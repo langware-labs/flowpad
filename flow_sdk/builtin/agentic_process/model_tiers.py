@@ -8,7 +8,7 @@ single place that knows, e.g., that claude's small model is ``haiku``.
 Resolution is authoritative on the backend (driver ``cli_options``), so a tier
 that was persisted into ``cli_config['model']`` still resolves correctly on
 reload. A value that is NOT a tier passes through unchanged — callers may still
-pass a concrete model name (``"sonnet"``, ``"claude-opus-4-6"``, …) directly.
+pass a concrete model name (``"sonnet"``, ``"gpt-5.4"``, …) directly.
 
 The SDK mirrors the enum (``WorkerModelTier`` in ``ts_sdk`` agentic-types) so the
 frontend can pass ``WorkerModelTier.SM`` as ``context.model``.
@@ -27,18 +27,25 @@ class ModelTier(StrEnum):
     LG = "lg"
 
 
-# Per-worker tier → concrete model string. A worker absent from this map (codex,
-# copilot) has no tier mapping yet → tiers pass through unchanged (the CLI then
-# uses its own default / rejects an unknown name, surfacing the gap loudly rather
-# than silently picking the wrong size).
-# claude's tier map. Each worker's CLI-options class owns its own map (and
-# applies it internally — see ``WorkerCLIOptions.model``); this module is just
-# the single place those maps are declared. Codex/copilot have none yet → their
-# options pass tiers through unchanged.
+# Per-worker tier → concrete model string. Each worker's CLI-options class owns
+# its own map and resolves only when emitting the worker command; persisted
+# AgenticProcess.cli_config keeps the portable tier.
 CLAUDE_MODEL_TIERS: dict[str, str] = {
     ModelTier.SM.value: "haiku",
     ModelTier.MD.value: "sonnet",
     ModelTier.LG.value: "opus",
+}
+
+CODEX_MODEL_TIERS: dict[str, str] = {
+    ModelTier.SM.value: "gpt-5.4-mini",
+    ModelTier.MD.value: "gpt-5.4",
+    ModelTier.LG.value: "gpt-5.5",
+}
+
+COPILOT_MODEL_TIERS: dict[str, str] = {
+    ModelTier.SM.value: "gpt-5.4-mini",
+    ModelTier.MD.value: "gpt-5.4",
+    ModelTier.LG.value: "gpt-5.5",
 }
 
 

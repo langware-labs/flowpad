@@ -218,7 +218,7 @@ export enum WorkerMode {
 /**
  * Portable model **tier** (size) — set as `context.model` instead of a vendor
  * model name. The backend driver maps the tier to its own model family at launch
- * (claude: sm→haiku, md→sonnet, lg→opus; codex/copilot pass through until mapped)
+ * (for example, claude: sm→haiku, md→sonnet, lg→opus)
  * — see `flow_sdk/builtin/agentic_process/model_tiers.py`, the single source of
  * truth. A concrete model string (e.g. `'sonnet'`) may still be passed directly.
  *

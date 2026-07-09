@@ -21,7 +21,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@src/components/ui/dropdown-menu';
@@ -119,6 +118,16 @@ interface EntityExecutionPanelProps {
    */
   defaultProjectId?: string | null;
   defaultWorkdir?: string | null;
+  /** Default model/tier for newly-created processes. Existing processes read
+   * their model from `cli_config.model`. */
+  defaultModel?: string | null;
+  /** Optional model control for surfaces that expose model selection. */
+  modelSelectSlot?: (args: {
+    value: string | null;
+    disabled: boolean;
+    onChange: (value: string) => void | Promise<void>;
+    activeProcess: AgenticProcess | null;
+  }) => React.ReactNode;
   /**
    * EXPERIMENT: chat transport. Selects how the process is created; both call
    * the same `prompt()`, which the backend routes by the process's `visible`
@@ -187,6 +196,8 @@ export function EntityExecutionPanel({
   dense = false,
   defaultProjectId,
   defaultWorkdir,
+  defaultModel,
+  modelSelectSlot,
   transport = 'print',
   autoPrompt,
   promptContext,
@@ -264,7 +275,7 @@ export function EntityExecutionPanel({
 
   const activeProcess: AgenticProcess | null = forceNew && !resolvedMatchesLocal
     ? localProcess
-    : ((resolvedProcess as AgenticProcess | null | undefined) ?? localProcess);
+    : (resolvedProcess ?? localProcess);
 
   // Hydrate history on first resolution. Per AgenticProcess.loadHistory, safe to
   // call repeatedly — internally guarded by `_historyLoaded`.
@@ -273,7 +284,7 @@ export function EntityExecutionPanel({
     void activeProcess.loadHistory().catch((err) => {
       console.error('[EntityExecutionPanel] loadHistory failed', err);
     });
-  }, [activeProcess?.id]);
+  }, [activeProcess]);
 
   // Stream ingestion — FlowStreamProcessor (inside AgenticProcess.prompt) appends
   // to flowDataStream; our local hook subscribes to its 'data' event.
@@ -339,6 +350,35 @@ export function EntityExecutionPanel({
   // Pre-first-send settings — applied at lazy-create time.
   const [pendingAttachedRefs, setPendingAttachedRefs] = useState<string[]>([]);
   const [pendingProjectId, setPendingProjectId] = useState<string | null>(null);
+  const [pendingModel, setPendingModel] = useState<string | null>(defaultModel ?? null);
+  const [modelSavePending, setModelSavePending] = useState(false);
+
+  const activeModelValue = (activeProcess?.cli_config as Record<string, unknown> | undefined)?.model;
+  const activeModel = typeof activeModelValue === 'string' && activeModelValue ? activeModelValue : null;
+  const effectiveModel = activeProcess
+    ? (activeModel ?? defaultModel ?? null)
+    : (pendingModel ?? defaultModel ?? null);
+
+  const handleModelChange = useCallback(async (model: string) => {
+    if (activeProcess && modelSavePending) return;
+    setPendingModel(model);
+    if (!activeProcess) return;
+
+    const previous = activeProcess.cli_config ?? {};
+    const previousModel = typeof previous.model === 'string' && previous.model ? previous.model : null;
+    activeProcess.cli_config = { ...previous, model };
+    setModelSavePending(true);
+    try {
+      await activeProcess.save();
+    } catch (err) {
+      activeProcess.cli_config = previous;
+      setPendingModel(previousModel ?? defaultModel ?? null);
+      console.error('[EntityExecutionPanel] model save failed', err);
+      notify.error({ title: t`Model not saved`, message: err instanceof Error ? err.message : String(err) });
+    } finally {
+      setModelSavePending(false);
+    }
+  }, [activeProcess, defaultModel, modelSavePending, t]);
 
   const startNewSession = useCallback(() => {
     setSelectedProcessId(null);
@@ -346,7 +386,8 @@ export function EntityExecutionPanel({
     setForceNew(true);
     setPendingAttachedRefs([]);
     setPendingProjectId(null);
-  }, []);
+    setPendingModel(effectiveModel);
+  }, [effectiveModel]);
 
   const selectSession = useCallback((processId: string) => {
     setSelectedProcessId(processId);
@@ -397,6 +438,7 @@ export function EntityExecutionPanel({
               projectId: pendingProjectId ?? effectiveProjectId ?? undefined,
               targetVfsPath: targetStr,
               processType,
+              ...(effectiveModel ? { model: effectiveModel } : {}),
               // pty-poll: interactive PTY worker, no stream-json print mode.
               ...(isPtyPoll ? {} : { outputFormat: 'stream-json' }),
             },
@@ -434,7 +476,7 @@ export function EntityExecutionPanel({
     } finally {
       setSending(false);
     }
-  }, [activeProcess, sending, targetStr, effectiveProjectId, effectiveWorkdir, onProcessCreated, pendingProjectId, pendingAttachedRefs, processType, transport, promptContext, onPromptContextConsumed, selectedProcessId]);
+  }, [activeProcess, sending, targetStr, effectiveProjectId, effectiveWorkdir, effectiveModel, onProcessCreated, pendingProjectId, pendingAttachedRefs, processType, transport, promptContext, onPromptContextConsumed, selectedProcessId, t]);
 
   const handleStop = useCallback(async () => {
     if (!activeProcess) return;
@@ -444,7 +486,7 @@ export function EntityExecutionPanel({
       console.error('[EntityExecutionPanel] interrupt failed', err);
       notify.error({ title: t`Could not stop`, message: err instanceof Error ? err.message : String(err) });
     }
-  }, [activeProcess]);
+  }, [activeProcess, t]);
 
   // Host-injected prompt (Run/Rerun/Refresh analysis). Nonce-gated so the
   // same object can sit in props without re-firing on unrelated renders.
@@ -526,6 +568,12 @@ export function EntityExecutionPanel({
   // the turn — no transport special-casing and no PENDING_USER carve-out needed.
   const busy = !!indicatorProcess && isBusy(indicatorProcess);
   const sendDisabled = !targetStr || sending || busy;
+  const modelSelectNode = modelSelectSlot?.({
+    value: effectiveModel,
+    disabled: !targetStr || sending || busy || modelSavePending,
+    onChange: handleModelChange,
+    activeProcess,
+  });
 
   // While the dense chat's live activity footer is showing (dots + phase label
   // + elapsed clock), it already carries the "working" signal — suppress the
@@ -643,7 +691,16 @@ export function EntityExecutionPanel({
           </span>
         </div>
       )}
-      <CompactExecutionInput onSend={handleSend} disabled={sendDisabled} running={busy} onStop={handleStop} statusSlot={statusSlot} placeholder={placeholder} onPasteImages={handlePasteImages} />
+      <CompactExecutionInput
+        onSend={handleSend}
+        disabled={sendDisabled}
+        running={busy}
+        onStop={handleStop}
+        statusSlot={statusSlot}
+        placeholder={placeholder}
+        onPasteImages={handlePasteImages}
+        leadingSlot={modelSelectNode}
+      />
       <ConfirmDialog
         open={!!pendingDelete}
         onOpenChange={(o) => { if (!o) setPendingDelete(null); }}
@@ -822,7 +879,7 @@ function ExecutionHistoryHeader({
                           // should NOT also load the session into the panel.
                           e.preventDefault();
                           e.stopPropagation();
-                          onDeleteSession(p.id!, title);
+                          onDeleteSession(p.id, title);
                         }}
                         className="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded text-muted-foreground/40 opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100 group-data-[active=true]:opacity-60"
                         title={t`Delete this chat`}

@@ -8,6 +8,12 @@
 
 import { WorkerCliOptions, shellQuote } from './base'
 
+const CLAUDE_MODEL_TIERS: Record<string, string> = {
+  sm: 'haiku',
+  md: 'sonnet',
+  lg: 'opus',
+}
+
 export interface ClaudeCliOptionsOptions {
   session_id?: string | null
   resume?: boolean
@@ -65,6 +71,10 @@ export class ClaudeCliOptions extends WorkerCliOptions {
     }
   }
 
+  get resolvedModel(): string | undefined {
+    return this.model ? (CLAUDE_MODEL_TIERS[this.model] ?? this.model) : undefined
+  }
+
   protected _buildWorkerArgs(): string[] {
     const args: string[] = ['claude']
 
@@ -87,7 +97,7 @@ export class ClaudeCliOptions extends WorkerCliOptions {
       args.push(`--session-id ${shellQuote(this.session_id)}`)
     }
 
-    if (this.model) args.push(`--model ${shellQuote(this.model)}`)
+    if (this.resolvedModel) args.push(`--model ${shellQuote(this.resolvedModel)}`)
     if (this.agents_json) args.push(`--agents ${shellQuote(JSON.stringify(this.agents_json))}`)
     for (const d of this.addDirs) {
       args.push(`--add-dir ${shellQuote(d)}`)

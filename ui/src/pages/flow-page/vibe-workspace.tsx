@@ -52,6 +52,7 @@ import {
 import { Plus } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
+import { normalizeVibeModelTier, VIBE_MODEL_DEFAULT, VibeModelSelect } from './vibe-model-select';
 
 
 interface VibeFocus {
@@ -526,6 +527,15 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
           noPastSessionsLabel={t`No past builds`}
           defaultProjectId={project?.id ?? null}
           defaultWorkdir={project?.fs_storage_mount_path ?? null}
+          defaultModel={VIBE_MODEL_DEFAULT}
+          modelSelectSlot={({ value, disabled, onChange }) => (
+            <VibeModelSelect
+              value={normalizeVibeModelTier(value)}
+              onChange={(next) => onChange(next)}
+              disabled={disabled}
+              triggerClassName="h-9 w-[112px]"
+            />
+          )}
           // Keep the chat bound to the workspace's process as the user browses
           // its child tabs (on a child URL `target`'s latest-wins pick could
           // otherwise drift to another session).

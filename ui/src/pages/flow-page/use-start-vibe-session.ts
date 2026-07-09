@@ -6,6 +6,7 @@ import { notify } from '@src/notifications';
 import { uploadFilesToProcessInputDir } from '@src/utils/upload-to-input-dir';
 import { useLingui } from '@lingui/react/macro';
 import { useCallback } from 'react';
+import { VIBE_MODEL_DEFAULT, type VibeModelTier } from './vibe-model-select';
 
 // The vibe agent's asset_ref is stable for the app's lifetime — resolve once,
 // reuse across builds. Raw graph route (not useEntitiesQuery) because system
@@ -33,8 +34,9 @@ export async function createVibeProcessForProject(opts: {
   projectId: string;
   workdir?: string;
   navigation: OpenShell;
+  model?: VibeModelTier;
 }): Promise<AgenticProcess> {
-  const { projectId, workdir, navigation } = opts;
+  const { projectId, workdir, navigation, model = VIBE_MODEL_DEFAULT } = opts;
   // Key the session to the project's id-based TypeId (NOT project.typeId, the
   // uname form `project-@local`) — VibeWorkspace's chat target must match this
   // exact string to attach to the same process.
@@ -50,6 +52,7 @@ export async function createVibeProcessForProject(opts: {
       processType: ProcessKind.Chat,
       loadFlowpadAssistant: true,
       outputFormat: 'stream-json',
+      model,
     },
     // Headless JSON-stream transport — the vibe chat is a side panel, not a
     // terminal; PTY transport would pre-fill (not run) the first prompt.
@@ -88,11 +91,12 @@ export async function launchVibeSessionForProject(opts: {
   message: string;
   files?: File[];
   navigation: OpenShell;
+  model?: VibeModelTier;
   /** Called when attachment upload fails (session still opens, text-only). */
   onAttachmentError?: () => void;
 }): Promise<string> {
-  const { projectId, workdir, message, files, navigation, onAttachmentError } = opts;
-  const proc = await createVibeProcessForProject({ projectId, workdir, navigation });
+  const { projectId, workdir, message, files, navigation, model, onAttachmentError } = opts;
+  const proc = await createVibeProcessForProject({ projectId, workdir, navigation, model });
   // Attachments (if any) must land in the process input dir BEFORE the first
   // turn starts — the agent reads the referenced paths immediately. Upload
   // failure degrades to a text-only prompt rather than losing the message.
@@ -115,13 +119,13 @@ export async function launchVibeSessionForProject(opts: {
  * {@link launchVibeSessionForProject} that resolves the active project + its
  * workdir and surfaces errors as toasts.
  */
-export function useStartVibeSession(): (message: string, files?: File[]) => void {
+export function useStartVibeSession(): (message: string, files?: File[], model?: VibeModelTier) => void {
   const { project } = useProject();
   const { navigation } = useDockNavigation();
   const { t } = useLingui();
 
   return useCallback(
-    (message: string, files?: File[]) => {
+    (message: string, files?: File[], model?: VibeModelTier) => {
       if (!project?.id) {
         notify.error({ title: t`Project Required`, message: t`Please select or create a project first.` });
         return;
@@ -134,6 +138,7 @@ export function useStartVibeSession(): (message: string, files?: File[]) => void
         workdir,
         message,
         files,
+        model,
         navigation,
         onAttachmentError: () =>
           notify.error({ title: t`Attachment upload failed`, message: t`Starting the session without the attached files.` }),

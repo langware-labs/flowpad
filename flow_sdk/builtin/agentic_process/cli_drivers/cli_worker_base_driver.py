@@ -295,12 +295,11 @@ class WorkerCLIOptions:
     for PTY injection. Subclasses override ``_build_worker_args()`` to provide
     the actual executable and its flags.
 
-    Model **tier** resolution lives here, once: assigning ``self.model`` runs it
-    through this class's ``MODEL_TIERS`` map, so a portable size (``sm``/``md``/
-    ``lg``) becomes the worker's concrete model the moment it's set — no matter
-    which path built the options (PTY ``cli_options`` or headless stream worker).
-    A subclass declares its own ``MODEL_TIERS`` (claude does; codex/copilot leave
-    it empty → tiers pass through). A concrete model name is always passed through.
+    Model **tier** resolution lives here, once: ``self.model`` keeps the raw
+    persisted intent (``sm``/``md``/``lg`` or a concrete model), while
+    ``self.resolved_model`` applies this class's ``MODEL_TIERS`` map for the
+    worker command. A subclass declares its own ``MODEL_TIERS``. A concrete
+    model name is always passed through.
     """
 
     # Per-worker tier→model map; empty in the base (pass-through). See
@@ -343,12 +342,15 @@ class WorkerCLIOptions:
 
     @model.setter
     def model(self, value: str | None) -> None:
-        # Resolve the tier as it's assigned — the single seam every options
-        # builder funnels through. ``resolve_model_tier`` is pass-through for a
-        # concrete model or an unmapped tier.
+        self._model = value
+
+    @property
+    def resolved_model(self) -> str | None:
+        # Resolve only for command emission. ``model`` itself stays the raw
+        # AP/cli_config value so the UI can reflect and save portable tiers.
         from flow_sdk.builtin.agentic_process.model_tiers import resolve_model_tier
 
-        self._model = resolve_model_tier(self.MODEL_TIERS, value)
+        return resolve_model_tier(self.MODEL_TIERS, self.model)
 
     def add_env(self, key: str, value: str) -> None:
         self.env_vars[key] = value

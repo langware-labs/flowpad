@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { WorkerCliOptions, ClaudeCliOptions, AgenticProcess, factory } from '@sdk'
+import { ClaudeCliOptions, AgenticProcess, factory } from '@sdk'
 
 // Simulates what the backend serializes into proc.cli_config
 const BACKEND_CLI_CONFIG = {
@@ -90,6 +90,13 @@ describe('ClaudeCliOptions', () => {
     const out = cmd.toShellString()
     expect(out).toContain('--session-id abc-123')
     expect(out).not.toContain('--resume')
+  })
+
+  it('persists model tiers raw but emits Claude model aliases', () => {
+    const cmd = new ClaudeCliOptions({ model: 'sm', workdir: '/proj' })
+    expect(cmd.model).toBe('sm')
+    expect(cmd.toJson().model).toBe('sm')
+    expect(cmd.toShellString()).toContain('--model haiku')
   })
 
   it('debug=false → no --debug flag', () => {

@@ -30,6 +30,7 @@ import { listInboxMessages } from '@src/components/inbox-view/inbox-api';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { GitOrigin, LastScanResult } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
+import { VIBE_MODEL_DEFAULT, VibeModelSelect, type VibeModelTier } from '@src/pages/flow-page/vibe-model-select';
 
 /**
  * HomeLanding - Welcome view with greeting and quick action buttons
@@ -138,6 +139,7 @@ export function HomeLanding() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchFilters, setSearchFilters] = useState<SearchFilters>({});
   const [selectedResultIndex, setSelectedResultIndex] = useState(-1);
+  const [vibeModel, setVibeModel] = useState<VibeModelTier>(VIBE_MODEL_DEFAULT);
   const { scope: searchScope, isLoading: searchScopeLoading } = useGlobalSearchScope();
 
   useEffect(() => { setSelectedResultIndex(-1); }, [searchQuery]);
@@ -195,7 +197,8 @@ export function HomeLanding() {
                   value={draftPrompt}
                   onChange={setDraftPrompt}
                   allowAttachments
-                  onSubmit={(msg, files) => void handleVibeSubmit(msg, files)}
+                  footerSlot={<VibeModelSelect value={vibeModel} onChange={setVibeModel} />}
+                  onSubmit={(msg, files) => void handleVibeSubmit(msg, files, vibeModel)}
                 />
               </div>
             </div>
