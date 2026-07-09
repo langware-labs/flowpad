@@ -4351,11 +4351,11 @@ class AgenticProcess(Entity):
         the value more than once should fetch once and pass it along (e.g.
         ``is_ready_for_input(self, worker_status=...)``).
         """
-        if self.status in {
-            ProcessStatus.NEW.value,
-            ProcessStatus.STOPPED.value,
-        }:
+        if self.status == ProcessStatus.NEW.value:
             return None
+        if self.status == ProcessStatus.STOPPED.value:
+            discovered = self._discover_status_from_transcript()
+            return discovered if discovered and is_worker_terminal(discovered) else None
         if self.status == ProcessStatus.FAILED.value:
             return WorkerStatus.ERROR
         return self._discover_status_from_transcript()

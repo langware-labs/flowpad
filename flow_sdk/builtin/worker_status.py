@@ -554,10 +554,16 @@ def _tail_status(path: "str | _Path") -> WorkerStatus:
         # the trailing ``last-prompt`` is NOT a turn end. Declaring COMPLETE here
         # cuts ``stream_transcript`` off during a long inter-tool pause (Opus can
         # take 20-40 s), so the diagnose runner never scrapes the final report
-        # and falsely reports "not recorded". Only a genuine ``end_turn`` is
-        # terminal; otherwise stay WORKING and keep reading. (Mirrors the
-        # ``stop_reason=="end_turn"`` guard on the ``_post_tool_idle`` path.)
-        if _last_assistant_stop_reason(chunk) != "end_turn":
+        # and falsely reports "not recorded". A ``stop_sequence`` error is also
+        # terminal; Claude may append ``last-prompt`` after synthetic API/limit
+        # errors, and treating that as WORKING pins the UI forever.
+        assistant_stop = _last_assistant_stop_reason(chunk)
+        if assistant_stop == "stop_sequence":
+            return WorkerStatus.ERROR
+        # Only a genuine ``end_turn`` is success-terminal; otherwise stay
+        # WORKING and keep reading. (Mirrors the ``stop_reason=="end_turn"``
+        # guard on the ``_post_tool_idle`` path.)
+        if assistant_stop != "end_turn":
             return WorkerStatus.WORKING
         return WorkerStatus.COMPLETE
     if last_type == "user" and "interrupted" in _last_user_text(chunk).lower():

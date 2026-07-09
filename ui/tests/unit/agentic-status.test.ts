@@ -427,6 +427,15 @@ describe('getDisplayStatus', () => {
     }
   });
 
+  it('surfaces worker errors even after the lifecycle has stopped', () => {
+    expect(
+      getDisplayStatus({ status: ProcessStatus.STOPPED, workerStatus: WorkerStatus.ERROR }),
+    ).toBe(WorkerStatus.ERROR);
+    expect(
+      getDisplayStatus({ status: ProcessStatus.STOPPED, worker_status: WorkerStatus.API_TIMEOUT }),
+    ).toBe(WorkerStatus.API_TIMEOUT);
+  });
+
   it('returns undefined for processes with no status at all', () => {
     expect(getDisplayStatus({})).toBeUndefined();
   });
