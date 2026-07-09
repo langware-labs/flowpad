@@ -27,6 +27,10 @@ from flow_sdk.fs_store.indexer._frontmatter import (
     _extract_frontmatter,
     _yaml_load,
 )
+from flow_sdk.fs_store.indexer.functions._folder_capsule import (
+    folder_capsule_gen_id,
+    read_folder_capsule_id,
+)
 from flow_sdk.fs_store.indexer.functions.skill import read_frontmatter_id_from_yaml
 from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
@@ -161,7 +165,11 @@ def _mint_task_id(key: str) -> str:
 
 
 def _task_id_from_fields(fields: dict, task_dir: Path) -> str:
-    """task.md frontmatter ``id`` (validated) → else a folder-name-derived v5."""
+    """`.flow/id` capsule (gen_id stamped it) → validated task.md frontmatter id →
+    folder-name-derived v5 (transitional). Matches ``task_gen_id`` precedence."""
+    cap = read_folder_capsule_id(task_dir)
+    if cap:
+        return cap
     fm_id = read_frontmatter_id_from_yaml(fields)
     if fm_id and is_valid_entity_id(fm_id):
         return fm_id
@@ -174,22 +182,23 @@ def _task_id_from_fields(fields: dict, task_dir: Path) -> str:
 
 
 def task_gen_id(ref: FSRef) -> str:
-    """Return the task id.
+    """Resolve the task id.
 
-    ``task.md`` frontmatter ``id`` first (stamped on create by
-    ``render_entity_frontmatter``); else the legacy ``task_id``/``id`` from the
-    manifest; else the folder name. The legacy fallback preserves the exact
-    formula the old ``task_fn`` used so DB rows keyed by that value remain valid.
+    Precedence: the `.flow/id` capsule → a VALID task.md frontmatter id → a VALID
+    legacy manifest id (each adopted + backfilled into the capsule) → a fresh
+    random **v4** into the capsule. The folder-name uuid5 survives only as a
+    read-only / transitional read fallback (``_mint_task_id``).
     """
     task_dir = ref._path if ref._path.is_dir() else ref._path.parent
+    candidates: list = []
     task_md = task_dir / "task.md"
     if task_md.is_file():
-        fm_id = read_frontmatter_id_from_yaml(_read_task_md_fields(task_md))
-        if fm_id and is_valid_entity_id(fm_id):
-            return fm_id
+        fields = _read_task_md_fields(task_md)
+        candidates += [fields.get("id"), fields.get("asset_id")]
     manifest = _legacy_manifest(task_dir)
     data = _read_legacy_data(manifest) if manifest else {}
-    return _mint_task_id(str(data.get("task_id") or data.get("id") or task_dir.name))
+    candidates += [data.get("task_id"), data.get("id")]
+    return folder_capsule_gen_id(task_dir, *candidates)
 
 
 # ---------------------------------------------------------------------------

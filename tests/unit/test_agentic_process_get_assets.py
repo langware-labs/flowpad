@@ -391,9 +391,11 @@ async def test_load_embedded_agent_action_records_entity_ref(tree, tmp_path):
     assert [str(r) for r in proc.embedded_asset_refs] == [f"agent-{expected_id}"]
 
 
-def test_agent_peek_entity_id_matches_gen_id_without_writing(tmp_path):
-    """agent_peek_entity_id returns the same uuid agent_gen_id mints, but
-    leaves the source file byte-identical; an adopted frontmatter UUID wins."""
+def test_agent_peek_entity_id_reads_capsule_without_writing(tmp_path):
+    """agent_peek_entity_id never writes the source file. Under capsule-v4 it
+    cannot predict a not-yet-minted random v4 (the documented asymmetry), but
+    once gen_id has stamped the v4 into the frontmatter capsule, peek reads and
+    returns that same id. An already-adopted frontmatter UUID wins on both."""
     from flow_sdk.fs_store.fs_ref import FSRef
     from flow_sdk.fs_store.identifier import is_valid_entity_id
     from flow_sdk.fs_store.indexer.functions.agent import agent_gen_id, agent_peek_entity_id
@@ -404,8 +406,10 @@ def test_agent_peek_entity_id_matches_gen_id_without_writing(tmp_path):
     peeked = agent_peek_entity_id(FSRef(md, record_type=RecordType.AGENT))
     assert md.read_bytes() == before, "peek must not write"
     assert is_valid_entity_id(peeked)
-    # gen_id (the writing variant) mints the identical uuid for the same key.
-    assert agent_gen_id(FSRef(md, record_type=RecordType.AGENT)) == peeked
+    # gen_id stamps a fresh v4 into the frontmatter capsule; peek then reads it.
+    minted = agent_gen_id(FSRef(md, record_type=RecordType.AGENT))
+    assert uuid.UUID(minted).version == 4
+    assert agent_peek_entity_id(FSRef(md, record_type=RecordType.AGENT)) == minted
 
     adopted = str(uuid.uuid4())
     md2 = tmp_path / "adopted_agent.md"

@@ -671,6 +671,16 @@ class FSRecord(Generic[M]):
         # otherwise short-circuit the first-create write.
         path = info.body_path_for(ar._path) if info else ar._path
         owns = bool(info and info.owns_main_ref)
+        # Folder-backed entities carry their id in a `.flow/id` capsule inside the
+        # folder — the portable, move-safe identity home (and the only place a
+        # main-doc-less folder can store its id). Written for EVERY folder-backed
+        # type, BEFORE the body-None early-return below, so a folder with no main
+        # doc still gets a capsule on create.
+        if info and info.folder_backed and getattr(entity, "id", None):
+            from flow_sdk.fs_store.indexer.functions._folder_capsule import (  # noqa: PLC0415
+                write_folder_capsule_id,
+            )
+            write_folder_capsule_id(ar._path, str(entity.id))
         if path.exists() and not owns:
             return
         body = self.default_body(entity)

@@ -103,6 +103,10 @@ def _seed_io_dataset(
 def _assert_indexer_compatible(ds_path: Path) -> Dataset:
     """Load via from_fs_ref and assert it equals the indexer cold path."""
     ref = FSRef(ds_path)
+    # gen_id stamps the `.flow/id` capsule first — the production index order
+    # (gen_uuid_fn runs before the extractor). The loader + cold-path extractor
+    # then adopt that same capsule id (a fresh v4 when the dataset carries no id).
+    gen = dataset_gen_id(ref)
     loaded = Dataset.from_fs_ref(ref)
     assert loaded is not None, "from_fs_ref returned None for a real dataset"
     assert isinstance(loaded, Dataset)
@@ -111,7 +115,7 @@ def _assert_indexer_compatible(ds_path: Path) -> Dataset:
     meta = rec.meta_dict()["metadata"]
 
     # id: loader == gen_id == cold-path record id
-    assert loaded.id == dataset_gen_id(ref) == rec.id
+    assert loaded.id == gen == rec.id
 
     # typed fields lifted from the nested `metadata` section
     assert loaded.data_layout == meta["data_layout"]
