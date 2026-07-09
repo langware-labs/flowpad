@@ -272,6 +272,38 @@ def test_tail_status_stop_sequence_is_error(tmp_path: Path):
     assert _tail_status(f) == WorkerStatus.ERROR
 
 
+def test_tail_status_last_prompt_after_stop_sequence_is_error(tmp_path: Path):
+    """``last-prompt`` after a synthetic API/limit stop_sequence remains ERROR.
+
+    Claude Code can write a synthetic assistant message for a 429/Fable limit
+    with ``stop_reason=stop_sequence`` and then append ``last-prompt``. The
+    ``last-prompt`` marker is an ack, not proof that the worker is still busy.
+    """
+    f = tmp_path / "session.jsonl"
+    _write_jsonl(f, [
+        {"type": "user", "message": {"role": "user"}},
+        {
+            "type": "assistant",
+            "message": {
+                "role": "assistant",
+                "model": "<synthetic>",
+                "stop_reason": "stop_sequence",
+                "stop_sequence": "",
+                "content": [{
+                    "type": "text",
+                    "text": "You've reached your Fable 5 limit. Run /usage-credits to continue or switch models with /model.",
+                }],
+            },
+            "error": "rate_limit",
+            "isApiErrorMessage": True,
+            "apiErrorStatus": 429,
+        },
+        {"type": "last-prompt"},
+    ])
+    os.utime(f, None)
+    assert _tail_status(f) == WorkerStatus.ERROR
+
+
 def test_tail_status_thinking(tmp_path: Path):
     """Active file + assistant with no stop_reason → THINKING."""
     f = tmp_path / "session.jsonl"
@@ -904,6 +936,30 @@ def test_fetch_worker_status_terminal_lifecycle_overrides_transcript(monkeypatch
     )
 
     assert proc.fetch_worker_status() == expected
+
+
+@pytest.mark.parametrize(
+    "terminal",
+    [
+        WorkerStatus.COMPLETE,
+        WorkerStatus.ERROR,
+        WorkerStatus.INTERRUPTED,
+        WorkerStatus.INACTIVE,
+        WorkerStatus.API_TIMEOUT,
+    ],
+)
+def test_fetch_worker_status_stopped_preserves_terminal_transcript(monkeypatch, terminal):
+    """A headless CLI process sits at STOPPED between turns, but its terminal
+    transcript status is still the user-visible outcome of the last turn."""
+    proc = AgenticProcess()
+    proc.status = ProcessStatus.STOPPED.value
+    monkeypatch.setattr(
+        AgenticProcess,
+        "_discover_status_from_transcript",
+        lambda self, terminal=terminal: terminal,
+    )
+
+    assert proc.fetch_worker_status() == terminal
 
 
 def test_api_json_serializer_always_emits_raw_running(monkeypatch):

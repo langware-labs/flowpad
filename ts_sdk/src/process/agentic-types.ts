@@ -414,8 +414,11 @@ export function isReadyForInput(p: StatusBearingProcess): boolean {
 export function getDisplayStatus(p: StatusBearingProcess): ProcessStatus | WorkerStatus | undefined {
   const status = resolveStatus(p);
   if (status === undefined) return undefined;
+  const worker = resolveWorkerStatus(p);
+  if (worker !== undefined && worker !== WorkerStatus.UNKNOWN && ERROR_WORKER_STATUSES.has(worker)) {
+    return worker;
+  }
   if (isProcessRunning(status)) {
-    const worker = resolveWorkerStatus(p);
     if (worker !== undefined && worker !== WorkerStatus.UNKNOWN) return worker;
   }
   return status;
