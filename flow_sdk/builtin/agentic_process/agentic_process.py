@@ -322,6 +322,44 @@ def _build_run_result(proc: "AgenticProcess") -> "RunResult":
     )
 
 
+# ── Display stack (the `flow show` history) ──────────────────────────────────
+# The agent's `flow show` targets accumulate on ``context_data["display_stack"]``
+# (each entry = a resolve_display_target payload + a server ``shown_at`` ISO
+# stamp), newest last. ``last_shown`` stays = the newest TARGET (no shown_at) for
+# back-compat readers (standard-mode viewer). Capped; consecutive identical
+# targets refresh the timestamp instead of duplicating.
+DISPLAY_STACK_CAP = 50
+_DISPLAY_TARGET_KEYS = ("kind", "typeid", "type", "id", "path", "port")
+
+
+def _same_display_target(a: dict, b: dict) -> bool:
+    """Two display payloads point at the same thing (ignoring ``shown_at``)."""
+    return all(a.get(k) == b.get(k) for k in _DISPLAY_TARGET_KEYS)
+
+
+def _append_display_entry(stack: list[dict], payload: dict, shown_at: str) -> list[dict]:
+    """Append ``payload`` (stamped ``shown_at``) to ``stack``; a consecutive
+    identical target just refreshes its timestamp. Capped to the newest N."""
+    entry = {**payload, "shown_at": shown_at}
+    if stack and isinstance(stack[-1], dict) and _same_display_target(stack[-1], payload):
+        stack = [*stack[:-1], entry]
+    else:
+        stack = [*stack, entry]
+    return stack[-DISPLAY_STACK_CAP:]
+
+
+def _union_display_stacks(a: list, b: list) -> list[dict]:
+    """Superset of two stacks keyed by ``shown_at`` (ISO strings sort
+    chronologically), so a stale whole-row save never shrinks the persisted
+    history. Newest last, capped."""
+    by_key: dict[str, dict] = {}
+    for entry in (*(a or []), *(b or [])):
+        if isinstance(entry, dict) and entry.get("shown_at"):
+            by_key[entry["shown_at"]] = entry
+    merged = sorted(by_key.values(), key=lambda e: e.get("shown_at") or "")
+    return merged[-DISPLAY_STACK_CAP:]
+
+
 class AgenticProcess(Entity):
     _api_visible = True
     _icon: ClassVar[str | None] = "Workflow"
@@ -1937,15 +1975,27 @@ class AgenticProcess(Entity):
         the standard-mode viewer). Nothing watching → a silent context change;
         that is the intended semantics, not a failure.
 
-        The payload is also persisted as ``context_data.last_shown`` so a
-        display that mounts LATER (page reload, late-opened tab) restores the
-        pin — the entity event alone has no replay.
+        The payload is appended to ``context_data.display_stack`` (the show
+        HISTORY, newest last) and mirrored to ``context_data.last_shown`` (the
+        newest target) so a display that mounts LATER (page reload, late-opened
+        tab) restores the pin AND its history — the entity event has no replay.
         """
-        self.context_data = {**(self.context_data or {}), "last_shown": payload}
+        shown_at = datetime.now(timezone.utc).isoformat()
+        context = self.context_data if isinstance(self.context_data, dict) else {}
+        # Read-modify-write against the freshest stack so concurrent shows don't
+        # lose each other (self.context_data may predate another show's append).
+        base = list(context.get("display_stack") or [])
+        if getattr(self, "exist_in_db", False):
+            latest = await AgenticProcess.get_by_id(self.id)
+            if latest is not None and latest is not self:
+                latest_ctx = latest.context_data if isinstance(latest.context_data, dict) else {}
+                base = _union_display_stacks(base, latest_ctx.get("display_stack") or [])
+        stack = _append_display_entry(base, payload, shown_at)
+        self.context_data = {**context, "display_stack": stack, "last_shown": payload}
         try:
             await self.save()
         except Exception:
-            logger.warning("on_show: last_shown persist failed", exc_info=True)
+            logger.warning("on_show: display persist failed", exc_info=True)
         await self.emit_entity_event("on_show", payload)
 
     @action.post(action_name="show")
@@ -3975,19 +4025,30 @@ class AgenticProcess(Entity):
         )
 
     async def _preserve_latest_display_pin(self) -> None:
-        """Keep ``context_data.last_shown`` from being lost by stale whole-row saves."""
+        """Keep the display state (``context_data.display_stack`` + ``last_shown``)
+        from being lost by a stale whole-row save.
+
+        A save from a copy constructed WITHOUT loading (neither field in memory)
+        would clobber the persisted display, so it re-attaches from the DB. When
+        the in-memory context already carries either field the fast path trusts it
+        (no DB read) — keeping every hot save cheap. ACCEPTED RACE: a copy that
+        LOADED the display earlier but predates a later ``on_show`` still writes
+        its stale (shorter) ``display_stack`` back on a whole-row save, dropping
+        the newer row; ``on_show`` unions to REPAIR it on the next show, and the
+        lost value is only a cosmetic history entry — not worth a per-save DB read
+        to prevent. (Same risk the original ``last_shown``-only guard carried.)"""
         if not getattr(self, "exist_in_db", False):
             return
         current_context = self.context_data if isinstance(self.context_data, dict) else {}
-        if "last_shown" in current_context:
+        if "display_stack" in current_context or "last_shown" in current_context:
             return
         latest = await AgenticProcess.get_by_id(self.id)
         if latest is None or latest is self:
             return
         latest_context = latest.context_data if isinstance(latest.context_data, dict) else {}
-        if "last_shown" not in latest_context:
-            return
-        self.context_data = {**current_context, "last_shown": latest_context["last_shown"]}
+        carry = {k: latest_context[k] for k in ("display_stack", "last_shown") if k in latest_context}
+        if carry:
+            self.context_data = {**current_context, **carry}
 
     async def save(self, owner=None, notify: bool = True):
         """Override to maintain ``restart_required`` automatically.

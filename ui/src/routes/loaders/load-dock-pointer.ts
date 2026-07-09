@@ -109,6 +109,11 @@ export async function loadDockPointer(
       case ViewType.AGENTIC_PROCESS:
         await loadAgenticProcessRoute(dock.pointer);
         break;
+      case ViewType.DISPLAY:
+        // The vibe Display surface carries an `agentic_process-<id>` pointer —
+        // same loader as the process route (resolves the process into context).
+        await loadAgenticProcessRoute(dock.pointer);
+        break;
       case ViewType.TRIGGERS:
         await Trigger.query(new QueryRequest({ type: Trigger.type, scope: [] }));
         break;

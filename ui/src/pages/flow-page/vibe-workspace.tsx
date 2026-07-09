@@ -16,9 +16,12 @@ import { useViewerStore, useProcessWebApp } from '@src/hooks/flow-hooks';
 import { isMcpAppPath } from '@src/lib/mcp-app-resources';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { editorForPath, editorForType } from '@src/navigation/asset-doc-types';
+import { useEntity } from '@src/hooks/entity-hooks';
+import { DisplayHistoryButton } from './display-history-button';
 import {
   AgenticProcess,
   dataContext,
+  type DisplayEntry,
   FlowData,
   fsStore,
   ProcessKind,
@@ -45,13 +48,32 @@ import {
 } from './display-annotation';
 import { Plus } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useLingui } from '@lingui/react/macro';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 
 interface VibeFocus {
   viewType: ViewType | null;
   path?: string;
   port?: string;
+}
+
+// Empty-display starter prompts — clicking one submits it to the chat (the
+// agent then drives the first `flow show`).
+const STARTER_PROMPTS = [
+  'Build a landing page',
+  'Make a todo app',
+  'Create a dashboard',
+  'Design a pricing page',
+];
+
+/** The dock pointer a shown target opens as its own tab — the single type/path →
+ *  editor rule shared by the current-display render and the history popover. */
+function assetPointerForTarget(target: DisplayShowTarget): AssetDocPointer | null {
+  if (target.kind === 'webapp') return null; // webapps have no dock editor
+  const editor = target.type ? editorForType(target.type) : undefined;
+  if (editor && target.typeid) return AssetDocPointer.forTypeId(editor, new TypeId(target.typeid));
+  if (target.path) return AssetDocPointer.forVfs(editorForPath(target.path), target.path);
+  return null;
 }
 
 /** Mount the right asset editor for a raw path — shared extension rule
@@ -160,17 +182,39 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
       setShown(null);
       return;
     }
-    // Restore the persisted pin (context_data.last_shown) so a display mounted
-    // AFTER the agent's `flow show` (page reload, late-opened tab) still lands
-    // on the deliverable — the on_show entity event has no replay.
+    // Restore the persisted pin (context_data.last_shown / newest stack entry) so
+    // a display mounted AFTER the agent's `flow show` (page reload, late-opened
+    // tab) still lands on the deliverable — the on_show entity event has no replay.
     const lastShown = (activeProcess.context_data as { last_shown?: DisplayShowTarget } | undefined)
       ?.last_shown;
-    setShown(lastShown ?? null);
+    const stack = activeProcess.displayStack;
+    setShown(lastShown ?? (stack.length ? stack[stack.length - 1] : null));
     return activeProcess.onShow((payload) => {
       setShown(payload);
       setShowNonce((n) => n + 1);
     });
   }, [activeProcess]);
+
+  // The `flow show` history (oldest first) is the AUTHORITATIVE server stack —
+  // derived from the reactive process entity (the wholesale-replace guard keeps
+  // it fresh), never a hand-appended local mirror. `useEntity` re-renders on the
+  // backend's context_data update.
+  const reactiveProcess = useEntity<AgenticProcess>(activeProcess?.typeId ?? null);
+  const displayStack = useMemo(
+    () => reactiveProcess.data?.displayStack ?? activeProcess?.displayStack ?? [],
+    [reactiveProcess.data, activeProcess],
+  );
+
+  // Open a past display as its OWN standard tab (the reusable behavior): convert
+  // the stored target to its dock pointer and navigate. Webapps have no dock
+  // editor — re-focus the live Display instead.
+  const onOpenHistoryEntry = useCallback(
+    (entry: DisplayEntry) => {
+      const ptr = assetPointerForTarget(entry)?.toDockPointer() ?? null;
+      navigation.openDock(ptr ?? session.displayDock);
+    },
+    [navigation, session.displayDock],
+  );
 
   // Feed the dev-server port into the viewer store — the exact channel
   // WebappViewer reads (`currentContext.viewerOptions.port`). A shown webapp
@@ -252,6 +296,10 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
   }, [activeProcess]);
 
   const displayEl = useMemo(() => {
+    // The display-history popover control, rendered next to each toolbar's
+    // open-in-window icon.
+    const historySlot = <DisplayHistoryButton stack={displayStack} onOpen={onOpenHistoryEntry} />;
+
     // Fallback (nothing explicitly shown): the artifact-driven WebappViewer,
     // which carries its own chrome — left unwrapped.
     const preview = (
@@ -266,6 +314,36 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
       />
     );
 
+    // True empty state — nothing shown yet AND no stream focus: offer starter
+    // prompt chips. Clicking one submits it to the chat (prompt + enter); the
+    // agent then drives the first `flow show`. (`!shown` already implies an empty
+    // stack — the pin restores from the newest entry.)
+    if (!shown && !focus.viewType) {
+      return (
+        <div
+          className="flex h-full flex-col items-center justify-center gap-4 p-6 text-center"
+          data-testid="display-empty-state"
+        >
+          <p className="text-sm text-muted-foreground">
+            <Trans>Nothing to display yet — try one to get started</Trans>
+          </p>
+          <div className="flex max-w-md flex-wrap justify-center gap-2">
+            {STARTER_PROMPTS.map((p) => (
+              <button
+                key={p}
+                type="button"
+                onClick={() => void activeProcess?.prompt(p)}
+                data-testid="display-starter-chip"
+                className="rounded-full border border-border px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              >
+                {p}
+              </button>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
     // A shown viewer under the two-tier toolbar: per-type toolbar (left) +
     // the generic action (right). For entities/files that action is "open in
     // a new tab" — IN-APP dock navigation (promotes the item to a full
@@ -277,6 +355,7 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
         onAnnotate={(target) => {
           void handleAnnotateDisplay(target, displayAnnotationContextForPath(path));
         }}
+        historySlot={historySlot}
       >
         {node}
       </DisplayToolbar>
@@ -293,6 +372,7 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
               onAnnotate={(target) => {
                 void handleAnnotateDisplay(target, webappContext);
               }}
+              historySlot={historySlot}
               perType={
                 <WebappDisplayToolbar
                   host={webAppConfig.host}
@@ -325,6 +405,7 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
                 onAnnotate={(target) => {
                   void handleAnnotateDisplay(target, entityContext);
                 }}
+                historySlot={historySlot}
               >
                 <AssetEditorRouter key={`${ptr.toPointer()}:${refreshStamp}`} pointer={ptr.toPointer()} />
               </DisplayToolbar>
@@ -353,9 +434,12 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
           viewType: ViewType.DIFF,
         };
         return focus.path ? (
-          <DisplayToolbar onAnnotate={(target) => {
-            void handleAnnotateDisplay(target, diffContext);
-          }}>
+          <DisplayToolbar
+            historySlot={historySlot}
+            onAnnotate={(target) => {
+              void handleAnnotateDisplay(target, diffContext);
+            }}
+          >
             <DiffViewer checkpoint_hash={focus.path} />
           </DisplayToolbar>
         ) : (
@@ -368,6 +452,8 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
     }
   }, [
     shown,
+    displayStack,
+    onOpenHistoryEntry,
     showNonce,
     refreshStamp,
     focus.viewType,

@@ -40,22 +40,13 @@ export function WorkspaceChildStrip({ displayTab, displayDock }: WorkspaceChildS
     () => (displayTab ? allTabs.filter((tab) => tab.parent_tab_id === displayTab.id && tab.visible !== false) : []),
     [allTabs, displayTab],
   );
-  const childItems = useTabStripItems(children);
+  // The child TABS only — the Display is NOT a tab (it renders as a fixed,
+  // square header to the left of the strip). The strip starts after it.
+  const items: TabStripItem[] = useTabStripItems(children);
 
   const displayKey = displayDock.tabHash ?? 'workspace-display';
-  const items: TabStripItem[] = useMemo(() => {
-    const displayItem: TabStripItem = {
-      key: displayKey,
-      title: displayTab?.name || t`Display`,
-      icon: <Monitor className="h-3.5 w-3.5" />,
-      closable: false,
-      renameable: false,
-      testId: 'workspace-display-tab',
-    };
-    return [displayItem, ...childItems];
-  }, [displayKey, displayTab?.name, childItems, t]);
-
   const activeKey = currentDock?.tabHash ?? '';
+  const displayActive = activeKey === displayKey;
 
   const childByKey = useMemo(() => {
     const m = new Map<string, Tab>();
@@ -64,15 +55,13 @@ export function WorkspaceChildStrip({ displayTab, displayDock }: WorkspaceChildS
   }, [children]);
 
   const handleSelect = useCallback(
+    // The strip carries only children now (the Display is the standalone header
+    // below), so a select key is always a child tab.
     (key: string) => {
-      if (key === displayKey) {
-        navigation.openDock(displayDock);
-        return;
-      }
       const tab = childByKey.get(key);
       if (tab?.dockPointer) navigation.openDock(tab.dockPointer);
     },
-    [displayKey, displayDock, childByKey, navigation],
+    [childByKey, navigation],
   );
 
   const handleClose = useCallback(
@@ -88,15 +77,34 @@ export function WorkspaceChildStrip({ displayTab, displayDock }: WorkspaceChildS
   );
 
   return (
-    <div className="shrink-0 border-b border-border bg-muted/20">
-      <TabStrip
-        items={items}
-        activeKey={activeKey}
-        onSelect={handleSelect}
-        onClose={handleClose}
-        hideCloseAllButton
-        testId="workspace-child-strip"
-      />
+    <div className="flex shrink-0 items-stretch border-b border-border bg-muted/20">
+      {/* Fixed, SQUARE Display header — deliberately NOT tab-shaped (no rounded
+          chip, a solid right border) so it reads as the persistent surface, not
+          a closable tab. The child tab strip begins to its right. */}
+      <button
+        type="button"
+        onClick={() => navigation.openDock(displayDock)}
+        title={displayTab?.name || t`Display`}
+        aria-current={displayActive ? 'true' : undefined}
+        data-testid="workspace-display-tab"
+        className={`flex h-9 w-9 shrink-0 items-center justify-center border-r border-border transition-colors ${
+          displayActive
+            ? 'bg-background text-foreground'
+            : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'
+        }`}
+      >
+        <Monitor className="h-4 w-4" />
+      </button>
+      <div className="min-w-0 flex-1">
+        <TabStrip
+          items={items}
+          activeKey={activeKey}
+          onSelect={handleSelect}
+          onClose={handleClose}
+          hideCloseAllButton
+          testId="workspace-child-strip"
+        />
+      </div>
     </div>
   );
 }

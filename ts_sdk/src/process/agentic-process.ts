@@ -61,6 +61,16 @@ export interface ShowTarget {
   port?: number | string;
 }
 
+/**
+ * One entry in a process's display history — `context_data.display_stack`. The
+ * backend flattens the `flow show` target and stamps it with `shown_at`, so an
+ * entry IS a {@link ShowTarget} plus its server timestamp. Newest last.
+ */
+export interface DisplayEntry extends ShowTarget {
+  /** ISO 8601 server timestamp — when the agent showed this target. */
+  shown_at?: string;
+}
+
 export interface SpawnResult {
   process: AgenticProcess;
   /** Set in PTY mode */
@@ -2514,6 +2524,17 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   }
 
   /**
+   * The agent's display history (`context_data.display_stack`) — every `flow
+   * show` target with its `shown_at` stamp, newest last. Empty when nothing has
+   * been shown. The newest entry is the current display pin (mirrors
+   * `context_data.last_shown`).
+   */
+  get displayStack(): DisplayEntry[] {
+    const raw = (this.context_data as { display_stack?: unknown } | undefined)?.display_stack;
+    return Array.isArray(raw) ? (raw as DisplayEntry[]) : [];
+  }
+
+  /**
    * Intercept the live agent-progress push before it enters the flow stream.
    *
    * The backend reuses the `progress_report` envelope (attributes.kind ===
@@ -2725,6 +2746,22 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       const q = data.queue;
       this.queue = q ? { enabled: !!q.enabled, entries: [...(q.entries ?? [])] } : null;
       delete data.queue;
+    }
+    // ``context_data.display_stack`` (the flow-show history) has the SAME
+    // array-index-merge hazard as ``queue``: deepAssign recurses into
+    // ``context_data`` and then index-merges the nested array, never shrinking
+    // it — so a dedupe/cap/reorder would leave stale tail entries. Replace the
+    // stack wholesale and strip it from the payload, letting the following
+    // deepAssign deep-merge the REST of context_data untouched.
+    if (data.context_data && typeof data.context_data === 'object' && 'display_stack' in data.context_data) {
+      const ctx = data.context_data as Record<string, unknown>;
+      const stack = ctx.display_stack;
+      this.context_data = {
+        ...(this.context_data ?? {}),
+        display_stack: Array.isArray(stack) ? [...stack] : stack,
+      };
+      const { display_stack: _omit, ...rest } = ctx;
+      data.context_data = rest as IAgenticProcess['context_data'];
     }
     // Desired-value latch: once the client optimistically sets the transport /
     // visibility (`switchMode`/`setVisible`), HOLD that value against every
