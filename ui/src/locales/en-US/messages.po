@@ -2712,6 +2712,7 @@ msgstr "Could not save changes"
 #: src/components/conversation/asset-review/useRunReceivedSkill.tsx
 #: src/components/conversation/asset-review/useRunReceivedSkill.tsx
 #: src/pages/flow-page/use-start-vibe-session.ts
+#: src/pages/flow-page/vibe-no-process-workspace.tsx
 msgid "Could not start"
 msgstr "Could not start"
 
@@ -4563,6 +4564,7 @@ msgid "Failed to start session"
 msgstr "Failed to start session"
 
 #: src/pages/flow-page/use-start-vibe-session.ts
+#: src/pages/flow-page/vibe-no-process-workspace.tsx
 msgid "Failed to start the build session."
 msgstr "Failed to start the build session."
 
@@ -11331,6 +11333,10 @@ msgstr "Start Copilot"
 #: src/components/tasks-viewer/TasksViewer.tsx
 #~ msgid "Start date"
 #~ msgstr "Start date"
+
+#: src/pages/flow-page/vibe-no-process-workspace.tsx
+msgid "Start new chat"
+msgstr "Start new chat"
 
 #: src/components/account/system-diagnoses.tsx
 #: src/components/diagnose/diagnosis-action-buttons.tsx
