@@ -9,11 +9,8 @@ import { tabKey, useTerminalTabs } from '@src/tabs/useTabs';
 import { AlertTriangle, PlayCircle, RefreshCw } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 import InteractiveTerminal from './interactive-terminal';
-import {
-  retryFailedStart,
-  TerminalRuntimeErrorBanner,
-} from './interactive-terminal/TerminalRuntimeErrorBanner';
-import { allowRename, cleanTitle, shouldAutoSaveTitleForTarget } from './rename-rules';
+import { retryFailedStart, TerminalRuntimeErrorBanner } from './interactive-terminal/TerminalRuntimeErrorBanner';
+import { allowRename, cleanTitle, isProgramIdentityTitle, shouldAutoSaveTitleForTarget } from './rename-rules';
 
 interface TabbedTerminalProps {
   className?: string;
@@ -119,9 +116,7 @@ const TerminalPanel: React.FC<{
   const { data: process } = useEntity<AgenticProcess>(
     isProcess && targetId ? new TypeId(AgenticProcess.type, targetId) : null,
   );
-  const { data: shell } = useEntity<Shell>(
-    !isProcess && targetId ? new TypeId(Shell.type, targetId) : null,
-  );
+  const { data: shell } = useEntity<Shell>(!isProcess && targetId ? new TypeId(Shell.type, targetId) : null);
   const transportShellId = isProcess ? (process?.shell_id ?? '') : targetId;
   const source = isProcess ? process : shell;
 
@@ -134,6 +129,9 @@ const TerminalPanel: React.FC<{
     // reduce to the same title never fire a save.
     const clean = cleanTitle(title);
     if (!allowRename(clean) || source.name === clean) return;
+    // A restarting worker re-announces itself (title `claude` / the exe path)
+    // before any topic title exists — never let that clobber the stored name.
+    if (isProgramIdentityTitle(clean, isProcess ? process : null)) return;
     source.name = clean;
     void source.save().catch(() => {});
     // Mirror onto the durable Tab label so the chip stays right once inactive —
@@ -182,11 +180,7 @@ const TerminalPanel: React.FC<{
  * panel hydrates its own entity on mount. With no tabs it renders `ProjectHome`
  * (the shared project landing, which owns the spawn openers + their modals).
  */
-const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
-  className = '',
-  scope = 'project',
-  spawnProjectId,
-}) => {
+const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', scope = 'project', spawnProjectId }) => {
   const { flow } = useAgentContext();
   const { currentDock } = useDockNavigation();
   const tabs = useTerminalTabs(scope, spawnProjectId);
@@ -207,8 +201,7 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
     activePointer && DockPointer.isAgenticProcessPointer(activePointer)
       ? DockPointer.extractAgenticProcessId(activePointer)
       : undefined;
-  const activeTabMissing =
-    !!activeKey && tabs.length > 0 && !tabs.some((t) => tabKey(t) === activeKey);
+  const activeTabMissing = !!activeKey && tabs.length > 0 && !tabs.some((t) => tabKey(t) === activeKey);
 
   // Lazy-mount: mount the active panel on first visit; keep mounted ones warm
   // (the Set never shrinks) so re-activation is instant.

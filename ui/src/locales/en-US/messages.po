@@ -813,8 +813,8 @@ msgid "Agent"
 msgstr "Agent"
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
-msgid "Agent is taking a long time to respond"
-msgstr "Agent is taking a long time to respond"
+#~ msgid "Agent is taking a long time to respond"
+#~ msgstr "Agent is taking a long time to respond"
 
 #: src/components/agent-layout/error-screen/error-screen.tsx
 msgid "Agent not found"
@@ -5911,8 +5911,8 @@ msgid "Keep editing"
 msgstr "Keep editing"
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
-msgid "Keep Waiting"
-msgstr "Keep Waiting"
+#~ msgid "Keep Waiting"
+#~ msgstr "Keep Waiting"
 
 #: src/pages/keychain-approval.tsx
 msgid "Keychain access is required to finish signing in to Flowpad."
@@ -11679,8 +11679,8 @@ msgid "Terminal Sessions"
 msgstr "Terminal Sessions"
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
-msgid "Terminate"
-msgstr "Terminate"
+#~ msgid "Terminate"
+#~ msgstr "Terminate"
 
 #: src/components/triggers-view/TriggerInvocationsPanel.tsx
 msgid "test"
@@ -11732,8 +11732,8 @@ msgid "The agent you're looking for doesn't exist or is not available."
 msgstr "The agent you're looking for doesn't exist or is not available."
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
-msgid "The Anthropic API may be slow or unresponsive."
-msgstr "The Anthropic API may be slow or unresponsive."
+#~ msgid "The Anthropic API may be slow or unresponsive."
+#~ msgstr "The Anthropic API may be slow or unresponsive."
 
 #: src/components/artifacts/artifacts-list.tsx
 msgid "The artifact has been removed successfully."
@@ -12933,6 +12933,10 @@ msgstr "You'll be removed from the participant list. Other members keep the conv
 #: src/components/join-room-dialog/JoinRoomDialog.tsx
 msgid "You're about to open a room on this project. You can invite others with the share code that'll appear in the header once the room starts."
 msgstr "You're about to open a room on this project. You can invite others with the share code that'll appear in the header once the room starts."
+
+#: src/components/conversation/ConversationView.tsx
+msgid "You're the only participant in this conversation — no one else will see this message."
+msgstr "You're the only participant in this conversation — no one else will see this message."
 
 #: src/components/inbox-view/InboxView.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx

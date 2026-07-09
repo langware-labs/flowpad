@@ -179,8 +179,15 @@ echo ""
 
 # Run tests before deploying (unless skipped)
 if [[ "$SKIP_TESTS" == false ]]; then
-    echo -e "${YELLOW}Running tests...${NC}"
-    if python3 -m pytest tests/ -v --tb=short; then
+    # Tee to a timestamped log so a long run is observable from another shell
+    # (tail -f) instead of a silent multi-minute gate; --durations shows where
+    # the time went. PYTHONUNBUFFERED defeats pipe buffering so lines stream
+    # live. The if reads pytest's status via PIPESTATUS (a plain `if pipeline`
+    # would test tee's exit, which is always 0).
+    TEST_LOG="${TMPDIR:-/tmp}/deploy-tests-$(date +%Y%m%d-%H%M%S).log"
+    echo -e "${YELLOW}Running tests... (live log: tail -f ${TEST_LOG})${NC}"
+    PYTHONUNBUFFERED=1 python3 -m pytest tests/ -v --tb=short --durations=20 2>&1 | tee "$TEST_LOG"
+    if [[ ${PIPESTATUS[0]} -eq 0 ]]; then
         echo -e "${GREEN}Tests passed!${NC}"
     else
         echo -e "${RED}Tests failed!${NC}"
