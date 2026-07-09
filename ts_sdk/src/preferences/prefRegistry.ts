@@ -39,6 +39,7 @@ export enum PrefKey {
   LOCALE = 'preferences.i18n.locale',
   VIEW_MODE = 'preferences.ui.view_mode',
   CHAT_UI_MODE = 'preferences.ui.chat_ui_mode',
+  CHAT_SHOW_TOOLS = 'preferences.chat.show_tools',
   ONBOARDING_DISMISSED = 'preferences.ui.onboarding_dismissed',
   SHOW_SYSTEM_PROJECTS = 'preferences.ui.show_system_projects',
   INDEXING_APPROVED = 'preferences.indexing.approved',
@@ -245,6 +246,15 @@ export const PREF_REGISTRY: Record<PrefKey, PrefInfo> = {
     description: "Preferred interactive-tab UI ('chat' | 'terminal'); empty = auto.",
     dataType: PrefDataType.STRING,
     defaultValue: '',
+  },
+  [PrefKey.CHAT_SHOW_TOOLS]: {
+    key: PrefKey.CHAT_SHOW_TOOLS,
+    surfaced: true,
+    category: 'chat',
+    label: 'Show tool calls',
+    description: 'Show tool calls, reasoning, and status chips in the chat transcript.',
+    dataType: PrefDataType.BOOL,
+    defaultValue: false,
   },
   [PrefKey.ONBOARDING_DISMISSED]: {
     key: PrefKey.ONBOARDING_DISMISSED,
