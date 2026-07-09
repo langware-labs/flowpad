@@ -12605,6 +12605,10 @@ msgstr "You'll be removed from the participant list. Other members keep the conv
 msgid "You're about to open a room on this project. You can invite others with the share code that'll appear in the header once the room starts."
 msgstr "You're about to open a room on this project. You can invite others with the share code that'll appear in the header once the room starts."
 
+#: src/components/conversation/ConversationView.tsx
+msgid "You're the only participant in this conversation — no one else will see this message."
+msgstr "You're the only participant in this conversation — no one else will see this message."
+
 #: src/components/inbox-view/InboxView.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx

@@ -12605,6 +12605,10 @@ msgstr "תוסר מרשימת המשתתפים. חברים אחרים שומרי
 msgid "You're about to open a room on this project. You can invite others with the share code that'll appear in the header once the room starts."
 msgstr "אתה עומד לפתוח חדר בפרויקט זה. אתה יכול להזמין אחרים באמצעות קוד השיתוף שיופיע בכותרת כשהחדר יתחיל."
 
+#: src/components/conversation/ConversationView.tsx
+msgid "You're the only participant in this conversation — no one else will see this message."
+msgstr ""
+
 #: src/components/inbox-view/InboxView.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
