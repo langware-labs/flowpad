@@ -16,7 +16,7 @@ import { ContextEntityChip, EntityChip, iconForEntity } from './EntityChip';
 import { chipStateFor } from './useMessageAttachments';
 import { AssetReviewDialog } from './asset-review/AssetReviewDialog';
 import { TESTABLE_TYPES } from './asset-review/test-prompt';
-import { useRunReceivedSkill } from './asset-review/useRunReceivedSkill';
+import { useRunSkillWithProjectPrompt } from './asset-review/useRunReceivedSkill';
 import { useLocalUser } from './useLocalUser';
 import { localBundleUrl } from './flow-message-drafts';
 import { MessageComposer } from './MessageComposer';
@@ -654,7 +654,7 @@ function MessageEntityChip({
   attachment?: MessageAttachment;
 }) {
   const { navigation } = useDockNavigation();
-  const runSkill = useRunReceivedSkill();
+  const { start: startSkillRun, picker: runPicker } = useRunSkillWithProjectPrompt();
   const [reviewOpen, setReviewOpen] = useState(false);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data } = useEntity<APIEntity<any>>(typeId);
@@ -669,9 +669,7 @@ function MessageEntityChip({
       type="button"
       title="Run skill"
       data-testid="skill-run-icon"
-      onClick={() =>
-        runSkill({ attachment, conversationProjectId: projectId ?? null })
-      }
+      onClick={() => startSkillRun(attachment, projectId ?? null)}
       className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-primary/50 bg-background text-primary transition-colors hover:bg-primary/10"
     >
       <Play className="h-3 w-3" />
@@ -701,6 +699,7 @@ function MessageEntityChip({
           {runButton}
         </span>
         {dialog}
+        {runPicker}
       </>
     );
   }
@@ -732,6 +731,7 @@ function MessageEntityChip({
         {runButton}
       </span>
       {dialog}
+      {runPicker}
     </>
   );
 }

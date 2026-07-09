@@ -10,7 +10,7 @@ import { useAllProjects } from '@src/hooks/use-all-projects';
 import { notify } from '@src/notifications';
 import { TESTABLE_TYPES } from './test-prompt';
 import { TestPromptDialog } from './TestPromptDialog';
-import { useRunReceivedSkill } from './useRunReceivedSkill';
+import { useRunSkillWithProjectPrompt } from './useRunReceivedSkill';
 
 /** One install-scope toggle: shows Uninstall when THIS scope is installed,
  *  Install (disabled while the other scope holds the install) otherwise. */
@@ -85,7 +85,7 @@ export function AssetInstallActions({
   const projectItems = useMemo(() => projectListToSelectorItems(projects), [projects]);
   const ensureProject = useEnsureProject();
   const { project: currentProject } = useProject();
-  const runSkill = useRunReceivedSkill();
+  const { start: startSkillRun, picker: runPicker } = useRunSkillWithProjectPrompt();
 
   const installedScope = attachment.effectiveScope;
   // Schema-derived, stamped backend-side at stage time — no type list here.
@@ -210,14 +210,11 @@ export function AssetInstallActions({
           onClose={() => setTestOpen(false)}
           assetName={attachment.name ?? attachment.asset_type ?? ''}
           onRun={(prompt) =>
-            runSkill({
-              attachment,
-              userPrompt: prompt,
-              conversationProjectId: conversationProjectId ?? currentProject?.id ?? null,
-            })
+            startSkillRun(attachment, conversationProjectId ?? currentProject?.id ?? null, prompt)
           }
         />
       )}
+      {runPicker}
     </div>
   );
 }
