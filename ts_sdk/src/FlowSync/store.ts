@@ -779,6 +779,17 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       if (scope?.mode === 'user') return `My ${noun}`;
       return null;
     }
+    // The Desktop is scope-keyed too: a project-scoped desktop chip is named
+    // "<project> Desktop"; the global/user desktop falls back to the registry
+    // title ("Desktop").
+    if (dock?.viewType === 'desktop') {
+      const scope = dockOptionsToScopeFilter(dock.options);
+      if (scope?.mode === 'project' && scope.activeProjectId) {
+        const name = nameFromCache('project', scope.activeProjectId);
+        return name ? `${name} Desktop` : null;
+      }
+      return null;
+    }
     const pointer = dock?.pointer ?? '';
     if (!pointer) return null;
     const lastSegment = (path: string): string | null =>

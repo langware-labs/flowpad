@@ -387,6 +387,10 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     iconName: 'LayoutGrid',
     tabLocation: 'dedicated',
     canAddAsTab: true,
+    // One Desktop tab per scope: the global desktop (`desktop|all`) and a
+    // project-scoped one (`desktop|project:<id>`) are distinct chips, and the
+    // scope persists on the stored pointer so reopen restores the filter.
+    scopeKeyed: true,
   },
   // The vibe Display surface for a process. Not a manually-addable tab — it is
   // the always-present right pane in vibe mode, addressed by its own URL.

@@ -4,11 +4,10 @@ import { MiniDesktop } from '@src/components/quick-create/MiniDesktop';
 import { Button } from '@src/components/ui/button';
 import { useContext as useDataContext } from '@src/hooks/useContext';
 import { useTerminalStripController } from '@src/tabs/useTerminalStripController';
-import { bookmarkInScope } from '@src/lib/bookmark-scope';
 import { projectScope } from '@src/lib/scope-filter';
-import { Bookmark, Project, TypeId } from '@sdk';
+import { Project, TypeId } from '@sdk';
 import { History, Loader2, SquareTerminal } from 'lucide-react';
-import React, { useCallback, useMemo } from 'react';
+import React, { useMemo } from 'react';
 import { Trans } from '@lingui/react/macro';
 import { ContextFolders } from './ContextFolders';
 
@@ -108,14 +107,10 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, showSe
     [projectId],
   );
 
-  // The mini-desktop shows only this project's favorites (bookmarks stamped with
-  // its id). Unscoped/personal favorites don't leak into the project surface.
-  // Build the scope once per project (not once per bookmark in the predicate).
-  const favoritesScope = useMemo(() => (projectId ? projectScope(projectId) : null), [projectId]);
-  const favoritesFilter = useCallback(
-    (b: Bookmark) => (projectId && favoritesScope ? bookmarkInScope(b, favoritesScope, projectId) : false),
-    [projectId, favoritesScope],
-  );
+  // The mini-desktop is pinned to this project's scope: it shows only bookmarks
+  // stamped with this project, and its expand affordance opens the full desktop
+  // pinned to the same scope. Unscoped/personal favorites don't leak in.
+  const desktopScope = useMemo(() => (projectId ? projectScope(projectId) : null), [projectId]);
 
   return (
     <div className="flex h-full flex-col">
@@ -136,12 +131,12 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, showSe
         <div className="mx-auto flex w-full max-w-md flex-col gap-6 px-4 py-6">
           {showSessionStarters && <SessionStarters spawnProjectId={spawnProjectId} />}
 
-          {projectId && (
+          {desktopScope && (
             <div className="flex flex-col gap-2" data-testid="project-home-bookmarks">
               <span className="px-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
                 <Trans>Bookmarks</Trans>
               </span>
-              <MiniDesktop filter={favoritesFilter} />
+              <MiniDesktop scope={desktopScope} />
             </div>
           )}
 
