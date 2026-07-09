@@ -21,7 +21,7 @@ import { DesktopPage } from '@src/pages/desktop/DesktopPage';
 import { ShowView } from '@src/components/show-view/ShowView';
 import { AppHost } from '@src/components/app-host/AppHost';
 import { FilterName, getAllFilterDefinitions } from '@src/components/simple-file-manager';
-import { TasksViewer } from '@src/components/tasks-viewer/TasksViewer';
+import { TasksRedirect } from '@src/components/tasks-viewer/TasksRedirect';
 import { HomeLanding } from '@src/pages/home-landing';
 import { LiveStatus } from '@src/pages/live-status';
 import { SearchView } from '@src/pages/search-view/SearchView';
@@ -353,7 +353,9 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
       case ViewType.LENS:
         return <LensViewer />;
       case ViewType.TASKS:
-        return <TasksViewer />;
+        // Retired: task opens through the generic asset editor. Redirect any
+        // lingering /dock/tasks/<id> deep link to editor/task/typeid/…
+        return <TasksRedirect />;
       case ViewType.SETTINGS:
         return <SettingsView />;
       case ViewType.PREFERENCES:

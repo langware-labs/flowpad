@@ -11,6 +11,7 @@ export enum AssetEditor {
   MARKDOWN = 'markdown', // rich markdown editor — entity-backed markdown family
   AGENT = 'agent',
   SKILL = 'skill',
+  TASK = 'task',
   WORKFLOW = 'workflow',
   WHITEBOARD = 'whiteboard',
   AGENT_TRACE = 'agent_trace',
@@ -33,6 +34,7 @@ export const EDITOR_TYPES: Record<AssetEditor, RecordType[]> = {
   ],
   [AssetEditor.AGENT]: [RecordType.AGENT],
   [AssetEditor.SKILL]: [RecordType.SKILL],
+  [AssetEditor.TASK]: [RecordType.TASK],
   [AssetEditor.WORKFLOW]: [RecordType.WORKFLOW],
   [AssetEditor.WHITEBOARD]: [RecordType.WHITEBOARD],
   [AssetEditor.AGENT_TRACE]: [RecordType.AGENT_TRACE],
