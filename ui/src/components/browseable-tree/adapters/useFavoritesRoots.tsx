@@ -56,7 +56,15 @@ function favoriteDragData(b: Bookmark, label: string): BrowseableDragData {
  */
 export const FOLDER_DRAG_KIND = 'favorite_folder';
 
-export function useFavoritesRoots(): {
+/** Stable identity so the default (unfiltered) case never churns the roots memo. */
+const PASS_ALL = (): boolean => true;
+
+export function useFavoritesRoots(opts?: {
+  /** Optional visibility predicate (e.g. a scope filter) applied to the leaves
+   *  and folders that get rendered; children are filtered too. Lookups for drag
+   *  targets still use the full favorite set. Default (unset) renders all. */
+  filter?: (b: Bookmark) => boolean;
+}): {
   roots: Browseable[];
   /** Drop on the surface background = un-file back to root. */
   onDropToBackground: (drag: BrowseableDragData) => void;
@@ -66,6 +74,7 @@ export function useFavoritesRoots(): {
     anchor: { afterId?: string; beforeId?: string },
   ) => Promise<void>;
 } {
+  const filter = opts?.filter ?? PASS_ALL;
   const { navigation } = useDockNavigation();
   // navigation's identity changes on every dock change (it carries
   // currentDock); read it through a ref inside the activate closures so URL
@@ -148,7 +157,8 @@ export function useFavoritesRoots(): {
 
     const asFolder = (folder: Bookmark): Browseable => {
       const title = folder.name || folder.title || folder.displayName;
-      const children = folder.id ? childrenOf(folder.id) : [];
+      const allChildren = folder.id ? childrenOf(folder.id) : [];
+      const children = allChildren.filter(filter);
       return {
         kind: 'favorite_folder',
         id: folder.id ?? '',
@@ -163,6 +173,7 @@ export function useFavoritesRoots(): {
         hasChildren: children.length > 0 ? true : 'unknown',
         listChildren: () => Promise.resolve(children.map(asLeaf)),
         pointer: null,
+        selectionKey: folder.id,
         onRename: (next) => renameFavorite(folder, next),
         // Draggable for root reordering only — canDrop's kind gate keeps
         // folders out of folders (one nesting level).
@@ -209,11 +220,14 @@ export function useFavoritesRoots(): {
       if (dragged) await reorder(dragged, anchor, '');
     };
 
+    const visibleFolders = folders.filter(filter);
+    const visibleRootFavorites = rootFavorites.filter(filter);
+
     return {
       // One root container, OS-style: folders and unfiled favorites share the
       // manual order — sort the combined sibling set with the same container
       // comparator the backend uses, then render each by its shape.
-      roots: sortContainer([...folders, ...rootFavorites]).map((b) =>
+      roots: sortContainer([...visibleFolders, ...visibleRootFavorites]).map((b) =>
         b.bookmark_type === BookmarkType.FAVORITE_FOLDER ? asFolder(b) : asLeaf(b),
       ),
       onDropToBackground,
@@ -230,6 +244,7 @@ export function useFavoritesRoots(): {
     moveToFolder,
     deleteFolder,
     reorder,
+    filter,
     t,
   ]);
 }

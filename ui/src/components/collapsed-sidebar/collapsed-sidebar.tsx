@@ -11,6 +11,7 @@ import { ViewType } from '@src/types/ViewType';
 import { Sidebar, SidebarContent, SidebarGroup, SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@src/components/ui/sidebar';
 import { useInboxStore } from '@src/store/use-inbox-store';
 import { useSpotlightStore } from '@src/store/use-spotlight-store';
+import { BookmarksSlider } from '@src/components/bookmarks-slider/BookmarksSlider';
 import { useLingui } from '@lingui/react/macro';
 
 /**
@@ -21,6 +22,7 @@ export const RAIL_WIDTH_CLASS = 'w-[50px]';
 import {
   ArrowLeft,
   BadgeCheck,
+  Bookmark,
   RefreshCw,
   BookOpen,
   Bug,
@@ -84,6 +86,7 @@ export function CollapsedSidebar() {
   const onDiscover = location.pathname === '/discover';
   const { goBack, canGoBack } = useNavigationState();
   const [secondaryExpanded, setSecondaryExpanded] = useState(false);
+  const [bookmarksOpen, setBookmarksOpen] = useState(false);
   const devMode = useDevMode();
   const { unreadCount } = useInboxStore();
   const viewMode = useViewMode();
@@ -210,6 +213,7 @@ export function CollapsedSidebar() {
   };
 
   return (
+    <>
     <Sidebar collapsible="none" className={`flex ${RAIL_WIDTH_CLASS} flex-col border-r`}>
       <SidebarContent className="flex-1">
         <SidebarGroup className="px-0 py-2">
@@ -234,6 +238,25 @@ export function CollapsedSidebar() {
 
             {visibleItems.map((item) =>
               renderNavItem(item, undefined, item.viewType === ViewType.INBOX ? unreadCount : undefined),
+            )}
+
+            {/* Bookmarks — vibe-mode only. Opens the favorites desktop as a
+                left slide-in flyout (not a dock tab), so it toggles local state
+                rather than routing through handleClick/openTab. The
+                data-left-slider-ignore marker keeps this click from registering
+                as an outside-dismiss and fighting the toggle. */}
+            {isVibe && (
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  tooltip={t`Bookmarks`}
+                  isActive={bookmarksOpen}
+                  onClick={() => setBookmarksOpen((v) => !v)}
+                  data-left-slider-ignore
+                  className="relative w-full justify-center px-2"
+                >
+                  <Bookmark className="h-5 w-5" />
+                </SidebarMenuButton>
+              </SidebarMenuItem>
             )}
 
             {/* Discover — full-page marketplace; a top-level route, not a dock tab,
@@ -331,5 +354,7 @@ export function CollapsedSidebar() {
         <UserDropdown />
       </div>
     </Sidebar>
+    {isVibe && <BookmarksSlider open={bookmarksOpen} onOpenChange={setBookmarksOpen} />}
+    </>
   );
 }

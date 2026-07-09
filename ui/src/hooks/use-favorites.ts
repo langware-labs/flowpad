@@ -1,4 +1,5 @@
 import { Bookmark, BookmarkType } from '@sdk';
+import { useProject } from '@sdk/react/hooks';
 import { useCallback, useMemo } from 'react';
 import { useProjectBookmarks } from './use-project-bookmarks';
 
@@ -41,6 +42,11 @@ function matchesRef(b: Bookmark, entityType: string, entityId: string): boolean 
  */
 export function useFavorites() {
   const { data: bookmarks, refetch, excludeBookmarks } = useProjectBookmarks();
+  // Stamp the current project onto favorites/folders at creation so the
+  // bookmarks slider can filter them by scope. The record still saves unscoped
+  // (below) — @local visibility is unchanged; project_id is just a field.
+  const { project } = useProject();
+  const currentProjectId = project?.id ?? null;
 
   const favorites = useMemo(() => bookmarks.filter(isFavoriteBookmark), [bookmarks]);
 
@@ -79,12 +85,14 @@ export function useFavorites() {
   );
 
   const addFavorite = useCallback(
-    async (ref: FavoriteRef) => {
-      if (isFavorited(ref.entityType, ref.entityId)) return;
+    async (ref: FavoriteRef): Promise<Bookmark> => {
+      const existing = isFavorited(ref.entityType, ref.entityId);
+      if (existing) return existing;
       const bookmark = new Bookmark({
         bookmark_type: BookmarkType.FAVORITE,
         title: ref.title,
         order: appendOrder(''),
+        project_id: currentProjectId,
         data: {
           entity_type: ref.entityType,
           entity_id: ref.entityId,
@@ -94,8 +102,9 @@ export function useFavorites() {
       });
       await bookmark.save([]);
       await refetch();
+      return bookmark;
     },
-    [isFavorited, refetch, appendOrder],
+    [isFavorited, refetch, appendOrder, currentProjectId],
   );
 
   const removeFavorite = useCallback(
@@ -125,12 +134,13 @@ export function useFavorites() {
         name: name.trim(),
         title: name.trim(),
         order: appendOrder(''),
+        project_id: currentProjectId,
       });
       await folder.save([]);
       await refetch();
       return folder;
     },
-    [refetch, appendOrder],
+    [refetch, appendOrder, currentProjectId],
   );
 
   const moveToFolder = useCallback(
@@ -175,13 +185,13 @@ export function useFavorites() {
   );
 
   const toggleFavorite = useCallback(
-    async (ref: FavoriteRef) => {
+    async (ref: FavoriteRef): Promise<Bookmark | null> => {
       const existing = isFavorited(ref.entityType, ref.entityId);
       if (existing) {
         await removeFavorite(existing);
-      } else {
-        await addFavorite(ref);
+        return null;
       }
+      return addFavorite(ref);
     },
     [isFavorited, addFavorite, removeFavorite],
   );

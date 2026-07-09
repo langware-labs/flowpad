@@ -1,3 +1,4 @@
+import type { Bookmark } from '@sdk';
 import { BrowseableGrid } from '@src/components/browseable-tree/BrowseableGrid';
 import { useFavoritesRoots } from '@src/components/browseable-tree/adapters/useFavoritesRoots';
 import { cn } from '@src/lib/utils';
@@ -18,16 +19,22 @@ import { QuickCreateModal } from './QuickCreateModal';
 export function DesktopSurface({
   size = 'default',
   className,
+  filter,
+  selectedKey,
 }: {
   size?: 'default' | 'large';
   className?: string;
+  /** Optional visibility predicate (e.g. a scope filter) over favorites. */
+  filter?: (b: Bookmark) => boolean;
+  /** Highlight a favorite by its bookmark id (id-based selection). */
+  selectedKey?: string;
 }) {
   const { t } = useLingui();
   const { currentDock } = useDockNavigation();
   const [modalOpen, setModalOpen] = useState(false);
   const [activeType, setActiveType] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const { roots, onDropToBackground, onReorderRoot } = useFavoritesRoots();
+  const { roots, onDropToBackground, onReorderRoot } = useFavoritesRoots({ filter });
 
   const handlePick = (type: string) => {
     setActiveType(type);
@@ -56,6 +63,7 @@ export function DesktopSurface({
       <BrowseableGrid
         roots={roots}
         activePointer={currentDock}
+        selectedKey={selectedKey}
         size={size}
         leadingChrome={plusTile}
         onDropToBackground={onDropToBackground}
