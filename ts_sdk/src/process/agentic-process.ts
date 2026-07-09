@@ -12,7 +12,7 @@ import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { isApiError } from '../ApiResponse';
 import { IEntity } from '../IEntity';
 import { FSRef, type FSRefJson } from '../fs/FSRef';
-import { ClaudeCliOptions } from '../cli_workers';
+import { ClaudeCliOptions, factory as cliOptionsFactory } from '../cli_workers';
 import { dataContext } from '../FlowSync/context';
 import { FlowDataFactory } from '../entities/flow/flow-data-factory';
 import { Shell, ShellStatus } from '../entities/shell';
@@ -788,8 +788,8 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     const restored = this.wasRestoredFromSession;
     if (wt === 'codex') return restored ? 'codex-restore' : 'codex';
     if (wt === 'copilot') return restored ? 'copilot-restore' : 'copilot';
-    // Default to claude — that's what AgenticProcess.spawn produces today
-    // (ClaudeCliOptions hardcoded), so an unset worker_type means claude.
+    // Default to claude — that's what AgenticProcess.spawn produces unless a
+    // worker override is provided, so an unset worker_type means claude.
     if (wt === '' || wt === 'claude' || wt.startsWith('claude_') || wt.startsWith('claude-')) {
       return restored ? 'claude-restore' : 'claude';
     }
@@ -942,20 +942,23 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   /** `<exe_folder>/assets/` — materialised embedded agents / skills. */
   assets_folder: FSRef | null = null;
 
-  /** Deserialize cli_config into a live ClaudeCliOptions instance.
+  /** Deserialize cli_config into a live worker-specific CLI options instance.
    *
    * Mirrors Python AgenticProcess.cli_options property exactly:
    * workdir and session_id are injected from entity fields (not stored in cli_config).
    */
   get cliOptions(): ClaudeCliOptions {
-    const cmd = ClaudeCliOptions.fromJson(this.cli_config ?? {});
+    const workerType = (this.worker_type ?? this.cli_config?.worker_type ?? 'claude') as string;
+    const cmd = cliOptionsFactory(this.cli_config ?? {}, workerType) as ClaudeCliOptions;
     if (this.session_id) cmd.session_id = this.session_id;
     const wd = this.workdir;
     if (wd) {
       cmd.workdir = wd;
-      cmd.envVars['CLAUDE_PROJECT_DIR'] ??= wd;
+      if (cmd instanceof ClaudeCliOptions) {
+        cmd.envVars['CLAUDE_PROJECT_DIR'] ??= wd;
+      }
     }
-    cmd.addDirs = this.additional_dirs ?? [];
+    if ('addDirs' in cmd) cmd.addDirs = this.additional_dirs ?? [];
     return cmd;
   }
 

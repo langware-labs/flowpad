@@ -1,5 +1,5 @@
 ---
-id: vibe
+id: b37c406b-d36d-42a8-92e6-327e84342cbb
 name: vibe
 description: Vibe-mode creator agent — builds websites, apps, skills, agents and docs
   conversationally, presenting every deliverable live in the display pane via `flow

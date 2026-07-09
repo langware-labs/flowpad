@@ -7,7 +7,7 @@ import { PoweredBy } from '@src/components/powered-by';
 import { IndexerStatusPill } from '@src/components/search-index/IndexerStatusPill';
 import { StatusBar } from '@src/components/status-bar';
 import { VersionPopover } from '@src/components/version-popover';
-import { AdvancedOnly } from '@src/components/view-mode';
+import { AdvancedOnly, useIsVibe } from '@src/components/view-mode';
 import { WarningsPopover } from '@src/components/warnings-popover';
 import { PrivacyModePopover } from '@src/components/privacy-mode/privacy-mode-popover';
 import { Agent, FLOWPAD_ASSISTANT_PROJECT_UNAME, TypeId } from '@sdk';
@@ -29,6 +29,7 @@ export function Footer({ className = '' }: FooterProps) {
   const { version } = useContext();
   const { t } = useLingui();
   const { agentId } = useParams();
+  const isVibe = useIsVibe();
   const agentTypeId = useMemo(() => (agentId ? new TypeId(Agent.type, agentId) : null), [agentId]);
   const { data: agent } = useEntity<Agent>(agentTypeId);
   const { navigation } = useDockNavigation();
@@ -46,7 +47,7 @@ export function Footer({ className = '' }: FooterProps) {
         {/* View toggle + Data-privacy mode + Warnings icons on the left */}
         <div className="flex shrink-0 items-center gap-1">
           <ViewToggle />
-          <PrivacyModePopover />
+          {!isVibe && <PrivacyModePopover />}
           <WarningsPopover />
         </div>
 

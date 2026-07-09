@@ -176,4 +176,11 @@ describe('BookmarksSlider', () => {
     rerender(<BookmarksSlider open onOpenChange={onOpenChange} />);
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
+
+  it('closes the slider when the window loses focus', () => {
+    const onOpenChange = vi.fn();
+    render(<BookmarksSlider open onOpenChange={onOpenChange} />);
+    fireEvent.blur(window);
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
 });

@@ -1,5 +1,5 @@
 ---
-id: asset-cleanup-wizard
+id: 949de759-ead7-4838-a47e-047f48b51c1f
 name: asset-cleanup-wizard
 description: Wizard agent that removes garbage assets selected in an AssetCleanupReport
   — presents the removal plan, waits for the user's confirmation, deletes exactly
