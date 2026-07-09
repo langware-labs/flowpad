@@ -109,7 +109,7 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'proje
 
   // Where to go when the active tab(s) close: the next tab in the current
   // project (confined to its scope — `resolveNextTab` with `projectId`), or the
-  // project home (`DockPointer.forProject`, which renders `ProjectBrief`) when the
+  // project home (`DockPointer.forProject`, which renders `ProjectHome`) when the
   // project has no tabs left. Closing a project's last tab lands on its project
   // home rather than jumping to a tab in another project — same destination a
   // fresh project entry resolves to (`dockForProjectEntry`). Falls back to Home

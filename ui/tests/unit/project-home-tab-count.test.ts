@@ -62,7 +62,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe('projects-chip buckets ignore the project-brief host tab', () => {
+describe('projects-chip buckets ignore the project-home host tab', () => {
   it('1. last real tab removed → chip does NOT list the project (only the brief host remains)', () => {
     // End-state after closing the last terminal tab and landing on the brief:
     // the only surviving visible tab for the project is its own brief/landing host.

@@ -6,6 +6,7 @@ import { DockPointerData } from '../models/DockPointer';
 import { ViewType } from '../utils/ui/view-types';
 import { Agent } from './agent';
 import { Artifact, IArtifact } from './artifact';
+import { type ConversationParticipant } from './conversation';
 import { ComputeNode } from './compute_node';
 import { GitWorkdir } from './git-workdir';
 import { Workspace } from './workspace';
@@ -54,6 +55,15 @@ export function getOrCreateLocalMemberId(): string {
 export class Project extends APIEntity<Project> {
   static type: string = 'project';
   computeNode?: ComputeNode | null = null;
+  // ── Hub collaboration (Project as a shared unit — mirrors Conversation) ──
+  /** Opaque hub identity for a shared project (mirrors backend Project.cloud_id).
+   *  Null until first share; the sharer's local id stays the path-derived alias.
+   *  Reflected member actions target this id (see backend `_hub_id`). */
+  cloud_id: string | null = null;
+  /** Hub role roster [{user_id, email, name, role}] — mirrors backend
+   *  Project.participants. This is what the Members UI (`useMembers`) reads;
+   *  distinct from the local presence `members` overlay below. */
+  participants: ConversationParticipant[] = [];
   // ── Collaboration overlay (merged from the former CollaborationSpace) ──
   session_code: string | null = null;
   host_member_id: string | null = null;
@@ -65,6 +75,8 @@ export class Project extends APIEntity<Project> {
 
   constructor(entity: Partial<Project> = {}) {
     super(entity);
+    this.cloud_id = (entity.cloud_id as string | null | undefined) ?? null;
+    this.participants = (entity.participants as ConversationParticipant[] | undefined) ?? [];
     this.session_code = (entity.session_code as string | null | undefined) ?? null;
     this.host_member_id = (entity.host_member_id as string | null | undefined) ?? null;
     this.members = (entity.members as ProjectMember[] | undefined) ?? [];

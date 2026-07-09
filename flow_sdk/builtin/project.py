@@ -118,6 +118,26 @@ class Project(Entity):
         default_factory=list,
         description="Collaboration participants: [{member_id, name, joined_at, last_seen_at}]",
     )
+    # ── Hub collaboration (Project as a shared unit — mirrors Conversation) ──
+    # Opaque cloud id, minted ONCE at first ``share()`` (uuid4, NOT the
+    # path-derived local id). The shared identity every member's instance binds
+    # to: the hub row and the recipient's local mirror both live under this id,
+    # while the sharer keeps their path-derived ``id`` as a local alias. Decouples
+    # the shared identity from the sharer's local filesystem path (two users
+    # never share a cwd; two users with the same cwd would otherwise collide).
+    cloud_id: str | None = APIField(
+        default=None,
+        description="Opaque hub identity for a shared project; minted at first share. "
+                    "The sharer's local id stays the path-derived alias.",
+    )
+    # Hub-authoritative role roster: [{user_id, email, name, role}] with roles
+    # owner/admin/member/reader. Distinct from the local presence ``members``
+    # overlay (session-code join, no roles). Written by the reflected ``members``
+    # action / ``_upsert_hub_project_metadata``; read by the Members UI.
+    participants: list[dict] = APIField(
+        default_factory=list,
+        description="Hub role roster: [{user_id, email, name, role}]. Distinct from presence ``members``.",
+    )
     # ── Indexer-denormalized fields (project consolidation, Path A 2026-05-09) ──
     # Written by the indexer at adopt time via ``Project.from_record`` so the
     # frontend can render activity hints (session count, last activity) without
@@ -138,6 +158,13 @@ class Project(Entity):
     @model_validator(mode="after")
     def set_fs_storage_mount_path(self):
         """Set the storage mount path based on project name and create the folder if needed."""
+        # A remote mirror (a project shared TO this instance) has no local
+        # working directory — it lives under the sharer's cwd on their machine,
+        # not ours. Never derive a mount path from its display name or mkdir a
+        # folder for it; that would materialize a bogus directory named after the
+        # project on every recipient. Only canonicalize an explicit path below.
+        if self.remote and not self.fs_storage_mount_path:
+            return self
         if self.name and not self.fs_storage_mount_path:
             if os.path.isabs(self.name):
                 # Name is an absolute path - use it directly as mount path
@@ -371,6 +398,102 @@ class Project(Entity):
         proj.id = cls.allocate_id(create_kwargs)
         await proj.save(notify=notify)
         return proj
+
+    @property
+    def hub_id(self) -> str:
+        """The opaque ``cloud_id`` once shared, else the path-derived local id.
+
+        The sharer's local id is derived from their filesystem path, so reflected
+        member actions must target ``cloud_id`` (the shared hub identity). On the
+        recipient side ``id == cloud_id`` so both agree. See ``Entity.hub_id``.
+        """
+        return self.cloud_id or self.id
+
+    def _hub_body(self) -> dict:
+        """Hub POST body for a shared project.
+
+        Overrides the generic body to (1) publish under the opaque ``cloud_id``
+        so the path-derived local id never becomes the shared identity, (2) map
+        the local ``name`` to the hub's ``title`` field, and (3) strip local-only
+        project fields the hub doesn't host (the working-dir path, the presence
+        overlay, indexer hints, the binding itself).
+        """
+        body = super()._hub_body()
+        if self.cloud_id:
+            body["id"] = self.cloud_id
+        # Hub Project uses ``title``; local Project uses ``name``.
+        if self.name:
+            body["title"] = self.name
+        for local_only in (
+            "name",
+            "fs_storage_mount_path",
+            "fs_storage_provider",
+            "session_code",
+            "host_member_id",
+            "members",
+            "include_dirs",
+            "session_count",
+            "last_session_at",
+            "cloud_id",
+        ):
+            body.pop(local_only, None)
+        return body
+
+    async def share(self, recipients: Optional[List[str]] = None) -> "Project":
+        """Publish this project to the hub as a shared unit + invite recipients.
+
+        Mirrors ``Conversation.share`` (the working precedent), with one added
+        step: a project's local id is derived from the sharer's filesystem path,
+        so it cannot be the shared identity. We mint an opaque ``cloud_id`` once
+        (uuid4) and publish the hub row under it via ``_hub_body``; the local id
+        stays a path alias. Persisting ``cloud_id`` + ``remote=True`` on the local
+        row is the caller's responsibility (``share_action.share_entity``).
+
+        Without ``recipients``: just the hub create. The hub stamps the creator
+        as ``owner`` on create (``save(owner=...)`` → literal 'owner' role edge;
+        ``project`` relies on the hub's default ``owner:["*"]`` policy chain), so
+        no explicit join is needed — the roster derives from role edges.
+        With ``recipients`` (emails): one ``MembershipRequest`` per recipient
+        targets ``project-<cloud_id>`` with role ``member`` via
+        ``POST /graph/project/<cloud_id>/members`` — the recipient discovers it
+        via ``GET /graph/invitation/pending`` and accepts via the standard flow
+        (``flow_message_action.handle_invitation_accept`` →
+        ``_membership_cls('project')`` → local ``remote=True`` Project mirror).
+        """
+        from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
+        from flow_sdk.builtin.user import normalize_email  # noqa: PLC0415
+        from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
+        from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient  # noqa: PLC0415
+
+        if not self.cloud_id:
+            # Opaque uuid4 (no key) — a valid v4 entity id, decoupled from cwd.
+            self.cloud_id = mint_uuid()
+
+        await super().share()  # POSTs _hub_body() (id == cloud_id); flips remote=True
+        if not recipients:
+            return self
+
+        creds = load_credentials()
+        if not creds or not creds.api_key:
+            raise RuntimeError("Cloud login required")
+
+        async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:
+            for email in recipients:
+                if not email or not isinstance(email, str):
+                    continue
+                email = normalize_email(email)
+                if not email:
+                    continue
+                await client.post(
+                    f"/graph/project/{self.cloud_id}/members",
+                    {
+                        "recipient_email": email,
+                        "invitation_targets": [
+                            {"typeid": f"project-{self.cloud_id}", "role": "member"},
+                        ],
+                    },
+                )
+        return self
 
     @property
     def main_ref(self):

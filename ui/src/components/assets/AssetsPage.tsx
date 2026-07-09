@@ -2,7 +2,7 @@ import { AssetEditorRouter, hasEditor } from '@src/components/assets/editor/Asse
 import { WikiResolveView } from '@src/components/assets/editor/WikiResolveView';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { AssetEditor, AssetRoutingMethod, DEFAULT_WIKI_SPACE } from '@src/navigation/asset-doc-types';
-import { ProjectBrief } from '@src/components/project-brief/ProjectBrief';
+import { ProjectHome } from '@src/components/project-home/ProjectHome';
 import { InputDialog } from '@src/components/ui/input-dialog';
 import { Button } from '@src/components/ui/button';
 import { getDescriptor } from '@src/components/quick-create';
@@ -697,7 +697,7 @@ export function AssetsPage() {
               </div>
             </div>
           ) : isProjectView ? (
-            <ProjectBrief spawnProjectId={scopeProjectId} />
+            <ProjectHome spawnProjectId={scopeProjectId} />
           ) : (
             <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
               <Trans>Select a type to browse</Trans>
