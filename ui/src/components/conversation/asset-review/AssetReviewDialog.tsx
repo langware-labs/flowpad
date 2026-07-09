@@ -1,4 +1,4 @@
-import { APIEntity, MessageAttachment, TypeId } from '@sdk';
+import { MessageAttachment, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { useMemo } from 'react';
 import { Trans } from '@lingui/react/macro';
@@ -16,11 +16,10 @@ import { StagedAssetViewer } from './StagedAssetViewer';
 /**
  * Review modal for a received, staged bundle attachment (opened from the
  * dashed conversation chip). Shows the staged content read-only plus the
- * install header: Install in project / Install global / Uninstall / Test it.
+ * install header: Install in project / Install global / Uninstall / Run.
  *
- * The header flips live: `useEntity(targetTypeId)` resolving means the asset
- * was installed (its CREATE data-op landed), and the MessageAttachment UPDATE
- * carries the scope — no optimistic writes anywhere.
+ * The header flips live off the MessageAttachment UPDATE (its scope), via the
+ * `liveAttachment` subscription below — no optimistic writes anywhere.
  */
 export function AssetReviewDialog({
   open,
@@ -35,8 +34,6 @@ export function AssetReviewDialog({
   targetTypeId: TypeId;
   attachmentProjectId: string | null;
 }) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data: installedEntity } = useEntity<APIEntity<any>>(open ? targetTypeId : null);
   // Live MessageAttachment subscription: the `attachment` prop rides the
   // conversation-wide QUERY, and WS UPDATE ops don't notify query watchers —
   // without this, installing from the open modal leaves the header buttons
@@ -50,8 +47,6 @@ export function AssetReviewDialog({
   const Icon = iconForEntity(targetTypeId.type);
   const typeWord =
     targetTypeId.type.charAt(0).toUpperCase() + targetTypeId.type.slice(1).replace(/_/g, ' ');
-  const installedAssetRef =
-    (installedEntity as unknown as { asset_ref?: string | null } | null)?.asset_ref ?? null;
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
