@@ -133,14 +133,20 @@ class TestPackBundle:
 
     @pytest.mark.asyncio
     async def test_pack_with_task_attachment(self, tmp_path):
-        """pack_bundle writes header.json for task attachments."""
+        """pack_bundle writes task.md via the generic folder-asset packer.
+
+        Task is now a folder asset (``main_subdir="tasks"``) — no bespoke
+        header.json packer. Same layout as spec: the DB-backed mock (no on-disk
+        asset_ref) renders ``task.md`` via ``default_body_fn``. Sender-local
+        fields never appear in the shipped file (the whitelist in
+        ``_task_default_body``)."""
         from flow_sdk.builtin.task import Task
 
         fm = _make_flow_message()
         task_id = _TASK2_UUID
         fm.attachment = [Attachment(attachment_type=AttachmentType.TYPE_ID, data=f"task-{task_id}")]
 
-        mock_task = Task(title="My Task")
+        mock_task = Task(title="My Task", status="in_progress", my_process_id="LEAK-PROC")
         mock_task.id = task_id
 
         with patch.object(Task, "get_one", new=AsyncMock(return_value=mock_task)):
@@ -148,10 +154,15 @@ class TestPackBundle:
 
         with zipfile.ZipFile(zip_path, "r") as zf:
             names = zf.namelist()
-            expected = f"attachment/task-@{task_id}/header.json"
+            expected = f"attachment/task-@{task_id}/tasks/My_Task/task.md"
             assert expected in names
-            data = json.loads(zf.read(expected))
-            assert data["title"] == "My Task"
+            content = zf.read(expected).decode("utf-8")
+            assert "My Task" in content
+            assert task_id in content  # frontmatter id, so the receiver adopts the row
+            assert "in_progress" in content
+            # Sender-local fields must never ride along in the shared file.
+            assert "my_process_id" not in content
+            assert "LEAK-PROC" not in content
 
     @pytest.mark.asyncio
     async def test_pack_copies_native_file_attachment_bytes_into_files_dir(self, tmp_path):
@@ -779,10 +790,10 @@ async def test_pack_with_conversation_attachment(tmp_path, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_pack_task_attachment_excludes_sender_local_fields(tmp_path):
-    """_pack_task_attachment strips sender-local fields: a Task that actually
-    populates ``project_root`` and ``my_process_id`` must NOT leak them into
-    header.json, while whitelisted fields (title/status) survive. Pins the
-    _TASK_FIELDS whitelist against regressions."""
+    """A Task that populates ``project_root`` / ``my_process_id`` must NOT leak
+    them into the shared ``task.md``, while whitelisted fields (title/status)
+    survive. Pins the ``_task_default_body`` frontmatter whitelist — which is now
+    the single home of the sender-local strip — against regressions."""
     from flow_sdk.builtin.task import Task
 
     fm = _make_flow_message(fm_id="f0f00002-0000-4000-8000-000000000002")
@@ -798,13 +809,15 @@ async def test_pack_task_attachment_excludes_sender_local_fields(tmp_path):
         zip_path = await pack_bundle(fm, dest_dir=tmp_path)
 
     with zipfile.ZipFile(zip_path, "r") as zf:
-        data = json.loads(zf.read(f"attachment/task-@{task_id}/header.json"))
-    # Sender-local fields stripped.
-    assert "project_root" not in data
-    assert "my_process_id" not in data
+        content = zf.read(f"attachment/task-@{task_id}/tasks/Shared_Task/task.md").decode("utf-8")
+    # Sender-local fields stripped (never written to task.md).
+    assert "project_root" not in content
+    assert "/sender/local/path" not in content
+    assert "my_process_id" not in content
+    assert "agentic-proc-sender-123" not in content
     # Whitelisted fields survive.
-    assert data["title"] == "Shared Task"
-    assert data["status"] == "in_progress"
+    assert "Shared Task" in content
+    assert "in_progress" in content
 
 
 @pytest.mark.asyncio

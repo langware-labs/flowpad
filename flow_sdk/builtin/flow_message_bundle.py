@@ -47,33 +47,16 @@ _FM_FIELDS = {"type", "id", "text", "instruction", "shared_context_entities", "a
               # conversation's derived recency to the sync instant).
               "created_date", "updated_date"}
 
-_TASK_FIELDS = {"type", "id", "title", "description", "status", "task_type",
-                "priority", "shared_by_id",
-                "due_at", "start_date",
-                "project_id", "spec_type",
-                "shared_process_id",
-                "shared_context_entities",
-                "active_form", "analysis_json_path", "analysis_path", "artifacts",
-                "git_origin", "classification_category", "classification_command",
-                "classification_path", "classification_title", "command",
-                "completed_at", "error_fingerprint", "folder_name", "output_dir",
-                "process_id", "project_name",
-                "recipient_email", "result_uname", "sender_email",
-                "sender_name", "session_id", "skill_name", "skill_path",
-                "skill_scope", "task_type_label", "team_space_id",
-                "worker_session_id"}
-# `project_root` and `my_process_id` are intentionally excluded — both are
-# sender-side values that mean nothing on the receiver. ``project_root`` is
-# the sender's local FS path; ``my_process_id`` is the AgenticProcess id
-# of the sender's authoring session. The receiver allocates their own local
-# my_process_id the first time they click "Start Claude Code" — and that
-# spawn path injects the conversation+spec context as the first instruction,
-# which is the whole point of receiving a shared task. Shipping the sender's
-# id would short-circuit that flow into an "open existing" branch that
-# attaches to a stub of the sender's process locally, with no instruction
-# injected. Remote-project provenance (`remote_project_id` /
-# `remote_project_name`) lives on the Conversation, not the Task — see
-# flow_sdk/builtin/conversation.py.
+# Task is now a folder-backed asset (``main_subdir="tasks"``), so it packs via
+# the ONE generic ``_pack_file_backed_attachment`` (the folder — ``task.md`` +
+# inner ``spec.md`` — copied verbatim) and receives via the generic staged →
+# install → reindex path, exactly like ``skill``. There is no bespoke task
+# packer or ``_TASK_FIELDS`` whitelist anymore. The old sender-local strip
+# (``my_process_id`` / ``project_root`` / ``project_id`` / ``project_name``) now
+# lives in ``_task_default_body``'s frontmatter whitelist (task_type_info.py):
+# those keys are never written to ``task.md``, so the verbatim folder copy can't
+# leak them and the receiver still allocates its own ``my_process_id`` (runnable
+# received task) and maps its own local project.
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.flow_message import FlowMessage
@@ -150,25 +133,6 @@ def _pack_file_attachment(entry, flow_message: "FlowMessage", attachment_dir: Pa
     files_dir = attachment_dir / "files"
     files_dir.mkdir(exist_ok=True)
     shutil.copy2(file_path, files_dir / file_path.name)
-
-
-async def _pack_task_attachment(entry_id: str, attachment_dir: Path) -> None:
-    """Write ``attachment/task-@<id>/header.json`` (whitelisted Task fields)."""
-    from flow_sdk.builtin.task import Task
-
-    task = await Task.get_one({"id": entry_id})
-    if not task:
-        return
-    task_dir = attachment_dir / f"task-@{entry_id}"
-    task_dir.mkdir(parents=True, exist_ok=True)
-    task_data = task.model_dump(
-        mode="python",
-        include=_TASK_FIELDS,
-        context={"skip_api_serializer": True},
-    )
-    (task_dir / "header.json").write_text(
-        json.dumps(task_data, default=_json_default, ensure_ascii=False), encoding="utf-8"
-    )
 
 
 async def _pack_claude_session_attachment(entry_id: str, attachment_dir: Path) -> None:
@@ -305,9 +269,7 @@ async def _pack_attachment_entry(
     entry_type, entry_id = tid.type, tid.id
     if not entry_type or not entry_id:
         return
-    if entry_type == BuiltinEntityType.TASK.value:
-        await _pack_task_attachment(entry_id, attachment_dir)
-    elif entry_type == BuiltinEntityType.CONVERSATION.value:
+    if entry_type == BuiltinEntityType.CONVERSATION.value:
         await _pack_conversation_attachment(entry_id, flow_message, attachment_dir)
     elif entry_type == BuiltinEntityType.FLOW_MESSAGE.value:
         await _pack_flow_message_entry(entry_id, attachment_dir)
@@ -1493,6 +1455,20 @@ def _read_entity_header(entity_dir: Path) -> dict | None:
         return None
 
 
+def _read_task_md_header(entry_dir: Path) -> dict | None:
+    """Read a staged task's ``task.md`` frontmatter → flat field dict.
+
+    The generic file-backed packer stores the folder under
+    ``attachment/task-@<id>/tasks/<name>/task.md``. Locate that inner doc, then
+    delegate the parse to the one canonical task frontmatter reader."""
+    task_md = next(entry_dir.glob("tasks/*/task.md"), None) or next(entry_dir.rglob("task.md"), None)
+    if task_md is None:
+        return None
+    from flow_sdk.fs_store.indexer.functions.task import _read_task_md_fields  # noqa: PLC0415
+    fields = _read_task_md_fields(task_md)
+    return fields or None
+
+
 def _fill_merge_entity(existing, payload: dict, skip_keys: tuple[str, ...]) -> bool:
     """Re-unpack onto an existing row: FILL-MERGE, never skip.
 
@@ -1892,64 +1868,42 @@ async def unpack_bundle(
                         git_origin=(git_origins_map.get(name) or None),
                         owner_typeid=owner_typeid,
                     ))
-                    continue
-
-                if entry_type == BuiltinEntityType.TASK.value:
-                    task_data = _read_entity_header(entry_dir)
-                    if task_data is not None:
-                        task_id = task_data.get("id") or entry_id
-                        # Materialize the sender as a local User (contact list).
-                        bundle_sender_email = task_data.get("sender_email") or ""
-                        bundle_sender_name = task_data.get("sender_name") or None
-                        if bundle_sender_email:
-                            await User.get_or_create_by_email(bundle_sender_email, name=bundle_sender_name)
-                        # Note: we do NOT compute a deterministic Project uuid
-                        # from the sender's `project_root` here. That path is
-                        # the sender's local filesystem and means nothing on
-                        # the receiver's machine — we'd just stamp a uuid that
-                        # 404s when anyone tries to load the Project. Receiver
-                        # picks via the mapping dialog; the picker stamps both
-                        # task.project_id and conversation.project_id.
-                        existing_task = await Task.get_one({"id": task_id})
-                        # Strip sender-local fields that are meaningless on the
-                        # receiver: `project_root` is the sender's filesystem
-                        # path; `project_name` mirrors the sender's local
-                        # Project name; `my_process_id` is the sender's
-                        # AgenticProcess id (defense in depth — the pack side
-                        # also drops it from `_TASK_FIELDS`, but we re-strip
-                        # here so older bundles on the hub and senders running
-                        # stale code can't leak it through). Remote provenance
-                        # now lives on the Conversation (see CONVERSATION
-                        # branch below), not the Task — so we don't propagate
-                        # `project_id` / `project_name` onto the receiver's
-                        # task either.
-                        task_payload = {
-                            k: v for k, v in task_data.items()
-                            if k not in ("project_root", "project_name", "my_process_id")
-                        }
-                        task_payload.update({
-                            "id": task_id,
-                            "title": task_data.get("title", ""),
-                            "status": task_data.get("status", "to_do"),
-                            "spec_type": task_data.get("spec_type") or None,
-                            "project_id": None,
-                        })
-                        if existing_task is None or overwrite:
-                            task = Task.model_validate(task_payload)
-                            await task.save(owner_typeid)
-                        else:
-                            # The old exists-check skip let any earlier partial
-                            # row permanently block the bundle's real title /
-                            # spec link / process id from ever landing. Skips
-                            # protect receiver-local state (project mapping,
-                            # status progress).
-                            if _fill_merge_entity(
+                    # TASK rides the generic staged→install→reindex path like any
+                    # folder asset, BUT a collaboration bundle also carries a
+                    # CONVERSATION whose branch (below) wants the Task row to exist
+                    # for its perm-dir slug + chip resolution. Install/reindex runs
+                    # later, so materialize a slim row NOW from the staged
+                    # ``task.md`` frontmatter. Sender-local keys never travel in
+                    # ``task.md`` (the whitelist in ``_task_default_body``), so
+                    # there is nothing to re-strip. project_id stays receiver-null;
+                    # the mapping dialog stamps the local project.
+                    if entry_type == BuiltinEntityType.TASK.value:
+                        task_data = _read_task_md_header(entry_dir)
+                        if task_data is not None:
+                            task_id = task_data.get("id") or entry_id
+                            bundle_sender_email = task_data.get("sender_email") or ""
+                            bundle_sender_name = task_data.get("sender_name") or None
+                            if bundle_sender_email:
+                                await User.get_or_create_by_email(bundle_sender_email, name=bundle_sender_name)
+                            task_payload = {
+                                **task_data,
+                                "id": task_id,
+                                "title": task_data.get("title", ""),
+                                "status": task_data.get("status", "to_do"),
+                                "spec_type": task_data.get("spec_type") or None,
+                                "project_id": None,
+                            }
+                            existing_task = await Task.get_one({"id": task_id})
+                            if existing_task is None or overwrite:
+                                await Task.model_validate(task_payload).save(owner_typeid)
+                            elif _fill_merge_entity(
                                 existing_task, task_payload,
                                 ("id", "type", "project_id", "status"),
                             ):
                                 await existing_task.save(owner_typeid)
+                    continue
 
-                elif entry_type == BuiltinEntityType.CLAUDE_SESSION.value:
+                if entry_type == BuiltinEntityType.CLAUDE_SESSION.value:
                     # Shared ClaudeTranscript: materialize the entity row from
                     # the packed header (same create-or-fill-merge contract as
                     # TASK — a partial row never blocks the real name/slug).

@@ -73,7 +73,7 @@ def markdown_flat_fn(
 # workflow_fn, command_fn). Skip emission to avoid double-indexing a SKILL.md
 # as both SKILL and MARKDOWN.
 _TYPED_RECORD_DIRS: frozenset[str] = frozenset({
-    "skills", "agents", "workflows", "commands", "whiteboards",
+    "skills", "agents", "workflows", "commands", "whiteboards", "tasks",
 })
 
 def _has_typed_ancestor(folder: Path) -> bool:

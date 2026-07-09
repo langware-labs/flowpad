@@ -1,4 +1,4 @@
-import { Agent, AgentTrace, AssetCleanupReport, DynamicWorkflow, FSRef, Skill, TypeId, UsageReport, VFSPath, Whiteboard, Workflow } from '@sdk';
+import { Agent, AgentTrace, AssetCleanupReport, DynamicWorkflow, FSRef, Skill, Task, TypeId, UsageReport, VFSPath, Whiteboard, Workflow } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { useMemo } from 'react';
 import { RefreshCw } from 'lucide-react';
@@ -10,6 +10,7 @@ import { EntityResolutionGate } from './EntityResolutionGate';
 import { MissingAssetCard } from './MissingAssetCard';
 import { PlainMarkdownAssetEditor } from './markdown/PlainMarkdownAssetEditor';
 import { SkillAssetEditor } from './skill/SkillAssetEditor';
+import { TaskAssetEditor } from './task/TaskAssetEditor';
 import { AgentAssetEditor } from './agent/AgentAssetEditor';
 import { AgentTraceAssetEditor } from './agent-trace/AgentTraceAssetEditor';
 import { DynamicWorkflowAssetEditor } from './dynamic-workflow/DynamicWorkflowAssetEditor';
@@ -143,6 +144,15 @@ export function AssetEditorRouter({ pointer }: AssetEditorRouterProps) {
           fsRef={fsRef}
           typeLabel="skill"
           render={(skill) => <SkillAssetEditor fsRef={fsRef!} skill={skill} />}
+        />
+      );
+    case AssetEditor.TASK:
+      return (
+        <EntityResolutionGate<Task>
+          type={Task.type}
+          fsRef={fsRef}
+          typeLabel="task"
+          render={(task) => <TaskAssetEditor fsRef={fsRef!} task={task} />}
         />
       );
     case AssetEditor.AGENT:
