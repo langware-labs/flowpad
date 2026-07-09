@@ -13,6 +13,7 @@ describe('VibeModelSelect', () => {
     render(<VibeModelSelect value={undefined} onChange={vi.fn()} />);
 
     expect(screen.getByTestId('vibe-model-select')).toHaveTextContent('Balanced');
+    expect(screen.getByTestId('vibe-model-select')).toHaveTextContent('Model');
     expect(normalizeVibeModelTier(undefined)).toBe(VIBE_MODEL_DEFAULT);
   });
 

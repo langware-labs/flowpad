@@ -71,16 +71,20 @@ export function VibeModelSelect({
         title={labels[selected]}
         data-testid={testId}
         className={cn(
-          'h-8 w-[112px] shrink-0 rounded-full border-border bg-background/70 px-2.5 text-xs shadow-none',
+          'h-7 w-auto min-w-[124px] shrink-0 rounded-md border-input bg-background px-2 text-xs shadow-none',
           triggerClassName,
           className,
         )}
       >
-        <SelectValue />
+        <span className="flex min-w-0 items-center gap-1.5">
+          <span className="text-muted-foreground">{t`Model`}</span>
+          <span aria-hidden className="text-muted-foreground">:</span>
+          <SelectValue />
+        </span>
       </SelectTrigger>
-      <SelectContent align="start" className="min-w-[8rem]">
+      <SelectContent align="start" className="min-w-[7.75rem]">
         {VIBE_MODEL_TIERS.map((tier) => (
-          <SelectItem key={tier} value={tier} data-testid={`vibe-model-option-${tier}`}>
+          <SelectItem key={tier} value={tier} data-testid={`vibe-model-option-${tier}`} className="py-1 text-xs">
             {labels[tier]}
           </SelectItem>
         ))}
