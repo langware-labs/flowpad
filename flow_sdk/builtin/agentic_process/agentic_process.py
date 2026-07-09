@@ -2871,6 +2871,18 @@ class AgenticProcess(Entity):
                     nudge_task.cancel()
                 # Signal end-of-stream to downstream consumers.
                 await handler.on_flow_data(None)
+                # Broadcast the entity's now-idle state. The lock released when
+                # the ``async with lock`` block exited above, so ``is_turn_busy``
+                # computes False now — but the readiness/toggle UIs read the AP
+                # ENTITY (useEntity), NOT this content stream. Without an explicit
+                # entity update the chat⇄terminal toggle stays disabled after a
+                # PTY-prompt turn even though the turn is done (the switch_stress
+                # "toggle never re-enabled" wedge at running/complete). Best-effort
+                # so a client-disconnect cancellation can't mask the teardown.
+                try:
+                    await self.notify_updated()
+                except Exception:
+                    logger.debug("prompt-pty: post-turn notify_updated failed", exc_info=True)
 
         turn_task = asyncio.create_task(_run_turn())
 
