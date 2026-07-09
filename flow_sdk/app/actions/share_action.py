@@ -110,27 +110,15 @@ async def share_entity() -> ApiSuccessResponse:
         except Exception as e:  # noqa: BLE001
             logger.warning("[share] local row lookup failed (non-fatal): %s", e)
             local_row = None
-        if local_row is not None:
-            changed = False
-            if getattr(local_row, "remote", None) is not True:
-                local_row.remote = True
-                changed = True
-            # Projects bind an opaque ``cloud_id`` at first share; the shared
-            # instance built from the request body carries it back — persist it
-            # on the local (path-id) row so re-shares/invites reuse the same
-            # hub identity instead of minting a fresh one.
-            ent_cloud = getattr(entity, "cloud_id", None)
-            if ent_cloud and getattr(local_row, "cloud_id", None) != ent_cloud:
-                local_row.cloud_id = ent_cloud
-                changed = True
-            if changed:
-                try:
-                    await local_row.save(request_info.someone_typeid)
-                except Exception as e:  # noqa: BLE001
-                    logger.warning(
-                        "[share] persisting remote/cloud_id on local %s %s failed (non-fatal): %s",
-                        target.type, target.id, e,
-                    )
+        if local_row is not None and getattr(local_row, "remote", None) is not True:
+            local_row.remote = True
+            try:
+                await local_row.save(request_info.someone_typeid)
+            except Exception as e:  # noqa: BLE001
+                logger.warning(
+                    "[share] persisting remote=True on local %s %s failed (non-fatal): %s",
+                    target.type, target.id, e,
+                )
     return ApiSuccessResponse(data=entity)
 
 

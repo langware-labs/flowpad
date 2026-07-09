@@ -1993,7 +1993,7 @@ def _membership_cls(target_type: str | None):
 
     A project shared as a collaboration unit rides the SAME membership-invitation
     path as org/team (target descriptor, no backing conversation): the recipient
-    materializes a ``remote=True`` mirror keyed by the sharer's opaque ``cloud_id``.
+    materializes a ``remote=True`` mirror keyed by the shared project's (uuid4) id.
     Resolves via the schema registry — the codebase's single type→class lookup (as
     used by ``share_action``); unknown/None falls back to Team for back-compat.
     """

@@ -78,7 +78,7 @@ async def reflect_to_hub(a: Action, entity: Entity, body: dict[str, Any], method
     if et is None:
         raise HubError(0, f"entity type {entity.type!r} has no hub representation")
 
-    hub_id = entity.hub_id
+    hub_id = entity.id
     verb = (method or "").lower()
     if verb == "get":
         hub_resp = await hub_get(et, hub_id, action=a.action_name)

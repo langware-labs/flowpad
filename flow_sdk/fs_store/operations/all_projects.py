@@ -324,10 +324,14 @@ async def get_all_scope_filter(
 
 
 async def _materialize(info: ProjectInfo) -> None:
-    """Save a fresh ``Project`` for ``info.cwd``; mutate ``info.project_id``."""
+    """Save a fresh ``Project`` for ``info.cwd``; mutate ``info.project_id``.
+
+    The entity gets an opaque uuid4 id (NOT ``info.project_id``, which is the
+    path-derived alias). ``info.record_project_id`` keeps the alias so records
+    stamped with it still resolve; ``info.project_id`` is updated to the new id.
+    """
     from flow_sdk.builtin.project import Project
     proj = Project.model_validate({
-        "id": info.project_id,
         "fs_storage_mount_path": info.cwd,
         "name": info.name,
     })
