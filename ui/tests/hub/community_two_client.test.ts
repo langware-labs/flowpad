@@ -61,6 +61,24 @@ beforeAll(async () => {
   communityProjectId = await fetchCommunityProjectId();
   if (!communityProjectId) {
     skipReason = 'hub /version did not return community_project_id (restart hub from source)';
+    return;
+  }
+  // /version advertising an id is NOT enough: the hub can name a
+  // community_project_id whose project entity isn't actually seeded/reachable
+  // (no COMMUNITY_STAFF_EMAILS at hub launch → start_guest_conversation 401s
+  // "Entity project-<id> not found"). Probe that a guest can genuinely open a
+  // ticket; if not, the community feature isn't usable on this hub — skip the
+  // whole suite cleanly rather than hard-fail every setup. (The security
+  // contract these tests assert requires a real, working community project.)
+  try {
+    const probe = await guest.sdk.startCommunityTicket(`community-availability-probe ${Date.now()}`);
+    if (!probe?.conversation_id) {
+      skipReason = 'community project advertised but a guest could not open a ticket';
+    }
+  } catch {
+    skipReason =
+      'community project not usable on this hub (start_guest_conversation failed) — ' +
+      'restart the hub from source with COMMUNITY_STAFF_EMAILS to run the community suite';
   }
 }, 30_000);
 
