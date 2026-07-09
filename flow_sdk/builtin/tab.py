@@ -533,6 +533,31 @@ async def _project_of_target(target_type: str, target_id: str) -> str | None:
 _DB_BACKED_TARGET_TYPES = (EntityType.SHELL.value, EntityType.AGENTIC_PROCESS.value)
 
 
+def _is_synthetic_name(
+    name: str | None, target_type: str | None, target_id: str | None
+) -> bool:
+    """True when ``name`` is the frontend's ``<type>-<id>`` synthetic fallback for
+    this target rather than a real name — the label ``APIEntity.defaultDisplayName``
+    fabricates for an entity with no name/uname/title (e.g. an un-stamped
+    AgenticProcess). Backstop so a stale/legacy client can never freeze the
+    synthetic into the durable ``Tab.name`` (the FE guard in ``getTabName`` is the
+    primary fix; this is belt-and-suspenders). Anchored to the exact synthetic
+    shape — the literal id or the ``<first4>…<last4>`` ellipsis form — so it never
+    eats a legitimate user name that merely starts with the type token."""
+    if not name or not target_type:
+        return False
+    prefix = f"{target_type}-"
+    if not name.startswith(prefix):
+        return False
+    tail = name[len(prefix):]
+    tid = str(target_id or "")
+    if not tid:
+        return False
+    if tail == tid:
+        return True
+    return len(tid) >= 8 and tail == f"{tid[:4]}…{tid[-4:]}"
+
+
 async def _load_target_entity(target_type: str | None, target_id: str | None):
     """Resolve the backing entity row for a tab target (None if unresolvable)."""
     if not (target_type and target_id):
@@ -567,6 +592,11 @@ async def ensure_tab(
     ``ensure_file_entity``.
     """
     tid = tab_id_for(pointer)
+    # Never adopt the FE `<type>-<id>` synthetic as a durable name (backstop to the
+    # `getTabName` guard): drop it to None so the null-name backfill / fresh create
+    # below leave the label empty until a real name is stamped onto the target.
+    if _is_synthetic_name(name, target_type, target_id):
+        name = None
     # Backend authority for the chip's project: the client computes ``project_id``
     # from a cache-first target read that MISSES on a cold/bare open (e.g. an
     # unindexed claude-session lens — the row only resolves via on-disk recovery),

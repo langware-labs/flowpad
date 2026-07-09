@@ -243,6 +243,27 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     return `${type}-${id.slice(0, 4)}…${id.slice(-4)}`;
   }
 
+  /**
+   * True when `displayName` is ONLY the `<type>-<key>` / `<type>-<id-tail>`
+   * synthetic fallback — i.e. the entity has no real `name`/`uname`/`title`/`key`
+   * and no `getDisplayName()` override. Distinguishes "the label is a real name"
+   * from "the label is a fabricated id string" without string-sniffing the value
+   * (which would risk eating a legit user name that happens to look like one).
+   *
+   * Callers that must not persist or label with the synthetic — notably the tab
+   * name resolver (`FlowSync.getTabName`), which would otherwise freeze
+   * `agentic_process-<id>` into `Tab.name` — check this and fall back instead.
+   */
+  get hasSyntheticDisplayName(): boolean {
+    return (
+      this.getDisplayName() == null &&
+      !isNonEmptyString(this.name) &&
+      !isNonEmptyString(this.uname) &&
+      !isNonEmptyString(this.title) &&
+      !isNonEmptyString(this.key)
+    );
+  }
+
   get expand(): EntityExpansion | undefined {
     return this._expand;
   }
