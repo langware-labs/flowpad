@@ -113,6 +113,8 @@ export interface TraceAnnotations {
   notes: string[];
   /** Per-asset findings keyed by skill name (the bucket skillit correct consumes). */
   by_skill?: Record<string, { skill: string; findings: TraceFinding[] }>;
+  /** Per-asset findings keyed by asset typeid/path for generic asset improvement. */
+  by_asset?: Record<string, { asset_ref?: string; typeid?: string; findings: TraceFinding[] }>;
   /** Session-level findings not attributable to a skill. */
   unattributed?: TraceFinding[];
 }

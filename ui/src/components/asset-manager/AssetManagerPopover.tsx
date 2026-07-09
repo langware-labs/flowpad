@@ -11,6 +11,8 @@ import {
   Project,
   QueryRequest,
   TypeId,
+  ActionInfo,
+  GitWorkdir,
   type AssetDescriptor,
   type AssetSource,
 } from '@sdk';
@@ -19,6 +21,16 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@src/components/ui/popover';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@src/components/ui/dialog';
+import { Button } from '@src/components/ui/button';
+import { Textarea } from '@src/components/ui/textarea';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -29,6 +41,7 @@ import { useContext as useDataContext } from '@src/hooks/useContext';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import { useProcessAssets } from './useProcessAssets';
 import { useAssetTypes } from '@src/hooks/use-asset-types';
+import { sdkConfig } from '@sdk/config/index';
 import {
   basename as _basename,
   displayLabelForTypeid as _displayLabelForTypeid,
@@ -38,8 +51,18 @@ import {
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { editorForType } from '@src/navigation/asset-doc-types';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { DockPointer } from '@src/navigation/DockPointer';
 import { cn } from '@src/lib/utils';
-import { ArrowLeft, ArrowDownAZ, Boxes, Folder, FolderOpen, FolderPlus, Lock, Plus, Search, Sparkles, X, type LucideIcon } from 'lucide-react';
+import { invalidateGitStatus } from '@src/lib/git-status-cache';
+import { notify } from '@src/notifications';
+import type { WorkerType as TranscriptWorkerType } from '@src/hooks/use-transcript';
+import { isFileRead, parseTranscriptResponse } from '@sdk/utils/agent-transcript';
+import {
+  launchAssetAnalysis,
+  launchAssetCorrect,
+  waitForAssetAnalysisResult,
+} from '@src/components/assets/editor/skill/skill-eval-analysis';
+import { ArrowLeft, ArrowDownAZ, Boxes, Folder, FolderOpen, FolderPlus, GitCommitHorizontal, Loader2, Lock, Plus, Search, Sparkles, WandSparkles, X, type LucideIcon } from 'lucide-react';
 
 const READONLY_TOOLTIP_BY_SOURCE: Partial<Record<AssetSource, string>> = {
   project_dir: 'Defined in the project — edits propagate to every process under this project. Attach to get a private editable copy.',
@@ -47,6 +70,47 @@ const READONLY_TOOLTIP_BY_SOURCE: Partial<Record<AssetSource, string>> = {
   workdir: 'Lives in the agent’s working directory. Attach to get a private editable copy.',
   additional_dir: 'Lives outside the project — edits propagate everywhere this path is referenced. Attach to get a private editable copy.',
 };
+
+interface AssetImproveTarget {
+  descriptor: AssetDescriptor;
+  assetKey: string;
+  assetTypeid: string;
+  assetPath: string;
+  assetLabel: string;
+  assetType: string;
+  workdir: string;
+  file: string;
+  folderBacked: boolean;
+  computeNodeId: string;
+}
+
+function normalizePath(path: string | null | undefined): string {
+  return (path ?? '').replace(/\\/g, '/').replace(/\/+/g, '/').replace(/\/$/, '');
+}
+
+function dirname(path: string): string {
+  const n = normalizePath(path);
+  const idx = n.lastIndexOf('/');
+  return idx >= 0 ? n.slice(0, idx) || '/' : '.';
+}
+
+function basename(path: string): string {
+  const n = normalizePath(path);
+  const idx = n.lastIndexOf('/');
+  return idx >= 0 ? n.slice(idx + 1) : n;
+}
+
+function descriptorKey(descriptor: AssetDescriptor): string {
+  return `${descriptor.typeid}@${normalizePath(descriptor.posix_path)}`;
+}
+
+function normalizeTranscriptWorker(workerType: string | null | undefined): TranscriptWorkerType {
+  const w = (workerType ?? 'claude').toLowerCase();
+  if (w.includes('codex')) return 'codex';
+  if (w.includes('copilot')) return 'copilot';
+  if (w.includes('workflow')) return 'workflow';
+  return 'claude';
+}
 
 interface AssetManagerPopoverProps {
   /** Process whose assets we are managing. Null before first-send. */
@@ -83,55 +147,151 @@ export function AssetManagerPopover({
   const [query, setQuery] = useState('');
   const [listFilter, setListFilter] = useState('');
   const [sortBy, setSortBy] = useState<'source' | 'name'>('source');
-
-  const { descriptors, refresh } = useProcessAssets(process, { enabled: open });
-  const { types: assetTypes } = useAssetTypes();
+  const [fixDescriptor, setFixDescriptor] = useState<AssetDescriptor | null>(null);
+  const [fixText, setFixText] = useState('');
+  const [busyAssetKey, setBusyAssetKey] = useState<string | null>(null);
+  const [dirtyImprove, setDirtyImprove] = useState<{ target: AssetImproveTarget; issueRequest: string } | null>(null);
+  const [processHydrationVersion, setProcessHydrationVersion] = useState(0);
+  const [hydratedTranscriptIdentity, setHydratedTranscriptIdentity] = useState<{
+    sessionId: string | null;
+    workerType: string | null;
+  }>({ sessionId: null, workerType: null });
+  const [transcriptReadPaths, setTranscriptReadPaths] = useState<Set<string>>(() => new Set());
+  const hydratedProcessIds = useRef<Set<string>>(new Set());
 
   const dataCtx = useDataContext();
+  const { navigation } = useDockNavigation();
 
   // Subscribe to entity-field changes (additional_dirs, restart_required,
   // load_flowpad_assistant, …) so the popover re-renders when the backend
   // mutates them in place. The snapshot folds in `load_flowpad_assistant` so
   // the header toggle + location marker re-render even when the process isn't
   // RUNNING (i.e. `restart_required` doesn't move).
-  useSyncExternalStore(
+  const processSnapshot = useSyncExternalStore(
     useCallback(
       (cb) => (process ? dataManager.subscribe(process.typeId, cb, false) : () => {}),
       [process],
     ),
-    () => (process ? `${process.restart_required}|${process.load_flowpad_assistant}` : ''),
-    () => (process ? `${process.restart_required}|${process.load_flowpad_assistant}` : ''),
+    () => {
+      if (!process) return '';
+      const current = dataManager.getByTypeIdFromCache<AgenticProcess>(process.typeId) ?? process;
+      return `${current.restart_required}|${current.load_flowpad_assistant}|${current.session_id ?? ''}|${current.worker_type ?? ''}`;
+    },
+    () => {
+      if (!process) return '';
+      const current = dataManager.getByTypeIdFromCache<AgenticProcess>(process.typeId) ?? process;
+      return `${current.restart_required}|${current.load_flowpad_assistant}|${current.session_id ?? ''}|${current.worker_type ?? ''}`;
+    },
   );
 
-  const additionalDirs = process?.additional_dirs ?? [];
+  const activeProcess = useMemo(() => {
+    if (!process) return null;
+    void processSnapshot;
+    void processHydrationVersion;
+    return dataManager.getByTypeIdFromCache(process.typeId) ?? process;
+  }, [process, processHydrationVersion, processSnapshot]);
+
+  const processKey = process?.typeId.toString() ?? '';
+
+  useEffect(() => {
+    setHydratedTranscriptIdentity({ sessionId: null, workerType: null });
+    setTranscriptReadPaths(new Set());
+  }, [processKey]);
+
+  useEffect(() => {
+    if (!open || !process) return;
+    const current = dataManager.getByTypeIdFromCache<AgenticProcess>(process.typeId) ?? process;
+    if (current.session_id) return;
+    const processKey = process.typeId.toString();
+    if (hydratedProcessIds.current.has(processKey)) return;
+    hydratedProcessIds.current.add(processKey);
+    let cancelled = false;
+    void dataManager.refreshByTypeId(process.typeId)
+      .then((fresh) => {
+        if (cancelled) return;
+        if (fresh instanceof AgenticProcess && fresh.session_id) {
+          setHydratedTranscriptIdentity({
+            sessionId: fresh.session_id,
+            workerType: fresh.worker_type ?? null,
+          });
+        }
+        setProcessHydrationVersion((version) => version + 1);
+      })
+      .catch((err) => {
+        console.error('[AssetManagerPopover] process hydration failed', err);
+      });
+    return () => { cancelled = true; };
+  }, [open, process, processSnapshot]);
+
+  const { descriptors, refresh } = useProcessAssets(activeProcess, { enabled: open });
+  const { types: assetTypes } = useAssetTypes();
+  const transcriptSessionId = activeProcess?.session_id ?? hydratedTranscriptIdentity.sessionId;
+  const transcriptWorkerType = normalizeTranscriptWorker(
+    activeProcess?.worker_type ?? hydratedTranscriptIdentity.workerType,
+  );
+
+  useEffect(() => {
+    if (!open || !transcriptSessionId) {
+      setTranscriptReadPaths(new Set());
+      return;
+    }
+    let cancelled = false;
+    const url = `${sdkConfig.apiUrl}/api/v1/workers/${encodeURIComponent(transcriptWorkerType)}/${encodeURIComponent(transcriptSessionId)}/transcript`;
+    void fetch(url, { credentials: 'include' })
+      .then(async (response) => {
+        const json = await response.json();
+        if (!response.ok || json?.ok === false) {
+          const code = json?.error_code ?? response.status;
+          const message = json?.error ?? response.statusText;
+          throw new Error(`${code}: ${message}`);
+        }
+        return parseTranscriptResponse(json);
+      })
+      .then((parsed) => {
+        if (cancelled) return;
+        const paths = new Set<string>();
+        for (const entry of parsed.entries) {
+          if (isFileRead(entry) && entry.path) paths.add(normalizePath(entry.path));
+        }
+        setTranscriptReadPaths(paths);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setTranscriptReadPaths(new Set());
+        }
+      });
+    return () => { cancelled = true; };
+  }, [open, transcriptSessionId, transcriptWorkerType]);
+
+  const additionalDirs = useMemo(() => activeProcess?.additional_dirs ?? [], [activeProcess?.additional_dirs]);
 
   // Resolved Flowpad Assistant mount status for this process. `null`/`undefined`
   // inherits the global default (currently ON), so only an explicit `false`
   // reads as disabled. Toggling writes an explicit boolean.
-  const assistantEnabled = !!process && process.load_flowpad_assistant !== false;
+  const assistantEnabled = !!activeProcess && activeProcess.load_flowpad_assistant !== false;
 
   const handleToggleAssistant = useCallback(async () => {
-    if (!process) return;
+    if (!activeProcess) return;
     try {
-      await process.setAssistantEnabled(!assistantEnabled);
+      await activeProcess.setAssistantEnabled(!assistantEnabled);
       await refresh();
     } catch (err) {
       console.error('[AssetManagerPopover] toggle Flowpad Assistant failed', err);
     }
-  }, [process, assistantEnabled, refresh]);
+  }, [activeProcess, assistantEnabled, refresh]);
 
   // When restart_required transitions from true → false (a successful restart
   // just completed) re-fetch descriptors so the list reflects the new worker
   // state — e.g. embedded assets that were materialized on start.
   const prevRestartRequired = useRef<boolean>(false);
   useEffect(() => {
-    if (!process) return;
-    const cur = !!process.restart_required;
+    if (!activeProcess) return;
+    const cur = !!activeProcess.restart_required;
     if (prevRestartRequired.current && !cur && open) {
       void refresh();
     }
     prevRestartRequired.current = cur;
-  }, [process, process?.restart_required, open, refresh]);
+  }, [activeProcess, activeProcess?.restart_required, open, refresh]);
 
   // Project picker — load once when entering pick-project mode.
   const projectsQuery = useMemo(() => new QueryRequest({ type: Project.type }), []);
@@ -141,33 +301,33 @@ export function AssetManagerPopover({
   const [projectQuery, setProjectQuery] = useState('');
 
   const handleAddFolder = useCallback(async () => {
-    if (!process) return;
+    if (!activeProcess) return;
     const cn = dataCtx.computeNode;
     if (!cn) return;
     const picked = await cn.openPathDialog();
     if (!picked) return;
-    await process.addDir(picked);
+    await activeProcess.addDir(picked);
     await refresh();
-  }, [process, dataCtx.computeNode, refresh]);
+  }, [activeProcess, dataCtx.computeNode, refresh]);
 
   const handlePickProject = useCallback(
     async (path: string) => {
-      if (!process || !path) return;
-      await process.addDir(path);
+      if (!activeProcess || !path) return;
+      await activeProcess.addDir(path);
       setMode('list');
       setProjectQuery('');
       await refresh();
     },
-    [process, refresh],
+    [activeProcess, refresh],
   );
 
   const handleRemoveDir = useCallback(
     async (path: string) => {
-      if (!process) return;
-      await process.removeDir(path);
+      if (!activeProcess) return;
+      await activeProcess.removeDir(path);
       await refresh();
     },
-    [process, refresh],
+    [activeProcess, refresh],
   );
 
   // Pre-fetch every descriptor's entity into the dataManager cache so the
@@ -197,6 +357,28 @@ export function AssetManagerPopover({
   const iconForType = useMemo(() => makeIconForType(assetTypes), [assetTypes]);
 
   const attachedSet = useMemo(() => new Set(attachedRefs), [attachedRefs]);
+  const assetTypeByName = useMemo(() => {
+    void assetTypes;
+    return new Map(dataManager.getAllTypeInfos().map((t) => [t.type_name, t]));
+  }, [assetTypes]);
+
+  const usedAssetKeys = useMemo(() => {
+    const used = new Set<string>();
+    if (!transcriptReadPaths.size) return used;
+    for (const descriptor of descriptors) {
+      const assetPath = normalizePath(descriptor.posix_path);
+      if (!assetPath) continue;
+      const typeInfo = assetTypeByName.get(_parseTypeid(descriptor.typeid).type);
+      const folderBacked = !!typeInfo?.folder_backed;
+      for (const readPath of transcriptReadPaths) {
+        if (readPath === assetPath || (folderBacked && readPath.startsWith(`${assetPath}/`))) {
+          used.add(descriptorKey(descriptor));
+          break;
+        }
+      }
+    }
+    return used;
+  }, [assetTypeByName, descriptors, transcriptReadPaths]);
 
   // Group descriptors by typeid for the "list" mode — but show one row per
   // (typeid, source) pair so duplicate sources are explicitly visible.
@@ -290,7 +472,167 @@ export function AssetManagerPopover({
     [attachedSet, onAttach, onDetach],
   );
 
+  const resolveImproveTarget = useCallback(
+    (descriptor: AssetDescriptor): AssetImproveTarget | null => {
+      const assetPath = normalizePath(descriptor.posix_path);
+      if (!assetPath) {
+        notify.error({ title: t`Cannot improve asset`, message: t`This asset has no file path.` });
+        return null;
+      }
+      const { type } = _parseTypeid(descriptor.typeid);
+      const typeInfo = assetTypeByName.get(type);
+      const folderBacked = !!typeInfo?.folder_backed;
+      const file = folderBacked ? typeInfo?.main_file ?? '' : basename(assetPath);
+      if (!file) {
+        notify.error({ title: t`Cannot improve asset`, message: t`This folder-backed asset has no main file metadata.` });
+        return null;
+      }
+      return {
+        descriptor,
+        assetKey: descriptorKey(descriptor),
+        assetTypeid: descriptor.typeid,
+        assetPath,
+        assetLabel: _displayLabelForTypeid(descriptor.typeid),
+        assetType: type,
+        workdir: folderBacked ? assetPath : dirname(assetPath),
+        file,
+        folderBacked,
+        computeNodeId: dataCtx.computeNode?.id ?? '@local',
+      };
+    },
+    [assetTypeByName, dataCtx.computeNode?.id, t],
+  );
+
+  const assetHasDirtyChanges = useCallback(async (target: AssetImproveTarget): Promise<boolean> => {
+    const diff = await new GitWorkdir(target.workdir, target.computeNodeId).assetDiff(target.file);
+    return diff.files.length > 0;
+  }, []);
+
+  const commitAsset = useCallback(async (target: AssetImproveTarget) => {
+    const action = new ActionInfo('commit-asset', 'compute_node', target.computeNodeId, 'POST');
+    action.bodyParameters = { workdir: target.workdir, file: target.file };
+    const result = await dataManager.callAction<null, { committed: boolean; version?: number }>(action);
+    invalidateGitStatus(target.computeNodeId, target.workdir);
+    if (result?.committed) {
+      notify.success({ title: `Saved ${target.assetLabel} v${result.version ?? ''}`.trim() });
+    } else {
+      notify.info({ title: t`Nothing to save`, message: t`The asset matches HEAD.` });
+    }
+  }, [t]);
+
+  const runImprovement = useCallback(
+    async (target: AssetImproveTarget, issueRequest: string, opts: { skipDirtyCheck?: boolean } = {}) => {
+      if (!activeProcess?.session_id) {
+        notify.error({ title: t`Cannot improve asset`, message: t`This process has no transcript session yet.` });
+        return;
+      }
+      const notificationId = `asset-improve:${target.assetKey}`;
+      try {
+        if (!opts.skipDirtyCheck && await assetHasDirtyChanges(target)) {
+          setDirtyImprove({ target, issueRequest });
+          return;
+        }
+        setBusyAssetKey(target.assetKey);
+        const startedAt = Date.now();
+        notify.busy({ id: notificationId, title: t`Analyzing asset`, message: target.assetLabel });
+        const analysisProcess = await launchAssetAnalysis({
+          assetKey: target.assetKey,
+          assetTypeid: target.assetTypeid,
+          assetPath: target.assetPath,
+          assetLabel: target.assetLabel,
+          issueRequest,
+          sessionId: activeProcess.session_id,
+          workerType: transcriptWorkerType,
+        });
+        if (!analysisProcess) return;
+        await analysisProcess.waitForComplete();
+
+        const analysis = await waitForAssetAnalysisResult({
+          sessionId: activeProcess.session_id,
+          assetKey: target.assetKey,
+          assetTypeid: target.assetTypeid,
+          assetPath: target.assetPath,
+          sinceMs: startedAt,
+        });
+        if (!analysis?.findings.length) {
+          notify.warning({
+            id: notificationId,
+            title: t`No findings found`,
+            message: t`The analysis completed but did not produce asset-scoped findings.`,
+          });
+          return;
+        }
+
+        notify.busy({ id: notificationId, title: t`Improving asset`, message: target.assetLabel });
+        const correctionProcess = await launchAssetCorrect({
+          assetKey: target.assetKey,
+          assetTypeid: target.assetTypeid,
+          assetPath: target.assetPath,
+          assetLabel: target.assetLabel,
+          workdir: target.workdir,
+          file: target.file,
+          issueRequest,
+          sessionId: activeProcess.session_id,
+          findings: analysis.findings,
+          analysisTrace: analysis.trace,
+        });
+        if (!correctionProcess) return;
+        await correctionProcess.waitForComplete();
+
+        invalidateGitStatus(target.computeNodeId, target.workdir);
+        navigation.openDock(DockPointer.forAssetCompare({
+          computeNodeId: target.computeNodeId,
+          workdir: target.workdir,
+          file: target.file,
+          assetPath: target.assetPath,
+          assetType: target.assetType,
+          assetLabel: target.assetLabel,
+        }));
+        notify.success({ id: notificationId, title: t`Improvement ready`, message: t`Opened Asset compare.` });
+        setOpen(false);
+      } catch (err) {
+        notify.error({
+          id: notificationId,
+          title: t`Improve failed`,
+          message: err instanceof Error ? err.message : String(err),
+        });
+      } finally {
+        setBusyAssetKey(null);
+      }
+    },
+    [activeProcess?.session_id, assetHasDirtyChanges, navigation, t, transcriptWorkerType],
+  );
+
+  const openImproveDialog = useCallback((descriptor: AssetDescriptor) => {
+    setFixDescriptor(descriptor);
+    setFixText('');
+  }, []);
+
+  const submitImproveDialog = useCallback(async () => {
+    if (!fixDescriptor) return;
+    const issueRequest = fixText.trim();
+    if (!issueRequest) return;
+    const target = resolveImproveTarget(fixDescriptor);
+    if (!target) return;
+    setFixDescriptor(null);
+    setFixText('');
+    await runImprovement(target, issueRequest);
+  }, [fixDescriptor, fixText, resolveImproveTarget, runImprovement]);
+
+  const saveDirtyAndContinue = useCallback(async () => {
+    const pending = dirtyImprove;
+    if (!pending) return;
+    setDirtyImprove(null);
+    try {
+      await commitAsset(pending.target);
+      await runImprovement(pending.target, pending.issueRequest, { skipDirtyCheck: true });
+    } catch (err) {
+      notify.error({ title: t`Save failed`, message: err instanceof Error ? err.message : String(err) });
+    }
+  }, [commitAsset, dirtyImprove, runImprovement, t]);
+
   return (
+    <>
     <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild>{trigger}</PopoverTrigger>
       <PopoverContent
@@ -323,7 +665,7 @@ export function AssetManagerPopover({
           </span>
           {mode === 'list' && (
             <div className="ml-auto flex items-center gap-1">
-              {process && (
+              {activeProcess && (
                 <button
                   type="button"
                   role="switch"
@@ -367,7 +709,7 @@ export function AssetManagerPopover({
                     <Trans>Asset…</Trans>
                   </DropdownMenuItem>
                   <DropdownMenuItem
-                    disabled={!process || !dataCtx.computeNode}
+                    disabled={!activeProcess || !dataCtx.computeNode}
                     onSelect={() => { void handleAddFolder(); }}
                     data-testid="asset-manager-add-folder"
                   >
@@ -375,7 +717,7 @@ export function AssetManagerPopover({
                     <Trans>Folder…</Trans>
                   </DropdownMenuItem>
                   <DropdownMenuItem
-                    disabled={!process}
+                    disabled={!activeProcess}
                     onSelect={() => { setProjectQuery(''); setMode('pick-project'); }}
                     data-testid="asset-manager-add-project-folder"
                   >
@@ -450,7 +792,10 @@ export function AssetManagerPopover({
                   descriptor={d}
                   iconForType={iconForType}
                   attached={attachedSet.has(d.typeid)}
+                  used={usedAssetKeys.has(descriptorKey(d))}
+                  busy={busyAssetKey === descriptorKey(d)}
                   onDetach={onDetach}
+                  onImprove={openImproveDialog}
                 />
               ))}
             </div>
@@ -522,6 +867,54 @@ export function AssetManagerPopover({
         )}
       </PopoverContent>
     </Popover>
+
+    <Dialog open={!!fixDescriptor} onOpenChange={(next) => { if (!next) setFixDescriptor(null); }}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle><Trans>What would you like to fix?</Trans></DialogTitle>
+          <DialogDescription>
+            {fixDescriptor ? _displayLabelForTypeid(fixDescriptor.typeid) : null}
+          </DialogDescription>
+        </DialogHeader>
+        <Textarea
+          value={fixText}
+          onChange={(event) => setFixText(event.target.value)}
+          placeholder={t`Describe the issue to analyze and improve…`}
+          className="min-h-28"
+          autoFocus
+        />
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setFixDescriptor(null)}>
+            <Trans>Cancel</Trans>
+          </Button>
+          <Button onClick={() => { void submitImproveDialog(); }} disabled={!fixText.trim() || !!busyAssetKey}>
+            {busyAssetKey ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <WandSparkles className="h-3.5 w-3.5" />}
+            <Trans>Analyze and improve</Trans>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    <Dialog open={!!dirtyImprove} onOpenChange={(next) => { if (!next) setDirtyImprove(null); }}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle><Trans>Asset has changes</Trans></DialogTitle>
+          <DialogDescription>
+            <Trans>Save the current asset changes as a version before running improvement.</Trans>
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setDirtyImprove(null)} disabled={!!busyAssetKey}>
+            <Trans>Cancel</Trans>
+          </Button>
+          <Button onClick={() => { void saveDirtyAndContinue(); }} disabled={!!busyAssetKey}>
+            {busyAssetKey ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <GitCommitHorizontal className="h-3.5 w-3.5" />}
+            <Trans>Save</Trans>
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 }
 
@@ -600,10 +993,16 @@ function AssetRow({
   descriptor,
   iconForType,
   attached,
+  used,
+  busy,
   onDetach,
+  onImprove,
 }: RowSharedProps & {
   attached: boolean;
+  used: boolean;
+  busy: boolean;
   onDetach: (ref: string) => void | Promise<void>;
+  onImprove: (descriptor: AssetDescriptor) => void;
 }) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
@@ -651,9 +1050,13 @@ function AssetRow({
 
   return (
     <div
-      className="flex items-center gap-2 border-b px-3 py-1.5 last:border-b-0"
+      className={cn(
+        'flex items-center gap-2 border-b px-3 py-1.5 last:border-b-0',
+        used && 'bg-primary/5',
+      )}
       data-testid={`asset-manager-row-${descriptor.typeid}-${descriptor.source}`}
       data-read-only={readOnly ? 'true' : 'false'}
+      data-used={used ? 'true' : 'false'}
     >
       <button
         type="button"
@@ -693,6 +1096,18 @@ function AssetRow({
       >
         {sourcePillText}
       </span>
+      {used && (
+        <button
+          type="button"
+          className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded text-primary hover:bg-primary/10 disabled:opacity-60"
+          onClick={() => onImprove(descriptor)}
+          disabled={busy}
+          title={t`Analyze and improve`}
+          data-testid={`asset-manager-improve-${descriptor.typeid}-${descriptor.source}`}
+        >
+          {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <WandSparkles className="h-3 w-3" />}
+        </button>
+      )}
       {attached && !readOnly && (
         <button
           type="button"

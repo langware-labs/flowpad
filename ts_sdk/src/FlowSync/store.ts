@@ -792,6 +792,9 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     }
     const pointer = dock?.pointer ?? '';
     if (!pointer) return null;
+    if (dock?.viewType === 'diff' && pointer.startsWith('asset-compare/')) {
+      return 'Asset compare';
+    }
     const lastSegment = (path: string): string | null =>
       decodeURIComponent(path).split('/').filter(Boolean).pop() ?? null;
     // 1. entity — asset-editor typeid form, a bare `<type>-<id>` pointer, or a

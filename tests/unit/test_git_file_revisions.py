@@ -13,6 +13,7 @@ from types import SimpleNamespace
 import pytest
 
 from flow_sdk.builtin.faas.git_repo import GitRepo
+from flow_sdk.schema.type_info import register_all
 
 
 class _LocalNode:
@@ -35,11 +36,15 @@ def _write_commit(repo: Path, body: str, version: int):
     _git(["commit", "-m", f"Flowpad: slick v{version}"], repo)
 
 
+def _init_repo(repo: Path):
+    _git(["init"], repo)
+    _git(["config", "user.email", "t@t.test"], repo)
+    _git(["config", "user.name", "t"], repo)
+
+
 @pytest.fixture
 def repo(tmp_path) -> Path:
-    _git(["init"], tmp_path)
-    _git(["config", "user.email", "t@t.test"], tmp_path)
-    _git(["config", "user.name", "t"], tmp_path)
+    _init_repo(tmp_path)
     _write_commit(tmp_path, "Body one.", 1)
     _write_commit(tmp_path, "Body two.", 2)
     _write_commit(tmp_path, "Body three.", 3)
@@ -84,3 +89,34 @@ async def test_compare_file_revision_returns_diff(repo: Path):
     assert "Body one." in diff.diff  # removed line from v1
     assert "Body three." in diff.diff  # current line
     assert "SKILL.md" in diff.diff
+
+
+async def test_asset_diff_folder_backed_scopes_to_asset_folder(tmp_path: Path):
+    register_all()
+    _init_repo(tmp_path)
+    skill = tmp_path / ".claude" / "skills" / "slick"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text("# slick\n\nBody one.\n", encoding="utf-8")
+    _git(["add", "-A"], tmp_path)
+    _git(["commit", "-m", "Flowpad: slick v1"], tmp_path)
+
+    (skill / "SKILL.md").write_text("# slick\n\nBody two.\n", encoding="utf-8")
+    (skill / "helper.txt").write_text("new helper\n", encoding="utf-8")
+    (tmp_path / "outside.txt").write_text("outside\n", encoding="utf-8")
+
+    result = await GitRepo(str(skill), _LocalNode()).get_asset_diff("SKILL.md")
+
+    assert {f.path for f in result.files} == {"SKILL.md", "helper.txt"}
+    assert "SKILL.md" in result.diff
+    assert "helper.txt" in result.diff
+    assert "outside.txt" not in result.diff
+
+
+async def test_working_file_stays_inside_workdir(repo: Path):
+    secret = repo.parent / f"{repo.name}-secret.txt"
+    secret.write_text("do not leak\n", encoding="utf-8")
+    gr = GitRepo(str(repo), _LocalNode())
+
+    assert "Body three." in (await gr.get_working_file("SKILL.md")).content
+    assert (await gr.get_working_file("../secret.txt")).content == ""
+    assert (await gr.get_working_file(str(secret))).content == ""
