@@ -11,8 +11,6 @@ Contracts under test:
     LocalOrigin;
   * the LocalOriginDriver materializes with NO fetch and guards rel_path.
 """
-import uuid
-
 import pytest
 from pydantic import TypeAdapter
 

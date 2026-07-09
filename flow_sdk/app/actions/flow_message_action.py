@@ -19,10 +19,10 @@ from flow_sdk.actions.action_registry import action
 from flow_sdk.builtin.conversation import Conversation
 from flow_sdk.builtin.flow_message import AttachmentType, BodyStatus, DeliveryStatus, FlowMessage, FlowMessageKind
 from flow_sdk.builtin.flow_message_bundle import FlowMessageExistsError
-from flow_sdk.core.entity.entity_model import remote_reflection
 from flow_sdk.builtin.task import Task
 from flow_sdk.builtin.team import Team
 from flow_sdk.builtin.user import User, normalize_email
+from flow_sdk.core.entity.entity_model import remote_reflection
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.fs_store.operations.conversation import (
     append_message_pointer,
@@ -1448,7 +1448,8 @@ async def _download_and_unpack_bundle(
     when set the hub GET is streamed instead of buffered whole.
     """
     from flow_sdk.builtin.flow_message_bundle import (
-        FlowMessageExistsError, unpack_bundle,
+        FlowMessageExistsError,
+        unpack_bundle,
     )
 
     if body_status is not None:
@@ -2012,10 +2013,10 @@ async def _materialize_membership_invitation(
     ``target_*`` fields. We also mirror the target org/team locally so the row
     can show its name/icon and so accept resolves a real entity.
     """
-    from flow_sdk.builtin.invitation import Invitation as LocalInvitation  # noqa: PLC0415
     from flow_sdk.app.actions.membership_sync import (  # noqa: PLC0415
         materialize_remote_membership_entity,
     )
+    from flow_sdk.builtin.invitation import Invitation as LocalInvitation  # noqa: PLC0415
 
     inv_id = hub_inv["id"]
     target_type = target.get("type")
@@ -3450,9 +3451,44 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
             from flow_sdk.app.actions.membership_sync import (  # noqa: PLC0415
                 materialize_remote_membership_entity,
             )
+            target_payload = {
+                "id": membership_target.target_id,
+                "name": membership_target.target_name,
+            }
+            if membership_target.target_type == BuiltinEntityType.PROJECT.value:
+                project_payload_error: str | None = None
+                try:
+                    from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
+                    from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient  # noqa: PLC0415
+
+                    creds = load_credentials()
+                    if not creds or not creds.api_key:
+                        project_payload_error = "cloud login required"
+                    else:
+                        async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:
+                            hub_project = await client.get(f"/graph/project/{membership_target.target_id}")
+                        if isinstance(hub_project, dict) and hub_project.get("id"):
+                            target_payload.update(hub_project)
+                        else:
+                            project_payload_error = "hub project payload was empty or malformed"
+                except Exception as fetch_err:  # noqa: BLE001
+                    project_payload_error = str(fetch_err)
+                if project_payload_error:
+                    logger.warning(
+                        "[invitation-accept] project payload fetch failed for %s: %s",
+                        membership_target.target_id,
+                        project_payload_error,
+                    )
+                    return ApiFailResponse(
+                        message=(
+                            "Accepted invitation, but failed to fetch shared project metadata; "
+                            "local project was not materialized. Retry after cloud connectivity "
+                            f"and login are restored: {project_payload_error[:160]}"
+                        )
+                    )
             ent = await materialize_remote_membership_entity(
                 cls,
-                {"id": membership_target.target_id, "name": membership_target.target_name},
+                target_payload,
                 someone_typeid,
             )
             if ent is not None:

@@ -72,3 +72,21 @@ describe('Project.removeContextDir', () => {
     expect(project.include_dirs).toEqual(['/b']);
   });
 });
+
+describe('Project.resolveContextFolders', () => {
+  it('posts resolve-context-folders and adopts the server-computed include_dirs', async () => {
+    const project = makeProject([]);
+    const spy = vi.spyOn(dataManager, 'callAction').mockResolvedValue({
+      include_dirs: ['/cloned/repo/ctx'],
+      context_folder_results: [{ kind: 'ready', path: '/cloned/repo/ctx' }],
+    });
+
+    const results = await project.resolveContextFolders();
+
+    expect(project.include_dirs).toEqual(['/cloned/repo/ctx']);
+    expect(results).toEqual([{ kind: 'ready', path: '/cloned/repo/ctx' }]);
+    const actionInfo = spy.mock.calls[0][0] as { name?: string; bodyParameters?: unknown };
+    expect(actionInfo.name).toBe('resolve-context-folders');
+    expect(actionInfo.bodyParameters).toEqual({});
+  });
+});
