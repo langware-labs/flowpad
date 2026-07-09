@@ -270,9 +270,19 @@ async def handle_attachment_uninstall(attachment_id: str, *, someone_typeid=None
                 dest.unlink()
                 removed_dirs.add(dest.parent)
         # Prune now-empty dirs up to (not including) the install root.
+        import shutil  # noqa: PLC0415
         for d in sorted(removed_dirs, key=lambda p: len(p.parts), reverse=True):
             cur = d
             while cur != root and root_resolved in cur.resolve().parents:
+                # The indexer stamps a `.flow/id` capsule into a folder-asset dir;
+                # it isn't a bundle-tracked file, so a lone `.flow/` would block
+                # the prune. Drop it here (the entity is being destroyed anyway).
+                flow_dir = cur / ".flow"
+                try:
+                    if list(cur.iterdir()) == [flow_dir] and flow_dir.is_dir():
+                        shutil.rmtree(flow_dir, ignore_errors=True)
+                except OSError:
+                    pass
                 try:
                     cur.rmdir()  # only succeeds when empty
                 except OSError:

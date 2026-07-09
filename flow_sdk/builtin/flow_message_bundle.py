@@ -32,10 +32,8 @@ from typing import TYPE_CHECKING
 
 logger = logging.getLogger(__name__)
 
-from flow_sdk.discovery.notify import send_resource_sync
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.schema.types import EntityType
-from flow_sdk.fs_store import SyncOperation
 from flow_sdk.fs_store.type_id import TypeId
 
 _FM_FIELDS = {"type", "id", "text", "instruction", "shared_context_entities", "attachment",
@@ -570,6 +568,13 @@ async def _pack_file_backed_attachment(
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_text(default_body_fn(ent), encoding="utf-8")
         _ensure_id_in_md_frontmatter(dest, entry_id)
+        # Also pin the `.flow/id` capsule for folder-backed types (the folder is
+        # dest.parent), so the id travels even when the main doc isn't the id home.
+        if getattr(info, "folder_backed", False):
+            from flow_sdk.fs_store.indexer.functions._folder_capsule import (  # noqa: PLC0415
+                write_folder_capsule_id,
+            )
+            write_folder_capsule_id(dest.parent, entry_id)
         return
 
     # Origin present → key by repo-relative path (mirror sender layout); else the
@@ -579,12 +584,20 @@ async def _pack_file_backed_attachment(
     dest.parent.mkdir(parents=True, exist_ok=True)
     if src_root.is_dir():
         shutil.copytree(src_root, dest, dirs_exist_ok=True, ignore=_ASSET_PACK_IGNORE)
-        # Pin the id into the folder's main doc (TypeInfo.main_file).
+        # Pin the id into the folder's main doc (TypeInfo.main_file)…
         main_file = getattr(info, "main_file", None)
         if main_file:
             doc = dest / main_file
             if doc.exists():
                 _ensure_id_in_md_frontmatter(doc, entry_id)
+        # …and into the `.flow/id` capsule for folder-backed types, so the
+        # receiver adopts the sender's id even for a yaml-only skill or a
+        # main-doc-less folder (whose id has nowhere else to travel).
+        if getattr(info, "folder_backed", False):
+            from flow_sdk.fs_store.indexer.functions._folder_capsule import (  # noqa: PLC0415
+                write_folder_capsule_id,
+            )
+            write_folder_capsule_id(dest, entry_id)
     else:
         shutil.copy2(src_root, dest)
         # Single-file markdown asset: pin the id into its frontmatter. Skip
@@ -667,6 +680,12 @@ async def _reindex_root(root: Path, record_type, *, types=None, project_id: str 
             types=types,
             force=True,
             verbose=False,
+            # A received asset arrives at a new path carrying the SENDER's id in
+            # its capsule — that's an intentional same-id install, NOT a local
+            # copy to re-key. Exempt it from dedup-on-adopt (belt-and-suspenders
+            # on top of the structural exemption: the sender's local path doesn't
+            # exist on the receiver, so it already classifies as a move).
+            dedup_on_adopt=False,
         )
     )
 

@@ -54,6 +54,18 @@ def write_folder_capsule_id(folder: Path, entity_id: str) -> bool:
         return False
 
 
+def write_capsule_id(info: object, path: Path, entity_id: str) -> bool:
+    """Force ``entity_id`` into the entity's capsule — the ``.flow/id`` sidecar
+    for a folder-backed type, the file frontmatter otherwise. Returns whether it
+    persisted. Used to re-key a copied entity (dedup-on-adopt).
+    """
+    if info is not None and getattr(info, "folder_backed", False):
+        return write_folder_capsule_id(path, entity_id)
+    from flow_sdk.fs_store.indexer._frontmatter import write_frontmatter_id  # noqa: PLC0415
+
+    return write_frontmatter_id(path, entity_id)
+
+
 def folder_capsule_gen_id(folder: Path, *candidate_raw_ids: object) -> str:
     """Resolve a folder entity's id (the one place the folder-capsule precedence
     lives). Adopt the ``.flow/id`` capsule; else adopt the first VALID (v4/v5)
