@@ -67,6 +67,23 @@ _TRANSFER_MODE_COPY = "copy"
 _TRANSFER_MODE_GIT = "git"
 _GIT_TRANSFERS_FILE = "git_transfers.json"
 
+# Origin map filename. FSOrigin generalized the git-only origin into a
+# kind-tagged pointer; the canonical file is now ``fs_origins.json``. During the
+# fleet-upgrade transition we ALSO dual-write the legacy ``git_origins.json``
+# (git-kind entries only) so an older receiver — which only knows the legacy
+# name — keeps resolving git shares. Readers try the new name, then the legacy.
+# The transfers file (``git_transfers.json``) is transfer-STRATEGY metadata, a
+# separate axis, and is intentionally left unrenamed.
+_FS_ORIGINS_FILE = "fs_origins.json"
+_LEGACY_ORIGINS_FILE = "git_origins.json"
+
+
+def _is_git_origin_dict(raw) -> bool:
+    """A persisted origin dict is git iff its kind is git (or absent — legacy)."""
+    from flow_sdk.builtin.fs_origin import DEFAULT_ORIGIN_KIND, resolve_origin_kind  # noqa: PLC0415
+
+    return isinstance(raw, dict) and resolve_origin_kind(raw) == DEFAULT_ORIGIN_KIND
+
 
 def _json_default(obj):
     """JSON serializer that converts Enum members to their values."""
@@ -951,7 +968,8 @@ async def _restore_git_transfer_entry(
     overwrite: bool,
     owner_typeid: str | None,
 ) -> bool:
-    from flow_sdk.builtin.git_origin import GitOrigin  # noqa: PLC0415
+    from flow_sdk.builtin.fs_origin_driver import get_origin_driver  # noqa: PLC0415
+    from flow_sdk.builtin.fs_origin_field import FS_ORIGIN_ADAPTER  # noqa: PLC0415
     from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
@@ -964,23 +982,27 @@ async def _restore_git_transfer_entry(
     info = SchemaRegistry.get(entry_type)
     if info is None or getattr(info, "main_subdir", None) is None:
         return False
-    raw_origin = origins_map.get(key) or transfer.get("git_origin")
+    raw_origin = origins_map.get(key) or transfer.get("git_origin") or transfer.get("origin")
     if not raw_origin:
         return False
     try:
-        origin = GitOrigin.model_validate(raw_origin)
+        origin = FS_ORIGIN_ADAPTER.validate_python(raw_origin)
     except Exception:
-        logger.warning("[bundle] invalid git transfer origin for %s", key, exc_info=True)
+        logger.warning("[bundle] invalid transfer origin for %s", key, exc_info=True)
         return False
 
-    checkout_root, project_id = await _resolve_git_checkout(
+    # Materialize the bytes to a local path via the kind's driver (git = clone/
+    # pull/reuse-local; local = resolve an existing mount). Everything below is
+    # origin-kind-agnostic — it operates only on the returned local_root + the
+    # universal rel_path.
+    local_root, project_id = await get_origin_driver(origin.kind).materialize(
         origin,
         preferred_root=preferred_project_root,
         preferred_project_id=preferred_project_id,
     )
-    asset_ref = _asset_ref_for_git_origin(checkout_root, origin.rel_path, info)
+    asset_ref = _asset_ref_for_git_origin(local_root, origin.rel_path, info)
     if asset_ref is None or not asset_ref.exists():
-        raise FileNotFoundError(f"git transfer asset not found: {checkout_root / origin.rel_path}")
+        raise FileNotFoundError(f"transfer asset not found: {local_root / origin.rel_path}")
 
     cls = SchemaRegistry.get_entity_cls(entry_type)
     existing = await cls.get_one({"id": entry_id}) if cls is not None else None
@@ -998,7 +1020,7 @@ async def _restore_git_transfer_entry(
                 "path": str(existing_asset),
             }])
 
-    scope = _git_origin_index_scope(checkout_root, origin.rel_path, info)
+    scope = _git_origin_index_scope(local_root, origin.rel_path, info)
     try:
         record_type = RecordType(entry_type)
     except ValueError:
@@ -1018,17 +1040,22 @@ async def _restore_git_transfer_entry(
 
 
 def _git_origin_from_payload(payload: dict, origins_map: dict, key: str, transfer: dict):
-    raw = origins_map.get(key) or transfer.get("git_origin") or payload.get("git_origin")
+    raw = (
+        origins_map.get(key)
+        or transfer.get("origin") or transfer.get("git_origin")
+        or payload.get("origin") or payload.get("git_origin")
+    )
     if raw is None and isinstance(payload.get("metadata"), dict):
-        raw = payload["metadata"].get("git_origin")
+        raw = payload["metadata"].get("origin") or payload["metadata"].get("git_origin")
     if raw is None:
         return None
-    from flow_sdk.builtin.git_origin import GitOrigin  # noqa: PLC0415
+    from flow_sdk.builtin.fs_origin import FSOrigin  # noqa: PLC0415
+    from flow_sdk.builtin.fs_origin_field import FS_ORIGIN_ADAPTER  # noqa: PLC0415
 
     try:
-        return raw if isinstance(raw, GitOrigin) else GitOrigin.model_validate(raw)
+        return raw if isinstance(raw, FSOrigin) else FS_ORIGIN_ADAPTER.validate_python(raw)
     except Exception:
-        logger.warning("[bundle] invalid git transfer origin for %s", key, exc_info=True)
+        logger.warning("[bundle] invalid transfer origin for %s", key, exc_info=True)
         return None
 
 
@@ -1411,9 +1438,18 @@ async def pack_bundle(
                 transfer_mode=transfer_mode,
             )
         if origins:
-            (tmp_root / "git_origins.json").write_text(
+            (tmp_root / _FS_ORIGINS_FILE).write_text(
                 json.dumps(origins, default=_json_default, ensure_ascii=False), encoding="utf-8"
             )
+            # Transition dual-write: legacy receivers only read git_origins.json.
+            # Non-git kinds never go in the legacy file (an old receiver can't
+            # materialize them anyway and would mis-handle the entry).
+            legacy_origins = {k: v for k, v in origins.items() if _is_git_origin_dict(v)}
+            if legacy_origins:
+                (tmp_root / _LEGACY_ORIGINS_FILE).write_text(
+                    json.dumps(legacy_origins, default=_json_default, ensure_ascii=False),
+                    encoding="utf-8",
+                )
         if transfers:
             (tmp_root / _GIT_TRANSFERS_FILE).write_text(
                 json.dumps(transfers, default=_json_default, ensure_ascii=False), encoding="utf-8"
@@ -1784,13 +1820,18 @@ async def unpack_bundle(
         # to (a) place assets at their repo-relative path — already encoded in the
         # bundle layout by the packer — and (b) stamp ``git_origin`` on the
         # materialized receiver entities after reindex.
+        # Origin map: prefer the canonical fs_origins.json, fall back to the
+        # legacy git_origins.json (old sender). Values are kind-tagged FSOrigin
+        # dicts (a legacy dict with no ``kind`` reads as git downstream).
         git_origins_map: dict = {}
-        _go_path = tmp_root / "git_origins.json"
-        if _go_path.exists():
-            try:
-                git_origins_map = json.loads(_go_path.read_text(encoding="utf-8")) or {}
-            except Exception:
-                logger.warning("[bundle] unreadable git_origins.json; ignoring", exc_info=True)
+        for _origins_name in (_FS_ORIGINS_FILE, _LEGACY_ORIGINS_FILE):
+            _go_path = tmp_root / _origins_name
+            if _go_path.exists():
+                try:
+                    git_origins_map = json.loads(_go_path.read_text(encoding="utf-8")) or {}
+                    break
+                except Exception:
+                    logger.warning("[bundle] unreadable %s; ignoring", _origins_name, exc_info=True)
 
         git_transfers_map: dict = {}
         _gt_path = tmp_root / _GIT_TRANSFERS_FILE
