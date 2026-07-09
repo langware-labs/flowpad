@@ -427,8 +427,15 @@ to reuse the version string.
 
 Rehearse a release end-to-end on your own machine — exactly as if the package had
 shipped to PyPI and the desktop app pulled the update — **without publishing
-anything**. Give the build a throwaway local version so you can prove the running
-server is *your* build and not the installed/published one.
+anything**. **Local deployment builds from your current working tree and branch**
+(your in-progress version), never from the release branch tip. If your dev branch
+is behind the latest release line, pull and merge the latest release branch into
+your dev branch first — so your changes ride on top of the latest fixes — then
+build from your now-updated working tree. Never switch to and build the release
+branch tip; that would drop your code. Give the build a throwaway local version
+label (bumped above whatever `+local` is already installed) so you can prove the
+running server is *your* updated build and not a previous deployment or the
+released version.
 
 > Give it `<version>+local` (e.g. `0.2.38+local`). This is a PEP 440 *local
 > version label* — the `+` is required; a bare `-local` will not build.
@@ -508,12 +515,13 @@ check above is what proves it; don't skip it.
 When done rehearsing, `git checkout flow_sdk/_version.py` to discard the `+local`
 marker.
 
-> **"Patch desktop" (the full prod-parity operation):** the steps above deploy the
-> **backend wheel**. "Patch desktop" means BOTH halves built from the **latest release
-> branch published on PyPI** (never the dev checkout): the backend wheel as
-> `<latest>+local<count>`, and the Electron shell's `main.js` from the release tip stamped
-> `<latest>-patch<count>` — incl. the macOS App-Management / asar-integrity / ad-hoc-resign
-> gotchas — see
+> **"Patch desktop" (the full prod-parity operation):** distinct from the default local
+> deployment above—which rehearses YOUR in-progress code by building from your working
+> tree—"Patch desktop" is a separate prod-parity operation that deliberately reproduces
+> what users run by building BOTH halves from the **latest release branch published on
+> PyPI** (never the dev checkout). This means the backend wheel as `<latest>+local<count>`,
+> and the Electron shell's `main.js` from the release tip stamped `<latest>-patch<count>`
+> — incl. the macOS App-Management / asar-integrity / ad-hoc-resign gotchas — see
 > [`local_patch.md` → Patching the desktop app (Electron shell)](../../../docs/local_patch.md#patching-the-desktop-app-electron-shell).
 
 ---
