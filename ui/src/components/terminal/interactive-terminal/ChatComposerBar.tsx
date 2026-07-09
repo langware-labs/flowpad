@@ -12,6 +12,8 @@ import { ScrollText } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useChatPlanMode } from './chat-plan-mode-context';
+import { ChatToolsMenu } from './ChatToolsMenu';
+import { COMPOSER_PILL_CLASS } from './composer-pill';
 
 interface ChatComposerBarProps {
   /** The interactive tab's live PTY AgenticProcess. */
@@ -88,24 +90,27 @@ export function ChatComposerBar({ process, onPasteImages }: ChatComposerBarProps
       placeholder={plan.planPending ? t`Plan mode — describe what to plan…` : t`Message the agent…`}
       onShiftTab={plan.enabled ? plan.togglePlan : undefined}
       leadingSlot={
-        plan.enabled ? (
-          <button
-            type="button"
-            onClick={plan.togglePlan}
-            title={t`Toggle plan mode (Shift+Tab)`}
-            data-testid="plan-mode-pill"
-            aria-pressed={plan.planPending}
-            className={cn(
-              'mb-1 inline-flex flex-shrink-0 items-center gap-1 rounded-full border px-2.5 py-1 text-[12px] transition-colors',
-              plan.planPending
-                ? 'border-blue-400 bg-blue-400/15 text-blue-300'
-                : 'border-border/60 text-muted-foreground hover:border-blue-400/50 hover:text-foreground',
-            )}
-          >
-            <ScrollText className="h-3.5 w-3.5" />
-            <Trans>Plan</Trans>
-          </button>
-        ) : undefined
+        <div className="mb-1 flex items-end gap-2">
+          <ChatToolsMenu />
+          {plan.enabled ? (
+            <button
+              type="button"
+              onClick={plan.togglePlan}
+              title={t`Toggle plan mode (Shift+Tab)`}
+              data-testid="plan-mode-pill"
+              aria-pressed={plan.planPending}
+              className={cn(
+                COMPOSER_PILL_CLASS,
+                plan.planPending
+                  ? 'border-blue-400 bg-blue-400/15 text-blue-300'
+                  : 'border-border/60 text-muted-foreground hover:border-blue-400/50 hover:text-foreground',
+              )}
+            >
+              <ScrollText className="h-3.5 w-3.5" />
+              <Trans>Plan</Trans>
+            </button>
+          ) : null}
+        </div>
       }
       statusSlot={
         <span

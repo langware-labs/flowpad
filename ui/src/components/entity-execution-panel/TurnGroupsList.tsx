@@ -1,7 +1,8 @@
-import { FlowElementTypes } from '@sdk';
+import { FlowElementTypes, PrefKey } from '@sdk';
 import { Fragment } from 'react';
 import { ToolEntryRow } from '@src/components/floating-chat/ToolEntryRow';
 import type { TurnGroup } from '@src/components/floating-chat/groupTurnEvents';
+import { usePreference } from '@src/hooks/use-preference';
 import ExecutionMessage from './execution-message/execution-message';
 import { MetaMessageChip } from './MetaMessageChip';
 
@@ -25,8 +26,12 @@ function TurnDivider() {
  * tab's Standard-mode SimpleChatPane so both render identical chat turns.
  */
 export function TurnGroupsList({ groups, worker }: { groups: TurnGroup[]; worker?: string }) {
+  // "Show tool calls" (default off) gates the dense tool/reasoning/status chips.
+  // When off, dense (non-message) groups are dropped so the transcript shows only
+  // user/assistant text turns. Toggled from the composer's Tools menu or Preferences → Chat.
+  const [showTools] = usePreference<boolean>(PrefKey.CHAT_SHOW_TOOLS);
   const visibleGroups = groups.filter((g) => {
-    if (g.kind !== 'message') return true;
+    if (g.kind !== 'message') return showTools;
     if (g.flowData.attributes?.['is-meta'] !== 'true') return true;
     const content = g.flowData.content ?? '';
     return !isFlowpadPromptEnvelope(String(content));
