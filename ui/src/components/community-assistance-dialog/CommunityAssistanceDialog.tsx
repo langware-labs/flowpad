@@ -28,7 +28,7 @@ const EXAMPLES: string[] = [
 ];
 
 const PLACEHOLDER =
-  "Describe what you want done — what should the agent automate, " +
+  'Describe what you want done — what should the agent automate, ' +
   'research, summarize, or fix? The more context the better.';
 
 export function CommunityAssistanceDialog({ open, onClose }: CommunityAssistanceDialogProps) {
@@ -60,7 +60,7 @@ export function CommunityAssistanceDialog({ open, onClose }: CommunityAssistance
       // resumes on the same click.
       const gate = await ensureCloudLogin();
       if (!gate.ok) {
-        notify.info({ title: 'Sign in required', message: gate.error });
+        console.warn('[CommunityAssistanceDialog] sign in required:', gate.error);
         return;
       }
 
@@ -72,10 +72,7 @@ export function CommunityAssistanceDialog({ open, onClose }: CommunityAssistance
         console.error('[CommunityAssistanceDialog] failed to open support ticket', err);
         notify.error({
           title: 'Could not reach support',
-          message:
-            err instanceof Error
-              ? err.message
-              : 'Community support is unavailable right now. Please try again.',
+          message: err instanceof Error ? err.message : 'Community support is unavailable right now. Please try again.',
         });
         return;
       }
@@ -106,8 +103,8 @@ export function CommunityAssistanceDialog({ open, onClose }: CommunityAssistance
 
         <div className="flex flex-col gap-3 text-sm">
           <p className="text-muted-foreground">
-            Send a question to the Flowpad Assistant project. A new conversation will open with your
-            message as the starting point.
+            Send a question to the Flowpad Assistant project. A new conversation will open with your message as the
+            starting point.
           </p>
 
           <div className="flex flex-wrap gap-1.5">
