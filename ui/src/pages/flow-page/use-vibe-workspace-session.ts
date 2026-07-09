@@ -58,11 +58,10 @@ export function useVibeWorkspaceSession(): VibeWorkspaceSession | null {
           }
         : null;
 
-    // FIXME(display-refactor handoff, RCA 2026-07-09): legacy /dock/shell/agentic_process-<id>
-    // URLs no longer resolve a session since Case 1 narrowed SHELL→DISPLAY — vibe renders
-    // VibeNewChat (home) and asset clicks can't parent into display child tabs. Accept SHELL
-    // as an alias here or bridge shell→display in the route loader before landing.
     // Case 1 — the display URL itself: DISPLAY + agentic_process pointer.
+    // DISPLAY-only is safe: legacy /dock/shell/agentic_process-<id> URLs in vibe
+    // canonicalize to /dock/display in the main loader (canonicalProcessDockPath),
+    // so this hook never sees the shell form.
     if (currentDock.viewType === ViewType.DISPLAY) {
       return build(tabByHash(currentDock.tabHash), currentDock, true);
     }

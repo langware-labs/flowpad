@@ -32,6 +32,7 @@ import {
 import { resolveProcessInputDir } from '@src/utils/upload-to-input-dir';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { setActiveTabParent } from '@src/tabs/tab-parent-context';
+import { setupTabAndAdopt } from '@src/tabs/setup-tab-and-adopt';
 import { notify } from '@src/notifications/notify';
 import { WorkspaceChildStrip } from './workspace-child-strip';
 import { ContentPanel } from './content-panel/content-panel';
@@ -150,6 +151,17 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
     setActiveTabParent(session.displayTab?.id ?? null);
     return () => setActiveTabParent(null);
   }, [session.displayTab?.id]);
+
+  // The Display is a real Tab owned by this process — the anchor children are
+  // parented to and the row the strip renders. The route loader mints it on
+  // the display URL; this covers the paths it can't (deep-linked child URLs,
+  // a row lost to the orphan reap after the process recovered). Idempotent
+  // get-or-create; a failed mint (e.g. the process entity is gone) just leaves
+  // displayTab null, same as before.
+  useEffect(() => {
+    if (session.displayTab) return;
+    void setupTabAndAdopt(session.displayDock);
+  }, [session.displayTab, session.displayDock]);
 
   // id-based TypeId (NOT project.typeId, which is the uname form `project-@local`) —
   // must match the target HomeLanding.handleVibeSubmit created the process with.
