@@ -3,6 +3,8 @@ import type { LucideIcon } from 'lucide-react';
 import { AgenticProcess } from '@sdk';
 import { cn } from '@src/lib/utils';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
+import { IconWithBadge } from '@src/components/graph-view/icons/IconWithBadge';
+import { subIconForEntity } from '@src/components/graph-view/icons/subIconRegistry';
 import { useIsAdvanced } from '@src/contexts/view-mode-context';
 import { useContextProcess } from '@src/hooks/useContextProcess';
 
@@ -63,8 +65,13 @@ export function ContextProcessButton({
     launch: { label: t`Context process`, tooltip: t`Start a context process for this` },
     resume: { label: t`Resume context`, tooltip: t`Resume the context process` },
   };
-  const Icon = c.icon ?? iconForType(AgenticProcess.type);
   const state = existing ? c.resume : c.launch;
+
+  // A per-surface `copy.icon` override wins as-is. Otherwise the AgenticProcess
+  // type glyph, badged with the bound process's worker-type sub-icon (base-only
+  // until a process binds — worker_type is unknown before then).
+  const Base = c.icon ?? iconForType(AgenticProcess.type);
+  const Sub = c.icon ? null : subIconForEntity(existing);
 
   return (
     <button
@@ -77,7 +84,7 @@ export function ContextProcessButton({
         className,
       )}
     >
-      <Icon className="h-3 w-3" />
+      <IconWithBadge Base={Base} Badge={Sub} className="h-3 w-3" />
       {state.label}
     </button>
   );
