@@ -26,6 +26,19 @@ export interface ResolveProjectResult {
   members_count: number;
 }
 
+export interface ProjectContextFolderResolveResult {
+  typeid: string;
+  kind: string;
+  path?: string;
+  message?: string;
+  [key: string]: unknown;
+}
+
+interface ProjectContextFolderResolveResponse {
+  include_dirs?: unknown;
+  context_folder_results?: unknown;
+}
+
 const LOCAL_MEMBER_ID_KEY = 'flowpad.collaboration.member_id';
 
 function uuid(): string {
@@ -165,6 +178,18 @@ export class Project extends APIEntity<Project> {
     const actionInfo = new ActionInfo('remove-context-dir', Project.type, this.typeId.id, 'POST');
     actionInfo.bodyParameters = { path };
     this.adoptContextDirs(await dataManager.callAction(actionInfo));
+  }
+
+  /** Resolve received shared context folders into receiver-local paths. */
+  async resolveContextFolders(): Promise<ProjectContextFolderResolveResult[]> {
+    const actionInfo = new ActionInfo('resolve-context-folders', Project.type, this.typeId.id, 'POST');
+    const response = await dataManager.callAction<undefined, ProjectContextFolderResolveResponse>(actionInfo);
+    this.adoptContextDirs(response);
+    const results = response?.context_folder_results;
+    if (!Array.isArray(results)) return [];
+    return results.filter((item): item is ProjectContextFolderResolveResult => (
+      !!item && typeof item === 'object' && typeof (item as ProjectContextFolderResolveResult).kind === 'string'
+    ));
   }
 
   async setupComputeNode(options?: { gitOrigin?: GitOrigin | null }): Promise<ComputeNode | null> {

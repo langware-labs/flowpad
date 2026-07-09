@@ -18,8 +18,8 @@ from flow_sdk.builtin.git_origin import GitOrigin
 from flow_sdk.builtin.local_origin import LocalOrigin
 from flow_sdk.fs_store.identifier import is_valid_entity_id
 from flow_sdk.fs_store.path_utils import canonical_posix_path
-from flow_sdk.schema.type_info import register_all
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
+from flow_sdk.schema.type_info import register_all
 
 register_all()
 
@@ -115,3 +115,49 @@ def test_type_registered_without_breaking_capability_tag():
     assert info.owns_main_ref is False
     assert info.default_body_fn is None
     assert info.icon == "Folder"
+
+
+def test_hub_body_never_leaks_local_path(tmp_path):
+    local_origin = LocalOrigin(base=canonical_posix_path(str(tmp_path / "private")))
+    local = Folder(
+        id=Folder.id_for_origin(local_origin),
+        origin=local_origin,
+        path=local_origin.base,
+        name="private",
+    )
+    local_body = local._hub_body()
+    assert "path" not in local_body
+    assert "origin" not in local_body
+
+    git_origin = GitOrigin(provider="github", owner="acme", name="repo", branch="main", rel_path="ctx")
+    git = Folder(
+        id=Folder.id_for_origin(git_origin),
+        origin=git_origin,
+        path="/Users/alice/private/ctx",
+        name="ctx",
+    )
+    git_body = git._hub_body()
+    assert "path" not in git_body
+    assert git_body["origin"]["kind"] == "git"
+    assert "/Users/alice" not in str(git_body)
+
+
+@pytest.mark.asyncio
+async def test_resolve_location_missing_target_does_not_save_path(tmp_path, monkeypatch):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    origin = GitOrigin(provider="github", owner="acme", name="missing-repo", branch="main", rel_path="missing")
+    folder = await Folder.mint_for_origin(origin)
+
+    from flow_sdk.builtin.drivers.git_driver import GitOriginDriver
+
+    async def _materialize(_self, _origin, **_kwargs):
+        return repo, None
+
+    monkeypatch.setattr(GitOriginDriver, "materialize", _materialize)
+
+    resp = await folder.resolve_location()
+    assert resp.data["kind"] == "error"
+    assert "not found" in resp.data["message"]
+    reloaded = await Folder.get_by_id(folder.id)
+    assert reloaded.path in (None, "")

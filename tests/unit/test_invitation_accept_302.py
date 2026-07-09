@@ -18,6 +18,7 @@ to /flow_message/<id>.
 """
 
 from unittest.mock import AsyncMock, MagicMock, patch
+from uuid import uuid4
 
 import httpx
 import pytest
@@ -217,6 +218,75 @@ async def test_handle_invitation_accept_learns_conversation_participants(monkeyp
     assert result.data.get("conversation_id") == conv_id
     learned.assert_any_await(authoritative_members)
     conversation_client.get.assert_any_await(f"/graph/conversation/{conv_id}/members")
+
+
+@pytest.mark.asyncio
+async def test_handle_invitation_accept_project_fetches_payload_and_materializes_context(monkeypatch):
+    from flow_sdk.app.actions import flow_message_action
+    from flow_sdk.builtin.folder import Folder
+    from flow_sdk.builtin.git_origin import GitOrigin
+    from flow_sdk.builtin.invitation import Invitation
+    from flow_sdk.builtin.project import Project
+
+    monkeypatch.setattr(flow_message_action, "hub_base_url", lambda: "https://hub.test", raising=False)
+    monkeypatch.setattr("flow_sdk.cli.auth.credentials.load_credentials", lambda: MagicMock(api_key="test-key"))
+
+    inv_id = str(uuid4())
+    project_id = str(uuid4())
+    origin = GitOrigin(
+        provider="github",
+        owner="acme",
+        name=f"accepted-{uuid4().hex}",
+        branch="main",
+        rel_path="ctx",
+    )
+    folder_tid = f"folder-{origin.key()}"
+    inv = Invitation(
+        id=inv_id,
+        recipient_email="bob@example.com",
+        target_type="project",
+        target_id=project_id,
+        target_name="Shared Project",
+    )
+    await inv.save()
+
+    accept_resp = MagicMock(spec=httpx.Response)
+    accept_resp.status_code = 200
+    accept_resp.headers = {}
+    accept_resp.text = f'{{"data": "project-{project_id}"}}'
+    accept_resp.json.return_value = {"data": f"project-{project_id}"}
+
+    accept_client = MagicMock()
+    accept_client.request = AsyncMock(return_value=accept_resp)
+    accept_client.__aenter__ = AsyncMock(return_value=accept_client)
+    accept_client.__aexit__ = AsyncMock(return_value=False)
+
+    project_client = MagicMock()
+    project_client.get = AsyncMock(return_value={
+        "id": project_id,
+        "title": "Shared Project",
+        "shared_context_entities": [folder_tid],
+        "shared_context_origins": {folder_tid: origin.model_dump(mode="json")},
+    })
+    project_client.__aenter__ = AsyncMock(return_value=project_client)
+    project_client.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("flow_sdk.cloud_client.FlowpadClient", return_value=accept_client), \
+            patch("flow_sdk.cloud_client.client.FlowpadClient", return_value=project_client):
+        result = await flow_message_action.handle_invitation_accept(
+            {"invitation_id": inv_id},
+            someone_typeid=f"user-{uuid4()}",
+        )
+
+    assert getattr(result, "status", None) != "fail"
+    project = await Project.get_by_id(project_id)
+    assert project is not None
+    assert [str(t) for t in project.context_of_type("folder", bucket="shared")] == [folder_tid]
+    assert project.get_context_entry_data(folder_tid) is None
+    folder = await Folder.get_by_id(origin.key())
+    assert folder is not None
+    assert folder.remote is True
+    project_client.get.assert_awaited_once_with(f"/graph/project/{project_id}")
 
 
 @pytest.mark.asyncio

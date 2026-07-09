@@ -4,7 +4,7 @@ import { useContext as useDataContext } from '@src/hooks/useContext';
 import { useEntity } from '@src/hooks/entity-hooks';
 import { useProjectContextFolders } from '@src/hooks/use-project-context-folders';
 import { FolderPlus, X } from 'lucide-react';
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 
 interface ContextFoldersProps {
@@ -35,7 +35,27 @@ export const ContextFolders: React.FC<ContextFoldersProps> = ({ spawnProjectId }
 
   const { contextDirs, addPaths, pickAndAdd: handlePickFolder, remove: handleRemove } =
     useProjectContextFolders(project);
+  const resolvedProjectIdRef = useRef<string | null>(null);
+  const resolvingProjectIdRef = useRef<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
+
+  useEffect(() => {
+    const projectId = project?.id;
+    if (!projectId || resolvedProjectIdRef.current === projectId || resolvingProjectIdRef.current === projectId) {
+      return;
+    }
+    resolvingProjectIdRef.current = projectId;
+    void project.resolveContextFolders()
+      .then(() => {
+        resolvedProjectIdRef.current = projectId;
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (resolvingProjectIdRef.current === projectId) {
+          resolvingProjectIdRef.current = null;
+        }
+      });
+  }, [project?.id, project]);
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {

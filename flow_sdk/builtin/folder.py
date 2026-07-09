@@ -66,6 +66,21 @@ class Folder(Entity):
         data.pop("git_origin", None)  # dropped field — never let it reach the model
         super().__init__(**data)
 
+    def _hub_body(self) -> dict:
+        """Folder hub payload: never leak the local resolved path.
+
+        Folders normally travel as project context refs plus
+        ``shared_context_origins``. This guard keeps direct Folder share/create
+        paths from exposing a machine-local cache, and strips non-transportable
+        origins entirely.
+        """
+        body = super()._hub_body()
+        body.pop("path", None)
+        origin = self.origin
+        if origin is None or not origin.transportable:
+            body.pop("origin", None)
+        return body
+
     # ── Identity ─────────────────────────────────────────────────────────────
 
     @staticmethod
@@ -175,6 +190,18 @@ class Folder(Entity):
             target.resolve().relative_to(root.resolve())
         except (ValueError, OSError):
             return ApiSuccessResponse(data={"kind": "error", "message": "resolved path escaped origin root"})
+        if not target.exists():
+            return ApiSuccessResponse(data={"kind": "error", "message": f"resolved path not found: {target}"})
+        if not target.is_dir():
+            return ApiSuccessResponse(data={"kind": "error", "message": f"resolved path is not a directory: {target}"})
         self.path = canonical_posix_path(str(target))
         await self.save()
+        try:
+            from flow_sdk.builtin.agentic_process.agentic_process import (  # noqa: PLC0415
+                _index_additional_dir,
+            )
+
+            await _index_additional_dir(self.path)
+        except Exception:
+            pass
         return ApiSuccessResponse(data={"kind": "ready", "path": self.path})

@@ -27,7 +27,6 @@ from flow_sdk.request_context.methods import (
 )
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
 
-
 log = logging.getLogger(__name__)
 
 
@@ -134,6 +133,11 @@ class Project(Entity):
     participants: list[dict] = APIField(
         default_factory=list,
         description="Hub role roster: [{user_id, email, name, role}]. Distinct from presence ``members``.",
+    )
+    shared_context_origins: dict[str, dict[str, Any]] = APIField(
+        default_factory=dict,
+        persist=Persist.FALSE,
+        description="Hub-side transportable context-folder origins keyed by Folder typeid.",
     )
     # ── Indexer-denormalized fields (project consolidation, Path A 2026-05-09) ──
     # Written by the indexer at adopt time via ``Project.from_record`` so the
@@ -477,11 +481,25 @@ class Project(Entity):
             "host_member_id",
             "members",
             "include_dirs",
+            "shared_context_origins",
             "session_count",
             "last_session_at",
         ):
             body.pop(local_only, None)
         return body
+
+    async def _shared_context_origin_payload(self) -> dict[str, dict[str, Any]]:
+        """Build the wire-safe origin map for shared context Folder refs."""
+        payload: dict[str, dict[str, Any]] = {}
+        from flow_sdk.builtin.folder import Folder  # noqa: PLC0415
+
+        for tid in self.context_of_type("folder", bucket="shared"):
+            folder = await Folder.get_by_id(tid.id)
+            origin = folder.origin if folder is not None else None
+            if origin is None or not origin.transportable:
+                continue
+            payload[str(tid)] = origin.model_dump(mode="json")
+        return payload
 
     async def share(self, recipients: Optional[List[str]] = None) -> "Project":
         """Publish this project to the hub as a shared unit + invite recipients.
@@ -505,16 +523,37 @@ class Project(Entity):
         from flow_sdk.builtin.user import normalize_email  # noqa: PLC0415
         from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
         from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient  # noqa: PLC0415
-
-        await super().share()  # POSTs _hub_body() (id == self.id); flips remote=True
-        if not recipients:
-            return self
+        from flow_sdk.core.entity.parent_share import parent_share_typeid  # noqa: PLC0415
+        from flow_sdk.core.urls.service_urls import build_hub_url  # noqa: PLC0415
 
         creds = load_credentials()
         if not creds or not creds.api_key:
             raise RuntimeError("Cloud login required")
 
+        parent_tid = parent_share_typeid(self)
+        if parent_tid is not None:
+            self.add_shared_context_entities(parent_tid)
+        body = self._hub_body()
+        shared_context_origins = await self._shared_context_origin_payload()
+        invalid_shared_folders = [
+            str(tid)
+            for tid in self.context_of_type("folder", bucket="shared")
+            if str(tid) not in shared_context_origins
+        ]
+        if invalid_shared_folders:
+            raise RuntimeError(
+                "Shared context folders must have transportable origins before sharing: "
+                + ", ".join(invalid_shared_folders)
+            )
+        if shared_context_origins:
+            body["shared_context_origins"] = shared_context_origins
+
         async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:
+            await client.post(build_hub_url(self.get_type()), body)
+            if "remote" in type(self).model_fields:
+                self.remote = True
+            if not recipients:
+                return self
             for email in recipients:
                 if not email or not isinstance(email, str):
                     continue
@@ -773,22 +812,65 @@ class Project(Entity):
                 message="Only git-backed folders can be shared. Add this folder as private, "
                         "or use a folder inside a git repository."
             )
+        bucket = "shared" if scope == "shared" else "private"
+        already_linked = any(
+            (self.get_context_entry_data(tid) or {}).get("path") == canonical
+            for tid in self.context_of_type("folder", bucket=bucket)
+        )
         is_new = canonical not in self.include_dirs
-        folder = await Folder.mint_for_origin(origin, local_path=canonical)
-        # Idempotent by folder typeid (the bucket dedups); a kind-flip re-add
-        # that mints a new id is harmless — include_dirs path-dedups and remove
-        # matches by sidecar path across both links.
-        if scope == "shared":
-            self.add_shared_context_entities(folder.typeid, data={"path": canonical})
-        else:
-            self.add_private_context_entities(folder.typeid, data={"path": canonical})
-        await self.save()
+        if not already_linked:
+            folder = await Folder.mint_for_origin(origin, local_path=canonical)
+            if scope == "shared":
+                self.add_shared_context_entities(folder.typeid, data={"path": canonical})
+            else:
+                self.add_private_context_entities(folder.typeid, data={"path": canonical})
+            await self.save()
         if is_new:
             from flow_sdk.builtin.agentic_process.agentic_process import (
                 _index_additional_dir,
             )
             await _index_additional_dir(canonical)
         return ApiSuccessResponse(data=self.model_dump(mode="json"))
+
+    @action.post(action_name="resolve-context-folders")
+    async def resolve_context_folders(self) -> "ApiResponse":
+        """Resolve shared context folders whose receiver-local sidecar is empty."""
+        from flow_sdk.builtin.folder import Folder
+
+        results: list[dict[str, Any]] = []
+        changed = False
+        for tid in self.context_of_type("folder", bucket="shared"):
+            entry = self.get_context_entry_data(tid) or {}
+            if entry.get("path"):
+                results.append({"typeid": str(tid), "kind": "already_ready", "path": entry.get("path")})
+                continue
+            folder = await Folder.get_by_id(tid.id)
+            if folder is None:
+                results.append({"typeid": str(tid), "kind": "error", "message": "Folder entity not found"})
+                continue
+            if folder.origin is None:
+                results.append({"typeid": str(tid), "kind": "error", "message": "Folder has no origin"})
+                continue
+            if not folder.origin.transportable:
+                results.append({"typeid": str(tid), "kind": "error", "message": "Folder origin is not transportable"})
+                continue
+            resp = await folder.resolve_location()
+            data = getattr(resp, "data", None) or {}
+            if not isinstance(data, dict):
+                data = {"kind": "error", "message": "Unexpected resolve response"}
+            result = {"typeid": str(tid), **data}
+            resolved = data.get("path") if data.get("kind") == "ready" else None
+            if isinstance(resolved, str) and resolved:
+                canonical = canonical_posix_path(resolved)
+                self.add_shared_context_entities(folder.typeid, data={"path": canonical})
+                result["path"] = canonical
+                changed = True
+            results.append(result)
+        if changed:
+            await self.save()
+        payload = self.model_dump(mode="json")
+        payload["context_folder_results"] = results
+        return ApiSuccessResponse(data=payload)
 
     @action.post(action_name="remove-context-dir")
     async def remove_context_dir(self, path: str) -> "ApiResponse":

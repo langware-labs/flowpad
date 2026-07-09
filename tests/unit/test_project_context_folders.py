@@ -15,11 +15,13 @@ Contract under test (no LLM, no server):
     stamping into ``resolved_add_dirs`` and the rendered ``--add-dir`` flags.
 """
 import json
+from uuid import uuid4
 
 import pytest
 
 from flow_sdk.builtin.folder import Folder
 from flow_sdk.builtin.git_origin import GitOrigin
+from flow_sdk.builtin.local_origin import LocalOrigin
 from flow_sdk.builtin.project import Project
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.path_utils import canonical_posix_path
@@ -170,6 +172,139 @@ async def test_context_paths_never_on_the_wire(tmp_path, stub_git_detect):
     assert shared_tid in payload
     private_tid = str((await Folder.get_by_id(Folder.id_for_path(private_dir))).typeid)
     assert private_tid not in payload
+
+
+@pytest.mark.asyncio
+async def test_project_share_emits_shared_context_origins_only(tmp_path, stub_git_detect, monkeypatch):
+    project = await _make_project(tmp_path)
+    shared_dir = _ctx_dir(tmp_path, "shared-repo")
+    await project.add_context_dir(shared_dir, scope="shared")
+    shared_tid = f"folder-{stub_git_detect(shared_dir)}"
+    posts = []
+
+    class _Creds:
+        api_key = "token"
+
+    class _Client:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def post(self, path, body):
+            posts.append((path, body))
+            return {"ok": True}
+
+    monkeypatch.setattr("flow_sdk.cli.auth.credentials.load_credentials", lambda: _Creds())
+    monkeypatch.setattr("flow_sdk.cloud_client.client.ApiConfig.from_env", staticmethod(lambda: object()))
+    monkeypatch.setattr("flow_sdk.cloud_client.client.FlowpadClient", _Client)
+
+    await project.share()
+
+    body = posts[0][1]
+    assert shared_tid in body["shared_context_entities"]
+    assert body["shared_context_origins"][shared_tid]["kind"] == "git"
+    assert "path" not in body["shared_context_origins"][shared_tid]
+    assert shared_dir not in json.dumps(body)
+
+
+@pytest.mark.asyncio
+async def test_project_share_rejects_shared_folder_without_transportable_origin(tmp_path, monkeypatch):
+    project = await _make_project(tmp_path)
+    local_dir = _ctx_dir(tmp_path, "local-shared")
+    folder = await Folder.mint_for_origin(LocalOrigin(base=local_dir), local_path=local_dir)
+    project.add_shared_context_entities(folder.typeid, data={"path": local_dir})
+    await project.save()
+
+    class _Creds:
+        api_key = "token"
+
+    monkeypatch.setattr("flow_sdk.cli.auth.credentials.load_credentials", lambda: _Creds())
+
+    with pytest.raises(RuntimeError, match="transportable origins"):
+        await project.share()
+
+
+@pytest.mark.asyncio
+async def test_remote_project_materializes_shared_context_folder_with_empty_sidecar():
+    from flow_sdk.app.actions.membership_sync import materialize_remote_membership_entity
+
+    origin = GitOrigin(
+        provider="github",
+        owner="acme",
+        name=f"remote-{uuid4().hex}",
+        branch="main",
+        rel_path="ctx",
+    )
+    tid = f"folder-{origin.key()}"
+    project = await materialize_remote_membership_entity(
+        Project,
+        {
+            "id": str(uuid4()),
+            "title": "Shared Project",
+            "shared_context_entities": [tid],
+            "shared_context_origins": {tid: origin.model_dump(mode="json")},
+        },
+        f"user-{uuid4()}",
+    )
+
+    assert project is not None
+    assert project.remote is True
+    assert [str(t) for t in project.context_of_type("folder", bucket="shared")] == [tid]
+    assert project.get_context_entry_data(tid) is None
+    assert project.include_dirs == []
+    folder = await Folder.get_by_id(origin.key())
+    assert folder is not None
+    assert folder.remote is True
+    assert folder.path in (None, "")
+
+
+@pytest.mark.asyncio
+async def test_resolve_context_folders_stamps_receiver_sidecar(tmp_path, monkeypatch):
+    repo = tmp_path / "repo"
+    target = repo / "ctx"
+    target.mkdir(parents=True)
+    origin = GitOrigin(
+        provider="github",
+        owner="acme",
+        name=f"resolve-{uuid4().hex}",
+        branch="main",
+        rel_path="ctx",
+    )
+    folder = await Folder.mint_for_origin(origin)
+    folder.remote = True
+    await folder.save()
+    project = await _make_project(tmp_path, "remote-project")
+    project.remote = True
+    project.add_shared_context_entities(folder.typeid)
+    await project.save()
+
+    import flow_sdk.builtin.agentic_process.agentic_process as agentic_process
+    from flow_sdk.builtin.drivers.git_driver import GitOriginDriver
+
+    indexed = []
+
+    async def _materialize(_self, _origin, **_kwargs):
+        return repo, None
+
+    async def _index(path):
+        indexed.append(path)
+
+    monkeypatch.setattr(GitOriginDriver, "materialize", _materialize)
+    monkeypatch.setattr(agentic_process, "_index_additional_dir", _index)
+
+    resp = await project.resolve_context_folders()
+
+    resolved = canonical_posix_path(str(target))
+    assert resp.status == "SUCCESS"
+    assert project.include_dirs == [resolved]
+    assert (project.get_context_entry_data(folder.typeid) or {}).get("path") == resolved
+    assert indexed == [resolved]
+    assert resp.data["include_dirs"] == [resolved]
 
 
 async def _as_coro(value):
