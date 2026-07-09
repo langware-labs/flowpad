@@ -24,6 +24,10 @@ export interface BrowseableGridProps {
    *  grid of their children; leaves activate via `pointer ?? activate`. */
   roots: Browseable[];
   activePointer?: DockPointer | null;
+  /** Highlight a specific node by its `selectionKey` (id-based), independent of
+   *  `activePointer`. Reusable across all node types — including non-navigable
+   *  ones (no pointer) — e.g. to pre-select a just-created favorite by its id. */
+  selectedKey?: string;
   /** Defaults to `navigation.openDock` (URL-first). */
   onNavigate?: (pointer: DockPointer) => void;
   isLoading?: boolean;
@@ -60,6 +64,7 @@ interface DragBus {
 export function BrowseableGrid({
   roots,
   activePointer = null,
+  selectedKey,
   onNavigate,
   isLoading,
   emptyState,
@@ -117,6 +122,7 @@ export function BrowseableGrid({
           bus={bus}
           navigate={navigate}
           activePointer={activePointer}
+          selectedKey={selectedKey}
           size={size}
           onReorder={onReorder}
         />
@@ -132,6 +138,7 @@ function GridTile({
   bus,
   navigate,
   activePointer,
+  selectedKey,
   size,
   onReorder,
 }: {
@@ -139,6 +146,7 @@ function GridTile({
   bus: DragBus;
   navigate: (pointer: DockPointer) => void;
   activePointer: DockPointer | null;
+  selectedKey?: string;
   size: 'default' | 'large';
   onReorder?: BrowseableGridProps['onReorder'];
 }) {
@@ -165,12 +173,16 @@ function GridTile({
     };
   }, [node, isContainer, popoverOpen]);
 
-  const isSelected = !!(
-    node.pointer &&
-    activePointer &&
-    node.pointer.viewType === activePointer.viewType &&
-    node.pointer.pointer === activePointer.pointer
-  );
+  const isSelected =
+    // id-based selection (works for non-navigable nodes too)
+    (!!selectedKey && node.selectionKey === selectedKey) ||
+    // pointer-based (URL-derived) selection
+    !!(
+      node.pointer &&
+      activePointer &&
+      node.pointer.viewType === activePointer.viewType &&
+      node.pointer.pointer === activePointer.pointer
+    );
 
   const actionable = !!(node.pointer || node.activate || isContainer);
 
