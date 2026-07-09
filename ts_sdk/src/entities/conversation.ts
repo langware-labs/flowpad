@@ -127,6 +127,26 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
     return this.title?.trim() || null;
   }
 
+  /**
+   * Called by the store when the backend pushes an entity update
+   * (castAndDeepAssign runs this hook, then deepAssign on what's left).
+   *
+   * A wire ``participants`` roster is a full server-authoritative snapshot —
+   * it must REPLACE, not merge. ``deepAssign`` recurses into arrays and merges
+   * them by index, never shrinking the target, so a member leaving would leave
+   * a stale tail entry ([A,B] + wire [B] → [B,B]). Assign the wire value
+   * wholesale here and strip it from the payload so the following deepAssign
+   * skips it. (Same pattern AgenticProcess uses for ``queue``.)
+   * @internal
+   */
+  protected onEntityUpdate(data: Partial<IConversation>): void {
+    if ('participants' in data) {
+      const roster = data.participants;
+      this.participants = Array.isArray(roster) ? roster.map((p) => ({ ...p })) : roster;
+      delete data.participants;
+    }
+  }
+
   // NOTE: FE-side project chip projection moved server-side. The backend's
   // ``Entity.get_implicit_private_context_entities`` projects project_id
   // for every entity that has one; the merged ``private_context_entities``
