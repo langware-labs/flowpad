@@ -122,6 +122,13 @@ interface HistoryMatchCandidate {
   matched: boolean;
 }
 
+/**
+ * Stable per-row identity for history⇄live reconciliation: the transcript
+ * entry id (from the typed `process_entry` payload, falling back to the
+ * `transcript-entry-id` attribute for rows that only carry it as an attr).
+ * Returns null for rows with no transcript id — those reconcile via
+ * `historyFallbackKey` instead.
+ */
 function historyIdentityKey(item: FlowData): string | null {
   const processEntry = item.processEntry as
     | { transcript_entry?: { id?: unknown; kind?: unknown } }
@@ -138,6 +145,24 @@ function historyFallbackKey(item: FlowData): string {
   return `${item.elementType}|${role}|${item.timestamp}|${item.content ?? ''}`;
 }
 
+/**
+ * Drop the history rows that were already observed live, one-for-one.
+ *
+ * Matching is two-tier: transcript-entry identity first (exact), then the
+ * fallback key `elementType|role|timestamp|content` with a one-for-one
+ * `take()` — every existing item can absorb AT MOST ONE history row, so N
+ * identical rows in history always survive as N total rows (the pre-fix
+ * Set-based content dedup collapsed them to 1).
+ *
+ * INVARIANT (id-less collisions): for rows with no transcript id, K existing
+ * live rows and M history rows sharing all four fallback fields reconcile to
+ * `max(K, M)` total rows — never fewer. Collapsing below that requires two
+ * genuinely distinct transcript entries with identical elementType, role,
+ * content AND the same wire timestamp while ALSO lacking transcript ids;
+ * transcript-shaped rows carry `process_entry.transcript_entry.id`, so the
+ * timestamp component bounds the residual risk to non-transcript rows minted
+ * in the same instant with identical content — an acceptable dedup.
+ */
 function reconcileHistoryOverlap(history: FlowData[], existing: readonly FlowData[]): FlowData[] {
   const candidates: HistoryMatchCandidate[] = existing.map((item) => ({ item, matched: false }));
   const byIdentity = new Map<string, HistoryMatchCandidate[]>();
@@ -1789,6 +1814,16 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
         // History rows are already complete records. Reconcile one-for-one with
         // any live observations, then append directly so repeated turns and
         // adjacent CHAT/REASONING rows are not deduped or chunk-consolidated.
+        //
+        // Force-path concurrency contract: clear() above through append()
+        // below run in ONE synchronous block after the fetch resolved — no
+        // await separates them, so a live frame can never land between clear
+        // and append. Frames that streamed in DURING the fetch are replaced
+        // by their transcript counterparts (history is authoritative); a frame
+        // not yet persisted to the transcript would be dropped, which is why
+        // callers only force-reload when no turn is in flight (post-switchMode
+        // reconcile behind the isReadyForInput toggle gate; the chat pane's
+        // useTurnCompletionReconcile on the busy→ready edge).
         const newItems = force
           ? historyItems
           : reconcileHistoryOverlap(historyItems, this.flowDataStream.items);

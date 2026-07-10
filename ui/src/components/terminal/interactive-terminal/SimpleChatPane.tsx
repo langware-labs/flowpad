@@ -1,5 +1,4 @@
-import { AgenticProcess, TypeId } from '@sdk';
-import { useEntity } from '@sdk/react/hooks';
+import { AgenticProcess } from '@sdk';
 import { AutoScrollContainer, AutoScrollContainerHandle } from '@src/components/AutoScrollContainer';
 import { ChatActivityLine } from '@src/components/entity-execution-panel/ChatActivityLine';
 import { TurnGroupsList } from '@src/components/entity-execution-panel/TurnGroupsList';
@@ -11,6 +10,7 @@ import { Trans } from '@lingui/react/macro';
 import { MessageSquare } from 'lucide-react';
 import { useEffect, useMemo, useRef } from 'react';
 import { PlanInteractionBar } from './PlanInteractionBar';
+import { useTurnCompletionReconcile } from './useTurnCompletionReconcile';
 
 interface SimpleChatPaneProps {
   /** The interactive tab's live PTY AgenticProcess. */
@@ -40,21 +40,9 @@ export function SimpleChatPane({ process, className }: SimpleChatPaneProps) {
     });
   }, [process.id]);
 
-  // A browser reload closes the HTTP response stream while the backend turn
-  // continues. Entity updates still announce the terminal worker state, but
-  // no stream consumer remains to append the final frames. Reconcile once on
-  // that terminal transition so the remounted chat converges automatically.
-  const processTypeId = useMemo(() => new TypeId(AgenticProcess.type, process.id), [process.id]);
-  const { data: liveProcess } = useEntity<AgenticProcess>(processTypeId, { watch: true });
-  const workerStatus = liveProcess?.workerStatus;
-  const reconciledStatusRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (!liveProcess?.completed || !workerStatus || reconciledStatusRef.current === workerStatus) return;
-    reconciledStatusRef.current = workerStatus;
-    void process.loadHistory({ force: true }).catch((err) => {
-      console.error('[SimpleChatPane] completion history reconcile failed', err);
-    });
-  }, [liveProcess?.completed, process, workerStatus]);
+  // A browser reload can remount this pane while a backend turn is still in
+  // flight — converge with the transcript once when that turn completes.
+  useTurnCompletionReconcile(process);
 
   const items = useAgenticProcessStream(process);
   const turnGroups = useMemo(() => groupTurnEvents(items), [items]);

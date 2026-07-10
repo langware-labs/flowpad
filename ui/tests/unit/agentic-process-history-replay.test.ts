@@ -13,6 +13,12 @@ interface ProcessHistoryInternals {
   flowDataStream: { append(item: FlowData): void };
 }
 
+/** Typed view over the opaque `processEntry` payload for assertions. */
+function transcriptEntryOf(item: FlowData): { id?: string; kind?: string } | undefined {
+  return (item.processEntry as { transcript_entry?: { id?: string; kind?: string } } | null)
+    ?.transcript_entry;
+}
+
 function processEntry(id: string, kind: string) {
   return {
     transcript_entry: {
@@ -117,8 +123,8 @@ describe('AgenticProcess canonical history replay', () => {
       tool_call_id: 'call-1',
       args: { cmd: 'printf ok' },
     });
-    expect(tool.process_entry?.transcript_entry).toMatchObject({ id: 'tool-1', kind: 'tool_use' });
-    expect(tool.created_time).toBe('2026-07-10T06:00:00.600Z');
+    expect(transcriptEntryOf(tool)).toMatchObject({ id: 'tool-1', kind: 'tool_use' });
+    expect(tool.timestamp).toBe('2026-07-10T06:00:00.600Z');
     expect(outputs.every((item) => item.source === FlowDataSource.History)).toBe(true);
   });
 
@@ -154,7 +160,7 @@ describe('AgenticProcess canonical history replay', () => {
 
     const outputs = process.getOutputs();
     expect(outputs).toHaveLength(3);
-    expect(outputs.map((item) => item.process_entry?.transcript_entry?.id)).toEqual([
+    expect(outputs.map((item) => transcriptEntryOf(item)?.id)).toEqual([
       'user-1',
       'user-2',
       'user-3',
@@ -162,5 +168,68 @@ describe('AgenticProcess canonical history replay', () => {
     expect(outputs.filter((item) => item.content === 'same prompt')).toHaveLength(3);
     expect(outputs.filter((item) => item.source === FlowDataSource.Stream)).toHaveLength(1);
     expect(outputs.filter((item) => item.source === FlowDataSource.History)).toHaveLength(2);
+  });
+
+  it('id-less rows sharing elementType|role|timestamp|content reconcile one-for-one to max(live, history)', async () => {
+    // Pins the documented invariant on `reconcileHistoryOverlap`: without a
+    // transcript id, K live rows and M history rows colliding on all four
+    // fallback fields must yield max(K, M) rows — the one live observation
+    // absorbs exactly ONE history row, never the whole bucket.
+    const timestamp = '2026-07-10T06:00:00.100Z';
+    const idlessRow = {
+      flow_value: 'same prompt',
+      created_time: timestamp,
+      attributes: {
+        'element-type': FlowElementTypes.USER_MESSAGE,
+        'data-type': 'string',
+        role: 'user',
+      },
+    };
+    const history = [idlessRow, { ...idlessRow }, { ...idlessRow }];
+    callActionSpy.mockResolvedValue({
+      history,
+      count: history.length,
+      session_id: 'session-d01',
+      use_worker_history: true,
+    } as never);
+    const process = new AgenticProcess({ id: PROCESS_ID });
+    const live = FlowData.fromJSON(idlessRow);
+    live.source = FlowDataSource.Stream;
+    live.markReady();
+    (process as unknown as ProcessHistoryInternals).flowDataStream.append(live);
+
+    await process.loadHistory();
+
+    const outputs = process.getOutputs();
+    expect(outputs).toHaveLength(3); // max(1 live, 3 history), not 1 and not 4
+    expect(outputs.filter((item) => item.content === 'same prompt')).toHaveLength(3);
+    expect(outputs.filter((item) => item.source === FlowDataSource.Stream)).toHaveLength(1);
+    expect(outputs.filter((item) => item.source === FlowDataSource.History)).toHaveLength(2);
+  });
+});
+
+describe('FlowData.fromJSON non-string flow_value (history ingestion path)', () => {
+  it('serializes object flow_value into string content and parses it back per data-type', () => {
+    const payload = { tool_name: 'exec_command', args: { cmd: 'printf ok' } };
+    const objectRow = FlowData.fromJSON({
+      flow_value: payload,
+      created_time: '2026-07-10T06:00:00.100Z',
+      attributes: { 'element-type': FlowElementTypes.TOOL_CALL, 'data-type': 'object' },
+    });
+    // `content` must be a real string (previews, reconcile fallback keys and
+    // parseChunk all assume it); `data` round-trips to the object.
+    expect(objectRow.content).toBe(JSON.stringify(payload));
+    expect(objectRow.data).toEqual(payload);
+  });
+
+  it('stringifies non-string flow_value even for string-typed rows instead of leaking a raw object', () => {
+    const stray = { note: 'backend sent an object on a string row' };
+    const row = FlowData.fromJSON({
+      flow_value: stray,
+      created_time: '2026-07-10T06:00:00.200Z',
+      attributes: { 'element-type': FlowElementTypes.CHAT, 'data-type': 'string' },
+    });
+    expect(typeof row.content).toBe('string');
+    expect(row.content).toBe(JSON.stringify(stray));
   });
 });

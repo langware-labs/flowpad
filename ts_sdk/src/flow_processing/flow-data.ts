@@ -387,15 +387,6 @@ export class FlowData<T = any> extends EventEmitter implements IFlowData<T> {
   get lastChunkLength(): number {
     return this.last_chunk.length;
   }
-
-  /** Backend wire aliases retained for history/transcript consumers. */
-  get process_entry(): Record<string, unknown> | null {
-    return this.processEntry;
-  }
-
-  get created_time(): string {
-    return this.timestamp;
-  }
   /**
    * Computed property: dataType comes from 'data-type' attribute, defaults to string if missing
    */
@@ -584,6 +575,12 @@ export class FlowData<T = any> extends EventEmitter implements IFlowData<T> {
   static fromJSON(data: Record<string, unknown>): FlowData {
     const attributes = (data.attributes as Record<string, string>) || {};
     const elementType = attributes['element-type'] || (data.element_type as string) || 'unknown';
+    // fromJSON is the history/JSONL ingestion path only (get-history replay +
+    // FlowDataStreamReader) — live frames arrive via the XML stream parser.
+    // Backend history rows carry non-string flow_value for object rows (e.g.
+    // TOOL_CALL dicts from transcript_analyzer), so serialize them instead of
+    // passing a raw object where every consumer (parseObject, `content`,
+    // reconcile fallback keys, previews) expects a string.
     const value = data.flow_value ?? data.content ?? '';
     const content = typeof value === 'string' ? value : JSON.stringify(value);
 
