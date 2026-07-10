@@ -77,8 +77,7 @@ export function VibeModelSelect({
         )}
       >
         <span className="flex min-w-0 items-center gap-1.5">
-          <span className="text-muted-foreground">{t`Model`}</span>
-          <span aria-hidden className="text-muted-foreground">:</span>
+          <span className="text-muted-foreground">{t`Model`}:</span>
           <SelectValue />
         </span>
       </SelectTrigger>
