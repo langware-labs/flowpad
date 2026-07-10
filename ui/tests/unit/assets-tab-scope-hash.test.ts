@@ -42,6 +42,7 @@ describe('assets tabHash = scope (not sub-pointer)', () => {
     ['list/agent', DockPointer.forAssetList('agent', { scope: A })],
     ['folder', DockPointer.forAssetFolder('markdown', 'compute_node-@local', 'x').withScopeFilter(A)],
     ['editor', DockPointer.forAssetEditor('skill', '/p/s.md').withScopeFilter(A)],
+    ['project home', DockPointer.forAssetProjectHome({ scope: A })],
   ])('same scope, different sub-pointer (%s) ⇒ same tab', (_label, dock) => {
     expect(dock.tabHash).toBe(`assets|project:${PA}`);
   });
