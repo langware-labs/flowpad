@@ -32,6 +32,9 @@ export enum AssetMode {
   // rather than addressing one entity, so the asset loader no-ops it instead of
   // letting AssetDocPointer.parse throw `unknown mode "folder"`.
   FOLDER = 'folder',
+  // Project landing rendered inside the project-scoped Assets tab. It is a
+  // browser surface, not a single asset entity, so the asset loader no-ops it.
+  PROJECT_HOME = 'project-home',
 }
 
 /** Default wiki space (the local compute node). */
@@ -46,15 +49,19 @@ export function isAssetRoutingMethod(v: string): v is AssetRoutingMethod {
 }
 
 /**
- * True for multi-entity *browser* pointers — `list/<type>` and `folder/<…>` —
- * which address a directory/list rather than a single backing entity. These are
- * NOT modeled by `AssetDocPointer` (the browser views resolve their own
- * contents), so the asset route loader no-ops them instead of letting
+ * True for browser-only pointers — `list/<type>`, `folder/<…>`, and the project
+ * landing — which address a directory/list/surface rather than a single backing
+ * entity. These are NOT modeled by `AssetDocPointer` (the browser views resolve
+ * their own contents), so the asset route loader no-ops them instead of letting
  * `AssetDocPointer.parse` throw `unknown mode "list"` / `unknown mode "folder"`.
  * Pure + dependency-free so it's unit-testable in isolation.
  */
 export function isBrowseListPointer(pointer: string): boolean {
-  return pointer.startsWith(`${AssetMode.LIST}/`) || pointer.startsWith(`${AssetMode.FOLDER}/`);
+  return (
+    pointer.startsWith(`${AssetMode.LIST}/`) ||
+    pointer.startsWith(`${AssetMode.FOLDER}/`) ||
+    pointer === AssetMode.PROJECT_HOME
+  );
 }
 
 /** Thrown by AssetDocPointer.parse/validate on a malformed pointer. */

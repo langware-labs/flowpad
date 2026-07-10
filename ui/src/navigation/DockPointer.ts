@@ -511,6 +511,19 @@ export class DockPointer implements IDockPointer {
   }
 
   /**
+   * Create a pointer for the project landing rendered inside the project-scoped
+   * Assets tab. Assets is scope-keyed, so this shares the same tab as the asset
+   * manager for that project while still giving the landing a restorable URL.
+   */
+  static forAssetProjectHome(
+    options?: { scope?: ScopeFilter },
+    layout: Layout = Layout.DOCK,
+  ): DockPointer {
+    const base = new DockPointer(ViewType.ASSETS, AssetMode.PROJECT_HOME, undefined, layout);
+    return options?.scope ? base.withScopeFilter(options.scope) : base;
+  }
+
+  /**
    * Create dock pointer for an asset folder view (filtered list under a folder).
    * Pointer format: "folder/<typeName>/<typeid>/<relPath>"
    *   - typeid is a VFS entity identifier like "compute_node-@local" or "project-<uuid>".

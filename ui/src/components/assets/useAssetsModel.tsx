@@ -17,7 +17,7 @@ import { useAssetTreeRefresh } from '@src/hooks/useAssetTreeRefresh';
 import { useProjectContextFolders } from '@src/hooks/use-project-context-folders';
 import { useSystemTools } from '@src/hooks/use-system-tools';
 import { useIsDev } from '@src/contexts/view-mode-context';
-import { assetScopeBucket, defaultScopeFilter, scopeFilterKey, unionAssetBucket } from '@src/lib/scope-filter';
+import { assetScopeBucket, defaultScopeFilter, projectScope, scopeFilterKey, unionAssetBucket } from '@src/lib/scope-filter';
 import type { AssetScopeBucket, ScopeFilter } from '@src/lib/scope-filter';
 import { refreshNode } from '@src/components/browseable-tree/refresh-store';
 import { showDeleteAssetModal } from '@src/components/assets/delete-asset-modal';
@@ -103,8 +103,6 @@ export function useAssetsModel() {
   const { projectId: urlProjectId, assetSubPointer } = isProjectView
     ? DockPointer.splitProjectPointer(currentDock?.pointer)
     : { projectId: null, assetSubPointer: currentDock?.pointer ?? '' };
-  const scopeProjectId = urlProjectId ?? currentProjectId;
-  const scopeProjectName = scopeProjectId === currentProjectId ? currentProjectName : null;
   const projectSeedScope = useMemo(
     () => (urlProjectId ? defaultScopeFilter(urlProjectId) : null),
     [urlProjectId],
@@ -115,6 +113,9 @@ export function useAssetsModel() {
     () => currentDock?.scopeFilter ?? projectSeedScope ?? defaultScopeFilter(currentProjectId),
     [currentDock, projectSeedScope, currentProjectId],
   );
+  const scopeProjectId =
+    urlProjectId ?? (urlScope.mode === 'project' ? urlScope.activeProjectId ?? null : currentProjectId);
+  const scopeProjectName = scopeProjectId === currentProjectId ? currentProjectName : null;
 
   // The scoped project entity, watched so `include_dirs` edits (add/remove
   // context folder) re-render the tree. Backs the "Context folders" root.
@@ -221,10 +222,12 @@ export function useAssetsModel() {
 
   const openScoped = useCallback(
     (scope: ScopeFilter) => {
-      const base = currentDock ?? DockPointer.forAssetList('all');
+      const base = effectivePointer === AssetMode.PROJECT_HOME && scope.mode !== 'project'
+        ? DockPointer.forAssetList('all')
+        : (currentDock ?? DockPointer.forAssetList('all'));
       navigation.openDock(base.withScopeFilter(scope));
     },
-    [currentDock, navigation],
+    [currentDock, effectivePointer, navigation],
   );
 
   const handleScopeChange = useCallback(
@@ -237,11 +240,12 @@ export function useAssetsModel() {
 
   const navigateAsset = useCallback(
     (p: DockPointer) => {
-      // Roots emit ASSETS pointers except the cross-view "Project home" entry (a
-      // PROJECT pointer). The project view doesn't read the scope query param, so
-      // only re-stamp scope on asset pointers — otherwise a project jump carries
-      // stray scope params into its URL.
-      navigation.openDock(p.viewType === ViewType.ASSETS ? p.withScopeFilter(urlScope) : p);
+      // Menu builders usually emit scope-less ASSETS pointers; stamp the active
+      // URL scope so in-assets navigation keeps the same scope-keyed tab. A row
+      // may intentionally carry its own scope (Project home), which wins.
+      navigation.openDock(
+        p.viewType === ViewType.ASSETS ? p.withScopeFilter(p.scopeFilter ?? urlScope) : p,
+      );
     },
     [navigation, urlScope],
   );
@@ -495,11 +499,10 @@ export function useAssetsModel() {
 
   const roots = useMemo<BrowseableRoot[]>(() => {
     const list: BrowseableRoot[] = [];
-    // Special top entry: jump back to the selected project's home (its
-    // collaboration/room view). Only shown when a project is in scope (project
-    // view, or a project-scoped assets view). A plain leaf link-root — it owns
-    // exactly the bare project pointer, so it highlights on the project home but
-    // not while browsing that project's assets.
+    // Special top entry: jump back to the selected project's home. In a project
+    // route, keep the bare PROJECT pointer. In the Assets manager, use the
+    // project-home asset sub-pointer so the landing opens in the same
+    // scope-keyed Assets tab instead of minting a separate Project tab.
     if (scopeProjectId) {
       list.push(
         ...flatEntityRoots([
@@ -507,7 +510,9 @@ export function useAssetsModel() {
             id: `project-home:${scopeProjectId}`,
             label: 'Project home',
             icon: <Home className="h-4 w-4 flex-shrink-0 text-muted-foreground" />,
-            pointer: DockPointer.forProject(scopeProjectId),
+            pointer: isProjectView
+              ? DockPointer.forProject(scopeProjectId)
+              : DockPointer.forAssetProjectHome({ scope: projectScope(scopeProjectId) }),
           },
         ]),
       );
@@ -552,6 +557,7 @@ export function useAssetsModel() {
     creatableTypes,
     effectiveFilter,
     navigation,
+    isProjectView,
     scopeProjectId,
     hasScopeProject,
     contextDirs,

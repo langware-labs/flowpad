@@ -1,6 +1,6 @@
 /**
  * Unit tests for `isBrowseListPointer` — the pure predicate that distinguishes
- * multi-entity *browser* asset pointers (`list/<type>`, `folder/<…>`) from
+ * browser-only asset pointers (`list/<type>`, `folder/<…>`, project home) from
  * single-entity editor/wiki pointers. The asset route loader uses it to no-op
  * browser pointers instead of letting `AssetDocPointer.parse` throw
  * `unknown mode "list"` / `unknown mode "folder"` (the original console error).
@@ -19,6 +19,10 @@ describe('isBrowseListPointer', () => {
     expect(isBrowseListPointer('folder/markdown/compute_node-@local/docs')).toBe(true);
   });
 
+  it('is true for the project-home browser surface', () => {
+    expect(isBrowseListPointer(AssetMode.PROJECT_HOME)).toBe(true);
+  });
+
   it('is false for single-entity editor/wiki pointers', () => {
     expect(isBrowseListPointer('editor/markdown/vfs/compute_node-@local/x.md')).toBe(false);
     expect(isBrowseListPointer('editor/agent/typeid/agent-d864c29b-69fc-4b8d-b748-1526a83f598a')).toBe(false);
@@ -34,6 +38,7 @@ describe('isBrowseListPointer', () => {
   it('is keyed off the AssetMode enum values, not hardcoded strings', () => {
     expect(isBrowseListPointer(`${AssetMode.LIST}/anything`)).toBe(true);
     expect(isBrowseListPointer(`${AssetMode.FOLDER}/anything`)).toBe(true);
+    expect(isBrowseListPointer(AssetMode.PROJECT_HOME)).toBe(true);
     expect(isBrowseListPointer(`${AssetMode.EDITOR}/markdown/vfs/x`)).toBe(false);
   });
 });

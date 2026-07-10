@@ -1,7 +1,7 @@
 import { AssetEditorRouter, hasEditor } from '@src/components/assets/editor/AssetEditorRouter';
 import { WikiResolveView } from '@src/components/assets/editor/WikiResolveView';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
-import { AssetEditor, AssetRoutingMethod, DEFAULT_WIKI_SPACE } from '@src/navigation/asset-doc-types';
+import { AssetEditor, AssetMode, AssetRoutingMethod, DEFAULT_WIKI_SPACE } from '@src/navigation/asset-doc-types';
 import { ProjectHome } from '@src/components/project-home/ProjectHome';
 import { InputDialog } from '@src/components/ui/input-dialog';
 import { Button } from '@src/components/ui/button';
@@ -65,7 +65,7 @@ import '@src/components/assets/columns/claudeRulesColumns';
 import '@src/components/assets/filters/taskFilters';
 
 interface ParsedAssetPointer {
-  mode: 'editor' | 'list' | 'folder' | 'wiki' | 'fs' | null;
+  mode: 'editor' | 'list' | 'folder' | 'wiki' | 'fs' | 'projectHome' | null;
   typeName: string | null;
   /** Only set when mode === 'folder'. */
   folderTypeid: string | null;
@@ -85,6 +85,9 @@ function parseAssetPointer(pointer: string | undefined): ParsedAssetPointer {
     fsRelPath: null,
   };
   if (!pointer) return empty;
+  if (pointer === AssetMode.PROJECT_HOME) {
+    return { ...empty, mode: 'projectHome' };
+  }
   if (pointer.startsWith('editor/')) {
     return { ...empty, mode: 'editor' };
   }
@@ -243,9 +246,29 @@ export function AssetsPage() {
   const { projectId: urlProjectId, assetSubPointer } = isProjectView
     ? DockPointer.splitProjectPointer(currentDock?.pointer)
     : { projectId: null, assetSubPointer: currentDock?.pointer ?? '' };
+  // On a project page, scope is *preselected* to that project (not locked) — the
+  // user can still switch to All/User/Selected. `projectSeedScope` is that
+  // preselection: it seeds the initial scope, scopes the project index status,
+  // and re-applies when navigating between projects.
+  const projectSeedScope = useMemo(
+    () => (urlProjectId ? defaultScopeFilter(urlProjectId) : null),
+    [urlProjectId],
+  );
+  const effectivePointer = isProjectView ? assetSubPointer : (currentDock?.pointer ?? '');
+  // Scope is URL-first: it lives in the dock options (read generically via
+  // `DockPointer.scopeFilter`). An explicit option wins; on a project page we
+  // default to that project; the bare `/dock/assets` (no option) falls back to
+  // the context-aware default (project chip when in a project, else user-only)
+  // — NOT a forced "All".
+  const urlScope = useMemo<ScopeFilter>(
+    () => currentDock?.scopeFilter ?? projectSeedScope ?? defaultScopeFilter(currentProjectId),
+    [currentDock, projectSeedScope, currentProjectId],
+  );
   // The project the scope filter points at: the URL project on a project page,
-  // else the context project. Drives the Project mode + its tooltip name.
-  const scopeProjectId = urlProjectId ?? currentProjectId;
+  // the explicit project scope on an assets page, else the context project.
+  // Drives the Project mode + its tooltip name.
+  const scopeProjectId =
+    urlProjectId ?? (urlScope.mode === 'project' ? urlScope.activeProjectId ?? null : currentProjectId);
   // The project entity backing the project view — drives the "Delete project"
   // header action. Only resolved on a project page.
   const projectTypeId = useMemo<TypeId | null>(
@@ -274,24 +297,6 @@ export function AssetsPage() {
       },
     });
   }, [projectEntity, navigation]);
-  // On a project page, scope is *preselected* to that project (not locked) — the
-  // user can still switch to All/User/Selected. `projectSeedScope` is that
-  // preselection: it seeds the initial scope, scopes the project index status,
-  // and re-applies when navigating between projects.
-  const projectSeedScope = useMemo(
-    () => (urlProjectId ? defaultScopeFilter(urlProjectId) : null),
-    [urlProjectId],
-  );
-  const effectivePointer = isProjectView ? assetSubPointer : (currentDock?.pointer ?? '');
-  // Scope is URL-first: it lives in the dock options (read generically via
-  // `DockPointer.scopeFilter`). An explicit option wins; on a project page we
-  // default to that project; the bare `/dock/assets` (no option) falls back to
-  // the context-aware default (project chip when in a project, else user-only)
-  // — NOT a forced "All".
-  const urlScope = useMemo<ScopeFilter>(
-    () => currentDock?.scopeFilter ?? projectSeedScope ?? defaultScopeFilter(currentProjectId),
-    [currentDock, projectSeedScope, currentProjectId],
-  );
   // Non-scope filter state (query / tags / per-type filters / folder path).
   // The `scope` field is vestigial here — `effectiveFilter` always derives it
   // from `urlScope`, keeping scope URL-authoritative.
@@ -449,6 +454,9 @@ export function AssetsPage() {
   const isFolderMode = mode === 'folder';
   const isWikiMode = mode === 'wiki';
   const isFsMode = mode === 'fs';
+  const isProjectHomeMode = isProjectView
+    ? !effectivePointer && !!scopeProjectId
+    : mode === 'projectHome' && urlScope.mode === 'project' && !!urlScope.activeProjectId;
 
   const creatableTypes = useMemo(
     () => new Set(allTypes.filter((t) => t.creatable).map((t) => t.type_name)),
@@ -696,7 +704,7 @@ export function AssetsPage() {
                 </Button>
               </div>
             </div>
-          ) : isProjectView ? (
+          ) : isProjectHomeMode ? (
             <ProjectHome spawnProjectId={scopeProjectId} />
           ) : (
             <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
