@@ -51,7 +51,11 @@ import { CommandStatusViewer } from './command-status-viewer';
 import type { ColVisibility, TraceFilters } from './InteractiveTerminal';
 import { setChatUiOverride, useChatUiOverride } from '@src/contexts/chat-ui-mode-context';
 import { resolveProcessDisplayName } from '@src/components/terminal/process-display-name';
-import { buildSessionResumeCommand, getWorkerCliCapabilities } from './process-cli-presentation';
+import {
+  buildSessionResumeCommand,
+  getWorkerCliCapabilities,
+  type WorkerCliCapabilities,
+} from './process-cli-presentation';
 
 interface ProcessToolbarProps {
   process: AgenticProcess;
@@ -81,7 +85,7 @@ export function ProcessToolbar({
   onClose,
   shell,
 }: ProcessToolbarProps) {
-  const { t } = useLingui();
+  const { t, i18n } = useLingui();
   const handleInjectPrompt = useCallback((text: string) => void shell?.sendInput(text + '\r'), [shell]);
   const { navigation } = useDockNavigation();
   const chatOverride = useChatUiOverride();
@@ -170,12 +174,8 @@ export function ProcessToolbar({
   };
 
   const anyCliActive = currentChrome || currentDanger || currentDebug;
-  const fullTrustDescription =
-    cliCapabilities.vendor === 'codex'
-      ? t`Skip approvals and sandboxing (--dangerously-bypass-approvals-and-sandbox)`
-      : cliCapabilities.vendor === 'copilot'
-        ? t`Allow all tools without confirmation (--allow-all)`
-        : t`Skip all permission prompts (--dangerously-skip-permissions)`;
+  // Vendor knowledge lives in the capabilities table; render its lazy descriptor here.
+  const fullTrustDescription = cliCapabilities.fullTrustDescription ? i18n._(cliCapabilities.fullTrustDescription) : '';
   const anyTimeFieldActive =
     traceFilters.time ||
     traceFilters.index ||
@@ -511,7 +511,12 @@ export function ProcessToolbar({
 
       {/* Session Info */}
       {hasSession && (
-        <SessionInfoPopover process={process} sessionStartTime={sessionStartTime} lastMessageTime={lastMessageTime} />
+        <SessionInfoPopover
+          process={process}
+          cliCapabilities={cliCapabilities}
+          sessionStartTime={sessionStartTime}
+          lastMessageTime={lastMessageTime}
+        />
       )}
 
       {/* Open Transcript */}
@@ -749,10 +754,12 @@ function workerLabel(workerType: string | null | undefined): string {
 
 function SessionInfoPopover({
   process,
+  cliCapabilities,
   sessionStartTime,
   lastMessageTime,
 }: {
   process: AgenticProcess;
+  cliCapabilities: WorkerCliCapabilities;
   sessionStartTime?: string | null;
   lastMessageTime?: string | null;
 }) {
@@ -765,7 +772,6 @@ function SessionInfoPopover({
   const chrome = cliOpts.chrome;
   const debug = cliOpts.debug;
   const worktree = cliOpts.worktree;
-  const cliCapabilities = getWorkerCliCapabilities(process.worker_type);
 
   const startDisplay = useTimeDisplay(sessionStartTime);
   const lastDisplay = useTimeDisplay(lastMessageTime);

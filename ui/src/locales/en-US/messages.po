@@ -930,6 +930,10 @@ msgstr "All types"
 msgid "Allow AI to search the web"
 msgstr "Allow AI to search the web"
 
+#: src/components/terminal/interactive-terminal/process-cli-presentation.ts
+msgid "Allow all tools without confirmation (--allow-all)"
+msgstr "Allow all tools without confirmation (--allow-all)"
+
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "Already a member — change their role in the list above"
 msgstr "Already a member — change their role in the list above"
@@ -11244,9 +11248,13 @@ msgstr "Skills + AGENTS.md + MCP are the portable core; plugins & native agents 
 msgid "Skills, MCP servers, and agents — published by teams across your organization. Install into Claude Code, Codex, or Copilot <0>in one line.</0>"
 msgstr "Skills, MCP servers, and agents — published by teams across your organization. Install into Claude Code, Codex, or Copilot <0>in one line.</0>"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/process-cli-presentation.ts
 msgid "Skip all permission prompts (--dangerously-skip-permissions)"
 msgstr "Skip all permission prompts (--dangerously-skip-permissions)"
+
+#: src/components/terminal/interactive-terminal/process-cli-presentation.ts
+msgid "Skip approvals and sandboxing (--dangerously-bypass-approvals-and-sandbox)"
+msgstr "Skip approvals and sandboxing (--dangerously-bypass-approvals-and-sandbox)"
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Slower. To wipe rows first, use Clear Index then Full."
