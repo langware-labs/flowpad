@@ -34,6 +34,7 @@ import logging
 import os
 import re
 import shlex
+import shutil
 import sys
 import uuid
 from abc import ABC, abstractmethod
@@ -326,6 +327,21 @@ async def wait_for_asyncio_process_or_kill_tree(
             run_id,
             sweep_run_marker=False,
         )
+
+
+class WorkerSpawnError(RuntimeError):
+    """A worker turn cannot spawn its CLI subprocess.
+
+    Raised by the stream workers' ``_build_spawn`` when the vendor CLI is not
+    installed (no harness capability discovered) or its executable cannot be
+    resolved on the spawn PATH. Turn runners route it into the standard
+    failure path — ``status=FAILED`` + the ``start_failure`` latch — via
+    :func:`latch_spawn_failure` instead of leaving the process spinning.
+    """
+
+    def __init__(self, worker_type: str, message: str) -> None:
+        self.worker_type = worker_type
+        super().__init__(message)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -810,17 +826,13 @@ def worker_capability_kind(worker_type: str) -> str:
     return f"harness.{worker_type}.cli"
 
 
-def worker_path_env(worker_type: str) -> dict[str, str] | None:
-    """PATH override for spawning this worker, from the discovered capability.
+def worker_bin_folder(worker_type: str) -> str | None:
+    """The discovered bin FOLDER of this worker's CLI, or ``None`` ⇔ not installed.
 
     The harness capability's value (RecordType.FOLDER, an FSRef dict) is the
-    CLI's bin directory as a standard terminal would resolve it. Prepending it
-    to the spawn PATH makes both argv[0] and the CLI's ``#!/usr/bin/env node``
-    shebang resolve regardless of how the backend process was launched.
-
-    Returns ``{"PATH": "<folder>:<current>"}`` when the capability has a
-    value; ``None`` ⇔ no value discovered (CLI not installed) — callers fail
-    fast with a clear error instead of spawning into FileNotFoundError.
+    CLI's bin directory as a standard terminal would resolve it — recorded by
+    capability discovery even when the backend's own service PATH (e.g. a
+    desktop launchd/named-instance environment) does not contain it.
     """
     from flow_sdk.core.capabilities.discovery import get_capability_value
 
@@ -828,10 +840,108 @@ def worker_path_env(worker_type: str) -> dict[str, str] | None:
     if discovered is None or not isinstance(discovered.value, dict):
         return None
     folder = discovered.value.get("path")
-    if not folder:
+    return str(folder) if folder else None
+
+
+def worker_path_env(worker_type: str) -> dict[str, str] | None:
+    """PATH override for spawning this worker, from the discovered capability.
+
+    Prepending the discovered bin folder to the spawn PATH makes both argv[0]
+    and the CLI's ``#!/usr/bin/env node`` shebang resolve regardless of how
+    the backend process was launched.
+
+    Returns ``{"PATH": "<folder>:<current>"}`` when the capability has a
+    value; ``None`` ⇔ no value discovered (CLI not installed) — callers fail
+    fast with a clear error instead of spawning into FileNotFoundError.
+    """
+    folder = worker_bin_folder(worker_type)
+    if folder is None:
         return None
-    current = os.environ.get("PATH", "")
-    return {"PATH": f"{folder}{os.pathsep}{current}" if current else str(folder)}
+    return {"PATH": prepend_path_dir(folder, os.environ.get("PATH", ""))}
+
+
+def prepend_path_dir(folder: str, path: str | None) -> str:
+    """*path* with *folder* prepended; idempotent when it is already first."""
+    base = path or ""
+    if base.split(os.pathsep, 1)[0] == folder:
+        return base
+    return f"{folder}{os.pathsep}{base}" if base else folder
+
+
+def build_worker_spawn_env(
+    worker_type: str,
+    env_from_opts: dict[str, str],
+    base_env: dict[str, str] | None = None,
+) -> dict[str, str]:
+    """Spawn env for a per-turn worker subprocess: base ⊕ options env, with the
+    discovered CLI bin folder pinned FIRST on PATH.
+
+    ``env_from_opts`` (the options' env_vars) wins over the base for every
+    key — including PATH, which ``apply_worker_env`` routinely pins to the
+    backend venv. That pinned PATH is built from the backend's own (possibly
+    stripped) service PATH, so the capability folder is re-prepended AFTER the
+    overlay — otherwise a service PATH that never contained the nvm bin dir
+    resurfaces as "codex not found" despite discovery having recorded it.
+
+    Raises :class:`WorkerSpawnError` when no capability value was discovered
+    (CLI not installed).
+    """
+    folder = worker_bin_folder(worker_type)
+    if folder is None:
+        raise WorkerSpawnError(
+            worker_type,
+            f"{worker_type} CLI not found — no {worker_capability_kind(worker_type)} "
+            "installation discovered",
+        )
+    env = dict(os.environ if base_env is None else base_env)
+    env.update(env_from_opts)
+    env["PATH"] = prepend_path_dir(folder, env.get("PATH"))
+    return env
+
+
+def resolve_worker_argv0(worker_type: str, argv: list[str], env: dict[str, str]) -> list[str]:
+    """Pin ``argv[0]`` to the absolute executable resolved against the SPAWN
+    env's PATH (not the parent process PATH).
+
+    subprocess/libuv resolve a bare argv[0] against the parent process PATH
+    before the child's env applies on some platforms, so a backend started
+    with a stripped service PATH would fail to exec a CLI that capability
+    discovery found through nvm. Resolving against ``env["PATH"]`` — which
+    :func:`build_worker_spawn_env` guarantees starts with the discovered bin
+    folder — makes the spawn independent of how the backend was launched.
+
+    Mutates and returns *argv*. Raises :class:`WorkerSpawnError` when the
+    executable is missing even on the discovery-augmented PATH (e.g. the CLI
+    was uninstalled after discovery).
+    """
+    resolved = shutil.which(argv[0], path=env.get("PATH"))
+    if resolved is None:
+        raise WorkerSpawnError(
+            worker_type,
+            f"{worker_type} executable {argv[0]!r} not found on worker PATH "
+            f"({env.get('PATH')})",
+        )
+    argv[0] = resolved
+    return argv
+
+
+async def latch_spawn_failure(process: "AgenticProcess", error: WorkerSpawnError) -> None:
+    """Route a :class:`WorkerSpawnError` into the standard start-failure path.
+
+    Mirrors what ``start_pty``'s except-clause and ``_on_pty_exit``'s
+    instant-exit classification do for PTY launches: ``status=FAILED`` plus the
+    ``start_failure`` latch, so the UI surfaces the message and auto-recovery
+    stops relaunching until an explicit user retry (``open(retry=True)``).
+    """
+    from flow_sdk.builtin.process_lifecycle import ProcessStatus
+
+    logger.error("AgenticProcess %s: worker spawn failed — %s", process.id, error)
+    process.status = ProcessStatus.FAILED.value
+    process.start_failure = str(error)
+    try:
+        await process.save()
+    except Exception:
+        logger.exception("AgenticProcess %s: failed to persist spawn-failure latch", process.id)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1143,10 +1253,17 @@ __all__ = [
     "WorkerCLIOptions",
     "WorkerExecutionInfo",
     "WorkerDriver",
+    "WorkerSpawnError",
+    "build_worker_spawn_env",
     "factory",
     "get_driver",
+    "latch_spawn_failure",
+    "prepend_path_dir",
+    "resolve_worker_argv0",
     "restart_payload_from_cli_options",
     "stamp_cli_run_id",
     "terminate_asyncio_process_tree",
     "wait_for_asyncio_process_or_kill_tree",
+    "worker_bin_folder",
+    "worker_path_env",
 ]

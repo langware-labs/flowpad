@@ -21,6 +21,8 @@ from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import 
     AgenticContext,
     AgenticProcessContextKey,
     WorkerCLIOptions,
+    WorkerSpawnError,
+    latch_spawn_failure,
     restart_payload_from_cli_options,
 )
 from flow_sdk.builtin.agentic_process.cli_drivers.codex.cli import CodexCliOptions
@@ -195,6 +197,10 @@ class CodexDriver:
                         await process_ref.emit_flow_data(fd.model_dump())
                     except Exception:
                         logger.debug("CodexDriver.headless_prompt: emit_flow_data failed", exc_info=True)
+            except WorkerSpawnError as e:
+                # No subprocess ever started — end the process FAILED with the
+                # start_failure latch (the ERROR frame was already emitted).
+                await latch_spawn_failure(process_ref, e)
             except Exception:
                 logger.exception("CodexDriver.headless_prompt: worker error")
             finally:

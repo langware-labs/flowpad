@@ -25,8 +25,10 @@ from flow_sdk.builtin.agentic_process.cli_drivers.claude.stream_worker import (
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
     AgenticContext,
     WorkerCLIOptions,
+    WorkerSpawnError,
     apply_worker_env,
     apply_worker_secret_env,
+    latch_spawn_failure,
     restart_payload_from_cli_options,
 )
 from flow_sdk.builtin.worker_status import WorkerStatus, _tail_status
@@ -218,6 +220,10 @@ class ClaudeDriver:
                         await process_ref.emit_flow_data(fd.model_dump())
                     except Exception:
                         logger.exception("ClaudeDriver.headless_prompt: emit_flow_data failed")
+            except WorkerSpawnError as e:
+                # No subprocess ever started — end the process FAILED with the
+                # start_failure latch (the ERROR frame was already emitted).
+                await latch_spawn_failure(process_ref, e)
             except Exception:
                 logger.exception("ClaudeDriver.headless_prompt: worker error")
             finally:

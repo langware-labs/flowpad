@@ -32,8 +32,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
-import shutil
 from pathlib import Path
 from typing import AsyncIterator
 
@@ -41,10 +39,12 @@ from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import 
     STREAM_JSON_LINE_LIMIT_BYTES,
     AgenticContext,
     AgenticWorker,
+    WorkerSpawnError,
+    build_worker_spawn_env,
+    resolve_worker_argv0,
     stamp_cli_run_id,
     terminate_asyncio_process_tree,
     wait_for_asyncio_process_or_kill_tree,
-    worker_path_env,
 )
 from flow_sdk.builtin.agentic_process.cli_drivers.codex.cli import CodexCliOptions
 from flow_sdk.builtin.agentic_process.cli_drivers.codex.event_to_flowdata import (
@@ -94,10 +94,13 @@ class CodexCLIStreamWorker(AgenticWorker):
         context: AgenticContext,
     ) -> AsyncIterator[FlowData]:
         self._process_run_id = None
-        argv, env, stdin = self._build_spawn(context, prompt)
-        if argv is None:
-            yield _error("codex binary not found in PATH")
-            return
+        try:
+            argv, env, stdin = self._build_spawn(context, prompt)
+        except WorkerSpawnError as e:
+            # Surface the message on the chat stream, then propagate so the
+            # turn runner latches status=FAILED + start_failure.
+            yield _error(str(e))
+            raise
 
         logger.info("CodexCLIStreamWorker: launching %s", " ".join(argv))
         self._process_run_id = stamp_cli_run_id(env)
@@ -205,13 +208,13 @@ class CodexCLIStreamWorker(AgenticWorker):
         self,
         context: AgenticContext,
         prompt: str,
-    ) -> tuple[list[str] | None, dict[str, str], str | None]:
-        # Discovered harness capability supplies the CLI's bin folder
-        # (terminal-PATH resolution) — None ⇔ codex is not installed.
-        path_env = worker_path_env("codex")
-        if path_env is None:
-            return None, {}, None
+    ) -> tuple[list[str], dict[str, str], str | None]:
+        """Build the ``(argv, env, stdin)`` spawn tuple.
 
+        Raises :class:`WorkerSpawnError` when codex is not installed (no
+        harness capability discovered) or its executable can't be resolved on
+        the spawn PATH.
+        """
         opts = CodexCliOptions(
             workdir=context.workdir,
             env_vars=dict(context.env_vars) if context.env_vars else None,
@@ -233,20 +236,14 @@ class CodexCLIStreamWorker(AgenticWorker):
         # legacy system_prompt_append path remains unused for new launches.
         argv, env_from_opts, stdin = opts.to_spawn(instruction=prompt, system_prompt_append=context.instructions)
 
-        # Inherit os.environ so codex can find creds, PATH, ~/.codex; overlay
-        # the capability's PATH prepend (argv[0] + `#!/usr/bin/env node`
-        # resolution), then caller-provided env_vars last so they win.
-        env = dict(os.environ)
-        env.update(path_env)
-        env.update(env_from_opts)
-        # libuv/uvloop resolves argv[0] against the parent process PATH before
-        # applying the child's env on some platforms. Named desktop instances
-        # commonly have a stripped service PATH even though capability discovery
-        # found Codex through nvm. Pin the already-discovered executable here.
-        resolved = shutil.which(argv[0], path=env.get("PATH"))
-        if resolved is None:
-            return None, {}, None
-        argv[0] = resolved
+        # Inherit os.environ so codex can find creds, ~/.codex; overlay the
+        # caller-provided env_vars (they win, except the discovered capability
+        # bin folder stays first on PATH), then pin argv[0] to the discovered
+        # absolute executable — the subprocess layer resolves a bare argv[0]
+        # against the PARENT process PATH on some platforms, and a desktop
+        # service PATH commonly lacks the nvm bin dir discovery recorded.
+        env = build_worker_spawn_env("codex", env_from_opts)
+        argv = resolve_worker_argv0("codex", argv, env)
         return argv, env, stdin
 
     async def _drain_stderr(self, proc: asyncio.subprocess.Process) -> None:
