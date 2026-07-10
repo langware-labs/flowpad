@@ -406,3 +406,185 @@ async def test_cancel_prompt_without_in_flight_turn_fails(bootstrapped_client, u
     res = ApiResponse(**resp.json())
     assert res.status == ApiResponseStatus.FAIL.value
     assert "in-flight" in (res.message or "").lower()
+
+
+# ── R03: restart_required stays clear across transport switches + turns ──────
+
+
+async def _restart_info(client, pid: str) -> dict:
+    resp = await client.get(f"/api/v1/graph/agentic_process/{pid}/restart-info")
+    assert resp.status_code == 200, resp.text
+    return ApiResponse(**resp.json()).data
+
+
+async def _wait_turn_done(pid: str) -> None:
+    deadline = time.monotonic() + 20
+    while pid in _PROMPT_WORKERS and time.monotonic() < deadline:
+        await asyncio.sleep(0.05)
+    assert pid not in _PROMPT_WORKERS, "headless turn never completed"
+
+
+@pytest.mark.asyncio
+async def test_r03_no_phantom_restart_across_transport_and_turns(
+    bootstrapped_client, user, tmp_path, monkeypatch
+):
+    """QA R03 end-to-end: interactive → cli → headless turn → back to the
+    interactive transport intent — ``restart_required`` stays False and
+    ``restart-info.changed`` stays empty at EVERY settled point. Transport
+    switches only move transport-derived launch fields; a turn's session
+    rotation only moves session-derived fields; neither is config drift."""
+    patch_build_spawn(
+        monkeypatch,
+        ClaudeCLIStreamWorker,
+        fake_stream_argv(
+            _fake_stream_lines(
+                [
+                    {"type": "system", "subtype": "init"},
+                    {"type": "result", "subtype": "success", "is_error": False, "result": "ok"},
+                ]
+            )
+        ),
+        env=dict(os.environ),
+    )
+
+    pid = await create_agentic_process(
+        bootstrapped_client, pty_mode=True, visible=True, workdir=str(tmp_path)
+    )
+    base = f"/api/v1/graph/agentic_process/{pid}"
+
+    # Settled point 1 — simulate a successful interactive start (the snapshot
+    # capture start_pty performs, without spawning a real PTY).
+    proc = await AgenticProcess.get_by_id(pid)
+    proc.status = "running"
+    proc.last_started_snapshot = proc._restart_snapshot_payload()
+    proc.last_started_hash = proc._restart_snapshot()
+    proc.restart_required = False
+    await proc.save()
+    info = await _restart_info(bootstrapped_client, pid)
+    assert info["restart_required"] is False and info["changed"] == [], info
+
+    # Settled point 2 — switch to the CLI (headless) transport over HTTP.
+    resp = await bootstrapped_client.post(f"{base}/switch-mode", json={"mode": "cli"})
+    assert resp.status_code == 200, resp.text
+    assert ApiResponse(**resp.json()).status == ApiResponseStatus.SUCCESS.value
+    info = await _restart_info(bootstrapped_client, pid)
+    assert info["restart_required"] is False, "transport switch must not glow restart"
+    assert info["changed"] == [], info["changed"]
+
+    # Settled point 3 — run a headless turn; the fake worker reports a session
+    # id the process didn't have (the expected rotation on adopt/resume).
+    resp = await bootstrapped_client.post(f"{base}/execute", json={"instruction": "hi"})
+    assert resp.status_code == 200, resp.text
+    await _wait_turn_done(pid)
+    entity = await get_agentic_process(bootstrapped_client, pid)
+    assert entity["session_id"] == _FAKE_SID
+    info = await _restart_info(bootstrapped_client, pid)
+    assert info["restart_required"] is False and info["changed"] == [], info["changed"]
+    assert entity["restart_required"] is False
+
+    # Settled point 4 — flip the transport intent back to interactive. Even
+    # BEFORE start_pty recaptures its snapshot, the intent flip alone must not
+    # read as drift (transport-derived fields are excluded from comparators).
+    proc = await AgenticProcess.get_by_id(pid)
+    proc.pty_mode = True
+    await proc.save()
+    info = await _restart_info(bootstrapped_client, pid)
+    assert info["restart_required"] is False and info["changed"] == [], info
+
+
+@pytest.mark.asyncio
+async def test_r03_session_rotation_does_not_clear_genuine_drift(
+    bootstrapped_client, user, tmp_path, monkeypatch
+):
+    """A turn whose worker rotates the session id must NOT silently clear a
+    restart_required caused by real config drift (model changed while the
+    process is running). Guards the old full-payload re-capture behavior."""
+    patch_build_spawn(
+        monkeypatch,
+        ClaudeCLIStreamWorker,
+        fake_stream_argv(
+            _fake_stream_lines(
+                [
+                    {"type": "system", "subtype": "init"},
+                    {"type": "result", "subtype": "success", "is_error": False, "result": "ok"},
+                ]
+            )
+        ),
+        env=dict(os.environ),
+    )
+
+    pid = await _create_headless_process(bootstrapped_client, str(tmp_path))
+    base = f"/api/v1/graph/agentic_process/{pid}"
+
+    # Baseline: as if launched with sonnet…
+    proc = await AgenticProcess.get_by_id(pid)
+    proc.cli_config = {"model": "claude-sonnet-4-6"}
+    proc.status = "running"
+    proc.last_started_snapshot = proc._restart_snapshot_payload()
+    proc.last_started_hash = proc._restart_snapshot()
+    proc.restart_required = False
+    await proc.save()
+
+    # …then the user switches the model: genuine drift.
+    proc = await AgenticProcess.get_by_id(pid)
+    proc.cli_config = {"model": "claude-opus-4-7"}
+    await proc.save()
+    info = await _restart_info(bootstrapped_client, pid)
+    assert info["restart_required"] is True
+
+    # A turn with the expected session rotation runs…
+    resp = await bootstrapped_client.post(f"{base}/execute", json={"instruction": "hi"})
+    assert resp.status_code == 200, resp.text
+    await _wait_turn_done(pid)
+
+    # …and the drift is still flagged afterwards.
+    entity = await get_agentic_process(bootstrapped_client, pid)
+    assert entity["session_id"] == _FAKE_SID
+    assert entity["restart_required"] is True, (
+        "session adoption must not bless genuine config drift"
+    )
+    info = await _restart_info(bootstrapped_client, pid)
+    fields = {(c["section"], c["field"]) for c in info["changed"]}
+    assert ("worker", "model") in fields
+
+
+@pytest.mark.asyncio
+async def test_r03_spurious_mid_turn_rotation_ignored(
+    bootstrapped_client, user, tmp_path, monkeypatch
+):
+    """Only the turn-INITIAL session report is adopted. A misbehaving extractor
+    flapping ids mid-turn (simulated by patching ``get_session_id``) must not
+    churn the persisted session id."""
+    patch_build_spawn(
+        monkeypatch,
+        ClaudeCLIStreamWorker,
+        fake_stream_argv(
+            _fake_stream_lines(
+                [
+                    {"type": "system", "subtype": "init"},
+                    {"type": "system", "subtype": "status"},
+                    {"type": "result", "subtype": "success", "is_error": False, "result": "ok"},
+                ]
+            )
+        ),
+        env=dict(os.environ),
+    )
+    calls = {"n": 0}
+
+    def flapping_get_session_id(self):
+        calls["n"] += 1
+        return "sid-first" if calls["n"] == 1 else f"sid-flap-{calls['n']}"
+
+    monkeypatch.setattr(ClaudeCLIStreamWorker, "get_session_id", flapping_get_session_id)
+
+    pid = await _create_headless_process(bootstrapped_client, str(tmp_path))
+    base = f"/api/v1/graph/agentic_process/{pid}"
+
+    resp = await bootstrapped_client.post(f"{base}/execute", json={"instruction": "hi"})
+    assert resp.status_code == 200, resp.text
+    await _wait_turn_done(pid)
+
+    assert calls["n"] > 1, "guard not exercised: worker reported a sid only once"
+    entity = await get_agentic_process(bootstrapped_client, pid)
+    assert entity["session_id"] == "sid-first"
+    assert entity["restart_required"] is False

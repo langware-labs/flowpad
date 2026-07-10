@@ -154,22 +154,16 @@ class CopilotDriver:
         except Exception:
             logger.exception("CopilotDriver.headless_prompt: start notify failed")
 
+        # Session adoption (and its restart-snapshot bookkeeping) is owned by
+        # AgenticProcess.adopt_worker_session; the turn-scoped adopter trusts
+        # only the turn-initial report (spurious-rotation guard). Resumed
+        # sessions no-op inside adopt_worker_session when the id is unchanged.
+        adopt_session = process_ref.make_turn_session_adopter("CopilotDriver.headless_prompt")
+
         async def _run_turn() -> None:
-            # Resumed sessions already have the right id persisted; a fresh start
-            # persists copilot's real id once the worker reports it (below).
-            session_id_persisted = resumable
             try:
                 async for fd in worker.execute(prompt=full_prompt, context=context):
-                    sid = worker.get_session_id()
-                    if sid and sid != process_ref.session_id:
-                        process_ref.session_id = sid
-                        session_id_persisted = False
-                    if sid and not session_id_persisted:
-                        try:
-                            await process_ref.save()
-                            session_id_persisted = True
-                        except Exception:
-                            logger.debug("CopilotDriver.headless_prompt: session save failed", exc_info=True)
+                    await adopt_session(worker.get_session_id())
                     try:
                         await process_ref.emit_flow_data(fd.model_dump())
                     except Exception:

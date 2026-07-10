@@ -30,7 +30,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ExecutionSettingsPopover } from './ExecutionSettingsPopover';
 import { notify } from '@src/notifications/notify';
 import { CompactExecutionInput } from './CompactExecutionInput';
-import { groupTurnEvents, splitLiveGroup } from '@src/components/floating-chat/groupTurnEvents';
+import { splitLiveGroup, useTurnGroups, type TurnGroup } from '@src/components/floating-chat/groupTurnEvents';
 import { TurnGroupsList } from './TurnGroupsList';
 import { ChatActivityLine } from './ChatActivityLine';
 import { TurnEventChip } from '@src/components/floating-chat/TurnEventChip';
@@ -50,6 +50,8 @@ import {
   normalizeWorkerType,
   type WorkerType,
 } from '@src/components/workers/worker-types';
+
+const EMPTY_TURN_GROUPS: TurnGroup[] = [];
 
 interface EntityExecutionPanelProps {
   /**
@@ -346,7 +348,11 @@ export function EntityExecutionPanel({
   // grouped non-text events (tool calls, reasoning, status, errors) rendered
   // as expandable summary rows. See `groupTurnEvents` for the partitioning
   // rules.
-  const turnGroups = useMemo(() => (dense ? groupTurnEvents(items) : []), [dense, items]);
+  // `useTurnGroups` is incremental and identity-stable across live appends
+  // (QA D10); hooks can't be conditional, so it always runs and the non-dense
+  // layout just ignores the (cheap, O(delta)) result.
+  const groupedItems = useTurnGroups(items);
+  const turnGroups = dense ? groupedItems : EMPTY_TURN_GROUPS;
 
   // Dense (chat) mode: a live "agent is working" footer — the SAME dots +
   // elapsed-clock line the interactive chat pane shows (ChatActivityLine),

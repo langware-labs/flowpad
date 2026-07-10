@@ -3,12 +3,12 @@ import { AutoScrollContainer, AutoScrollContainerHandle } from '@src/components/
 import { ChatActivityLine } from '@src/components/entity-execution-panel/ChatActivityLine';
 import { TurnGroupsList } from '@src/components/entity-execution-panel/TurnGroupsList';
 import { useTurnActivity } from '@src/components/entity-execution-panel/hooks/useTurnActivity';
-import { groupTurnEvents } from '@src/components/floating-chat/groupTurnEvents';
+import { useTurnGroups } from '@src/components/floating-chat/groupTurnEvents';
 import { useAgenticProcessStream } from '@src/hooks/use-agentic-process-stream';
 import { cn } from '@src/lib/utils';
 import { Trans } from '@lingui/react/macro';
 import { MessageSquare } from 'lucide-react';
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { PlanInteractionBar } from './PlanInteractionBar';
 import { useTurnCompletionReconcile } from './useTurnCompletionReconcile';
 
@@ -45,7 +45,9 @@ export function SimpleChatPane({ process, className }: SimpleChatPaneProps) {
   useTurnCompletionReconcile(process);
 
   const items = useAgenticProcessStream(process);
-  const turnGroups = useMemo(() => groupTurnEvents(items), [items]);
+  // Incremental grouping: committed groups keep identity across live appends
+  // so the memoized rows below only re-render the trailing group (QA D10).
+  const turnGroups = useTurnGroups(items);
   const activity = useTurnActivity(process);
 
   const scrollRef = useRef<AutoScrollContainerHandle>(null);
