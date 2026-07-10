@@ -227,13 +227,12 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   // not reactive, so subscribe via useEntity and surface the banner here.
   const { data: liveProcess } = useEntity<AgenticProcess>(process?.typeId ?? null);
   const liveStartFailure = liveProcess?.start_failure ?? null;
-  // The chat⇄terminal toggle is only enabled while the process is ready for input
-  // (RUNNING and no turn in flight). A mode switch mid-turn is 409'd by the backend
-  // on the SAME `is_turn_busy` predicate that sets the wire `busy` boolean, so
-  // gating on `isReadyForInput` (reactive `status === RUNNING && !busy`) keeps the
-  // toggle in lock-step with the AP and can never land on a 409 hole. `liveProcess` is the reactive
-  // entity; the loader `process` is the fallback for the first render before the
-  // subscription resolves.
+  // The chat⇄terminal toggle is enabled while the process is ready for input:
+  // RUNNING, fresh headless, or headless-idle, with no turn in flight. A mode
+  // switch mid-turn is 409'd by the backend on the SAME `is_turn_busy` predicate
+  // that sets the wire `busy` boolean, so `isReadyForInput` keeps the toggle in
+  // lock-step with the AP and cannot land on a 409 hole. `liveProcess` is the
+  // reactive entity; the loader `process` is the first-render fallback.
   const awaitingUserInput = isReadyForInput(liveProcess ?? process ?? {});
   useEffect(() => {
     if (!liveStartFailure || !process) return;
@@ -503,10 +502,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   const markdownDocs = process?.markdown_docs ?? EMPTY_DOCS;
   // Open via the shared file dispatch (an .md routes to the markdown asset
   // editor, rendered — the same chokepoint every "open this file" surface uses).
-  const handleOpenMarkdown = useCallback(
-    (path: string) => navigation.openFile(path),
-    [navigation],
-  );
+  const handleOpenMarkdown = useCallback((path: string) => navigation.openFile(path), [navigation]);
 
   // On mount (and whenever the process identity changes), proactively call
   // getPlan() once so the button restores after a reload — the line trigger
@@ -933,7 +929,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId]);
+  }, [sessionId, isHeadless]);
 
   // Intercept Cmd+F / Ctrl+F at the native DOM level so we can call preventDefault()
   // before the browser opens its own find bar. xterm's attachCustomKeyEventHandler

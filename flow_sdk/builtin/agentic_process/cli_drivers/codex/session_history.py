@@ -29,6 +29,8 @@ from flow_sdk.external_apis.llm.llm_drivers.flow_data import (
     FlowDataType,
     FlowElementType,
 )
+from flow_sdk.transcript_analyzer import AgentTranscriptFile, EntryKind
+from flow_sdk.transcript_analyzer.process_entry import ProcessEntry
 
 logger = logging.getLogger(__name__)
 _LAUNCH_LOOKBACK = timedelta(seconds=30)
@@ -173,21 +175,20 @@ def load_session_history(session_id: str, process_id: str | None = None) -> list
 
 
 def load_transcript_history(transcript: Path) -> list[FlowData]:
-    """Load a specific Codex transcript file as FlowData."""
+    """Load a Codex transcript through the canonical typed parser."""
     history: list[FlowData] = []
     try:
-        with open(transcript, "r", encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    entry = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                history.extend(_entry_to_flow_data(entry))
-    except OSError:
-        return history
+        parsed = AgentTranscriptFile("codex", transcript)
+    except Exception:
+        logger.debug("Codex history parse failed for %s", transcript, exc_info=True)
+        return []
+
+    for entry in parsed.entries:
+        # Session metadata and unknown parser fallbacks are discovery/debug
+        # details, not durable conversation rows.
+        if entry.kind in (EntryKind.META, EntryKind.UNKNOWN):
+            continue
+        history.extend(_entry_to_replay_flow_data(entry))
 
     return history
 
@@ -208,98 +209,72 @@ def _entry_to_flow_data(entry: dict) -> list[FlowData]:
     transcript time instead of the get-history call time.
     """
     etype = entry.get("type")
-    entry_ts = entry.get("timestamp") or ""
 
     # ── Process-local stream event shape ──────────────────────────────────────
     if etype == "item.completed":
-        item = entry.get("item") or {}
-        return _item_to_flow_data(item, entry_ts)
+        return []
 
     # ── codex sessions/* rollout shape ────────────────────────────────────────
     if etype == "response_item":
-        payload = entry.get("payload") or {}
-        return _response_item_to_flow_data(payload, entry_ts)
-
-    return []
-
-
-def _item_to_flow_data(item: dict, entry_ts: str = "") -> list[FlowData]:
-    itype = item.get("type")
-    if itype == "agent_message":
-        text = item.get("text") or ""
-        if not text:
-            return []
-        return [FlowData(
-            flow_value=text,
-            created_time=entry_ts,
-            attributes={
-                "element-type": FlowElementType.CHAT,
-                "data-type": FlowDataType.TEXT,
-                "role": "assistant",
-            },
-        )]
-    if itype == "command_execution":
-        return [FlowData(
-            flow_value={
-                "command": item.get("command"),
-                "output": item.get("aggregated_output"),
-                "exit_code": item.get("exit_code"),
-            },
-            created_time=entry_ts,
-            attributes={
-                "element-type": FlowElementType.TOOL_RESULT,
-                "data-type": FlowDataType.OBJECT,
-                "tool-name": "shell",
-            },
-        )]
-    if itype == "file_change":
-        return [FlowData(
-            flow_value={"changes": item.get("changes")},
-            created_time=entry_ts,
-            attributes={
-                "element-type": FlowElementType.TOOL_RESULT,
-                "data-type": FlowDataType.OBJECT,
-                "tool-name": "file_change",
-            },
-        )]
-    return []
-
-
-def _response_item_to_flow_data(payload: dict, entry_ts: str = "") -> list[FlowData]:
-    if payload.get("type") != "message":
         return []
-    role = payload.get("role")
-    content = payload.get("content") or []
-    text_parts: list[str] = []
-    for block in content:
-        if not isinstance(block, dict):
-            continue
-        if block.get("type") in ("input_text", "output_text"):
-            text = block.get("text") or ""
-            # Skip codex's own permission/apps/skills/plugins prelude blocks.
-            if text and not text.startswith("<"):
-                text_parts.append(text)
-    text = "\n".join(text_parts).strip()
-    if not text:
-        return []
-    if role == "user":
-        return [FlowData(
-            flow_value=text,
-            created_time=entry_ts,
-            attributes={
-                "element-type": FlowElementType.USER_MESSAGE,
-                "data-type": FlowDataType.TEXT,
-                "role": "user",
-            },
-        )]
-    if role in ("assistant", "developer"):
-        return [FlowData(
-            flow_value=text,
-            created_time=entry_ts,
-            attributes={
-                "element-type": FlowElementType.CHAT,
-                "data-type": FlowDataType.TEXT,
-                "role": "assistant",
-            },
-        )]
+
     return []
+
+
+_TOOL_USE_KINDS = frozenset({
+    "tool_use",
+    "shell_command",
+    "file_write",
+    "file_edit",
+    "file_read",
+    "skill_call",
+    "search",
+    "web_fetch",
+    "todo_update",
+    "agent_spawn",
+    "exit_plan_mode",
+})
+
+
+def _entry_to_replay_flow_data(entry) -> list[FlowData]:
+    process_entry = ProcessEntry(
+        transcript_entry=entry,
+        observation_kind="replay",
+    ).to_dict()
+    frames = entry.to_flow_data()
+    if not frames:
+        frames = [FlowData(
+            flow_value={},
+            created_time=entry.timestamp or "",
+            attributes={
+                "element-type": _element_type_for_kind(entry.kind.value),
+                "data-type": FlowDataType.OBJECT,
+            },
+        )]
+
+    for frame in frames:
+        frame.process_entry = process_entry
+        frame.attributes.setdefault("subtype", entry.kind.value)
+        frame.attributes.setdefault("observation-kind", "replay")
+        frame.attributes.setdefault("transcript-entry-id", entry.id)
+        if entry.entry_id:
+            frame.attributes.setdefault("transcript-source-entry-id", entry.entry_id)
+        phase = getattr(entry, "phase", None)
+        if phase:
+            frame.attributes.setdefault("phase", str(phase))
+        system_subtype = getattr(entry, "subtype", None)
+        if entry.kind is EntryKind.SYSTEM and system_subtype:
+            frame.attributes["subtype"] = str(system_subtype)
+    return frames
+
+
+def _element_type_for_kind(kind: str) -> str:
+    if kind == "user_message":
+        return FlowElementType.USER_MESSAGE
+    if kind == "assistant_message":
+        return FlowElementType.CHAT
+    if kind in _TOOL_USE_KINDS:
+        return FlowElementType.TOOL_CALL
+    if kind == "tool_result":
+        return FlowElementType.TOOL_RESULT
+    return FlowElementType.STATUS

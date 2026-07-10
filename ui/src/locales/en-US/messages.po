@@ -583,6 +583,10 @@ msgstr "Accept"
 msgid "Accepting…"
 msgstr "Accepting…"
 
+#: src/pages/flow-page/vibe-model-select.tsx
+msgid "Accurate"
+msgstr "Accurate"
+
 #: src/components/graph-context/RunAutomationPanel.tsx
 msgid "Act as the \"{name}\" agent and work on the current context."
 msgstr "Act as the \"{name}\" agent and work on the current context."
@@ -868,6 +872,10 @@ msgstr "All"
 msgid "All calls"
 msgstr "All calls"
 
+#: src/components/code-editor/AssetCompareView.tsx
+msgid "All changes"
+msgstr "All changes"
+
 #: src/components/account/database-section.tsx
 msgid "All data cleared. Redirecting..."
 msgstr "All data cleared. Redirecting..."
@@ -1005,6 +1013,11 @@ msgstr "Analysis Report"
 msgid "Analyze"
 msgstr "Analyze"
 
+#: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Analyze and improve"
+msgstr "Analyze and improve"
+
 #: src/components/lens-viewer/shared/transcript-features/AnalysisControls.tsx
 msgid "Analyze this session: goals, issues, divergences and skill performance on a timeline"
 msgstr "Analyze this session: goals, issues, divergences and skill performance on a timeline"
@@ -1012,6 +1025,10 @@ msgstr "Analyze this session: goals, issues, divergences and skill performance o
 #: src/pages/live-status/LiveStatus.tsx
 msgid "analyzed"
 msgstr "analyzed"
+
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Analyzing asset"
+msgstr "Analyzing asset"
 
 #: src/components/lens-viewer/shared/transcript-features/AnalysisControls.tsx
 msgid "Analyzing…"
@@ -1230,6 +1247,14 @@ msgstr "asset"
 msgid "Asset cleanup"
 msgstr "Asset cleanup"
 
+#: src/components/code-editor/AssetCompareView.tsx
+msgid "Asset compare"
+msgstr "Asset compare"
+
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Asset has changes"
+msgstr "Asset has changes"
+
 #: src/components/assets/AssetsPage.tsx
 msgid "Asset has no file on disk"
 msgstr "Asset has no file on disk"
@@ -1409,6 +1434,10 @@ msgstr "Backing up..."
 #: src/components/account/database-section.tsx
 msgid "Backup DB"
 msgstr "Backup DB"
+
+#: src/pages/flow-page/vibe-model-select.tsx
+msgid "Balanced"
+msgstr "Balanced"
 
 #: src/components/hooks-view/HookEditor.tsx
 msgid "Bash Command *"
@@ -1605,6 +1634,8 @@ msgstr "Can't open terminal"
 #: src/components/account/secrets-section.tsx
 #: src/components/anchored-markdown/CommentPin.tsx
 #: src/components/artifacts/artifact-form.tsx
+#: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/assets/delete-asset-modal.tsx
 #: src/components/assets/editor/markdown/ReviewSurface.tsx
 #: src/components/assets/editor/run/useRunOnFile.tsx
@@ -1676,6 +1707,12 @@ msgstr "Cannot determine settings file"
 #: src/components/hooks-view/HooksBrowser.tsx
 msgid "Cannot edit"
 msgstr "Cannot edit"
+
+#: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Cannot improve asset"
+msgstr "Cannot improve asset"
 
 #: src/components/chats-navigator/ChatsNavigator.tsx
 msgid "Cannot open"
@@ -2713,6 +2750,7 @@ msgstr "Could not save changes"
 #: src/components/conversation/asset-review/useRunReceivedSkill.tsx
 #: src/pages/flow-page/use-start-vibe-session.ts
 #: src/pages/flow-page/vibe-no-process-workspace.tsx
+#: src/pages/flow-page/vibe-no-process-workspace.tsx
 msgid "Could not start"
 msgstr "Could not start"
 
@@ -3302,6 +3340,10 @@ msgstr "Deriving with Claude…"
 #: src/components/version-popover/diagnose-modal.tsx
 msgid "Describe the issue or paste the error, then run the diagnosis. Leave it empty for a full diagnostic sweep. The assistant inspects Flowpad, repairs what's safe, and records the result."
 msgstr "Describe the issue or paste the error, then run the diagnosis. Leave it empty for a full diagnostic sweep. The assistant inspects Flowpad, repairs what's safe, and records the result."
+
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Describe the issue to analyze and improve…"
+msgstr "Describe the issue to analyze and improve…"
 
 #: src/components/tasks-viewer/TasksViewer.tsx
 #~ msgid "Describe the task..."
@@ -4565,6 +4607,7 @@ msgstr "Failed to start session"
 
 #: src/pages/flow-page/use-start-vibe-session.ts
 #: src/pages/flow-page/vibe-no-process-workspace.tsx
+#: src/pages/flow-page/vibe-no-process-workspace.tsx
 msgid "Failed to start the build session."
 msgstr "Failed to start the build session."
 
@@ -4602,6 +4645,7 @@ msgid "Failed to upload the zip file. Please try again."
 msgstr "Failed to upload the zip file. Please try again."
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
+#: src/pages/flow-page/vibe-model-select.tsx
 msgid "Fast"
 msgstr "Fast"
 
@@ -5532,6 +5576,10 @@ msgstr "Imported"
 msgid "Improve"
 msgstr "Improve"
 
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Improve failed"
+msgstr "Improve failed"
+
 #: src/components/terminal/interactive-terminal/side-windows/AnalysisPanel.tsx
 msgid "Improve from this analysis"
 msgstr "Improve from this analysis"
@@ -5539,6 +5587,14 @@ msgstr "Improve from this analysis"
 #: src/components/assets/editor/skill/UsagePanel.tsx
 msgid "Improve skipped"
 msgstr "Improve skipped"
+
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Improvement ready"
+msgstr "Improvement ready"
+
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Improving asset"
+msgstr "Improving asset"
 
 #: src/components/terminal/interactive-terminal/side-windows/AnalysisPanel.tsx
 msgid "Improving…"
@@ -5739,6 +5795,10 @@ msgstr "Instructions"
 #: src/components/app-host/AppHost.tsx
 msgid "Invalid App Path"
 msgstr "Invalid App Path"
+
+#: src/components/code-editor/AssetCompareView.tsx
+msgid "Invalid asset comparison."
+msgstr "Invalid asset comparison."
 
 #: src/components/artifacts/artifact-metadata-editor.tsx
 #: src/components/hooks-view/hooks-view.tsx
@@ -6180,6 +6240,10 @@ msgstr "Loading {0}..."
 #: src/components/assets/editor/EntityResolutionGate.tsx
 msgid "Loading {typeLabel}…"
 msgstr "Loading {typeLabel}…"
+
+#: src/components/code-editor/AssetCompareView.tsx
+msgid "Loading asset diff…"
+msgstr "Loading asset diff…"
 
 #: src/components/milkdown-editor/side-windows/BacklinksTab.tsx
 msgid "Loading backlinks…"
@@ -6714,8 +6778,14 @@ msgid "model"
 msgstr "model"
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/pages/flow-page/vibe-model-select.tsx
+#: src/pages/flow-page/vibe-model-select.tsx
 msgid "Model"
 msgstr "Model"
+
+#: src/components/entity-execution-panel/EntityExecutionPanel.tsx
+msgid "Model not saved"
+msgstr "Model not saved"
 
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 msgid "Models"
@@ -7117,6 +7187,7 @@ msgstr "No bookmarks yet"
 msgid "No changes"
 msgstr "No changes"
 
+#: src/components/code-editor/AssetCompareView.tsx
 #: src/components/code-editor/DiffContent.tsx
 #: src/components/code-editor/DiffViewer.tsx
 msgid "No changes to show"
@@ -7299,6 +7370,10 @@ msgstr "No files open"
 #: src/components/directory-tree/DirectoryTree.tsx
 msgid "No files or folders"
 msgstr "No files or folders"
+
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "No findings found"
+msgstr "No findings found"
 
 #: src/components/execute-flow-view/flows-panel/flows-panel.tsx
 msgid "No flows connected to this file"
@@ -7945,6 +8020,7 @@ msgstr "Nothing shared on this process."
 msgid "Nothing to commit"
 msgstr "Nothing to commit"
 
+#: src/pages/flow-page/vibe-no-process-workspace.tsx
 #: src/pages/flow-page/vibe-workspace.tsx
 msgid "Nothing to display yet — try one to get started"
 msgstr "Nothing to display yet — try one to get started"
@@ -7956,6 +8032,10 @@ msgstr "Nothing to do."
 #: src/components/assets/editor/skill/UsagePanel.tsx
 msgid "Nothing to improve"
 msgstr "Nothing to improve"
+
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Nothing to save"
+msgstr "Nothing to save"
 
 #: src/components/history-dropdown.tsx
 msgid "Nothing yet!"
@@ -8426,6 +8506,10 @@ msgstr "Open transcript"
 #: src/components/account/secrets-section.tsx
 msgid "OPENAI_API_KEY"
 msgstr "OPENAI_API_KEY"
+
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Opened Asset compare."
+msgstr "Opened Asset compare."
 
 #: src/components/open-project-component/open-project-component.tsx
 msgid "Opened existing project"
@@ -9388,6 +9472,7 @@ msgid "referenced but not in entities table"
 msgstr "referenced but not in entities table"
 
 #: src/components/capabilities-view/CapabilitiesView.tsx
+#: src/components/code-editor/AssetCompareView.tsx
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/contact-picker/AddressBookButton.tsx
 #: src/components/cost-dashboard/CostDashboard.tsx
@@ -10069,6 +10154,7 @@ msgstr "Sandbox Metrics"
 
 #: src/components/account/secrets-section.tsx
 #: src/components/anchored-markdown/CommentPin.tsx
+#: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/assets/editor/skill/SkillActivationEditor.tsx
 #: src/components/assets/toolbar/AssetToolbar.tsx
 #: src/components/cron-view/CronForm.tsx
@@ -10098,6 +10184,7 @@ msgstr "Save changes"
 msgid "Save Changes"
 msgstr "Save Changes"
 
+#: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/execute-flow-view/instruction-panel/instruction-panel.tsx
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
 #: src/components/triggers-view/TriggerEditor.tsx
@@ -10108,9 +10195,17 @@ msgstr "Save failed"
 msgid "Save Failed"
 msgstr "Save Failed"
 
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Save the current asset changes as a version before running improvement."
+msgstr "Save the current asset changes as a version before running improvement."
+
 #: src/components/api-keys-view/api-keys-view.tsx
 msgid "Save this API key now. You won't be able to see it again!"
 msgstr "Save this API key now. You won't be able to see it again!"
+
+#: src/components/code-editor/AssetCompareView.tsx
+msgid "Save version"
+msgstr "Save version"
 
 #: src/components/assets/editor/skill/SkillActivationEditor.tsx
 #: src/components/triggers-view/TriggerEditor.tsx
@@ -11731,6 +11826,10 @@ msgstr "The <0>flow-sdk-mcp</0> server is required to run workflows with progres
 msgid "The agent you're looking for doesn't exist or is not available."
 msgstr "The agent you're looking for doesn't exist or is not available."
 
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "The analysis completed but did not produce asset-scoped findings."
+msgstr "The analysis completed but did not produce asset-scoped findings."
+
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 #~ msgid "The Anthropic API may be slow or unresponsive."
 #~ msgstr "The Anthropic API may be slow or unresponsive."
@@ -11739,6 +11838,7 @@ msgstr "The agent you're looking for doesn't exist or is not available."
 msgid "The artifact has been removed successfully."
 msgstr "The artifact has been removed successfully."
 
+#: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/assets/editor/skill/UsagePanel.tsx
 msgid "The asset matches HEAD."
 msgstr "The asset matches HEAD."
@@ -11837,6 +11937,10 @@ msgstr "Thinking:"
 msgid "This action cannot be undone."
 msgstr "This action cannot be undone."
 
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "This asset has no file path."
+msgstr "This asset has no file path."
+
 #: src/components/chats-navigator/ChatsNavigator.tsx
 msgid "This chat has no resumable session."
 msgstr "This chat has no resumable session."
@@ -11869,6 +11973,10 @@ msgstr "This file has no backing entity yet."
 msgid "This file isn't text"
 msgstr "This file isn't text"
 
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "This folder-backed asset has no main file metadata."
+msgstr "This folder-backed asset has no main file metadata."
+
 #: src/components/persistent-iframe.tsx
 msgid "This may take up to 20 seconds"
 msgstr "This may take up to 20 seconds"
@@ -11884,6 +11992,10 @@ msgstr "This permanently removes the file from disk. This cannot be undone."
 #: src/components/graph-context/GraphContextViewer.tsx
 msgid "This permanently removes the saved context snapshot. This cannot be undone."
 msgstr "This permanently removes the saved context snapshot. This cannot be undone."
+
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "This process has no transcript session yet."
+msgstr "This process has no transcript session yet."
 
 #: src/components/version-popover/diagnose-modal.tsx
 #~ msgid "This runs in the background — feel free to close this and keep working. When it's done, the result (and any actions) will be waiting on your Home feed."
@@ -12783,6 +12895,10 @@ msgstr "What would you like to build, {firstName}?"
 #: src/pages/flow-page/vibe-new-chat.tsx
 msgid "What would you like to build?"
 msgstr "What would you like to build?"
+
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "What would you like to fix?"
+msgstr "What would you like to fix?"
 
 #: src/components/greeting/Greeting.tsx
 msgid "What would you like to work on today?"

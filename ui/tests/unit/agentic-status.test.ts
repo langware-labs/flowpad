@@ -301,12 +301,13 @@ describe('supportedExecutionModes', () => {
 // ─── isReadyForInput / isBusy — the ONE gate, two orthogonal axes ────────────
 //
 // Realigned: ``isBusy`` reads the separate ``busy`` boolean; ``isReadyForInput``
-// ⇔ ``!busy && (status === RUNNING || headless-idle)`` where headless-idle =
-// CLI transport (``!pty_mode``) + STOPPED + a live ``session_id``. They do NOT
-// re-derive from workerStatus. "ready" and "busy" are disjoint by construction.
+// ⇔ ``!busy && (status === RUNNING || fresh-headless || headless-idle)`` where
+// fresh-headless = CLI transport + NEW, and headless-idle = CLI transport +
+// STOPPED + a live ``session_id``. They do NOT re-derive from workerStatus.
+// "ready" and "busy" are disjoint by construction.
 
 describe('isReadyForInput', () => {
-  it('is true exactly for RUNNING and not busy', () => {
+  it('is true for RUNNING and not busy', () => {
     expect(isReadyForInput({ status: ProcessStatus.RUNNING, busy: false })).toBe(true);
     expect(isReadyForInput({ status: ProcessStatus.RUNNING })).toBe(true); // busy defaults falsy
   });
@@ -316,7 +317,6 @@ describe('isReadyForInput', () => {
   });
 
   it.each([
-    ProcessStatus.NEW,
     ProcessStatus.STARTING, // live bookend, but the worker isn't fully up → not ready
     ProcessStatus.STOPPING,
     ProcessStatus.STOPPED, // no session_id here → not headless-idle → not ready
@@ -338,6 +338,12 @@ describe('isReadyForInput', () => {
 
   it('is false when there is no status at all', () => {
     expect(isReadyForInput({})).toBe(false);
+  });
+
+  it('is true for a fresh headless process and false for a fresh PTY process', () => {
+    expect(isReadyForInput({ status: ProcessStatus.NEW, busy: false, pty_mode: false })).toBe(true);
+    expect(isReadyForInput({ status: ProcessStatus.NEW, busy: false, pty_mode: true })).toBe(false);
+    expect(isReadyForInput({ status: ProcessStatus.NEW, busy: true, pty_mode: false })).toBe(false);
   });
 });
 
@@ -374,7 +380,7 @@ describe('isReadyForInput — headless-idle', () => {
     ).toBe(false);
   });
 
-  it.each([ProcessStatus.NEW, ProcessStatus.STARTING, ProcessStatus.FAILED])(
+  it.each([ProcessStatus.STARTING, ProcessStatus.FAILED])(
     'is false for CLI %s + session_id (only STOPPED qualifies as headless-idle)',
     (s) => {
       expect(isReadyForInput({ status: s, busy: false, pty_mode: false, session_id: 'sess-abc' })).toBe(false);

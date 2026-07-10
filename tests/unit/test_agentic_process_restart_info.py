@@ -64,6 +64,13 @@ def test_diff_helper_normalizes_enums_and_paths():
     assert AgenticProcess._diff_snapshot_fields(loaded, current) == []
 
 
+def test_diff_helper_ignores_transport_derived_worker_fields():
+    loaded = {"generic": {}, "worker": {"ephemeral": False, "json_stream": False}}
+    current = {"generic": {}, "worker": {"ephemeral": True, "json_stream": True}}
+
+    assert AgenticProcess._diff_snapshot_fields(loaded, current) == []
+
+
 # ── restart_info_action ───────────────────────────────────────────────────────
 
 

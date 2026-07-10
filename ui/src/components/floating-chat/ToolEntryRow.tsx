@@ -164,8 +164,17 @@ function ExpandableRow({
 function ToolPairItem({ pair }: { pair: ToolPair }) {
   const toolName = pair.call.attributes['tool-name'] || 'Tool';
   const summary = describeToolInput(pair.call.data);
-  const inFlight = pair.result === null;
-  const isError = pair.result?.attributes['outcome'] === 'error';
+  // Replay emits durable semantic operations (file_write, file_edit,
+  // skill_call, etc.) as TOOL_CALL-shaped rows. They describe work that has
+  // already happened and do not have a separate TOOL_RESULT to pair with.
+  // Only a raw tool_use without a result is genuinely still in flight.
+  const inFlight = pair.result === null && !pair.terminated && pair.call.attributes.subtype === 'tool_use';
+  const isError = pair.result?.attributes['outcome'] === 'error' || pair.result?.attributes['is_error'] === 'true';
+  const resultData = pair.result?.data;
+  const resultOutput =
+    resultData && typeof resultData === 'object' && 'content' in resultData
+      ? (resultData as { content?: unknown }).content
+      : resultData;
 
   return (
     <li
@@ -177,10 +186,7 @@ function ToolPairItem({ pair }: { pair: ToolPair }) {
         payload={
           <>
             <PayloadBlock label="input" value={(pair.call.data as Record<string, unknown> | undefined)?.args ?? (pair.call.data as Record<string, unknown> | undefined)?.input} />
-            <PayloadBlock
-              label={inFlight ? 'output (running…)' : 'output'}
-              value={pair.result ? (pair.result.data as Record<string, unknown> | undefined)?.content : null}
-            />
+            <PayloadBlock label={inFlight ? 'output (running…)' : 'output'} value={resultOutput} />
           </>
         }
       >
@@ -256,7 +262,7 @@ function PayloadBlock({ label, value }: { label: string; value: unknown }) {
   try {
     text = typeof parsed === 'string' ? parsed : JSON.stringify(parsed, null, 2);
   } catch {
-    text = String(parsed);
+    text = '[Unserializable payload]';
   }
   if (!text.trim()) return null;
   return (

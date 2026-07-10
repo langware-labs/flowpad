@@ -583,6 +583,10 @@ msgstr ""
 msgid "Accepting…"
 msgstr ""
 
+#: src/pages/flow-page/vibe-model-select.tsx
+msgid "Accurate"
+msgstr ""
+
 #: src/components/graph-context/RunAutomationPanel.tsx
 msgid "Act as the \"{name}\" agent and work on the current context."
 msgstr ""
@@ -868,6 +872,10 @@ msgstr ""
 msgid "All calls"
 msgstr ""
 
+#: src/components/code-editor/AssetCompareView.tsx
+msgid "All changes"
+msgstr ""
+
 #: src/components/account/database-section.tsx
 msgid "All data cleared. Redirecting..."
 msgstr ""
@@ -1005,12 +1013,21 @@ msgstr ""
 msgid "Analyze"
 msgstr ""
 
+#: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Analyze and improve"
+msgstr ""
+
 #: src/components/lens-viewer/shared/transcript-features/AnalysisControls.tsx
 msgid "Analyze this session: goals, issues, divergences and skill performance on a timeline"
 msgstr ""
 
 #: src/pages/live-status/LiveStatus.tsx
 msgid "analyzed"
+msgstr ""
+
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Analyzing asset"
 msgstr ""
 
 #: src/components/lens-viewer/shared/transcript-features/AnalysisControls.tsx
@@ -1230,6 +1247,14 @@ msgstr ""
 msgid "Asset cleanup"
 msgstr ""
 
+#: src/components/code-editor/AssetCompareView.tsx
+msgid "Asset compare"
+msgstr ""
+
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Asset has changes"
+msgstr ""
+
 #: src/components/assets/AssetsPage.tsx
 msgid "Asset has no file on disk"
 msgstr ""
@@ -1408,6 +1433,10 @@ msgstr ""
 #: src/components/account/danger-zone.tsx
 #: src/components/account/database-section.tsx
 msgid "Backup DB"
+msgstr ""
+
+#: src/pages/flow-page/vibe-model-select.tsx
+msgid "Balanced"
 msgstr ""
 
 #: src/components/hooks-view/HookEditor.tsx
@@ -1605,6 +1634,8 @@ msgstr ""
 #: src/components/account/secrets-section.tsx
 #: src/components/anchored-markdown/CommentPin.tsx
 #: src/components/artifacts/artifact-form.tsx
+#: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/assets/delete-asset-modal.tsx
 #: src/components/assets/editor/markdown/ReviewSurface.tsx
 #: src/components/assets/editor/run/useRunOnFile.tsx
@@ -1675,6 +1706,12 @@ msgstr ""
 
 #: src/components/hooks-view/HooksBrowser.tsx
 msgid "Cannot edit"
+msgstr ""
+
+#: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Cannot improve asset"
 msgstr ""
 
 #: src/components/chats-navigator/ChatsNavigator.tsx
@@ -2713,6 +2750,7 @@ msgstr ""
 #: src/components/conversation/asset-review/useRunReceivedSkill.tsx
 #: src/pages/flow-page/use-start-vibe-session.ts
 #: src/pages/flow-page/vibe-no-process-workspace.tsx
+#: src/pages/flow-page/vibe-no-process-workspace.tsx
 msgid "Could not start"
 msgstr ""
 
@@ -3301,6 +3339,10 @@ msgstr ""
 
 #: src/components/version-popover/diagnose-modal.tsx
 msgid "Describe the issue or paste the error, then run the diagnosis. Leave it empty for a full diagnostic sweep. The assistant inspects Flowpad, repairs what's safe, and records the result."
+msgstr ""
+
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Describe the issue to analyze and improve…"
 msgstr ""
 
 #: src/components/tasks-viewer/TasksViewer.tsx
@@ -4562,6 +4604,7 @@ msgstr ""
 
 #: src/pages/flow-page/use-start-vibe-session.ts
 #: src/pages/flow-page/vibe-no-process-workspace.tsx
+#: src/pages/flow-page/vibe-no-process-workspace.tsx
 msgid "Failed to start the build session."
 msgstr ""
 
@@ -4599,6 +4642,7 @@ msgid "Failed to upload the zip file. Please try again."
 msgstr ""
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
+#: src/pages/flow-page/vibe-model-select.tsx
 msgid "Fast"
 msgstr ""
 
@@ -5529,12 +5573,24 @@ msgstr ""
 msgid "Improve"
 msgstr ""
 
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Improve failed"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/side-windows/AnalysisPanel.tsx
 msgid "Improve from this analysis"
 msgstr ""
 
 #: src/components/assets/editor/skill/UsagePanel.tsx
 msgid "Improve skipped"
+msgstr ""
+
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Improvement ready"
+msgstr ""
+
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Improving asset"
 msgstr ""
 
 #: src/components/terminal/interactive-terminal/side-windows/AnalysisPanel.tsx
@@ -5735,6 +5791,10 @@ msgstr ""
 
 #: src/components/app-host/AppHost.tsx
 msgid "Invalid App Path"
+msgstr ""
+
+#: src/components/code-editor/AssetCompareView.tsx
+msgid "Invalid asset comparison."
 msgstr ""
 
 #: src/components/artifacts/artifact-metadata-editor.tsx
@@ -6176,6 +6236,10 @@ msgstr ""
 
 #: src/components/assets/editor/EntityResolutionGate.tsx
 msgid "Loading {typeLabel}…"
+msgstr ""
+
+#: src/components/code-editor/AssetCompareView.tsx
+msgid "Loading asset diff…"
 msgstr ""
 
 #: src/components/milkdown-editor/side-windows/BacklinksTab.tsx
@@ -6711,7 +6775,13 @@ msgid "model"
 msgstr ""
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/pages/flow-page/vibe-model-select.tsx
+#: src/pages/flow-page/vibe-model-select.tsx
 msgid "Model"
+msgstr ""
+
+#: src/components/entity-execution-panel/EntityExecutionPanel.tsx
+msgid "Model not saved"
 msgstr ""
 
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
@@ -7114,6 +7184,7 @@ msgstr ""
 msgid "No changes"
 msgstr ""
 
+#: src/components/code-editor/AssetCompareView.tsx
 #: src/components/code-editor/DiffContent.tsx
 #: src/components/code-editor/DiffViewer.tsx
 msgid "No changes to show"
@@ -7295,6 +7366,10 @@ msgstr ""
 
 #: src/components/directory-tree/DirectoryTree.tsx
 msgid "No files or folders"
+msgstr ""
+
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "No findings found"
 msgstr ""
 
 #: src/components/execute-flow-view/flows-panel/flows-panel.tsx
@@ -7942,6 +8017,7 @@ msgstr ""
 msgid "Nothing to commit"
 msgstr ""
 
+#: src/pages/flow-page/vibe-no-process-workspace.tsx
 #: src/pages/flow-page/vibe-workspace.tsx
 msgid "Nothing to display yet — try one to get started"
 msgstr ""
@@ -7952,6 +8028,10 @@ msgstr ""
 
 #: src/components/assets/editor/skill/UsagePanel.tsx
 msgid "Nothing to improve"
+msgstr ""
+
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Nothing to save"
 msgstr ""
 
 #: src/components/history-dropdown.tsx
@@ -8420,6 +8500,10 @@ msgstr ""
 
 #: src/components/account/secrets-section.tsx
 msgid "OPENAI_API_KEY"
+msgstr ""
+
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Opened Asset compare."
 msgstr ""
 
 #: src/components/open-project-component/open-project-component.tsx
@@ -9383,6 +9467,7 @@ msgid "referenced but not in entities table"
 msgstr ""
 
 #: src/components/capabilities-view/CapabilitiesView.tsx
+#: src/components/code-editor/AssetCompareView.tsx
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/contact-picker/AddressBookButton.tsx
 #: src/components/cost-dashboard/CostDashboard.tsx
@@ -10062,6 +10147,7 @@ msgstr ""
 
 #: src/components/account/secrets-section.tsx
 #: src/components/anchored-markdown/CommentPin.tsx
+#: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/assets/editor/skill/SkillActivationEditor.tsx
 #: src/components/assets/toolbar/AssetToolbar.tsx
 #: src/components/cron-view/CronForm.tsx
@@ -10091,6 +10177,7 @@ msgstr ""
 msgid "Save Changes"
 msgstr ""
 
+#: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/execute-flow-view/instruction-panel/instruction-panel.tsx
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
 #: src/components/triggers-view/TriggerEditor.tsx
@@ -10101,8 +10188,16 @@ msgstr ""
 msgid "Save Failed"
 msgstr ""
 
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Save the current asset changes as a version before running improvement."
+msgstr ""
+
 #: src/components/api-keys-view/api-keys-view.tsx
 msgid "Save this API key now. You won't be able to see it again!"
+msgstr ""
+
+#: src/components/code-editor/AssetCompareView.tsx
+msgid "Save version"
 msgstr ""
 
 #: src/components/assets/editor/skill/SkillActivationEditor.tsx
@@ -11722,6 +11817,10 @@ msgstr ""
 msgid "The agent you're looking for doesn't exist or is not available."
 msgstr ""
 
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "The analysis completed but did not produce asset-scoped findings."
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 #~ msgid "The Anthropic API may be slow or unresponsive."
 #~ msgstr ""
@@ -11730,6 +11829,7 @@ msgstr ""
 msgid "The artifact has been removed successfully."
 msgstr ""
 
+#: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/assets/editor/skill/UsagePanel.tsx
 msgid "The asset matches HEAD."
 msgstr ""
@@ -11828,6 +11928,10 @@ msgstr ""
 msgid "This action cannot be undone."
 msgstr ""
 
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "This asset has no file path."
+msgstr ""
+
 #: src/components/chats-navigator/ChatsNavigator.tsx
 msgid "This chat has no resumable session."
 msgstr ""
@@ -11860,6 +11964,10 @@ msgstr ""
 msgid "This file isn't text"
 msgstr ""
 
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "This folder-backed asset has no main file metadata."
+msgstr ""
+
 #: src/components/persistent-iframe.tsx
 msgid "This may take up to 20 seconds"
 msgstr ""
@@ -11874,6 +11982,10 @@ msgstr ""
 
 #: src/components/graph-context/GraphContextViewer.tsx
 msgid "This permanently removes the saved context snapshot. This cannot be undone."
+msgstr ""
+
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "This process has no transcript session yet."
 msgstr ""
 
 #: src/components/version-popover/diagnose-modal.tsx
@@ -12773,6 +12885,10 @@ msgstr ""
 
 #: src/pages/flow-page/vibe-new-chat.tsx
 msgid "What would you like to build?"
+msgstr ""
+
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "What would you like to fix?"
 msgstr ""
 
 #: src/components/greeting/Greeting.tsx

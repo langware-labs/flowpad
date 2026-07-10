@@ -128,6 +128,8 @@ export function getToolUseId(item: FlowData): string | null {
 export interface ToolPair {
   call: FlowData;
   result: FlowData | null;
+  /** The turn ended explicitly (for example, turn_aborted) without a result. */
+  terminated: boolean;
 }
 
 export function pairToolEvents(events: FlowData[]): {
@@ -148,7 +150,7 @@ export function pairToolEvents(events: FlowData[]): {
     const t = item.elementType;
     if (t === FlowElementTypes.TOOL_CALL) {
       const id = getToolUseId(item);
-      const pairIndex = pairs.push({ call: item, result: null }) - 1;
+      const pairIndex = pairs.push({ call: item, result: null, terminated: false }) - 1;
       if (id) callIndexById.set(id, pairIndex);
     } else if (t === FlowElementTypes.TOOL_RESULT) {
       const id = getToolUseId(item);
@@ -160,6 +162,15 @@ export function pairToolEvents(events: FlowData[]): {
       }
     } else {
       others.push(item);
+    }
+  }
+
+  const turnTerminated = others.some(
+    (item) => item.elementType === FlowElementTypes.STATUS && item.attributes.subtype === 'event_msg.turn_aborted',
+  );
+  if (turnTerminated) {
+    for (const pair of pairs) {
+      if (pair.result === null) pair.terminated = true;
     }
   }
 

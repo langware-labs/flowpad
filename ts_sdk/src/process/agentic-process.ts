@@ -110,10 +110,66 @@ interface HistoryResponse {
     part?: number;
     created_time?: string;
     focus?: string;
+    process_entry?: Record<string, unknown> | null;
   }>;
   count: number;
   session_id: string | null;
   use_worker_history: boolean;
+}
+
+interface HistoryMatchCandidate {
+  item: FlowData;
+  matched: boolean;
+}
+
+function historyIdentityKey(item: FlowData): string | null {
+  const processEntry = item.processEntry as
+    | { transcript_entry?: { id?: unknown; kind?: unknown } }
+    | null;
+  const transcriptEntry = processEntry?.transcript_entry;
+  const id = transcriptEntry?.id ?? item.attributes['transcript-entry-id'];
+  if (id === undefined || id === null || id === '') return null;
+  const kind = transcriptEntry?.kind ?? item.attributes.subtype ?? '';
+  return `${item.elementType}|${String(kind)}|${String(id)}`;
+}
+
+function historyFallbackKey(item: FlowData): string {
+  const role = item.attributes.role ?? '';
+  return `${item.elementType}|${role}|${item.timestamp}|${item.content ?? ''}`;
+}
+
+function reconcileHistoryOverlap(history: FlowData[], existing: readonly FlowData[]): FlowData[] {
+  const candidates: HistoryMatchCandidate[] = existing.map((item) => ({ item, matched: false }));
+  const byIdentity = new Map<string, HistoryMatchCandidate[]>();
+  const byFallback = new Map<string, HistoryMatchCandidate[]>();
+
+  const add = (index: Map<string, HistoryMatchCandidate[]>, key: string, candidate: HistoryMatchCandidate) => {
+    const bucket = index.get(key);
+    if (bucket) bucket.push(candidate);
+    else index.set(key, [candidate]);
+  };
+  for (const candidate of candidates) {
+    const identity = historyIdentityKey(candidate.item);
+    if (identity) add(byIdentity, identity, candidate);
+    add(byFallback, historyFallbackKey(candidate.item), candidate);
+  }
+
+  const take = (index: Map<string, HistoryMatchCandidate[]>, key: string): boolean => {
+    const bucket = index.get(key);
+    while (bucket?.length) {
+      const candidate = bucket.shift()!;
+      if (candidate.matched) continue;
+      candidate.matched = true;
+      return true;
+    }
+    return false;
+  };
+
+  return history.filter((item) => {
+    const identity = historyIdentityKey(item);
+    if (identity && take(byIdentity, identity)) return false;
+    return !take(byFallback, historyFallbackKey(item));
+  });
 }
 
 export enum AgenticProcessEventName {
@@ -1690,6 +1746,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
             attributes: item.attributes,
             index: item.index,
             created_time: item.created_time,
+            process_entry: item.process_entry,
           });
           if (onlyUserMessages) {
             const isUserMessage = flowData.elementType === 'user-message' || flowData.attributes.role === 'user';
@@ -1705,30 +1762,13 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
           historyItems.push(flowData);
         }
 
-        // Ingest history items to stream, skipping duplicates by elementType + role + content
-        const existingKeys = new Set(
-          this.flowDataStream.items.map((item) => {
-            const role = item.attributes.role ?? '';
-            return `${item.elementType}|${role}|${item.content ?? ''}`;
-          }),
-        );
-
-        // Filter out duplicates (already-ingested items by element/role/content
-        // signature) BEFORE ingesting so the batch only carries new items.
-        const newItems: FlowData[] = [];
-        for (const item of historyItems) {
-          const role = item.attributes.role ?? '';
-          const key = `${item.elementType}|${role}|${item.content ?? ''}`;
-          if (existingKeys.has(key)) continue;
-          existingKeys.add(key);
-          newItems.push(item);
-        }
-        // Coalesce per-item `'data'` emissions into a single one so React
-        // consumers (`useSyncExternalStore` via `useAgenticProcessStream` /
-        // `useEntityData`) re-render once per loadHistory call instead of once
-        // per item — prevents 700+ notifications from blowing past React's
-        // nested-update budget.
-        this.flowDataStream.ingestBatch(newItems);
+        // History rows are already complete records. Reconcile one-for-one with
+        // any live observations, then append directly so repeated turns and
+        // adjacent CHAT/REASONING rows are not deduped or chunk-consolidated.
+        const newItems = force
+          ? historyItems
+          : reconcileHistoryOverlap(historyItems, this.flowDataStream.items);
+        if (newItems.length > 0) this.flowDataStream.append(newItems);
         // Close any open groups after loading history
         this.flowDataStream.closeOpenGroups();
 
@@ -2467,11 +2507,27 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    */
   async switchMode(mode: WorkerMode, opts?: { cols?: number; rows?: number }): Promise<void> {
     if (mode === WorkerMode.Interactive) {
+      const previousPtyMode = this.pty_mode;
+      const previousVisible = this.visible;
+      const previousPendingPtyMode = this._pendingPtyMode;
+      const previousPendingVisible = this._pendingVisible;
       this.pty_mode = true;
       this._pendingPtyMode = true;
       this._pendingVisible = true;
-      await this.start({ visible: true, retry: true, cols: opts?.cols, rows: opts?.rows });
-      this.emit('restarted', { process: this });
+      try {
+        await this.start({ visible: true, retry: true, cols: opts?.cols, rows: opts?.rows });
+        this.emit('restarted', { process: this });
+      } catch (error) {
+        // The open action rejected, so the optimistic transport intent never
+        // became durable. Restore both the visible fields and their stale-wire
+        // guards; otherwise later headless broadcasts are discarded and the UI
+        // remains pinned to a terminal that was never started.
+        this.pty_mode = previousPtyMode;
+        this.visible = previousVisible;
+        this._pendingPtyMode = previousPendingPtyMode;
+        this._pendingVisible = previousPendingVisible;
+        throw error;
+      }
       return;
     }
     // CLI: one `switch-mode` round-trip. Mirror exit()'s optimistic CLOSING +

@@ -151,11 +151,15 @@ def is_ready_from_busy(
     session_id: str | None = None,
 ) -> bool:
     """Combine the two orthogonal axes into "can send now": no turn is in flight
-    (``not busy``) and the worker is either fully up (``status == RUNNING``) OR a
-    **headless-idle** session (see below). Callers that have already computed
-    ``busy`` (the serializer, ``get_status``) pass it here to avoid re-probing
-    ``is_turn_busy``; ``is_ready_for_input`` computes ``busy`` for callers that
-    only hold the process.
+    (``not busy``) and the worker is either fully up (``status == RUNNING``), a
+    fresh headless process, OR a **headless-idle** session (see below). Callers
+    that have already computed ``busy`` (the serializer, ``get_status``) pass it
+    here to avoid re-probing ``is_turn_busy``; ``is_ready_for_input`` computes
+    ``busy`` for callers that only hold the process.
+
+    Fresh-headless readiness (``pty_mode is False`` + ``status == NEW``): no
+    persistent worker or session exists before the first turn, but both the first
+    print-mode prompt and an interactive-mode switch are accepted immediately.
 
     Headless-idle readiness (``pty_mode is False`` + a live ``session_id`` +
     ``status == STOPPED``): the CLI transport runs a fresh ``claude -p`` worker
@@ -172,6 +176,8 @@ def is_ready_from_busy(
     if busy:
         return False
     if status == ProcessStatus.RUNNING.value:
+        return True
+    if status == ProcessStatus.NEW.value and pty_mode is False:
         return True
     return (
         status == ProcessStatus.STOPPED.value
@@ -190,6 +196,7 @@ def is_ready_for_input(
 
         is_ready_for_input(p)  ⇔  not is_turn_busy(p) and (
             p.status == RUNNING
+            or (p.status == NEW and not p.pty_mode)  # fresh headless
             or (p.status == STOPPED and not p.pty_mode and p.session_id)  # headless-idle
         )
 

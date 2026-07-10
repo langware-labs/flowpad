@@ -31,9 +31,7 @@ from flow_sdk.builtin.agentic_process.cli_drivers.codex import (
     CodexCLIStreamWorker,
 )
 from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowElementType
-
 from tests.utils.fake_cli import fake_stream_argv, patch_build_spawn
-
 
 # ``_build_spawn`` takes ``(context, prompt)`` and returns a 3-tuple
 # ``(argv, env, stdin)`` — codex delivers the prompt over the child's stdin
@@ -57,10 +55,30 @@ TURN_COMPLETED = {
 }
 
 
+def test_build_spawn_uses_absolute_discovered_codex_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    bin_dir = tmp_path / "nvm-bin"
+    bin_dir.mkdir()
+    codex = bin_dir / "codex"
+    codex.write_text("#!/bin/sh\n", encoding="utf-8")
+    codex.chmod(0o755)
+    monkeypatch.setattr(
+        "flow_sdk.builtin.agentic_process.cli_drivers.codex.stream_worker.worker_path_env",
+        lambda _worker: {"PATH": str(bin_dir)},
+    )
+
+    argv, env, stdin = CodexCLIStreamWorker()._build_spawn(AgenticContext(workdir=str(tmp_path)), "hello")
+
+    assert argv is not None and argv[0] == str(codex)
+    assert env["PATH"] == str(bin_dir)
+    assert stdin == "hello"
+
+
 @pytest.mark.asyncio
 async def test_session_id_captured_from_thread_started(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     worker = CodexCLIStreamWorker(transcript_path=tmp_path / "codex.jsonl")
-    patch_build_spawn(monkeypatch, CodexCLIStreamWorker, fake_stream_argv([THREAD_STARTED, TURN_COMPLETED], delay_ms=2), stdin="")
+    patch_build_spawn(
+        monkeypatch, CodexCLIStreamWorker, fake_stream_argv([THREAD_STARTED, TURN_COMPLETED], delay_ms=2), stdin=""
+    )
 
     await _collect(worker, AgenticContext(workdir=str(tmp_path)))
 
@@ -77,7 +95,12 @@ async def test_first_thread_started_wins_within_a_stream(tmp_path: Path, monkeyp
         "timestamp": "2026-05-06T21:39:49.000Z",
     }
     worker = CodexCLIStreamWorker(transcript_path=tmp_path / "codex.jsonl")
-    patch_build_spawn(monkeypatch, CodexCLIStreamWorker, fake_stream_argv([THREAD_STARTED, second, TURN_COMPLETED], delay_ms=2), stdin="")
+    patch_build_spawn(
+        monkeypatch,
+        CodexCLIStreamWorker,
+        fake_stream_argv([THREAD_STARTED, second, TURN_COMPLETED], delay_ms=2),
+        stdin="",
+    )
 
     await _collect(worker, AgenticContext(workdir=str(tmp_path)))
 
@@ -95,11 +118,21 @@ async def test_fresh_id_every_turn_hazard(tmp_path: Path, monkeypatch: pytest.Mo
     turn2_id = "bbbbbbbb-0000-7000-9000-000000000003"
 
     w1 = CodexCLIStreamWorker(transcript_path=tmp_path / "t1.jsonl")
-    patch_build_spawn(monkeypatch, CodexCLIStreamWorker, fake_stream_argv([{**THREAD_STARTED, "thread_id": turn1_id}, TURN_COMPLETED], delay_ms=2), stdin="")
+    patch_build_spawn(
+        monkeypatch,
+        CodexCLIStreamWorker,
+        fake_stream_argv([{**THREAD_STARTED, "thread_id": turn1_id}, TURN_COMPLETED], delay_ms=2),
+        stdin="",
+    )
     await _collect(w1, AgenticContext(workdir=str(tmp_path)))
 
     w2 = CodexCLIStreamWorker(transcript_path=tmp_path / "t2.jsonl")
-    patch_build_spawn(monkeypatch, CodexCLIStreamWorker, fake_stream_argv([{**THREAD_STARTED, "thread_id": turn2_id}, TURN_COMPLETED], delay_ms=2), stdin="")
+    patch_build_spawn(
+        monkeypatch,
+        CodexCLIStreamWorker,
+        fake_stream_argv([{**THREAD_STARTED, "thread_id": turn2_id}, TURN_COMPLETED], delay_ms=2),
+        stdin="",
+    )
     await _collect(w2, AgenticContext(workdir=str(tmp_path)))
 
     assert w1.get_session_id() == turn1_id
@@ -110,7 +143,9 @@ async def test_fresh_id_every_turn_hazard(tmp_path: Path, monkeypatch: pytest.Mo
 @pytest.mark.asyncio
 async def test_turn_completed_yields_result_and_end(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     worker = CodexCLIStreamWorker(transcript_path=tmp_path / "codex.jsonl")
-    patch_build_spawn(monkeypatch, CodexCLIStreamWorker, fake_stream_argv([THREAD_STARTED, TURN_COMPLETED], delay_ms=2), stdin="")
+    patch_build_spawn(
+        monkeypatch, CodexCLIStreamWorker, fake_stream_argv([THREAD_STARTED, TURN_COMPLETED], delay_ms=2), stdin=""
+    )
 
     out = await _collect(worker, AgenticContext(workdir=str(tmp_path)))
     types = [fd.attributes["element-type"] for fd in out]
@@ -123,7 +158,9 @@ async def test_turn_completed_yields_result_and_end(tmp_path: Path, monkeypatch:
 async def test_stream_is_teed_to_transcript(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     transcript = tmp_path / "codex.jsonl"
     worker = CodexCLIStreamWorker(transcript_path=transcript)
-    patch_build_spawn(monkeypatch, CodexCLIStreamWorker, fake_stream_argv([THREAD_STARTED, TURN_COMPLETED], delay_ms=2), stdin="")
+    patch_build_spawn(
+        monkeypatch, CodexCLIStreamWorker, fake_stream_argv([THREAD_STARTED, TURN_COMPLETED], delay_ms=2), stdin=""
+    )
 
     await _collect(worker, AgenticContext(workdir=str(tmp_path)))
 

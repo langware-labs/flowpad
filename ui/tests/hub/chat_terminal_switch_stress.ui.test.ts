@@ -300,6 +300,7 @@ describe('chat⇄terminal switch stress in the browser — one session, 10 itera
 
       const chatPane = p.getByTestId('simple-chat-pane');
       const activePanel = p.locator('[data-testid="terminal-panel"][data-active="true"]');
+      const xterm = activePanel.locator('.xterm');
 
       const perCount: Array<{
         count: number;
@@ -338,16 +339,14 @@ describe('chat⇄terminal switch stress in the browser — one session, 10 itera
           expect(IDLE_STATUS.has(statusText.trim()), `chat status idle at count ${count} (was "${statusText}")`).toBe(true);
         }
 
-        // 4) SKIN follows transport? headless ⇒ chat pane; pty ⇒ (Advanced) xterm.
-        //    Logged, NOT asserted: the chat-skin `chatOverride` has an intermittent
-        //    re-render race under rapid toggling that is a SEPARATE pre-existing
-        //    issue, out of scope for the switch itself (transport + session +
-        //    status, all validated above).
-        const chatShown = await chatPane
-          .waitFor({ state: onPty ? 'hidden' : 'visible', timeout: 4_000 })
+        // 4) SKIN follows transport: headless ⇒ chat pane; PTY ⇒ a mounted xterm.
+        //    Checking only that chat is hidden is insufficient: a mode round trip
+        //    can otherwise leave the whole content area blank while pty_mode=true.
+        const expectedSurface = onPty ? xterm : chatPane;
+        const skinMatched = await expectedSurface
+          .waitFor({ state: 'visible', timeout: 4_000 })
           .then(() => true)
           .catch(() => false);
-        const skinMatched = chatShown;
 
         // 5) LIVENESS — the one session is usable after the switch. Drive a token
         //    turn on the CURRENT transport and see it land as REAL agent output in
@@ -403,12 +402,6 @@ describe('chat⇄terminal switch stress in the browser — one session, 10 itera
 
       // ── Assert. ───────────────────────────────────────────────────────────
       const drift = perCount.filter((r) => !r.sessionStable);
-      const skinLags = perCount.filter((r) => !r.skinMatched).length;
-      if (skinLags) {
-        // eslint-disable-next-line no-console
-        console.warn(`NOTE: chat-skin lagged the transport on ${skinLags}/${COUNT_TARGET} toggles ` +
-          `(known chatOverride reactivity race — separate from the switch).`);
-      }
       // Both transports genuinely exercised across the 10 toggles.
       expect(perCount.filter((r) => r.transport === 'pty').length).toBeGreaterThan(0);
       expect(perCount.filter((r) => r.transport === 'headless').length).toBeGreaterThan(0);
@@ -416,6 +409,12 @@ describe('chat⇄terminal switch stress in the browser — one session, 10 itera
       expect(drift, 'session_id changed on some iteration').toEqual([]);
       // The status indicator agreed the agent was idle before each toggle.
       expect(perCount.every((r) => r.statusIdle), 'worker not idle before some toggle').toBe(true);
+      // Every settled transport must expose its usable surface; pty=true with no
+      // xterm is a blank-terminal regression, not an acceptable skin lag.
+      expect(
+        perCount.every((r) => r.skinMatched),
+        'surface did not follow some transport switch',
+      ).toBe(true);
       // Every turn produced real agent output — the one session stayed live through
       // every switch, via the transport-appropriate driver (PTY: prompt action,
       // headless: submit) and asserted as non-user (agent) output.

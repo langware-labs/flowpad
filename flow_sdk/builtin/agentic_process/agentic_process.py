@@ -913,7 +913,12 @@ class AgenticProcess(Entity):
         is held. All lifecycle decisions (reattach vs recover vs fresh) live
         here; the caller is responsible for the lock and the start-lifecycle
         flag."""
+        previous_visible = self.visible
+        previous_pty_mode = self.pty_mode
+        previous_shell_id = self.shell_id
+        previous_sidecar_shell_id = self.sidecar_shell_id
         cleared_start_failure = False
+        shell = None
         try:
             # If we're stuck in STOPPING with a dead worker (orphan from a
             # crashed close()/exit()), reset to STOPPED before doing anything
@@ -1190,7 +1195,25 @@ class AgenticProcess(Entity):
             raise
         except Exception as e:
             logger.exception(f"AgenticProcess {self.id} start_pty error: {e}")
-            self.shell_id = None
+            # A failed terminal open must not strand the entity in its
+            # optimistic PTY intent. Best-effort stop any partially created
+            # transport, then restore the prior shell/transport so an existing
+            # headless chat remains renderable and an explicit Retry can make
+            # one clean launch attempt.
+            if shell is not None:
+                try:
+                    await shell.stop()
+                except Exception:
+                    logger.warning(
+                        "AgenticProcess %s: failed to clean partial shell %s",
+                        self.id,
+                        getattr(shell, "id", None),
+                        exc_info=True,
+                    )
+            self.shell_id = previous_shell_id
+            self.sidecar_shell_id = previous_sidecar_shell_id
+            self.visible = previous_visible
+            self.pty_mode = previous_pty_mode
             self.status = ProcessStatus.FAILED.value
             # Latch normal launch failures: the UI surfaces them and
             # open()/auto-recovery stops retrying a spawn that can't succeed.
@@ -1349,7 +1372,9 @@ class AgenticProcess(Entity):
             return await self._enter_cli_mode()
         # INTERACTIVE (PTY): the canonical open path — spawns the PTY and sets
         # ``visible=True`` (which persists ``pty_mode=True`` in the open tail).
-        return await self._perform_open(instruction=None, visible=True, retry=True)
+        # Route through start_pty rather than its unlocked implementation so a
+        # watchdog/client race cannot launch two workers for the same process.
+        return await self.start_pty(instruction=None, visible=True, retry=True)
 
     @action.post(action_name="restart")
     async def http_restart(self) -> ApiSuccessResponse | ApiFailResponse:
@@ -2590,6 +2615,16 @@ class AgenticProcess(Entity):
                                     self.id,
                                 )
                             self.session_id = sid
+                            # The running headless worker was launched from the
+                            # current config and has now reported its durable
+                            # session identity. Capture that effective launch
+                            # snapshot before save() evaluates restart drift;
+                            # otherwise the expected session rotation creates a
+                            # phantom restart until the next PTY launch.
+                            started = self._restart_snapshot_payload()
+                            self.last_started_snapshot = started
+                            self.last_started_hash = self._restart_snapshot(started)
+                            self.restart_required = False
                             try:
                                 await self.save()
                             except Exception:
@@ -2622,7 +2657,11 @@ class AgenticProcess(Entity):
                     # Client disconnected; let the turn finish to keep JSONL coherent,
                     # but don't block the HTTP handler beyond a short grace.
                     try:
-                        await asyncio.wait_for(turn_task, timeout=1.0)
+                        # wait_for cancels its awaitable on timeout. Shield the
+                        # background turn so a reload/disconnect only stops the
+                        # response stream, not the Codex worker producing the
+                        # durable transcript.
+                        await asyncio.wait_for(asyncio.shield(turn_task), timeout=1.0)
                     except (asyncio.TimeoutError, Exception):
                         pass
 
@@ -4162,6 +4201,11 @@ class AgenticProcess(Entity):
             l_section = norm_loaded.get(section) or {}
             c_section = norm_current.get(section) or {}
             for field in sorted(set(l_section) | set(c_section)):
+                # These describe the active transport, not user launch config.
+                # PTY/CLI switches intentionally change them without requiring
+                # a restart; exposing them here contradicted restart_required.
+                if section == "worker" and field in {"ephemeral", "json_stream"}:
+                    continue
                 l_val = l_section.get(field)
                 c_val = c_section.get(field)
                 if l_val != c_val:

@@ -26,9 +26,10 @@
  *   identical to their Python counterparts, verified by a contract test against
  *   ``test_fixtures/status_sets.json``.
  * - ``isBusy(process)`` ⇔ ``process.busy`` is the single canonical "the user must
- *   wait" predicate. Its inverse ``isReadyForInput`` ⇔ ``isProcessRunning(status)
- *   && !busy`` — live and no turn in flight. The two are disjoint by construction.
- *   There is no worker-status-derived gating in the frontend.
+ *   wait" predicate. ``isReadyForInput`` combines ``!busy`` with the lifecycle
+ *   states that can accept a prompt or transport switch (RUNNING, fresh headless,
+ *   or headless-idle). The two are disjoint by construction. There is no
+ *   worker-status-derived gating in the frontend.
  */
 
 /**
@@ -382,9 +383,14 @@ export function isBusy(p: StatusBearingProcess): boolean {
 
 /**
  * "Can the caller send a new user prompt / switch transport now?" — ⇔ no turn is
- * in flight (``!busy``) AND the worker is either fully up (``status === RUNNING``)
- * OR a **headless-idle** session. Mirror of the Python ``is_ready_from_busy`` /
- * ``is_ready_for_input``.
+ * in flight (``!busy``) AND the worker is either fully up (``status === RUNNING``),
+ * a fresh headless process, OR a **headless-idle** session. Mirror of the Python
+ * ``is_ready_from_busy`` / ``is_ready_for_input``.
+ *
+ * A fresh headless process (CLI transport at ``status === NEW``) has no persistent
+ * worker or session yet, but its first prompt and an interactive-mode switch are
+ * both accepted immediately. Treating it as not ready disabled the chat/terminal
+ * toggle before the first turn even though the backend switch guard accepted it.
  *
  * Headless-idle readiness (CLI transport — ``!isPtyTransport`` — with a live
  * ``session_id`` at ``status === STOPPED``): the CLI transport runs a fresh
@@ -400,6 +406,7 @@ export function isReadyForInput(p: StatusBearingProcess): boolean {
   if (isBusy(p)) return false;
   const status = resolveStatus(p);
   if (status === ProcessStatus.RUNNING) return true;
+  if (status === ProcessStatus.NEW && !isPtyTransport(p)) return true;
   return status === ProcessStatus.STOPPED && !isPtyTransport(p) && !!p.session_id;
 }
 

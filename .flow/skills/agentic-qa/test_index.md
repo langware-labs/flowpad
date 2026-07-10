@@ -1,6 +1,8 @@
-# Test Index — generated 2026-07-07T17:13:14 (post 2026-07-07 cycle)
+# Test Index — generated 2026-07-10T14:10:16 (Codex chat/terminal E2E run)
 
 ## agentic-process (playwright.config: yes)
+- agentic-process/codex_chat_terminal_full_matrix.md — md.ts: NO
+- agentic-process/codex_chat_terminal_switch_matrix.md — md.ts: NO
 - agentic-process/conversation_view_three_spawn_branches.md — md.ts: yes
 - agentic-process/embedded_close_preserves_process.md — md.ts: NO
 - agentic-process/fork_action_from_search_dock.md — md.ts: yes
