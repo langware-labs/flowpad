@@ -55,6 +55,9 @@ class CopilotDriver:
     # Copilot's TUI treats a pasted prompt ending in \r as literal text — needs
     # a discrete Enter after the paste settles (Shell.write_then_submit).
     pty_submits_on_paste = False
+    # No empirically-grounded composer marker for copilot yet — None keeps the
+    # legacy settle-then-type first delivery (see WorkerDriver Protocol).
+    pty_composer_ready_pattern = None
     pins_resume_cwd = False  # no transcript-cwd pinning, no fork
 
     def cli_options(self, process: "AgenticProcess") -> CopilotCliOptions:

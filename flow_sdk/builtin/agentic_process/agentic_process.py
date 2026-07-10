@@ -2712,6 +2712,49 @@ class AgenticProcess(Entity):
                 return ApiSuccessResponse(data={"cancelled": True, "transport": "pty"})
         return ApiFailResponse(message="no in-flight prompt turn")
 
+    async def _typed_pty_delivery(self, message: str, *, landed: "asyncio.Event") -> bool:
+        """Type ``message`` into the live PTY once it can actually receive it.
+
+        The typed-delivery half of a PTY prompt turn for vendors whose TUI
+        reads prompts from the composer (``pty_submits_on_paste`` False). When
+        the driver declares a ``pty_composer_ready_pattern``, delivery is
+        DEFERRED until that marker appears in the PTY output — a cold TUI can
+        boot into a quiet blocking interstitial (codex directory-trust prompt,
+        login screen), and typing on quiescence alone gets the prompt eaten or
+        truncated while the process still reports ready (QA C09b). Warm PTYs
+        pass the gate instantly (the marker is already in the accumulated
+        output). Without a pattern, the legacy settle-then-type behaviour is
+        kept for that vendor.
+
+        ``landed`` is the turn's transcript-confirmation event — if the user
+        turn landed while we waited (e.g. the launch-arg path already injected
+        it), nothing is typed (no duplicate). Returns False when the PTY is
+        unusable (no shell, or it closed before the composer appeared) so the
+        caller can skip the Enter-nudge retries instead of poking a dead or
+        blocked screen.
+        """
+        shell = await self.shell()
+        if shell is None:
+            return False
+        pattern = getattr(self.driver, "pty_composer_ready_pattern", None)
+        if pattern is not None:
+            if not await shell.wait_for_composer_ready(pattern):
+                logger.warning(
+                    "prompt-pty: composer never became ready for %s — prompt NOT typed",
+                    self.id,
+                )
+                return False
+        else:
+            # No grounded marker for this vendor — legacy boot-settle delay.
+            await asyncio.sleep(2.0)
+        if landed.is_set():
+            return True
+        try:
+            await shell.write_then_submit(message)
+        except Exception:
+            logger.debug("prompt-pty: typed delivery failed", exc_info=True)
+        return True
+
     # ── EXPERIMENT: PTY-transcript streaming prompt ─────────────────────────
     #
     # The PTY-interactive (visible=true) branch of the ``prompt`` action. The
@@ -2823,6 +2866,14 @@ class AgenticProcess(Entity):
                         # guard (previously cold-start-only) closes that hole.
                         if submits_on_paste:
                             await self.send(message)
+                        elif getattr(self.driver, "pty_composer_ready_pattern", None) is not None:
+                            # Composer-gated vendor (codex): defer typing to the
+                            # nudge task so a boot interstitial still on screen
+                            # (RUNNING is not composer-ready — QA C09b) can never
+                            # eat the prompt, and so the transcript poll loop
+                            # below starts streaming while we wait. A warm
+                            # composer passes the gate instantly.
+                            needs_initial_type = True
                         else:
                             shell = await self.shell()
                             if shell is None:
@@ -2848,14 +2899,17 @@ class AgenticProcess(Entity):
                     # entry appears.
                     async def _nudge_submit() -> None:
                         if needs_initial_type:
-                            await asyncio.sleep(2.0)
-                            if not user_turn_landed.is_set():
-                                shell = await self.shell()
-                                if shell is not None:
-                                    try:
-                                        await shell.write_then_submit(message)
-                                    except Exception:
-                                        pass
+                            # Composer-gated typed delivery (QA C09b): waits for
+                            # the vendor's composer-ready marker before typing
+                            # (legacy settle-sleep for pattern-less vendors).
+                            if not await self._typed_pty_delivery(
+                                message, landed=user_turn_landed
+                            ):
+                                # PTY unusable / composer never appeared —
+                                # blind Enter retries would only poke a dead or
+                                # blocked screen (or accept an interstitial the
+                                # user never saw).
+                                return
                         delay = 1.5 if not needs_initial_type else 3.0
                         for _ in range(8):
                             await asyncio.sleep(delay)

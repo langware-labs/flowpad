@@ -628,6 +628,45 @@ class Shell(Entity):
         """
         await self._wait_for_shell_ready(timeout=timeout)
 
+    async def wait_for_composer_ready(self, pattern: "re.Pattern[str]") -> bool:
+        """Block until ``pattern`` appears in this PTY's ANSI-stripped output.
+
+        The vendor-marker gate for typed first deliveries (QA C09b): output
+        quiescence is NOT composer-readiness — a blocking boot interstitial
+        (directory trust / login screen) is quiet too, and typing into it eats
+        the prompt. This subscribes to the live output feed FIRST (synchronous
+        queue registration — no subscribe/read gap), then scans the accumulated
+        history and every subsequent paint via ``pump_composer_ready``.
+
+        Event-driven: only ever waits on the next PTY paint. Returns False when
+        the PTY is gone or closes before the marker appears — the caller must
+        not type. Callers own cancellation (e.g. the prompt turn's nudge task
+        is cancelled when the turn stream closes).
+        """
+        from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
+            pump_composer_ready,
+        )
+        from flow_sdk.compute.providers.desktop.pty_session_manager import pty_registry
+
+        await self.ensure_live_compute_node_binding()
+        provider_id = self.compute_node.node_provider_id if self.compute_node else None
+        if not provider_id:
+            return False
+        pty_key = (self.compute_node_id, provider_id, self.id)
+        session = pty_registry.states.get(pty_key)
+        if session is None:
+            return False
+        q: asyncio.Queue = asyncio.Queue()
+        session.output_queues.append(q)
+        try:
+            initial = await self.read()
+            return await pump_composer_ready(pattern, initial, q.get)
+        finally:
+            try:
+                session.output_queues.remove(q)
+            except ValueError:
+                pass
+
     async def write_raw(self, data: bytes) -> None:
         """Send raw bytes verbatim to PTY stdin (no \\r, no bracketed paste).
 

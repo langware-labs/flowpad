@@ -55,6 +55,10 @@ class ClaudeDriver:
     name = "claude"
     preassign_interactive_session_id = True
     pty_submits_on_paste = True
+    # Cold boot delivers the first prompt as a launch arg (pre-filled input,
+    # Enter-only nudge confirmed via the transcript) — nothing is TYPED into a
+    # cold PTY, so there is no composer gate to declare.
+    pty_composer_ready_pattern = None
     pins_resume_cwd = True  # pins CLAUDE_PROJECT_DIR + workdir to the source session's cwd
 
     # ── CLI shape ────────────────────────────────────────────────────────────
