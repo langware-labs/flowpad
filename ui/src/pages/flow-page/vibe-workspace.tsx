@@ -9,6 +9,7 @@ import PersistentIframe, { PersistentIframeHandle } from '@src/components/persis
 import { DisplayToolbar, WebappDisplayToolbar } from '@src/components/display-toolbar';
 import { captureElementAsImageFile } from '@src/components/display-toolbar/capture-region';
 import { annotateImage } from '@src/components/image-annotator/image-annotator-store';
+import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { ResizablePanel, ResizablePanelGroup, ResizableHandle } from '@src/components/ui/resizable';
 import { useAgentContext } from '@src/contexts/agent-context';
 import { useAgenticProcessStream } from '@src/hooks/use-agentic-process-stream';
@@ -36,7 +37,7 @@ import { setupTabAndAdopt } from '@src/tabs/setup-tab-and-adopt';
 import { notify } from '@src/notifications/notify';
 import { WorkspaceChildStrip } from './workspace-child-strip';
 import { ContentPanel } from './content-panel/content-panel';
-import { launchVibeSessionForProject } from './use-start-vibe-session';
+import { createVibeProcessForProject, launchVibeSessionForProject } from './use-start-vibe-session';
 import { VIBE_STARTER_PROMPTS } from './vibe-starter-prompts';
 import type { VibeWorkspaceSession } from './use-vibe-workspace-session';
 import {
@@ -52,7 +53,19 @@ import {
 import { Plus } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { normalizeVibeModelTier, VIBE_MODEL_DEFAULT, VibeModelSelect } from './vibe-model-select';
+import {
+  normalizeVibeModelTier,
+  VIBE_MODEL_DEFAULT,
+  VibeModelSelect,
+  type VibeModelTier,
+} from './vibe-model-select';
+import { VibeWorkerSelect } from './vibe-worker-select';
+import {
+  DEFAULT_WORKER_TYPE,
+  normalizeWorkerType,
+  type WorkerType,
+} from '@src/components/workers/worker-types';
+import { workerLabel } from '@src/components/lens-viewer/shared/transcript-features/transcript-utils';
 
 
 interface VibeFocus {
@@ -163,6 +176,10 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
     () => (project?.id ? new TypeId(Project.type, project.id).toString() : null),
     [project?.id],
   );
+  const [pendingWorkerSwitch, setPendingWorkerSwitch] = useState<{
+    workerType: WorkerType;
+    model: VibeModelTier;
+  } | null>(null);
 
   // The display's process. On the display URL `flow` IS the process; on a child
   // URL `flow` is the child's entity, so the agent-driven display machinery
@@ -172,6 +189,34 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
     flow instanceof AgenticProcess && flow.id === session.processId ? flow : null;
   const streamItems = useAgenticProcessStream(activeProcess);
   const focus = useVibeFocus(streamItems);
+
+  const handleActiveWorkerChange = useCallback(
+    ({ workerType, model }: { workerType: WorkerType; model: string | null }) => {
+      setPendingWorkerSwitch({ workerType, model: normalizeVibeModelTier(model) });
+    },
+    [],
+  );
+
+  const confirmWorkerSwitch = useCallback(() => {
+    if (!project?.id || !pendingWorkerSwitch) return;
+    void createVibeProcessForProject({
+      projectId: project.id,
+      workdir: project.fs_storage_mount_path || project.name || undefined,
+      navigation,
+      model: pendingWorkerSwitch.model,
+      workerType: pendingWorkerSwitch.workerType,
+    }).catch((error) => {
+      console.error('[Vibe] Failed to switch worker:', error);
+      notify.error({ title: t`Could not start`, message: t`Failed to start the build session.` });
+    });
+  }, [
+    navigation,
+    pendingWorkerSwitch,
+    project?.fs_storage_mount_path,
+    project?.id,
+    project?.name,
+    t,
+  ]);
 
   // Agent-declared display focus (`flow show` → on_show entity event). The
   // last shown target PINS the display: it outranks the involuntary per-file
@@ -528,6 +573,7 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
           defaultProjectId={project?.id ?? null}
           defaultWorkdir={project?.fs_storage_mount_path ?? null}
           defaultModel={VIBE_MODEL_DEFAULT}
+          defaultWorkerType={DEFAULT_WORKER_TYPE}
           modelSelectSlot={({ value, disabled, onChange }) => (
             <VibeModelSelect
               value={normalizeVibeModelTier(value)}
@@ -535,6 +581,14 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
               disabled={disabled}
             />
           )}
+          workerSelectSlot={({ value, disabled, onChange }) => (
+            <VibeWorkerSelect
+              value={normalizeWorkerType(value)}
+              onChange={(next) => onChange(next)}
+              disabled={disabled || !project?.id}
+            />
+          )}
+          onActiveWorkerChange={handleActiveWorkerChange}
           // Keep the chat bound to the workspace's process as the user browses
           // its child tabs (on a child URL `target`'s latest-wins pick could
           // otherwise drift to another session).
@@ -563,6 +617,20 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
           </div>
         </div>
       </ResizablePanel>
+      <ConfirmDialog
+        open={!!pendingWorkerSwitch}
+        onOpenChange={(open) => {
+          if (!open) setPendingWorkerSwitch(null);
+        }}
+        title={
+          pendingWorkerSwitch
+            ? t`Start new ${workerLabel(pendingWorkerSwitch.workerType)} chat?`
+            : t`Start new chat?`
+        }
+        description={t`Changing worker requires a new chat. The current chat stays in history.`}
+        confirmLabel={t`Start new chat`}
+        onConfirm={confirmWorkerSwitch}
+      />
     </ResizablePanelGroup>
   );
 }

@@ -4,7 +4,6 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
 } from '@src/components/ui/select';
 import { cn } from '@src/lib/utils';
 import { useLingui } from '@lingui/react/macro';
@@ -71,15 +70,15 @@ export function VibeModelSelect({
         title={labels[selected]}
         data-testid={testId}
         className={cn(
-          'h-7 w-auto min-w-[124px] shrink-0 rounded-md border-input bg-background px-2 text-xs shadow-none',
+          'h-7 w-auto min-w-[142px] shrink-0 rounded-md border-input bg-background px-2 text-xs shadow-none',
           triggerClassName,
           className,
         )}
       >
-        <span className="flex min-w-0 items-center gap-1.5">
+        <div className="flex min-w-0 items-center gap-1.5">
           <span className="text-muted-foreground">{t`Model`}:</span>
-          <SelectValue />
-        </span>
+          <span className="truncate">{labels[selected]}</span>
+        </div>
       </SelectTrigger>
       <SelectContent align="start" className="min-w-[7.75rem]">
         {VIBE_MODEL_TIERS.map((tier) => (

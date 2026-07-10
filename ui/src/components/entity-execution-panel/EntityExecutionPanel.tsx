@@ -44,6 +44,12 @@ import {
 import { useWorkerHistory, type WorkerHistoryEntry } from '@src/hooks/useWorkerHistory';
 import { useProcessesForTarget } from './hooks/useProcessesForTarget';
 import { useAgenticProcessStream } from '@src/hooks/use-agentic-process-stream';
+import { AssetManagerButton } from '@src/components/asset-manager';
+import {
+  DEFAULT_WORKER_TYPE,
+  normalizeWorkerType,
+  type WorkerType,
+} from '@src/components/workers/worker-types';
 
 interface EntityExecutionPanelProps {
   /**
@@ -121,6 +127,8 @@ interface EntityExecutionPanelProps {
   /** Default model/tier for newly-created processes. Existing processes read
    * their model from `cli_config.model`. */
   defaultModel?: string | null;
+  /** Default worker/vendor for newly-created processes. */
+  defaultWorkerType?: WorkerType | null;
   /** Optional model control for surfaces that expose model selection. */
   modelSelectSlot?: (args: {
     value: string | null;
@@ -128,6 +136,22 @@ interface EntityExecutionPanelProps {
     onChange: (value: string) => void | Promise<void>;
     activeProcess: AgenticProcess | null;
   }) => React.ReactNode;
+  /** Optional worker control for surfaces that expose worker selection. */
+  workerSelectSlot?: (args: {
+    value: WorkerType | null;
+    disabled: boolean;
+    onChange: (value: WorkerType) => void | Promise<void>;
+    activeProcess: AgenticProcess | null;
+  }) => React.ReactNode;
+  /** Active worker changes require host-specific behavior, e.g. Vibe starts a
+   * fresh chat instead of mutating the current worker. */
+  onActiveWorkerChange?: (args: {
+    workerType: WorkerType;
+    activeProcess: AgenticProcess;
+    model: string | null;
+    projectId: string | null;
+    workdir: string | null | undefined;
+  }) => void | Promise<void>;
   /**
    * EXPERIMENT: chat transport. Selects how the process is created; both call
    * the same `prompt()`, which the backend routes by the process's `visible`
@@ -197,7 +221,10 @@ export function EntityExecutionPanel({
   defaultProjectId,
   defaultWorkdir,
   defaultModel,
+  defaultWorkerType,
   modelSelectSlot,
+  workerSelectSlot,
+  onActiveWorkerChange,
   transport = 'print',
   autoPrompt,
   promptContext,
@@ -351,6 +378,7 @@ export function EntityExecutionPanel({
   const [pendingAttachedRefs, setPendingAttachedRefs] = useState<string[]>([]);
   const [pendingProjectId, setPendingProjectId] = useState<string | null>(null);
   const [pendingModel, setPendingModel] = useState<string | null>(defaultModel ?? null);
+  const [pendingWorkerType, setPendingWorkerType] = useState<WorkerType | null>(defaultWorkerType ?? null);
   const [modelSavePending, setModelSavePending] = useState(false);
 
   const activeModelValue = (activeProcess?.cli_config as Record<string, unknown> | undefined)?.model;
@@ -358,6 +386,9 @@ export function EntityExecutionPanel({
   const effectiveModel = activeProcess
     ? (activeModel ?? defaultModel ?? null)
     : (pendingModel ?? defaultModel ?? null);
+  const effectiveWorkerType = activeProcess
+    ? normalizeWorkerType(activeProcess.worker_type)
+    : (pendingWorkerType ?? defaultWorkerType ?? null);
 
   const handleModelChange = useCallback(async (model: string) => {
     if (activeProcess && modelSavePending) return;
@@ -380,6 +411,22 @@ export function EntityExecutionPanel({
     }
   }, [activeProcess, defaultModel, modelSavePending, t]);
 
+  const handleWorkerChange = useCallback(async (workerType: WorkerType) => {
+    if (activeProcess) {
+      const currentWorker = normalizeWorkerType(activeProcess.worker_type);
+      if (workerType === currentWorker) return;
+      await onActiveWorkerChange?.({
+        workerType,
+        activeProcess,
+        model: effectiveModel,
+        projectId: activeProcess.project_id ?? effectiveProjectId,
+        workdir: effectiveWorkdir,
+      });
+      return;
+    }
+    setPendingWorkerType(workerType);
+  }, [activeProcess, effectiveModel, effectiveProjectId, effectiveWorkdir, onActiveWorkerChange]);
+
   const startNewSession = useCallback(() => {
     setSelectedProcessId(null);
     setLocalProcess(null);
@@ -387,7 +434,8 @@ export function EntityExecutionPanel({
     setPendingAttachedRefs([]);
     setPendingProjectId(null);
     setPendingModel(effectiveModel);
-  }, [effectiveModel]);
+    setPendingWorkerType(effectiveWorkerType ?? defaultWorkerType ?? DEFAULT_WORKER_TYPE);
+  }, [defaultWorkerType, effectiveModel, effectiveWorkerType]);
 
   const selectSession = useCallback((processId: string) => {
     setSelectedProcessId(processId);
@@ -439,6 +487,7 @@ export function EntityExecutionPanel({
               targetVfsPath: targetStr,
               processType,
               ...(effectiveModel ? { model: effectiveModel } : {}),
+              ...(effectiveWorkerType ? { workerType: effectiveWorkerType } : {}),
               // pty-poll: interactive PTY worker, no stream-json print mode.
               ...(isPtyPoll ? {} : { outputFormat: 'stream-json' }),
             },
@@ -476,7 +525,7 @@ export function EntityExecutionPanel({
     } finally {
       setSending(false);
     }
-  }, [activeProcess, sending, targetStr, effectiveProjectId, effectiveWorkdir, effectiveModel, onProcessCreated, pendingProjectId, pendingAttachedRefs, processType, transport, promptContext, onPromptContextConsumed, selectedProcessId, t]);
+  }, [activeProcess, sending, targetStr, effectiveProjectId, effectiveWorkdir, effectiveModel, effectiveWorkerType, onProcessCreated, pendingProjectId, pendingAttachedRefs, processType, transport, promptContext, onPromptContextConsumed, selectedProcessId, t]);
 
   const handleStop = useCallback(async () => {
     if (!activeProcess) return;
@@ -568,10 +617,16 @@ export function EntityExecutionPanel({
   // the turn — no transport special-casing and no PENDING_USER carve-out needed.
   const busy = !!indicatorProcess && isBusy(indicatorProcess);
   const sendDisabled = !targetStr || sending || busy;
-  const modelSelectNode = modelSelectSlot?.({
+  const modelSettingsNode = modelSelectSlot?.({
     value: effectiveModel,
     disabled: !targetStr || sending || busy || modelSavePending,
     onChange: handleModelChange,
+    activeProcess,
+  });
+  const workerSettingsNode = workerSelectSlot?.({
+    value: effectiveWorkerType,
+    disabled: !targetStr || sending || busy,
+    onChange: handleWorkerChange,
     activeProcess,
   });
 
@@ -623,24 +678,31 @@ export function EntityExecutionPanel({
         pastSessionsLabel={pastSessionsLabel}
         noPastSessionsLabel={noPastSessionsLabel}
         settingsSlot={
-          <ExecutionSettingsPopover
-            attachedRefs={effectiveAttachedRefs}
-            onAttach={handleAttach}
-            onDetach={handleDetach}
-            activeProcess={activeProcess}
-            projectId={activeProcess ? (activeProcess.project_id ?? null) : (pendingProjectId ?? effectiveProjectId ?? null)}
-            onProjectChange={setPendingProjectId}
-            trigger={
-              <button
-                type="button"
-                title={settingsLabel}
-                className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
-                data-testid="entity-execution-settings"
-              >
-                <Settings className="h-3.5 w-3.5" />
-              </button>
-            }
-          />
+          <>
+            <AssetManagerButton
+              process={activeProcess}
+              pendingRefs={effectiveAttachedRefs}
+              onAttach={activeProcess ? undefined : handleAttach}
+              onDetach={activeProcess ? undefined : handleDetach}
+            />
+            <ExecutionSettingsPopover
+              activeProcess={activeProcess}
+              projectId={activeProcess ? (activeProcess.project_id ?? null) : (pendingProjectId ?? effectiveProjectId ?? null)}
+              onProjectChange={setPendingProjectId}
+              modelControl={modelSettingsNode}
+              workerControl={workerSettingsNode}
+              trigger={
+                <button
+                  type="button"
+                  title={settingsLabel}
+                  className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+                  data-testid="entity-execution-settings"
+                >
+                  <Settings className="h-3.5 w-3.5" />
+                </button>
+              }
+            />
+          </>
         }
       />
       <AutoScrollContainer ref={scrollRef} className="flex-1 overflow-y-auto">
@@ -699,7 +761,6 @@ export function EntityExecutionPanel({
         statusSlot={statusSlot}
         placeholder={placeholder}
         onPasteImages={handlePasteImages}
-        leadingSlot={modelSelectNode}
       />
       <ConfirmDialog
         open={!!pendingDelete}
