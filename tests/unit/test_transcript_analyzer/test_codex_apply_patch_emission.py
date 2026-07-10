@@ -115,6 +115,32 @@ def test_apply_patch_multi_file_emits_one_entry_per_file():
     assert {entry.tool_use_id for entry in entries} == {"call-1"}
 
 
+def test_apply_patch_multi_file_ids_are_stable_across_reparses():
+    """Replay dedup keys on the per-op ids — the same input parsed by a fresh
+    parser must mint byte-identical (id, entry_id, tool_use_id) triples."""
+    patch = (
+        "*** Begin Patch\n"
+        "*** Add File: a.md\n"
+        "+aaa\n"
+        "*** Update File: b.py\n"
+        "@@\n"
+        "-old\n"
+        "+new\n"
+        "*** End Patch\n"
+    )
+    event = _custom_tool_call("apply_patch", patch)
+
+    def triples():
+        return [(e.id, e.entry_id, e.tool_use_id) for e in _parser().feed(event, 0)]
+
+    first, second = triples(), triples()
+    assert first == second
+    # And the per-op ids are distinct within one parse (the D01 defect was
+    # both ops sharing one id, letting dedup collapse one away).
+    assert len({t[0] for t in first}) == len(first) == 2
+    assert len({t[1] for t in first}) == 2
+
+
 def test_non_apply_patch_custom_tool_still_emits_tool_use_entry():
     """Generic custom tool calls (anything other than apply_patch) keep the
     previous ToolUseEntry behaviour — back-compat."""

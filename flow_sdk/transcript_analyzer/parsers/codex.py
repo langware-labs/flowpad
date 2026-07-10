@@ -296,6 +296,10 @@ class _CodexParserBase:
         ("chunk_id", re.compile(r"^Chunk ID:\s*([\w-]+)$")),
         ("wall_time", re.compile(r"^Wall time:\s*([\d.]+)\s*seconds$")),
         ("exit_code", re.compile(r"^Process exited with code\s*(-?\d+)$")),
+        # Newer codex writes the exit line as ``Exit code: N`` (validated
+        # against real rollouts; both function_call_output and
+        # custom_tool_call_output use it).
+        ("exit_code", re.compile(r"^Exit code:\s*(-?\d+)$")),
         ("token_count", re.compile(r"^Original token count:\s*(\d+)$")),
     )
 
@@ -352,6 +356,76 @@ class _CodexParserBase:
             return {}, text
         body = "\n".join(lines[i:])
         return fields, body
+
+    @staticmethod
+    def _decode_structured_result(decoded: Any) -> tuple[dict, str] | None:
+        """Decode a JSON result object into ``(fields, body)``.
+
+        Two real shapes carry exit metadata (validated against
+        ``~/.codex/sessions`` rollouts):
+
+        - top-level (list-form custom exec results)::
+
+            {"exit_code": N, "wall_time_seconds": S,
+             "original_token_count": T, "output": "..."}
+
+        - nested (apply_patch-era JSON-string outputs)::
+
+            {"output": "...", "metadata": {"exit_code": N,
+             "duration_seconds": S}}
+
+        Returns ``None`` when ``decoded`` is neither — callers fall back to
+        the line-preamble grammar.
+        """
+
+        def _to_ms(secs: Any) -> int | None:
+            return round(float(secs) * 1000) if isinstance(secs, (int, float)) else None
+
+        if not isinstance(decoded, dict):
+            return None
+        if "exit_code" in decoded:
+            exit_code = decoded.get("exit_code")
+            fields = {
+                "exit_code": exit_code if isinstance(exit_code, int) else None,
+                "duration_ms": _to_ms(decoded.get("wall_time_seconds")),
+                "output_token_count": decoded.get("original_token_count"),
+            }
+            return fields, str(decoded.get("output") or "")
+        metadata = decoded.get("metadata")
+        if isinstance(metadata, dict) and "exit_code" in metadata and "output" in decoded:
+            exit_code = metadata.get("exit_code")
+            fields = {
+                "exit_code": exit_code if isinstance(exit_code, int) else None,
+                "duration_ms": _to_ms(metadata.get("duration_seconds")),
+            }
+            return fields, str(decoded.get("output") or "")
+        return None
+
+    def _decode_tool_output(self, output: Any) -> tuple[dict, str]:
+        """Normalize a ``*_call_output.output`` payload into ``(fields, body)``.
+
+        Precedence: a structured JSON result object wins over the line
+        preamble — decoded from the string form directly, or by scanning
+        list-form text blocks from the END (the result object is the final
+        block; a human status block precedes it). Absent both, the
+        line-preamble grammar applies, and text without a preamble passes
+        through unchanged. This keeps nonzero exits durable error metadata
+        instead of reading as successful blank output.
+        """
+        if isinstance(output, list):
+            for block in reversed(output):
+                if not isinstance(block, dict) or not isinstance(block.get("text"), str):
+                    continue
+                structured = self._decode_structured_result(self._safe_json(block["text"]))
+                if structured is not None:
+                    return structured
+            return self._parse_codex_output_preamble(self._join_text_blocks(output))
+        if isinstance(output, str) and output.lstrip().startswith("{"):
+            structured = self._decode_structured_result(self._safe_json(output))
+            if structured is not None:
+                return structured
+        raw_text = "" if output is None else str(output)
+        return self._parse_codex_output_preamble(raw_text)
 
     @staticmethod
     def _codex_duration_to_ms(value: Any) -> int | None:
@@ -589,9 +663,7 @@ class _CodexParserBase:
             return out
         if ptype is CodexResponseItemType.FUNCTION_CALL_OUTPUT:
             call_id = str(payload.get("call_id") or "")
-            output = payload.get("output")
-            raw_text = "" if output is None else str(output)
-            preamble, body = self._parse_codex_output_preamble(raw_text)
+            preamble, body = self._decode_tool_output(payload.get("output"))
             exit_code = preamble.get("exit_code")
             return [
                 ToolResultEntry(
@@ -669,30 +741,7 @@ class _CodexParserBase:
             ]
         if ptype is CodexResponseItemType.CUSTOM_TOOL_CALL_OUTPUT:
             call_id = str(payload.get("call_id") or "")
-            output = payload.get("output")
-            raw_text = (
-                self._join_text_blocks(output) if isinstance(output, list) else ("" if output is None else str(output))
-            )
-            preamble, body = self._parse_codex_output_preamble(raw_text)
-            # Newer Codex custom exec results carry a human status block plus a
-            # JSON result object in the final input_text block. Decode that
-            # structured object so nonzero exits remain durable error metadata.
-            if isinstance(output, list):
-                for block in reversed(output):
-                    if not isinstance(block, dict) or not isinstance(block.get("text"), str):
-                        continue
-                    decoded = self._safe_json(block["text"])
-                    if not isinstance(decoded, dict) or "exit_code" not in decoded:
-                        continue
-                    preamble = {
-                        "exit_code": decoded.get("exit_code"),
-                        "duration_ms": round(float(decoded["wall_time_seconds"]) * 1000)
-                        if isinstance(decoded.get("wall_time_seconds"), (int, float))
-                        else None,
-                        "output_token_count": decoded.get("original_token_count"),
-                    }
-                    body = str(decoded.get("output") or "")
-                    break
+            preamble, body = self._decode_tool_output(payload.get("output"))
             exit_code = preamble.get("exit_code")
             return [
                 ToolResultEntry(
@@ -768,9 +817,7 @@ class _CodexParserBase:
             ]
         if ptype is CodexResponseItemType.TOOL_SEARCH_OUTPUT:
             call_id = str(payload.get("call_id") or "")
-            output = payload.get("output")
-            raw_text = "" if output is None else str(output)
-            preamble, body = self._parse_codex_output_preamble(raw_text)
+            preamble, body = self._decode_tool_output(payload.get("output"))
             exit_code = preamble.get("exit_code")
             return [
                 ToolResultEntry(
@@ -894,11 +941,31 @@ class _CodexParserBase:
                     **base,
                 )
             ]
-        # patch_apply_end mirrors a response_item custom_tool_call_output but
-        # carries Codex's internal exec id instead of the custom call id. Keeping
-        # both creates an unpairable orphan result for every apply_patch call.
+        # patch_apply_end mirrors the response_item custom_tool_call_output for
+        # the same apply_patch call (same call_id — validated against real
+        # rollouts). Emit it tagged as a transport mirror: the fold layer drops
+        # it whenever the canonical output exists, but when the rollout lost
+        # that line (turn killed between the two writes, event_msg-only
+        # histories) the mirror is the ONLY durable record of the apply result
+        # and must not vanish.
         if etype == "patch_apply_end":
-            return []
+            call_id = str(payload.get("call_id") or "")
+            exit_code = payload.get("exit_code")
+            stdout = str(payload.get("stdout") or "")
+            stderr = str(payload.get("stderr") or "")
+            is_error = payload.get("success") is False or (isinstance(exit_code, int) and exit_code != 0)
+            return [
+                ToolResultEntry(
+                    tool_use_id=call_id or base["id"],
+                    tool_output="\n".join(s for s in (stdout, stderr) if s),
+                    is_error=is_error,
+                    tool_name=self._call_tool_name.get(call_id, "apply_patch"),
+                    duration_ms=self._codex_duration_to_ms(payload.get("duration")),
+                    exit_code=exit_code if isinstance(exit_code, int) else None,
+                    is_transport_mirror=True,
+                    **base,
+                )
+            ]
         if etype in ("exec_command_end", "mcp_tool_call_end"):
             call_id = str(payload.get("call_id") or "")
             output = payload.get("aggregated_output") or payload.get("output") or payload.get("formatted_output") or ""

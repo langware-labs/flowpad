@@ -466,6 +466,149 @@ def test_custom_tool_output_list_preserves_nonzero_exit(tmp_path):
     assert result.duration_ms == 250
 
 
+def test_custom_tool_output_list_json_missing_exit_code_falls_back_to_text(tmp_path):
+    """A trailing JSON block WITHOUT ``exit_code`` is not the structured result
+    object — the joined text is kept as the output, with no error flag."""
+    path = _write_jsonl(
+        tmp_path,
+        "rollout.jsonl",
+        [
+            {"timestamp": "t0", "type": "session_meta", "payload": {"id": "s1"}},
+            {
+                "timestamp": "t1",
+                "type": "response_item",
+                "payload": {
+                    "type": "custom_tool_call_output",
+                    "call_id": "call-plain",
+                    "output": [
+                        {"type": "input_text", "text": "hello"},
+                        {"type": "input_text", "text": '{"not_a_result": true}'},
+                    ],
+                },
+            },
+        ],
+    )
+
+    result = next(e for e in AgentTranscriptFile("codex", path).entries if isinstance(e, ToolResultEntry))
+    assert result.is_error is False
+    assert result.exit_code is None
+    assert result.tool_output == 'hello\n{"not_a_result": true}'
+
+
+def test_custom_tool_output_list_last_json_result_wins_and_zero_is_not_error(tmp_path):
+    """Multiple JSON-object blocks: the LAST one carrying ``exit_code`` is the
+    result frame. ``exit_code == 0`` must not be flagged as an error."""
+    path = _write_jsonl(
+        tmp_path,
+        "rollout.jsonl",
+        [
+            {"timestamp": "t0", "type": "session_meta", "payload": {"id": "s1"}},
+            {
+                "timestamp": "t1",
+                "type": "response_item",
+                "payload": {
+                    "type": "custom_tool_call_output",
+                    "call_id": "call-ok",
+                    "output": [
+                        {"type": "input_text", "text": '{"exit_code":1,"output":"stale"}'},
+                        {"type": "input_text", "text": '{"exit_code":0,"output":"fresh OK\\n"}'},
+                    ],
+                },
+            },
+        ],
+    )
+
+    result = next(e for e in AgentTranscriptFile("codex", path).entries if isinstance(e, ToolResultEntry))
+    assert result.is_error is False
+    assert result.exit_code == 0
+    assert result.tool_output == "fresh OK\n"
+
+
+def test_custom_tool_output_list_json_result_found_behind_trailing_nonjson_block(tmp_path):
+    """A non-JSON block AFTER the structured result must not hide it — the
+    reversed scan skips it and still decodes the exit code."""
+    path = _write_jsonl(
+        tmp_path,
+        "rollout.jsonl",
+        [
+            {"timestamp": "t0", "type": "session_meta", "payload": {"id": "s1"}},
+            {
+                "timestamp": "t1",
+                "type": "response_item",
+                "payload": {
+                    "type": "custom_tool_call_output",
+                    "call_id": "call-trail",
+                    "output": [
+                        {"type": "input_text", "text": "Script completed\n"},
+                        {"type": "input_text", "text": '{"exit_code":5,"output":"boom"}'},
+                        {"type": "input_text", "text": "trailing human note"},
+                    ],
+                },
+            },
+        ],
+    )
+
+    result = next(e for e in AgentTranscriptFile("codex", path).entries if isinstance(e, ToolResultEntry))
+    assert result.is_error is True
+    assert result.exit_code == 5
+    assert result.tool_output == "boom"
+
+
+def test_string_output_exit_code_line_preamble_is_decoded(tmp_path):
+    """Real rollouts also carry the ``Exit code: N`` line form (both
+    function_call_output and custom_tool_call_output). A nonzero exit must
+    not read as success with the preamble left glued to the body."""
+    path = _write_jsonl(
+        tmp_path,
+        "rollout.jsonl",
+        [
+            {"timestamp": "t0", "type": "session_meta", "payload": {"id": "s1"}},
+            {
+                "timestamp": "t1",
+                "type": "response_item",
+                "payload": {
+                    "type": "function_call_output",
+                    "call_id": "call-exitline",
+                    "output": "Exit code: 7\nWall time: 0.3 seconds\nOutput:\nno such file\n",
+                },
+            },
+        ],
+    )
+
+    result = next(e for e in AgentTranscriptFile("codex", path).entries if isinstance(e, ToolResultEntry))
+    assert result.is_error is True
+    assert result.exit_code == 7
+    assert result.duration_ms == 300
+    assert result.tool_output == "no such file\n"
+
+
+def test_string_output_json_metadata_exit_code_is_decoded(tmp_path):
+    """apply_patch-era outputs are a JSON string of the form
+    ``{"output": ..., "metadata": {"exit_code": N, "duration_seconds": S}}``."""
+    path = _write_jsonl(
+        tmp_path,
+        "rollout.jsonl",
+        [
+            {"timestamp": "t0", "type": "session_meta", "payload": {"id": "s1"}},
+            {
+                "timestamp": "t1",
+                "type": "response_item",
+                "payload": {
+                    "type": "custom_tool_call_output",
+                    "call_id": "call-meta",
+                    "output": '{"output":"patch failed: conflict\\n","metadata":{"exit_code":2,"duration_seconds":0.5}}',
+                },
+            },
+        ],
+    )
+
+    result = next(e for e in AgentTranscriptFile("codex", path).entries if isinstance(e, ToolResultEntry))
+    assert result.is_error is True
+    assert result.exit_code == 2
+    assert result.duration_ms == 500
+    assert result.tool_output == "patch failed: conflict\n"
+
+
 def test_internal_angle_only_user_message_is_not_a_visible_turn(tmp_path):
     path = _write_jsonl(
         tmp_path,
@@ -500,7 +643,69 @@ def test_internal_angle_only_user_message_is_not_a_visible_turn(tmp_path):
     assert [e.text for e in users] == ["real prompt"]
 
 
+def test_whitespace_only_user_message_is_not_a_visible_turn(tmp_path):
+    path = _write_jsonl(
+        tmp_path,
+        "rollout.jsonl",
+        [
+            {"timestamp": "t0", "type": "session_meta", "payload": {"id": "s1"}},
+            {
+                "timestamp": "t1",
+                "type": "response_item",
+                "payload": {
+                    "type": "message",
+                    "role": "user",
+                    "content": [{"type": "input_text", "text": "  \n\t "}],
+                },
+            },
+        ],
+    )
+
+    assert not [e for e in AgentTranscriptFile("codex", path).entries if isinstance(e, UserMessageEntry)]
+
+
+def test_user_message_mixing_angle_blocks_and_real_text_keeps_the_text(tmp_path):
+    path = _write_jsonl(
+        tmp_path,
+        "rollout.jsonl",
+        [
+            {"timestamp": "t0", "type": "session_meta", "payload": {"id": "s1"}},
+            {
+                "timestamp": "t1",
+                "type": "response_item",
+                "payload": {
+                    "type": "message",
+                    "role": "user",
+                    "content": [
+                        {"type": "input_text", "text": "<environment_context>internal</environment_context>"},
+                        {"type": "input_text", "text": "fix the bug please"},
+                    ],
+                },
+            },
+        ],
+    )
+
+    users = [e for e in AgentTranscriptFile("codex", path).entries if isinstance(e, UserMessageEntry)]
+    assert [e.text for e in users] == ["fix the bug please"]
+
+
+# ── patch_apply_end mirror vs orphan semantics ───────────────────────────────
+#
+# Real rollouts (validated against ~/.codex/sessions 2026-07) write, per
+# apply_patch call, in this order and all sharing ONE call_id:
+#   response_item custom_tool_call → event_msg patch_apply_end
+#   → response_item custom_tool_call_output
+# The event_msg is a transport mirror of the canonical output. Some rollouts
+# (forked/event_msg-only histories, or turns killed between the two writes)
+# carry the patch_apply_end WITHOUT the custom_tool_call_output — that mirror
+# is then the ONLY durable record of the apply result and must not vanish.
+
+_APPLY_PATCH_UPDATE = "*** Begin Patch\n*** Update File: b.py\n@@\n-old\n+new\n*** End Patch\n"
+
+
 def test_patch_apply_end_transport_mirror_is_not_an_orphan_result(tmp_path):
+    """When the canonical custom_tool_call_output exists, the patch_apply_end
+    mirror must not surface as a second/orphan result row."""
     path = _write_jsonl(
         tmp_path,
         "rollout.jsonl",
@@ -511,11 +716,93 @@ def test_patch_apply_end_transport_mirror_is_not_an_orphan_result(tmp_path):
                 "type": "event_msg",
                 "payload": {
                     "type": "patch_apply_end",
-                    "call_id": "internal-exec-id",
-                    "exit_code": 0,
+                    "call_id": "call-77",
+                    "success": True,
+                    "stdout": "Success. Updated the following files:\nM b.py\n",
+                    "stderr": "",
+                },
+            },
+            {
+                "timestamp": "t2",
+                "type": "response_item",
+                "payload": {
+                    "type": "custom_tool_call_output",
+                    "call_id": "call-77",
+                    "output": "canonical output",
                 },
             },
         ],
     )
 
-    assert not any(isinstance(e, ToolResultEntry) for e in AgentTranscriptFile("codex", path).entries)
+    results = [e for e in AgentTranscriptFile("codex", path).entries if isinstance(e, ToolResultEntry)]
+    assert len(results) == 1
+    assert results[0].tool_output == "canonical output"
+
+
+def test_orphaned_patch_apply_end_still_yields_a_result(tmp_path):
+    """Event_msg-only rollout: patch_apply_end with NO custom_tool_call_output
+    anywhere. The mirror is the only record — it must survive as a durable
+    result frame instead of vanishing silently."""
+    path = _write_jsonl(
+        tmp_path,
+        "rollout.jsonl",
+        [
+            {"timestamp": "t0", "type": "session_meta", "payload": {"id": "s1"}},
+            {
+                "timestamp": "t1",
+                "type": "event_msg",
+                "payload": {
+                    "type": "patch_apply_end",
+                    "call_id": "call-orphan",
+                    "success": True,
+                    "stdout": "Success. Updated the following files:\nM b.py\n",
+                    "stderr": "",
+                },
+            },
+        ],
+    )
+
+    results = [e for e in AgentTranscriptFile("codex", path).entries if isinstance(e, ToolResultEntry)]
+    assert len(results) == 1
+    assert results[0].tool_use_id == "call-orphan"
+    assert results[0].is_error is False
+    assert "Updated the following files" in results[0].tool_output
+
+
+def test_orphaned_failed_patch_apply_end_marks_file_ops_as_errored(tmp_path):
+    """Turn killed between patch_apply_end and custom_tool_call_output: the
+    semantic file ops must still end up in a derivable failed state."""
+    path = _write_jsonl(
+        tmp_path,
+        "rollout.jsonl",
+        [
+            {"timestamp": "t0", "type": "session_meta", "payload": {"id": "s1"}},
+            {
+                "timestamp": "t1",
+                "type": "response_item",
+                "payload": {
+                    "type": "custom_tool_call",
+                    "name": "apply_patch",
+                    "call_id": "call-killed",
+                    "input": _APPLY_PATCH_UPDATE,
+                },
+            },
+            {
+                "timestamp": "t2",
+                "type": "event_msg",
+                "payload": {
+                    "type": "patch_apply_end",
+                    "call_id": "call-killed",
+                    "success": False,
+                    "stdout": "",
+                    "stderr": "apply failed: conflict in b.py",
+                },
+            },
+        ],
+    )
+
+    from flow_sdk.transcript_analyzer.entries import FileEditEntry
+
+    t = AgentTranscriptFile("codex", path)
+    edit = next(e for e in t.entries if isinstance(e, FileEditEntry))
+    assert edit.is_error is True
