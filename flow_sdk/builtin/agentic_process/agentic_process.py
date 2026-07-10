@@ -919,6 +919,18 @@ class AgenticProcess(Entity):
         previous_sidecar_shell_id = self.sidecar_shell_id
         cleared_start_failure = False
         shell = None
+        # The shell this attempt bound for a fresh launch (via
+        # ``_get_or_create_shell``). Tracked separately from ``shell`` so the
+        # failure cleanup only ever stops a transport THIS open partially
+        # created — never a pre-existing live shell observed during the
+        # reattach phase (stopping that would kill a healthy worker on an
+        # unrelated error, e.g. a transient save failure).
+        launch_shell = None
+        # Set when a fresh spawn consumes a queued prompt as its launch arg
+        # (see the pop below). Defined OUTSIDE the try so the except handlers'
+        # ``_requeue_failed_launch(launched_head)`` can't NameError (masking
+        # the real failure) when the exception fires before the pop section.
+        launched_head: dict | None = None
         try:
             # If we're stuck in STOPPING with a dead worker (orphan from a
             # crashed close()/exit()), reset to STOPPED before doing anything
@@ -958,10 +970,6 @@ class AgenticProcess(Entity):
             # recovery), set in the stale-shell-drop branch below. Drives the
             # ``recovered`` event emission in the success tail.
             is_recovery = False
-            # Set when this fresh spawn consumes a queued prompt as its launch
-            # arg (see the pop below). Tracked here so the except handler can
-            # re-queue it if the boot fails — the prompt must survive.
-            launched_head: dict | None = None
             if visible is not None and self.visible != visible:
                 self.visible = visible
                 reattach_changed = True
@@ -1049,6 +1057,7 @@ class AgenticProcess(Entity):
             is_resume = cmd.resume
 
             shell = await self._get_or_create_shell()
+            launch_shell = shell
             self.shell_id = shell.id
             self.status = ProcessStatus.STARTING.value
             if self.driver.name in (WorkerType.CODEX.value, WorkerType.COPILOT.value):
@@ -1199,15 +1208,17 @@ class AgenticProcess(Entity):
             # optimistic PTY intent. Best-effort stop any partially created
             # transport, then restore the prior shell/transport so an existing
             # headless chat remains renderable and an explicit Retry can make
-            # one clean launch attempt.
-            if shell is not None:
+            # one clean launch attempt. Only ``launch_shell`` (bound by THIS
+            # attempt's fresh-launch section) is stopped — a pre-existing shell
+            # seen during the reattach phase may host a live healthy worker.
+            if launch_shell is not None:
                 try:
-                    await shell.stop()
+                    await launch_shell.stop()
                 except Exception:
                     logger.warning(
                         "AgenticProcess %s: failed to clean partial shell %s",
                         self.id,
-                        getattr(shell, "id", None),
+                        getattr(launch_shell, "id", None),
                         exc_info=True,
                     )
             self.shell_id = previous_shell_id

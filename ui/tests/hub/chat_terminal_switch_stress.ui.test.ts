@@ -6,8 +6,8 @@
  * in a headless Chromium and proves the switch survives 10 rapid round-trips
  * without the pane desyncing, the session drifting, or the status indicator
  * going stale. It exists to catch the stale-broadcast clobber the SDK
- * desired-value latch fixes (agentic-process.ts `_pendingPtyMode`/
- * `_pendingVisible`): an in-flight entity broadcast carrying the pre-switch
+ * desired-value latch fixes (agentic-process.ts `_pendingTransport`): an
+ * in-flight entity broadcast carrying the pre-switch
  * `pty_mode` must NOT flip the pane back after the user toggles.
  *
  * The chat⇄terminal toggle (`handleToggleView`) does TWO things at once: it
