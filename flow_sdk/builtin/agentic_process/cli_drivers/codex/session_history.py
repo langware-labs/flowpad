@@ -256,6 +256,13 @@ def _entry_to_replay_flow_data(entry) -> list[FlowData]:
     for frame in frames:
         frame.process_entry = process_entry
         frame.attributes["subtype"] = subtype
+        # Vendor-neutral abort signal: a rollout's organic turn_aborted event
+        # (written by the codex TUI on Ctrl-C) means every still-unmatched tool
+        # call of that turn is terminated, exactly like a flowpad-authored
+        # cancel marker (turn_abort.py). Stamp the shared attribute so the UI
+        # keys on semantics, not the vendor event name.
+        if subtype == "event_msg.turn_aborted":
+            frame.attributes["turn-terminated"] = "true"
         frame.attributes["observation-kind"] = "replay"
         frame.attributes.setdefault("transcript-entry-id", entry.id)
         if entry.entry_id:
