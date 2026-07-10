@@ -22,14 +22,19 @@ import { FileOptions, TabOptions } from './types';
 import { preserveWindowLayout, stripDockPortion } from './url-builder';
 import { allScope, projectScope } from '@src/lib/scope-filter';
 
-function toStringRecord(obj?: Record<string, unknown>): Record<string, string> | undefined {
-  if (!obj) return undefined;
+// Always returns a record (possibly empty) so consumers can read keys without
+// optional-chaining. An earlier version returned `undefined` for empty input,
+// which made every consumer responsible for `?.` — `openShellProcess` missed
+// one and crashed on option-less opens (Quick Create from Home). `openDock`
+// treats an empty record the same as no extra options.
+function toStringRecord(obj?: Record<string, unknown>): Record<string, string> {
   const result: Record<string, string> = {};
+  if (!obj) return result;
   for (const [key, value] of Object.entries(obj)) {
     if (value == null || value === false || typeof value === 'object') continue;
     result[key] = typeof value === 'string' ? value : `${value as number | boolean}`;
   }
-  return Object.keys(result).length > 0 ? result : undefined;
+  return result;
 }
 
 let pendingDockNavigationUrl: string | null = null;
@@ -184,9 +189,10 @@ export class NavigationActions {
     }
 
     const base = pointer instanceof DockPointer ? pointer : new DockPointer(pointer);
-    let dock = extraOptions
-      ? new DockPointer(base.viewType, base.pointer, { ...base.options, ...extraOptions }, base.layout)
-      : base;
+    let dock =
+      extraOptions && Object.keys(extraOptions).length > 0
+        ? new DockPointer(base.viewType, base.pointer, { ...base.options, ...extraOptions }, base.layout)
+        : base;
 
     // URL-first default scope for scope-aware surfaces (assets, triggers, file
     // explorer): a dock opened WITHOUT an explicit scope (no `scope-*` keys →
@@ -423,7 +429,7 @@ export class NavigationActions {
     // (`/dock/display/<proc>`), not a shell dock. The mode→surface pairing is
     // owned by processSurfaceViewType (shared with the loader's URL
     // canonicalization) so the two can't drift.
-    const surface = processSurfaceViewType(extraOptions?.viewMode === 'vibe');
+    const surface = processSurfaceViewType(extraOptions.viewMode === 'vibe');
     const dock =
       surface === ViewType.DISPLAY
         ? DockPointer.forDisplay(agenticProcessId)
