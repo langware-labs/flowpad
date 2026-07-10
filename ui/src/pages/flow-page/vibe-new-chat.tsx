@@ -6,6 +6,8 @@ import { useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useStartVibeSession } from './use-start-vibe-session';
 import { VIBE_MODEL_DEFAULT, VibeModelSelect, type VibeModelTier } from './vibe-model-select';
+import { VibeWorkerSelect } from './vibe-worker-select';
+import { DEFAULT_WORKER_TYPE, type WorkerType } from '@src/components/workers/worker-types';
 
 /**
  * Vibe fallback shown when no build session is active — i.e. we're in Vibe mode
@@ -21,6 +23,7 @@ export function VibeNewChat() {
   const startVibe = useStartVibeSession();
   const [draft, setDraft] = useState('');
   const [model, setModel] = useState<VibeModelTier>(VIBE_MODEL_DEFAULT);
+  const [workerType, setWorkerType] = useState<WorkerType>(DEFAULT_WORKER_TYPE);
   const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
   const firstName = user?.name?.split(' ')[0] || 'there';
 
@@ -45,8 +48,13 @@ export function VibeNewChat() {
             value={draft}
             onChange={setDraft}
             allowAttachments
-            footerSlot={<VibeModelSelect value={model} onChange={setModel} />}
-            onSubmit={(msg, files) => startVibe(msg, files, model)}
+            footerSlot={(
+              <div className="flex flex-wrap items-center gap-1.5">
+                <VibeModelSelect value={model} onChange={setModel} />
+                <VibeWorkerSelect value={workerType} onChange={setWorkerType} />
+              </div>
+            )}
+            onSubmit={(msg, files) => startVibe(msg, files, model, workerType)}
           />
         </div>
         <button
