@@ -22,17 +22,27 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from pathlib import Path
 
 import pytest
 
-from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import AgenticContext
+from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
+    AgenticContext,
+    WorkerSpawnError,
+)
 from flow_sdk.builtin.agentic_process.cli_drivers.codex import (
     CANCEL_GRACE_SECONDS,
     CodexCLIStreamWorker,
 )
 from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowElementType
-from tests.utils.fake_cli import fake_stream_argv, patch_build_spawn
+from tests.utils.fake_cli import (
+    clear_harness_capability,
+    fake_stream_argv,
+    make_fake_cli_bin,
+    patch_build_spawn,
+    seed_harness_capability,
+)
 
 # ``_build_spawn`` takes ``(context, prompt)`` and returns a 3-tuple
 # ``(argv, env, stdin)`` — codex delivers the prompt over the child's stdin
@@ -56,22 +66,61 @@ TURN_COMPLETED = {
 }
 
 
+# ── D02: spawn must use the capability-discovered executable, not the service
+# PATH. The QA repro is a backend launched with a PATH that excludes the nvm
+# bin dir while capability discovery recorded it.
+
+_STRIPPED_SERVICE_PATH = os.pathsep.join(["/usr/bin", "/bin"])
+
+
 def test_build_spawn_uses_absolute_discovered_codex_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    bin_dir = tmp_path / "nvm-bin"
-    bin_dir.mkdir()
-    codex = bin_dir / "codex"
-    codex.write_text("#!/bin/sh\n", encoding="utf-8")
-    codex.chmod(0o755)
-    monkeypatch.setattr(
-        "flow_sdk.builtin.agentic_process.cli_drivers.codex.stream_worker.worker_path_env",
-        lambda _worker: {"PATH": str(bin_dir)},
-    )
+    bin_dir, codex = make_fake_cli_bin(tmp_path, "codex")
+    monkeypatch.setenv("PATH", _STRIPPED_SERVICE_PATH)  # service PATH lacks nvm dir
+    seed_harness_capability(monkeypatch, "codex", bin_dir)
 
     argv, env, stdin = CodexCLIStreamWorker()._build_spawn(AgenticContext(workdir=str(tmp_path)), "hello")
 
-    assert argv is not None and argv[0] == str(codex)
-    assert env["PATH"] == str(bin_dir)
+    assert argv[0] == str(codex)
+    assert env["PATH"].split(os.pathsep)[0] == str(bin_dir)
     assert stdin == "hello"
+
+
+def test_build_spawn_survives_worker_env_path_pin(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """The exact D02 scenario: every headless turn's context env_vars carry a
+    PATH (``apply_worker_env`` pins the backend venv, built from the SAME
+    stripped service PATH). That overlay must not clobber the discovered bin
+    dir — argv[0] still resolves to the absolute discovered executable."""
+    bin_dir, codex = make_fake_cli_bin(tmp_path, "codex")
+    monkeypatch.setenv("PATH", _STRIPPED_SERVICE_PATH)
+    seed_harness_capability(monkeypatch, "codex", bin_dir)
+    venv_bin = str(tmp_path / "venv-bin")
+    pinned_path = f"{venv_bin}{os.pathsep}{_STRIPPED_SERVICE_PATH}"  # apply_worker_env shape
+
+    ctx = AgenticContext(workdir=str(tmp_path), env_vars={"PATH": pinned_path})
+    argv, env, stdin = CodexCLIStreamWorker()._build_spawn(ctx, "hello")
+
+    assert argv[0] == str(codex)
+    path_dirs = env["PATH"].split(os.pathsep)
+    assert path_dirs[0] == str(bin_dir)  # discovered dir stays first
+    assert venv_bin in path_dirs  # the flow-CLI pin survives
+
+
+def test_build_spawn_missing_binary_raises_typed_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    # Discovery recorded a folder, but the binary is gone (uninstalled since).
+    empty_dir = tmp_path / "empty-bin"
+    empty_dir.mkdir()
+    monkeypatch.setenv("PATH", _STRIPPED_SERVICE_PATH)
+    seed_harness_capability(monkeypatch, "codex", empty_dir)
+
+    with pytest.raises(WorkerSpawnError, match=r"codex executable .* not found on worker PATH"):
+        CodexCLIStreamWorker()._build_spawn(AgenticContext(workdir=str(tmp_path)), "hello")
+
+
+def test_build_spawn_no_capability_raises_typed_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    clear_harness_capability(monkeypatch, "codex")
+
+    with pytest.raises(WorkerSpawnError, match=r"no harness\.codex\.cli installation discovered"):
+        CodexCLIStreamWorker()._build_spawn(AgenticContext(workdir=str(tmp_path)), "hello")
 
 
 @pytest.mark.asyncio
@@ -195,22 +244,103 @@ async def test_stream_is_teed_to_transcript(tmp_path: Path, monkeypatch: pytest.
 
 
 @pytest.mark.asyncio
-async def test_missing_binary_yields_single_error_no_end(tmp_path: Path):
-    # Unlike the copilot worker (which emits ERROR + END), the codex worker
-    # yields ONLY the ERROR frame on a missing binary and returns early — pin
-    # that divergence so a future refactor doesn't silently change the contract.
+async def test_missing_binary_yields_error_frame_then_raises(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    # An unresolvable binary surfaces on BOTH channels: an ERROR frame on the
+    # chat stream (so the user sees the message) and a typed WorkerSpawnError
+    # out of the generator (so the turn runner latches status=FAILED +
+    # start_failure instead of ending the turn look-successful).
+    empty_dir = tmp_path / "empty-bin"
+    empty_dir.mkdir()
+    monkeypatch.setenv("PATH", _STRIPPED_SERVICE_PATH)
+    seed_harness_capability(monkeypatch, "codex", empty_dir)
     worker = CodexCLIStreamWorker(transcript_path=tmp_path / "codex.jsonl")
 
-    def _stub(context: AgenticContext, prompt: str):
-        return None, {}, prompt
+    out = []
+    with pytest.raises(WorkerSpawnError, match="not found on worker PATH"):
+        async for fd in worker.execute(prompt="hi", context=AgenticContext(workdir=str(tmp_path))):
+            out.append(fd)
 
-    worker._build_spawn = _stub  # type: ignore[assignment]
-
-    out = await _collect(worker, AgenticContext(workdir=str(tmp_path)))
     types = [fd.attributes["element-type"] for fd in out]
-
     assert types == [FlowElementType.ERROR]
-    assert "codex binary not found" in out[0].flow_value
+    assert "not found on worker PATH" in out[0].flow_value
+
+
+@pytest.mark.asyncio
+async def test_headless_prompt_missing_binary_ends_process_failed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Driver-level D02 contract: a headless turn whose codex executable can't
+    be resolved must end the process FAILED with the start_failure latch (not
+    crash, not stay RUNNING with an empty transcript)."""
+    from flow_sdk.builtin.agentic_process.cli_drivers.codex.driver import CodexDriver
+    from flow_sdk.builtin.process_lifecycle import ProcessStatus
+
+    empty_dir = tmp_path / "empty-bin"
+    empty_dir.mkdir()
+    monkeypatch.setenv("PATH", _STRIPPED_SERVICE_PATH)
+    seed_harness_capability(monkeypatch, "codex", empty_dir)
+    monkeypatch.setattr(
+        CodexCLIStreamWorker,
+        "for_process",
+        classmethod(lambda cls, _pid: cls(transcript_path=tmp_path / "codex.jsonl")),
+    )
+
+    class _FakeProcess:
+        id = "aaaaaaaa-1111-4111-9111-000000000001"
+        typeid = None
+
+        def __init__(self) -> None:
+            self.workdir = str(tmp_path)
+            self.cli_config = {}
+            self.session_id = None
+            self.project_id = None
+            self.resolved_add_dirs = []
+            self.status = ProcessStatus.STOPPED.value
+            self.start_failure = None
+            self.emitted: list[dict] = []
+
+        def get_type(self) -> str:
+            return "agentic_process"
+
+        def get_agents_json(self) -> None:
+            return None
+
+        def _instruction_context_kwargs(self, _assets) -> dict:
+            return {}
+
+        def make_turn_session_adopter(self, _log_prefix: str):
+            # Mirrors AgenticProcess.make_turn_session_adopter's shape: a
+            # coroutine function called per streamed frame with the worker's
+            # session id. The spawn-failure turn never reports one.
+            async def adopt(_sid: str | None) -> None:
+                return None
+
+            return adopt
+
+        async def get_project(self) -> None:
+            return None
+
+        async def prepare_system_instruction_assets(self) -> list:
+            return []
+
+        async def save(self) -> None:
+            pass
+
+        async def notify_updated(self) -> None:
+            pass
+
+        async def emit_flow_data(self, fd: dict) -> None:
+            self.emitted.append(fd)
+
+    proc = _FakeProcess()
+    resp = await CodexDriver().headless_prompt(proc, "hi")  # type: ignore[arg-type]
+    assert resp.status.lower() == "success"
+
+    # The turn runs as a named background task — await it deterministically.
+    task = next(t for t in asyncio.all_tasks() if t.get_name() == f"codex-{proc.id[:8]}")
+    await task
+
+    assert proc.status == ProcessStatus.FAILED.value
+    assert proc.start_failure is not None and "not found on worker PATH" in proc.start_failure
+    assert any("not found on worker PATH" in str(fd.get("flow_value", "")) for fd in proc.emitted)
 
 
 @pytest.mark.asyncio

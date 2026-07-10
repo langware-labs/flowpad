@@ -4,17 +4,27 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from pathlib import Path
 
 import pytest
 
-from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import AgenticContext
+from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
+    AgenticContext,
+    WorkerSpawnError,
+)
 from flow_sdk.builtin.agentic_process.cli_drivers.copilot import (
     CANCEL_GRACE_SECONDS,
     CopilotCLIStreamWorker,
 )
 from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowElementType
-from tests.utils.fake_cli import fake_stream_argv, patch_build_spawn
+
+from tests.utils.fake_cli import (
+    fake_stream_argv,
+    make_fake_cli_bin,
+    patch_build_spawn,
+    seed_harness_capability,
+)
 
 # ``_build_spawn`` takes ``(context, prompt)`` and returns a 3-tuple
 # ``(argv, env, stdin)`` — copilot delivers the prompt over the child's stdin
@@ -93,18 +103,48 @@ async def test_nonzero_exit_writes_synthetic_error(tmp_path: Path, monkeypatch: 
 
 
 @pytest.mark.asyncio
-async def test_missing_binary_writes_terminal_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+async def test_missing_binary_writes_terminal_error_and_raises(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    # Discovery recorded a folder without the binary → the transcript gets the
+    # flowpad.error terminal event (tail_status → FAILED), the stream carries
+    # ERROR + END, and the typed WorkerSpawnError propagates so the turn
+    # runner latches status=FAILED + start_failure.
+    empty_dir = tmp_path / "empty-bin"
+    empty_dir.mkdir()
+    monkeypatch.setenv("PATH", os.pathsep.join(["/usr/bin", "/bin"]))
+    seed_harness_capability(monkeypatch, "copilot", empty_dir)
     transcript = tmp_path / "copilot.jsonl"
     worker = CopilotCLIStreamWorker(transcript_path=transcript)
-    patch_build_spawn(monkeypatch, CopilotCLIStreamWorker, None, stdin="")  # type: ignore[arg-type]
 
-    out = await _collect(worker, AgenticContext(workdir=str(tmp_path), session_id="missing-bin"))
+    out = []
+    with pytest.raises(WorkerSpawnError, match="not found on worker PATH"):
+        async for fd in worker.execute(
+            prompt="hi", context=AgenticContext(workdir=str(tmp_path), session_id="missing-bin")
+        ):
+            out.append(fd)
     types = [fd.attributes["element-type"] for fd in out]
 
     assert types == [FlowElementType.ERROR, FlowElementType.END]
     text = transcript.read_text(encoding="utf-8")
     assert '"type":"flowpad.error"' in text
-    assert "copilot binary not found" in text
+    assert "not found on worker PATH" in text
+
+
+def test_build_spawn_uses_absolute_discovered_copilot_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """D02 parity with codex: argv[0] resolves to the discovered absolute
+    executable even when the context env_vars carry their own PATH pin."""
+    bin_dir, copilot = make_fake_cli_bin(tmp_path, "copilot")
+    stripped = os.pathsep.join(["/usr/bin", "/bin"])
+    monkeypatch.setenv("PATH", stripped)
+    seed_harness_capability(monkeypatch, "copilot", bin_dir)
+    ctx = AgenticContext(
+        workdir=str(tmp_path),
+        env_vars={"PATH": f"{tmp_path / 'venv-bin'}{os.pathsep}{stripped}"},
+    )
+
+    argv, env, _stdin = CopilotCLIStreamWorker()._build_spawn(ctx, "hi")
+
+    assert argv[0] == str(copilot)
+    assert env["PATH"].split(os.pathsep)[0] == str(bin_dir)
 
 
 @pytest.mark.asyncio

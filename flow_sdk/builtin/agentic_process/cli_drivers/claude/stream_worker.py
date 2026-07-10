@@ -37,10 +37,12 @@ from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import 
     STREAM_JSON_LINE_LIMIT_BYTES,
     AgenticContext,
     AgenticWorker,
+    WorkerSpawnError,
+    build_worker_spawn_env,
+    resolve_worker_argv0,
     stamp_cli_run_id,
     terminate_asyncio_process_tree,
     wait_for_asyncio_process_or_kill_tree,
-    worker_path_env,
 )
 from flow_sdk.external_apis.llm.llm_drivers.flow_data import (
     FlowData,
@@ -75,10 +77,13 @@ class ClaudeCLIStreamWorker(AgenticWorker):
         context: AgenticContext,
     ) -> AsyncIterator[FlowData]:
         self._process_run_id = None
-        argv, env = self._build_spawn(prompt, context)
-        if argv is None:
-            yield _error("claude binary not found in PATH")
-            return
+        try:
+            argv, env = self._build_spawn(prompt, context)
+        except WorkerSpawnError as e:
+            # Surface the message on the chat stream, then propagate so the
+            # turn runner latches status=FAILED + start_failure.
+            yield _error(str(e))
+            raise
 
         logger.info("ClaudeCLIStreamWorker: launching %s", " ".join(argv))
         self._process_run_id = stamp_cli_run_id(env)
@@ -162,14 +167,13 @@ class ClaudeCLIStreamWorker(AgenticWorker):
         self,
         prompt: str,
         context: AgenticContext,
-    ) -> tuple[list[str] | None, dict[str, str]]:
-        """Build argv + env via the standard ``ClaudeCliOptions`` abstraction."""
-        # Discovered harness capability supplies the CLI's bin folder
-        # (terminal-PATH resolution) — None ⇔ claude is not installed.
-        path_env = worker_path_env("claude")
-        if path_env is None:
-            return None, {}
+    ) -> tuple[list[str], dict[str, str]]:
+        """Build argv + env via the standard ``ClaudeCliOptions`` abstraction.
 
+        Raises :class:`WorkerSpawnError` when claude is not installed (no
+        harness capability discovered) or its executable can't be resolved on
+        the spawn PATH.
+        """
         # Resume takes priority — when ``resume_session_id`` is set, attach
         # ``--resume <sid>``. Otherwise honour ``context.session_id`` (a
         # pre-allocated UUID the caller wants Claude to use) so transcript
@@ -215,12 +219,15 @@ class ClaudeCLIStreamWorker(AgenticWorker):
         argv = opts.cli_cmd(instruction=prompt, system_prompt_append=context.instructions)
         env_from_opts = dict(opts.env_vars)
 
-        # Start from os.environ so the CLI can find its creds, PATH, home.
-        # Strip CLAUDECODE* to avoid the CLI thinking it's already inside a
-        # Claude run. Overlay context env_vars last so callers win.
-        env = {k: v for k, v in os.environ.items() if not k.startswith("CLAUDECODE")}
-        env.update(path_env)  # capability bin-folder PATH prepend
-        env.update(env_from_opts)
+        # Start from os.environ so the CLI can find its creds, home. Strip
+        # CLAUDECODE* to avoid the CLI thinking it's already inside a Claude
+        # run. Context env_vars win (except the discovered capability bin
+        # folder stays first on PATH); argv[0] is pinned to the discovered
+        # absolute executable so a stripped backend service PATH can't break
+        # the spawn.
+        base_env = {k: v for k, v in os.environ.items() if not k.startswith("CLAUDECODE")}
+        env = build_worker_spawn_env("claude", env_from_opts, base_env=base_env)
+        argv = resolve_worker_argv0("claude", argv, env)
         return argv, env
 
     async def _drain_stderr(self, proc: asyncio.subprocess.Process) -> None:

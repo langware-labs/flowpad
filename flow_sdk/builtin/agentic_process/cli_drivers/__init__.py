@@ -15,8 +15,10 @@ from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import 
     WorkerCLIOptions,
     WorkerDriver,
     WorkerExecutionInfo,
+    WorkerSpawnError,
     factory,
     get_driver,
+    latch_spawn_failure,
 )
 
 __all__ = [
@@ -29,6 +31,8 @@ __all__ = [
     "WorkerCLIOptions",
     "WorkerDriver",
     "WorkerExecutionInfo",
+    "WorkerSpawnError",
     "factory",
     "get_driver",
+    "latch_spawn_failure",
 ]

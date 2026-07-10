@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
 from pathlib import Path
 from typing import Any, AsyncIterator
 
@@ -13,10 +12,12 @@ from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import 
     STREAM_JSON_LINE_LIMIT_BYTES,
     AgenticContext,
     AgenticWorker,
+    WorkerSpawnError,
+    build_worker_spawn_env,
+    resolve_worker_argv0,
     stamp_cli_run_id,
     terminate_asyncio_process_tree,
     wait_for_asyncio_process_or_kill_tree,
-    worker_path_env,
 )
 from flow_sdk.builtin.agentic_process.cli_drivers.copilot.cli import CopilotCliOptions
 from flow_sdk.builtin.agentic_process.cli_drivers.copilot.event_to_flowdata import (
@@ -61,17 +62,21 @@ class CopilotCLIStreamWorker(AgenticWorker):
     ) -> AsyncIterator[FlowData]:
         self._process_run_id = None
         self._session_id = context.resume_session_id or context.session_id
-        argv, env, stdin = self._build_spawn(context, prompt)
-        if argv is None:
+        try:
+            argv, env, stdin = self._build_spawn(context, prompt)
+        except WorkerSpawnError as e:
+            # Surface the message on the transcript (tail_status → FAILED) and
+            # the chat stream, then propagate so the turn runner latches
+            # status=FAILED + start_failure.
             event = {
                 "type": "flowpad.error",
                 "sessionId": self._session_id,
-                "message": "copilot binary not found in PATH",
+                "message": str(e),
             }
             self._write_jsonl_path(event)
             for fd in self._converter.convert_event(event):
                 yield fd
-            return
+            raise
 
         logger.info("CopilotCLIStreamWorker: launching %s", " ".join(argv))
         self._process_run_id = stamp_cli_run_id(env)
@@ -186,13 +191,13 @@ class CopilotCLIStreamWorker(AgenticWorker):
         self,
         context: AgenticContext,
         prompt: str,
-    ) -> tuple[list[str] | None, dict[str, str], str | None]:
-        # Discovered harness capability supplies the CLI's bin folder
-        # (terminal-PATH resolution) — None ⇔ copilot is not installed.
-        path_env = worker_path_env("copilot")
-        if path_env is None:
-            return None, {}, None
+    ) -> tuple[list[str], dict[str, str], str | None]:
+        """Build the ``(argv, env, stdin)`` spawn tuple.
 
+        Raises :class:`WorkerSpawnError` when copilot is not installed (no
+        harness capability discovered) or its executable can't be resolved on
+        the spawn PATH.
+        """
         opts = CopilotCliOptions(
             workdir=context.workdir,
             env_vars=dict(context.env_vars) if context.env_vars else None,
@@ -213,9 +218,11 @@ class CopilotCLIStreamWorker(AgenticWorker):
         argv, env_from_opts, stdin = opts.to_spawn(
             instruction=prompt, system_prompt_append=context.instructions
         )
-        env = dict(os.environ)
-        env.update(path_env)  # capability bin-folder PATH prepend
-        env.update(env_from_opts)
+        # Context env_vars win (except the discovered capability bin folder
+        # stays first on PATH); argv[0] is pinned to the discovered absolute
+        # executable so a stripped backend service PATH can't break the spawn.
+        env = build_worker_spawn_env("copilot", env_from_opts)
+        argv = resolve_worker_argv0("copilot", argv, env)
         return argv, env, stdin
 
     async def _drain_stderr(self, proc: asyncio.subprocess.Process) -> None:

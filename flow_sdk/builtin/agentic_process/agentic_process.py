@@ -35,9 +35,11 @@ from flow_sdk.builtin.agentic_process.cli_drivers import (
     AgenticProcessContextKey,
     WorkerCLIOptions,
     WorkerDriver,
+    WorkerSpawnError,
     apply_worker_env,
     apply_worker_secret_env,
     get_driver,
+    latch_spawn_failure,
 )
 from flow_sdk.builtin.agentic_process.status_predicates import (
     WorkerMode,
@@ -1121,6 +1123,8 @@ class AgenticProcess(Entity):
                 # re-discover once (covers the boot race and retry-after-
                 # install), then fail fast into the start_failure latch.
                 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
+                    prepend_path_dir,
+                    worker_bin_folder,
                     worker_capability_kind,
                     worker_path_env,
                 )
@@ -1138,6 +1142,14 @@ class AgenticProcess(Entity):
                         "installation discovered"
                     )
                 spawn_env = {**path_env, **spawn_env}  # explicit worker env wins
+                # …except the discovered bin folder stays first on PATH: the
+                # worker env's own PATH (apply_worker_env's venv pin) is built
+                # from this backend's possibly-stripped service PATH, and
+                # letting it clobber the capability prepend re-breaks spawn
+                # (the D02 "codex not found despite discovery" failure).
+                folder = worker_bin_folder(self.driver.name)
+                if folder and "PATH" in spawn_env:
+                    spawn_env["PATH"] = prepend_path_dir(folder, spawn_env["PATH"])
                 if _shell_compute_is_local(shell):
                     await apply_worker_secret_env(spawn_env, self)
                 spawned = await shell.start_pty(on_exit=on_exit, spawn_args=spawn_argv, extra_env=spawn_env)
@@ -2621,6 +2633,11 @@ class AgenticProcess(Entity):
                         # turn-INITIAL report (spurious-rotation guard).
                         await adopt_session(worker.get_session_id())
                         await handler.on_flow_data(fd)
+            except WorkerSpawnError as e:
+                # No subprocess ever started — end the process FAILED with the
+                # start_failure latch. The worker already yielded the ERROR
+                # frame onto the stream, so the client sees the message.
+                await latch_spawn_failure(self, e)
             except Exception as e:
                 logger.exception("prompt: worker error")
                 await handler.add_str_to_queue(Exception(f"prompt error: {e}"))

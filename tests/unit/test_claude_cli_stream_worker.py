@@ -11,18 +11,28 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from pathlib import Path
 
 import pytest
 
-from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import AgenticContext
+from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
+    AgenticContext,
+    WorkerSpawnError,
+)
 from flow_sdk.builtin.agentic_process.cli_drivers.claude import (
     CANCEL_GRACE_SECONDS,
     ClaudeCLIStreamWorker,
 )
 from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowElementType
 
-from tests.utils.fake_cli import fake_stream_argv, patch_build_spawn
+from tests.utils.fake_cli import (
+    clear_harness_capability,
+    fake_stream_argv,
+    make_fake_cli_bin,
+    patch_build_spawn,
+    seed_harness_capability,
+)
 
 
 # ── Fake-claude helpers ──────────────────────────────────────────────────────
@@ -181,16 +191,38 @@ async def test_close_session_terminates_running_subprocess(tmp_path: Path, monke
 
 
 @pytest.mark.asyncio
-async def test_no_claude_binary_yields_error_flowdata(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+async def test_no_claude_binary_yields_error_flowdata_then_raises(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     worker = ClaudeCLIStreamWorker()
-    # No discovered harness capability value → _build_spawn decides no binary.
-    monkeypatch.setattr(
-        "flow_sdk.builtin.agentic_process.cli_drivers.claude.stream_worker.worker_path_env",
-        lambda _worker_type: None,
-    )
+    # No discovered harness capability value → typed spawn failure: an ERROR
+    # frame for the chat stream, then WorkerSpawnError for the turn runner's
+    # FAILED + start_failure latch.
+    clear_harness_capability(monkeypatch, "claude")
     ctx = AgenticContext(workdir=str(tmp_path))
 
-    out = await _collect(worker, ctx)
+    out = []
+    with pytest.raises(WorkerSpawnError, match=r"no harness\.claude\.cli installation discovered"):
+        async for fd in worker.execute(prompt="hi", context=ctx):
+            out.append(fd)
 
     assert len(out) == 1
     assert out[0].attributes["element-type"] == FlowElementType.ERROR
+
+
+def test_build_spawn_uses_absolute_discovered_claude_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """D02 parity with codex: a backend service PATH that excludes the nvm bin
+    dir must not break the spawn when discovery recorded it — argv[0] is the
+    absolute discovered executable even when the context env_vars carry their
+    own PATH pin (the ``apply_worker_env`` overlay)."""
+    bin_dir, claude = make_fake_cli_bin(tmp_path, "claude")
+    stripped = os.pathsep.join(["/usr/bin", "/bin"])
+    monkeypatch.setenv("PATH", stripped)
+    seed_harness_capability(monkeypatch, "claude", bin_dir)
+    ctx = AgenticContext(
+        workdir=str(tmp_path),
+        env_vars={"PATH": f"{tmp_path / 'venv-bin'}{os.pathsep}{stripped}"},
+    )
+
+    argv, env = ClaudeCLIStreamWorker()._build_spawn("hi", ctx)
+
+    assert argv[0] == str(claude)
+    assert env["PATH"].split(os.pathsep)[0] == str(bin_dir)
