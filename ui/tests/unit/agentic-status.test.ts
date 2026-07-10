@@ -36,6 +36,15 @@ import {
 
 // ─── Shared fixture ──────────────────────────────────────────────────────────
 
+interface ReadyForInputCase {
+  status: string;
+  busy: boolean;
+  pty_mode: boolean;
+  session_id: string | null;
+  expected: boolean;
+  label: string;
+}
+
 interface StatusSetsFixture {
   worker_running: string[];
   worker_busy: string[];
@@ -44,6 +53,7 @@ interface StatusSetsFixture {
   process_stored_running: string[];
   process_running_wire: string[];
   process_startable: string[];
+  ready_for_input_cases: ReadyForInputCase[];
 }
 
 const FIXTURE_PATH = resolve(__dirname, '../../../test_fixtures/status_sets.json');
@@ -386,6 +396,32 @@ describe('isReadyForInput — headless-idle', () => {
       expect(isReadyForInput({ status: s, busy: false, pty_mode: false, session_id: 'sess-abc' })).toBe(false);
     },
   );
+});
+
+// ─── isReadyForInput — cross-language contract (shared fixture rows) ─────────
+//
+// The same ``ready_for_input_cases`` rows are iterated by the Python
+// ``test_ready_for_input_contract_cases`` against ``is_ready_from_busy`` — the
+// two language predicates cannot silently diverge on the RUNNING baseline,
+// the fresh-headless (NEW + CLI) branch, or the headless-idle branch.
+
+describe('isReadyForInput — contract (test_fixtures/status_sets.json)', () => {
+  const cases = fixture.ready_for_input_cases;
+
+  it('fixture carries the shared truth table', () => {
+    expect(cases.length).toBeGreaterThan(0);
+  });
+
+  it.each(cases)('$label', (c) => {
+    expect(
+      isReadyForInput({
+        status: c.status as ProcessStatus,
+        busy: c.busy,
+        pty_mode: c.pty_mode,
+        session_id: c.session_id ?? undefined,
+      }),
+    ).toBe(c.expected);
+  });
 });
 
 describe('isBusy', () => {

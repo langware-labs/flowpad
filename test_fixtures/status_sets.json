@@ -41,5 +41,21 @@
     "new",
     "stopped",
     "failed"
+  ],
+  "_note_ready_for_input": "Cross-language truth table for the ready-for-input projection: Python is_ready_from_busy(status, busy, pty_mode=..., session_id=...) and TS isReadyForInput({status, busy, pty_mode, session_id}) must both produce `expected` for every row. Covers the RUNNING baseline, the fresh-headless branch (NEW + CLI transport), and the headless-idle branch (STOPPED + CLI transport + session).",
+  "ready_for_input_cases": [
+    {"status": "running", "busy": false, "pty_mode": true, "session_id": null, "expected": true, "label": "RUNNING PTY, no turn in flight -> ready"},
+    {"status": "running", "busy": true, "pty_mode": true, "session_id": null, "expected": false, "label": "RUNNING but busy -> not ready"},
+    {"status": "running", "busy": false, "pty_mode": false, "session_id": "sess-abc", "expected": true, "label": "RUNNING CLI -> ready"},
+    {"status": "new", "busy": false, "pty_mode": false, "session_id": null, "expected": true, "label": "fresh headless NEW -> ready"},
+    {"status": "new", "busy": true, "pty_mode": false, "session_id": null, "expected": false, "label": "fresh headless NEW but busy -> not ready"},
+    {"status": "new", "busy": false, "pty_mode": true, "session_id": null, "expected": false, "label": "fresh PTY NEW -> not ready"},
+    {"status": "stopped", "busy": false, "pty_mode": false, "session_id": "sess-abc", "expected": true, "label": "headless-idle STOPPED + session -> ready"},
+    {"status": "stopped", "busy": false, "pty_mode": false, "session_id": null, "expected": false, "label": "headless STOPPED, never prompted -> not ready"},
+    {"status": "stopped", "busy": false, "pty_mode": true, "session_id": "sess-abc", "expected": false, "label": "PTY STOPPED + session -> not ready"},
+    {"status": "stopped", "busy": true, "pty_mode": false, "session_id": "sess-abc", "expected": false, "label": "headless-idle signature but busy -> not ready"},
+    {"status": "starting", "busy": false, "pty_mode": false, "session_id": "sess-abc", "expected": false, "label": "STARTING is never ready"},
+    {"status": "stopping", "busy": false, "pty_mode": false, "session_id": "sess-abc", "expected": false, "label": "STOPPING is never ready"},
+    {"status": "failed", "busy": false, "pty_mode": false, "session_id": "sess-abc", "expected": false, "label": "FAILED is never ready"}
   ]
 }

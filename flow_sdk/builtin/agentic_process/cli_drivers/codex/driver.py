@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -59,6 +60,14 @@ class CodexDriver:
     # Codex's TUI needs a discrete Enter after the paste settles, not a
     # trailing \r in the pasted text (Shell.write_then_submit).
     pty_submits_on_paste = False
+    # Composer-ready marker (QA C09b). Empirically grounded on codex-cli
+    # 0.144.1 raw PTY captures (tests/unit/fixtures/codex_pty_*.bin): the
+    # ``>_ OpenAI Codex (vX.Y.Z)`` banner paints in the same frame as the
+    # composer input line, and never renders while the directory-trust
+    # interstitial is up (that screen has no banner — and paints its own ``›``
+    # cursor, so a prompt-glyph marker would false-positive). The banner text
+    # is painted contiguously, so it survives ``strip_pty_controls``.
+    pty_composer_ready_pattern = re.compile(r">_ OpenAI Codex")
     pins_resume_cwd = False  # codex mints its own rollout; no transcript-cwd pinning, no fork
 
     # ── CLI shape ────────────────────────────────────────────────────────────

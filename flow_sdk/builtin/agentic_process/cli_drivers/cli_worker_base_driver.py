@@ -30,6 +30,7 @@ Public exports:
 from __future__ import annotations
 
 import os
+import re
 import shlex
 import sys
 from abc import ABC, abstractmethod
@@ -582,6 +583,73 @@ def factory(cli_json: dict, worker_type: str) -> WorkerCLIOptions:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Composer-ready gate — vendor-marker detection over the raw PTY stream
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# A cold interactive TUI can boot into a *blocking interstitial* (directory
+# trust prompt, login, migration notice) whose screen is quiet — so "output
+# went idle" is NOT a composer-ready signal, and typing the first prompt on
+# quiescence alone gets it eaten by the interstitial (QA C09b). Vendors that
+# need a typed first delivery declare a ``pty_composer_ready_pattern``; the
+# submit path defers typing until the pattern appears in the ANSI-stripped
+# PTY output. Detection is event-driven — each PTY paint wakes the scanner;
+# there are no sleeps and no poll budgets here.
+
+# TUIs paint with cursor positioning, so scan a bounded tail of the
+# accumulated output rather than growing without bound. Markers are a few
+# dozen bytes; 64 KiB of tail is orders of magnitude more than one frame.
+_COMPOSER_SCAN_WINDOW = 65536
+
+# Order matters: OSC first (its payload may contain '[' etc.), then CSI
+# (parameter + intermediate + final byte), then bare two-byte ESC sequences,
+# then residual C0 controls (keep \t\n\r as separators is unnecessary — the
+# markers are single-line, so drop them all except nothing).
+_OSC_RE = re.compile(rb"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)")
+_CSI_RE = re.compile(rb"\x1b\[[0-9;:?<>=!]*[ -/]*[@-~]")
+_ESC_RE = re.compile(rb"\x1b[@-_=>]?")
+_CTRL_RE = re.compile(rb"[\x00-\x08\x0b-\x1f\x7f]")
+
+
+def strip_pty_controls(data: bytes) -> str:
+    """Reduce raw PTY output to its printable text (best-effort).
+
+    Removes OSC/CSI/ESC escape sequences and C0 controls, then decodes as
+    UTF-8 with replacement. Good enough for marker *search* — it does not
+    reconstruct screen layout (a TUI that paints word-by-word yields the words
+    concatenated in paint order), so patterns must match text the TUI paints
+    contiguously (e.g. the codex ``>_ OpenAI Codex`` banner).
+    """
+    data = _OSC_RE.sub(b"", data)
+    data = _CSI_RE.sub(b"", data)
+    data = _ESC_RE.sub(b"", data)
+    data = _CTRL_RE.sub(b"", data)
+    return data.decode("utf-8", "replace")
+
+
+async def pump_composer_ready(
+    pattern: re.Pattern[str],
+    initial: bytes,
+    next_chunk,
+) -> bool:
+    """Block until ``pattern`` appears in the (ANSI-stripped) PTY output.
+
+    ``initial`` is the already-accumulated output (checked first — a warm PTY
+    whose composer painted long ago passes instantly); ``next_chunk`` is an
+    awaitable callable yielding subsequent raw output chunks, with ``None`` as
+    the close sentinel (PTY died / stream ended → returns False: the caller
+    must NOT type). Purely event-driven: it only ever waits on the next paint.
+    """
+    buf = initial[-_COMPOSER_SCAN_WINDOW:]
+    while True:
+        if pattern.search(strip_pty_controls(buf)):
+            return True
+        chunk = await next_chunk()
+        if chunk is None:
+            return False
+        buf = (buf + chunk)[-_COMPOSER_SCAN_WINDOW:]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # WorkerDriver — Protocol the vendor sub-packages implement
 # ─────────────────────────────────────────────────────────────────────────────
 #
@@ -607,6 +675,14 @@ class WorkerDriver(Protocol):
     # literal text and need a discrete Enter after the paste settles (copilot,
     # codex) — see ``Shell.write_then_submit`` and the ``prompt-pty`` action.
     pty_submits_on_paste: bool
+    # Composer-ready marker for the vendor's interactive TUI, or None. When a
+    # first prompt must be TYPED into the PTY (``pty_submits_on_paste`` False
+    # cold start / hot submit), the delivery is deferred until this pattern
+    # appears in the ANSI-stripped PTY output — so a blocking boot interstitial
+    # (directory trust / login / migration screen) can never eat the prompt
+    # (QA C09b). None → no grounded marker; delivery keeps the legacy
+    # settle-then-type behaviour. Matched via ``pump_composer_ready``.
+    pty_composer_ready_pattern: "re.Pattern[str] | None"
     # True iff, on resume/fork, this vendor pins the worker's launch cwd
     # (``CLAUDE_PROJECT_DIR`` + ``workdir``) to the recorded cwd of the source
     # session's transcript (claude). Codex/copilot don't rewrite the launch cwd

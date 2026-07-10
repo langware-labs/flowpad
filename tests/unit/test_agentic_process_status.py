@@ -25,6 +25,7 @@ from flow_sdk.builtin.agentic_process import AgenticProcess, ProcessStatus, Work
 from flow_sdk.builtin.agentic_process.status_predicates import (
     get_worker_mode,
     is_ready_for_input,
+    is_ready_from_busy,
     WorkerMode,
 )
 from flow_sdk.builtin.worker_status import (
@@ -688,6 +689,24 @@ def test_is_ready_for_input_headless_states(process_status, pty_mode, session_id
         session_id=session_id, turn_in_flight=turn_in_flight, pty_mode=pty_mode,
     )
     assert is_ready_for_input(proc, WorkerStatus.COMPLETE) is expected, label
+
+
+def test_ready_for_input_contract_cases(status_fixture):
+    """Cross-language contract: ``is_ready_from_busy`` must produce ``expected``
+    for every row of ``ready_for_input_cases`` in the shared fixture — the same
+    rows the TS ``isReadyForInput`` vitest iterates. Covers the RUNNING baseline,
+    the fresh-headless (NEW + CLI) branch, and the headless-idle branch, so the
+    two language predicates cannot silently diverge."""
+    cases = status_fixture["ready_for_input_cases"]
+    assert cases, "fixture must carry the shared ready-for-input truth table"
+    for case in cases:
+        actual = is_ready_from_busy(
+            case["status"],
+            case["busy"],
+            pty_mode=case["pty_mode"],
+            session_id=case["session_id"],
+        )
+        assert actual is case["expected"], case["label"]
 
 
 @pytest.mark.parametrize(
