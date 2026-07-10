@@ -29,14 +29,18 @@ Public exports:
 
 from __future__ import annotations
 
+import asyncio
+import logging
 import os
 import re
 import shlex
 import sys
+import uuid
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, AsyncIterator, Protocol
 
+import psutil
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic.alias_generators import to_camel
 
@@ -50,6 +54,278 @@ if TYPE_CHECKING:
     from flow_sdk.builtin.agentic_process.events import AgenticProcessEventName
     from flow_sdk.builtin.worker_status import WorkerStatus
     from flow_sdk.responses.response import ApiResponse
+
+
+# Per-line StreamReader limit shared by every JSONL CLI transport. Asyncio's
+# default 64 KiB limit is too small for events that wrap large tool results in
+# one physical line (browser snapshots, fetched HTML, large diffs, ...). 4 MiB
+# gives bounded headroom and matches the limit historically used by Claude.
+STREAM_JSON_LINE_LIMIT_BYTES = 4 * 1024 * 1024
+CLI_RUN_ID_ENV_VAR = "FLOWPAD_CLI_RUN_ID"
+
+logger = logging.getLogger(__name__)
+
+_PROCESS_GONE = (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess)
+_PROCESS_LOOKUP_ERRORS = (*_PROCESS_GONE, OSError)
+_FORCE_KILL_WAIT_SECONDS = 2.0
+
+
+def stamp_cli_run_id(env: dict[str, str]) -> str:
+    """Tag one CLI launch so descendants remain identifiable after reparenting."""
+    run_id = str(uuid.uuid4())
+    env[CLI_RUN_ID_ENV_VAR] = run_id
+    return run_id
+
+
+def _process_descendants(pid: int) -> list[psutil.Process]:
+    """Snapshot descendants before their CLI wrapper can be reaped."""
+    try:
+        return psutil.Process(pid).children(recursive=True)
+    except _PROCESS_GONE:
+        return []
+
+
+def _processes_for_cli_run(run_id: str | None, *, exclude: set[int]) -> list[psutil.Process]:
+    """Find a launch's descendants even after their direct wrapper has exited."""
+    if not run_id:
+        return []
+    matches: list[psutil.Process] = []
+    for process in psutil.process_iter(["pid"]):
+        if process.info["pid"] in exclude:
+            continue
+        try:
+            if process.environ().get(CLI_RUN_ID_ENV_VAR) == run_id:
+                matches.append(process)
+        except _PROCESS_LOOKUP_ERRORS:
+            pass
+    return matches
+
+
+async def _processes_for_cli_run_async(
+    run_id: str | None,
+    *,
+    exclude: set[int],
+) -> list[psutil.Process]:
+    # environ() can block on OS process inspection, especially on Windows.
+    return await asyncio.to_thread(_processes_for_cli_run, run_id, exclude=exclude)
+
+
+def _merge_processes(*groups: list[psutil.Process]) -> list[psutil.Process]:
+    merged: list[psutil.Process] = []
+    seen: set[psutil.Process] = set()
+    for group in groups:
+        for process in group:
+            if process in seen:
+                continue
+            seen.add(process)
+            merged.append(process)
+    return merged
+
+
+def _signal_processes(processes: list[psutil.Process], *, force: bool) -> None:
+    # psutil returns descendants parent-first. Signal leaves first so an
+    # intermediate wrapper cannot strand its tool/native child on exit.
+    for process in reversed(processes):
+        try:
+            process.kill() if force else process.terminate()
+        except _PROCESS_GONE:
+            pass
+
+
+async def _wait_for_asyncio_process_tree(
+    process: asyncio.subprocess.Process,
+    descendants: list[psutil.Process],
+    deadline: float,
+) -> list[psutil.Process]:
+    """Wait under one deadline; asyncio owns the root, psutil the descendants."""
+    if process.returncode is None:
+        remaining = max(0.0, deadline - asyncio.get_running_loop().time())
+        try:
+            await asyncio.wait_for(process.wait(), timeout=remaining)
+        except asyncio.TimeoutError:
+            pass
+
+    remaining = max(0.0, deadline - asyncio.get_running_loop().time())
+    if descendants:
+        _, descendants = await asyncio.to_thread(
+            psutil.wait_procs,
+            descendants,
+            remaining,
+        )
+    return descendants
+
+
+async def _refresh_descendants(
+    process: asyncio.subprocess.Process,
+    descendants: list[psutil.Process],
+    run_id: str | None,
+    *,
+    sweep_run_marker: bool,
+) -> list[psutil.Process]:
+    refreshed = _process_descendants(process.pid) if process.returncode is None else []
+    for descendant in descendants:
+        try:
+            refreshed.extend(descendant.children(recursive=True))
+        except _PROCESS_GONE:
+            pass
+    if sweep_run_marker or process.returncode not in (None, 0):
+        refreshed.extend(
+            await _processes_for_cli_run_async(
+                run_id,
+                exclude={os.getpid(), process.pid},
+            )
+        )
+    return _merge_processes(descendants, refreshed)
+
+
+async def _kill_asyncio_process_tree(
+    process: asyncio.subprocess.Process,
+    descendants: list[psutil.Process],
+    run_id: str | None,
+    *,
+    sweep_run_marker: bool,
+) -> None:
+    descendants = await _refresh_descendants(
+        process,
+        descendants,
+        run_id,
+        sweep_run_marker=sweep_run_marker,
+    )
+    if process.returncode is None or descendants:
+        logger.warning(
+            "CLI process tree did not exit in grace; force-killing (pid=%s)",
+            process.pid,
+        )
+        _signal_processes(descendants, force=True)
+        if process.returncode is None:
+            try:
+                process.kill()
+            except ProcessLookupError:
+                pass
+
+    if process.returncode is None:
+        try:
+            await asyncio.wait_for(process.wait(), timeout=_FORCE_KILL_WAIT_SECONDS)
+        except asyncio.TimeoutError:
+            logger.error("CLI wrapper did not exit after force-kill (pid=%s)", process.pid)
+
+    survivors: list[psutil.Process] = []
+    if descendants:
+        _, survivors = await asyncio.to_thread(
+            psutil.wait_procs,
+            descendants,
+            _FORCE_KILL_WAIT_SECONDS,
+        )
+
+    # Close the fork-after-snapshot race for abnormal exits. Clean turns do not
+    # sweep the marker: background servers intentionally launched by an agent
+    # must survive a successful CLI wrapper exit.
+    if sweep_run_marker or process.returncode not in (None, 0):
+        late_descendants = await _processes_for_cli_run_async(
+            run_id,
+            exclude={os.getpid(), process.pid},
+        )
+        late_targets = _merge_processes(survivors, late_descendants)
+        if late_targets:
+            _signal_processes(late_targets, force=True)
+            _, late_survivors = await asyncio.to_thread(
+                psutil.wait_procs,
+                late_targets,
+                _FORCE_KILL_WAIT_SECONDS,
+            )
+            survivors = late_survivors
+
+    if survivors:
+        logger.error(
+            "%d CLI descendant process(es) survived force-kill (pid=%s)",
+            len(survivors),
+            process.pid,
+        )
+
+
+async def terminate_asyncio_process_tree(
+    process: asyncio.subprocess.Process,
+    grace_seconds: float,
+    *,
+    force: bool = False,
+    run_id: str | None = None,
+) -> None:
+    """Terminate an asyncio child and all descendants without racing waitpid.
+
+    npm-installed CLIs are wrappers around native children. Killing only the
+    wrapper can orphan the real worker, so descendants are captured before any
+    signal. Asyncio exclusively waits on the direct child; psutil waits only on
+    descendants. ``force=True`` skips SIGTERM because a passive grace already
+    expired at the caller.
+    """
+    # Never resolve a completed asyncio child's bare PID through psutil: the OS
+    # may already have reused it. The per-launch marker is safe to sweep because
+    # it is unique and inherited by native/tool descendants.
+    descendants = _process_descendants(process.pid) if process.returncode is None else []
+    descendants = _merge_processes(
+        descendants,
+        await _processes_for_cli_run_async(
+            run_id,
+            exclude={os.getpid(), process.pid},
+        ),
+    )
+    if process.returncode is not None and not descendants:
+        return
+    if not force:
+        _signal_processes(descendants, force=False)
+        if process.returncode is None:
+            try:
+                process.terminate()
+            except ProcessLookupError:
+                pass
+        deadline = asyncio.get_running_loop().time() + max(grace_seconds, 0.0)
+        descendants = await _wait_for_asyncio_process_tree(process, descendants, deadline)
+
+    # Always do the final marker sweep. A wrapper may handle SIGTERM, exit 0,
+    # and reparent a native child that was not in the original tree snapshot.
+    await _kill_asyncio_process_tree(
+        process,
+        descendants,
+        run_id,
+        sweep_run_marker=True,
+    )
+
+
+async def wait_for_asyncio_process_or_kill_tree(
+    process: asyncio.subprocess.Process,
+    grace_seconds: float,
+    *,
+    run_id: str | None = None,
+) -> None:
+    """Await a wrapper; clean exits preserve background tools, failures reap them."""
+    if process.returncode == 0:
+        return
+    descendants = _process_descendants(process.pid) if process.returncode is None else []
+    deadline = asyncio.get_running_loop().time() + max(grace_seconds, 0.0)
+    if process.returncode is None:
+        remaining = max(0.0, deadline - asyncio.get_running_loop().time())
+        try:
+            await asyncio.wait_for(process.wait(), timeout=remaining)
+        except asyncio.TimeoutError:
+            pass
+
+    if process.returncode == 0:
+        return
+    if process.returncode is not None:
+        descendants = _merge_processes(
+            descendants,
+            await _processes_for_cli_run_async(
+                run_id,
+                exclude={os.getpid(), process.pid},
+            ),
+        )
+    if process.returncode is None or descendants:
+        await _kill_asyncio_process_tree(
+            process,
+            descendants,
+            run_id,
+            sweep_run_marker=False,
+        )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -859,6 +1135,8 @@ def get_driver(worker_type: Any) -> WorkerDriver:
 
 
 __all__ = [
+    "CLI_RUN_ID_ENV_VAR",
+    "STREAM_JSON_LINE_LIMIT_BYTES",
     "AgenticContext",
     "AgenticProcessContextKey",
     "AgenticWorker",
@@ -868,4 +1146,7 @@ __all__ = [
     "factory",
     "get_driver",
     "restart_payload_from_cli_options",
+    "stamp_cli_run_id",
+    "terminate_asyncio_process_tree",
+    "wait_for_asyncio_process_or_kill_tree",
 ]

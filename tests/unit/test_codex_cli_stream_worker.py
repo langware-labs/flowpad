@@ -21,6 +21,7 @@ Two behaviours specific to codex are pinned here:
 from __future__ import annotations
 
 import asyncio
+import json
 from pathlib import Path
 
 import pytest
@@ -150,6 +151,29 @@ async def test_turn_completed_yields_result_and_end(tmp_path: Path, monkeypatch:
     out = await _collect(worker, AgenticContext(workdir=str(tmp_path)))
     types = [fd.attributes["element-type"] for fd in out]
 
+    assert FlowElementType.RESULT in types
+    assert types[-1] == FlowElementType.END
+
+
+@pytest.mark.asyncio
+async def test_single_jsonl_event_larger_than_asyncio_default_limit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    oversized_started = {**THREAD_STARTED, "payload": "x" * (96 * 1024)}
+    assert len(json.dumps(oversized_started).encode("utf-8")) > 64 * 1024
+
+    worker = CodexCLIStreamWorker(transcript_path=tmp_path / "codex.jsonl")
+    patch_build_spawn(
+        monkeypatch,
+        CodexCLIStreamWorker,
+        fake_stream_argv([oversized_started, TURN_COMPLETED], delay_ms=2),
+        stdin="",
+    )
+
+    out = await _collect(worker, AgenticContext(workdir=str(tmp_path)))
+    types = [fd.attributes["element-type"] for fd in out]
+
+    assert worker.get_session_id() == THREAD_STARTED["thread_id"]
     assert FlowElementType.RESULT in types
     assert types[-1] == FlowElementType.END
 

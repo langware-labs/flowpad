@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from pathlib import Path
 
 import pytest
@@ -13,9 +14,7 @@ from flow_sdk.builtin.agentic_process.cli_drivers.copilot import (
     CopilotCLIStreamWorker,
 )
 from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowElementType
-
 from tests.utils.fake_cli import fake_stream_argv, patch_build_spawn
-
 
 # ``_build_spawn`` takes ``(context, prompt)`` and returns a 3-tuple
 # ``(argv, env, stdin)`` — copilot delivers the prompt over the child's stdin
@@ -54,6 +53,29 @@ async def test_result_yields_result_and_end(tmp_path: Path, monkeypatch: pytest.
     out = await _collect(worker, AgenticContext(workdir=str(tmp_path)))
     types = [fd.attributes["element-type"] for fd in out]
 
+    assert FlowElementType.RESULT in types
+    assert types[-1] == FlowElementType.END
+
+
+@pytest.mark.asyncio
+async def test_single_jsonl_event_larger_than_asyncio_default_limit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    oversized_result = {**RESULT_SUCCESS, "payload": "x" * (96 * 1024)}
+    assert len(json.dumps(oversized_result).encode("utf-8")) > 64 * 1024
+
+    worker = CopilotCLIStreamWorker(transcript_path=tmp_path / "copilot.jsonl")
+    patch_build_spawn(
+        monkeypatch,
+        CopilotCLIStreamWorker,
+        fake_stream_argv([oversized_result], delay_ms=5),
+        stdin="",
+    )
+
+    out = await _collect(worker, AgenticContext(workdir=str(tmp_path)))
+    types = [fd.attributes["element-type"] for fd in out]
+
+    assert worker.get_session_id() == "copilot-session"
     assert FlowElementType.RESULT in types
     assert types[-1] == FlowElementType.END
 

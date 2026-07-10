@@ -28,13 +28,19 @@ import logging
 import os
 from typing import AsyncIterator
 
-from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import AgenticContext
-from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import AgenticWorker
-from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_path_env
 from flow_sdk.builtin.agentic_process.cli_drivers.claude.cli import ClaudeCliOptions
 from flow_sdk.builtin.agentic_process.cli_drivers.claude.event_to_flowdata import (
     convert_line,
     final_end_frame,
+)
+from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
+    STREAM_JSON_LINE_LIMIT_BYTES,
+    AgenticContext,
+    AgenticWorker,
+    stamp_cli_run_id,
+    terminate_asyncio_process_tree,
+    wait_for_asyncio_process_or_kill_tree,
+    worker_path_env,
 )
 from flow_sdk.external_apis.llm.llm_drivers.flow_data import (
     FlowData,
@@ -48,14 +54,6 @@ logger = logging.getLogger(__name__)
 # timeout (~10 s) so a stuck subprocess never wedges the chat.
 CANCEL_GRACE_SECONDS = 5.0
 
-# Per-line StreamReader limit. Default asyncio limit is 64 KiB which is too
-# small for stream-json events that wrap large tool results (e.g. a full
-# ``browser_snapshot`` of a real page can be several hundred KB on a single
-# JSON line). 4 MiB gives generous headroom without spending real memory
-# unless we actually receive that much data.
-STDOUT_LINE_LIMIT_BYTES = 4 * 1024 * 1024
-
-
 class ClaudeCLIStreamWorker(AgenticWorker):
     """Streaming Claude CLI worker using ``--output-format stream-json``.
 
@@ -67,6 +65,7 @@ class ClaudeCLIStreamWorker(AgenticWorker):
     def __init__(self) -> None:
         self._session_id: str | None = None
         self._proc: asyncio.subprocess.Process | None = None
+        self._process_run_id: str | None = None
 
     # ── AgenticWorker contract ────────────────────────────────────────────────
 
@@ -75,12 +74,14 @@ class ClaudeCLIStreamWorker(AgenticWorker):
         prompt: str,
         context: AgenticContext,
     ) -> AsyncIterator[FlowData]:
+        self._process_run_id = None
         argv, env = self._build_spawn(prompt, context)
         if argv is None:
             yield _error("claude binary not found in PATH")
             return
 
         logger.info("ClaudeCLIStreamWorker: launching %s", " ".join(argv))
+        self._process_run_id = stamp_cli_run_id(env)
 
         try:
             self._proc = await asyncio.create_subprocess_exec(
@@ -90,7 +91,7 @@ class ClaudeCLIStreamWorker(AgenticWorker):
                 stdin=asyncio.subprocess.DEVNULL,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
-                limit=STDOUT_LINE_LIMIT_BYTES,
+                limit=STREAM_JSON_LINE_LIMIT_BYTES,
             )
         except Exception as e:
             logger.exception("ClaudeCLIStreamWorker: spawn failed")
@@ -118,13 +119,12 @@ class ClaudeCLIStreamWorker(AgenticWorker):
             raise
         finally:
             # Always wait for the subprocess to settle so we don't leak zombies.
-            if self._proc and self._proc.returncode is None:
-                try:
-                    await asyncio.wait_for(self._proc.wait(), timeout=CANCEL_GRACE_SECONDS)
-                except asyncio.TimeoutError:
-                    logger.warning("ClaudeCLIStreamWorker: subprocess did not exit in grace; sending SIGKILL")
-                    self._proc.kill()
-                    await self._proc.wait()
+            if self._proc:
+                await wait_for_asyncio_process_or_kill_tree(
+                    self._proc,
+                    CANCEL_GRACE_SECONDS,
+                    run_id=self._process_run_id,
+                )
 
             stderr_task.cancel()
             try:
@@ -245,24 +245,13 @@ class ClaudeCLIStreamWorker(AgenticWorker):
     async def _terminate_process(self) -> None:
         """SIGTERM → grace → SIGKILL. Safe to call multiple times."""
         proc = self._proc
-        if proc is None or proc.returncode is not None:
+        if proc is None:
             return
-        try:
-            proc.terminate()
-        except ProcessLookupError:
-            return
-        try:
-            await asyncio.wait_for(proc.wait(), timeout=CANCEL_GRACE_SECONDS)
-        except asyncio.TimeoutError:
-            logger.warning("ClaudeCLIStreamWorker: grace expired, sending SIGKILL")
-            try:
-                proc.kill()
-            except ProcessLookupError:
-                return
-            try:
-                await proc.wait()
-            except Exception:
-                pass
+        await terminate_asyncio_process_tree(
+            proc,
+            CANCEL_GRACE_SECONDS,
+            run_id=self._process_run_id,
+        )
 
 
 # ── Module helpers ────────────────────────────────────────────────────────────

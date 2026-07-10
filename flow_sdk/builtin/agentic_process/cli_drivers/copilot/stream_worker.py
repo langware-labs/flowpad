@@ -10,8 +10,12 @@ from pathlib import Path
 from typing import Any, AsyncIterator
 
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
+    STREAM_JSON_LINE_LIMIT_BYTES,
     AgenticContext,
     AgenticWorker,
+    stamp_cli_run_id,
+    terminate_asyncio_process_tree,
+    wait_for_asyncio_process_or_kill_tree,
     worker_path_env,
 )
 from flow_sdk.builtin.agentic_process.cli_drivers.copilot.cli import CopilotCliOptions
@@ -35,6 +39,7 @@ class CopilotCLIStreamWorker(AgenticWorker):
     def __init__(self, transcript_path: Path | str | None = None) -> None:
         self._session_id: str | None = None
         self._proc: asyncio.subprocess.Process | None = None
+        self._process_run_id: str | None = None
         self._transcript_path = Path(transcript_path) if transcript_path else None
         self._interrupted = False
         self._stderr_lines: list[str] = []
@@ -54,6 +59,7 @@ class CopilotCLIStreamWorker(AgenticWorker):
         prompt: str,
         context: AgenticContext,
     ) -> AsyncIterator[FlowData]:
+        self._process_run_id = None
         self._session_id = context.resume_session_id or context.session_id
         argv, env, stdin = self._build_spawn(context, prompt)
         if argv is None:
@@ -68,6 +74,7 @@ class CopilotCLIStreamWorker(AgenticWorker):
             return
 
         logger.info("CopilotCLIStreamWorker: launching %s", " ".join(argv))
+        self._process_run_id = stamp_cli_run_id(env)
         tee_fh = None
         if self._transcript_path is not None:
             try:
@@ -85,6 +92,7 @@ class CopilotCLIStreamWorker(AgenticWorker):
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                limit=STREAM_JSON_LINE_LIMIT_BYTES,
             )
         except Exception as exc:
             logger.exception("CopilotCLIStreamWorker: spawn failed")
@@ -135,13 +143,12 @@ class CopilotCLIStreamWorker(AgenticWorker):
             await self._terminate_process()
             raise
         finally:
-            if self._proc and self._proc.returncode is None:
-                try:
-                    await asyncio.wait_for(self._proc.wait(), timeout=CANCEL_GRACE_SECONDS)
-                except asyncio.TimeoutError:
-                    logger.warning("CopilotCLIStreamWorker: grace expired, sending SIGKILL")
-                    self._proc.kill()
-                    await self._proc.wait()
+            if self._proc:
+                await wait_for_asyncio_process_or_kill_tree(
+                    self._proc,
+                    CANCEL_GRACE_SECONDS,
+                    run_id=self._process_run_id,
+                )
 
             try:
                 await stderr_task
@@ -227,24 +234,13 @@ class CopilotCLIStreamWorker(AgenticWorker):
 
     async def _terminate_process(self) -> None:
         proc = self._proc
-        if proc is None or proc.returncode is not None:
+        if proc is None:
             return
-        try:
-            proc.terminate()
-        except ProcessLookupError:
-            return
-        try:
-            await asyncio.wait_for(proc.wait(), timeout=CANCEL_GRACE_SECONDS)
-        except asyncio.TimeoutError:
-            logger.warning("CopilotCLIStreamWorker: grace expired, sending SIGKILL")
-            try:
-                proc.kill()
-            except ProcessLookupError:
-                return
-            try:
-                await proc.wait()
-            except Exception:
-                pass
+        await terminate_asyncio_process_tree(
+            proc,
+            CANCEL_GRACE_SECONDS,
+            run_id=self._process_run_id,
+        )
 
     def _terminal_synthetic_event(self) -> dict[str, Any] | None:
         if self._interrupted:
