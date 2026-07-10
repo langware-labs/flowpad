@@ -12,44 +12,13 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.db import get_db_driver
-from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.indexer import FSIndexer, IndexerOptions
-from flow_sdk.fs_store.indexer._frontmatter import _extract_frontmatter, _yaml_load
-from flow_sdk.fs_store.indexer.functions.markdown import markdown_flat_fn
-from flow_sdk.fs_store.record_types import RecordType
-
-_OPTS = dict(verbose=False, types=[RecordType.MARKDOWN])
-
-
-def _indexer(root: Path) -> FSIndexer:
-    idx = FSIndexer()
-    idx.add_root(FSRef(root, record_type=RecordType.USER_HOME_FOLDER, scope="user"))
-    idx.add_function(RecordType.USER_HOME_FOLDER, markdown_flat_fn)
-    return idx
-
-
-async def _sources() -> dict:
-    return await get_db_driver().list_entity_sources_by_type("markdown")
-
-
-def _fm_id(p: Path):
-    fm = _extract_frontmatter(p.read_text(encoding="utf-8"))
-    return (_yaml_load(fm) or {}).get("id") if fm else None
-
-
-async def _seed_one(tmp_path: Path) -> tuple[FSIndexer, Path, str]:
-    """Index a single ``a.md`` and return (indexer, path, its stamped id)."""
-    docs = tmp_path / "proj" / ".claude" / "docs"
-    docs.mkdir(parents=True)
-    await get_db_driver().delete_entities_by_type("markdown")
-    a = docs / "a.md"
-    a.write_text("# a\nbody\n", encoding="utf-8")
-    idx = _indexer(tmp_path / "proj")
-    await idx.index(IndexerOptions(**_OPTS))
-    src = await _sources()
-    assert len(src) == 1
-    return idx, a, next(iter(src))
+from flow_sdk.fs_store.indexer import IndexerOptions
+from tests.unit.test_fs_store._md_harness import (
+    MD_OPTS as _OPTS,
+    fm_id as _fm_id,
+    md_sources as _sources,
+    seed_one_md as _seed_one,
+)
 
 
 @pytest.mark.asyncio
