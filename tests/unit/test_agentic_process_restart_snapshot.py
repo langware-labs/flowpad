@@ -151,15 +151,23 @@ def test_toggling_flowpad_assistant_changes_restart_snapshot(worker_type):
     assert on._restart_snapshot() != off._restart_snapshot()
 
 
-def test_pty_mode_changes_codex_launch_shape_but_visible_does_not():
-    # New contract (commit 624ddb89): the worker argv keys on the *transport intent*
-    # (``pty_mode``), NOT on tab ``visible``. Codex's interactive PTY shape differs
-    # from its ``codex exec --json`` headless shape, so pty_mode flips the launch
-    # snapshot; toggling tab visibility alone never restarts the worker. Claude's
-    # launch shape is unaffected by either flag.
+def test_pty_mode_changes_codex_launch_shape_but_never_restart_hash():
+    # The worker argv keys on the *transport intent* (``pty_mode``), NOT on tab
+    # ``visible`` (commit 624ddb89): codex's interactive PTY shape differs from
+    # its ``codex exec --json`` headless shape, so pty_mode flips the raw launch
+    # PAYLOAD (ephemeral/json_stream). But the restart HASH must ignore those
+    # transport-derived fields (QA R03): a PTY⇄CLI switch replaces the worker
+    # itself, so it must never read as config drift / a phantom "restart
+    # required" glow. Both comparators share TRANSPORT_DERIVED_WORKER_FIELDS.
     codex_headless = AgenticProcess(worker_type="codex", pty_mode=False)
     codex_pty = AgenticProcess(worker_type="codex", pty_mode=True)
-    assert codex_headless._restart_snapshot() != codex_pty._restart_snapshot()
+    headless_worker = codex_headless._restart_snapshot_payload()["worker"]
+    pty_worker = codex_pty._restart_snapshot_payload()["worker"]
+    assert (headless_worker["ephemeral"], headless_worker["json_stream"]) != (
+        pty_worker["ephemeral"],
+        pty_worker["json_stream"],
+    )
+    assert codex_headless._restart_snapshot() == codex_pty._restart_snapshot()
 
     codex_hidden = AgenticProcess(worker_type="codex", visible=False)
     codex_visible = AgenticProcess(worker_type="codex", visible=True)

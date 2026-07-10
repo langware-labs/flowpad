@@ -205,19 +205,15 @@ class ClaudeDriver:
         except Exception:
             logger.exception("ClaudeDriver.headless_prompt: start-of-turn notify_updated failed")
 
+        # Session adoption (and its restart-snapshot bookkeeping) is owned by
+        # AgenticProcess.adopt_worker_session; the turn-scoped adopter trusts
+        # only the turn-initial report (spurious-rotation guard).
+        adopt_session = process_ref.make_turn_session_adopter("ClaudeDriver.headless_prompt")
+
         async def _run_turn() -> None:
             try:
                 async for fd in worker.execute(prompt=composed, context=context):
-                    sid = worker.get_session_id()
-                    if sid and process_ref.session_id != sid:
-                        try:
-                            process_ref.session_id = sid
-                            await process_ref.save()
-                        except Exception:
-                            logger.warning(
-                                "ClaudeDriver.headless_prompt: session_id save failed",
-                                exc_info=True,
-                            )
+                    await adopt_session(worker.get_session_id())
                     try:
                         await process_ref.emit_flow_data(fd.model_dump())
                     except Exception:

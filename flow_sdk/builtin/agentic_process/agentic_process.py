@@ -2586,6 +2586,7 @@ class AgenticProcess(Entity):
             """Drive the worker → handler pipeline. Runs as a background task."""
             worker = self.driver.stream_worker(self)
             _PROMPT_WORKERS[self.id] = worker
+            adopt_session = self.make_turn_session_adopter("prompt")
             try:
                 async with lock:
                     # Kick off lifecycle transition so observers see RUNNING.
@@ -2614,32 +2615,11 @@ class AgenticProcess(Entity):
                         # from structured CLI events, and the worker's actual id must
                         # win when a preassigned id failed to stick or the CLI rotates
                         # ids across resumed turns — a stale id points at a session
-                        # that doesn't exist. Rotation of an established id is logged
-                        # so a misbehaving extractor can't clobber silently.
-                        sid = worker.get_session_id()
-                        if sid and sid != self.session_id:
-                            if self.session_id:
-                                logger.warning(
-                                    "prompt: worker rotated session_id %s -> %s (process %s)",
-                                    self.session_id,
-                                    sid,
-                                    self.id,
-                                )
-                            self.session_id = sid
-                            # The running headless worker was launched from the
-                            # current config and has now reported its durable
-                            # session identity. Capture that effective launch
-                            # snapshot before save() evaluates restart drift;
-                            # otherwise the expected session rotation creates a
-                            # phantom restart until the next PTY launch.
-                            started = self._restart_snapshot_payload()
-                            self.last_started_snapshot = started
-                            self.last_started_hash = self._restart_snapshot(started)
-                            self.restart_required = False
-                            try:
-                                await self.save()
-                            except Exception:
-                                logger.warning("prompt: session_id save failed", exc_info=True)
+                        # that doesn't exist. Adoption (and the paired restart-
+                        # snapshot re-pointing) is owned by ``adopt_worker_session``
+                        # via the turn-scoped adopter, which trusts only the
+                        # turn-INITIAL report (spurious-rotation guard).
+                        await adopt_session(worker.get_session_id())
                         await handler.on_flow_data(fd)
             except Exception as e:
                 logger.exception("prompt: worker error")
@@ -3146,15 +3126,18 @@ class AgenticProcess(Entity):
             return None
 
     async def _persist_transcript_session_id(self, descriptor) -> None:
+        """Adopt a session id discovered in the on-disk transcript (PTY resume
+        rotation). Routed through ``adopt_worker_session`` — the single owner
+        of session-rotation restart bookkeeping — which patches only the
+        session-derived snapshot fields. The previous inline version refreshed
+        ``last_started_hash`` from the FULL live payload, silently blessing
+        any genuine config drift (and leaving ``last_started_snapshot`` stale,
+        so restart-info diffs contradicted the flag)."""
         if descriptor is None or not descriptor.session_id:
             return
-        if self.session_id == descriptor.session_id:
+        if not self.adopt_worker_session(descriptor.session_id):
             return
-        self.session_id = descriptor.session_id
         try:
-            self._set_start_lifecycle(True)
-            if self.status == ProcessStatus.RUNNING.value:
-                self.last_started_hash = self._restart_snapshot()
             await self.save()
         except Exception:
             # WARNING so resume-from-transcript regressions surface.
@@ -3163,8 +3146,6 @@ class AgenticProcess(Entity):
                 self.id,
                 exc_info=True,
             )
-        finally:
-            self._set_start_lifecycle(False)
 
     @action.post(action_name="transcript")
     async def transcript_action(self) -> ApiSuccessResponse | ApiFailResponse:
@@ -4064,6 +4045,33 @@ class AgenticProcess(Entity):
 
     # ── Restart-required tracking ─────────────────────────────────────────────
 
+    #: Worker-section snapshot fields that describe the ACTIVE TRANSPORT, not
+    #: user launch config. PTY⇄CLI switches intentionally change them without
+    #: requiring a restart (codex: interactive TUI runs without ``--json`` /
+    #: ``--ephemeral``), so BOTH restart comparators — the ``_restart_snapshot``
+    #: hash behind ``restart_required`` and the ``_diff_snapshot_fields`` diff
+    #: behind ``restart-info`` — must ignore them, or a transport switch lights
+    #: a phantom restart glow (QA issue R03). Kept beside the snapshot builders
+    #: so a new transport-derived field is added here, not inside a comparator.
+    TRANSPORT_DERIVED_WORKER_FIELDS: ClassVar[frozenset[str]] = frozenset(
+        {"ephemeral", "json_stream"}
+    )
+
+    @classmethod
+    def _comparable_restart_payload(cls, payload: dict[str, Any] | None) -> dict[str, Any]:
+        """Normalize a ``{generic, worker}`` snapshot payload into the form the
+        restart comparators agree on: values canonicalized via
+        ``_normalize_restart_value`` and transport-derived worker fields
+        stripped. Single choke point shared by the hash and the diff so they
+        can never disagree about which fields count as launch config."""
+        normalized = cls._normalize_restart_value(payload) or {}
+        worker = normalized.get("worker")
+        if isinstance(worker, dict):
+            normalized["worker"] = {
+                k: v for k, v in worker.items() if k not in cls.TRANSPORT_DERIVED_WORKER_FIELDS
+            }
+        return normalized
+
     @staticmethod
     def _normalize_restart_value(value: Any) -> Any:
         """Canonicalize values before hashing restart snapshots.
@@ -4122,6 +4130,111 @@ class AgenticProcess(Entity):
 
         return cmd
 
+    def adopt_worker_session(self, session_id: str) -> bool:
+        """Adopt the durable session identity a live worker reported.
+
+        SINGLE OWNER of the restart-FSM bookkeeping for session rotation —
+        every path that learns a new session id from a running worker (the
+        headless turn stream in ``_run_turn``, the PTY transcript watcher in
+        ``_persist_transcript_session_id``) routes through here instead of
+        touching ``last_started_snapshot`` / ``last_started_hash`` itself.
+
+        A legitimate rotation (first adoption on a fresh process, or the CLI
+        minting a new id when resuming — ``claude -p --resume`` rotates the
+        session id every resumed turn) must not light the restart glow: the
+        running worker WAS launched from the current config, only its session
+        identity moved. So the captured launch snapshot is re-pointed at the
+        new id — and ONLY the session-derived fields are patched. Re-capturing
+        the whole live payload here (the previous behavior) would silently
+        bless any genuine config drift the user made mid-turn, clearing a
+        ``restart_required`` that should stay on.
+
+        ``restart_required`` itself is deliberately NOT written here: the
+        ``save()`` hook is its single author and recomputes it from the
+        patched hash on the very next save.
+
+        Returns True when the id changed (callers persist), False on no-op.
+        The mid-turn spurious-rotation guard (a misbehaving extractor flapping
+        ids WITHIN one turn) lives at the turn scope — turn loops route
+        through :meth:`make_turn_session_adopter`, which trusts only the
+        turn-INITIAL report. This method itself assumes the rotation is
+        legitimate.
+        """
+        if not session_id or session_id == self.session_id:
+            return False
+        if self.session_id:
+            logger.warning(
+                "adopt_worker_session: worker rotated session_id %s -> %s (process %s)",
+                self.session_id,
+                session_id,
+                self.id,
+            )
+        self.session_id = session_id
+        if self.last_started_snapshot:
+            # Shallow per-section copies (deepcopy would choke on immutable
+            # TypeId values inside the payload); only the section dicts we
+            # patch are re-created, nested values stay shared.
+            snapshot = dict(self.last_started_snapshot)
+            generic = snapshot.get("generic")
+            if isinstance(generic, dict):
+                snapshot["generic"] = {**generic, "session_id": session_id}
+            worker = snapshot.get("worker")
+            # Driver CLI-option payloads always carry worker_type (and a
+            # session_id that may have been None-pruned by DB serialization);
+            # the driverless {"cli_config": ...} shape has neither and is
+            # left untouched.
+            if isinstance(worker, dict) and ("session_id" in worker or "worker_type" in worker):
+                snapshot["worker"] = {**worker, "session_id": session_id}
+            self.last_started_snapshot = snapshot
+            self.last_started_hash = self._restart_snapshot(snapshot)
+        else:
+            # Never started via start_pty (pure headless process): the running
+            # worker's launch config IS the current config, so first adoption
+            # establishes the full baseline snapshot.
+            snapshot = self._restart_snapshot_payload()
+            self.last_started_snapshot = snapshot
+            self.last_started_hash = self._restart_snapshot(snapshot)
+        return True
+
+    def make_turn_session_adopter(self, log_prefix: str) -> Callable[[str | None], Any]:
+        """Turn-scoped wrapper around :meth:`adopt_worker_session`.
+
+        Every turn loop (the HTTP ``prompt`` stream in ``_run_turn`` and each
+        driver's ``headless_prompt``) calls the returned coroutine function
+        once per streamed frame with ``worker.get_session_id()``. Only the
+        turn-INITIAL session report is adopted: a CLI establishes its session
+        identity once, at turn start (claude ``system:init``, codex
+        ``thread.started``), so any LATER differing id within the same turn is
+        a misbehaving extractor — it is logged once and ignored, never adopted
+        (previously each driver hand-rolled this and claude/copilot adopted
+        every flap, churning ``session_id`` and the restart snapshot on
+        garbage)."""
+        turn_session_id: str | None = None
+        warned_spurious = False
+
+        async def adopt(sid: str | None) -> None:
+            nonlocal turn_session_id, warned_spurious
+            if not sid:
+                return
+            if turn_session_id is None:
+                turn_session_id = sid
+                if self.adopt_worker_session(sid):
+                    try:
+                        await self.save()
+                    except Exception:
+                        logger.warning("%s: session_id save failed", log_prefix, exc_info=True)
+            elif sid != turn_session_id and not warned_spurious:
+                warned_spurious = True
+                logger.warning(
+                    "%s: ignoring spurious mid-turn session_id rotation %s -> %s (process %s)",
+                    log_prefix,
+                    turn_session_id,
+                    sid,
+                    self.id,
+                )
+
+        return adopt
+
     def _generic_restart_snapshot_payload(self, driver: WorkerDriver | None) -> dict[str, Any]:
         worker_type: Any = driver.name if driver is not None else self.worker_type
         return {
@@ -4165,9 +4278,9 @@ class AgenticProcess(Entity):
 
         if payload is None:
             payload = self._restart_snapshot_payload()
-        normalized = self._normalize_restart_value(payload)
+        comparable = self._comparable_restart_payload(payload)
         return hashlib.md5(
-            _json.dumps(normalized, sort_keys=True, default=str).encode()
+            _json.dumps(comparable, sort_keys=True, default=str).encode()
         ).hexdigest()
 
     def _set_start_lifecycle(self, value: bool) -> None:
@@ -4285,24 +4398,21 @@ class AgenticProcess(Entity):
     ) -> list[dict[str, Any]]:
         """Return per-field differences between two ``{generic, worker}`` payloads.
 
-        Normalizes both sides through ``_normalize_restart_value`` so equality
-        matches the hash semantics in ``_restart_snapshot``. Keys present on
-        only one side are reported with the missing side as None.
+        Normalizes both sides through ``_comparable_restart_payload`` so
+        equality matches the hash semantics in ``_restart_snapshot`` exactly —
+        including the shared exclusion of transport-derived worker fields
+        (``TRANSPORT_DERIVED_WORKER_FIELDS``). Keys present on only one side
+        are reported with the missing side as None.
         """
         if not loaded:
             return []
-        norm_loaded = AgenticProcess._normalize_restart_value(loaded) or {}
-        norm_current = AgenticProcess._normalize_restart_value(current) or {}
+        norm_loaded = AgenticProcess._comparable_restart_payload(loaded)
+        norm_current = AgenticProcess._comparable_restart_payload(current)
         changes: list[dict[str, Any]] = []
         for section in ("generic", "worker"):
             l_section = norm_loaded.get(section) or {}
             c_section = norm_current.get(section) or {}
             for field in sorted(set(l_section) | set(c_section)):
-                # These describe the active transport, not user launch config.
-                # PTY/CLI switches intentionally change them without requiring
-                # a restart; exposing them here contradicted restart_required.
-                if section == "worker" and field in {"ephemeral", "json_stream"}:
-                    continue
                 l_val = l_section.get(field)
                 c_val = c_section.get(field)
                 if l_val != c_val:

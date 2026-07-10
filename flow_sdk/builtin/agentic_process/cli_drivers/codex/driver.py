@@ -182,18 +182,15 @@ class CodexDriver:
         except Exception:
             logger.exception("CodexDriver.headless_prompt: start-of-turn notify_updated failed")
 
+        # Session adoption (and its restart-snapshot bookkeeping) is owned by
+        # AgenticProcess.adopt_worker_session; the turn-scoped adopter trusts
+        # only the turn-initial report (spurious-rotation guard).
+        adopt_session = process_ref.make_turn_session_adopter("CodexDriver.headless_prompt")
+
         async def _run_turn() -> None:
-            session_id_persisted = False
             try:
                 async for fd in worker.execute(prompt=full_prompt, context=context):
-                    if not session_id_persisted and worker.get_session_id():
-                        sid = worker.get_session_id()
-                        try:
-                            process_ref.session_id = sid
-                            await process_ref.save()
-                            session_id_persisted = True
-                        except Exception:
-                            logger.debug("CodexDriver.headless_prompt: session_id save failed", exc_info=True)
+                    await adopt_session(worker.get_session_id())
                     try:
                         await process_ref.emit_flow_data(fd.model_dump())
                     except Exception:
