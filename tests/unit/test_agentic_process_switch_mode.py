@@ -119,6 +119,62 @@ async def test_failed_open_restores_headless_transport_and_latches_failure():
 
 
 @pytest.mark.asyncio
+async def test_failed_launch_after_shell_bind_stops_partial_shell_and_rolls_back():
+    """A launch that fails AFTER binding a fresh shell must stop that partial
+    transport and roll ``shell_id``/``visible``/``pty_mode`` back to the prior
+    (headless) state — the deeper failure point the pre-shell test above
+    doesn't reach."""
+    prior_shell_id = str(uuid.uuid4())
+    proc = _proc(
+        visible=False,
+        pty_mode=False,
+        status="stopped",
+        shell_id=prior_shell_id,
+        session_id=str(uuid.uuid4()),
+        shell_mode=True,  # legacy branch: first shell call is start_pty → raise
+    )
+
+    launch_shell = MagicMock()
+    launch_shell.id = str(uuid.uuid4())
+    launch_shell.start_pty = AsyncMock(
+        side_effect=RuntimeError("PTY environment value for 'BAD' contains an embedded NUL")
+    )
+    launch_shell.stop = AsyncMock()
+
+    with patch.object(
+        AgenticProcess, "reap_if_orphaned", new_callable=AsyncMock, return_value=False
+    ), patch.object(
+        AgenticProcess, "shell", new_callable=AsyncMock, return_value=None
+    ), patch.object(
+        AgenticProcess, "get_project", new_callable=AsyncMock
+    ), patch.object(
+        AgenticProcess,
+        "prepare_system_instruction_assets",
+        new_callable=AsyncMock,
+        return_value=None,
+    ), patch.object(
+        AgenticProcess,
+        "_get_or_create_shell",
+        new_callable=AsyncMock,
+        return_value=launch_shell,
+    ), patch.object(AgenticProcess, "save", new_callable=AsyncMock):
+        result = await proc._perform_open(None, True, retry=True)
+
+    assert isinstance(result, ApiFailResponse)
+    assert "embedded NUL" in result.message
+    # The partially created transport is stopped, not left half-open.
+    launch_shell.stop.assert_awaited_once()
+    # Full rollback: the entity points at the PRIOR shell/transport again.
+    assert proc.shell_id == prior_shell_id
+    assert proc.visible is False
+    assert proc.pty_mode is False
+    assert proc.status == "failed"
+    # Fresh failure latches (no pre-existing latch was cleared by this retry),
+    # so auto-recovery won't spin on a spawn that can't succeed.
+    assert proc.start_failure == result.message
+
+
+@pytest.mark.asyncio
 async def test_switch_mode_unknown_rejected():
     """An unrecognized mode is a clean ApiFailResponse, not a silent no-op."""
     proc = _proc(visible=True, pty_mode=True)

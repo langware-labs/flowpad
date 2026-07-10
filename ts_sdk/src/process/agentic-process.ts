@@ -1376,10 +1376,34 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * `onEntityUpdate` HOLDS the latch (stripping any disagreeing wire value) until
    * the NEXT `switchMode`/`setVisible` overwrites it — these are the only ways
    * `pty_mode`/`visible` change, so a disagreeing wire value is always stale.
-   * `undefined` = no switch yet on this client, trust the wire.
+   * `undefined` (whole object or a member) = no switch yet on this client for
+   * that field, trust the wire. ONE object, written ONLY through
+   * {@link stageTransportIntent}, so an optimistic switch and its failure
+   * rollback always move the durable fields and their latches together.
    */
-  private _pendingPtyMode?: boolean;
-  private _pendingVisible?: boolean;
+  private _pendingTransport?: { pty_mode?: boolean; visible?: boolean };
+
+  /**
+   * Single writer for the optimistic transport intent: atomically sets the
+   * durable fields (`pty_mode`/`visible`, only those present in `intent`) AND
+   * their stale-wire latch, and returns a restore function that atomically
+   * puts BOTH back to the pre-stage state. Callers whose backend action fails
+   * invoke the restore so the entity never stays pinned to a transport that
+   * was never started (and later authoritative broadcasts aren't discarded).
+   */
+  private stageTransportIntent(intent: { pty_mode?: boolean; visible?: boolean }): () => void {
+    const priorLatch = this._pendingTransport;
+    const priorPtyMode = this.pty_mode;
+    const priorVisible = this.visible;
+    this._pendingTransport = { ...priorLatch, ...intent };
+    if (intent.pty_mode !== undefined) this.pty_mode = intent.pty_mode;
+    if (intent.visible !== undefined) this.visible = intent.visible;
+    return () => {
+      this._pendingTransport = priorLatch;
+      this.pty_mode = priorPtyMode;
+      this.visible = priorVisible;
+    };
+  }
 
   /**
    * Count of in-flight streaming `prompt()` calls. A definitive, delivery-
@@ -2053,8 +2077,8 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     const actionInfo = new ActionInfo('set-visible', AgenticProcess.type, this.id, 'POST');
     actionInfo.bodyParameters = { visible };
     await dataManager.callAction(actionInfo);
-    this.visible = visible; // optimistic; the broadcast confirms it
-    this._pendingVisible = visible; // latch until the wire agrees (see onEntityUpdate)
+    // Optimistic + latched until the wire agrees (see onEntityUpdate).
+    this.stageTransportIntent({ visible });
   }
 
   /**
@@ -2507,25 +2531,16 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    */
   async switchMode(mode: WorkerMode, opts?: { cols?: number; rows?: number }): Promise<void> {
     if (mode === WorkerMode.Interactive) {
-      const previousPtyMode = this.pty_mode;
-      const previousVisible = this.visible;
-      const previousPendingPtyMode = this._pendingPtyMode;
-      const previousPendingVisible = this._pendingVisible;
-      this.pty_mode = true;
-      this._pendingPtyMode = true;
-      this._pendingVisible = true;
+      const restoreTransport = this.stageTransportIntent({ pty_mode: true, visible: true });
       try {
         await this.start({ visible: true, retry: true, cols: opts?.cols, rows: opts?.rows });
         this.emit('restarted', { process: this });
       } catch (error) {
         // The open action rejected, so the optimistic transport intent never
-        // became durable. Restore both the visible fields and their stale-wire
-        // guards; otherwise later headless broadcasts are discarded and the UI
-        // remains pinned to a terminal that was never started.
-        this.pty_mode = previousPtyMode;
-        this.visible = previousVisible;
-        this._pendingPtyMode = previousPendingPtyMode;
-        this._pendingVisible = previousPendingVisible;
+        // became durable. Restore the durable fields and their stale-wire
+        // latch in one scoped step; otherwise later headless broadcasts are
+        // discarded and the UI stays pinned to a terminal that never started.
+        restoreTransport();
         throw error;
       }
       return;
@@ -2542,10 +2557,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     const actionInfo = new ActionInfo('switch-mode', AgenticProcess.type, this.id, 'POST');
     actionInfo.bodyParameters = { mode };
     await dataManager.callAction(actionInfo);
-    this.visible = false;
-    this.pty_mode = false;
-    this._pendingVisible = false;
-    this._pendingPtyMode = false;
+    this.stageTransportIntent({ pty_mode: false, visible: false });
   }
 
   /**
@@ -2831,10 +2843,12 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     // `deepAssign`. Do NOT clear on first match: an early agreeing broadcast
     // followed by a delayed stale one is exactly the desync this guards against.
     // Same "remove from payload before deepAssign" shape as the `queue` guard.
-    if (this._pendingPtyMode !== undefined && 'pty_mode' in data && data.pty_mode !== this._pendingPtyMode) {
+    const pendingPtyMode = this._pendingTransport?.pty_mode;
+    if (pendingPtyMode !== undefined && 'pty_mode' in data && data.pty_mode !== pendingPtyMode) {
       delete data.pty_mode;
     }
-    if (this._pendingVisible !== undefined && 'visible' in data && data.visible !== this._pendingVisible) {
+    const pendingVisible = this._pendingTransport?.visible;
+    if (pendingVisible !== undefined && 'visible' in data && data.visible !== pendingVisible) {
       delete data.visible;
     }
     // Skip no-op transitions: castAndDeepAssign() runs this hook for every

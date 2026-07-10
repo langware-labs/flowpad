@@ -2,8 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { AgenticProcess, ProcessStatus, WorkerMode, dataManager, type IAgenticProcess } from '@sdk';
 
 interface SwitchModeInternals {
-  _pendingPtyMode?: boolean;
-  _pendingVisible?: boolean;
+  _pendingTransport?: { pty_mode?: boolean; visible?: boolean };
 }
 
 /**
@@ -100,19 +99,17 @@ describe('AgenticProcess.switchMode', () => {
       pty_mode: false,
       session_id: 'worker-session-xyz',
     } satisfies Partial<IAgenticProcess>);
-    // A process that previously switched to CLI carries false desired-value
-    // latches. A failed return to PTY must restore them instead of pinning true.
+    // A process that previously switched to CLI carries a false desired-value
+    // latch. A failed return to PTY must restore it instead of pinning true.
     const internals = p as unknown as SwitchModeInternals;
-    internals._pendingPtyMode = false;
-    internals._pendingVisible = false;
+    internals._pendingTransport = { pty_mode: false, visible: false };
     const emitSpy = vi.spyOn(p, 'emit');
 
     await expect(p.switchMode(WorkerMode.Interactive)).rejects.toBe(error);
 
     expect(p.pty_mode).toBe(false);
     expect(p.visible).toBe(false);
-    expect(internals._pendingPtyMode).toBe(false);
-    expect(internals._pendingVisible).toBe(false);
+    expect(internals._pendingTransport).toEqual({ pty_mode: false, visible: false });
     expect(fakeShell.attachPty).not.toHaveBeenCalled();
     expect(emitSpy).not.toHaveBeenCalledWith('restarted', expect.anything());
   });
