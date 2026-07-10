@@ -2663,14 +2663,16 @@
           "workdir": "/repo",
           "worker_type": "codex"
         },
-        "shell_dash": "cd /repo && codex --dangerously-bypass-approvals-and-sandbox -C /repo -m gpt-5.2 --add-dir /extra resume s1 -- $'-rf danger'",
-        "shell_instr": "cd /repo && codex --dangerously-bypass-approvals-and-sandbox -C /repo -m gpt-5.2 --add-dir /extra resume s1 -- $'fix the bug'",
-        "shell_multi": "cd /repo && codex --dangerously-bypass-approvals-and-sandbox -C /repo -m gpt-5.2 --add-dir /extra resume s1 -- $'line one\\nline two'",
-        "shell_none": "cd /repo && codex --dangerously-bypass-approvals-and-sandbox -C /repo -m gpt-5.2 --add-dir /extra resume s1",
+        "shell_dash": "cd /repo && codex --dangerously-bypass-approvals-and-sandbox -c 'projects.\"/repo\".trust_level=\"trusted\"' -C /repo -m gpt-5.2 --add-dir /extra resume s1 -- $'-rf danger'",
+        "shell_instr": "cd /repo && codex --dangerously-bypass-approvals-and-sandbox -c 'projects.\"/repo\".trust_level=\"trusted\"' -C /repo -m gpt-5.2 --add-dir /extra resume s1 -- $'fix the bug'",
+        "shell_multi": "cd /repo && codex --dangerously-bypass-approvals-and-sandbox -c 'projects.\"/repo\".trust_level=\"trusted\"' -C /repo -m gpt-5.2 --add-dir /extra resume s1 -- $'line one\\nline two'",
+        "shell_none": "cd /repo && codex --dangerously-bypass-approvals-and-sandbox -c 'projects.\"/repo\".trust_level=\"trusted\"' -C /repo -m gpt-5.2 --add-dir /extra resume s1",
         "spawn_dash": {
           "argv": [
             "codex",
             "--dangerously-bypass-approvals-and-sandbox",
+            "-c",
+            "projects.\"/repo\".trust_level=\"trusted\"",
             "-C",
             "/repo",
             "-m",
@@ -2686,6 +2688,8 @@
           "argv": [
             "codex",
             "--dangerously-bypass-approvals-and-sandbox",
+            "-c",
+            "projects.\"/repo\".trust_level=\"trusted\"",
             "-C",
             "/repo",
             "-m",
@@ -2701,6 +2705,8 @@
           "argv": [
             "codex",
             "--dangerously-bypass-approvals-and-sandbox",
+            "-c",
+            "projects.\"/repo\".trust_level=\"trusted\"",
             "-C",
             "/repo",
             "-m",
@@ -2716,6 +2722,8 @@
           "argv": [
             "codex",
             "--dangerously-bypass-approvals-and-sandbox",
+            "-c",
+            "projects.\"/repo\".trust_level=\"trusted\"",
             "-C",
             "/repo",
             "-m",
@@ -2744,14 +2752,16 @@
           "workdir": "/repo",
           "worker_type": "codex"
         },
-        "shell_dash": "cd '/repo'; codex --dangerously-bypass-approvals-and-sandbox -C /repo -m gpt-5.2 --add-dir /extra resume s1 ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('LXJmIGRhbmdlcg==')))",
-        "shell_instr": "cd '/repo'; codex --dangerously-bypass-approvals-and-sandbox -C /repo -m gpt-5.2 --add-dir /extra resume s1 ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('Zml4IHRoZSBidWc=')))",
-        "shell_multi": "cd '/repo'; codex --dangerously-bypass-approvals-and-sandbox -C /repo -m gpt-5.2 --add-dir /extra resume s1 ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('bGluZSBvbmUKbGluZSB0d28=')))",
-        "shell_none": "cd '/repo'; codex --dangerously-bypass-approvals-and-sandbox -C /repo -m gpt-5.2 --add-dir /extra resume s1",
+        "shell_dash": "cd '/repo'; codex --dangerously-bypass-approvals-and-sandbox -c 'projects.\"/repo\".trust_level=\"trusted\"' -C /repo -m gpt-5.2 --add-dir /extra resume s1 ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('LXJmIGRhbmdlcg==')))",
+        "shell_instr": "cd '/repo'; codex --dangerously-bypass-approvals-and-sandbox -c 'projects.\"/repo\".trust_level=\"trusted\"' -C /repo -m gpt-5.2 --add-dir /extra resume s1 ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('Zml4IHRoZSBidWc=')))",
+        "shell_multi": "cd '/repo'; codex --dangerously-bypass-approvals-and-sandbox -c 'projects.\"/repo\".trust_level=\"trusted\"' -C /repo -m gpt-5.2 --add-dir /extra resume s1 ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('bGluZSBvbmUKbGluZSB0d28=')))",
+        "shell_none": "cd '/repo'; codex --dangerously-bypass-approvals-and-sandbox -c 'projects.\"/repo\".trust_level=\"trusted\"' -C /repo -m gpt-5.2 --add-dir /extra resume s1",
         "spawn_dash": {
           "argv": [
             "codex",
             "--dangerously-bypass-approvals-and-sandbox",
+            "-c",
+            "projects.\"/repo\".trust_level=\"trusted\"",
             "-C",
             "/repo",
             "-m",
@@ -2767,6 +2777,8 @@
           "argv": [
             "codex",
             "--dangerously-bypass-approvals-and-sandbox",
+            "-c",
+            "projects.\"/repo\".trust_level=\"trusted\"",
             "-C",
             "/repo",
             "-m",
@@ -2782,6 +2794,8 @@
           "argv": [
             "codex",
             "--dangerously-bypass-approvals-and-sandbox",
+            "-c",
+            "projects.\"/repo\".trust_level=\"trusted\"",
             "-C",
             "/repo",
             "-m",
@@ -2797,6 +2811,8 @@
           "argv": [
             "codex",
             "--dangerously-bypass-approvals-and-sandbox",
+            "-c",
+            "projects.\"/repo\".trust_level=\"trusted\"",
             "-C",
             "/repo",
             "-m",

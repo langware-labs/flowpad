@@ -423,7 +423,7 @@ export class NavigationActions {
     // (`/dock/display/<proc>`), not a shell dock. The mode→surface pairing is
     // owned by processSurfaceViewType (shared with the loader's URL
     // canonicalization) so the two can't drift.
-    const surface = processSurfaceViewType(extraOptions.viewMode === 'vibe');
+    const surface = processSurfaceViewType(extraOptions?.viewMode === 'vibe');
     const dock =
       surface === ViewType.DISPLAY
         ? DockPointer.forDisplay(agenticProcessId)

@@ -1,8 +1,8 @@
 /**
  * ProcessToolbar — icon-only toolbar for a running AgenticProcess.
  *
- * Flags (Chrome, Full Trust, Debug) live in the CLI Options dropdown and write
- * straight to the entity. Column visibility + Trace filters live in Columns & Trace.
+ * Supported vendor flags live in the CLI Options dropdown and write straight
+ * to the entity. Column visibility + Trace filters live in Columns & Trace.
  *
  * Restart awareness is backend-driven: any worker-relevant change flips
  * `process.restart_required` and the top-left Restart button glows.
@@ -51,6 +51,7 @@ import { CommandStatusViewer } from './command-status-viewer';
 import type { ColVisibility, TraceFilters } from './InteractiveTerminal';
 import { setChatUiOverride, useChatUiOverride } from '@src/contexts/chat-ui-mode-context';
 import { resolveProcessDisplayName } from '@src/components/terminal/process-display-name';
+import { buildSessionResumeCommand, getWorkerCliCapabilities } from './process-cli-presentation';
 
 interface ProcessToolbarProps {
   process: AgenticProcess;
@@ -115,10 +116,11 @@ export function ProcessToolbar({
   const canToggle = started;
   const workdir = process.workdir ?? '';
 
+  const cliCapabilities = getWorkerCliCapabilities(process.worker_type);
   const _cliOpts = process.cliOptions;
-  const currentChrome = _cliOpts.chrome;
-  const currentDanger = _cliOpts.permission_mode === 'bypassPermissions';
-  const currentDebug = _cliOpts.debug;
+  const currentChrome = cliCapabilities.chrome && _cliOpts.chrome;
+  const currentDanger = cliCapabilities.fullTrust && _cliOpts.permission_mode === 'bypassPermissions';
+  const currentDebug = cliCapabilities.debug && _cliOpts.debug;
 
   const [isForking, setIsForking] = useState(false);
   const [isRestarting, setIsRestarting] = useState(false);
@@ -168,6 +170,12 @@ export function ProcessToolbar({
   };
 
   const anyCliActive = currentChrome || currentDanger || currentDebug;
+  const fullTrustDescription =
+    cliCapabilities.vendor === 'codex'
+      ? t`Skip approvals and sandboxing (--dangerously-bypass-approvals-and-sandbox)`
+      : cliCapabilities.vendor === 'copilot'
+        ? t`Allow all tools without confirmation (--allow-all)`
+        : t`Skip all permission prompts (--dangerously-skip-permissions)`;
   const anyTimeFieldActive =
     traceFilters.time ||
     traceFilters.index ||
@@ -187,43 +195,51 @@ export function ProcessToolbar({
   const debugSlot = (
     <>
       {/* CLI Options dropdown */}
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <button
-            className={`inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded transition-colors hover:bg-accent ${anyCliActive ? 'text-amber-500 dark:text-amber-400' : 'text-muted-foreground'}`}
-            aria-label={t`CLI Options`}
-            title={t`CLI launch options`}
-          >
-            <SlidersHorizontal className="h-3.5 w-3.5" />
-          </button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-72">
-          <RichCheckboxItem
-            checked={currentChrome}
-            disabled={!canToggle}
-            onCheckedChange={(v) => void persistCliFlags({ chrome: v })}
-            label={t`Chrome browser`}
-            description={t`Enable browser automation via Chrome (--chrome)`}
-            docsUrl="https://docs.anthropic.com/en/docs/claude-code/cli-reference"
-          />
-          <RichCheckboxItem
-            checked={currentDanger}
-            disabled={!canToggle}
-            onCheckedChange={(v) => void persistCliFlags({ danger: v })}
-            label={t`Full Trust`}
-            description={t`Skip all permission prompts (--dangerously-skip-permissions)`}
-            docsUrl="https://docs.anthropic.com/en/docs/claude-code/settings"
-          />
-          <RichCheckboxItem
-            checked={currentDebug}
-            disabled={!canToggle}
-            onCheckedChange={(v) => void persistCliFlags({ debug: v })}
-            label={t`Debug logging`}
-            description={t`Verbose debug output (--debug)`}
-            docsUrl="https://docs.anthropic.com/en/docs/claude-code/cli-reference"
-          />
-        </DropdownMenuContent>
-      </DropdownMenu>
+      {(cliCapabilities.chrome || cliCapabilities.fullTrust || cliCapabilities.debug) && (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              className={`inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded transition-colors hover:bg-accent ${anyCliActive ? 'text-amber-500 dark:text-amber-400' : 'text-muted-foreground'}`}
+              aria-label={t`CLI Options`}
+              title={t`CLI launch options`}
+            >
+              <SlidersHorizontal className="h-3.5 w-3.5" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-72">
+            {cliCapabilities.chrome && (
+              <RichCheckboxItem
+                checked={currentChrome}
+                disabled={!canToggle}
+                onCheckedChange={(v) => void persistCliFlags({ chrome: v })}
+                label={t`Chrome browser`}
+                description={t`Enable browser automation via Chrome (--chrome)`}
+                docsUrl="https://docs.anthropic.com/en/docs/claude-code/cli-reference"
+              />
+            )}
+            {cliCapabilities.fullTrust && (
+              <RichCheckboxItem
+                checked={currentDanger}
+                disabled={!canToggle}
+                onCheckedChange={(v) => void persistCliFlags({ danger: v })}
+                label={t`Full Trust`}
+                description={fullTrustDescription}
+                docsUrl={cliCapabilities.fullTrustDocsUrl}
+              />
+            )}
+            {cliCapabilities.debug && (
+              <RichCheckboxItem
+                checked={currentDebug}
+                disabled={!canToggle}
+                onCheckedChange={(v) => void persistCliFlags({ debug: v })}
+                label={t`Debug logging`}
+                description={t`Verbose debug output (--debug)`}
+                docsUrl="https://docs.anthropic.com/en/docs/claude-code/cli-reference"
+              />
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
 
       {/* Columns & Trace dropdown */}
       <DropdownMenu>
@@ -580,7 +596,7 @@ function RichCheckboxItem({
   onCheckedChange: (v: boolean) => void;
   label: string;
   description: string;
-  docsUrl: string;
+  docsUrl?: string | null;
 }) {
   const { t } = useLingui();
   return (
@@ -593,16 +609,18 @@ function RichCheckboxItem({
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
         <div className="flex items-center gap-1">
           <span className="text-xs font-medium">{label}</span>
-          <a
-            href={docsUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="ml-auto text-muted-foreground hover:text-foreground"
-            onClick={(e) => e.stopPropagation()}
-            aria-label={t`${label} docs`}
-          >
-            <ExternalLink className="h-3 w-3" />
-          </a>
+          {docsUrl && (
+            <a
+              href={docsUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="ml-auto text-muted-foreground hover:text-foreground"
+              onClick={(e) => e.stopPropagation()}
+              aria-label={t`${label} docs`}
+            >
+              <ExternalLink className="h-3 w-3" />
+            </a>
+          )}
         </div>
         <span className="text-[11px] text-muted-foreground">{description}</span>
       </div>
@@ -747,6 +765,7 @@ function SessionInfoPopover({
   const chrome = cliOpts.chrome;
   const debug = cliOpts.debug;
   const worktree = cliOpts.worktree;
+  const cliCapabilities = getWorkerCliCapabilities(process.worker_type);
 
   const startDisplay = useTimeDisplay(sessionStartTime);
   const lastDisplay = useTimeDisplay(lastMessageTime);
@@ -772,33 +791,36 @@ function SessionInfoPopover({
     };
   }, [process.session_id, workdir]);
 
-  // Build a copy-paste-into-terminal-and-run command. The session is already
-  // running, so the right flag is `--resume <uuid>` (not `--session-id`, which
-  // is for first-time session creation with a chosen UUID — and would error if
-  // the session already exists). Prefix with `cd <workdir>` so the command is
-  // self-contained.
-  const claudeParts = ['claude'];
-  if (permMode === 'bypassPermissions') claudeParts.push('--dangerously-skip-permissions');
-  if (chrome) claudeParts.push('--chrome');
-  if (debug) claudeParts.push('--debug');
-  if (worktree) claudeParts.push('--worktree');
-  claudeParts.push('--resume', process.session_id || '?');
-  if (model && model !== '(default)') claudeParts.push('--model', model);
-  const claudeCmd = claudeParts.join(' ');
+  // Build a copy-paste-into-terminal-and-run command using each vendor's resume
+  // syntax. Prefix with `cd <workdir>` so the displayed command is self-contained.
+  const resumeCommand = buildSessionResumeCommand({
+    workerType: process.worker_type,
+    sessionId: process.session_id,
+    permissionMode: permMode,
+    chrome,
+    debug,
+    worktree,
+    model: model === '(default)' ? null : model,
+  });
   // Single-quote the path so spaces/metachars are safe; escape any embedded ' as '\''.
   const quoted = (s: string) => `'${s.replace(/'/g, "'\\''")}'`;
-  const command = workdir && workdir !== '(not set)' ? `cd ${quoted(workdir)} && ${claudeCmd}` : claudeCmd;
+  const command = resumeCommand
+    ? workdir && workdir !== '(not set)'
+      ? `cd ${quoted(workdir)} && ${resumeCommand}`
+      : resumeCommand
+    : '(unsupported worker)';
 
   // "Open in external terminal": spawn a real OS terminal (Terminal.app / cmd /
   // gnome-terminal) via the compute node's cross-platform `open-terminal` action.
-  // Pass the bare claude command + cwd separately — the backend composes the
+  // Pass the bare worker command + cwd separately — the backend composes the
   // `cd` itself per-OS. The displayed/copied string keeps the `cd … &&` prefix.
   const computeNodeId = dataContext.computeNode?.id;
   const openExternalTerminal = () => {
     if (!computeNodeId) return;
+    if (!resumeCommand) return;
     void openTerminalFromComputeNode(
       computeNodeId,
-      claudeCmd,
+      resumeCommand,
       workdir && workdir !== '(not set)' ? workdir : undefined,
     ).catch((e) => console.error('[SessionInfoPopover] open external terminal failed:', e));
   };
@@ -822,11 +844,11 @@ function SessionInfoPopover({
     [t`Harness worker Session ID`, process.session_id || 'none'],
     [t`PTY ID`, process.pty_pid || 'none (detached)'],
     [t`Permission`, permMode],
-    [t`Chrome`, chrome ? 'enabled' : 'disabled'],
-    [t`Debug`, debug ? 'enabled' : 'disabled'],
-    [t`Worktree`, worktree ? 'enabled' : 'disabled'],
-    [t`Model`, model],
   ];
+  if (cliCapabilities.chrome) rows.push([t`Chrome`, chrome ? 'enabled' : 'disabled']);
+  if (cliCapabilities.debug) rows.push([t`Debug`, debug ? 'enabled' : 'disabled']);
+  if (cliCapabilities.worktree) rows.push([t`Worktree`, worktree ? 'enabled' : 'disabled']);
+  rows.push([t`Model`, model]);
 
   return (
     <Popover>
@@ -852,7 +874,8 @@ function SessionInfoPopover({
             label={t`Command`}
             value={command}
             extraAction={
-              computeNodeId && (
+              computeNodeId &&
+              resumeCommand && (
                 <button
                   className={ROW_ICON_BUTTON_CLASS}
                   onClick={openExternalTerminal}

@@ -151,6 +151,9 @@ async def test_prompt_headless_streams_flowdata_and_end(
     # The worker echoes back whatever session id the turn ran under (a preassigned
     # id or the fake fallback) and the handler persists it onto the entity.
     assert ApiResponse(**got.json()).data["session_id"]
+    entity = ApiResponse(**got.json()).data
+    assert entity["restart_required"] is False
+    assert entity["last_started_snapshot"]["generic"]["session_id"] == entity["session_id"]
 
 
 @pytest.mark.asyncio

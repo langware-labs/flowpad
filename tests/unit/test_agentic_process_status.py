@@ -583,7 +583,8 @@ def test_tail_status_expands_past_envelope_run_beyond_4kb(tmp_path: Path):
 # ── is_ready_for_input truth table ───────────────────────────────────────────
 #
 # Contract (realigned): is_ready_for_input(p) ⇔ ¬is_turn_busy(p) AND (
-#   p.status == RUNNING  OR  headless-idle (pty_mode is False ∧ status == STOPPED ∧ session_id)
+#   p.status == RUNNING  OR  fresh-headless (pty_mode is False ∧ status == NEW)
+#   OR headless-idle (pty_mode is False ∧ status == STOPPED ∧ session_id)
 # ). busy ⇔ prompt-lock held ∨ _turn_in_flight
 # ∨ worker ∈ {initializing, working, thinking, tool_call, tool_running}.
 # Everything else while RUNNING (idle/complete/interrupted/pending_user AND the
@@ -639,7 +640,7 @@ class _FakeProcess:
         (ProcessStatus.RUNNING, WorkerStatus.TOOL_CALL, False),
         (ProcessStatus.RUNNING, WorkerStatus.TOOL_RUNNING, False),
         (ProcessStatus.RUNNING, WorkerStatus.INITIALIZING, False),
-        # Any non-RUNNING lifecycle → never ready
+        # Non-RUNNING PTY lifecycle states are not ready.
         (ProcessStatus.NEW, WorkerStatus.IDLE, False),
         (ProcessStatus.STARTING, WorkerStatus.IDLE, False),
         (ProcessStatus.STOPPING, WorkerStatus.COMPLETE, False),
@@ -658,6 +659,10 @@ def test_is_ready_for_input_truth_table(process_status, worker_status, expected)
         # Headless-idle: CLI transport, STOPPED between per-turn workers, session
         # preserved → READY (the fix for RCA #12a — toggle re-enables).
         (ProcessStatus.STOPPED, False, "sess-abc", False, True, "headless-idle STOPPED+session → ready"),
+        # Fresh headless: before the first turn there is no session or worker, but
+        # prompt and switch-mode both accept the process immediately.
+        (ProcessStatus.NEW, False, None, False, True, "fresh headless NEW → ready"),
+        (ProcessStatus.NEW, False, None, True, False, "fresh headless NEW but busy → not ready"),
         # Headless STOPPED but NO session yet (never prompted) → not ready.
         (ProcessStatus.STOPPED, False, None, False, False, "headless STOPPED no session → not ready"),
         # Interactive (PTY) transport STOPPED → not headless-idle (needs a live
@@ -666,18 +671,18 @@ def test_is_ready_for_input_truth_table(process_status, worker_status, expected)
         # Headless-idle signature but a turn is in flight → busy short-circuits.
         (ProcessStatus.STOPPED, False, "sess-abc", True, False, "headless STOPPED but busy → not ready"),
         # Other non-running lifecycle states never qualify even for CLI+session.
-        (ProcessStatus.NEW, False, "sess-abc", False, False, "headless NEW+session → not ready"),
+        (ProcessStatus.NEW, True, None, False, False, "fresh PTY NEW → not ready"),
         (ProcessStatus.FAILED, False, "sess-abc", False, False, "headless FAILED+session → not ready"),
         # RUNNING CLI session is ready regardless of the headless-idle branch.
         (ProcessStatus.RUNNING, False, "sess-abc", False, True, "CLI RUNNING → ready"),
     ],
 )
-def test_is_ready_for_input_headless_idle(process_status, pty_mode, session_id, turn_in_flight, expected, label):
-    """Headless-idle readiness: a CLI-transport (pty_mode False) session with a
-    live session_id at STOPPED is ready-for-input, so the chat⇄terminal toggle
-    re-enables between headless turns. busy still gates first; PTY-transport and
-    non-STOPPED/non-RUNNING states do NOT qualify. Mirror of the TS
-    isReadyForInput headless-idle branch."""
+def test_is_ready_for_input_headless_states(process_status, pty_mode, session_id, turn_in_flight, expected, label):
+    """Headless readiness: a CLI-transport (pty_mode False) session with a
+    NEW process or a live session_id at STOPPED is ready-for-input, so the
+    chat⇄terminal toggle works before and between headless turns. busy still
+    gates first; PTY-transport and other lifecycle states do NOT qualify.
+    Mirror of the TS isReadyForInput headless branches."""
     proc = _FakeProcess(
         process_status, WorkerStatus.COMPLETE,
         session_id=session_id, turn_in_flight=turn_in_flight, pty_mode=pty_mode,

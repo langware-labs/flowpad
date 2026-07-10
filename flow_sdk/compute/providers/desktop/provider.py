@@ -762,6 +762,29 @@ class LocalComputeProvider(ComputeProvider):
             # Spawn PTY using ptyprocess/winpty (cross-platform)
             pty_working_dir = working_dir if working_dir else self._node_dirs.get(provider_node_id, self._default_working_dir)
 
+            # Validate in the parent before ptyprocess forks. On POSIX,
+            # os.execvpe raises ValueError for an embedded NUL, while
+            # ptyprocess's child-side error path only catches OSError. The
+            # child then leaves its exec-error pipe open and the parent blocks
+            # forever waiting for a result. Reject malformed argv/env/cwd here
+            # so the normal AgenticProcess failure rollback can run.
+            if not isinstance(pty_working_dir, str):
+                raise TypeError("PTY working directory must be a string")
+            if "\x00" in pty_working_dir:
+                raise ValueError("PTY working directory contains an embedded NUL")
+            for index, arg in enumerate(final_spawn_args):
+                if not isinstance(arg, str):
+                    raise TypeError(f"PTY argv[{index}] must be a string")
+                if "\x00" in arg:
+                    raise ValueError(f"PTY argv[{index}] contains an embedded NUL")
+            for key, value in env.items():
+                if not isinstance(key, str) or not isinstance(value, str):
+                    raise TypeError("PTY environment keys and values must be strings")
+                if "\x00" in key or "=" in key:
+                    raise ValueError("PTY environment key is invalid")
+                if "\x00" in value:
+                    raise ValueError(f"PTY environment value for {key!r} contains an embedded NUL")
+
             # The PATH scan (find_command), the makedirs, and PtyProcess.spawn
             # (a fork+exec whose cost scales with the parent process image and
             # the child's own bootstrap — seconds for a Claude worker) are all

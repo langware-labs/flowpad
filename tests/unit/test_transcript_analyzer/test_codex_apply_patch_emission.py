@@ -13,11 +13,12 @@ from __future__ import annotations
 import pytest
 
 from flow_sdk.transcript_analyzer.entries import (
-    FileEditEntry, FileWriteEntry, ToolUseEntry,
+    FileEditEntry,
+    FileWriteEntry,
+    ToolUseEntry,
 )
 from flow_sdk.transcript_analyzer.formats import TranscriptFormat
 from flow_sdk.transcript_analyzer.parsers import get_parser_class
-
 
 pytestmark = pytest.mark.timeout(30)
 
@@ -103,6 +104,15 @@ def test_apply_patch_multi_file_emits_one_entry_per_file():
     assert isinstance(by_path["a.md"], FileWriteEntry)
     assert isinstance(by_path["b.py"], FileEditEntry)
     assert "c.txt" not in by_path
+    assert [entry.id for entry in entries] == [
+        "item-1:file_op_0",
+        "item-1:file_op_1",
+    ]
+    assert [entry.entry_id for entry in entries] == [
+        "item-1:file_op_0",
+        "item-1:file_op_1",
+    ]
+    assert {entry.tool_use_id for entry in entries} == {"call-1"}
 
 
 def test_non_apply_patch_custom_tool_still_emits_tool_use_entry():
