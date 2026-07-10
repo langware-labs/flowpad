@@ -252,6 +252,69 @@ def test_codex_history_replays_all_durable_typed_entries(tmp_path):
     assert [entry["count"] for entry in usage] == [60, 20, 40, 0]
 
 
+def test_codex_history_system_and_usage_rows_replay_as_status(tmp_path):
+    """Pin the synthetic-STATUS fallback: SYSTEM / TOKEN_USAGE entries have an
+    intentionally-empty ``to_flow_data()`` but the live stream still emits one
+    frame per entry (``event_to_flowdata._wrap_live``); replay must match."""
+    rows = [
+        {
+            "timestamp": "2026-07-10T06:00:00.000Z",
+            "type": "turn_context",
+            "payload": {"model": "gpt-test", "turn_id": "turn-1"},
+        },
+        {
+            "timestamp": "2026-07-10T06:00:00.001Z",
+            "type": "event_msg",
+            "payload": {"type": "error", "message": "recoverable"},
+        },
+    ]
+    rollout = tmp_path / "rollout-status.jsonl"
+    rollout.write_text(
+        "".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8"
+    )
+
+    history = load_transcript_history(rollout)
+
+    assert len(history) == 2
+    assert [item.attributes["element-type"] for item in history] == ["status", "status"]
+    # SYSTEM frames surface the refined subtype, not the generic kind tag.
+    assert [item.attributes["subtype"] for item in history] == [
+        "turn_context",
+        "event_msg.error",
+    ]
+    assert all(item.attributes["observation-kind"] == "replay" for item in history)
+    assert all(item.process_entry["observation_kind"] == "replay" for item in history)
+
+
+def test_codex_history_parse_failure_warns_and_surfaces_error_frame(
+    tmp_path, monkeypatch, caplog
+):
+    """A rollout the typed parser cannot open at all is not silently-empty
+    history: WARNING with the path, plus one structured ERROR frame."""
+    import flow_sdk.builtin.agentic_process.cli_drivers.codex.session_history as sh
+
+    rollout = tmp_path / "rollout-corrupt.jsonl"
+    rollout.write_text("{}\n", encoding="utf-8")
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("parser exploded")
+
+    monkeypatch.setattr(sh, "AgentTranscriptFile", _boom)
+    with caplog.at_level("WARNING", logger=sh.logger.name):
+        history = load_transcript_history(rollout)
+
+    assert len(history) == 1
+    frame = history[0]
+    assert frame.attributes["element-type"] == "error"
+    assert frame.attributes["subtype"] == "history-parse-error"
+    assert str(rollout) in frame.flow_value
+    assert any(
+        str(rollout) in record.getMessage()
+        for record in caplog.records
+        if record.levelname == "WARNING"
+    )
+
+
 def test_codex_visible_resolves_rollout_by_session_id(isolated_codex_home):
     thread_id = "019dfe96-cc36-7d80-a907-de19575a6ea4"
     rollout = _write_rollout(

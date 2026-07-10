@@ -63,7 +63,10 @@ def resolve_session_jsonl(worker_type: str, session_id: str) -> Path:
     with the share). Worker-generic across claude/codex/copilot.
 
     Raises ``TranscriptNotFoundError`` when no match is found, ``ValueError``
-    on unsupported worker types.
+    on unsupported worker types or a ``session_id`` that is not one
+    filename-safe path component (ids are interpolated into glob patterns
+    below, so a raw ``*``/``../`` must be a hard caller error here — unlike
+    ``received_transcript_dest``, which treats it as a non-match).
     """
     wt = worker_type.lower().strip()
     _resolvers = {

@@ -175,13 +175,28 @@ def load_session_history(session_id: str, process_id: str | None = None) -> list
 
 
 def load_transcript_history(transcript: Path) -> list[FlowData]:
-    """Load a Codex transcript through the canonical typed parser."""
+    """Load a Codex transcript through the canonical typed parser.
+
+    ``AgentTranscriptFile`` is per-line tolerant — a malformed JSONL line is
+    skipped, not fatal — so reaching this except means the rollout as a whole
+    could not be parsed (a parser bug or an unreadable/foreign format). That
+    is worth a WARNING, and the caller gets a structured ERROR frame instead
+    of a silently-empty history.
+    """
     history: list[FlowData] = []
     try:
         parsed = AgentTranscriptFile("codex", transcript)
-    except Exception:
-        logger.debug("Codex history parse failed for %s", transcript, exc_info=True)
-        return []
+    except Exception as exc:
+        logger.warning("Codex history parse failed for %s", transcript, exc_info=True)
+        return [FlowData(
+            flow_value=f"Failed to parse codex transcript {transcript}: {exc}",
+            attributes={
+                "element-type": FlowElementType.ERROR,
+                "data-type": FlowDataType.TEXT,
+                "subtype": "history-parse-error",
+                "observation-kind": "replay",
+            },
+        )]
 
     for entry in parsed.entries:
         # Session metadata and unknown parser fallbacks are discovery/debug
@@ -194,31 +209,6 @@ def load_transcript_history(transcript: Path) -> list[FlowData]:
 
 
 # ── Per-entry conversion ───────────────────────────────────────────────────────
-
-
-def _entry_to_flow_data(entry: dict) -> list[FlowData]:
-    """Convert a single transcript line to zero or more FlowData items.
-
-    Handles both shapes:
-      - process-local stream events (``thread.started`` / ``item.completed`` ...)
-      - codex's own ``~/.codex/sessions/`` rollout shape
-        (``response_item`` with ``role`` and ``content`` blocks).
-
-    Both shapes carry an outer ISO 8601 ``timestamp`` field per line; we
-    forward it as ``created_time`` so the UI timeline reflects the original
-    transcript time instead of the get-history call time.
-    """
-    etype = entry.get("type")
-
-    # ── Process-local stream event shape ──────────────────────────────────────
-    if etype == "item.completed":
-        return []
-
-    # ── codex sessions/* rollout shape ────────────────────────────────────────
-    if etype == "response_item":
-        return []
-
-    return []
 
 
 _TOOL_USE_KINDS = frozenset({
@@ -243,6 +233,10 @@ def _entry_to_replay_flow_data(entry) -> list[FlowData]:
     ).to_dict()
     frames = entry.to_flow_data()
     if not frames:
+        # Entries whose ``to_flow_data()`` is deliberately empty (SYSTEM,
+        # TOKEN_USAGE) still get one STATUS frame — the live stream does the
+        # same (see ``event_to_flowdata._wrap_live``), so replay stays
+        # row-for-row comparable with what a live subscriber saw.
         frames = [FlowData(
             flow_value={},
             created_time=entry.timestamp or "",
@@ -252,19 +246,23 @@ def _entry_to_replay_flow_data(entry) -> list[FlowData]:
             },
         )]
 
+    # SYSTEM entries carry a refined subtype (``turn_context``,
+    # ``event_msg.error``, ...) that is strictly more informative than the
+    # generic kind tag — surface it instead.
+    subtype = entry.kind.value
+    if entry.kind is EntryKind.SYSTEM and getattr(entry, "subtype", None):
+        subtype = str(entry.subtype)
+
     for frame in frames:
         frame.process_entry = process_entry
-        frame.attributes.setdefault("subtype", entry.kind.value)
-        frame.attributes.setdefault("observation-kind", "replay")
+        frame.attributes["subtype"] = subtype
+        frame.attributes["observation-kind"] = "replay"
         frame.attributes.setdefault("transcript-entry-id", entry.id)
         if entry.entry_id:
             frame.attributes.setdefault("transcript-source-entry-id", entry.entry_id)
         phase = getattr(entry, "phase", None)
         if phase:
             frame.attributes.setdefault("phase", str(phase))
-        system_subtype = getattr(entry, "subtype", None)
-        if entry.kind is EntryKind.SYSTEM and system_subtype:
-            frame.attributes["subtype"] = str(system_subtype)
     return frames
 
 
