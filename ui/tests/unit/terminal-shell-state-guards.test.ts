@@ -11,11 +11,6 @@ const contentPanelSource = readFileSync(
   resolve(__dirname, '../../src/pages/flow-page/content-panel/content-panel.tsx'),
   'utf-8',
 );
-const interactiveTerminalSource = readFileSync(
-  resolve(__dirname, '../../src/components/terminal/interactive-terminal/InteractiveTerminal.tsx'),
-  'utf-8',
-);
-
 describe('Terminal shell state guards', () => {
   it('tracks closing as a shell status instead of a local ui-only map', () => {
     expect(shellEntitySource).toContain("CLOSING: 'closing'");
@@ -29,11 +24,8 @@ describe('Terminal shell state guards', () => {
     expect(contentPanelSource).toContain('if (active?.is_disabled) {');
   });
 
-  it('reinitializes xterm when a process round-trips through headless mode', () => {
-    const lifecycleStart = interactiveTerminalSource.indexOf('Terminal init/dispose');
-    const lifecycleEnd = interactiveTerminalSource.indexOf('// Intercept Cmd+F', lifecycleStart);
-    const lifecycleSource = interactiveTerminalSource.slice(lifecycleStart, lifecycleEnd);
-
-    expect(lifecycleSource).toContain('}, [sessionId, isHeadless]);');
-  });
+  // The headless round-trip xterm re-init regression (C11) is covered
+  // BEHAVIORALLY in terminal-headless-roundtrip.test.tsx — it renders the real
+  // InteractiveTerminal and proves the init effect re-runs, instead of
+  // scraping the source for a dependency-array string.
 });

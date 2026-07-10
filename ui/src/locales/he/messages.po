@@ -930,6 +930,10 @@ msgstr "כל הסוגים"
 msgid "Allow AI to search the web"
 msgstr "אפשר ל-AI לחפש ברשת"
 
+#: src/components/terminal/interactive-terminal/process-cli-presentation.ts
+msgid "Allow all tools without confirmation (--allow-all)"
+msgstr ""
+
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "Already a member — change their role in the list above"
 msgstr "כבר חבר — שנה את התפקיד שלהם ברשימה למעלה"
@@ -11244,9 +11248,13 @@ msgstr "כישורים + AGENTS.md + MCP הם הליבה הנייד; תוספי�
 msgid "Skills, MCP servers, and agents — published by teams across your organization. Install into Claude Code, Codex, or Copilot <0>in one line.</0>"
 msgstr "כישורים, שרתי MCP וסוכנים — פורסמו על ידי צוותים בארגון שלך. התקן ל-Claude Code, Codex, או Copilot <0>בשורה אחת.</0>"
 
-#: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/components/terminal/interactive-terminal/process-cli-presentation.ts
 msgid "Skip all permission prompts (--dangerously-skip-permissions)"
 msgstr "דלג על כל הודעות הרשאה (--dangerously-skip-permissions)"
+
+#: src/components/terminal/interactive-terminal/process-cli-presentation.ts
+msgid "Skip approvals and sandboxing (--dangerously-bypass-approvals-and-sandbox)"
+msgstr ""
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Slower. To wipe rows first, use Clear Index then Full."

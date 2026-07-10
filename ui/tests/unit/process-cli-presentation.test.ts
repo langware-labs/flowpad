@@ -10,7 +10,7 @@ describe('worker CLI presentation', () => {
   it('exposes only supported Codex launch controls and OpenAI documentation', () => {
     const capabilities = getWorkerCliCapabilities('codex');
 
-    expect(capabilities).toEqual({
+    expect(capabilities).toMatchObject({
       vendor: 'codex',
       chrome: false,
       fullTrust: true,
@@ -19,29 +19,47 @@ describe('worker CLI presentation', () => {
       debug: false,
       worktree: false,
     });
+    expect(capabilities.fullTrustDescription?.message).toBe(
+      'Skip approvals and sandboxing (--dangerously-bypass-approvals-and-sandbox)',
+    );
     expect(capabilities.fullTrustDocsUrl).toContain('developers.openai.com/codex');
     expect(capabilities.fullTrustDocsUrl).not.toContain('anthropic.com');
   });
 
-  it('preserves Claude controls while treating unknown workers conservatively', () => {
-    expect(getWorkerCliCapabilities('claude_code')).toMatchObject({
+  it('reproduces the exact pre-vendor-split Claude toolbar surface', () => {
+    // The claude row of the capability table IS the pre-fix toolbar contract:
+    // Chrome + Debug + Worktree toggles, Anthropic docs, the claude full-trust
+    // flag and its description string. Any drift here is a claude regression.
+    const capabilities = getWorkerCliCapabilities('claude_code');
+    expect(capabilities).toMatchObject({
       vendor: 'claude',
       chrome: true,
       fullTrust: true,
       fullTrustFlag: '--dangerously-skip-permissions',
+      fullTrustDocsUrl: 'https://docs.anthropic.com/en/docs/claude-code/settings',
       debug: true,
       worktree: true,
     });
+    expect(capabilities.fullTrustDescription?.message).toBe(
+      'Skip all permission prompts (--dangerously-skip-permissions)',
+    );
+    // Bare 'claude' and a missing worker_type (legacy rows) resolve identically.
+    expect(getWorkerCliCapabilities('claude')).toEqual(capabilities);
+    expect(getWorkerCliCapabilities(null)).toEqual(capabilities);
+    expect(workerCliVendor(null)).toBe('claude');
+  });
+
+  it('treats unknown workers conservatively (no toggles, no docs)', () => {
     expect(getWorkerCliCapabilities('custom-worker')).toEqual({
       vendor: 'unknown',
       chrome: false,
       fullTrust: false,
       fullTrustFlag: null,
+      fullTrustDescription: null,
       fullTrustDocsUrl: null,
       debug: false,
       worktree: false,
     });
-    expect(workerCliVendor(null)).toBe('claude');
   });
 });
 

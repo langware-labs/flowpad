@@ -1,3 +1,5 @@
+import { msg } from '@lingui/core/macro';
+import type { MessageDescriptor } from '@lingui/core';
 import { shellQuote } from '@sdk';
 
 export const CODEX_CLI_REFERENCE_URL = 'https://developers.openai.com/codex/cli/reference#global-flags';
@@ -9,6 +11,8 @@ export interface WorkerCliCapabilities {
   chrome: boolean;
   fullTrust: boolean;
   fullTrustFlag: string | null;
+  /** Lazy lingui descriptor — render via `i18n._(...)`. Null ⇔ fullTrust is false. */
+  fullTrustDescription: MessageDescriptor | null;
   fullTrustDocsUrl: string | null;
   debug: boolean;
   worktree: boolean;
@@ -30,6 +34,7 @@ export function getWorkerCliCapabilities(workerType: string | null | undefined):
       chrome: false,
       fullTrust: true,
       fullTrustFlag: '--dangerously-bypass-approvals-and-sandbox',
+      fullTrustDescription: msg`Skip approvals and sandboxing (--dangerously-bypass-approvals-and-sandbox)`,
       fullTrustDocsUrl: CODEX_CLI_REFERENCE_URL,
       debug: false,
       worktree: false,
@@ -41,6 +46,7 @@ export function getWorkerCliCapabilities(workerType: string | null | undefined):
       chrome: false,
       fullTrust: true,
       fullTrustFlag: '--allow-all',
+      fullTrustDescription: msg`Allow all tools without confirmation (--allow-all)`,
       fullTrustDocsUrl: null,
       debug: false,
       worktree: false,
@@ -52,6 +58,7 @@ export function getWorkerCliCapabilities(workerType: string | null | undefined):
       chrome: true,
       fullTrust: true,
       fullTrustFlag: '--dangerously-skip-permissions',
+      fullTrustDescription: msg`Skip all permission prompts (--dangerously-skip-permissions)`,
       fullTrustDocsUrl: 'https://docs.anthropic.com/en/docs/claude-code/settings',
       debug: true,
       worktree: true,
@@ -62,6 +69,7 @@ export function getWorkerCliCapabilities(workerType: string | null | undefined):
     chrome: false,
     fullTrust: false,
     fullTrustFlag: null,
+    fullTrustDescription: null,
     fullTrustDocsUrl: null,
     debug: false,
     worktree: false,
