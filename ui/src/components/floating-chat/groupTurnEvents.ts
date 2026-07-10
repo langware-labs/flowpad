@@ -165,8 +165,15 @@ export function pairToolEvents(events: FlowData[]): {
     }
   }
 
+  // A turn is terminated when the backend says so semantically
+  // (`turn-terminated: "true"`, stamped on flowpad cancel markers AND on
+  // replayed vendor abort events), with the raw codex event subtype kept as a
+  // fallback for live/PTY streams that bypass the replay stamping path.
   const turnTerminated = others.some(
-    (item) => item.elementType === FlowElementTypes.STATUS && item.attributes.subtype === 'event_msg.turn_aborted',
+    (item) =>
+      item.elementType === FlowElementTypes.STATUS &&
+      (item.attributes['turn-terminated'] === 'true' ||
+        item.attributes.subtype === 'event_msg.turn_aborted'),
   );
   if (turnTerminated) {
     for (const pair of pairs) {

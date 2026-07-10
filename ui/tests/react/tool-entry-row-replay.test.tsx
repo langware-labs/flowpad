@@ -107,6 +107,29 @@ describe('ToolEntryRow replay results', () => {
     expect(screen.queryByText(/running/i)).not.toBeInTheDocument();
   });
 
+  it('does not leave a cancelled unmatched tool running (flowpad abort marker)', () => {
+    // Shape of the durable marker `cancel-prompt` persists and `get-history`
+    // merges (backend turn_abort.py): vendor-neutral subtype plus the semantic
+    // `turn-terminated` attribute the grouping keys on.
+    const call = replayFlowData(
+      FlowElementTypes.TOOL_CALL,
+      { tool_call_id: 'cancelled-headless', args: { cmd: 'sleep 600' } },
+      { subtype: 'tool_use', 'tool-name': 'exec_command', 'tool-use-id': 'cancelled-headless' },
+      6,
+    );
+    const marker = replayFlowData(
+      FlowElementTypes.STATUS,
+      { reason: 'user_interrupt' },
+      { subtype: 'turn_aborted', 'turn-terminated': 'true', origin: 'flowpad' },
+      7,
+    );
+
+    render(<TurnGroupsList groups={groupTurnEvents([call, marker])} />);
+    fireEvent.click(screen.getByTestId('dense-tool-row-toggle'));
+
+    expect(screen.getAllByTestId('tool-entry')[0]).toHaveAttribute('data-state', 'done');
+  });
+
   it('does not leave an aborted unmatched tool running', () => {
     const call = replayFlowData(
       FlowElementTypes.TOOL_CALL,

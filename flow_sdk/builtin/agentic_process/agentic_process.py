@@ -2668,13 +2668,22 @@ class AgenticProcess(Entity):
                     # Client disconnected; let the turn finish to keep JSONL coherent,
                     # but don't block the HTTP handler beyond a short grace.
                     try:
-                        # wait_for cancels its awaitable on timeout. Shield the
-                        # background turn so a reload/disconnect only stops the
-                        # response stream, not the Codex worker producing the
-                        # durable transcript.
+                        # wait_for cancels its awaitable on timeout AND on outer
+                        # cancellation (a hard reload closes this generator with
+                        # CancelledError). Shield the background turn so a
+                        # disconnect only stops the response stream — never the
+                        # worker producing the durable transcript. The turn task
+                        # owns its own teardown (_run_turn's finally deregisters
+                        # the worker and notifies watchers) and Stop still works:
+                        # cancel-prompt kills the subprocess, which ends the
+                        # shielded turn naturally via stream EOF.
                         await asyncio.wait_for(asyncio.shield(turn_task), timeout=1.0)
-                    except (asyncio.TimeoutError, Exception):
-                        pass
+                    except asyncio.TimeoutError:
+                        pass  # expected: turn outlives the grace, keeps running shielded
+                    except Exception:
+                        # _run_turn traps its own errors; anything landing here is
+                        # a harness-level anomaly worth a trace, not a crash.
+                        logger.debug("prompt: post-disconnect turn wait failed", exc_info=True)
 
         return StreamingResponse(
             _stream_body(),
@@ -2699,6 +2708,15 @@ class AgenticProcess(Entity):
         worker = _PROMPT_WORKERS.get(self.id)
         if worker is not None:
             await worker.close_session()
+            # Durable abort record (issue D09): the SIGTERM'd CLI writes nothing
+            # to its own transcript, so a history replay after reload would show
+            # the interrupted tool call as still running. Persist a flowpad-owned
+            # marker that ``get_history_action`` merges back in. The PTY branch
+            # below deliberately doesn't do this — the vendor TUI records its own
+            # abort (codex ``event_msg.turn_aborted``; claude interrupt result).
+            from flow_sdk.builtin.agentic_process.turn_abort import record_turn_abort  # noqa: PLC0415
+
+            record_turn_abort(self._record_dir(), session_id=self.session_id)
             return ApiSuccessResponse(data={"cancelled": True, "transport": "cli"})
         if self.pty_mode and self.shell_id:
             try:
@@ -4236,7 +4254,21 @@ class AgenticProcess(Entity):
         (no live worker required). Empty result is a success with
         ``history=[]``, not a 404.
         """
+        from flow_sdk.builtin.agentic_process.turn_abort import (  # noqa: PLC0415
+            load_abort_marker_frames,
+            merge_abort_markers,
+        )
+
         history = self.driver.load_history(self)
+        # Merge flowpad-authored durable abort markers (written by
+        # ``cancel-prompt``) so a cancelled turn replays as terminated instead
+        # of leaving its last tool call rendered as still running. Worker-
+        # generic: the vendor transcript is vendor-owned and never contains
+        # these; the sidecar in the process record dir does.
+        history = merge_abort_markers(
+            history,
+            load_abort_marker_frames(self._record_dir(), session_id=self.session_id),
+        )
         return ApiSuccessResponse(
             data={
                 "session_id": self.session_id,

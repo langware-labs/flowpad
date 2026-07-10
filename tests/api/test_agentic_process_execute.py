@@ -24,17 +24,22 @@ Invariants pinned (README.md Rules):
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import time
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from flow_sdk.builtin.agentic_process.agentic_process import _PROMPT_WORKERS
+from flow_sdk.builtin.agentic_process.agentic_process import _PROMPT_WORKERS, AgenticProcess
 from flow_sdk.builtin.agentic_process.cli_drivers.claude.stream_worker import (
     ClaudeCLIStreamWorker,
 )
+from flow_sdk.builtin.agentic_process.cli_drivers.codex.stream_worker import (
+    CodexCLIStreamWorker,
+)
+from flow_sdk.builtin.agentic_process.turn_abort import turn_events_path
 from flow_sdk.responses.response import ApiResponse, ApiResponseStatus
-
 from tests.api.conftest import create_agentic_process, get_agentic_process
 from tests.utils.fake_cli import fake_stream_argv, patch_build_spawn
 
@@ -203,6 +208,192 @@ async def test_cancel_prompt_terminates_in_flight_turn(
     while pid in _PROMPT_WORKERS and time.monotonic() < deadline:
         await asyncio.sleep(0.05)
     assert pid not in _PROMPT_WORKERS, "cancelled turn never tore down"
+
+    # Durable cancellation record (issue D09, claude side): the SIGTERM'd CLI
+    # writes nothing durable itself, so the shared cancel path must persist a
+    # flowpad-owned abort marker in the process record dir.
+    proc = await AgenticProcess.get_by_id(pid)
+    marker_file = turn_events_path(proc._record_dir())
+    assert marker_file.exists(), "cancel-prompt must write a durable abort marker"
+    markers = [json.loads(line) for line in marker_file.read_text().splitlines() if line.strip()]
+    assert len(markers) == 1 and markers[0]["type"] == "turn_aborted"
+
+
+# ── Issue D06: reload / client disconnect during a headless tool call ─────────
+
+_CODEX_TID = "d06d06d0-aaaa-4000-8000-000000000006"
+_CODEX_STREAM_TURN = [
+    {"type": "thread.started", "thread_id": _CODEX_TID, "timestamp": "2026-07-10T06:00:00.000Z"},
+    {
+        "type": "item.completed",
+        "timestamp": "2026-07-10T06:00:01.000Z",
+        "item": {
+            "type": "command_execution",
+            "id": "call-d06",
+            "command": "run-the-d06-tool",
+            "aggregated_output": "TOOL-OUTPUT-D06",
+            "exit_code": 0,
+        },
+    },
+    {
+        "type": "item.completed",
+        "timestamp": "2026-07-10T06:00:02.000Z",
+        "item": {"type": "agent_message", "id": "msg-d06", "text": "FINAL-ANSWER-D06"},
+    },
+    {"type": "turn.completed", "usage": {"input_tokens": 1, "output_tokens": 1}, "timestamp": "2026-07-10T06:00:03.000Z"},
+]
+
+
+def _prompt_request_stub(message: str) -> MagicMock:
+    """The established request-info seam (see test_agentic_process_switch_mode):
+    supplies the JSON body ``_http_prompt`` reads via ``get_post_data``."""
+    req = MagicMock()
+    req.get_post_data = AsyncMock(return_value={"message": message})
+    return req
+
+
+@pytest.mark.asyncio
+async def test_disconnect_mid_turn_shielded_turn_completes_durably(
+    bootstrapped_client, user, tmp_path, monkeypatch
+):
+    """A hard reload (client disconnect) mid-tool-call must NOT cancel the
+    headless turn (issue D06).
+
+    Pre-fix, ``_stream_body``'s post-disconnect ``asyncio.wait_for(turn_task,
+    1.0)`` CANCELLED the turn when the 1s grace lapsed — the worker was
+    SIGTERM'd mid-tool and the durable transcript ended at the unmatched call.
+    The ``asyncio.shield`` keeps the turn alive; this test fails (missing tool
+    result / final answer) when the shield is removed.
+
+    Transport note: httpx's ASGITransport buffers the whole app run, so a real
+    mid-stream HTTP disconnect cannot be expressed through the test client.
+    The disconnect is therefore driven at the exact seam starlette uses for a
+    dropped client: ``StreamingResponse.body_iterator.aclose()`` after the
+    first chunk. Everything else — entity, dispatch, worker subprocess,
+    transcript tee, history endpoint — is the genuine stack.
+    """
+    patch_build_spawn(
+        monkeypatch,
+        CodexCLIStreamWorker,
+        # 0.8s between lines: the disconnect lands right after the first chunk,
+        # so the 1.0s grace expires while the tool result (t≈1.6s) and final
+        # answer (t≈2.4s) are still pending — exactly the pre-fix kill window.
+        fake_stream_argv(_CODEX_STREAM_TURN, delay_ms=800),
+        env=dict(os.environ),
+        stdin="",
+    )
+
+    pid = await create_agentic_process(
+        bootstrapped_client, worker_type="codex", pty_mode=False, workdir=str(tmp_path)
+    )
+    proc = await AgenticProcess.get_by_id(pid)
+    monkeypatch.setattr(
+        "flow_sdk.builtin.agentic_process.agentic_process.get_current_request_info",
+        lambda: _prompt_request_stub("run the d06 tool"),
+    )
+
+    response = await proc._http_prompt()
+    assert hasattr(response, "body_iterator"), f"expected StreamingResponse, got {response!r}"
+    stream = response.body_iterator
+    first_chunk = await stream.__anext__()
+    assert first_chunk, "turn must start streaming before the disconnect"
+    # Simulate the hard reload: starlette closes the response generator when
+    # the client goes away.
+    await stream.aclose()
+
+    # The shielded turn keeps running detached; wait for its natural end.
+    deadline = time.monotonic() + 10
+    while pid in _PROMPT_WORKERS and time.monotonic() < deadline:
+        await asyncio.sleep(0.05)
+    assert pid not in _PROMPT_WORKERS, "disconnected turn never completed"
+
+    got = await bootstrapped_client.get(f"/api/v1/graph/agentic_process/{pid}/get-history")
+    history = ApiResponse(**got.json()).data["history"]
+    tool_results = [fd for fd in history if "TOOL-OUTPUT-D06" in json.dumps(fd)]
+    final_answers = [fd for fd in history if "FINAL-ANSWER-D06" in json.dumps(fd)]
+    assert len(tool_results) == 1, f"tool result must be persisted exactly once, got {len(tool_results)}"
+    assert len(final_answers) == 1, f"final answer must be persisted exactly once, got {len(final_answers)}"
+    assert any(
+        fd.get("attributes", {}).get("subtype") == "turn.completed" for fd in history
+    ), "turn must have run to its durable turn.completed despite the disconnect"
+
+    # Status settles: the entity is fetchable and the worker's session id stuck.
+    entity = await get_agentic_process(bootstrapped_client, pid)
+    assert entity["session_id"] == _CODEX_TID
+
+
+# ── Issue D09: cancellation must leave a durable abort record ─────────────────
+
+
+@pytest.mark.asyncio
+async def test_cancel_prompt_abort_marker_replays_in_history(
+    bootstrapped_client, user, tmp_path, monkeypatch
+):
+    """Stop on a headless codex turn writes a flowpad-owned abort marker that
+    the history endpoint replays as a terminated-turn STATUS frame (issue D09).
+
+    Pre-fix there was NO durable abort record anywhere: the SIGTERM'd codex CLI
+    writes nothing, so after a hard reload the cancelled call replayed as still
+    running. (The unmatched-call rendering itself is pinned in
+    tests/unit/test_turn_abort_marker.py and the UI replay test.)
+    """
+    thread_started = json.dumps(
+        # A timestamp like every real codex event — without one the replay
+        # stamps parse-time "now", which would sort after the abort marker.
+        {"type": "thread.started", "thread_id": _CODEX_TID, "timestamp": "2026-07-10T06:00:00.000Z"}
+    )
+    patch_build_spawn(
+        monkeypatch,
+        CodexCLIStreamWorker,
+        # A long "real" command: announce the thread, then hang like a
+        # long-running tool until cancel-prompt SIGTERMs us. ``exec`` so the
+        # sleep replaces bash and the SIGTERM reaches the pipe holder (a forked
+        # sleep would survive bash and keep stdout open for its full 30s).
+        ["bash", "-c", f"printf '%s\\n' {json.dumps(thread_started)}; exec sleep 30"],
+        env=dict(os.environ),
+        stdin="",
+    )
+
+    pid = await create_agentic_process(
+        bootstrapped_client, worker_type="codex", pty_mode=False, workdir=str(tmp_path)
+    )
+    base = f"/api/v1/graph/agentic_process/{pid}"
+    resp = await bootstrapped_client.post(f"{base}/execute", json={"instruction": "hang"})
+    assert resp.status_code == 200, resp.text
+
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        worker = _PROMPT_WORKERS.get(pid)
+        if worker is not None and getattr(worker, "_proc", None) is not None:
+            break
+        await asyncio.sleep(0.02)
+    assert _PROMPT_WORKERS.get(pid) is not None, "worker never spawned"
+
+    cancel = await bootstrapped_client.post(f"{base}/cancel-prompt")
+    assert cancel.status_code == 200, cancel.text
+    assert ApiResponse(**cancel.json()).data["cancelled"] is True
+
+    deadline = time.monotonic() + 10
+    while pid in _PROMPT_WORKERS and time.monotonic() < deadline:
+        await asyncio.sleep(0.05)
+    assert pid not in _PROMPT_WORKERS, "cancelled turn never tore down"
+
+    # The durable marker exists on disk…
+    proc = await AgenticProcess.get_by_id(pid)
+    assert turn_events_path(proc._record_dir()).exists()
+
+    # …and the history replay (what a reloaded UI renders from) carries exactly
+    # one terminated-turn STATUS frame.
+    got = await bootstrapped_client.get(f"{base}/get-history")
+    history = ApiResponse(**got.json()).data["history"]
+    terminated = [
+        fd for fd in history if fd.get("attributes", {}).get("turn-terminated") == "true"
+    ]
+    assert len(terminated) == 1, f"expected exactly one abort marker in replay, got {len(terminated)}"
+    assert terminated[0]["attributes"]["subtype"] == "turn_aborted"
+    assert history.index(terminated[0]) == len(history) - 1, (
+        "abort marker must replay after everything the dying turn flushed"
+    )
 
 
 @pytest.mark.asyncio
