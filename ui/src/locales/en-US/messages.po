@@ -8405,6 +8405,7 @@ msgstr "Open process"
 #: src/components/project-setup-screen/project-setup-screen.tsx
 #: src/components/project-sidebar/ProjectSidebar.tsx
 #: src/components/quick-access-sidebar/QuickAccessSideBar.tsx
+#: src/tabs/tab-row-item.tsx
 msgid "Open Project"
 msgstr "Open Project"
 
@@ -11472,6 +11473,10 @@ msgstr "Start new conversation"
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Start new conversation · {effectiveTitle}"
 msgstr "Start new conversation · {effectiveTitle}"
+
+#: src/components/project-home/ProjectHome.tsx
+msgid "Start new session"
+msgstr "Start new session"
 
 #: src/components/collaboration/StartRoomDialog.tsx
 msgid "Start room"
