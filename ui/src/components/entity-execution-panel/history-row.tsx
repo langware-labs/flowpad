@@ -11,8 +11,8 @@ import type { WorkerHistoryEntry } from '@src/hooks/useWorkerHistory';
  * 1. The chat panel's history dropdown (`EntityExecutionPanel` →
  *    `ExecutionHistoryHeader`) — the "Past chats" / "Past executions" menu
  *    that appears in the floating Flowpad Assistant chat AND in every
- *    asset-editor's chat side panel (Skill, Agent, Trigger, in-doc
- *    `ChatTab`, Run overlay) since they all instantiate the same panel.
+ *    asset-editor's chat side panel (Skill, Agent, Trigger, Run overlay)
+ *    since they all instantiate the same panel.
  * 2. The terminal's full-screen `HistoryModal` (one-off picker).
  *
  * The two surfaces show the same data shape so a user moving between them
