@@ -3,6 +3,7 @@ import { Trans, useLingui } from '@lingui/react/macro';
 import {
   AgenticProcess,
   ASSET_SOURCE_LABEL,
+  assetDescriptorHasUsage,
   dataManager,
   FLOWPAD_ASSISTANT_PROJECT_NAME,
   isReadOnlySource,
@@ -41,7 +42,6 @@ import { useContext as useDataContext } from '@src/hooks/useContext';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import { useProcessAssets } from './useProcessAssets';
 import { useAssetTypes } from '@src/hooks/use-asset-types';
-import { sdkConfig } from '@sdk/config/index';
 import {
   basename as _basename,
   displayLabelForTypeid as _displayLabelForTypeid,
@@ -56,7 +56,6 @@ import { cn } from '@src/lib/utils';
 import { invalidateGitStatus } from '@src/lib/git-status-cache';
 import { notify } from '@src/notifications';
 import type { WorkerType as TranscriptWorkerType } from '@src/hooks/use-transcript';
-import { isFileRead, parseTranscriptResponse } from '@sdk/utils/agent-transcript';
 import {
   launchAssetAnalysis,
   launchAssetCorrect,
@@ -156,7 +155,6 @@ export function AssetManagerPopover({
     sessionId: string | null;
     workerType: string | null;
   }>({ sessionId: null, workerType: null });
-  const [transcriptReadPaths, setTranscriptReadPaths] = useState<Set<string>>(() => new Set());
   const hydratedProcessIds = useRef<Set<string>>(new Set());
 
   const dataCtx = useDataContext();
@@ -195,7 +193,6 @@ export function AssetManagerPopover({
 
   useEffect(() => {
     setHydratedTranscriptIdentity({ sessionId: null, workerType: null });
-    setTranscriptReadPaths(new Set());
   }, [processKey]);
 
   useEffect(() => {
@@ -229,39 +226,6 @@ export function AssetManagerPopover({
   const transcriptWorkerType = normalizeTranscriptWorker(
     activeProcess?.worker_type ?? hydratedTranscriptIdentity.workerType,
   );
-
-  useEffect(() => {
-    if (!open || !transcriptSessionId) {
-      setTranscriptReadPaths(new Set());
-      return;
-    }
-    let cancelled = false;
-    const url = `${sdkConfig.apiUrl}/api/v1/workers/${encodeURIComponent(transcriptWorkerType)}/${encodeURIComponent(transcriptSessionId)}/transcript`;
-    void fetch(url, { credentials: 'include' })
-      .then(async (response) => {
-        const json = await response.json();
-        if (!response.ok || json?.ok === false) {
-          const code = json?.error_code ?? response.status;
-          const message = json?.error ?? response.statusText;
-          throw new Error(`${code}: ${message}`);
-        }
-        return parseTranscriptResponse(json);
-      })
-      .then((parsed) => {
-        if (cancelled) return;
-        const paths = new Set<string>();
-        for (const entry of parsed.entries) {
-          if (isFileRead(entry) && entry.path) paths.add(normalizePath(entry.path));
-        }
-        setTranscriptReadPaths(paths);
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setTranscriptReadPaths(new Set());
-        }
-      });
-    return () => { cancelled = true; };
-  }, [open, transcriptSessionId, transcriptWorkerType]);
 
   const additionalDirs = useMemo(() => activeProcess?.additional_dirs ?? [], [activeProcess?.additional_dirs]);
 
@@ -361,24 +325,6 @@ export function AssetManagerPopover({
     void assetTypes;
     return new Map(dataManager.getAllTypeInfos().map((t) => [t.type_name, t]));
   }, [assetTypes]);
-
-  const usedAssetKeys = useMemo(() => {
-    const used = new Set<string>();
-    if (!transcriptReadPaths.size) return used;
-    for (const descriptor of descriptors) {
-      const assetPath = normalizePath(descriptor.posix_path);
-      if (!assetPath) continue;
-      const typeInfo = assetTypeByName.get(_parseTypeid(descriptor.typeid).type);
-      const folderBacked = !!typeInfo?.folder_backed;
-      for (const readPath of transcriptReadPaths) {
-        if (readPath === assetPath || (folderBacked && readPath.startsWith(`${assetPath}/`))) {
-          used.add(descriptorKey(descriptor));
-          break;
-        }
-      }
-    }
-    return used;
-  }, [assetTypeByName, descriptors, transcriptReadPaths]);
 
   // Group descriptors by typeid for the "list" mode — but show one row per
   // (typeid, source) pair so duplicate sources are explicitly visible.
@@ -792,7 +738,7 @@ export function AssetManagerPopover({
                   descriptor={d}
                   iconForType={iconForType}
                   attached={attachedSet.has(d.typeid)}
-                  used={usedAssetKeys.has(descriptorKey(d))}
+                  used={assetDescriptorHasUsage(d)}
                   busy={busyAssetKey === descriptorKey(d)}
                   onDetach={onDetach}
                   onImprove={openImproveDialog}
@@ -1010,6 +956,7 @@ function AssetRow({
   const Icon = iconForType(type);
   const readOnly = isReadOnlySource(descriptor.source);
   const label = _displayLabelForTypeid(descriptor.typeid);
+  const canImprove = used && !!normalizePath(descriptor.posix_path);
   // Entity-less personas (e.g. a name-keyed agents_json entry with no backing
   // entity) carry a name-form pseudo-typeid — there is nothing to open. Entity
   // ids are always UUIDs (v4/v5 policy), so gate on that rather than the looser
@@ -1096,7 +1043,7 @@ function AssetRow({
       >
         {sourcePillText}
       </span>
-      {used && (
+      {canImprove && (
         <button
           type="button"
           className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded text-primary hover:bg-primary/10 disabled:opacity-60"

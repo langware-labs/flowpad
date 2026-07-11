@@ -14,7 +14,7 @@ import collections
 import json
 import logging
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from functools import cached_property
@@ -124,6 +124,13 @@ class AssetSource(str, Enum):
     WORKDIR = "workdir"                # process workdir if distinct from project/user
     ADDITIONAL_DIR = "additional_dir"  # additional_dirs entries (excl. auto-appended assets dir)
     CONTEXT_DIR = "context_dir"        # project.include_dirs (context folders)
+    TRANSCRIPT = "transcript"          # file-backed entity read in transcript only
+
+
+class AssetUsageKind(str, Enum):
+    EMBEDDED_ASSET = "embedded_asset"
+    INLINE_PERSONA = "inline_persona"
+    TRANSCRIPT_FILE_READ = "transcript_file_read"
 
 
 # Sources whose underlying file/state lives outside this AgenticProcess —
@@ -136,6 +143,7 @@ READONLY_ASSET_SOURCES: frozenset[AssetSource] = frozenset({
     AssetSource.WORKDIR,
     AssetSource.ADDITIONAL_DIR,
     AssetSource.CONTEXT_DIR,
+    AssetSource.TRANSCRIPT,
 })
 
 
@@ -151,6 +159,17 @@ def is_readonly_source(source: AssetSource) -> bool:
 
 
 @dataclass
+class AssetUsage:
+    """Lightweight evidence that an asset is active or was used in this run."""
+
+    kind: AssetUsageKind
+    path: str | None = None
+    entry_id: str | None = None
+    timestamp: str | None = None
+    label: str | None = None
+
+
+@dataclass
 class AssetDescriptor:
     """Single asset row visible to an AgenticProcess.
 
@@ -161,6 +180,7 @@ class AssetDescriptor:
     source: AssetSource
     posix_path: str | None    # canonical POSIX path; None for INLINE
     source_dir: str | None = None  # matched source dir (path-discovered only); None for EMBEDDED/INLINE
+    usage: list[AssetUsage] = field(default_factory=list)
 
 
 @dataclass
@@ -3841,10 +3861,160 @@ class AgenticProcess(Entity):
 
     # ── Asset descriptors (read-only unified view) ────────────────────────────
 
+    def _transcript_file_reads(self) -> list[tuple[object, str]]:
+        from flow_sdk.fs_store.path_utils import canonical_posix_path
+        from flow_sdk.transcript_analyzer.entries.file_read import FileReadEntry
+
+        try:
+            transcript = self._load_transcript()
+        except Exception:
+            transcript = None
+        if transcript is None:
+            return []
+
+        reads: list[tuple[object, str]] = []
+        for entry in getattr(transcript, "entries", []) or []:
+            if not isinstance(entry, FileReadEntry) or not getattr(entry, "path", None):
+                continue
+            try:
+                reads.append((entry, canonical_posix_path(entry.path)))
+            except Exception:
+                continue
+        return reads
+
+    @staticmethod
+    def _usage_from_file_read(entry: object, read_path: str) -> AssetUsage:
+        return AssetUsage(
+            kind=AssetUsageKind.TRANSCRIPT_FILE_READ,
+            path=read_path,
+            entry_id=getattr(entry, "entry_id", None) or getattr(entry, "id", None),
+            timestamp=getattr(entry, "timestamp", None),
+            label="Read in transcript",
+        )
+
+    def _annotate_asset_usage(
+        self,
+        descriptors: list[AssetDescriptor],
+        reads: list[tuple[object, str]],
+    ) -> None:
+        """Attach transcript-file-read usage to descriptors in-place.
+
+        EMBEDDED/INLINE process-active usage is added at descriptor creation.
+        Transcript usage is derived here so the frontend consumes one unified
+        ``usage`` surface and does not need to fetch or parse transcripts.
+        """
+        from flow_sdk.fs_store.path_utils import canonical_posix_path
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry
+
+        if not reads:
+            return
+
+        for descriptor in descriptors:
+            if not descriptor.posix_path:
+                continue
+            try:
+                asset_path = canonical_posix_path(descriptor.posix_path)
+            except Exception:
+                continue
+            type_name = descriptor.typeid.split("-", 1)[0]
+            type_info = SchemaRegistry.get(type_name)
+            folder_backed = bool(getattr(type_info, "folder_backed", False))
+            for entry, read_path in reads:
+                if read_path != asset_path and not (
+                    folder_backed and read_path.startswith(asset_path.rstrip("/") + "/")
+                ):
+                    continue
+                descriptor.usage.append(self._usage_from_file_read(entry, read_path))
+
+    async def _entity_for_transcript_read(self, read_path: str):
+        """Resolve a read path to the owning file-backed entity, if any."""
+        from pathlib import Path
+
+        from flow_sdk.core.entity.entity_model import Entity
+        from flow_sdk.fs_store.path_utils import canonical_posix_path
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry
+
+        cur = Path(read_path)
+        for path in [cur, *cur.parents]:
+            try:
+                entity = await Entity.get_by_asset_ref(canonical_posix_path(path))
+            except Exception:
+                entity = None
+            if entity is None:
+                continue
+            asset_ref = getattr(entity, "asset_ref", None)
+            if not asset_ref:
+                continue
+            asset_path = canonical_posix_path(asset_ref)
+            type_info = SchemaRegistry.get(entity.type or entity.get_type())
+            folder_backed = bool(getattr(type_info, "folder_backed", False))
+            if read_path == asset_path or (
+                folder_backed and read_path.startswith(asset_path.rstrip("/") + "/")
+            ):
+                return entity
+        return None
+
+    async def _append_transcript_asset_descriptors(
+        self,
+        descriptors: list[AssetDescriptor],
+        reads: list[tuple[object, str]],
+        sources: list[tuple[str, AssetSource]],
+    ) -> None:
+        """Append read assets that were not visible through process sources."""
+        from flow_sdk.fs_store.path_utils import canonical_posix_path
+
+        if not reads:
+            return
+
+        ranked_sources = sorted(sources, key=lambda s: -len(s[0]))
+        existing_read_paths = {
+            u.path
+            for descriptor in descriptors
+            for u in descriptor.usage
+            if u.kind == AssetUsageKind.TRANSCRIPT_FILE_READ and u.path
+        }
+        descriptor_by_key = {(d.typeid, d.source): d for d in descriptors}
+
+        for entry, read_path in reads:
+            if read_path in existing_read_paths:
+                continue
+            entity = await self._entity_for_transcript_read(read_path)
+            if entity is None:
+                continue
+            asset_ref = getattr(entity, "asset_ref", None)
+            if not asset_ref:
+                continue
+            asset_path = canonical_posix_path(asset_ref)
+            match = next(
+                (
+                    (path, source)
+                    for path, source in ranked_sources
+                    if asset_path == path or asset_path.startswith(path + "/")
+                ),
+                None,
+            )
+            source_dir, source = match if match is not None else (None, AssetSource.TRANSCRIPT)
+            typeid = f"{entity.type or entity.get_type()}-{entity.id}"
+            key = (typeid, source)
+            if key in descriptor_by_key:
+                descriptor_by_key[key].usage.append(self._usage_from_file_read(entry, read_path))
+                existing_read_paths.add(read_path)
+                continue
+            descriptor = AssetDescriptor(
+                typeid=typeid,
+                source=source,
+                posix_path=asset_path,
+                source_dir=source_dir,
+                usage=[self._usage_from_file_read(entry, read_path)],
+            )
+            descriptors.append(descriptor)
+            descriptor_by_key[key] = descriptor
+            existing_read_paths.add(read_path)
+
     async def get_asset_descriptors(self) -> list[AssetDescriptor]:
         """Return a unified list of assets visible to this process.
 
-        Composed from three sources of truth:
+        Composed from four sources of truth:
           1. EMBEDDED   — ``self.embedded_asset_refs`` + computed materialized path.
           2. INLINE     — ``cli_config.agents_json`` (or ``embedded_agent_ids``
                            fallback). No file → ``posix_path=None``.
@@ -3852,6 +4022,8 @@ class AgenticProcess(Entity):
                            user/project/workdir/additional_dirs, filtered to
                            ``EXECUTABLE_ASSET_TYPES`` and attributed to the
                            longest-prefix source.
+          4. Transcript — file-backed entities read in the transcript but not
+                           otherwise visible in the process asset sources.
 
         Duplicates across sources are intentional — the same source skill may
         appear as both EMBEDDED (materialized into the process) and USER_DIR
@@ -3868,10 +4040,16 @@ class AgenticProcess(Entity):
         # 1. EMBEDDED
         for ref in self.embedded_asset_refs or []:
             mat_path = await self._materialized_path_for(ref, assets_dir)
+            mat_path_posix = canonical_posix_path(mat_path) if mat_path else None
             descriptors.append(AssetDescriptor(
                 typeid=str(ref),
                 source=AssetSource.EMBEDDED,
-                posix_path=canonical_posix_path(mat_path) if mat_path else None,
+                posix_path=mat_path_posix,
+                usage=[AssetUsage(
+                    kind=AssetUsageKind.EMBEDDED_ASSET,
+                    path=mat_path_posix,
+                    label="Embedded in this process",
+                )],
             ))
             seen_embedded.add(str(ref))
 
@@ -3883,6 +4061,11 @@ class AgenticProcess(Entity):
                 typeid=tid,
                 source=AssetSource.INLINE,
                 posix_path=inline_path,
+                usage=[AssetUsage(
+                    kind=AssetUsageKind.INLINE_PERSONA,
+                    path=inline_path,
+                    label="Loaded as inline persona",
+                )],
             ))
 
         # 3. Path-discovered
@@ -3928,6 +4111,9 @@ class AgenticProcess(Entity):
                     source_dir=src_dir,
                 ))
 
+        reads = self._transcript_file_reads()
+        self._annotate_asset_usage(descriptors, reads)
+        await self._append_transcript_asset_descriptors(descriptors, reads, sources)
         return descriptors
 
     async def _collect_source_dirs(
@@ -4401,6 +4587,16 @@ class AgenticProcess(Entity):
                 "source": d.source.value,
                 "posix_path": d.posix_path,
                 "source_dir": d.source_dir,
+                "usage": [
+                    {
+                        "kind": u.kind.value,
+                        "path": u.path,
+                        "entry_id": u.entry_id,
+                        "timestamp": u.timestamp,
+                        "label": u.label,
+                    }
+                    for u in d.usage
+                ],
             }
             for d in items
         ]})

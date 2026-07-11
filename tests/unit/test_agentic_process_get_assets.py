@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import uuid
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -17,6 +18,7 @@ from flow_sdk.builtin.agentic_process import AgenticProcess
 from flow_sdk.builtin.agentic_process.agentic_process import (
     AssetDescriptor,
     AssetSource,
+    AssetUsageKind,
     READONLY_ASSET_SOURCES,
     is_readonly_source,
 )
@@ -144,6 +146,33 @@ def _by_source(descriptors: list[AssetDescriptor], source: AssetSource) -> list[
     return [d for d in descriptors if d.source == source]
 
 
+def _usage_kinds(descriptor: AssetDescriptor) -> set[AssetUsageKind]:
+    return {u.kind for u in descriptor.usage}
+
+
+def _file_read(path: str | Path, entry_id: str = "entry-read-1"):
+    from flow_sdk.transcript_analyzer.entries.file_read import FileReadEntry
+
+    return FileReadEntry(
+        id=f"{entry_id}:id",
+        session_id="session-usage",
+        timestamp="2026-07-11T00:00:00Z",
+        worker="claude",
+        entry_id=entry_id,
+        tool_name="Read",
+        path=str(path),
+    )
+
+
+def _stub_transcript(monkeypatch, entries: list) -> None:
+    monkeypatch.setattr(
+        AgenticProcess,
+        "_load_transcript",
+        lambda self, descriptor=None: SimpleNamespace(entries=entries),
+        raising=False,
+    )
+
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
@@ -211,7 +240,10 @@ async def test_inline_persona_descriptor(tree):
     proc = _make_proc(cli_config={"agents_json": {"inline_helper": {"description": "x"}}})
     descs = await proc.get_asset_descriptors()
     inline = _by_source(descs, AssetSource.INLINE)
-    assert any(d.typeid == "agent-inline_helper" and d.posix_path is None for d in inline)
+    match = next((d for d in inline if d.typeid == "agent-inline_helper"), None)
+    assert match is not None
+    assert match.posix_path is None
+    assert AssetUsageKind.INLINE_PERSONA in _usage_kinds(match)
 
 
 @pytest.mark.asyncio
@@ -491,6 +523,99 @@ async def test_embedded_materialized_path_layout(tree, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_embedded_descriptor_is_marked_used_without_file_read(tree, monkeypatch):
+    """Vibe-style embedded personas are process-active even when the transcript
+    never contains a Read of the agent markdown."""
+    from flow_sdk.api.api_types.type_id import TypeId
+
+    async def _fake_path_for(self, ref, assets_dir):
+        return assets_dir / ".claude" / "agents" / "vibe.md"
+
+    monkeypatch.setattr(AgenticProcess, "_materialized_path_for", _fake_path_for)
+    _stub_transcript(monkeypatch, [])
+
+    proc = _make_proc(embedded_asset_refs=[
+        TypeId("agent-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+    ])
+    descs = await proc.get_asset_descriptors()
+    embedded = _by_source(descs, AssetSource.EMBEDDED)
+    assert len(embedded) == 1
+    assert embedded[0].posix_path.endswith("/.claude/agents/vibe.md")
+    assert AssetUsageKind.EMBEDDED_ASSET in _usage_kinds(embedded[0])
+
+
+@pytest.mark.asyncio
+async def test_file_read_marks_matching_asset_used(tree, monkeypatch):
+    _stub_transcript(monkeypatch, [_file_read(tree["paths"]["e_agent"])])
+
+    proc = _make_proc(additional_dirs=[str(tree["extra_dir"])])
+    descs = await proc.get_asset_descriptors()
+    extra = _by_source(descs, AssetSource.ADDITIONAL_DIR)
+    match = next(d for d in extra if d.typeid == f"agent-{tree['ents']['e_agent'].id}")
+
+    assert AssetUsageKind.TRANSCRIPT_FILE_READ in _usage_kinds(match)
+    usage = next(u for u in match.usage if u.kind == AssetUsageKind.TRANSCRIPT_FILE_READ)
+    assert usage.path == canonical_posix_path(tree["paths"]["e_agent"])
+    assert usage.entry_id == "entry-read-1"
+
+
+@pytest.mark.asyncio
+async def test_folder_backed_skill_file_read_marks_skill_used(tree, monkeypatch):
+    _stub_transcript(monkeypatch, [_file_read(tree["paths"]["u_skill_user"] / "SKILL.md")])
+
+    proc = _make_proc()
+    descs = await proc.get_asset_descriptors()
+    user_descs = _by_source(descs, AssetSource.USER_DIR)
+    match = next(d for d in user_descs if d.typeid == f"skill-{tree['ents']['u_skill_user'].id}")
+
+    assert AssetUsageKind.TRANSCRIPT_FILE_READ in _usage_kinds(match)
+    usage = next(u for u in match.usage if u.kind == AssetUsageKind.TRANSCRIPT_FILE_READ)
+    assert usage.path == canonical_posix_path(tree["paths"]["u_skill_user"] / "SKILL.md")
+
+
+@pytest.mark.asyncio
+async def test_transcript_only_asset_is_returned(tree, tmp_path, monkeypatch):
+    transcript_dir = tmp_path / "transcript_only"
+    transcript_dir.mkdir()
+    note_path = transcript_dir / "note.md"
+    note_path.write_text("# transcript only\n")
+    doc = Docs(
+        id=str(uuid.uuid4()),
+        name="transcript_only_note",
+        asset_ref=canonical_posix_path(note_path),
+    )
+    await doc.save()
+    try:
+        _stub_transcript(monkeypatch, [_file_read(note_path)])
+
+        proc = _make_proc()
+        descs = await proc.get_asset_descriptors()
+        match = next(d for d in descs if d.typeid == f"markdown-{doc.id}")
+
+        assert match.source == AssetSource.TRANSCRIPT
+        assert match.posix_path == canonical_posix_path(note_path)
+        assert AssetUsageKind.TRANSCRIPT_FILE_READ in _usage_kinds(match)
+    finally:
+        await doc.delete()
+
+
+@pytest.mark.asyncio
+async def test_get_assets_action_serializes_usage(tree):
+    proc = _make_proc(cli_config={"agents_json": {"inline_helper": {"description": "x"}}})
+
+    res = await proc.get_assets_action()
+    inline = next(a for a in res.data["assets"] if a["typeid"] == "agent-inline_helper")
+
+    assert inline["usage"] == [{
+        "kind": AssetUsageKind.INLINE_PERSONA.value,
+        "path": None,
+        "entry_id": None,
+        "timestamp": None,
+        "label": "Loaded as inline persona",
+    }]
+
+
+@pytest.mark.asyncio
 async def test_remove_dir_drops_descriptors(tree):
     """Mutating additional_dirs / workdir between calls must change the
     descriptor list (the read is not cached)."""
@@ -538,6 +663,7 @@ def test_is_readonly_source_partition():
         AssetSource.WORKDIR: True,
         AssetSource.ADDITIONAL_DIR: True,
         AssetSource.CONTEXT_DIR: True,
+        AssetSource.TRANSCRIPT: True,
     }
     # Every enum member is covered (no missing keys → guards drift).
     assert set(expected) == set(AssetSource)
