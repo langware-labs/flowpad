@@ -6,6 +6,7 @@
 
 ## Testing Environment
 
+- Current focused run (2026-07-10, Claude Vibe Workspace): dedicated `vibe-12` backend `http://localhost:6012`, frontend `http://localhost:5012`, Chrome Canary 152 through DebugMCP/CDP. The instance was reset backend-only with keychain preservation before every scenario and killed at cycle end. Live projects were mounted under `/tmp` so Vite did not reload on fixture/evidence writes.
 - Current cycle (2026-07-07, Phases 11+12 only): main backend 9008 restarted by user request mid-cycle (manual detached start; frontend 4098 stayed up); hub 8093 UP all cycle. Dedicated instances launched+killed by the cycle: qa7 (be 6007/fe 5007, the workhorse), qa5 (be 6005, whiteboard agent), qa3 (be 6004, bounded fixture HOME for corpus-bound search tests). Host: 14 cores; load oscillated 4→46 all day from the user's own live sessions (which also edited ui/src + ran their own playwright mid-cycle — see 2026-07-07 learnings for the contamination rules). Python 3.10.17, Node v22.15.0.
 - Backend: `http://localhost:9008` (port set via `LOCAL_SERVER_PORT=9008` in `.env.local`)
 - Frontend: `http://localhost:4098` (VITE_PORT=4098 in `.env.local`, NOT 4097)
@@ -20,6 +21,15 @@
 - Last cycle (2026-05-30, record-removal branch): backend 9008 + frontend 4098 both reachable (HTTP 200) throughout. Phases 1-4 green (1522 / 441 / 51 / 907). 1 real fix (bootstrap `types` shape, 4 tests). No port conflicts this run.
 
 ## Learnings
+
+### 2026-07-10 - Claude Vibe Workspace Open/Run/Skill browser matrix
+
+- **Vibe presentation and general navigation instructions conflict.** Existing Markdown/source/HTML requests repeatedly selected global navigation workflows and used `flow navigate`, producing child asset routes with no `last_shown`/`display_stack`; the fixed Display then remained empty. Treat assistant prose saying "opened" as insufficient: assert process Display state and the actual browser renderer.
+- **A process's recorded project/workdir does not prove unscoped `flow context list` is correct.** In skill-create runs, the process/browser were bound to a temp project while `flow context list` returned `project-@local`, no current process, and `my_first_project`; the records workflow wrote across project boundaries. Capture the command's real stdout in the transcript.
+- **Indexing a direct folder-backed main file changes the asset contract.** `flow record index <SKILL.md> --types skill` yielded a file-valued skill `asset_ref`; the Skill editor appended its own `SKILL.md` and 404ed. Indexing the skill folder/project root generated a `.flow/id`, a folder-valued ref, and a unique entity instead.
+- **Vibe's local `New` panel state is not workspace rebinding.** A real P1 can run in the panel while URL/Display stay on P0; P1 also lost the embedded Vibe attachment. Always compare URL id, panel transcript id, process entities, attachments, and behavior after hard reload.
+- **Prompt Queue must be tested from the visible Advanced queue surface.** Vibe has no queue control while busy. Disable draining, enqueue through the UI, verify backend order, then enable. In this run the first dequeued turn navigated and later entries remained queued while the worker was idle/ready; navigation is correlated, not established as the cause.
+- **DebugMCP harness pitfalls from this run:** a long `page.waitForFunction` can retain the pre-navigation execution context; poll `window.dataContext.project` explicitly. `CompactExecutionInput` sends on `mousedown`, not click. Save mutable evidence outside `ui/` until the tab closes to avoid Vite HMR. Screenshot font waits can time out; accessibility snapshots plus frame DOM/API assertions remain valid evidence.
 
 ### 2026-07-07 — Phases 11+12 cycle (0.2.93; started on stress-test, branch merged+released mid-cycle)
 
