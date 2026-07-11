@@ -37,9 +37,13 @@ export function ViewToggle() {
   const { currentDock, navigation } = useDockNavigation();
   const modes = mode === ViewMode.Dev ? MODES_DEV : MODES_NORMAL;
 
+  // URL-first: the click only navigates — same pointer, requested mode. All
+  // arrangements (applying + persisting the mode) happen on load, driven by the
+  // URL (useDockViewModeOverrideSync). Pointerless routes (e.g. home) have no
+  // dock URL to carry the mode, so they write the preference directly.
   const select = (next: ViewMode) => {
     if (next === mode) return;
-    if (currentDock?.viewMode) {
+    if (currentDock) {
       navigation.openDock(currentDock.withViewMode(next));
     } else {
       setViewMode(next);

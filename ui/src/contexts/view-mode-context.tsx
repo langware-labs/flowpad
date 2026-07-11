@@ -37,6 +37,11 @@ function toViewMode(v: unknown): ViewMode {
 }
 
 const viewModeOverrideListeners = new Set<() => void>();
+// Since the URL's viewMode is also adopted into the persisted preference on load
+// (useDockViewModeOverrideSync), this transient override normally equals the pref.
+// Its remaining purpose is to pin the displayed mode against externally-originated
+// pref changes (e.g. a cross-device backend reconcile) while a viewMode-carrying
+// dock URL is mounted.
 let dockViewModeOverride: ViewMode | null = null;
 let flickerTimer: number | undefined;
 
@@ -155,13 +160,21 @@ export function useViewMode(): ViewMode {
   return mode;
 }
 
-/** Sync the current DockPointer's page-local viewMode override into useViewMode(). */
+/**
+ * Sync the current DockPointer's viewMode override into useViewMode().
+ * This is the load-time owner of all view-mode arrangements: the footer toggle
+ * only navigates (same pointer, `?viewMode=<mode>`); when the URL loads here we
+ * apply the mode AND adopt it as the persisted preference, so the choice
+ * survives leaving the URL and the session without any write in the click path.
+ */
 export function useDockViewModeOverrideSync(): void {
   const currentDock = useCurrentDock();
   const override = currentDock?.viewMode ?? null;
 
   useEffect(() => {
     setDockViewModeOverride(override);
+    // instancePreferences.set no-ops on equal values, so no guard is needed here.
+    if (override) setViewMode(override);
   }, [override]);
 
   useEffect(() => () => setDockViewModeOverride(null), []);
