@@ -24,6 +24,20 @@ def canonical_posix_path(p: Path | str) -> str:
     return unicodedata.normalize("NFC", Path(p).resolve().as_posix())
 
 
+def ancestors_of(p: Path | str) -> list[str]:
+    """Ancestor directories of ``p`` in canonical posix form, deepest first,
+    excluding the filesystem root.
+
+    Canonicalizes through ``canonical_posix_path`` first so the returned keys
+    match stored ``asset_ref`` values (which are written through the same
+    rule) — the containment counterpart of ``is_path_under``.
+    """
+    from pathlib import PurePosixPath
+
+    canon = canonical_posix_path(p)
+    return [a.as_posix() for a in PurePosixPath(canon).parents if a.as_posix() != "/"]
+
+
 def is_path_under(path: str, root: str) -> bool:
     """Segment-safe containment: ``path`` IS ``root`` or lives inside it.
 

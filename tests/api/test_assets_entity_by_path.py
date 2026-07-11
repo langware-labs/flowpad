@@ -94,11 +94,66 @@ async def test_agent_file_resolves_via_endpoint(bootstrapped_client, tmp_path: P
         assert data["project_id"] == pid
 
 
-async def test_skill_inner_file_unresolved_via_endpoint(bootstrapped_client, tmp_path: Path):
-    """Folder-layout inner file (SKILL.md) returns null — exact-match only."""
+async def test_skill_inner_file_resolves_to_skill(bootstrapped_client, tmp_path: Path):
+    """Folder-layout inner file (SKILL.md) resolves to the owning Skill entity
+    via the containing-folder fallback (exact miss → deepest ancestor
+    ``asset_ref`` of a folder-layout type)."""
     sid = _v5("api:skill:inner")
     folder = _write_skill(tmp_path, "api_inner_skill", sid)
     await _index(tmp_path, "user")
 
     assert (await _resolve(bootstrapped_client, str(folder.resolve()))) is not None
-    assert (await _resolve(bootstrapped_client, str((folder / "SKILL.md").resolve()))) is None
+    data = await _resolve(bootstrapped_client, str((folder / "SKILL.md").resolve()))
+    assert data is not None, "inner SKILL.md did not resolve to the owning skill"
+    assert data["type"] == str(RecordType.SKILL)
+    assert data["id"] == sid
+
+
+async def test_skill_nested_inner_file_resolves_to_skill(bootstrapped_client, tmp_path: Path):
+    """A file nested deeper inside the skill folder still resolves to the Skill."""
+    sid = _v5("api:skill:nested")
+    folder = _write_skill(tmp_path, "api_nested_skill", sid)
+    helpers = folder / "helpers"
+    helpers.mkdir()
+    inner = helpers / "x.py"
+    inner.write_text("print('hi')\n", encoding="utf-8")
+    await _index(tmp_path, "user")
+
+    data = await _resolve(bootstrapped_client, str(inner.resolve()))
+    assert data is not None, "nested inner file did not resolve to the owning skill"
+    assert data["type"] == str(RecordType.SKILL)
+    assert data["id"] == sid
+
+
+async def test_exact_match_wins_over_containing_folder(bootstrapped_client, tmp_path: Path):
+    """A file that is itself an indexed entity resolves to itself, not to a
+    folder-backed ancestor: an agent .md placed INSIDE a skill folder must
+    come back as the AGENT, exact match beating containment."""
+    sid = _v5("api:skill:host")
+    folder = _write_skill(tmp_path, "api_host_skill", sid)
+    aid = _v5("api:agent:inside")
+    inner_agents = folder / ".claude" / "agents"
+    inner_agents.mkdir(parents=True)
+    md = inner_agents / "inside_agent.md"
+    md.write_text(
+        f"---\nid: {aid}\nname: inside_agent\ndescription: nested agent\n---\n\n# inside\n",
+        encoding="utf-8",
+    )
+    await _index(tmp_path, "user")
+    # Index the agent under the skill folder too (agent_fn scans .claude/agents
+    # under the root; the skill folder acts as a second root for this case).
+    await _index(folder, "user")
+
+    data = await _resolve(bootstrapped_client, str(md.resolve()))
+    assert data is not None
+    assert data["type"] == str(RecordType.AGENT), "exact match must beat containment"
+    assert data["id"] == aid
+
+
+async def test_unowned_path_returns_null(bootstrapped_client, tmp_path: Path):
+    """A path under no indexed entity (and no folder-backed ancestor) is null."""
+    stray = tmp_path / "stray" / "nothing.md"
+    stray.parent.mkdir(parents=True)
+    stray.write_text("# stray\n", encoding="utf-8")
+
+    assert (await _resolve(bootstrapped_client, str(stray.resolve()))) is None
