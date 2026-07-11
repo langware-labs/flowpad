@@ -1783,6 +1783,10 @@ msgstr ""
 msgid "Changes saved successfully"
 msgstr ""
 
+#: src/pages/flow-page/vibe-workspace.tsx
+msgid "Changing worker requires a new chat. The current chat stays in history."
+msgstr ""
+
 #: src/components/floating-chat/FloatingChatWindow.tsx
 msgid "Chat history"
 msgstr ""
@@ -2759,6 +2763,7 @@ msgstr ""
 #: src/pages/flow-page/use-start-vibe-session.ts
 #: src/pages/flow-page/vibe-no-process-workspace.tsx
 #: src/pages/flow-page/vibe-no-process-workspace.tsx
+#: src/pages/flow-page/vibe-workspace.tsx
 msgid "Could not start"
 msgstr ""
 
@@ -4613,6 +4618,7 @@ msgstr ""
 #: src/pages/flow-page/use-start-vibe-session.ts
 #: src/pages/flow-page/vibe-no-process-workspace.tsx
 #: src/pages/flow-page/vibe-no-process-workspace.tsx
+#: src/pages/flow-page/vibe-workspace.tsx
 msgid "Failed to start the build session."
 msgstr ""
 
@@ -6782,6 +6788,7 @@ msgstr ""
 msgid "model"
 msgstr ""
 
+#: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 #: src/pages/flow-page/vibe-model-select.tsx
 #: src/pages/flow-page/vibe-model-select.tsx
@@ -11121,6 +11128,8 @@ msgstr ""
 msgid "Show system skills"
 msgstr ""
 
+#: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
+#: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
 #: src/components/terminal/interactive-terminal/ChatToolsMenu.tsx
 msgid "Show tool calls"
 msgstr ""
@@ -11432,8 +11441,18 @@ msgstr ""
 #~ msgid "Start date"
 #~ msgstr ""
 
+#. placeholder {0}: workerLabel(pendingWorkerSwitch.workerType)
+#: src/pages/flow-page/vibe-workspace.tsx
+msgid "Start new {0} chat?"
+msgstr ""
+
 #: src/pages/flow-page/vibe-no-process-workspace.tsx
+#: src/pages/flow-page/vibe-workspace.tsx
 msgid "Start new chat"
+msgstr ""
+
+#: src/pages/flow-page/vibe-workspace.tsx
+msgid "Start new chat?"
 msgstr ""
 
 #: src/components/account/system-diagnoses.tsx
@@ -12925,6 +12944,12 @@ msgstr ""
 
 #: src/components/wizard/WizardHost.tsx
 msgid "Wizard"
+msgstr ""
+
+#: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
+#: src/pages/flow-page/vibe-worker-select.tsx
+#: src/pages/flow-page/vibe-worker-select.tsx
+msgid "Worker"
 msgstr ""
 
 #. placeholder {0}: data.worker_type ? ` (${data.worker_type})` : ''
