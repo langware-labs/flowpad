@@ -33,22 +33,35 @@ view-mode, and filesystem-shape hints (`main_layout`/`main_file`/`main_ext`)
 
 ## 2. Files by extension
 
-The extension→viewer rule is deliberately minimal and lives in ONE place —
-`ts_sdk/src/models/asset-editor.ts:68` `editorForPath`:
+The extension→viewer rule is ONE registry — `EXT_TO_EDITOR` +
+`editorForPath` in `ts_sdk/src/models/asset-editor.ts` — and every raw-file
+surface routes through it: `dockPointerForFile` (openFile / explorer / chat
+attachments), the vibe display's `vfsEditorEl`, and `assetPointerForTarget`
+(display history). File viewers are file-only `AssetEditor` values (like CODE:
+no backing record type, `EDITOR_TYPES[e] === []`, `isFileOnlyEditor`), rendered
+by CODE-style early returns in `AssetEditorRouter`. The same file renders the
+same way on every surface.
 
-| Extension | Viewer (normal open) | Viewer (vibe `flow show file`) |
+| Extension | AssetEditor | Component |
 |---|---|---|
-| `.md` / `.markdown` | `PlainMarkdownAssetEditor` (markdown editor) | same |
-| `.mcp.html` | *(no special case — code editor)* | `McpAppPreview` (MCP-app sandbox, agent bridge) — `vibe-workspace.tsx:93` |
-| `.html` / `.htm` | **CodeEditor (source view)** | **`HtmlPreview` (live, sandboxed srcDoc)** |
-| images (`isImagePath`) | ad-hoc `<img>` inside CodeEditor (`EditorPane.tsx:102`) | **no branch — falls to CodeEditor as text** |
-| everything else | `CodeEditor` | `CodeEditor` via `editorForPath` |
+| `.md` / `.markdown` (+ mdx/md.out via `isMarkdownDocumentPath`) | MARKDOWN | `PlainMarkdownAssetEditor` |
+| `.mcp.html` / `.mcp.htm` (checked before .html) | MCP_APP | `McpAppPreview` (MCP sandbox; agent bridge when the vibe display threads the process, bridge-less elsewhere) |
+| `.html` / `.htm` | HTML | `HtmlPreview` (live sandboxed srcDoc, `allow-scripts` only) |
+| png jpg jpeg gif webp svg avif bmp ico | IMAGE | `MediaViewer` (`<img>` via fs `download` URL) |
+| mp4 webm mov | VIDEO | `MediaViewer` (`<video>`) |
+| mp3 wav m4a ogg | AUDIO | `MediaViewer` (`<audio>`) |
+| everything else | CODE | `CodeEditor` (keeps line/column options) |
+
+Media bytes are served by the fs `download` action (`flow_sdk/actions/fs/
+fs_actions.py` — MIME from guess_type, inline disposition for image/video/
+audio, streaming). Text viewers read via FSRef.
 
 Notes: `.jsonl` transcripts are never opened by extension — they route through
 the Lens (`/dock/lens/<worker>/transcript/<ref>` → `TranscriptViewer`).
 Whiteboards have **no** `.excalidraw` extension handling — they are
 folder-backed entities opened by TypeId. Folders are browsed
-(`ViewType.ASSETS` folder/fs pointers), never "opened".
+(`ViewType.ASSETS` folder/fs pointers), never "opened". Entities always win
+over extensions: a path that resolves to an entity opens its type's editor.
 
 ## 3. Assets / entities
 
@@ -122,11 +135,13 @@ No host currently passes `csp`/`connectDomains` to the sandbox proxy, so tier
 
 ## 7. Gaps & inconsistencies (consolidated)
 
-1. **`.html` split-brain**: source view on normal open, live preview only in
-   vibe. Same file, two behaviors by entry path.
-2. **No image display in the show path** — `flow show file chart.png` renders
-   binary as text in CodeEditor; the only image handling is ad-hoc inside the
-   code editor.
+1. ~~**`.html` split-brain**~~ **RESOLVED** — `.html` now maps to the HTML
+   editor in `editorForPath`; every surface renders the sandboxed live
+   preview.
+2. ~~**No image display in the show path**~~ **RESOLVED** — IMAGE/VIDEO/AUDIO
+   editors → `MediaViewer`; `flow show file dog.jpg` renders the image.
+   (The old ad-hoc image branch inside CodeEditor remains as a redundant
+   fallback for explicit "Open in Editor".)
 3. **Sandbox tiers are implicit** — nothing in the address (pointer/target)
    states the trust tier; it's an emergent property of extension + surface.
    The webapp iframe (tier 3) is the most privileged and hosts arbitrary
@@ -170,9 +185,12 @@ No host currently passes `csp`/`connectDomains` to the sandbox proxy, so tier
    per-entity getters. Should `TypeInfo` grow a display hint (viewer/editor
    name) so backend-registered types can't become unopenable (the `dataset`
    hole), mirroring how icons already work?
-4. **Extension registry**: do we want a single extension→viewer table
-   (images, html, mcp.html, jsonl, md, code) shared by openFile, vibe show,
-   and explorer — replacing today's scattered special cases?
+4. ~~**Extension registry**~~ **ANSWERED — implemented.** `EXT_TO_EDITOR` /
+   `editorForPath` (`ts_sdk/src/models/asset-editor.ts`) is the single
+   extension→viewer table; openFile (`dockPointerForFile`), the vibe display
+   (`vfsEditorEl`), and the explorer all route through it. Adding a viewer =
+   one enum value + one table row + one `AssetEditorRouter` case.
+   (`.jsonl` stays lens-routed by design.)
 5. **HTML deliverables as artifacts?** Webapps get registration, restart, and
    history via WEBAPP artifacts; shown `.html` files get nothing. Should
    there be an HTML/report artifact kind with the same lifecycle?
