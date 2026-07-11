@@ -60,6 +60,10 @@ function harnessWarning(capability: UseCapabilityResult): string | null {
   return capability.result?.message ?? 'This harness is not available on this machine.';
 }
 
+/** WorkerType → the controller's per-vendor kind token (pending-label key). */
+const kindForWorker = (worker: ProjectWorkerType): 'claude' | 'codex' | 'copilot' =>
+  worker === 'claude_code' ? 'claude' : worker;
+
 export interface TerminalStripControllerOptions {
   /** Whether to expose the "Add Tab" opener toolbar as `trailing`. */
   addTabButton?: boolean;
@@ -169,7 +173,7 @@ export function useTerminalStripController({
   const handleStartCodex = useCallback(() => startAgenticTab('codex', 'codex'), [startAgenticTab]);
   const handleStartCopilot = useCallback(() => startAgenticTab('copilot', 'copilot'), [startAgenticTab]);
   const startWorker = useCallback(
-    (worker: ProjectWorkerType) => startAgenticTab(worker === 'claude_code' ? 'claude' : worker, worker),
+    (worker: ProjectWorkerType) => startAgenticTab(kindForWorker(worker), worker),
     [startAgenticTab],
   );
 
@@ -178,11 +182,10 @@ export function useTerminalStripController({
     async (cwd: string, workerType: ProjectWorkerType) => {
       try {
         const project = await ensureProject(cwd, { select: false });
-        await startAgenticTab(
-          workerType === 'codex' ? 'codex' : workerType === 'copilot' ? 'copilot' : 'claude',
-          workerType,
-          { projectId: project.id, cwd: project.fs_storage_mount_path },
-        );
+        await startAgenticTab(kindForWorker(workerType), workerType, {
+          projectId: project.id,
+          cwd: project.fs_storage_mount_path,
+        });
       } catch (error) {
         notify.error({
           title: t`Failed to open project`,
