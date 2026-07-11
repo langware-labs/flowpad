@@ -94,6 +94,7 @@ class TestInstanceSettings(BaseInstanceSettings):
             inbox_last_fetch_path=flow_home / ".inbox_last_fetch.json",
             conversation_last_sync_path=flow_home / ".conversation_last_sync.json",
             transcript_cursors_path=flow_home / "transcript_cursors.json",
+            worker_history_cache_path=flow_home / "worker_history_cache.sqlite",
             toplog_config_path=flow_home / "toplog.json",
             db_driver=os.environ.get(ENV_DESKTOP_DB, DEFAULT_DB_DRIVER).lower(),
             user_home=sandbox,

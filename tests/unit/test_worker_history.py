@@ -57,10 +57,10 @@ async def test_get_worker_history_caps_per_scope_not_globally(monkeypatch):
         for i in range(5)
     ]
 
-    async def _claude(_limit, _idx, _pids=None):
+    async def _claude(_limit, _idx, _pids=None, _cwd_map=None):
         return [*b_entries, *a_entries]
 
-    async def _codex(_limit, _idx, _pids=None):
+    async def _codex(_limit, _idx, _pids=None, _cwd_map=None):
         return []
 
     monkeypatch.setattr(
@@ -69,7 +69,7 @@ async def test_get_worker_history_caps_per_scope_not_globally(monkeypatch):
         {WorkerType.CLAUDE: _claude, WorkerType.CODEX: _codex},
     )
     monkeypatch.setattr(wh, "_load_agentic_processes", _noop_processes)
-    monkeypatch.setattr(wh, "_agentic_process_only_entries", lambda procs, seen, pids=None: [])
+    monkeypatch.setattr(wh, "_agentic_process_only_entries", lambda procs, seen, pids=None, cwd_map=None: [])
 
     result = await wh.get_worker_history(limit=10)
     by_proj = collections.Counter(e.project_id for e in result)
@@ -88,10 +88,10 @@ async def test_get_worker_history_merges_sorts_and_limits(monkeypatch):
     claude_old = _entry(WorkerType.CLAUDE, "claude-old", "2026-05-06T08:00:00")
     codex_new = _entry(WorkerType.CODEX, "codex-new", "2026-05-06T12:00:00")
 
-    async def _claude(_limit, _idx, _pids=None):
+    async def _claude(_limit, _idx, _pids=None, _cwd_map=None):
         return [claude_old, claude_mid]
 
-    async def _codex(_limit, _idx, _pids=None):
+    async def _codex(_limit, _idx, _pids=None, _cwd_map=None):
         return [codex_new]
 
     monkeypatch.setattr(
@@ -103,7 +103,7 @@ async def test_get_worker_history_merges_sorts_and_limits(monkeypatch):
         },
     )
     monkeypatch.setattr(wh, "_load_agentic_processes", _noop_processes)
-    monkeypatch.setattr(wh, "_agentic_process_only_entries", lambda procs, seen, pids=None: [])
+    monkeypatch.setattr(wh, "_agentic_process_only_entries", lambda procs, seen, pids=None, cwd_map=None: [])
 
     result = await wh.get_worker_history(limit=2)
 
@@ -120,10 +120,10 @@ async def test_get_worker_history_dedupes_by_worker_type_and_id(monkeypatch):
     duplicate_old = _entry(WorkerType.CODEX, "same-session", "2026-05-06T09:00:00")
     claude_same_id = _entry(WorkerType.CLAUDE, "same-session", "2026-05-06T11:00:00")
 
-    async def _claude(_limit, _idx, _pids=None):
+    async def _claude(_limit, _idx, _pids=None, _cwd_map=None):
         return [claude_same_id]
 
-    async def _codex(_limit, _idx, _pids=None):
+    async def _codex(_limit, _idx, _pids=None, _cwd_map=None):
         return [duplicate_new, duplicate_old]
 
     monkeypatch.setattr(
@@ -135,7 +135,7 @@ async def test_get_worker_history_dedupes_by_worker_type_and_id(monkeypatch):
         },
     )
     monkeypatch.setattr(wh, "_load_agentic_processes", _noop_processes)
-    monkeypatch.setattr(wh, "_agentic_process_only_entries", lambda procs, seen, pids=None: [])
+    monkeypatch.setattr(wh, "_agentic_process_only_entries", lambda procs, seen, pids=None, cwd_map=None: [])
 
     result = await wh.get_worker_history(limit=10)
 
