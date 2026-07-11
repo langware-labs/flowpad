@@ -85,14 +85,17 @@ function assetPointerForTarget(target: DisplayShowTarget): AssetDocPointer | nul
 
 /** Mount the right viewer/editor for a raw path — ONE shared extension rule
  *  (`editorForPath`): html→HtmlPreview, images/video/audio→MediaViewer,
- *  markdown/code→their editors, all via AssetEditorRouter. Only MCP apps stay
- *  a direct mount here: McpAppPreview needs the live `process` for the agent
- *  bridge, which only the vibe display can thread. */
+ *  markdown/code→their editors, all via AssetEditorRouter. MCP apps stay a
+ *  direct mount here only for the `refreshKey` PROP — a soft inner reload of
+ *  the running app on turn-end instead of the full remount the keyed router
+ *  path does (the router's own MCP_APP case threads the same process from
+ *  agent context). */
 function vfsEditorEl(absPath: string, refreshKey?: number, process?: AgenticProcess | null) {
-  if (editorForPath(absPath) === AssetEditor.MCP_APP) {
+  const editor = editorForPath(absPath);
+  if (editor === AssetEditor.MCP_APP) {
     return <McpAppPreview key={`${absPath}:${refreshKey ?? 0}`} path={absPath} process={process ?? null} refreshKey={refreshKey} />;
   }
-  const pointer = AssetDocPointer.forVfs(editorForPath(absPath), absPath).toPointer();
+  const pointer = AssetDocPointer.forVfs(editor, absPath).toPointer();
   return <AssetEditorRouter key={`${pointer}:${refreshKey ?? 0}`} pointer={pointer} />;
 }
 

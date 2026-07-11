@@ -1,4 +1,5 @@
 import { RecordType } from '../resource_management/fs_records/record-types';
+import { IMAGE_EXTENSIONS } from '../utils/utils';
 
 /**
  * Canonical asset-editor vocabulary — the single source of truth for the
@@ -84,16 +85,7 @@ const EXT_TO_EDITOR: Record<string, AssetEditor> = {
   markdown: AssetEditor.MARKDOWN,
   html: AssetEditor.HTML,
   htm: AssetEditor.HTML,
-  // keep in sync with IMAGE_EXTENSIONS (utils/utils.ts) / isImagePath
-  png: AssetEditor.IMAGE,
-  jpg: AssetEditor.IMAGE,
-  jpeg: AssetEditor.IMAGE,
-  gif: AssetEditor.IMAGE,
-  webp: AssetEditor.IMAGE,
-  svg: AssetEditor.IMAGE,
-  avif: AssetEditor.IMAGE,
-  bmp: AssetEditor.IMAGE,
-  ico: AssetEditor.IMAGE,
+  ...Object.fromEntries([...IMAGE_EXTENSIONS].map((ext) => [ext, AssetEditor.IMAGE])),
   mp4: AssetEditor.VIDEO,
   webm: AssetEditor.VIDEO,
   mov: AssetEditor.VIDEO,
@@ -103,15 +95,16 @@ const EXT_TO_EDITOR: Record<string, AssetEditor> = {
   ogg: AssetEditor.AUDIO,
 };
 
+/** MCP-app suffix rule — `.mcp.html` needs a suffix check because its last-dot
+ * extension is plain `html`. The UI's `isMcpAppPath` delegates here. */
+const MCP_APP_PATH_RE = /\.mcp\.html?$/i;
+
 /**
- * Editor for a RAW file path (no entity). `.mcp.html` must be checked before
- * the extension map (its last-dot extension is `html`); the suffix rule is the
- * same as the UI's `isMcpAppPath`. Unknown extensions fall back to the plain
- * code editor.
+ * Editor for a RAW file path (no entity). Unknown extensions fall back to the
+ * plain code editor.
  */
 export function editorForPath(path: string): AssetEditor {
-  const lower = path.toLowerCase();
-  if (lower.endsWith('.mcp.html') || lower.endsWith('.mcp.htm')) return AssetEditor.MCP_APP;
-  const ext = lower.split('.').pop();
+  if (MCP_APP_PATH_RE.test(path)) return AssetEditor.MCP_APP;
+  const ext = path.split('.').pop()?.toLowerCase();
   return (ext && EXT_TO_EDITOR[ext]) || AssetEditor.CODE;
 }
