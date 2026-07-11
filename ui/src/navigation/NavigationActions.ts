@@ -209,11 +209,12 @@ export class NavigationActions {
       dock = dock.withScopeFilter(projectId ? projectScope(projectId) : allScope());
     }
 
-    // URL-first stickiness: inherit the live URL's ?viewMode unless the target
-    // names its own (mirrors the scope-seed above); explicit target / ViewToggle
-    // mode still wins. `currentBrowserViewMode` reads window.location as a
-    // stopgap for the lagging React `currentDock` — the durable fix (correct
-    // viewMode at hydration) belongs in the view-mode override, not here.
+    // Inherit the live URL's ?viewMode unless the target names its own (mirrors
+    // the scope-seed above); explicit target / ViewToggle mode still wins. Since
+    // useDockViewModeOverrideSync now adopts the URL's mode into the persisted
+    // preference on load, this inheritance matters only for navigations issued
+    // BEFORE that adopt effect commits (e.g. a redirect right after a hard load
+    // on a ?viewMode URL) — not for general mode stickiness.
     if (dock.viewMode === null) {
       const liveViewMode = NavigationActions.currentBrowserViewMode() ?? this.currentDock?.viewMode ?? null;
       if (liveViewMode) dock = dock.withViewMode(liveViewMode);
