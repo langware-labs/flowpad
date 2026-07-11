@@ -72,6 +72,10 @@ export interface TabStripContextMenuItem {
   onSelect: () => void;
   /** Optional leading icon (e.g. graph glyph for "Open Context"). */
   Icon?: LucideIcon;
+  /** Renders the entry as a distinguished header row at the TOP of the menu
+   *  (accented, above Rename, own separator) instead of a plain item — for
+   *  navigation shortcuts like "Open Project" that aren't tab operations. */
+  emphasized?: boolean;
 }
 
 export interface TabStripProps {
@@ -231,8 +235,12 @@ export const TabStrip: React.FC<TabStripProps> = ({
     return (
       <>
         {entries.map((entry) => (
-          <ContextMenuItem key={entry.label} onSelect={entry.onSelect}>
-            {entry.Icon && <entry.Icon className="mr-2 h-4 w-4" />}
+          <ContextMenuItem
+            key={entry.label}
+            onSelect={entry.onSelect}
+            className={entry.emphasized ? 'bg-accent/50 font-medium text-foreground focus:bg-accent' : undefined}
+          >
+            {entry.Icon && <entry.Icon className={`mr-2 h-4 w-4${entry.emphasized ? ' text-primary' : ''}`} />}
             {entry.label}
             {entry.shortcut && <span className="ml-auto pl-4 text-xs text-muted-foreground">{entry.shortcut}</span>}
           </ContextMenuItem>
@@ -482,13 +490,17 @@ export const TabStrip: React.FC<TabStripProps> = ({
             </Tooltip>
           </TooltipProvider>
           <ContextMenuContent>
+            {/* Emphasized shortcuts (e.g. "Open Project") sit above the tab
+                operations as an accented header group — they navigate, they
+                don't mutate the tab, so they must not read as one more entry. */}
+            {renderMenuGroup(item.contextMenuItems?.filter((e) => e.emphasized))}
             {item.renameable && (
               <>
                 <ContextMenuItem onSelect={() => startRename(key, item.title)}><Trans>Rename</Trans></ContextMenuItem>
                 <ContextMenuSeparator />
               </>
             )}
-            {renderMenuGroup(item.contextMenuItems)}
+            {renderMenuGroup(item.contextMenuItems?.filter((e) => !e.emphasized))}
             {renderMenuGroup(newTabMenuItems)}
             {item.closable !== false && (
               <ContextMenuItem onSelect={() => onClose(key)}>
