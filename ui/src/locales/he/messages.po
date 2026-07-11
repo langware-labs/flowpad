@@ -645,6 +645,10 @@ msgstr "סינונים פעילים"
 msgid "Active log: {0}"
 msgstr "יומן פעיל: {0}"
 
+#: src/components/terminal/ProjectsCounterChip.tsx
+msgid "Active projects"
+msgstr ""
+
 #: src/components/account/database-section.tsx
 msgid "Active: {activeDbPath}"
 msgstr "פעיל: {activeDbPath}"

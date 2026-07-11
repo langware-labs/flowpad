@@ -352,6 +352,22 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
                   </button>
                 </li>
               ) : null}
+              {isGlobalScope && sorted.length > 0 ? (
+                // Small mid-title separating the Global row from the project
+                // buckets below it.
+                <li key="__projects_title__" aria-hidden>
+                  <div
+                    className="flex items-center gap-2 px-2 pb-0.5 pt-1.5"
+                    data-testid="projects-counter-section-title"
+                  >
+                    <span aria-hidden className="h-px flex-1 bg-border" />
+                    <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                      <Trans>Active projects</Trans>
+                    </span>
+                    <span aria-hidden className="h-px flex-1 bg-border" />
+                  </div>
+                </li>
+              ) : null}
               {sorted.map((bucket) => {
                 const isCurrent = bucket.projectId === currentProjectId;
                 const isRecovering = recoveringId === bucket.projectId;
