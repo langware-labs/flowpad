@@ -945,15 +945,10 @@ async def broadcast_tabs_changed() -> None:
     backend-originated changes (death/orphan-cleanup, rename, second window). Sends
     a proper broadcast message to all connected clients."""
     try:
+        from flow_sdk.api.messages import BroadcastMessage  # noqa: PLC0415
         from flow_sdk.server.routes.websocket import broadcast  # noqa: PLC0415
-        from pydantic import BaseModel
-        from flow_sdk.api.messages import WSMessageType
 
-        class TabsChangedMessage(BaseModel):
-            message_type: str = WSMessageType.BROADCAST.value
-            broadcast_type: str = "tabs_changed"
-
-        await broadcast(TabsChangedMessage().model_dump_json())
+        await broadcast(BroadcastMessage(broadcast_type="tabs_changed").model_dump_json())
     except Exception as e:
         logger.debug(f"broadcast_tabs_changed failed: {e}")
 
