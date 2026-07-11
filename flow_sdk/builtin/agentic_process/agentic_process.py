@@ -180,7 +180,29 @@ class AssetDescriptor:
     source: AssetSource
     posix_path: str | None    # canonical POSIX path; None for INLINE
     source_dir: str | None = None  # matched source dir (path-discovered only); None for EMBEDDED/INLINE
+    project_id: str | None = None  # owning project (path-discovered / spec rows); None for EMBEDDED/INLINE
     usage: list[AssetUsage] = field(default_factory=list)
+
+    def to_row(self) -> dict:
+        """Single owner of the get-assets wire row — used by BOTH the process
+        and project actions so the response shapes cannot drift."""
+        return {
+            "typeid": self.typeid,
+            "source": self.source.value,
+            "posix_path": self.posix_path,
+            "source_dir": self.source_dir,
+            "project_id": self.project_id,
+            "usage": [
+                {
+                    "kind": u.kind.value,
+                    "path": u.path,
+                    "entry_id": u.entry_id,
+                    "timestamp": u.timestamp,
+                    "label": u.label,
+                }
+                for u in self.usage
+            ],
+        }
 
 
 @dataclass
@@ -194,6 +216,97 @@ class SystemInstructionAssets:
 # Markdown / spec / plan / claude_rules etc. are intentionally excluded —
 # they're documentation, not things the agent runs.
 EXECUTABLE_ASSET_TYPES: list[str] = ["skill", "agent"]
+
+
+def add_source_dir(
+    pairs: list[tuple[str, AssetSource]],
+    seen: set[str],
+    path: "str | Path | None",
+    source: AssetSource,
+) -> None:
+    """Canonicalize + dedup one candidate scan dir into ``pairs``/``seen``."""
+    from flow_sdk.fs_store.path_utils import canonical_posix_path
+
+    if not path:
+        return
+    try:
+        key = canonical_posix_path(path)
+    except (OSError, ValueError):
+        return
+    if not key or key in seen:
+        return
+    seen.add(key)
+    pairs.append((key, source))
+
+
+def collect_base_source_dirs(project) -> tuple[list[tuple[str, AssetSource]], set[str]]:
+    """The user/project/context portion of the scan-dir policy, shared by
+    ``AgenticProcess._collect_source_dirs`` and ``Project.get_assets_action``
+    so the staging view cannot drift from what a new process would see.
+    ``project`` may be None (user-home only)."""
+    from flow_sdk.instance_settings import get_instance_settings
+
+    pairs: list[tuple[str, AssetSource]] = []
+    seen: set[str] = set()
+    add_source_dir(pairs, seen, get_instance_settings().user_home, AssetSource.USER_DIR)
+    if project is not None:
+        add_source_dir(
+            pairs, seen, getattr(project, "fs_storage_mount_path", None), AssetSource.PROJECT_DIR,
+        )
+        # CONTEXT_DIR — the project's context folders (include_dirs). Deduped on
+        # canonical path, so a folder that is also the project/user root won't
+        # double-count.
+        for context_dir in getattr(project, "include_dirs", None) or []:
+            add_source_dir(pairs, seen, context_dir, AssetSource.CONTEXT_DIR)
+    return pairs, seen
+
+
+async def scan_path_asset_descriptors(
+    sources: list[tuple[str, AssetSource]],
+    own_project_id: str,
+    types: list[str],
+    limit: int = 10000,
+    offset: int = 0,
+) -> list[AssetDescriptor]:
+    """Path-scan step shared by process and project asset views.
+
+    One ``Entity.assets_by_path()`` over ``sources`` (SQL prefix pushdown),
+    each hit attributed to the longest-prefix source dir via
+    ``AgenticProcess._source_match_for_asset`` — including its rule that a
+    project-scoped entity from another project is not claimed by the USER_DIR
+    home catchall.
+    """
+    from flow_sdk.core.entity.entity_model import Entity, PathQueryOptions
+    from flow_sdk.fs_store.path_utils import canonical_posix_path
+
+    if not sources:
+        return []
+    entities = await Entity.assets_by_path(PathQueryOptions(
+        search_dirs=[s[0] for s in sources],
+        types=types,
+        limit=limit,
+        offset=offset,
+    ))
+    ranked = sorted(sources, key=lambda s: -len(s[0]))
+    descriptors: list[AssetDescriptor] = []
+    for ent in entities:
+        ar_raw = getattr(ent, "asset_ref", None) or ""
+        if not ar_raw:
+            continue
+        ar = canonical_posix_path(ar_raw)
+        match = AgenticProcess._source_match_for_asset(ar, ranked, ent, own_project_id)
+        if match is None:
+            continue
+        src_dir, src = match
+        ent_project_id = getattr(ent, "project_id", None)
+        descriptors.append(AssetDescriptor(
+            typeid=f"{ent.type or ent.get_type()}-{ent.id}",
+            source=src,
+            posix_path=ar,
+            source_dir=src_dir,
+            project_id=str(ent_project_id) if ent_project_id else None,
+        ))
+    return descriptors
 
 
 # ── prompt-action transient state (per-process locks + live workers) ─────────
@@ -4060,7 +4173,6 @@ class AgenticProcess(Entity):
         appear as both EMBEDDED (materialized into the process) and USER_DIR
         (still globally available).
         """
-        from flow_sdk.core.entity.entity_model import Entity, PathQueryOptions
         from flow_sdk.fs_store.path_utils import canonical_posix_path
 
         descriptors: list[AssetDescriptor] = []
@@ -4101,29 +4213,12 @@ class AgenticProcess(Entity):
 
         # 3. Path-discovered
         sources = await self._collect_source_dirs(assets_dir)
-        if sources:
-            entities = await Entity.assets_by_path(PathQueryOptions(
-                search_dirs=[s[0] for s in sources],
-                types=list(EXECUTABLE_ASSET_TYPES),
-                limit=10000,
-            ))
-            ranked = sorted(sources, key=lambda s: -len(s[0]))
-            own_project_id = str(self.project_id or "")
-            for ent in entities:
-                ar_raw = getattr(ent, "asset_ref", None) or ""
-                if not ar_raw:
-                    continue
-                ar = canonical_posix_path(ar_raw)
-                match = self._source_match_for_asset(ar, ranked, ent, own_project_id)
-                if match is None:
-                    continue
-                src_dir, src = match
-                descriptors.append(AssetDescriptor(
-                    typeid=f"{ent.type or ent.get_type()}-{ent.id}",
-                    source=src,
-                    posix_path=ar,
-                    source_dir=src_dir,
-                ))
+        descriptors.extend(await scan_path_asset_descriptors(
+            sources,
+            own_project_id=str(self.project_id or ""),
+            types=list(EXECUTABLE_ASSET_TYPES),
+            limit=10000,
+        ))
 
         reads = self._transcript_file_reads()
         self._annotate_asset_usage(descriptors, reads)
@@ -4144,43 +4239,17 @@ class AgenticProcess(Entity):
           - Final list is deduped on canonical path.
         """
         from flow_sdk.fs_store.path_utils import canonical_posix_path
-        from flow_sdk.instance_settings import get_instance_settings
 
-        pairs: list[tuple[str, AssetSource]] = []
-        seen: set[str] = set()
-
-        def _add(p: "str | Path | None", source: AssetSource) -> None:
-            if not p:
-                return
-            try:
-                key = canonical_posix_path(p)
-            except (OSError, ValueError):
-                return
-            if not key or key in seen:
-                return
-            seen.add(key)
-            pairs.append((key, source))
-
-        _add(get_instance_settings().user_home, AssetSource.USER_DIR)
-
-        project_dir: str | None = None
-        project_include_dirs: list[str] = []
+        proj = None
         if self.project_id:
             try:
                 from flow_sdk.builtin.project import Project
                 proj = await Project.get_by_id(self.project_id)
-                if proj:
-                    project_dir = getattr(proj, "fs_storage_mount_path", None)
-                    project_include_dirs = list(getattr(proj, "include_dirs", []) or [])
             except Exception:
-                project_dir = None
-        _add(project_dir, AssetSource.PROJECT_DIR)
-
-        # CONTEXT_DIR — the project's context folders (include_dirs). Deduped on
-        # canonical path via _add, so a folder that is also the project/user/
-        # workdir root won't double-count.
-        for d in project_include_dirs:
-            _add(d, AssetSource.CONTEXT_DIR)
+                proj = None
+        # USER_DIR / PROJECT_DIR / CONTEXT_DIR — shared policy with the
+        # project-level staging view (Project.get_assets_action).
+        pairs, seen = collect_base_source_dirs(proj)
 
         # WORKDIR — only if outside the previously-added paths.
         wd = getattr(self, "workdir", None)
@@ -4595,25 +4664,7 @@ class AgenticProcess(Entity):
     async def get_assets_action(self) -> "ApiSuccessResponse":
         """HTTP wrapper around ``get_asset_descriptors``."""
         items = await self.get_asset_descriptors()
-        return ApiSuccessResponse(data={"assets": [
-            {
-                "typeid": d.typeid,
-                "source": d.source.value,
-                "posix_path": d.posix_path,
-                "source_dir": d.source_dir,
-                "usage": [
-                    {
-                        "kind": u.kind.value,
-                        "path": u.path,
-                        "entry_id": u.entry_id,
-                        "timestamp": u.timestamp,
-                        "label": u.label,
-                    }
-                    for u in d.usage
-                ],
-            }
-            for d in items
-        ]})
+        return ApiSuccessResponse(data={"assets": [d.to_row() for d in items]})
 
     @action.get(action_name="get-history")
     async def get_history_action(self) -> "ApiSuccessResponse":
