@@ -27,6 +27,24 @@ async function resolveVibeAgentRef(): Promise<string | null> {
 type OpenShell = { openShellProcess: (procId: string, opts?: { viewMode?: ViewMode }) => void };
 
 /**
+ * Ride the SDK-shipped `vibe` persona on a process so the driver's directive
+ * (creator routing + the `flow show` presentation contract) is active. Shared
+ * by BOTH vibe process-creation paths — the vibe-home launcher here and the
+ * in-workspace `New` control (EntityExecutionPanel's onProcessCreated hook) —
+ * so a process born either way carries the same persona. An un-indexed agent
+ * degrades to a plain assistant session (logged, never thrown).
+ */
+export async function embedVibeAgent(proc: AgenticProcess): Promise<void> {
+  try {
+    const vibeRef = await resolveVibeAgentRef();
+    if (vibeRef) await proc.loadEmbeddedAgent(vibeRef);
+    else console.warn('[Vibe] vibe agent not indexed; continuing without persona');
+  } catch (e) {
+    console.warn('[Vibe] failed to embed vibe agent; continuing without persona', e);
+  }
+}
+
+/**
  * Create and open a fresh Vibe process for a project without sending a prompt.
  * Used by the no-process Vibe workspace's "Start new chat" button; callers that
  * also have an initial message layer prompt/upload behavior on top.
@@ -61,13 +79,7 @@ export async function createVibeProcessForProject(opts: {
     // terminal; PTY transport would pre-fill (not run) the first prompt.
     { pty_mode: false },
   );
-  try {
-    const vibeRef = await resolveVibeAgentRef();
-    if (vibeRef) await proc.loadEmbeddedAgent(vibeRef);
-    else console.warn('[Vibe] vibe agent not indexed; continuing without persona');
-  } catch (e) {
-    console.warn('[Vibe] failed to embed vibe agent; continuing without persona', e);
-  }
+  await embedVibeAgent(proc);
   void navigation.openShellProcess(proc.id, { viewMode: ViewMode.Vibe });
   return proc;
 }

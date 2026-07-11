@@ -178,11 +178,9 @@ class CopilotDriver:
                 logger.exception("CopilotDriver.headless_prompt: worker error")
             finally:
                 _PROMPT_WORKERS.pop(process_id, None)
-                object.__setattr__(process_ref, "_turn_in_flight", False)
-                try:
-                    await process_ref.notify_updated()
-                except Exception:
-                    logger.exception("CopilotDriver.headless_prompt: terminal notify failed")
+                # Terminal status broadcast + completion-driven queue advance
+                # (see AgenticProcess.end_headless_turn).
+                await process_ref.end_headless_turn("CopilotDriver.headless_prompt")
 
         asyncio.create_task(_run_turn(), name=f"copilot-{process.id[:8]}")
         return ApiSuccessResponse(data={"status": "started", "worker": self.name})

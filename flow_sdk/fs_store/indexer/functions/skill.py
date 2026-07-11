@@ -33,6 +33,9 @@ from flow_sdk.fs_store.indexer.functions._folder_capsule import (
 from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
 
+# The files whose presence makes a folder a skill; SKILL.md is the main doc.
+SKILL_INNER_FILES = ("SKILL.md", "skill.yaml", "skill.yml")
+
 
 def skill_fn(
     nodes: list[FSRef],
@@ -47,11 +50,7 @@ def skill_fn(
         for entry in sorted(skills_dir.iterdir()):
             if not entry.is_dir():
                 continue
-            if (
-                not (entry / "SKILL.md").exists()
-                and not (entry / "skill.yaml").exists()
-                and not (entry / "skill.yml").exists()
-            ):
+            if not any((entry / name).exists() for name in SKILL_INNER_FILES):
                 continue
             key = str(entry.resolve())
             if key in seen:
@@ -142,7 +141,7 @@ def skill_asset_hash(ref: FSRef) -> float:
     """
     base = ref._path
     ts = 0.0
-    for name in ("SKILL.md", "skill.yaml", "skill.yml"):
+    for name in SKILL_INNER_FILES:
         try:
             ts = max(ts, (base / name).stat().st_mtime)
         except OSError:
@@ -157,6 +156,11 @@ def extract_skill(ref: FSRef) -> list[FSRecord]:
     SKILL.md body for FTS), body, metadata (yaml fields).
     """
     path = ref._path
+    # Single-file index paths hand us the inner doc, not the skill folder.
+    # Normalize, or every skill id-derives from the constant "SKILL.md"
+    # filename and collides (VIBE-004) with a file-valued asset_ref (VIBE-007).
+    if not path.is_dir() and path.name in SKILL_INNER_FILES:
+        path = path.parent
     yaml_fields = parse_skill_yaml_from_dir(path) if path.is_dir() else {}
     skill_name = resolve_skill_name(yaml_fields, path.name)
     rec_id = (

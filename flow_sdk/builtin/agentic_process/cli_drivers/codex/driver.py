@@ -205,19 +205,9 @@ class CodexDriver:
                 logger.exception("CodexDriver.headless_prompt: worker error")
             finally:
                 _PROMPT_WORKERS.pop(process_id, None)
-                object.__setattr__(process_ref, "_turn_in_flight", False)
-                # ``worker_status`` is a computed projection re-derived from
-                # the JSONL tail by ``to_dict`` / ``api_json_serializer``, so
-                # ``save()`` short-circuits when no real entity field changed.
-                # ``notify_updated`` forces a data-op broadcast carrying the
-                # fresh ``worker_status=COMPLETE`` projection — that's what
-                # flips ``proc.output()`` consumers out of their wait loop on
-                # the TS side. Lifecycle ``status`` intentionally stays
-                # RUNNING so ``is_ready_for_input(p)`` returns True.
-                try:
-                    await process_ref.notify_updated()
-                except Exception:
-                    logger.exception("CodexDriver.headless_prompt: terminal notify_updated failed")
+                # Terminal status broadcast + completion-driven queue advance
+                # (see AgenticProcess.end_headless_turn).
+                await process_ref.end_headless_turn("CodexDriver.headless_prompt")
 
         asyncio.create_task(_run_turn(), name=f"codex-{process.id[:8]}")
         return ApiSuccessResponse(data={"status": "started", "worker": self.name})

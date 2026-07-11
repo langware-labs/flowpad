@@ -288,6 +288,10 @@ def _resolve_vault_root(path: Path) -> str | None:
 def extract_markdown(ref: FSRef) -> list[FSRecord]:
     """Parse a .md file into a Record. Replaces ``MarkdownRecord._from_fsref_sync``."""
     path = ref._path
+    # Single-file index paths bypass the walker's ``*.md`` glob; without this
+    # gate any UTF-8 file (e.g. ``.html``) mints as markdown (VIBE-002).
+    if path.suffix.lower() != ".md":
+        return []
     try:
         text = path.read_text(encoding="utf-8")
     except OSError:

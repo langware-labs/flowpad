@@ -19,7 +19,11 @@ from flow_sdk.fs_store.indexer.functions._folder_capsule import (
     read_folder_capsule_id,
     write_folder_capsule_id,
 )
-from flow_sdk.fs_store.indexer.functions.skill import skill_gen_id, skill_id_from_name
+from flow_sdk.fs_store.indexer.functions.skill import (
+    extract_skill,
+    skill_gen_id,
+    skill_id_from_name,
+)
 
 V4 = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
 V7 = "018f0000-0000-7000-8000-000000000000"
@@ -111,6 +115,23 @@ def test_skill_valid_frontmatter_id_backfilled_into_capsule(tmp_path: Path) -> N
     assert not _cap(sk).exists()
     assert skill_gen_id(FSRef(sk)) == V4, "valid frontmatter id adopted"
     assert read_folder_capsule_id(sk) == V4, "and backfilled into .flow/id"
+
+
+def test_indexing_skill_md_file_paths_dont_collide(tmp_path: Path) -> None:
+    """VIBE-004: indexing a direct ``SKILL.md`` FILE path (the CLI/`discover_
+    record_by_path` single-file fast path) must not give every skill the same id.
+
+    ``extract_skill`` on a non-dir ref sees only ``path.name == "SKILL.md"``, so
+    the name-derived fallback yields ``uuid5(skill:SKILL.md)`` for EVERY skill —
+    distinct folders collide on one TypeId and overwrite each other's asset_ref.
+    """
+    ids = set()
+    for nm in ("vibe-qa-greeter", "vibe-qa-bundle"):
+        md = tmp_path / nm / "SKILL.md"
+        md.parent.mkdir(parents=True)
+        md.write_text(f"---\nname: {nm}\n---\n\nbody {nm}", encoding="utf-8")
+        ids.add(extract_skill(FSRef(md))[0].id)  # FILE path, as the CLI passes
+    assert len(ids) == 2, f"distinct skill folders collided on one id: {ids}"
 
 
 def test_yaml_only_skill_persists_capsule_id(tmp_path: Path) -> None:

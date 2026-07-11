@@ -327,6 +327,10 @@ async def test_headless_prompt_missing_binary_ends_process_failed(tmp_path: Path
         async def notify_updated(self) -> None:
             pass
 
+        async def end_headless_turn(self, _log_prefix: str) -> None:
+            object.__setattr__(self, "_turn_in_flight", False)
+            await self.notify_updated()
+
         async def emit_flow_data(self, fd: dict) -> None:
             self.emitted.append(fd)
 

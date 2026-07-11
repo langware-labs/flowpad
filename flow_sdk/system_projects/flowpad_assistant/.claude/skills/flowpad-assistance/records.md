@@ -117,11 +117,12 @@ JSON
 # 3. Index. Scope to the type.
 flow record index "$(pwd)/tasks/release-notes-0.2.9/manifest.json" --types task
 
-# 4. Open it.
-flow navigate entity "task-$TASK_ID"
+# 4. Open it — Vibe/Display session uses `flow show`; standard mode uses `flow navigate`.
+flow show entity "task-$TASK_ID"        # vibe/creator: into the active display pane
+# flow navigate entity "task-$TASK_ID"  # standard assistant: moves the user's browser tab
 ```
 
-Do not write a long-form summary at the end — a one-line confirmation ("Created task `task-…` and navigated") is enough.
+Do not write a long-form summary at the end — a one-line confirmation ("Created task `task-…` and opened it") is enough.
 
 ## Creating a record from a metadata object
 
@@ -191,7 +192,7 @@ Fixed rules — do not deviate:
 - **Never pass your own `id`.** Leave `id=None`; `save()` mints a policy-valid UUID. It is **deterministic (v5)** when derivable from the fields, so re-running with identical values upserts the **same** record (same TypeId) rather than creating a new one — change a field if you want a distinct record.
 - **Set only fields the model declares.** Unknown kwargs are silently dropped, never persisted — so a typo'd or wrong-type-for-this-type field won't error, it just won't save.
 - **`save()` writes the file; `await sync_to_db()` writes the DB.** Run both so the app's lists/search see it; run only `save()` if you just need `metadata.json`.
-- **Done = the Step-2 assert printed `OK created+verified …`.** The TypeId is `<TYPE>-<rec.id>`; pass it to `flow navigate entity` per [`navigate.md`](navigate.md) only if the user asked to open it.
+- **Done = the Step-2 assert printed `OK created+verified …`.** The TypeId is `<TYPE>-<rec.id>`; open it only if the user asked — into a Vibe/Display session use `flow show entity <typeid>`, in standard mode use `flow navigate entity <typeid>` per [`navigate.md`](navigate.md).
 - **Ignore the benign `VIRTUAL_ENV … does not match … will be ignored` uv warning** — `uv run` uses the project's `.venv` regardless; it is not an error.
 
 ### Step 3 — link the record to the current process (optional)

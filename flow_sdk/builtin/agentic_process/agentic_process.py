@@ -1729,6 +1729,29 @@ class AgenticProcess(Entity):
             return  # no running loop (sync context) — nothing to drain into
         task.add_done_callback(lambda t: self._log_drain_task_exc(t, source))
 
+    async def end_headless_turn(self, log_prefix: str) -> None:
+        """Shared tail of every driver's headless ``_run_turn`` finally.
+
+        Clears the ``_turn_in_flight`` override BEFORE the terminal
+        ``notify_updated`` so the broadcast carries the real JSONL-derived
+        ``worker_status=COMPLETE`` projection (``save()`` alone short-circuits
+        because no real entity field changed) — that's what flips
+        ``proc.output()`` consumers out of their wait loop. Then schedules a
+        queue drain on this completion edge: headless ``prompt()`` returns at
+        SCHEDULING time, so the chain drain in ``_maybe_drain_queue`` fires
+        while the turn is still in flight and bails ``not_ready``; this edge is
+        what actually advances a multi-entry queue (VIBE-005).
+        """
+        object.__setattr__(self, "_turn_in_flight", False)
+        try:
+            await self.notify_updated()
+        except Exception:
+            logger.exception("%s: terminal notify_updated failed", log_prefix)
+        try:
+            self._schedule_queue_drain("complete")
+        except Exception:
+            logger.debug("%s: completion drain schedule failed", log_prefix, exc_info=True)
+
     def _log_drain_task_exc(self, task: "asyncio.Task", source: str) -> None:
         exc = None if task.cancelled() else task.exception()
         if exc is not None:

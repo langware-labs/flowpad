@@ -2,6 +2,11 @@
 
 Drive the user's Flowpad browser tab to a specific entity. The CLI targets the tab the user is currently looking at — you do not need to pick a destination window.
 
+> **Not for Display presentation.** `flow navigate` moves the user's browser tab.
+> When you are presenting a file/entity into an active process **Display** (a
+> vibe/creator session, "open it in the display"), use `flow show file <path>` /
+> `flow show entity <typeid>` instead — never `flow navigate`.
+
 ## How to navigate
 
 Identify the TypeId from the user's request. A TypeId has the shape `<type>-<id>` (e.g. `shell-550e8400-e29b-41d4-a716-446655440000`, `markdown-abc123…`, `task-<uuid>`). Then run exactly one command:
@@ -28,11 +33,19 @@ For requests like *"create a task and open it"*: complete the `records` action f
 
 ## Opening a file you just wrote (no TypeId yet)
 
-For *"open it / open it in flowpad"* after writing a plain file: the file has no TypeId until it is indexed. `flow record index` is path-scoped (fast) and returns the minted TypeId in `data.typeid`. Do not research, do not open it with the OS — run two commands and stop:
+**Presenting it into a vibe/creator Display pane** ("open it in the display") →
+use `flow show file <absolute-path>` directly — no TypeId, no indexing — and
+stop. Do **not** use `flow navigate` for a Display; it moves the user's browser
+tab instead of setting the display target.
+
+**Moving the user's browser tab to it** (standard mode, *"open it / open it in
+flowpad"*): the file has no TypeId until it is indexed. `flow record index` is
+path-scoped (fast) and returns the minted TypeId in `data.typeid`. Do not
+research, do not open it with the OS — run two commands and stop:
 
 ```bash
 flow record index <absolute-path> --types <record-type>   # e.g. --types markdown; returns data.typeid
-flow navigate entity <data.typeid>                        # navigate straight to it
+flow navigate entity <data.typeid>                        # navigate the browser tab straight to it
 ```
 
 No search needed — `data.typeid` is the entity to open.
