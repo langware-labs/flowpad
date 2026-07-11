@@ -645,6 +645,10 @@ msgstr ""
 msgid "Active log: {0}"
 msgstr ""
 
+#: src/components/terminal/ProjectsCounterChip.tsx
+msgid "Active projects"
+msgstr ""
+
 #: src/components/account/database-section.tsx
 msgid "Active: {activeDbPath}"
 msgstr ""
