@@ -37,7 +37,8 @@ import { setupTabAndAdopt } from '@src/tabs/setup-tab-and-adopt';
 import { notify } from '@src/notifications/notify';
 import { WorkspaceChildStrip } from './workspace-child-strip';
 import { ContentPanel } from './content-panel/content-panel';
-import { createVibeProcessForProject, launchVibeSessionForProject } from './use-start-vibe-session';
+import { createVibeProcessForProject, embedVibeAgent, launchVibeSessionForProject } from './use-start-vibe-session';
+import { ViewMode } from '@src/contexts/view-mode-context';
 import { VIBE_STARTER_PROMPTS } from './vibe-starter-prompts';
 import type { VibeWorkspaceSession } from './use-vibe-workspace-session';
 import {
@@ -593,7 +594,16 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
           // its child tabs (on a child URL `target`'s latest-wins pick could
           // otherwise drift to another session).
           initialProcessId={session.processId}
-          onProcessCreated={(p) => p.enableAssistant()}
+          // A `New` build must reach parity with the vibe-home creation path
+          // (createVibeProcessForProject): enable the assistant, embed the vibe
+          // persona, and — URL-first — rebind the workspace to the new process
+          // so the URL-derived Display follows it (and a reload preserves it).
+          // The panel's local swap alone would strand the URL on the old process.
+          onProcessCreated={async (p) => {
+            await p.enableAssistant();
+            await embedVibeAgent(p);
+            void navigation.openShellProcess(p.id, { viewMode: ViewMode.Vibe });
+          }}
         />
       </ResizablePanel>
       <ResizableHandle withHandle />

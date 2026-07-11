@@ -56,7 +56,11 @@ export function SkillAssetEditor({ fsRef, skill: providedSkill }: SkillAssetEdit
   // editorRef's identity every render and reload the MarkdownEditor. skillRef
   // holds the live skill; fsRef is stable for a given SKILL.md path anyway.
   const editorRef = useMemo(
-    () => skillRef.current?.doc ?? fsRef.child('SKILL.md'),
+    // Same guard as Skill.doc: a file-valued ref (already .../SKILL.md) must not
+    // get the main file appended again, or the download 404s on SKILL.md/SKILL.md.
+    () =>
+      skillRef.current?.doc ??
+      (fsRef.path.endsWith('/SKILL.md') ? fsRef : fsRef.child('SKILL.md')),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [skillKey],
   );

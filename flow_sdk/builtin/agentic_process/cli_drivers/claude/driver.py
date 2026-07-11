@@ -228,9 +228,6 @@ class ClaudeDriver:
                 logger.exception("ClaudeDriver.headless_prompt: worker error")
             finally:
                 _PROMPT_WORKERS.pop(process_id, None)
-                # Clear the override before the closing notify_updated so it
-                # carries the real JSONL-derived status.
-                object.__setattr__(process_ref, "_turn_in_flight", False)
                 # If the fork materialised on disk (the new session's JSONL
                 # was written), drop ``fork_session_id`` from cli_config so
                 # subsequent launches plain ``--resume`` the new session
@@ -247,18 +244,9 @@ class ClaudeDriver:
                             await process_ref.save()
                         except Exception:
                             logger.debug("ClaudeDriver.headless_prompt: fork-strip save failed", exc_info=True)
-                # ``worker_status`` is a computed projection re-derived from
-                # the JSONL tail by ``to_dict`` / ``api_json_serializer``, so
-                # ``save()`` short-circuits when no real entity field changed.
-                # ``notify_updated`` forces a data-op broadcast carrying the
-                # fresh ``worker_status=COMPLETE`` projection — that's what
-                # flips ``proc.output()`` consumers out of their wait loop on
-                # the TS side. Lifecycle ``status`` intentionally stays
-                # RUNNING so ``is_ready_for_input(p)`` returns True.
-                try:
-                    await process_ref.notify_updated()
-                except Exception:
-                    logger.exception("ClaudeDriver.headless_prompt: terminal notify_updated failed")
+                # Terminal status broadcast + completion-driven queue advance
+                # (see AgenticProcess.end_headless_turn).
+                await process_ref.end_headless_turn("ClaudeDriver.headless_prompt")
 
         asyncio.create_task(_run_turn(), name=f"claude-{process.id[:8]}")
         return ApiSuccessResponse(data={"status": "started", "worker": self.name})

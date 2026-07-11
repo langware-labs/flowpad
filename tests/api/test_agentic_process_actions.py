@@ -306,6 +306,71 @@ async def test_queue_enqueue_dequeue_clear_and_enabled(bootstrapped_client, user
     assert cleared["enabled"] is False
 
 
+@pytest.mark.asyncio
+async def test_multi_entry_queue_drains_every_headless_entry(
+    bootstrapped_client, user, tmp_path, monkeypatch
+):
+    """VIBE-005: stage 3 entries with draining OFF, then turn draining ON — all
+    three must dequeue, not just the first.
+
+    Only the ``claude`` binary is faked (the real ``ClaudeCLIStreamWorker`` /
+    ``_run_turn`` / ``_turn_in_flight`` lifecycle runs); the queue-drain logic
+    under test is untouched. The bug: headless ``prompt()`` returns after
+    *scheduling* ``_run_turn`` (driver.py: ``asyncio.create_task``), not after
+    completion, so the chained drain in ``_maybe_drain_queue``'s ``finally``
+    fires while the first turn is still in flight, bails ``not_ready``, and
+    nothing re-triggers a drain once the turn completes.
+    """
+    # A brief turn so the chain drain genuinely races an in-flight worker.
+    patch_build_spawn(
+        monkeypatch,
+        ClaudeCLIStreamWorker,
+        fake_stream_argv(
+            [{"type": "result", "subtype": "success", "is_error": False, "session_id": "sid"}],
+            delay_ms=50,
+        ),
+    )
+    pid = await create_agentic_process(
+        bootstrapped_client, pty_mode=False, workdir=str(tmp_path)
+    )
+    base = f"/api/v1/graph/agentic_process/{pid}"
+
+    # Stage three ordered entries with draining OFF (no drain yet).
+    await bootstrapped_client.post(f"{base}/set-queue-enabled", json={"enabled": False})
+    staged = ["one", "two", "three"]
+    for prompt in staged:
+        await bootstrapped_client.post(f"{base}/enqueue", json={"prompt": prompt})
+
+    ap = await AgenticProcess.get_one({"id": pid})
+    assert [e["prompt"] for e in ap.queue.entries] == staged, "staging order lost"
+
+    # Turn draining ON and drive the drain deterministically. Each headless
+    # turn is a background ``_run_turn`` task that, on completion, schedules the
+    # next drain — so await the whole cascade (worker turns + drain tasks) until
+    # the queue settles. No sleeps/timeouts: this only awaits real tasks the
+    # drain machinery spawns, which is finite for a finite queue.
+    ap.queue.set_enabled(True)
+
+    def _related(t: asyncio.Task) -> bool:
+        if t is asyncio.current_task() or t.done():
+            return False
+        qual = getattr(t.get_coro(), "__qualname__", "")
+        return (t.get_name() or "").startswith("claude-") or "_maybe_drain_queue" in qual
+
+    await ap._maybe_drain_queue("enable")
+    for _ in range(30):
+        pending = [t for t in asyncio.all_tasks() if _related(t)]
+        if not pending:
+            break
+        await asyncio.gather(*pending, return_exceptions=True)
+
+    # Every staged entry should have become a turn exactly once, in order.
+    assert ap.queue.entries == [], (
+        "queue stranded after the first headless turn: "
+        f"{[e['prompt'] for e in ap.queue.entries]}"
+    )
+
+
 # ---------------------------------------------------------------------------
 # input / submit — headless staged-queue vs nothing-staged
 # ---------------------------------------------------------------------------
