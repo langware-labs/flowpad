@@ -3625,7 +3625,13 @@ class AgenticProcess(Entity):
         """Materialize process instructions into the process asset directory."""
         explicit = await self.resolve_system_instructions()
         legacy_agents = self.get_agents_json() or {}
-        has_existing_assets = self.embedded_assets is not None
+        # Embedded assets must be detected from PERSISTED state, not just the
+        # in-memory AssetDir handle: load-embedded-agent runs on one entity
+        # instance and save() invalidates the cache, so the prompt/launch
+        # request gets a fresh instance whose _embedded_assets is None. Without
+        # this, a materialized persona (e.g. vibe) silently never reaches the
+        # worker's system instructions.
+        has_existing_assets = self.embedded_assets is not None or bool(self.embedded_asset_refs)
         if not explicit and not legacy_agents and not has_existing_assets:
             return None
 
