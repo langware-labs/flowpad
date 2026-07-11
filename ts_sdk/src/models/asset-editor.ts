@@ -18,6 +18,13 @@ export enum AssetEditor {
   DYNAMIC_WORKFLOW = 'dynamic_workflow',
   USAGE_REPORT = 'usage_report',
   ASSET_CLEANUP_REPORT = 'asset_cleanup_report',
+  // File-only display viewers — no backing record type, routed by extension
+  // via `editorForPath` (like CODE, they never appear in TYPE_TO_EDITOR).
+  HTML = 'html', // sandboxed live preview of a self-contained .html deliverable
+  MCP_APP = 'mcp_app', // MCP App (.mcp.html) — sandbox + agent bridge
+  IMAGE = 'image',
+  VIDEO = 'video',
+  AUDIO = 'audio',
 }
 
 /** editor → record types it edits. `code` is file-only (no record type). */
@@ -41,7 +48,17 @@ export const EDITOR_TYPES: Record<AssetEditor, RecordType[]> = {
   [AssetEditor.DYNAMIC_WORKFLOW]: [RecordType.DYNAMIC_WORKFLOW],
   [AssetEditor.USAGE_REPORT]: [RecordType.USAGE_REPORT],
   [AssetEditor.ASSET_CLEANUP_REPORT]: [RecordType.ASSET_CLEANUP_REPORT],
+  [AssetEditor.HTML]: [],
+  [AssetEditor.MCP_APP]: [],
+  [AssetEditor.IMAGE]: [],
+  [AssetEditor.VIDEO]: [],
+  [AssetEditor.AUDIO]: [],
 };
+
+/** True for editors that render raw files and have no backing record type. */
+export function isFileOnlyEditor(editor: AssetEditor): boolean {
+  return EDITOR_TYPES[editor].length === 0;
+}
 
 /** Derived inverse: record type → the editor that edits it. */
 export const TYPE_TO_EDITOR: Record<string, AssetEditor> = Object.fromEntries(
@@ -59,13 +76,42 @@ export function isAssetEditor(v: string): v is AssetEditor {
   return (Object.values(AssetEditor) as string[]).includes(v);
 }
 
+/** Extension → file-only viewer/editor. Single source: every "open/show a raw
+ * file" surface (openFile, explorer, chat attachments, vibe display) routes
+ * through `editorForPath`, so adding a viewer means adding a row here. */
+const EXT_TO_EDITOR: Record<string, AssetEditor> = {
+  md: AssetEditor.MARKDOWN,
+  markdown: AssetEditor.MARKDOWN,
+  html: AssetEditor.HTML,
+  htm: AssetEditor.HTML,
+  // keep in sync with IMAGE_EXTENSIONS (utils/utils.ts) / isImagePath
+  png: AssetEditor.IMAGE,
+  jpg: AssetEditor.IMAGE,
+  jpeg: AssetEditor.IMAGE,
+  gif: AssetEditor.IMAGE,
+  webp: AssetEditor.IMAGE,
+  svg: AssetEditor.IMAGE,
+  avif: AssetEditor.IMAGE,
+  bmp: AssetEditor.IMAGE,
+  ico: AssetEditor.IMAGE,
+  mp4: AssetEditor.VIDEO,
+  webm: AssetEditor.VIDEO,
+  mov: AssetEditor.VIDEO,
+  mp3: AssetEditor.AUDIO,
+  wav: AssetEditor.AUDIO,
+  m4a: AssetEditor.AUDIO,
+  ogg: AssetEditor.AUDIO,
+};
+
 /**
- * Editor for a RAW file path (no entity): the markdown family by extension,
- * everything else the plain code editor. The single home of the
- * "which extensions are markdown" rule — navigate_vfs and the vibe display
- * both route through this.
+ * Editor for a RAW file path (no entity). `.mcp.html` must be checked before
+ * the extension map (its last-dot extension is `html`); the suffix rule is the
+ * same as the UI's `isMcpAppPath`. Unknown extensions fall back to the plain
+ * code editor.
  */
 export function editorForPath(path: string): AssetEditor {
-  const ext = path.split('.').pop()?.toLowerCase();
-  return ext === 'md' || ext === 'markdown' ? AssetEditor.MARKDOWN : AssetEditor.CODE;
+  const lower = path.toLowerCase();
+  if (lower.endsWith('.mcp.html') || lower.endsWith('.mcp.htm')) return AssetEditor.MCP_APP;
+  const ext = lower.split('.').pop();
+  return (ext && EXT_TO_EDITOR[ext]) || AssetEditor.CODE;
 }

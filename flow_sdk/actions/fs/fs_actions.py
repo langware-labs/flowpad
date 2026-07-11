@@ -218,8 +218,9 @@ async def download(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> Strea
         stream: AsyncIterator[bytes] = storage.stream(fs_info.vpath.abs_vfspath)
         filename = fs_info.vpath.filename
         media_type = _get_media_type(filename)
-        # Use inline disposition for images so browsers can render them in <img> tags
-        is_inline = media_type.startswith("image/")
+        # Use inline disposition for media so browsers can render them in
+        # <img>/<video>/<audio> tags instead of forcing a download
+        is_inline = media_type.startswith(("image/", "video/", "audio/"))
         headers = {
             "Content-Disposition": make_content_disposition(filename, inline=is_inline),
         }

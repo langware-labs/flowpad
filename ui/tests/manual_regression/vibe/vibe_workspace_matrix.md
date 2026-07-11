@@ -42,6 +42,8 @@ Do not reuse process, project, browser-tab, or display state between scenarios.
 | VW-10 | Skill run | Create a deterministic skill, then say `Run the skill you just created` | Claude resolves that project skill, executes its instructions, creates the expected report, and shows the report in Display | Transcript contains a real skill invocation/reading path; output marker and file content match; skill is not recreated |
 | VW-11 | Skill persistence | Create a skill, hard reload, start a new Vibe build in the same project, and run the skill by name | The new Claude process loads the existing project skill and produces/shows its expected output | Skill remains discoverable after reload/new process; no stale previous-process Display or output is reused |
 | VW-12 | Queue/stress | Create a skill without running it, then queue `open its SKILL.md`, `run it`, and `open the generated report` as ordered follow-ups | Each request executes once and in order; final Display is the report | No dropped/duplicated user turns, no duplicate skill/report, Display history order is coherent, reload restores the final report |
+| VW-13 | Open/Image | `Search for a dog image and show it` | Claude downloads an image file into the project and shows it; Display renders a visible image (`media-viewer-image`), not source bytes | `<img>` src is an fs `download` URL and loads (naturalWidth > 0); hard reload restores the image target |
+| VW-14 | Generate/HTML | `generate crm.html` | Claude writes a single standalone `crm.html` and shows the FILE; Display renders the sandboxed live preview (`html-preview`) | No `http.server`/port is started; not raw source in a code editor; hard reload restores the same HTML target |
 
 ## Full Scenario Steps
 
@@ -139,6 +141,20 @@ Fixture: Markdown, HTML, source, and an existing static app with `VW07_*` marker
 2. On the same process, disable queue draining and stage the three follow-ups. Use Vibe's queue control if one was available; otherwise use the visible `Advanced` mode control, then the `Queue` ribbon control (list-ordered icon / `Prompt Queue` panel). Add exactly, in order: `Open the skill you just created.`, `Run it once.`, `Open the generated report.` Do not call the queue API directly.
 3. Wait until the queue drains, return through the visible `Vibe` mode control, and verify the three exact user turns and one execution/output occurred in order without duplicates.
 4. Verify final Display/report, Display history ordering, unique filesystem paths, empty final queue, and final-target restore after hard reload.
+
+### VW-13 - Image deliverable shown in the image viewer
+
+1. Start Vibe with `Search for a dog image and show it.`
+2. Wait for the turn to complete; the agent should download an image file (jpg/png/webp/…) into the project and run `flow show file <abs image>`.
+3. Verify the Display contains a visible `[data-testid="media-viewer-image"]` `<img>` whose `src` points at the fs `download` action and which actually loaded (`naturalWidth > 0`) — NOT a code editor with binary text.
+4. Hard reload; verify the image target restores.
+
+### VW-14 - Generated standalone HTML shown as live preview
+
+1. Start Vibe with `generate crm.html`.
+2. Wait for the turn to complete; the agent should write one standalone `crm.html` in the project and run `flow show file <abs>/crm.html` (no server, no port).
+3. Verify the Display contains the sandboxed `[data-testid="html-preview"]` iframe rendering the page — NOT the code editor source view and NOT a webapp port iframe.
+4. Hard reload; verify the same HTML target restores.
 
 ## Bug Gate
 

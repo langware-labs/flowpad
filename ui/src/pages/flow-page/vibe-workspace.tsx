@@ -3,7 +3,6 @@ import { WebappViewer } from '@src/components/webapp-viewer';
 import CodeEditor from '@src/components/code-editor/CodeEditor';
 import DiffViewer from '@src/components/code-editor/DiffViewer';
 import { AssetEditorRouter } from '@src/components/assets/editor/AssetEditorRouter';
-import { HtmlPreview } from '@src/components/html-preview/HtmlPreview';
 import { McpAppPreview } from '@src/components/mcp-app-preview/McpAppPreview';
 import PersistentIframe, { PersistentIframeHandle } from '@src/components/persistent-iframe';
 import { DisplayToolbar, WebappDisplayToolbar } from '@src/components/display-toolbar';
@@ -14,9 +13,8 @@ import { ResizablePanel, ResizablePanelGroup, ResizableHandle } from '@src/compo
 import { useAgentContext } from '@src/contexts/agent-context';
 import { useAgenticProcessStream } from '@src/hooks/use-agentic-process-stream';
 import { useViewerStore, useProcessWebApp } from '@src/hooks/flow-hooks';
-import { isMcpAppPath } from '@src/lib/mcp-app-resources';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
-import { editorForPath, editorForType } from '@src/navigation/asset-doc-types';
+import { AssetEditor, editorForPath, editorForType } from '@src/navigation/asset-doc-types';
 import { useEntity } from '@src/hooks/entity-hooks';
 import { DisplayHistoryButton } from './display-history-button';
 import {
@@ -85,17 +83,14 @@ function assetPointerForTarget(target: DisplayShowTarget): AssetDocPointer | nul
   return null;
 }
 
-/** Mount the right asset editor for a raw path — shared extension rule
- *  (`editorForPath`, same as the `navigate_vfs` ui_command handler). One vibe
- *  addition: a shown ``.html`` file is a DELIVERABLE (chart/diagram/one-file
- *  app), so it renders in the sandboxed HtmlPreview instead of the code
- *  editor's source view. */
+/** Mount the right viewer/editor for a raw path — ONE shared extension rule
+ *  (`editorForPath`): html→HtmlPreview, images/video/audio→MediaViewer,
+ *  markdown/code→their editors, all via AssetEditorRouter. Only MCP apps stay
+ *  a direct mount here: McpAppPreview needs the live `process` for the agent
+ *  bridge, which only the vibe display can thread. */
 function vfsEditorEl(absPath: string, refreshKey?: number, process?: AgenticProcess | null) {
-  if (isMcpAppPath(absPath)) {
+  if (editorForPath(absPath) === AssetEditor.MCP_APP) {
     return <McpAppPreview key={`${absPath}:${refreshKey ?? 0}`} path={absPath} process={process ?? null} refreshKey={refreshKey} />;
-  }
-  if (/\.html?$/i.test(absPath)) {
-    return <HtmlPreview key={`${absPath}:${refreshKey ?? 0}`} path={absPath} />;
   }
   const pointer = AssetDocPointer.forVfs(editorForPath(absPath), absPath).toPointer();
   return <AssetEditorRouter key={`${pointer}:${refreshKey ?? 0}`} pointer={pointer} />;

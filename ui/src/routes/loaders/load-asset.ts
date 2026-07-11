@@ -15,7 +15,7 @@
  */
 import { ContextEntitiesEnum, Project, TypeId, VFSPath, apiClient, dataContext, dataManager } from '@sdk';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
-import { AssetEditor, AssetMode, AssetRoutingMethod, isBrowseListPointer } from '@src/navigation/asset-doc-types';
+import { AssetMode, AssetRoutingMethod, isBrowseListPointer, isFileOnlyEditor } from '@src/navigation/asset-doc-types';
 
 interface WikiResolveResult {
   type: string;
@@ -108,7 +108,7 @@ export async function loadAssetRoute(pointer: string | undefined): Promise<void>
     }
 
     // EDITOR mode
-    if (ptr.editor === AssetEditor.CODE) return; // file-only, no backing entity.
+    if (ptr.editor && isFileOnlyEditor(ptr.editor)) return; // file-only (code/html/media…), no backing entity.
 
     if (ptr.method === AssetRoutingMethod.TYPEID) {
       await ensureInContext(new TypeId(ptr.value));
