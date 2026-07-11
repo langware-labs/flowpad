@@ -342,7 +342,7 @@ export type EditorLanguage = ReturnType<typeof detectLanguage>;
  * so editors/viewers must special-case them via this predicate to avoid
  * showing raw binary.
  */
-const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'avif', 'bmp', 'ico']);
+export const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'avif', 'bmp', 'ico']);
 
 export const isImagePath = (path: string): boolean => {
   const extension = path.split('.').pop()?.toLowerCase();

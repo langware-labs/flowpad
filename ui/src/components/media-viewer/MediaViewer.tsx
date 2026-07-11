@@ -1,6 +1,5 @@
-import { VFSPath } from '@sdk';
+import { AssetEditor, VFSPath } from '@sdk';
 import { AlertCircle } from 'lucide-react';
-import { useMemo } from 'react';
 import { useFS } from '@src/hooks/useFS';
 import { useProject } from '@src/hooks/useProject';
 
@@ -11,16 +10,19 @@ import { useProject } from '@src/hooks/useProject';
  * asset-editor grammar produces: a compute-node vpath
  * (`compute_node-@local/<rel>`) and a plain machine path.
  */
-export function MediaViewer({ path, kind }: { path: string; kind: 'image' | 'video' | 'audio' }) {
+export function MediaViewer({
+  path,
+  kind,
+}: {
+  path: string;
+  kind: AssetEditor.IMAGE | AssetEditor.VIDEO | AssetEditor.AUDIO;
+}) {
   const { project } = useProject();
-  const parsed = useMemo(() => VFSPath.parse(path), [path]);
+  const parsed = VFSPath.parse(path);
   const typeId = parsed.typeId ?? project?.typeId;
-  const subPath = useMemo(() => {
-    if (!parsed.typeId) return path;
-    return parsed.entitySubPath.startsWith('/') ? parsed.entitySubPath : `/${parsed.entitySubPath}`;
-  }, [parsed.typeId, parsed.entitySubPath, path]);
+  const subPath = parsed.typeId ? parsed.machinePath : path;
   const fs = useFS(typeId);
-  const url = fs && subPath ? fs.getDownloadUrl(subPath) : null;
+  const url = fs ? fs.getDownloadUrl(subPath) : null;
 
   if (!url) {
     return (
@@ -32,18 +34,13 @@ export function MediaViewer({ path, kind }: { path: string; kind: 'image' | 'vid
   }
   return (
     <div className="flex h-full w-full items-center justify-center overflow-auto bg-background p-4">
-      {kind === 'image' && (
-        <img
-          src={url}
-          alt={subPath ?? path}
-          className="max-h-full max-w-full object-contain"
-          data-testid="media-viewer-image"
-        />
+      {kind === AssetEditor.IMAGE && (
+        <img src={url} alt={subPath} className="max-h-full max-w-full object-contain" data-testid="media-viewer-image" />
       )}
-      {kind === 'video' && (
+      {kind === AssetEditor.VIDEO && (
         <video src={url} controls className="max-h-full max-w-full" data-testid="media-viewer-video" />
       )}
-      {kind === 'audio' && <audio src={url} controls className="w-full max-w-xl" data-testid="media-viewer-audio" />}
+      {kind === AssetEditor.AUDIO && <audio src={url} controls className="w-full max-w-xl" data-testid="media-viewer-audio" />}
     </div>
   );
 }

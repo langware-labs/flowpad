@@ -35,8 +35,7 @@ export function hasEditor(assetType: string): boolean {
 /** vpath (`compute_node-@local/<rel>`) → machine abs path; passthrough otherwise. */
 function machinePathOf(value: string): string {
   const vfs = VFSPath.parse(value);
-  if (!vfs.typeId) return value;
-  return vfs.entitySubPath.startsWith('/') ? vfs.entitySubPath : `/${vfs.entitySubPath}`;
+  return vfs.typeId ? vfs.machinePath : value;
 }
 
 function ConnectingFallback() {
@@ -132,7 +131,8 @@ export function AssetEditorRouter({ pointer }: AssetEditorRouterProps) {
     return <McpAppPreview path={machinePathOf(ptr.value)} process={flow ?? null} />;
   }
   if (ptr.editor === AssetEditor.IMAGE || ptr.editor === AssetEditor.VIDEO || ptr.editor === AssetEditor.AUDIO) {
-    return <MediaViewer path={ptr.value} kind={ptr.editor === AssetEditor.IMAGE ? 'image' : ptr.editor === AssetEditor.VIDEO ? 'video' : 'audio'} />;
+    // The enum values ARE the kind strings ('image' | 'video' | 'audio').
+    return <MediaViewer path={ptr.value} kind={ptr.editor} />;
   }
 
   // A typeid pointer whose entity has SETTLED with nothing usable (404 /
