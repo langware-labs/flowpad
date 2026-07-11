@@ -69,7 +69,6 @@ export function AssetReviewDialog({
         </DialogHeader>
         <AssetInstallActions
           attachment={ma}
-          installedAssetRef={installedAssetRef}
           conversationProjectId={attachmentProjectId}
         />
         <div className="border-t border-border pt-3">
