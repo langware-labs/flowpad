@@ -1984,7 +1984,9 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * (e.g. EMBEDDED + USER_DIR for a skill that's both materialized into the
    * process and globally discoverable).
    *
-   * Currently filtered to ExecutableAssets (skills + agents).
+   * Path-discovered process-visible rows are executable assets (skills +
+   * agents). Transcript usage can also surface other file-backed entities that
+   * were read in the session.
    */
   async getAssets(): Promise<AssetDescriptor[]> {
     const actionInfo = new ActionInfo('get-assets', AgenticProcess.type, this.id, 'GET');

@@ -3892,6 +3892,38 @@ class AgenticProcess(Entity):
             label="Read in transcript",
         )
 
+    @staticmethod
+    def _source_match_for_asset(
+        asset_path: str,
+        ranked_sources: list[tuple[str, AssetSource]],
+        entity: object,
+        own_project_id: str,
+    ) -> tuple[str, AssetSource] | None:
+        match = next(
+            (
+                (path, source)
+                for path, source in ranked_sources
+                if asset_path == path or asset_path.startswith(path + "/")
+            ),
+            None,
+        )
+        if match is None:
+            return None
+
+        src_dir, src = match
+        # USER_DIR is the real $HOME, so its prefix swallows every indexed asset
+        # on the machine, including other project checkouts under ~/. Keep the
+        # normal path-scan and transcript-only attribution rules aligned: a
+        # project-scoped entity from another project should not be mislabeled as
+        # a user asset just because it lives under the home catchall.
+        if (
+            src == AssetSource.USER_DIR
+            and getattr(entity, "scope", None) == "project"
+            and str(getattr(entity, "project_id", None) or "") != own_project_id
+        ):
+            return None
+        return src_dir, src
+
     def _annotate_asset_usage(
         self,
         descriptors: list[AssetDescriptor],
@@ -3967,6 +3999,7 @@ class AgenticProcess(Entity):
             return
 
         ranked_sources = sorted(sources, key=lambda s: -len(s[0]))
+        own_project_id = str(self.project_id or "")
         existing_read_paths = {
             u.path
             for descriptor in descriptors
@@ -3985,13 +4018,11 @@ class AgenticProcess(Entity):
             if not asset_ref:
                 continue
             asset_path = canonical_posix_path(asset_ref)
-            match = next(
-                (
-                    (path, source)
-                    for path, source in ranked_sources
-                    if asset_path == path or asset_path.startswith(path + "/")
-                ),
-                None,
+            match = self._source_match_for_asset(
+                asset_path,
+                ranked_sources,
+                entity,
+                own_project_id,
             )
             source_dir, source = match if match is not None else (None, AssetSource.TRANSCRIPT)
             typeid = f"{entity.type or entity.get_type()}-{entity.id}"
@@ -4083,27 +4114,10 @@ class AgenticProcess(Entity):
                 if not ar_raw:
                     continue
                 ar = canonical_posix_path(ar_raw)
-                match = next(
-                    ((path, s) for path, s in ranked if ar == path or ar.startswith(path + "/")),
-                    None,
-                )
+                match = self._source_match_for_asset(ar, ranked, ent, own_project_id)
                 if match is None:
                     continue
                 src_dir, src = match
-                # USER_DIR is the real $HOME, so its prefix swallows every
-                # indexed asset on the machine — including OTHER projects'
-                # checkouts under ~/. An entity that is project-scoped to a
-                # different project must not ride in via that swallow (it
-                # would render as a misleading "user" asset). Explicit mounts
-                # (own PROJECT_DIR / WORKDIR / ADDITIONAL_DIR) stay
-                # authoritative: matching one of those shows the asset
-                # regardless of its scope stamp.
-                if (
-                    src == AssetSource.USER_DIR
-                    and getattr(ent, "scope", None) == "project"
-                    and str(getattr(ent, "project_id", None) or "") != own_project_id
-                ):
-                    continue
                 descriptors.append(AssetDescriptor(
                     typeid=f"{ent.type or ent.get_type()}-{ent.id}",
                     source=src,

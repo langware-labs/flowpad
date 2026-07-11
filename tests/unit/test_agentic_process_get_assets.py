@@ -600,6 +600,35 @@ async def test_transcript_only_asset_is_returned(tree, tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_cross_project_home_transcript_asset_uses_transcript_source(tree, monkeypatch):
+    """A project-scoped entity under $HOME but owned by another project should
+    not be mislabeled as USER_DIR when it only appears via transcript reads."""
+    other_project_doc = tree["user_home"] / "other_project" / "notes" / "other.md"
+    other_project_doc.parent.mkdir(parents=True)
+    other_project_doc.write_text("# other project\n")
+    doc = Docs(
+        id=str(uuid.uuid4()),
+        name="other_project_note",
+        asset_ref=canonical_posix_path(other_project_doc),
+        scope="project",
+        project_id=str(uuid.uuid4()),
+    )
+    await doc.save()
+    try:
+        _stub_transcript(monkeypatch, [_file_read(other_project_doc)])
+
+        proc = _make_proc(project_id=str(uuid.uuid4()))
+        descs = await proc.get_asset_descriptors()
+        match = next(d for d in descs if d.typeid == f"markdown-{doc.id}")
+
+        assert match.source == AssetSource.TRANSCRIPT
+        assert match.source_dir is None
+        assert AssetUsageKind.TRANSCRIPT_FILE_READ in _usage_kinds(match)
+    finally:
+        await doc.delete()
+
+
+@pytest.mark.asyncio
 async def test_get_assets_action_serializes_usage(tree):
     proc = _make_proc(cli_config={"agents_json": {"inline_helper": {"description": "x"}}})
 
