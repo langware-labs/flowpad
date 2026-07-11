@@ -16,7 +16,9 @@
  * The controller is kept ONLY for the surrounding controls: leading/trailing
  * toolbars, the new-tab menu, spawn modals, and the close-shortcut label.
  */
-import { Tab } from '@sdk';
+import { Project, Tab } from '@sdk';
+import { useLingui } from '@lingui/react/macro';
+import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { TabStrip } from '@src/components/tabs/TabStrip';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -37,6 +39,7 @@ export interface UnifiedTabStripProps {
 
 export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'project' }) => {
   const { navigation, currentDock } = useDockNavigation();
+  const { t } = useLingui();
   const controller = useTerminalStripController({ addTabButton: true });
 
   const projectId = controller.tabsProjectId ?? null;
@@ -50,7 +53,7 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'proje
   const currentTabs = useCurrentTabs();
   const globalTabs = useMemo(() => uniqueTabsByDockKey(allTabs), [allTabs]);
   const tabs = scope === 'all' ? globalTabs : currentTabs;
-  const items = useTabStripItems(tabs);
+  const baseItems = useTabStripItems(tabs);
   const tabByKey = useMemo(() => {
     const m = new Map<string, Tab>();
     for (const t of tabs) {
@@ -59,6 +62,32 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'proje
     }
     return m;
   }, [tabs]);
+
+  // "Open Project" — the footer's project-name shortcut surfaced on the chip
+  // menu as a distinguished (emphasized) header entry. Owner-injected so the
+  // mapper stays a pure display layer and other strips (e.g. the vibe
+  // workspace child strip) don't inherit it. Navigates to the TAB's own
+  // project home, URL-first; global (projectless) tabs skip it.
+  const items = useMemo(() => {
+    const openProjectLabel = t`Open Project`;
+    const ProjectIcon = iconForType(Project.type);
+    return baseItems.map((item) => {
+      const projectId = tabByKey.get(item.key)?.project_id;
+      if (!projectId) return item;
+      return {
+        ...item,
+        contextMenuItems: [
+          {
+            label: openProjectLabel,
+            Icon: ProjectIcon,
+            emphasized: true,
+            onSelect: () => navigation.openDock(DockPointer.forProject(projectId)),
+          },
+          ...(item.contextMenuItems ?? []),
+        ],
+      };
+    });
+  }, [baseItems, tabByKey, navigation, t]);
 
   // Active highlight is the URL, full stop (every chip is keyed by its tabHash).
   const activeKey = currentDock?.tabHash ?? '';
