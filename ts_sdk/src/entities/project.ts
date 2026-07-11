@@ -3,6 +3,7 @@ import apiClient from '../client';
 import { QueryRequest } from '../FlowSync/query';
 import { ActionInfo, TypeId, gitOriginFromUrl, type GitOrigin } from '../models';
 import { DockPointerData } from '../models/DockPointer';
+import type { AssetDescriptor } from '../process/asset-descriptor';
 import { ViewType } from '../utils/ui/view-types';
 import { Agent } from './agent';
 import { Artifact, IArtifact } from './artifact';
@@ -162,6 +163,32 @@ export class Project extends APIEntity<Project> {
     const computeNode = dataManager.updateEntityFromJson<ComputeNode>(responseComputeNode.compute_node);
     this.computeNode = computeNode;
     return computeNode;
+  }
+
+  /**
+   * Discoverable assets for this project, pre-process (staging picker).
+   * Backend `project/{id}/get-assets` — same descriptor shape as
+   * `AgenticProcess.getAssets()`, computed server-side (path-scan over
+   * user/project/context dirs + scoped spec list). Always bounded; when the
+   * scan hit `limit` the response is truncated (long tail should be searched,
+   * not listed).
+   */
+  async getAssets(options?: { types?: string[]; limit?: number }): Promise<AssetDescriptor[]> {
+    return Project.getAssetsById(this.typeId.id, options);
+  }
+
+  /** Static form for callers without a Project instance (projectless staging → `'@local'`). */
+  static async getAssetsById(
+    projectId: string,
+    options?: { types?: string[]; limit?: number },
+  ): Promise<AssetDescriptor[]> {
+    const actionInfo = new ActionInfo('get-assets', Project.type, projectId, 'GET');
+    const queryParameters: Record<string, string | number> = {};
+    if (options?.types?.length) queryParameters.types = options.types.join(',');
+    if (options?.limit) queryParameters.limit = options.limit;
+    actionInfo.queryParameters = queryParameters;
+    const response = await dataManager.callAction<void, { assets?: AssetDescriptor[] }>(actionInfo);
+    return response?.assets ?? [];
   }
 
   /**
