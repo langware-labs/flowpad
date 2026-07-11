@@ -8400,6 +8400,7 @@ msgstr ""
 #: src/components/project-setup-screen/project-setup-screen.tsx
 #: src/components/project-sidebar/ProjectSidebar.tsx
 #: src/components/quick-access-sidebar/QuickAccessSideBar.tsx
+#: src/tabs/tab-row-item.tsx
 msgid "Open Project"
 msgstr ""
 
@@ -11462,6 +11463,10 @@ msgstr ""
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Start new conversation · {effectiveTitle}"
+msgstr ""
+
+#: src/components/project-home/ProjectHome.tsx
+msgid "Start new session"
 msgstr ""
 
 #: src/components/collaboration/StartRoomDialog.tsx

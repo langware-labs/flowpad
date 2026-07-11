@@ -82,6 +82,8 @@ export interface TerminalStripController {
   isClaudeCreationPending: boolean;
   isTerminalCreationPending: boolean;
   handleStartClaude: () => Promise<void> | void;
+  /** Generic vendor launch — the `WorkerToolbar.onLaunch` contract. */
+  startWorker: (worker: ProjectWorkerType) => Promise<void> | void;
   handleStartTerminal: () => Promise<void> | void;
   handleOpenHistory: () => void;
 }
@@ -166,6 +168,10 @@ export function useTerminalStripController({
   const handleStartClaude = useCallback(() => startAgenticTab('claude', 'claude_code'), [startAgenticTab]);
   const handleStartCodex = useCallback(() => startAgenticTab('codex', 'codex'), [startAgenticTab]);
   const handleStartCopilot = useCallback(() => startAgenticTab('copilot', 'copilot'), [startAgenticTab]);
+  const startWorker = useCallback(
+    (worker: ProjectWorkerType) => startAgenticTab(worker === 'claude_code' ? 'claude' : worker, worker),
+    [startAgenticTab],
+  );
 
   const ensureProject = useEnsureProject();
   const handleLaunchProjectPath = useCallback(
@@ -463,6 +469,7 @@ export function useTerminalStripController({
     isClaudeCreationPending,
     isTerminalCreationPending,
     handleStartClaude,
+    startWorker,
     handleStartTerminal,
     handleOpenHistory: () => setHistoryModalOpen(true),
   };

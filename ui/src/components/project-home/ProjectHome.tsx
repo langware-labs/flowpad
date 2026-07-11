@@ -3,6 +3,7 @@ import { MembersAvatarStack } from '@src/components/conversation/MembersAvatarSt
 import { MiniDesktop } from '@src/components/quick-create/MiniDesktop';
 import { Button } from '@src/components/ui/button';
 import { useContext as useDataContext } from '@src/hooks/useContext';
+import { WorkerToolbar } from '@src/components/workers/WorkerToolbar';
 import { useTerminalStripController } from '@src/tabs/useTerminalStripController';
 import { projectScope } from '@src/lib/scope-filter';
 import { Project, TypeId } from '@sdk';
@@ -23,8 +24,9 @@ interface ProjectHomeProps {
 
 /**
  * SessionStarters — the spawn openers (Claude Code / Terminal / Open from
- * history) + their modals. Encapsulates `useTerminalStripController` so the
- * project-home landing (which doesn't show them) never runs the controller.
+ * history) + their modals. Encapsulates `useTerminalStripController` so only
+ * one controller instance (this one, or StartSessionWorkers' — they render
+ * mutually exclusively) runs per ProjectHome.
  */
 const SessionStarters: React.FC<{ spawnProjectId?: string | null }> = ({ spawnProjectId }) => {
   const {
@@ -88,6 +90,28 @@ const SessionStarters: React.FC<{ spawnProjectId?: string | null }> = ({ spawnPr
 };
 
 /**
+ * StartSessionWorkers — the per-vendor launch buttons for the "Start new
+ * session" row on the project-home landing. Encapsulates
+ * `useTerminalStripController` (like SessionStarters) so the controller +
+ * its modals only run where the row renders.
+ */
+const StartSessionWorkers: React.FC<{ spawnProjectId?: string | null }> = ({ spawnProjectId }) => {
+  const { modals, isTabCreationPending, startWorker } = useTerminalStripController({ spawnProjectId });
+
+  return (
+    <>
+      <WorkerToolbar
+        onLaunch={startWorker}
+        starting={isTabCreationPending}
+        mode="all"
+        testIdPrefix="project-home-worker"
+      />
+      {modals}
+    </>
+  );
+};
+
+/**
  * ProjectHome — the project's landing surface, shown wherever a project has no
  * open content: the terminal body's empty state (no terminal sessions) and the
  * project-home content slot (no asset/item selected). The one surface that is
@@ -125,6 +149,21 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, showSe
             <Trans>Members</Trans>
           </span>
           <MembersAvatarStack typeId={projectTypeId} />
+        </div>
+      )}
+
+      {/* Start new session — worker launch row, right below Members. Hidden on
+          the terminal empty state, which shows the full SessionStarters instead
+          (avoids two controller instances / duplicate modals). */}
+      {projectTypeId && !showSessionStarters && (
+        <div
+          className="flex items-center justify-between border-b border-border/50 px-4 py-2"
+          data-testid="project-home-start-session"
+        >
+          <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+            <Trans>Start new session</Trans>
+          </span>
+          <StartSessionWorkers spawnProjectId={spawnProjectId} />
         </div>
       )}
 
