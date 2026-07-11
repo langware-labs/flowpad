@@ -333,6 +333,44 @@ def _claude_dir_cwd(path: Path) -> Optional[str]:
         return None
 
 
+def _open_history_cache():
+    """Instance-scoped :class:`WorkerSessionStatsCache`, or None if settings are
+    unavailable — collectors then run fully uncached. Never raises."""
+    try:
+        from flow_sdk.builtin.worker_history_cache import WorkerSessionStatsCache  # noqa: PLC0415
+        from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
+        return WorkerSessionStatsCache(get_instance_settings().worker_history_cache_path)
+    except Exception as e:  # noqa: BLE001 — cache is best-effort by contract
+        logger.debug("[worker_history] cache unavailable: %s", e)
+        return None
+
+
+# Candidate tuples carry the full stat snapshot: (mtime, path, mtime_ns, size).
+# mtime keeps the existing sort/fallback semantics; (mtime_ns, size) are the
+# cache validators — a payload is served only while the file is byte-identical
+# to when it was parsed.
+_Candidate = tuple[float, Path, int, int]
+
+
+def _cache_lookup(cache, candidates: list[_Candidate]) -> dict[str, dict]:
+    """Batched cache read for a finalized candidate slice. ``{}`` when uncached."""
+    if cache is None or not candidates:
+        return {}
+    return cache.get_many([(str(p), mns, sz) for _, p, mns, sz in candidates])
+
+
+def _cache_store(cache, pending: list[tuple[str, int, int, str, dict]]) -> None:
+    if cache is not None and pending:
+        cache.put_many(pending)
+
+
+def _payload_last_active(payload: dict, mtime: float) -> datetime:
+    return _coerce_datetime(payload.get("last_content_ts")) or datetime.fromtimestamp(
+        mtime, tz=timezone.utc
+    )
+
+
 def _collect_claude_entries_sync(
     limit: int, process_index: ProcessIndex, project_ids: ScopeProjectIds = None,
     cwd_to_pid: Optional[dict[str, str]] = None,
@@ -357,14 +395,15 @@ def _collect_claude_entries_sync(
     # each directory to its project_id (one envelope-head peek per dir) and keep
     # only the matching directories, then take that project's most-recent
     # ``limit`` files. Cost stays bounded: we never parse non-matching dirs.
-    candidates: list[tuple[float, Path]] = []
+    candidates: list[_Candidate] = []
     for proj_dir in projects_dir.iterdir():
         if not proj_dir.is_dir() or _is_scratch_encoded_dir(proj_dir.name):
             continue
-        dir_files: list[tuple[float, Path]] = []
+        dir_files: list[_Candidate] = []
         for jsonl in proj_dir.glob("*.jsonl"):
             try:
-                dir_files.append((jsonl.stat().st_mtime, jsonl))
+                st = jsonl.stat()
+                dir_files.append((st.st_mtime, jsonl, st.st_mtime_ns, st.st_size))
             except OSError:
                 continue
         if not dir_files:
@@ -393,34 +432,56 @@ def _collect_claude_entries_sync(
 
     from flow_sdk.fs_store.indexer.functions.claude_sessions import ensure_claude_session_stats  # noqa: PLC0415
 
-    for mtime, jsonl_path in candidates:
-        try:
-            # include_content=False: worker-history reads only envelope + lazy
-            # stats and never touches `session.content`, so skip the full
-            # per-file transcript parse (worker_summary_log) that otherwise
-            # dominates this endpoint's latency across all candidates.
-            session = extract_claude_session_from_path(jsonl_path, include_content=False)
-            ensure_claude_session_stats(session)  # populate message_count, last_user_message, git_branch, etc.
-        except Exception as e:
-            logger.debug("[worker_history] from_jsonl failed for %s: %s", jsonl_path, e)
-            continue
+    cache = _open_history_cache()
+    cached = _cache_lookup(cache, candidates)
+    pending: list[tuple[str, int, int, str, dict]] = []
 
-        sid = session.session_id
+    for mtime, jsonl_path, mtime_ns, size in candidates:
+        payload = cached.get(str(jsonl_path))
+        if payload is None:
+            try:
+                # include_content=False: worker-history reads only envelope + lazy
+                # stats and never touches `session.content`, so skip the full
+                # per-file transcript parse (worker_summary_log) that otherwise
+                # dominates this endpoint's latency across all candidates.
+                session = extract_claude_session_from_path(jsonl_path, include_content=False)
+                ensure_claude_session_stats(session)  # populate message_count, last_user_message, git_branch, etc.
+            except Exception as e:
+                logger.debug("[worker_history] from_jsonl failed for %s: %s", jsonl_path, e)
+                continue
+            sd = object.__getattribute__(session, "__dict__")
+            payload = {
+                "session_id": session.session_id,
+                "cwd": sd.get("cwd") or None,
+                "project_encoded_name": sd.get("project_encoded_name") or None,
+                "slug": session.slug or None,
+                "custom_title": sd.get("custom_title") or None,
+                "git_branch": sd.get("git_branch") or None,
+                "message_count": sd.get("message_count") or None,
+                "last_user_message": sd.get("last_user_message"),
+                "last_content_ts": _last_content_timestamp(jsonl_path, mtime).isoformat(),
+            }
+            # Cached even when the filters below reject the row — the next
+            # request then rejects it from the payload instead of re-parsing.
+            pending.append((str(jsonl_path), mtime_ns, size, "claude", payload))
+
+        sid = payload.get("session_id")
         if not sid or sid in seen:
             continue
         seen.add(sid)
 
-        sd = object.__getattribute__(session, "__dict__")
-        cwd = sd.get("cwd") or None
+        cwd = payload.get("cwd") or None
         if _is_scratch_cwd(cwd):
             # Belt-and-suspenders for sessions whose encoded dir name slipped
             # past the scratch prefix check (e.g. unusual path encodings).
+            # Re-checked on cache hits too, so filter changes apply without
+            # cache invalidation.
             continue
-        project_encoded = sd.get("project_encoded_name") or jsonl_path.parent.name
+        project_encoded = payload.get("project_encoded_name") or jsonl_path.parent.name
 
-        git_branch: Optional[str] = sd.get("git_branch") or None
-        message_count: Optional[int] = sd.get("message_count") or None
-        last_user_message: Optional[str] = sd.get("last_user_message")
+        git_branch: Optional[str] = payload.get("git_branch") or None
+        message_count: Optional[int] = payload.get("message_count") or None
+        last_user_message: Optional[str] = payload.get("last_user_message")
 
         # Name priority: AgenticProcess.name (user/upsert-set) > Claude's
         # ``custom_title`` (set by ``/rename`` or Claude's own auto-summary,
@@ -433,8 +494,8 @@ def _collect_claude_entries_sync(
         ap_id, ap_name = process_index.get(sid, (None, None))
         name = _pick_name(
             custom_title=ap_name,
-            slug=sd.get("custom_title") or None,
-            display=session.slug or None,
+            slug=payload.get("custom_title") or None,
+            display=payload.get("slug") or None,
             session_id=sid,
         )
         last_prompt = _pick_last_prompt(
@@ -448,7 +509,7 @@ def _collect_claude_entries_sync(
                 project_id=_project_id_for(cwd, project_encoded, cwd_to_pid),
                 project_name=_basename(cwd) or (project_encoded or None),
                 project_cwd=cwd,
-                last_active_time=_last_content_timestamp(jsonl_path, mtime),
+                last_active_time=_payload_last_active(payload, mtime),
                 name=name,
                 last_prompt=last_prompt,
                 git_branch=git_branch,
@@ -457,6 +518,7 @@ def _collect_claude_entries_sync(
             )
         )
 
+    _cache_store(cache, pending)
     return result
 
 
@@ -474,10 +536,11 @@ def _collect_codex_entries_sync(
 
     scoped = project_ids is not None
 
-    candidates: list[tuple[float, Path]] = []
+    candidates: list[_Candidate] = []
     for jsonl in sessions_root.rglob("rollout-*.jsonl"):
         try:
-            candidates.append((jsonl.stat().st_mtime, jsonl))
+            st = jsonl.stat()
+            candidates.append((st.st_mtime, jsonl, st.st_mtime_ns, st.st_size))
         except OSError:
             continue
     candidates.sort(key=lambda x: -x[0])
@@ -497,25 +560,39 @@ def _collect_codex_entries_sync(
 
     from flow_sdk.fs_store.indexer.functions.codex_sessions import ensure_codex_session_stats  # noqa: PLC0415
 
-    for mtime, jsonl_path in candidates:
+    cache = _open_history_cache()
+    cached = _cache_lookup(cache, candidates)
+    pending: list[tuple[str, int, int, str, dict]] = []
+
+    for mtime, jsonl_path, mtime_ns, size in candidates:
         if scoped and all(scope_counts.get(p, 0) >= limit for p in project_ids):
             break
-        try:
-            # include_content=False: see the Claude branch above — worker-history
-            # never reads `session.content`, so skip the full-transcript parse.
-            session = extract_codex_session_from_path(jsonl_path, include_content=False)
-            ensure_codex_session_stats(session)  # populate message_count, last_user_message, etc.
-        except Exception as e:
-            logger.debug("[worker_history] codex from_jsonl failed for %s: %s", jsonl_path, e)
-            continue
+        payload = cached.get(str(jsonl_path))
+        if payload is None:
+            try:
+                # include_content=False: see the Claude branch above — worker-history
+                # never reads `session.content`, so skip the full-transcript parse.
+                session = extract_codex_session_from_path(jsonl_path, include_content=False)
+                ensure_codex_session_stats(session)  # populate message_count, last_user_message, etc.
+            except Exception as e:
+                logger.debug("[worker_history] codex from_jsonl failed for %s: %s", jsonl_path, e)
+                continue
+            sd = object.__getattribute__(session, "__dict__")
+            payload = {
+                "session_id": session.session_id,
+                "cwd": sd.get("cwd") or None,
+                "message_count": sd.get("message_count") or None,
+                "last_user_message": sd.get("last_user_message"),
+                "last_content_ts": _last_content_timestamp(jsonl_path, mtime).isoformat(),
+            }
+            pending.append((str(jsonl_path), mtime_ns, size, "codex", payload))
 
-        sid = session.session_id
+        sid = payload.get("session_id")
         if not sid or sid in seen:
             continue
         seen.add(sid)
 
-        sd = object.__getattribute__(session, "__dict__")
-        cwd = sd.get("cwd") or None
+        cwd = payload.get("cwd") or None
         if _is_scratch_cwd(cwd):
             continue
         pid = _project_id_for(cwd, None, cwd_to_pid)
@@ -524,14 +601,9 @@ def _collect_codex_entries_sync(
         if scoped:
             scope_counts[pid] = scope_counts.get(pid, 0) + 1
 
-        message_count: Optional[int] = None
-        last_user_message: Optional[str] = None
-        try:
-            mc = sd.get("message_count") or 0
-            message_count = mc if mc > 0 else None
-            last_user_message = sd.get("last_user_message")
-        except Exception as e:
-            logger.debug("[worker_history] codex stats read failed for %s: %s", sid, e)
+        mc = payload.get("message_count") or 0
+        message_count: Optional[int] = mc if mc > 0 else None
+        last_user_message: Optional[str] = payload.get("last_user_message")
 
         # Codex sessions never carry their own title — name comes from the
         # AgenticProcess entity if one exists for this session, else None.
@@ -545,7 +617,7 @@ def _collect_codex_entries_sync(
                 project_id=pid,
                 project_name=_basename(cwd),
                 project_cwd=cwd,
-                last_active_time=_last_content_timestamp(jsonl_path, mtime),
+                last_active_time=_payload_last_active(payload, mtime),
                 name=ap_name,
                 last_prompt=last_prompt,
                 git_branch=None,
@@ -554,6 +626,7 @@ def _collect_codex_entries_sync(
             )
         )
 
+    _cache_store(cache, pending)
     return result
 
 
@@ -573,10 +646,11 @@ def _collect_copilot_entries_sync(
 
     scoped = project_ids is not None
 
-    candidates: list[tuple[float, Path]] = []
+    candidates: list[_Candidate] = []
     for jsonl in root.glob("*/events.jsonl"):
         try:
-            candidates.append((jsonl.stat().st_mtime, jsonl))
+            st = jsonl.stat()
+            candidates.append((st.st_mtime, jsonl, st.st_mtime_ns, st.st_size))
         except OSError:
             continue
     candidates.sort(key=lambda x: -x[0])
@@ -588,16 +662,33 @@ def _collect_copilot_entries_sync(
     # See the codex collector: when scoped, stop once each in-scope project has
     # its newest ``limit`` rows rather than parsing every session dir.
     scope_counts: dict[str, int] = {}
-    for mtime, jsonl_path in candidates:
+
+    cache = _open_history_cache()
+    cached = _cache_lookup(cache, candidates)
+    pending: list[tuple[str, int, int, str, dict]] = []
+
+    for mtime, jsonl_path, mtime_ns, size in candidates:
         if scoped and all(scope_counts.get(p, 0) >= limit for p in project_ids):
             break
-        meta = read_copilot_session_meta(jsonl_path)
-        sid = str(meta.get("id") or jsonl_path.parent.name)
+        payload = cached.get(str(jsonl_path))
+        if payload is None:
+            meta = read_copilot_session_meta(jsonl_path)
+            message_count, last_user_message = _copilot_stats(jsonl_path)
+            payload = {
+                "session_id": str(meta.get("id") or jsonl_path.parent.name),
+                "cwd": meta.get("cwd") or None,
+                "message_count": message_count,
+                "last_user_message": last_user_message,
+                "last_content_ts": _last_content_timestamp(jsonl_path, mtime).isoformat(),
+            }
+            pending.append((str(jsonl_path), mtime_ns, size, "copilot", payload))
+
+        sid = payload.get("session_id")
         if not sid or sid in seen:
             continue
         seen.add(sid)
 
-        cwd = meta.get("cwd") or None
+        cwd = payload.get("cwd") or None
         if _is_scratch_cwd(cwd):
             continue
         pid = _project_id_for(cwd, None, cwd_to_pid)
@@ -606,8 +697,7 @@ def _collect_copilot_entries_sync(
         if scoped:
             scope_counts[pid] = scope_counts.get(pid, 0) + 1
 
-        message_count, last_user_message = _copilot_stats(jsonl_path)
-        last_prompt = _pick_last_prompt(last_user_message)
+        last_prompt = _pick_last_prompt(payload.get("last_user_message"))
         ap_id, ap_name = process_index.get(sid, (None, None))
         result.append(
             WorkerHistoryEntry(
@@ -616,14 +706,15 @@ def _collect_copilot_entries_sync(
                 project_id=pid,
                 project_name=_basename(cwd),
                 project_cwd=cwd,
-                last_active_time=_last_content_timestamp(jsonl_path, mtime),
+                last_active_time=_payload_last_active(payload, mtime),
                 name=ap_name,
                 last_prompt=last_prompt,
                 git_branch=None,
-                message_count=message_count,
+                message_count=payload.get("message_count"),
                 agentic_process_id=ap_id,
             )
         )
+    _cache_store(cache, pending)
     return result
 
 
@@ -807,13 +898,23 @@ async def get_worker_history(
     collected: list[WorkerHistoryEntry] = []
     seen: set[tuple[WorkerType, str]] = set()
 
-    for worker_type, provider in WORKER_HISTORY_PROVIDERS.items():
-        try:
-            entries = await provider(limit, process_index, project_ids, cwd_to_pid)
-        except NotImplementedError:
+    # Providers run concurrently (each is one ``to_thread`` hop over its own
+    # disk corpus) — wall time is max(provider), not sum. Results are folded in
+    # registration order so dedup precedence is unchanged. The call happens
+    # inside ``_run`` so even a synchronously-raising provider is captured by
+    # ``return_exceptions`` instead of escaping ``gather(*...)``.
+    async def _run(provider: WorkerHistoryProvider) -> list[WorkerHistoryEntry]:
+        return await provider(limit, process_index, project_ids, cwd_to_pid)
+
+    provider_results = await asyncio.gather(
+        *(_run(provider) for provider in WORKER_HISTORY_PROVIDERS.values()),
+        return_exceptions=True,
+    )
+    for worker_type, entries in zip(WORKER_HISTORY_PROVIDERS, provider_results):
+        if isinstance(entries, NotImplementedError):
             continue
-        except Exception as e:
-            logger.warning("[worker_history] provider %s failed: %s", worker_type, e)
+        if isinstance(entries, BaseException):
+            logger.warning("[worker_history] provider %s failed: %s", worker_type, entries)
             continue
         for entry in entries:
             key = (entry.worker_type, entry.worker_id)
