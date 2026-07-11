@@ -44,7 +44,7 @@ export const SpecEditor: React.FC = () => {
   const { currentDock } = useDockNavigation();
   // Spec-entity mode: routed via /dock/spec/<specId>. Spec content lives on the
   // entity record, not on a plan file, so we render the body via MilkdownEditor
-  // wrapped in EditorWithSidePanel (chat + backlinks keyed on the spec TypeId).
+  // wrapped in EditorWithSidePanel (backlinks keyed on the spec TypeId).
   if (currentDock?.viewType === ViewType.SPEC) {
     return <SpecEntityEditor />;
   }
@@ -507,7 +507,7 @@ const SpecEntityEditor: React.FC = () => {
       )}
 
       <div className="min-h-0 flex-1">
-        <EditorWithSidePanel chatTarget={chatTarget}>
+        <EditorWithSidePanel target={chatTarget}>
           <div className="plan-milkdown-editor h-full overflow-auto">
             <MilkdownEditor
               content={localContent ?? ''}
