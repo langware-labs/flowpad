@@ -8,6 +8,7 @@ import { IEntity } from '../IEntity';
 import { ActionInfo, BootstrapInfo, ScanInfo } from '../models';
 import { TypeId } from '../models/TypeId';
 import { dockOptionsToScopeFilter } from '../utils/scope-filter';
+import { isAbsoluteMachinePath } from '../utils/vfs-path';
 import { UserRole } from '../services/membershipService';
 import {
   ConnectionManager,
@@ -1653,11 +1654,17 @@ export class DataManager<T extends Manageable> extends EventEmitter {
    * recovery, no discovery scan, no indexing — returns the entity or null.
    * The cheap path→entity conversion (e.g. minting a vfs asset tab's project);
    * `systemTools.discoverByPath` is the heavy recovery counterpart, used only by
-   * the editor view on a bulk miss. Hydrates + caches the hit via the standard
+   * the editor view on a miss. Hydrates + caches the hit via the standard
    * dedup path.
+   *
+   * Accepts both machine-absolute paths and slash-less VFS sub-paths: stored
+   * `asset_ref` is the machine-absolute form, so a relative-looking path is
+   * prefixed with `/` here — the single choke point — rather than at each
+   * call site.
    */
   public async getEntityByPath<U extends T>(path: string): Promise<U | null> {
-    const json = await apiClient.get<any>('/assets/entity', { params: { path } }).catch(() => null);
+    const machine = isAbsoluteMachinePath(path) ? path : `/${path}`;
+    const json = await apiClient.get<any>('/assets/entity', { params: { path: machine } }).catch(() => null);
     if (!json) return null;
     return this.updateEntityFromJson<U>(json);
   }
