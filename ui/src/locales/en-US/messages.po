@@ -1783,6 +1783,10 @@ msgstr "Changes pending next index"
 msgid "Changes saved successfully"
 msgstr "Changes saved successfully"
 
+#: src/pages/flow-page/vibe-workspace.tsx
+msgid "Changing worker requires a new chat. The current chat stays in history."
+msgstr "Changing worker requires a new chat. The current chat stays in history."
+
 #: src/components/floating-chat/FloatingChatWindow.tsx
 msgid "Chat history"
 msgstr "Chat history"
@@ -2759,6 +2763,7 @@ msgstr "Could not save changes"
 #: src/pages/flow-page/use-start-vibe-session.ts
 #: src/pages/flow-page/vibe-no-process-workspace.tsx
 #: src/pages/flow-page/vibe-no-process-workspace.tsx
+#: src/pages/flow-page/vibe-workspace.tsx
 msgid "Could not start"
 msgstr "Could not start"
 
@@ -4616,6 +4621,7 @@ msgstr "Failed to start session"
 #: src/pages/flow-page/use-start-vibe-session.ts
 #: src/pages/flow-page/vibe-no-process-workspace.tsx
 #: src/pages/flow-page/vibe-no-process-workspace.tsx
+#: src/pages/flow-page/vibe-workspace.tsx
 msgid "Failed to start the build session."
 msgstr "Failed to start the build session."
 
@@ -6785,6 +6791,7 @@ msgstr "Missing asset"
 msgid "model"
 msgstr "model"
 
+#: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 #: src/pages/flow-page/vibe-model-select.tsx
 #: src/pages/flow-page/vibe-model-select.tsx
@@ -11130,6 +11137,8 @@ msgstr "Show system"
 msgid "Show system skills"
 msgstr "Show system skills"
 
+#: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
+#: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
 #: src/components/terminal/interactive-terminal/ChatToolsMenu.tsx
 msgid "Show tool calls"
 msgstr "Show tool calls"
@@ -11441,9 +11450,19 @@ msgstr "Start Copilot"
 #~ msgid "Start date"
 #~ msgstr "Start date"
 
+#. placeholder {0}: workerLabel(pendingWorkerSwitch.workerType)
+#: src/pages/flow-page/vibe-workspace.tsx
+msgid "Start new {0} chat?"
+msgstr "Start new {0} chat?"
+
 #: src/pages/flow-page/vibe-no-process-workspace.tsx
+#: src/pages/flow-page/vibe-workspace.tsx
 msgid "Start new chat"
 msgstr "Start new chat"
+
+#: src/pages/flow-page/vibe-workspace.tsx
+msgid "Start new chat?"
+msgstr "Start new chat?"
 
 #: src/components/account/system-diagnoses.tsx
 #: src/components/diagnose/diagnosis-action-buttons.tsx
@@ -12935,6 +12954,12 @@ msgstr "Wipes the DB rows + FTS entries for every indexable type. The index beco
 #: src/components/wizard/WizardHost.tsx
 msgid "Wizard"
 msgstr "Wizard"
+
+#: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
+#: src/pages/flow-page/vibe-worker-select.tsx
+#: src/pages/flow-page/vibe-worker-select.tsx
+msgid "Worker"
+msgstr "Worker"
 
 #. placeholder {0}: data.worker_type ? ` (${data.worker_type})` : ''
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
