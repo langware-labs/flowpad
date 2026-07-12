@@ -98,6 +98,9 @@ export class Project extends APIEntity<Project> {
    *  distinct from the local presence `members` overlay below. The project's
    *  own (uuid4) id is the shared hub identity — no separate cloud id. */
   participants: ConversationParticipant[] = [];
+  /** Last UI view mode used in this project (vibe|standard|advanced|dev);
+   *  applied on project load so the mode is remembered per project. */
+  last_mode: string | null = null;
   // ── Collaboration overlay (merged from the former CollaborationSpace) ──
   session_code: string | null = null;
   host_member_id: string | null = null;
@@ -113,6 +116,7 @@ export class Project extends APIEntity<Project> {
   constructor(entity: Partial<Project> = {}) {
     super(entity);
     this.participants = (entity.participants as ConversationParticipant[] | undefined) ?? [];
+    this.last_mode = (entity.last_mode as string | null | undefined) ?? null;
     this.session_code = (entity.session_code as string | null | undefined) ?? null;
     this.host_member_id = (entity.host_member_id as string | null | undefined) ?? null;
     this.members = (entity.members as ProjectMember[] | undefined) ?? [];

@@ -18,6 +18,7 @@ import {
   Shell,
   TypeId,
 } from '@sdk';
+import { applyProjectViewMode } from '@src/contexts/view-mode-context';
 import { DockPointer } from '@src/navigation';
 import { resolveNextTab, tabTargetKey } from '@src/tabs/tab-candidates';
 import { getTerminalTabsSnapshot } from '@src/tabs/useTabs';
@@ -181,6 +182,11 @@ export async function loadProject(projectTypeId: TypeId): Promise<Project> {
     ContextEntitiesEnum.CurrentProjectTypeId,
     projectTypeId,
   );
+  // Per-project view-mode memory: apply the project's remembered mode (or stamp
+  // the current one onto a project that has none). After the context write, so
+  // dataContext.project is this project before any recording. Synchronous apart
+  // from fire-and-forget saves — the loader stays fast.
+  applyProjectViewMode(project);
   return project;
 }
 

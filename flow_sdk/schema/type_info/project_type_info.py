@@ -18,6 +18,7 @@ class ProjectMeta(BaseMeta):
     adopt time, not mirrored to disk.
     """
     fs_storage_mount_path: Optional[str] = None
+    last_mode: Optional[str] = None
     session_code: Optional[str] = None
     host_member_id: Optional[str] = None
     artifacts: Optional[list] = None

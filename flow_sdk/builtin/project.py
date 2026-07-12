@@ -93,6 +93,11 @@ class Project(Entity):
         persist=Persist.TRUE,
         description="Support-center configuration; set on the canonical community project.",
     )
+    last_mode: str | None = APIField(
+        default=None,
+        description="Last UI view mode used in this project (vibe|standard|advanced|dev). "
+                    "Applied on project load so the mode is remembered per project.",
+    )
     fs_storage_provider: StorageProvider | None = StorageProvider.SANDBOX
     fs_storage_mount_path: str | None = APIField(
         default=None, description="Full path to the project folder"
@@ -509,6 +514,7 @@ class Project(Entity):
             "name",
             "fs_storage_mount_path",
             "fs_storage_provider",
+            "last_mode",
             "session_code",
             "host_member_id",
             "members",
