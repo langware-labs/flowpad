@@ -477,6 +477,14 @@ export class DataManager<T extends Manageable> extends EventEmitter {
           void this._query(watchedQuery.request).then((queryResult) => {
             watchedQuery.updateResults(queryResult);
           });
+        } else if (matches && inResults) {
+          // Field update on a row already IN the results: the cache merge below
+          // (castAndDeepAssign) mutates the very object held in `results`, so
+          // the data is fresh — but without a notify the subscribers never
+          // re-render and the value stays stale-in-React (e.g. the `activate`
+          // recency stamp never reordering a live list). Local, no network —
+          // the symmetric completion of the splice branch above.
+          watchedQuery.notifyCallbacks();
         }
       }
     }

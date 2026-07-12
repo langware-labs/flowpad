@@ -20,6 +20,10 @@ export interface WorkerHistoryEntry {
   git_branch: string | null;
   message_count: number | null;
   agentic_process_id: string | null;
+  /** Epoch-ms open-recency stamp of the backing AgenticProcess (the `activate`
+   *  action fired on every open). `last_active_time` is transcript recency
+   *  only; "last active OR last opened" consumers take the max of the two. */
+  last_active_at?: number | null;
 }
 
 export function useWorkerHistory(
