@@ -1394,6 +1394,14 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       if (query) {
         apiQuery = query.toJSON();
       }
+      // Blob-carrying types (comment.raw_content, …) serve their blob fields
+      // only under expand=blobs — without this, a scoped query returns rows
+      // with EMPTY bodies (a receiver's synced comment renders "(empty)" in
+      // the gutter; the author only sees text via their in-memory copy).
+      // Mirrors getLoadingExpansions' hasBlobs rule on the by-id load path.
+      if (!apiQuery.expand && this.getSchema(type)?.hasBlobs) {
+        apiQuery.expand = 'blobs';
+      }
       let scope_path = '';
       for (const parent_type_id of scope) {
         scope_path = `${scope_path}/${parent_type_id.type}/${parent_type_id.id}`;

@@ -103,6 +103,16 @@ skill, …) are anchored to the conversation and recursively auto-share.
 - **roster / role ladder** — `participants` is the hub-authoritative membership
   list; roles rank `owner > full-access > admin > editor > member > reader >
   guest`. Ownership and "who can invite" derive from it, never from `created_by`.
+- **receiver contract** — a materialized hub child is *query-equivalent* to the
+  sender's original: row (LWW upsert) + parent `is_child` edge (replayed
+  `add_child`) + blob fields (`expand=blobs` on pull; follow-up fetch on the
+  live bridge). Enforced by the single kernel `Entity.upsert_from_hub_child`;
+  child-before-parent ordering is healed by the catch-up rebind pass. See
+  [Sharing & Sync §5](./sharing-and-sync.md).
+- **shared_child** — `TypeInfo` registry flag enrolling a type (e.g. `comment`)
+  in generic children sync: auto-share on create under an effective-remote
+  parent, live `child_*` fanout, and per-conversation catch-up pull + delete
+  reconcile + orphan rebind.
 
 ## Related
 

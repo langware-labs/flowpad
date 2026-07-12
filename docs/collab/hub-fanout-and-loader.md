@@ -204,6 +204,52 @@ keeps `None`; see [`./conversation-model.md`](./conversation-model.md)
 (`hub_bridge.py:716-726`), allowed fields are merged in place and the hub owner
 is adopted when it carries one.
 
+### `_handle_child_op` — the generic child materialization kernel
+
+`child_created` / `child_updated` / `child_deleted` ops (envelope inverted:
+`to_entity`=parent, `from_entity`=child) route to `_handle_child_op`, which is a
+thin shell around **the single receiver kernel** shared with the catch-up sync:
+`Entity.upsert_from_hub_child` (`entity_model.py`). The kernel's contract is
+**replication, not row-copying** — after it runs, the local replica is
+query-equivalent to the sender's original:
+
+1. **Row** — LWW upsert (`is_stale` on `updated_date`), `remote=True`, the
+   child's own `parent_type_id` (e.g. the markdown doc) winning over the op's
+   hub-container envelope (the conversation, used only for fanout/authz).
+2. **Edge** — `ensure_child_edge()`: when the `parent_type_id` row exists
+   locally, the parent→child `is_child` role edge is recreated (idempotently),
+   exactly the edge the sender's `add_child` produced. Role-walk scope queries
+   (the doc-comment gutter's `QueryRequest scope=[doc]`) resolve through this
+   edge — a bare row save leaves the child invisible to them.
+3. **Blobs** — blob fields (`raw_content` on comments) are db-excluded from hub
+   rows and served only under `expand=blobs`. The live op usually embeds the
+   in-memory entity (blobs included); when a blob-declaring type arrives with
+   all blob fields empty, the bridge does one follow-up
+   `hub_get(child, expand=blobs)` and merges before materializing
+   (`hub_bridge.py::_handle_child_op`).
+
+A child whose parent hasn't materialized yet (a layer-1-gated shared doc, not
+yet installed) saves row-only; the **orphan rebind** pass of the catch-up sync
+heals the edge when the parent lands (see §4a).
+
+### §4a Catch-up subtree sync + rebind (`conversation-message-sync`)
+
+Push is an optimization; **pull is correctness**. Each
+`conversation-message-sync` call runs `_sync_shared_context_subtree`
+(`flow_message_action.py`), which for every registry type flagged
+`shared_child=True`:
+
+1. pulls the conversation's hub children in one list call **with
+   `expand=blobs`** (`_sync_remote_children`) and LWW-upserts each through the
+   same kernel;
+2. prunes local `remote` children whose hub row is confirmed gone
+   (`_reconcile_deleted_children` — confirm-GET before prune guards the
+   create/list-lag race);
+3. **rebinds orphans** (`_rebind_orphan_children`): every remote child bound to
+   the conversation or to a shared-context doc gets `ensure_child_edge()` — the
+   only healer for children that synced before their parent existed (the LWW
+   skip means such rows never re-materialize on their own).
+
 ## 3. Materialize pipeline
 
 `flow_sdk/app/actions/materialize_flow_message.py` is the **single write path**

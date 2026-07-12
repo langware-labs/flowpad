@@ -344,6 +344,44 @@ dispatched to the hub and received by the other members.
 
 ---
 
+## 5. The receiver contract — materialization is replication
+
+§4 is the SENDER half of the promise; this is the receiver half. A shared
+child's *meaning* is more than its row — it's the row **plus** the parent edge
+the origin's `add_child` created (what role-walk scope queries resolve through)
+**plus** its blob fields (db-excluded from hub rows, served only under
+`expand=blobs`). The receiver therefore replays the origin's write, not a bare
+row copy. One kernel enforces this on every inbound path:
+
+```
+Entity.upsert_from_hub_child          (entity_model.py — live bridge + catch-up)
+  1. row    — LWW upsert, remote=True, payload parent_type_id wins over envelope
+  2. edge   — ensure_child_edge(): parent present locally → idempotent
+              parent→child is_child role edge (the sender's add_child, replayed)
+  3. blobs  — the catch-up pull requests expand=blobs; the live bridge
+              follow-up-fetches when an op payload arrives blob-empty
+```
+
+Ordering is healed, not prevented: a comment can sync before its doc (the doc
+is layer-1-gated — staged install). It lands row-only, and the next
+`conversation-message-sync` catch-up runs `_rebind_orphan_children`
+(`flow_message_action.py`) — conversation ref + every shared-context ref ×
+every `shared_child` type → `ensure_child_edge()` — the only healer for
+pre-existing orphans, since the LWW `is_stale` skip means they never
+re-materialize on their own.
+
+The contract is pinned at three tiers: unit
+(`tests/unit/test_upsert_from_hub_child_edge.py`,
+`test_rebind_orphan_children.py`, `test_hub_child_blob_semantics.py`,
+`test_attach_child_idempotency.py`), live two-instance pytest
+(`tests/hub_tests/test_doc_comment_child_sync.py` — including the
+`receiver_scope_visibility` cell: the doc materializes AFTER its comments,
+rebind links them, and the gutter's scoped query sees body-carrying comments),
+and vitest (`ui/tests/hub/doc_comment_sync.test.ts` — scoped-query assertions
+on the exact route the UI's role-walk `QueryRequest` resolves to).
+
+---
+
 ## Invariants at a glance
 
 - **One dialog, one prep.** Every surface produces a `ShareSource`; `prepare()`
@@ -358,3 +396,7 @@ dispatched to the hub and received by the other members.
   conversation membership is just the delivery channel.
 - **Recursive share is emergent.** `parent_type_id` → `effective_remote` makes
   children of shared docs fan out with zero bespoke code.
+- **Materialization is replication.** The receiver kernel
+  (`upsert_from_hub_child`) replays the origin's write — row + parent edge +
+  blobs — never a bare row copy; orphans (child before parent) are healed by
+  the catch-up rebind pass. See §5.

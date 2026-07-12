@@ -66,6 +66,25 @@ async function waitText(inst: ResolvedInstance, id: string, text: string): Promi
   }, CONVERGE, `comment ${id} == "${text}" on ${inst.name}`).catch(() => null);
 }
 
+/** The comment as seen through the SCOPED list — the exact route the UI's
+ * role-walk query (`QueryRequest({type:'comment', scope:[parent]})`) resolves to
+ * (`GET /graph/<parent>/<id>/comment`). Edge-backed: a bare row copy (pre-fix
+ * receiver) passes the by-id read yet returns [] here — the live-bug assertion. */
+async function waitScoped(inst: ResolvedInstance, id: string, text: string): Promise<any | null> {
+  return pollUntil(async () => {
+    await fetch(`${inst.apiUrl}/api/v1/graph/conversation-message-sync`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ conversation_id: convId }),
+    }).catch(() => undefined);
+    const r = await fetch(`${inst.apiUrl}/api/v1/graph/conversation/${convId}/comment?expand=blobs`)
+      .then((x) => x.json())
+      .catch(() => null);
+    const d = ((r?.data ?? []) as any[]).find((x) => x?.id === id);
+    return d && d.raw_content === text ? d : null;
+  }, CONVERGE, `comment ${id} scope-visible on ${inst.name}`).catch(() => null);
+}
+
 async function waitAbsent(inst: ResolvedInstance, id: string): Promise<boolean> {
   return pollUntil(async () => ((await commentOn(inst, id)) === null ? true : null), CONVERGE, `comment ${id} gone on ${inst.name}`)
     .then(() => true)
@@ -153,9 +172,12 @@ describe('doc comment child sync (Alice ↔ Bob)', () => {
   it('create — a comment by either peer reaches the other [doc_comment_create_sync]', async () => {
     const a = await mkComment(alice, 'conversation', convId, `alice-create-${convId.slice(0, 6)}`, 3);
     expect(await waitText(bob, a.id!, a.raw_content!), 'create A→B: bob receives alice comment').toBeTruthy();
+    // Receiver contract: also visible via the UI's scoped (edge-backed) query, body included.
+    expect(await waitScoped(bob, a.id!, a.raw_content!), 'create A→B: comment scope-visible on bob').toBeTruthy();
 
     const b = await mkComment(bob, 'conversation', convId, `bob-create-${convId.slice(0, 6)}`, 4);
     expect(await waitText(alice, b.id!, b.raw_content!), 'create B→A: alice receives bob comment').toBeTruthy();
+    expect(await waitScoped(alice, b.id!, b.raw_content!), 'create B→A: comment scope-visible on alice').toBeTruthy();
   }, 30_000); // do not increase timeout without approval
 
   it('update — editing a comment syncs the new text [doc_comment_update_sync]', async () => {
