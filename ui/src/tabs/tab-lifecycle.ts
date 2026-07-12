@@ -140,14 +140,17 @@ async function materializeTab(dock: DockPointer): Promise<{ tab: Tab | null; tab
     `materializeTab Tab.listAll took ${(performance.now() - t0).toFixed(1)}ms (${existing.length} tabs) dock=${dock.tabHash}`,
   );
   const existingTab = findTabForDock(existing, dock);
-  // A workspace surface (the vibe display) may have registered itself as the
-  // parent for tabs materialized right now. A tab opened while that window is
-  // up becomes its child (Tab.parent_tab_id) — this is the ONLY grouping seam;
-  // no navigation call site knows about children.
-  const parentTabId = getActiveTabParent();
-  // Mirror the backend's self-parent guard: the display tab IS its own workspace
-  // parent, so it can never adopt `parentTabId` (== its own id) and would
-  // otherwise re-resolve on every return-to-display navigation forever.
+  // A workspace surface (the vibe workspace) may have registered its process
+  // tab as the parent for tabs materialized right now. Only a CONTENT-ASSET
+  // dock is adoptable — a process/project/assets-list dock is a navigation
+  // *away* from the workspace (its loader runs before the workspace unmounts
+  // and clears the slot), and adopting those was how nested-workspace /
+  // process-under-process corruption arose. This is the ONLY grouping seam;
+  // no navigation call site knows about children, and the backend enforces the
+  // same invariant (`_PARENT_FORBIDDEN_TARGET_TYPES`) as the second belt.
+  const parentTabId = dockAddressesAsset(dock) ? getActiveTabParent() : null;
+  // Mirror the backend's self-parent guard: a tab can never adopt itself, and
+  // would otherwise re-resolve on every return navigation forever.
   const needsReparent =
     !!parentTabId &&
     !!existingTab &&

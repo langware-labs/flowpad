@@ -75,6 +75,32 @@ def _pointer_to_hash(pointer: str) -> str:
     return pointer
 
 
+def _pointer_view_type(pointer: str | None) -> str | None:
+    """The dock viewType a stored pointer addresses. Derived from
+    ``_pointer_to_hash`` — the one owner of the pointer-format grammar — whose
+    canonical hash always leads with the viewType (``vt|sub``, and the
+    scope-keyed ``tabHash`` form too). A malformed pointer yields a string no
+    real viewType equals, so equality checks fail closed."""
+    if not pointer:
+        return None
+    return _pointer_to_hash(pointer).split('|', 1)[0] or None
+
+
+# Target types that can never be workspace CHILDREN. A vibe workspace groups the
+# content assets it opens under its process tab (``parent_tab_id``); a live
+# session anchor (process/shell) or a whole project is never "inside" another
+# workspace — adopting one was how nested-display / shell-under-display
+# corruption arose. Mirrors the FE allow-list (``dockAddressesAsset``): the FE
+# adopts only content-asset docks, this deny-list is the backend belt.
+# ``ensure_tab`` drops the hint silently (an old client may still send it) and
+# null-heals legacy corrupt rows on touch.
+_PARENT_FORBIDDEN_TARGET_TYPES = frozenset({
+    EntityType.SHELL.value,
+    EntityType.AGENTIC_PROCESS.value,
+    EntityType.PROJECT.value,
+})
+
+
 def tab_id_for(pointer: str) -> str:
     """Deterministic Tab id (uuid5) for a canonical pointer string.
 
@@ -444,13 +470,7 @@ async def _reap_orphans(
             and (pid := pointer_pids.get(t.id)) is not None
             and pid not in existing_projects
         ]
-        for tab in pointer_orphans:
-            try:
-                await tab.delete()
-            except Exception:
-                continue
-            deleted_ids.add(tab.id)
-            reaped_pointer = True
+        reaped_pointer = await _delete_rows(pointer_orphans, deleted_ids)
 
     # Missing TARGET: a shell/agentic_process tab whose entity row is absent.
     # BOTH live-session target types (``_DB_BACKED_TARGET_TYPES``) are ALWAYS
@@ -471,45 +491,137 @@ async def _reap_orphans(
         and t.target_id
         and (t.target_type, str(t.target_id)) not in target_map
     ]
-    reaped_target = False
-    for tab in target_orphans:
+    reaped_target = await _delete_rows(target_orphans, deleted_ids)
+
+    # Legacy DISPLAY rows: the display surface is no longer a Tab identity —
+    # a process has exactly ONE tab (its shell pointer) and vibe is a rendering
+    # mode of it. Any row still carrying a display pointer predates that model,
+    # so the pointer SHAPE alone condemns it (target liveness is irrelevant —
+    # ``Tab.delete`` is row-only and never touches the target). Children grouped
+    # under it re-anchor to the same target's shell tab (the process tab that
+    # replaced it) so workspace membership survives the heal; with no shell row
+    # the ``_reparent_children`` pass below nulls them instead. The cheap
+    # substring pre-filter keeps the steady state (no display rows anywhere)
+    # from paying a JSON parse per tab per list read.
+    display_rows = [
+        t
+        for t in tabs
+        if t.id not in deleted_ids
+        and "display" in (t.pointer or "")
+        and _pointer_view_type(t.pointer) == "display"
+    ]
+    # Same-target shell siblings are live visible rows, so resolve them from the
+    # already-loaded list — no extra query.
+    reparent: dict[str, str | None] = {}
+    for tab in display_rows:
+        shell_row = next(
+            (
+                s
+                for s in tabs
+                if s.id != tab.id
+                and tab.target_type
+                and s.target_type == tab.target_type
+                and str(s.target_id) == str(tab.target_id)
+                and _pointer_view_type(s.pointer) == "shell"
+            ),
+            None,
+        )
+        if shell_row is not None:
+            reparent[tab.id] = shell_row.id
+    reaped_display = await _delete_rows(display_rows, deleted_ids)
+
+    # Every hard-deleted row's children heal in ONE pass: display children
+    # re-anchor to their process's shell tab; everything else nulls (soft-close
+    # leaves edges intact by design — the deterministic id regroups on reopen;
+    # only a real delete is terminal). Mappings for rows whose delete failed are
+    # dropped so their children keep pointing at the still-existing row.
+    for pid in deleted_ids:
+        reparent.setdefault(pid, None)
+    reparent = {pid: nid for pid, nid in reparent.items() if pid in deleted_ids}
+    healed_children = await _reparent_children(reparent)
+
+    # Dangling parent edges: a visible child whose parent row no longer EXISTS —
+    # e.g. an old client minted it under a row another reap cycle had already
+    # deleted, so no reap ever saw the pair together. A soft-closed parent is
+    # legitimate (regroups on reopen); only a genuinely missing row is terminal.
+    # Parents outside the visible list resolve in ONE batched ``id IN`` query
+    # (deduped set) — zero queries when every visible child's parent is visible,
+    # and hidden-but-live parents cost one query per cycle, not one per child.
+    healed_dangling = False
+    loaded_ids = {t.id for t in tabs}
+    unresolved = {
+        t.parent_tab_id
+        for t in tabs
+        if t.parent_tab_id
+        and t.id not in deleted_ids
+        and t.parent_tab_id not in loaded_ids
+        and t.parent_tab_id not in reparent  # healed above
+    }
+    if unresolved:
+        from flow_sdk.db.drivers.query import (  # noqa: PLC0415
+            ExpressionNode,
+            QueryFilter,
+            QueryOp,
+        )
+
+        try:
+            rows = await Tab.get_all(
+                QueryFilter(match=ExpressionNode(op=QueryOp.IN, operands=["id", sorted(unresolved)]))
+            )
+            gone = unresolved - {str(r.id) for r in rows}
+        except Exception:
+            gone = set()  # fail-open: never null edges on a transient read error
+        for child in tabs:
+            if child.id in deleted_ids or child.parent_tab_id not in gone:
+                continue
+            child.parent_tab_id = None
+            try:
+                await child.save()
+                healed_dangling = True
+            except Exception:
+                continue
+
+    if reaped_target or reaped_pointer or reaped_display or healed_children or healed_dangling:
+        # Background reap (no user navigation) — ONE ping per cycle so clients
+        # refetch once and the dangling chips drop live.
+        await broadcast_tabs_changed()
+    return [t for t in tabs if t.id not in deleted_ids]
+
+
+async def _delete_rows(rows: "list[Tab]", deleted_ids: "set[str]") -> bool:
+    """Fail-open hard-delete shared by every reap pass: a row whose delete
+    raises is skipped (never blocks the list read), successes land in
+    ``deleted_ids``. Returns whether anything was deleted."""
+    reaped = False
+    for tab in rows:
         try:
             await tab.delete()
         except Exception:
             continue
         deleted_ids.add(tab.id)
-        reaped_target = True
-    if reaped_target or reaped_pointer:
-        # Background reap (no user navigation) — ping clients so the dangling
-        # chip drops live instead of waiting for the next list fetch.
-        await broadcast_tabs_changed()
-    # Null any child ``parent_tab_id`` pointing at a hard-deleted row so no
-    # permanently-dangling group edges accumulate (soft-close leaves them intact
-    # by design — the id is deterministic and regroups on reopen; only a real
-    # delete is terminal). Fires only when something was actually reaped.
-    if deleted_ids:
-        await _clear_parent_refs(deleted_ids)
-    return [t for t in tabs if t.id not in deleted_ids]
+        reaped = True
+    return reaped
 
 
-async def _clear_parent_refs(parent_ids: "set[str]") -> None:
-    """Null ``parent_tab_id`` on every tab whose parent was hard-deleted. Rare
-    path (only on genuine reap); best-effort, one query per gone parent."""
+async def _reparent_children(mapping: "dict[str, str | None]") -> bool:
+    """Move every child of each hard-deleted parent id onto its replacement
+    (``None`` = detach). Rare path (only on genuine reap); best-effort, one
+    query per gone parent. Broadcast is owned by the caller (coalesced into
+    ``_reap_orphans``'s single ping per cycle). Returns whether anything moved."""
     changed = False
-    for pid in parent_ids:
+    for pid, new_parent in mapping.items():
         try:
             children = await Tab.get_all({"parent_tab_id": pid})
         except Exception:
             continue
         for child in children:
-            child.parent_tab_id = None
+            child.parent_tab_id = new_parent
             try:
                 await child.save()
                 changed = True
             except Exception:
                 continue
-    if changed:
-        await broadcast_tabs_changed()
+    return changed
 
 
 async def _persist_global_order(new_order: list[str], by_id: dict[str, Tab]) -> bool:
@@ -679,8 +791,15 @@ async def ensure_tab(
         # Adopt into a group on (re)open: opening an already-open tab from inside
         # a workspace must pull it into that workspace's subset. Last-writer-wins
         # (a tab belongs to at most one group). ``None`` = no hint → preserve
-        # (matches the name/icon_key hint convention). Never self-parent.
-        if parent_tab_id and parent_tab_id != tid and existing.parent_tab_id != parent_tab_id:
+        # (matches the name/icon_key hint convention). Never self-parent, and
+        # never a process/project tab (``_PARENT_FORBIDDEN_TARGET_TYPES``) —
+        # those are workspace ANCHORS, not children; a legacy row that carries a
+        # parent from the pre-invariant era is null-healed on touch.
+        if existing.target_type in _PARENT_FORBIDDEN_TARGET_TYPES:
+            if existing.parent_tab_id is not None:
+                existing.parent_tab_id = None
+                dirty = True
+        elif parent_tab_id and parent_tab_id != tid and existing.parent_tab_id != parent_tab_id:
             existing.parent_tab_id = parent_tab_id
             dirty = True
         if dirty:
@@ -699,6 +818,10 @@ async def ensure_tab(
         activated = [t for t in visible if t.last_active_at]
         if activated:
             after_tab_id = max(activated, key=lambda t: t.last_active_at or 0).id
+    # Same parent invariant as the reopen path: a process/project tab is never
+    # minted as a workspace child, whatever hint the client sent.
+    if target_type in _PARENT_FORBIDDEN_TARGET_TYPES:
+        parent_tab_id = None
     tab = Tab(
         id=tid,
         pointer=pointer,

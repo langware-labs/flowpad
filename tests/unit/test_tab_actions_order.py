@@ -190,3 +190,28 @@ async def test_reopen_waits_for_pending_teardown() -> None:
     again = await reopen
     assert again.id == tab.id
     assert again.visible is True
+
+
+async def test_display_row_reap_keeps_order_contiguous() -> None:
+    # A legacy display row wedged mid-order is reaped by the list read; the
+    # global order must stay gap-free so the next insert lands contiguously.
+    from flow_sdk.builtin.tab import _build_tab_list
+
+    a = await ensure_tab("g/a", project_id="p1")
+    legacy = Tab(
+        id=tab_id_for('{"viewType": "display", "pointer": "agentic_process-g"}'),
+        pointer='{"viewType": "display", "pointer": "agentic_process-g"}',
+        target_type="agentic_process",
+        target_id="g",
+        project_id="p1",
+        visible=True,
+        tab_order=1,
+    )
+    await legacy.save()
+    c = await ensure_tab("g/c", project_id="p1")
+
+    await _build_tab_list("p1")  # reaps the display row
+    assert await _order("p1") == [a.id, c.id]
+    d = await ensure_tab("g/d", project_id="p1")
+    order = await _order("p1")
+    assert order == [a.id, c.id, d.id] or order.index(d.id) == order.index(c.id) + 1

@@ -9,27 +9,30 @@ import { ViewType } from '@src/types/ViewType';
  * Resolved vibe-workspace session for the current URL.
  *
  * The vibe workspace is a HOST layout — a side chat bound to a process plus a
- * display area — that stays mounted across two kinds of URL:
- *   - the DISPLAY url: the process's own `/dock/display/agentic_process-<id>` dock
- *     (`onDisplayUrl: true`), where the display shows the agent's `flow show` pin;
- *   - a CHILD url: any tab whose `parent_tab_id` is the display tab (opened from
+ * display area — rendered over the process's ONE tab (its shell dock; vibe is a
+ * view mode of that tab, not a URL family or a second tab identity). It stays
+ * mounted across two kinds of URL:
+ *   - the PROCESS url: `/dock/shell/agentic_process-<id>` (`onProcessUrl: true`),
+ *     where the display area shows the agent's `flow show` pin;
+ *   - a CHILD url: any tab whose `parent_tab_id` is the process tab (opened from
  *     inside the workspace), where the display shows that child's content.
  *
  * Returning the resolved shape from ONE hook keeps the "is this a workspace
  * surface" decision out of `flow-page` inline checks — any future
- * workspace-with-children surface reuses it.
+ * workspace-with-children surface reuses it. Whether the workspace actually
+ * RENDERS stays gated on the effective view mode (`flow-page`'s `isVibe`).
  */
 export interface VibeWorkspaceSession {
-  /** The display tab (the process tab). May be null briefly on the display URL
-   *  before the tab row lands in the store — not needed to render, only to
-   *  parent new children and drive the strip. */
-  displayTab: Tab | null;
-  /** The display's dock pointer — the "Display" chip target + strip home. */
-  displayDock: DockPointer;
+  /** The process's tab (the workspace anchor children parent to). May be null
+   *  briefly on the process URL before the row lands in the store — not needed
+   *  to render, only to parent new children and drive the strip. */
+  processTab: Tab | null;
+  /** The process's shell dock — the "Display" chip target + strip home. */
+  processDock: DockPointer;
   /** The agentic_process id the side chat binds to. */
   processId: string;
   /** True on the process dock URL itself; false on a child tab's URL. */
-  onDisplayUrl: boolean;
+  onProcessUrl: boolean;
 }
 
 export function useVibeWorkspaceSession(): VibeWorkspaceSession | null {
@@ -45,24 +48,23 @@ export function useVibeWorkspaceSession(): VibeWorkspaceSession | null {
     // a process dock. Both entry cases build through here so the 4 fields never
     // drift apart.
     const build = (
-      displayTab: Tab | null,
-      displayDock: DockPointer,
-      onDisplayUrl: boolean,
+      processTab: Tab | null,
+      processDock: DockPointer,
+      onProcessUrl: boolean,
     ): VibeWorkspaceSession | null =>
-      DockPointer.isAgenticProcessPointer(displayDock.pointer)
+      DockPointer.isAgenticProcessPointer(processDock.pointer)
         ? {
-            displayTab,
-            displayDock,
-            processId: DockPointer.extractAgenticProcessId(displayDock.pointer!),
-            onDisplayUrl,
+            processTab,
+            processDock,
+            processId: DockPointer.extractAgenticProcessId(processDock.pointer!),
+            onProcessUrl,
           }
         : null;
 
-    // Case 1 — the display URL itself: DISPLAY + agentic_process pointer.
-    // DISPLAY-only is safe: legacy /dock/shell/agentic_process-<id> URLs in vibe
-    // canonicalize to /dock/display in the main loader (canonicalProcessDockPath),
-    // so this hook never sees the shell form.
-    if (currentDock.viewType === ViewType.DISPLAY) {
+    // Case 1 — the process URL itself: a SHELL dock with an agentic_process
+    // pointer (the single URL family; legacy /dock/display forms redirect here
+    // in the main loader's canonicalProcessDockPath).
+    if (currentDock.viewType === ViewType.SHELL) {
       return build(tabByHash(currentDock.tabHash), currentDock, true);
     }
 

@@ -1,52 +1,42 @@
-/** canonicalProcessDockPath — see the source JSDoc for the canonical-family rule. */
+/** canonicalProcessDockPath — see the source JSDoc for the canonical-family rule.
+ *
+ * One URL family per process (`/dock/shell/...`) in BOTH view modes: vibe is a
+ * rendering mode carried by `?viewMode`, never a URL family. The canonicalizer
+ * is now purely legacy back-compat — any `display` URL redirects to the shell
+ * form with its search preserved verbatim; shell URLs are never redirected. */
 import { describe, expect, it } from 'vitest';
 import { canonicalProcessDockPath } from '@src/navigation/process-dock-canonicalization';
+import { ViewType } from '@src/types/ViewType';
 
 const PROC = 'agentic_process-37c47bb1-f010-45e2-8ed9-fcad8901f7da';
 const VIBE = `?scope-mode=project&viewMode=vibe`;
 const STD = `?scope-mode=project&viewMode=standard`;
 
 describe('canonicalProcessDockPath', () => {
-  it('vibe: legacy shell process URL canonicalizes to the display URL', () => {
-    expect(canonicalProcessDockPath(`/dock/shell/${PROC}`, VIBE)).toBe(
-      `/dock/display/${PROC}${VIBE}`,
-    );
-  });
-
-  it('vibe: display URL is already canonical', () => {
-    expect(canonicalProcessDockPath(`/dock/display/${PROC}`, VIBE)).toBeNull();
-  });
-
-  it('standard: display URL canonicalizes to the shell URL', () => {
-    expect(canonicalProcessDockPath(`/dock/display/${PROC}`, STD)).toBe(
-      `/dock/shell/${PROC}${STD}`,
-    );
-  });
-
-  it('viewMode absent falls back to the preference argument', () => {
-    // Standard preference (default): display bounces, shell stays.
+  it('legacy display URL redirects to the shell URL, search preserved verbatim', () => {
+    expect(canonicalProcessDockPath(`/dock/display/${PROC}`, STD)).toBe(`/dock/shell/${PROC}${STD}`);
+    expect(canonicalProcessDockPath(`/dock/display/${PROC}`, VIBE)).toBe(`/dock/shell/${PROC}${VIBE}`);
     expect(canonicalProcessDockPath(`/dock/display/${PROC}`, '')).toBe(`/dock/shell/${PROC}`);
-    expect(canonicalProcessDockPath(`/dock/shell/${PROC}`, '')).toBeNull();
-    // Vibe preference: the param-less legacy bookmark still reaches the display.
-    expect(canonicalProcessDockPath(`/dock/shell/${PROC}`, '', true)).toBe(
-      `/dock/display/${PROC}`,
-    );
-    expect(canonicalProcessDockPath(`/dock/display/${PROC}`, '', true)).toBeNull();
   });
 
-  it('explicit param outranks the preference argument', () => {
-    expect(canonicalProcessDockPath(`/dock/display/${PROC}`, STD, true)).toBe(
-      `/dock/shell/${PROC}${STD}`,
-    );
-  });
-
-  it('standard: shell process URL is already canonical', () => {
+  it('shell process URLs are never redirected — either mode param, or none', () => {
+    expect(canonicalProcessDockPath(`/dock/shell/${PROC}`, VIBE)).toBeNull();
     expect(canonicalProcessDockPath(`/dock/shell/${PROC}`, STD)).toBeNull();
+    expect(canonicalProcessDockPath(`/dock/shell/${PROC}`, '')).toBeNull();
   });
 
-  it('bare shell (terminal) pointers are never redirected, either mode', () => {
+  it('win layout keeps its segment', () => {
+    expect(canonicalProcessDockPath(`/win/display/${PROC}`, VIBE)).toBe(`/win/shell/${PROC}${VIBE}`);
+    expect(canonicalProcessDockPath(`/win/shell/${PROC}`, VIBE)).toBeNull();
+  });
+
+  it('bare shell (terminal) pointers are never redirected', () => {
     expect(canonicalProcessDockPath('/dock/shell/shell-abc123', VIBE)).toBeNull();
     expect(canonicalProcessDockPath('/dock/shell/new_terminal', VIBE)).toBeNull();
+  });
+
+  it('a display URL with a non-process pointer is not redirected', () => {
+    expect(canonicalProcessDockPath('/dock/display/shell-abc123', VIBE)).toBeNull();
   });
 
   it('non-process routes are untouched', () => {
@@ -54,9 +44,10 @@ describe('canonicalProcessDockPath', () => {
     expect(canonicalProcessDockPath('/dock/home', VIBE)).toBeNull();
   });
 
-  it('win layout keeps its segment', () => {
-    expect(canonicalProcessDockPath(`/win/shell/${PROC}`, VIBE)).toBe(
-      `/win/display/${PROC}${VIBE}`,
-    );
+  it('the DISPLAY view type is gone from the registry (identity fully retired)', () => {
+    // The display tab identity was eliminated (one tab per process); the enum
+    // member's removal is what auto-rejects /dock/display for anything the
+    // legacy redirect above doesn't cover.
+    expect(Object.values(ViewType)).not.toContain('display');
   });
 });

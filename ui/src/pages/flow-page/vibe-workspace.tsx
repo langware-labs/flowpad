@@ -150,24 +150,25 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
   // re-render this component on its own `currentContext` writes (it never reads it).
   const setCurrentContext = useViewerStore((s) => s.setCurrentContext);
 
-  // Register this workspace's display tab as the parent for any tab materialized
-  // while we're mounted (the open button, links inside child content). This is
-  // the ONLY child-tab grouping seam — consumed at the tab chokepoint.
+  // Register this workspace's PROCESS tab (its one shell-dock tab — the
+  // workspace anchor) as the parent for content tabs materialized while we're
+  // mounted (the open button, links inside child content). This is the ONLY
+  // child-tab grouping seam — consumed at the tab chokepoint, which adopts
+  // content-asset docks exclusively (never a process/project dock).
   useEffect(() => {
-    setActiveTabParent(session.displayTab?.id ?? null);
+    setActiveTabParent(session.processTab?.id ?? null);
     return () => setActiveTabParent(null);
-  }, [session.displayTab?.id]);
+  }, [session.processTab?.id]);
 
-  // The Display is a real Tab owned by this process — the anchor children are
-  // parented to and the row the strip renders. The route loader mints it on
-  // the display URL; this covers the paths it can't (deep-linked child URLs,
-  // a row lost to the orphan reap after the process recovered). Idempotent
-  // get-or-create; a failed mint (e.g. the process entity is gone) just leaves
-  // displayTab null, same as before.
+  // The process tab is the anchor children are parented to and the row the
+  // strip reads. The route loader mints it on the process URL; this covers the
+  // paths it can't (deep-linked child URLs, a row lost to the orphan reap after
+  // the process recovered). Idempotent get-or-create; a failed mint (e.g. the
+  // process entity is gone) just leaves processTab null, same as before.
   useEffect(() => {
-    if (session.displayTab) return;
-    void setupTabAndAdopt(session.displayDock);
-  }, [session.displayTab, session.displayDock]);
+    if (session.processTab) return;
+    void setupTabAndAdopt(session.processDock);
+  }, [session.processTab, session.processDock]);
 
   // id-based TypeId (NOT project.typeId, which is the uname form `project-@local`) —
   // must match the target HomeLanding.handleVibeSubmit created the process with.
@@ -261,9 +262,9 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
   const onOpenHistoryEntry = useCallback(
     (entry: DisplayEntry) => {
       const ptr = assetPointerForTarget(entry)?.toDockPointer() ?? null;
-      navigation.openDock(ptr ?? session.displayDock);
+      navigation.openDock(ptr ?? session.processDock);
     },
-    [navigation, session.displayDock],
+    [navigation, session.processDock],
   );
 
   // Feed the dev-server port into the viewer store — the exact channel
@@ -607,11 +608,11 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
       <ResizableHandle withHandle />
       <ResizablePanel defaultSize={64} minSize={45}>
         <div className="flex h-full flex-col">
-          <WorkspaceChildStrip displayTab={session.displayTab} displayDock={session.displayDock} />
+          <WorkspaceChildStrip processTab={session.processTab} processDock={session.processDock} />
           <div className="min-h-0 flex-1">
             {/* On the display URL: the agent-driven pin. On a child URL: the
                 child's ContentPanel (chrome-less). */}
-            {session.onDisplayUrl ? (
+            {session.onProcessUrl ? (
               displayEl
             ) : (
               <DisplayToolbar

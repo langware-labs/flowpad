@@ -1,5 +1,4 @@
 import { AgenticProcess, DockPointerData, ViewType } from '@sdk';
-import { DockPointer } from '@src/navigation/DockPointer';
 import { NavigationActions } from '@src/navigation/NavigationActions';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -53,15 +52,15 @@ describe('NavigationActions.openShellProcess', () => {
     expect(openDockSpy.mock.calls[0][0]).toBe(terminalDockPointer);
   });
 
-  it('routes viewMode=vibe to the Display surface and forwards the option to openDock', async () => {
-    const { process, navigation, openDockSpy } = setup();
+  it('viewMode=vibe opens the SAME shell dock, with the mode riding as an option', async () => {
+    // One tab per process: vibe is a rendering mode of the shell dock, never a
+    // second URL family/tab identity (the old Display surface is retired).
+    const { process, terminalDockPointer, navigation, openDockSpy } = setup();
 
     await expect(navigation.openShellProcess(process.id, { viewMode: 'vibe' })).resolves.toBe(process);
     expect(openDockSpy).toHaveBeenCalledTimes(1);
     const [dock, extraOptions] = openDockSpy.mock.calls[0];
-    expect(dock).toBeInstanceOf(DockPointer);
-    expect((dock as DockPointer).viewType).toBe(ViewType.DISPLAY);
-    expect((dock as DockPointer).pointer).toBe(`agentic_process-${process.id}`);
+    expect(dock).toBe(terminalDockPointer);
     expect(extraOptions).toEqual({ viewMode: 'vibe' });
   });
 });
