@@ -108,3 +108,16 @@ describe('resolveNextTabRow — pickability exclusions', () => {
     expect(resolveNextTabRow([])).toBeNull();
   });
 });
+
+describe('stale legacy-display intent', () => {
+  it('a pending intent keyed to a reaped display row falls through without crashing', () => {
+    // Legacy display rows are reaped server-side (one tab per process); a
+    // stored intent naming `display|agentic_process-<id>` can never match a
+    // live row again — the resolver must fall through to recency/tab_order.
+    setPendingIntent(`display|agentic_process-${uid('gone')}`);
+    const rows = [row('b', { tabOrder: 2, lastActiveAt: 5 }), row('a', { tabOrder: 1 })];
+    expect(resolveNextTabRow(rows)?.name).toBe('b');
+    // The unmatched intent is left for its real owner (peek shows it intact).
+    expect(peekPendingIntent()).toContain('display|');
+  });
+});

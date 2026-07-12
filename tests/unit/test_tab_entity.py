@@ -357,14 +357,14 @@ async def test_parent_tab_id_in_wire_projection() -> None:
 async def test_hard_reap_clears_child_parent_refs() -> None:
     # A hard delete of the parent must null its children's parent_tab_id (unlike
     # soft-close) so no permanently-dangling edges accumulate.
-    from flow_sdk.builtin.tab import _clear_parent_refs
+    from flow_sdk.builtin.tab import _reparent_children
 
     parent = await ensure_tab(_jptr("shell", f"agentic_process-{uuid.uuid4()}"))
     child = await ensure_tab(
         _jptr("editor", "markdown"), target_type="markdown", target_id="md-reap", parent_tab_id=parent.id
     )
 
-    await _clear_parent_refs({parent.id})
+    await _reparent_children({parent.id: None})
 
     reloaded = await Tab.get_one({"id": child.id})
     assert reloaded is not None and reloaded.parent_tab_id is None
@@ -733,3 +733,245 @@ async def test_ensure_tab_does_not_persist_synthetic_name() -> None:
     again = await ensure_tab(p, target_type="agentic_process", target_id=target, name="Real title")
     assert again.id == tab.id
     assert again.name == "Real title"
+
+
+# ── One-tab-per-process: parent invariant + legacy display-row reap ──────────
+#
+# The display surface is no longer a Tab identity (a process has exactly ONE
+# tab — its shell pointer; vibe is a rendering mode). Two backend guarantees:
+# 1. A process/project tab is never a workspace CHILD: ``ensure_tab`` drops the
+#    ``parent_tab_id`` hint on mint, and null-heals a legacy corrupt row on touch.
+# 2. Legacy display-pointer rows are reaped from the list path regardless of
+#    target liveness, re-anchoring their children to the same target's shell tab.
+
+
+@pytest.mark.asyncio
+async def test_ensure_tab_never_parents_process_or_project_tabs() -> None:
+    anchor = await ensure_tab(f"shell/agentic_process-{uuid.uuid4()}")
+    ap_id = str(uuid.uuid4())
+    proc_tab = await ensure_tab(
+        f"shell/agentic_process-{ap_id}",
+        target_type="agentic_process",
+        target_id=ap_id,
+        parent_tab_id=anchor.id,
+    )
+    assert proc_tab.parent_tab_id is None, "a process tab must never be minted as a child"
+
+    proj_id = str(uuid.uuid4())
+    proj_tab = await ensure_tab(
+        f'{{"viewType": "project", "pointer": "{proj_id}"}}',
+        target_type="project",
+        target_id=proj_id,
+        parent_tab_id=anchor.id,
+    )
+    assert proj_tab.parent_tab_id is None, "a project tab must never be minted as a child"
+
+    # Content tabs still adopt (the invariant is scoped, not a blanket ban).
+    child = await ensure_tab(
+        '{"viewType": "editor", "pointer": "markdown-inv"}',
+        target_type="markdown",
+        target_id="md-inv",
+        parent_tab_id=anchor.id,
+    )
+    assert child.parent_tab_id == anchor.id
+
+
+@pytest.mark.asyncio
+async def test_ensure_tab_null_heals_legacy_parented_process_tab() -> None:
+    # A pre-invariant DB may hold a process tab already carrying a parent
+    # (the shell-under-display corruption). Reopening it must heal the edge.
+    anchor = await ensure_tab(f"shell/agentic_process-{uuid.uuid4()}")
+    ap_id = str(uuid.uuid4())
+    pointer = f"shell/agentic_process-{ap_id}"
+    corrupt = await ensure_tab(pointer, target_type="agentic_process", target_id=ap_id)
+    corrupt.parent_tab_id = anchor.id  # simulate the legacy write path
+    await corrupt.save()
+
+    healed = await ensure_tab(pointer, target_type="agentic_process", target_id=ap_id)
+    assert healed.id == corrupt.id
+    assert healed.parent_tab_id is None, "reopen must null-heal the corrupt parent edge"
+
+
+async def _live_process():
+    from flow_sdk.builtin.agentic_process import AgenticProcess
+
+    proc = AgenticProcess(name=f"one-tab-{uuid.uuid4().hex[:8]}")
+    await proc.save()
+    return proc
+
+
+async def _seed_tab(pointer: str, **fields) -> Tab:
+    """Seed a row DIRECTLY (no ensure_tab) — models pre-upgrade legacy state.
+    ``ensure_tab``'s fresh-create path runs the list reaper for its ordering
+    read, which would reap a just-seeded display row mid-setup and invalidate
+    the scenario being staged."""
+    tab = Tab(id=tab_id_for(pointer), pointer=pointer, visible=True, **fields)
+    await tab.save()
+    return tab
+
+
+@pytest.mark.asyncio
+async def test_display_row_reaped_and_children_reanchored_to_shell_tab() -> None:
+    from flow_sdk.builtin.tab import _build_tab_list
+
+    proc = await _live_process()
+    apid = str(proc.id)
+    shell_tab = await _seed_tab(
+        f'{{"viewType": "shell", "pointer": "agentic_process-{apid}"}}',
+        target_type="agentic_process",
+        target_id=apid,
+    )
+    display_tab = await _seed_tab(
+        f'{{"viewType": "display", "pointer": "agentic_process-{apid}"}}',
+        target_type="agentic_process",
+        target_id=apid,
+    )
+    child = await _seed_tab(
+        '{"viewType": "editor", "pointer": "markdown-reanchor"}',
+        target_type="markdown",
+        target_id="md-reanchor",
+        parent_tab_id=display_tab.id,
+    )
+
+    listed = await _build_tab_list(None)
+    listed_ids = {t.id for t in listed}
+    assert display_tab.id not in listed_ids, (
+        "a display-pointer row must be reaped by pointer shape even though its "
+        "target process is alive"
+    )
+    assert shell_tab.id in listed_ids, "the process's shell tab must survive"
+    assert await Tab.get_one({"id": display_tab.id}) is None, "display row hard-deleted"
+    fresh_child = await Tab.get_one({"id": child.id})
+    assert fresh_child is not None
+    assert fresh_child.parent_tab_id == shell_tab.id, (
+        "children of the reaped display row re-anchor to the same target's shell tab"
+    )
+
+
+@pytest.mark.asyncio
+async def test_display_row_reap_nulls_children_without_shell_sibling() -> None:
+    from flow_sdk.builtin.tab import _build_tab_list
+
+    proc = await _live_process()
+    apid = str(proc.id)
+    display_tab = await _seed_tab(
+        f'{{"viewType": "display", "pointer": "agentic_process-{apid}"}}',
+        target_type="agentic_process",
+        target_id=apid,
+    )
+    child = await _seed_tab(
+        '{"viewType": "editor", "pointer": "markdown-nullheal"}',
+        target_type="markdown",
+        target_id="md-nullheal",
+        parent_tab_id=display_tab.id,
+    )
+
+    await _build_tab_list(None)
+    assert await Tab.get_one({"id": display_tab.id}) is None
+    fresh_child = await Tab.get_one({"id": child.id})
+    assert fresh_child is not None
+    assert fresh_child.parent_tab_id is None, (
+        "with no shell sibling the child's dangling parent edge is nulled"
+    )
+
+
+@pytest.mark.asyncio
+async def test_legacy_pipe_format_display_pointer_is_reaped() -> None:
+    from flow_sdk.builtin.tab import _build_tab_list
+
+    proc = await _live_process()
+    apid = str(proc.id)
+    legacy = await _seed_tab(
+        f"display|agentic_process-{apid}",
+        target_type="agentic_process",
+        target_id=apid,
+    )
+    listed = await _build_tab_list(None)
+    assert legacy.id not in {t.id for t in listed}
+    assert await Tab.get_one({"id": legacy.id}) is None
+
+
+@pytest.mark.asyncio
+async def test_dangling_parent_edge_is_healed_on_list() -> None:
+    # A child whose parent row does not EXIST at all (minted under a row a
+    # previous reap cycle had already deleted — the old-client upgrade window).
+    # Distinct from a soft-closed parent, which is a legitimate group edge.
+    from flow_sdk.builtin.tab import _build_tab_list
+
+    ghost_parent_id = str(uuid.uuid4())
+    child = await _seed_tab(
+        '{"viewType": "editor", "pointer": "markdown-dangling"}',
+        target_type="markdown",
+        target_id="md-dangling",
+        parent_tab_id=ghost_parent_id,
+    )
+    await _build_tab_list(None)
+    fresh = await Tab.get_one({"id": child.id})
+    assert fresh is not None
+    assert fresh.parent_tab_id is None, "a parent edge to a nonexistent row must be healed"
+
+
+@pytest.mark.asyncio
+async def test_soft_closed_parent_edge_is_preserved_on_list() -> None:
+    # Counterpart of the dangling heal: a HIDDEN (soft-closed) parent still
+    # exists — the deterministic id regroups on reopen, so the edge must stay.
+    from flow_sdk.builtin.tab import _build_tab_list
+
+    parent = await _seed_tab(
+        '{"viewType": "editor", "pointer": "markdown-softparent"}',
+        target_type="markdown",
+        target_id="md-softparent",
+    )
+    child = await _seed_tab(
+        '{"viewType": "editor", "pointer": "markdown-softchild"}',
+        target_type="markdown",
+        target_id="md-softchild",
+        parent_tab_id=parent.id,
+    )
+    parent.visible = False
+    await parent.save()
+
+    await _build_tab_list(None)
+    fresh = await Tab.get_one({"id": child.id})
+    assert fresh is not None
+    assert fresh.parent_tab_id == parent.id, "a soft-closed parent is a live group edge"
+
+
+@pytest.mark.asyncio
+async def test_reap_cycle_emits_single_broadcast() -> None:
+    from unittest.mock import AsyncMock, patch
+
+    import flow_sdk.builtin.tab as tab_mod
+    from flow_sdk.builtin.tab import _build_tab_list
+
+    proc = await _live_process()
+    apid = str(proc.id)
+    await _seed_tab(
+        f'{{"viewType": "shell", "pointer": "agentic_process-{apid}"}}',
+        target_type="agentic_process",
+        target_id=apid,
+    )
+    display_tab = await _seed_tab(
+        f'{{"viewType": "display", "pointer": "agentic_process-{apid}"}}',
+        target_type="agentic_process",
+        target_id=apid,
+    )
+    await _seed_tab(
+        '{"viewType": "editor", "pointer": "markdown-bcast"}',
+        target_type="markdown",
+        target_id="md-bcast",
+        parent_tab_id=display_tab.id,
+    )
+    # A target-orphan alongside, so multiple reap kinds fire in ONE cycle.
+    ghost = str(uuid.uuid4())
+    await _seed_tab(
+        f"shell/agentic_process-{ghost}",
+        target_type="agentic_process",
+        target_id=ghost,
+    )
+
+    with patch.object(tab_mod, "broadcast_tabs_changed", new=AsyncMock()) as bc:
+        await _build_tab_list(None)
+        assert bc.await_count == 1, (
+            f"one reap cycle must coalesce to a single tabs_changed ping, got {bc.await_count}"
+        )

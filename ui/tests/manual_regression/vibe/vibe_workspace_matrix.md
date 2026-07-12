@@ -30,7 +30,9 @@ Do not reuse process, project, browser-tab, or display state between scenarios.
 
 | ID | Area | Scenario | Required result | Stress/consistency checks |
 | --- | --- | --- | --- | --- |
-| VW-01 | Entry | Open a clean fixture project and enter Vibe | Vibe home binds to the fixture project; submit creates a Claude process at `/dock/display/agentic_process-*?viewMode=vibe`; chat and Display are both mounted | No `Project Required`, no shell-route regression, no console error |
+| VW-01 | Entry | Open a clean fixture project and enter Vibe | Vibe home binds to the fixture project; submit creates a Claude process at `/dock/shell/agentic_process-*?viewMode=vibe` — ONE URL family per process (vibe rides the `viewMode` param; the `/dock/display` family is retired and only redirects); chat and Display are both mounted | No `Project Required`, no shell-route regression, no console error; the scope-align redirect must KEEP `viewMode=vibe`; tab list holds exactly ONE row for the process (no `display`-pointer row, ever) |
+| VW-15 | One-tab model | Toggle vibe ⇄ standard on an open process; paste a legacy `/dock/display/agentic_process-<id>` (and `/win/display/...`) URL | Mode toggle keeps the SAME URL path and the same single strip chip (only `viewMode` changes); legacy display URLs redirect to the `shell` form with the search string preserved | Backend `tab/list_all`: one row per process across all toggles, zero display-pointer rows, no `agentic_process`/`project` row carries `parent_tab_id` |
+| VW-16 | Strip partition | While in vibe, open content files (children of the process tab); exit to standard | Children render ONLY in the workspace child strip (after the square Display header); the standard unified strip shows just the process chip; closing the active child returns to the Display home | Child rows carry `parent_tab_id == <process tab id>`; re-entering vibe restores the child strip as left |
 | VW-02 | Open | Ask Claude to open a known Markdown file, then a known source file | Markdown renders in the document editor; source renders in the code editor; each replaces the active Display | Process URL and left chat stay stable; Display history contains both targets in order |
 | VW-03 | Open | Ask Claude to open a known standalone HTML file | HTML is rendered as a usable preview, not raw source or a download | Its button changes page state; hard reload restores the same shown HTML target |
 | VW-04 | Open/Run | Ask Claude to open the existing static app | Claude uses the existing app, starts it, and shows a live iframe | Fixture source marker remains unchanged; iframe interaction works; no duplicate app is created |
@@ -53,7 +55,7 @@ Do not reuse process, project, browser-tab, or display state between scenarios.
 2. In a fresh browser tab open `/dock/project/<project-id>?viewMode=vibe`.
 3. Use the visible Home control, then verify the Vibe prompt and selected project.
 4. Submit `Reply with VIBE_ENTRY_READY and do not create files.`
-5. Wait for the canonical Display process URL and mounted chat/Display split.
+5. Wait for the canonical process URL (`/dock/shell/agentic_process-*?viewMode=vibe`) and mounted chat/Display split.
 6. Verify the response, idle status, route, process project/workdir, and console.
 
 ### VW-02 - Markdown and source opening

@@ -16,7 +16,6 @@ import {
 import { NavigateFunction } from 'react-router';
 import type { ViewMode } from '@src/contexts/view-mode-context';
 import { DockPointer, HIGHLIGHT_PARAM } from './DockPointer';
-import { processSurfaceViewType } from './process-dock-canonicalization';
 import { dockPointerForFile } from './local-file-pointer';
 import { FileOptions, TabOptions } from './types';
 import { preserveWindowLayout, stripDockPortion } from './url-builder';
@@ -426,16 +425,12 @@ export class NavigationActions {
     if (!process) {
       return null;
     }
-    // Vibe mode: the process is the left-side chat — its surface is the DISPLAY
-    // (`/dock/display/<proc>`), not a shell dock. The mode→surface pairing is
-    // owned by processSurfaceViewType (shared with the loader's URL
-    // canonicalization) so the two can't drift.
-    const surface = processSurfaceViewType(extraOptions.viewMode === 'vibe');
-    const dock =
-      surface === ViewType.DISPLAY
-        ? DockPointer.forDisplay(agenticProcessId)
-        : process.terminalDockPointer;
-    this.openDock(dock, extraOptions);
+    // ONE surface per process, whatever the mode: the shell dock. Vibe is a
+    // rendering mode of that same tab — `extraOptions.viewMode` rides the URL
+    // as `?viewMode=vibe` via the openDock options merge, never a second URL
+    // family (the display tab identity is gone; legacy /dock/display URLs
+    // redirect in canonicalProcessDockPath).
+    this.openDock(process.terminalDockPointer, extraOptions);
     return process;
   }
 

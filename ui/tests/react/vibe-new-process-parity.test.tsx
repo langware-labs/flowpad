@@ -5,7 +5,7 @@ import type { ReactNode } from 'react';
 /**
  * VIBE-006 regression.
  *
- * The Vibe workspace is bound to its process by URL (`/dock/display/
+ * The Vibe workspace is bound to its process by URL (`/dock/shell/
  * agentic_process-<id>`). The vibe-home creation path
  * (`createVibeProcessForProject`) does three things when it makes a process:
  *   1. embeds the SDK `vibe` persona agent (`loadEmbeddedAgent`),
@@ -125,10 +125,10 @@ function makeCreatedProcess() {
 describe('VIBE-006 — New must reach parity with the vibe-home creation path', () => {
   it('embeds the vibe agent and rebinds the URL when the New path creates a process', async () => {
     const session = {
-      displayTab: null,
-      displayDock: {} as never,
+      processTab: null,
+      processDock: {} as never,
       processId: 'P0',
-      onDisplayUrl: true,
+      onProcessUrl: true,
     };
     render(<VibeWorkspace session={session} />);
 

@@ -92,7 +92,7 @@ export async function loadDockPointer(
   try {
     switch (dock.viewType) {
       case ViewType.SHELL:
-        await loadShellRoute(dock.pointer, context.requestPath, dock.scopeFilter);
+        await loadShellRoute(dock.pointer, context.requestPath, { scope: dock.scopeFilter, viewMode: dock.viewMode });
         break;
       case ViewType.PROJECT:
         await loadProjectRoute(dock.pointer);
@@ -107,11 +107,6 @@ export async function loadDockPointer(
         await loadTasksRoute(dock.pointer);
         break;
       case ViewType.AGENTIC_PROCESS:
-        await loadAgenticProcessRoute(dock.pointer);
-        break;
-      case ViewType.DISPLAY:
-        // The vibe Display surface carries an `agentic_process-<id>` pointer —
-        // same loader as the process route (resolves the process into context).
         await loadAgenticProcessRoute(dock.pointer);
         break;
       case ViewType.TRIGGERS:
