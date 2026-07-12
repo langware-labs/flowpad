@@ -113,6 +113,13 @@ Run it exactly once (exit 0 = shown). See
 and Reveal controls. Outside FlowPad, print the file path and suggest opening
 it in a browser.
 
+**Testing the deck — use the `web-tester` skill.** When the user asks to test /
+QA / validate / check the deck in a browser, route to the **web-tester** skill:
+the assembled deck is a self-contained `.html`, so it sweeps it headlessly
+(console/JS errors, failed requests, screenshot, basic a11y) and reports pass/fail,
+keeping all debug artifacts in an isolated temp folder — not in this project.
+Don't hand-roll Playwright checks here.
+
 ## Development guides
 
 Read the matching reference before making that kind of change:

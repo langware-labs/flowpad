@@ -173,3 +173,11 @@ full show/navigate contract. Optionally, ALSO register the services as results
 ```
 
 Outside FlowPad, just print the URLs (http://localhost:3000, :8080).
+
+## Testing the app — use the `web-tester` skill
+
+When the user asks to **test / QA / validate / smoke-test / check** the app in a
+browser, don't hand-roll Playwright here — route to the **web-tester** skill. With
+the dev server running, it sweeps the app's routes headlessly (console/JS errors,
+failed requests, screenshots, broken links, basic a11y) and reports pass/fail,
+keeping all debug artifacts in an isolated temp folder (never in this project).
