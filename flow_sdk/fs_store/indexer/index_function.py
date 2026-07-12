@@ -700,6 +700,26 @@ class FSIndexer:
         from flow_sdk.fs_store.indexer.functions._folder_capsule import (  # noqa: PLC0415
             write_capsule_id,
         )
+        from flow_sdk.fs_store.path_utils import is_path_under  # noqa: PLC0415
+
+        # Dedup-on-adopt's copy verdict is SCOPED to this run's index roots.
+        # An incumbent that lives UNDER a walk root is a genuine intra-workspace
+        # duplication (a local ``cp -r``) → re-key the copy. An incumbent OUTSIDE
+        # every walk root is a foreign checkout/clone of the same repo — a
+        # legitimately shared committed capsule id (e.g. a sibling git worktree,
+        # or a stale DB row from a past scope), whose authored source file must
+        # NOT be re-minted. Without this, re-indexing one clone re-keys another
+        # clone's committed ids and writes them back over git-tracked files
+        # (the 2026-07-12 mass-re-mint incident).
+        _dedup_root_canons = [
+            canonical_posix_path(str(r._path))
+            for r in (opts.roots if opts.roots is not None else self._roots)
+        ]
+
+        def _incumbent_in_run_scope(incumbent_canon: str) -> bool:
+            return any(
+                is_path_under(incumbent_canon, root) for root in _dedup_root_canons
+            )
 
         def _probe_chunk(
             items: list[tuple[FSRef, Any]],
@@ -736,7 +756,17 @@ class FSIndexer:
                             existing_db_paths.get(str(ref.record_type), {}).get(ref_id)
                             or claimed_ids.get(ref_id)
                         )
-                        if incumbent and canonical_posix_path(incumbent) != cur:
+                        incumbent_canon = (
+                            canonical_posix_path(incumbent) if incumbent else None
+                        )
+                        # Only a still-present incumbent WITHIN this run's roots
+                        # is a real copy; a foreign clone / out-of-scope path is
+                        # a legitimately shared committed id — leave it alone.
+                        if (
+                            incumbent_canon
+                            and incumbent_canon != cur
+                            and _incumbent_in_run_scope(incumbent_canon)
+                        ):
                             try:
                                 incumbent_present = Path(incumbent).exists()
                             except OSError:
