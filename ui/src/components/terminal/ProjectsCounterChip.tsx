@@ -69,6 +69,29 @@ export function resolveProjectChipName(
   return bucket ? bucketDisplayName(bucket) : null;
 }
 
+/**
+ * Hairline-flanked mid-list section title — the chip's "Active projects"
+ * separator. Exported so other project lists (the footer Switch Project
+ * dialog) render the identical separator instead of a lookalike.
+ */
+export function SectionHairlineTitle({
+  children,
+  testid = 'projects-counter-section-title',
+}: {
+  children: React.ReactNode;
+  testid?: string;
+}) {
+  return (
+    <div className="flex items-center gap-2 px-2 pb-0.5 pt-1.5" data-testid={testid}>
+      <span aria-hidden className="h-px flex-1 bg-border" />
+      <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+        {children}
+      </span>
+      <span aria-hidden className="h-px flex-1 bg-border" />
+    </div>
+  );
+}
+
 // Sort: alphabetical by display name, projectId tie-break. Deliberately NOT
 // current-first or state-ranked — the list keeps a stable order as the user
 // switches projects or buckets change state; the current row is highlighted
@@ -356,16 +379,9 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
                 // Small mid-title separating the Global row from the project
                 // buckets below it.
                 <li key="__projects_title__" aria-hidden>
-                  <div
-                    className="flex items-center gap-2 px-2 pb-0.5 pt-1.5"
-                    data-testid="projects-counter-section-title"
-                  >
-                    <span aria-hidden className="h-px flex-1 bg-border" />
-                    <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                      <Trans>Active projects</Trans>
-                    </span>
-                    <span aria-hidden className="h-px flex-1 bg-border" />
-                  </div>
+                  <SectionHairlineTitle>
+                    <Trans>Active projects</Trans>
+                  </SectionHairlineTitle>
                 </li>
               ) : null}
               {sorted.map((bucket) => {
