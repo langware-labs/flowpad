@@ -17,6 +17,8 @@ import { selectProjectContext } from '@src/components/project-selector';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { agenticProcessIdForProjectEntry, dockForProjectEntry } from '@src/tabs/project-entry';
+import { SectionHairlineTitle } from '@src/components/terminal/ProjectsCounterChip';
+import { useTabProjectBuckets } from '@src/tabs/useTabs';
 import { useProject } from '@sdk/react/hooks';
 import { useDevMode } from '@src/contexts/dev-mode-context';
 import { useIsAdvanced, useIsVibe, ViewMode } from '@src/contexts/view-mode-context';
@@ -437,21 +439,70 @@ function CompactProjectSelectDialog({
   const [search, setSearch] = useState('');
   const q = search.trim().toLowerCase();
 
-  const filtered = useMemo(() => {
+  // Active projects = the ones that own open tabs — the SAME source the tab
+  // strip's projects chip renders, so both surfaces always agree.
+  const { buckets } = useTabProjectBuckets();
+  const tabCountByProjectId = useMemo(
+    () => new Map(buckets.map((b) => [b.projectId, b.tabCount])),
+    [buckets],
+  );
+
+  const { active, rest, hiddenCount } = useMemo(() => {
+    const matches = (p: ProjectListItem) => !q || matchesProjectQuery(p, q);
+    // Active section mirrors the chip: alphabetical by display name, id tie-break.
+    const activeList = projects
+      .filter((p) => tabCountByProjectId.has(p.id) && matches(p))
+      .sort(
+        (a, b) =>
+          getProjectDisplayName(a).localeCompare(getProjectDisplayName(b)) || a.id.localeCompare(b.id),
+      );
     // `last_active_at` (UI-open recency) wins; session `modified_at` is the
     // fallback; fully-unknown recency sorts as "now" (new project → top).
     const now = Date.now();
     const byRecent = projects
+      .filter((p) => !tabCountByProjectId.has(p.id) && matches(p))
       .map((p) => ({ p, ms: projectRecencyMs(p) ?? now }))
       .sort((a, b) => b.ms - a.ms)
       .map((r) => r.p);
-    // No query → show only the most-recent slice; querying searches all projects.
-    return q ? byRecent.filter((p) => matchesProjectQuery(p, q)) : byRecent.slice(0, COMPACT_PROJECT_LIMIT);
-  }, [projects, q]);
+    // No query → active projects always show; the rest keep the most-recent
+    // cap so Standard view stays short. Querying searches all projects.
+    const restList = q ? byRecent : byRecent.slice(0, COMPACT_PROJECT_LIMIT);
+    return { active: activeList, rest: restList, hiddenCount: q ? 0 : byRecent.length - restList.length };
+  }, [projects, q, tabCountByProjectId]);
 
-  // Without a query the list is capped; surface how many recent projects are hidden.
-  const hiddenCount = q ? 0 : Math.max(0, projects.length - filtered.length);
+  const filtered = useMemo(() => [...active, ...rest], [active, rest]);
   const showSearch = projects.length > COMPACT_PROJECT_LIMIT || search.length > 0;
+
+  // One row shape for both sections; active rows carry the chip's tab-count badge.
+  const renderRow = (project: ProjectListItem, tabCount?: number) => {
+    const projectPath = normalizePath(project.cwd || project.name || '');
+    const isCurrent =
+      !!currentProjectPath && canonicalPathKey(projectPath) === canonicalPathKey(currentProjectPath);
+    const isOpening = openingProjectId === project.id;
+    return (
+      <button
+        key={project.id}
+        onClick={() => onProjectClick(project)}
+        disabled={!!openingProjectId || isSubmitting}
+        title={project.cwd ? `${getProjectDisplayName(project)}\n${project.cwd}` : getProjectDisplayName(project)}
+        className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition-colors hover:bg-accent/50 disabled:cursor-not-allowed disabled:opacity-50 ${isCurrent ? 'bg-accent/30' : ''}`}
+      >
+        {isOpening ? (
+          <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground" />
+        ) : isCurrent ? (
+          <Check className="h-3.5 w-3.5 shrink-0 text-primary" />
+        ) : (
+          <div className="h-3.5 w-3.5 shrink-0" />
+        )}
+        <span className="min-w-0 flex-1 truncate font-medium">{getProjectDisplayName(project)}</span>
+        {tabCount !== undefined && (
+          <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-xs tabular-nums text-muted-foreground">
+            {tabCount}
+          </span>
+        )}
+      </button>
+    );
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -485,30 +536,18 @@ function CompactProjectSelectDialog({
               </div>
             ) : (
               <div className="divide-y divide-border">
-                {filtered.map((project) => {
-                  const projectPath = normalizePath(project.cwd || project.name || '');
-                  const isCurrent =
-                    !!currentProjectPath && canonicalPathKey(projectPath) === canonicalPathKey(currentProjectPath);
-                  const isOpening = openingProjectId === project.id;
-                  return (
-                    <button
-                      key={project.id}
-                      onClick={() => onProjectClick(project)}
-                      disabled={!!openingProjectId || isSubmitting}
-                      title={project.cwd ? `${getProjectDisplayName(project)}\n${project.cwd}` : getProjectDisplayName(project)}
-                      className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition-colors hover:bg-accent/50 disabled:cursor-not-allowed disabled:opacity-50 ${isCurrent ? 'bg-accent/30' : ''}`}
-                    >
-                      {isOpening ? (
-                        <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground" />
-                      ) : isCurrent ? (
-                        <Check className="h-3.5 w-3.5 shrink-0 text-primary" />
-                      ) : (
-                        <div className="h-3.5 w-3.5 shrink-0" />
-                      )}
-                      <span className="truncate font-medium">{getProjectDisplayName(project)}</span>
-                    </button>
-                  );
-                })}
+                {active.length > 0 && (
+                  <SectionHairlineTitle testid="switch-project-active-title">
+                    <Trans>Active projects</Trans>
+                  </SectionHairlineTitle>
+                )}
+                {active.map((project) => renderRow(project, tabCountByProjectId.get(project.id)))}
+                {active.length > 0 && rest.length > 0 && (
+                  <SectionHairlineTitle testid="switch-project-recent-title">
+                    <Trans>Recent</Trans>
+                  </SectionHairlineTitle>
+                )}
+                {rest.map((project) => renderRow(project))}
               </div>
             )}
           </div>
