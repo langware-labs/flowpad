@@ -2417,7 +2417,12 @@ async def _sync_remote_children(parent_tid: TypeId, child_type: str, someone_typ
         parent_etype = BuiltinEntityType(parent_tid.type)
     except ValueError:
         parent_etype = parent_tid.type
-    children = await hub_get(parent_etype, parent_tid.id, action=child_type)
+    # expand=blobs: blob fields (e.g. comment raw_content) are db-excluded from the
+    # hub row and served only on request — without this the pull materializes
+    # children with EMPTY bodies (the live-push path carries them; catch-up must too).
+    children = await hub_get(
+        parent_etype, parent_tid.id, action=child_type, params={"expand": "blobs"}
+    )
     child_list: list[dict] = []
     if isinstance(children, list):
         child_list = children
@@ -2536,8 +2541,51 @@ async def _sync_shared_context_subtree(conv_id: str, someone_typeid: str | None)
             # Delete half: prune local children removed on the hub (the pull above
             # only adds/updates), so a non-watching peer converges on deletions.
             await _reconcile_deleted_children(conv, child_type, hub_ids, someone_typeid)
+            # 3) Rebind half: recreate missing parent edges for remote children
+            #    whose parent materialized AFTER they did (e.g. the doc installed
+            #    after its comments synced) or that were synced before edge
+            #    recreation existed. The is_stale LWW skip means such rows never
+            #    re-materialize — this pass is their only healer. Skipped when the
+            #    hub has no children of this type (nothing can be orphaned), so
+            #    child-free conversations pay nothing per sync.
+            if hub_ids:
+                await _rebind_orphan_children(conv, child_type, someone_typeid)
     except Exception as e:  # noqa: BLE001
         logger.warning("[subtree-sync] conv=%s failed (non-fatal): %s", conv_id, e)
+
+
+async def _rebind_orphan_children(conv, child_type: str, someone_typeid: str | None) -> None:
+    """Recreate missing local parent edges for this conversation's remote children.
+
+    Candidate parents mirror ``_reconcile_deleted_children``: the conversation
+    itself plus each ``shared_context_entities`` doc. Each ``remote=True``
+    ``child_type`` row bound to a candidate parent gets ``ensure_child_edge()``
+    — which resolves the parent locally, dedup-checks the ``is_child`` role
+    edge, and attaches only when missing. Best-effort per row. Callers gate on
+    "the hub reported children of this type" so child-free syncs skip entirely.
+    """
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    cls = SchemaRegistry.get_entity_cls(child_type)
+    if cls is None:
+        return
+    conv_ref = f"{BuiltinEntityType.CONVERSATION.value}-{conv.id}"
+    candidate_parents = [conv_ref, *(str(r) for r in (conv.shared_context_entities or []))]
+    for parent_ref in candidate_parents:
+        try:
+            children = await cls.get_all({"parent_type_id": parent_ref})
+        except Exception:  # noqa: BLE001
+            continue
+        for ent in children or []:
+            if not getattr(ent, "remote", False):
+                continue  # locally-authored rows got their edge at create
+            try:
+                await ent.ensure_child_edge()
+            except Exception as e:  # noqa: BLE001
+                logger.warning(
+                    "[subtree-sync] rebind %s-%s failed (non-fatal): %s",
+                    child_type, ent.id, e,
+                )
 
 
 async def _fetch_conversation_messages(conv_id: str, someone_typeid: str) -> None:

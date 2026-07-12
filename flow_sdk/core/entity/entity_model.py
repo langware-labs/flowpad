@@ -1672,7 +1672,47 @@ class Entity(DBEntity):
         if "remote" in cls.model_fields:
             ent.remote = True
         await ent.save(someone_typeid, notify=notify)
+        # Receiver contract: replication replays the ORIGIN's write, not a weaker
+        # one. The sender's create ran `add_child` → a local `is_child` role edge;
+        # role-walk scope queries (e.g. the doc-comment gutter) resolve through
+        # that edge, so a bare row save leaves the child invisible. Recreate it
+        # when the parent row exists locally; when it doesn't (layer-1-gated doc
+        # not installed yet), the catch-up rebind pass heals later. Non-fatal.
+        try:
+            await ent.ensure_child_edge()
+        except Exception as e:  # noqa: BLE001
+            import logging
+            logging.getLogger(__name__).warning(
+                "upsert_from_hub_child: edge recreation failed for %s: %s", ent.typeid, e
+            )
         return ent
+
+    async def ensure_child_edge(self) -> bool:
+        """Ensure the local parent→self ``is_child`` role edge exists.
+
+        The single edge-recreation seam for materialized remote children (live
+        bridge + catch-up sync + orphan rebind). Resolves ``parent_type_id`` to a
+        LOCAL row; absent parent → False (caller-side rebind heals when the
+        parent materializes). ``attach_child``/``grant_role`` dedups an existing
+        edge (pinned by test_attach_child_idempotency), but we pre-check anyway so
+        the every-sync re-convergence path does zero writes when converged.
+        Returns True iff the edge exists after the call.
+        """
+        from flow_sdk.db.rolerelationship import RoleRelationship  # noqa: PLC0415
+
+        parent = await self.parent()
+        if parent is None:
+            return False
+        rel_filter = QueryFilter(
+            type=RoleRelationship.get_type(),
+            match=ExpressionNode(op=QueryOp.EQ, operands=["is_child", True]),
+        )
+        rels = await self.get_incoming_relationships(rel_filter)
+        parent_tid = str(parent.typeid)
+        if any(str(r.from_typeid) == parent_tid for r in rels if r.from_typeid):
+            return True
+        await parent.attach_child(self)
+        return True
 
     @classmethod
     async def materialize_share_parent(

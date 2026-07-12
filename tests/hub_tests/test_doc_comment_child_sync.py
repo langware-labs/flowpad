@@ -155,6 +155,28 @@ def _mk(c, be, parent_type, parent_id, text, line):
     ))["id"]
 
 
+def _scoped_ids(c, be, parent_type, parent_id):
+    """Comments visible through the SCOPED list — the exact route the UI's
+    role-walk query hits (``GET /graph/<parent>/<id>/comment``). Resolves through
+    the local is_child edge, so this asserts the receiver kernel recreated it —
+    a bare row copy (pre-fix behavior) returns [] here while the by-id GET passes."""
+    r = c.get(f"{be}/api/v1/graph/{parent_type}/{parent_id}/comment?expand=blobs")
+    if r.status_code != 200:
+        return {}
+    return {d["id"]: d for d in (r.json().get("data") or []) if isinstance(d, dict) and d.get("id")}
+
+
+def _wait_scoped(c, be, conv_id, parent_type, parent_id, cid):
+    end = time.monotonic() + CONVERGE
+    while time.monotonic() < end:
+        _sync(c, be, conv_id)
+        d = _scoped_ids(c, be, parent_type, parent_id).get(cid)
+        if d is not None:
+            return d
+        time.sleep(0.3)
+    return None
+
+
 def _build_shared(c, env, stamp):
     """Alice creates a markdown + conversation (markdown in shared_context, for the
     doc-binding cell), shares with bob; bob accepts. No bob-side ``discover``."""
@@ -189,7 +211,7 @@ def _build_shared(c, env, stamp):
     assert accepted, "bob never received/accepted the conversation invitation"
     # One sync so bob materializes the conversation (so his catch-up pulls its children).
     _sync(c, bob, conv_id)
-    return md_id, md_ref, conv_id
+    return md_id, md_ref, conv_id, md_path
 
 
 @pytest.fixture(scope="module")
@@ -198,8 +220,9 @@ def shared(two_backends):
     then runs only its two cells so no single test crowds the 30s cap."""
     stamp = uuid.uuid4().hex[:8]
     c = httpx.Client(timeout=15.0)
-    md_id, md_ref, conv_id = _build_shared(c, two_backends, stamp)
-    yield {**two_backends, "client": c, "md_id": md_id, "md_ref": md_ref, "conv_id": conv_id, "stamp": stamp}
+    md_id, md_ref, conv_id, md_path = _build_shared(c, two_backends, stamp)
+    yield {**two_backends, "client": c, "md_id": md_id, "md_ref": md_ref, "conv_id": conv_id,
+           "md_path": md_path, "stamp": stamp}
     c.close()
 
 
@@ -210,9 +233,16 @@ def test_doc_comment_create_sync(shared):
 
     cid = _mk(c, alice, "conversation", conv_id, f"alice-create-{stamp}", 3)
     assert _wait_text(c, bob, conv_id, cid, f"alice-create-{stamp}"), "create A→B: bob never received alice's comment"
+    # Receiver contract: the row must also be reachable through the UI's SCOPED
+    # query (edge-backed), not just the by-id GET — the exact gap of the live bug.
+    got = _wait_scoped(c, bob, conv_id, "conversation", conv_id, cid)
+    assert got is not None, "create A→B: comment not visible through bob's scoped (edge-backed) query"
+    assert got.get("raw_content") == f"alice-create-{stamp}", "create A→B: scoped query must carry the body"
 
     cid = _mk(c, bob, "conversation", conv_id, f"bob-create-{stamp}", 4)
     assert _wait_text(c, alice, conv_id, cid, f"bob-create-{stamp}"), "create B→A: alice never received bob's comment"
+    got = _wait_scoped(c, alice, conv_id, "conversation", conv_id, cid)
+    assert got is not None, "create B→A: comment not visible through alice's scoped (edge-backed) query"
 
 
 def test_doc_comment_update_sync(shared):
@@ -265,3 +295,39 @@ def test_doc_comment_doc_binding(shared):
     got = _wait_text(c, bob, conv_id, cid, f"on-doc-{stamp}")
     assert got is not None, "doc-binding: bob never received the doc comment"
     assert got.get("parent_type_id") == md_ref, "doc-binding: comment must bind to the doc, not the conversation envelope"
+    # Sender-side gutter parity: alice authored via add_child, so her doc-scoped
+    # (edge-backed) query — the exact route the review gutter hits — must see it.
+    assert cid in _scoped_ids(c, alice, "markdown", md_id), "doc-binding: comment missing from alice's doc-scoped query"
+
+
+def test_doc_comment_receiver_scope_visibility(shared):
+    """The receiver's doc GUTTER sees a synced comment once the doc materializes
+    locally — the full receiver contract: kernel edge recreation for children whose
+    parent already exists, orphan REBIND for children that synced first, and blob
+    transport (body present through the scoped route).
+
+    Bob materializes the shared md AFTER alice's comment reached him (same entity id
+    — the file carries its id in frontmatter, adopted on create), so the comment is
+    a pre-existing orphan that only ``_rebind_orphan_children`` can link."""
+    c, alice, bob = shared["client"], shared["alice"], shared["bob"]
+    conv_id, md_id, md_path, stamp = shared["conv_id"], shared["md_id"], shared["md_path"], shared["stamp"]
+
+    # 1) Alice comments on the doc; bob receives the ROW (his doc row may not exist yet).
+    cid = _mk(c, alice, "markdown", md_id, f"gutter-{stamp}", 4)
+    assert _wait_text(c, bob, conv_id, cid, f"gutter-{stamp}"), "receiver-scope: bob never received the doc comment row"
+
+    # 2) Bob materializes the doc locally via the INDEXER (the real receiver path —
+    #    install/index), which adopts the frontmatter capsule id → same entity id.
+    idx = _u(c.post(
+        f"{bob}/api/v1/graph/compute_node/@local/fs-records/index",
+        params={"type": "markdown", "path": md_path},
+    ))
+    assert f"markdown-{md_id}" in (idx.get("typeids") or []), (
+        f"receiver-scope: bob's index must adopt the sender's entity id, got {idx.get('typeids')}"
+    )
+
+    # 3) Next catch-up sync rebinds the orphan; the doc-scoped (edge-backed) query —
+    #    exactly what the review gutter runs — must now surface it, body included.
+    got = _wait_scoped(c, bob, conv_id, "markdown", md_id, cid)
+    assert got is not None, "receiver-scope: comment not visible in bob's doc gutter query after rebind"
+    assert got.get("raw_content") == f"gutter-{stamp}", "receiver-scope: gutter query must carry the comment body"
