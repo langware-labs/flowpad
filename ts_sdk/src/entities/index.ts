@@ -55,6 +55,7 @@ export * from './web-domain';
 export * from './workflow';
 export * from './skill';
 export * from './whiteboard';
+export * from './deck-template';
 export * from './agent-trace';
 export * from './dynamic-workflow';
 export * from './usage-report';

@@ -1,0 +1,35 @@
+"""Type metadata for DECK_TEMPLATE."""
+from typing import Optional
+
+from flow_sdk.schema.type_info import TypeMetadata
+from flow_sdk.schema.type_info.base_meta import BaseMeta
+from flow_sdk.schema.types import EntityType
+from flow_sdk.schema.view_mode import ViewMode
+from flow_sdk.fs_store.indexer.functions.deck_template import (
+    deck_template_asset_hash,
+    deck_template_gen_id,
+    extract_deck_template,
+)
+
+
+class DeckTemplateMeta(BaseMeta):
+    layouts: Optional[list] = None
+    page_types: Optional[list] = None
+    num_layouts: Optional[int] = None
+
+
+DECK_TEMPLATE = TypeMetadata(
+    type=EntityType.DECK_TEMPLATE,
+    icon="Presentation",
+    browseable_by=ViewMode.ADVANCED,
+    creatable=True,
+    indexed_by_default=True,
+    api_visible=True,
+    index_fields=["description"],
+    main_subdir="assets/deck-templates",
+    main_layout="folder",
+    from_disk_fn=extract_deck_template,
+    gen_uuid_fn=deck_template_gen_id,
+    asset_hash_fn=deck_template_asset_hash,
+    meta_model=DeckTemplateMeta,
+)

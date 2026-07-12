@@ -49,9 +49,18 @@ and echo the submitted fields.
 use the **web-app-builder** skill (copy its template as-is, run its setup
 as-is). When the dev server is up: `flow show webapp --port 3000`.
 
+**Slide deck / presentation / slideshow / pitch deck / keynote** (anything the
+user wants as slides — even phrased as "make me a presentation about X") → use
+the **decker** skill. It builds a reusable deck template (asks which page types
+to support via an mcp-ui multi-select) and generates a single self-contained
+deck HTML, then `flow show file <abs-path>.html`. Do NOT hand-write slide HTML
+and do NOT route a deck through the standalone-`.html` rule below — decks belong
+to decker.
+
 **Standalone `.html` deliverable** (a single self-contained page: a generated
 `crm.html`, a chart, a report, a mockup — anything that is ONE html file with
-inline CSS/JS and no server) → just write the file in the project directory and
+inline CSS/JS and no server; NOT a slide deck — those go to decker above) →
+just write the file in the project directory and
 `flow show file <abs-path>.html`. The display renders it live in a sandboxed
 preview — no `http.server`, no port. Only reach for a server (next rule) when
 the deliverable is multiple files/assets or genuinely needs one.

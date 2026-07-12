@@ -82,6 +82,7 @@ export enum RecordType {
   GITHUB_REPO = 'github_repo',
   TODO_FILE = 'todo_file',
   WHITEBOARD = 'whiteboard',
+  DECK_TEMPLATE = 'deck_template',
   AGENT_TRACE = 'agent_trace',
   DYNAMIC_WORKFLOW = 'dynamic_workflow',
   USAGE_REPORT = 'usage_report',

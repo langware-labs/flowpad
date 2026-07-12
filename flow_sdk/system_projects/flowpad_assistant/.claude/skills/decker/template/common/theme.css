@@ -1,0 +1,116 @@
+/* ---------------------------------------------------------------------------
+ * theme.css — layout-agnostic base. Replaces Reveal's theme CSS entirely.
+ * Every value comes from a token (var(--…)); no hardcoded colors/sizes here.
+ * ------------------------------------------------------------------------- */
+
+/* Reveal slide reset — normalize the section that Reveal renders */
+.reveal .slides section {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  padding: var(--safe-area);
+  font-family: var(--font-sans);
+  font-size: var(--fs-body);
+  font-weight: var(--fw-regular);
+  line-height: var(--lh-body);
+  color: var(--text);
+  background: var(--bg);
+  text-align: left;
+}
+.reveal .slides section * { box-sizing: border-box; }
+
+/* Headings & copy defaults */
+.reveal h1,
+.reveal h2,
+.reveal h3 {
+  margin: 0 0 var(--sp-4) 0;
+  color: var(--text);
+  font-weight: var(--fw-bold);
+  line-height: var(--lh-tight);
+  letter-spacing: -0.01em;
+}
+.reveal h1 { font-size: var(--fs-hero); }
+.reveal h2 { font-size: var(--fs-title); }
+.reveal h3 { font-size: var(--fs-subtitle); }
+.reveal p { margin: 0 0 var(--sp-4) 0; }
+.reveal a { color: var(--accent); text-decoration: none; }
+.reveal ul,
+.reveal ol { margin: 0; padding-left: var(--sp-6); }
+.reveal li { margin: 0 0 var(--sp-3) 0; }
+.reveal code { font-family: var(--font-mono); font-size: 0.9em; }
+.reveal img,
+.reveal video { max-width: 100%; }
+
+/* Base layout wrapper — full-bleed flex column inside the safe area */
+.layout {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+}
+.layout--center { justify-content: center; align-items: flex-start; }
+
+/* Helpers */
+.kicker {
+  color: var(--accent);
+  font-size: var(--fs-caption);
+  font-weight: var(--fw-medium);
+  letter-spacing: var(--tracking-kicker);
+  text-transform: uppercase;
+  margin: 0 0 var(--sp-3) 0;
+}
+.subtitle {
+  color: var(--text-secondary);
+  font-size: var(--fs-subtitle);
+  font-weight: var(--fw-regular);
+}
+.caption {
+  color: var(--text-secondary);
+  font-size: var(--fs-caption);
+}
+.accent-rule {
+  width: var(--sp-8);
+  height: 3px;
+  background: var(--accent);
+  border: 0;
+  margin: var(--sp-4) 0;
+}
+
+/* Metric primitives (used by metrics-grid exemplar) */
+.metric-value {
+  color: var(--accent);
+  font-size: var(--fs-hero);
+  font-weight: var(--fw-bold);
+  line-height: var(--lh-tight);
+}
+.metric-label {
+  color: var(--text-secondary);
+  font-size: var(--fs-caption);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-kicker);
+}
+.metric-delta { color: var(--accent); font-size: var(--fs-body); }
+
+/* Grid utilities used by exemplars */
+.grid { display: grid; gap: var(--sp-5); width: 100%; }
+.grid--cols-2 { grid-template-columns: repeat(2, 1fr); }
+.grid--cols-3 { grid-template-columns: repeat(3, 1fr); }
+
+/* Surface card */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--sp-5);
+}
+
+/* Reveal fragments */
+.reveal .fragment { transition: opacity 0.2s ease; }
+
+/* Slide number — subtle, token-driven */
+.reveal .slide-number {
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--fs-caption);
+  font-family: var(--font-sans);
+}
