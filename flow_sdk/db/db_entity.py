@@ -224,6 +224,12 @@ class DBEntity(DBBaseRecord):
         updated_dump.update(fields)
         updated_model = self.model_validate(updated_dump)
         for k in fields.keys():
+            # Computed fields ride every outbound payload, so clients echo them
+            # back on a full-entity PUT (e.g. Project.include_dirs) — they have
+            # no setter, and the model_validate above already gave validators
+            # their chance to adopt the value. Only declared fields are settable.
+            if k not in self.__class__.model_fields:
+                continue
             setattr(self, k, getattr(updated_model, k))
 
     async def expand_permissions(self):
