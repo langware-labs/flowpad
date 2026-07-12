@@ -17,7 +17,6 @@ import {
 } from '@sdk';
 import { DockPointer } from '@src/navigation';
 import { canonicalProcessDockPath } from '@src/navigation/process-dock-canonicalization';
-import { getViewMode, ViewMode } from '@src/contexts/view-mode-context';
 import { setupTabAndAdopt } from '@src/tabs/setup-tab-and-adopt';
 import { ViewType } from '@src/types/ViewType';
 import { TimeIt } from '@src/utils/timeit';
@@ -110,16 +109,11 @@ export async function loadAgentApp(args: LoaderArgs) {
   const { processId, viewType } = params;
   const pointer = params['*'] || '';
 
-  // Mode-canonical process surface: vibe ⇒ /dock/display/<proc>, standard ⇒
-  // /dock/shell/<proc>. Bridges legacy pre-display links and mode toggles —
-  // see canonicalProcessDockPath. Effective mode = URL param ?? preference,
-  // the same resolution the renderer uses (a vibe-preference user's param-less
-  // bookmark must canonicalize to the display too).
-  const canonical = canonicalProcessDockPath(
-    requestUrl.pathname,
-    requestUrl.search,
-    getViewMode() === ViewMode.Vibe,
-  );
+  // Legacy display-URL canonicalization: a process has ONE URL family
+  // (/dock/shell/<proc>) in both modes — vibe rides the ?viewMode param. Old
+  // /dock|win/display/<proc> links redirect to the shell form here (search
+  // preserved) — see canonicalProcessDockPath.
+  const canonical = canonicalProcessDockPath(requestUrl.pathname, requestUrl.search);
   if (canonical) {
     t.done(slowThresholdSeconds);
     // eslint-disable-next-line @typescript-eslint/only-throw-error
