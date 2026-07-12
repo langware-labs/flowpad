@@ -1,5 +1,6 @@
 ---
-id: f0d070fa-2438-59b8-857d-f6f4a24ef2a7
+id: d8f7b76f-2547-4599-8d59-8125fddbecbf
+version: 2
 ---
 
 # Agent Records
@@ -96,7 +97,7 @@ location/runtime attributes such as `source_file`, `path`, `json_path`,
 
 ### Location Properties
 
-| Property            | Type    | Description |                                                                    |
+| Property            | Type    | Description | <br />                                                             |
 | ------------------- | ------- | ----------- | ------------------------------------------------------------------ |
 | `source_file`       | \`str   | None\`      | Backing file path, often `metadata.json` or an external asset file |
 | `path`              | \`str   | None\`      | Record folder path                                                 |
@@ -201,31 +202,31 @@ The constructor sets:
 Aggregated fields are `_SessionStatsProp` descriptors. The first access parses
 the JSONL once and caches the result on the instance as `_session_batch_stats`.
 
-| Field                         | Type        | Notes                                    |                                             |
+| Field                         | Type        | Notes                                    | <br />                                      |
 | ----------------------------- | ----------- | ---------------------------------------- | ------------------------------------------- |
-| `session_id`                  | `str`       | Claude session UUID; also the record id  |                                             |
-| `cwd`                         | `str`       | Session working directory                |                                             |
-| `version`                     | `str`       | Claude Code CLI version                  |                                             |
-| `git_branch`                  | `str`       | Git branch from transcript envelope      |                                             |
-| `slug`                        | `str`       | Claude session slug                      |                                             |
+| `session_id`                  | `str`       | Claude session UUID; also the record id  | <br />                                      |
+| `cwd`                         | `str`       | Session working directory                | <br />                                      |
+| `version`                     | `str`       | Claude Code CLI version                  | <br />                                      |
+| `git_branch`                  | `str`       | Git branch from transcript envelope      | <br />                                      |
+| `slug`                        | `str`       | Claude session slug                      | <br />                                      |
 | `model`                       | \`str       | None\`                                   | First/primary model seen in assistant usage |
-| `message_count`               | `int`       | User plus assistant messages             |                                             |
-| `user_message_count`          | `int`       | User messages                            |                                             |
-| `assistant_message_count`     | `int`       | Assistant messages                       |                                             |
-| `input_tokens`                | `int`       | Total input tokens                       |                                             |
-| `output_tokens`               | `int`       | Total output tokens                      |                                             |
-| `cache_read_input_tokens`     | `int`       | Cache-read input tokens                  |                                             |
-| `cache_creation_input_tokens` | `int`       | Cache-creation input tokens              |                                             |
-| `duration_ms`                 | `int`       | Total turn duration                      |                                             |
-| `tools_used`                  | `list[str]` | Tool names                               |                                             |
-| `has_plan`                    | `bool`      | True if transcript includes plan content |                                             |
+| `message_count`               | `int`       | User plus assistant messages             | <br />                                      |
+| `user_message_count`          | `int`       | User messages                            | <br />                                      |
+| `assistant_message_count`     | `int`       | Assistant messages                       | <br />                                      |
+| `input_tokens`                | `int`       | Total input tokens                       | <br />                                      |
+| `output_tokens`               | `int`       | Total output tokens                      | <br />                                      |
+| `cache_read_input_tokens`     | `int`       | Cache-read input tokens                  | <br />                                      |
+| `cache_creation_input_tokens` | `int`       | Cache-creation input tokens              | <br />                                      |
+| `duration_ms`                 | `int`       | Total turn duration                      | <br />                                      |
+| `tools_used`                  | `list[str]` | Tool names                               | <br />                                      |
+| `has_plan`                    | `bool`      | True if transcript includes plan content | <br />                                      |
 | `last_stop_reason`            | \`str       | None\`                                   | Last assistant stop reason                  |
-| `project_encoded_name`        | `str`       | Encoded project directory name           |                                             |
+| `project_encoded_name`        | `str`       | Encoded project directory name           | <br />                                      |
 | `last_user_message`           | \`str       | None\`                                   | Last user text                              |
 | `modified_at`                 | \`str       | None\`                                   | Derived from transcript/file metadata       |
 | `task_path`                   | \`str       | None\`                                   | Claude task/todo path when available        |
-| `estimated_cost_usd`          | `float`     | Estimated session cost                   |                                             |
-| `models_used`                 | `list[str]` | All models encountered                   |                                             |
+| `estimated_cost_usd`          | `float`     | Estimated session cost                   | <br />                                      |
+| `models_used`                 | `list[str]` | All models encountered                   | <br />                                      |
 | `primary_model`               | \`str       | None\`                                   | Primary model                               |
 | `created_at`                  | \`str       | None\`                                   | First transcript timestamp                  |
 
