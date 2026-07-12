@@ -91,9 +91,14 @@ class WorkerHistoryEntry(BaseModel):
     git_branch: Optional[str] = None
     message_count: Optional[int] = None
     agentic_process_id: Optional[str] = None
+    # Epoch-ms open-recency stamp of the backing AgenticProcess entity (the
+    # generic ``activate`` action fired on every open). ``last_active_time`` is
+    # transcript CONTENT recency only; clients that sort by "last active OR
+    # last opened" take max(last_active_time, last_active_at).
+    last_active_at: Optional[int] = None
 
 
-ProcessIndex = dict[str, tuple[str, Optional[str]]]
+ProcessIndex = dict[str, tuple[str, Optional[str], Optional[int]]]
 # A provider may be asked to restrict its disk walk to a set of project_ids
 # (the active scope). ``None`` means "no scope" → the legacy global top-N walk.
 ScopeProjectIds = Optional[set[str]]
@@ -264,10 +269,13 @@ def _normalize_worker_type(wt: object) -> WorkerType:
 
 
 def _build_agentic_process_index(processes: list["AgenticProcess"]) -> ProcessIndex:
-    """Map ``session_id → (agentic_process_id, name)`` from live entity rows.
+    """Map ``session_id → (agentic_process_id, name, last_active_at)`` from
+    live entity rows.
 
     Whatever ends up in this index is openable via ``AgenticProcess.getById``
     on the client — by construction, since we sourced it from the same store.
+    ``last_active_at`` (epoch-ms, the ``activate`` open stamp) rides along so
+    worker-history rows can expose open-recency next to transcript recency.
     """
     index: ProcessIndex = {}
     for proc in processes:
@@ -276,7 +284,8 @@ def _build_agentic_process_index(processes: list["AgenticProcess"]) -> ProcessIn
             continue
         raw_name = getattr(proc, "name", None)
         name = raw_name.strip() if isinstance(raw_name, str) and raw_name.strip() else None
-        index[sid] = (proc.id, name)
+        last_active_at = getattr(proc, "last_active_at", None)
+        index[sid] = (proc.id, name, last_active_at if isinstance(last_active_at, int) else None)
     return index
 
 
@@ -491,7 +500,7 @@ def _collect_claude_entries_sync(
         # opened through Flowpad — that's the majority of on-disk Claude
         # sessions. ``_pick_name`` filters out session_id / UUID-like values,
         # so a trivial session still falls through to ``last_prompt`` rendering.
-        ap_id, ap_name = process_index.get(sid, (None, None))
+        ap_id, ap_name, ap_last_active_at = process_index.get(sid, (None, None, None))
         name = _pick_name(
             custom_title=ap_name,
             slug=payload.get("custom_title") or None,
@@ -515,6 +524,7 @@ def _collect_claude_entries_sync(
                 git_branch=git_branch,
                 message_count=message_count,
                 agentic_process_id=ap_id,
+                last_active_at=ap_last_active_at,
             )
         )
 
@@ -608,7 +618,7 @@ def _collect_codex_entries_sync(
         # Codex sessions never carry their own title — name comes from the
         # AgenticProcess entity if one exists for this session, else None.
         last_prompt = _pick_last_prompt(last_user_message)
-        ap_id, ap_name = process_index.get(sid, (None, None))
+        ap_id, ap_name, ap_last_active_at = process_index.get(sid, (None, None, None))
 
         result.append(
             WorkerHistoryEntry(
@@ -623,6 +633,7 @@ def _collect_codex_entries_sync(
                 git_branch=None,
                 message_count=message_count,
                 agentic_process_id=ap_id,
+                last_active_at=ap_last_active_at,
             )
         )
 
@@ -698,7 +709,7 @@ def _collect_copilot_entries_sync(
             scope_counts[pid] = scope_counts.get(pid, 0) + 1
 
         last_prompt = _pick_last_prompt(payload.get("last_user_message"))
-        ap_id, ap_name = process_index.get(sid, (None, None))
+        ap_id, ap_name, ap_last_active_at = process_index.get(sid, (None, None, None))
         result.append(
             WorkerHistoryEntry(
                 worker_type=WorkerType.COPILOT,
@@ -712,6 +723,7 @@ def _collect_copilot_entries_sync(
                 git_branch=None,
                 message_count=payload.get("message_count"),
                 agentic_process_id=ap_id,
+                last_active_at=ap_last_active_at,
             )
         )
     _cache_store(cache, pending)
@@ -856,6 +868,9 @@ def _agentic_process_only_entries(
                 git_branch=None,
                 message_count=None,
                 agentic_process_id=proc.id,
+                last_active_at=(
+                    proc.last_active_at if isinstance(getattr(proc, "last_active_at", None), int) else None
+                ),
             )
         )
 

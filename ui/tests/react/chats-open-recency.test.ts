@@ -13,23 +13,27 @@
  *      the key, so an opened chat stays buried until a new message lands. This
  *      holds even after an explicit `refetch()` (the backend never surfaces
  *      `last_active_at` per row) — the two levers are independent;
- *   3. after closing tabs the order still reflects transcript time, not
- *      last-open time.
+ *   3. the recency sort must honor the anti-flicker stability window
+ *      (`CHAT_SORT_STABILITY_MS`, 1 min in prod, 1 s here): deltas smaller
+ *      than the window keep the current relative order;
+ *   4. closing tabs is not an activity signal — entries survive and order
+ *      still reflects last-open recency.
  *
  * Faithful, no-mock: sessions are REAL JSONL transcripts under
- * `~/.claude/projects/<dir>/` (exactly what the backend's worker-history walks);
- * the "open from the left menu" is the REAL production path minus the router —
+ * `~/.claude/projects/<dir>/` (exactly what the backend's worker-history
+ * walks), with a real shared `cwd` (the heal 500s without one); the "open from
+ * the left menu" is the REAL production path minus the router —
  * `AgenticProcess.getByWorkerId` (the heal the navigator calls) + the
- * `activate` action + the Tab materialization `loadProcess` performs. Closes go
- * through the real `POST /graph/tab/<id>/close`.
+ * `activate` action + the Tab materialization `loadProcess` performs. Closes
+ * go through the real `POST /graph/tab/<id>/close`.
  *
- * Expected to FAIL today on the `open →` / `close →` cases (the bug); the
- * "create" case locks the working baseline. Fix shape: worker-history surfaces
- * the entity `last_active_at` and the client sorts by
- * max(last_active_time, last_active_at) + reconciles `agentic_process_id`
- * after an open (refetch/patch, or navigator matches by worker_id).
+ * Expected to FAIL today on every `open →` / `close →` case (the bug); the
+ * "create" case locks the working baseline. Fix shape: worker-history
+ * surfaces the entity `last_active_at`, the client sorts by
+ * max(last_active_time, last_active_at) under the stability window, and the
+ * entry's `agentic_process_id` is reconciled after an open.
  */
-import { AgenticProcess, Tab } from '@sdk';
+import { AgenticProcess, Project, Tab } from '@sdk';
 import { renderHook, waitFor } from '@testing-library/react';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import * as fs from 'fs';
@@ -41,21 +45,27 @@ import { useChatHistory } from '@src/components/chats-navigator/useChatHistory';
 import { allScope } from '@sdk/utils/scope-filter';
 import { apiTestSetup, getTestSignupInfo } from '../utils/test-utils';
 
+/** Test-mode stability window (prod: CHAT_SORT_STABILITY_MS = 1 min). Wide
+ *  enough that two back-to-back opens (each a real heal + activate round trip)
+ *  land INSIDE it; the achieved stamp delta is asserted as a precondition. */
+const STABILITY_MS = 3000;
+/** Comfortably ABOVE the window, for deterministic over-window decisions. */
+const OVER_WINDOW_MS = STABILITY_MS + 600;
+
 // ── Real on-disk session fixtures (what worker-history actually reads) ──────
 
-/** One fixture project dir; a NON-scratch encoded name so worker-history does
- *  not filter it (unlike `-history-merge-test-` which is scratch-listed). */
-const FIXTURE_DIR = path.join(
-  os.homedir(),
-  '.claude',
-  'projects',
-  `-rca-chats-open-recency-${randomUUID()}`,
-);
+const RUN = randomUUID();
+/** NON-scratch encoded dir name so worker-history does not filter it (unlike
+ *  `-history-merge-test-`, which is scratch-listed). */
+const FIXTURE_DIR = path.join(os.homedir(), '.claude', 'projects', `-rca-chats-open-recency-${RUN}`);
+/** Shared real cwd for every fixture session: the `get_by_worker_id` heal
+ *  refuses (500) a session with an unknown working directory, and a /tmp cwd
+ *  would be scratch-filtered out of worker-history. */
+const FIXTURE_CWD = path.join(os.homedir(), `.rca-chats-fixture-cwd-${RUN}`);
 
-/** Write a real Claude session JSONL whose last content `timestamp` (the
- *  worker-history sort key) and file mtime are both `ts`. */
-function writeSession(sessionId: string, prompt: string, ts: Date): string {
+function writeSession(sessionId: string, prompt: string, ts: Date): void {
   fs.mkdirSync(FIXTURE_DIR, { recursive: true });
+  fs.mkdirSync(FIXTURE_CWD, { recursive: true });
   const jsonlPath = path.join(FIXTURE_DIR, `${sessionId}.jsonl`);
   const iso = ts.toISOString();
   const lines = [
@@ -63,26 +73,28 @@ function writeSession(sessionId: string, prompt: string, ts: Date): string {
       type: 'user',
       sessionId,
       timestamp: iso,
+      cwd: FIXTURE_CWD,
       message: { role: 'user', content: [{ type: 'text', text: prompt }] },
     }),
     JSON.stringify({
       type: 'assistant',
       sessionId,
       timestamp: iso,
+      cwd: FIXTURE_CWD,
       message: { role: 'assistant', content: [{ type: 'text', text: `reply to: ${prompt}` }] },
     }),
   ];
   fs.writeFileSync(jsonlPath, lines.join('\n') + '\n', 'utf-8');
   fs.utimesSync(jsonlPath, ts, ts);
-  return jsonlPath;
 }
 
 const S1 = randomUUID(); // newest transcript
 const S2 = randomUUID(); // middle
-const S3 = randomUUID(); // oldest transcript — the one we "open"
+const S3 = randomUUID(); // oldest transcript — opened first
 const FIXTURES = new Set([S1, S2, S3]);
 
 const hourAgo = (h: number) => new Date(Date.now() - h * 3600_000);
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** The REAL left-menu open path, minus the router: the navigator's
  *  `getByWorkerId` heal, then exactly what `loadProcess` does on arrival —
@@ -93,34 +105,37 @@ async function openFromLeftMenu(workerId: string): Promise<{ p: AgenticProcess; 
   const p = await AgenticProcess.getByWorkerId(workerId, 'claude');
   expect(p, `getByWorkerId(${workerId}) must heal the on-disk session`).toBeTruthy();
   await p!.activate();
-  const created = await Tab.newTab(`dock/${AgenticProcess.type}-${p!.id}`, {
+  await Tab.newTab(`dock/${AgenticProcess.type}-${p!.id}`, {
     targetType: AgenticProcess.type,
     targetId: p!.id,
   });
-  const tab = created.find((t) => t.target_id === p!.id);
+  // `new_tab` responds with the BODY-scoped list (projectless here) while the
+  // tab itself lands under the AP's project — resolve it via the global list.
+  const all = await Tab.listAll();
+  const tab = all.find((t) => t.target_id === p!.id);
   expect(tab, 'open must materialize a Tab').toBeTruthy();
   return { p: p!, tab: tab! };
 }
 
-type HookResult = ReturnType<typeof useChatHistory>;
+type Rendered = ReturnType<typeof renderChatHistory>;
+
+function renderChatHistory() {
+  return renderHook(() => useChatHistory({ scope: allScope(), search: '' }, 50, STABILITY_MS));
+}
 
 /** Flatten buckets (bucketize preserves the global sort) → our fixtures only. */
-function fixtureOrder(r: HookResult): string[] {
-  return r.buckets
+function fixtureOrder(rendered: Rendered): string[] {
+  return rendered.result.current.buckets
     .flatMap((b) => b.entries)
     .filter((e) => FIXTURES.has(e.worker_id))
     .map((e) => e.worker_id);
 }
 
-function renderChatHistory() {
-  return renderHook(() => useChatHistory({ scope: allScope(), search: '' }));
-}
-
-async function settled(rendered: ReturnType<typeof renderChatHistory>): Promise<void> {
+async function settled(rendered: Rendered): Promise<void> {
   await waitFor(
     () => {
       expect(rendered.result.current.isLoading).toBe(false);
-      expect(fixtureOrder(rendered.result.current)).toHaveLength(3);
+      expect(fixtureOrder(rendered)).toHaveLength(3);
     },
     { timeout: 8000 },
   );
@@ -140,13 +155,22 @@ describe('useChatHistory — open/close recency + highlight linkage matrix', () 
     for (const tab of openedTabs) {
       await Tab.closeById(tab.id).catch(() => {});
     }
+    // The heal adopts the fixture cwd into a minted Project — remove it (the
+    // reactSetup sweep only covers agentic_process).
+    try {
+      const proj = await Project.getProjectByPath(FIXTURE_CWD);
+      if (proj) await proj.delete();
+    } catch {
+      /* best-effort */
+    }
     fs.rmSync(FIXTURE_DIR, { recursive: true, force: true });
+    fs.rmSync(FIXTURE_CWD, { recursive: true, force: true });
   });
 
   it('create: fabricated sessions appear, recency-sorted by transcript time', async () => {
     const rendered = renderChatHistory();
     await settled(rendered);
-    expect(fixtureOrder(rendered.result.current)).toEqual([S1, S2, S3]);
+    expect(fixtureOrder(rendered)).toEqual([S1, S2, S3]);
     rendered.unmount();
   });
 
@@ -175,12 +199,9 @@ describe('useChatHistory — open/close recency + highlight linkage matrix', () 
     const rendered = renderChatHistory();
     await settled(rendered);
 
-    // S3 was opened (and its entity activate-stamped) in the previous case —
-    // its open stamp is newer than every fixture transcript. It must lead.
-    await waitFor(
-      () => expect(fixtureOrder(rendered.result.current)[0]).toBe(S3),
-      { timeout: 5000 },
-    );
+    // S3 was opened (activate-stamped) in the previous case; its open stamp
+    // beats every fixture transcript by hours (≫ the stability window).
+    await waitFor(() => expect(fixtureOrder(rendered)[0]).toBe(S3), { timeout: 5000 });
     rendered.unmount();
   });
 
@@ -193,28 +214,61 @@ describe('useChatHistory — open/close recency + highlight linkage matrix', () 
     // backend row never carries last_active_at and tsOf() reads only the
     // transcript timestamp, so this fails even fresh.
     await rendered.result.current.refetch();
-    await waitFor(
-      () => expect(fixtureOrder(rendered.result.current)[0]).toBe(S3),
-      { timeout: 5000 },
-    );
+    await waitFor(() => expect(fixtureOrder(rendered)[0]).toBe(S3), { timeout: 5000 });
     rendered.unmount();
   });
 
-  it('close two: entries survive and order still reflects last-open recency', async () => {
-    // Open the remaining two (S1 then S2, strictly after S3's open) → open
-    // recency is now S2 > S1 > S3, all newer than any transcript timestamp.
-    const o1 = await openFromLeftMenu(S1);
-    const o2 = await openFromLeftMenu(S2);
-    openedTabs.push(o1.tab, o2.tab);
-
-    // Close two of the three tabs through the real strip action. Closing is
-    // not an activity signal: it must neither drop the entries nor reorder.
-    await Tab.closeById(o2.tab.id);
-    await Tab.closeById(o1.tab.id);
-
+  it('open ×2 honoring the stability window: under-window open must not overtake', async () => {
+    // The stability window is about a LIVE list not shuffling under the user:
+    // keep the hook MOUNTED across the opens, exactly like the real left menu.
     const rendered = renderChatHistory();
     await settled(rendered);
-    expect(fixtureOrder(rendered.result.current)).toEqual([S2, S1, S3]);
+
+    // Open S2 well OVER the window after everything so far (S2 must lead),
+    // then S1 back-to-back — UNDER the window after S2 (anti-flicker: S1 must
+    // NOT jump over S2, but is over-window vs S3 so it outranks S3).
+    await sleep(OVER_WINDOW_MS);
+    const o2 = await openFromLeftMenu(S2);
+    // Stability is relative to the last RENDERED order — let the S2 open land
+    // on screen (as it would between two real clicks) before opening S1.
+    await waitFor(() => expect(fixtureOrder(rendered)[0]).toBe(S2), { timeout: 5000 });
+    const o1 = await openFromLeftMenu(S1);
+    openedTabs.push(o2.tab, o1.tab);
+
+    // Precondition, not behavior: the two real activate stamps must have
+    // landed inside the window, or the scenario didn't happen as designed.
+    const stampOf = (id: string) =>
+      Number(AgenticProcess.getByIdFromCache<AgenticProcess>(id)?.last_active_at ?? NaN);
+    await waitFor(
+      () => {
+        const delta = Math.abs(stampOf(o1.p.id) - stampOf(o2.p.id));
+        expect(Number.isFinite(delta)).toBe(true); // both stamps arrived
+        expect(delta).toBeLessThan(STABILITY_MS);
+      },
+      { timeout: 3000 },
+    );
+
+    // Last-open recency with the stability window applied on the mounted list.
+    // Transcript order would be [S1, S2, S3].
+    await waitFor(() => expect(fixtureOrder(rendered)).toEqual([S2, S1, S3]), { timeout: 5000 });
+    rendered.unmount();
+  });
+
+  it('close two: entries survive and the order does not change', async () => {
+    // Depends on the opens above (tabs in `openedTabs`). Closing is not an
+    // activity signal: on the mounted list it must neither drop the entries
+    // nor reorder them.
+    expect(openedTabs.length).toBeGreaterThanOrEqual(2);
+    const rendered = renderChatHistory();
+    await settled(rendered);
+    const before = fixtureOrder(rendered);
+    expect(before).toHaveLength(3);
+
+    for (const tab of openedTabs.splice(1)) {
+      await Tab.closeById(tab.id);
+    }
+    await rendered.result.current.refetch();
+    expect(fixtureOrder(rendered)).toEqual(before);
     rendered.unmount();
   });
 });
