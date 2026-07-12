@@ -2,6 +2,7 @@ import { Tab } from '@sdk';
 import { DockPointer } from '@src/navigation/DockPointer';
 import {
   closeTabWithLifecycle,
+  excludeClosingTabs,
   getTabLifecycle,
   registerTabContentAdapter,
   resetTabLifecycleForTests,
@@ -9,6 +10,7 @@ import {
   setupTab,
   syncTabLifecycleWithTabs,
   TabLifecycleState,
+  type TabLifecycleEntry,
 } from '@src/tabs/tab-lifecycle';
 import { ViewType } from '@src/types/ViewType';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -166,7 +168,9 @@ describe('tab lifecycle registry', () => {
       },
     });
 
-    await expect(closeTabWithLifecycle(tab)).rejects.toThrow('cleanup failed');
+    // The CloseFailed lifecycle entry IS the failure channel — the promise
+    // resolves (empty) so no caller needs a catch.
+    await expect(closeTabWithLifecycle(tab)).resolves.toEqual([]);
 
     expect(getTabLifecycle(d.tabHash)?.state).toBe(TabLifecycleState.CloseFailed);
     expect(getTabLifecycle(d.tabHash)?.error).toBe('cleanup failed');
@@ -177,7 +181,7 @@ describe('tab lifecycle registry', () => {
     const tab = tabFor(d);
     vi.spyOn(Tab, 'closeById').mockRejectedValue(new Error('close failed'));
 
-    await expect(closeTabWithLifecycle(tab)).rejects.toThrow('close failed');
+    await expect(closeTabWithLifecycle(tab)).resolves.toEqual([]);
 
     expect(getTabLifecycle(d.tabHash)?.state).toBe(TabLifecycleState.CloseFailed);
     expect(getTabLifecycle(d.tabHash)?.error).toBe('close failed');
@@ -214,5 +218,33 @@ describe('tab lifecycle registry', () => {
     expect(materialize).not.toHaveBeenCalled();
     expect(setupContent).toHaveBeenCalledTimes(1);
     expect(getTabLifecycle(d.tabHash)).toBeNull();
+  });
+});
+
+describe('excludeClosingTabs', () => {
+  function entry(key: string, state: TabLifecycleState): [string, TabLifecycleEntry] {
+    return [key, { key, tabId: null, state, error: null, updatedAt: 0 }];
+  }
+
+  it('filters only Closing tabs; Opened/CloseFailed/absent stay', () => {
+    const dClosing = dock('5e11aaaa-aaaa-4aaa-8aaa-aaaaaaaaaa01');
+    const dOpened = dock('5e11aaaa-aaaa-4aaa-8aaa-aaaaaaaaaa02');
+    const dFailed = dock('5e11aaaa-aaaa-4aaa-8aaa-aaaaaaaaaa03');
+    const dAbsent = dock('5e11aaaa-aaaa-4aaa-8aaa-aaaaaaaaaa04');
+    const tabs = [tabFor(dClosing), tabFor(dOpened), tabFor(dFailed), tabFor(dAbsent)];
+    const lifecycles = new Map([
+      entry(dClosing.tabHash, TabLifecycleState.Closing),
+      entry(dOpened.tabHash, TabLifecycleState.Opened),
+      entry(dFailed.tabHash, TabLifecycleState.CloseFailed),
+    ]);
+
+    expect(excludeClosingTabs(tabs, lifecycles)).toEqual(tabs.slice(1));
+  });
+
+  it('falls back to tab.id as the key when there is no dock pointer', () => {
+    const tab = new Tab({ id: nextTabId(), pointer: '', name: 'Bare', visible: true });
+    const lifecycles = new Map([entry(tab.id, TabLifecycleState.Closing)]);
+
+    expect(excludeClosingTabs([tab], lifecycles)).toEqual([]);
   });
 });

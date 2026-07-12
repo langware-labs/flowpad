@@ -5,7 +5,7 @@ import { TabStrip, type TabStripItem } from '@src/components/tabs/TabStrip';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { refreshAllTabs, useAllTabs } from '@src/tabs/all-tabs-store';
-import { closeTabWithLifecycle } from '@src/tabs/tab-lifecycle';
+import { closeTabWithLifecycle, excludeClosingTabs, useTabLifecycles } from '@src/tabs/tab-lifecycle';
 import { useTabStripItems } from '@src/tabs/tab-row-item';
 import { tabKey } from '@src/tabs/useTabs';
 import { useLingui } from '@lingui/react/macro';
@@ -36,9 +36,16 @@ export function WorkspaceChildStrip({ displayTab, displayDock }: WorkspaceChildS
 
   // Children = the global list filtered to this display's tab (backend global
   // order preserved by filtering — no separate ordering).
+  const lifecycles = useTabLifecycles();
   const children = useMemo(
-    () => (displayTab ? allTabs.filter((tab) => tab.parent_tab_id === displayTab.id && tab.visible !== false) : []),
-    [allTabs, displayTab],
+    () =>
+      displayTab
+        ? excludeClosingTabs(
+            allTabs.filter((tab) => tab.parent_tab_id === displayTab.id && tab.visible !== false),
+            lifecycles,
+          )
+        : [],
+    [allTabs, displayTab, lifecycles],
   );
   // The child TABS only — the Display is NOT a tab (it renders as a fixed,
   // square header to the left of the strip). The strip starts after it.
