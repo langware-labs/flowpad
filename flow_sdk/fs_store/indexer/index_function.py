@@ -721,6 +721,21 @@ class FSIndexer:
                 is_path_under(incumbent_canon, root) for root in _dedup_root_canons
             )
 
+        def _root_relpath(canon: str) -> "tuple[str, str] | None":
+            """``(containing scan root, path relative to it)`` for a canonical
+            path, or None when it sits under no root. Two paths with the SAME
+            relpath under DIFFERENT roots are the same file in parallel checkouts
+            of one repo (``flowpad-oss/docs/x.md`` vs ``flowpad-base/docs/x.md``)
+            — a legitimately shared committed id, NOT a ``cp -r`` copy."""
+            from pathlib import PurePosixPath  # noqa: PLC0415
+            for root in _dedup_root_canons:
+                if is_path_under(canon, root):
+                    try:
+                        return root, str(PurePosixPath(canon).relative_to(root))
+                    except ValueError:
+                        continue
+            return None
+
         def _probe_chunk(
             items: list[tuple[FSRef, Any]],
         ) -> list[tuple[FSRef, Any, str, FSRecord, bool, str | None]]:
@@ -767,11 +782,28 @@ class FSIndexer:
                             and incumbent_canon != cur
                             and _incumbent_in_run_scope(incumbent_canon)
                         ):
+                            # An all-projects scan co-walks several checkouts of
+                            # one repo as roots; the SAME committed id then lives
+                            # at the SAME relpath under DIFFERENT roots. That is a
+                            # parallel checkout, NOT a ``cp -r`` copy — adopt it,
+                            # never re-key an authored committed id over its
+                            # git-tracked source (the 2026-07-12 mass re-mint the
+                            # run-scope guard alone didn't cover). A genuine intra-
+                            # tree copy stays under the same root (or a different
+                            # relpath) and still re-keys.
+                            cur_rr = _root_relpath(cur)
+                            inc_rr = _root_relpath(incumbent_canon)
+                            parallel_checkout = (
+                                cur_rr is not None
+                                and inc_rr is not None
+                                and cur_rr[0] != inc_rr[0]
+                                and cur_rr[1] == inc_rr[1]
+                            )
                             try:
                                 incumbent_present = Path(incumbent).exists()
                             except OSError:
                                 incumbent_present = False
-                            if incumbent_present:
+                            if incumbent_present and not parallel_checkout:
                                 new_id = mint_uuid()  # v4 for the copy
                                 write_capsule_id(info, ref._path, new_id)
                                 ref_id = new_id
