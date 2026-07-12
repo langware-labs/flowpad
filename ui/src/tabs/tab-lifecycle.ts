@@ -1,4 +1,4 @@
-import { Tab } from '@sdk';
+import { Tab, toplog } from '@sdk';
 import { useSyncExternalStore } from 'react';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { editorForType } from '@src/navigation/asset-doc-types';
@@ -133,7 +133,12 @@ function dockAddressesAsset(dock: DockPointer): boolean {
 }
 
 async function materializeTab(dock: DockPointer): Promise<{ tab: Tab | null; tabs: Tab[] }> {
+  const t0 = performance.now();
   const existing = await Tab.listAll();
+  toplog.log(
+    'process_load',
+    `materializeTab Tab.listAll took ${(performance.now() - t0).toFixed(1)}ms (${existing.length} tabs) dock=${dock.tabHash}`,
+  );
   const existingTab = findTabForDock(existing, dock);
   // A workspace surface (the vibe display) may have registered itself as the
   // parent for tabs materialized right now. A tab opened while that window is
@@ -156,6 +161,7 @@ async function materializeTab(dock: DockPointer): Promise<{ tab: Tab | null; tab
     return { tab: existingTab, tabs: existing };
   }
 
+  toplog.log('process_load', `materializeTab cache-miss → new_tab round trip dock=${dock.tabHash}`);
   // Create-or-resolve the dock's tab. `getFromDockPointer` → `new_tab` returns
   // the PROJECT-SCOPED list ({that project} + projectless), which must NEVER be
   // adopted into the GLOBAL all-tabs store (the caller applies `tabs` via

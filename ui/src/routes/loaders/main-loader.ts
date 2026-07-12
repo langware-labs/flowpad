@@ -25,7 +25,7 @@ import { redirect, type LoaderFunctionArgs as LoaderArgs } from 'react-router';
 import { getBrokenViewUrl, loadFlowFromParams } from './loaders';
 import { loadProject } from './load-project';
 import { describeProcessStartError } from './load-process';
-import { markPerfT0, perfLog } from './_perf';
+import { markPerfT0, perfLog, perfTime } from './_perf';
 import { loadDockPointer } from './load-dock-pointer';
 
 // Re-export kept for existing consumers (unit tests import from here).
@@ -95,7 +95,8 @@ export async function loadAgentApp(args: LoaderArgs) {
   // in `ts_sdk/src/main.ts`), so this is effectively `await
   // dataManager.schemasReady` — zero work on the warm path, full
   // serialisation on the cold path.
-  await initSdk(params);
+  // Cold path = full bootstrap; warm path resolves the memoised promise (~0ms).
+  await perfTime(`initSdk (${wasColdInit ? 'cold bootstrap' : 'warm'})`, () => initSdk(params));
   t.time('initSdk');
 
   // Check if service is unavailable - throw error so ErrorBoundary catches it.
