@@ -645,6 +645,7 @@ msgstr "Active Filters"
 msgid "Active log: {0}"
 msgstr "Active log: {0}"
 
+#: src/components/open-project-component/open-project-component.tsx
 #: src/components/terminal/ProjectsCounterChip.tsx
 msgid "Active projects"
 msgstr "Active projects"
@@ -8405,7 +8406,7 @@ msgstr "Open process"
 #: src/components/project-setup-screen/project-setup-screen.tsx
 #: src/components/project-sidebar/ProjectSidebar.tsx
 #: src/components/quick-access-sidebar/QuickAccessSideBar.tsx
-#: src/tabs/tab-row-item.tsx
+#: src/pages/flow-page/content-panel/unified-tab-strip.tsx
 msgid "Open Project"
 msgstr "Open Project"
 
@@ -9417,6 +9418,7 @@ msgstr "Recency Boost"
 msgid "Recency Factor (k)"
 msgstr "Recency Factor (k)"
 
+#: src/components/open-project-component/open-project-component.tsx
 #: src/pages/discover-page/discover-page.tsx
 msgid "Recent"
 msgstr "Recent"
