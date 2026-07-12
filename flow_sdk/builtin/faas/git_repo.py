@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import re
 import shlex
 from datetime import datetime
@@ -71,6 +72,11 @@ class GitFileDiff(_CamelModel):
 
 class GitFileContent(_CamelModel):
     content: str
+
+
+class GitAssetDiff(_CamelModel):
+    diff: str
+    files: list[GitStatusFile] = []
 
 
 class GitRevision(_CamelModel):
@@ -349,6 +355,18 @@ class GitRepo:
             diff, _ = await self._run_git("diff", "HEAD", "--", f"'{file_path}'")
         return GitFileDiff(diff=diff)
 
+    async def get_working_file(self, file_path: str) -> GitFileContent:
+        """Full file content from the working tree, relative to ``work_dir``."""
+        try:
+            root = os.path.realpath(self.work_dir)
+            full = os.path.realpath(os.path.join(root, file_path))
+            if full != root and not full.startswith(root + os.sep):
+                return GitFileContent(content="")
+            with open(full, "r", encoding="utf-8", errors="replace") as f:
+                return GitFileContent(content=f.read())
+        except OSError:
+            return GitFileContent(content="")
+
     # ------------------------------------------------------------------
     # Per-file revision history (scoped to a single asset file)
     # ------------------------------------------------------------------
@@ -374,6 +392,95 @@ class GitRepo:
         except Exception:  # noqa: BLE001 — scope resolution must never break the route
             logger.debug("scope-pathspec resolve failed; file-scoped", exc_info=True)
         return f"'{file_path}'", True
+
+    @staticmethod
+    def _status_lookup_path(path: str) -> str:
+        """Path used for scope matching, taking the new side of a rename."""
+        if " → " in path:
+            return path.split(" → ", 1)[1]
+        if " -> " in path:
+            return path.split(" -> ", 1)[1]
+        return path
+
+    async def _workdir_prefix(self) -> str:
+        """Repo-root-relative prefix for ``work_dir`` with a trailing slash."""
+        prefix, rc = await self._run_git("rev-parse", "--show-prefix")
+        if rc != 0:
+            return ""
+        return prefix.strip().replace("\\", "/")
+
+    @staticmethod
+    def _strip_prefix(path: str, prefix: str) -> str | None:
+        """Strip a repo-root prefix from a status path. None means outside scope."""
+        if not prefix:
+            return path
+        if path == prefix.rstrip("/"):
+            return ""
+        if path.startswith(prefix):
+            return path[len(prefix):]
+        return None
+
+    @classmethod
+    def _status_file_relative_to_workdir(cls, file: GitStatusFile, prefix: str) -> GitStatusFile | None:
+        """Convert a porcelain status path from repo-root to workdir-relative."""
+        if " → " in file.path:
+            old, new = file.path.split(" → ", 1)
+            old_rel = cls._strip_prefix(old, prefix)
+            new_rel = cls._strip_prefix(new, prefix)
+            if old_rel is None and new_rel is None:
+                return None
+            display = f"{old_rel if old_rel is not None else old} → {new_rel if new_rel is not None else new}"
+        else:
+            rel = cls._strip_prefix(file.path, prefix)
+            if rel is None:
+                return None
+            display = rel
+        return GitStatusFile(
+            status=file.status,
+            path=display,
+            staged=file.staged,
+            insertions=file.insertions,
+            deletions=file.deletions,
+        )
+
+    async def get_asset_diff(self, file_path: str) -> GitAssetDiff:
+        """Unified working-tree diff for an asset.
+
+        Single-file assets diff just that file. Folder-backed assets diff the
+        whole asset folder and include every changed file in that folder.
+        """
+        pathspec, _ = self._scope_pathspec(file_path)
+        status = await self.get_status()
+        prefix = await self._workdir_prefix()
+        files = [
+            rel for f in status.files
+            if (rel := self._status_file_relative_to_workdir(f, prefix)) is not None
+        ]
+        if pathspec != "'.'":
+            files = [
+                f for f in files
+                if self._status_lookup_path(f.path).strip("./") == file_path.strip("./")
+            ]
+
+        if await self.has_commit():
+            diff, _ = await self._run_git("diff", "HEAD", "--", pathspec)
+        else:
+            diff = ""
+
+        # ``git diff HEAD`` omits untracked files. Append a no-index diff for
+        # each one so the asset-level diff is complete.
+        additions: list[str] = []
+        for f in files:
+            if f.status != "?":
+                continue
+            rel = self._status_lookup_path(f.path)
+            d, _ = await self._run_git("diff", "--no-index", "/dev/null", f"'{rel}'")
+            if d:
+                additions.append(d)
+        if additions:
+            diff = "\n".join(part for part in [diff, *additions] if part)
+
+        return GitAssetDiff(diff=diff, files=files)
 
     async def get_file_revisions(self, file_path: str) -> GitRevisionList:
         """Commit history for an asset, newest first — a single file, or the whole
@@ -707,6 +814,11 @@ class GitRepo:
             if not file_path:
                 return ApiFailResponse(message="Missing required query parameter: file", status_code=400)
             return ApiSuccessResponse(data=(await self.get_file_diff(file_path, status)).model_dump(by_alias=True))
+        if sub == "asset-diff":
+            file_path = params.get("file", "")
+            if not file_path:
+                return ApiFailResponse(message="Missing required query parameter: file", status_code=400)
+            return ApiSuccessResponse(data=(await self.get_asset_diff(file_path)).model_dump(by_alias=True))
         if sub == "file-revisions":
             file_path = params.get("file", "")
             if not file_path:
@@ -724,6 +836,11 @@ class GitRepo:
             if not file_path or not commit_hash:
                 return ApiFailResponse(message="Missing required query parameter: file and hash", status_code=400)
             return ApiSuccessResponse(data=(await self.get_file_at(file_path, commit_hash)).model_dump(by_alias=True))
+        if sub == "working-file":
+            file_path = params.get("file", "")
+            if not file_path:
+                return ApiFailResponse(message="Missing required query parameter: file", status_code=400)
+            return ApiSuccessResponse(data=(await self.get_working_file(file_path)).model_dump(by_alias=True))
         if sub == "restore-file":
             if method.upper() != "POST":
                 return ApiFailResponse(message="git-ops/restore-file requires POST", status_code=405)

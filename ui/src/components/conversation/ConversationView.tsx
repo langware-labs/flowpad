@@ -25,6 +25,7 @@ import { useLocalUser } from './useLocalUser';
 import { useMembers } from '@src/hooks/use-members';
 import { buildConversationItems, ConversationItemKind, shouldShowSoloSendNotice } from './conversation-items';
 import { resolveAttachmentProjectId } from './conversation-context-aggregation';
+import { useConversationMessageAttachments } from './useMessageAttachments';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useProcessesForTarget } from '@src/components/entity-execution-panel/hooks/useProcessesForTarget';
@@ -331,6 +332,9 @@ export function ConversationView({
   const isCommunityConversation = conversation?.kind === ConversationKind.COMMUNITY;
   const { project: currentProject } = useProject();
   const attachmentProjectId = resolveAttachmentProjectId(task, conversation, currentProject?.id);
+  // Staged bundle attachments (one query for the whole panel). Drives the
+  // dashed staged chips + review modal in each bubble.
+  const { byMessage: attachmentsByMessage } = useConversationMessageAttachments(conversationId);
 
   // The conversation owner (created_by == the local cloud user) may delete ANY
   // message; everyone may delete their own. The per-bubble sender check is done
@@ -462,8 +466,8 @@ export function ConversationView({
                   onDeleteMessage={handleDeleteMessage}
                   conversationStatusVisible={conversationStatusVisible}
                   isCommunity={isCommunityConversation}
-                  ensureProjectMapped={ensureMapped}
                   attachmentProjectId={attachmentProjectId}
+                  messageAttachments={attachmentsByMessage.get(id)}
                 />
               );
             }

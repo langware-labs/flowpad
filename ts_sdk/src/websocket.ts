@@ -9,6 +9,7 @@ import {
   LocalConnectionStatus,
   makeConnectionSlot,
 } from './services/cloud_status';
+import { toplog } from './services/toplog';
 import { defineGlobal } from './utils/globals';
 
 type MessageType =
@@ -30,7 +31,8 @@ type MessageType =
   | 'privacy_mode_msg'
   | 'toplog_state_msg'
   | 'ui_command'
-  | 'recovered_msg';
+  | 'recovered_msg'
+  | 'broadcast';
 
 
 interface BaseMessage {
@@ -227,6 +229,16 @@ export interface FlowDataMessage extends EntityMessage {
   };
 }
 
+/** Server-wide fan-out ping (``flow_sdk/server/routes/websocket.py broadcast()``):
+ *  no target entity, just a ``broadcast_type`` discriminator (the shared
+ *  ``BroadcastMessage`` model in ``flow_sdk/api/messages.py``; currently
+ *  ``tabs_changed``). Optional because the client→server relay fan-out sends a
+ *  bare ``broadcast`` with no discriminator. */
+export interface BroadcastMessage extends BaseMessage {
+  message_type: 'broadcast';
+  broadcast_type?: string;
+}
+
 export type DataOpType = 'create' | 'update' | 'delete';
 
 /** Enum form of {@link DataOpType}. Use these members instead of bare
@@ -248,6 +260,7 @@ export class ConnectionManager extends EventEmitter {
   private static instance: ConnectionManager;
   private socket: WebSocket | null = null;
   private pendingRequests: Map<string, PendingRequest<unknown>> = new Map();
+  private warnedMessageTypes = new Set<string>();
   private requestTimeoutMs: number = 30000;
 
   // Reconnect state
@@ -550,6 +563,23 @@ export class ConnectionManager extends EventEmitter {
     if (data.message_type === 'recovered_msg') {
       return this.onRecoveredMessage(data);
     }
+    if (data.message_type === 'broadcast') {
+      return this.onBroadcastMessage(data as BroadcastMessage);
+    }
+    // A message_type with no case above is silently invisible to every consumer
+    // (that's how the `broadcast` drop hid the stale-tab-strip bug) — surface it
+    // once per type. Deliberately-ignored types get an explicit `return null`
+    // case instead (see entity_msg).
+    if (!this.warnedMessageTypes.has(data.message_type)) {
+      this.warnedMessageTypes.add(data.message_type);
+      console.warn('[ConnectionManager] Unhandled message_type:', data.message_type);
+    }
+  }
+
+  /** Server-wide fan-out ping — re-emitted as ``on_broadcast`` for stores that
+   *  refetch on it (e.g. the tab strip on ``broadcast_type === 'tabs_changed'``). */
+  onBroadcastMessage(data: BroadcastMessage) {
+    this.emit('on_broadcast', data);
   }
 
   /** Distinct PTY-recovery signal: the backend watchdog respawned a session's
@@ -699,8 +729,14 @@ export class ConnectionManager extends EventEmitter {
       }
 
       const timeoutMs = options?.timeout ?? this.requestTimeoutMs;
+      const tSent = performance.now();
       const timeout = setTimeout(() => {
         this.pendingRequests.delete(message.message_id);
+        toplog.log(
+          'process_load',
+          `WS request TIMEOUT after ${(performance.now() - tSent).toFixed(0)}ms (budget ${timeoutMs}ms) ` +
+            `${message.method} action=${message.action ?? ''} target=${message.target_typeid?.type ?? ''}-${(message.target_typeid?.id ?? '').slice(0, 8)} pending=${this.pendingRequests.size}`,
+        );
         reject(new Error(`Request timeout for message_id: ${message.message_id}`));
       }, timeoutMs);
 

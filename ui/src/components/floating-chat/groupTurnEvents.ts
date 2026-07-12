@@ -1,4 +1,5 @@
 import { FlowData, FlowElementTypes } from '@sdk';
+import { useMemo, useRef } from 'react';
 
 /**
  * Groups a flat FlowData stream into a sequence of "turn groups" suitable for
@@ -51,32 +52,127 @@ export function splitLiveGroup(
   return { inlineGroups: groups, liveEvents: NO_LIVE_EVENTS };
 }
 
-export function groupTurnEvents(items: FlowData[]): TurnGroup[] {
-  const out: TurnGroup[] = [];
-  let buffer: FlowData[] = [];
+export function groupTurnEvents(items: readonly FlowData[]): TurnGroup[] {
+  return createTurnGrouper().next(items);
+}
 
-  const flushBuffer = () => {
-    if (buffer.length > 0) {
-      out.push({ kind: 'dense', events: buffer, index: out.length });
-      buffer = [];
-    }
+/**
+ * Incremental, identity-stable turn grouping.
+ *
+ * A live stream appends one frame at a time, and every appended frame used to
+ * re-run `groupTurnEvents` over the WHOLE array AND hand every consumer brand
+ * new group objects — so React re-rendered every turn row on every frame
+ * (QA issue D10: 1,000+ frame histories made each frame an O(n) regroup plus
+ * a full-list re-render). The grouper keeps the last input/output: when the
+ * new items array is an append-only extension of the previous one (checked by
+ * cheap reference-equality over the shared prefix), only the appended items
+ * are consumed and every COMMITTED group keeps its object identity — so
+ * memoized rows skip re-rendering. Only the trailing dense group (still
+ * growing until the next message arrives) gets a fresh identity per call.
+ *
+ * Any non-append change (clear + force reload, truncation, in-place
+ * replacement) falls back to a full rebuild — correctness never depends on
+ * the append-only fast path.
+ */
+export interface TurnGrouper {
+  next(items: readonly FlowData[]): TurnGroup[];
+}
+
+export function createTurnGrouper(): TurnGrouper {
+  let prevItems: readonly FlowData[] = [];
+  let lastOutput: TurnGroup[] = [];
+  /** Frozen groups: message groups, and dense groups sealed by a later message. */
+  let committed: TurnGroup[] = [];
+  /** Trailing dense run, not yet sealed — rebuilt with fresh identity per call. */
+  let tail: FlowData[] = [];
+  let skillCallIds = new Set<string>();
+
+  const reset = () => {
+    committed = [];
+    tail = [];
+    skillCallIds = new Set<string>();
   };
 
-  for (const item of items) {
+  const consume = (item: FlowData) => {
     const t: string = item.elementType;
     if (MESSAGE_TYPES.has(t)) {
-      flushBuffer();
-      out.push({ kind: 'message', flowData: item, index: out.length });
+      if (tail.length > 0) {
+        committed.push({ kind: 'dense', events: tail, index: committed.length });
+        tail = [];
+      }
+      committed.push({ kind: 'message', flowData: item, index: committed.length });
     } else if (DENSE_TYPES.has(t)) {
-      buffer.push(item);
+      // A `Skill` tool use is already represented in the chat by the skill's
+      // meta-injection chip (MetaMessageChip, "Using skill: <name>") — the
+      // injected body arrives as an isMeta USER_MESSAGE right after the call.
+      // Keeping the TOOL_CALL/TOOL_RESULT in the dense stream too rendered
+      // duplicate "Using Skill" chips around that one, so drop the pair here.
+      if (isSkillToolEvent(item, skillCallIds)) return;
+      tail.push(item);
     }
     // Anything else (END, RESULT, CHECKPOINT, …) is intentionally dropped from
     // the visible chat — the dense surface is for "things the agent did", not
     // every internal stream marker.
-  }
-  flushBuffer();
+  };
 
-  return out;
+  const isAppendOnlyExtension = (items: readonly FlowData[]): boolean => {
+    if (items.length < prevItems.length) return false;
+    for (let i = 0; i < prevItems.length; i++) {
+      if (items[i] !== prevItems[i]) return false;
+    }
+    return true;
+  };
+
+  return {
+    next(items: readonly FlowData[]): TurnGroup[] {
+      let start: number;
+      if (isAppendOnlyExtension(items)) {
+        if (items.length === prevItems.length) return lastOutput;
+        start = prevItems.length;
+      } else {
+        reset();
+        start = 0;
+      }
+      for (let i = start; i < items.length; i++) consume(items[i]);
+      prevItems = items;
+      lastOutput =
+        tail.length > 0
+          ? [...committed, { kind: 'dense', events: [...tail], index: committed.length }]
+          : [...committed];
+      return lastOutput;
+    },
+  };
+}
+
+/**
+ * React binding for {@link createTurnGrouper}: one grouper per component
+ * instance, re-grouping (incrementally) only when the items snapshot changes.
+ * Committed groups keep referential identity across appends, so memoized row
+ * components skip re-rendering on every live frame.
+ */
+export function useTurnGroups(items: FlowData[]): TurnGroup[] {
+  const grouperRef = useRef<TurnGrouper | null>(null);
+  if (grouperRef.current === null) grouperRef.current = createTurnGrouper();
+  return useMemo(() => grouperRef.current!.next(items), [items]);
+}
+
+/** The worker-side tool name Claude uses to load a skill. */
+const SKILL_TOOL_NAME = 'Skill';
+
+function isSkillToolEvent(item: FlowData, skillCallIds: Set<string>): boolean {
+  if (
+    item.elementType === FlowElementTypes.TOOL_CALL &&
+    item.attributes['tool-name'] === SKILL_TOOL_NAME
+  ) {
+    const id = getToolUseId(item);
+    if (id) skillCallIds.add(id);
+    return true;
+  }
+  if (item.elementType === FlowElementTypes.TOOL_RESULT) {
+    const id = getToolUseId(item);
+    return !!id && skillCallIds.has(id);
+  }
+  return false;
 }
 
 /**
@@ -102,6 +198,8 @@ export function getToolUseId(item: FlowData): string | null {
 export interface ToolPair {
   call: FlowData;
   result: FlowData | null;
+  /** The turn ended explicitly (for example, turn_aborted) without a result. */
+  terminated: boolean;
 }
 
 export function pairToolEvents(events: FlowData[]): {
@@ -122,7 +220,7 @@ export function pairToolEvents(events: FlowData[]): {
     const t = item.elementType;
     if (t === FlowElementTypes.TOOL_CALL) {
       const id = getToolUseId(item);
-      const pairIndex = pairs.push({ call: item, result: null }) - 1;
+      const pairIndex = pairs.push({ call: item, result: null, terminated: false }) - 1;
       if (id) callIndexById.set(id, pairIndex);
     } else if (t === FlowElementTypes.TOOL_RESULT) {
       const id = getToolUseId(item);
@@ -134,6 +232,22 @@ export function pairToolEvents(events: FlowData[]): {
       }
     } else {
       others.push(item);
+    }
+  }
+
+  // A turn is terminated when the backend says so semantically
+  // (`turn-terminated: "true"`, stamped on flowpad cancel markers AND on
+  // replayed vendor abort events), with the raw codex event subtype kept as a
+  // fallback for live/PTY streams that bypass the replay stamping path.
+  const turnTerminated = others.some(
+    (item) =>
+      item.elementType === FlowElementTypes.STATUS &&
+      (item.attributes['turn-terminated'] === 'true' ||
+        item.attributes.subtype === 'event_msg.turn_aborted'),
+  );
+  if (turnTerminated) {
+    for (const pair of pairs) {
+      if (pair.result === null) pair.terminated = true;
     }
   }
 

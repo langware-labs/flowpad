@@ -29,13 +29,19 @@ Public exports:
 
 from __future__ import annotations
 
+import asyncio
+import logging
 import os
+import re
 import shlex
+import shutil
 import sys
+import uuid
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, AsyncIterator, Protocol
 
+import psutil
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic.alias_generators import to_camel
 
@@ -49,6 +55,293 @@ if TYPE_CHECKING:
     from flow_sdk.builtin.agentic_process.events import AgenticProcessEventName
     from flow_sdk.builtin.worker_status import WorkerStatus
     from flow_sdk.responses.response import ApiResponse
+
+
+# Per-line StreamReader limit shared by every JSONL CLI transport. Asyncio's
+# default 64 KiB limit is too small for events that wrap large tool results in
+# one physical line (browser snapshots, fetched HTML, large diffs, ...). 4 MiB
+# gives bounded headroom and matches the limit historically used by Claude.
+STREAM_JSON_LINE_LIMIT_BYTES = 4 * 1024 * 1024
+CLI_RUN_ID_ENV_VAR = "FLOWPAD_CLI_RUN_ID"
+
+logger = logging.getLogger(__name__)
+
+_PROCESS_GONE = (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess)
+_PROCESS_LOOKUP_ERRORS = (*_PROCESS_GONE, OSError)
+_FORCE_KILL_WAIT_SECONDS = 2.0
+
+
+def stamp_cli_run_id(env: dict[str, str]) -> str:
+    """Tag one CLI launch so descendants remain identifiable after reparenting."""
+    run_id = str(uuid.uuid4())
+    env[CLI_RUN_ID_ENV_VAR] = run_id
+    return run_id
+
+
+def _process_descendants(pid: int) -> list[psutil.Process]:
+    """Snapshot descendants before their CLI wrapper can be reaped."""
+    try:
+        return psutil.Process(pid).children(recursive=True)
+    except _PROCESS_GONE:
+        return []
+
+
+def _processes_for_cli_run(run_id: str | None, *, exclude: set[int]) -> list[psutil.Process]:
+    """Find a launch's descendants even after their direct wrapper has exited."""
+    if not run_id:
+        return []
+    matches: list[psutil.Process] = []
+    for process in psutil.process_iter(["pid"]):
+        if process.info["pid"] in exclude:
+            continue
+        try:
+            if process.environ().get(CLI_RUN_ID_ENV_VAR) == run_id:
+                matches.append(process)
+        except _PROCESS_LOOKUP_ERRORS:
+            pass
+    return matches
+
+
+async def _processes_for_cli_run_async(
+    run_id: str | None,
+    *,
+    exclude: set[int],
+) -> list[psutil.Process]:
+    # environ() can block on OS process inspection, especially on Windows.
+    return await asyncio.to_thread(_processes_for_cli_run, run_id, exclude=exclude)
+
+
+def _merge_processes(*groups: list[psutil.Process]) -> list[psutil.Process]:
+    merged: list[psutil.Process] = []
+    seen: set[psutil.Process] = set()
+    for group in groups:
+        for process in group:
+            if process in seen:
+                continue
+            seen.add(process)
+            merged.append(process)
+    return merged
+
+
+def _signal_processes(processes: list[psutil.Process], *, force: bool) -> None:
+    # psutil returns descendants parent-first. Signal leaves first so an
+    # intermediate wrapper cannot strand its tool/native child on exit.
+    for process in reversed(processes):
+        try:
+            process.kill() if force else process.terminate()
+        except _PROCESS_GONE:
+            pass
+
+
+async def _wait_for_asyncio_process_tree(
+    process: asyncio.subprocess.Process,
+    descendants: list[psutil.Process],
+    deadline: float,
+) -> list[psutil.Process]:
+    """Wait under one deadline; asyncio owns the root, psutil the descendants."""
+    if process.returncode is None:
+        remaining = max(0.0, deadline - asyncio.get_running_loop().time())
+        try:
+            await asyncio.wait_for(process.wait(), timeout=remaining)
+        except asyncio.TimeoutError:
+            pass
+
+    remaining = max(0.0, deadline - asyncio.get_running_loop().time())
+    if descendants:
+        _, descendants = await asyncio.to_thread(
+            psutil.wait_procs,
+            descendants,
+            remaining,
+        )
+    return descendants
+
+
+async def _refresh_descendants(
+    process: asyncio.subprocess.Process,
+    descendants: list[psutil.Process],
+    run_id: str | None,
+    *,
+    sweep_run_marker: bool,
+) -> list[psutil.Process]:
+    refreshed = _process_descendants(process.pid) if process.returncode is None else []
+    for descendant in descendants:
+        try:
+            refreshed.extend(descendant.children(recursive=True))
+        except _PROCESS_GONE:
+            pass
+    if sweep_run_marker or process.returncode not in (None, 0):
+        refreshed.extend(
+            await _processes_for_cli_run_async(
+                run_id,
+                exclude={os.getpid(), process.pid},
+            )
+        )
+    return _merge_processes(descendants, refreshed)
+
+
+async def _kill_asyncio_process_tree(
+    process: asyncio.subprocess.Process,
+    descendants: list[psutil.Process],
+    run_id: str | None,
+    *,
+    sweep_run_marker: bool,
+) -> None:
+    descendants = await _refresh_descendants(
+        process,
+        descendants,
+        run_id,
+        sweep_run_marker=sweep_run_marker,
+    )
+    if process.returncode is None or descendants:
+        logger.warning(
+            "CLI process tree did not exit in grace; force-killing (pid=%s)",
+            process.pid,
+        )
+        _signal_processes(descendants, force=True)
+        if process.returncode is None:
+            try:
+                process.kill()
+            except ProcessLookupError:
+                pass
+
+    if process.returncode is None:
+        try:
+            await asyncio.wait_for(process.wait(), timeout=_FORCE_KILL_WAIT_SECONDS)
+        except asyncio.TimeoutError:
+            logger.error("CLI wrapper did not exit after force-kill (pid=%s)", process.pid)
+
+    survivors: list[psutil.Process] = []
+    if descendants:
+        _, survivors = await asyncio.to_thread(
+            psutil.wait_procs,
+            descendants,
+            _FORCE_KILL_WAIT_SECONDS,
+        )
+
+    # Close the fork-after-snapshot race for abnormal exits. Clean turns do not
+    # sweep the marker: background servers intentionally launched by an agent
+    # must survive a successful CLI wrapper exit.
+    if sweep_run_marker or process.returncode not in (None, 0):
+        late_descendants = await _processes_for_cli_run_async(
+            run_id,
+            exclude={os.getpid(), process.pid},
+        )
+        late_targets = _merge_processes(survivors, late_descendants)
+        if late_targets:
+            _signal_processes(late_targets, force=True)
+            _, late_survivors = await asyncio.to_thread(
+                psutil.wait_procs,
+                late_targets,
+                _FORCE_KILL_WAIT_SECONDS,
+            )
+            survivors = late_survivors
+
+    if survivors:
+        logger.error(
+            "%d CLI descendant process(es) survived force-kill (pid=%s)",
+            len(survivors),
+            process.pid,
+        )
+
+
+async def terminate_asyncio_process_tree(
+    process: asyncio.subprocess.Process,
+    grace_seconds: float,
+    *,
+    force: bool = False,
+    run_id: str | None = None,
+) -> None:
+    """Terminate an asyncio child and all descendants without racing waitpid.
+
+    npm-installed CLIs are wrappers around native children. Killing only the
+    wrapper can orphan the real worker, so descendants are captured before any
+    signal. Asyncio exclusively waits on the direct child; psutil waits only on
+    descendants. ``force=True`` skips SIGTERM because a passive grace already
+    expired at the caller.
+    """
+    # Never resolve a completed asyncio child's bare PID through psutil: the OS
+    # may already have reused it. The per-launch marker is safe to sweep because
+    # it is unique and inherited by native/tool descendants.
+    descendants = _process_descendants(process.pid) if process.returncode is None else []
+    descendants = _merge_processes(
+        descendants,
+        await _processes_for_cli_run_async(
+            run_id,
+            exclude={os.getpid(), process.pid},
+        ),
+    )
+    if process.returncode is not None and not descendants:
+        return
+    if not force:
+        _signal_processes(descendants, force=False)
+        if process.returncode is None:
+            try:
+                process.terminate()
+            except ProcessLookupError:
+                pass
+        deadline = asyncio.get_running_loop().time() + max(grace_seconds, 0.0)
+        descendants = await _wait_for_asyncio_process_tree(process, descendants, deadline)
+
+    # Always do the final marker sweep. A wrapper may handle SIGTERM, exit 0,
+    # and reparent a native child that was not in the original tree snapshot.
+    await _kill_asyncio_process_tree(
+        process,
+        descendants,
+        run_id,
+        sweep_run_marker=True,
+    )
+
+
+async def wait_for_asyncio_process_or_kill_tree(
+    process: asyncio.subprocess.Process,
+    grace_seconds: float,
+    *,
+    run_id: str | None = None,
+) -> None:
+    """Await a wrapper; clean exits preserve background tools, failures reap them."""
+    if process.returncode == 0:
+        return
+    descendants = _process_descendants(process.pid) if process.returncode is None else []
+    deadline = asyncio.get_running_loop().time() + max(grace_seconds, 0.0)
+    if process.returncode is None:
+        remaining = max(0.0, deadline - asyncio.get_running_loop().time())
+        try:
+            await asyncio.wait_for(process.wait(), timeout=remaining)
+        except asyncio.TimeoutError:
+            pass
+
+    if process.returncode == 0:
+        return
+    if process.returncode is not None:
+        descendants = _merge_processes(
+            descendants,
+            await _processes_for_cli_run_async(
+                run_id,
+                exclude={os.getpid(), process.pid},
+            ),
+        )
+    if process.returncode is None or descendants:
+        await _kill_asyncio_process_tree(
+            process,
+            descendants,
+            run_id,
+            sweep_run_marker=False,
+        )
+
+
+class WorkerSpawnError(RuntimeError):
+    """A worker turn cannot spawn its CLI subprocess.
+
+    Raised by the stream workers' ``_build_spawn`` when the vendor CLI is not
+    installed (no harness capability discovered) or its executable cannot be
+    resolved on the spawn PATH. Turn runners route it into the standard
+    failure path — ``status=FAILED`` + the ``start_failure`` latch — via
+    :func:`latch_spawn_failure` instead of leaving the process spinning.
+    """
+
+    def __init__(self, worker_type: str, message: str) -> None:
+        self.worker_type = worker_type
+        super().__init__(message)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -92,6 +385,58 @@ def apply_worker_env(env: dict[str, str], process: "AgenticProcess") -> dict[str
     pinned = flow_cli_env_path(env.get("PATH"))
     if pinned:
         env["PATH"] = pinned
+    return env
+
+
+async def apply_worker_secret_env(env: dict[str, str], process: "AgenticProcess") -> dict[str, str]:
+    """Resolve project SecretOrigin pointers into this transient worker env.
+
+    This must only be called on spawn-time env dicts. It must not mutate
+    WorkerCLIOptions.env_vars because those are persisted and rendered.
+    """
+    from flow_sdk.builtin.project import Project  # noqa: PLC0415
+    from flow_sdk.builtin.secret_origin import SecretOrigin  # noqa: PLC0415
+    from flow_sdk.builtin.secret_origin_driver import get_secret_origin_driver  # noqa: PLC0415
+
+    project = None
+    project_id = getattr(process, "project_id", None)
+    if project_id:
+        project = await Project.get_by_id(project_id)
+    if project is None:
+        try:
+            project = await Project.get_ancestor(process.typeid)
+        except Exception:
+            project = None
+    if project is None:
+        return env
+
+    seen: set[str] = set()
+    for bucket in ("private", "shared"):
+        for tid in project.context_of_type("secret_origin", bucket=bucket):
+            if str(tid) in seen:
+                continue
+            seen.add(str(tid))
+            entry = project.get_context_entry_data(tid) or {}
+            env_var = (entry.get("env_var") or "").strip()
+            if env_var and env_var in env:
+                continue
+            secret = await SecretOrigin.get_by_id(tid.id)
+            if secret is None:
+                continue
+            env_var = env_var or (secret.env_var or "").strip()
+            if not env_var or env_var in env:
+                continue
+            try:
+                resolved = await get_secret_origin_driver(secret.locator.kind).resolve(
+                    secret.locator,
+                    project=project,
+                    process=process,
+                    secret_origin=secret,
+                )
+            except Exception:
+                continue
+            if resolved is not None:
+                env.setdefault(env_var, resolved.get_secret_value())
     return env
 
 
@@ -243,12 +588,11 @@ class WorkerCLIOptions:
     for PTY injection. Subclasses override ``_build_worker_args()`` to provide
     the actual executable and its flags.
 
-    Model **tier** resolution lives here, once: assigning ``self.model`` runs it
-    through this class's ``MODEL_TIERS`` map, so a portable size (``sm``/``md``/
-    ``lg``) becomes the worker's concrete model the moment it's set — no matter
-    which path built the options (PTY ``cli_options`` or headless stream worker).
-    A subclass declares its own ``MODEL_TIERS`` (claude does; codex/copilot leave
-    it empty → tiers pass through). A concrete model name is always passed through.
+    Model **tier** resolution lives here, once: ``self.model`` keeps the raw
+    persisted intent (``sm``/``md``/``lg`` or a concrete model), while
+    ``self.resolved_model`` applies this class's ``MODEL_TIERS`` map for the
+    worker command. A subclass declares its own ``MODEL_TIERS``. A concrete
+    model name is always passed through.
     """
 
     # Per-worker tier→model map; empty in the base (pass-through). See
@@ -291,12 +635,15 @@ class WorkerCLIOptions:
 
     @model.setter
     def model(self, value: str | None) -> None:
-        # Resolve the tier as it's assigned — the single seam every options
-        # builder funnels through. ``resolve_model_tier`` is pass-through for a
-        # concrete model or an unmapped tier.
+        self._model = value
+
+    @property
+    def resolved_model(self) -> str | None:
+        # Resolve only for command emission. ``model`` itself stays the raw
+        # AP/cli_config value so the UI can reflect and save portable tiers.
         from flow_sdk.builtin.agentic_process.model_tiers import resolve_model_tier
 
-        self._model = resolve_model_tier(self.MODEL_TIERS, value)
+        return resolve_model_tier(self.MODEL_TIERS, self.model)
 
     def add_env(self, key: str, value: str) -> None:
         self.env_vars[key] = value
@@ -479,17 +826,13 @@ def worker_capability_kind(worker_type: str) -> str:
     return f"harness.{worker_type}.cli"
 
 
-def worker_path_env(worker_type: str) -> dict[str, str] | None:
-    """PATH override for spawning this worker, from the discovered capability.
+def worker_bin_folder(worker_type: str) -> str | None:
+    """The discovered bin FOLDER of this worker's CLI, or ``None`` ⇔ not installed.
 
     The harness capability's value (RecordType.FOLDER, an FSRef dict) is the
-    CLI's bin directory as a standard terminal would resolve it. Prepending it
-    to the spawn PATH makes both argv[0] and the CLI's ``#!/usr/bin/env node``
-    shebang resolve regardless of how the backend process was launched.
-
-    Returns ``{"PATH": "<folder>:<current>"}`` when the capability has a
-    value; ``None`` ⇔ no value discovered (CLI not installed) — callers fail
-    fast with a clear error instead of spawning into FileNotFoundError.
+    CLI's bin directory as a standard terminal would resolve it — recorded by
+    capability discovery even when the backend's own service PATH (e.g. a
+    desktop launchd/named-instance environment) does not contain it.
     """
     from flow_sdk.core.capabilities.discovery import get_capability_value
 
@@ -497,10 +840,108 @@ def worker_path_env(worker_type: str) -> dict[str, str] | None:
     if discovered is None or not isinstance(discovered.value, dict):
         return None
     folder = discovered.value.get("path")
-    if not folder:
+    return str(folder) if folder else None
+
+
+def worker_path_env(worker_type: str) -> dict[str, str] | None:
+    """PATH override for spawning this worker, from the discovered capability.
+
+    Prepending the discovered bin folder to the spawn PATH makes both argv[0]
+    and the CLI's ``#!/usr/bin/env node`` shebang resolve regardless of how
+    the backend process was launched.
+
+    Returns ``{"PATH": "<folder>:<current>"}`` when the capability has a
+    value; ``None`` ⇔ no value discovered (CLI not installed) — callers fail
+    fast with a clear error instead of spawning into FileNotFoundError.
+    """
+    folder = worker_bin_folder(worker_type)
+    if folder is None:
         return None
-    current = os.environ.get("PATH", "")
-    return {"PATH": f"{folder}{os.pathsep}{current}" if current else str(folder)}
+    return {"PATH": prepend_path_dir(folder, os.environ.get("PATH", ""))}
+
+
+def prepend_path_dir(folder: str, path: str | None) -> str:
+    """*path* with *folder* prepended; idempotent when it is already first."""
+    base = path or ""
+    if base.split(os.pathsep, 1)[0] == folder:
+        return base
+    return f"{folder}{os.pathsep}{base}" if base else folder
+
+
+def build_worker_spawn_env(
+    worker_type: str,
+    env_from_opts: dict[str, str],
+    base_env: dict[str, str] | None = None,
+) -> dict[str, str]:
+    """Spawn env for a per-turn worker subprocess: base ⊕ options env, with the
+    discovered CLI bin folder pinned FIRST on PATH.
+
+    ``env_from_opts`` (the options' env_vars) wins over the base for every
+    key — including PATH, which ``apply_worker_env`` routinely pins to the
+    backend venv. That pinned PATH is built from the backend's own (possibly
+    stripped) service PATH, so the capability folder is re-prepended AFTER the
+    overlay — otherwise a service PATH that never contained the nvm bin dir
+    resurfaces as "codex not found" despite discovery having recorded it.
+
+    Raises :class:`WorkerSpawnError` when no capability value was discovered
+    (CLI not installed).
+    """
+    folder = worker_bin_folder(worker_type)
+    if folder is None:
+        raise WorkerSpawnError(
+            worker_type,
+            f"{worker_type} CLI not found — no {worker_capability_kind(worker_type)} "
+            "installation discovered",
+        )
+    env = dict(os.environ if base_env is None else base_env)
+    env.update(env_from_opts)
+    env["PATH"] = prepend_path_dir(folder, env.get("PATH"))
+    return env
+
+
+def resolve_worker_argv0(worker_type: str, argv: list[str], env: dict[str, str]) -> list[str]:
+    """Pin ``argv[0]`` to the absolute executable resolved against the SPAWN
+    env's PATH (not the parent process PATH).
+
+    subprocess/libuv resolve a bare argv[0] against the parent process PATH
+    before the child's env applies on some platforms, so a backend started
+    with a stripped service PATH would fail to exec a CLI that capability
+    discovery found through nvm. Resolving against ``env["PATH"]`` — which
+    :func:`build_worker_spawn_env` guarantees starts with the discovered bin
+    folder — makes the spawn independent of how the backend was launched.
+
+    Mutates and returns *argv*. Raises :class:`WorkerSpawnError` when the
+    executable is missing even on the discovery-augmented PATH (e.g. the CLI
+    was uninstalled after discovery).
+    """
+    resolved = shutil.which(argv[0], path=env.get("PATH"))
+    if resolved is None:
+        raise WorkerSpawnError(
+            worker_type,
+            f"{worker_type} executable {argv[0]!r} not found on worker PATH "
+            f"({env.get('PATH')})",
+        )
+    argv[0] = resolved
+    return argv
+
+
+async def latch_spawn_failure(process: "AgenticProcess", error: WorkerSpawnError) -> None:
+    """Route a :class:`WorkerSpawnError` into the standard start-failure path.
+
+    Mirrors what ``start_pty``'s except-clause and ``_on_pty_exit``'s
+    instant-exit classification do for PTY launches: ``status=FAILED`` plus the
+    ``start_failure`` latch, so the UI surfaces the message and auto-recovery
+    stops relaunching until an explicit user retry (``open(retry=True)``).
+    """
+    from flow_sdk.builtin.process_lifecycle import ProcessStatus
+
+    logger.error("AgenticProcess %s: worker spawn failed — %s", process.id, error)
+    process.status = ProcessStatus.FAILED.value
+    process.start_failure = str(error)
+    try:
+        await process.save()
+    except Exception:
+        logger.exception("AgenticProcess %s: failed to persist spawn-failure latch", process.id)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -525,6 +966,73 @@ def factory(cli_json: dict, worker_type: str) -> WorkerCLIOptions:
         from flow_sdk.builtin.agentic_process.cli_drivers.copilot.cli import CopilotCliOptions
         return CopilotCliOptions.from_json(cli_json)
     raise ValueError(f"Unknown worker_type: {worker_type!r}")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Composer-ready gate — vendor-marker detection over the raw PTY stream
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# A cold interactive TUI can boot into a *blocking interstitial* (directory
+# trust prompt, login, migration notice) whose screen is quiet — so "output
+# went idle" is NOT a composer-ready signal, and typing the first prompt on
+# quiescence alone gets it eaten by the interstitial (QA C09b). Vendors that
+# need a typed first delivery declare a ``pty_composer_ready_pattern``; the
+# submit path defers typing until the pattern appears in the ANSI-stripped
+# PTY output. Detection is event-driven — each PTY paint wakes the scanner;
+# there are no sleeps and no poll budgets here.
+
+# TUIs paint with cursor positioning, so scan a bounded tail of the
+# accumulated output rather than growing without bound. Markers are a few
+# dozen bytes; 64 KiB of tail is orders of magnitude more than one frame.
+_COMPOSER_SCAN_WINDOW = 65536
+
+# Order matters: OSC first (its payload may contain '[' etc.), then CSI
+# (parameter + intermediate + final byte), then bare two-byte ESC sequences,
+# then residual C0 controls (keep \t\n\r as separators is unnecessary — the
+# markers are single-line, so drop them all except nothing).
+_OSC_RE = re.compile(rb"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)")
+_CSI_RE = re.compile(rb"\x1b\[[0-9;:?<>=!]*[ -/]*[@-~]")
+_ESC_RE = re.compile(rb"\x1b[@-_=>]?")
+_CTRL_RE = re.compile(rb"[\x00-\x08\x0b-\x1f\x7f]")
+
+
+def strip_pty_controls(data: bytes) -> str:
+    """Reduce raw PTY output to its printable text (best-effort).
+
+    Removes OSC/CSI/ESC escape sequences and C0 controls, then decodes as
+    UTF-8 with replacement. Good enough for marker *search* — it does not
+    reconstruct screen layout (a TUI that paints word-by-word yields the words
+    concatenated in paint order), so patterns must match text the TUI paints
+    contiguously (e.g. the codex ``>_ OpenAI Codex`` banner).
+    """
+    data = _OSC_RE.sub(b"", data)
+    data = _CSI_RE.sub(b"", data)
+    data = _ESC_RE.sub(b"", data)
+    data = _CTRL_RE.sub(b"", data)
+    return data.decode("utf-8", "replace")
+
+
+async def pump_composer_ready(
+    pattern: re.Pattern[str],
+    initial: bytes,
+    next_chunk,
+) -> bool:
+    """Block until ``pattern`` appears in the (ANSI-stripped) PTY output.
+
+    ``initial`` is the already-accumulated output (checked first — a warm PTY
+    whose composer painted long ago passes instantly); ``next_chunk`` is an
+    awaitable callable yielding subsequent raw output chunks, with ``None`` as
+    the close sentinel (PTY died / stream ended → returns False: the caller
+    must NOT type). Purely event-driven: it only ever waits on the next paint.
+    """
+    buf = initial[-_COMPOSER_SCAN_WINDOW:]
+    while True:
+        if pattern.search(strip_pty_controls(buf)):
+            return True
+        chunk = await next_chunk()
+        if chunk is None:
+            return False
+        buf = (buf + chunk)[-_COMPOSER_SCAN_WINDOW:]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -553,6 +1061,14 @@ class WorkerDriver(Protocol):
     # literal text and need a discrete Enter after the paste settles (copilot,
     # codex) — see ``Shell.write_then_submit`` and the ``prompt-pty`` action.
     pty_submits_on_paste: bool
+    # Composer-ready marker for the vendor's interactive TUI, or None. When a
+    # first prompt must be TYPED into the PTY (``pty_submits_on_paste`` False
+    # cold start / hot submit), the delivery is deferred until this pattern
+    # appears in the ANSI-stripped PTY output — so a blocking boot interstitial
+    # (directory trust / login / migration screen) can never eat the prompt
+    # (QA C09b). None → no grounded marker; delivery keeps the legacy
+    # settle-then-type behaviour. Matched via ``pump_composer_ready``.
+    pty_composer_ready_pattern: "re.Pattern[str] | None"
     # True iff, on resume/fork, this vendor pins the worker's launch cwd
     # (``CLAUDE_PROJECT_DIR`` + ``workdir``) to the recorded cwd of the source
     # session's transcript (claude). Codex/copilot don't rewrite the launch cwd
@@ -729,13 +1245,25 @@ def get_driver(worker_type: Any) -> WorkerDriver:
 
 
 __all__ = [
+    "CLI_RUN_ID_ENV_VAR",
+    "STREAM_JSON_LINE_LIMIT_BYTES",
     "AgenticContext",
     "AgenticProcessContextKey",
     "AgenticWorker",
     "WorkerCLIOptions",
     "WorkerExecutionInfo",
     "WorkerDriver",
+    "WorkerSpawnError",
+    "build_worker_spawn_env",
     "factory",
     "get_driver",
+    "latch_spawn_failure",
+    "prepend_path_dir",
+    "resolve_worker_argv0",
     "restart_payload_from_cli_options",
+    "stamp_cli_run_id",
+    "terminate_asyncio_process_tree",
+    "wait_for_asyncio_process_or_kill_tree",
+    "worker_bin_folder",
+    "worker_path_env",
 ]

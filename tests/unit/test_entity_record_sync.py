@@ -66,9 +66,10 @@ class TestEntityAllocateId:
 
 
 class TestProjectAllocateId:
-    """Project.allocate_id derives a deterministic uuid5 from the canonical
-    ``fs_storage_mount_path``. Two Projects pointing at the same path get
-    the same id — id derivation is the dedup mechanism.
+    """Project.allocate_id returns an OPAQUE uuid4 entity id (like every other
+    entity). A valid caller-supplied ``data['id']`` (v4/v5) round-trips; the
+    mount path is a natural key for ``find_by_cwd`` dedup, never an id source.
+    ``derive_id_for_path`` survives only as a record-match alias.
     """
 
     def test_project_allocate_id_returns_uuid(self):
@@ -78,13 +79,16 @@ class TestProjectAllocateId:
         parsed = uuid.UUID(result)
         assert str(parsed) == result
 
-    def test_project_allocate_id_deterministic_per_path(self):
+    def test_project_allocate_id_opaque_per_call(self):
         from flow_sdk.builtin.project import Project
         data = {"fs_storage_mount_path": "/tmp/myproject"}
         id1 = Project.allocate_id(data)
         id2 = Project.allocate_id(data)
-        # Same path → SAME id (uuid5 over canonical path).
-        assert id1 == id2
+        # Same path → DIFFERENT opaque ids (uuid4); dedup is find_by_cwd's job.
+        assert id1 != id2
+        assert uuid.UUID(id1).version == 4
+        # The old derivation survives only as a record-match alias, never the id.
+        assert id1 != Project.derive_id_for_path("/tmp/myproject")
 
     def test_project_allocate_id_returns_uuid_for_real_path(self):
         from flow_sdk.builtin.project import Project
@@ -101,14 +105,13 @@ class TestProjectAllocateId:
         uuid.UUID(id2)
         assert id1 != id2
 
-    def test_project_allocate_id_path_wins_over_client_id(self):
-        """The canonical mount path is the natural key — a client-minted uuid4
-        (e.g. the TS SDK's optimistic id) is overridden by path derivation."""
+    def test_project_allocate_id_client_id_wins_over_path(self):
+        """A valid client-minted uuid4 (e.g. the TS SDK's optimistic id) is
+        adopted verbatim — the mount path never overrides a valid entity id."""
         from flow_sdk.builtin.project import Project
         provided = str(uuid.uuid4())
         result = Project.allocate_id({"fs_storage_mount_path": "/tmp/x", "id": provided})
-        assert result == Project.derive_id_for_path("/tmp/x")
-        assert result != provided
+        assert result == provided
 
     def test_project_allocate_id_preserves_id_when_no_path(self):
         """No path supplied → caller's uuid round-trips."""
@@ -205,18 +208,27 @@ class TestEntityRecordCwdSync:
 
         scanned = await Entity.from_record(mock_record)
 
-        assert scanned.id == Project.derive_id_for_path(mount_path)
+        # Dispatched to Project.from_record (not the generic base): a net-new
+        # project mints a fresh opaque uuid4 (from_record strips the record id),
+        # never the record's id nor the legacy path derivation — and the row
+        # dedups by canonical cwd.
+        assert isinstance(scanned, Project)
         assert scanned.id != random_record_id
+        assert scanned.id != Project.derive_id_for_path(mount_path)
+        assert uuid.UUID(scanned.id).version == 4
+        from flow_sdk.fs_store.path_utils import canonical_posix_path
+        existing = await Project.find_by_cwd(canonical_posix_path(mount_path))
+        assert existing is not None and existing.id == scanned.id
 
-    def test_allocate_id_uses_record_cwd(self):
-        """Project records expose cwd before fs_storage_mount_path is hydrated."""
+    def test_allocate_id_adopts_valid_record_id_over_cwd(self):
+        """A record's valid v4 id round-trips even when cwd is present — cwd is a
+        natural key for find_by_cwd dedup, never an id source."""
         from flow_sdk.builtin.project import Project
 
         mount_path = "/tmp/testproject_allocate_from_cwd"
+        record_id = "11111111-2222-4333-8444-555555555555"
 
-        assert Project.allocate_id({"id": "11111111-2222-4333-8444-555555555555", "cwd": mount_path}) == (
-            Project.derive_id_for_path(mount_path)
-        )
+        assert Project.allocate_id({"id": record_id, "cwd": mount_path}) == record_id
 
     @pytest.mark.asyncio
     async def test_resolve_project_scope_prefers_canonical_project_list(self, monkeypatch):

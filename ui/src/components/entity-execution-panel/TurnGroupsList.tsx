@@ -1,7 +1,8 @@
-import { FlowElementTypes } from '@sdk';
-import { Fragment } from 'react';
+import { FlowElementTypes, PrefKey } from '@sdk';
+import { Fragment, memo } from 'react';
 import { ToolEntryRow } from '@src/components/floating-chat/ToolEntryRow';
 import type { TurnGroup } from '@src/components/floating-chat/groupTurnEvents';
+import { usePreference } from '@src/hooks/use-preference';
 import ExecutionMessage from './execution-message/execution-message';
 import { MetaMessageChip } from './MetaMessageChip';
 
@@ -25,8 +26,12 @@ function TurnDivider() {
  * tab's Standard-mode SimpleChatPane so both render identical chat turns.
  */
 export function TurnGroupsList({ groups, worker }: { groups: TurnGroup[]; worker?: string }) {
+  // "Show tool calls" (default off) gates the dense tool/reasoning/status chips.
+  // When off, dense (non-message) groups are dropped so the transcript shows only
+  // user/assistant text turns. Toggled from the composer's Tools menu or Preferences → Chat.
+  const [showTools] = usePreference<boolean>(PrefKey.CHAT_SHOW_TOOLS);
   const visibleGroups = groups.filter((g) => {
-    if (g.kind !== 'message') return true;
+    if (g.kind !== 'message') return showTools;
     if (g.flowData.attributes?.['is-meta'] !== 'true') return true;
     const content = g.flowData.content ?? '';
     return !isFlowpadPromptEnvelope(String(content));
@@ -43,40 +48,56 @@ export function TurnGroupsList({ groups, worker }: { groups: TurnGroup[]; worker
           g.kind === 'message'
             ? `msg-${i}-${g.flowData.id ?? g.flowData.timestamp ?? ''}`
             : `dense-${i}`;
-        const isUser =
-          g.kind === 'message' &&
-          (g.flowData.elementType === FlowElementTypes.USER_MESSAGE ||
-            g.flowData.attributes?.role === 'user');
-        const node =
-          g.kind === 'message' ? (
-            g.flowData.attributes?.['is-meta'] === 'true' ? (
-              <MetaMessageChip flowData={g.flowData} />
-            ) : (
-              <ExecutionMessage flowData={g.flowData} worker={worker} isUser={isUser} />
-            )
-          ) : (
-            <ToolEntryRow events={g.events} />
-          );
-        // `display: contents` wrapper carries the role for read-back/tests without
-        // generating a box (no layout impact). Assistant turns = message groups
-        // that aren't the user echo; dense tool runs aren't a chat role.
-        const role = g.kind === 'message' ? (isUser ? 'user' : 'assistant') : undefined;
         return (
           <Fragment key={key}>
             {i > 0 && <TurnDivider />}
-            {role ? (
-              <div className="contents" data-role={role}>
-                {node}
-              </div>
-            ) : (
-              node
-            )}
+            <TurnGroupRow group={g} worker={worker} />
           </Fragment>
         );
       })}
     </>
   );
 }
+
+/**
+ * One turn row, memoized on group identity. `useTurnGroups`'s incremental
+ * grouper keeps committed groups referentially stable across live appends, so
+ * a streaming frame re-renders ONLY the trailing (still-growing) group instead
+ * of every row — the fix for QA issue D10's large-history render blowup.
+ */
+const TurnGroupRow = memo(function TurnGroupRow({
+  group,
+  worker,
+}: {
+  group: TurnGroup;
+  worker?: string;
+}) {
+  const isUser =
+    group.kind === 'message' &&
+    (group.flowData.elementType === FlowElementTypes.USER_MESSAGE ||
+      group.flowData.attributes?.role === 'user');
+  const node =
+    group.kind === 'message' ? (
+      group.flowData.attributes?.['is-meta'] === 'true' ? (
+        <MetaMessageChip flowData={group.flowData} />
+      ) : (
+        <ExecutionMessage flowData={group.flowData} worker={worker} isUser={isUser} />
+      )
+    ) : (
+      <ToolEntryRow events={group.events} />
+    );
+  // `display: contents` wrapper carries the role for read-back/tests without
+  // generating a box (no layout impact). Assistant turns = message groups
+  // that aren't the user echo; dense tool runs aren't a chat role.
+  const role = group.kind === 'message' ? (isUser ? 'user' : 'assistant') : undefined;
+  return role ? (
+    <div className="contents" data-role={role}>
+      {node}
+    </div>
+  ) : (
+    node
+  );
+});
 
 function isFlowpadPromptEnvelope(content: string): boolean {
   if (!content.includes('\n# User message\n')) return false;

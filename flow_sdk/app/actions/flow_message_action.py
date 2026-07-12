@@ -20,10 +20,9 @@ from flow_sdk.actions.action_registry import action
 from flow_sdk.builtin.conversation import Conversation
 from flow_sdk.builtin.flow_message import AttachmentType, BodyStatus, DeliveryStatus, FlowMessage, FlowMessageKind
 from flow_sdk.builtin.flow_message_bundle import FlowMessageExistsError
-from flow_sdk.builtin.organization import Organization
 from flow_sdk.builtin.task import Task
 from flow_sdk.builtin.team import Team
-from flow_sdk.builtin.user import User
+from flow_sdk.builtin.user import User, normalize_email
 from flow_sdk.core.entity.entity_model import remote_reflection
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.fs_store.operations.conversation import (
@@ -70,9 +69,11 @@ def _normalize_participants(participants: list[dict]) -> list[dict]:
         if not isinstance(participant, dict):
             continue
         item = dict(participant)
-        email = _participant_value(participant, "email", "user_email")
+        email = normalize_email(_participant_value(participant, "email", "user_email"))
         name = _participant_value(participant, "name", "user_name")
         picture = _participant_value(participant, "picture", "user_picture")
+        if isinstance(item.get("email"), str):
+            item["email"] = normalize_email(item["email"]) or ""
         if email and not item.get("email"):
             item["email"] = email
         if name and not item.get("name"):
@@ -392,18 +393,15 @@ async def handle_download_body(fm_id: str, *, overwrite: bool = False) -> ApiRes
     ``asset_conflict`` + the conflicting paths so the UI can prompt the user and
     re-POST with ``overwrite=True``."""
     from flow_sdk.builtin.flow_message import BodyNotReadyError
-    from flow_sdk.builtin.flow_message_bundle import (
-        FlowMessageExistsError,
-        FlowMessageNoProjectError,
-    )
+    from flow_sdk.builtin.flow_message_bundle import FlowMessageExistsError
     from flow_sdk.core.network.resource_tracker import make_flow_message_progress_emitter
 
     fm = await _load_fm_local_or_hub(fm_id)
     if not fm:
         return ApiFailResponse(message=f"FlowMessage not found: {fm_id}", status_code=404)
-    # File-backed assets unpack into the conversation's mapped PROJECT (the
-    # destination is resolved inside unpack_bundle from the conversation). No
-    # asset_dest_root to pass — the project is the single source of placement.
+    # File-backed assets unpack into the message's STAGING area (record-data
+    # dir) and surface as MessageAttachment rows — no project needed here;
+    # placement happens in the explicit message_attachment install action.
     try:
         await fm.download_body(
             overwrite=overwrite,
@@ -418,14 +416,6 @@ async def handle_download_body(fm_id: str, *, overwrite: bool = False) -> ApiRes
             message="asset already exists — overwrite?",
             status_code=409,
             data={"asset_conflict": True, "conflicts": getattr(e, "conflicts", None)},
-        )
-    except FlowMessageNoProjectError as e:
-        # The conversation isn't mapped to a project — nowhere to land the
-        # assets. Tell the UI to prompt project selection then re-download.
-        return ApiFailResponse(
-            message="map a project to this conversation first",
-            status_code=409,
-            data={"needs_project": True, "pending_types": getattr(e, "pending_types", None)},
         )
     except Exception as e:
         logger.error("[flow_message_action] download_body fm=%s: %s", fm_id, e, exc_info=True)
@@ -730,6 +720,8 @@ async def _hard_delete_local_conversation(conv: Conversation) -> None:
         msgs = await FlowMessage.get_all(flt)
         for fm in msgs:
             try:
+                # FlowMessage.delete() also purges staging data + the
+                # MessageAttachment rows (installed copies are kept).
                 await fm.delete()
             except Exception as e:  # noqa: BLE001
                 logger.warning("[conv-hard-delete] %s fm delete failed: %s", cid[:8], e)
@@ -1117,7 +1109,8 @@ async def handle_remove_message(flow_message_id: str) -> ApiResponse:
                 message=f"Hub {e.status_code}: {e.reason}",
             )
 
-    # Purge the local existence (DB row + relationships + on-disk record folder).
+    # Purge the local existence (DB row + relationships + on-disk record folder
+    # + staging data/MessageAttachment rows, via the FlowMessage lifecycle).
     try:
         await fm.destroy()
     except Exception as e:  # noqa: BLE001
@@ -1348,7 +1341,11 @@ async def community_start_ticket() -> ApiResponse:
         resp = await _hub_action("POST", f"/graph/project/{community_id}/start_guest_conversation", {"text": text})
         if not resp or resp.get("status") != "SUCCESS":
             msg = (resp or {}).get("message") or "hub unreachable"
-            return ApiFailResponse(message=f"Could not open support ticket: {msg}")
+            # 502, not the default 500: the failure is the UPSTREAM hub rejecting
+            # or not resolving the community project (e.g. an unseeded community
+            # hub returns 401 "Entity project-<id> not found") — our backend is
+            # healthy, so a 500 Internal Server Error misattributes it to us.
+            return ApiFailResponse(message=f"Could not open support ticket: {msg}", status_code=502)
         conv_data = resp.get("data") or {}
         conv_id = conv_data.get("id")
         if not conv_id:
@@ -1452,7 +1449,18 @@ async def community_tickets_list() -> ApiResponse:
             return ApiFailResponse(message="Community support is unavailable on this hub")
 
         resp = await _hub_action("GET", f"/graph/project/{community_id}/community_conversations")
-        rows = (resp or {}).get("data") or []
+        # Propagate a hub authorization/transport failure instead of synthesizing
+        # an empty success. A non-staff caller gets a FAIL envelope here ("no
+        # valid access for role ['guest']"); collapsing that to {tickets: []}
+        # makes "unauthorized" indistinguishable from "empty queue" — it hid a
+        # real staff-UI robustness gap and defeated the community_two_client
+        # skip-guard (its try/catch never fired on a non-staff hub).
+        if not resp or resp.get("status") != "SUCCESS":
+            msg = (resp or {}).get("message") or "hub unreachable"
+            # 502: upstream hub rejected/could not resolve the community queue
+            # (non-staff caller → "no valid access"), not an internal error here.
+            return ApiFailResponse(message=f"Could not list community tickets: {msg}", status_code=502)
+        rows = resp.get("data") or []
         if not isinstance(rows, list):
             rows = []
         return ApiSuccessResponse(data={"tickets": rows, "project_id": community_id})
@@ -1492,7 +1500,6 @@ async def _download_and_unpack_bundle(
     body_status: "str | BodyStatus | None" = None,
     overwrite: bool = False,
     raise_on_conflict: bool = False,
-    raise_on_no_project: bool = False,
     on_progress=None,
 ) -> bool:
     """Download the .flowmsg bundle from the hub and unpack it locally.
@@ -1508,18 +1515,15 @@ async def _download_and_unpack_bundle(
     explicit ``download_body`` path forwards its own READY status. ``None`` means
     "caller did not supply a status" and proceeds unchanged (back-compat).
 
-    File-backed assets in the bundle are copied into the conversation's mapped
-    PROJECT and indexed there (``unpack_bundle``). When no project is mapped the
-    assets are parked; ``raise_on_no_project`` (the explicit ``download_body``
-    path) then re-raises ``FlowMessageNoProjectError`` so the caller can prompt
-    "map a project first" and re-download. Implicit callers swallow it (parked).
+    File-backed assets in the bundle are STAGED under the message's record-data
+    dir and surfaced as MessageAttachment rows (``unpack_bundle``) — no project
+    mapping is needed to download; installing is a separate explicit action.
 
     ``on_progress`` — optional async callback fired as download bytes land;
     when set the hub GET is streamed instead of buffered whole.
     """
     from flow_sdk.builtin.flow_message_bundle import (
         FlowMessageExistsError,
-        FlowMessageNoProjectError,
         unpack_bundle,
     )
 
@@ -1549,12 +1553,7 @@ async def _download_and_unpack_bundle(
         tmp_path = Path(tmp.name)
         tmp.write(bundle_bytes)
     try:
-        await unpack_bundle(
-            tmp_path,
-            local_user_id,
-            overwrite=overwrite,
-            raise_on_no_project=raise_on_no_project,
-        )
+        await unpack_bundle(tmp_path, local_user_id, overwrite=overwrite)
         # Bundle bytes are on disk now. The FM's ``attachment[].local_path``
         # is computed lazily by the model serializer from disk state, so the
         # cached browser entity still reads ``local_path=null`` from the
@@ -1605,16 +1604,6 @@ async def _download_and_unpack_bundle(
             "not materialized (retry with overwrite to replace)",
             fm_id,
         )
-        return False
-    except FlowMessageNoProjectError:
-        # File-backed assets were extracted but the conversation isn't mapped to
-        # a project — they're parked (the FM still materialized). The explicit
-        # download path re-raises so the UI can prompt "map a project first" and
-        # re-download; implicit auto-callers leave the asset parked and report
-        # not-fully-materialized (False) without crashing the sync.
-        if raise_on_no_project:
-            raise
-        logger.info("[bundle] assets parked fm=%s — no project mapped yet", fm_id)
         return False
     except ValueError as e:
         # Legacy bundles (pre-header.json) raise "Invalid .flowmsg: missing
@@ -1717,11 +1706,22 @@ async def _process_single_hub_message(raw: dict) -> str | None:
                 attachment_filename,
                 body_status=raw.get("body_status"),
             )
-            if existing is None:
-                # unpack materializes the FM row itself on success; on failure
-                # (body still uploading, transient hub error) leave nothing
-                # behind — the next sync pass retries.
-                return fm_id if success else None
+            if success and existing is None:
+                # unpack materialized the FM row itself (body + the real entity
+                # data carried in the bundle) — nothing left to persist.
+                return fm_id
+            # Download failed (body still uploading, a transient hub error, or —
+            # the receiver pre-accept case — the recipient can't pull the bundle
+            # body yet). Do NOT return empty: fall through to materialize the FM
+            # HEADER from the hub payload (metadata only, no body), exactly like
+            # the bundle-less/text branch below. Without this an artifact- or
+            # git-share message's latest FlowMessage never resolves locally
+            # pre-body, so the inbox's latest-pointer gate hides the whole
+            # invitation row and previews/ordering break — while a plain text
+            # message (no attachment_filename) materialized its header fine. The
+            # body stays un-downloaded (is_body_downloaded()=False), so the next
+            # sync pass re-attempts the bundle through this same branch: the
+            # download gate above is keyed on body-presence, not row existence.
     if existing is not None and not FlowMessage.is_stale(existing, raw):
         # Metadata current (body handled above).
         return fm_id
@@ -2077,8 +2077,17 @@ async def inbox_bulk_update() -> ApiResponse:
 
 
 def _membership_cls(target_type: str | None):
-    """Entity class for a membership target type (organization → Organization, else Team)."""
-    return Organization if target_type == BuiltinEntityType.ORGANIZATION.value else Team
+    """Entity class for a membership target type (organization / team / project / …).
+
+    A project shared as a collaboration unit rides the SAME membership-invitation
+    path as org/team (target descriptor, no backing conversation): the recipient
+    materializes a ``remote=True`` mirror keyed by the shared project's (uuid4) id.
+    Resolves via the schema registry — the codebase's single type→class lookup (as
+    used by ``share_action``); unknown/None falls back to Team for back-compat.
+    """
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    return (SchemaRegistry.get_entity_cls(target_type) if target_type else None) or Team
 
 
 async def _materialize_membership_invitation(
@@ -2115,7 +2124,7 @@ async def _materialize_membership_invitation(
         logger.warning("[inv-materialize] membership target mirror failed: %s", e)
 
     fields = {
-        "recipient_email": hub_inv.get("recipient_email") or "",
+        "recipient_email": normalize_email(hub_inv.get("recipient_email")) or "",
         "accepted": bool(hub_inv.get("accepted") or False),
         "sent": bool(hub_inv.get("sent") or False),
         "message": hub_inv.get("message"),
@@ -2178,7 +2187,7 @@ async def _materialize_invitation(hub_inv: dict, someone_typeid: str) -> tuple[O
     )
     inv_fields = {
         "id": inv_id,
-        "recipient_email": hub_inv.get("recipient_email") or "",
+        "recipient_email": normalize_email(hub_inv.get("recipient_email")) or "",
         "accepted": bool(hub_inv.get("accepted") or False),
         "sent": bool(hub_inv.get("sent") or False),
         "message": hub_inv.get("message"),
@@ -2408,7 +2417,12 @@ async def _sync_remote_children(parent_tid: TypeId, child_type: str, someone_typ
         parent_etype = BuiltinEntityType(parent_tid.type)
     except ValueError:
         parent_etype = parent_tid.type
-    children = await hub_get(parent_etype, parent_tid.id, action=child_type)
+    # expand=blobs: blob fields (e.g. comment raw_content) are db-excluded from the
+    # hub row and served only on request — without this the pull materializes
+    # children with EMPTY bodies (the live-push path carries them; catch-up must too).
+    children = await hub_get(
+        parent_etype, parent_tid.id, action=child_type, params={"expand": "blobs"}
+    )
     child_list: list[dict] = []
     if isinstance(children, list):
         child_list = children
@@ -2527,8 +2541,51 @@ async def _sync_shared_context_subtree(conv_id: str, someone_typeid: str | None)
             # Delete half: prune local children removed on the hub (the pull above
             # only adds/updates), so a non-watching peer converges on deletions.
             await _reconcile_deleted_children(conv, child_type, hub_ids, someone_typeid)
+            # 3) Rebind half: recreate missing parent edges for remote children
+            #    whose parent materialized AFTER they did (e.g. the doc installed
+            #    after its comments synced) or that were synced before edge
+            #    recreation existed. The is_stale LWW skip means such rows never
+            #    re-materialize — this pass is their only healer. Skipped when the
+            #    hub has no children of this type (nothing can be orphaned), so
+            #    child-free conversations pay nothing per sync.
+            if hub_ids:
+                await _rebind_orphan_children(conv, child_type, someone_typeid)
     except Exception as e:  # noqa: BLE001
         logger.warning("[subtree-sync] conv=%s failed (non-fatal): %s", conv_id, e)
+
+
+async def _rebind_orphan_children(conv, child_type: str, someone_typeid: str | None) -> None:
+    """Recreate missing local parent edges for this conversation's remote children.
+
+    Candidate parents mirror ``_reconcile_deleted_children``: the conversation
+    itself plus each ``shared_context_entities`` doc. Each ``remote=True``
+    ``child_type`` row bound to a candidate parent gets ``ensure_child_edge()``
+    — which resolves the parent locally, dedup-checks the ``is_child`` role
+    edge, and attaches only when missing. Best-effort per row. Callers gate on
+    "the hub reported children of this type" so child-free syncs skip entirely.
+    """
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    cls = SchemaRegistry.get_entity_cls(child_type)
+    if cls is None:
+        return
+    conv_ref = f"{BuiltinEntityType.CONVERSATION.value}-{conv.id}"
+    candidate_parents = [conv_ref, *(str(r) for r in (conv.shared_context_entities or []))]
+    for parent_ref in candidate_parents:
+        try:
+            children = await cls.get_all({"parent_type_id": parent_ref})
+        except Exception:  # noqa: BLE001
+            continue
+        for ent in children or []:
+            if not getattr(ent, "remote", False):
+                continue  # locally-authored rows got their edge at create
+            try:
+                await ent.ensure_child_edge()
+            except Exception as e:  # noqa: BLE001
+                logger.warning(
+                    "[subtree-sync] rebind %s-%s failed (non-fatal): %s",
+                    child_type, ent.id, e,
+                )
 
 
 async def _fetch_conversation_messages(conv_id: str, someone_typeid: str) -> None:
@@ -3556,10 +3613,44 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
             from flow_sdk.app.actions.membership_sync import (  # noqa: PLC0415
                 materialize_remote_membership_entity,
             )
+            target_payload = {
+                "id": membership_target.target_id,
+                "name": membership_target.target_name,
+            }
+            if membership_target.target_type == BuiltinEntityType.PROJECT.value:
+                project_payload_error: str | None = None
+                try:
+                    from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
+                    from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient  # noqa: PLC0415
 
+                    creds = load_credentials()
+                    if not creds or not creds.api_key:
+                        project_payload_error = "cloud login required"
+                    else:
+                        async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:
+                            hub_project = await client.get(f"/graph/project/{membership_target.target_id}")
+                        if isinstance(hub_project, dict) and hub_project.get("id"):
+                            target_payload.update(hub_project)
+                        else:
+                            project_payload_error = "hub project payload was empty or malformed"
+                except Exception as fetch_err:  # noqa: BLE001
+                    project_payload_error = str(fetch_err)
+                if project_payload_error:
+                    logger.warning(
+                        "[invitation-accept] project payload fetch failed for %s: %s",
+                        membership_target.target_id,
+                        project_payload_error,
+                    )
+                    return ApiFailResponse(
+                        message=(
+                            "Accepted invitation, but failed to fetch shared project metadata; "
+                            "local project was not materialized. Retry after cloud connectivity "
+                            f"and login are restored: {project_payload_error[:160]}"
+                        )
+                    )
             ent = await materialize_remote_membership_entity(
                 cls,
-                {"id": membership_target.target_id, "name": membership_target.target_name},
+                target_payload,
                 someone_typeid,
             )
             if ent is not None:

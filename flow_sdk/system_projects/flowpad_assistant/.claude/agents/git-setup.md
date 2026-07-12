@@ -1,5 +1,5 @@
 ---
-id: git-setup
+id: a9d1ebb8-ecc7-49d7-a41a-6b3c09c5c8c6
 name: git-setup
 description: Wizard agent for preparing a local git checkout for a shared Flowpad
   artifact

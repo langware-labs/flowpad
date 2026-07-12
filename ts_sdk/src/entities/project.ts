@@ -3,9 +3,11 @@ import apiClient from '../client';
 import { QueryRequest } from '../FlowSync/query';
 import { ActionInfo, TypeId, gitOriginFromUrl, type GitOrigin } from '../models';
 import { DockPointerData } from '../models/DockPointer';
+import type { AssetDescriptor } from '../process/asset-descriptor';
 import { ViewType } from '../utils/ui/view-types';
 import { Agent } from './agent';
 import { Artifact, IArtifact } from './artifact';
+import { type ConversationParticipant } from './conversation';
 import { ComputeNode } from './compute_node';
 import { GitWorkdir } from './git-workdir';
 import { Workspace } from './workspace';
@@ -23,6 +25,42 @@ export interface ResolveProjectResult {
   name: string | null;
   host_name: string | null;
   members_count: number;
+}
+
+export type SecretPointerScope = 'private' | 'shared';
+
+export interface LocalSecretRef {
+  kind: 'local';
+  sod_name: string;
+}
+
+export interface HubSecretRef {
+  kind: 'flowpad-hub';
+  secret_id: string;
+}
+
+export type SecretOriginLocator = LocalSecretRef | HubSecretRef;
+
+export interface ProjectSecretOriginSummary {
+  typeid: string;
+  name: string;
+  env_var: string;
+  kind: SecretOriginLocator['kind'] | string;
+  locator: Partial<SecretOriginLocator>;
+  scope: SecretPointerScope | string;
+}
+
+export interface ProjectContextFolderResolveResult {
+  typeid: string;
+  kind: string;
+  path?: string;
+  message?: string;
+  [key: string]: unknown;
+}
+
+interface ProjectContextFolderResolveResponse {
+  include_dirs?: unknown;
+  context_folder_results?: unknown;
 }
 
 const LOCAL_MEMBER_ID_KEY = 'flowpad.collaboration.member_id';
@@ -54,6 +92,15 @@ export function getOrCreateLocalMemberId(): string {
 export class Project extends APIEntity<Project> {
   static type: string = 'project';
   computeNode?: ComputeNode | null = null;
+  // ── Hub collaboration (Project as a shared unit — mirrors Conversation) ──
+  /** Hub role roster [{user_id, email, name, role}] — mirrors backend
+   *  Project.participants. This is what the Members UI (`useMembers`) reads;
+   *  distinct from the local presence `members` overlay below. The project's
+   *  own (uuid4) id is the shared hub identity — no separate cloud id. */
+  participants: ConversationParticipant[] = [];
+  /** Last UI view mode used in this project (vibe|standard|advanced|dev);
+   *  applied on project load so the mode is remembered per project. */
+  last_mode: string | null = null;
   // ── Collaboration overlay (merged from the former CollaborationSpace) ──
   session_code: string | null = null;
   host_member_id: string | null = null;
@@ -62,13 +109,19 @@ export class Project extends APIEntity<Project> {
    *  --add-dir set and browseable in the Explorer as their own root. Mirrors
    *  the backend Project.include_dirs. */
   include_dirs: string[] = [];
+  /** Project secret pointers. Value-free metadata only; values are never
+   *  exposed through the SDK and resolve only inside worker launch. */
+  secret_origins: ProjectSecretOriginSummary[] = [];
 
   constructor(entity: Partial<Project> = {}) {
     super(entity);
+    this.participants = (entity.participants as ConversationParticipant[] | undefined) ?? [];
+    this.last_mode = (entity.last_mode as string | null | undefined) ?? null;
     this.session_code = (entity.session_code as string | null | undefined) ?? null;
     this.host_member_id = (entity.host_member_id as string | null | undefined) ?? null;
     this.members = (entity.members as ProjectMember[] | undefined) ?? [];
     this.include_dirs = (entity.include_dirs as string[] | undefined) ?? [];
+    this.secret_origins = (entity.secret_origins as ProjectSecretOriginSummary[] | undefined) ?? [];
   }
 
   // Land on the project's collaboration/home view at /dock/project/<id>
@@ -117,6 +170,32 @@ export class Project extends APIEntity<Project> {
   }
 
   /**
+   * Discoverable assets for this project, pre-process (staging picker).
+   * Backend `project/{id}/get-assets` — same descriptor shape as
+   * `AgenticProcess.getAssets()`, computed server-side (path-scan over
+   * user/project/context dirs + scoped spec list). Always bounded; when the
+   * scan hit `limit` the response is truncated (long tail should be searched,
+   * not listed).
+   */
+  async getAssets(options?: { types?: string[]; limit?: number }): Promise<AssetDescriptor[]> {
+    return Project.getAssetsById(this.typeId.id, options);
+  }
+
+  /** Static form for callers without a Project instance (projectless staging → `'@local'`). */
+  static async getAssetsById(
+    projectId: string,
+    options?: { types?: string[]; limit?: number },
+  ): Promise<AssetDescriptor[]> {
+    const actionInfo = new ActionInfo('get-assets', Project.type, projectId, 'GET');
+    const queryParameters: Record<string, string | number> = {};
+    if (options?.types?.length) queryParameters.types = options.types.join(',');
+    if (options?.limit) queryParameters.limit = options.limit;
+    actionInfo.queryParameters = queryParameters;
+    const response = await dataManager.callAction<void, { assets?: AssetDescriptor[] }>(actionInfo);
+    return response?.assets ?? [];
+  }
+
+  /**
    * `GitWorkdir` bound to this project's working tree, or null when the
    * project has no working directory or compute node. Null does NOT mean
    * "not a git repo" — that stays the async `isInit()` probe on the result.
@@ -130,24 +209,78 @@ export class Project extends APIEntity<Project> {
     return new GitWorkdir(this.fs_storage_mount_path, computeNode.id);
   }
 
-  /** Add a context folder to this project's `include_dirs` (auto-added to every
-   *  agentic worker's --add-dir set). Idempotent; the backend canonicalizes the
-   *  path and kicks a one-shot index so the folder's assets become discoverable. */
-  async addContextDir(path: string): Promise<void> {
-    const actionInfo = new ActionInfo('add-context-dir', Project.type, this.typeId.id, 'POST');
-    actionInfo.bodyParameters = { path };
-    await dataManager.callAction(actionInfo);
-    if (!(this.include_dirs ?? []).includes(path)) {
-      this.include_dirs = [...(this.include_dirs ?? []), path];
+  /** Adopt the server-computed `include_dirs` off a context-dir action
+   *  response. The backend derives the list from Folder context links (it
+   *  canonicalizes paths), so the response — not an optimistic local guess —
+   *  is the truth. */
+  private adoptContextDirs(response: unknown): void {
+    const dirs = (response as { include_dirs?: unknown } | null)?.include_dirs;
+    if (Array.isArray(dirs)) {
+      this.include_dirs = dirs.filter((d): d is string => typeof d === 'string');
     }
   }
 
-  /** Remove a context folder from `include_dirs`. No-op if not present. */
+  private adoptSecretOrigins(response: unknown): void {
+    const origins = (response as { secret_origins?: unknown } | null)?.secret_origins;
+    if (Array.isArray(origins)) {
+      this.secret_origins = origins.filter((item): item is ProjectSecretOriginSummary => (
+        !!item && typeof item === 'object' && typeof (item as ProjectSecretOriginSummary).typeid === 'string'
+      ));
+    }
+  }
+
+  /** Attach a context folder (auto-added to every agentic worker's --add-dir
+   *  set). Idempotent; the backend mints the Folder entity, links it into the
+   *  requested context bucket — `private` (default, never leaves this machine)
+   *  or `shared` (travels with the project) — and kicks a one-shot index so
+   *  the folder's assets become discoverable. */
+  async addContextDir(path: string, scope: 'private' | 'shared' = 'private'): Promise<void> {
+    const actionInfo = new ActionInfo('add-context-dir', Project.type, this.typeId.id, 'POST');
+    actionInfo.bodyParameters = { path, scope };
+    this.adoptContextDirs(await dataManager.callAction(actionInfo));
+  }
+
+  /** Detach a context folder. No-op if not attached. */
   async removeContextDir(path: string): Promise<void> {
     const actionInfo = new ActionInfo('remove-context-dir', Project.type, this.typeId.id, 'POST');
     actionInfo.bodyParameters = { path };
-    await dataManager.callAction(actionInfo);
-    this.include_dirs = (this.include_dirs ?? []).filter((d) => d !== path);
+    this.adoptContextDirs(await dataManager.callAction(actionInfo));
+  }
+
+  async addSecretPointer(
+    name: string,
+    envVar: string,
+    options: { locator: SecretOriginLocator; scope?: SecretPointerScope },
+  ): Promise<void> {
+    const actionInfo = new ActionInfo('add-secret-pointer', Project.type, this.typeId.id, 'POST');
+    actionInfo.bodyParameters = {
+      name,
+      env_var: envVar,
+      scope: options.scope ?? 'private',
+      kind: options.locator.kind,
+      locator: options.locator,
+      ...(options.locator.kind === 'local' ? { sod_name: options.locator.sod_name } : {}),
+      ...(options.locator.kind === 'flowpad-hub' ? { secret_id: options.locator.secret_id } : {}),
+    };
+    this.adoptSecretOrigins(await dataManager.callAction(actionInfo));
+  }
+
+  async removeSecretPointer(typeid: string): Promise<void> {
+    const actionInfo = new ActionInfo('remove-secret-pointer', Project.type, this.typeId.id, 'POST');
+    actionInfo.bodyParameters = { typeid };
+    this.adoptSecretOrigins(await dataManager.callAction(actionInfo));
+  }
+
+  /** Resolve received shared context folders into receiver-local paths. */
+  async resolveContextFolders(): Promise<ProjectContextFolderResolveResult[]> {
+    const actionInfo = new ActionInfo('resolve-context-folders', Project.type, this.typeId.id, 'POST');
+    const response = await dataManager.callAction<undefined, ProjectContextFolderResolveResponse>(actionInfo);
+    this.adoptContextDirs(response);
+    const results = response?.context_folder_results;
+    if (!Array.isArray(results)) return [];
+    return results.filter((item): item is ProjectContextFolderResolveResult => (
+      !!item && typeof item === 'object' && typeof (item as ProjectContextFolderResolveResult).kind === 'string'
+    ));
   }
 
   async setupComputeNode(options?: { gitOrigin?: GitOrigin | null }): Promise<ComputeNode | null> {

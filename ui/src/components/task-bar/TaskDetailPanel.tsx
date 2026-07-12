@@ -4,12 +4,12 @@
  */
 
 import { ArrowLeft, ExternalLink, FileText } from 'lucide-react';
-import { Spec, Task, TypeId, User } from '@sdk';
+import { Task, TypeId, User } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
-import { ExpansionRequest } from '@sdk/FlowSync/query';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { EntityActionsToolbar } from '@src/components/entity-actions/EntityActionsToolbar';
+import { useTaskSpecText } from '@src/hooks/use-task-spec-text';
 import { getPriorityColor, PRIORITY_CONFIG } from './constants';
 import { getAnalysisPath, getTaskTypeLabel, openAnalysisReport } from './task-utils';
 import { ConversationPanel } from '@src/components/conversation/ConversationPanel';
@@ -27,18 +27,15 @@ function displayName(user: User | null | undefined, fallback?: string | null): s
 export function TaskDetailPanel({ task, onClose }: TaskDetailPanelProps) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
-  const blobExpansion = new ExpansionRequest({ expand: ['blobs'] });
-  const specTypeId = task.firstContextOfType?.('spec') ?? null;
   const conversationTypeId = task.firstContextOfType?.('conversation') ?? null;
-  const isSharedTask = !!specTypeId;
+  const isSharedTask = !!task.shared_by_id;
 
   const { data: sender } = useEntity<User>(
     task.shared_by_id ? new TypeId(User.type, task.shared_by_id) : null,
   );
-  const { data: spec } = useEntity<Spec>(
-    specTypeId,
-    { query: blobExpansion },
-  );
+  // Spec is a plain `spec.md` file in the task folder (legacy Spec-entity
+  // fallback) — resolved by the shared hook.
+  const specText = useTaskSpecText(task);
   const handleOpenFullView = () => {
     navigation.openDock(DockPointer.forTasks(task.id));
   };
@@ -152,14 +149,14 @@ export function TaskDetailPanel({ task, onClose }: TaskDetailPanelProps) {
         {/* ── Shared task section ─────────────────────────────── */}
         {isSharedTask && (
           <>
-            {/* Spec content */}
-            {spec?.content && (
+            {/* Plan (inner spec.md file) */}
+            {specText && (
               <div>
                 <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  {spec.spec_type ? t`Spec · ${spec.spec_type}` : t`Spec`}
+                  {task.spec_type ? t`Plan · ${task.spec_type}` : t`Plan`}
                 </span>
                 <div className="mt-1 max-h-48 overflow-y-auto whitespace-pre-wrap rounded border border-border p-2 text-sm text-foreground/80">
-                  {spec.content}
+                  {specText}
                 </div>
               </div>
             )}

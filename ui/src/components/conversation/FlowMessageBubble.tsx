@@ -1,4 +1,4 @@
-import { APIEntity, Artifact, createConversationForShare, FlowMessage, isImagePath, Prompt, TypeId, User, type AgenticProcess, type WorkerStatus } from '@sdk';
+import { APIEntity, Artifact, createConversationForShare, FlowMessage, isImagePath, MessageAttachment, Prompt, TypeId, User, type AgenticProcess, type WorkerStatus } from '@sdk';
 import { isValidIdentifier } from '@sdk/models/TypeId';
 import { useEntity } from '@sdk/react/hooks';
 import { Trans, useLingui } from '@lingui/react/macro';
@@ -6,13 +6,17 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ITask } from '@sdk/entities/task';
 import type { ConversationMessage, ConversationParticipant } from '@sdk/entities/conversation';
 import { BodyStatus, FlowMessageKind, forwardMessage } from '@sdk/entities/flow-message';
-import { AlertCircle, Download, File, FileText, Loader2, X } from 'lucide-react';
+import { AlertCircle, Download, File, FileText, Loader2, Play, X } from 'lucide-react';
 import { MessageBubble } from './MessageBubble';
 import { MessageContextButton } from './MessageContextButton';
 import { MessageRunStatus } from './MessageRunStatus';
 import { PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT } from './constants';
 import { AttachmentChip, AttachmentChipState } from './AttachmentChip';
-import { ContextEntityChip, iconForEntity } from './EntityChip';
+import { ContextEntityChip, EntityChip, iconForEntity } from './EntityChip';
+import { chipStateFor } from './useMessageAttachments';
+import { AssetReviewDialog } from './asset-review/AssetReviewDialog';
+import { TESTABLE_TYPES } from './asset-review/test-prompt';
+import { useRunSkillWithProjectPrompt } from './asset-review/useRunReceivedSkill';
 import { useLocalUser } from './useLocalUser';
 import { localBundleUrl } from './flow-message-drafts';
 import { MessageComposer } from './MessageComposer';
@@ -160,14 +164,11 @@ interface FlowMessageBubbleProps {
   /** Parent conversation's `message_status_visible` flag — passed straight
    *  through to the receipt indicator. Defaults to true. */
   conversationStatusVisible?: boolean;
-  /** Project gate from the parent. Attachment downloads materialize assets into
-   *  the conversation's project (`.claude/…`), so a download must run inside a
-   *  mapped project — when supplied, the bubble routes its download trigger
-   *  through this, which opens the project picker first if none is selected and
-   *  resumes the download after a pick. */
-  ensureProjectMapped?: (run: () => void | Promise<void>) => void;
   /** Project shell to use when opening asset entity attachments. */
   attachmentProjectId?: string | null;
+  /** Staged MessageAttachment rows for THIS message (parent-resolved via the
+   *  conversation-wide query). Drive the dashed staged chips + review modal. */
+  messageAttachments?: MessageAttachment[];
 }
 
 export function FlowMessageBubble({
@@ -192,8 +193,8 @@ export function FlowMessageBubble({
   rosterReady = false,
   isCommunity = false,
   conversationStatusVisible = true,
-  ensureProjectMapped,
   attachmentProjectId,
+  messageAttachments,
 }: FlowMessageBubbleProps) {
   // Prefer the FlowMessage handed down from the parent's batched conversation
   // query; fall back to a per-id fetch only when it wasn't provided (so the
@@ -400,12 +401,10 @@ export function FlowMessageBubble({
     !hasAttachments &&
     (!message.content || message.content === PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT);
 
-  // One click pulls the whole bundle (files + entities). When the parent supplies
-  // a project gate, route through it: assets materialize into the conversation's
-  // project, so a download with no project selected opens the picker first and
-  // resumes after a pick.
-  const triggerDownload = () =>
-    ensureProjectMapped ? ensureProjectMapped(() => handleDownloadBody()) : void handleDownloadBody();
+  // One click pulls the whole bundle (files + entities). Downloads STAGE into
+  // the message's record-data dir — no project mapping needed; installing into
+  // a project is the review modal's explicit step.
+  const triggerDownload = () => void handleDownloadBody();
 
   // `body_downloaded` only means "the bytes are on local disk" — and a FILE
   // attachment's bytes live in the message's own (project-independent) embedded
@@ -516,7 +515,13 @@ export function FlowMessageBubble({
                 typeId={typeId}
                 conversationId={fm.conversation_id ?? ''}
                 projectId={attachmentProjectId}
-                forceShow={showLiveChips}
+                // Entity chips need no project context: staged chips open the
+                // review modal, installed chips navigate by TypeId. `downloaded`
+                // alone unhides them (file chips keep the project gate).
+                forceShow={downloaded}
+                attachment={messageAttachments?.find(
+                  (ma) => ma.asset_type === typeId.type && ma.asset_id === String(typeId.id),
+                )}
               />
             ))}
           </div>
@@ -628,37 +633,105 @@ export function FlowMessageBubble({
  * resolvable locally — no body-download / cloud-login round-trip. A local app
  * entity (e.g. a forwarded `flowpad_diagnosis`) already lives on disk, so its
  * chip shows immediately rather than as a blank message behind a Download button.
- * When the entity isn't local yet (a cross-user forward whose bundle hasn't been
- * pulled), it renders only once `forceShow` is set (the body has been downloaded),
- * where `ContextEntityChip`'s own resolved / "unavailable" states take over.
+ *
+ * Three-phase reception states (see useMessageAttachments.chipStateFor):
+ *   installed — the entity resolves locally: today's solid chip (navigates).
+ *   staged    — no local entity but a MessageAttachment row exists: dashed,
+ *               clickable — opens the review/install modal (no navigation).
+ *   hidden    — pre-download (`forceShow` false); the Download button carries it.
  */
 function MessageEntityChip({
   typeId,
   conversationId,
   projectId,
   forceShow,
+  attachment,
 }: {
   typeId: TypeId;
   conversationId: string;
   projectId?: string | null;
   forceShow: boolean;
+  attachment?: MessageAttachment;
 }) {
   const { navigation } = useDockNavigation();
+  const { start: startSkillRun, picker: runPicker } = useRunSkillWithProjectPrompt();
+  const [reviewOpen, setReviewOpen] = useState(false);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data } = useEntity<APIEntity<any>>(typeId);
-  // Hidden until either the entity is on disk (local) or the bundle is downloaded.
-  if (!data && !forceShow) return null;
+  const state = chipStateFor(!!data, attachment, forceShow);
+  if (state === 'hidden') return null;
+  // "Run icon near the skill": one-click install-if-needed + run in a Vibe
+  // session (see useRunReceivedSkill). Only for skills with a staged/installed
+  // attachment — not artifacts or plain shares.
+  const runnable = !!attachment && TESTABLE_TYPES.has(typeId.type);
+  const runButton = runnable ? (
+    <button
+      type="button"
+      title="Run skill"
+      data-testid="skill-run-icon"
+      onClick={() => startSkillRun(attachment, projectId ?? null)}
+      className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-primary/50 bg-background text-primary transition-colors hover:bg-primary/10"
+    >
+      <Play className="h-3 w-3" />
+    </button>
+  ) : null;
+  // The dialog is hoisted ABOVE the staged/installed branch: installing from
+  // the open modal flips the chip staged → installed, and the modal must stay
+  // mounted mid-session so its header can flip to Uninstall (not vanish).
+  const dialog = attachment && reviewOpen && (
+    <AssetReviewDialog
+      open={reviewOpen}
+      onClose={() => setReviewOpen(false)}
+      attachment={attachment}
+      targetTypeId={typeId}
+      attachmentProjectId={projectId ?? null}
+    />
+  );
+  if (state === 'staged') {
+    return (
+      <>
+        <span className="inline-flex items-center gap-1">
+          <EntityChip
+            entity={{ typeId, type: typeId.type, id: typeId.id, name: attachment!.name ?? typeId.type }}
+            staged
+            onClick={() => setReviewOpen(true)}
+          />
+          {runButton}
+        </span>
+        {dialog}
+        {runPicker}
+      </>
+    );
+  }
   const artifact = typeId.type === Artifact.type && data
     ? data instanceof Artifact
       ? data
       : new Artifact(data as unknown as Partial<Artifact>)
     : null;
+  // Installed via a MessageAttachment: the chip KEEPS opening the review modal
+  // (uninstall / test live there — requirement: "if already installed,
+  // uninstall appears instead"). The asset itself opens via the modal-adjacent
+  // context panel or any normal entity surface. Chips without an attachment
+  // (plain shares, artifacts) keep their navigation behavior.
   return (
-    <ContextEntityChip
-      typeId={typeId}
-      inside={{ type: 'conversation', id: conversationId }}
-      onClick={artifact ? () => void openArtifact(artifact, { navigation, currentProjectId: projectId ?? null }) : undefined}
-      projectId={projectId}
-    />
+    <>
+      <span className="inline-flex items-center gap-1">
+        <ContextEntityChip
+          typeId={typeId}
+          inside={{ type: 'conversation', id: conversationId }}
+          onClick={
+            artifact
+              ? () => void openArtifact(artifact, { navigation, currentProjectId: projectId ?? null })
+              : attachment
+                ? () => setReviewOpen(true)
+                : undefined
+          }
+          projectId={projectId}
+        />
+        {runButton}
+      </span>
+      {dialog}
+      {runPicker}
+    </>
   );
 }

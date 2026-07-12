@@ -1,6 +1,6 @@
 /**
  * Closing the LAST tab in the active project lands on that project's HOME
- * (`navigation.openDock(DockPointer.forProject(projectId))` → ProjectBrief) — it
+ * (`navigation.openDock(DockPointer.forProject(projectId))` → ProjectHome) — it
  * does NOT skip to a tab in ANOTHER project, even if that other tab is more
  * recently active.
  *
@@ -41,6 +41,15 @@ vi.mock('@src/navigation/useDockNavigation', () => ({
     currentDock: h.currentDock,
   }),
 }));
+
+// UnifiedTabStrip reads react-router's `useNavigation()` for the in-flight nav
+// target. This suite renders it outside a data router, so provide the hook's
+// idle shape (no navigation in flight → `location` undefined) while keeping the
+// rest of react-router real.
+vi.mock('react-router', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('react-router')>();
+  return { ...actual, useNavigation: () => ({ location: undefined, state: 'idle' }) };
+});
 
 vi.mock('@src/tabs/useTerminalStripController', () => ({
   useTerminalStripController: () => ({
@@ -114,7 +123,7 @@ describe('closing the last tab in a project', () => {
     fireEvent.keyDown(window, { key: 'w', ctrlKey: true, altKey: true, metaKey: true });
 
     // Expected (navigateAfterClose): the project has no tabs left, so land on the
-    // PROJECT HOME (openDock(DockPointer.forProject(PROJ_A)) → ProjectBrief) — the
+    // PROJECT HOME (openDock(DockPointer.forProject(PROJ_A)) → ProjectHome) — the
     // same destination a fresh project entry resolves to. It must NOT jump to
     // project B's more-recent tab, and it does NOT fall back to the global home
     // (closeDock) because a project scope is active.

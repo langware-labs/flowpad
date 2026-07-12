@@ -1,12 +1,12 @@
 import { useCallback, useMemo, useState } from 'react';
-import { Link, Trash2 } from 'lucide-react';
+import { Home, Link, Trash2 } from 'lucide-react';
 import {
   AssetDocPointer,
 } from '@src/navigation/AssetDocPointer';
 import { AssetEditor, AssetMode, AssetRoutingMethod } from '@src/navigation/asset-doc-types';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { dataContext, fsManager, fsStore, RecordType, TypeId, VFSPath } from '@sdk';
+import { dataContext, fsManager, fsStore, Project, RecordType, TypeId, VFSPath } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { ViewType } from '@src/types/ViewType';
 import { notify } from '@src/notifications';
@@ -14,12 +14,17 @@ import { getDescriptor } from '@src/components/quick-create';
 import { useAssetStats } from '@src/hooks/use-asset-stats';
 import { useAssetTypes } from '@src/hooks/use-asset-types';
 import { useAssetTreeRefresh } from '@src/hooks/useAssetTreeRefresh';
+import { useProjectContextFolders } from '@src/hooks/use-project-context-folders';
 import { useSystemTools } from '@src/hooks/use-system-tools';
-import { assetScopeBucket, defaultScopeFilter, scopeFilterKey, unionAssetBucket } from '@src/lib/scope-filter';
+import { useIsDev } from '@src/contexts/view-mode-context';
+import { assetScopeBucket, defaultScopeFilter, projectScope, scopeFilterKey, unionAssetBucket } from '@src/lib/scope-filter';
 import type { AssetScopeBucket, ScopeFilter } from '@src/lib/scope-filter';
 import { refreshNode } from '@src/components/browseable-tree/refresh-store';
 import { showDeleteAssetModal } from '@src/components/assets/delete-asset-modal';
 import { assetTypeRoot } from '@src/components/browseable-tree/adapters/assetTypeRoot';
+import { assetContextFoldersRoot } from '@src/components/browseable-tree/adapters/assetContextFoldersRoot';
+import { flatEntityRoots } from '@src/components/browseable-tree/adapters/flatEntityRoot';
+import { normalizeRel } from '@src/components/browseable-tree/adapters/fsFolderRoot';
 import {
   markdownFolderNodeId,
   markdownFolderRoot,
@@ -98,8 +103,6 @@ export function useAssetsModel() {
   const { projectId: urlProjectId, assetSubPointer } = isProjectView
     ? DockPointer.splitProjectPointer(currentDock?.pointer)
     : { projectId: null, assetSubPointer: currentDock?.pointer ?? '' };
-  const scopeProjectId = urlProjectId ?? currentProjectId;
-  const scopeProjectName = scopeProjectId === currentProjectId ? currentProjectName : null;
   const projectSeedScope = useMemo(
     () => (urlProjectId ? defaultScopeFilter(urlProjectId) : null),
     [urlProjectId],
@@ -110,6 +113,27 @@ export function useAssetsModel() {
     () => currentDock?.scopeFilter ?? projectSeedScope ?? defaultScopeFilter(currentProjectId),
     [currentDock, projectSeedScope, currentProjectId],
   );
+  const scopeProjectId =
+    urlProjectId ?? (urlScope.mode === 'project' ? urlScope.activeProjectId ?? null : currentProjectId);
+  const scopeProjectName = scopeProjectId === currentProjectId ? currentProjectName : null;
+
+  // The scoped project entity, watched so `include_dirs` edits (add/remove
+  // context folder) re-render the tree. Backs the "Context folders" root.
+  const scopeProjectTypeId = useMemo(
+    () => (scopeProjectId ? new TypeId(Project.type, scopeProjectId) : null),
+    [scopeProjectId],
+  );
+  const { data: scopeProject } = useEntity<Project>(scopeProjectTypeId, {
+    watch: true,
+    enabled: !!scopeProjectTypeId,
+  });
+  const hasScopeProject = !!scopeProject;
+  const {
+    contextDirs,
+    addPaths: handleAddContextPaths,
+    pickAndAdd: handleBrowseContextDir,
+    remove: removeContextDir,
+  } = useProjectContextFolders(scopeProject);
 
   const [assetFilter] = useState<AssetFilter>(() => ({ ...DEFAULT_ASSET_FILTER }));
 
@@ -144,13 +168,46 @@ export function useAssetsModel() {
     return { ...assetFilter, scope };
   }, [assetFilter, urlScope, openAssetBucket, openAssetId, suppressedAssetId]);
 
-  const { stats: assetStats } = useAssetStats(effectiveFilter.scope);
+  const { stats: assetStats, isLoading: statsLoading } = useAssetStats(effectiveFilter.scope);
   const typeCounts = useMemo(
     () => new Map(Object.entries(assetStats.per_type)),
     [assetStats.per_type],
   );
 
+  // Dev mode sees every registered type regardless of count; everyone else only
+  // sees types that actually have items in the current scope.
+  const isDev = useIsDev();
+
   const visibleTypes = useMemo(() => allTypes.filter((t) => !HIDDEN_TYPES.has(t.type_name)), [allTypes]);
+
+  // The set of type names the menu lists, as a stable string key. Non-dev: hide
+  // empty types once counts are in. First load (`statsLoading`, no cached counts)
+  // → empty, so the navigator shows its "Loading…" state; then the list collapses
+  // to the types with content. `null` = dev (show all). Keying on the *set* (not
+  // the count values) means a count changing 3→4 doesn't churn `displayTypes` /
+  // `roots` — only a type appearing/disappearing does.
+  const shownTypesKey = useMemo(() => {
+    if (isDev) return null;
+    if (statsLoading) return '';
+    return visibleTypes
+      .filter((t) => (typeCounts.get(t.type_name) ?? 0) > 0)
+      .map((t) => t.type_name)
+      .join(',');
+  }, [isDev, statsLoading, visibleTypes, typeCounts]);
+
+  // The types the menu actually lists. Derived purely from `shownTypesKey` +
+  // `visibleTypes`, so its array identity is stable while the shown set is.
+  const displayTypes = useMemo(() => {
+    if (shownTypesKey === null) return visibleTypes; // dev: all
+    if (shownTypesKey === '') return []; // loading, or genuinely nothing to show
+    const shown = new Set(shownTypesKey.split(','));
+    return visibleTypes.filter((t) => shown.has(t.type_name));
+  }, [shownTypesKey, visibleTypes]);
+
+  // First-load spinner for the type list: true only until the first counts land
+  // (react-query `isLoading` is first-load-only, so scope refetches with a warm
+  // cache don't re-flash it). Dev mode never gates on counts.
+  const menuLoading = typesLoading || (!isDev && statsLoading);
 
   // Reactivity only: keep each type's tree root live. A created / indexed /
   // scanned entity arrives as a `data_op`; this re-fetches the affected root
@@ -165,10 +222,12 @@ export function useAssetsModel() {
 
   const openScoped = useCallback(
     (scope: ScopeFilter) => {
-      const base = currentDock ?? DockPointer.forAssetList('all');
+      const base = effectivePointer === AssetMode.PROJECT_HOME && scope.mode !== 'project'
+        ? DockPointer.forAssetList('all')
+        : (currentDock ?? DockPointer.forAssetList('all'));
       navigation.openDock(base.withScopeFilter(scope));
     },
-    [currentDock, navigation],
+    [currentDock, effectivePointer, navigation],
   );
 
   const handleScopeChange = useCallback(
@@ -181,9 +240,35 @@ export function useAssetsModel() {
 
   const navigateAsset = useCallback(
     (p: DockPointer) => {
-      navigation.openDock(p.withScopeFilter(urlScope));
+      // Menu builders usually emit scope-less ASSETS pointers; stamp the active
+      // URL scope so in-assets navigation keeps the same scope-keyed tab. A row
+      // may intentionally carry its own scope (Project home), which wins.
+      navigation.openDock(
+        p.viewType === ViewType.ASSETS ? p.withScopeFilter(p.scopeFilter ?? urlScope) : p,
+      );
     },
     [navigation, urlScope],
+  );
+
+  // ── Context folders (project include_dirs) ────────────────────────────────
+  // Mutations live in the shared useProjectContextFolders hook (destructured
+  // above); the watched entity re-renders the root's rows. The root's "+"
+  // opens the source-chooser dialog (project folder / open folder), which
+  // funnels back through handleAddContextPaths / handleBrowseContextDir.
+  const [addContextFolderDialogOpen, setAddContextFolderDialogOpen] = useState(false);
+
+  const handleRemoveContextDir = useCallback(
+    async (dir: string) => {
+      await removeContextDir(dir);
+      // If the body is showing the removed folder (or a subfolder of it), fall
+      // back to the plain asset list so the view isn't stranded.
+      const rel = normalizeRel(DockPointer.parseAssetFsPointer(effectivePointer) ?? '');
+      const removed = normalizeRel(dir);
+      if (rel && removed && (rel === removed || rel.startsWith(`${removed}/`))) {
+        navigateAsset(DockPointer.forAssetList('all'));
+      }
+    },
+    [removeContextDir, effectivePointer, navigateAsset],
   );
 
   // Multi-select toolbar resolver. Content adapts to the current selection: every
@@ -260,10 +345,15 @@ export function useAssetsModel() {
         // forAssetEditor already returns a ViewType.ASSETS editor pointer.
         return DockPointer.forAssetEditor(openAssetTypeId.type, assetRef);
       }
+      // Bare project home (no asset sub-pointer) → address the project pointer so
+      // the "Project home" top entry highlights (it owns exactly this pointer).
+      if (!effectivePointer && scopeProjectId) {
+        return DockPointer.forProject(scopeProjectId);
+      }
       return new DockPointer(ViewType.ASSETS, effectivePointer || undefined);
     }
     return currentDock ?? null;
-  }, [isProjectView, effectivePointer, currentDock, openAsset, openAssetTypeId]);
+  }, [isProjectView, effectivePointer, scopeProjectId, currentDock, openAsset, openAssetTypeId]);
 
   const handleNew = useCallback((type: string) => {
     setNewTypeTarget(type);
@@ -407,44 +497,78 @@ export function useAssetsModel() {
     [effectiveFilter.scope, effectivePointer, indexType, navigateAsset],
   );
 
-  const roots = useMemo<BrowseableRoot[]>(
-    () =>
-      visibleTypes.map((t) => {
-        if (t.type_name === 'markdown') {
-          return markdownFolderRoot(t, {
-            indexType,
-            onNew: handleNew,
-            onCreateFolder: handleCreateFolder,
-            onMoveItem: handleMoveMarkdownItem,
-            filter: effectiveFilter,
-            onOpenKnowledgeBrowser: (absPath) =>
-              navigation.openDock(DockPointer.forKnowledgeBrowser(absPath, 'vfs')),
-          });
-        }
-        return assetTypeRoot(t, {
+  const roots = useMemo<BrowseableRoot[]>(() => {
+    const list: BrowseableRoot[] = [];
+    // Special top entry: jump back to the selected project's home. In a project
+    // route, keep the bare PROJECT pointer. In the Assets manager, use the
+    // project-home asset sub-pointer so the landing opens in the same
+    // scope-keyed Assets tab instead of minting a separate Project tab.
+    if (scopeProjectId) {
+      list.push(
+        ...flatEntityRoots([
+          {
+            id: `project-home:${scopeProjectId}`,
+            label: 'Project home',
+            icon: <Home className="h-4 w-4 flex-shrink-0 text-muted-foreground" />,
+            pointer: isProjectView
+              ? DockPointer.forProject(scopeProjectId)
+              : DockPointer.forAssetProjectHome({ scope: projectScope(scopeProjectId) }),
+          },
+        ]),
+      );
+    }
+    list.push(...displayTypes.map((t) => {
+      if (t.type_name === 'markdown') {
+        return markdownFolderRoot(t, {
           indexType,
           onNew: handleNew,
-          creatableTypes,
+          onCreateFolder: handleCreateFolder,
+          onMoveItem: handleMoveMarkdownItem,
           filter: effectiveFilter,
+          onOpenKnowledgeBrowser: (absPath) =>
+            navigation.openDock(DockPointer.forKnowledgeBrowser(absPath, 'vfs')),
         });
-      }),
-    [
-      visibleTypes,
-      indexType,
-      handleNew,
-      handleCreateFolder,
-      handleMoveMarkdownItem,
-      creatableTypes,
-      effectiveFilter,
-      navigation,
-    ],
-  );
+      }
+      return assetTypeRoot(t, {
+        indexType,
+        onNew: handleNew,
+        creatableTypes,
+        filter: effectiveFilter,
+      });
+    }));
+    // Context folders (project include_dirs) — shown whenever a project is in
+    // scope (even with no dirs yet, so the "+" add action is reachable).
+    if (hasScopeProject) {
+      list.push(
+        assetContextFoldersRoot({
+          dirs: contextDirs,
+          onAdd: () => setAddContextFolderDialogOpen(true),
+          onRemove: handleRemoveContextDir,
+        }),
+      );
+    }
+    return list;
+  }, [
+    displayTypes,
+    indexType,
+    handleNew,
+    handleCreateFolder,
+    handleMoveMarkdownItem,
+    creatableTypes,
+    effectiveFilter,
+    navigation,
+    isProjectView,
+    scopeProjectId,
+    hasScopeProject,
+    contextDirs,
+    handleRemoveContextDir,
+  ]);
 
   return {
     roots,
     treeActivePointer,
     openAssetId,
-    typesLoading,
+    menuLoading,
     typeCounts,
     isProjectView,
     // scope bar
@@ -463,5 +587,10 @@ export function useAssetsModel() {
     newFolderDialogOpen,
     setNewFolderDialogOpen,
     handleNewFolderConfirm,
+    // context folders
+    addContextFolderDialogOpen,
+    setAddContextFolderDialogOpen,
+    handleAddContextPaths,
+    handleBrowseContextDir,
   } as const;
 }

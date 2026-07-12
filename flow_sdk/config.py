@@ -313,13 +313,15 @@ def set_server_info(data: dict) -> Path:
 
 
 def clear_server_info() -> None:
-    """Remove sentinel keys (server_pid, monitor_pid, launch_iso_time) from active file."""
+    """Delete the active server.json — this server is no longer running.
+
+    Every key in the file is runtime-only (port, pids, launch time), and a
+    leftover file is actively harmful: broadcast readers (``flow hooks
+    report``) treat any server.json as a live target, so a stale one
+    re-routes their traffic to whichever server later recycles the port.
+    """
     try:
-        info = load_server_info()
-        info.pop("server_pid", None)
-        info.pop("monitor_pid", None)
-        info.pop("launch_iso_time", None)
-        save_server_info(info)
+        get_port_file_path().unlink(missing_ok=True)
     except Exception:
         pass
 

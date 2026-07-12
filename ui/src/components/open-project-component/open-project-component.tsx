@@ -5,6 +5,7 @@ import { CopilotIcon } from '@src/components/icons/CopilotIcon';
 import { getProjectDisplayName } from '@src/hooks/use-claude-projects';
 import { useAllProjects } from '@src/hooks/use-all-projects';
 import {
+  ContextEntitiesEnum,
   dataContext,
   type ProjectListItem,
   Project,
@@ -14,10 +15,13 @@ import {
 import { usePreference } from '@src/hooks/use-preference';
 import { selectProjectContext } from '@src/components/project-selector';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { dockForProjectEntry } from '@src/tabs/project-entry';
+import { DockPointer } from '@src/navigation/DockPointer';
+import { agenticProcessIdForProjectEntry, dockForProjectEntry } from '@src/tabs/project-entry';
+import { SectionHairlineTitle } from '@src/components/terminal/ProjectsCounterChip';
+import { useTabProjectBuckets } from '@src/tabs/useTabs';
 import { useProject } from '@sdk/react/hooks';
 import { useDevMode } from '@src/contexts/dev-mode-context';
-import { useIsAdvanced } from '@src/contexts/view-mode-context';
+import { useIsAdvanced, useIsVibe, ViewMode } from '@src/contexts/view-mode-context';
 import { Button } from '@src/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { Input } from '@src/components/ui/input';
@@ -435,21 +439,70 @@ function CompactProjectSelectDialog({
   const [search, setSearch] = useState('');
   const q = search.trim().toLowerCase();
 
-  const filtered = useMemo(() => {
+  // Active projects = the ones that own open tabs — the SAME source the tab
+  // strip's projects chip renders, so both surfaces always agree.
+  const { buckets } = useTabProjectBuckets();
+  const tabCountByProjectId = useMemo(
+    () => new Map(buckets.map((b) => [b.projectId, b.tabCount])),
+    [buckets],
+  );
+
+  const { active, rest, hiddenCount } = useMemo(() => {
+    const matches = (p: ProjectListItem) => !q || matchesProjectQuery(p, q);
+    // Active section mirrors the chip: alphabetical by display name, id tie-break.
+    const activeList = projects
+      .filter((p) => tabCountByProjectId.has(p.id) && matches(p))
+      .sort(
+        (a, b) =>
+          getProjectDisplayName(a).localeCompare(getProjectDisplayName(b)) || a.id.localeCompare(b.id),
+      );
     // `last_active_at` (UI-open recency) wins; session `modified_at` is the
     // fallback; fully-unknown recency sorts as "now" (new project → top).
     const now = Date.now();
     const byRecent = projects
+      .filter((p) => !tabCountByProjectId.has(p.id) && matches(p))
       .map((p) => ({ p, ms: projectRecencyMs(p) ?? now }))
       .sort((a, b) => b.ms - a.ms)
       .map((r) => r.p);
-    // No query → show only the most-recent slice; querying searches all projects.
-    return q ? byRecent.filter((p) => matchesProjectQuery(p, q)) : byRecent.slice(0, COMPACT_PROJECT_LIMIT);
-  }, [projects, q]);
+    // No query → active projects always show; the rest keep the most-recent
+    // cap so Standard view stays short. Querying searches all projects.
+    const restList = q ? byRecent : byRecent.slice(0, COMPACT_PROJECT_LIMIT);
+    return { active: activeList, rest: restList, hiddenCount: q ? 0 : byRecent.length - restList.length };
+  }, [projects, q, tabCountByProjectId]);
 
-  // Without a query the list is capped; surface how many recent projects are hidden.
-  const hiddenCount = q ? 0 : Math.max(0, projects.length - filtered.length);
+  const filtered = useMemo(() => [...active, ...rest], [active, rest]);
   const showSearch = projects.length > COMPACT_PROJECT_LIMIT || search.length > 0;
+
+  // One row shape for both sections; active rows carry the chip's tab-count badge.
+  const renderRow = (project: ProjectListItem, tabCount?: number) => {
+    const projectPath = normalizePath(project.cwd || project.name || '');
+    const isCurrent =
+      !!currentProjectPath && canonicalPathKey(projectPath) === canonicalPathKey(currentProjectPath);
+    const isOpening = openingProjectId === project.id;
+    return (
+      <button
+        key={project.id}
+        onClick={() => onProjectClick(project)}
+        disabled={!!openingProjectId || isSubmitting}
+        title={project.cwd ? `${getProjectDisplayName(project)}\n${project.cwd}` : getProjectDisplayName(project)}
+        className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition-colors hover:bg-accent/50 disabled:cursor-not-allowed disabled:opacity-50 ${isCurrent ? 'bg-accent/30' : ''}`}
+      >
+        {isOpening ? (
+          <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground" />
+        ) : isCurrent ? (
+          <Check className="h-3.5 w-3.5 shrink-0 text-primary" />
+        ) : (
+          <div className="h-3.5 w-3.5 shrink-0" />
+        )}
+        <span className="min-w-0 flex-1 truncate font-medium">{getProjectDisplayName(project)}</span>
+        {tabCount !== undefined && (
+          <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-xs tabular-nums text-muted-foreground">
+            {tabCount}
+          </span>
+        )}
+      </button>
+    );
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -483,30 +536,18 @@ function CompactProjectSelectDialog({
               </div>
             ) : (
               <div className="divide-y divide-border">
-                {filtered.map((project) => {
-                  const projectPath = normalizePath(project.cwd || project.name || '');
-                  const isCurrent =
-                    !!currentProjectPath && canonicalPathKey(projectPath) === canonicalPathKey(currentProjectPath);
-                  const isOpening = openingProjectId === project.id;
-                  return (
-                    <button
-                      key={project.id}
-                      onClick={() => onProjectClick(project)}
-                      disabled={!!openingProjectId || isSubmitting}
-                      title={project.cwd ? `${getProjectDisplayName(project)}\n${project.cwd}` : getProjectDisplayName(project)}
-                      className={`flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition-colors hover:bg-accent/50 disabled:cursor-not-allowed disabled:opacity-50 ${isCurrent ? 'bg-accent/30' : ''}`}
-                    >
-                      {isOpening ? (
-                        <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground" />
-                      ) : isCurrent ? (
-                        <Check className="h-3.5 w-3.5 shrink-0 text-primary" />
-                      ) : (
-                        <div className="h-3.5 w-3.5 shrink-0" />
-                      )}
-                      <span className="truncate font-medium">{getProjectDisplayName(project)}</span>
-                    </button>
-                  );
-                })}
+                {active.length > 0 && (
+                  <SectionHairlineTitle testid="switch-project-active-title">
+                    <Trans>Active projects</Trans>
+                  </SectionHairlineTitle>
+                )}
+                {active.map((project) => renderRow(project, tabCountByProjectId.get(project.id)))}
+                {active.length > 0 && rest.length > 0 && (
+                  <SectionHairlineTitle testid="switch-project-recent-title">
+                    <Trans>Recent</Trans>
+                  </SectionHairlineTitle>
+                )}
+                {rest.map((project) => renderRow(project))}
               </div>
             )}
           </div>
@@ -709,6 +750,7 @@ export function OpenProjectComponent({
   const [showSystem, setShowSystem] = usePreference<boolean>(PrefKey.SHOW_SYSTEM_PROJECTS);
   const devMode = useDevMode();
   const isAdvanced = useIsAdvanced();
+  const isVibe = useIsVibe();
 
   // The detailed picker (search + time pills + system toggle + per-row metadata)
   // is an Advanced-view affordance. In Standard view the footer "Switch Project"
@@ -758,6 +800,20 @@ export function OpenProjectComponent({
           // continuation errors shouldn't break the picker
         }
       } else {
+        if (isVibe) {
+          await selectProjectContext(project);
+          const processId = project.id ? await agenticProcessIdForProjectEntry(project.id) : null;
+          if (processId) {
+            void navigation.openShellProcess(processId, { viewMode: ViewMode.Vibe });
+            return;
+          }
+          await dataContext.setActiveEntityTypeId(null);
+          await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProcessTypeId, null);
+          navigation.openDock(
+            DockPointer.forHome(undefined, undefined, { vibeNoProcess: true }).withViewMode(ViewMode.Vibe),
+          );
+          return;
+        }
         // Plain switch (footer Switch Project included): navigate to the
         // project's tab — the same path as clicking that tab in the strip
         // (dockForProjectEntry → fromTabHash → openDock). Resumes the
@@ -767,7 +823,7 @@ export function OpenProjectComponent({
         navigation.openDock(await dockForProjectEntry(project.id));
       }
     },
-    [onProjectChanged, onPicked, navigation],
+    [isVibe, onProjectChanged, onPicked, navigation],
   );
 
   const ensureProjectAndSetContext = useCallback(

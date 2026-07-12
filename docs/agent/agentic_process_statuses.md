@@ -88,12 +88,35 @@ and not on the lock alone.
 `is_turn_busy` is the single source consumed by:
 - the serialized `busy` field (`busy` ⇔ `is_turn_busy`),
 - the `switch-mode` / `restart` 409 guard (`_reject_if_turn_in_flight`),
-- `ready_for_input` (`⇔ status == running and not busy`),
+- `ready_for_input` (see the readiness rule below),
 - and, via the serialized `busy`, every frontend gate: `isBusy(p) ⇔ p.busy`,
-  `isReadyForInput(p) ⇔ p.status === 'running' && !p.busy`.
+  `isReadyForInput(p)` (see below).
 
-"ready" (`running && !busy`) and `busy` are disjoint by construction, so the
-frontend toggle (enabled when ready) can never land on the backend's busy 409.
+"ready" and `busy` are disjoint by construction (`!busy` gates readiness first),
+so the frontend toggle (enabled when ready) can never land on the backend's busy 409.
+
+### ready_for_input — the readiness rule (incl. headless-idle)
+
+`ready_for_input` is a **projection** over `status` + `busy` + transport, computed
+by `status_predicates.is_ready_from_busy(status, busy, *, pty_mode, session_id)`
+(mirrored by the frontend `isReadyForInput`). A caller can send a new prompt /
+toggle chat⇄terminal when **not busy** AND either:
+
+- `status == running`, OR
+- **headless-idle**: `pty_mode is False` (CLI transport) AND `status == stopped`
+  AND a live `session_id`.
+
+The headless-idle branch exists because the CLI transport runs a fresh
+`claude -p` worker **per turn**, so between turns a headless session legitimately
+has no running worker and sits at `stopped` while preserving its `session_id`. It
+is nonetheless ready for the next prompt. Switching terminal→chat
+(`_enter_cli_mode` → `exit()`) lands exactly here: without this branch the toggle
+enable-gate (`isReadyForInput`) wedged permanently off at headless-idle, so a user
+who switched to chat could never toggle back to terminal without first sending a
+message (RCA debug_log.md #12a). An **interactive** (PTY) worker that stopped
+(`pty_mode is True`) is NOT headless-idle — its transport requires a live PID — so
+it stays not-ready at `stopped`, as before. This is readiness projection only; the
+`is_turn_busy` gate is unchanged (`busy` still short-circuits to not-ready first).
 
 ### worker → busy mapping (when the stored status is `running`)
 

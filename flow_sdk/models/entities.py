@@ -24,6 +24,11 @@ except ImportError as e:
     print(f"[WARN] Failed to import Project: {e}")
 
 try:
+    from flow_sdk.builtin.secret_origin import SecretOrigin  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import SecretOrigin: {e}")
+
+try:
     from flow_sdk.builtin.workspace import Workspace  # noqa: F401
 except ImportError as e:
     print(f"[WARN] Failed to import Workspace: {e}")
@@ -151,6 +156,11 @@ except ImportError as e:
     print(f"[WARN] Failed to import FeedEntry: {e}")
 
 try:
+    from flow_sdk.builtin.message_attachment import MessageAttachment  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import MessageAttachment: {e}")
+
+try:
     from flow_sdk.builtin.message_suggest import MessageSuggest  # noqa: F401
 except ImportError as e:
     print(f"[WARN] Failed to import MessageSuggest: {e}")
@@ -171,9 +181,19 @@ except ImportError as e:
     print(f"[WARN] Failed to import UsageReport: {e}")
 
 try:
+    from flow_sdk.builtin.asset_cleanup_report import AssetCleanupReport  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import AssetCleanupReport: {e}")
+
+try:
     from flow_sdk.builtin.workflow_run import WorkflowRun  # noqa: F401
 except ImportError as e:
     print(f"[WARN] Failed to import WorkflowRun: {e}")
+
+try:
+    from flow_sdk.builtin.folder import Folder  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import Folder: {e}")
 
 # These have more complex dependencies - skip for now
 # from builtin.page import Page  # noqa: F401

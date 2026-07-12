@@ -23,7 +23,13 @@ def _claude_projects_dir() -> Path:
 
 
 def _codex_sessions_dir() -> Path:
-    return Path.home() / ".codex" / "sessions"
+    # CODEX_HOME is instance configuration, not necessarily ``~/.codex`` (for
+    # example, isolated app/test instances deliberately point it elsewhere).
+    # Keep this resolver on the same source of truth as the Codex driver,
+    # transcript watcher, and history indexer.
+    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
+    return get_instance_settings().codex_sessions_dir
 
 
 def _copilot_session_state_dir() -> Path:
@@ -32,6 +38,20 @@ def _copilot_session_state_dir() -> Path:
 
 class TranscriptNotFoundError(LookupError):
     """Raised when no JSONL exists for ``(worker_type, session_id)``."""
+
+
+def _validate_path_component(value: str, field: str) -> None:
+    """Reject identifiers that could escape or broaden a store lookup."""
+    if (
+        not isinstance(value, str)
+        or not value
+        or len(value.encode("utf-8")) > 255
+        or value in {".", ".."}
+        or value != value.strip()
+        or any(char in value for char in ("/", "\\", "*", "?", "[", "]"))
+        or any(ord(char) < 32 or ord(char) == 127 for char in value)
+    ):
+        raise ValueError(f"Invalid {field}: expected one filename-safe component")
 
 
 def resolve_session_jsonl(worker_type: str, session_id: str) -> Path:
@@ -43,7 +63,10 @@ def resolve_session_jsonl(worker_type: str, session_id: str) -> Path:
     with the share). Worker-generic across claude/codex/copilot.
 
     Raises ``TranscriptNotFoundError`` when no match is found, ``ValueError``
-    on unsupported worker types.
+    on unsupported worker types or a ``session_id`` that is not one
+    filename-safe path component (ids are interpolated into glob patterns
+    below, so a raw ``*``/``../`` must be a hard caller error here — unlike
+    ``received_transcript_dest``, which treats it as a non-match).
     """
     wt = worker_type.lower().strip()
     _resolvers = {
@@ -55,6 +78,7 @@ def resolve_session_jsonl(worker_type: str, session_id: str) -> Path:
     resolver = _resolvers.get(wt)
     if resolver is None:
         raise ValueError(f"Unsupported worker_type: {worker_type!r}")
+    _validate_path_component(session_id, "session_id")
     try:
         return resolver(session_id)
     except TranscriptNotFoundError:
@@ -157,9 +181,17 @@ def received_transcript_dest(worker_type: str, session_id: str) -> Path | None:
     ``<instance_dir>/received_transcripts/<worker>/<session_id>.jsonl``.
 
     The layout is worker-uniform — the parser keys off ``worker_type``, not the
-    filename, so one shape serves every worker. ``None`` when no instance dir
-    is available. The single source of truth for the path, shared by the
-    unpack writer and the resolver fallback."""
+    filename, so one shape serves every worker. ``None`` when no safe
+    destination or instance dir is available. The single source of truth for
+    the path, shared by the unpack writer and the resolver fallback."""
+    try:
+        _validate_path_component(worker_type, "worker_type")
+        _validate_path_component(session_id, "session_id")
+    except ValueError:
+        # This helper is also used while inspecting arbitrary transcript/share
+        # metadata. An unsafe id is a non-match, not a reason to fail the whole
+        # parse or bundle import.
+        return None
     base = _received_transcripts_dir()
     return None if base is None else base / worker_type / f"{session_id}.jsonl"
 

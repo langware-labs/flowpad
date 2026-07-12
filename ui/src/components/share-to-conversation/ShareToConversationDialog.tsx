@@ -3,6 +3,7 @@ import { Check, MessageSquarePlus, Send } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import {
   hasRemoteParticipant,
+  normalizeEmail,
   type ConversationParticipant,
   type ConversationSendPayload,
 } from '@sdk';
@@ -172,7 +173,7 @@ export function ShareToConversationDialog({
   const recipientEmails = useMemo(
     () =>
       participants
-        .map((p) => (p.email || '').trim())
+        .map((p) => normalizeEmail(p.email) || '')
         .filter((e) => !!e && e.includes('@')),
     [participants],
   );

@@ -261,19 +261,17 @@ async def test_download_body_uses_legacy_attachment_filename(bootstrapped_client
 async def test_download_body_409_envelopes_and_overwrite_plumbing(
     bootstrapped_client,
 ) -> None:
-    """Drive the three refactor branches of ``handle_download_body`` through the
-    ASGI client, plus the ``overwrite`` plumb-through.
+    """Drive the error branches of ``handle_download_body`` through the ASGI
+    client, plus the ``overwrite`` plumb-through.
 
     The real ``download_body`` runs end-to-end (READY gate + filename resolution)
     and delegates to ``_download_and_unpack_bundle``; we stub only that delegate
     (same seam the happy-path tests use) so each underlying exception travels the
     genuine ``FlowMessage.download_body`` → ``handle_download_body`` path and
-    lands in the documented envelope branch.
+    lands in the documented envelope branch. (There is no needs_project branch
+    anymore — downloads STAGE and never require a mapped project.)
     """
-    from flow_sdk.builtin.flow_message_bundle import (
-        FlowMessageExistsError,
-        FlowMessageNoProjectError,
-    )
+    from flow_sdk.builtin.flow_message_bundle import FlowMessageExistsError
 
     DL = "flow_sdk.app.actions.flow_message_action._download_and_unpack_bundle"
 
@@ -294,24 +292,7 @@ async def test_download_body_409_envelopes_and_overwrite_plumbing(
     assert body["data"]["asset_conflict"] is True
     assert body["data"]["conflicts"] == conflicts
 
-    # (b) FlowMessageNoProjectError → 409 {needs_project: True, pending_types: [...]}.
-    pending = ["markdown", "task"]
-    fm_noproj = await _save_local_fm(
-        text="no-project",
-        body_status=BodyStatus.READY,
-        attachment_filename=BODY_FILENAME,
-    )
-    with patch(DL, AsyncMock(side_effect=FlowMessageNoProjectError(pending))):
-        r = await bootstrapped_client.post(
-            f"/api/v1/graph/flow_message/{fm_noproj}/download_body", json={},
-        )
-    assert r.status_code == 409, r.text
-    body = r.json()
-    assert body.get("status") in ("FAIL", "fail")
-    assert body["data"]["needs_project"] is True
-    assert body["data"]["pending_types"] == pending
-
-    # (c) overwrite=True in the POST body reaches _download_and_unpack_bundle.
+    # (b) overwrite=True in the POST body reaches _download_and_unpack_bundle.
     fm_ovr = await _save_local_fm(
         text="overwrite",
         body_status=BodyStatus.READY,
@@ -328,7 +309,6 @@ async def test_download_body_409_envelopes_and_overwrite_plumbing(
     assert mock_dl.await_args.kwargs["overwrite"] is True
     # And the explicit download path opts into hard failures (not log-and-drop).
     assert mock_dl.await_args.kwargs["raise_on_conflict"] is True
-    assert mock_dl.await_args.kwargs["raise_on_no_project"] is True
 
     # Control: omitting overwrite defaults it to False on the same seam.
     fm_default = await _save_local_fm(

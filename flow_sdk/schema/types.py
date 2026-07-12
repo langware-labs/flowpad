@@ -116,6 +116,7 @@ class EntityType(StrEnum):
     # parsed & served like a worker transcript/session (worker_type "workflow").
     WORKFLOW_RUN = "workflow_run"
     USAGE_REPORT = "usage_report"
+    ASSET_CLEANUP_REPORT = "asset_cleanup_report"
     DATASET = "dataset"
     FLOWPAD_DIAGNOSIS = "flowpad_diagnosis"
     COLLABORATION_ROOM = "collaboration_room"
@@ -129,6 +130,7 @@ class EntityType(StrEnum):
     SYSTEM_ROOT = "system_root"
     CWD_ROOT = "cwd_root"
     FOLDER = "folder"
+    SECRET_ORIGIN = "secret_origin"
 
     # ── DB / hub entity types (formerly BuiltinEntityType-only) ──────────────
     USER = "user"
@@ -162,6 +164,9 @@ class EntityType(StrEnum):
     PROCESS_RESULT = "process_result"
     CRON_EVENT = "cron_event"
     FLOW_MESSAGE = "flow_message"
+    # A received, staged bundle attachment awaiting explicit install
+    # (DB-only entity — no TypeInfo/RecordType; see builtin/message_attachment.py).
+    MESSAGE_ATTACHMENT = "message_attachment"
     TEAM_SPACE = "team_space"
     NOTIFICATION = "notification"
     RUN = "run"

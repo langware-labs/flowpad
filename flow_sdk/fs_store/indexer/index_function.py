@@ -106,6 +106,18 @@ class IndexerOptions:
     # Orphan detection is automatic — happens after the main index loop by
     # walking the record homes on disk (no DB query).
     orphan_action: OrphanAction = OrphanAction.INDEX
+    # Dedup-on-adopt: a capsule id (frontmatter / .flow/id) survives move+rename,
+    # but a local ``cp -r`` duplicates it → two entities collapsing into one row.
+    # When True (default), an adopted id already living at a DIFFERENT still-present
+    # path is re-keyed (fresh v4 into the copy's capsule). Set False on the bundle
+    # RECEIVE/install path, where the same id arriving at a new path is intentional
+    # (a shared asset), not a copy to re-key.
+    # This flag also arms the INVERSE reconciliation — the same-path duplicate
+    # sweep: when a parsed file resolves to one id, other pre-existing rows
+    # anchored to the same path that nothing in the walk claims are removed
+    # (the wheel-reinstall / invalid-capsule-id leak). Both directions are one
+    # id⇄path consistency policy, so they toggle together.
+    dedup_on_adopt: bool = True
     # When set, the orphan candidate set is intersected with this filter
     # before reporting and acting. Orphan-ness is still determined globally
     # (a record is orphan iff its Layer 1 source is missing); the filter
@@ -130,6 +142,10 @@ class PerTypeIndexResult:
     orphans_db_removed: int = 0
     orphans_disk_removed: int = 0
     orphan_ids: tuple[str, ...] = ()
+    # Stale same-path duplicates removed (see the dupe sweep in index()):
+    # pre-existing rows anchored to a walked file that resolved to a
+    # different id this run and were claimed by nothing else.
+    dupes_removed: int = 0
 
 
 @dataclass(slots=True)
@@ -141,6 +157,7 @@ class IndexResult:
     total_orphans_found: int = 0
     total_orphans_db_removed: int = 0
     total_orphans_disk_removed: int = 0
+    total_dupes_removed: int = 0
 
 
 class IndexerFunc(Protocol):
@@ -250,6 +267,34 @@ def _scope_filter_keeps(
         return pid in set((*sf.projects, *record_projects))
     # Genuinely-empty scope (scope == "" or other falsy).
     return _empty_scope_keeps(type_name)
+
+
+def _same_path_dupe_groups(
+    existing_db_paths: dict[str, dict[str, str]],
+) -> dict[str, dict[str, set[str]]]:
+    """``{type: {canonical_path: {id, ...}}}`` for paths claimed by ≥2 DB rows.
+
+    Input is the skip-fresh preload (``{type: {id: asset_ref}}``). Grouping is
+    on the RAW stored path first, so ``canonical_posix_path`` (a per-path
+    ``resolve()`` syscall chain) runs only for the rare already-duplicated
+    groups — never per row.
+    """
+    from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
+
+    out: dict[str, dict[str, set[str]]] = {}
+    for tname, by_id in existing_db_paths.items():
+        groups: dict[str, set[str]] = {}
+        for rid, src in by_id.items():
+            groups.setdefault(src, set()).add(rid)
+        for src, rids in groups.items():
+            if len(rids) < 2:
+                continue
+            try:
+                key = canonical_posix_path(src)
+            except (OSError, ValueError):
+                continue
+            out.setdefault(tname, {}).setdefault(key, set()).update(rids)
+    return out
 
 
 def _db_missing_orphans(
@@ -466,7 +511,7 @@ class FSIndexer:
             rt: {
                 "indexed": 0, "errors": 0, "duration_ms": 0.0, "skipped": 0,
                 "orphans_found": 0, "orphans_db_removed": 0, "orphans_disk_removed": 0,
-                "orphan_ids": [],
+                "orphan_ids": [], "dupes_removed": 0,
             }
             for rt in per_type_totals
         }
@@ -560,17 +605,45 @@ class FSIndexer:
         # and gate freshness on membership. An empty ``existing_db_ids`` means
         # "couldn't enumerate" → fall back to sentinel-only (prior behaviour).
         existing_db_ids: dict[str, set[str]] = {}
+        # ``{type: {id: asset_ref}}`` — the incumbent path an id already lives at.
+        # Powers dedup-on-adopt (move vs copy). Same lean SELECT as the id set.
+        existing_db_paths: dict[str, dict[str, str]] = {}
         if hasattr(driver, "list_entity_sources_by_type"):
             try:
                 for rt in per_type_totals:
                     rows = await driver.list_entity_sources_by_type(str(rt))
                     existing_db_ids[str(rt)] = set(rows.keys())
+                    existing_db_paths[str(rt)] = {
+                        rid: src[0] for rid, src in rows.items() if src and src[0]
+                    }
             except Exception:
                 logging.warning(
                     "[FSIndexer] could not preload DB ids for skip-fresh row check; "
                     "falling back to sentinel-only freshness", exc_info=True,
                 )
                 existing_db_ids.clear()
+                existing_db_paths.clear()
+
+        # In-run copy detection: the first index after ``cp -r`` sees BOTH copies
+        # in one walk before either is in the DB. ``{id: canonical_path}`` records
+        # which ref first claimed an id this run so the second is caught as a copy.
+        claimed_ids: dict[str, str] = {}
+
+        # Same-path reconciliation (the inverse of dedup-on-adopt, which handles
+        # one id at two paths): paths already claimed by MORE THAN ONE row.
+        # Classic cause: a wheel reinstall restores an invalid frontmatter id,
+        # so each subsequent index mints a fresh id and inserts a new row — one
+        # duplicate per install, and the orphan sweep never fires because the
+        # source file still exists. When a walked file is parsed this run,
+        # every other id anchored to its exact path becomes a removal
+        # candidate; anything the walk claims elsewhere (``seen_ids``, e.g. a
+        # MOVE's incumbent or a sibling fragment) is rescued before the sweep
+        # below acts. Armed by ``opts.dedup_on_adopt`` — both sides of the same
+        # id⇄path reconciliation policy.
+        dupe_ids_by_path = (
+            _same_path_dupe_groups(existing_db_paths) if opts.dedup_on_adopt else {}
+        )
+        stale_dupe_candidates: dict[RecordType, set[str]] = {}
 
         # Deepest-project-wins association: snapshot (canonical_mount, id) for
         # every project once per run. With NESTED project mounts (an umbrella
@@ -624,12 +697,19 @@ class FSIndexer:
         # mint: stable uuid5 of the path, via the single minter
         # (policy-conforming).
         from flow_sdk.fs_store.identifier import mint_uuid  # noqa: PLC0415
+        from flow_sdk.fs_store.indexer.functions._folder_capsule import (  # noqa: PLC0415
+            write_capsule_id,
+        )
 
         def _probe_chunk(
             items: list[tuple[FSRef, Any]],
-        ) -> list[tuple[FSRef, Any, str, FSRecord, bool]]:
-            out: list[tuple[FSRef, Any, str, FSRecord, bool]] = []
+        ) -> list[tuple[FSRef, Any, str, FSRecord, bool, str | None]]:
+            out: list[tuple[FSRef, Any, str, FSRecord, bool, str | None]] = []
             for ref, info in items:
+                # Canonical walked path, computed off-loop here (resolve()
+                # syscalls) and threaded through for the same-path dupe
+                # nomination in the parse loop. None when dedup is off.
+                canon_path: str | None = None
                 # Per-ref tolerance: one unreadable source (e.g. a non-UTF-8
                 # file blowing up a frontmatter read) must not abort the whole
                 # index run. Fall back to the path-derived id and mark the ref
@@ -643,6 +723,29 @@ class FSIndexer:
                         ref_id = info.gen_uuid_fn(ref)
                     else:
                         ref_id = mint_uuid(str(ref._path))
+                    # Dedup-on-adopt: a capsule id survives move+rename, but a
+                    # local ``cp -r`` duplicates it. If this id already lives at a
+                    # DIFFERENT still-present path (a DB incumbent or an earlier
+                    # ref this run), this ref is a COPY → re-key it (fresh v4 into
+                    # its own capsule) so the two don't collapse. Old path gone →
+                    # a MOVE → keep the id. Missing/errored incumbent stat fails
+                    # safe to MOVE (never spuriously re-key an authored id).
+                    if opts.dedup_on_adopt and ref_id:
+                        cur = canon_path = canonical_posix_path(str(ref._path))
+                        incumbent = (
+                            existing_db_paths.get(str(ref.record_type), {}).get(ref_id)
+                            or claimed_ids.get(ref_id)
+                        )
+                        if incumbent and canonical_posix_path(incumbent) != cur:
+                            try:
+                                incumbent_present = Path(incumbent).exists()
+                            except OSError:
+                                incumbent_present = False
+                            if incumbent_present:
+                                new_id = mint_uuid()  # v4 for the copy
+                                write_capsule_id(info, ref._path, new_id)
+                                ref_id = new_id
+                        claimed_ids[ref_id] = cur
                     probe = FSRecord(type=str(ref.record_type), id=ref_id, asset_ref=ref)
                     # Skip-fresh: on-disk ``.hash`` equality AND a live DB row.
                     # The probe reads its own sentinel (shadow home) and the
@@ -670,14 +773,14 @@ class FSIndexer:
                     ref_id = mint_uuid(str(ref._path))
                     probe = FSRecord(type=str(ref.record_type), id=ref_id, asset_ref=ref)
                     fresh = False
-                out.append((ref, info, ref_id, probe, fresh))
+                out.append((ref, info, ref_id, probe, fresh, canon_path))
             return out
 
         async with _db_session() as _idx_session:
             for chunk_start in range(0, len(dispatchable), _PROBE_CHUNK_REFS):
                 chunk = dispatchable[chunk_start:chunk_start + _PROBE_CHUNK_REFS]
                 probed = await asyncio.to_thread(_probe_chunk, chunk)
-                for ref, info, ref_id, probe, fresh in probed:
+                for ref, info, ref_id, probe, fresh, canon_path in probed:
                     current_rt = ref.record_type
                     acc = per_type_counts[ref.record_type]
 
@@ -750,6 +853,20 @@ class FSIndexer:
                             if rec_id:
                                 seen_ids.setdefault(ref.record_type, set()).add(str(rec_id))
                         acc["indexed"] += len(records)
+                        # Same-path reconciliation: a successful parse enumerates
+                        # the file's COMPLETE record set (all landed in seen_ids
+                        # just above), so any other pre-existing id anchored to
+                        # this exact path is a stale-duplicate candidate. Only
+                        # parsed refs nominate — a fresh-skip or per-type-cap
+                        # skip doesn't prove the file's full id set.
+                        if canon_path is not None and (
+                            prior := dupe_ids_by_path.get(
+                                str(ref.record_type), {}
+                            ).get(canon_path)
+                        ):
+                            stale_dupe_candidates.setdefault(
+                                ref.record_type, set()
+                            ).update(prior)
                         # Stamp the sentinel only on a successful parse+sync (a
                         # failed parse stays index_required and is retried) AND
                         # only after the row commits — defer to the post-commit
@@ -791,6 +908,29 @@ class FSIndexer:
             # a stalled-looking 100% bar. Any non-complete text works; the
             # activity stays alive until the terminal emit below.
             await emit(text="sweeping", force=True)
+
+            # ----- Same-path duplicate sweep -----
+            # Positive-evidence cleanup, independent of ``orphan_action``: each
+            # candidate's path was walked AND parsed this run and resolved to a
+            # different id, so a candidate that nothing else claimed
+            # (``seen_ids`` is global for the run) is an unreachable duplicate
+            # row. Remove row + FTS + records dir via the same machinery as an
+            # orphan DELETE. The source file is never touched — it belongs to
+            # the surviving id.
+            for rt, cands in stale_dupe_candidates.items():
+                stale = sorted(cands - seen_ids.get(rt, set()))
+                if not stale:
+                    continue
+                db_removed, _ = await self._apply_orphan_action(
+                    rt, stale, OrphanAction.DELETE,
+                )
+                # rt was necessarily indexed via per_type_counts[rt] when the
+                # parse loop nominated its candidates — always present.
+                per_type_counts[rt]["dupes_removed"] += db_removed
+                logging.info(
+                    "[FSIndexer] removed %d stale same-path duplicate row(s) for %s: %s",
+                    db_removed, rt, stale,
+                )
 
             # ----- Orphan handling -----
             # DEFINITION: a record is orphan iff its source (Layer 1, e.g.
@@ -922,6 +1062,7 @@ class FSIndexer:
                 orphans_db_removed=int(acc.get("orphans_db_removed", 0)),
                 orphans_disk_removed=int(acc.get("orphans_disk_removed", 0)),
                 orphan_ids=tuple(acc.get("orphan_ids", []) or []),
+                dupes_removed=int(acc.get("dupes_removed", 0)),
             )
 
         duration = (time.perf_counter() - t0) * 1000
@@ -941,6 +1082,7 @@ class FSIndexer:
             total_orphans_found=sum(p.orphans_found for p in per_type.values()),
             total_orphans_db_removed=sum(p.orphans_db_removed for p in per_type.values()),
             total_orphans_disk_removed=sum(p.orphans_disk_removed for p in per_type.values()),
+            total_dupes_removed=sum(p.dupes_removed for p in per_type.values()),
         )
 
     @staticmethod

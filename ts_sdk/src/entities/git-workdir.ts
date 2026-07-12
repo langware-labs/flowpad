@@ -33,6 +33,11 @@ export interface GitFileContent {
   content: string;
 }
 
+export interface GitAssetDiff {
+  diff: string;
+  files: GitStatusFile[];
+}
+
 export interface GitRevision {
   hash: string;
   version: number | null;
@@ -156,6 +161,11 @@ export class GitWorkdir {
     return this._call<GitFileDiff>('diff', { file, status });
   }
 
+  /** Unified diff of an asset's pending changes plus its changed-file list. */
+  async assetDiff(file: string): Promise<GitAssetDiff> {
+    return this._call<GitAssetDiff>('asset-diff', { file });
+  }
+
   /** Commit history for an asset (folder-scoped for folder-backed assets). */
   async fileRevisions(file: string): Promise<GitRevisionList> {
     return this._call<GitRevisionList>('file-revisions', { file });
@@ -169,6 +179,11 @@ export class GitWorkdir {
   /** Full file content at a revision (`hash` may be `HEAD`). */
   async show(file: string, hash: string): Promise<GitFileContent> {
     return this._call<GitFileContent>('show', { file, hash });
+  }
+
+  /** Full file content from the current working tree. */
+  async workingFile(file: string): Promise<GitFileContent> {
+    return this._call<GitFileContent>('working-file', { file });
   }
 
   // ------------------------------------------------------------------

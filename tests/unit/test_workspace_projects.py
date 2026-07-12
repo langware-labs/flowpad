@@ -103,10 +103,12 @@ async def test_workspace_folders_materialize_as_projects(project_db, tmp_path, m
         # Minted this call.
         assert info.is_new is True
 
-        # Id is a valid entity id (v5) and equals the deterministic derivation.
+        # Id is a valid opaque entity id (v4 — Project ids are random like every
+        # other entity; dedup is find_by_cwd's job, NOT a path-derived id).
         assert is_valid_entity_id(info.project_id), info.project_id
-        assert uuid.UUID(info.project_id).version == 5
-        assert info.project_id == Project.derive_id_for_path(cwd)
+        assert uuid.UUID(info.project_id).version == 4
+        # derive_id_for_path lives on only as a record-match ALIAS, never the id.
+        assert info.project_id != Project.derive_id_for_path(cwd)
 
         # Persisted: queryable by its natural key, same id.
         persisted = await Project.find_by_cwd(cwd)

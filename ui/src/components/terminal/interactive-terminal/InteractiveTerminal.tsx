@@ -12,6 +12,7 @@ import {
   isReadyForInput,
   PrefKey,
   Shell,
+  toplog,
   WorkerMode,
   type AgenticProcess,
   type MarkdownDoc,
@@ -227,13 +228,12 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   // not reactive, so subscribe via useEntity and surface the banner here.
   const { data: liveProcess } = useEntity<AgenticProcess>(process?.typeId ?? null);
   const liveStartFailure = liveProcess?.start_failure ?? null;
-  // The chat⇄terminal toggle is only enabled while the process is ready for input
-  // (RUNNING and no turn in flight). A mode switch mid-turn is 409'd by the backend
-  // on the SAME `is_turn_busy` predicate that sets the wire `busy` boolean, so
-  // gating on `isReadyForInput` (reactive `status === RUNNING && !busy`) keeps the
-  // toggle in lock-step with the AP and can never land on a 409 hole. `liveProcess` is the reactive
-  // entity; the loader `process` is the fallback for the first render before the
-  // subscription resolves.
+  // The chat⇄terminal toggle is enabled while the process is ready for input:
+  // RUNNING, fresh headless, or headless-idle, with no turn in flight. A mode
+  // switch mid-turn is 409'd by the backend on the SAME `is_turn_busy` predicate
+  // that sets the wire `busy` boolean, so `isReadyForInput` keeps the toggle in
+  // lock-step with the AP and cannot land on a 409 hole. `liveProcess` is the
+  // reactive entity; the loader `process` is the first-render fallback.
   const awaitingUserInput = isReadyForInput(liveProcess ?? process ?? {});
   useEffect(() => {
     if (!liveStartFailure || !process) return;
@@ -408,6 +408,9 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
         const fullPath = `${inputDirInfo.absPath}/${file.name}`;
         await shellRef.current?.sendInput(`\nFile ${file.name} is available here: ${fullPath}\n`);
         openSideTab(SideTabId.Files);
+        // Opening the Files drawer (and the annotate dialog before it) drops
+        // focus to <body> — hand it back to the terminal so typing continues.
+        requestAnimationFrame(() => terminalRef.current?.focus());
       } catch {
         // clipboard read failed — fall through to default xterm behavior
       }
@@ -503,10 +506,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   const markdownDocs = process?.markdown_docs ?? EMPTY_DOCS;
   // Open via the shared file dispatch (an .md routes to the markdown asset
   // editor, rendered — the same chokepoint every "open this file" surface uses).
-  const handleOpenMarkdown = useCallback(
-    (path: string) => navigation.openFile(path),
-    [navigation],
-  );
+  const handleOpenMarkdown = useCallback((path: string) => navigation.openFile(path), [navigation]);
 
   // On mount (and whenever the process identity changes), proactively call
   // getPlan() once so the button restores after a reload — the line trigger
@@ -933,7 +933,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessionId]);
+  }, [sessionId, isHeadless]);
 
   // Intercept Cmd+F / Ctrl+F at the native DOM level so we can call preventDefault()
   // before the browser opens its own find bar. xterm's attachCustomKeyEventHandler
@@ -1089,9 +1089,20 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
         let historyLastSeq = 0;
         try {
           const ptyId = shell.pty_pid ?? shell.id;
+          const tFetch = performance.now();
           const stream = await fetchPtyStream(ptyId);
+          const tReplay = performance.now();
+          toplog.log(
+            'process_load',
+            `onConnected pty-stream fetch took ${(tReplay - tFetch).toFixed(1)}ms events=${stream?.events.length ?? 0} pty=${ptyId.slice(0, 8)}`,
+          );
+          if (gen !== connectGen) return; // superseded — don't burn a full replay for a dead attach
           if (stream) {
             const replay = await replayPtyStream(stream);
+            toplog.log(
+              'process_load',
+              `onConnected replay took ${(performance.now() - tReplay).toFixed(1)}ms serializedKB=${replay ? (replay.serialized.length / 1024).toFixed(1) : 0}`,
+            );
             if (replay) {
               historySerialized = replay.serialized;
               historyLastSeq = replay.lastSeq;
@@ -1117,6 +1128,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
         const chunks = shell.getPtyChunks();
         const chunkDecoder = new TextDecoder('utf-8', { fatal: false });
         let wrote = Boolean(historySerialized);
+        const tBacklog = performance.now();
         for (const chunk of chunks) {
           ptySyncRef.current.processChunk(chunk);
           const text = chunkDecoder.decode(chunk.data, { stream: true });
@@ -1124,6 +1136,10 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
           term.write(text);
           wrote = true;
         }
+        toplog.log(
+          'process_load',
+          `onConnected backlog processChunk loop took ${(performance.now() - tBacklog).toFixed(1)}ms chunks=${chunks.length} lastSeq=${historyLastSeq}`,
+        );
 
         // Signal buffer ready after xterm processes the buffered writes.
         if (wrote) {
@@ -1469,6 +1485,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
         await shellRef.current?.sendInput(`\nFile ${file.name} is available here: ${fullPath}\n`);
       }
       openSideTab(SideTabId.Files);
+      requestAnimationFrame(() => terminalRef.current?.focus());
     },
     [inputDirInfo, openSideTab],
   );

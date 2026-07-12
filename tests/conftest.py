@@ -144,6 +144,27 @@ def pytest_collection_modifyitems(items):
         async_test.add_marker(session_scope_marker, append=False)
 
 
+@pytest.fixture(autouse=True)
+def _restore_main_thread_event_loop():
+    """Keep the main thread's event-loop slot usable across the whole run.
+
+    A sync test that calls ``asyncio.run(...)`` leaves the thread with NO
+    current loop (``asyncio.run`` closes its loop and unsets it on exit), so —
+    under pytest-randomly's shuffled order — any later session-loop async test
+    dies with "There is no current event loop in thread 'MainThread'". Restore
+    a fresh loop whenever a test leaves the slot empty or closed.
+    """
+    yield
+    import asyncio as _asyncio
+    try:
+        loop = _asyncio.get_event_loop_policy().get_event_loop()
+        closed = loop.is_closed()
+    except RuntimeError:
+        closed = True
+    if closed:
+        _asyncio.set_event_loop(_asyncio.new_event_loop())
+
+
 def async_context(func):
     """Decorator to run async tests with proper async event loop."""
     @functools.wraps(func)

@@ -66,10 +66,9 @@ def changed_ids(old_order: list[str], new_order: list[str]) -> set[str]:
 def filter_for_project(
     order: list[str], project_of: dict[str, str | None], project_id: str | None
 ) -> list[str]:
-    """The project view: global order filtered to tabs in ``project_id`` plus all
-    projectless tabs (``project is None``), preserving global order."""
-    return [
-        tid
-        for tid in order
-        if project_of.get(tid) == project_id or project_of.get(tid) is None
-    ]
+    """The scope view: global order filtered to tabs whose project EXACTLY matches
+    ``project_id`` (a project id, or ``None`` for the Global/no-active-project
+    scope), preserving global order. A tab belongs to exactly one scope — a
+    projectless tab (``project is None``) appears only in the ``None`` view, never
+    inside a project's strip."""
+    return [tid for tid in order if project_of.get(tid) == project_id]

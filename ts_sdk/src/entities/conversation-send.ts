@@ -1,5 +1,6 @@
 import { dataManager } from '../APIEntity';
 import { ActionInfo } from '../models/ActionInfo';
+import { normalizeEmail } from '../utils/utils';
 import { sendReply } from './notifications';
 import {
   Conversation,
@@ -136,7 +137,7 @@ export async function createConversationForShare(
       if (!gate.ok) throw new Error(gate.error);
     }
     const emails = params.participants
-      .map((p) => (p.email || '').trim())
+      .map((p) => normalizeEmail(p.email) || '')
       .filter((e): e is string => !!e && e.includes('@'));
     if (emails.length === 0) {
       throw new Error('At least one recipient email is required');
@@ -147,6 +148,10 @@ export async function createConversationForShare(
       new Conversation({
         title: params.title,
         participants: params.participants,
+        // Local-only project mapping (the hub body strips project_id) — without
+        // it a remote-shared conversation loses its project association and the
+        // sender's conversation list can't scope it.
+        ...(params.project_id ? { project_id: params.project_id } : {}),
         // ``shared_context_entities`` is a wire-lifted field (not on IConversation);
         // the APIEntity base moves it into ``_shared_context_entities_`` on construct.
         ...(params.shared_context_entities && params.shared_context_entities.length > 0

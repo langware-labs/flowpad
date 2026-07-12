@@ -26,7 +26,7 @@ export function MetaMessageChip({ flowData }: { flowData: FlowData }) {
   const content = flowData.content ?? '';
   const skillDir = parseSkillDir(content);
   const skillName = skillDir ? skillDir.replace(/\/+$/, '').split('/').pop() : null;
-  const label = skillName ? t`Skill: ${skillName}` : t`System note`;
+  const label = skillName ? t`Using skill: ${skillName}` : t`System note`;
   const { navigation } = useDockNavigation();
   const [open, setOpen] = useState(false);
   const [opening, setOpening] = useState(false);
@@ -61,7 +61,13 @@ export function MetaMessageChip({ flowData }: { flowData: FlowData }) {
         disabled={!skillDir}
         onClick={() => setOpen(true)}
         title={skillDir ? t`Preview ${label}` : label}
-        className="inline-flex max-w-full items-center gap-1.5 rounded-md border border-border/60 bg-muted/40 px-2 py-1 text-[13px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-default disabled:opacity-70 disabled:hover:bg-muted/40 disabled:hover:text-muted-foreground"
+        className={
+          skillDir
+            ? // Skill chip is a real affordance (click → preview modal): blue so
+              // it reads as clickable, unlike the muted breadcrumb chips.
+              'inline-flex max-w-full items-center gap-1.5 rounded-md border border-blue-500/40 bg-blue-500/10 px-2 py-1 text-[13px] text-blue-600 transition-colors hover:bg-blue-500/20 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300'
+            : 'inline-flex max-w-full items-center gap-1.5 rounded-md border border-border/60 bg-muted/40 px-2 py-1 text-[13px] text-muted-foreground transition-colors disabled:cursor-default disabled:opacity-70'
+        }
       >
         <Sparkles className="h-3.5 w-3.5 flex-shrink-0" />
         <span className="truncate font-medium">{label}</span>

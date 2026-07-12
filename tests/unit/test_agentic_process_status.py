@@ -25,6 +25,7 @@ from flow_sdk.builtin.agentic_process import AgenticProcess, ProcessStatus, Work
 from flow_sdk.builtin.agentic_process.status_predicates import (
     get_worker_mode,
     is_ready_for_input,
+    is_ready_from_busy,
     WorkerMode,
 )
 from flow_sdk.builtin.worker_status import (
@@ -269,6 +270,38 @@ def test_tail_status_stop_sequence_is_error(tmp_path: Path):
         {"type": "user", "message": {"role": "user"}},
         {"type": "assistant", "message": {"role": "assistant", "stop_reason": "stop_sequence", "content": []}},
     ])
+    assert _tail_status(f) == WorkerStatus.ERROR
+
+
+def test_tail_status_last_prompt_after_stop_sequence_is_error(tmp_path: Path):
+    """``last-prompt`` after a synthetic API/limit stop_sequence remains ERROR.
+
+    Claude Code can write a synthetic assistant message for a 429/Fable limit
+    with ``stop_reason=stop_sequence`` and then append ``last-prompt``. The
+    ``last-prompt`` marker is an ack, not proof that the worker is still busy.
+    """
+    f = tmp_path / "session.jsonl"
+    _write_jsonl(f, [
+        {"type": "user", "message": {"role": "user"}},
+        {
+            "type": "assistant",
+            "message": {
+                "role": "assistant",
+                "model": "<synthetic>",
+                "stop_reason": "stop_sequence",
+                "stop_sequence": "",
+                "content": [{
+                    "type": "text",
+                    "text": "You've reached your Fable 5 limit. Run /usage-credits to continue or switch models with /model.",
+                }],
+            },
+            "error": "rate_limit",
+            "isApiErrorMessage": True,
+            "apiErrorStatus": 429,
+        },
+        {"type": "last-prompt"},
+    ])
+    os.utime(f, None)
     assert _tail_status(f) == WorkerStatus.ERROR
 
 
@@ -550,12 +583,17 @@ def test_tail_status_expands_past_envelope_run_beyond_4kb(tmp_path: Path):
 
 # ── is_ready_for_input truth table ───────────────────────────────────────────
 #
-# Contract (realigned): is_ready_for_input(p) ⇔ is_process_running(p.status) AND
-# ¬is_turn_busy(p) ⇔ the process is RUNNING AND ¬busy. busy ⇔ prompt-lock held ∨ _turn_in_flight
+# Contract (realigned): is_ready_for_input(p) ⇔ ¬is_turn_busy(p) AND (
+#   p.status == RUNNING  OR  fresh-headless (pty_mode is False ∧ status == NEW)
+#   OR headless-idle (pty_mode is False ∧ status == STOPPED ∧ session_id)
+# ). busy ⇔ prompt-lock held ∨ _turn_in_flight
 # ∨ worker ∈ {initializing, working, thinking, tool_call, tool_running}.
 # Everything else while RUNNING (idle/complete/interrupted/pending_user AND the
 # fail-open error states error/api_error/api_timeout/inactive/unknown/None) is
 # READY — the user can just re-prompt.
+# The headless-idle case (a CLI session between per-turn `claude -p` workers,
+# STOPPED with a preserved session_id) is READY too — see the dedicated test
+# below (RCA #12a: the chat⇄terminal toggle wedged off at headless-idle).
 
 
 class _FakeProcess:
@@ -603,7 +641,7 @@ class _FakeProcess:
         (ProcessStatus.RUNNING, WorkerStatus.TOOL_CALL, False),
         (ProcessStatus.RUNNING, WorkerStatus.TOOL_RUNNING, False),
         (ProcessStatus.RUNNING, WorkerStatus.INITIALIZING, False),
-        # Any non-RUNNING lifecycle → never ready
+        # Non-RUNNING PTY lifecycle states are not ready.
         (ProcessStatus.NEW, WorkerStatus.IDLE, False),
         (ProcessStatus.STARTING, WorkerStatus.IDLE, False),
         (ProcessStatus.STOPPING, WorkerStatus.COMPLETE, False),
@@ -614,6 +652,61 @@ class _FakeProcess:
 def test_is_ready_for_input_truth_table(process_status, worker_status, expected):
     proc = _FakeProcess(process_status, worker_status)
     assert is_ready_for_input(proc, worker_status) is expected
+
+
+@pytest.mark.parametrize(
+    "process_status,pty_mode,session_id,turn_in_flight,expected,label",
+    [
+        # Headless-idle: CLI transport, STOPPED between per-turn workers, session
+        # preserved → READY (the fix for RCA #12a — toggle re-enables).
+        (ProcessStatus.STOPPED, False, "sess-abc", False, True, "headless-idle STOPPED+session → ready"),
+        # Fresh headless: before the first turn there is no session or worker, but
+        # prompt and switch-mode both accept the process immediately.
+        (ProcessStatus.NEW, False, None, False, True, "fresh headless NEW → ready"),
+        (ProcessStatus.NEW, False, None, True, False, "fresh headless NEW but busy → not ready"),
+        # Headless STOPPED but NO session yet (never prompted) → not ready.
+        (ProcessStatus.STOPPED, False, None, False, False, "headless STOPPED no session → not ready"),
+        # Interactive (PTY) transport STOPPED → not headless-idle (needs a live
+        # PID); stays not-ready as before, even with a preserved session.
+        (ProcessStatus.STOPPED, True, "sess-abc", False, False, "PTY STOPPED+session → not ready"),
+        # Headless-idle signature but a turn is in flight → busy short-circuits.
+        (ProcessStatus.STOPPED, False, "sess-abc", True, False, "headless STOPPED but busy → not ready"),
+        # Other non-running lifecycle states never qualify even for CLI+session.
+        (ProcessStatus.NEW, True, None, False, False, "fresh PTY NEW → not ready"),
+        (ProcessStatus.FAILED, False, "sess-abc", False, False, "headless FAILED+session → not ready"),
+        # RUNNING CLI session is ready regardless of the headless-idle branch.
+        (ProcessStatus.RUNNING, False, "sess-abc", False, True, "CLI RUNNING → ready"),
+    ],
+)
+def test_is_ready_for_input_headless_states(process_status, pty_mode, session_id, turn_in_flight, expected, label):
+    """Headless readiness: a CLI-transport (pty_mode False) session with a
+    NEW process or a live session_id at STOPPED is ready-for-input, so the
+    chat⇄terminal toggle works before and between headless turns. busy still
+    gates first; PTY-transport and other lifecycle states do NOT qualify.
+    Mirror of the TS isReadyForInput headless branches."""
+    proc = _FakeProcess(
+        process_status, WorkerStatus.COMPLETE,
+        session_id=session_id, turn_in_flight=turn_in_flight, pty_mode=pty_mode,
+    )
+    assert is_ready_for_input(proc, WorkerStatus.COMPLETE) is expected, label
+
+
+def test_ready_for_input_contract_cases(status_fixture):
+    """Cross-language contract: ``is_ready_from_busy`` must produce ``expected``
+    for every row of ``ready_for_input_cases`` in the shared fixture — the same
+    rows the TS ``isReadyForInput`` vitest iterates. Covers the RUNNING baseline,
+    the fresh-headless (NEW + CLI) branch, and the headless-idle branch, so the
+    two language predicates cannot silently diverge."""
+    cases = status_fixture["ready_for_input_cases"]
+    assert cases, "fixture must carry the shared ready-for-input truth table"
+    for case in cases:
+        actual = is_ready_from_busy(
+            case["status"],
+            case["busy"],
+            pty_mode=case["pty_mode"],
+            session_id=case["session_id"],
+        )
+        assert actual is case["expected"], case["label"]
 
 
 @pytest.mark.parametrize(
@@ -867,6 +960,30 @@ def test_fetch_worker_status_terminal_lifecycle_overrides_transcript(monkeypatch
     )
 
     assert proc.fetch_worker_status() == expected
+
+
+@pytest.mark.parametrize(
+    "terminal",
+    [
+        WorkerStatus.COMPLETE,
+        WorkerStatus.ERROR,
+        WorkerStatus.INTERRUPTED,
+        WorkerStatus.INACTIVE,
+        WorkerStatus.API_TIMEOUT,
+    ],
+)
+def test_fetch_worker_status_stopped_preserves_terminal_transcript(monkeypatch, terminal):
+    """A headless CLI process sits at STOPPED between turns, but its terminal
+    transcript status is still the user-visible outcome of the last turn."""
+    proc = AgenticProcess()
+    proc.status = ProcessStatus.STOPPED.value
+    monkeypatch.setattr(
+        AgenticProcess,
+        "_discover_status_from_transcript",
+        lambda self, terminal=terminal: terminal,
+    )
+
+    assert proc.fetch_worker_status() == terminal
 
 
 def test_api_json_serializer_always_emits_raw_running(monkeypatch):

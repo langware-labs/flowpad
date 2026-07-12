@@ -299,7 +299,7 @@ async function acceptConversationInvitationInUI(inst: InstancePage, conversation
       body: '{}',
     }).catch(() => undefined);
 
-    await page.goto(`${inst.feUrl}/dock/inbox`, { waitUntil: 'domcontentloaded' });
+    await page.goto(`${inst.feUrl}/dock/inbox?viewMode=advanced`, { waitUntil: 'domcontentloaded' });
     await dismissWelcomeModal(page);
 
     const row = page.locator(rowSelector).first();
@@ -554,7 +554,9 @@ describe('hub: git-backed artifact share wizard', () => {
         )) ?? null;
       }, 20_000, 'Vibe app-open process');
 
-      await bobPage.page.waitForURL(/\/dock\/shell\/agentic_process-.*viewMode=vibe/, { timeout: 20_000 });
+      // Vibe's process surface is the DISPLAY dock (process-dock-canonicalization:
+      // vibe → /dock/display/…, standard → /dock/shell/…).
+      await bobPage.page.waitForURL(/\/dock\/display\/agentic_process-.*viewMode=vibe/, { timeout: 20_000 });
       const appOpen = JSON.parse(await flowCliAsync(
         bob,
         ['app', 'open', artifactName, '--root', project.dir, '--process', `agentic_process-${vibeProcess.id}`, '--port', String(appPort), '--timeout', '25'],

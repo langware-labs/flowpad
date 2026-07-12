@@ -2,7 +2,9 @@
  * loadEmbeddedAgent Integration Test
  *
  * Verifies that:
- *   1. loadEmbeddedAgent bakes the agent spec into cli_config.agents_json (durable across requests)
+ *   1. loadEmbeddedAgent records the agent's ENTITY ref (agent-<uuid>) in
+ *      embedded_asset_refs (durable across requests) and getAssets() reports
+ *      it as an EMBEDDED descriptor
  *   2. executeInstruction on a process with an embedded agent produces CHAT/TEXT FlowData output
  *
  * Uses new AgenticProcess({ workdir }).save([]) pattern — not computeNode.createProcess().
@@ -11,7 +13,7 @@
  * Timeout: 180s (real Claude subprocess).
  */
 
-import { AgenticProcess, FlowData, FlowElementTypes, dataManager } from '@sdk';
+import { AgenticProcess, FlowData, FlowElementTypes, TypeId, dataManager, isTypeId, isValidUUIDv4 } from '@sdk';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { apiTestSetup, getTestSignupInfo } from '../utils/test-utils';
 import * as fs from 'fs';
@@ -72,33 +74,46 @@ describe('AgenticProcess loadEmbeddedAgent', () => {
     );
   });
 
-  it('bakes agent into cli_config.agents_json (persisted)', async () => {
+  it('records the agent entity ref in embedded_asset_refs (persisted)', async () => {
     const proc = await new AgenticProcess({ workdir }).save([]);
 
     await proc.loadEmbeddedAgent(agentFilePath);
 
-    // Fetch fresh from server to confirm persistence. Backend persists
-    // agents_json then pushes the updated cli_config via WebSocket; the
-    // cached entity reflects it once that WS message lands. Under suite
-    // load that can take a beat — poll briefly so the test isn't racing
-    // a fan-out we can't observe directly.
+    // Fetch fresh from server to confirm persistence. Backend persists the
+    // ref then pushes the updated entity via WebSocket; the cached entity
+    // reflects it once that WS message lands. Under suite load that can
+    // take a beat — poll briefly so the test isn't racing a fan-out we
+    // can't observe directly.
+    // Same gate the product code uses: well-formed typeid + uuid-form entity id.
+    const isAgentUuidRef = (r: unknown) => {
+      const s = String(r);
+      if (!isTypeId(s)) return false;
+      const tid = new TypeId(s);
+      return tid.type === 'agent' && isValidUUIDv4(tid.id);
+    };
     const deadline = Date.now() + 5000;
     let refreshed: AgenticProcess | null = null;
-    let agentsJson: Record<string, unknown> | undefined;
+    let refs: unknown[] = [];
     while (Date.now() < deadline) {
       refreshed = await dataManager.getByTypeId<AgenticProcess>(proc.typeId);
-      agentsJson = (refreshed?.cli_config as any)?.agents_json as Record<string, unknown> | undefined;
-      if (agentsJson && Object.keys(agentsJson).includes('pong-agent')) break;
+      refs = (refreshed?.embedded_asset_refs ?? []) as unknown[];
+      if (refs.some(isAgentUuidRef)) break;
       await new Promise((r) => setTimeout(r, 50));
     }
     expect(refreshed, 'Process not found in dataManager after loadEmbeddedAgent').not.toBeNull();
-    expect(agentsJson, 'cli_config.agents_json should be set after loadEmbeddedAgent').toBeDefined();
     expect(
-      Object.keys(agentsJson!),
-      'Expected "pong-agent" key in agents_json',
-    ).toContain('pong-agent');
+      refs.map(String),
+      'Expected an agent-<uuid> entry in embedded_asset_refs',
+    ).toSatisfy((all: string[]) => all.some(isAgentUuidRef));
 
-    console.log('[load_embedded_agent] agents_json:', JSON.stringify(agentsJson));
+    // The unified descriptor view reports it as EMBEDDED with the same ref.
+    const embeddedRef = refs.map(String).find(isAgentUuidRef)!;
+    const descriptors = await proc.getAssets();
+    const embedded = descriptors.filter((d) => d.typeid === embeddedRef);
+    expect(embedded.length, 'getAssets should surface the embedded agent').toBeGreaterThan(0);
+    expect(embedded.every((d) => d.source === 'embedded')).toBe(true);
+
+    console.log('[load_embedded_agent] embedded_asset_refs:', refs.map(String).join(', '));
   }, TIMEOUT);
 
   it('executeInstruction produces CHAT/TEXT output', async (context: any) => {

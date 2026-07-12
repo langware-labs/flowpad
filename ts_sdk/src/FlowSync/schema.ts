@@ -56,9 +56,17 @@ export interface TypeInfo {
   icon: string | null;
   parent_type: string | null;
   locations: string[];
+  /** Fixed inner filename for folder-layout assets when one exists, e.g. SKILL.md. */
+  main_file?: string | null;
+  /** True when a folder-layout type's asset_ref points at the inner main_file. */
+  main_file_is_asset_ref?: boolean;
   /** True when asset_ref is a bare folder (e.g. skill): the Assets sidebar
    *  expands the row into its on-disk file tree. Derived from the folder layout. */
   folder_backed: boolean;
+  /** The entity owns its backing file (re-rendered from the default body on every
+   *  save, e.g. task/spec), so an orphaned row (file missing / no asset_ref) can
+   *  self-heal with a single save. Defaults false for hand-edited files (markdown/skill). */
+  owns_main_ref?: boolean;
   schema_hash: string;
   schema: JSONSchemaProperty | null;
 }

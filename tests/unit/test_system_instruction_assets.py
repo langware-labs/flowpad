@@ -131,8 +131,16 @@ async def test_load_embedded_agent_materializes_into_instruction_assets(
 
     result = await process.load_embedded_agent_action(str(agent_md))
     assert result.status == "SUCCESS"
-    assert result.data == {"ok": True, "name": "persona-probe"}
-    assert process.embedded_agent_ids == ["persona-probe"]
+    assert result.data["ok"] is True
+    assert result.data["name"] == "persona-probe"
+    # Identity is persisted as the agent's ENTITY ref, not a legacy name entry.
+    from flow_sdk.fs_store.fs_ref import FSRef
+    from flow_sdk.fs_store.indexer.functions.agent import agent_peek_entity_id
+    from flow_sdk.fs_store.record_types import RecordType
+    expected_ref = f"agent-{agent_peek_entity_id(FSRef(agent_md, record_type=RecordType.AGENT))}"
+    assert result.data["ref"] == expected_ref
+    assert [str(r) for r in process.embedded_asset_refs] == [expected_ref]
+    assert not process.embedded_agent_ids
 
     materialized = process.embedded_assets.os_path / ".claude" / "agents" / "persona-probe.md"
     assert materialized.exists()
@@ -143,3 +151,56 @@ async def test_load_embedded_agent_materializes_into_instruction_assets(
     claude_text = assets.claude_file.read_text(encoding="utf-8")
     assert "# You are the 'persona-probe' agent" in claude_text
     assert "Always answer as PERSONA_PROBE." in claude_text
+
+
+@pytest.mark.asyncio
+async def test_persona_survives_fresh_entity_instance(records_root, tmp_path, monkeypatch):
+    """Vibe-display RCA: the embed request and the prompt/launch request run on
+    DIFFERENT entity instances (save() invalidates the entity cache), so the
+    launch-time instance has no in-memory _embedded_assets handle. The persona
+    must still be detected from persisted state (embedded_asset_refs) or the
+    generated CLAUDE.md — and with it the vibe `flow show` contract — is
+    silently skipped."""
+
+    async def _save_noop(self):
+        return self
+
+    monkeypatch.setattr(AgenticProcess, "save", _save_noop)
+    agent_md = tmp_path / "vibe-probe.md"
+    agent_md.write_text(
+        "---\nname: vibe-probe\ndescription: Vibe persona probe\n---\n\n"
+        "Always run flow show after every deliverable.\n",
+        encoding="utf-8",
+    )
+    proc_id = str(uuid.uuid4())
+
+    def make_process(**extra) -> AgenticProcess:
+        return AgenticProcess(
+            id=proc_id,
+            worker_type=WorkerType.CLAUDE_CODE,
+            workdir=str(tmp_path / "workdir"),
+            load_flowpad_assistant=False,
+            pty_mode=False,
+            **extra,
+        )
+
+    # Instance A: the request that handled load-embedded-agent (UI embed call).
+    proc_a = make_process()
+    result = await proc_a.load_embedded_agent_action(str(agent_md))
+    assert result.status == "SUCCESS"
+
+    # Instance B: the fresh instance the prompt/launch request operates on,
+    # carrying only the PERSISTED fields of the DB row — not the in-memory
+    # _embedded_assets handle.
+    proc_b = make_process(
+        embedded_asset_refs=[str(r) for r in proc_a.embedded_asset_refs],
+        additional_dirs=list(proc_a.additional_dirs or []),
+    )
+    assert proc_b.embedded_assets is None
+
+    assets = await proc_b.prepare_system_instruction_assets()
+
+    assert assets is not None, "persona lost: prepare returned None on fresh instance"
+    claude_text = assets.claude_file.read_text(encoding="utf-8")
+    assert "# You are the 'vibe-probe' agent" in claude_text
+    assert "Always run flow show after every deliverable." in claude_text

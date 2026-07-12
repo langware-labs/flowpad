@@ -11,14 +11,18 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
     apply_worker_env,
+    apply_worker_secret_env,
     AgenticContext,
     AgenticProcessContextKey,
     WorkerCLIOptions,
+    WorkerSpawnError,
+    latch_spawn_failure,
     restart_payload_from_cli_options,
 )
 from flow_sdk.builtin.agentic_process.cli_drivers.codex.cli import CodexCliOptions
@@ -58,6 +62,14 @@ class CodexDriver:
     # Codex's TUI needs a discrete Enter after the paste settles, not a
     # trailing \r in the pasted text (Shell.write_then_submit).
     pty_submits_on_paste = False
+    # Composer-ready marker (QA C09b). Empirically grounded on codex-cli
+    # 0.144.1 raw PTY captures (tests/unit/fixtures/codex_pty_*.bin): the
+    # ``>_ OpenAI Codex (vX.Y.Z)`` banner paints in the same frame as the
+    # composer input line, and never renders while the directory-trust
+    # interstitial is up (that screen has no banner — and paints its own ``›``
+    # cursor, so a prompt-glyph marker would false-positive). The banner text
+    # is painted contiguously, so it survives ``strip_pty_controls``.
+    pty_composer_ready_pattern = re.compile(r">_ OpenAI Codex")
     pins_resume_cwd = False  # codex mints its own rollout; no transcript-cwd pinning, no fork
 
     # ── CLI shape ────────────────────────────────────────────────────────────
@@ -119,9 +131,11 @@ class CodexDriver:
         full_prompt = self.compose_prompt(instruction, process.get_agents_json())
 
         cli_cfg = process.cli_config or {}
+        env_vars = apply_worker_env(dict(cli_cfg.get("env_vars") or {}), process)
+        await apply_worker_secret_env(env_vars, process)
         context = AgenticContext(
             workdir=process.workdir,
-            env_vars=apply_worker_env(dict(cli_cfg.get("env_vars") or {}), process),
+            env_vars=env_vars,
             model=cli_cfg.get("model"),
             permission_mode=cli_cfg.get("permission_mode", "bypassPermissions"),
             # Resume ONLY when codex actually has a rollout for this id. Codex
@@ -170,39 +184,30 @@ class CodexDriver:
         except Exception:
             logger.exception("CodexDriver.headless_prompt: start-of-turn notify_updated failed")
 
+        # Session adoption (and its restart-snapshot bookkeeping) is owned by
+        # AgenticProcess.adopt_worker_session; the turn-scoped adopter trusts
+        # only the turn-initial report (spurious-rotation guard).
+        adopt_session = process_ref.make_turn_session_adopter("CodexDriver.headless_prompt")
+
         async def _run_turn() -> None:
-            session_id_persisted = False
             try:
                 async for fd in worker.execute(prompt=full_prompt, context=context):
-                    if not session_id_persisted and worker.get_session_id():
-                        sid = worker.get_session_id()
-                        try:
-                            process_ref.session_id = sid
-                            await process_ref.save()
-                            session_id_persisted = True
-                        except Exception:
-                            logger.debug("CodexDriver.headless_prompt: session_id save failed", exc_info=True)
+                    await adopt_session(worker.get_session_id())
                     try:
                         await process_ref.emit_flow_data(fd.model_dump())
                     except Exception:
                         logger.debug("CodexDriver.headless_prompt: emit_flow_data failed", exc_info=True)
+            except WorkerSpawnError as e:
+                # No subprocess ever started — end the process FAILED with the
+                # start_failure latch (the ERROR frame was already emitted).
+                await latch_spawn_failure(process_ref, e)
             except Exception:
                 logger.exception("CodexDriver.headless_prompt: worker error")
             finally:
                 _PROMPT_WORKERS.pop(process_id, None)
-                object.__setattr__(process_ref, "_turn_in_flight", False)
-                # ``worker_status`` is a computed projection re-derived from
-                # the JSONL tail by ``to_dict`` / ``api_json_serializer``, so
-                # ``save()`` short-circuits when no real entity field changed.
-                # ``notify_updated`` forces a data-op broadcast carrying the
-                # fresh ``worker_status=COMPLETE`` projection — that's what
-                # flips ``proc.output()`` consumers out of their wait loop on
-                # the TS side. Lifecycle ``status`` intentionally stays
-                # RUNNING so ``is_ready_for_input(p)`` returns True.
-                try:
-                    await process_ref.notify_updated()
-                except Exception:
-                    logger.exception("CodexDriver.headless_prompt: terminal notify_updated failed")
+                # Terminal status broadcast + completion-driven queue advance
+                # (see AgenticProcess.end_headless_turn).
+                await process_ref.end_headless_turn("CodexDriver.headless_prompt")
 
         asyncio.create_task(_run_turn(), name=f"codex-{process.id[:8]}")
         return ApiSuccessResponse(data={"status": "started", "worker": self.name})

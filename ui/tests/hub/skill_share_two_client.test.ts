@@ -76,7 +76,7 @@ describe('two SDK clients in one process (realm per instance)', () => {
     expect(onDev2).toBeFalsy();
   });
 
-  it('dev-1 shares a skill conversation; dev-2 SDK client accepts + receives it', async () => {
+  it('dev-1 shares a skill; dev-2 accepts, downloads (staged), installs, uninstalls', async () => {
 
     // ── dev-1 (sender): real SDK share path (mirrors matrix.alice). ──
     const skill = trackForCleanup(await dev1.sdk.Skill.create(testEntityName('skill')));
@@ -122,5 +122,64 @@ describe('two SDK clients in one process (realm per instance)', () => {
     );
     expect(received.id).toBe(conv.id);
     expect((received as any).remote).toBe(true);
+
+    // ── Staged reception: download the bundle on dev-2. The skill must NOT
+    //    materialise as an entity — it stages as a MessageAttachment
+    //    (scope=null) awaiting an explicit install. ──
+    const receivedFm = await pollUntil(async () => {
+      const fm = await dev2.sdk.FlowMessage.getById(fmId).catch(() => null);
+      return fm && (fm as any).body_status === 'ready' ? fm : null;
+    }, 20_000, 'shared message READY on dev-2');
+    await post(dev2.apiUrl, `/graph/flow_message/${receivedFm.id}/download_body`, {});
+
+    const queryAttachments = async (): Promise<any[]> =>
+      (await dev2.sdk.MessageAttachment.query(
+        new dev2.sdk.QueryRequest({
+          type: 'message_attachment',
+          query: { flow_message_id: fmId },
+          name: 'staged attachments (test)',
+        }),
+        /* invalidate — re-read from the backend, not the realm's query cache */ true,
+      ).catch(() => [])) as any[];
+
+    const stagedMa = await pollUntil(async () => {
+      const rows = await queryAttachments();
+      return rows.find((r) => r.asset_id === skill.id) ?? null;
+    }, 10_000, 'staged MessageAttachment on dev-2');
+    expect(stagedMa.asset_type).toBe('skill');
+    expect(stagedMa.scope ?? null).toBeNull();
+    expect(stagedMa.unpacked_path).toBeTruthy();
+    // NOT installed: the skill entity does not exist on dev-2 yet.
+    expect(await dev2.sdk.Skill.getById(skill.id!).catch(() => null)).toBeFalsy();
+
+    // ── Install (user scope) → the skill entity materialises on dev-2. ──
+    const install = await post(
+      dev2.apiUrl,
+      `/graph/message_attachment/${stagedMa.id}/install`,
+      { scope: 'user' },
+    );
+    expect(String(install.status)).toMatch(/success/i);
+    const installedSkill = await pollUntil(
+      () => dev2.sdk.Skill.getById(skill.id!).catch(() => null),
+      10_000,
+      'installed skill entity on dev-2',
+    );
+    expect(installedSkill!.id).toBe(skill.id);
+
+    // ── Uninstall → entity gone; attachment back to staged (re-installable). ──
+    const uninstall = await post(
+      dev2.apiUrl,
+      `/graph/message_attachment/${stagedMa.id}/uninstall`,
+      {},
+    );
+    expect(String(uninstall.status)).toMatch(/success/i);
+    await pollUntil(async () => {
+      const gone = await dev2.sdk.Skill.getById(skill.id!).catch(() => null);
+      return gone ? null : true;
+    }, 10_000, 'skill entity removed on dev-2 after uninstall');
+    const reset = await queryAttachments();
+    const resetMa = reset.find((r) => r.id === stagedMa.id);
+    // '' is the backend's cleared form — any falsy scope means "staged again".
+    expect(resetMa?.scope || null).toBeNull();
   });
 });

@@ -12,13 +12,17 @@ import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { isApiError } from '../ApiResponse';
 import { IEntity } from '../IEntity';
 import { FSRef, type FSRefJson } from '../fs/FSRef';
-import { ClaudeCliOptions } from '../cli_workers';
+import { ClaudeCliOptions, factory as cliOptionsFactory } from '../cli_workers';
 import { dataContext } from '../FlowSync/context';
 import { FlowDataFactory } from '../entities/flow/flow-data-factory';
 import { Shell, ShellStatus } from '../entities/shell';
 import { FlowData, FlowDataSource } from '../flow_processing';
 import { FlowElementTypes } from '../flow_processing/flow-element-types';
 import { ActionInfo } from '../models/ActionInfo';
+import { toplog } from '../services/toplog';
+
+/** Elapsed ms since `t0` formatted for `process_load` trace lines. */
+const msSince = (t0: number): string => (performance.now() - t0).toFixed(1);
 import type { AssetDescriptor } from './asset-descriptor';
 import { DockPointerData } from '../models/DockPointer';
 import { TypeId } from '../models/TypeId';
@@ -61,6 +65,16 @@ export interface ShowTarget {
   port?: number | string;
 }
 
+/**
+ * One entry in a process's display history — `context_data.display_stack`. The
+ * backend flattens the `flow show` target and stamps it with `shown_at`, so an
+ * entry IS a {@link ShowTarget} plus its server timestamp. Newest last.
+ */
+export interface DisplayEntry extends ShowTarget {
+  /** ISO 8601 server timestamp — when the agent showed this target. */
+  shown_at?: string;
+}
+
 export interface SpawnResult {
   process: AgenticProcess;
   /** Set in PTY mode */
@@ -100,10 +114,91 @@ interface HistoryResponse {
     part?: number;
     created_time?: string;
     focus?: string;
+    process_entry?: Record<string, unknown> | null;
   }>;
   count: number;
   session_id: string | null;
   use_worker_history: boolean;
+}
+
+interface HistoryMatchCandidate {
+  item: FlowData;
+  matched: boolean;
+}
+
+/**
+ * Stable per-row identity for history⇄live reconciliation: the transcript
+ * entry id (from the typed `process_entry` payload, falling back to the
+ * `transcript-entry-id` attribute for rows that only carry it as an attr).
+ * Returns null for rows with no transcript id — those reconcile via
+ * `historyFallbackKey` instead.
+ */
+function historyIdentityKey(item: FlowData): string | null {
+  const processEntry = item.processEntry as
+    | { transcript_entry?: { id?: unknown; kind?: unknown } }
+    | null;
+  const transcriptEntry = processEntry?.transcript_entry;
+  const id = transcriptEntry?.id ?? item.attributes['transcript-entry-id'];
+  if (id === undefined || id === null || id === '') return null;
+  const kind = transcriptEntry?.kind ?? item.attributes.subtype ?? '';
+  return `${item.elementType}|${String(kind)}|${String(id)}`;
+}
+
+function historyFallbackKey(item: FlowData): string {
+  const role = item.attributes.role ?? '';
+  return `${item.elementType}|${role}|${item.timestamp}|${item.content ?? ''}`;
+}
+
+/**
+ * Drop the history rows that were already observed live, one-for-one.
+ *
+ * Matching is two-tier: transcript-entry identity first (exact), then the
+ * fallback key `elementType|role|timestamp|content` with a one-for-one
+ * `take()` — every existing item can absorb AT MOST ONE history row, so N
+ * identical rows in history always survive as N total rows (the pre-fix
+ * Set-based content dedup collapsed them to 1).
+ *
+ * INVARIANT (id-less collisions): for rows with no transcript id, K existing
+ * live rows and M history rows sharing all four fallback fields reconcile to
+ * `max(K, M)` total rows — never fewer. Collapsing below that requires two
+ * genuinely distinct transcript entries with identical elementType, role,
+ * content AND the same wire timestamp while ALSO lacking transcript ids;
+ * transcript-shaped rows carry `process_entry.transcript_entry.id`, so the
+ * timestamp component bounds the residual risk to non-transcript rows minted
+ * in the same instant with identical content — an acceptable dedup.
+ */
+function reconcileHistoryOverlap(history: FlowData[], existing: readonly FlowData[]): FlowData[] {
+  const candidates: HistoryMatchCandidate[] = existing.map((item) => ({ item, matched: false }));
+  const byIdentity = new Map<string, HistoryMatchCandidate[]>();
+  const byFallback = new Map<string, HistoryMatchCandidate[]>();
+
+  const add = (index: Map<string, HistoryMatchCandidate[]>, key: string, candidate: HistoryMatchCandidate) => {
+    const bucket = index.get(key);
+    if (bucket) bucket.push(candidate);
+    else index.set(key, [candidate]);
+  };
+  for (const candidate of candidates) {
+    const identity = historyIdentityKey(candidate.item);
+    if (identity) add(byIdentity, identity, candidate);
+    add(byFallback, historyFallbackKey(candidate.item), candidate);
+  }
+
+  const take = (index: Map<string, HistoryMatchCandidate[]>, key: string): boolean => {
+    const bucket = index.get(key);
+    while (bucket?.length) {
+      const candidate = bucket.shift()!;
+      if (candidate.matched) continue;
+      candidate.matched = true;
+      return true;
+    }
+    return false;
+  };
+
+  return history.filter((item) => {
+    const identity = historyIdentityKey(item);
+    if (identity && take(byIdentity, identity)) return false;
+    return !take(byFallback, historyFallbackKey(item));
+  });
 }
 
 export enum AgenticProcessEventName {
@@ -664,6 +759,17 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     }
   }
 
+  /** POST /graph/agentic_process/<id>/rename {name} — user rename from OUTSIDE the
+   *  tab strip (the footer process list). The backend pins `auto_rename=false` and
+   *  mirrors onto any open tab, so it behaves exactly like a tab rename (updates
+   *  both the process and its chip). Works for a headless worker with no open tab.
+   *  The entity broadcast updates cache so name surfaces re-render. */
+  static async renameById(id: string, name: string): Promise<void> {
+    const info = new ActionInfo('rename', AgenticProcess.type, id, 'POST');
+    info.bodyParameters = { name };
+    await dataManager.callAction<{ name: string }, { id: string; name: string }>(info);
+  }
+
   /**
    * Check if content is already in AMD format.
    * @internal
@@ -767,8 +873,8 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     const restored = this.wasRestoredFromSession;
     if (wt === 'codex') return restored ? 'codex-restore' : 'codex';
     if (wt === 'copilot') return restored ? 'copilot-restore' : 'copilot';
-    // Default to claude — that's what AgenticProcess.spawn produces today
-    // (ClaudeCliOptions hardcoded), so an unset worker_type means claude.
+    // Default to claude — that's what AgenticProcess.spawn produces unless a
+    // worker override is provided, so an unset worker_type means claude.
     if (wt === '' || wt === 'claude' || wt.startsWith('claude_') || wt.startsWith('claude-')) {
       return restored ? 'claude-restore' : 'claude';
     }
@@ -921,20 +1027,23 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   /** `<exe_folder>/assets/` — materialised embedded agents / skills. */
   assets_folder: FSRef | null = null;
 
-  /** Deserialize cli_config into a live ClaudeCliOptions instance.
+  /** Deserialize cli_config into a live worker-specific CLI options instance.
    *
    * Mirrors Python AgenticProcess.cli_options property exactly:
    * workdir and session_id are injected from entity fields (not stored in cli_config).
    */
   get cliOptions(): ClaudeCliOptions {
-    const cmd = ClaudeCliOptions.fromJson(this.cli_config ?? {});
+    const workerType = (this.worker_type ?? this.cli_config?.worker_type ?? 'claude') as string;
+    const cmd = cliOptionsFactory(this.cli_config ?? {}, workerType) as ClaudeCliOptions;
     if (this.session_id) cmd.session_id = this.session_id;
     const wd = this.workdir;
     if (wd) {
       cmd.workdir = wd;
-      cmd.envVars['CLAUDE_PROJECT_DIR'] ??= wd;
+      if (cmd instanceof ClaudeCliOptions) {
+        cmd.envVars['CLAUDE_PROJECT_DIR'] ??= wd;
+      }
     }
-    cmd.addDirs = this.additional_dirs ?? [];
+    if ('addDirs' in cmd) cmd.addDirs = this.additional_dirs ?? [];
     return cmd;
   }
 
@@ -1296,10 +1405,34 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * `onEntityUpdate` HOLDS the latch (stripping any disagreeing wire value) until
    * the NEXT `switchMode`/`setVisible` overwrites it — these are the only ways
    * `pty_mode`/`visible` change, so a disagreeing wire value is always stale.
-   * `undefined` = no switch yet on this client, trust the wire.
+   * `undefined` (whole object or a member) = no switch yet on this client for
+   * that field, trust the wire. ONE object, written ONLY through
+   * {@link stageTransportIntent}, so an optimistic switch and its failure
+   * rollback always move the durable fields and their latches together.
    */
-  private _pendingPtyMode?: boolean;
-  private _pendingVisible?: boolean;
+  private _pendingTransport?: { pty_mode?: boolean; visible?: boolean };
+
+  /**
+   * Single writer for the optimistic transport intent: atomically sets the
+   * durable fields (`pty_mode`/`visible`, only those present in `intent`) AND
+   * their stale-wire latch, and returns a restore function that atomically
+   * puts BOTH back to the pre-stage state. Callers whose backend action fails
+   * invoke the restore so the entity never stays pinned to a transport that
+   * was never started (and later authoritative broadcasts aren't discarded).
+   */
+  private stageTransportIntent(intent: { pty_mode?: boolean; visible?: boolean }): () => void {
+    const priorLatch = this._pendingTransport;
+    const priorPtyMode = this.pty_mode;
+    const priorVisible = this.visible;
+    this._pendingTransport = { ...priorLatch, ...intent };
+    if (intent.pty_mode !== undefined) this.pty_mode = intent.pty_mode;
+    if (intent.visible !== undefined) this.visible = intent.visible;
+    return () => {
+      this._pendingTransport = priorLatch;
+      this.pty_mode = priorPtyMode;
+      this.visible = priorVisible;
+    };
+  }
 
   /**
    * Count of in-flight streaming `prompt()` calls. A definitive, delivery-
@@ -1666,6 +1799,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
             attributes: item.attributes,
             index: item.index,
             created_time: item.created_time,
+            process_entry: item.process_entry,
           });
           if (onlyUserMessages) {
             const isUserMessage = flowData.elementType === 'user-message' || flowData.attributes.role === 'user';
@@ -1681,30 +1815,23 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
           historyItems.push(flowData);
         }
 
-        // Ingest history items to stream, skipping duplicates by elementType + role + content
-        const existingKeys = new Set(
-          this.flowDataStream.items.map((item) => {
-            const role = item.attributes.role ?? '';
-            return `${item.elementType}|${role}|${item.content ?? ''}`;
-          }),
-        );
-
-        // Filter out duplicates (already-ingested items by element/role/content
-        // signature) BEFORE ingesting so the batch only carries new items.
-        const newItems: FlowData[] = [];
-        for (const item of historyItems) {
-          const role = item.attributes.role ?? '';
-          const key = `${item.elementType}|${role}|${item.content ?? ''}`;
-          if (existingKeys.has(key)) continue;
-          existingKeys.add(key);
-          newItems.push(item);
-        }
-        // Coalesce per-item `'data'` emissions into a single one so React
-        // consumers (`useSyncExternalStore` via `useAgenticProcessStream` /
-        // `useEntityData`) re-render once per loadHistory call instead of once
-        // per item — prevents 700+ notifications from blowing past React's
-        // nested-update budget.
-        this.flowDataStream.ingestBatch(newItems);
+        // History rows are already complete records. Reconcile one-for-one with
+        // any live observations, then append directly so repeated turns and
+        // adjacent CHAT/REASONING rows are not deduped or chunk-consolidated.
+        //
+        // Force-path concurrency contract: clear() above through append()
+        // below run in ONE synchronous block after the fetch resolved — no
+        // await separates them, so a live frame can never land between clear
+        // and append. Frames that streamed in DURING the fetch are replaced
+        // by their transcript counterparts (history is authoritative); a frame
+        // not yet persisted to the transcript would be dropped, which is why
+        // callers only force-reload when no turn is in flight (post-switchMode
+        // reconcile behind the isReadyForInput toggle gate; the chat pane's
+        // useTurnCompletionReconcile on the busy→ready edge).
+        const newItems = force
+          ? historyItems
+          : reconcileHistoryOverlap(historyItems, this.flowDataStream.items);
+        if (newItems.length > 0) this.flowDataStream.append(newItems);
         // Close any open groups after loading history
         this.flowDataStream.closeOpenGroups();
 
@@ -1861,7 +1988,9 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * (e.g. EMBEDDED + USER_DIR for a skill that's both materialized into the
    * process and globally discoverable).
    *
-   * Currently filtered to ExecutableAssets (skills + agents).
+   * Path-discovered process-visible rows are executable assets (skills +
+   * agents). Transcript usage can also surface other file-backed entities that
+   * were read in the session.
    */
   async getAssets(): Promise<AssetDescriptor[]> {
     const actionInfo = new ActionInfo('get-assets', AgenticProcess.type, this.id, 'GET');
@@ -1989,8 +2118,8 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     const actionInfo = new ActionInfo('set-visible', AgenticProcess.type, this.id, 'POST');
     actionInfo.bodyParameters = { visible };
     await dataManager.callAction(actionInfo);
-    this.visible = visible; // optimistic; the broadcast confirms it
-    this._pendingVisible = visible; // latch until the wire agrees (see onEntityUpdate)
+    // Optimistic + latched until the wire agrees (see onEntityUpdate).
+    this.stageTransportIntent({ visible });
   }
 
   /**
@@ -2313,6 +2442,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     // (the cached ``status === RUNNING`` could outlive the actual worker).
     const actionInfo = new ActionInfo('open', AgenticProcess.type, this.id, 'POST');
     actionInfo.bodyParameters = options ?? {};
+    const tOpen = performance.now();
     const result = await dataManager.callAction<
       unknown,
       {
@@ -2323,6 +2453,10 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
         shell: Record<string, unknown>;
       } | null
     >(actionInfo);
+    toplog.log(
+      'process_load',
+      `AgenticProcess.start POST /open took ${msSince(tOpen)}ms proc=${this.id.slice(0, 8)} ok=${!!result}`,
+    );
     if (!result) throw new Error('Process could not be opened (process may be terminated)');
     if (result.status) {
       this.status = result.status as ProcessStatus;
@@ -2338,6 +2472,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       shell.ptyConnection.shellId = shell.id;
       if (shell.compute_node_id) shell.ptyConnection.computeNodeId = shell.compute_node_id;
     }
+    const tAttach = performance.now();
     await shell.attachPty({
       // Real xterm size only — undefined means "keep current size, just repaint".
       cols: options?.cols,
@@ -2345,6 +2480,10 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       timeout: options?.ptyTimeout,
       ptyId: result.pty_id,
     });
+    toplog.log(
+      'process_load',
+      `AgenticProcess.start attachPty took ${msSince(tAttach)}ms pty=${result.pty_id?.slice(0, 8)}`,
+    );
     // Successful open clears any prior user-stop intent.
     this._userInitiatedStop = false;
     // A successful open implies the process is not latched (the backend gate
@@ -2443,11 +2582,18 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    */
   async switchMode(mode: WorkerMode, opts?: { cols?: number; rows?: number }): Promise<void> {
     if (mode === WorkerMode.Interactive) {
-      this.pty_mode = true;
-      this._pendingPtyMode = true;
-      this._pendingVisible = true;
-      await this.start({ visible: true, retry: true, cols: opts?.cols, rows: opts?.rows });
-      this.emit('restarted', { process: this });
+      const restoreTransport = this.stageTransportIntent({ pty_mode: true, visible: true });
+      try {
+        await this.start({ visible: true, retry: true, cols: opts?.cols, rows: opts?.rows });
+        this.emit('restarted', { process: this });
+      } catch (error) {
+        // The open action rejected, so the optimistic transport intent never
+        // became durable. Restore the durable fields and their stale-wire
+        // latch in one scoped step; otherwise later headless broadcasts are
+        // discarded and the UI stays pinned to a terminal that never started.
+        restoreTransport();
+        throw error;
+      }
       return;
     }
     // CLI: one `switch-mode` round-trip. Mirror exit()'s optimistic CLOSING +
@@ -2462,10 +2608,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     const actionInfo = new ActionInfo('switch-mode', AgenticProcess.type, this.id, 'POST');
     actionInfo.bodyParameters = { mode };
     await dataManager.callAction(actionInfo);
-    this.visible = false;
-    this.pty_mode = false;
-    this._pendingVisible = false;
-    this._pendingPtyMode = false;
+    this.stageTransportIntent({ pty_mode: false, visible: false });
   }
 
   /**
@@ -2500,6 +2643,17 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    */
   onShow(handler: (payload: ShowTarget) => void): () => void {
     return this.on('show', handler);
+  }
+
+  /**
+   * The agent's display history (`context_data.display_stack`) — every `flow
+   * show` target with its `shown_at` stamp, newest last. Empty when nothing has
+   * been shown. The newest entry is the current display pin (mirrors
+   * `context_data.last_shown`).
+   */
+  get displayStack(): DisplayEntry[] {
+    const raw = (this.context_data as { display_stack?: unknown } | undefined)?.display_stack;
+    return Array.isArray(raw) ? (raw as DisplayEntry[]) : [];
   }
 
   /**
@@ -2715,6 +2869,22 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       this.queue = q ? { enabled: !!q.enabled, entries: [...(q.entries ?? [])] } : null;
       delete data.queue;
     }
+    // ``context_data.display_stack`` (the flow-show history) has the SAME
+    // array-index-merge hazard as ``queue``: deepAssign recurses into
+    // ``context_data`` and then index-merges the nested array, never shrinking
+    // it — so a dedupe/cap/reorder would leave stale tail entries. Replace the
+    // stack wholesale and strip it from the payload, letting the following
+    // deepAssign deep-merge the REST of context_data untouched.
+    if (data.context_data && typeof data.context_data === 'object' && 'display_stack' in data.context_data) {
+      const ctx = data.context_data as Record<string, unknown>;
+      const stack = ctx.display_stack;
+      this.context_data = {
+        ...(this.context_data ?? {}),
+        display_stack: Array.isArray(stack) ? [...stack] : stack,
+      };
+      const { display_stack: _omit, ...rest } = ctx;
+      data.context_data = rest as IAgenticProcess['context_data'];
+    }
     // Desired-value latch: once the client optimistically sets the transport /
     // visibility (`switchMode`/`setVisible`), HOLD that value against every
     // broadcast until the NEXT client switch overwrites the latch. `pty_mode` /
@@ -2724,10 +2894,12 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     // `deepAssign`. Do NOT clear on first match: an early agreeing broadcast
     // followed by a delayed stale one is exactly the desync this guards against.
     // Same "remove from payload before deepAssign" shape as the `queue` guard.
-    if (this._pendingPtyMode !== undefined && 'pty_mode' in data && data.pty_mode !== this._pendingPtyMode) {
+    const pendingPtyMode = this._pendingTransport?.pty_mode;
+    if (pendingPtyMode !== undefined && 'pty_mode' in data && data.pty_mode !== pendingPtyMode) {
       delete data.pty_mode;
     }
-    if (this._pendingVisible !== undefined && 'visible' in data && data.visible !== this._pendingVisible) {
+    const pendingVisible = this._pendingTransport?.visible;
+    if (pendingVisible !== undefined && 'visible' in data && data.visible !== pendingVisible) {
       delete data.visible;
     }
     // Skip no-op transitions: castAndDeepAssign() runs this hook for every

@@ -16,6 +16,7 @@ from fastapi import HTTPException
 
 from flow_sdk.actions import action
 from flow_sdk.builtin.conversation import Conversation
+from flow_sdk.builtin.project import Project
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.request_context.methods import get_current_request_info
@@ -76,7 +77,9 @@ async def share_entity() -> ApiSuccessResponse:
     if recipients is not None and not isinstance(recipients, list):
         raise HTTPException(status_code=400, detail="share: 'recipients' must be a list")
 
-    if recipients and isinstance(entity, Conversation):
+    # Conversation and Project both implement a ``share(recipients=...)`` fan-out
+    # (per-recipient MembershipRequest). Other types share without invites.
+    if recipients and isinstance(entity, (Conversation, Project)):
         await entity.share(recipients=recipients)
     else:
         await entity.share()

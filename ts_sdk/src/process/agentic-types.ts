@@ -26,9 +26,10 @@
  *   identical to their Python counterparts, verified by a contract test against
  *   ``test_fixtures/status_sets.json``.
  * - ``isBusy(process)`` ⇔ ``process.busy`` is the single canonical "the user must
- *   wait" predicate. Its inverse ``isReadyForInput`` ⇔ ``isProcessRunning(status)
- *   && !busy`` — live and no turn in flight. The two are disjoint by construction.
- *   There is no worker-status-derived gating in the frontend.
+ *   wait" predicate. ``isReadyForInput`` combines ``!busy`` with the lifecycle
+ *   states that can accept a prompt or transport switch (RUNNING, fresh headless,
+ *   or headless-idle). The two are disjoint by construction. There is no
+ *   worker-status-derived gating in the frontend.
  */
 
 /**
@@ -218,7 +219,7 @@ export enum WorkerMode {
 /**
  * Portable model **tier** (size) — set as `context.model` instead of a vendor
  * model name. The backend driver maps the tier to its own model family at launch
- * (claude: sm→haiku, md→sonnet, lg→opus; codex/copilot pass through until mapped)
+ * (for example, claude: sm→haiku, md→sonnet, lg→opus)
  * — see `flow_sdk/builtin/agentic_process/model_tiers.py`, the single source of
  * truth. A concrete model string (e.g. `'sonnet'`) may still be passed directly.
  *
@@ -381,15 +382,32 @@ export function isBusy(p: StatusBearingProcess): boolean {
 }
 
 /**
- * "Can the caller send a new user prompt / switch transport now?" — ⇔ the worker
- * is fully up (``status === RUNNING``, NOT the STARTING/STOPPING bookends) AND no
- * turn is in flight (``!busy``). Mirror of the Python ``is_ready_for_input``. The
- * chat⇄terminal toggle gates on this: "ready" and "busy" are disjoint by
- * construction (``running && !busy`` vs ``busy``), so enabling the toggle on
- * ready can never hit the backend's busy 409.
+ * "Can the caller send a new user prompt / switch transport now?" — ⇔ no turn is
+ * in flight (``!busy``) AND the worker is either fully up (``status === RUNNING``),
+ * a fresh headless process, OR a **headless-idle** session. Mirror of the Python
+ * ``is_ready_from_busy`` / ``is_ready_for_input``.
+ *
+ * A fresh headless process (CLI transport at ``status === NEW``) has no persistent
+ * worker or session yet, but its first prompt and an interactive-mode switch are
+ * both accepted immediately. Treating it as not ready disabled the chat/terminal
+ * toggle before the first turn even though the backend switch guard accepted it.
+ *
+ * Headless-idle readiness (CLI transport — ``!isPtyTransport`` — with a live
+ * ``session_id`` at ``status === STOPPED``): the CLI transport runs a fresh
+ * ``claude -p`` worker per turn, so between turns a headless session sits at
+ * STOPPED with its ``session_id`` preserved, yet is ready for the next prompt and
+ * to toggle chat⇄terminal back. Without this the toggle wedged permanently off
+ * once a session went headless-idle (RCA #12a: switch→cli ``exit()`` → STOPPED).
+ *
+ * "ready" and "busy" stay disjoint (``!busy`` gates first), so enabling the
+ * toggle on ready can never hit the backend's busy 409.
  */
 export function isReadyForInput(p: StatusBearingProcess): boolean {
-  return resolveStatus(p) === ProcessStatus.RUNNING && !isBusy(p);
+  if (isBusy(p)) return false;
+  const status = resolveStatus(p);
+  if (status === ProcessStatus.RUNNING) return true;
+  if (status === ProcessStatus.NEW && !isPtyTransport(p)) return true;
+  return status === ProcessStatus.STOPPED && !isPtyTransport(p) && !!p.session_id;
 }
 
 /**
@@ -403,8 +421,11 @@ export function isReadyForInput(p: StatusBearingProcess): boolean {
 export function getDisplayStatus(p: StatusBearingProcess): ProcessStatus | WorkerStatus | undefined {
   const status = resolveStatus(p);
   if (status === undefined) return undefined;
+  const worker = resolveWorkerStatus(p);
+  if (worker !== undefined && worker !== WorkerStatus.UNKNOWN && ERROR_WORKER_STATUSES.has(worker)) {
+    return worker;
+  }
   if (isProcessRunning(status)) {
-    const worker = resolveWorkerStatus(p);
     if (worker !== undefined && worker !== WorkerStatus.UNKNOWN) return worker;
   }
   return status;

@@ -22,6 +22,8 @@ expected to reset on such a rebuild anyway).
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import json as _json
 import logging
 import uuid
@@ -153,9 +155,14 @@ class Tab(Entity):
         tears down its PTY/worker; a markdown/skill survives untouched). A
         target without that method is a no-op.
         """
+        await self._soft_hide()
+        await self._dispatch_teardown()
+
+    async def _soft_hide(self) -> None:
+        """The membership-removal half of close — ONE definition of "soft-close"
+        shared by ``close`` and the fast HTTP handler (``_http_close``)."""
         self.visible = False
         await self.save()
-        await self._dispatch_teardown()
 
     async def _dispatch_teardown(self) -> None:
         target = await self._target_entity()
@@ -309,9 +316,32 @@ async def _load_status_targets(
     return by_type_id, verified
 
 
-async def _existing_project_ids(tabs: list[Tab]) -> "tuple[set[str], set[str], bool]":
+def _pointer_project_id(pointer: str | None) -> str | None:
+    """The project id NAMED by a project-scoped dock pointer — pure parse, no
+    existence check (``viewType:"project"`` → leading ``<project_id>/`` segment).
+    Returns the id only when UUID-shaped (same reap-eligibility rule as
+    ``_existing_project_ids``); any other pointer shape → ``None``."""
+    if not pointer:
+        return None
+    try:
+        data = _json.loads(pointer)
+    except (ValueError, TypeError):
+        return None
+    if not isinstance(data, dict) or data.get("viewType") != "project":
+        return None
+    candidate = str(data.get("pointer") or "").split("/", 1)[0].strip()
+    return candidate if is_valid_uuid(candidate) else None
+
+
+async def _existing_project_ids(
+    tabs: list[Tab], pointer_pids: "dict[str, str | None]"
+) -> "tuple[set[str], set[str], bool]":
     """Resolve which of the tabs' project ids still exist, via ONE ``id IN (…)``
     query (vs a ``get_by_id`` per distinct project).
+
+    ``pointer_pids`` is the caller's per-tab ``_pointer_project_id`` parse
+    (tab id → pointer-named project id), computed once and shared with the
+    pointer-orphan reap so each pointer is parsed a single time per list call.
 
     Returns ``(existing_ids, candidate_ids, ok)`` where ``candidate_ids`` is the
     set of distinct UUID-shaped ``project_id``s (the only ones eligible for
@@ -326,6 +356,10 @@ async def _existing_project_ids(tabs: list[Tab]) -> "tuple[set[str], set[str], b
         for t in tabs
         if getattr(t, "project_id", None) and is_valid_uuid(str(t.project_id))
     }
+    # Also validate the project id NAMED BY a project-scoped dock pointer: a tab
+    # can carry a live (target-healed) ``project_id`` while its URL still names a
+    # deleted project — that fossil must be detected here to be reapable at all.
+    candidates |= {pid for pid in pointer_pids.values() if pid is not None}
     if not candidates:
         return set(), candidates, True
     from flow_sdk.builtin.project import Project  # noqa: PLC0415
@@ -376,7 +410,8 @@ async def _reap_orphans(
         return tabs
     if target_map is None or verified_types is None:
         target_map, verified_types = await _load_status_targets(tabs)
-    existing_projects, candidate_projects, projects_ok = await _existing_project_ids(tabs)
+    pointer_pids = {t.id: _pointer_project_id(t.pointer) for t in tabs}
+    existing_projects, candidate_projects, projects_ok = await _existing_project_ids(tabs, pointer_pids)
 
     deleted_ids: set[str] = set()
 
@@ -390,6 +425,32 @@ async def _reap_orphans(
             deleted_ids.update(
                 t.id for t in tabs if str(getattr(t, "project_id", None)) == pid
             )
+
+    # Dead-URL POINTER: a project-scoped tab whose dock URL names a project that
+    # no longer exists. ``_backfill_tab_projects`` may still heal such a tab's
+    # ``project_id`` from its TARGET — so the projects chip advertises a live
+    # project — but opening the tab, or entering that project via the chip
+    # (``dockForProjectEntry`` resolves the tab's stored pointer VERBATIM), can
+    # only ever land on ``/dock/project/<dead>/…`` → "Project not found", forever
+    # (RCA 2026-07-08). A tab addressing a dead project is removed, not healed
+    # half-way. Same fail-open as the project reap above: only when the batched
+    # existence lookup succeeded.
+    reaped_pointer = False
+    if projects_ok:
+        pointer_orphans = [
+            t
+            for t in tabs
+            if t.id not in deleted_ids
+            and (pid := pointer_pids.get(t.id)) is not None
+            and pid not in existing_projects
+        ]
+        for tab in pointer_orphans:
+            try:
+                await tab.delete()
+            except Exception:
+                continue
+            deleted_ids.add(tab.id)
+            reaped_pointer = True
 
     # Missing TARGET: a shell/agentic_process tab whose entity row is absent.
     # BOTH live-session target types (``_DB_BACKED_TARGET_TYPES``) are ALWAYS
@@ -418,7 +479,7 @@ async def _reap_orphans(
             continue
         deleted_ids.add(tab.id)
         reaped_target = True
-    if reaped_target:
+    if reaped_target or reaped_pointer:
         # Background reap (no user navigation) — ping clients so the dangling
         # chip drops live instead of waiting for the next list fetch.
         await broadcast_tabs_changed()
@@ -479,6 +540,31 @@ async def _project_of_target(target_type: str, target_id: str) -> str | None:
 _DB_BACKED_TARGET_TYPES = (EntityType.SHELL.value, EntityType.AGENTIC_PROCESS.value)
 
 
+def _is_synthetic_name(
+    name: str | None, target_type: str | None, target_id: str | None
+) -> bool:
+    """True when ``name`` is the frontend's ``<type>-<id>`` synthetic fallback for
+    this target rather than a real name — the label ``APIEntity.defaultDisplayName``
+    fabricates for an entity with no name/uname/title (e.g. an un-stamped
+    AgenticProcess). Backstop so a stale/legacy client can never freeze the
+    synthetic into the durable ``Tab.name`` (the FE guard in ``getTabName`` is the
+    primary fix; this is belt-and-suspenders). Anchored to the exact synthetic
+    shape — the literal id or the ``<first4>…<last4>`` ellipsis form — so it never
+    eats a legitimate user name that merely starts with the type token."""
+    if not name or not target_type:
+        return False
+    prefix = f"{target_type}-"
+    if not name.startswith(prefix):
+        return False
+    tail = name[len(prefix):]
+    tid = str(target_id or "")
+    if not tid:
+        return False
+    if tail == tid:
+        return True
+    return len(tid) >= 8 and tail == f"{tid[:4]}…{tid[-4:]}"
+
+
 async def _load_target_entity(target_type: str | None, target_id: str | None):
     """Resolve the backing entity row for a tab target (None if unresolvable)."""
     if not (target_type and target_id):
@@ -513,6 +599,19 @@ async def ensure_tab(
     ``ensure_file_entity``.
     """
     tid = tab_id_for(pointer)
+    # Reopen-race guard: a just-closed tab's background teardown may still be
+    # killing the shell/worker this pointer re-materializes. Wait for it so the
+    # reopen can't be reaped as a target orphan mid-teardown (awaits in-flight
+    # work only — a settled or absent task costs nothing).
+    pending = _PENDING_TEARDOWNS.get(tid)
+    if pending is not None:
+        with contextlib.suppress(Exception):
+            await pending
+    # Never adopt the FE `<type>-<id>` synthetic as a durable name (backstop to the
+    # `getTabName` guard): drop it to None so the null-name backfill / fresh create
+    # below leave the label empty until a real name is stamped onto the target.
+    if _is_synthetic_name(name, target_type, target_id):
+        name = None
     # Backend authority for the chip's project: the client computes ``project_id``
     # from a cache-first target read that MISSES on a cold/bare open (e.g. an
     # unindexed claude-session lens — the row only resolves via on-disk recovery),
@@ -759,15 +858,9 @@ async def _project_from_pointer(pointer: str | None) -> str | None:
     is the authority. Returns the id only when it's a valid entity id AND the
     project still exists, so a stale pointer to a deleted project never stamps a
     dangling id."""
-    if not pointer:
+    candidate = _pointer_project_id(pointer)
+    if candidate is None:
         return None
-    try:
-        data = _json.loads(pointer)
-    except (ValueError, TypeError):
-        return None
-    if not isinstance(data, dict) or data.get("viewType") != "project":
-        return None
-    candidate = str(data.get("pointer") or "").split("/", 1)[0].strip()
     from flow_sdk.api.api_types.identifier import is_valid_entity_id  # noqa: PLC0415
 
     if not is_valid_entity_id(candidate):
@@ -867,15 +960,10 @@ async def broadcast_tabs_changed() -> None:
     backend-originated changes (death/orphan-cleanup, rename, second window). Sends
     a proper broadcast message to all connected clients."""
     try:
+        from flow_sdk.api.messages import BroadcastMessage  # noqa: PLC0415
         from flow_sdk.server.routes.websocket import broadcast  # noqa: PLC0415
-        from pydantic import BaseModel
-        from flow_sdk.api.messages import WSMessageType
 
-        class TabsChangedMessage(BaseModel):
-            message_type: str = WSMessageType.BROADCAST.value
-            broadcast_type: str = "tabs_changed"
-
-        await broadcast(TabsChangedMessage().model_dump_json())
+        await broadcast(BroadcastMessage(broadcast_type="tabs_changed").model_dump_json())
     except Exception as e:
         logger.debug(f"broadcast_tabs_changed failed: {e}")
 
@@ -996,11 +1084,44 @@ _action_registry.register(
 )
 
 
+# In-flight background teardowns keyed by tab id. Serves two purposes: the
+# strong reference that keeps each fire-and-forget task alive until done, and
+# the reopen-race guard — ``ensure_tab`` awaits a pending teardown for the same
+# deterministic tab id before re-showing the row, so a fast close→reopen can't
+# resurrect a tab whose shell/worker is still being torn down under it.
+_PENDING_TEARDOWNS: dict[str, asyncio.Task] = {}
+
+
+async def drain_pending_teardowns() -> None:
+    """Await every in-flight tab teardown (test hook — keeps event loops clean)."""
+    await asyncio.gather(*_PENDING_TEARDOWNS.values(), return_exceptions=True)
+
+
 async def _http_close(self: Tab):
-    """POST /graph/tab/<id>/close — soft-close then return the updated list."""
-    await self.close()
+    """POST /graph/tab/<id>/close — soft-close, respond immediately, tear down
+    in the background.
+
+    The membership flip (``visible=False``) + broadcast + list response happen
+    before the per-target teardown (PTY/worker kill can take seconds), so the
+    client drops the chip instantly. A teardown failure therefore no longer
+    surfaces as an HTTP error — the tab hides regardless and the failure is
+    logged (``Shell.close`` already swallowed its sub-failures anyway).
+    Programmatic callers keep the synchronous semantics via ``Tab.close``.
+    """
+    await self._soft_hide()
     await broadcast_tabs_changed()
-    return await _list_response(self.project_id)
+    response = await _list_response(self.project_id)
+    tab_id = self.id
+    task = asyncio.create_task(self._dispatch_teardown(), name=f"tab-teardown:{tab_id}")
+    _PENDING_TEARDOWNS[tab_id] = task
+
+    def _done(t: asyncio.Task) -> None:
+        _PENDING_TEARDOWNS.pop(tab_id, None)
+        if not t.cancelled() and t.exception() is not None:
+            logger.warning("tab teardown failed for %s", tab_id, exc_info=t.exception())
+
+    task.add_done_callback(_done)
+    return response
 
 
 _action_registry.register(

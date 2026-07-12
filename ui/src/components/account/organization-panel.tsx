@@ -1,4 +1,4 @@
-import { APIEntity, QueryRequest, TypeId, User } from '@sdk';
+import { APIEntity, normalizeEmail, QueryRequest, TypeId, User } from '@sdk';
 import { useCallback, useMemo, useState } from 'react';
 import { Button } from '@src/components/ui/button';
 import { Loader2 } from 'lucide-react';
@@ -178,7 +178,7 @@ function InviteBox({ entityTypeId, onInvited }: { entityTypeId: TypeId; onInvite
   const [busy, setBusy] = useState(false);
 
   const submit = useCallback(async () => {
-    const trimmed = email.trim();
+    const trimmed = normalizeEmail(email) || '';
     if (!trimmed) return;
     setBusy(true);
     try {

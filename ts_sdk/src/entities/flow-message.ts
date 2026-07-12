@@ -162,6 +162,10 @@ export interface IFlowMessage extends IEntity {
    *  message between a single Download button and rendered chips off this one
    *  flag, so the transcript and the context panel share download state. */
   body_downloaded?: boolean;
+  /** Transient, server-derived. True when the bundle's extracted tree persists
+   *  under the message's staging dir — staged attachments are reviewable (and
+   *  MessageAttachment rows exist) even though nothing is installed/indexed. */
+  body_unpacked?: boolean;
   /** Forward provenance: id of the source FlowMessage this one was forwarded
    *  from (set only on forwarded clones — see forwardMessage). */
   cloned_from_id?: string | null;
@@ -189,6 +193,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
   kind?: FlowMessageKind;
   body_status?: BodyStatus;
   body_downloaded?: boolean;
+  body_unpacked?: boolean;
   cloned_from_id?: string | null;
   cloned_from_sender_id?: string | null;
   static type: string = 'flow_message';
@@ -213,6 +218,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
     this.kind = entity.kind ?? FlowMessageKind.USER;
     this.body_status = entity.body_status ?? BodyStatus.NA;
     this.body_downloaded = entity.body_downloaded ?? false;
+    this.body_unpacked = entity.body_unpacked ?? false;
     this.cloned_from_id = entity.cloned_from_id ?? null;
     this.cloned_from_sender_id = entity.cloned_from_sender_id ?? null;
   }

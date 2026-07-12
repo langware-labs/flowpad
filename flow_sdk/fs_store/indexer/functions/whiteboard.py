@@ -20,8 +20,11 @@ from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer._frontmatter import (
     _extract_body,
     _extract_frontmatter,
-    _render_frontmatter,
     _yaml_load,
+)
+from flow_sdk.fs_store.indexer.functions._folder_capsule import (
+    folder_capsule_gen_id,
+    read_folder_capsule_id,
 )
 from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
@@ -83,9 +86,13 @@ def _load_whiteboard_fm(whiteboard_dir: Path) -> dict[str, Any]:
     return parsed if isinstance(parsed, dict) else {}
 
 def whiteboard_id(ref: FSRef) -> str:
-    """Cheap id: prefer WHITE_BOARD.md frontmatter id; else uuid5(name)."""
+    """Cheap id (no write): `.flow/id` capsule, else valid frontmatter id, else
+    the transitional uuid5(name) read fallback for legacy rows."""
     path = ref._path
     if path.is_dir():
+        cap = read_folder_capsule_id(path)
+        if cap:
+            return cap
         fm = _load_whiteboard_fm(path)
         fm_id = _read_frontmatter_id_from_yaml(fm)
         if fm_id:
@@ -95,43 +102,17 @@ def whiteboard_id(ref: FSRef) -> str:
     return path.name.split("-@", 1)[-1] if "-@" in path.name else path.name
 
 def whiteboard_gen_id(ref: FSRef) -> str:
-    """Mint+write a stable id into WHITE_BOARD.md frontmatter (idempotent).
+    """Adopt the whiteboard's id from its capsule, else mint a fresh v4.
 
-    Same shape as the deleted ``WhiteboardRecord.genId``. Preserves any
-    existing id so DB rows keyed on that value stay valid.
+    Precedence: `.flow/id` capsule → valid WHITE_BOARD.md frontmatter id (adopted
+    + backfilled into the capsule) → fresh random **v4** into `.flow/id`. No
+    longer name-derives (`uuid5("whiteboard:name")` collided across machines).
     """
     path = ref._path
     if not path.is_dir():
         return whiteboard_id(ref)
     fm = _load_whiteboard_fm(path)
-    existing = _read_frontmatter_id_from_yaml(fm)
-    if existing:
-        return existing
-    wb_name = _resolve_whiteboard_name(fm, path.name)
-    new_id = _whiteboard_id_from_name(wb_name)
-    doc = path / WHITE_BOARD_MD
-    if not doc.exists():
-        return new_id
-    try:
-        text = doc.read_text(encoding="utf-8")
-    except OSError:
-        return new_id
-    fm_text = _extract_frontmatter(text)
-    body = _extract_body(text)
-    fields: dict = {}
-    if fm_text:
-        parsed = _yaml_load(fm_text)
-        if isinstance(parsed, dict):
-            fields.update(parsed)
-    merged = {"id": new_id, **{k: v for k, v in fields.items() if k not in ("id", "asset_id")}}
-    try:
-        doc.write_text(
-            _render_frontmatter(merged) + "\n\n" + body + ("\n" if body and not body.endswith("\n") else ""),
-            encoding="utf-8",
-        )
-    except OSError:
-        pass
-    return new_id
+    return folder_capsule_gen_id(path, fm.get("id"), fm.get("asset_id"))
 
 def whiteboard_asset_hash(ref: FSRef) -> float:
     """mtime across the whiteboard's inner content files.
@@ -163,7 +144,11 @@ def extract_whiteboard(ref: FSRef) -> list[FSRecord]:
     path = ref._path
     fm = _load_whiteboard_fm(path) if path.is_dir() else {}
     wb_name = _resolve_whiteboard_name(fm, path.name)
-    rec_id = _read_frontmatter_id_from_yaml(fm) or _whiteboard_id_from_name(wb_name)
+    rec_id = (
+        (read_folder_capsule_id(path) if path.is_dir() else None)
+        or _read_frontmatter_id_from_yaml(fm)
+        or _whiteboard_id_from_name(wb_name)  # transitional read fallback for legacy rows
+    )
     description = ""
     if isinstance(fm.get("description"), str):
         description = fm["description"]

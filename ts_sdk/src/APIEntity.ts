@@ -12,6 +12,7 @@ import { DockPointerData } from './models/DockPointer';
 import { editorForType } from './models/asset-editor';
 import { TypeId } from './models/TypeId';
 import { ViewType } from './utils/ui/view-types';
+import { normalizeEmail } from './utils/utils';
 import { Callable } from './types';
 
 /**
@@ -240,6 +241,27 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     const id = this.id ?? '';
     if (id.length < 8) return `${type}-${id || '?'}`;
     return `${type}-${id.slice(0, 4)}…${id.slice(-4)}`;
+  }
+
+  /**
+   * True when `displayName` is ONLY the `<type>-<key>` / `<type>-<id-tail>`
+   * synthetic fallback — i.e. the entity has no real `name`/`uname`/`title`/`key`
+   * and no `getDisplayName()` override. Distinguishes "the label is a real name"
+   * from "the label is a fabricated id string" without string-sniffing the value
+   * (which would risk eating a legit user name that happens to look like one).
+   *
+   * Callers that must not persist or label with the synthetic — notably the tab
+   * name resolver (`FlowSync.getTabName`), which would otherwise freeze
+   * `agentic_process-<id>` into `Tab.name` — check this and fall back instead.
+   */
+  get hasSyntheticDisplayName(): boolean {
+    return (
+      this.getDisplayName() == null &&
+      !isNonEmptyString(this.name) &&
+      !isNonEmptyString(this.uname) &&
+      !isNonEmptyString(this.title) &&
+      !isNonEmptyString(this.key)
+    );
   }
 
   get expand(): EntityExpansion | undefined {
@@ -724,7 +746,10 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
    */
   public async share(recipients?: string[]): Promise<T> {
     const info = new ActionInfo('share', this.typeId.type, this.typeId.id, 'POST');
-    info.bodyParameters = { ...this.toJSON(), ...(recipients ? { recipients } : {}) };
+    const cleaned = recipients
+      ?.map((r) => normalizeEmail(r))
+      .filter((r): r is string => !!r);
+    info.bodyParameters = { ...this.toJSON(), ...(cleaned?.length ? { recipients: cleaned } : {}) };
     await dataManager.callAction<unknown, unknown>(info);
     (this as any).remote = true;
     return this as unknown as T;
@@ -779,7 +804,7 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     const info = new ActionInfo('members', this.typeId.type, this.typeId.id, 'POST');
     info.hubReflect = true; // membership change is hub-owned — reflect to the hub
     info.bodyParameters = {
-      recipient_email: email,
+      recipient_email: normalizeEmail(email) ?? '',
       invitation_targets: [{ typeid: `${this.typeId.type}-${this.typeId.id}`, role }],
     };
     const res = await dataManager.callAction<unknown, EntityMember[]>(info);

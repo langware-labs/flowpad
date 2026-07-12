@@ -200,9 +200,7 @@ class _CodexParserBase:
     def _unknown(self, raw: dict, rtype: str, line_index: int) -> list[TranscriptEntry]:
         return [UnknownEntry(raw_data=raw, **self._base(raw, rtype, line_index))]
 
-    def _maybe_synthesize_plan_entry(
-        self, text: str, base: dict
-    ) -> list[TranscriptEntry]:
+    def _maybe_synthesize_plan_entry(self, text: str, base: dict) -> list[TranscriptEntry]:
         """Synthesize ``ExitPlanModeEntry`` from a ``<proposed_plan>`` block.
 
         Codex Plan Mode finalizes the plan inside an assistant message wrapped
@@ -221,20 +219,27 @@ class _CodexParserBase:
         body = m.group(1).strip()
         plan_path = _codex_plan_path_for_session(self.session_id)
         use_id = f"{base['id']}:exit_plan_mode"
-        return [ExitPlanModeEntry(
-            tool_name="ExitPlanMode",
-            tool_use_id=use_id,
-            tool_input={"plan": body, "planFilePath": plan_path},
-            **{**base, "id": use_id},
-        )]
+        return [
+            ExitPlanModeEntry(
+                tool_name="ExitPlanMode",
+                tool_use_id=use_id,
+                tool_input={"plan": body, "planFilePath": plan_path},
+                **{**base, "id": use_id},
+            )
+        ]
 
     # ── helpers ──────────────────────────────────────────────────────────────
 
     def _synth_id(self, raw: dict, rtype: str, line_index: int) -> str:
-        item = raw.get("item") if rtype in (
-            CodexLineType.ITEM_COMPLETED.value,
-            CodexLineType.ITEM_STARTED.value,
-        ) else None
+        item = (
+            raw.get("item")
+            if rtype
+            in (
+                CodexLineType.ITEM_COMPLETED.value,
+                CodexLineType.ITEM_STARTED.value,
+            )
+            else None
+        )
         if isinstance(item, dict):
             iid = item.get("id")
             if iid:
@@ -291,6 +296,10 @@ class _CodexParserBase:
         ("chunk_id", re.compile(r"^Chunk ID:\s*([\w-]+)$")),
         ("wall_time", re.compile(r"^Wall time:\s*([\d.]+)\s*seconds$")),
         ("exit_code", re.compile(r"^Process exited with code\s*(-?\d+)$")),
+        # Newer codex writes the exit line as ``Exit code: N`` (validated
+        # against real rollouts; both function_call_output and
+        # custom_tool_call_output use it).
+        ("exit_code", re.compile(r"^Exit code:\s*(-?\d+)$")),
         ("token_count", re.compile(r"^Original token count:\s*(\d+)$")),
     )
 
@@ -347,6 +356,76 @@ class _CodexParserBase:
             return {}, text
         body = "\n".join(lines[i:])
         return fields, body
+
+    @staticmethod
+    def _decode_structured_result(decoded: Any) -> tuple[dict, str] | None:
+        """Decode a JSON result object into ``(fields, body)``.
+
+        Two real shapes carry exit metadata (validated against
+        ``~/.codex/sessions`` rollouts):
+
+        - top-level (list-form custom exec results)::
+
+            {"exit_code": N, "wall_time_seconds": S,
+             "original_token_count": T, "output": "..."}
+
+        - nested (apply_patch-era JSON-string outputs)::
+
+            {"output": "...", "metadata": {"exit_code": N,
+             "duration_seconds": S}}
+
+        Returns ``None`` when ``decoded`` is neither — callers fall back to
+        the line-preamble grammar.
+        """
+
+        def _to_ms(secs: Any) -> int | None:
+            return round(float(secs) * 1000) if isinstance(secs, (int, float)) else None
+
+        if not isinstance(decoded, dict):
+            return None
+        if "exit_code" in decoded:
+            exit_code = decoded.get("exit_code")
+            fields = {
+                "exit_code": exit_code if isinstance(exit_code, int) else None,
+                "duration_ms": _to_ms(decoded.get("wall_time_seconds")),
+                "output_token_count": decoded.get("original_token_count"),
+            }
+            return fields, str(decoded.get("output") or "")
+        metadata = decoded.get("metadata")
+        if isinstance(metadata, dict) and "exit_code" in metadata and "output" in decoded:
+            exit_code = metadata.get("exit_code")
+            fields = {
+                "exit_code": exit_code if isinstance(exit_code, int) else None,
+                "duration_ms": _to_ms(metadata.get("duration_seconds")),
+            }
+            return fields, str(decoded.get("output") or "")
+        return None
+
+    def _decode_tool_output(self, output: Any) -> tuple[dict, str]:
+        """Normalize a ``*_call_output.output`` payload into ``(fields, body)``.
+
+        Precedence: a structured JSON result object wins over the line
+        preamble — decoded from the string form directly, or by scanning
+        list-form text blocks from the END (the result object is the final
+        block; a human status block precedes it). Absent both, the
+        line-preamble grammar applies, and text without a preamble passes
+        through unchanged. This keeps nonzero exits durable error metadata
+        instead of reading as successful blank output.
+        """
+        if isinstance(output, list):
+            for block in reversed(output):
+                if not isinstance(block, dict) or not isinstance(block.get("text"), str):
+                    continue
+                structured = self._decode_structured_result(self._safe_json(block["text"]))
+                if structured is not None:
+                    return structured
+            return self._parse_codex_output_preamble(self._join_text_blocks(output))
+        if isinstance(output, str) and output.lstrip().startswith("{"):
+            structured = self._decode_structured_result(self._safe_json(output))
+            if structured is not None:
+                return structured
+        raw_text = "" if output is None else str(output)
+        return self._parse_codex_output_preamble(raw_text)
 
     @staticmethod
     def _codex_duration_to_ms(value: Any) -> int | None:
@@ -420,13 +499,15 @@ class _CodexParserBase:
             if not isinstance(count, (int, float)) or count <= 0:
                 return
             dim_id = f"{base_id}:usage:dim_{len(out)}"
-            out.append(UsageEntry(
-                id=dim_id,
-                entry_id=entry_id,
-                model=self._current_model,
-                **base_envelope,
-                **fields,  # type: ignore[arg-type]
-            ))
+            out.append(
+                UsageEntry(
+                    id=dim_id,
+                    entry_id=entry_id,
+                    model=self._current_model,
+                    **base_envelope,
+                    **fields,  # type: ignore[arg-type]
+                )
+            )
 
         if total:
             # Bill the increment of the cumulative counter (complete record).
@@ -455,29 +536,26 @@ class _CodexParserBase:
         # all per-dim entries were zero. Useful for matching against
         # OpenAI's own session totals.
         if total or turn_id_str:
-            out.append(CodexUsageEntry(
-                id=f"{base_id}:usage:cumulative",
-                entry_id=entry_id,
-                model=self._current_model,
-                count=0,
-                io="input",
-                total_input_tokens=total.get("input_tokens"),
-                total_output_tokens=total.get("output_tokens"),
-                turn_id=turn_id_str,
-                **base_envelope,
-            ))
+            out.append(
+                CodexUsageEntry(
+                    id=f"{base_id}:usage:cumulative",
+                    entry_id=entry_id,
+                    model=self._current_model,
+                    count=0,
+                    io="input",
+                    total_input_tokens=total.get("input_tokens"),
+                    total_output_tokens=total.get("output_tokens"),
+                    turn_id=turn_id_str,
+                    **base_envelope,
+                )
+            )
         return out
 
     def _parse_compacted(self, raw: dict, base: dict) -> list[TranscriptEntry]:
         payload = raw.get("payload") or raw
         text = ""
         if isinstance(payload, dict):
-            text = str(
-                payload.get("replacement_history")
-                or payload.get("message")
-                or payload.get("text")
-                or ""
-            )
+            text = str(payload.get("replacement_history") or payload.get("message") or payload.get("text") or "")
         if not text:
             try:
                 text = json.dumps(payload, sort_keys=True)
@@ -492,9 +570,7 @@ class _CodexParserBase:
         itype = item.get("type")
         if itype == "agent_message":
             text = str(item.get("text") or "")
-            out: list[TranscriptEntry] = [
-                AssistantMessageEntry(text=text, model=self._current_model, **base)
-            ]
+            out: list[TranscriptEntry] = [AssistantMessageEntry(text=text, model=self._current_model, **base)]
             out.extend(self._maybe_synthesize_plan_entry(text, base))
             return out
         if itype == "command_execution":
@@ -508,30 +584,36 @@ class _CodexParserBase:
             entries: list[TranscriptEntry] = []
             skill_name = _skill_name_from_command(cmd)
             if skill_name:
-                entries.append(SkillCallEntry(
-                    skill_name=skill_name,
-                    invocation_kind=SkillInvocationKind.FILE_LOAD,
+                entries.append(
+                    SkillCallEntry(
+                        skill_name=skill_name,
+                        invocation_kind=SkillInvocationKind.FILE_LOAD,
+                        tool_name="shell",
+                        tool_use_id=f"{tool_use_id}:skill",
+                        tool_input={"command": cmd},
+                        **{**base, "id": f"{tool_use_id}:skill_call"},
+                    )
+                )
+            entries.append(
+                ToolUseEntry(
                     tool_name="shell",
-                    tool_use_id=f"{tool_use_id}:skill",
+                    tool_use_id=tool_use_id,
                     tool_input={"command": cmd},
-                    **{**base, "id": f"{tool_use_id}:skill_call"},
-                ))
-            entries.append(ToolUseEntry(
-                tool_name="shell",
-                tool_use_id=tool_use_id,
-                tool_input={"command": cmd},
-                **use_base,
-            ))
-            entries.append(ToolResultEntry(
-                tool_use_id=tool_use_id,
-                tool_output=output,
-                is_error=isinstance(exit_code, int) and exit_code != 0,
-                file_path=None,
-                tool_name="shell",
-                duration_ms=duration_ms,
-                exit_code=exit_code if isinstance(exit_code, int) else None,
-                **result_base,
-            ))
+                    **use_base,
+                )
+            )
+            entries.append(
+                ToolResultEntry(
+                    tool_use_id=tool_use_id,
+                    tool_output=output,
+                    is_error=isinstance(exit_code, int) and exit_code != 0,
+                    file_path=None,
+                    tool_name="shell",
+                    duration_ms=duration_ms,
+                    exit_code=exit_code if isinstance(exit_code, int) else None,
+                    **result_base,
+                )
+            )
             return entries
         if itype == "file_change":
             return [MetaEntry(meta_kind="file_change", payload=item, **base)]
@@ -559,39 +641,43 @@ class _CodexParserBase:
             out: list[TranscriptEntry] = []
             skill_name = _skill_name_from_command(tool_input)
             if skill_name:
-                out.append(SkillCallEntry(
-                    skill_name=skill_name,
-                    invocation_kind=SkillInvocationKind.FILE_LOAD,
-                    tool_name=tool_name or "shell",
-                    tool_use_id=f"{tool_use_id}:skill",
+                out.append(
+                    SkillCallEntry(
+                        skill_name=skill_name,
+                        invocation_kind=SkillInvocationKind.FILE_LOAD,
+                        tool_name=tool_name or "shell",
+                        tool_use_id=f"{tool_use_id}:skill",
+                        tool_input=tool_input if isinstance(tool_input, dict) else {},
+                        **{**envelope, **base, "id": f"{base['id']}:skill_call"},
+                    )
+                )
+            out.append(
+                ToolUseEntry(
+                    tool_name=tool_name,
+                    tool_use_id=tool_use_id,
                     tool_input=tool_input if isinstance(tool_input, dict) else {},
-                    **{**envelope, **base, "id": f"{base['id']}:skill_call"},
-                ))
-            out.append(ToolUseEntry(
-                tool_name=tool_name,
-                tool_use_id=tool_use_id,
-                tool_input=tool_input if isinstance(tool_input, dict) else {},
-                **envelope,
-                **base,
-            ))
+                    **envelope,
+                    **base,
+                )
+            )
             return out
         if ptype is CodexResponseItemType.FUNCTION_CALL_OUTPUT:
             call_id = str(payload.get("call_id") or "")
-            output = payload.get("output")
-            raw_text = "" if output is None else str(output)
-            preamble, body = self._parse_codex_output_preamble(raw_text)
+            preamble, body = self._decode_tool_output(payload.get("output"))
             exit_code = preamble.get("exit_code")
-            return [ToolResultEntry(
-                tool_use_id=call_id or str(eid or base["id"]),
-                tool_output=body,
-                is_error=isinstance(exit_code, int) and exit_code != 0,
-                tool_name=self._call_tool_name.get(call_id),
-                duration_ms=preamble.get("duration_ms"),
-                exit_code=exit_code,
-                output_token_count=preamble.get("output_token_count"),
-                **envelope,
-                **base,
-            )]
+            return [
+                ToolResultEntry(
+                    tool_use_id=call_id or str(eid or base["id"]),
+                    tool_output=body,
+                    is_error=isinstance(exit_code, int) and exit_code != 0,
+                    tool_name=self._call_tool_name.get(call_id),
+                    duration_ms=preamble.get("duration_ms"),
+                    exit_code=exit_code,
+                    output_token_count=preamble.get("output_token_count"),
+                    **envelope,
+                    **base,
+                )
+            ]
         if ptype is CodexResponseItemType.CUSTOM_TOOL_CALL:
             tool_name = str(payload.get("name") or "custom_tool")
             call_id = str(payload.get("call_id") or "")
@@ -605,56 +691,71 @@ class _CodexParserBase:
             # native Write/Edit. Delete ops have no FileDeleteEntry — skipped.
             if tool_name == "apply_patch" and isinstance(raw_input, str) and raw_input:
                 file_entries: list[TranscriptEntry] = []
-                for op in parse_apply_patch(raw_input):
+                for op_index, op in enumerate(parse_apply_patch(raw_input)):
+                    operation_id = f"{base['id']}:file_op_{op_index}"
+                    source_id = str(envelope.get("entry_id") or base["id"])
+                    operation_envelope = {
+                        **envelope,
+                        "entry_id": f"{source_id}:file_op_{op_index}",
+                    }
+                    operation_base = {**base, "id": operation_id}
                     if op.op == "add":
                         content = add_op_to_content(op)
                         trailing = 0 if not content or content.endswith("\n") else 1
-                        file_entries.append(FileWriteEntry(
-                            path=op.path,
-                            content=content,
-                            bytes_count=len(content.encode("utf-8")),
-                            line_count=content.count("\n") + trailing,
-                            is_new=True,
-                            tool_name="apply_patch",
-                            tool_use_id=tool_use_id,
-                            **envelope, **base,
-                        ))
+                        file_entries.append(
+                            FileWriteEntry(
+                                path=op.path,
+                                content=content,
+                                bytes_count=len(content.encode("utf-8")),
+                                line_count=content.count("\n") + trailing,
+                                is_new=True,
+                                tool_name="apply_patch",
+                                tool_use_id=tool_use_id,
+                                **operation_envelope,
+                                **operation_base,
+                            )
+                        )
                     elif op.op == "update":
-                        file_entries.append(FileEditEntry(
-                            path=op.path,
-                            hunks=update_op_to_hunks(op),
-                            tool_name="apply_patch",
-                            tool_use_id=tool_use_id,
-                            **envelope, **base,
-                        ))
+                        file_entries.append(
+                            FileEditEntry(
+                                path=op.path,
+                                hunks=update_op_to_hunks(op),
+                                tool_name="apply_patch",
+                                tool_use_id=tool_use_id,
+                                **operation_envelope,
+                                **operation_base,
+                            )
+                        )
                 if file_entries:
                     return file_entries
                 # Zero parseable ops → fall through to generic ToolUseEntry.
 
-            return [ToolUseEntry(
-                tool_name=tool_name,
-                tool_use_id=tool_use_id,
-                tool_input=self._safe_json(raw_input or {}) or {},
-                **envelope,
-                **base,
-            )]
+            return [
+                ToolUseEntry(
+                    tool_name=tool_name,
+                    tool_use_id=tool_use_id,
+                    tool_input=self._safe_json(raw_input or {}) or {},
+                    **envelope,
+                    **base,
+                )
+            ]
         if ptype is CodexResponseItemType.CUSTOM_TOOL_CALL_OUTPUT:
             call_id = str(payload.get("call_id") or "")
-            output = payload.get("output")
-            raw_text = "" if output is None else str(output)
-            preamble, body = self._parse_codex_output_preamble(raw_text)
+            preamble, body = self._decode_tool_output(payload.get("output"))
             exit_code = preamble.get("exit_code")
-            return [ToolResultEntry(
-                tool_use_id=call_id or str(eid or base["id"]),
-                tool_output=body,
-                is_error=isinstance(exit_code, int) and exit_code != 0,
-                tool_name=self._call_tool_name.get(call_id),
-                duration_ms=preamble.get("duration_ms"),
-                exit_code=exit_code,
-                output_token_count=preamble.get("output_token_count"),
-                **envelope,
-                **base,
-            )]
+            return [
+                ToolResultEntry(
+                    tool_use_id=call_id or str(eid or base["id"]),
+                    tool_output=body,
+                    is_error=isinstance(exit_code, int) and exit_code != 0,
+                    tool_name=self._call_tool_name.get(call_id),
+                    duration_ms=preamble.get("duration_ms"),
+                    exit_code=exit_code,
+                    output_token_count=preamble.get("output_token_count"),
+                    **envelope,
+                    **base,
+                )
+            ]
         if ptype is CodexResponseItemType.REASONING:
             summary = payload.get("summary") or []
             thinking_parts: list[str] = []
@@ -672,13 +773,15 @@ class _CodexParserBase:
                 thinking = "[encrypted reasoning, content dropped]"
             else:
                 thinking = None
-            return [AssistantMessageEntry(
-                text="",
-                thinking=thinking,
-                model=self._current_model,
-                **envelope,
-                **base,
-            )]
+            return [
+                AssistantMessageEntry(
+                    text="",
+                    thinking=thinking,
+                    model=self._current_model,
+                    **envelope,
+                    **base,
+                )
+            ]
         if ptype is CodexResponseItemType.WEB_SEARCH_CALL:
             action = payload.get("action") or {}
             tool_input: dict[str, Any] = {}
@@ -690,48 +793,54 @@ class _CodexParserBase:
                 if action.get("type"):
                     tool_input["action_type"] = action["type"]
             call_id = str(payload.get("call_id") or eid or base["id"])
-            return [ToolUseEntry(
-                tool_name="web_search",
-                tool_use_id=call_id,
-                tool_input=tool_input,
-                **envelope,
-                **base,
-            )]
+            return [
+                ToolUseEntry(
+                    tool_name="web_search",
+                    tool_use_id=call_id,
+                    tool_input=tool_input,
+                    **envelope,
+                    **base,
+                )
+            ]
         if ptype is CodexResponseItemType.TOOL_SEARCH_CALL:
             tool_input = self._safe_json(payload.get("arguments") or {}) or {}
             call_id = str(payload.get("call_id") or eid or base["id"])
             self._call_tool_name[call_id] = "tool_search"
-            return [ToolUseEntry(
-                tool_name="tool_search",
-                tool_use_id=call_id,
-                tool_input=tool_input,
-                **envelope,
-                **base,
-            )]
+            return [
+                ToolUseEntry(
+                    tool_name="tool_search",
+                    tool_use_id=call_id,
+                    tool_input=tool_input,
+                    **envelope,
+                    **base,
+                )
+            ]
         if ptype is CodexResponseItemType.TOOL_SEARCH_OUTPUT:
             call_id = str(payload.get("call_id") or "")
-            output = payload.get("output")
-            raw_text = "" if output is None else str(output)
-            preamble, body = self._parse_codex_output_preamble(raw_text)
+            preamble, body = self._decode_tool_output(payload.get("output"))
             exit_code = preamble.get("exit_code")
-            return [ToolResultEntry(
-                tool_use_id=call_id or str(eid or base["id"]),
-                tool_output=body,
-                is_error=isinstance(exit_code, int) and exit_code != 0,
-                tool_name=self._call_tool_name.get(call_id, "tool_search"),
-                duration_ms=preamble.get("duration_ms"),
-                exit_code=exit_code,
-                output_token_count=preamble.get("output_token_count"),
+            return [
+                ToolResultEntry(
+                    tool_use_id=call_id or str(eid or base["id"]),
+                    tool_output=body,
+                    is_error=isinstance(exit_code, int) and exit_code != 0,
+                    tool_name=self._call_tool_name.get(call_id, "tool_search"),
+                    duration_ms=preamble.get("duration_ms"),
+                    exit_code=exit_code,
+                    output_token_count=preamble.get("output_token_count"),
+                    **envelope,
+                    **base,
+                )
+            ]
+
+        return [
+            MetaEntry(
+                meta_kind=f"response_item:{payload.get('type') or ''}",
+                payload=payload,
                 **envelope,
                 **base,
-            )]
-
-        return [MetaEntry(
-            meta_kind=f"response_item:{payload.get('type') or ''}",
-            payload=payload,
-            **envelope,
-            **base,
-        )]
+            )
+        ]
 
     def _parse_response_message(
         self,
@@ -751,37 +860,50 @@ class _CodexParserBase:
                 kinds=("input_text",),
                 skip_angle_blocks=True,
             ).strip()
-            return [UserMessageEntry(
-                text=text,
-                role=CodexMessageRole.USER.value,
-                **envelope,
-                **base,
-            )]
+            # Codex records injected angle-bracket environment/plugin blocks as
+            # user-role response items. Once those internal blocks are removed,
+            # do not manufacture an empty visible user turn.
+            if not text:
+                return []
+            return [
+                UserMessageEntry(
+                    text=text,
+                    role=CodexMessageRole.USER.value,
+                    **envelope,
+                    **base,
+                )
+            ]
         if role is CodexMessageRole.ASSISTANT:
             text = self._join_text_blocks(content, kinds=("output_text",)).strip()
             phase = payload.get("phase")
-            out: list[TranscriptEntry] = [AssistantMessageEntry(
-                text=text,
-                phase=str(phase) if phase else None,
-                model=self._current_model,
-                **envelope,
-                **base,
-            )]
+            out: list[TranscriptEntry] = [
+                AssistantMessageEntry(
+                    text=text,
+                    phase=str(phase) if phase else None,
+                    model=self._current_model,
+                    **envelope,
+                    **base,
+                )
+            ]
             out.extend(self._maybe_synthesize_plan_entry(text, base))
             return out
         if role in (CodexMessageRole.DEVELOPER, CodexMessageRole.SYSTEM):
-            return [SystemEntry(
-                subtype=f"{role.value}_message",
+            return [
+                SystemEntry(
+                    subtype=f"{role.value}_message",
+                    payload=payload,
+                    **envelope,
+                    **base,
+                )
+            ]
+        return [
+            MetaEntry(
+                meta_kind=f"response_item:message:{role_raw}",
                 payload=payload,
                 **envelope,
                 **base,
-            )]
-        return [MetaEntry(
-            meta_kind=f"response_item:message:{role_raw}",
-            payload=payload,
-            **envelope,
-            **base,
-        )]
+            )
+        ]
 
     # ── rollout event_msg ──────────────────────────────────────────────────
 
@@ -804,36 +926,62 @@ class _CodexParserBase:
             "context_compacted",
             "update_plan",
         }:
-            return [SystemEntry(
-                subtype=f"event_msg.{etype}",
-                payload=payload,
-                **base,
-            )]
+            return [
+                SystemEntry(
+                    subtype=f"event_msg.{etype}",
+                    payload=payload,
+                    **base,
+                )
+            ]
         if etype == "error":
-            return [SystemEntry(
-                subtype="event_msg.error",
-                payload=payload,
-                **base,
-            )]
-        if etype in ("exec_command_end", "mcp_tool_call_end", "patch_apply_end"):
+            return [
+                SystemEntry(
+                    subtype="event_msg.error",
+                    payload=payload,
+                    **base,
+                )
+            ]
+        # patch_apply_end mirrors the response_item custom_tool_call_output for
+        # the same apply_patch call (same call_id — validated against real
+        # rollouts). Emit it tagged as a transport mirror: the fold layer drops
+        # it whenever the canonical output exists, but when the rollout lost
+        # that line (turn killed between the two writes, event_msg-only
+        # histories) the mirror is the ONLY durable record of the apply result
+        # and must not vanish.
+        if etype == "patch_apply_end":
             call_id = str(payload.get("call_id") or "")
-            output = (
-                payload.get("aggregated_output")
-                or payload.get("output")
-                or payload.get("formatted_output")
-                or ""
-            )
+            exit_code = payload.get("exit_code")
+            stdout = str(payload.get("stdout") or "")
+            stderr = str(payload.get("stderr") or "")
+            is_error = payload.get("success") is False or (isinstance(exit_code, int) and exit_code != 0)
+            return [
+                ToolResultEntry(
+                    tool_use_id=call_id or base["id"],
+                    tool_output="\n".join(s for s in (stdout, stderr) if s),
+                    is_error=is_error,
+                    tool_name=self._call_tool_name.get(call_id, "apply_patch"),
+                    duration_ms=self._codex_duration_to_ms(payload.get("duration")),
+                    exit_code=exit_code if isinstance(exit_code, int) else None,
+                    is_transport_mirror=True,
+                    **base,
+                )
+            ]
+        if etype in ("exec_command_end", "mcp_tool_call_end"):
+            call_id = str(payload.get("call_id") or "")
+            output = payload.get("aggregated_output") or payload.get("output") or payload.get("formatted_output") or ""
             exit_code = payload.get("exit_code")
             duration_ms = self._codex_duration_to_ms(payload.get("duration"))
-            return [ToolResultEntry(
-                tool_use_id=call_id or base["id"],
-                tool_output=str(output),
-                is_error=isinstance(exit_code, int) and exit_code != 0,
-                tool_name=self._call_tool_name.get(call_id),
-                duration_ms=duration_ms,
-                exit_code=exit_code if isinstance(exit_code, int) else None,
-                **base,
-            )]
+            return [
+                ToolResultEntry(
+                    tool_use_id=call_id or base["id"],
+                    tool_output=str(output),
+                    is_error=isinstance(exit_code, int) and exit_code != 0,
+                    tool_name=self._call_tool_name.get(call_id),
+                    duration_ms=duration_ms,
+                    exit_code=exit_code if isinstance(exit_code, int) else None,
+                    **base,
+                )
+            ]
         if etype == "view_image_tool_call":
             call_id = str(payload.get("call_id") or base["id"])
             tool_input = {"path": payload.get("path") or payload.get("image_path") or ""}
@@ -853,11 +1001,13 @@ class _CodexParserBase:
                     **result_base,
                 ),
             ]
-        return [MetaEntry(
-            meta_kind=f"event_msg.{etype}",
-            payload=payload,
-            **base,
-        )]
+        return [
+            MetaEntry(
+                meta_kind=f"event_msg.{etype}",
+                payload=payload,
+                **base,
+            )
+        ]
 
 
 class CodexStreamParser(_CodexParserBase):
@@ -893,32 +1043,38 @@ class CodexRolloutParser(_CodexParserBase):
         base = self._base(raw, rtype_raw, line_index)
 
         if rtype is CodexLineType.SESSION_META:
-            return [MetaEntry(
-                meta_kind=CodexLineType.SESSION_META.value,
-                payload=raw.get("payload") or {},
-                **base,
-            )]
+            return [
+                MetaEntry(
+                    meta_kind=CodexLineType.SESSION_META.value,
+                    payload=raw.get("payload") or {},
+                    **base,
+                )
+            ]
         if rtype is CodexLineType.RESPONSE_ITEM:
             return self._parse_response_item(raw, base)
         if rtype is CodexLineType.EVENT_MSG:
             return self._parse_event_msg(raw, base)
         if rtype is CodexLineType.TURN_CONTEXT:
-            return [SystemEntry(
-                subtype=CodexLineType.TURN_CONTEXT.value,
-                payload=raw.get("payload") or raw,
-                **base,
-            )]
+            return [
+                SystemEntry(
+                    subtype=CodexLineType.TURN_CONTEXT.value,
+                    payload=raw.get("payload") or raw,
+                    **base,
+                )
+            ]
         if rtype is CodexLineType.COMPACTED:
             return self._parse_compacted(raw, base)
         if rtype is CodexLineType.TOKEN_COUNT:
             payload = raw.get("payload") or raw
             return self._emit_usage(payload, base)
         if rtype in {CodexLineType.TASK_STARTED, CodexLineType.TASK_COMPLETE}:
-            return [SystemEntry(
-                subtype=rtype.value,
-                payload=raw.get("payload") or raw,
-                **base,
-            )]
+            return [
+                SystemEntry(
+                    subtype=rtype.value,
+                    payload=raw.get("payload") or raw,
+                    **base,
+                )
+            ]
         return [UnknownEntry(raw_data=raw, **base)]
 
 

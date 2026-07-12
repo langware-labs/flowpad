@@ -218,6 +218,10 @@ export interface TabProjectBucket {
 
 export interface UseTabProjectBucketsResult {
   buckets: TabProjectBucket[];
+  /** Number of visible projectless ("global") tabs — the Global scope's count.
+   *  Kind-agnostic, same as a project bucket's `tabCount`. Powers the Global chip
+   *  (which is shown only in the no-active-project scope). */
+  globalTabCount: number;
 }
 
 /**
@@ -227,16 +231,25 @@ export interface UseTabProjectBucketsResult {
  *
  * Membership is KIND-AGNOSTIC: every visible `Tab` counts (terminal, agent,
  * markdown, skill, …). Reads the same `all-tabs-store` projection the terminal
- * tabs use — no separate query. Global tabs (`project_id == null`) never bucket.
+ * tabs use — no separate query. Global tabs (`project_id == null`) don't form a
+ * project bucket; they are tallied separately into `globalTabCount` (the Global
+ * scope), which the chip surfaces only when no project is active.
  */
 export function useTabProjectBuckets(): UseTabProjectBucketsResult {
   const allTabs = useAllTabs();
 
-  const grouped = useMemo(() => {
+  const { grouped, globalTabCount } = useMemo(() => {
     const counts = new Map<string, number>();
+    let global = 0;
     for (const tab of allTabs) {
       const pid = tab.project_id ?? null;
-      if (!pid) continue;
+      if (!pid) {
+        // Projectless tab → the Global scope. There is no per-project "host" tab
+        // to skip here (a project's landing host carries the project's own id,
+        // never null), so every visible projectless tab counts.
+        global += 1;
+        continue;
+      }
       // Skip a project's OWN landing/brief host tab (target === the project
       // itself): `DockPointer.forProject` — where last-tab-close navigates —
       // materializes a visible `project`-target Tab, but that is the empty-state
@@ -247,7 +260,7 @@ export function useTabProjectBuckets(): UseTabProjectBucketsResult {
       if (tab.target_type === Project.type) continue;
       counts.set(pid, (counts.get(pid) ?? 0) + 1);
     }
-    return Array.from(counts.entries());
+    return { grouped: Array.from(counts.entries()), globalTabCount: global };
   }, [allTabs]);
 
   const [status, setStatus] = useState<ReadonlyMap<string, BucketState>>(() => new Map());
@@ -313,7 +326,7 @@ export function useTabProjectBuckets(): UseTabProjectBucketsResult {
     });
   }, [grouped, status]);
 
-  return { buckets };
+  return { buckets, globalTabCount };
 }
 
 // Backward-compat aliases for migration

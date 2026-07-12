@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { WorkerCliOptions, ClaudeCliOptions, AgenticProcess, factory } from '@sdk'
+import { ClaudeCliOptions, CodexCliOptions, CopilotCliOptions, AgenticProcess, factory } from '@sdk'
 
 // Simulates what the backend serializes into proc.cli_config
 const BACKEND_CLI_CONFIG = {
@@ -92,6 +92,13 @@ describe('ClaudeCliOptions', () => {
     expect(out).not.toContain('--resume')
   })
 
+  it('persists model tiers raw but emits Claude model aliases', () => {
+    const cmd = new ClaudeCliOptions({ model: 'sm', workdir: '/proj' })
+    expect(cmd.model).toBe('sm')
+    expect(cmd.toJson().model).toBe('sm')
+    expect(cmd.toShellString()).toContain('--model haiku')
+  })
+
   it('debug=false → no --debug flag', () => {
     const cmd = new ClaudeCliOptions({ workdir: '/proj', debug: false })
     expect(cmd.toShellString()).not.toContain('--debug')
@@ -126,6 +133,20 @@ describe('factory()', () => {
   it('returns ClaudeCliOptions instance for worker_type: claude', () => {
     const cmd = factory({ worker_type: 'claude', workdir: '/proj' }, 'claude')
     expect(cmd).toBeInstanceOf(ClaudeCliOptions)
+  })
+
+  it('returns CodexCliOptions and resolves portable tiers for codex', () => {
+    const cmd = factory({ worker_type: 'codex', model: 'sm', workdir: '/proj' }, 'codex')
+    expect(cmd).toBeInstanceOf(CodexCliOptions)
+    expect(cmd.toJson().model).toBe('sm')
+    expect(cmd.toShellString()).toContain('-m gpt-5.4-mini')
+  })
+
+  it('returns CopilotCliOptions and resolves portable tiers for copilot', () => {
+    const cmd = factory({ worker_type: 'copilot', model: 'lg', workdir: '/proj' }, 'copilot')
+    expect(cmd).toBeInstanceOf(CopilotCliOptions)
+    expect(cmd.toJson().model).toBe('lg')
+    expect(cmd.toShellString()).toContain('--model gpt-5.5')
   })
 
   it('throws for unknown worker_type', () => {
@@ -170,5 +191,17 @@ describe('proc.cliOptions — frontend override of server cli_config', () => {
     })
     expect(proc.cliOptions.toShellString()).toMatch(/^cd \/home\/user\/myproject/)
     expect(proc.cliOptions.toShellString()).not.toContain('cd .')
+  })
+
+  it('cliOptions uses worker-specific tier resolution for non-Claude processes', () => {
+    const proc = Object.assign(new AgenticProcess({}), {
+      worker_type: 'codex',
+      cli_config: { worker_type: 'codex', model: 'sm' },
+      workdir: '/home/user/myproject',
+    })
+
+    expect(proc.cliOptions.toJson().model).toBe('sm')
+    expect(proc.cliOptions.toShellString()).toContain('-m gpt-5.4-mini')
+    expect(proc.cliOptions.toShellString()).not.toContain('--model haiku')
   })
 })

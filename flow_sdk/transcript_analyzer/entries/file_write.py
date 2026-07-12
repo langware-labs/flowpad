@@ -26,6 +26,7 @@ class FileWriteEntry(TranscriptEntry):
         is_new: bool = True,
         tool_name: str = "",
         tool_use_id: str = "",
+        is_error: bool = False,
         **base: Any,
     ) -> None:
         super().__init__(**base)
@@ -37,6 +38,10 @@ class FileWriteEntry(TranscriptEntry):
         # Worker-side tool name preserved for debugging / catch-all parity.
         self.tool_name = tool_name
         self.tool_use_id = tool_use_id
+        # Set when the paired tool result reported failure (folded in by
+        # ``AgentTranscriptFile._fold_tool_results``). Declared so the error
+        # state survives ``to_dict`` serialization.
+        self.is_error = is_error
 
     def to_flow_data(self) -> list:
         return self._tool_flow_data(
@@ -54,12 +59,15 @@ class FileWriteEntry(TranscriptEntry):
             "is_new": self.is_new,
             "tool_name": self.tool_name,
             "tool_use_id": self.tool_use_id,
+            "is_error": self.is_error,
         }
 
     def _body_lines(self) -> list[str]:
         out: list[str] = [f"path: {self.path}"]
         if self.tool_use_id:
             out.append(f"tool_use_id: {self.tool_use_id}")
+        if self.is_error:
+            out.append("is_error: true")
         meta_parts: list[str] = []
         if self.line_count is not None:
             meta_parts.append(f"lines={self.line_count}")

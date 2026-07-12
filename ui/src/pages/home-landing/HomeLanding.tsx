@@ -30,6 +30,9 @@ import { listInboxMessages } from '@src/components/inbox-view/inbox-api';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { GitOrigin, LastScanResult } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
+import { VIBE_MODEL_DEFAULT, VibeModelSelect, type VibeModelTier } from '@src/pages/flow-page/vibe-model-select';
+import { VibeWorkerSelect } from '@src/pages/flow-page/vibe-worker-select';
+import { DEFAULT_WORKER_TYPE, type WorkerType } from '@src/components/workers/worker-types';
 
 /**
  * HomeLanding - Welcome view with greeting and quick action buttons
@@ -138,6 +141,8 @@ export function HomeLanding() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchFilters, setSearchFilters] = useState<SearchFilters>({});
   const [selectedResultIndex, setSelectedResultIndex] = useState(-1);
+  const [vibeModel, setVibeModel] = useState<VibeModelTier>(VIBE_MODEL_DEFAULT);
+  const [vibeWorker, setVibeWorker] = useState<WorkerType>(DEFAULT_WORKER_TYPE);
   const { scope: searchScope, isLoading: searchScopeLoading } = useGlobalSearchScope();
 
   useEffect(() => { setSelectedResultIndex(-1); }, [searchQuery]);
@@ -195,7 +200,13 @@ export function HomeLanding() {
                   value={draftPrompt}
                   onChange={setDraftPrompt}
                   allowAttachments
-                  onSubmit={(msg, files) => void handleVibeSubmit(msg, files)}
+                  footerSlot={
+                    <div className="flex min-w-0 items-center gap-1.5">
+                      <VibeModelSelect value={vibeModel} onChange={setVibeModel} />
+                      <VibeWorkerSelect value={vibeWorker} onChange={setVibeWorker} />
+                    </div>
+                  }
+                  onSubmit={(msg, files) => void handleVibeSubmit(msg, files, vibeModel, vibeWorker)}
                 />
               </div>
             </div>
@@ -326,7 +337,7 @@ export function HomeLanding() {
           </AdvancedOnly>
         </div>
 
-        <div className="hidden lg:block">
+        <div className="hidden min-h-0 lg:block">
           <HomeFeedColumn />
         </div>
 

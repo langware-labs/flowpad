@@ -179,7 +179,16 @@ export function ConversationListRow({ conv, isFocused, viewMode, searchActive, o
   //   - 'unread'    → only non-archived unread rows
   //   - search      → span everything; only half-materialized rows stay hidden
   // ``inLoadingState`` keeps a row whose FlowMessage hasn't landed from rendering blank.
-  const inLoadingState = !!lastPtr && !latestMessage;
+  //
+  // Invitation rows are exempt: invitation-ness is driven by the FIRST message
+  // (``facets.isInvitation`` ⇐ ``firstMessage``), which IS materialized, and the
+  // Accept CTA renders entirely from it. Gating on ``latestMessage`` wrongly hid a
+  // valid pending-invitation row whenever a LATER message's FlowMessage entity was
+  // unresolved locally (e.g. a pre-accept git-artifact share message that doesn't
+  // materialize on the recipient) — the row, its testid, and the Accept button
+  // must still render. See RCA debug_log.md #14 (receiver artifact-materialization
+  // is a separate follow-up). Preview text may still show a loading affordance.
+  const inLoadingState = !isInvitationRow && !!lastPtr && !latestMessage;
   let isHidden: boolean;
   if (searchActive) {
     isHidden = inLoadingState;

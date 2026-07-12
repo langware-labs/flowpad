@@ -104,6 +104,7 @@ class BaseInstanceSettings:
     inbox_last_fetch_path: Path
     conversation_last_sync_path: Path
     transcript_cursors_path: Path
+    worker_history_cache_path: Path
 
     # ---- Toplog filter file (watched by the builtin FSOp toplog trigger) ----
     toplog_config_path: Path
@@ -246,6 +247,7 @@ class BaseInstanceSettings:
             inbox_last_fetch_path=instance_dir / "inbox.json",
             conversation_last_sync_path=instance_dir / "conversation_sync.json",
             transcript_cursors_path=instance_dir / "transcript_cursors.json",
+            worker_history_cache_path=instance_dir / "worker_history_cache.sqlite",
             toplog_config_path=instance_dir / "toplog.json",
             # On in dev, off in prod/named/test — only the initial seed value.
             toplog_enabled=is_dev,

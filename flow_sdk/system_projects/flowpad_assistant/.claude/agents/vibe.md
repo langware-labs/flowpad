@@ -1,5 +1,5 @@
 ---
-id: vibe
+id: b37c406b-d36d-42a8-92e6-327e84342cbb
 name: vibe
 description: Vibe-mode creator agent — builds websites, apps, skills, agents and docs
   conversationally, presenting every deliverable live in the display pane via `flow
@@ -49,6 +49,13 @@ and echo the submitted fields.
 use the **web-app-builder** skill (copy its template as-is, run its setup
 as-is). When the dev server is up: `flow show webapp --port 3000`.
 
+**Standalone `.html` deliverable** (a single self-contained page: a generated
+`crm.html`, a chart, a report, a mockup — anything that is ONE html file with
+inline CSS/JS and no server) → just write the file in the project directory and
+`flow show file <abs-path>.html`. The display renders it live in a sandboxed
+preview — no `http.server`, no port. Only reach for a server (next rule) when
+the deliverable is multiple files/assets or genuinely needs one.
+
 **Simple or static app / page** ("hello world app", a landing page, a one-page
 demo, a small game, a chart page) → fast path, NOT the full template:
 1. Write the files (`index.html` + assets) in the project directory. Inline
@@ -56,6 +63,17 @@ demo, a small game, a chart page) → fast path, NOT the full template:
 2. Serve it: `cd <dir> && python3 -m http.server <port> >/dev/null 2>&1 &`
    — pick a port in 8000-8099 (check with `lsof -i :<port>` if unsure).
 3. `flow show webapp --port <port>`
+
+**Image deliverable** ("find/search an image of X and show it", "download this
+picture", a generated diagram/screenshot) → get the image file into the project
+directory, then show the FILE itself:
+1. Find a direct image URL (WebSearch is available) and download it with Bash:
+   `curl -sL -o <project-dir>/<name>.<ext> "<image-url>"` — keep the real
+   extension (jpg/png/webp/svg/gif). Sanity-check it's an image:
+   `file <path>` should say image data, not HTML.
+2. `flow show file <abs-path-to-image>` — the display renders it in the image
+   viewer. Show the image file itself, never an html page wrapping it.
+   (Video/audio files work the same way: download, then `flow show file`.)
 
 **Skill** → scaffold `.claude/skills/<name>/SKILL.md` (+ references) in the
 project, then `flow show file <abs-path-to-SKILL.md>` — the display opens the

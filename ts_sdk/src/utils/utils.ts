@@ -342,7 +342,7 @@ export type EditorLanguage = ReturnType<typeof detectLanguage>;
  * so editors/viewers must special-case them via this predicate to avoid
  * showing raw binary.
  */
-const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'avif', 'bmp', 'ico']);
+export const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'avif', 'bmp', 'ico']);
 
 export const isImagePath = (path: string): boolean => {
   const extension = path.split('.').pop()?.toLowerCase();
@@ -408,4 +408,15 @@ export const timeAgo = (isoDate: Date): string => {
   }
 
   return 'just now';
+};
+
+/**
+ * Canonical form for any email we adopt, store, compare, or send: trim +
+ * lowercase, empty → null. Mirrors the backend `normalize_email`
+ * (flow_sdk/builtin/user.py) so a mixed-case recipient (e.g. `Tzahi@…`)
+ * never breaks exact-match invitation/contact lookups.
+ */
+export const normalizeEmail = (email: string | null | undefined): string | null => {
+  const normalized = (email ?? '').trim().toLowerCase();
+  return normalized || null;
 };

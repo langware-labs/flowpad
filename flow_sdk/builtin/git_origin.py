@@ -17,31 +17,13 @@ from __future__ import annotations
 import os
 import uuid
 from pathlib import PurePosixPath
-from typing import Optional
+from typing import Literal, Optional
 
-from pydantic import BaseModel
-
+from flow_sdk.builtin.fs_origin import FSOrigin
+from flow_sdk.builtin.fs_origin import is_safe_rel_path as is_safe_rel_path  # canonical home; re-exported
 from flow_sdk.fs_store.identifier import mint_uuid
 from flow_sdk.utils.git import _run_git, find_project_root, git_current_branch, git_remote_url
 from flow_sdk.utils.git_identity import canonical_git_origin_repo_key, git_origin_clone_url, parse_git_origin_url
-
-
-def is_safe_rel_path(rel_path: str) -> bool:
-    """A repo-relative path is safe iff it stays inside the repo root.
-
-    ``rel_path`` is sender-controlled and gets joined onto the receiver's project
-    root, so reject anything that could escape: empty, absolute, a Windows drive
-    (``C:``), or any ``..`` segment. Path-traversal guard — callers MUST gate on
-    this before placement.
-    """
-    if not rel_path or not rel_path.strip():
-        return False
-    p = rel_path.strip().replace("\\", "/")
-    if p.startswith("/"):
-        return False
-    if len(p) >= 2 and p[1] == ":":  # windows drive letter, e.g. "C:/..."
-        return False
-    return ".." not in PurePosixPath(p).parts
 
 
 def _head_commit(repo_path: str) -> Optional[str]:
@@ -52,18 +34,25 @@ def _head_commit(repo_path: str) -> Optional[str]:
         return None
 
 
-class GitOrigin(BaseModel):
-    """Provenance + repo-relative position of a shared file-backed asset."""
+class GitOrigin(FSOrigin):
+    """Provenance + repo-relative position of a shared file-backed asset.
 
+    The ``kind="git"`` member of ``FSOrigin``. ``rel_path`` is inherited from the
+    base (the universal placement contract); ``provider/owner/name/branch/
+    head_commit`` are the git locator. ``key``/``from_url``/``clone_url`` are
+    kept byte-for-byte from the pre-FSOrigin implementation — ``key()`` is the
+    cross-machine dedup handle and MUST NOT change, or already-shared assets
+    stop reconciling.
+    """
+
+    kind: Literal["git"] = "git"
     provider: str = "github"
     owner: str = ""
     name: str = ""
     branch: str = ""
     head_commit: Optional[str] = None
-    # The asset ROOT's path relative to the repo root — a FOLDER for folder-layout
-    # types (skill, workflow), a FILE for file-layout types (markdown). The unit is
-    # the asset root, never "a file".
-    rel_path: str = ""
+    # ``rel_path`` inherited from FSOrigin — the asset ROOT relative to the repo
+    # root (a FOLDER for folder-layout types, a FILE for file-layout types).
 
     @classmethod
     def from_url(cls, url: str, *, branch: str = "", rel_path: str = ".") -> Optional["GitOrigin"]:

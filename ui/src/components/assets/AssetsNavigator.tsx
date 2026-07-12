@@ -3,6 +3,7 @@ import type { NavigatorDescriptor } from '@src/components/navigator-panel/types'
 import { AssetTypeCountsContext } from '@src/components/browseable-tree/adapters/assetTypeRoot';
 import { ScopeFilterIconBar } from '@src/components/scope-filter/ScopeFilterIconBar';
 import { InputDialog } from '@src/components/ui/input-dialog';
+import { AddContextFolderDialog } from './AddContextFolderDialog';
 import { useAssetsModel } from './useAssetsModel';
 import { useLingui } from '@lingui/react/macro';
 import { useMemo } from 'react';
@@ -26,7 +27,7 @@ export function AssetsNavigator() {
   const descriptor: NavigatorDescriptor = {
     id: 'assets',
     roots: m.roots,
-    isLoading: m.typesLoading && m.roots.length === 0,
+    isLoading: m.menuLoading,
     activePointer: m.treeActivePointer,
     activeKey: m.openAssetId,
     onNavigate: m.navigateAsset,
@@ -72,6 +73,12 @@ export function AssetsNavigator() {
         placeholder={t`Folder name`}
         confirmLabel={t`Create`}
         onConfirm={(name) => void m.handleNewFolderConfirm(name)}
+      />
+      <AddContextFolderDialog
+        open={m.addContextFolderDialogOpen}
+        onOpenChange={m.setAddContextFolderDialogOpen}
+        onAddPaths={m.handleAddContextPaths}
+        onBrowse={m.handleBrowseContextDir}
       />
     </>
   );

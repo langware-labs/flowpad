@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { ContactPermission, PermissionAction, QueryRequest } from '@sdk';
+import { ContactPermission, normalizeEmail, PermissionAction, QueryRequest } from '@sdk';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 
 /** Minimal contact identity for keying permissions (user id preferred, email fallback). */
@@ -13,7 +13,7 @@ export function rowMatchesContact(p: ContactPermission, c: ContactKey | null): b
   if (!c) return false;
   if (c.userId && p.contact_user_id && p.contact_user_id === c.userId) return true;
   if (c.email && p.contact_email) {
-    return p.contact_email.trim().toLowerCase() === c.email.trim().toLowerCase();
+    return normalizeEmail(p.contact_email) === normalizeEmail(c.email);
   }
   return false;
 }
@@ -55,7 +55,7 @@ export async function grantContactPermission(
   }
   const row = new ContactPermission({
     contact_user_id: contact.userId ?? null,
-    contact_email: contact.email ?? null,
+    contact_email: normalizeEmail(contact.email),
     project_id: projectId,
     allowed_actions: [action],
   });

@@ -85,13 +85,16 @@ export function CompactExecutionInput({
       const start = ta.selectionStart ?? value.length;
       const end = ta.selectionEnd ?? start;
       void Promise.resolve(onPasteImages(images)).then((refs) => {
-        if (!refs || refs.length === 0) return;
-        const insert = refs.join('\n');
-        setValue((prev) => `${prev.slice(0, start)}${insert}${prev.slice(end)}`);
+        const insert = refs && refs.length > 0 ? refs.join('\n') : null;
+        if (insert !== null) {
+          setValue((prev) => `${prev.slice(0, start)}${insert}${prev.slice(end)}`);
+        }
+        // Always hand focus back to the composer — the annotate dialog and the
+        // Files drawer opening drop focus to <body>, even on cancel/empty refs.
         requestAnimationFrame(() => {
           const node = taRef.current;
           if (!node) return;
-          const caret = start + insert.length;
+          const caret = start + (insert?.length ?? 0);
           node.focus();
           node.selectionStart = caret;
           node.selectionEnd = caret;
@@ -104,8 +107,7 @@ export function CompactExecutionInput({
   const showStop = running && !!onStop;
 
   return (
-    <div className={cn('flex flex-shrink-0 items-end gap-2', !bare && 'border-t bg-background px-3 py-2.5', className)}>
-      {leadingSlot}
+    <div className={cn('flex flex-shrink-0 flex-col gap-1.5', !bare && 'border-t bg-background px-3 py-2.5', className)}>
       <textarea
         ref={taRef}
         value={value}
@@ -126,40 +128,45 @@ export function CompactExecutionInput({
         placeholder={placeholder ?? t`Message the agent…`}
         rows={1}
         aria-label={t`Message the agent`}
-        className="min-h-[44px] flex-1 resize-none overflow-y-hidden rounded-2xl border bg-background px-4 py-3 text-[15px] outline-none transition-colors focus:border-primary disabled:opacity-50"
+        className="min-h-[48px] w-full resize-none overflow-y-hidden rounded-xl border bg-background px-4 py-3 text-[15px] outline-none transition-colors focus:border-primary disabled:opacity-50"
         data-testid="entity-execution-input"
       />
-      {statusSlot}
-      {showStop ? (
-        <button
-          type="button"
-          onMouseDown={(e) => {
-            e.preventDefault();
-            void onStop?.();
-          }}
-          title={t`Stop generating`}
-          aria-label={t`Stop generating`}
-          className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-muted text-foreground transition-colors hover:bg-destructive hover:text-destructive-foreground"
-          data-testid="entity-execution-stop"
-        >
-          <Square className="h-3.5 w-3.5 fill-current" />
-        </button>
-      ) : (
-        <button
-          type="button"
-          onMouseDown={(e) => {
-            e.preventDefault();
-            void send();
-          }}
-          disabled={disabled || !value.trim()}
-          title={t`Send`}
-          aria-label={t`Send message`}
-          className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-primary"
-          data-testid="entity-execution-send"
-        >
-          <Send className="h-4 w-4" />
-        </button>
-      )}
+      <div className="flex min-h-8 items-center justify-between gap-2">
+        <div className="flex min-w-0 flex-1 items-center gap-1.5">{leadingSlot}</div>
+        <div className="ml-auto flex shrink-0 items-center gap-2">
+          {statusSlot}
+          {showStop ? (
+            <button
+              type="button"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                void onStop?.();
+              }}
+              title={t`Stop generating`}
+              aria-label={t`Stop generating`}
+              className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-muted text-foreground transition-colors hover:bg-destructive hover:text-destructive-foreground"
+              data-testid="entity-execution-stop"
+            >
+              <Square className="h-3.5 w-3.5 fill-current" />
+            </button>
+          ) : (
+            <button
+              type="button"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                void send();
+              }}
+              disabled={disabled || !value.trim()}
+              title={t`Send`}
+              aria-label={t`Send message`}
+              className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-primary"
+              data-testid="entity-execution-send"
+            >
+              <Send className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

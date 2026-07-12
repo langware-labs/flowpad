@@ -8,25 +8,31 @@ its own sub-package (``claude/``, ``codex/``).
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
     AgenticContext,
     AgenticProcessContextKey,
+    apply_worker_secret_env,
     apply_worker_env,
     flow_cli_env_path,
     AgenticWorker,
     WorkerCLIOptions,
     WorkerDriver,
     WorkerExecutionInfo,
+    WorkerSpawnError,
     factory,
     get_driver,
+    latch_spawn_failure,
 )
 
 __all__ = [
     "AgenticContext",
     "AgenticProcessContextKey",
+    "apply_worker_secret_env",
     "apply_worker_env",
     "flow_cli_env_path",
     "AgenticWorker",
     "WorkerCLIOptions",
     "WorkerDriver",
     "WorkerExecutionInfo",
+    "WorkerSpawnError",
     "factory",
     "get_driver",
+    "latch_spawn_failure",
 ]

@@ -28,13 +28,21 @@ import logging
 import os
 from typing import AsyncIterator
 
-from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import AgenticContext
-from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import AgenticWorker
-from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_path_env
 from flow_sdk.builtin.agentic_process.cli_drivers.claude.cli import ClaudeCliOptions
 from flow_sdk.builtin.agentic_process.cli_drivers.claude.event_to_flowdata import (
     convert_line,
     final_end_frame,
+)
+from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
+    STREAM_JSON_LINE_LIMIT_BYTES,
+    AgenticContext,
+    AgenticWorker,
+    WorkerSpawnError,
+    build_worker_spawn_env,
+    resolve_worker_argv0,
+    stamp_cli_run_id,
+    terminate_asyncio_process_tree,
+    wait_for_asyncio_process_or_kill_tree,
 )
 from flow_sdk.external_apis.llm.llm_drivers.flow_data import (
     FlowData,
@@ -48,14 +56,6 @@ logger = logging.getLogger(__name__)
 # timeout (~10 s) so a stuck subprocess never wedges the chat.
 CANCEL_GRACE_SECONDS = 5.0
 
-# Per-line StreamReader limit. Default asyncio limit is 64 KiB which is too
-# small for stream-json events that wrap large tool results (e.g. a full
-# ``browser_snapshot`` of a real page can be several hundred KB on a single
-# JSON line). 4 MiB gives generous headroom without spending real memory
-# unless we actually receive that much data.
-STDOUT_LINE_LIMIT_BYTES = 4 * 1024 * 1024
-
-
 class ClaudeCLIStreamWorker(AgenticWorker):
     """Streaming Claude CLI worker using ``--output-format stream-json``.
 
@@ -67,6 +67,7 @@ class ClaudeCLIStreamWorker(AgenticWorker):
     def __init__(self) -> None:
         self._session_id: str | None = None
         self._proc: asyncio.subprocess.Process | None = None
+        self._process_run_id: str | None = None
 
     # ── AgenticWorker contract ────────────────────────────────────────────────
 
@@ -75,12 +76,17 @@ class ClaudeCLIStreamWorker(AgenticWorker):
         prompt: str,
         context: AgenticContext,
     ) -> AsyncIterator[FlowData]:
-        argv, env = self._build_spawn(prompt, context)
-        if argv is None:
-            yield _error("claude binary not found in PATH")
-            return
+        self._process_run_id = None
+        try:
+            argv, env = self._build_spawn(prompt, context)
+        except WorkerSpawnError as e:
+            # Surface the message on the chat stream, then propagate so the
+            # turn runner latches status=FAILED + start_failure.
+            yield _error(str(e))
+            raise
 
         logger.info("ClaudeCLIStreamWorker: launching %s", " ".join(argv))
+        self._process_run_id = stamp_cli_run_id(env)
 
         try:
             self._proc = await asyncio.create_subprocess_exec(
@@ -90,7 +96,7 @@ class ClaudeCLIStreamWorker(AgenticWorker):
                 stdin=asyncio.subprocess.DEVNULL,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
-                limit=STDOUT_LINE_LIMIT_BYTES,
+                limit=STREAM_JSON_LINE_LIMIT_BYTES,
             )
         except Exception as e:
             logger.exception("ClaudeCLIStreamWorker: spawn failed")
@@ -118,13 +124,12 @@ class ClaudeCLIStreamWorker(AgenticWorker):
             raise
         finally:
             # Always wait for the subprocess to settle so we don't leak zombies.
-            if self._proc and self._proc.returncode is None:
-                try:
-                    await asyncio.wait_for(self._proc.wait(), timeout=CANCEL_GRACE_SECONDS)
-                except asyncio.TimeoutError:
-                    logger.warning("ClaudeCLIStreamWorker: subprocess did not exit in grace; sending SIGKILL")
-                    self._proc.kill()
-                    await self._proc.wait()
+            if self._proc:
+                await wait_for_asyncio_process_or_kill_tree(
+                    self._proc,
+                    CANCEL_GRACE_SECONDS,
+                    run_id=self._process_run_id,
+                )
 
             stderr_task.cancel()
             try:
@@ -162,14 +167,13 @@ class ClaudeCLIStreamWorker(AgenticWorker):
         self,
         prompt: str,
         context: AgenticContext,
-    ) -> tuple[list[str] | None, dict[str, str]]:
-        """Build argv + env via the standard ``ClaudeCliOptions`` abstraction."""
-        # Discovered harness capability supplies the CLI's bin folder
-        # (terminal-PATH resolution) — None ⇔ claude is not installed.
-        path_env = worker_path_env("claude")
-        if path_env is None:
-            return None, {}
+    ) -> tuple[list[str], dict[str, str]]:
+        """Build argv + env via the standard ``ClaudeCliOptions`` abstraction.
 
+        Raises :class:`WorkerSpawnError` when claude is not installed (no
+        harness capability discovered) or its executable can't be resolved on
+        the spawn PATH.
+        """
         # Resume takes priority — when ``resume_session_id`` is set, attach
         # ``--resume <sid>``. Otherwise honour ``context.session_id`` (a
         # pre-allocated UUID the caller wants Claude to use) so transcript
@@ -215,12 +219,15 @@ class ClaudeCLIStreamWorker(AgenticWorker):
         argv = opts.cli_cmd(instruction=prompt, system_prompt_append=context.instructions)
         env_from_opts = dict(opts.env_vars)
 
-        # Start from os.environ so the CLI can find its creds, PATH, home.
-        # Strip CLAUDECODE* to avoid the CLI thinking it's already inside a
-        # Claude run. Overlay context env_vars last so callers win.
-        env = {k: v for k, v in os.environ.items() if not k.startswith("CLAUDECODE")}
-        env.update(path_env)  # capability bin-folder PATH prepend
-        env.update(env_from_opts)
+        # Start from os.environ so the CLI can find its creds, home. Strip
+        # CLAUDECODE* to avoid the CLI thinking it's already inside a Claude
+        # run. Context env_vars win (except the discovered capability bin
+        # folder stays first on PATH); argv[0] is pinned to the discovered
+        # absolute executable so a stripped backend service PATH can't break
+        # the spawn.
+        base_env = {k: v for k, v in os.environ.items() if not k.startswith("CLAUDECODE")}
+        env = build_worker_spawn_env("claude", env_from_opts, base_env=base_env)
+        argv = resolve_worker_argv0("claude", argv, env)
         return argv, env
 
     async def _drain_stderr(self, proc: asyncio.subprocess.Process) -> None:
@@ -245,24 +252,13 @@ class ClaudeCLIStreamWorker(AgenticWorker):
     async def _terminate_process(self) -> None:
         """SIGTERM → grace → SIGKILL. Safe to call multiple times."""
         proc = self._proc
-        if proc is None or proc.returncode is not None:
+        if proc is None:
             return
-        try:
-            proc.terminate()
-        except ProcessLookupError:
-            return
-        try:
-            await asyncio.wait_for(proc.wait(), timeout=CANCEL_GRACE_SECONDS)
-        except asyncio.TimeoutError:
-            logger.warning("ClaudeCLIStreamWorker: grace expired, sending SIGKILL")
-            try:
-                proc.kill()
-            except ProcessLookupError:
-                return
-            try:
-                await proc.wait()
-            except Exception:
-                pass
+        await terminate_asyncio_process_tree(
+            proc,
+            CANCEL_GRACE_SECONDS,
+            run_id=self._process_run_id,
+        )
 
 
 # ── Module helpers ────────────────────────────────────────────────────────────

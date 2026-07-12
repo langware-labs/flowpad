@@ -167,6 +167,7 @@ async def _fire_schedule_job(trigger_id: str) -> None:
                     target_typeid_str=str(entity.typeid),
                     project_id=entity.project_id,
                     visible=False,
+                    name=f"Trigger: {entity.name}" if entity.name else "Trigger",
                 )
                 await proc.save()
                 await proc.start_pty(instruction=entity.instruction, visible=False)

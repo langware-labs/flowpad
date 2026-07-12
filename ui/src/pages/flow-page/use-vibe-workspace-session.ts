@@ -10,7 +10,7 @@ import { ViewType } from '@src/types/ViewType';
  *
  * The vibe workspace is a HOST layout — a side chat bound to a process plus a
  * display area — that stays mounted across two kinds of URL:
- *   - the DISPLAY url: the process's own `/dock/shell/agentic_process-<id>` dock
+ *   - the DISPLAY url: the process's own `/dock/display/agentic_process-<id>` dock
  *     (`onDisplayUrl: true`), where the display shows the agent's `flow show` pin;
  *   - a CHILD url: any tab whose `parent_tab_id` is the display tab (opened from
  *     inside the workspace), where the display shows that child's content.
@@ -58,8 +58,11 @@ export function useVibeWorkspaceSession(): VibeWorkspaceSession | null {
           }
         : null;
 
-    // Case 1 — the display URL itself: SHELL + agentic_process pointer.
-    if (currentDock.viewType === ViewType.SHELL) {
+    // Case 1 — the display URL itself: DISPLAY + agentic_process pointer.
+    // DISPLAY-only is safe: legacy /dock/shell/agentic_process-<id> URLs in vibe
+    // canonicalize to /dock/display in the main loader (canonicalProcessDockPath),
+    // so this hook never sees the shell form.
+    if (currentDock.viewType === ViewType.DISPLAY) {
       return build(tabByHash(currentDock.tabHash), currentDock, true);
     }
 
