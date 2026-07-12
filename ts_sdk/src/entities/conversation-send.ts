@@ -148,6 +148,10 @@ export async function createConversationForShare(
       new Conversation({
         title: params.title,
         participants: params.participants,
+        // Local-only project mapping (the hub body strips project_id) — without
+        // it a remote-shared conversation loses its project association and the
+        // sender's conversation list can't scope it.
+        ...(params.project_id ? { project_id: params.project_id } : {}),
         // ``shared_context_entities`` is a wire-lifted field (not on IConversation);
         // the APIEntity base moves it into ``_shared_context_entities_`` on construct.
         ...(params.shared_context_entities && params.shared_context_entities.length > 0
