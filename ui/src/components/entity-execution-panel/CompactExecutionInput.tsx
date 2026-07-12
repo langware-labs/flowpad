@@ -85,13 +85,16 @@ export function CompactExecutionInput({
       const start = ta.selectionStart ?? value.length;
       const end = ta.selectionEnd ?? start;
       void Promise.resolve(onPasteImages(images)).then((refs) => {
-        if (!refs || refs.length === 0) return;
-        const insert = refs.join('\n');
-        setValue((prev) => `${prev.slice(0, start)}${insert}${prev.slice(end)}`);
+        const insert = refs && refs.length > 0 ? refs.join('\n') : null;
+        if (insert !== null) {
+          setValue((prev) => `${prev.slice(0, start)}${insert}${prev.slice(end)}`);
+        }
+        // Always hand focus back to the composer — the annotate dialog and the
+        // Files drawer opening drop focus to <body>, even on cancel/empty refs.
         requestAnimationFrame(() => {
           const node = taRef.current;
           if (!node) return;
-          const caret = start + insert.length;
+          const caret = start + (insert?.length ?? 0);
           node.focus();
           node.selectionStart = caret;
           node.selectionEnd = caret;

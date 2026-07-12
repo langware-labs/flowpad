@@ -408,6 +408,9 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
         const fullPath = `${inputDirInfo.absPath}/${file.name}`;
         await shellRef.current?.sendInput(`\nFile ${file.name} is available here: ${fullPath}\n`);
         openSideTab(SideTabId.Files);
+        // Opening the Files drawer (and the annotate dialog before it) drops
+        // focus to <body> — hand it back to the terminal so typing continues.
+        requestAnimationFrame(() => terminalRef.current?.focus());
       } catch {
         // clipboard read failed — fall through to default xterm behavior
       }
@@ -1482,6 +1485,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
         await shellRef.current?.sendInput(`\nFile ${file.name} is available here: ${fullPath}\n`);
       }
       openSideTab(SideTabId.Files);
+      requestAnimationFrame(() => terminalRef.current?.focus());
     },
     [inputDirInfo, openSideTab],
   );
