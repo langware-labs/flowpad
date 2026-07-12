@@ -618,22 +618,27 @@ export class SystemToolsService extends EventEmitter {
   // ---- project context resolution ------------------------------------------
 
   /**
-   * Resolve workdir → project using longest-match on fs_storage_mount_path.
-   * Sets CurrentProjectTypeId in dataContext.
+   * Resolve workdir → project (longest-match on fs_storage_mount_path) and set it
+   * as the active project. When no project owns the workdir — or there is no
+   * workdir — the target is genuinely projectless, so the active project is
+   * CLEARED to null (the Global scope). Owning the clear here (rather than
+   * returning a flag for callers to act on) keeps the "projectless ⇒ Global"
+   * policy in one place; every loader's no-project branch is a single call.
    * If entity is provided and lacks project_id, writes the resolved id back and saves.
    */
   async resolveProjectContext(
     workdir: string | undefined,
     entity?: { project_id?: string | null; save: () => Promise<void> },
   ): Promise<void> {
-    if (!workdir) return;
-    const match = await Project.getProjectByPath(workdir);
-    if (match) {
-      await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, match.typeId);
-      if (entity && !entity.project_id) {
-        entity.project_id = match.id;
-        await entity.save();
-      }
+    const match = workdir ? await Project.getProjectByPath(workdir) : null;
+    if (!match) {
+      await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, null);
+      return;
+    }
+    await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, match.typeId);
+    if (entity && !entity.project_id) {
+      entity.project_id = match.id;
+      await entity.save();
     }
   }
 

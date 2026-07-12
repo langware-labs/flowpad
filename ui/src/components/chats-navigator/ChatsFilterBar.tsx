@@ -22,7 +22,7 @@ interface ChatsFilterBarProps {
 export function ChatsFilterBar({ onNewChat, onResumeById }: ChatsFilterBarProps) {
   const { t } = useLingui();
   return (
-    <div className="flex flex-col gap-1.5 border-b px-2 py-2">
+    <div className="flex flex-col gap-1.5 px-2 py-2">
       <div className="flex items-center gap-1.5">
         <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground"><Trans>New</Trans></span>
         <div className="flex items-center gap-0.5">

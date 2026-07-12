@@ -8,6 +8,7 @@ import { IEntity } from '../IEntity';
 import { ActionInfo, BootstrapInfo, ScanInfo } from '../models';
 import { TypeId } from '../models/TypeId';
 import { dockOptionsToScopeFilter } from '../utils/scope-filter';
+import { isAbsoluteMachinePath } from '../utils/vfs-path';
 import { UserRole } from '../services/membershipService';
 import {
   ConnectionManager,
@@ -476,6 +477,14 @@ export class DataManager<T extends Manageable> extends EventEmitter {
           void this._query(watchedQuery.request).then((queryResult) => {
             watchedQuery.updateResults(queryResult);
           });
+        } else if (matches && inResults) {
+          // Field update on a row already IN the results: the cache merge below
+          // (castAndDeepAssign) mutates the very object held in `results`, so
+          // the data is fresh — but without a notify the subscribers never
+          // re-render and the value stays stale-in-React (e.g. the `activate`
+          // recency stamp never reordering a live list). Local, no network —
+          // the symmetric completion of the splice branch above.
+          watchedQuery.notifyCallbacks();
         }
       }
     }
@@ -748,8 +757,14 @@ export class DataManager<T extends Manageable> extends EventEmitter {
         // `name` — both for entities with no display override and for plain
         // cached rows that have no `displayName` getter.
         const ent = this.getByTypeIdFromCache(tid) as
-          | { displayName?: string | null; name?: string | null }
+          | { displayName?: string | null; name?: string | null; hasSyntheticDisplayName?: boolean }
           | null;
+        // Never adopt the `<type>-<id>` synthetic as a tab name: returning it here
+        // would freeze `agentic_process-<id>` into the durable `Tab.name` (backfill
+        // only heals a NULL name). Fall back to null so the chip shows the provider
+        // label until a real name is stamped onto the entity (backend
+        // `stamp_default_name`), which then flows through `displayName`.
+        if (ent?.hasSyntheticDisplayName) return null;
         return (ent?.displayName ?? ent?.name) ?? null;
       } catch {
         return null;
@@ -773,8 +788,22 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       if (scope?.mode === 'user') return `My ${noun}`;
       return null;
     }
+    // The Desktop is scope-keyed too: a project-scoped desktop chip is named
+    // "<project> Desktop"; the global/user desktop falls back to the registry
+    // title ("Desktop").
+    if (dock?.viewType === 'desktop') {
+      const scope = dockOptionsToScopeFilter(dock.options);
+      if (scope?.mode === 'project' && scope.activeProjectId) {
+        const name = nameFromCache('project', scope.activeProjectId);
+        return name ? `${name} Desktop` : null;
+      }
+      return null;
+    }
     const pointer = dock?.pointer ?? '';
     if (!pointer) return null;
+    if (dock?.viewType === 'diff' && pointer.startsWith('asset-compare/')) {
+      return 'Asset compare';
+    }
     const lastSegment = (path: string): string | null =>
       decodeURIComponent(path).split('/').filter(Boolean).pop() ?? null;
     // 1. entity — asset-editor typeid form, a bare `<type>-<id>` pointer, or a
@@ -1373,6 +1402,14 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       if (query) {
         apiQuery = query.toJSON();
       }
+      // Blob-carrying types (comment.raw_content, …) serve their blob fields
+      // only under expand=blobs — without this, a scoped query returns rows
+      // with EMPTY bodies (a receiver's synced comment renders "(empty)" in
+      // the gutter; the author only sees text via their in-memory copy).
+      // Mirrors getLoadingExpansions' hasBlobs rule on the by-id load path.
+      if (!apiQuery.expand && this.getSchema(type)?.hasBlobs) {
+        apiQuery.expand = 'blobs';
+      }
       let scope_path = '';
       for (const parent_type_id of scope) {
         scope_path = `${scope_path}/${parent_type_id.type}/${parent_type_id.id}`;
@@ -1633,11 +1670,17 @@ export class DataManager<T extends Manageable> extends EventEmitter {
    * recovery, no discovery scan, no indexing — returns the entity or null.
    * The cheap path→entity conversion (e.g. minting a vfs asset tab's project);
    * `systemTools.discoverByPath` is the heavy recovery counterpart, used only by
-   * the editor view on a bulk miss. Hydrates + caches the hit via the standard
+   * the editor view on a miss. Hydrates + caches the hit via the standard
    * dedup path.
+   *
+   * Accepts both machine-absolute paths and slash-less VFS sub-paths: stored
+   * `asset_ref` is the machine-absolute form, so a relative-looking path is
+   * prefixed with `/` here — the single choke point — rather than at each
+   * call site.
    */
   public async getEntityByPath<U extends T>(path: string): Promise<U | null> {
-    const json = await apiClient.get<any>('/assets/entity', { params: { path } }).catch(() => null);
+    const machine = isAbsoluteMachinePath(path) ? path : `/${path}`;
+    const json = await apiClient.get<any>('/assets/entity', { params: { path: machine } }).catch(() => null);
     if (!json) return null;
     return this.updateEntityFromJson<U>(json);
   }

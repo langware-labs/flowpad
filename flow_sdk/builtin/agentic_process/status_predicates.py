@@ -143,15 +143,47 @@ def is_turn_busy(
     return resolved in _BUSY_WORKER_STATUSES
 
 
-def is_ready_from_busy(status: str, busy: bool) -> bool:
-    """Combine the two orthogonal axes into "can send now": the worker is fully up
-    (``status == RUNNING``, not the STARTING/STOPPING bookends) and no turn is in
-    flight. The single definition of the RUNNING-literal predicate — callers that
-    have already computed ``busy`` (the serializer, ``get_status``) pass it here to
-    avoid re-probing ``is_turn_busy``; ``is_ready_for_input`` computes ``busy`` for
-    callers that only hold the process.
+def is_ready_from_busy(
+    status: str,
+    busy: bool,
+    *,
+    pty_mode: bool | None = None,
+    session_id: str | None = None,
+) -> bool:
+    """Combine the two orthogonal axes into "can send now": no turn is in flight
+    (``not busy``) and the worker is either fully up (``status == RUNNING``), a
+    fresh headless process, OR a **headless-idle** session (see below). Callers
+    that have already computed ``busy`` (the serializer, ``get_status``) pass it
+    here to avoid re-probing ``is_turn_busy``; ``is_ready_for_input`` computes
+    ``busy`` for callers that only hold the process.
+
+    Fresh-headless readiness (``pty_mode is False`` + ``status == NEW``): no
+    persistent worker or session exists before the first turn, but both the first
+    print-mode prompt and an interactive-mode switch are accepted immediately.
+
+    Headless-idle readiness (``pty_mode is False`` + a live ``session_id`` +
+    ``status == STOPPED``): the CLI transport runs a fresh ``claude -p`` worker
+    PER TURN, so between turns a headless session legitimately has no running
+    worker and sits at ``STOPPED`` — yet its ``session_id`` is preserved and it
+    is fully ready to accept the next prompt (and to toggle chat⇄terminal back).
+    Without this branch the chat⇄terminal toggle wedged permanently off once a
+    session went headless-idle (RCA debug_log.md #12a: ``_enter_cli_mode`` →
+    ``exit()`` → STOPPED). ``pty_mode``/``session_id`` default to ``None`` so the
+    branch is opt-in — callers that don't pass them keep the pure RUNNING-literal
+    behaviour. This is a readiness *projection* only; it does not touch the
+    ``is_turn_busy`` gate (``busy`` still short-circuits to not-ready first).
     """
-    return status == ProcessStatus.RUNNING.value and not busy
+    if busy:
+        return False
+    if status == ProcessStatus.RUNNING.value:
+        return True
+    if status == ProcessStatus.NEW.value and pty_mode is False:
+        return True
+    return (
+        status == ProcessStatus.STOPPED.value
+        and pty_mode is False
+        and bool(session_id)
+    )
 
 
 def is_ready_for_input(
@@ -162,9 +194,18 @@ def is_ready_for_input(
 
     Contract (also enforced by the vitest / pytest truth-table tests):
 
-        is_ready_for_input(p)  ⇔  p.status == RUNNING and not is_turn_busy(p)
+        is_ready_for_input(p)  ⇔  not is_turn_busy(p) and (
+            p.status == RUNNING
+            or (p.status == NEW and not p.pty_mode)  # fresh headless
+            or (p.status == STOPPED and not p.pty_mode and p.session_id)  # headless-idle
+        )
 
     The ``worker_status`` argument is optional — pass a pre-resolved value to avoid
     a second tail-read.
     """
-    return is_ready_from_busy(process.status, is_turn_busy(process, worker_status))
+    return is_ready_from_busy(
+        process.status,
+        is_turn_busy(process, worker_status),
+        pty_mode=process.pty_mode,
+        session_id=process.session_id,
+    )

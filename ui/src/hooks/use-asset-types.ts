@@ -25,6 +25,8 @@ export interface AssetTypeInfo {
    *  sidebar row expands into the on-disk file tree. Sourced synchronously from
    *  the registry (TypeInfo.folder_backed), so it's set on the first render. */
   folder_backed?: boolean;
+  /** Fixed inner filename for folder-backed assets, e.g. SKILL.md. */
+  main_file?: string | null;
   vaults?: AssetTypeVault[];
 }
 
@@ -52,6 +54,7 @@ function staticAssetTypes(mode: ViewMode): AssetTypeInfo[] {
       // Sourced synchronously from the registry like every other static field —
       // available on the first render, so a deep-link auto-expand can't race it.
       folder_backed: t.folder_backed,
+      main_file: t.main_file,
     }));
 }
 

@@ -26,29 +26,71 @@ afterEach(() => cleanup());
 
 // The chat⇄terminal toggle may only be used while the agent is awaiting the
 // user's input — a mid-turn switchMode is 409'd by the backend. The gate is the
-// single readiness predicate: the toggle is enabled ⇔ the process is RUNNING and
-// not busy (a turn is not in flight). "ready" and "busy" are disjoint by
-// construction (RUNNING && !busy vs busy), so enabling on ready can never hit the
+// single readiness predicate: the toggle is enabled ⇔ not busy AND (the process
+// is RUNNING, fresh-headless, OR headless-idle — a CLI-transport session STOPPED
+// between per-turn workers with a live session_id). "ready" and "busy" are disjoint by
+// construction (!busy gates first), so enabling on ready can never hit the
 // backend's busy 409. These tests pin the predicate and the ribbon wiring.
 
 describe('isReadyForInput — the "your turn" toggle gate', () => {
-  it('is true exactly for a RUNNING, non-busy process', () => {
+  it('is true for a RUNNING, non-busy process', () => {
     expect(isReadyForInput({ status: ProcessStatus.RUNNING, busy: false })).toBe(true);
     expect(isReadyForInput({ status: ProcessStatus.RUNNING })).toBe(true); // busy defaults falsy
   });
 
-  it('is false when busy (turn in flight) and for every non-live / terminal status (no 409 hole)', () => {
+  it('is true for a headless-idle session (CLI transport, STOPPED, live session_id)', () => {
+    // RCA #12a: switching terminal→chat kills the per-turn PTY and lands the
+    // process at STOPPED with its session_id preserved. The toggle must stay
+    // enabled so the user can switch back without first sending a message.
+    expect(
+      isReadyForInput({ status: ProcessStatus.STOPPED, busy: false, pty_mode: false, session_id: 'sess-abc' }),
+    ).toBe(true);
+  });
+
+  it('is true for a fresh headless process before its first turn', async () => {
+    const onToggleView = vi.fn();
+    const toggleEnabled = isReadyForInput({
+      status: ProcessStatus.NEW,
+      busy: false,
+      pty_mode: false,
+      session_id: null,
+    });
+
+    render(
+      <TerminalBottomRibbon
+        {...baseProps}
+        chatActive
+        onToggleView={onToggleView}
+        toggleEnabled={toggleEnabled}
+      />,
+    );
+
+    const btn = screen.getByRole('button', { name: 'Switch to terminal view' });
+    expect((btn as HTMLButtonElement).disabled).toBe(false);
+    await userEvent.click(btn);
+    expect(onToggleView).toHaveBeenCalledTimes(1);
+  });
+
+  it('is false when busy (turn in flight) and for non-live states with no live headless session', () => {
     // A RUNNING process with a turn in flight is busy, not ready.
     expect(isReadyForInput({ status: ProcessStatus.RUNNING, busy: true })).toBe(false);
+    // A headless-idle session mid-turn is busy → not ready (no 409 hole).
+    expect(
+      isReadyForInput({ status: ProcessStatus.STOPPED, busy: true, pty_mode: false, session_id: 'sess-abc' }),
+    ).toBe(false);
+    // A stopped PTY (interactive transport) is not headless-idle → not ready.
+    expect(
+      isReadyForInput({ status: ProcessStatus.STOPPED, busy: false, pty_mode: true, session_id: 'sess-abc' }),
+    ).toBe(false);
     for (const s of [
-      ProcessStatus.NEW,
       ProcessStatus.STARTING,
       ProcessStatus.STOPPING,
-      ProcessStatus.STOPPED,
+      ProcessStatus.STOPPED, // no session_id → not headless-idle
       ProcessStatus.FAILED,
     ]) {
       expect(isReadyForInput({ status: s })).toBe(false);
     }
+    expect(isReadyForInput({ status: ProcessStatus.NEW, pty_mode: true })).toBe(false);
     expect(isReadyForInput({})).toBe(false);
   });
 });

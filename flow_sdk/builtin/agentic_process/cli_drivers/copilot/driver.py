@@ -10,9 +10,12 @@ from uuid import uuid4
 
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
     apply_worker_env,
+    apply_worker_secret_env,
     AgenticContext,
     AgenticProcessContextKey,
     WorkerCLIOptions,
+    WorkerSpawnError,
+    latch_spawn_failure,
     restart_payload_from_cli_options,
 )
 from flow_sdk.builtin.agentic_process.cli_drivers.copilot.cli import CopilotCliOptions
@@ -54,6 +57,9 @@ class CopilotDriver:
     # Copilot's TUI treats a pasted prompt ending in \r as literal text — needs
     # a discrete Enter after the paste settles (Shell.write_then_submit).
     pty_submits_on_paste = False
+    # No empirically-grounded composer marker for copilot yet — None keeps the
+    # legacy settle-then-type first delivery (see WorkerDriver Protocol).
+    pty_composer_ready_pattern = None
     pins_resume_cwd = False  # no transcript-cwd pinning, no fork
 
     def cli_options(self, process: "AgenticProcess") -> CopilotCliOptions:
@@ -108,9 +114,11 @@ class CopilotDriver:
 
         full_prompt = self.compose_prompt(instruction, process.get_agents_json())
         cli_cfg = process.cli_config or {}
+        env_vars = apply_worker_env(dict(cli_cfg.get("env_vars") or {}), process)
+        await apply_worker_secret_env(env_vars, process)
         context = AgenticContext(
             workdir=process.workdir,
-            env_vars=apply_worker_env(dict(cli_cfg.get("env_vars") or {}), process),
+            env_vars=env_vars,
             model=cli_cfg.get("model"),
             permission_mode=cli_cfg.get("permission_mode", "bypassPermissions"),
             effort=cli_cfg.get("effort"),
@@ -148,35 +156,31 @@ class CopilotDriver:
         except Exception:
             logger.exception("CopilotDriver.headless_prompt: start notify failed")
 
+        # Session adoption (and its restart-snapshot bookkeeping) is owned by
+        # AgenticProcess.adopt_worker_session; the turn-scoped adopter trusts
+        # only the turn-initial report (spurious-rotation guard). Resumed
+        # sessions no-op inside adopt_worker_session when the id is unchanged.
+        adopt_session = process_ref.make_turn_session_adopter("CopilotDriver.headless_prompt")
+
         async def _run_turn() -> None:
-            # Resumed sessions already have the right id persisted; a fresh start
-            # persists copilot's real id once the worker reports it (below).
-            session_id_persisted = resumable
             try:
                 async for fd in worker.execute(prompt=full_prompt, context=context):
-                    sid = worker.get_session_id()
-                    if sid and sid != process_ref.session_id:
-                        process_ref.session_id = sid
-                        session_id_persisted = False
-                    if sid and not session_id_persisted:
-                        try:
-                            await process_ref.save()
-                            session_id_persisted = True
-                        except Exception:
-                            logger.debug("CopilotDriver.headless_prompt: session save failed", exc_info=True)
+                    await adopt_session(worker.get_session_id())
                     try:
                         await process_ref.emit_flow_data(fd.model_dump())
                     except Exception:
                         logger.debug("CopilotDriver.headless_prompt: emit_flow_data failed", exc_info=True)
+            except WorkerSpawnError as e:
+                # No subprocess ever started — end the process FAILED with the
+                # start_failure latch (the ERROR frame was already emitted).
+                await latch_spawn_failure(process_ref, e)
             except Exception:
                 logger.exception("CopilotDriver.headless_prompt: worker error")
             finally:
                 _PROMPT_WORKERS.pop(process_id, None)
-                object.__setattr__(process_ref, "_turn_in_flight", False)
-                try:
-                    await process_ref.notify_updated()
-                except Exception:
-                    logger.exception("CopilotDriver.headless_prompt: terminal notify failed")
+                # Terminal status broadcast + completion-driven queue advance
+                # (see AgenticProcess.end_headless_turn).
+                await process_ref.end_headless_turn("CopilotDriver.headless_prompt")
 
         asyncio.create_task(_run_turn(), name=f"copilot-{process.id[:8]}")
         return ApiSuccessResponse(data={"status": "started", "worker": self.name})

@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { AgenticProcess, WorkerMode, dataManager } from '@sdk';
+import { AgenticProcess, ProcessStatus, WorkerMode, dataManager, type IAgenticProcess } from '@sdk';
+
+interface SwitchModeInternals {
+  _pendingTransport?: { pty_mode?: boolean; visible?: boolean };
+}
 
 /**
  * `AgenticProcess.switchMode(mode)` — the single, standardized transport switch
@@ -34,6 +38,7 @@ describe('AgenticProcess.switchMode', () => {
   };
 
   beforeEach(() => {
+    fakeShell.attachPty.mockClear();
     callActionSpy = vi.spyOn(dataManager, 'callAction').mockResolvedValue(fakeOpenResult as any);
     updateEntitySpy = vi.spyOn(dataManager, 'updateEntityFromJson').mockReturnValue(fakeShell as any);
     getByTypeIdSpy = vi.spyOn(dataManager, 'getByTypeId').mockResolvedValue(fakeShell as any);
@@ -82,5 +87,52 @@ describe('AgenticProcess.switchMode', () => {
     expect(p.pty_mode).toBe(true);
     // 'restarted' tells the terminal to clear + re-attach the fresh PTY.
     expect(emitSpy).toHaveBeenCalledWith('restarted', expect.anything());
+  });
+
+  it('Interactive rejection restores the prior headless intent and desired-value latches', async () => {
+    const error = new Error('Failed to create PTY session: embedded null byte');
+    callActionSpy.mockRejectedValueOnce(error);
+    const p = new AgenticProcess({
+      id: '00000000-0000-4000-8000-000000000001',
+      status: ProcessStatus.STOPPED,
+      visible: false,
+      pty_mode: false,
+      session_id: 'worker-session-xyz',
+    } satisfies Partial<IAgenticProcess>);
+    // A process that previously switched to CLI carries a false desired-value
+    // latch. A failed return to PTY must restore it instead of pinning true.
+    const internals = p as unknown as SwitchModeInternals;
+    internals._pendingTransport = { pty_mode: false, visible: false };
+    const emitSpy = vi.spyOn(p, 'emit');
+
+    await expect(p.switchMode(WorkerMode.Interactive)).rejects.toBe(error);
+
+    expect(p.pty_mode).toBe(false);
+    expect(p.visible).toBe(false);
+    expect(internals._pendingTransport).toEqual({ pty_mode: false, visible: false });
+    expect(fakeShell.attachPty).not.toHaveBeenCalled();
+    expect(emitSpy).not.toHaveBeenCalledWith('restarted', expect.anything());
+  });
+
+  it('Interactive can retry once after a rejected open without duplicate attach or restart events', async () => {
+    const error = new Error('Failed to create PTY session: embedded null byte');
+    callActionSpy.mockRejectedValueOnce(error).mockResolvedValueOnce(fakeOpenResult as never);
+    const p = new AgenticProcess({
+      id: '00000000-0000-4000-8000-000000000001',
+      status: ProcessStatus.STOPPED,
+      visible: false,
+      pty_mode: false,
+      session_id: 'worker-session-xyz',
+    } satisfies Partial<IAgenticProcess>);
+    const emitSpy = vi.spyOn(p, 'emit');
+
+    await expect(p.switchMode(WorkerMode.Interactive)).rejects.toBe(error);
+    await expect(p.switchMode(WorkerMode.Interactive)).resolves.toBeUndefined();
+
+    const openActions = callActionSpy.mock.calls.filter((call) => call[0].name === 'open');
+    expect(openActions).toHaveLength(2);
+    expect(fakeShell.attachPty).toHaveBeenCalledTimes(1);
+    expect(emitSpy.mock.calls.filter(([event]) => event === 'restarted')).toHaveLength(1);
+    expect(p.pty_mode).toBe(true);
   });
 });

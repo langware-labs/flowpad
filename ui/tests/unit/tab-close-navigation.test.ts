@@ -62,10 +62,12 @@ describe('closeDock from root-level dock URLs', () => {
 
 describe('UnifiedTabStrip close navigation', () => {
   it('only navigates when the closed tab is the URL-active one', () => {
-    // The strip navigates off a close ONLY for the active chip (`key === activeKey`);
-    // closing a background tab leaves the current view untouched. Active key is
-    // URL-derived (`currentDock.tabHash`) — URL-first.
-    expect(unifiedStripSource).toContain('if (key === activeKey)');
+    // The strip navigates off a close ONLY for the current chip — closing a
+    // background tab leaves the view untouched. The guard is `isCurrentTab(key)`
+    // (active OR pending-active, the close-X-during-pending-nav self-heal), whose
+    // definition anchors on the URL-derived active key (`currentDock.tabHash`).
+    expect(unifiedStripSource).toContain('if (isCurrentTab(key))');
+    expect(unifiedStripSource).toContain('key === activeKey || key === pendingActiveKey');
     expect(unifiedStripSource).toContain("currentDock?.tabHash ?? ''");
   });
 });

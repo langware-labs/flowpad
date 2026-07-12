@@ -1,7 +1,7 @@
-import { AgenticProcess, Shell, Tab, TypeId } from '@sdk';
+import { AgenticProcess, Shell, Tab, toplog, TypeId } from '@sdk';
 import { useEntity } from '@src/hooks/entity-hooks';
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
-import { ProjectBrief } from '@src/components/project-brief/ProjectBrief';
+import { ProjectHome } from '@src/components/project-home/ProjectHome';
 import { Button } from '@src/components/ui/button';
 import { DockPointer } from '@src/navigation';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -177,7 +177,7 @@ const TerminalPanel: React.FC<{
  * warm-mounted terminal panels; the chip strip is the shared `UnifiedTabStrip` the
  * host renders above it. Tabs come from the one backend-authoritative source
  * (`useTerminalTabs` → `tab` action), the active panel is URL-derived, and each
- * panel hydrates its own entity on mount. With no tabs it renders `ProjectBrief`
+ * panel hydrates its own entity on mount. With no tabs it renders `ProjectHome`
  * (the shared project landing, which owns the spawn openers + their modals).
  */
 const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', scope = 'project', spawnProjectId }) => {
@@ -209,6 +209,9 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', scope =
   useEffect(() => {
     if (!activeKey) return;
     setMounted((prev) => {
+      // Warm switch = the panel is already in the Set (visibility flip only);
+      // cold = first visit mounts InteractiveTerminal (attach + replay).
+      toplog.log('process_load', `TabbedTerminal active flip → ${activeKey} (${prev.has(activeKey) ? 'warm' : 'cold mount'})`);
       if (prev.has(activeKey)) return prev;
       const next = new Set(prev);
       next.add(activeKey);
@@ -221,7 +224,7 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', scope =
       <div className="flex h-full w-full flex-col">
         <div className="relative flex-1 overflow-hidden" data-testid="terminal-panels">
           {tabs.length === 0 ? (
-            <ProjectBrief spawnProjectId={spawnProjectId} />
+            <ProjectHome spawnProjectId={spawnProjectId} showSessionStarters />
           ) : (
             tabs.map((tab) => {
               const tabHash = tabKey(tab);

@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   ASSET_SOURCE_LABEL,
   READONLY_ASSET_SOURCES,
+  assetDescriptorHasUsage,
   isReadOnlySource,
+  type AssetDescriptor,
   type AssetSource,
 } from '@sdk';
 
@@ -14,6 +16,7 @@ const ALL_SOURCES: AssetSource[] = [
   'workdir',
   'additional_dir',
   'context_dir',
+  'transcript',
 ];
 
 describe('isReadOnlySource — partition over every AssetSource member', () => {
@@ -27,6 +30,7 @@ describe('isReadOnlySource — partition over every AssetSource member', () => {
     workdir: true,
     additional_dir: true,
     context_dir: true,
+    transcript: true,
   };
 
   it.each(ALL_SOURCES)('%s', (source) => {
@@ -41,5 +45,30 @@ describe('isReadOnlySource — partition over every AssetSource member', () => {
 
   it('ASSET_SOURCE_LABEL covers every source (no missing keys)', () => {
     for (const s of ALL_SOURCES) expect(ASSET_SOURCE_LABEL[s]).toBeTruthy();
+  });
+});
+
+describe('assetDescriptorHasUsage', () => {
+  const base: AssetDescriptor = {
+    typeid: 'agent-11111111-1111-4111-8111-111111111111',
+    source: 'embedded',
+    posix_path: '/tmp/.claude/agents/vibe.md',
+    source_dir: null,
+  };
+
+  it('is false when backend usage is absent or empty', () => {
+    expect(assetDescriptorHasUsage(base)).toBe(false);
+    expect(assetDescriptorHasUsage({ ...base, usage: [] })).toBe(false);
+  });
+
+  it('is true for process-active and transcript-backed usage', () => {
+    expect(assetDescriptorHasUsage({
+      ...base,
+      usage: [{ kind: 'embedded_asset', path: base.posix_path }],
+    })).toBe(true);
+    expect(assetDescriptorHasUsage({
+      ...base,
+      usage: [{ kind: 'transcript_file_read', path: base.posix_path, entry_id: 'entry-1' }],
+    })).toBe(true);
   });
 });

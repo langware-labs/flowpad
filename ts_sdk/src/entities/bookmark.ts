@@ -1,4 +1,5 @@
-import { APIEntity, registerEntity } from '../APIEntity';
+import { ActionInfo } from '../models';
+import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { IEntity } from '../IEntity';
 
 export enum BookmarkType {
@@ -28,6 +29,15 @@ export interface IBookmark extends IEntity {
    *  string, not null — dropped-None serialization + merge-never-removes
    *  would otherwise strand cleared memberships. */
   parent_id?: string;
+  /** Manual placement within the parent container. 0/unset = unstamped
+   *  (sorts at the END of a stamped container, newest first); stamped values
+   *  are contiguous from 1 via the `bookmark.order` action. */
+  order?: number;
+  /** Owning project id, stamped at favorite-creation time from the current
+   *  project context. Carried as a plain field (the record still saves under
+   *  the unscoped @local desktop so webhook-created favorites stay visible);
+   *  the bookmarks slider filters favorites by this against the scope filter. */
+  project_id?: string | null;
 }
 
 @registerEntity
@@ -43,6 +53,8 @@ export class Bookmark extends APIEntity<Bookmark> implements IBookmark {
   closed_at?: string;
   remind_at?: string;
   parent_id?: string;
+  order?: number;
+  project_id?: string | null;
   static type: string = 'bookmark';
 
   constructor(entity: Partial<IBookmark> = {}) {
@@ -58,5 +70,26 @@ export class Bookmark extends APIEntity<Bookmark> implements IBookmark {
     this.closed_at = entity.closed_at;
     this.remind_at = entity.remind_at;
     this.parent_id = entity.parent_id;
+    this.order = entity.order;
+    this.project_id = entity.project_id ?? null;
+  }
+
+  /** Desktop drag-drop commit — splice a bookmark into the drop gap within
+   *  its container (root '' or a folder id). Mirrors Tab.reorder; the server
+   *  registers the handler type-qualified as `bookmark.order`. */
+  static async reorder(
+    reorderId: string,
+    afterId: string | null,
+    beforeId: string | null,
+    parentId: string = '',
+  ): Promise<void> {
+    const info = new ActionInfo('order', Bookmark.type, null, 'POST');
+    info.bodyParameters = {
+      reorder_bookmark_id: reorderId,
+      after_bookmark_id: afterId,
+      before_bookmark_id: beforeId,
+      parent_id: parentId,
+    };
+    await dataManager.callAction<unknown, { bookmarks: IBookmark[] }>(info);
   }
 }

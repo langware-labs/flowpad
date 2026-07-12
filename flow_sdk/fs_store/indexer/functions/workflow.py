@@ -26,10 +26,7 @@ from pathlib import Path
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer._frontmatter import (
-    _extract_body,
-    _extract_frontmatter,
-    _render_frontmatter,
-    _yaml_load,
+    adopt_or_mint_id,
 )
 from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
@@ -115,59 +112,18 @@ def workflow_frontmatter_fn(
             out.append(FSRef(md, record_type=RecordType.WORKFLOW, parent=node))
     return out
 
-def _workflow_id_from_path(path: Path) -> str:
-    from flow_sdk.fs_store.identifier import mint_uuid  # noqa: PLC0415
-    return mint_uuid(str(path.resolve()))
-
-def _read_workflow_asset_id(path: Path) -> str | None:
-    """Return ``id`` (or legacy ``asset_id``) from frontmatter, or None."""
-    try:
-        text = path.read_text(encoding="utf-8")
-    except OSError:
-        return None
-    fm = _extract_frontmatter(text)
-    if not fm:
-        return None
-    fields = _yaml_load(fm) or {}
-    from flow_sdk.fs_store.identifier import adopt_entity_id  # noqa: PLC0415
-    raw = fields.get("id") or fields.get("asset_id")
-    return adopt_entity_id(raw)  # validate-on-adopt (v4/v5) → else caller derives uuid5(path)
-
 def workflow_id(ref: FSRef) -> str:
-    """Cheap id: prefer frontmatter ``id``; else uuid5(path)."""
-    existing = _read_workflow_asset_id(ref._path)
-    return existing if existing else _workflow_id_from_path(ref._path)
+    """Cheap id (no write): adopted frontmatter capsule id; else stable derived key."""
+    return adopt_or_mint_id(ref._path, write_back=False)
 
 def workflow_gen_id(ref: FSRef) -> str:
-    """Mint+write a stable id into the frontmatter (idempotent).
+    """Adopt the frontmatter capsule id, else mint a fresh v4 and write it back.
 
-    Same shape as the deleted ``WorkflowRecord.genId``. Preserves any existing
-    derived id so DB rows keyed on uuid5(path) stay valid.
+    The miss path now mints a random **v4** (not uuid5(path)) so a shared/copied
+    workflow carries a portable id in its capsule. uuid5(path) survives only as
+    the read-only-file fallback (inside ``adopt_or_mint_id``).
     """
-    existing = _read_workflow_asset_id(ref._path)
-    if existing:
-        return existing
-    new_id = _workflow_id_from_path(ref._path)
-    try:
-        text = ref._path.read_text(encoding="utf-8")
-    except OSError:
-        return new_id
-    fm = _extract_frontmatter(text)
-    body = _extract_body(text)
-    fields: dict = {}
-    if fm:
-        parsed = _yaml_load(fm)
-        if isinstance(parsed, dict):
-            fields.update(parsed)
-    merged = {"id": new_id, **{k: v for k, v in fields.items() if k not in ("id", "asset_id")}}
-    try:
-        ref._path.write_text(
-            _render_frontmatter(merged) + "\n\n" + body + ("\n" if body and not body.endswith("\n") else ""),
-            encoding="utf-8",
-        )
-    except OSError:
-        pass
-    return new_id
+    return adopt_or_mint_id(ref._path, write_back=True)
 
 def extract_workflow(ref: FSRef) -> list[FSRecord]:
     """Parse a workflow .md into a Record. Replaces ``WorkflowRecord._from_fsref_sync``."""

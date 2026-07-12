@@ -6,6 +6,7 @@ from typing import ClassVar, List, Optional, TYPE_CHECKING
 
 from flow_sdk._compat import StrEnum  # 3.10-safe StrEnum (project pins py3.10)
 from flow_sdk.api.api_types.api_field import APIField
+from flow_sdk.builtin.user import normalize_email
 from flow_sdk.core import Entity
 from flow_sdk.db.drivers.db_base_record import TypeId
 from flow_sdk.schema.types import EntityType
@@ -248,6 +249,9 @@ class Conversation(Entity):
             # One invitation per recipient.
             for email in recipients:
                 if not email or not isinstance(email, str):
+                    continue
+                email = normalize_email(email)
+                if not email:
                     continue
                 body: dict = {
                     "recipient_email": email,

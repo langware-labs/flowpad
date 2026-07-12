@@ -14,9 +14,16 @@ other skill files, never `ls` the skills dir, never write a report.** Navigation
 is one side-effect that the user sees in their browser; it is a few commands, not
 an investigation.
 
+> **Display sessions use `flow show`, not `flow navigate`.** Everything below
+> `flow navigate`s the user's browser tab. If you are in a vibe/creator session
+> with a display pane (asked to open/show something "in the display"), use
+> `flow show file <path>` / `flow show entity <typeid>` instead — see the
+> decision rule at the bottom.
+
 ## You already have a TypeId
 
-Run exactly one command, then stop:
+Run exactly one command, then stop (Display session → `flow show entity <typeid>`
+instead):
 
 ```bash
 flow navigate entity <typeid>
@@ -27,14 +34,24 @@ open Flowpad, `4` not found, `5` server down.)
 
 ## You have a file path you just wrote (no TypeId yet)
 
-This is "open it" after creating a file. The file needs a Flowpad entity, then its
-TypeId. Two commands, no research:
+This is "open it" after creating a file. **First decide the target** (see the
+`flow show` vs `flow navigate` rule below):
+
+**Presenting it into the active process Display** (a vibe/creator session, or
+"open it in the display") → use `flow show` — no TypeId, no indexing needed:
+
+```bash
+flow show file <absolute-path>   # sets the Display target; stop
+```
+
+**Moving the user's own browser tab** to it → the file needs a Flowpad entity,
+then its TypeId. Two commands, no research:
 
 ```bash
 # 1. Index just this file — returns its TypeId in data.typeid.
 flow record index <absolute-path> --types markdown
 
-# 2. Navigate to the returned TypeId. Stop.
+# 2. Navigate the browser tab to the returned TypeId. Stop.
 flow navigate entity <data.typeid>
 ```
 
@@ -44,19 +61,27 @@ guessing. Do not read the file, do not open it with the OS, do not summarize.
 
 ## "the current X" (no path, no id)
 
-Resolve via context, then navigate:
+Resolve via context, then navigate (Display session → `flow show entity` instead
+of `flow navigate`):
 
 ```bash
 flow context list                      # JSON; read e.g. CurrentProjectTypeId
 flow navigate entity <that-typeid>     # if the value is null, tell the user and stop
 ```
 
-## Presenting your own work: `flow show` (not navigate)
+## Presenting into a Display vs. moving the browser: `flow show` vs `flow navigate`
 
-Decision rule: the user asked to open/jump somewhere → `flow navigate`. You are
-presenting something YOU created or run (a file, an app you started) → `flow show`.
-`show` never moves the user's browser; it sets the display focus for whoever is
-watching this session. Exit 0 = recorded, done — even if nothing is visibly open.
+Decision rule — key on the **target**, not on who authored the file:
+
+- **The active process Display** (a vibe/creator session with a display pane, or
+  the user says "in the display / on screen") → **always `flow show`**, whether
+  you created the file/entity or it already existed. `show` never moves the
+  user's browser; it sets the display focus for whoever is watching this session.
+- **The user's own browser tab** ("jump to", "take me to" an entity, standard
+  assistant with no Display) → `flow navigate`. It hijacks the visible tab, so
+  never use it to present something on a Display.
+
+Exit 0 = recorded, done — even if nothing is visibly open.
 
 ```bash
 flow show file <absolute-path>       # a file you just wrote (no TypeId needed)

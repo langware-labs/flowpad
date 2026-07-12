@@ -13,10 +13,10 @@ import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popo
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { notify } from '@src/notifications';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { dockForProjectEntry } from '@src/tabs/project-entry';
+import { dockForGlobalEntry, dockForProjectEntry } from '@src/tabs/project-entry';
 import { useAllProjects } from '@src/hooks/use-all-projects';
 import { useTabProjectBuckets, type TabProjectBucket } from '@src/tabs/useTabs';
-import { ChevronLeft, History, Layers, Loader2, RotateCcw } from 'lucide-react';
+import { ChevronLeft, Globe, History, Layers, Loader2, RotateCcw } from 'lucide-react';
 import React, { useMemo, useState } from 'react';
 
 /** Agentic worker kinds offered by the picker's worker toolbar. Alias of the
@@ -67,6 +67,29 @@ export function resolveProjectChipName(
   if (currentProjectName?.trim()) return currentProjectName.trim();
   const bucket = currentProjectId ? buckets.find((b) => b.projectId === currentProjectId) : null;
   return bucket ? bucketDisplayName(bucket) : null;
+}
+
+/**
+ * Hairline-flanked mid-list section title — the chip's "Active projects"
+ * separator. Exported so other project lists (the footer Switch Project
+ * dialog) render the identical separator instead of a lookalike.
+ */
+export function SectionHairlineTitle({
+  children,
+  testid = 'projects-counter-section-title',
+}: {
+  children: React.ReactNode;
+  testid?: string;
+}) {
+  return (
+    <div className="flex items-center gap-2 px-2 pb-0.5 pt-1.5" data-testid={testid}>
+      <span aria-hidden className="h-px flex-1 bg-border" />
+      <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+        {children}
+      </span>
+      <span aria-hidden className="h-px flex-1 bg-border" />
+    </div>
+  );
 }
 
 // Sort: alphabetical by display name, projectId tie-break. Deliberately NOT
@@ -153,13 +176,12 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
   const [pickerWorker, setPickerWorker] = useState<ProjectWorkerType | null>(null);
   const [recoveringId, setRecoveringId] = useState<string | null>(null);
   const { navigation } = useDockNavigation();
-  const { buckets } = useTabProjectBuckets();
+  const { buckets, globalTabCount } = useTabProjectBuckets();
 
   const sorted = useMemo(() => [...buckets].sort(compareBuckets), [buckets]);
 
   const tabTotal = buckets.reduce((sum, b) => sum + b.tabCount, 0);
   const projectTotal = buckets.length;
-  const isEmpty = projectTotal === 0;
 
   // Name of the current project, shown as a label segment on the chip.
   const projectName = useMemo(
@@ -167,11 +189,23 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
     [currentProjectName, currentProjectId, buckets],
   );
   const hasProject = !!projectName;
+  // The Global scope surfaces ONLY when no project is active AND there is ≥1
+  // global tab (strictly current-only — you enter Global by opening a global
+  // tab, not by picking it from within a project). It is then always the current
+  // scope: a violet "Global" label + a current-marked row above the projects.
+  const isGlobalScope = currentProjectId == null && globalTabCount > 0;
+  // The active scope's label — a project name, or "Global" — or null when the
+  // chip is a bare counter. `scopeLabel != null` is the single "chip carries a
+  // label" predicate used for both styling and the counts muting.
+  const scopeLabel = hasProject ? projectName : isGlobalScope ? 'Global' : null;
+  // Nothing to advertise: no project owns a tab and we're not in a populated
+  // Global scope. A bare "0 / 0" chip represents nothing, so it stays hidden.
+  const isEmpty = projectTotal === 0 && !isGlobalScope;
 
   const countTooltip = `${projectTotal} active project${projectTotal === 1 ? '' : 's'} with ${tabTotal} open tab${
     tabTotal === 1 ? '' : 's'
   }`;
-  const tooltipText = hasProject ? `${projectName} — ${countTooltip}` : countTooltip;
+  const tooltipText = scopeLabel ? `${scopeLabel} — ${countTooltip}` : countTooltip;
 
   // Canonical mount paths of projects already open in the strip — excluded
   // from the picker so it only offers not-yet-open projects.
@@ -184,23 +218,26 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
     [buckets],
   );
 
-  // When the chip carries a project name it reads as the "project context"
-  // pill — a subtle primary tint + accent border sets it apart from the neutral
-  // tab headers next to it, while staying within the design language (same
-  // height, radius, border weight). Without a project it falls back to the
-  // plain neutral chip so a project-less strip isn't washed in accent color.
+  // Three scope treatments, all within the same design language (height, radius,
+  // border weight): a PROJECT scope reads as a subtle primary-tinted pill; the
+  // GLOBAL scope gets a distinct violet accent so it never looks like a regular
+  // project; a scope-less strip falls back to the plain neutral chip so it isn't
+  // washed in accent color.
   const chipClass = `mx-1 inline-flex h-6 shrink-0 items-center gap-1 rounded-md border px-2 text-xs font-medium tabular-nums focus:outline-none focus:ring-1 focus:ring-ring ${
     hasProject
       ? 'border-primary/30 bg-primary/5 text-foreground hover:bg-primary/10'
-      : 'border-border bg-background hover:bg-accent hover:text-accent-foreground'
+      : isGlobalScope
+        ? 'border-violet-500/30 bg-violet-500/5 text-foreground hover:bg-violet-500/10'
+        : 'border-border bg-background hover:bg-accent hover:text-accent-foreground'
   }`;
 
   // Per-type icon from the backend TypeInfo registry (CLAUDE.md: never hardcode
   // a glyph for an entity type) — the same project icon every other surface shows.
+  // Global is a pseudo-scope (not an entity type), so it uses a plain `Globe` glyph.
   const ProjectIcon = iconForType(Project.type);
 
-  // Shared trigger content: the project-name label (when known) followed by the
-  // open-projects / terminals counts. The name is the hero (primary glyph,
+  // Shared trigger content: the scope label (project name, or "Global") followed
+  // by the open-projects / tabs counts. The label is the hero (accent glyph,
   // foreground weight); the counts ride along muted and divided off.
   const triggerContent = (
     <>
@@ -210,9 +247,15 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
           <span className="max-w-[9rem] truncate">{projectName}</span>
           <span aria-hidden className="mx-0.5 h-3 w-px shrink-0 bg-border" />
         </>
+      ) : isGlobalScope ? (
+        <>
+          <Globe className="h-3 w-3 shrink-0 text-violet-500" />
+          <span className="max-w-[9rem] truncate"><Trans>Global</Trans></span>
+          <span aria-hidden className="mx-0.5 h-3 w-px shrink-0 bg-border" />
+        </>
       ) : null}
-      <Layers className={`h-3 w-3 shrink-0 ${hasProject ? 'text-muted-foreground' : ''}`} />
-      <span className={hasProject ? 'text-muted-foreground' : undefined}>{projectTotal}</span>
+      <Layers className={`h-3 w-3 shrink-0 ${scopeLabel != null ? 'text-muted-foreground' : ''}`} />
+      <span className={scopeLabel != null ? 'text-muted-foreground' : undefined}>{projectTotal}</span>
       <sub className="ml-0.5 text-[9px] leading-none text-muted-foreground">{tabTotal}</sub>
     </>
   );
@@ -261,6 +304,14 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
     // 'loading' — ignore; spinner is rendered in the row.
   };
 
+  // Selecting the Global row re-focuses the Global scope (it's only shown while
+  // Global is already current). URL-first: resolve the most-recently-active
+  // global tab (or Home) and navigate; the loader re-scopes off the URL.
+  const handleSelectGlobal = async () => {
+    setOpen(false);
+    navigation.openDock(await dockForGlobalEntry());
+  };
+
   const handleOpenChange = (next: boolean) => {
     setOpen(next);
     if (!next) setPickerWorker(null);
@@ -303,6 +354,36 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
             />
           ) : (
             <ul className="flex flex-col">
+              {isGlobalScope ? (
+                // The Global scope row — violet-accented so it never reads as a
+                // regular project, and always the current scope when shown.
+                <li key="__global__">
+                  <button
+                    type="button"
+                    aria-current="true"
+                    onClick={() => void handleSelectGlobal()}
+                    className="flex w-full items-center gap-2 rounded bg-violet-500/10 px-2 py-1.5 text-left text-sm font-medium hover:bg-violet-500/15"
+                    data-testid="projects-counter-global"
+                  >
+                    <Globe className="h-3.5 w-3.5 shrink-0 text-violet-500" />
+                    <span className="min-w-0 flex-1 truncate text-violet-600 dark:text-violet-300">
+                      <Trans>Global</Trans>
+                    </span>
+                    <span className="shrink-0 rounded bg-violet-500/15 px-1.5 py-0.5 text-xs tabular-nums text-violet-600 dark:text-violet-300">
+                      {globalTabCount}
+                    </span>
+                  </button>
+                </li>
+              ) : null}
+              {isGlobalScope && sorted.length > 0 ? (
+                // Small mid-title separating the Global row from the project
+                // buckets below it.
+                <li key="__projects_title__" aria-hidden>
+                  <SectionHairlineTitle>
+                    <Trans>Active projects</Trans>
+                  </SectionHairlineTitle>
+                </li>
+              ) : null}
               {sorted.map((bucket) => {
                 const isCurrent = bucket.projectId === currentProjectId;
                 const isRecovering = recoveringId === bucket.projectId;

@@ -1015,7 +1015,7 @@
             "FOO": "bar"
           },
           "fork_session_id": null,
-          "model": "haiku",
+          "model": "sm",
           "output_format": "stream-json",
           "permission_mode": "plan",
           "print_mode": true,
@@ -1143,7 +1143,7 @@
             "FOO": "bar"
           },
           "fork_session_id": null,
-          "model": "haiku",
+          "model": "sm",
           "output_format": "stream-json",
           "permission_mode": "plan",
           "print_mode": true,
@@ -1404,7 +1404,7 @@
           "effort": null,
           "env_vars": {},
           "fork_session_id": null,
-          "model": "haiku",
+          "model": "sm",
           "output_format": null,
           "permission_mode": "bypassPermissions",
           "print_mode": false,
@@ -1471,7 +1471,7 @@
           "effort": null,
           "env_vars": {},
           "fork_session_id": null,
-          "model": "haiku",
+          "model": "sm",
           "output_format": null,
           "permission_mode": "bypassPermissions",
           "print_mode": false,
@@ -2663,14 +2663,16 @@
           "workdir": "/repo",
           "worker_type": "codex"
         },
-        "shell_dash": "cd /repo && codex --dangerously-bypass-approvals-and-sandbox -C /repo -m gpt-5.2 --add-dir /extra resume s1 -- $'-rf danger'",
-        "shell_instr": "cd /repo && codex --dangerously-bypass-approvals-and-sandbox -C /repo -m gpt-5.2 --add-dir /extra resume s1 -- $'fix the bug'",
-        "shell_multi": "cd /repo && codex --dangerously-bypass-approvals-and-sandbox -C /repo -m gpt-5.2 --add-dir /extra resume s1 -- $'line one\\nline two'",
-        "shell_none": "cd /repo && codex --dangerously-bypass-approvals-and-sandbox -C /repo -m gpt-5.2 --add-dir /extra resume s1",
+        "shell_dash": "cd /repo && codex --dangerously-bypass-approvals-and-sandbox -c 'projects.\"/repo\".trust_level=\"trusted\"' -C /repo -m gpt-5.2 --add-dir /extra resume s1 -- $'-rf danger'",
+        "shell_instr": "cd /repo && codex --dangerously-bypass-approvals-and-sandbox -c 'projects.\"/repo\".trust_level=\"trusted\"' -C /repo -m gpt-5.2 --add-dir /extra resume s1 -- $'fix the bug'",
+        "shell_multi": "cd /repo && codex --dangerously-bypass-approvals-and-sandbox -c 'projects.\"/repo\".trust_level=\"trusted\"' -C /repo -m gpt-5.2 --add-dir /extra resume s1 -- $'line one\\nline two'",
+        "shell_none": "cd /repo && codex --dangerously-bypass-approvals-and-sandbox -c 'projects.\"/repo\".trust_level=\"trusted\"' -C /repo -m gpt-5.2 --add-dir /extra resume s1",
         "spawn_dash": {
           "argv": [
             "codex",
             "--dangerously-bypass-approvals-and-sandbox",
+            "-c",
+            "projects.\"/repo\".trust_level=\"trusted\"",
             "-C",
             "/repo",
             "-m",
@@ -2686,6 +2688,8 @@
           "argv": [
             "codex",
             "--dangerously-bypass-approvals-and-sandbox",
+            "-c",
+            "projects.\"/repo\".trust_level=\"trusted\"",
             "-C",
             "/repo",
             "-m",
@@ -2701,6 +2705,8 @@
           "argv": [
             "codex",
             "--dangerously-bypass-approvals-and-sandbox",
+            "-c",
+            "projects.\"/repo\".trust_level=\"trusted\"",
             "-C",
             "/repo",
             "-m",
@@ -2716,6 +2722,8 @@
           "argv": [
             "codex",
             "--dangerously-bypass-approvals-and-sandbox",
+            "-c",
+            "projects.\"/repo\".trust_level=\"trusted\"",
             "-C",
             "/repo",
             "-m",
@@ -2744,14 +2752,16 @@
           "workdir": "/repo",
           "worker_type": "codex"
         },
-        "shell_dash": "cd '/repo'; codex --dangerously-bypass-approvals-and-sandbox -C /repo -m gpt-5.2 --add-dir /extra resume s1 ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('LXJmIGRhbmdlcg==')))",
-        "shell_instr": "cd '/repo'; codex --dangerously-bypass-approvals-and-sandbox -C /repo -m gpt-5.2 --add-dir /extra resume s1 ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('Zml4IHRoZSBidWc=')))",
-        "shell_multi": "cd '/repo'; codex --dangerously-bypass-approvals-and-sandbox -C /repo -m gpt-5.2 --add-dir /extra resume s1 ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('bGluZSBvbmUKbGluZSB0d28=')))",
-        "shell_none": "cd '/repo'; codex --dangerously-bypass-approvals-and-sandbox -C /repo -m gpt-5.2 --add-dir /extra resume s1",
+        "shell_dash": "cd '/repo'; codex --dangerously-bypass-approvals-and-sandbox -c 'projects.\"/repo\".trust_level=\"trusted\"' -C /repo -m gpt-5.2 --add-dir /extra resume s1 ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('LXJmIGRhbmdlcg==')))",
+        "shell_instr": "cd '/repo'; codex --dangerously-bypass-approvals-and-sandbox -c 'projects.\"/repo\".trust_level=\"trusted\"' -C /repo -m gpt-5.2 --add-dir /extra resume s1 ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('Zml4IHRoZSBidWc=')))",
+        "shell_multi": "cd '/repo'; codex --dangerously-bypass-approvals-and-sandbox -c 'projects.\"/repo\".trust_level=\"trusted\"' -C /repo -m gpt-5.2 --add-dir /extra resume s1 ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('bGluZSBvbmUKbGluZSB0d28=')))",
+        "shell_none": "cd '/repo'; codex --dangerously-bypass-approvals-and-sandbox -c 'projects.\"/repo\".trust_level=\"trusted\"' -C /repo -m gpt-5.2 --add-dir /extra resume s1",
         "spawn_dash": {
           "argv": [
             "codex",
             "--dangerously-bypass-approvals-and-sandbox",
+            "-c",
+            "projects.\"/repo\".trust_level=\"trusted\"",
             "-C",
             "/repo",
             "-m",
@@ -2767,6 +2777,8 @@
           "argv": [
             "codex",
             "--dangerously-bypass-approvals-and-sandbox",
+            "-c",
+            "projects.\"/repo\".trust_level=\"trusted\"",
             "-C",
             "/repo",
             "-m",
@@ -2782,6 +2794,8 @@
           "argv": [
             "codex",
             "--dangerously-bypass-approvals-and-sandbox",
+            "-c",
+            "projects.\"/repo\".trust_level=\"trusted\"",
             "-C",
             "/repo",
             "-m",
@@ -2797,6 +2811,8 @@
           "argv": [
             "codex",
             "--dangerously-bypass-approvals-and-sandbox",
+            "-c",
+            "projects.\"/repo\".trust_level=\"trusted\"",
             "-C",
             "/repo",
             "-m",
@@ -2893,6 +2909,174 @@
         "spawn_none": {
           "argv": [
             "codex"
+          ],
+          "env": {}
+        }
+      }
+    },
+    "model_tier_sm": {
+      "linux": {
+        "json": {
+          "add_dirs": [],
+          "env_vars": {},
+          "ephemeral": true,
+          "json_stream": true,
+          "model": "sm",
+          "permission_mode": "bypassPermissions",
+          "resume": false,
+          "session_id": null,
+          "skill_names": [],
+          "workdir": null,
+          "worker_type": "codex"
+        },
+        "shell_dash": "cd . && codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --ephemeral --json -c model_reasoning_effort=low -m gpt-5.4-mini - -- $'-rf danger'",
+        "shell_instr": "cd . && codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --ephemeral --json -c model_reasoning_effort=low -m gpt-5.4-mini - -- $'fix the bug'",
+        "shell_multi": "cd . && codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --ephemeral --json -c model_reasoning_effort=low -m gpt-5.4-mini - -- $'line one\\nline two'",
+        "shell_none": "cd . && codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --ephemeral --json -c model_reasoning_effort=low -m gpt-5.4-mini -",
+        "spawn_dash": {
+          "argv": [
+            "codex",
+            "exec",
+            "--skip-git-repo-check",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "--ephemeral",
+            "--json",
+            "-c",
+            "model_reasoning_effort=low",
+            "-m",
+            "gpt-5.4-mini",
+            "-"
+          ],
+          "env": {}
+        },
+        "spawn_instr": {
+          "argv": [
+            "codex",
+            "exec",
+            "--skip-git-repo-check",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "--ephemeral",
+            "--json",
+            "-c",
+            "model_reasoning_effort=low",
+            "-m",
+            "gpt-5.4-mini",
+            "-"
+          ],
+          "env": {}
+        },
+        "spawn_multi": {
+          "argv": [
+            "codex",
+            "exec",
+            "--skip-git-repo-check",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "--ephemeral",
+            "--json",
+            "-c",
+            "model_reasoning_effort=low",
+            "-m",
+            "gpt-5.4-mini",
+            "-"
+          ],
+          "env": {}
+        },
+        "spawn_none": {
+          "argv": [
+            "codex",
+            "exec",
+            "--skip-git-repo-check",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "--ephemeral",
+            "--json",
+            "-c",
+            "model_reasoning_effort=low",
+            "-m",
+            "gpt-5.4-mini",
+            "-"
+          ],
+          "env": {}
+        }
+      },
+      "win32": {
+        "json": {
+          "add_dirs": [],
+          "env_vars": {},
+          "ephemeral": true,
+          "json_stream": true,
+          "model": "sm",
+          "permission_mode": "bypassPermissions",
+          "resume": false,
+          "session_id": null,
+          "skill_names": [],
+          "workdir": null,
+          "worker_type": "codex"
+        },
+        "shell_dash": "cd '.'; codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --ephemeral --json -c model_reasoning_effort=low -m gpt-5.4-mini - ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('LXJmIGRhbmdlcg==')))",
+        "shell_instr": "cd '.'; codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --ephemeral --json -c model_reasoning_effort=low -m gpt-5.4-mini - ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('Zml4IHRoZSBidWc=')))",
+        "shell_multi": "cd '.'; codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --ephemeral --json -c model_reasoning_effort=low -m gpt-5.4-mini - ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('bGluZSBvbmUKbGluZSB0d28=')))",
+        "shell_none": "cd '.'; codex exec --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox --ephemeral --json -c model_reasoning_effort=low -m gpt-5.4-mini -",
+        "spawn_dash": {
+          "argv": [
+            "codex",
+            "exec",
+            "--skip-git-repo-check",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "--ephemeral",
+            "--json",
+            "-c",
+            "model_reasoning_effort=low",
+            "-m",
+            "gpt-5.4-mini",
+            "-"
+          ],
+          "env": {}
+        },
+        "spawn_instr": {
+          "argv": [
+            "codex",
+            "exec",
+            "--skip-git-repo-check",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "--ephemeral",
+            "--json",
+            "-c",
+            "model_reasoning_effort=low",
+            "-m",
+            "gpt-5.4-mini",
+            "-"
+          ],
+          "env": {}
+        },
+        "spawn_multi": {
+          "argv": [
+            "codex",
+            "exec",
+            "--skip-git-repo-check",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "--ephemeral",
+            "--json",
+            "-c",
+            "model_reasoning_effort=low",
+            "-m",
+            "gpt-5.4-mini",
+            "-"
+          ],
+          "env": {}
+        },
+        "spawn_none": {
+          "argv": [
+            "codex",
+            "exec",
+            "--skip-git-repo-check",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "--ephemeral",
+            "--json",
+            "-c",
+            "model_reasoning_effort=low",
+            "-m",
+            "gpt-5.4-mini",
+            "-"
           ],
           "env": {}
         }
@@ -4157,6 +4341,166 @@
             "--model",
             "claude-haiku-4.5",
             "--resume=abc"
+          ],
+          "env": {}
+        }
+      }
+    },
+    "model_tier_lg": {
+      "linux": {
+        "json": {
+          "add_dirs": [],
+          "allow_all": true,
+          "effort": null,
+          "env_vars": {},
+          "json_stream": true,
+          "model": "lg",
+          "no_ask_user": true,
+          "no_auto_update": true,
+          "no_custom_instructions": true,
+          "permission_mode": "bypassPermissions",
+          "resume": false,
+          "session_id": null,
+          "skill_names": [],
+          "workdir": null,
+          "worker_type": "copilot"
+        },
+        "shell_dash": "cd . && copilot --output-format=json --stream=on --no-ask-user --no-auto-update --no-custom-instructions --allow-all --model gpt-5.5 -- $'-rf danger'",
+        "shell_instr": "cd . && copilot --output-format=json --stream=on --no-ask-user --no-auto-update --no-custom-instructions --allow-all --model gpt-5.5 -- $'fix the bug'",
+        "shell_multi": "cd . && copilot --output-format=json --stream=on --no-ask-user --no-auto-update --no-custom-instructions --allow-all --model gpt-5.5 -- $'line one\\nline two'",
+        "shell_none": "cd . && copilot --output-format=json --stream=on --no-ask-user --no-auto-update --no-custom-instructions --allow-all --model gpt-5.5",
+        "spawn_dash": {
+          "argv": [
+            "copilot",
+            "--output-format=json",
+            "--stream=on",
+            "--no-ask-user",
+            "--no-auto-update",
+            "--no-custom-instructions",
+            "--allow-all",
+            "--model",
+            "gpt-5.5"
+          ],
+          "env": {}
+        },
+        "spawn_instr": {
+          "argv": [
+            "copilot",
+            "--output-format=json",
+            "--stream=on",
+            "--no-ask-user",
+            "--no-auto-update",
+            "--no-custom-instructions",
+            "--allow-all",
+            "--model",
+            "gpt-5.5"
+          ],
+          "env": {}
+        },
+        "spawn_multi": {
+          "argv": [
+            "copilot",
+            "--output-format=json",
+            "--stream=on",
+            "--no-ask-user",
+            "--no-auto-update",
+            "--no-custom-instructions",
+            "--allow-all",
+            "--model",
+            "gpt-5.5"
+          ],
+          "env": {}
+        },
+        "spawn_none": {
+          "argv": [
+            "copilot",
+            "--output-format=json",
+            "--stream=on",
+            "--no-ask-user",
+            "--no-auto-update",
+            "--no-custom-instructions",
+            "--allow-all",
+            "--model",
+            "gpt-5.5"
+          ],
+          "env": {}
+        }
+      },
+      "win32": {
+        "json": {
+          "add_dirs": [],
+          "allow_all": true,
+          "effort": null,
+          "env_vars": {},
+          "json_stream": true,
+          "model": "lg",
+          "no_ask_user": true,
+          "no_auto_update": true,
+          "no_custom_instructions": true,
+          "permission_mode": "bypassPermissions",
+          "resume": false,
+          "session_id": null,
+          "skill_names": [],
+          "workdir": null,
+          "worker_type": "copilot"
+        },
+        "shell_dash": "cd '.'; copilot --output-format=json --stream=on --no-ask-user --no-auto-update --no-custom-instructions --allow-all --model gpt-5.5 ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('LXJmIGRhbmdlcg==')))",
+        "shell_instr": "cd '.'; copilot --output-format=json --stream=on --no-ask-user --no-auto-update --no-custom-instructions --allow-all --model gpt-5.5 ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('Zml4IHRoZSBidWc=')))",
+        "shell_multi": "cd '.'; copilot --output-format=json --stream=on --no-ask-user --no-auto-update --no-custom-instructions --allow-all --model gpt-5.5 ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('bGluZSBvbmUKbGluZSB0d28=')))",
+        "shell_none": "cd '.'; copilot --output-format=json --stream=on --no-ask-user --no-auto-update --no-custom-instructions --allow-all --model gpt-5.5",
+        "spawn_dash": {
+          "argv": [
+            "copilot",
+            "--output-format=json",
+            "--stream=on",
+            "--no-ask-user",
+            "--no-auto-update",
+            "--no-custom-instructions",
+            "--allow-all",
+            "--model",
+            "gpt-5.5"
+          ],
+          "env": {}
+        },
+        "spawn_instr": {
+          "argv": [
+            "copilot",
+            "--output-format=json",
+            "--stream=on",
+            "--no-ask-user",
+            "--no-auto-update",
+            "--no-custom-instructions",
+            "--allow-all",
+            "--model",
+            "gpt-5.5"
+          ],
+          "env": {}
+        },
+        "spawn_multi": {
+          "argv": [
+            "copilot",
+            "--output-format=json",
+            "--stream=on",
+            "--no-ask-user",
+            "--no-auto-update",
+            "--no-custom-instructions",
+            "--allow-all",
+            "--model",
+            "gpt-5.5"
+          ],
+          "env": {}
+        },
+        "spawn_none": {
+          "argv": [
+            "copilot",
+            "--output-format=json",
+            "--stream=on",
+            "--no-ask-user",
+            "--no-auto-update",
+            "--no-custom-instructions",
+            "--allow-all",
+            "--model",
+            "gpt-5.5"
           ],
           "env": {}
         }

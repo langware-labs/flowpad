@@ -12,6 +12,9 @@ interface DisplayToolbarProps {
   perType?: ReactNode;
   /** Generic annotate action for the active display content area. */
   onAnnotate?: (target: HTMLElement) => void;
+  /** Right-aligned control rendered NEXT TO the open-in-window icon — the
+   *  display-history popover. */
+  historySlot?: ReactNode;
   /** The viewer being displayed — fills the area below the strip. */
   children: ReactNode;
 }
@@ -22,7 +25,7 @@ interface DisplayToolbarProps {
  * the resolved `externalUrl` and the caller-supplied `perType` node; the
  * kind→{externalUrl, perType} mapping lives in `display-descriptors`.
  */
-export function DisplayToolbar({ externalUrl, onOpenInTab, perType, onAnnotate, children }: DisplayToolbarProps) {
+export function DisplayToolbar({ externalUrl, onOpenInTab, perType, onAnnotate, historySlot, children }: DisplayToolbarProps) {
   const contentRef = useRef<HTMLDivElement>(null);
 
   return (
@@ -33,6 +36,7 @@ export function DisplayToolbar({ externalUrl, onOpenInTab, perType, onAnnotate, 
           externalUrl={externalUrl}
           onOpenInTab={onOpenInTab}
           onAnnotate={onAnnotate ? () => contentRef.current && onAnnotate(contentRef.current) : undefined}
+          historySlot={historySlot}
         />
       </div>
       <div ref={contentRef} className="relative min-h-0 flex-1">{children}</div>

@@ -58,6 +58,17 @@ def test_spawn_args_support_session_id_resume_model_effort_and_add_dirs():
     assert env == {"FOO": "bar"}
 
 
+def test_model_tier_persists_raw_and_emits_resolved_model():
+    cmd = CopilotCliOptions(model="lg", workdir="/repo")
+
+    assert cmd.model == "lg"
+    assert cmd.to_json()["model"] == "lg"
+
+    argv, _env = cmd.to_spawn_args()
+    assert argv[argv.index("--model") + 1] == "gpt-5.5"
+    assert "--model gpt-5.5" in cmd.to_shell_string()
+
+
 def test_fresh_session_id_uses_session_id_flag_not_resume():
     argv, _ = CopilotCliOptions(session_id="new-session").to_spawn_args()
 

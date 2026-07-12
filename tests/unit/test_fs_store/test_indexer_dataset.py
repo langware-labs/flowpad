@@ -223,12 +223,12 @@ def test_gen_id_adopts_valid_manifest_id(tmp_path: Path) -> None:
     assert dataset_gen_id(FSRef(ds)) == valid
 
 
-def test_gen_id_derives_stable_uuid5_when_absent(tmp_path: Path) -> None:
+def test_gen_id_mints_v4_capsule_when_absent(tmp_path: Path) -> None:
     ds = _seed_csv_dataset(tmp_path, "derive", manifest={"data_layout": "csv"}, csv_text="input\nx\n")
     first = dataset_gen_id(FSRef(ds))
     second = dataset_gen_id(FSRef(ds))
-    assert first == second  # idempotent
-    assert uuid.UUID(first).version == 5
+    assert first == second  # idempotent (adopted from the .flow/id capsule)
+    assert uuid.UUID(first).version == 4  # capsule-v4: a fresh random id, not uuid5(path)
 
 
 def test_gen_id_ignores_foreign_id_version(tmp_path: Path) -> None:
@@ -239,7 +239,7 @@ def test_gen_id_ignores_foreign_id_version(tmp_path: Path) -> None:
     )
     minted = dataset_gen_id(FSRef(ds))
     assert minted != v7
-    assert uuid.UUID(minted).version == 5
+    assert uuid.UUID(minted).version == 4  # foreign id rejected → fresh v4 into the capsule
 
 
 # ── example id determinism ────────────────────────────────────────────────────

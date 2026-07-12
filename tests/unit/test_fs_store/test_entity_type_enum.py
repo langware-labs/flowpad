@@ -55,7 +55,7 @@ EXPECTED = {
     "DOC_DB": "doc_db", "RECORD_ERROR": "record_error", "TEXT_FILE": "text_file",
     "WORKFLOW": "workflow", "MARKDOWN": "markdown", "MARKDOWN_INDEX": "markdown_index",
     "SPEC": "spec", "PROMPT": "prompt", "CONVERSATION": "conversation", "WHITEBOARD": "whiteboard",
-    "DATASET": "dataset",
+    "DATASET": "dataset", "SECRET_ORIGIN": "secret_origin",
     "COLLABORATION_ROOM": "collaboration_room", "USER_HOME_FOLDER": "user_home_folder",
     "REAL_PROJECT_CWD": "real_project_cwd", "SYSTEM_ROOT": "system_root",
     "CWD_ROOT": "cwd_root", "FOLDER": "folder", "USER": "user", "VISITOR": "visitor",
@@ -67,7 +67,10 @@ EXPECTED = {
     "MICRO_APP": "micro_app", "WEB_DOMAIN": "web_domain", "JOB": "job", "SYSTEM_JOB": "system_job",
     "JOB_EXECUTION": "job_execution", "API_KEY": "api_key", "CODE_REF": "code_ref",
     "AGENT_HOOK": "agent_hook", "TRIGGER": "trigger", "PROCESS_RESULT": "process_result",
-    "CRON_EVENT": "cron_event", "FLOW_MESSAGE": "flow_message", "TEAM_SPACE": "team_space",
+    "CRON_EVENT": "cron_event", "FLOW_MESSAGE": "flow_message",
+    # Staged bundle attachment awaiting explicit install (DB-only entity).
+    "MESSAGE_ATTACHMENT": "message_attachment",
+    "TEAM_SPACE": "team_space",
     "NOTIFICATION": "notification", "RUN": "run",
     "PROMPT_RESULT": "prompt_result", "REMOTE_WORKER_SESSION": "remote_worker_session",
     # SemanticLock file targets (5a19f9e6) — additive member; the commit that
@@ -85,6 +88,9 @@ EXPECTED = {
     # Usage-report feature (16b7936e) — additive member; brand-new type, no
     # existing value changed, so no migration. Existing values stay frozen.
     "USAGE_REPORT": "usage_report",
+    # Asset-cleanup feature — additive member; brand-new type, no existing
+    # value changed, so no migration.
+    "ASSET_CLEANUP_REPORT": "asset_cleanup_report",
     # Additive members; brand-new types, no existing value changed, so no
     # migration. DYNAMIC_WORKFLOW's adding commit missed this freeze; WORKFLOW_RUN
     # is the workflow-run-as-transcript feature.

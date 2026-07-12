@@ -20,8 +20,8 @@ import { homedir } from 'os';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { renderHook, waitFor } from '@testing-library/react';
 import React from 'react';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { TypeId, fsManager } from '@sdk';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { TypeId, fsManager, systemTools } from '@sdk';
 import { FSRef } from '@sdk/fs/FSRef';
 import { __seedDiscoverMissForTests, useEntityByPath } from '@src/hooks/use-entity-by-path';
 import { apiTestSetup, getTestSignupInfo } from '../../../utils/test-utils';
@@ -84,5 +84,71 @@ describe('useEntityByPath — discover re-runs on open (md open ⇒ doc created 
     expect(entity?.asset_ref).toContain('OPEN-DISCOVER.md');
     createdEntity = entity;
     opened.unmount();
+  }, 25000);
+});
+
+describe('useEntityByPath — stage-1 exact path lookup (no corpus list, no discover)', () => {
+  const signupInfo = getTestSignupInfo();
+  const basePath = `${homedir()}/flow-test-md-exact-${Date.now()}`;
+  const filePath = `${basePath}/EXACT-RESOLVE.md`;
+  let createdEntity: { delete?: () => Promise<boolean> } | null = null;
+
+  beforeAll(async () => {
+    await apiTestSetup(signupInfo, 'useEntityByPath-exact-lookup');
+    // Materialize + index the real record once (real discover round-trip), so
+    // the hook mounts against an already-indexed doc — the everyday doc-open
+    // case that must resolve via the exact `/assets/entity` lookup alone.
+    await fsManager.writeFile(
+      COMPUTE_NODE_TYPEID,
+      filePath,
+      '# Exact-resolve doc\n\nBody.\n',
+    );
+    const row = await systemTools.discoverByPath('markdown', filePath);
+    expect(row?.asset_ref).toContain('EXACT-RESOLVE.md');
+  }, 30000);
+
+  afterAll(async () => {
+    try {
+      await createdEntity?.delete?.();
+    } catch {
+      // best-effort
+    }
+    try {
+      await fsManager.delete(COMPUTE_NODE_TYPEID, basePath);
+    } catch {
+      // dir may not exist — ignore
+    }
+  });
+
+  // Both slash forms: stored asset_ref is the absolute leading-slash form,
+  // but call sites pass fsRef.path with AND without the leading slash
+  // (AssetEditorRouter strips it). The hook must normalize — this locks it.
+  it.each([
+    ['leading slash', () => filePath],
+    ['stripped slash', () => filePath.slice(1)],
+  ])('resolves an indexed doc via stage-1 only (%s form)', async (_label, pathOf) => {
+    const queryClient = new QueryClient();
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    );
+    const discoverSpy = vi.spyOn(systemTools, 'discoverByPath');
+    try {
+      const fsRef = new FSRef(pathOf(), COMPUTE_NODE_TYPEID);
+      const opened = renderHook(() => useEntityByPath('markdown', fsRef), { wrapper });
+      await waitFor(() => expect(opened.result.current.state).toBe('resolved'), {
+        timeout: 10000,
+      });
+      const entity = opened.result.current.entity as {
+        asset_ref?: string;
+        delete?: () => Promise<boolean>;
+      } | null;
+      expect(entity?.asset_ref).toContain('EXACT-RESOLVE.md');
+      // Stage-1 must be sufficient — the heavy discover recovery stays cold.
+      expect(discoverSpy).not.toHaveBeenCalled();
+      createdEntity = entity;
+      opened.unmount();
+    } finally {
+      discoverSpy.mockRestore();
+    }
   }, 25000);
 });

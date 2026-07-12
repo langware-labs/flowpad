@@ -1,7 +1,7 @@
 import { FSItem, TypeId, VFSPath, fsStore } from '@sdk';
 import { File, Folder } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { DockPointer } from '@src/navigation/DockPointer';
+import { DockPointer, normalizeRel } from '@src/navigation/DockPointer';
 import { ViewType } from '@src/types/ViewType';
 import type { ScopeFilter } from '@src/lib/scope-filter';
 import type { Browseable, BrowseableRoot } from '@src/components/browseable-tree/types';
@@ -32,10 +32,9 @@ export interface FsFolderRootDeps {
   projectRootPath?: string | null;
 }
 
-export function normalizeRel(path: string | null | undefined): string {
-  if (!path) return '';
-  return path.replace(/\\/g, '/').replace(/\/+/g, '/').replace(/^\/+/, '').replace(/\/+$/, '');
-}
+// Re-exported so browse-side consumers keep one canonical rel-path form; the
+// definition lives with the `fs/` pointer grammar (DockPointer).
+export { normalizeRel };
 
 function toFsPath(rel: string): string {
   const r = normalizeRel(rel);

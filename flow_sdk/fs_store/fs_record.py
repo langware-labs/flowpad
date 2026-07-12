@@ -307,6 +307,35 @@ class FSRecord(Generic[M]):
         """Write a single metadata field (partial-merge convenience)."""
         return self.save_metadata({key: val})
 
+    def remove_metadata_keys(self, *keys: str) -> Path | None:
+        """Delete keys from metadata.json (the merge-writer can't remove).
+
+        ``save_metadata`` partial-merges — an obsolete key (e.g. a stored
+        field promoted to a computed one) would otherwise live on disk
+        forever and re-hydrate on every adopt. Returns the metadata path, or
+        None when there is no metadata file / nothing to remove.
+        """
+        meta_path = self.shadow_dir / _METADATA_JSON
+        if not meta_path.exists():
+            return None
+        try:
+            merged = json.loads(meta_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+        removed = False
+        for k in keys:
+            if k in merged:
+                merged.pop(k)
+                self.__dict__.pop(k, None)  # keep the in-memory view consistent
+                removed = True
+        if not removed:
+            return None
+        meta_path.write_text(
+            json.dumps(merged, indent=2, ensure_ascii=False, default=str),
+            encoding="utf-8",
+        )
+        return meta_path
+
     @classmethod
     def load(cls, type: str, id: str) -> "FSRecord":
         """Load by identity. Reads <records_root>/<type>/<type>-@<id>/metadata.json"""
@@ -642,6 +671,16 @@ class FSRecord(Generic[M]):
         # otherwise short-circuit the first-create write.
         path = info.body_path_for(ar._path) if info else ar._path
         owns = bool(info and info.owns_main_ref)
+        # Folder-backed entities carry their id in a `.flow/id` capsule inside the
+        # folder — the portable, move-safe identity home (and the only place a
+        # main-doc-less folder can store its id). Written for EVERY folder-backed
+        # type, BEFORE the body-None early-return below, so a folder with no main
+        # doc still gets a capsule on create.
+        if info and info.folder_backed and getattr(entity, "id", None):
+            from flow_sdk.fs_store.indexer.functions._folder_capsule import (  # noqa: PLC0415
+                write_folder_capsule_id,
+            )
+            write_folder_capsule_id(ar._path, str(entity.id))
         if path.exists() and not owns:
             return
         body = self.default_body(entity)

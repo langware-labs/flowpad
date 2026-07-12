@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from typing import Any, List, Optional
 
 from fastapi import HTTPException
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, computed_field, model_validator
 from pydantic.alias_generators import to_camel
 
 from flow_sdk._compat import StrEnum  # 3.10-safe StrEnum (project pins py3.10)
@@ -26,6 +26,8 @@ from flow_sdk.request_context.methods import (
     get_current_request_info,
 )
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
+
+log = logging.getLogger(__name__)
 
 
 def _now_iso() -> str:
@@ -91,19 +93,26 @@ class Project(Entity):
         persist=Persist.TRUE,
         description="Support-center configuration; set on the canonical community project.",
     )
+    last_mode: str | None = APIField(
+        default=None,
+        description="Last UI view mode used in this project (vibe|standard|advanced|dev). "
+                    "Applied on project load so the mode is remembered per project.",
+    )
     fs_storage_provider: StorageProvider | None = StorageProvider.SANDBOX
     fs_storage_mount_path: str | None = APIField(
         default=None, description="Full path to the project folder"
     )
-    # Project "context folders": extra directories that are auto-added to every
-    # agentic worker's ``--add-dir`` set and browseable in the Explorer as their
-    # own root. persist=TRUE (the ``community`` pattern) so the list round-trips
-    # FS<->DB without needing an entry in ``ProjectMeta``. Entries are canonical
-    # posix paths.
-    include_dirs: list[str] = APIField(
+    # Legacy stash for the removed stored ``include_dirs`` field. Context
+    # folders are now Folder entities linked via the base-Entity context
+    # buckets (see the computed ``include_dirs`` property); any raw
+    # ``include_dirs`` key still arriving from old DB rows / metadata.json is
+    # captured here by ``_stash_legacy_include_dirs`` and converted into
+    # folder links at the next write (``_migrate_legacy_context_dirs``).
+    # persist=FALSE: the stash itself must never be re-persisted.
+    legacy_include_dirs_: list[str] = APIField(
         default_factory=list,
-        persist=Persist.TRUE,
-        description="Project context folders; auto-added to every agentic worker's --add-dir set.",
+        persist=Persist.FALSE,
+        description="Legacy include_dirs values pending migration into Folder context links.",
     )
     # ── Collaboration overlay (merged from the former CollaborationSpace entity) ──
     session_code: str | None = APIField(
@@ -117,6 +126,27 @@ class Project(Entity):
     members: list[dict] = APIField(
         default_factory=list,
         description="Collaboration participants: [{member_id, name, joined_at, last_seen_at}]",
+    )
+    # ── Hub collaboration (Project as a shared unit — mirrors Conversation) ──
+    # The project's own (uuid4) id IS the shared hub identity: on share the hub
+    # row and the recipient's local mirror both live under it (no separate cloud
+    # id). This works because project ids are opaque uuid4, not path-derived.
+    # Hub-authoritative role roster: [{user_id, email, name, role}] with roles
+    # owner/admin/member/reader. Distinct from the local presence ``members``
+    # overlay (session-code join, no roles). Written by the reflected ``members``
+    # action / ``_upsert_hub_project_metadata``; read by the Members UI.
+    participants: list[dict] = APIField(
+        default_factory=list,
+        description="Hub role roster: [{user_id, email, name, role}]. Distinct from presence ``members``.",
+    )
+    shared_secret_origins: dict[str, dict[str, Any]] = APIField(
+        default_factory=dict,
+        description="Hub-side value-free secret pointer metadata keyed by SecretOrigin typeid.",
+    )
+    shared_context_origins: dict[str, dict[str, Any]] = APIField(
+        default_factory=dict,
+        persist=Persist.FALSE,
+        description="Hub-side transportable context-folder origins keyed by Folder typeid.",
     )
     # ── Indexer-denormalized fields (project consolidation, Path A 2026-05-09) ──
     # Written by the indexer at adopt time via ``Project.from_record`` so the
@@ -135,9 +165,92 @@ class Project(Entity):
                     "denormalized from the matching ProjectFsRecord. Null if no sessions yet.",
     )
 
+    @model_validator(mode="before")
+    @classmethod
+    def _stash_legacy_include_dirs(cls, data):
+        """Capture a raw ``include_dirs`` key into the legacy stash.
+
+        ``include_dirs`` is a computed field now; pydantic would silently drop
+        the raw key on hydration (old DB rows, old metadata.json, or a
+        ``Project(**model_dump())`` round-trip feeding the computed output
+        back in). Stashing keeps the values visible through the computed
+        merge until ``_migrate_legacy_context_dirs`` converts them into
+        Folder context links. Idempotent: post-migration round-trips re-stash
+        already-covered paths, which the migration then no-ops on.
+        """
+        if isinstance(data, dict) and "include_dirs" in data:
+            raw = data.pop("include_dirs")
+            if isinstance(raw, list):
+                merged = list(data.get("legacy_include_dirs_") or [])
+                merged.extend(d for d in raw if isinstance(d, str) and d)
+                data["legacy_include_dirs_"] = list(dict.fromkeys(merged))
+        return data
+
+    @computed_field
+    @property
+    def include_dirs(self) -> list[str]:
+        """Project context folders, derived from Folder context links.
+
+        Walks both context buckets (private links never leave this machine;
+        shared links travel with the project) and reads each folder's
+        canonical path from the per-entry sidecar stamped at link time —
+        strictly sync/in-memory, because the agentic-process spawn path reads
+        this via ``getattr`` (see ``resolved_add_dirs``). Entries without a
+        locally-resolvable sidecar path (e.g. a shared link received from a
+        peer) are skipped. Legacy stashed values are merged until migrated.
+        """
+        out: list[str] = []
+        seen: set[str] = set()
+        for tid in self.context_of_type("folder", bucket="both"):
+            entry = self.get_context_entry_data(tid) or {}
+            p = entry.get("path")
+            if isinstance(p, str) and p and p not in seen:
+                seen.add(p)
+                out.append(p)
+        for p in self.legacy_include_dirs_ or []:
+            if p and p not in seen:
+                seen.add(p)
+                out.append(p)
+        return out
+
+    @computed_field
+    @property
+    def secret_origins(self) -> list[dict[str, Any]]:
+        """Project secret pointer summaries, derived from SecretOrigin links.
+
+        This read surface is intentionally value-free. It is sync-only because
+        workers and the UI read it from serialized project state.
+        """
+        out: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for scope, bucket in (("shared", "shared"), ("private", "private")):
+            for tid in self.context_of_type("secret_origin", bucket=bucket):
+                key = str(tid)
+                if key in seen:
+                    continue
+                seen.add(key)
+                entry = dict(self.get_context_entry_data(tid) or {})
+                locator = entry.get("locator") if isinstance(entry.get("locator"), dict) else {}
+                out.append({
+                    "typeid": key,
+                    "name": entry.get("name") or "",
+                    "env_var": entry.get("env_var") or "",
+                    "kind": entry.get("kind") or locator.get("kind") or "",
+                    "locator": locator,
+                    "scope": entry.get("scope") or scope,
+                })
+        return out
+
     @model_validator(mode="after")
     def set_fs_storage_mount_path(self):
         """Set the storage mount path based on project name and create the folder if needed."""
+        # A remote mirror (a project shared TO this instance) has no local
+        # working directory — it lives under the sharer's cwd on their machine,
+        # not ours. Never derive a mount path from its display name or mkdir a
+        # folder for it; that would materialize a bogus directory named after the
+        # project on every recipient. Only canonicalize an explicit path below.
+        if self.remote and not self.fs_storage_mount_path:
+            return self
         if self.name and not self.fs_storage_mount_path:
             if os.path.isabs(self.name):
                 # Name is an absolute path - use it directly as mount path
@@ -208,33 +321,32 @@ class Project(Entity):
 
     @classmethod
     def allocate_id(cls, data: dict) -> str:
-        """Return a stable id for this Project.
+        """Return an opaque uuid4 entity id for this Project.
 
-        The canonical ``fs_storage_mount_path`` is the natural key, so the
-        path-derived uuid5 wins when a path is supplied. Clients that pre-mint
-        an optimistic uuid4 still resolve to the same row, and legacy Project
-        records that only have ``cwd`` repair to the path-derived id.
+        Project entity ids are random uuid4, like every other entity — so a
+        project can be shared under its own id (the Conversation model). The
+        canonical ``fs_storage_mount_path`` is still the natural key, but dedup
+        is the job of ``find_by_cwd`` (a lookup), NOT of a path-derived id.
+        ``derive_id_for_path`` lives on only as a record-match *alias* (records
+        stamped with it still resolve via ``record_projects``); it must never
+        become the entity id again.
 
         Order of precedence:
-          1. uuid5 over canonical path when ``fs_storage_mount_path`` or
-             record ``cwd`` is supplied.
-          2. ``data['id']`` if it's a valid uuid (no path supplied).
-          3. Random uuid4 fallback.
+          1. ``data['id']`` if it's a valid entity id (v4/v5 — a caller/materialize
+             pre-mint, or an existing v5 project being reconstructed pre-migration).
+          2. Random uuid4.
+
+        Uses ``is_valid_entity_id`` (the v4/v5 mint/adopt gate), NOT ``is_valid_uuid``:
+        a foreign non-v4/v5 id (e.g. a client-supplied v7) must not be adopted as an
+        entity id. Deliberately keeps this override rather than inheriting the base —
+        the base derives ``uuid5(type:id)`` from a non-uuid slug, which would
+        reintroduce a v5 project id.
         """
         import uuid
 
-        from flow_sdk.fs_store.identifier import is_valid_uuid
-        mount_path = data.get("fs_storage_mount_path") or data.get("cwd") or data.get("real_path")
-        if not mount_path:
-            name = data.get("name", "")
-            if name and os.path.isabs(name):
-                mount_path = name
-        if mount_path:
-            derived = cls.derive_id_for_path(mount_path)
-            if derived:
-                return derived
+        from flow_sdk.fs_store.identifier import is_valid_entity_id
         rid = data.get("id") or ""
-        if rid and is_valid_uuid(rid):
+        if rid and is_valid_entity_id(rid):
             return rid
         return str(uuid.uuid4())
 
@@ -267,9 +379,10 @@ class Project(Entity):
 
         Phase 1 — exact-match an existing Project by canonical mount_path
                   (delegates to ``find_by_cwd``).
-        Phase 2 — construct a fresh Project from the path with a deterministic
-                  uuid5 id (``derive_id_for_path``) so any indexer-stamped
-                  ``project_id`` references on records resolve to the same row.
+        Phase 2 — construct a fresh Project with an opaque uuid4 id. Records
+                  stamped with the path-derived alias still resolve via
+                  ``record_projects`` (injected by ``resolve_project_scope``), so
+                  the entity id need not equal the alias.
 
         Returns ``None`` only when ``path`` is empty/falsy.
         """
@@ -283,12 +396,11 @@ class Project(Entity):
         if existing is not None:
             return existing
 
-        # Phase 2: construct a fresh Project. Identity is derived from the
-        # canonical path so it matches what the indexer would have stamped
-        # on records via ``derive_id_for_path``.
-        derived_id = cls.derive_id_for_path(canonical)
+        # Phase 2: construct a fresh Project with an opaque uuid4 id. Records
+        # stamped with the path-derived alias still resolve via ``record_projects``
+        # (``derive_id_for_path`` is injected server-side by resolve_project_scope),
+        # so the entity id no longer needs to equal the alias.
         proj = cls.model_validate({
-            "id": derived_id,
             "fs_storage_mount_path": canonical,
             "name": os.path.basename(canonical.rstrip(os.sep)) or canonical,
         })
@@ -336,7 +448,24 @@ class Project(Entity):
             for k, v in data.items():
                 if k in ("id", "type"):
                     continue
-                if hasattr(existing, k):
+                # Legacy stored include_dirs (now a computed field): route into
+                # the migration stash instead of a doomed setattr.
+                if k == "include_dirs":
+                    if isinstance(v, list):
+                        stash = list(existing.legacy_include_dirs_ or [])
+                        stash.extend(d for d in v if isinstance(d, str) and d)
+                        existing.legacy_include_dirs_ = list(dict.fromkeys(stash))
+                    continue
+                field = cls.model_fields.get(k)
+                if field is not None:
+                    # Declared fields validate through their annotation —
+                    # metadata.json carries e.g. TypeId lists as plain strings
+                    # (json default=str) and must coerce back on adopt.
+                    try:
+                        setattr(existing, k, TypeAdapter(field.annotation).validate_python(v))
+                    except Exception:
+                        pass
+                elif hasattr(existing, k):
                     try:
                         setattr(existing, k, v)
                     except Exception:
@@ -351,16 +480,12 @@ class Project(Entity):
             await existing.save(notify=notify)
             return existing
 
-        # Net-new project: id is derived from the canonical mount path so it
-        # matches whatever the indexer already stamped on records (via
-        # ``derive_id_for_path``). Falls back to opaque uuid4 only when no
-        # path is available.
+        # Net-new project: opaque uuid4 entity id (via ``allocate_id``). Records
+        # stamped with ``derive_id_for_path(cwd)`` still resolve via the record
+        # alias, so the entity id no longer needs to equal that derived value.
         create_kwargs = {k: v for k, v in data.items() if k != "id"}
         if canonical_mp:
             create_kwargs["fs_storage_mount_path"] = canonical_mp
-            derived_id = cls.derive_id_for_path(canonical_mp)
-            if derived_id:
-                create_kwargs["id"] = derived_id
         # Drop record-only fields the Project entity doesn't carry — provenance
         # flags stay on ProjectFsRecord (backend only). Only denormalized
         # activity hints surface on the entity.
@@ -371,6 +496,148 @@ class Project(Entity):
         proj.id = cls.allocate_id(create_kwargs)
         await proj.save(notify=notify)
         return proj
+
+    def _hub_body(self) -> dict:
+        """Hub POST body for a shared project.
+
+        The project's own (uuid4) id is the shared identity — the base body
+        already emits ``id = self.id`` (same-id invariant), so no id swap. This
+        override only (1) maps the local ``name`` to the hub's ``title`` field
+        and (2) strips local-only project fields the hub doesn't host (the
+        working-dir path, the presence overlay, indexer hints).
+        """
+        body = super()._hub_body()
+        # Hub Project uses ``title``; local Project uses ``name``.
+        if self.name:
+            body["title"] = self.name
+        for local_only in (
+            "name",
+            "fs_storage_mount_path",
+            "fs_storage_provider",
+            "last_mode",
+            "session_code",
+            "host_member_id",
+            "members",
+            "include_dirs",
+            "secret_origins",
+            "shared_secret_origins",
+            "shared_context_origins",
+            "session_count",
+            "last_session_at",
+        ):
+            body.pop(local_only, None)
+        return body
+
+    async def _shared_context_origin_payload(self) -> dict[str, dict[str, Any]]:
+        """Build the wire-safe origin map for shared context Folder refs."""
+        payload: dict[str, dict[str, Any]] = {}
+        from flow_sdk.builtin.folder import Folder  # noqa: PLC0415
+
+        for tid in self.context_of_type("folder", bucket="shared"):
+            folder = await Folder.get_by_id(tid.id)
+            origin = folder.origin if folder is not None else None
+            if origin is None or not origin.transportable:
+                continue
+            payload[str(tid)] = origin.model_dump(mode="json")
+        return payload
+
+    async def _shared_secret_origin_payload(self) -> dict[str, dict[str, Any]]:
+        """Build the value-free hub payload for shared secret pointers."""
+        payload: dict[str, dict[str, Any]] = {}
+        from flow_sdk.builtin.secret_origin import SecretOrigin  # noqa: PLC0415
+
+        for tid in self.context_of_type("secret_origin", bucket="shared"):
+            entry = dict(self.get_context_entry_data(tid) or {})
+            locator = entry.get("locator") if isinstance(entry.get("locator"), dict) else None
+            name = entry.get("name") or ""
+            env_var = entry.get("env_var") or ""
+            if not locator or not name or not env_var:
+                secret = await SecretOrigin.get_by_id(tid.id)
+                if secret is None:
+                    continue
+                locator = secret.locator.model_dump(mode="json")
+                name = secret.name or ""
+                env_var = secret.env_var
+            if (locator or {}).get("kind") == "local":
+                continue
+            payload[str(tid)] = {
+                "name": name,
+                "env_var": env_var,
+                "kind": (locator or {}).get("kind"),
+                "locator": locator,
+            }
+        return payload
+
+    async def share(self, recipients: Optional[List[str]] = None) -> "Project":
+        """Publish this project to the hub as a shared unit + invite recipients.
+
+        Mirrors ``Conversation.share``: the project's own (uuid4) id is the shared
+        identity, so ``super().share()`` publishes the hub row under ``self.id`` —
+        no separate cloud id. Persisting ``remote=True`` on the local row is the
+        caller's responsibility (``share_action.share_entity``).
+
+        Without ``recipients``: just the hub create. The hub stamps the creator
+        as ``owner`` on create (``save(owner=...)`` → literal 'owner' role edge;
+        ``project`` relies on the hub's default ``owner:["*"]`` policy chain), so
+        no explicit join is needed — the roster derives from role edges.
+        With ``recipients`` (emails): one ``MembershipRequest`` per recipient
+        targets ``project-<id>`` with role ``member`` via
+        ``POST /graph/project/<id>/members`` — the recipient discovers it via
+        ``GET /graph/invitation/pending`` and accepts via the standard flow
+        (``flow_message_action.handle_invitation_accept`` →
+        ``_membership_cls('project')`` → local ``remote=True`` Project mirror).
+        """
+        from flow_sdk.builtin.user import normalize_email  # noqa: PLC0415
+        from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
+        from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient  # noqa: PLC0415
+        from flow_sdk.core.entity.parent_share import parent_share_typeid  # noqa: PLC0415
+        from flow_sdk.core.urls.service_urls import build_hub_url  # noqa: PLC0415
+
+        creds = load_credentials()
+        if not creds or not creds.api_key:
+            raise RuntimeError("Cloud login required")
+
+        parent_tid = parent_share_typeid(self)
+        if parent_tid is not None:
+            self.add_shared_context_entities(parent_tid)
+        body = self._hub_body()
+        shared_context_origins = await self._shared_context_origin_payload()
+        invalid_shared_folders = [
+            str(tid)
+            for tid in self.context_of_type("folder", bucket="shared")
+            if str(tid) not in shared_context_origins
+        ]
+        if invalid_shared_folders:
+            raise RuntimeError(
+                "Shared context folders must have transportable origins before sharing: "
+                + ", ".join(invalid_shared_folders)
+            )
+        if shared_context_origins:
+            body["shared_context_origins"] = shared_context_origins
+        body["shared_secret_origins"] = await self._shared_secret_origin_payload()
+
+        async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:
+            await client.post(build_hub_url(self.get_type()), body)
+            if "remote" in type(self).model_fields:
+                self.remote = True
+            if not recipients:
+                return self
+            for email in recipients:
+                if not email or not isinstance(email, str):
+                    continue
+                email = normalize_email(email)
+                if not email:
+                    continue
+                await client.post(
+                    f"/graph/project/{self.id}/members",
+                    {
+                        "recipient_email": email,
+                        "invitation_targets": [
+                            {"typeid": f"project-{self.id}", "role": "member"},
+                        ],
+                    },
+                )
+        return self
 
     @property
     def main_ref(self):
@@ -516,47 +783,356 @@ class Project(Entity):
             data={"compute_node": compute_node.model_dump() if compute_node else None}
         )
 
+    @action.get(action_name="get-assets")
+    async def get_assets_action(self, types: str | None = None, limit: int = 1000):
+        """Discoverable assets for this project, pre-process (staging).
+
+        The project-level counterpart of ``agentic_process/{id}/get-assets``:
+        what a NEW process started in this project would see, before any
+        process exists. Same path-scan + longest-prefix attribution
+        (``scan_path_asset_descriptors``) over user-home / project-mount /
+        context dirs; ``spec`` (not file-backed) comes from a bounded scoped
+        DB list instead. Response shape matches the process action, plus
+        ``project_id`` per row and a top-level ``truncated`` flag — the seam
+        for FTS-backed long-tail search. Never unbounded: ``limit`` is
+        clamped; callers wanting more should search, not list.
+        """
+        from flow_sdk.builtin.agentic_process.agentic_process import (  # noqa: PLC0415
+            AssetDescriptor,
+            AssetSource,
+            collect_base_source_dirs,
+            scan_path_asset_descriptors,
+        )
+
+        requested = [t.strip() for t in types.split(",") if t.strip()] if types else [
+            "skill", "agent", "markdown", "spec",
+        ]
+        limit = max(1, min(int(limit), 2000))
+
+        sources, _seen = collect_base_source_dirs(self)
+
+        file_backed = [t for t in requested if t != "spec"]
+        descriptors: list[AssetDescriptor] = []
+        if file_backed:
+            descriptors = await scan_path_asset_descriptors(
+                sources,
+                own_project_id=str(self.id),
+                types=file_backed,
+                limit=limit,
+            )
+
+        if "spec" in requested and len(descriptors) < limit:
+            from flow_sdk.builtin.spec import Spec  # noqa: PLC0415
+            from flow_sdk.db.drivers.query import QueryFilter  # noqa: PLC0415
+
+            # Own-project OR global (project_id unset) — one query; $IS_NULL is
+            # unary, single-operand [field] shape.
+            spec_rows = await Spec.get_all(QueryFilter.parse(
+                {
+                    "match": {"op": "$OR", "operands": [
+                        {"project_id": str(self.id)},
+                        {"op": "$IS_NULL", "operands": ["project_id"]},
+                    ]},
+                    "limit": limit - len(descriptors),
+                },
+                "spec",
+            ))
+            for spec_entity in spec_rows:
+                spec_project_id = getattr(spec_entity, "project_id", None)
+                descriptors.append(AssetDescriptor(
+                    typeid=f"spec-{spec_entity.id}",
+                    source=(
+                        AssetSource.PROJECT_DIR
+                        if str(spec_project_id or "") == str(self.id)
+                        else AssetSource.USER_DIR
+                    ),
+                    posix_path=None,
+                    project_id=str(spec_project_id) if spec_project_id else None,
+                ))
+
+        return ApiSuccessResponse(data={
+            "assets": [d.to_row() for d in descriptors],
+            "truncated": len(descriptors) >= limit,
+        })
+
     @action.get(action_name="get-worker-sessions")
     async def _get_worker_sessions_action(self):
         """Get worker sessions for current directory."""
         sessions = get_worker_sessions()
         return ApiSuccessResponse(data=sessions)
 
-    # ── Context folders (project include_dirs) ──────────────────────────────
+    # ── Secret pointers (SecretOrigin entities linked via context buckets) ──
+
+    @action.post(action_name="add-secret-pointer")
+    async def add_secret_pointer(
+        self,
+        name: str = "",
+        env_var: str = "",
+        scope: str = "private",
+        kind: str = "local",
+        locator: dict[str, Any] | None = None,
+        sod_name: str | None = None,
+        secret_id: str | None = None,
+    ) -> "ApiResponse":
+        """Attach a value-free secret pointer to this project."""
+        from flow_sdk.builtin.hub_secret_ref import HubSecretRef  # noqa: PLC0415
+        from flow_sdk.builtin.local_secret_ref import LocalSecretRef  # noqa: PLC0415
+        from flow_sdk.builtin.secret_origin import (  # noqa: PLC0415
+            SecretOrigin,
+            is_valid_secret_origin_env_var,
+        )
+        from flow_sdk.builtin.secret_origin_driver import normalize_secret_origin_kind  # noqa: PLC0415
+
+        name = (name or "").strip()
+        env_var = (env_var or "").strip()
+        scope = (scope or "private").strip().lower()
+        if not env_var:
+            return ApiFailResponse(message="env_var is required")
+        if not is_valid_secret_origin_env_var(env_var):
+            return ApiFailResponse(message="env_var must be a valid environment variable name")
+        if scope not in ("private", "shared"):
+            return ApiFailResponse(message="scope must be 'private' or 'shared'")
+
+        raw_locator = dict(locator or {})
+        resolved_kind = normalize_secret_origin_kind(
+            raw_locator.get("kind") or kind or ("flowpad-hub" if secret_id else "local")
+        )
+        if resolved_kind == "local":
+            if scope == "shared":
+                return ApiFailResponse(message="Local secret pointers can only be private")
+            local_name = (sod_name or raw_locator.get("sod_name") or name or "").strip()
+            if not local_name:
+                return ApiFailResponse(message="sod_name is required for local secret pointers")
+            loc = LocalSecretRef(sod_name=local_name)
+            name = name or local_name
+        elif resolved_kind == "flowpad-hub":
+            hub_id = (secret_id or raw_locator.get("secret_id") or "").strip()
+            if not hub_id:
+                return ApiFailResponse(message="secret_id is required for flowpad-hub secret pointers")
+            loc = HubSecretRef(secret_id=hub_id)
+            name = name or hub_id
+        else:
+            return ApiFailResponse(message=f"Unsupported secret pointer kind: {resolved_kind}")
+
+        candidate_typeid = f"{BuiltinEntityType.SECRET_ORIGIN.value}-{SecretOrigin.id_for_locator(loc)}"
+        for existing in self.secret_origins:
+            if existing.get("env_var") == env_var and existing.get("typeid") != candidate_typeid:
+                return ApiFailResponse(message=f"env_var {env_var} is already bound to another secret pointer")
+
+        secret = await SecretOrigin.mint_for(locator=loc, name=name, env_var=env_var)
+        data = secret.context_data(scope=scope)
+        if scope == "shared":
+            self.add_shared_context_entities(secret.typeid, data=data)
+        else:
+            self.add_private_context_entities(secret.typeid, data=data)
+        await self.save()
+        return ApiSuccessResponse(data=self.model_dump(mode="json"))
+
+    @action.post(action_name="remove-secret-pointer")
+    async def remove_secret_pointer(
+        self,
+        typeid: str | None = None,
+        name: str | None = None,
+        env_var: str | None = None,
+    ) -> "ApiResponse":
+        """Detach project secret pointers. The SecretOrigin row and secret value remain."""
+        if not typeid and not name and not env_var:
+            return ApiFailResponse(message="typeid, name, or env_var is required")
+        targets: list[TypeId] = []
+        if typeid:
+            try:
+                targets.append(TypeId.to_typeid(typeid))
+            except Exception:
+                targets.append(TypeId(type=BuiltinEntityType.SECRET_ORIGIN.value, id=typeid))
+        else:
+            want_name = (name or "").strip()
+            want_env_var = (env_var or "").strip()
+            for tid in self.context_of_type("secret_origin", bucket="both"):
+                entry = self.get_context_entry_data(tid) or {}
+                if want_name and entry.get("name") != want_name:
+                    continue
+                if want_env_var and entry.get("env_var") != want_env_var:
+                    continue
+                targets.append(tid)
+        if targets:
+            self.remove_shared_context_entities(*targets)
+            self.remove_private_context_entities(*targets)
+            await self.save()
+        return ApiSuccessResponse(data=self.model_dump(mode="json"))
+
+    # ── Context folders (Folder entities linked via context buckets) ────────
+
+    async def _migrate_legacy_context_dirs(self) -> bool:
+        """Convert stashed legacy ``include_dirs`` into Folder context links.
+
+        Each stashed path is minted as a Folder entity (idempotent v5) and
+        linked as PRIVATE context (legacy dirs were always hub-excluded).
+        Clears the stash and neutralizes the stale ``include_dirs`` key in the
+        record's metadata.json — ``save_metadata`` is a merge-writer, so
+        without the explicit empty-list write the old key would resurrect
+        removed dirs after a DB rebuild. Returns True when anything changed;
+        the CALLER persists (this never calls ``self.save()``).
+        """
+        stash = [d for d in (self.legacy_include_dirs_ or []) if d]
+        if not stash:
+            return False
+        from flow_sdk.builtin.folder import Folder
+
+        covered: set[str] = set()
+        for tid in self.context_of_type("folder", bucket="both"):
+            entry = self.get_context_entry_data(tid) or {}
+            if entry.get("path"):
+                covered.add(entry["path"])
+        for path in stash:
+            canonical = canonical_posix_path(path)
+            if canonical in covered:
+                continue
+            folder = await Folder.mint_for_path(canonical)
+            self.add_private_context_entities(folder.typeid, data={"path": canonical})
+            covered.add(canonical)
+        self.legacy_include_dirs_ = []
+        # Drop the stale on-disk key (best-effort): save_metadata is a
+        # merge-writer, so without removal the key would re-hydrate — and
+        # resurrect removed dirs — on every adopt after a DB rebuild.
+        try:
+            import asyncio
+
+            from flow_sdk.fs_store.fs_record import FSRecord
+
+            record = await asyncio.to_thread(FSRecord.load_or_none, self.get_type(), self.id)
+            if record is not None:
+                await asyncio.to_thread(record.remove_metadata_keys, "include_dirs")
+        except Exception:
+            log.debug("[project] legacy include_dirs disk-key removal failed", exc_info=True)
+        return True
+
+    async def save(self, owner=None, notify: bool = True) -> "Project":
+        """Project save — lazy-migration chokepoint for legacy context dirs.
+
+        Any project write converges stashed legacy ``include_dirs`` into
+        Folder context links first (no-op once clean), so old rows migrate on
+        their first save without a dedicated migration run.
+        """
+        if self.legacy_include_dirs_:
+            await self._migrate_legacy_context_dirs()
+        return await super().save(owner, notify=notify)
 
     @action.post(action_name="add-context-dir")
-    async def add_context_dir(self, path: str) -> "ApiResponse":
-        """Add a directory to this project's ``include_dirs`` (context folders).
+    async def add_context_dir(self, path: str, scope: str = "private") -> "ApiResponse":
+        """Attach a directory to this project as a context folder.
 
-        The path is canonicalized; adding is idempotent. On add we kick a
-        one-shot indexer scan over the new path (reusing the AgenticProcess
-        helper) so any skills / agents living under it become discoverable in
-        the Asset Manager without a manual ``flow record index``.
+        Mints (or reuses) the ``Folder`` entity — detecting whether the dir is
+        inside a git repo (→ transportable ``GitOrigin``) or plain (→
+        ``LocalOrigin``) — and links it into the project's context bucket:
+        ``private`` (default; never leaves this machine) or ``shared`` (travels
+        when the project is shared). The canonical LOCAL path is stamped into
+        the per-entry sidecar so the computed ``include_dirs`` derives
+        synchronously. On a new add we kick a one-shot indexer scan.
+
+        A ``LocalOrigin`` (non-git) folder cannot be reconstructed on a peer, so
+        it is rejected from ``scope="shared"``.
         """
         if not path:
             return ApiFailResponse(message="path is required")
+        if scope not in ("private", "shared"):
+            return ApiFailResponse(message="scope must be 'private' or 'shared'")
+        # No explicit legacy migration here: the computed include_dirs already
+        # merges the stash (so is_new sees legacy dirs), and save() below is
+        # the migration chokepoint.
         canonical = canonical_posix_path(path)
-        if canonical not in (self.include_dirs or []):
-            self.include_dirs = list(self.include_dirs or []) + [canonical]
+        from flow_sdk.builtin.folder import Folder
+
+        # Detect the origin BEFORE minting so a rejected shared add leaves no
+        # orphan Folder row. A non-transportable origin (local) can't be
+        # reconstructed on a peer, so it can't be shared.
+        origin = await Folder.detect_origin(canonical)
+        if scope == "shared" and not origin.transportable:
+            return ApiFailResponse(
+                message="Only git-backed folders can be shared. Add this folder as private, "
+                        "or use a folder inside a git repository."
+            )
+        bucket = "shared" if scope == "shared" else "private"
+        already_linked = any(
+            (self.get_context_entry_data(tid) or {}).get("path") == canonical
+            for tid in self.context_of_type("folder", bucket=bucket)
+        )
+        is_new = canonical not in self.include_dirs
+        if not already_linked:
+            folder = await Folder.mint_for_origin(origin, local_path=canonical)
+            if scope == "shared":
+                self.add_shared_context_entities(folder.typeid, data={"path": canonical})
+            else:
+                self.add_private_context_entities(folder.typeid, data={"path": canonical})
             await self.save()
+        if is_new:
             from flow_sdk.builtin.agentic_process.agentic_process import (
                 _index_additional_dir,
             )
             await _index_additional_dir(canonical)
         return ApiSuccessResponse(data=self.model_dump(mode="json"))
 
+    @action.post(action_name="resolve-context-folders")
+    async def resolve_context_folders(self) -> "ApiResponse":
+        """Resolve shared context folders whose receiver-local sidecar is empty."""
+        from flow_sdk.builtin.folder import Folder
+
+        results: list[dict[str, Any]] = []
+        changed = False
+        for tid in self.context_of_type("folder", bucket="shared"):
+            entry = self.get_context_entry_data(tid) or {}
+            if entry.get("path"):
+                results.append({"typeid": str(tid), "kind": "already_ready", "path": entry.get("path")})
+                continue
+            folder = await Folder.get_by_id(tid.id)
+            if folder is None:
+                results.append({"typeid": str(tid), "kind": "error", "message": "Folder entity not found"})
+                continue
+            if folder.origin is None:
+                results.append({"typeid": str(tid), "kind": "error", "message": "Folder has no origin"})
+                continue
+            if not folder.origin.transportable:
+                results.append({"typeid": str(tid), "kind": "error", "message": "Folder origin is not transportable"})
+                continue
+            resp = await folder.resolve_location()
+            data = getattr(resp, "data", None) or {}
+            if not isinstance(data, dict):
+                data = {"kind": "error", "message": "Unexpected resolve response"}
+            result = {"typeid": str(tid), **data}
+            resolved = data.get("path") if data.get("kind") == "ready" else None
+            if isinstance(resolved, str) and resolved:
+                canonical = canonical_posix_path(resolved)
+                self.add_shared_context_entities(folder.typeid, data={"path": canonical})
+                result["path"] = canonical
+                changed = True
+            results.append(result)
+        if changed:
+            await self.save()
+        payload = self.model_dump(mode="json")
+        payload["context_folder_results"] = results
+        return ApiSuccessResponse(data=payload)
+
     @action.post(action_name="remove-context-dir")
     async def remove_context_dir(self, path: str) -> "ApiResponse":
-        """Remove a directory from ``include_dirs``. No-op if not present.
+        """Detach a context folder from this project. No-op if not attached.
 
-        Matches on the canonical form so a caller passing an un-canonical path
-        still removes the stored entry.
+        Matches on the canonical path against the folder links' sidecar
+        entries and unlinks from BOTH buckets. The Folder entity itself is
+        never deleted (it may be linked by other projects) and the directory
+        on disk is never touched.
         """
         if not path:
             return ApiFailResponse(message="path is required")
+        migrated = await self._migrate_legacy_context_dirs()
         canonical = canonical_posix_path(path)
-        if canonical in (self.include_dirs or []):
-            self.include_dirs = [d for d in (self.include_dirs or []) if d != canonical]
+        to_remove = [
+            tid
+            for tid in self.context_of_type("folder", bucket="both")
+            if (self.get_context_entry_data(tid) or {}).get("path") == canonical
+        ]
+        if to_remove:
+            self.remove_shared_context_entities(*to_remove)
+            self.remove_private_context_entities(*to_remove)
+        if to_remove or migrated:
             await self.save()
         return ApiSuccessResponse(data=self.model_dump(mode="json"))
 

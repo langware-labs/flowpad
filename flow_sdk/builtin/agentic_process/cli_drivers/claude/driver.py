@@ -25,7 +25,10 @@ from flow_sdk.builtin.agentic_process.cli_drivers.claude.stream_worker import (
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
     AgenticContext,
     WorkerCLIOptions,
+    WorkerSpawnError,
     apply_worker_env,
+    apply_worker_secret_env,
+    latch_spawn_failure,
     restart_payload_from_cli_options,
 )
 from flow_sdk.builtin.worker_status import WorkerStatus, _tail_status
@@ -54,6 +57,10 @@ class ClaudeDriver:
     name = "claude"
     preassign_interactive_session_id = True
     pty_submits_on_paste = True
+    # Cold boot delivers the first prompt as a launch arg (pre-filled input,
+    # Enter-only nudge confirmed via the transcript) — nothing is TYPED into a
+    # cold PTY, so there is no composer gate to declare.
+    pty_composer_ready_pattern = None
     pins_resume_cwd = True  # pins CLAUDE_PROJECT_DIR + workdir to the source session's cwd
 
     # ── CLI shape ────────────────────────────────────────────────────────────
@@ -152,6 +159,7 @@ class ClaudeDriver:
         # (agentic_process.py:786-788) so headless workers can route
         # CLI calls (e.g. ``flow workflow report``) back to this process.
         env_vars = apply_worker_env(dict(cli_cfg.get("env_vars") or {}), process)
+        await apply_worker_secret_env(env_vars, process)
 
         context = AgenticContext(
             workdir=process.workdir,
@@ -199,30 +207,27 @@ class ClaudeDriver:
         except Exception:
             logger.exception("ClaudeDriver.headless_prompt: start-of-turn notify_updated failed")
 
+        # Session adoption (and its restart-snapshot bookkeeping) is owned by
+        # AgenticProcess.adopt_worker_session; the turn-scoped adopter trusts
+        # only the turn-initial report (spurious-rotation guard).
+        adopt_session = process_ref.make_turn_session_adopter("ClaudeDriver.headless_prompt")
+
         async def _run_turn() -> None:
             try:
                 async for fd in worker.execute(prompt=composed, context=context):
-                    sid = worker.get_session_id()
-                    if sid and process_ref.session_id != sid:
-                        try:
-                            process_ref.session_id = sid
-                            await process_ref.save()
-                        except Exception:
-                            logger.warning(
-                                "ClaudeDriver.headless_prompt: session_id save failed",
-                                exc_info=True,
-                            )
+                    await adopt_session(worker.get_session_id())
                     try:
                         await process_ref.emit_flow_data(fd.model_dump())
                     except Exception:
                         logger.exception("ClaudeDriver.headless_prompt: emit_flow_data failed")
+            except WorkerSpawnError as e:
+                # No subprocess ever started — end the process FAILED with the
+                # start_failure latch (the ERROR frame was already emitted).
+                await latch_spawn_failure(process_ref, e)
             except Exception:
                 logger.exception("ClaudeDriver.headless_prompt: worker error")
             finally:
                 _PROMPT_WORKERS.pop(process_id, None)
-                # Clear the override before the closing notify_updated so it
-                # carries the real JSONL-derived status.
-                object.__setattr__(process_ref, "_turn_in_flight", False)
                 # If the fork materialised on disk (the new session's JSONL
                 # was written), drop ``fork_session_id`` from cli_config so
                 # subsequent launches plain ``--resume`` the new session
@@ -239,18 +244,9 @@ class ClaudeDriver:
                             await process_ref.save()
                         except Exception:
                             logger.debug("ClaudeDriver.headless_prompt: fork-strip save failed", exc_info=True)
-                # ``worker_status`` is a computed projection re-derived from
-                # the JSONL tail by ``to_dict`` / ``api_json_serializer``, so
-                # ``save()`` short-circuits when no real entity field changed.
-                # ``notify_updated`` forces a data-op broadcast carrying the
-                # fresh ``worker_status=COMPLETE`` projection — that's what
-                # flips ``proc.output()`` consumers out of their wait loop on
-                # the TS side. Lifecycle ``status`` intentionally stays
-                # RUNNING so ``is_ready_for_input(p)`` returns True.
-                try:
-                    await process_ref.notify_updated()
-                except Exception:
-                    logger.exception("ClaudeDriver.headless_prompt: terminal notify_updated failed")
+                # Terminal status broadcast + completion-driven queue advance
+                # (see AgenticProcess.end_headless_turn).
+                await process_ref.end_headless_turn("ClaudeDriver.headless_prompt")
 
         asyncio.create_task(_run_turn(), name=f"claude-{process.id[:8]}")
         return ApiSuccessResponse(data={"status": "started", "worker": self.name})

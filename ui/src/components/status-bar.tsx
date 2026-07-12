@@ -118,11 +118,13 @@ export function StatusBar({ className = '' }: StatusBarProps) {
         </button>
         <button
           onClick={() => navigation.openDock(DockPointer.forProject(project.id))}
-          className="min-w-0 max-w-[10rem] truncate text-xs font-medium transition-colors hover:underline sm:max-w-[16rem]"
+          className="shrink-0 whitespace-nowrap text-xs font-medium transition-colors hover:underline"
           style={isRoot ? glowStyle : { color: 'var(--muted-foreground)' }}
           title={isRoot ? rootTooltip : projectPath ? t`Open project view — ${projectPath}` : t`Open project view`}
         >
-          {project.displayName}
+          {project.displayName.length > 20
+            ? `${project.displayName.slice(0, 20)}…`
+            : project.displayName}
         </button>
         {projectPath && computeNode && (
           <Tooltip delayDuration={0}>

@@ -28,6 +28,7 @@ class ToolResultEntry(TranscriptEntry):
         duration_ms: int | None = None,
         exit_code: int | None = None,
         output_token_count: int | None = None,
+        is_transport_mirror: bool = False,
         **base: Any,
     ) -> None:
         super().__init__(**base)
@@ -45,6 +46,13 @@ class ToolResultEntry(TranscriptEntry):
         self.duration_ms = duration_ms
         self.exit_code = exit_code
         self.output_token_count = output_token_count
+        # True for event-stream duplicates of a canonical result (codex
+        # ``event_msg.patch_apply_end`` mirrors the ``custom_tool_call_output``
+        # response_item, same call id). The fold layer drops a mirror when the
+        # canonical result exists — but keeps it as the durable result frame
+        # when the canonical line is missing (turn killed between the two
+        # writes, event_msg-only rollouts).
+        self.is_transport_mirror = is_transport_mirror
 
     def to_flow_data(self) -> list[FlowData]:
         attrs = {
@@ -74,6 +82,7 @@ class ToolResultEntry(TranscriptEntry):
             "duration_ms": self.duration_ms,
             "exit_code": self.exit_code,
             "output_token_count": self.output_token_count,
+            "is_transport_mirror": self.is_transport_mirror,
         }
 
     def _body_lines(self) -> list[str]:

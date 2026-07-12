@@ -28,6 +28,9 @@ class TaskType(StrEnum):
 class Task(Entity):
     type: str = APIField(default="task")
     title: str = APIField("")
+    # Task is a folder-backed markdown asset (see task_type_info): asset_ref is
+    # the ``tasks/<name>/`` folder holding ``task.md`` + inner ``spec.md``.
+    asset_ref: Optional[str] = APIField(None)
     description: Optional[str] = APIField(None, blob=True)
     status: str = APIField(TaskStatus.TO_DO)
     last_viewed_at: Optional[datetime] = APIField(None)

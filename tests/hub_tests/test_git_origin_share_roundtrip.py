@@ -2,7 +2,8 @@
 
 This is the hub transport counterpart to ``tests/unit/test_git_origin_e2e_roundtrip.py``:
 the sender packs a git-backed skill, uploads the ``body.flowmsg`` through the
-real local hub, then the receiver-side download path pulls that same bundle and
+real local hub, then the receiver-side download path pulls that bundle into the
+message's STAGING area, and an explicit install (the review modal's action)
 materializes the asset into a mapped project at the sender's repo-relative path.
 """
 from __future__ import annotations
@@ -35,6 +36,22 @@ from flow_sdk.schema.types import EntityType
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]
 
 REL_PATH = "tools/kit/.claude/skills/hubgit"
+
+
+async def _install_staged(fm_id: str, entry_key: str, *, project_id: str) -> None:
+    """Reception is two-phase now: download STAGES (MessageAttachment,
+    scope=None) and the user explicitly installs. Drive the install half the
+    way the review modal does, asserting the staged row existed first."""
+    from flow_sdk.app.actions.message_attachment_action import handle_attachment_install
+    from flow_sdk.builtin.message_attachment import MessageAttachment
+    from flow_sdk.responses.response import ApiSuccessResponse
+
+    ma_id = MessageAttachment.allocate_deterministic_id(fm_id, entry_key)
+    ma = await MessageAttachment.get_one({"id": ma_id})
+    assert ma is not None, f"download did not stage {entry_key}"
+    assert not ma.scope, f"staged attachment must start uninstalled: {ma.scope!r}"
+    res = await handle_attachment_install(ma_id, "project", project_id, someone_typeid=None)
+    assert isinstance(res, ApiSuccessResponse), f"install failed: {getattr(res, 'message', res)!r}"
 
 
 def _login(hub_login_payload):
@@ -121,6 +138,7 @@ async def test_git_origin_asset_body_round_trips_through_live_hub(
     await sender_skill.delete()
 
     await fm.download_body()
+    await _install_staged(fm.id, f"{EntityType.SKILL.value}-@{skill_id}", project_id=project.id)
 
     expected = receiver_project_root / REL_PATH / "SKILL.md"
     assert expected.exists(), (
@@ -224,6 +242,7 @@ async def test_git_origin_markdown_body_round_trips_through_live_hub_and_search(
     await sender_doc_entity.delete()
 
     await fm.download_body()
+    await _install_staged(fm.id, f"{EntityType.MARKDOWN.value}-@{doc_id}", project_id=project.id)
 
     expected = receiver_repo / rel_path
     assert expected.exists(), (

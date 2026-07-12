@@ -131,4 +131,23 @@ describe('project context folders (include_dirs)', () => {
     // Attribution carries the matched context dir.
     for (const a of ctx) expect(a.source_dir).toBe(contextDir);
   }, 60_000);
+
+  it('shared scope + remove: link round-trips and removal survives reload', async () => {
+    const project = await new sdk.Project({ name: `ctxproj2-${Date.now()}` }).save();
+    const sharedDir = path.join(tmpRoot, 'shared-ctx');
+    await fs.mkdir(sharedDir, { recursive: true });
+
+    // Shared scope: same derived include_dirs surface, different bucket.
+    await project.addContextDir(sharedDir, 'shared');
+    expect(project.include_dirs).toContain(sharedDir);
+    const reloaded = await sdk.Project.getById(project.id);
+    expect(reloaded?.include_dirs ?? []).toContain(sharedDir);
+
+    // Remove unlinks (both buckets) — the SDK adopts the server response and a
+    // fresh fetch agrees (the folder link is gone server-side, not just locally).
+    await project.removeContextDir(sharedDir);
+    expect(project.include_dirs).not.toContain(sharedDir);
+    const reloaded2 = await sdk.Project.getById(project.id);
+    expect(reloaded2?.include_dirs ?? []).not.toContain(sharedDir);
+  }, 30_000);
 });

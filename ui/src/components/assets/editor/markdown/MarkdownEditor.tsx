@@ -84,10 +84,8 @@ interface MarkdownEditorProps {
    * frontmatter key through the single content buffer.
    */
   headerExtras?: (ctx: MarkdownHeaderExtrasCtx) => React.ReactNode;
-  /** Appended to the side drawer after Editor + Backlinks. */
+  /** Appended to the side drawer after Backlinks. */
   extraSideTabs?: ExtraSideTab[];
-  /** Forwarded to the Editor tab — runs once after its backing process is created. */
-  onChatProcessCreated?: (process: import('@sdk').AgenticProcess) => Promise<void> | void;
   /** When true, the "Learning" view-mode chip appears in the header strip. */
   showLearningMode?: boolean;
   /** Body rendered when viewMode === 'learning'. Required when showLearningMode is true. */
@@ -118,7 +116,6 @@ export function MarkdownEditor({
   toolbar,
   headerExtras,
   extraSideTabs,
-  onChatProcessCreated,
   showLearningMode,
   learningPanel,
   onDelete,
@@ -132,7 +129,6 @@ export function MarkdownEditor({
       toolbar={toolbar}
       headerExtras={headerExtras}
       extraSideTabs={extraSideTabs}
-      onChatProcessCreated={onChatProcessCreated}
       showLearningMode={showLearningMode}
       learningPanel={learningPanel}
       onDelete={onDelete}
@@ -179,7 +175,6 @@ function MarkdownEditorContent({
   toolbar,
   headerExtras,
   extraSideTabs,
-  onChatProcessCreated,
   showLearningMode,
   learningPanel,
   onDelete,
@@ -191,7 +186,6 @@ function MarkdownEditorContent({
   toolbar?: React.ReactNode;
   headerExtras?: MarkdownEditorProps['headerExtras'];
   extraSideTabs?: ExtraSideTab[];
-  onChatProcessCreated?: MarkdownEditorProps['onChatProcessCreated'];
   showLearningMode?: boolean;
   learningPanel?: React.ReactNode;
   onDelete?: MarkdownEditorProps['onDelete'];
@@ -326,24 +320,26 @@ function MarkdownEditorContent({
   }, [chatTarget, sourcePath]);
 
   // On-disk caret line shared across all editor backends. Null means "user has
-  // not clicked yet" — chat header badge is hidden in that case. Persists across
-  // mode switches so caret restores to the same logical position.
-  const [cursorLine, setCursorLine] = useState<number | null>(null);
+  // not clicked yet". Only read when an editor (re)mounts on a mode switch, so
+  // caret restores to the same logical position — a ref, not state, so caret
+  // moves don't re-render the editor tree.
+  const cursorLineRef = useRef<number | null>(null);
   const bodyStartLineRef = useRef(bodyStartLine);
   bodyStartLineRef.current = bodyStartLine;
   const handleEditorLineChange = useCallback((bodyLine: number) => {
-    setCursorLine(bodyStartLineRef.current + bodyLine - 1);
+    cursorLineRef.current = bodyStartLineRef.current + bodyLine - 1;
   }, []);
   // Seed the caret from `?initialLine=N` on a fresh open (no user caret yet) —
   // body-line space, so it survives frontmatter changes. Cleared once the user
-  // clicks/types and `cursorLine` becomes the source of truth.
+  // clicks/types and `cursorLineRef` becomes the source of truth.
   const initialLineParam = useMemo(() => {
     const raw = currentDock?.options?.[INITIAL_LINE_PARAM];
     if (raw == null) return null;
     const n = parseInt(raw, 10);
     return Number.isFinite(n) && n > 0 ? n : null;
   }, [currentDock?.options]);
-  const initialBodyLine = cursorLine != null ? cursorLine - bodyStartLine + 1 : initialLineParam;
+  const initialBodyLine =
+    cursorLineRef.current != null ? cursorLineRef.current - bodyStartLine + 1 : initialLineParam;
 
   const setBodyRef = useRef(setBody);
   setBodyRef.current = setBody;
@@ -625,12 +621,7 @@ function MarkdownEditorContent({
         {viewMode === 'learning' && learningPanel ? (
           <div className="h-full overflow-hidden">{learningPanel}</div>
         ) : (
-          <EditorWithSidePanel
-            chatTarget={chatTarget}
-            extraTabs={allSideTabs}
-            onChatProcessCreated={onChatProcessCreated}
-            cursorLine={cursorLine}
-          >
+          <EditorWithSidePanel target={chatTarget} extraTabs={allSideTabs}>
             {viewMode === 'markdown' ? (
               <MonacoMarkdownEditor
                 value={body}

@@ -20,7 +20,11 @@ export interface BrowseableDragData {
  * across Wiki, Collaboration, and any other view that needs a tree menu.
  *
  * Design invariants:
- * - Click on a row == navigate to `pointer`. Never a side effect.
+ * - Click on a row resolves as `pointer ?? activate`. `pointer` is the
+ *   preferred pure form (URL-first: click == navigate to the pointer, never a
+ *   side effect); `activate` is the documented imperative fallback for
+ *   entities whose navigation requires async lookups or side effects (e.g.
+ *   resolving a session by worker id first). Neither ⇒ non-actionable row.
  * - Toolbar actions are explicitly for side effects (scan, new, delete).
  *   Never navigation.
  * - Selection is derived from the tree's `activePointer` prop, not stored.
@@ -76,8 +80,19 @@ export interface Browseable {
   listChildren?: (opts?: { refresh?: boolean }) => Promise<Browseable[]>;
 
   /** Click == navigate to this pointer. `null` means header-only row
-   *  (clicking just toggles the chevron). */
+   *  (clicking just toggles the chevron) — unless `activate` is set. */
   pointer: DockPointer | null;
+
+  /** Imperative activation fallback for nodes whose navigation cannot be
+   *  expressed as a pure DockPointer (async entity resolution / side effects).
+   *  Renderers resolve a click as `pointer ?? activate`. Prefer `pointer`
+   *  wherever possible — it keeps navigation URL-first and selectable. */
+  activate?: () => void | Promise<void>;
+
+  /** Optional hover tooltip content (e.g. a live entity summary). Rendered by
+   *  renderers that support tooltips (the desktop grid); the tree currently
+   *  ignores it. */
+  tooltip?: ReactNode;
 
   /** Optional stable alternate identity for *selection* matching, used when the
    *  active pointer addresses this row by a different serialization than its
@@ -120,6 +135,15 @@ export interface Browseable {
 
   /** Side effect for a successful drop. */
   onDrop?: (dragData: BrowseableDragData) => void | Promise<void>;
+
+  /** Container-owned manual ordering of children: splice `dragId` into the
+   *  gap next to the anchor sibling. Renderers that support reordering (the
+   *  desktop grid's edge drop zones) call this; the anchor ids are siblings
+   *  within THIS container. */
+  reorderChildren?: (
+    dragId: string,
+    anchor: { afterId?: string; beforeId?: string },
+  ) => void | Promise<void>;
 }
 
 /**

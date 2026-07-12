@@ -21,7 +21,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@src/components/ui/dropdown-menu';
@@ -31,7 +30,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ExecutionSettingsPopover } from './ExecutionSettingsPopover';
 import { notify } from '@src/notifications/notify';
 import { CompactExecutionInput } from './CompactExecutionInput';
-import { groupTurnEvents, splitLiveGroup } from '@src/components/floating-chat/groupTurnEvents';
+import { splitLiveGroup, useTurnGroups, type TurnGroup } from '@src/components/floating-chat/groupTurnEvents';
 import { TurnGroupsList } from './TurnGroupsList';
 import { ChatActivityLine } from './ChatActivityLine';
 import { TurnEventChip } from '@src/components/floating-chat/TurnEventChip';
@@ -45,6 +44,14 @@ import {
 import { useWorkerHistory, type WorkerHistoryEntry } from '@src/hooks/useWorkerHistory';
 import { useProcessesForTarget } from './hooks/useProcessesForTarget';
 import { useAgenticProcessStream } from '@src/hooks/use-agentic-process-stream';
+import { AssetManagerButton } from '@src/components/asset-manager';
+import {
+  DEFAULT_WORKER_TYPE,
+  normalizeWorkerType,
+  type WorkerType,
+} from '@src/components/workers/worker-types';
+
+const EMPTY_TURN_GROUPS: TurnGroup[] = [];
 
 interface EntityExecutionPanelProps {
   /**
@@ -89,8 +96,16 @@ interface EntityExecutionPanelProps {
   emptyStateText?: string;
   /** Optional header label rendered above the panel (e.g. "Agent execution"). Hidden when omitted. */
   headerLabel?: string;
-  /** Optional node rendered on the LEFT of the header action row (e.g. a title / home button). */
-  leadingSlot?: React.ReactNode;
+  /**
+   * Optional content rendered on the LEFT of the header action row. The
+   * function form receives the panel's session actions so the slot can host
+   * the new-session control itself (Vibe's "+ New" pill); when a function is
+   * passed the built-in new-session icon button is hidden — one affordance,
+   * not two.
+   */
+  leadingSlot?:
+    | React.ReactNode
+    | ((actions: { startNewSession: () => void }) => React.ReactNode);
   /** Placeholder for the composer textbox. Defaults to "Ask about this doc…". */
   placeholder?: string;
   /**
@@ -111,6 +126,34 @@ interface EntityExecutionPanelProps {
    */
   defaultProjectId?: string | null;
   defaultWorkdir?: string | null;
+  /** Default model/tier for newly-created processes. Existing processes read
+   * their model from `cli_config.model`. */
+  defaultModel?: string | null;
+  /** Default worker/vendor for newly-created processes. */
+  defaultWorkerType?: WorkerType | null;
+  /** Optional model control for surfaces that expose model selection. */
+  modelSelectSlot?: (args: {
+    value: string | null;
+    disabled: boolean;
+    onChange: (value: string) => void | Promise<void>;
+    activeProcess: AgenticProcess | null;
+  }) => React.ReactNode;
+  /** Optional worker control for surfaces that expose worker selection. */
+  workerSelectSlot?: (args: {
+    value: WorkerType | null;
+    disabled: boolean;
+    onChange: (value: WorkerType) => void | Promise<void>;
+    activeProcess: AgenticProcess | null;
+  }) => React.ReactNode;
+  /** Active worker changes require host-specific behavior, e.g. Vibe starts a
+   * fresh chat instead of mutating the current worker. */
+  onActiveWorkerChange?: (args: {
+    workerType: WorkerType;
+    activeProcess: AgenticProcess;
+    model: string | null;
+    projectId: string | null;
+    workdir: string | null | undefined;
+  }) => void | Promise<void>;
   /**
    * EXPERIMENT: chat transport. Selects how the process is created; both call
    * the same `prompt()`, which the backend routes by the process's `visible`
@@ -179,6 +222,11 @@ export function EntityExecutionPanel({
   dense = false,
   defaultProjectId,
   defaultWorkdir,
+  defaultModel,
+  defaultWorkerType,
+  modelSelectSlot,
+  workerSelectSlot,
+  onActiveWorkerChange,
   transport = 'print',
   autoPrompt,
   promptContext,
@@ -256,7 +304,7 @@ export function EntityExecutionPanel({
 
   const activeProcess: AgenticProcess | null = forceNew && !resolvedMatchesLocal
     ? localProcess
-    : ((resolvedProcess as AgenticProcess | null | undefined) ?? localProcess);
+    : (resolvedProcess ?? localProcess);
 
   // Hydrate history on first resolution. Per AgenticProcess.loadHistory, safe to
   // call repeatedly — internally guarded by `_historyLoaded`.
@@ -265,7 +313,7 @@ export function EntityExecutionPanel({
     void activeProcess.loadHistory().catch((err) => {
       console.error('[EntityExecutionPanel] loadHistory failed', err);
     });
-  }, [activeProcess?.id]);
+  }, [activeProcess]);
 
   // Stream ingestion — FlowStreamProcessor (inside AgenticProcess.prompt) appends
   // to flowDataStream; our local hook subscribes to its 'data' event.
@@ -300,7 +348,11 @@ export function EntityExecutionPanel({
   // grouped non-text events (tool calls, reasoning, status, errors) rendered
   // as expandable summary rows. See `groupTurnEvents` for the partitioning
   // rules.
-  const turnGroups = useMemo(() => (dense ? groupTurnEvents(items) : []), [dense, items]);
+  // `useTurnGroups` is incremental and identity-stable across live appends
+  // (QA D10); hooks can't be conditional, so it always runs and the non-dense
+  // layout just ignores the (cheap, O(delta)) result.
+  const groupedItems = useTurnGroups(items);
+  const turnGroups = dense ? groupedItems : EMPTY_TURN_GROUPS;
 
   // Dense (chat) mode: a live "agent is working" footer — the SAME dots +
   // elapsed-clock line the interactive chat pane shows (ChatActivityLine),
@@ -331,6 +383,55 @@ export function EntityExecutionPanel({
   // Pre-first-send settings — applied at lazy-create time.
   const [pendingAttachedRefs, setPendingAttachedRefs] = useState<string[]>([]);
   const [pendingProjectId, setPendingProjectId] = useState<string | null>(null);
+  const [pendingModel, setPendingModel] = useState<string | null>(defaultModel ?? null);
+  const [pendingWorkerType, setPendingWorkerType] = useState<WorkerType | null>(defaultWorkerType ?? null);
+  const [modelSavePending, setModelSavePending] = useState(false);
+
+  const activeModelValue = (activeProcess?.cli_config as Record<string, unknown> | undefined)?.model;
+  const activeModel = typeof activeModelValue === 'string' && activeModelValue ? activeModelValue : null;
+  const effectiveModel = activeProcess
+    ? (activeModel ?? defaultModel ?? null)
+    : (pendingModel ?? defaultModel ?? null);
+  const effectiveWorkerType = activeProcess
+    ? normalizeWorkerType(activeProcess.worker_type)
+    : (pendingWorkerType ?? defaultWorkerType ?? null);
+
+  const handleModelChange = useCallback(async (model: string) => {
+    if (activeProcess && modelSavePending) return;
+    setPendingModel(model);
+    if (!activeProcess) return;
+
+    const previous = activeProcess.cli_config ?? {};
+    const previousModel = typeof previous.model === 'string' && previous.model ? previous.model : null;
+    activeProcess.cli_config = { ...previous, model };
+    setModelSavePending(true);
+    try {
+      await activeProcess.save();
+    } catch (err) {
+      activeProcess.cli_config = previous;
+      setPendingModel(previousModel ?? defaultModel ?? null);
+      console.error('[EntityExecutionPanel] model save failed', err);
+      notify.error({ title: t`Model not saved`, message: err instanceof Error ? err.message : String(err) });
+    } finally {
+      setModelSavePending(false);
+    }
+  }, [activeProcess, defaultModel, modelSavePending, t]);
+
+  const handleWorkerChange = useCallback(async (workerType: WorkerType) => {
+    if (activeProcess) {
+      const currentWorker = normalizeWorkerType(activeProcess.worker_type);
+      if (workerType === currentWorker) return;
+      await onActiveWorkerChange?.({
+        workerType,
+        activeProcess,
+        model: effectiveModel,
+        projectId: activeProcess.project_id ?? effectiveProjectId,
+        workdir: effectiveWorkdir,
+      });
+      return;
+    }
+    setPendingWorkerType(workerType);
+  }, [activeProcess, effectiveModel, effectiveProjectId, effectiveWorkdir, onActiveWorkerChange]);
 
   const startNewSession = useCallback(() => {
     setSelectedProcessId(null);
@@ -338,7 +439,9 @@ export function EntityExecutionPanel({
     setForceNew(true);
     setPendingAttachedRefs([]);
     setPendingProjectId(null);
-  }, []);
+    setPendingModel(effectiveModel);
+    setPendingWorkerType(effectiveWorkerType ?? defaultWorkerType ?? DEFAULT_WORKER_TYPE);
+  }, [defaultWorkerType, effectiveModel, effectiveWorkerType]);
 
   const selectSession = useCallback((processId: string) => {
     setSelectedProcessId(processId);
@@ -389,12 +492,17 @@ export function EntityExecutionPanel({
               projectId: pendingProjectId ?? effectiveProjectId ?? undefined,
               targetVfsPath: targetStr,
               processType,
+              ...(effectiveModel ? { model: effectiveModel } : {}),
+              ...(effectiveWorkerType ? { workerType: effectiveWorkerType } : {}),
               // pty-poll: interactive PTY worker, no stream-json print mode.
               ...(isPtyPoll ? {} : { outputFormat: 'stream-json' }),
             },
             // pty-poll: spawn the interactive PTY right away (visible=true
             // auto-start) so the first prompt() lands on a live worker.
-            isPtyPoll ? { visible: true } : undefined,
+            // print: declare the headless transport (pty_mode=false) — the
+            // backend defaults pty_mode to true when omitted, which would put
+            // the print-mode chat on a PTY worker.
+            isPtyPoll ? { visible: true } : { pty_mode: false },
           );
           if (onProcessCreated) await onProcessCreated(newProcess);
           for (const ref of pendingAttachedRefs) {
@@ -423,7 +531,7 @@ export function EntityExecutionPanel({
     } finally {
       setSending(false);
     }
-  }, [activeProcess, sending, targetStr, effectiveProjectId, effectiveWorkdir, onProcessCreated, pendingProjectId, pendingAttachedRefs, processType, transport, promptContext, onPromptContextConsumed, selectedProcessId]);
+  }, [activeProcess, sending, targetStr, effectiveProjectId, effectiveWorkdir, effectiveModel, effectiveWorkerType, onProcessCreated, pendingProjectId, pendingAttachedRefs, processType, transport, promptContext, onPromptContextConsumed, selectedProcessId, t]);
 
   const handleStop = useCallback(async () => {
     if (!activeProcess) return;
@@ -433,7 +541,7 @@ export function EntityExecutionPanel({
       console.error('[EntityExecutionPanel] interrupt failed', err);
       notify.error({ title: t`Could not stop`, message: err instanceof Error ? err.message : String(err) });
     }
-  }, [activeProcess]);
+  }, [activeProcess, t]);
 
   // Host-injected prompt (Run/Rerun/Refresh analysis). Nonce-gated so the
   // same object can sit in props without re-firing on unrelated renders.
@@ -515,6 +623,18 @@ export function EntityExecutionPanel({
   // the turn — no transport special-casing and no PENDING_USER carve-out needed.
   const busy = !!indicatorProcess && isBusy(indicatorProcess);
   const sendDisabled = !targetStr || sending || busy;
+  const modelSettingsNode = modelSelectSlot?.({
+    value: effectiveModel,
+    disabled: !targetStr || sending || busy || modelSavePending,
+    onChange: handleModelChange,
+    activeProcess,
+  });
+  const workerSettingsNode = workerSelectSlot?.({
+    value: effectiveWorkerType,
+    disabled: !targetStr || sending || busy,
+    onChange: handleWorkerChange,
+    activeProcess,
+  });
 
   // While the dense chat's live activity footer is showing (dots + phase label
   // + elapsed clock), it already carries the "working" signal — suppress the
@@ -553,40 +673,47 @@ export function EntityExecutionPanel({
         processes={sortedProcesses}
         workerHistoryByProcessId={workerHistoryByProcessId}
         activeId={activeProcess?.id ?? null}
-        onNewSession={startNewSession}
+        onNewSession={typeof leadingSlot === 'function' ? null : startNewSession}
         onPickSession={selectSession}
         onDeleteSession={handleDeleteOne}
         onClearAll={handleClearAll}
         cursorLine={cursorLine ?? null}
-        leadingSlot={leadingSlot}
+        leadingSlot={typeof leadingSlot === 'function' ? leadingSlot({ startNewSession }) : leadingSlot}
         newSessionLabel={newSessionLabel}
         historyLabel={historyLabel}
         pastSessionsLabel={pastSessionsLabel}
         noPastSessionsLabel={noPastSessionsLabel}
         settingsSlot={
-          <ExecutionSettingsPopover
-            attachedRefs={effectiveAttachedRefs}
-            onAttach={handleAttach}
-            onDetach={handleDetach}
-            activeProcess={activeProcess}
-            projectId={activeProcess ? (activeProcess.project_id ?? null) : (pendingProjectId ?? effectiveProjectId ?? null)}
-            onProjectChange={setPendingProjectId}
-            trigger={
-              <button
-                type="button"
-                title={settingsLabel}
-                className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
-                data-testid="entity-execution-settings"
-              >
-                <Settings className="h-3.5 w-3.5" />
-              </button>
-            }
-          />
+          <>
+            <AssetManagerButton
+              process={activeProcess}
+              pendingRefs={effectiveAttachedRefs}
+              onAttach={activeProcess ? undefined : handleAttach}
+              onDetach={activeProcess ? undefined : handleDetach}
+            />
+            <ExecutionSettingsPopover
+              activeProcess={activeProcess}
+              projectId={activeProcess ? (activeProcess.project_id ?? null) : (pendingProjectId ?? effectiveProjectId ?? null)}
+              onProjectChange={setPendingProjectId}
+              modelControl={modelSettingsNode}
+              workerControl={workerSettingsNode}
+              trigger={
+                <button
+                  type="button"
+                  title={settingsLabel}
+                  className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+                  data-testid="entity-execution-settings"
+                >
+                  <Settings className="h-3.5 w-3.5" />
+                </button>
+              }
+            />
+          </>
         }
       />
       <AutoScrollContainer ref={scrollRef} className="flex-1 overflow-y-auto">
         {showEmptyState && (
-          <div className="p-3 text-[11px] text-muted-foreground">
+          <div className="p-3 text-sm text-muted-foreground">
             {emptyStateText}
           </div>
         )}
@@ -632,7 +759,15 @@ export function EntityExecutionPanel({
           </span>
         </div>
       )}
-      <CompactExecutionInput onSend={handleSend} disabled={sendDisabled} running={busy} onStop={handleStop} statusSlot={statusSlot} placeholder={placeholder} onPasteImages={handlePasteImages} />
+      <CompactExecutionInput
+        onSend={handleSend}
+        disabled={sendDisabled}
+        running={busy}
+        onStop={handleStop}
+        statusSlot={statusSlot}
+        placeholder={placeholder}
+        onPasteImages={handlePasteImages}
+      />
       <ConfirmDialog
         open={!!pendingDelete}
         onOpenChange={(o) => { if (!o) setPendingDelete(null); }}
@@ -678,7 +813,8 @@ function ExecutionHistoryHeader({
   processes: AgenticProcess[];
   workerHistoryByProcessId: Map<string, WorkerHistoryEntry>;
   activeId: string | null;
-  onNewSession: () => void;
+  /** Null hides the built-in new-session icon (the leadingSlot hosts it instead). */
+  onNewSession: (() => void) | null;
   onPickSession: (id: string) => void;
   onDeleteSession: (id: string, title: string) => void;
   onClearAll: () => void;
@@ -715,15 +851,17 @@ function ExecutionHistoryHeader({
         </span>
       )}
       <div className="flex-1" />
-      <button
-        type="button"
-        onClick={onNewSession}
-        title={newSessionLabel}
-        className={iconBtn}
-        data-testid="entity-execution-new"
-      >
-        <MessageSquarePlus className="h-3.5 w-3.5" />
-      </button>
+      {onNewSession && (
+        <button
+          type="button"
+          onClick={onNewSession}
+          title={newSessionLabel}
+          className={iconBtn}
+          data-testid="entity-execution-new"
+        >
+          <MessageSquarePlus className="h-3.5 w-3.5" />
+        </button>
+      )}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
@@ -808,7 +946,7 @@ function ExecutionHistoryHeader({
                           // should NOT also load the session into the panel.
                           e.preventDefault();
                           e.stopPropagation();
-                          onDeleteSession(p.id!, title);
+                          onDeleteSession(p.id, title);
                         }}
                         className="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded text-muted-foreground/40 opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100 group-data-[active=true]:opacity-60"
                         title={t`Delete this chat`}

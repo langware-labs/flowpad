@@ -149,6 +149,16 @@ class ToplogStateMessage(BaseMessage):
     filter: Dict[str, bool]
 
 
+class BroadcastMessage(BaseMessage):
+    """Server-wide fan-out ping to every connected client: no target entity,
+    just a ``broadcast_type`` discriminator (e.g. ``"tabs_changed"`` from
+    ``broadcast_tabs_changed`` in ``flow_sdk/builtin/tab.py``). The TS mirror is
+    ``BroadcastMessage`` in ``ts_sdk/src/websocket.ts`` — keep the shapes in step."""
+
+    message_type: str = WSMessageType.BROADCAST.value
+    broadcast_type: str
+
+
 class EntityMessage(BaseMessage):
     message_type: str = WSMessageType.ENTITY_MSG.value
     from_entity: Optional[TypeId] = None

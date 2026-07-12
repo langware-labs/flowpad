@@ -51,7 +51,7 @@ interface DesktopTileProps {
 
 /**
  * A single desktop-style icon tile — sized to match the home MiniDesktop /
- * FavoriteTile grid (square tile, icon over a truncated label).
+ * favorites grid (square tile, icon over a truncated label).
  */
 function DesktopTile({ Icon, label, iconClassName, disabled, onClick }: DesktopTileProps) {
   return (

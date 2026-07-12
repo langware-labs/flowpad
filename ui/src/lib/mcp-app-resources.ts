@@ -1,5 +1,5 @@
 import type { ReadResourceResult } from '@modelcontextprotocol/sdk/types.js';
-import { FSRef, fsManager, TypeId, VFSPath } from '@sdk';
+import { AssetEditor, editorForPath, FSRef, fsManager, TypeId, VFSPath } from '@sdk';
 
 export const MCP_APP_MIME_TYPE = 'text/html;profile=mcp-app';
 export const FLOWPAD_LOCAL_UI_PREFIX = 'ui://flowpad-local/';
@@ -28,7 +28,8 @@ export function inferTextMimeType(path: string, fallback = 'text/plain'): string
 }
 
 export function isMcpAppPath(path: string): boolean {
-  return /\.mcp\.html?$/i.test(path);
+  // Delegates to the SDK's extension registry — single home of the suffix rule.
+  return editorForPath(path) === AssetEditor.MCP_APP;
 }
 
 export function mcpAppResourceUriForPath(path: string): string {

@@ -16,14 +16,16 @@
  * The controller is kept ONLY for the surrounding controls: leading/trailing
  * toolbars, the new-tab menu, spawn modals, and the close-shortcut label.
  */
-import { Tab } from '@sdk';
+import { Project, Tab } from '@sdk';
+import { useLingui } from '@lingui/react/macro';
+import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { TabStrip } from '@src/components/tabs/TabStrip';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useTabStripItems } from '@src/tabs/tab-row-item';
 import { resolveNextTab } from '@src/tabs/tab-candidates';
 import { applyPredictedOrder, refreshAllTabs, useAllTabs } from '@src/tabs/all-tabs-store';
-import { closeTabWithLifecycle } from '@src/tabs/tab-lifecycle';
+import { closeTabWithLifecycle, excludeClosingTabs, useTabLifecycles } from '@src/tabs/tab-lifecycle';
 import { uniqueTabsByDockKey, useCurrentTabs, useSyncContentTabNames } from '@src/tabs/useTabs';
 import { useTerminalStripController } from '@src/tabs/useTerminalStripController';
 import React, { useCallback, useEffect, useMemo } from 'react';
@@ -37,6 +39,7 @@ export interface UnifiedTabStripProps {
 
 export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'project' }) => {
   const { navigation, currentDock } = useDockNavigation();
+  const { t } = useLingui();
   const controller = useTerminalStripController({ addTabButton: true });
 
   const projectId = controller.tabsProjectId ?? null;
@@ -49,8 +52,15 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'proje
   useSyncContentTabNames();
   const currentTabs = useCurrentTabs();
   const globalTabs = useMemo(() => uniqueTabsByDockKey(allTabs), [allTabs]);
-  const tabs = scope === 'all' ? globalTabs : currentTabs;
-  const items = useTabStripItems(tabs);
+  // Optimistic close: drop `Closing` tabs from the WHOLE working set (not just
+  // the rendered items) — `baseItems`, `tabByKey`, and the mod+PgUp/PgDn cycling
+  // all derive from `tabs`, so a closing tab can't be re-selected mid-teardown.
+  const lifecycles = useTabLifecycles();
+  const tabs = useMemo(
+    () => excludeClosingTabs(scope === 'all' ? globalTabs : currentTabs, lifecycles),
+    [scope, globalTabs, currentTabs, lifecycles],
+  );
+  const baseItems = useTabStripItems(tabs);
   const tabByKey = useMemo(() => {
     const m = new Map<string, Tab>();
     for (const t of tabs) {
@@ -59,6 +69,32 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'proje
     }
     return m;
   }, [tabs]);
+
+  // "Open Project" — the footer's project-name shortcut surfaced on the chip
+  // menu as a distinguished (emphasized) header entry. Owner-injected so the
+  // mapper stays a pure display layer and other strips (e.g. the vibe
+  // workspace child strip) don't inherit it. Navigates to the TAB's own
+  // project home, URL-first; global (projectless) tabs skip it.
+  const items = useMemo(() => {
+    const openProjectLabel = t`Open Project`;
+    const ProjectIcon = iconForType(Project.type);
+    return baseItems.map((item) => {
+      const projectId = tabByKey.get(item.key)?.project_id;
+      if (!projectId) return item;
+      return {
+        ...item,
+        contextMenuItems: [
+          {
+            label: openProjectLabel,
+            Icon: ProjectIcon,
+            emphasized: true,
+            onSelect: () => navigation.openDock(DockPointer.forProject(projectId)),
+          },
+          ...(item.contextMenuItems ?? []),
+        ],
+      };
+    });
+  }, [baseItems, tabByKey, navigation, t]);
 
   // Active highlight is the URL, full stop (every chip is keyed by its tabHash).
   const activeKey = currentDock?.tabHash ?? '';
@@ -109,7 +145,7 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'proje
 
   // Where to go when the active tab(s) close: the next tab in the current
   // project (confined to its scope — `resolveNextTab` with `projectId`), or the
-  // project home (`DockPointer.forProject`, which renders `ProjectBrief`) when the
+  // project home (`DockPointer.forProject`, which renders `ProjectHome`) when the
   // project has no tabs left. Closing a project's last tab lands on its project
   // home rather than jumping to a tab in another project — same destination a
   // fresh project entry resolves to (`dockForProjectEntry`). Falls back to Home

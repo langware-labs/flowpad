@@ -32,13 +32,20 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
 from pathlib import Path
 from typing import AsyncIterator
 
-from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import AgenticContext
-from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import AgenticWorker
-from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_path_env
+from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
+    STREAM_JSON_LINE_LIMIT_BYTES,
+    AgenticContext,
+    AgenticWorker,
+    WorkerSpawnError,
+    build_worker_spawn_env,
+    resolve_worker_argv0,
+    stamp_cli_run_id,
+    terminate_asyncio_process_tree,
+    wait_for_asyncio_process_or_kill_tree,
+)
 from flow_sdk.builtin.agentic_process.cli_drivers.codex.cli import CodexCliOptions
 from flow_sdk.builtin.agentic_process.cli_drivers.codex.event_to_flowdata import (
     convert_line,
@@ -69,9 +76,8 @@ class CodexCLIStreamWorker(AgenticWorker):
     def __init__(self, transcript_path: Path | str | None = None) -> None:
         self._session_id: str | None = None
         self._proc: asyncio.subprocess.Process | None = None
-        self._transcript_path: Path | None = (
-            Path(transcript_path) if transcript_path else None
-        )
+        self._process_run_id: str | None = None
+        self._transcript_path: Path | None = Path(transcript_path) if transcript_path else None
 
     @classmethod
     def for_process(cls, process_id: str) -> "CodexCLIStreamWorker":
@@ -87,12 +93,17 @@ class CodexCLIStreamWorker(AgenticWorker):
         prompt: str,
         context: AgenticContext,
     ) -> AsyncIterator[FlowData]:
-        argv, env, stdin = self._build_spawn(context, prompt)
-        if argv is None:
-            yield _error("codex binary not found in PATH")
-            return
+        self._process_run_id = None
+        try:
+            argv, env, stdin = self._build_spawn(context, prompt)
+        except WorkerSpawnError as e:
+            # Surface the message on the chat stream, then propagate so the
+            # turn runner latches status=FAILED + start_failure.
+            yield _error(str(e))
+            raise
 
         logger.info("CodexCLIStreamWorker: launching %s", " ".join(argv))
+        self._process_run_id = stamp_cli_run_id(env)
 
         # Open transcript file for tee'ing the JSONL stream.
         # Append mode keeps existing content if the worker is reused (rare).
@@ -102,8 +113,7 @@ class CodexCLIStreamWorker(AgenticWorker):
                 self._transcript_path.parent.mkdir(parents=True, exist_ok=True)
                 tee_fh = open(self._transcript_path, "ab", buffering=0)
             except OSError as e:
-                logger.warning("CodexCLIStreamWorker: failed to open transcript %s: %s",
-                               self._transcript_path, e)
+                logger.warning("CodexCLIStreamWorker: failed to open transcript %s: %s", self._transcript_path, e)
 
         try:
             self._proc = await asyncio.create_subprocess_exec(
@@ -113,6 +123,7 @@ class CodexCLIStreamWorker(AgenticWorker):
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                limit=STREAM_JSON_LINE_LIMIT_BYTES,
             )
         except Exception as e:
             logger.exception("CodexCLIStreamWorker: spawn failed")
@@ -153,15 +164,12 @@ class CodexCLIStreamWorker(AgenticWorker):
             await self._terminate_process()
             raise
         finally:
-            if self._proc and self._proc.returncode is None:
-                try:
-                    await asyncio.wait_for(self._proc.wait(), timeout=CANCEL_GRACE_SECONDS)
-                except asyncio.TimeoutError:
-                    logger.warning(
-                        "CodexCLIStreamWorker: subprocess did not exit in grace; sending SIGKILL"
-                    )
-                    self._proc.kill()
-                    await self._proc.wait()
+            if self._proc:
+                await wait_for_asyncio_process_or_kill_tree(
+                    self._proc,
+                    CANCEL_GRACE_SECONDS,
+                    run_id=self._process_run_id,
+                )
 
             stderr_task.cancel()
             try:
@@ -200,13 +208,13 @@ class CodexCLIStreamWorker(AgenticWorker):
         self,
         context: AgenticContext,
         prompt: str,
-    ) -> tuple[list[str] | None, dict[str, str], str | None]:
-        # Discovered harness capability supplies the CLI's bin folder
-        # (terminal-PATH resolution) — None ⇔ codex is not installed.
-        path_env = worker_path_env("codex")
-        if path_env is None:
-            return None, {}, None
+    ) -> tuple[list[str], dict[str, str], str | None]:
+        """Build the ``(argv, env, stdin)`` spawn tuple.
 
+        Raises :class:`WorkerSpawnError` when codex is not installed (no
+        harness capability discovered) or its executable can't be resolved on
+        the spawn PATH.
+        """
         opts = CodexCliOptions(
             workdir=context.workdir,
             env_vars=dict(context.env_vars) if context.env_vars else None,
@@ -226,16 +234,16 @@ class CodexCLIStreamWorker(AgenticWorker):
         opts.developer_instructions = context.developer_instructions
         # Asset-backed system instructions ride developer_instructions; the
         # legacy system_prompt_append path remains unused for new launches.
-        argv, env_from_opts, stdin = opts.to_spawn(
-            instruction=prompt, system_prompt_append=context.instructions
-        )
+        argv, env_from_opts, stdin = opts.to_spawn(instruction=prompt, system_prompt_append=context.instructions)
 
-        # Inherit os.environ so codex can find creds, PATH, ~/.codex; overlay
-        # the capability's PATH prepend (argv[0] + `#!/usr/bin/env node`
-        # resolution), then caller-provided env_vars last so they win.
-        env = dict(os.environ)
-        env.update(path_env)
-        env.update(env_from_opts)
+        # Inherit os.environ so codex can find creds, ~/.codex; overlay the
+        # caller-provided env_vars (they win, except the discovered capability
+        # bin folder stays first on PATH), then pin argv[0] to the discovered
+        # absolute executable — the subprocess layer resolves a bare argv[0]
+        # against the PARENT process PATH on some platforms, and a desktop
+        # service PATH commonly lacks the nvm bin dir discovery recorded.
+        env = build_worker_spawn_env("codex", env_from_opts)
+        argv = resolve_worker_argv0("codex", argv, env)
         return argv, env, stdin
 
     async def _drain_stderr(self, proc: asyncio.subprocess.Process) -> None:
@@ -253,24 +261,13 @@ class CodexCLIStreamWorker(AgenticWorker):
 
     async def _terminate_process(self) -> None:
         proc = self._proc
-        if proc is None or proc.returncode is not None:
+        if proc is None:
             return
-        try:
-            proc.terminate()
-        except ProcessLookupError:
-            return
-        try:
-            await asyncio.wait_for(proc.wait(), timeout=CANCEL_GRACE_SECONDS)
-        except asyncio.TimeoutError:
-            logger.warning("CodexCLIStreamWorker: grace expired, sending SIGKILL")
-            try:
-                proc.kill()
-            except ProcessLookupError:
-                return
-            try:
-                await proc.wait()
-            except Exception:
-                pass
+        await terminate_asyncio_process_tree(
+            proc,
+            CANCEL_GRACE_SECONDS,
+            run_id=self._process_run_id,
+        )
 
 
 # ── Module helpers ────────────────────────────────────────────────────────────

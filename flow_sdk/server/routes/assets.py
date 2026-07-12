@@ -178,14 +178,17 @@ async def get_entity_by_path(
 
     Pure DB lookup across every file-backed type (thin wrapper over
     ``Entity.get_by_asset_ref``) — **no discovery, no recovery scan, no
-    indexing**. Returns the full entity row, or ``null`` when no entity owns the
-    path (caller keeps its fallback). This is the cheap, best-effort path→entity
-    conversion the loader uses; ``/fs-records/{type}/discover`` is the heavy
-    recovery counterpart and stays out of the hot path.
+    indexing**. Exact match wins; on a miss, a file inside a folder-backed
+    asset (skill, whiteboard, task, ...) resolves to its owning folder entity
+    (deepest ancestor ``asset_ref`` — still a pure indexed DB lookup). Returns
+    the full entity row, or ``null`` when no entity owns the path (caller
+    keeps its fallback). This is the cheap, best-effort path→entity conversion
+    the loader uses; ``/fs-records/{type}/discover`` is the heavy recovery
+    counterpart and stays out of the hot path.
     """
     from flow_sdk.core.entity.entity_model import Entity  # noqa: PLC0415
 
-    entity = await Entity.get_by_asset_ref(path)
+    entity = await Entity.get_by_asset_ref(path, resolve_containing=True)
     return JSONResponse(content={"status": "SUCCESS", "data": (
         entity.model_dump(mode="json") if entity is not None else None
     )})

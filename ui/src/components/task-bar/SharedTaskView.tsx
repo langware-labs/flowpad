@@ -7,14 +7,13 @@
 
 import { useState } from 'react';
 import { ArrowLeft, Activity } from 'lucide-react';
-import { Conversation, Spec, Task, TypeId } from '@sdk';
-import { useEntity } from '@sdk/react/hooks';
-import { ExpansionRequest } from '@sdk/FlowSync/query';
+import { Conversation, Task, TypeId } from '@sdk';
 import { sendReply } from '@sdk/entities/notifications';
 import { notify } from '@src/notifications';
 import { ConversationPanel } from '@src/components/conversation/ConversationPanel';
 import { useLocalUser } from '@src/components/conversation/useLocalUser';
 import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
+import { useTaskSpecText } from '@src/hooks/use-task-spec-text';
 import { Trans, useLingui } from '@lingui/react/macro';
 
 const STATUS_REQUEST_PROMPT_TEXT = 'Summarize the task and plan status in 5 lines';
@@ -34,17 +33,14 @@ interface SharedTaskViewProps {
 
 export function SharedTaskView({ task, conversationId, onClose }: SharedTaskViewProps) {
   const { t } = useLingui();
-  const blobExpansion = new ExpansionRequest({ expand: ['blobs'] });
 
   const senderName = task.sender_name
     || task.shared_by_id
     || 'Unknown';
 
-  const specTypeId = task.firstContextOfType?.('spec') ?? null;
-  const { data: spec } = useEntity<Spec>(
-    specTypeId,
-    { query: blobExpansion },
-  );
+  // Spec is now a plain `spec.md` file inside the task folder (with a legacy
+  // Spec-entity fallback) — resolved by the shared hook.
+  const specText = useTaskSpecText(task);
   const taskDerivedConvTypeId = task.firstContextOfType?.('conversation') ?? null;
   const resolvedConversationId = conversationId ?? taskDerivedConvTypeId?.id ?? null;
   const conversationTypeId = resolvedConversationId
@@ -121,19 +117,19 @@ export function SharedTaskView({ task, conversationId, onClose }: SharedTaskView
           conversation hosts its own right-side drawer (Runs / Context) plus
           the bottom ribbon, which now sits flush at the bottom of this view. */}
       <div className="flex min-h-0 flex-1 flex-col">
-        {(spec?.title || spec?.content) && (
+        {(task.title || specText) && (
           <section className="flex-shrink-0 space-y-3 border-b border-border px-4 py-4">
-            {spec?.title && (
+            {task.title && (
               <div>
                 <span className="text-xs font-medium text-muted-foreground"><Trans>Title</Trans></span>
-                <p className="mt-0.5 text-sm">{spec.title}</p>
+                <p className="mt-0.5 text-sm">{task.title}</p>
               </div>
             )}
-            {spec?.content && (
+            {specText && (
               <div>
-                <span className="text-xs font-medium text-muted-foreground"><Trans>Description</Trans></span>
+                <span className="text-xs font-medium text-muted-foreground"><Trans>Plan</Trans></span>
                 <div className="mt-1 max-h-40 overflow-y-auto rounded-lg border border-border bg-muted/30 p-3 text-sm text-foreground/80 whitespace-pre-wrap">
-                  {spec.content}
+                  {specText}
                 </div>
               </div>
             )}

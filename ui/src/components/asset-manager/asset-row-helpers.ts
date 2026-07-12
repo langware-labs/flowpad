@@ -10,7 +10,9 @@ import type { AssetTypeInfo } from '@src/hooks/use-asset-types';
  * isn't well-formed.
  */
 export function displayLabelForTypeid(typeid: string): string {
-  if (!isTypeId(typeid)) return typeid;
+  // Name-form pseudo-typeids (entity-less inline personas, `agent-<name>`)
+  // aren't cache-resolvable — show the bare name, not the raw pair.
+  if (!isTypeId(typeid)) return parseTypeid(typeid).id || typeid;
   try {
     const entity = dataManager.getByTypeIdFromCache(new TypeId(typeid));
     return entity?.displayName ?? typeid;

@@ -16,6 +16,7 @@ Error contract (parsed by the agent — keep stable):
 
 from __future__ import annotations
 
+import os
 from typing import Optional
 
 import requests
@@ -58,6 +59,14 @@ def list_context(
         typer.Option("--connection-id", "-c", help="Target a specific WS connection by id."),
     ] = None,
 ) -> None:
+    # A worker inherits the id of the browser tab that launched it via
+    # FLOWPAD_CONNECTION_ID (injected in agentic_process.py). Default to it so a
+    # headless worker reads ITS OWN tab's context instead of whichever tab is
+    # currently active/visible — otherwise `flow context list` returns the wrong
+    # project and records get written across the project boundary (VIBE-003).
+    if not connection_id:
+        connection_id = os.environ.get("FLOWPAD_CONNECTION_ID") or None
+
     port = _discover_port()
     url = f"http://127.0.0.1:{port}/api/v1/agent/context"
     params = {"connection_id": connection_id} if connection_id else None

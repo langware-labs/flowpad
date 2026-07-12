@@ -14,7 +14,22 @@ export type AssetSource =
   | 'user_dir'        // under user_home
   | 'workdir'         // process workdir if distinct from project/user
   | 'additional_dir'  // additional_dirs entries (excl. auto-appended assets dir)
-  | 'context_dir';    // project.include_dirs (context folders)
+  | 'context_dir'     // project.include_dirs (context folders)
+  | 'transcript';     // file-backed entity read in transcript only
+
+export type AssetUsageKind =
+  | 'embedded_asset'
+  | 'inline_persona'
+  | 'transcript_file_read';
+
+export interface AssetUsage {
+  /** Normalized reason this descriptor is considered active/used. */
+  kind: AssetUsageKind;
+  path?: string | null;
+  entry_id?: string | null;
+  timestamp?: string | null;
+  label?: string | null;
+}
 
 export interface AssetDescriptor {
   /** Serialized TypeId, e.g. "skill-<uuid>" or "agent-<uuid>". */
@@ -28,6 +43,8 @@ export interface AssetDescriptor {
    *  process-local (embedded/inline/workdir) assets. Lets scope-aware UIs
    *  filter by specific project ids without re-fetching. */
   project_id?: string | null;
+  /** Lightweight usage evidence owned by the backend. */
+  usage?: AssetUsage[];
 }
 
 /**
@@ -42,6 +59,7 @@ export const ASSET_SOURCE_LABEL: Record<AssetSource, string> = {
   workdir: 'workdir',
   additional_dir: 'additional',
   context_dir: 'context folder',
+  transcript: 'transcript',
 };
 
 /**
@@ -61,8 +79,13 @@ export const READONLY_ASSET_SOURCES: readonly AssetSource[] = [
   'workdir',
   'additional_dir',
   'context_dir',
+  'transcript',
 ];
 
 export function isReadOnlySource(source: AssetSource): boolean {
   return READONLY_ASSET_SOURCES.includes(source);
+}
+
+export function assetDescriptorHasUsage(descriptor: Pick<AssetDescriptor, 'usage'>): boolean {
+  return (descriptor.usage?.length ?? 0) > 0;
 }

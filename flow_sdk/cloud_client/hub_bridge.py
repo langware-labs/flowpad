@@ -382,6 +382,25 @@ class HubWsBridge:
         # hub container (e.g. the conversation, used only for fanout).
         if isinstance(data, dict) and not data.get("id"):
             data = {**data, "id": child_id}
+        # Blob fallback: the hub op usually embeds the in-memory entity (blobs
+        # included), but a payload built from the hub's DB row carries blob
+        # fields EMPTY (they're db-excluded). Materializing that would clobber
+        # nothing locally yet still leave the child bodyless — so when a
+        # blob-declaring type arrives with all blob fields empty, fetch the
+        # expanded entity once and merge. Harmless when the body is genuinely
+        # empty; skipped entirely for types without blob fields.
+        blob_fields = cls.get_blob_fields_names() if hasattr(cls, "get_blob_fields_names") else []
+        if blob_fields and isinstance(data, dict) and not any(data.get(f) for f in blob_fields):
+            try:
+                from flow_sdk.db.drivers.db_base_record import BuiltinEntityType  # noqa: PLC0415
+                from flow_sdk.utils.hub import hub_get  # noqa: PLC0415
+
+                etype = BuiltinEntityType(child_type)
+                expanded = await hub_get(etype, child_id, params={"expand": "blobs"})
+                if isinstance(expanded, dict) and any(expanded.get(f) for f in blob_fields):
+                    data = {**data, **{f: expanded[f] for f in blob_fields if expanded.get(f)}}
+            except Exception:  # noqa: BLE001
+                logger.debug("hub_bridge: blob follow-up fetch failed for %s-%s", child_type, child_id, exc_info=True)
         envelope_ref = f"{parent_type}-{parent_id}" if parent_type and parent_id else None
         local_user = await User.get_local()
         someone_typeid = local_user.typeid if local_user else None

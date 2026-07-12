@@ -36,6 +36,15 @@ import {
 
 // ─── Shared fixture ──────────────────────────────────────────────────────────
 
+interface ReadyForInputCase {
+  status: string;
+  busy: boolean;
+  pty_mode: boolean;
+  session_id: string | null;
+  expected: boolean;
+  label: string;
+}
+
 interface StatusSetsFixture {
   worker_running: string[];
   worker_busy: string[];
@@ -44,6 +53,7 @@ interface StatusSetsFixture {
   process_stored_running: string[];
   process_running_wire: string[];
   process_startable: string[];
+  ready_for_input_cases: ReadyForInputCase[];
 }
 
 const FIXTURE_PATH = resolve(__dirname, '../../../test_fixtures/status_sets.json');
@@ -301,11 +311,13 @@ describe('supportedExecutionModes', () => {
 // ─── isReadyForInput / isBusy — the ONE gate, two orthogonal axes ────────────
 //
 // Realigned: ``isBusy`` reads the separate ``busy`` boolean; ``isReadyForInput``
-// ⇔ ``status === RUNNING && !busy``. They do NOT re-derive from workerStatus.
-// The two are disjoint by construction.
+// ⇔ ``!busy && (status === RUNNING || fresh-headless || headless-idle)`` where
+// fresh-headless = CLI transport + NEW, and headless-idle = CLI transport +
+// STOPPED + a live ``session_id``. They do NOT re-derive from workerStatus.
+// "ready" and "busy" are disjoint by construction.
 
 describe('isReadyForInput', () => {
-  it('is true exactly for RUNNING and not busy', () => {
+  it('is true for RUNNING and not busy', () => {
     expect(isReadyForInput({ status: ProcessStatus.RUNNING, busy: false })).toBe(true);
     expect(isReadyForInput({ status: ProcessStatus.RUNNING })).toBe(true); // busy defaults falsy
   });
@@ -315,16 +327,15 @@ describe('isReadyForInput', () => {
   });
 
   it.each([
-    ProcessStatus.NEW,
     ProcessStatus.STARTING, // live bookend, but the worker isn't fully up → not ready
     ProcessStatus.STOPPING,
-    ProcessStatus.STOPPED,
+    ProcessStatus.STOPPED, // no session_id here → not headless-idle → not ready
     ProcessStatus.FAILED,
-  ])('is false for %s regardless of busy', (s) => {
+  ])('is false for %s (no live headless session)', (s) => {
     expect(isReadyForInput({ status: s, busy: false })).toBe(false);
   });
 
-  it('ignores workerStatus and session_id — status + busy are the source', () => {
+  it('ignores workerStatus; at RUNNING session_id is irrelevant', () => {
     // A ready process stays ready whatever the raw worker label says.
     expect(
       isReadyForInput({ status: ProcessStatus.RUNNING, busy: false, workerStatus: WorkerStatus.THINKING }),
@@ -337,6 +348,79 @@ describe('isReadyForInput', () => {
 
   it('is false when there is no status at all', () => {
     expect(isReadyForInput({})).toBe(false);
+  });
+
+  it('is true for a fresh headless process and false for a fresh PTY process', () => {
+    expect(isReadyForInput({ status: ProcessStatus.NEW, busy: false, pty_mode: false })).toBe(true);
+    expect(isReadyForInput({ status: ProcessStatus.NEW, busy: false, pty_mode: true })).toBe(false);
+    expect(isReadyForInput({ status: ProcessStatus.NEW, busy: true, pty_mode: false })).toBe(false);
+  });
+});
+
+// ─── isReadyForInput — headless-idle readiness (RCA #12a) ─────────────────────
+//
+// The CLI transport runs a fresh `claude -p` worker per turn, so between turns a
+// headless session sits at STOPPED with its session_id preserved — yet is ready
+// for the next prompt and to toggle chat⇄terminal back. Mirror of the Python
+// is_ready_from_busy headless-idle branch. Without it the toggle wedged off.
+
+describe('isReadyForInput — headless-idle', () => {
+  it('is true for CLI transport (pty_mode=false) + STOPPED + live session_id', () => {
+    expect(
+      isReadyForInput({ status: ProcessStatus.STOPPED, busy: false, pty_mode: false, session_id: 'sess-abc' }),
+    ).toBe(true);
+  });
+
+  it('is false at STOPPED without a session_id (never prompted)', () => {
+    expect(
+      isReadyForInput({ status: ProcessStatus.STOPPED, busy: false, pty_mode: false }),
+    ).toBe(false);
+  });
+
+  it('is false for PTY transport (pty_mode=true) at STOPPED even with a session', () => {
+    // An interactive worker needs a live PID; a stopped PTY is not headless-idle.
+    expect(
+      isReadyForInput({ status: ProcessStatus.STOPPED, busy: false, pty_mode: true, session_id: 'sess-abc' }),
+    ).toBe(false);
+  });
+
+  it('is false when the headless session is busy (a turn is in flight)', () => {
+    expect(
+      isReadyForInput({ status: ProcessStatus.STOPPED, busy: true, pty_mode: false, session_id: 'sess-abc' }),
+    ).toBe(false);
+  });
+
+  it.each([ProcessStatus.STARTING, ProcessStatus.FAILED])(
+    'is false for CLI %s + session_id (only STOPPED qualifies as headless-idle)',
+    (s) => {
+      expect(isReadyForInput({ status: s, busy: false, pty_mode: false, session_id: 'sess-abc' })).toBe(false);
+    },
+  );
+});
+
+// ─── isReadyForInput — cross-language contract (shared fixture rows) ─────────
+//
+// The same ``ready_for_input_cases`` rows are iterated by the Python
+// ``test_ready_for_input_contract_cases`` against ``is_ready_from_busy`` — the
+// two language predicates cannot silently diverge on the RUNNING baseline,
+// the fresh-headless (NEW + CLI) branch, or the headless-idle branch.
+
+describe('isReadyForInput — contract (test_fixtures/status_sets.json)', () => {
+  const cases = fixture.ready_for_input_cases;
+
+  it('fixture carries the shared truth table', () => {
+    expect(cases.length).toBeGreaterThan(0);
+  });
+
+  it.each(cases)('$label', (c) => {
+    expect(
+      isReadyForInput({
+        status: c.status as ProcessStatus,
+        busy: c.busy,
+        pty_mode: c.pty_mode,
+        session_id: c.session_id ?? undefined,
+      }),
+    ).toBe(c.expected);
   });
 });
 
@@ -383,6 +467,15 @@ describe('getDisplayStatus', () => {
     for (const s of [ProcessStatus.NEW, ProcessStatus.STOPPED, ProcessStatus.FAILED]) {
       expect(getDisplayStatus({ status: s, workerStatus: WorkerStatus.THINKING })).toBe(s);
     }
+  });
+
+  it('surfaces worker errors even after the lifecycle has stopped', () => {
+    expect(
+      getDisplayStatus({ status: ProcessStatus.STOPPED, workerStatus: WorkerStatus.ERROR }),
+    ).toBe(WorkerStatus.ERROR);
+    expect(
+      getDisplayStatus({ status: ProcessStatus.STOPPED, worker_status: WorkerStatus.API_TIMEOUT }),
+    ).toBe(WorkerStatus.API_TIMEOUT);
   });
 
   it('returns undefined for processes with no status at all', () => {

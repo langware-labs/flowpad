@@ -114,6 +114,54 @@ async def test_show_last_shown_survives_stale_process_save(bootstrapped_client, 
 
 
 @pytest.mark.asyncio
+async def test_show_appends_display_stack_with_dedupe(bootstrapped_client, user):
+    """Each `flow show` APPENDS to ``context_data.display_stack`` (newest last,
+    stamped ``shown_at``); ``last_shown`` mirrors the newest TARGET; a consecutive
+    identical target refreshes the timestamp instead of duplicating."""
+    pid = await create_agentic_process(bootstrapped_client, visible=False, pty_mode=False)
+    base = f"/api/v1/graph/agentic_process/{pid}"
+
+    r1 = ApiResponse(**(await bootstrapped_client.post(f"{base}/show", json={"port": 3000})).json()).data
+    r2 = ApiResponse(**(await bootstrapped_client.post(f"{base}/show", json={"port": 4000})).json()).data
+
+    row = await get_agentic_process(bootstrapped_client, pid)
+    stack = row["context_data"]["display_stack"]
+    assert len(stack) == 2, "two distinct shows → two entries"
+    assert all("shown_at" in e for e in stack), "every entry is timestamped"
+    # Each entry is the target payload plus shown_at, newest last.
+    assert {k: stack[0][k] for k in r1} == r1
+    assert {k: stack[1][k] for k in r2} == r2
+    # last_shown is the newest TARGET (no shown_at leak).
+    assert row["context_data"]["last_shown"] == r2
+    assert "shown_at" not in row["context_data"]["last_shown"]
+
+    # Re-show the SAME target → dedup: still 2 entries, timestamp refreshed.
+    prev = stack[1]["shown_at"]
+    await bootstrapped_client.post(f"{base}/show", json={"port": 4000})
+    row = await get_agentic_process(bootstrapped_client, pid)
+    stack2 = row["context_data"]["display_stack"]
+    assert len(stack2) == 2, "consecutive identical target must not duplicate"
+    assert stack2[1]["shown_at"] >= prev
+
+
+@pytest.mark.asyncio
+async def test_on_show_unions_concurrent_appends(bootstrapped_client, user):
+    """``on_show`` is read-modify-write against the freshest stack, so two
+    independent process objects showing different targets don't lose each other."""
+    pid = await create_agentic_process(bootstrapped_client, visible=False, pty_mode=False)
+
+    a = await AgenticProcess.get_by_id(pid)
+    b = await AgenticProcess.get_by_id(pid)
+    assert a is not None and b is not None
+    await a.on_show({"kind": "vfs", "path": "/tmp/a.txt"})
+    await b.on_show({"kind": "vfs", "path": "/tmp/b.txt"})
+
+    row = await get_agentic_process(bootstrapped_client, pid)
+    paths = [e.get("path") for e in row["context_data"]["display_stack"]]
+    assert "/tmp/a.txt" in paths and "/tmp/b.txt" in paths, "neither concurrent append is lost"
+
+
+@pytest.mark.asyncio
 async def test_register_webapp_artifact_attaches_to_project_and_shows(bootstrapped_client, user, tmp_path):
     project = Project(name="app-proj", fs_storage_mount_path=str(tmp_path))
     await project.save()
@@ -256,6 +304,71 @@ async def test_queue_enqueue_dequeue_clear_and_enabled(bootstrapped_client, user
     cleared = ApiResponse(**rc.json()).data
     assert cleared["entries"] == []
     assert cleared["enabled"] is False
+
+
+@pytest.mark.asyncio
+async def test_multi_entry_queue_drains_every_headless_entry(
+    bootstrapped_client, user, tmp_path, monkeypatch
+):
+    """VIBE-005: stage 3 entries with draining OFF, then turn draining ON — all
+    three must dequeue, not just the first.
+
+    Only the ``claude`` binary is faked (the real ``ClaudeCLIStreamWorker`` /
+    ``_run_turn`` / ``_turn_in_flight`` lifecycle runs); the queue-drain logic
+    under test is untouched. The bug: headless ``prompt()`` returns after
+    *scheduling* ``_run_turn`` (driver.py: ``asyncio.create_task``), not after
+    completion, so the chained drain in ``_maybe_drain_queue``'s ``finally``
+    fires while the first turn is still in flight, bails ``not_ready``, and
+    nothing re-triggers a drain once the turn completes.
+    """
+    # A brief turn so the chain drain genuinely races an in-flight worker.
+    patch_build_spawn(
+        monkeypatch,
+        ClaudeCLIStreamWorker,
+        fake_stream_argv(
+            [{"type": "result", "subtype": "success", "is_error": False, "session_id": "sid"}],
+            delay_ms=50,
+        ),
+    )
+    pid = await create_agentic_process(
+        bootstrapped_client, pty_mode=False, workdir=str(tmp_path)
+    )
+    base = f"/api/v1/graph/agentic_process/{pid}"
+
+    # Stage three ordered entries with draining OFF (no drain yet).
+    await bootstrapped_client.post(f"{base}/set-queue-enabled", json={"enabled": False})
+    staged = ["one", "two", "three"]
+    for prompt in staged:
+        await bootstrapped_client.post(f"{base}/enqueue", json={"prompt": prompt})
+
+    ap = await AgenticProcess.get_one({"id": pid})
+    assert [e["prompt"] for e in ap.queue.entries] == staged, "staging order lost"
+
+    # Turn draining ON and drive the drain deterministically. Each headless
+    # turn is a background ``_run_turn`` task that, on completion, schedules the
+    # next drain — so await the whole cascade (worker turns + drain tasks) until
+    # the queue settles. No sleeps/timeouts: this only awaits real tasks the
+    # drain machinery spawns, which is finite for a finite queue.
+    ap.queue.set_enabled(True)
+
+    def _related(t: asyncio.Task) -> bool:
+        if t is asyncio.current_task() or t.done():
+            return False
+        qual = getattr(t.get_coro(), "__qualname__", "")
+        return (t.get_name() or "").startswith("claude-") or "_maybe_drain_queue" in qual
+
+    await ap._maybe_drain_queue("enable")
+    for _ in range(30):
+        pending = [t for t in asyncio.all_tasks() if _related(t)]
+        if not pending:
+            break
+        await asyncio.gather(*pending, return_exceptions=True)
+
+    # Every staged entry should have become a turn exactly once, in order.
+    assert ap.queue.entries == [], (
+        "queue stranded after the first headless turn: "
+        f"{[e['prompt'] for e in ap.queue.entries]}"
+    )
 
 
 # ---------------------------------------------------------------------------

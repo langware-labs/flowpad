@@ -282,7 +282,7 @@ class FsRecordsActionsMixin:
             # Resolve a human-readable title the same way the history dropdown does.
             name: str | None = None
             last_prompt: str | None = None
-            ap_name = ap_index.get(sid, (None, None))[1]
+            ap_name = ap_index.get(sid, (None, None, None))[1]
             if wk == "claude":
                 try:
                     sess = extract_claude_session_from_path(path, include_content=False)

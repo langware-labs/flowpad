@@ -207,7 +207,7 @@ export async function acceptInvitationInUI(inst: InstancePage): Promise<void> {
 }
 
 export async function openConversation(inst: InstancePage, conversationId: string): Promise<void> {
-  await inst.page.goto(`${inst.feUrl}/dock/conversation/${conversationId}`, {
+  await inst.page.goto(`${inst.feUrl}/dock/conversation/${conversationId}?viewMode=advanced`, {
     waitUntil: 'domcontentloaded',
   });
   await dismissWelcomeModal(inst.page);

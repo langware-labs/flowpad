@@ -169,6 +169,12 @@ class DBBaseRecord(BaseModel):
     def is_api_field(cls, field_name: str) -> bool:
         # Check in the current class
         if field_name not in cls.model_fields:
+            # Computed fields are emitted on every outbound API payload, so a
+            # client echoing one back (e.g. Project.include_dirs) is not a
+            # foreign key — accept it and let the model's validators decide
+            # (a before-validator may adopt it; otherwise pydantic drops it).
+            if field_name in getattr(cls, "model_computed_fields", {}):
+                return True
             return False
         field_info = cls.model_fields[field_name]
         if is_api_visible_field(field_info):

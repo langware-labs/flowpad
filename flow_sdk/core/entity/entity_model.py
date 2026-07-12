@@ -488,14 +488,25 @@ class Entity(DBEntity):
         return results[opts.offset:end]
 
     @classmethod
-    async def get_by_asset_ref(cls, path: "str | Path") -> "Entity | None":
+    async def get_by_asset_ref(
+        cls, path: "str | Path", *, resolve_containing: bool = False
+    ) -> "Entity | None":
         """Resolve the single entity whose ``asset_ref`` equals ``path``.
 
         ``asset_ref`` is globally unique (one entity per file path across all
         types), so the first hit is THE entity. Queries every file-backed type
         (those declaring an ``asset_ref`` field) in parallel — the generic
         replacement for the per-type resolution loops the cross-link helpers
-        used to carry. Returns ``None`` when no entity owns the path.
+        used to carry.
+
+        ``resolve_containing`` (opt-in — the default keeps the strict
+        exact-match contract existing callers rely on): when the exact match
+        misses, a file INSIDE a folder-backed asset resolves to its owning
+        entity — the path's ancestor directories are matched (one
+        ``asset_ref IN (...)`` query per ``folder_backed`` type) and the
+        deepest hit wins, e.g. any file under ``.claude/skills/foo/`` resolves
+        to the ``foo`` Skill. Exact match always wins over containment.
+        Returns ``None`` when no entity owns the path.
         """
         import asyncio  # noqa: PLC0415
 
@@ -514,7 +525,43 @@ class Entity(DBEntity):
         for result in await asyncio.gather(*[_try(c) for c in candidates]):
             if result is not None:
                 return result
-        return None
+
+        if not resolve_containing:
+            return None
+        return await cls._get_by_containing_folder(path_str, candidates)
+
+    @classmethod
+    async def _get_by_containing_folder(
+        cls, path_str: str, candidates: list[type]
+    ) -> "Entity | None":
+        """Deepest folder-backed entity whose ``asset_ref`` is an ancestor dir
+        of ``path_str``. Pure DB lookup (indexed ``asset_ref IN`` per type) —
+        no disk access, no discovery."""
+        import asyncio  # noqa: PLC0415
+
+        from flow_sdk.fs_store.path_utils import ancestors_of
+
+        ancestors = ancestors_of(path_str)
+        if not ancestors:
+            return None
+
+        def _folder_backed(ecls: type) -> bool:
+            info = SchemaRegistry.get(ecls.get_type())
+            return info is not None and info.folder_backed
+
+        folder_types = [ecls for ecls in candidates if _folder_backed(ecls)]
+
+        async def _hits(ecls: type) -> "list[Entity]":
+            try:
+                return await ecls.get_all(QueryFilter(
+                    type=ecls.get_type(),
+                    match=ExpressionNode(op=QueryOp.IN, operands=["asset_ref", ancestors]),
+                ))
+            except Exception:
+                return []
+
+        all_hits = [e for hits in await asyncio.gather(*[_hits(t) for t in folder_types]) for e in hits]
+        return max(all_hits, key=lambda e: len(getattr(e, "asset_ref", "") or ""), default=None)
 
     @classmethod
     def allocate_id(cls, data: dict) -> str:
@@ -1625,7 +1672,47 @@ class Entity(DBEntity):
         if "remote" in cls.model_fields:
             ent.remote = True
         await ent.save(someone_typeid, notify=notify)
+        # Receiver contract: replication replays the ORIGIN's write, not a weaker
+        # one. The sender's create ran `add_child` → a local `is_child` role edge;
+        # role-walk scope queries (e.g. the doc-comment gutter) resolve through
+        # that edge, so a bare row save leaves the child invisible. Recreate it
+        # when the parent row exists locally; when it doesn't (layer-1-gated doc
+        # not installed yet), the catch-up rebind pass heals later. Non-fatal.
+        try:
+            await ent.ensure_child_edge()
+        except Exception as e:  # noqa: BLE001
+            import logging
+            logging.getLogger(__name__).warning(
+                "upsert_from_hub_child: edge recreation failed for %s: %s", ent.typeid, e
+            )
         return ent
+
+    async def ensure_child_edge(self) -> bool:
+        """Ensure the local parent→self ``is_child`` role edge exists.
+
+        The single edge-recreation seam for materialized remote children (live
+        bridge + catch-up sync + orphan rebind). Resolves ``parent_type_id`` to a
+        LOCAL row; absent parent → False (caller-side rebind heals when the
+        parent materializes). ``attach_child``/``grant_role`` dedups an existing
+        edge (pinned by test_attach_child_idempotency), but we pre-check anyway so
+        the every-sync re-convergence path does zero writes when converged.
+        Returns True iff the edge exists after the call.
+        """
+        from flow_sdk.db.rolerelationship import RoleRelationship  # noqa: PLC0415
+
+        parent = await self.parent()
+        if parent is None:
+            return False
+        rel_filter = QueryFilter(
+            type=RoleRelationship.get_type(),
+            match=ExpressionNode(op=QueryOp.EQ, operands=["is_child", True]),
+        )
+        rels = await self.get_incoming_relationships(rel_filter)
+        parent_tid = str(parent.typeid)
+        if any(str(r.from_typeid) == parent_tid for r in rels if r.from_typeid):
+            return True
+        await parent.attach_child(self)
+        return True
 
     @classmethod
     async def materialize_share_parent(

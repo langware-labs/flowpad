@@ -6,8 +6,8 @@
  * in a headless Chromium and proves the switch survives 10 rapid round-trips
  * without the pane desyncing, the session drifting, or the status indicator
  * going stale. It exists to catch the stale-broadcast clobber the SDK
- * desired-value latch fixes (agentic-process.ts `_pendingPtyMode`/
- * `_pendingVisible`): an in-flight entity broadcast carrying the pre-switch
+ * desired-value latch fixes (agentic-process.ts `_pendingTransport`): an
+ * in-flight entity broadcast carrying the pre-switch
  * `pty_mode` must NOT flip the pane back after the user toggles.
  *
  * The chat⇄terminal toggle (`handleToggleView`) does TWO things at once: it
@@ -24,13 +24,20 @@
  *
  * Each iteration toggles the surface, asserts the destination pane mounted +
  * the session_id is unchanged + the status indicator reads idle. Liveness is
- * proven on the CHAT iterations by sending a unique per-count token through the
- * composer and asserting it lands as real agent output — proof the one session
- * stays usable across the PTY restarts. (We don't type into the raw xterm on
- * terminal iterations: keystrokes racing the switch→Interactive PTY cold-restart
- * drop silently — a transport-timing artifact, not a switch defect; the switch
- * itself is still fully asserted there.) A slow turn trips the tight per-step
- * budget — a regression, never something to wait out.
+ * proven on ALL 10 iterations by driving a unique per-count token turn and
+ * asserting it lands as real AGENT output — proof the one session stays usable
+ * across the PTY restarts. The driver is transport-specific, because the two
+ * transports accept a turn differently (RCA #20):
+ *   • PTY iterations → the `prompt` action (`proc.prompt` → `_run_pty_prompt`),
+ *     which injects the turn into the (re)started TUI with a submission-confirm
+ *     nudge and streams the transcript back as flow_data. Typing raw keystrokes
+ *     into the freshly cold-restarted xterm (`proc.submit()` on PTY) drops them
+ *     before the TUI accepts input AND emits no flow_data — no turn to observe.
+ *   • headless iterations → `proc.submit()` (enqueue+drain streams agent output).
+ * The token-landing check matches only non-user entries, since both the prompt
+ * action's transcript replay and `proc.prompt()`'s optimistic echo carry the
+ * USER turn (which contains the token verbatim) — see `tokenInStream`. A slow
+ * turn trips the tight per-step budget — a regression, never something to wait out.
  *
  * Lifecycle is external (like every hub test): `scripts/instance_ctl.sh launch
  * dev-1` + the hub up, else the suite SKIPS. Run:
@@ -253,16 +260,25 @@ describe('chat⇄terminal switch stress in the browser — one session, 10 itera
     );
   }
 
-  /** Has `token` landed as REAL agent output? The SDK realm proc is WATCHED, so
-   *  the backend-recorded turn streams into `flowDataStream` over WS — and the
-   *  realm proc is a SEPARATE client from the browser, so its stream carries no
-   *  optimistic user echo (every item is backend-recorded). So the live check is
-   *  already authoritative; we do NOT `loadHistory({force})` on every poll — a
-   *  full transcript re-read every 400ms hammered the single-process backend and
-   *  starved the PTY switches (the cause of the mid-run "toggle never re-enabled"
-   *  wedge). Tokens are unique per count, so a stale item can't false-positive. */
+  /** Has `token` landed as REAL AGENT output? The SDK realm proc is WATCHED, so
+   *  the backend-recorded turn streams into `flowDataStream` over WS — plus, on
+   *  PTY iterations, the `prompt` action's own streamed transcript flows in via
+   *  `proc.prompt()` (see the liveness step). We match only NON-user entries
+   *  (`role !== 'user'`): both the `prompt` action's transcript poll AND
+   *  `proc.prompt()`'s optimistic user echo replay the USER turn — which contains
+   *  the token verbatim (it's the instruction) — so an unfiltered match would
+   *  false-positive on the prompt itself, never proving the agent replied. Agent
+   *  output is tagged `role: 'assistant'` (or carries no role on the headless
+   *  print-stream); the user turn is tagged `role: 'user'` on both sides.
+   *  We do NOT `loadHistory({force})` on every poll — a full transcript re-read
+   *  every 400ms hammered the single-process backend and starved the PTY switches
+   *  (the cause of the mid-run "toggle never re-enabled" wedge). Tokens are unique
+   *  per count, so a stale item can't false-positive. */
   function tokenInStream(token: string): boolean {
-    return proc.flowDataStream.items.some((entry: any) => (entry.content ?? '').includes(token));
+    return proc.flowDataStream.items.some(
+      (entry: any) =>
+        (entry.attributes?.role ?? '') !== 'user' && (entry.content ?? '').includes(token),
+    );
   }
   /** One authoritative on-disk re-read — the WS-miss fallback, used at most once
    *  per turn (not in the hot poll loop). */
@@ -284,6 +300,7 @@ describe('chat⇄terminal switch stress in the browser — one session, 10 itera
 
       const chatPane = p.getByTestId('simple-chat-pane');
       const activePanel = p.locator('[data-testid="terminal-panel"][data-active="true"]');
+      const xterm = activePanel.locator('.xterm');
 
       const perCount: Array<{
         count: number;
@@ -322,24 +339,34 @@ describe('chat⇄terminal switch stress in the browser — one session, 10 itera
           expect(IDLE_STATUS.has(statusText.trim()), `chat status idle at count ${count} (was "${statusText}")`).toBe(true);
         }
 
-        // 4) SKIN follows transport? headless ⇒ chat pane; pty ⇒ (Advanced) xterm.
-        //    Logged, NOT asserted: the chat-skin `chatOverride` has an intermittent
-        //    re-render race under rapid toggling that is a SEPARATE pre-existing
-        //    issue, out of scope for the switch itself (transport + session +
-        //    status, all validated above).
-        const chatShown = await chatPane
-          .waitFor({ state: onPty ? 'hidden' : 'visible', timeout: 4_000 })
+        // 4) SKIN follows transport: headless ⇒ chat pane; PTY ⇒ a mounted xterm.
+        //    Checking only that chat is hidden is insufficient: a mode round trip
+        //    can otherwise leave the whole content area blank while pty_mode=true.
+        const expectedSurface = onPty ? xterm : chatPane;
+        const skinMatched = await expectedSurface
+          .waitFor({ state: 'visible', timeout: 4_000 })
           .then(() => true)
           .catch(() => false);
-        const skinMatched = chatShown;
 
-        // 5) LIVENESS — the one session is usable after the switch. Send a token
-        //    through the refined `submit()` primitive (transport-agnostic: headless
-        //    enqueues+drains, PTY types+Enter — proven 100% by the hammers) and see
-        //    it land as REAL agent output in the shared transcript. This exercises
-        //    the migrated API and does not depend on the flaky skin.
+        // 5) LIVENESS — the one session is usable after the switch. Drive a token
+        //    turn on the CURRENT transport and see it land as REAL agent output in
+        //    the shared transcript. The transport dictates the driver:
+        //      • PTY  → the `prompt` action (`proc.prompt` → `_run_pty_prompt`): it
+        //        INJECTS the turn into the (re)started TUI with a submission-confirm
+        //        nudge AND streams the transcript back as flow_data. `proc.submit()`
+        //        here would type raw keystrokes into the freshly cold-restarted PTY
+        //        (they drop before it accepts input) and its PTY path emits no
+        //        flow_data at all — so no turn, nothing to observe (RCA #20).
+        //      • headless → `proc.submit()` (enqueue+drain streams the print-mode
+        //        agent output) — already the right channel there.
+        //    Not awaited before the poll: the streaming turn ingests concurrently,
+        //    so the tight TURN_BUDGET still governs "the token must land fast" — a
+        //    slow turn is a regression, never waited out.
         const token = tokenFor(count);
-        await proc.submit(`Reply with ONLY this exact token and nothing else: ${token}`).catch(() => undefined);
+        const promptText = `Reply with ONLY this exact token and nothing else: ${token}`;
+        const turnPromise = (onPty ? proc.prompt(promptText) : proc.submit(promptText)).catch(
+          () => undefined,
+        );
         let tokenSeen = false;
         const turnEnd = Date.now() + TURN_BUDGET_MS;
         while (Date.now() < turnEnd) {
@@ -350,6 +377,7 @@ describe('chat⇄terminal switch stress in the browser — one session, 10 itera
           await p.waitForTimeout(400);
         }
         if (!tokenSeen) tokenSeen = await tokenLandedForce(token); // one WS-miss fallback
+        await turnPromise; // let the streaming turn settle before the next toggle
         await waitToggleEnabled(); // turn complete (worker back to idle) before next toggle
 
         // 6) Console must stay clean across the switch + turn.
@@ -374,12 +402,6 @@ describe('chat⇄terminal switch stress in the browser — one session, 10 itera
 
       // ── Assert. ───────────────────────────────────────────────────────────
       const drift = perCount.filter((r) => !r.sessionStable);
-      const skinLags = perCount.filter((r) => !r.skinMatched).length;
-      if (skinLags) {
-        // eslint-disable-next-line no-console
-        console.warn(`NOTE: chat-skin lagged the transport on ${skinLags}/${COUNT_TARGET} toggles ` +
-          `(known chatOverride reactivity race — separate from the switch).`);
-      }
       // Both transports genuinely exercised across the 10 toggles.
       expect(perCount.filter((r) => r.transport === 'pty').length).toBeGreaterThan(0);
       expect(perCount.filter((r) => r.transport === 'headless').length).toBeGreaterThan(0);
@@ -387,8 +409,15 @@ describe('chat⇄terminal switch stress in the browser — one session, 10 itera
       expect(drift, 'session_id changed on some iteration').toEqual([]);
       // The status indicator agreed the agent was idle before each toggle.
       expect(perCount.every((r) => r.statusIdle), 'worker not idle before some toggle').toBe(true);
+      // Every settled transport must expose its usable surface; pty=true with no
+      // xterm is a blank-terminal regression, not an acceptable skin lag.
+      expect(
+        perCount.every((r) => r.skinMatched),
+        'surface did not follow some transport switch',
+      ).toBe(true);
       // Every turn produced real agent output — the one session stayed live through
-      // every switch (both transports), via the refined submit() primitive.
+      // every switch, via the transport-appropriate driver (PTY: prompt action,
+      // headless: submit) and asserted as non-user (agent) output.
       expect(
         perCount.every((r) => r.tokenSeen === true),
         'some turn produced no agent output across the switches',

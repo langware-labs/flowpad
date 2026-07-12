@@ -51,36 +51,51 @@ describe('DockPointer viewMode override', () => {
     document.documentElement.classList.remove('view-mode-glow-flicker');
   });
 
-  it('uses ?viewMode as a page-local effective mode without changing the user default', async () => {
+  it('adopts ?viewMode on load: applies it AND persists it as the user default', async () => {
     renderAt('/dock/settings?viewMode=advanced');
 
     await waitFor(() => expect(screen.getByTestId('effective-mode').textContent).toBe('advanced'));
     expect(document.documentElement.getAttribute('data-view')).toBe('advanced');
-    expect(instancePreferences.get(PrefKey.VIEW_MODE)).toBe('standard');
+    expect(instancePreferences.get(PrefKey.VIEW_MODE)).toBe('advanced');
   });
 
-  it('falls back to the stored default when navigating to a DockPointer without an override', async () => {
+  it('keeps the adopted mode when navigating to a DockPointer without an override', async () => {
     const router = renderAt('/dock/settings?viewMode=advanced');
 
     await waitFor(() => expect(screen.getByTestId('effective-mode').textContent).toBe('advanced'));
     await router.navigate('/dock/settings');
 
-    await waitFor(() => expect(screen.getByTestId('effective-mode').textContent).toBe('standard'));
-    expect(document.documentElement.getAttribute('data-view')).toBe('standard');
-    expect(instancePreferences.get(PrefKey.VIEW_MODE)).toBe('standard');
+    await waitFor(() => expect(screen.getByTestId('effective-mode').textContent).toBe('advanced'));
+    expect(document.documentElement.getAttribute('data-view')).toBe('advanced');
+    expect(instancePreferences.get(PrefKey.VIEW_MODE)).toBe('advanced');
   });
 
-  it('switches an existing local override through the URL and shows the glow flicker', async () => {
+  it('footer click on a dock URL without an override navigates instead of writing the pref', async () => {
+    renderAt('/dock/settings', true);
+
+    await waitFor(() => expect(screen.getByTestId('effective-mode').textContent).toBe('standard'));
+
+    fireEvent.click(screen.getByTestId('view-toggle-advanced'));
+
+    // The click itself only navigates; the mode then lands via the load-time sync.
+    await waitFor(() =>
+      expect(screen.getByTestId('location').textContent).toContain('viewMode=advanced'),
+    );
+    await waitFor(() => expect(screen.getByTestId('effective-mode').textContent).toBe('advanced'));
+    expect(instancePreferences.get(PrefKey.VIEW_MODE)).toBe('advanced');
+  });
+
+  it('switches an existing override through the URL and shows the glow flicker', async () => {
     renderAt('/dock/agentic_process/123?viewMode=advanced', true);
 
     await waitFor(() => expect(screen.getByTestId('effective-mode').textContent).toBe('advanced'));
     document.documentElement.classList.remove('view-mode-glow-flicker');
 
-    fireEvent.click(screen.getByTestId('view-toggle'));
+    fireEvent.click(screen.getByTestId('view-toggle-vibe'));
 
     await waitFor(() => expect(screen.getByTestId('effective-mode').textContent).toBe('vibe'));
     expect(screen.getByTestId('location').textContent).toContain('viewMode=vibe');
-    expect(instancePreferences.get(PrefKey.VIEW_MODE)).toBe('standard');
+    expect(instancePreferences.get(PrefKey.VIEW_MODE)).toBe('vibe');
     expect(document.documentElement.classList.contains('view-mode-glow-flicker')).toBe(true);
   });
 });

@@ -53,6 +53,17 @@ def test_model_add_dirs_resume_and_skills_in_shell_string():
     assert "# skill='bug fixer'" in result
 
 
+def test_model_tier_persists_raw_and_emits_resolved_model():
+    cmd = CodexCliOptions(model="sm", workdir="/repo")
+
+    assert cmd.model == "sm"
+    assert cmd.to_json()["model"] == "sm"
+
+    argv, _env = cmd.to_spawn_args()
+    assert argv[argv.index("-m") + 1] == "gpt-5.4-mini"
+    assert "-m gpt-5.4-mini" in cmd.to_shell_string()
+
+
 def test_json_spawn_args_read_prompt_from_stdin():
     cmd = CodexCliOptions(
         session_id="abc-123",
@@ -101,6 +112,8 @@ def test_interactive_spawn_args_use_bare_codex():
     assert argv == [
         "codex",
         "--dangerously-bypass-approvals-and-sandbox",
+        "-c",
+        'projects."/repo".trust_level="trusted"',
         "-C",
         "/repo",
         "-m",
@@ -122,6 +135,36 @@ def test_interactive_spawn_respects_non_bypass_permissions():
     argv, _ = cmd.to_spawn_args()
 
     assert argv == ["codex"]
+
+
+def test_interactive_trust_override_quotes_workdir_as_toml_key():
+    cmd = CodexCliOptions(
+        workdir='/repo with spaces/and "quotes"',
+        json_stream=False,
+        ephemeral=False,
+    )
+    argv, _ = cmd.to_spawn_args()
+
+    assert argv[argv.index("-c") + 1] == (
+        'projects."/repo with spaces/and \\"quotes\\"".trust_level="trusted"'
+    )
+
+
+def test_headless_bypass_does_not_add_interactive_trust_override():
+    argv, _ = CodexCliOptions(workdir="/repo").to_spawn_args()
+
+    assert not any("trust_level" in arg for arg in argv)
+
+
+def test_interactive_non_bypass_does_not_add_trust_override():
+    argv, _ = CodexCliOptions(
+        permission_mode="default",
+        workdir="/repo",
+        json_stream=False,
+        ephemeral=False,
+    ).to_spawn_args()
+
+    assert not any("trust_level" in arg for arg in argv)
 
 
 def test_pty_shell_string_uses_bare_codex_not_codex_exec():

@@ -8,8 +8,8 @@
  *   2. (this change) the chip counted only TERMINAL/agent tabs, so a project
  *      whose only open tab is content (markdown/skill/doc) vanished from the
  *      list — fixed by bucketing the raw `Tab` entities by `project_id`,
- *      independent of `target_type`. Global tabs (`project_id == null`) create
- *      no bucket.
+ *      independent of `target_type`. Global tabs (`project_id == null`) form no
+ *      project bucket; they are tallied into `globalTabCount` (the Global scope).
  *
  * This test drives the REAL derivation (`useTabProjectBuckets` over the live
  * visible-tabs query). The only stand-ins are the HTTP boundary (`apiClient.get`,
@@ -125,5 +125,9 @@ describe('ProjectsCounterChip buckets — one chip per project across all projec
     expect(result.current.buckets).toHaveLength(3);
     const byId = new Map(result.current.buckets.map((b) => [b.projectId, b]));
     expect(byId.get(PROJECT_C)?.tabCount).toBe(1);
+    // The one global (project_id null) tab forms no project bucket but IS
+    // counted into the Global scope.
+    expect(result.current.buckets.some((b) => b.projectId == null)).toBe(false);
+    expect(result.current.globalTabCount).toBe(1);
   });
 });

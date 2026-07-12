@@ -40,7 +40,7 @@ from flow_sdk._compat import StrEnum
 from flow_sdk._version import __version__
 from flow_sdk.builtin.faas.compute_node import ComputeNode
 from flow_sdk.builtin.project import Project
-from flow_sdk.builtin.user import User
+from flow_sdk.builtin.user import User, normalize_email
 from flow_sdk.builtin.workspace import Workspace
 from flow_sdk.config import (
     AGENT_MOUNT_FOLDER,
@@ -109,7 +109,7 @@ def get_default_desktop_email() -> str:
     Migrated from FlowPad: flowpad/hub/core/desktop_loader.py
     """
     hostname = socket.gethostname()
-    return f"{hostname}@{DESKTOP_EMAIL_DOMAIN}"
+    return normalize_email(f"{hostname}@{DESKTOP_EMAIL_DOMAIN}") or ""
 
 
 def get_name() -> Optional[str]:
@@ -150,7 +150,7 @@ def get_email() -> Optional[str]:
             text=True,
             timeout=2,
         )
-        email = result.stdout.strip()
+        email = normalize_email(result.stdout)
         if email:
             return email
     except Exception:
@@ -174,8 +174,8 @@ def get_email() -> Optional[str]:
                         # Extract email from line like: AccountID = "email@example.com";
                         parts = line.split('"')
                         if len(parts) >= 2:
-                            email = parts[1].strip()
-                            if "@" in email:
+                            email = normalize_email(parts[1])
+                            if email and "@" in email:
                                 return email
         except Exception:
             pass
@@ -189,14 +189,14 @@ def get_email() -> Optional[str]:
                 r"Software\Microsoft\IdentityCRL\UserExtendedProperties",
             )
             # Enumerate subkeys to find email
-            email = winreg.EnumKey(key, 0)
+            email = normalize_email(winreg.EnumKey(key, 0))
             if email and "@" in email:
                 return email
         except Exception:
             pass
 
     # Fall back to environment variables
-    email = os.environ.get("EMAIL") or os.environ.get("USER_EMAIL")
+    email = normalize_email(os.environ.get("EMAIL") or os.environ.get("USER_EMAIL"))
     if email:
         return email
 

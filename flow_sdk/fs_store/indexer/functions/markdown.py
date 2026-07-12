@@ -31,8 +31,8 @@ from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer._frontmatter import (
     _extract_body,
     _extract_frontmatter,
-    _render_frontmatter,
     _yaml_load,
+    adopt_or_mint_id,
 )
 from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
@@ -73,7 +73,7 @@ def markdown_flat_fn(
 # workflow_fn, command_fn). Skip emission to avoid double-indexing a SKILL.md
 # as both SKILL and MARKDOWN.
 _TYPED_RECORD_DIRS: frozenset[str] = frozenset({
-    "skills", "agents", "workflows", "commands", "whiteboards",
+    "skills", "agents", "workflows", "commands", "whiteboards", "tasks",
 })
 
 def _has_typed_ancestor(folder: Path) -> bool:
@@ -147,61 +147,27 @@ _DIR_TO_ASSET_TYPE: dict[str, str] = {
     "templates": "template",
 }
 
-def _read_frontmatter_asset_id(path: Path) -> str | None:
-    """Return `asset_id`/`id` from frontmatter, or None."""
-    try:
-        text = path.read_text(encoding="utf-8")
-    except OSError:
-        return None
-    fm = _extract_frontmatter(text)
-    if not fm:
-        return None
-    fields = _yaml_load(fm) or {}
-    raw = fields.get("asset_id") or fields.get("id")
-    from flow_sdk.fs_store.identifier import adopt_entity_id  # noqa: PLC0415
-    return adopt_entity_id(raw)  # validate-on-adopt (v4/v5) → else caller derives uuid5(path)
-
 def _markdown_id_from_path(path: Path) -> str:
+    """Transitional/read-only fallback key — the stable uuid5(path) value.
+
+    No longer the miss behavior (``markdown_gen_id`` mints a fresh v4 into the
+    frontmatter capsule). Survives only as the ``parse_markdown_text`` read-side
+    derive for a not-yet-stamped file.
+    """
     from flow_sdk.fs_store.identifier import mint_uuid  # noqa: PLC0415
     return mint_uuid(str(path.resolve()))
 
 def markdown_id(ref: FSRef) -> str:
-    """Cheap id: frontmatter id; else uuid5 of path."""
-    existing = _read_frontmatter_asset_id(ref._path)
-    if existing:
-        return existing
-    return _markdown_id_from_path(ref._path)
+    """Cheap id: adopted frontmatter capsule id; else stable derived key (no write)."""
+    return adopt_or_mint_id(ref._path, write_back=False)
 
 def markdown_gen_id(ref: FSRef) -> str:
-    """Mint+write id into frontmatter (idempotent).
+    """Adopt the frontmatter capsule id, else mint a fresh v4 and write it back.
 
-    Same shape as the deleted ``MarkdownRecord.genId``. Preserves the
-    derived uuid5(path) value so DB rows keyed by that value stay valid.
+    Idempotent. The miss path now mints a random v4 (not uuid5(path)) so a
+    shared/copied doc carries a portable id in its capsule.
     """
-    existing = _read_frontmatter_asset_id(ref._path)
-    if existing:
-        return existing
-    new_id = _markdown_id_from_path(ref._path)
-    try:
-        text = ref._path.read_text(encoding="utf-8")
-    except OSError:
-        return new_id
-    fm = _extract_frontmatter(text)
-    body = _extract_body(text)
-    fields: dict = {}
-    if fm:
-        parsed = _yaml_load(fm)
-        if isinstance(parsed, dict):
-            fields.update(parsed)
-    merged = {"id": new_id, **{k: v for k, v in fields.items() if k not in ("id", "asset_id")}}
-    try:
-        ref._path.write_text(
-            _render_frontmatter(merged) + "\n\n" + body + ("\n" if body and not body.endswith("\n") else ""),
-            encoding="utf-8",
-        )
-    except OSError:
-        pass
-    return new_id
+    return adopt_or_mint_id(ref._path, write_back=True)
 
 def parse_markdown_text(text: str, path: Path | None = None) -> dict[str, Any]:
     """Parse a markdown string with YAML frontmatter into a fields dict.
@@ -235,8 +201,8 @@ def parse_markdown_text(text: str, path: Path | None = None) -> dict[str, Any]:
     raw_id = fields.get("asset_id") or fields.get("id")
     from flow_sdk.fs_store.identifier import adopt_entity_id  # noqa: PLC0415
     # Validate-on-adopt (v4/v5 only) — a foreign/hand-authored id is never
-    # adopted; derive the stable uuid5(path) instead. Keeps this path in
-    # agreement with _read_frontmatter_asset_id (the gen_uuid_fn side).
+    # adopted; derive the stable uuid5(path) instead. Keeps this read-side path
+    # in agreement with ``markdown_gen_id`` (which adopts the same capsule id).
     asset_id = adopt_entity_id(raw_id)
     if not asset_id and path is not None:
         asset_id = _markdown_id_from_path(path)
@@ -322,6 +288,10 @@ def _resolve_vault_root(path: Path) -> str | None:
 def extract_markdown(ref: FSRef) -> list[FSRecord]:
     """Parse a .md file into a Record. Replaces ``MarkdownRecord._from_fsref_sync``."""
     path = ref._path
+    # Single-file index paths bypass the walker's ``*.md`` glob; without this
+    # gate any UTF-8 file (e.g. ``.html``) mints as markdown (VIBE-002).
+    if path.suffix.lower() != ".md":
+        return []
     try:
         text = path.read_text(encoding="utf-8")
     except OSError:

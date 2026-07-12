@@ -1,21 +1,22 @@
 /**
- * BUG TEST — asset sharing + indexing between conversation members (FAMILY model).
+ * BUG TEST — asset sharing + STAGED reception between conversation members
+ * (FAMILY model, staged-reception contract as of f1276cd5).
  *
  * Contract under test (Alice → Bob, two SDK realms in one process via
  * `getInstance`): a file-backed asset shared by TYPE_ID rides the `.flowmsg`
- * bundle, and on the receiver is EXTRACTED to the conversation's message folder,
- * then COPIED into the conversation's mapped PROJECT at `<project>/<TypeInfo
- * subdir>/<leaf>` and INDEXED from there. ONE family handler — no per-type code.
+ * bundle. On the receiver, download STAGES it under the message's record-data
+ * dir and mints a MessageAttachment row (scope=null) — it does NOT copy into
+ * any project or index. The explicit `install` action (the review modal's
+ * button) copies into the chosen project at `<project>/<TypeInfo subdir>/<leaf>`
+ * and indexes from there. ONE family handler — no per-type code.
  *
  *   1. Alice invites Bob; Bob accepts.
- *   2. Bob MAPS the conversation to a real project (the model requires it).
- *   3. Alice shares an asset BY TYPE_ID; Bob downloads.
- *   4. For every file-backed type, Bob must:
+ *   2. Alice shares an asset BY TYPE_ID; Bob downloads → STAGED (no entity,
+ *      MessageAttachment scope=null); no project mapping is needed to download.
+ *   3. Bob installs into a real project. For every file-backed type, Bob must:
  *        (a) resolve it in his DB by the SENDER's id (id-pin round-trips),
- *        (b) find it on disk under `<project>/<main_subdir>/…`,
- *        (c) [RUN_AGENTIC=1] use it in a real Haiku agentic run (project = cwd).
- *   5. No-project gate: download before mapping ⇒ 409 needs_project, parked.
- *   6. Conflict: a different same-path asset ⇒ 409 asset_conflict; overwrite replaces.
+ *        (a2) see it appear on the LIVE data layer via a CREATE data_op,
+ *        (b) find it on disk under `<project>/<main_subdir>/…`.
  *
  * Requires the local hub (8093) + two launched instances (SHARE_INST_1/2,
  * default dev-1/dev-2). Skips otherwise.
@@ -106,9 +107,10 @@ async function bobBackendHas(type: string, id: string): Promise<boolean> {
   return r?.status === 'SUCCESS' && r?.data?.id === id;
 }
 
-/** Create a real project dir on disk and map Bob's conversation to it. Returns
- *  the project root. The new model requires a mapped project to land assets. */
-async function createAndMapProject(convId: string): Promise<string> {
+/** Create a real project dir on disk on Bob — the INSTALL target. (Staged
+ *  reception needs no conversation→project mapping to download; the project id
+ *  is passed explicitly to the install action, like the review modal does.) */
+async function createProject(): Promise<{ id: string; dir: string }> {
   const dir = mkdtempSync(path.join(os.tmpdir(), 'flowpad-proj-'));
   const created = await post(bob.apiUrl, '/graph/project', {
     name: path.basename(dir),
@@ -117,15 +119,14 @@ async function createAndMapProject(convId: string): Promise<string> {
   const projectId = created.body?.data?.id;
   expect(projectId, 'project created on Bob').toBeTruthy();
   createdProjects.push({ id: projectId, dir });
-  await api(bob.apiUrl, 'PUT', `/graph/conversation/${convId}`, { project_id: projectId });
-  // Poll until the backend actually persisted the mapping — the download path
-  // resolves the project from the conversation server-side, so racing it yields
-  // a spurious needs_project 409.
-  await pollUntil(async () => {
-    const r = await fetch(`${bob.apiUrl}/api/v1/graph/conversation/${convId}`).then((x) => x.json());
-    return r?.data?.project_id === projectId ? true : null;
-  }, 10_000, 'conversation project_id persisted');
-  return dir;
+  return { id: projectId, dir };
+}
+
+/** Bob's staged MessageAttachment for (fmId, asset id) — backend read, no cache. */
+async function findStagedAttachment(fmId: string, assetId: string): Promise<any | null> {
+  const r = await fetch(`${bob.apiUrl}/api/v1/graph/message_attachment`).then((x) => x.json());
+  const rows = (r?.data ?? []) as any[];
+  return rows.find((m) => m.flow_message_id === fmId && m.asset_id === assetId) ?? null;
 }
 
 /** A shareable file-backed asset type + how to create it on the sender. */
@@ -241,26 +242,43 @@ async function acceptAndFindMessage(convId: string): Promise<{ fmId: string }> {
   return { fmId: fm.id };
 }
 
-describe('asset share → copy-to-project → index matrix (Alice → Bob)', () => {
+describe('asset share → staged → install-to-project → index matrix (Alice → Bob)', () => {
   for (const spec of ASSETS) {
-    it(`${spec.type}: copies into Bob's project and resolves by sender id`, async () => {
+    it(`${spec.type}: stages on download, installs into Bob's project, resolves by sender id`, async () => {
       const { convId, created } = await shareAsset(spec);
       const { fmId } = await acceptAndFindMessage(convId);
 
-      // Map a real project — required for the copy to happen.
-      const projectRoot = await createAndMapProject(convId);
+      // The install target — no conversation mapping needed to download.
+      const project = await createProject();
 
       // Prime the receiver's LIVE data layer the way the conversation chip does:
       // the bubble mounts and resolves the asset's TypeId BEFORE the bytes
       // arrive, so dataManager 404s and negative-caches it (`useEntity` →
-      // dataManager.getByTypeId; the chip renders disabled "not found locally").
+      // dataManager.getByTypeId; the chip renders "not found locally").
       const tid = new bob.sdk.TypeId(spec.type, created.id);
       const preDownload = await (bob.sdk.dataManager as any).getByTypeId(tid).catch(() => null);
       expect(preDownload, `${spec.type} not resolvable on Bob BEFORE download (primes negative cache)`).toBeNull();
 
-      // Explicit download → copy into the project + index.
+      // Explicit download → STAGED under the message's record-data dir.
       const dl = await post(bob.apiUrl, `/graph/flow_message/${fmId}/download_body`, {});
       expect(dl.status, `${spec.type} download ok (got ${JSON.stringify(dl.body?.message)})`).toBeLessThan(400);
+
+      // Staged contract: a MessageAttachment row exists (scope=null) and the
+      // asset entity does NOT — nothing entered Bob's work areas yet.
+      const staged = await pollUntil(
+        () => findStagedAttachment(fmId, created.id),
+        10_000, `${spec.type} staged MessageAttachment on Bob`,
+      );
+      expect(staged.asset_type, `${spec.type} staged row type`).toBe(spec.type);
+      expect(staged.scope, `${spec.type} staged (uninstalled) scope`).toBeFalsy();
+      expect(await bobBackendHas(spec.type, created.id), `${spec.type} NOT materialized pre-install`).toBe(false);
+
+      // Explicit install into the chosen project (the review modal's action).
+      const install = await post(bob.apiUrl, `/graph/message_attachment/${staged.id}/install`, {
+        scope: 'project',
+        project_id: project.id,
+      });
+      expect(install.status, `${spec.type} install ok (got ${JSON.stringify(install.body?.message)})`).toBeLessThan(400);
 
       // (a) resolvable in Bob's DB by the SENDER's id (id-pin round-trips).
       const resolved = await pollUntil(
@@ -270,12 +288,10 @@ describe('asset share → copy-to-project → index matrix (Alice → Bob)', () 
       expect(resolved, `${spec.type} resolvable on Bob by sender id`).toBe(true);
 
       // (a2) The receiver's LIVE data layer must learn the asset exists WITHOUT
-      // a manual refetch — the materialize has to announce the new entity as a
-      // CREATE data_op so the SDK's negative cache (primed above) self-heals and
+      // a manual refetch — install announces the new entity as a CREATE data_op
+      // so the SDK's negative cache (primed above) self-heals and
       // dataManager.getByTypeId starts returning it. This is the exact path the
-      // conversation chip uses (useEntity), so it goes enabled on its own — no
-      // page reload. We do NOT call invalidate; if no CREATE event arrives, the
-      // negative cache sticks and this stays null. (No browser; same dataManager.)
+      // conversation chip uses (useEntity) to flip dashed→solid — no reload.
       const live = await pollUntil(
         async () => (await (bob.sdk.dataManager as any).getByTypeId(tid).catch(() => null)),
         10_000, `${spec.type} resolves on Bob's live data layer (CREATE data_op)`,
@@ -287,19 +303,29 @@ describe('asset share → copy-to-project → index matrix (Alice → Bob)', () 
       const bobEntity = await (bob.sdk as any)[ClsName]?.getById?.(created.id).catch(() => null);
       if (bobEntity) trackForCleanup(bobEntity);
 
-      // (b) on disk under <project>/<main_subdir>/… (copied, not in ~/.claude).
-      const subdir = path.join(projectRoot, spec.mainSubdir);
+      // (b) on disk under <project>/<main_subdir>/… (installed, not in ~/.claude).
+      const subdir = path.join(project.dir, spec.mainSubdir);
       expect(existsSync(subdir), `${spec.type} subdir ${subdir}`).toBe(true);
       expect(readdirSync(subdir).length, `${spec.type} asset present under ${subdir}`).toBeGreaterThan(0);
     }, 30_000); // do not increase timeout without approval
   }
 
-  it('no-project gate: download before mapping returns 409 needs_project', async () => {
-    const { convId } = await shareAsset(ASSETS[0]); // skill
+  it('no-project download: succeeds and stages (consent boundary — nothing lands)', async () => {
+    const spec = ASSETS[0]; // skill
+    const { convId, created } = await shareAsset(spec);
     const { fmId } = await acceptAndFindMessage(convId);
-    // Download WITHOUT mapping a project.
+    // Download WITHOUT any project anywhere — must succeed (staging needs none).
     const dl = await post(bob.apiUrl, `/graph/flow_message/${fmId}/download_body`, {});
-    expect(dl.status, 'needs_project 409').toBe(409);
-    expect(dl.body?.data?.needs_project, 'needs_project flag').toBe(true);
+    expect(dl.status, `no-project download ok (got ${JSON.stringify(dl.body?.message)})`).toBeLessThan(400);
+    // Staged, not installed: MessageAttachment exists, the asset entity does not.
+    const staged = await pollUntil(
+      () => findStagedAttachment(fmId, created.id),
+      10_000, 'staged MessageAttachment (no project)',
+    );
+    expect(staged.scope, 'staged scope').toBeFalsy();
+    expect(await bobBackendHas(spec.type, created.id), 'no entity without install').toBe(false);
+    // Install without a project_id is refused — project scope needs a target.
+    const bad = await post(bob.apiUrl, `/graph/message_attachment/${staged.id}/install`, { scope: 'project' });
+    expect(bad.status, 'project install without project_id → 400').toBe(400);
   }, 30_000); // do not increase timeout without approval
 });

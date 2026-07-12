@@ -1,22 +1,22 @@
-import type { AgenticProcess } from '@sdk';
 import type { ReactNode } from 'react';
 import { useEffect, useMemo, useRef } from 'react';
-import { PanelRightClose, PanelRightOpen } from 'lucide-react';
+import { Link2, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import { useIsAdvanced } from '@src/components/view-mode';
 import { TabbedSideDrawer, type TabDescriptor } from '@src/components/ui/side-drawer';
 import { CollapsedSideRail, SideRailButton } from '@src/components/ui/collapsed-side-rail';
 import { useSideWindows } from '@src/navigation/useSideWindows';
-import {
-  BacklinksTab,
-  ChatTab,
-  MD_SIDE_TABS,
-  MD_SIDE_TABS_DEFAULT,
-  MD_SIDE_TABS_ORDER,
-  type MdSideTabId,
-} from './side-windows';
+import { BacklinksTab } from './side-windows';
+
+// The one built-in side window; asset editors append extras via `extraTabs`.
+const BACKLINKS_TAB: TabDescriptor = {
+  id: 'backlinks',
+  label: 'Backlinks',
+  icon: Link2,
+  description: 'Documents that link here',
+};
 
 /**
- * Extra tab a caller can inject alongside Chat + Backlinks. The `panel` is the
+ * Extra tab a caller can inject alongside Backlinks. The `panel` is the
  * ReactNode rendered when the tab is active. Used by asset types (workflow
  * Runs, revisions, …) to append a window without forking this component.
  */
@@ -33,24 +33,17 @@ interface EditorWithSidePanelProps {
   children: ReactNode;
   /**
    * Serialized TypeId of the first-class entity this file belongs to (e.g.
-   * `"plan-<uuid>"`, `"agent-<uuid>"`). Chat + Backlinks are keyed by this.
-   * Null disables those tabs' persistence (chat cannot open, history empty).
+   * `"plan-<uuid>"`, `"agent-<uuid>"`). Backlinks are keyed by this.
+   * Null disables that tab's persistence (history empty).
    */
-  chatTarget: string | null;
-  /** Appended after Chat + Backlinks. Use for asset-type-specific tabs (e.g. workflow Runs). */
+  target: string | null;
+  /** Appended after Backlinks. Use for asset-type-specific tabs (e.g. workflow Runs). */
   extraTabs?: ExtraSideTab[];
-  /** Forwarded to the Chat tab — runs once after its backing chat process is created. */
-  onChatProcessCreated?: (process: AgenticProcess) => Promise<void> | void;
-  /**
-   * Current caret line (1-indexed, on-disk) emitted by whichever editor is mounted.
-   * Rendered as "line N" in the chat header. Null hides the badge.
-   */
-  cursorLine?: number | null;
 }
 
 /**
  * Editor-agnostic shell: any markdown editor as `children`, plus a tabbed side
- * window (Chat, Backlinks, extras). The side window is URL-first dock state —
+ * window (Backlinks, extras). The side window is URL-first dock state —
  * the open set + active id live on the DockPointer (`?sideWindows=…`) and are
  * driven through the shared `useSideWindows` hook, identical to the interactive
  * terminal. Only opened windows show, each is closeable, and an empty set
@@ -62,10 +55,8 @@ interface EditorWithSidePanelProps {
  */
 export function EditorWithSidePanel({
   children,
-  chatTarget,
+  target,
   extraTabs,
-  onChatProcessCreated,
-  cursorLine,
 }: EditorWithSidePanelProps) {
   const { windows, active, open, close, closeAll, select } = useSideWindows();
   const advanced = useIsAdvanced();
@@ -85,33 +76,25 @@ export function EditorWithSidePanel({
     if (windows.length > 0) closeAll();
   }, [advanced, windows, closeAll]);
 
-  // Full registry of openable windows (Chat + Backlinks + caller extras), in
+  // Full registry of openable windows (Backlinks + caller extras), in
   // display order. Drives both the open-tab descriptors and the collapsed rail.
   const registry = useMemo<TabDescriptor[]>(() => {
-    const base = MD_SIDE_TABS_ORDER.map((id) => MD_SIDE_TABS[id] as TabDescriptor);
     const extras: TabDescriptor[] = (extraTabs ?? []).map(({ id, label, icon, description }) => ({
       id,
       label,
       icon,
       description,
     }));
-    return [...base, ...extras];
+    return [BACKLINKS_TAB, ...extras];
   }, [extraTabs]);
 
   const panels = useMemo<Record<string, ReactNode>>(() => {
     const map: Record<string, ReactNode> = {
-      chat: (
-        <ChatTab
-          target={chatTarget}
-          onChatProcessCreated={onChatProcessCreated}
-          cursorLine={cursorLine}
-        />
-      ),
-      backlinks: <BacklinksTab target={chatTarget} />,
+      backlinks: <BacklinksTab target={target} />,
     };
     for (const t of extraTabs ?? []) map[t.id] = t.panel;
     return map;
-  }, [chatTarget, extraTabs, onChatProcessCreated, cursorLine]);
+  }, [target, extraTabs]);
 
   // Open windows, in open order, narrowed to known registry ids (drops any
   // stale/foreign id) and marked closeable.
@@ -154,7 +137,7 @@ export function EditorWithSidePanel({
           <SideRailButton
             icon={PanelRightOpen}
             label="Expand side window"
-            onClick={() => open(registry[0]?.id ?? MD_SIDE_TABS_DEFAULT)}
+            onClick={() => open(registry[0].id)}
             testId="md-side-window-expand"
           />
         )}
@@ -172,6 +155,3 @@ export function EditorWithSidePanel({
     </div>
   );
 }
-
-// Re-export MdSideTabId for convenience for callers that pin the default tab.
-export type { MdSideTabId };

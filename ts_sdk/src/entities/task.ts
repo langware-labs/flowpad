@@ -1,12 +1,15 @@
 import { APIEntity, registerEntity } from '../APIEntity';
+import { dataContext } from '../FlowSync/context';
+import { FrontMatterFsRef } from '../fs/FrontMatterFsRef';
 import { DockPointerData } from '../models/DockPointer';
 import { TypeId } from '../models/TypeId';
-import { ViewType } from '../utils/ui/view-types';
 import { IEntity } from '../IEntity';
 import type { GitOrigin } from '../models/GitOrigin';
 
 export interface ITask extends IEntity {
   title?: string;
+  /** Folder-backed asset: tasks/<name>/ holding task.md + inner spec.md. */
+  asset_ref?: string;
   description?: string;
   status?: string;
   last_viewed_at?: Date;
@@ -65,6 +68,7 @@ export interface ITask extends IEntity {
 @registerEntity
 export class Task extends APIEntity<Task> implements ITask {
   title: string;
+  asset_ref?: string;
   description?: string;
   status?: string;
   last_viewed_at?: Date;
@@ -119,6 +123,7 @@ export class Task extends APIEntity<Task> implements ITask {
   constructor(entity: Partial<ITask> = {}) {
     super(entity);
     this.title = entity.title ||= '';
+    this.asset_ref = entity.asset_ref;
     this.description = entity.description;
     this.status = entity.status;
     this.last_viewed_at = entity.last_viewed_at;
@@ -169,8 +174,31 @@ export class Task extends APIEntity<Task> implements ITask {
     this.worker_session_id = entity.worker_session_id;
   }
 
+  /** Default open target: the generic task asset editor (URL-first). */
+  override get dockPointer(): DockPointerData {
+    return this.assetEditorPointer('task') ?? super.dockPointer;
+  }
+
+  override get editorDockPointer(): DockPointerData {
+    return this.assetEditorPointer('task') ?? super.editorDockPointer;
+  }
+
   override get searchDockPointer(): DockPointerData {
-    return new DockPointerData(ViewType.TASKS, this.id);
+    return this.assetEditorPointer('task') ?? this.dockPointer;
+  }
+
+  /** FrontMatterFsRef for task.md (frontmatter fields + description body). */
+  get doc(): FrontMatterFsRef | null {
+    const typeId = dataContext.computeNodeTypeId;
+    if (!typeId || !this.asset_ref) return null;
+    return new FrontMatterFsRef(this.asset_ref.replace(/\/$/, '') + '/task.md', typeId);
+  }
+
+  /** FrontMatterFsRef for the inner spec.md (the plan/issue — a plain file). */
+  get specDoc(): FrontMatterFsRef | null {
+    const typeId = dataContext.computeNodeTypeId;
+    if (!typeId || !this.asset_ref) return null;
+    return new FrontMatterFsRef(this.asset_ref.replace(/\/$/, '') + '/spec.md', typeId);
   }
 
   // NOTE: Task's former FE-side projection of project_id / assignee /

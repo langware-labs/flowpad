@@ -20,11 +20,12 @@ lines are easy to filter independently of the Claude CLI lines.
 
 from __future__ import annotations
 
-import logging
 import json
+import logging
 from typing import Any
 
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import WorkerCLIOptions
+from flow_sdk.builtin.agentic_process.model_tiers import CODEX_MODEL_TIERS
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +37,9 @@ class CodexCliOptions(WorkerCLIOptions):
     property on AgenticProcess returns something inspectable for codex too
     (the ``test_agentic_process_clock_agent`` test asserts on ``cmd_line``).
     """
+
+    # sm/md/lg → gpt-5.4-mini/gpt-5.4/gpt-5.5, applied when emitting command.
+    MODEL_TIERS = CODEX_MODEL_TIERS
 
     def __init__(
         self,
@@ -79,8 +83,8 @@ class CodexCliOptions(WorkerCLIOptions):
         tail: list[str] = []
         if self.workdir:
             tail.extend(["-C", self.workdir])
-        if self.model:
-            tail.extend(["-m", self.model])
+        if self.resolved_model:
+            tail.extend(["-m", self.resolved_model])
         for d in self.add_dirs:
             tail.extend(["--add-dir", d])
         if self.resume and self.session_id:
@@ -92,6 +96,17 @@ class CodexCliOptions(WorkerCLIOptions):
             return []
         return ["-c", f"developer_instructions={json.dumps(self.developer_instructions)}"]
 
+    def _interactive_trust_flags(self) -> list[str]:
+        """Trust the injected-input target only when full access was requested."""
+        if self.permission_mode != "bypassPermissions" or not self.workdir:
+            return []
+
+        # The interactive directory-trust prompt consumes Flowpad's first
+        # programmatic submission. Keep this override process-local and aligned
+        # with the caller's explicit full-access permission choice.
+        key = f"projects.{json.dumps(self.workdir)}.trust_level"
+        return ["-c", f"{key}={json.dumps('trusted')}"]
+
     def _emit_flags(self) -> list[str]:
         """argv after ``codex``. Two shapes keyed on ``json_stream``:
           * True (default) → ``exec … --json … -`` headless, prompt over stdin;
@@ -101,7 +116,7 @@ class CodexCliOptions(WorkerCLIOptions):
         bypass = ["--dangerously-bypass-approvals-and-sandbox"] if self.permission_mode == "bypassPermissions" else []
         dev_flags = self._developer_instruction_flags()
         if not self.json_stream:
-            return bypass + dev_flags + self._common_tail()
+            return bypass + self._interactive_trust_flags() + dev_flags + self._common_tail()
 
         head = ["exec", "--skip-git-repo-check", *bypass]
         if self.ephemeral:

@@ -8,8 +8,10 @@
 
 import { Archive, CheckSquare, Plus, RotateCcw, Search, Sparkles, Trash2, X, Zap } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { SkillItem, Task, Trigger } from '@sdk';
+import type { SkillItem, Trigger } from '@sdk';
+import { Task } from '@sdk';
 import { DockPointer } from '@src/navigation/DockPointer';
+import { notify } from '@src/notifications';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { ViewType } from '@src/types/ViewType';
 import { useProjectTasks } from '@src/hooks/use-project-tasks';
@@ -112,8 +114,16 @@ export function TaskBar() {
     );
   }, [tabFiltered, search]);
 
-  const handleCreate = () => {
-    navigation.openDock(DockPointer.forTasks());
+  const handleCreate = async () => {
+    try {
+      const task = await new Task({ title: 'Untitled task' }).save();
+      navigation.openDock(DockPointer.forAssetEditorByTypeId('task', task.typeId));
+    } catch (e) {
+      notify.error({
+        title: 'Could not create task',
+        message: e instanceof Error ? e.message : 'Create failed.',
+      });
+    }
   };
 
   // Single-task remove (archive or delete depending on current status)

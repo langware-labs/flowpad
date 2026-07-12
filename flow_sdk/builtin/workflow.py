@@ -92,7 +92,12 @@ class Workflow(Entity):
 
         # worker_type is snake_case on the model; the previous camelCase kwarg
         # was silently dropped by Pydantic, leaving the field as None.
-        process = AgenticProcess(worker_type=WorkerType.CLAUDE_CODE)
+        # Default name so the worker reads meaningfully in the footer process list
+        # / tab chip (a workflow runner has no session subject to auto-title from).
+        workflow_label = (self.name or "").strip() or abs_path.stem
+        process = AgenticProcess(
+            worker_type=WorkerType.CLAUDE_CODE, name=f"Workflow: {workflow_label}"
+        )
         # save() creates the AgenticProcessRecord on disk so the record-derived
         # execution folders resolve. The entity-side fields are plain APIFields
         # with default=None; meta_dict injects them at serialization but direct

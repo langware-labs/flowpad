@@ -128,7 +128,7 @@ function representativePointers(): DockPointer[] {
     DockPointer.forProject(project, { conversationId: conversation }, Layout.WIN),
     DockPointer.forInbox({ conversationId: conversation, messageId: U('feed') }),
     DockPointer.forConversation(conversation, { messageId: U('babe') }, Layout.WIN),
-    DockPointer.forTasks('task-alpha', { conversationId: conversation, layout: Layout.DEV }),
+    DockPointer.forTasks(U('a1fa'), { conversationId: conversation, layout: Layout.DEV }),
     DockPointer.forSearch('release notes closed', {
       record_type: 'skill',
       status: 'active',

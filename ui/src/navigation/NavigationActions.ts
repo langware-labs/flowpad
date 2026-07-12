@@ -16,19 +16,25 @@ import {
 import { NavigateFunction } from 'react-router';
 import type { ViewMode } from '@src/contexts/view-mode-context';
 import { DockPointer, HIGHLIGHT_PARAM } from './DockPointer';
+import { processSurfaceViewType } from './process-dock-canonicalization';
 import { dockPointerForFile } from './local-file-pointer';
 import { FileOptions, TabOptions } from './types';
 import { preserveWindowLayout, stripDockPortion } from './url-builder';
 import { allScope, projectScope } from '@src/lib/scope-filter';
 
-function toStringRecord(obj?: Record<string, unknown>): Record<string, string> | undefined {
-  if (!obj) return undefined;
+// Always returns a record (possibly empty) so consumers can read keys without
+// optional-chaining. An earlier version returned `undefined` for empty input,
+// which made every consumer responsible for `?.` — `openShellProcess` missed
+// one and crashed on option-less opens (Quick Create from Home). `openDock`
+// treats an empty record the same as no extra options.
+function toStringRecord(obj?: Record<string, unknown>): Record<string, string> {
   const result: Record<string, string> = {};
+  if (!obj) return result;
   for (const [key, value] of Object.entries(obj)) {
     if (value == null || value === false || typeof value === 'object') continue;
     result[key] = typeof value === 'string' ? value : `${value as number | boolean}`;
   }
-  return Object.keys(result).length > 0 ? result : undefined;
+  return result;
 }
 
 let pendingDockNavigationUrl: string | null = null;
@@ -183,9 +189,10 @@ export class NavigationActions {
     }
 
     const base = pointer instanceof DockPointer ? pointer : new DockPointer(pointer);
-    let dock = extraOptions
-      ? new DockPointer(base.viewType, base.pointer, { ...base.options, ...extraOptions }, base.layout)
-      : base;
+    let dock =
+      extraOptions && Object.keys(extraOptions).length > 0
+        ? new DockPointer(base.viewType, base.pointer, { ...base.options, ...extraOptions }, base.layout)
+        : base;
 
     // URL-first default scope for scope-aware surfaces (assets, triggers, file
     // explorer): a dock opened WITHOUT an explicit scope (no `scope-*` keys →
@@ -202,11 +209,12 @@ export class NavigationActions {
       dock = dock.withScopeFilter(projectId ? projectScope(projectId) : allScope());
     }
 
-    // URL-first stickiness: inherit the live URL's ?viewMode unless the target
-    // names its own (mirrors the scope-seed above); explicit target / ViewToggle
-    // mode still wins. `currentBrowserViewMode` reads window.location as a
-    // stopgap for the lagging React `currentDock` — the durable fix (correct
-    // viewMode at hydration) belongs in the view-mode override, not here.
+    // Inherit the live URL's ?viewMode unless the target names its own (mirrors
+    // the scope-seed above); explicit target / ViewToggle mode still wins. Since
+    // useDockViewModeOverrideSync now adopts the URL's mode into the persisted
+    // preference on load, this inheritance matters only for navigations issued
+    // BEFORE that adopt effect commits (e.g. a redirect right after a hard load
+    // on a ?viewMode URL) — not for general mode stickiness.
     if (dock.viewMode === null) {
       const liveViewMode = NavigationActions.currentBrowserViewMode() ?? this.currentDock?.viewMode ?? null;
       if (liveViewMode) dock = dock.withViewMode(liveViewMode);
@@ -418,7 +426,16 @@ export class NavigationActions {
     if (!process) {
       return null;
     }
-    this.openDock(process.terminalDockPointer, extraOptions);
+    // Vibe mode: the process is the left-side chat — its surface is the DISPLAY
+    // (`/dock/display/<proc>`), not a shell dock. The mode→surface pairing is
+    // owned by processSurfaceViewType (shared with the loader's URL
+    // canonicalization) so the two can't drift.
+    const surface = processSurfaceViewType(extraOptions.viewMode === 'vibe');
+    const dock =
+      surface === ViewType.DISPLAY
+        ? DockPointer.forDisplay(agenticProcessId)
+        : process.terminalDockPointer;
+    this.openDock(dock, extraOptions);
     return process;
   }
 

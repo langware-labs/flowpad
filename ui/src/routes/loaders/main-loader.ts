@@ -16,15 +16,16 @@ import {
   TypeId,
 } from '@sdk';
 import { DockPointer } from '@src/navigation';
-import { applyAllTabs } from '@src/tabs/all-tabs-store';
-import { setupTab } from '@src/tabs/tab-lifecycle';
+import { canonicalProcessDockPath } from '@src/navigation/process-dock-canonicalization';
+import { getViewMode, ViewMode } from '@src/contexts/view-mode-context';
+import { setupTabAndAdopt } from '@src/tabs/setup-tab-and-adopt';
 import { ViewType } from '@src/types/ViewType';
 import { TimeIt } from '@src/utils/timeit';
 import { redirect, type LoaderFunctionArgs as LoaderArgs } from 'react-router';
 import { getBrokenViewUrl, loadFlowFromParams } from './loaders';
 import { loadProject } from './load-project';
 import { describeProcessStartError } from './load-process';
-import { markPerfT0, perfLog } from './_perf';
+import { markPerfT0, perfLog, perfTime } from './_perf';
 import { loadDockPointer } from './load-dock-pointer';
 
 // Re-export kept for existing consumers (unit tests import from here).
@@ -49,25 +50,6 @@ async function ensureComputeNodeLoaded(): Promise<void> {
         new TypeId(bootstrapNode.type, bootstrapNode.id),
       );
     }
-  }
-}
-
-async function setupTabAndAdopt(
-  dock: DockPointer,
-  options?: Parameters<typeof setupTab>[1],
-): Promise<void> {
-  const onMaterialized = options?.onMaterialized;
-  let adoptedMaterializedTabs = false;
-  const result = await setupTab(dock, {
-    ...options,
-    onMaterialized: (tabs) => {
-      adoptedMaterializedTabs = true;
-      onMaterialized?.(tabs);
-      applyAllTabs(tabs);
-    },
-  });
-  if (!adoptedMaterializedTabs && result.tabs && result.tabs.length > 0) {
-    applyAllTabs(result.tabs);
   }
 }
 
@@ -113,7 +95,8 @@ export async function loadAgentApp(args: LoaderArgs) {
   // in `ts_sdk/src/main.ts`), so this is effectively `await
   // dataManager.schemasReady` — zero work on the warm path, full
   // serialisation on the cold path.
-  await initSdk(params);
+  // Cold path = full bootstrap; warm path resolves the memoised promise (~0ms).
+  await perfTime(`initSdk (${wasColdInit ? 'cold bootstrap' : 'warm'})`, () => initSdk(params));
   t.time('initSdk');
 
   // Check if service is unavailable - throw error so ErrorBoundary catches it.
@@ -126,6 +109,23 @@ export async function loadAgentApp(args: LoaderArgs) {
 
   const { processId, viewType } = params;
   const pointer = params['*'] || '';
+
+  // Mode-canonical process surface: vibe ⇒ /dock/display/<proc>, standard ⇒
+  // /dock/shell/<proc>. Bridges legacy pre-display links and mode toggles —
+  // see canonicalProcessDockPath. Effective mode = URL param ?? preference,
+  // the same resolution the renderer uses (a vibe-preference user's param-less
+  // bookmark must canonicalize to the display too).
+  const canonical = canonicalProcessDockPath(
+    requestUrl.pathname,
+    requestUrl.search,
+    getViewMode() === ViewMode.Vibe,
+  );
+  if (canonical) {
+    t.done(slowThresholdSeconds);
+    // eslint-disable-next-line @typescript-eslint/only-throw-error
+    throw redirect(canonical);
+  }
+
   let dockForSetup: DockPointer | null = null;
 
   // URL-first tab materialization: the loader is the single writer, but it now
@@ -160,6 +160,9 @@ export async function loadAgentApp(args: LoaderArgs) {
       if (process?.project_id) {
         await loadProject(new TypeId(Project.type, process.project_id)).catch(() => systemTools.resolveProjectContext(process.workdir, process));
       } else {
+        // Global (projectless) session — a workdir match adopts it into a project;
+        // otherwise resolveProjectContext clears the active project to null (the
+        // Global scope).
         await systemTools.resolveProjectContext(process?.workdir, process ?? undefined);
       }
     }

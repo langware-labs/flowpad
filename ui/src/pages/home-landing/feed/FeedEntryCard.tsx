@@ -3,7 +3,7 @@ import { DiagnosisReportModal } from '@src/components/version-popover/diagnosis-
 import { ChevronDown, ChevronRight, Eye, EyeOff } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { AgentTrace, FlowMessage, Markdown, MessageSuggest, UsageReport, UserNote, type FeedEntry } from '@sdk';
+import { AgentTrace, AssetCleanupReport, FlowMessage, Markdown, MessageSuggest, UsageReport, UserNote, type FeedEntry } from '@sdk';
 import { formatDuration } from '@src/components/lens-viewer/shared/format-utils';
 import { useEntity } from '@src/hooks/entity-hooks';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -123,6 +123,18 @@ export function FeedEntryCard({
       <UsageReportFeedEntryCard
         entry={entry}
         report={entity as UsageReport}
+        busy={busy}
+        feedData={feedData}
+        onDismiss={onDismiss}
+      />
+    );
+  }
+
+  if (entity.getType() === AssetCleanupReport.type) {
+    return (
+      <AssetCleanupReportFeedEntryCard
+        entry={entry}
+        report={entity as AssetCleanupReport}
         busy={busy}
         feedData={feedData}
         onDismiss={onDismiss}
@@ -517,6 +529,46 @@ function AgentTraceFeedEntryCard({ entry, trace, busy, feedData, onDismiss }: Ag
         </p>
         <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
           <Trans>Skill analysis ready for review and improvements</Trans>
+        </p>
+      </button>
+    </FeedEntryFrame>
+  );
+}
+
+interface AssetCleanupReportFeedEntryCardProps {
+  entry: FeedEntry;
+  report: AssetCleanupReport;
+  busy: boolean;
+  feedData: FeedData;
+  onDismiss: (entry: FeedEntry) => void;
+}
+
+function AssetCleanupReportFeedEntryCard({
+  entry,
+  report,
+  busy,
+  feedData,
+  onDismiss,
+}: AssetCleanupReportFeedEntryCardProps) {
+  const { navigation } = useDockNavigation();
+  const day = report.generated_at ? report.generated_at.slice(0, 10) : '';
+
+  return (
+    <FeedEntryFrame entry={entry} busy={busy} feedData={feedData} onDismiss={onDismiss}>
+      <button
+        type="button"
+        className="block w-full rounded text-left outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        onClick={() => navigation.openDock(report.editorDockPointer)}
+      >
+        <p className="min-w-0 text-xs font-medium leading-snug text-foreground">
+          <Trans>Asset cleanup</Trans>
+          {day ? ` · ${day}` : ''}
+        </p>
+        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+          <Trans>
+            {report.garbage_count} garbage · {report.unsure_count} unsure · {report.keep_count} keep ·{' '}
+            {report.root_count} roots scanned
+          </Trans>
         </p>
       </button>
     </FeedEntryFrame>

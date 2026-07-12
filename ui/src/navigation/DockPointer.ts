@@ -31,6 +31,51 @@ import type { ViewMode } from '@src/contexts/view-mode-context';
 export const HIGHLIGHT_PARAM = 'highlight';
 export const VIEW_MODE_PARAM = 'viewMode';
 
+/**
+ * Canonicalize a compute-node-relative path: forward slashes, collapsed
+ * separators, no leading/trailing slash. Single owner of the rel-path form the
+ * `fs/<relPath>` assets pointer carries (fsFolderRoot re-exports this for the
+ * browse-side consumers).
+ */
+export function normalizeRel(path: string | null | undefined): string {
+  if (!path) return '';
+  return path.replace(/\\/g, '/').replace(/\/+/g, '/').replace(/^\/+/, '').replace(/\/+$/, '');
+}
+
+export const ASSET_COMPARE_POINTER_PREFIX = 'asset-compare/';
+
+export interface AssetComparePointerPayload {
+  computeNodeId: string;
+  workdir: string;
+  file: string;
+  assetPath: string;
+  assetType: string;
+  assetLabel: string;
+}
+
+function encodePointerJson(value: unknown): string {
+  const json = JSON.stringify(value);
+  return btoa(unescape(encodeURIComponent(json)))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '');
+}
+
+function decodePointerJson<T>(value: string): T | null {
+  try {
+    const padded = value + '='.repeat((4 - (value.length % 4)) % 4);
+    const json = decodeURIComponent(escape(atob(padded.replace(/-/g, '+').replace(/_/g, '/'))));
+    return JSON.parse(json) as T;
+  } catch {
+    return null;
+  }
+}
+
+export function decodeAssetComparePointer(pointer: string | null | undefined): AssetComparePointerPayload | null {
+  if (!pointer?.startsWith(ASSET_COMPARE_POINTER_PREFIX)) return null;
+  return decodePointerJson<AssetComparePointerPayload>(pointer.slice(ASSET_COMPARE_POINTER_PREFIX.length));
+}
+
 function isViewMode(value: string | undefined): value is ViewMode {
   return value === 'vibe' || value === 'standard' || value === 'advanced' || value === 'dev';
 }
@@ -288,6 +333,13 @@ export class DockPointer implements IDockPointer {
   }
 
   /**
+   * Create dock pointer for an asset working-tree comparison.
+   */
+  static forAssetCompare(payload: AssetComparePointerPayload, layout: Layout = Layout.DOCK): DockPointer {
+    return new DockPointer(ViewType.DIFF, `${ASSET_COMPARE_POINTER_PREFIX}${encodePointerJson(payload)}`, undefined, layout);
+  }
+
+  /**
    * Create dock pointer for filesystem path
    */
   static forFs(path: string, layout: Layout = Layout.DOCK): DockPointer {
@@ -359,10 +411,10 @@ export class DockPointer implements IDockPointer {
     if (DockPointer.isAgenticProcessPointer(pointer)) {
       return { kind: 'legacy', agenticProcessTypeId: new TypeId(method), filePath: `/${value}` };
     }
-    if (method === AssetRoutingMethod.TYPEID) {
+    if (method === String(AssetRoutingMethod.TYPEID)) {
       return { kind: 'typeid', planTypeId: new TypeId(value) };
     }
-    if (method === AssetRoutingMethod.VFS) {
+    if (method === String(AssetRoutingMethod.VFS)) {
       return { kind: 'vfs', vfsValue: value };
     }
     return null;
@@ -459,6 +511,19 @@ export class DockPointer implements IDockPointer {
   }
 
   /**
+   * Create a pointer for the project landing rendered inside the project-scoped
+   * Assets tab. Assets is scope-keyed, so this shares the same tab as the asset
+   * manager for that project while still giving the landing a restorable URL.
+   */
+  static forAssetProjectHome(
+    options?: { scope?: ScopeFilter },
+    layout: Layout = Layout.DOCK,
+  ): DockPointer {
+    const base = new DockPointer(ViewType.ASSETS, AssetMode.PROJECT_HOME, undefined, layout);
+    return options?.scope ? base.withScopeFilter(options.scope) : base;
+  }
+
+  /**
    * Create dock pointer for an asset folder view (filtered list under a folder).
    * Pointer format: "folder/<typeName>/<typeid>/<relPath>"
    *   - typeid is a VFS entity identifier like "compute_node-@local" or "project-<uuid>".
@@ -476,6 +541,26 @@ export class DockPointer implements IDockPointer {
       ? `folder/${typeName}/${typeid}/${cleanRel}`
       : `folder/${typeName}/${typeid}`;
     return new DockPointer(ViewType.ASSETS, pointer, undefined, layout);
+  }
+
+  /**
+   * Create dock pointer for a real-filesystem folder browsed inside the Assets
+   * view (a project context folder or any folder under one).
+   * Pointer format: "fs/<relPath>" — relPath is compute-node-relative (no
+   * leading slash), the same form the Explorer's VFS listing uses.
+   * URL: /dock/assets/fs/<relPath>
+   */
+  static forAssetFsFolder(path: string, layout: Layout = Layout.DOCK): DockPointer {
+    return new DockPointer(ViewType.ASSETS, `fs/${normalizeRel(path)}`, undefined, layout);
+  }
+
+  /**
+   * Parse an `fs/<relPath>` assets pointer into its compute-node-relative path.
+   * Returns null if the pointer is not an fs pointer.
+   */
+  static parseAssetFsPointer(pointer: string | undefined | null): string | null {
+    if (!pointer || !pointer.startsWith('fs/')) return null;
+    return pointer.slice('fs/'.length);
   }
 
   /**
@@ -706,6 +791,20 @@ export class DockPointer implements IDockPointer {
   }
 
   /**
+   * Create dock pointer for the vibe DISPLAY surface of a process.
+   * URL structure: /dock/display/agentic_process-<id>
+   *
+   * Reuses the `agentic_process-<id>` pointer grammar (same as the shell dock),
+   * so `targetTypeId`/`tabHash` resolve the owning process for free. This is the
+   * always-present right pane in vibe mode — its "Display" tab identity, not the
+   * process's shell tab.
+   */
+  static forDisplay(processId: string, layout: Layout = Layout.DOCK): DockPointer {
+    const pointer = `${AgenticProcess.type}${TypeId.DELIMITER}${processId}`;
+    return new DockPointer(ViewType.DISPLAY, pointer, undefined, layout);
+  }
+
+  /**
    * Create dock pointer for HOME/LiveStatus view with optional tab and item
    * URL structure: /dock/home/<tab>?item=<item>&scope=<scope>&project=<project>
    *
@@ -718,7 +817,7 @@ export class DockPointer implements IDockPointer {
   static forHome(
     tab?: string,
     item?: string,
-    options?: { scope?: string; project?: string; expand?: boolean },
+    options?: { scope?: string; project?: string; expand?: boolean; vibeNoProcess?: boolean },
     layout: Layout = Layout.DOCK,
   ): DockPointer {
     const queryOptions: Record<string, string> = {};
@@ -726,6 +825,7 @@ export class DockPointer implements IDockPointer {
     if (options?.scope && options.scope !== 'all') queryOptions.scope = options.scope;
     if (options?.project) queryOptions.project = options.project;
     if (options?.expand) queryOptions.expand = 'true';
+    if (options?.vibeNoProcess) queryOptions.vibeNoProcess = 'true';
     return new DockPointer(ViewType.HOME, tab, queryOptions, layout);
   }
 
@@ -931,13 +1031,13 @@ export class DockPointer implements IDockPointer {
     taskId?: string,
     options?: { conversationId?: string; layout?: Layout },
   ): DockPointer {
+    // Task is now a generic folder asset — it opens through the shared asset
+    // editor (`editor/task/typeid/task-<id>`), not a bespoke ViewType.TASKS.
+    // Delegating here transparently repoints every `forTasks` caller.
     const layout = options?.layout ?? Layout.DOCK;
-    const pointer = taskId
-      ? options?.conversationId
-        ? `${taskId}/conversation/${options.conversationId}`
-        : taskId
-      : undefined;
-    return new DockPointer(ViewType.TASKS, pointer, undefined, layout);
+    if (!taskId) return DockPointer.forAssetList('task', undefined, layout);
+    const opts = options?.conversationId ? { conversationId: options.conversationId } : undefined;
+    return DockPointer.forAssetEditorByTypeId('task', new TypeId('task', taskId), layout, opts);
   }
 
   /**

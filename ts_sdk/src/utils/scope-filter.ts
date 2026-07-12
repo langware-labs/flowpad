@@ -115,6 +115,25 @@ export function scopeProjectIds(sf: ScopeFilter): string[] {
   }
 }
 
+/**
+ * Does a record with the given `projectId` belong in `scope`? The client-side
+ * mirror of the backend scope match, expressed via the selectors above:
+ *   all → everything; no project → user-scope only; project → the one active
+ *   project; filter → any selected project (+ personal when `user` is on).
+ * `currentProjectId` is the fallback anchor when a `project` scope carries no
+ * explicit `activeProjectId`.
+ */
+export function projectIdInScope(
+  projectId: string | null | undefined,
+  scope: ScopeFilter,
+  currentProjectId: string | null,
+): boolean {
+  if (isAllScope(scope)) return true;
+  if (!projectId) return scopeIncludesUser(scope);
+  if (scope.mode === 'project') return projectId === (scope.activeProjectId ?? currentProjectId);
+  return scopeProjectIds(scope).includes(projectId);
+}
+
 /** Equality on ScopeFilter (order-insensitive on `projects`). */
 export function scopeFilterEqual(a: ScopeFilter, b: ScopeFilter): boolean {
   if (a.mode !== b.mode) return false;

@@ -17,12 +17,11 @@
  *      So a tab whose URL names an existing project is NEVER born project-less.
  *      (This is what made the old "born null on first load" assertion stale.)
  *
- *   2. Target-driven heal (`_project_of_target`): a tab whose URL does NOT name a
- *      resolvable project is born project-less, then heals to its target's
- *      project on the next load once the target exists. This is the original
- *      never-heals bug's fix, and the `materializeTab` reuse path deliberately
- *      falls through to re-resolve a project-less content tab rather than
- *      returning it verbatim.
+ *   2. Dead-URL reap (`_reap_orphans` pointer arm): a project-scoped URL whose
+ *      leading project id does NOT exist never keeps a tab — the row is removed
+ *      on the next list rather than healed half-way (project_id healed from the
+ *      target while the dead id stays fossilized in the pointer, which made the
+ *      chip route into "Project not found" forever — RCA 2026-07-08).
  *
  * Both are driven against the REAL backend (no mocks) through the REAL UI load
  * path (`setupTab` → `materializeTab`).
@@ -33,6 +32,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { ViewType } from '@src/types/ViewType';
 import { setupTab } from '@src/tabs/tab-lifecycle';
+import { dockForProjectEntry } from '@src/tabs/project-entry';
 import { apiTestSetup, getTestSignupInfo } from '../utils/test-utils';
 
 // A no-op content adapter so `setupTab` exercises ONLY the materialize path
@@ -80,12 +80,12 @@ describe('a content tab keeps its project_id == its target entity project', () =
     expect(await loadTabProjectId(dock)).toBe(p1.id);
   }, 15000);
 
-  it('a tab born project-less (URL names no resolvable project) heals from its target on the next load', async () => {
-    const p1 = await new Project({ name: '/tmp/flow_tab_heal_p1' }).save([]);
-
-    // The URL's leading segment is a project id that does NOT exist, and the
-    // target markdown does not exist yet — so neither backfill mechanism can
-    // resolve a project and the tab is genuinely born project-less.
+  it('a URL naming a non-existent project persists no tab, even before the target exists', async () => {
+    // Old contract: such a tab was born project-less and healed its project_id
+    // from the target on a later load — leaving the DEAD project id fossilized
+    // in Tab.pointer forever (RCA 2026-07-08). New contract: a tab addressing a
+    // non-existent project is never kept — the dead-URL reap removes it on the
+    // next list, whether or not its target exists yet.
     const mdId = uuidv4();
     const ghostProjectId = uuidv4();
     const dock = new DockPointer(
@@ -93,18 +93,62 @@ describe('a content tab keeps its project_id == its target entity project', () =
       `${ghostProjectId}/editor/markdown/typeid/markdown-${mdId}`,
     );
 
-    // First load: no resolvable project anywhere → tab persisted project_id null.
-    expect(await loadTabProjectId(dock)).toBeNull();
+    // Load through the real UI path. Materialization may fail outright (the
+    // reap can drop the row within the same request) — either way, nothing may
+    // persist.
+    await setupTab(dock, { adapter: noopAdapter }).catch(() => null);
+    expect(
+      (await Tab.listAll()).filter((t) => t.pointer?.includes(ghostProjectId)),
+    ).toEqual([]);
 
-    // The target now exists, owned by P1 (a fresh CREATE — the backend's
-    // change-driven reconcile never fires; only a UI re-resolve on load could
-    // correct the tab). `materializeTab` re-resolves a project-less content tab
-    // rather than reusing it verbatim, so the reloaded tab adopts p1.
+    // The target coming into existence later must NOT resurrect the dead URL:
+    // reloading the same dock still persists nothing.
+    const p1 = await new Project({ name: '/tmp/flow_tab_heal_p1' }).save([]);
     const md = await new Markdown({ id: mdId, name: `heal-${mdId}`, project_id: p1.id }).save([]);
     expect(md.project_id).toBe(p1.id);
     await dataManager.clearCache(); // force a fresh target fetch on reload
 
-    // Second load (same dock): the tab must now adopt the target's project.
-    expect(await loadTabProjectId(dock)).toBe(p1.id);
+    await setupTab(dock, { adapter: noopAdapter }).catch(() => null);
+    expect(
+      (await Tab.listAll()).filter((t) => t.pointer?.includes(ghostProjectId)),
+    ).toEqual([]);
+  }, 15000);
+
+  it('a dock URL naming a NON-EXISTENT project leaves no tab behind and never re-routes into the dead URL', async () => {
+    // The proven production failure (RCA 2026-07-08): a tab opened under a dead
+    // project id survives forever — the heal re-stamps its project_id from the
+    // target, but the DEAD id stays baked into Tab.pointer. The chip then
+    // advertises the healed project, and entering that project resolves the
+    // stale tab's pointer verbatim → /dock/project/<dead>/… → "Project not
+    // found", every time. Contract under test: a load against a non-existent
+    // project must CLEAN UP — no persisted tab may keep addressing the dead
+    // project, and the project-entry resolver must never return its URL.
+    const p1 = await new Project({ name: '/tmp/flow_tab_heal_p1' }).save([]);
+    const mdId = uuidv4();
+    const md = await new Markdown({ id: mdId, name: `heal-${mdId}`, project_id: p1.id }).save([]);
+    expect(md.project_id).toBe(p1.id);
+
+    const ghostProjectId = uuidv4();
+    const dock = new DockPointer(
+      ViewType.PROJECT,
+      `${ghostProjectId}/editor/markdown/typeid/markdown-${mdId}`,
+    );
+
+    // Real UI load path. The project route itself may reject (the project is
+    // genuinely gone — a "Project not found" surface is correct); the tab
+    // lifecycle outcome is what's under test.
+    await setupTab(dock, { adapter: noopAdapter }).catch(() => null);
+
+    // (1) Tabs are removed/cleaned: no persisted tab still addresses the dead
+    // project. Today this fails — the materialized tab survives with the ghost
+    // id baked into its pointer.
+    const leftovers = (await Tab.listAll()).filter((t) => t.pointer?.includes(ghostProjectId));
+    expect(leftovers.map((t) => ({ id: t.id, pointer: t.pointer }))).toEqual([]);
+
+    // (2) Nothing routes back into the dead URL: entering the healed project
+    // (the chip's click path) must never resolve a pointer that names the
+    // non-existent project.
+    const entry = await dockForProjectEntry(p1.id);
+    expect(entry?.pointer ?? '').not.toContain(ghostProjectId);
   }, 15000);
 });

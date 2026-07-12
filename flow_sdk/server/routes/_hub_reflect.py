@@ -78,9 +78,10 @@ async def reflect_to_hub(a: Action, entity: Entity, body: dict[str, Any], method
     if et is None:
         raise HubError(0, f"entity type {entity.type!r} has no hub representation")
 
+    hub_id = entity.id
     verb = (method or "").lower()
     if verb == "get":
-        hub_resp = await hub_get(et, entity.id, action=a.action_name)
+        hub_resp = await hub_get(et, hub_id, action=a.action_name)
         # hub_get returns None on transport/HTTP failure (does not raise);
         # treat that as "fall through to local" via HubError.
         if hub_resp is None:
@@ -90,7 +91,7 @@ async def reflect_to_hub(a: Action, entity: Entity, body: dict[str, Any], method
         # MembershipMethod {member_through, value}); hub_delete sends it as
         # the JSON body and raises HubError on non-200 (e.g. 403 owner-only),
         # which propagates to the caller verbatim.
-        hub_resp = await hub_delete(et, entity.id, action=a.action_name, payload=body or {})
+        hub_resp = await hub_delete(et, hub_id, action=a.action_name, payload=body or {})
     elif verb in ("put", "patch") and a.action_name == "members":
         # Role change — PUT ``/<type>/<id>/members`` with ``{user_id|user_email|
         # invitation_id, role}``. Without this branch the generic PUT below would
@@ -98,7 +99,7 @@ async def reflect_to_hub(a: Action, entity: Entity, body: dict[str, Any], method
         # writing the member selector onto the conversation row instead of hitting
         # the hub's gated ``update_membership``. Raises HubError on non-200 (e.g.
         # 403 from the hub's ``can_assign`` ceiling), propagated to the caller.
-        hub_resp = await hub_put(et, entity.id, body or {}, action=a.action_name)
+        hub_resp = await hub_put(et, hub_id, body or {}, action=a.action_name)
     elif verb in ("put", "patch"):
         # A bare entity field update (the generic ``update`` CRUD action, e.g. a
         # conversation rename) reflects as a hub PUT to ``/<type>/<id>``. Merge the
@@ -106,20 +107,20 @@ async def reflect_to_hub(a: Action, entity: Entity, body: dict[str, Any], method
         # broadcast, then return the MERGED LOCAL entity — the same shape a normal
         # (non-reflected) update returns, so the local cache and the client stay
         # consistent (the hub is the source of truth for every differing scalar).
-        hub_resp = await hub_put(et, entity.id, body or {})
+        hub_resp = await hub_put(et, hub_id, body or {})
         updates = _merge_hub_entity_into_local(entity, hub_resp)
         if updates:
             entity.apply_field_updates(updates)
             await entity.save(notify=True)  # local row + data_op broadcast to watchers
         return entity.model_dump()
     else:
-        hub_resp = await hub_post(et, body or {}, entity.id, action=a.action_name)
+        hub_resp = await hub_post(et, body or {}, hub_id, action=a.action_name)
 
     # After a successful members mutation (remove / role change) the hub returns
     # a message, not a roster — so re-fetch the canonical roster to mirror
     # locally (keeps participants in sync without a second client round-trip).
     if verb in ("delete", "put", "patch") and a.action_name == "members":
-        refreshed = await hub_get(et, entity.id, action=a.action_name)
+        refreshed = await hub_get(et, hub_id, action=a.action_name)
         if refreshed is not None:
             hub_resp = refreshed
 

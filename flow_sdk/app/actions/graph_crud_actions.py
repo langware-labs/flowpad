@@ -31,6 +31,7 @@ async def handle_query_resource(request: Request):
         )
     filter_params = request_info.request_parameters.get("filter", {})
     entities_filter = QueryFilter.parse(filter_params, entity_model.get_type())
+    _apply_top_level_paging(request_info, entities_filter)
     source_entity = request_info.target_entity_typeid
     if source_entity is None:  # TODO, We need to validate parent access
         source_entity = request_info.user
@@ -47,6 +48,30 @@ async def handle_query_resource(request: Request):
     if not include_system:
         _all = [e for e in _all if not getattr(e, "system", False)]
     return ApiSuccessResponse[list[Entity]](data=_all)
+
+
+def _apply_top_level_paging(request_info, entities_filter) -> None:
+    """Honor ?limit= / ?offset= query params on graph list requests.
+
+    Historically only ``limit``/``offset`` INSIDE the ``filter`` JSON were
+    honored; a top-level ``?limit=5000`` was silently dropped, turning
+    intended-bounded list calls into full-corpus dumps. Filter-JSON values
+    win when both are set; malformed values are ignored.
+    """
+    params = request_info.request_parameters
+    for field in ("limit", "offset"):
+        if getattr(entities_filter, field, None) is not None:
+            continue
+        raw = params.get(field)
+        if raw is None:
+            continue
+        try:
+            value = int(raw)
+        except (TypeError, ValueError):
+            service_log.debug(f"[graph read] ignoring malformed ?{field}={raw!r}")
+            continue
+        if value >= 0:
+            setattr(entities_filter, field, value)
 
 
 def _request_wants_system(request_info, filter_params) -> bool:

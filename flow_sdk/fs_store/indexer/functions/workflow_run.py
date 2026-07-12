@@ -91,9 +91,13 @@ def extract_workflow_run(ref: FSRef) -> list[FSRecord]:
     status = str(data.get("status") or "")
 
     # Lineage: the journal records the source workflow's `.js` path (incl. the
-    # owning `.claude/skills/<name>/` when bundled in a skill). Derive the
-    # DynamicWorkflow id (path-derived, so it matches even if the workflow isn't
-    # indexed) and the owning skill id.
+    # owning `.claude/skills/<name>/` when bundled in a skill). Two cross-refs:
+    #  - dynamic_workflow_id: PATH-derived by design — a `.js` script carries no
+    #    capsule (no frontmatter, no `.flow/id`), so its id has no portable home;
+    #    the path derive is the only stable key, not the collision anti-pattern.
+    #  - skill_id: resolved through the capsule-aware `skill.skill_id`, which now
+    #    reads the owning skill's `.flow/id` capsule first (so this reference
+    #    tracks the skill's real id and survives a rename, not a name re-derive).
     script_path = str(data.get("scriptPath") or "") or None
     dynamic_workflow_id = None
     skill_id = None
