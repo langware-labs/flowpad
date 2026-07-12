@@ -79,6 +79,10 @@ _GIT_TRANSFERS_FILE = "git_transfers.json"
 # separate axis, and is intentionally left unrenamed.
 _FS_ORIGINS_FILE = "fs_origins.json"
 _LEGACY_ORIGINS_FILE = "git_origins.json"
+# Message-level sender share options (a small side-manifest, like the origin
+# maps). Currently just ``{"create_bookmark": bool}`` — the receiver stamps it
+# onto each staged MessageAttachment so install can mint a favorite.
+_SHARE_OPTIONS_FILE = "share_options.json"
 
 
 def _is_git_origin_dict(raw) -> bool:
@@ -1297,6 +1301,7 @@ async def _stage_attachment(
     git_transfer: "dict | None" = None,
     transfer_mode: str = "copy",
     user_scope_allowed: "bool | None" = None,
+    create_bookmark: bool = False,
     owner_typeid=None,
 ):
     """Upsert the MessageAttachment row for one staged bundle entry.
@@ -1327,6 +1332,7 @@ async def _stage_attachment(
     ma.transfer_mode = transfer_mode
     ma.git_origin = git_origin
     ma.git_transfer = git_transfer
+    ma.create_bookmark = create_bookmark
     # Schema-derived, stamped ONCE here so the UI never re-encodes the policy
     # (the install action re-enforces it through the same predicate).
     if user_scope_allowed is not None:
@@ -1539,6 +1545,7 @@ async def pack_bundle(
     dest_dir: Path | None = None,
     *,
     transfer_mode: str = _TRANSFER_MODE_COPY,
+    create_bookmark: bool = False,
 ) -> Path:
     """Build a .flowmsg zip from a FlowMessage entity. Returns the zip path.
 
@@ -1591,6 +1598,10 @@ async def pack_bundle(
         if transfers:
             (tmp_root / _GIT_TRANSFERS_FILE).write_text(
                 json.dumps(transfers, default=_json_default, ensure_ascii=False), encoding="utf-8"
+            )
+        if create_bookmark:
+            (tmp_root / _SHARE_OPTIONS_FILE).write_text(
+                json.dumps({"create_bookmark": True}, ensure_ascii=False), encoding="utf-8"
             )
         return _zip_bundle(tmp_root, dest_dir, flow_message.id)
     finally:
@@ -1979,24 +1990,27 @@ async def unpack_bundle(
             except Exception:
                 logger.warning("[bundle] unreadable %s; ignoring", _GIT_TRANSFERS_FILE, exc_info=True)
 
-        git_received_entries: set[tuple[str, str]] = set()
+        # Message-level sender share options (currently: create_bookmark). Stamped
+        # onto each staged MessageAttachment so install can mint a favorite.
+        create_bookmark = False
+        _so_path = tmp_root / _SHARE_OPTIONS_FILE
+        if _so_path.exists():
+            try:
+                _share_opts = json.loads(_so_path.read_text(encoding="utf-8")) or {}
+                create_bookmark = bool(_share_opts.get("create_bookmark"))
+            except Exception:
+                logger.warning("[bundle] unreadable %s; ignoring", _SHARE_OPTIONS_FILE, exc_info=True)
+
+        # Every git-transfer entry (file-backed asset OR graph artifact) is STAGED
+        # like a file-backed asset — nothing materializes at download; the row +
+        # any favorite are gated behind an explicit install.
         for key, transfer in sorted(git_transfers_map.items()):
             parsed = _parse_entry_key(key)
             if parsed is None:
                 continue
-            if await _restore_git_reference_entity_entry(
-                tmp_root,
-                key,
-                transfer,
-                git_origins_map,
-                overwrite=overwrite,
-                owner_typeid=owner_typeid,
-            ):
-                git_received_entries.add(parsed)
-                continue
-            # Git-TRANSFER file-backed asset: today this used to clone/pull the
-            # repo and index the asset at download time. Now STAGED — the clone
-            # runs inside the explicit install action instead.
+            # Git-TRANSFER entry (file-backed asset OR a graph artifact). STAGED —
+            # the clone/pull (file-backed) or the graph-row materialize (artifact)
+            # runs inside the explicit install action, not at download.
             entry_type, entry_id = parsed
             gt_payload = _read_transfer_metadata(tmp_root, transfer)
             raw_origin = git_origins_map.get(key) or (transfer or {}).get("git_origin")
@@ -2012,6 +2026,7 @@ async def unpack_bundle(
                 git_origin=raw_origin if isinstance(raw_origin, dict) else None,
                 git_transfer=transfer if isinstance(transfer, dict) else None,
                 transfer_mode="git",
+                create_bookmark=create_bookmark,
                 owner_typeid=owner_typeid,
             ))
 
@@ -2045,6 +2060,7 @@ async def unpack_bundle(
                         name=snap_name,
                         description=snap_desc,
                         git_origin=(git_origins_map.get(name) or None),
+                        create_bookmark=create_bookmark,
                         owner_typeid=owner_typeid,
                     ))
                     # TASK rides the generic staged→install→reindex path like any
@@ -2181,12 +2197,6 @@ async def unpack_bundle(
                         inner_fm = FlowMessage.model_validate(fm_data)
                         inner_fm.id = fm_id
                         await inner_fm.save(owner_typeid)
-
-        # 4b. Git-reference artifacts materialized DB rows above — announce them
-        # (staged file-backed assets are announced as MessageAttachments after
-        # the FM/Conversation sync instead; nothing was copied or indexed here).
-        if git_received_entries:
-            await _notify_received_assets(git_received_entries)
 
         # 5. Resolve FILE attachment paths and materialize the top-level FlowMessage
         # via the unified write path. ``materialize_flow_message`` saves the

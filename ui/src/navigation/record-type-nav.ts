@@ -3,9 +3,10 @@ import type { SearchResult } from '@src/hooks/use-record-search';
 import { DockPointer } from './DockPointer';
 import { ViewType } from '@src/types/ViewType';
 import { CheckSquare, Search, GitBranch, FileText } from 'lucide-react';
-import { AgenticProcess, dataContext, dataManager, isTypeId, RecordType, TypeId } from '@sdk';
+import { AgenticProcess, Artifact, dataContext, dataManager, isTypeId, RecordType, TypeId } from '@sdk';
 import { ClaudeSessionRecord } from '@sdk/resource_management/fs_records/claude/claude-session.js';
 import type { NavigationActions } from './NavigationActions';
+import { openArtifact } from '@src/components/artifacts/open-artifact';
 import { notify } from '@src/notifications';
 
 export interface DockNavigationAction {
@@ -199,6 +200,28 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
       return tid
         ? new DockPointer(ViewType.ASSETS, 'list/all', { scope: 'project', project_ids: tid.id })
         : null;
+    },
+  },
+  artifact: {
+    // A vibe artifact (webapp) is a graph entity, not an asset-editor doc — an
+    // asset-editor dock would bypass the real open path. Route through
+    // ``openArtifact`` so a git-backed app resolves its checkout (git-setup
+    // wizard → clone) and launches in a Vibe process, exactly like the artifact
+    // card. Imperative arm: needs the full Artifact entity, not just the row.
+    primaryAction: async (r, navigation) => {
+      const tid = resultTypeId(r);
+      if (!tid) return;
+      const artifact = await dataManager
+        .getByTypeId<Artifact>(new TypeId(Artifact.type, tid.id))
+        .catch(() => null);
+      if (!artifact) {
+        notify.error({ title: 'App not found', message: 'This app is no longer available.' });
+        return;
+      }
+      await openArtifact(artifact, {
+        navigation,
+        currentProjectId: dataContext.project?.id ?? null,
+      });
     },
   },
   codex_session: {

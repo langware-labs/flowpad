@@ -72,6 +72,11 @@ class MessageAttachment(Entity):
     # The git_transfers.json entry for TransferMode.GIT attachments.
     git_transfer: Optional[dict] = APIField(default=None)
 
+    # Sender opt-in ("create bookmark" share checkbox): when true, install mints
+    # a FAVORITE Bookmark on the receiver pointing at the materialized entity.
+    # Rides the bundle's share_options.json (message-level), stamped at unpack.
+    create_bookmark: bool = APIField(default=False)
+
     # Falsy (None or "") = staged only; "user" | "project" = installed there.
     # "" is the CLEARED form — entity save is exclude-none and the DB merge
     # never removes fields, so uninstall resets with "" rather than None.

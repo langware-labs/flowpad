@@ -373,7 +373,9 @@ async def test_git_transfer_packs_graph_artifact_metadata_without_copying_app_fi
                                data=f"{EntityType.ARTIFACT.value}-{GIT_ARTIFACT_ID}")],
     )
     fm.id = GIT_ARTIFACT_FM_ID
-    zip_path = await pack_bundle(fm, dest_dir=tmp_path, transfer_mode="git")
+    # create_bookmark=True: the receiver must mint a FAVORITE pointing at the
+    # artifact when it installs (not at download).
+    zip_path = await pack_bundle(fm, dest_dir=tmp_path, transfer_mode="git", create_bookmark=True)
 
     key = f"{EntityType.ARTIFACT.value}-@{GIT_ARTIFACT_ID}"
     with zipfile.ZipFile(zip_path) as zf:
@@ -391,8 +393,43 @@ async def test_git_transfer_packs_graph_artifact_metadata_without_copying_app_fi
     await artifact.delete()
     await unpack_bundle(zip_path, local_user_id="gx8")
 
+    # STAGED, not materialized: the git-backed artifact now rides the staged→
+    # install model like a file-backed asset. Download must NOT create the graph
+    # row — a MessageAttachment stands in until the receiver explicitly installs.
+    assert await Artifact.get_one({"id": GIT_ARTIFACT_ID}) is None, (
+        "artifact must be STAGED at download, not materialized"
+    )
+    staged = await MessageAttachment.get_one({"asset_id": GIT_ARTIFACT_ID})
+    assert staged is not None, "receiver never staged the git-backed artifact"
+    assert staged.asset_type == EntityType.ARTIFACT.value
+    assert staged.transfer_mode == "git"
+    assert staged.create_bookmark is True, "create_bookmark flag lost through staging"
+    assert not staged.scope, "staged attachment must not be installed yet"
+
+    # No favorite before install — mint is gated on the explicit install.
+    from flow_sdk.builtin.bookmark import Bookmark, BookmarkType  # noqa: PLC0415
+
+    async def _artifact_favorite():
+        for b in await Bookmark.get_all({"bookmark_type": BookmarkType.FAVORITE.value}):
+            if (b.data or {}).get("entity_id") == GIT_ARTIFACT_ID:
+                return b
+        return None
+
+    assert await _artifact_favorite() is None
+
+    # INSTALL: materialize the graph row (path='' — checkout resolves at open).
+    resp = await handle_attachment_install(str(staged.id), scope="user", project_id=None)
+    assert isinstance(resp, ApiSuccessResponse), resp
+
+    fav = await _artifact_favorite()
+    assert fav is not None, "install did not mint the artifact favorite"
+    assert (fav.data or {}).get("entity_type") == EntityType.ARTIFACT.value
+    # The checkout isn't resolved yet, so asset_ref is empty — the favorite
+    # navigates by id and the artifact-open path resolves the git checkout.
+    assert (fav.data or {}).get("nav", {}).get("asset_ref") == ""
+
     received = await Artifact.get_one({"id": GIT_ARTIFACT_ID})
-    assert received is not None, "receiver never materialized the git-backed artifact declaration"
+    assert received is not None, "install never materialized the git-backed artifact declaration"
     assert received.path == "", "receiver must not trust the sender's local filesystem path"
     assert received.port == "45678"
     received_origin = (
