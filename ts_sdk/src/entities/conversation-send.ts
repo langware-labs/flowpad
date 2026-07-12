@@ -23,9 +23,12 @@ export interface ConversationSendPayload {
    *  also merges these onto the parent Conversation and links them back —
    *  parity with the new-conversation path, without minting a new invite. */
   sharedContextEntities?: string[];
-  /** Body-bundle transfer policy. Defaults to copy. */
+  /** Body-bundle transfer policy + per-share opt-ins. Defaults to copy. */
   shareConfig?: {
     transferMode?: 'copy' | 'git';
+    /** When true, the receiver mints a FAVORITE bookmark pointing at the shared
+     *  asset when it installs. Default off. */
+    createBookmark?: boolean;
   };
 }
 

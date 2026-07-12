@@ -85,6 +85,102 @@ async def _load_ma(attachment_id: str) -> MessageAttachment | None:
     return await MessageAttachment.get_one({"id": attachment_id})
 
 
+async def _maybe_mint_bookmark(ma: MessageAttachment, someone_typeid) -> None:
+    """If the sender opted in (``ma.create_bookmark``), mint a FAVORITE bookmark
+    on the receiver pointing at the just-installed entity. Best-effort: a mint
+    failure never aborts a successful install. Loads the materialized entity to
+    read its local ``asset_ref`` (git artifacts carry ``""`` until opened — the
+    favorite navigates by id and the artifact-open path resolves the checkout)."""
+    if not ma.create_bookmark:
+        return
+    from flow_sdk.builtin.bookmark import mint_share_favorite  # noqa: PLC0415
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    cls = SchemaRegistry.get_entity_cls(ma.asset_type)
+    ent = await cls.get_one({"id": ma.asset_id}) if cls is not None else None
+    try:
+        await mint_share_favorite(
+            owner=someone_typeid,
+            entity_type=ma.asset_type,
+            entity_id=ma.asset_id,
+            title=ma.name or (getattr(ent, "display_name", None) if ent else None) or ma.asset_id,
+            asset_ref=str(getattr(ent, "asset_ref", "") or ""),
+            icon=SchemaRegistry.get_icon(ma.asset_type),
+        )
+    except Exception:
+        logger.warning("[message_attachment] bookmark mint failed for %s", ma.asset_id, exc_info=True)
+
+
+async def _finalize_install(
+    ma: MessageAttachment,
+    scope: str,
+    project_id: str | None,
+    installed_root: str | None,
+    someone_typeid,
+) -> ApiResponse:
+    """Shared install tail (both the file-backed and artifact branches): stamp the
+    install state, persist+notify, then mint the favorite if opted in."""
+    ma.scope = scope
+    ma.project_id = project_id
+    ma.installed_root = installed_root
+    ma.installed_at = datetime.now(UTC)
+    await ma.save(someone_typeid, notify=True)
+    await _maybe_mint_bookmark(ma, someone_typeid)
+    return ApiSuccessResponse(data=ma)
+
+
+async def _install_artifact_reference(
+    ma: MessageAttachment,
+    scope: str,
+    project_id: str | None,
+    *,
+    overwrite: bool,
+    someone_typeid,
+) -> ApiResponse:
+    """Install a staged git-reference ARTIFACT: materialize its graph row from the
+    staged metadata (path='' — the checkout resolves later at open, via the git
+    wizard). No clone here. Then mint the favorite if opted in."""
+    from flow_sdk.builtin.flow_message_bundle import (  # noqa: PLC0415
+        FlowMessageExistsError,
+        _notify_received_assets,
+        _restore_git_reference_entity_entry,
+    )
+
+    if not ma.git_transfer:
+        return ApiFailResponse(message="artifact git transfer metadata missing", status_code=410)
+    unpacked_root = unpacked_dir(ma.flow_message_id)
+    if not unpacked_root.exists():
+        return _staging_gone()
+    entry_key = record_stem(ma.asset_type, ma.asset_id)
+    try:
+        ok = await _restore_git_reference_entity_entry(
+            unpacked_root,
+            entry_key,
+            ma.git_transfer,
+            {entry_key: ma.git_origin} if ma.git_origin else {},
+            overwrite=overwrite,
+            owner_typeid=someone_typeid,
+        )
+    except FlowMessageExistsError as e:
+        return ApiFailResponse(
+            message="artifact already exists — overwrite?",
+            status_code=409,
+            data={"asset_conflict": True, "conflicts": getattr(e, "conflicts", None)},
+        )
+    if not ok:
+        return ApiFailResponse(message="artifact reference restore failed", status_code=500)
+    await _notify_received_assets({(ma.asset_type, ma.asset_id)})
+    # A graph artifact has no copied bytes → no installed_root; the checkout
+    # resolves at open. Project scope still records project_id.
+    return await _finalize_install(
+        ma,
+        scope,
+        project_id if scope == AttachmentScope.PROJECT.value else None,
+        None,
+        someone_typeid,
+    )
+
+
 def _not_found(attachment_id: str) -> ApiFailResponse:
     return ApiFailResponse(message=f"MessageAttachment not found: {attachment_id}", status_code=404)
 
@@ -127,11 +223,20 @@ async def handle_attachment_install(
     )
     from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
 
+    from flow_sdk.schema.types import EntityType  # noqa: PLC0415
+
     ma = await _load_ma(attachment_id)
     if ma is None:
         return _not_found(attachment_id)
     if scope not in (AttachmentScope.USER.value, AttachmentScope.PROJECT.value):
         return ApiFailResponse(message=f"invalid scope: {scope!r}", status_code=400)
+
+    # Git-reference ARTIFACT: a graph entity (not file-backed), materialized from
+    # the staged metadata here. No bytes copied, no clone (that happens at open).
+    if ma.asset_type == EntityType.ARTIFACT.value and ma.transfer_mode == TransferMode.GIT.value:
+        return await _install_artifact_reference(
+            ma, scope, project_id, overwrite=overwrite, someone_typeid=someone_typeid,
+        )
 
     # Raw FILE attachments (the OS-file-picker lane) have no TypeInfo/RecordType
     # and no schema-derived main_subdir — their staged entry dir already carries
@@ -239,12 +344,9 @@ async def handle_attachment_install(
             data={"asset_conflict": True, "conflicts": getattr(e, "conflicts", None)},
         )
 
-    ma.scope = scope
-    ma.project_id = project_id
-    ma.installed_root = str(root) if root is not None else None
-    ma.installed_at = datetime.now(UTC)
-    await ma.save(someone_typeid, notify=True)
-    return ApiSuccessResponse(data=ma)
+    return await _finalize_install(
+        ma, scope, project_id, str(root) if root is not None else None, someone_typeid,
+    )
 
 
 # ---------------------------------------------------------------------------

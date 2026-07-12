@@ -1,9 +1,12 @@
+import logging
 from flow_sdk._compat import StrEnum
 from typing import Any, ClassVar, Dict, Optional
 
 from flow_sdk.actions.action_registry import action as _action_registry
 from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.core import Entity
+
+logger = logging.getLogger(__name__)
 
 
 class BookmarkStatus(StrEnum):
@@ -93,6 +96,57 @@ class Bookmark(Entity):
         if bm is not None and bm.bookmark_type == BookmarkType.FAVORITE_FOLDER:
             await _promote_folder_children(str(eid))
         return await super().delete_by_id(eid)
+
+
+async def mint_share_favorite(
+    *,
+    owner,
+    entity_type: str,
+    entity_id: str,
+    title: str,
+    asset_ref: str = "",
+    icon: Optional[str] = None,
+    source: str = "shared",
+) -> "Bookmark | None":
+    """Create a FAVORITE bookmark for ``owner`` pointing at a just-installed
+    entity (the "create bookmark" share opt-in). Idempotent: a favorite already
+    pointing at ``(entity_type, entity_id)`` is left as-is. ``data`` shape matches
+    the frontend ``addFavorite`` + the onboarding favorite in
+    ``server/routes/bootstrap.py`` so every favorite surface resolves it the same
+    way. A shared favorite is unscoped (the receiver's Bookmark has no project
+    column) — it shows in the bookmarks slider regardless of the active project.
+
+    ``asset_ref`` may be "" for a git-backed artifact whose checkout isn't
+    resolved yet — the favorite navigates by ``(entity_type, entity_id)`` and
+    the artifact-open path materializes the checkout on click.
+    """
+    if not entity_type or not entity_id:
+        return None
+    try:
+        existing = await Bookmark.get_all({"bookmark_type": BookmarkType.FAVORITE.value}, source_entity=owner)
+    except Exception:
+        existing = []
+    for b in existing:
+        data = b.data or {}
+        if data.get("entity_type") == entity_type and data.get("entity_id") == entity_id:
+            return b
+    fav = Bookmark(
+        bookmark_type=BookmarkType.FAVORITE.value,
+        title=title or entity_id,
+        source=source,
+        data={
+            "entity_type": entity_type,
+            "entity_id": entity_id,
+            "icon": icon,
+            "nav": {"asset_ref": asset_ref or ""},
+        },
+    )
+    try:
+        await fav.save(owner)
+    except Exception:
+        logger.warning("[bookmark] mint_share_favorite failed for %s-@%s", entity_type, entity_id, exc_info=True)
+        return None
+    return fav
 
 
 _FAVORITE_TYPES = {BookmarkType.FAVORITE.value, BookmarkType.FAVORITE_FOLDER.value}

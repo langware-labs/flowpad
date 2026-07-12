@@ -278,8 +278,9 @@ def _parse_asset_references(raw: Any) -> list:
     return []
 
 
-def _parse_share_transfer_mode(body: dict) -> str:
-    """Read share_config.transfer_mode from JSON or multipart bodies."""
+def _parse_share_config(body: dict) -> dict:
+    """Decode the share_config carrier (JSON or multipart) into a dict. Both
+    share opt-ins (transfer_mode, create_bookmark) read their own key off this."""
     raw = (
         body.get("share_config")
         or body.get("shareConfig")
@@ -292,7 +293,12 @@ def _parse_share_transfer_mode(body: dict) -> str:
             raw = _json.loads(raw)
         except Exception:
             raw = {}
-    config = raw if isinstance(raw, dict) else {}
+    return raw if isinstance(raw, dict) else {}
+
+
+def _parse_share_transfer_mode(body: dict) -> str:
+    """Read share_config.transfer_mode from JSON or multipart bodies."""
+    config = _parse_share_config(body)
     mode = (
         config.get("transfer_mode")
         or config.get("transferMode")
@@ -302,6 +308,13 @@ def _parse_share_transfer_mode(body: dict) -> str:
     )
     mode = str(mode).strip().lower()
     return mode if mode in {"copy", "git"} else "copy"
+
+
+def _parse_share_create_bookmark(body: dict) -> bool:
+    """Read share_config.create_bookmark (the "create bookmark on the recipient's
+    desktop" share opt-in) off the same share_config carrier."""
+    config = _parse_share_config(body)
+    return bool(config.get("create_bookmark") or config.get("createBookmark"))
 
 
 async def _attach_asset_references(reply_fm: "FlowMessage", asset_typeids: list) -> None:
@@ -513,6 +526,7 @@ async def _upload_body_and_finalize(
     conv_id: str,
     *,
     transfer_mode: str = "copy",
+    create_bookmark: bool = False,
 ) -> None:
     """Pack + upload the FlowMessage body bundle in a background task.
 
@@ -529,6 +543,7 @@ async def _upload_body_and_finalize(
         await reply_fm.upload_body(
             on_progress=make_flow_message_progress_emitter(reply_fm.id, "upload"),
             transfer_mode=transfer_mode,
+            create_bookmark=create_bookmark,
         )
         await reply_fm.save()
         _notify_ui_conversation_updated(conv_id, "", reply_fm.id)
@@ -546,6 +561,7 @@ async def _finalize_message_dispatch(
     *,
     is_remote_send: bool,
     transfer_mode: str = "copy",
+    create_bookmark: bool = False,
 ) -> "Conversation":
     """Shared post-save dispatch tail for an already-saved FlowMessage (a reply
     OR a forwarded clone): backlink the shared-context entities, append the
@@ -568,7 +584,9 @@ async def _finalize_message_dispatch(
         await _send_conversation_message_header(conv, fm)
         from flow_sdk.builtin.flow_message import BodyStatus  # noqa: PLC0415
         if fm.body_status == BodyStatus.UPLOADING:
-            asyncio.create_task(_upload_body_and_finalize(fm, conv.id, transfer_mode=transfer_mode))
+            asyncio.create_task(_upload_body_and_finalize(
+                fm, conv.id, transfer_mode=transfer_mode, create_bookmark=create_bookmark,
+            ))
     return conv
 
 
@@ -749,6 +767,7 @@ async def handle_add_message(
         uploaded_files_preview = [uploaded_files_preview]
     asset_references = _parse_asset_references(body.get("asset_references"))
     transfer_mode = _parse_share_transfer_mode(body)
+    create_bookmark = _parse_share_create_bookmark(body)
     # Accept both the new ``shared_context_entities`` name and the legacy
     # ``context_entities`` body key during transition (frontend may not be
     # fully cut over yet). Treat both as wire-bound (shared).
@@ -919,6 +938,7 @@ async def handle_add_message(
         someone_typeid,
         is_remote_send=is_remote_send,
         transfer_mode=transfer_mode,
+        create_bookmark=create_bookmark,
     )
 
     return ApiSuccessResponse(data=_fm_response_fields(reply_fm, conv))
