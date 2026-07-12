@@ -198,6 +198,7 @@ async def test_fork_action_creates_sibling_with_fork_session_id():
         project_id=None,
         visible=False,
         shared_context_entities=[],
+        name=None,
     )
     fake_new_proc.save.assert_awaited_once_with(None)
     from flow_sdk.responses.response import ApiSuccessResponse
@@ -224,6 +225,7 @@ async def test_fork_action_visible_false_by_default():
         project_id=None,
         visible=False,
         shared_context_entities=[],
+        name=None,
     )
 
 
@@ -250,6 +252,7 @@ async def test_fork_action_visible_true_when_passed():
         project_id=None,
         visible=True,
         shared_context_entities=[],
+        name=None,
     )
 
 
@@ -272,6 +275,7 @@ async def test_fork_action_propagates_project_id():
         project_id="proj-xyz",
         visible=False,
         shared_context_entities=[],
+        name=None,
     )
 
 
