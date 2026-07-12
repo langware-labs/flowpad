@@ -1012,10 +1012,29 @@ class Project(Entity):
         Any project write converges stashed legacy ``include_dirs`` into
         Folder context links first (no-op once clean), so old rows migrate on
         their first save without a dedicated migration run.
+
+        On creation the (empty, instant) index is stamped so a brand-new project
+        never reads as ``never_indexed`` — otherwise the UI shows a spurious
+        "no index / Build Index" warning on a project with nothing to index yet.
         """
         if self.legacy_include_dirs_:
             await self._migrate_legacy_context_dirs()
-        return await super().save(owner, notify=notify)
+        was_create = not self.exist_in_db
+        await super().save(owner, notify=notify)
+        if was_create:
+            await self._stamp_index_sentinel()
+        return self
+
+    async def _stamp_index_sentinel(self) -> None:
+        """Stamp a brand-new project's ``.hash`` index sentinel so an empty
+        project isn't reported as ``never_indexed``. No-op if a sentinel already
+        exists (preserves a stale project's ``index_required`` state)."""
+        try:
+            record = await self.get_record()
+            if record is not None and record.ensure_asset_ref().indexed_at is None:
+                record.write_hash()
+        except Exception:
+            log.debug("[project] index-sentinel stamp on create failed", exc_info=True)
 
     @action.post(action_name="add-context-dir")
     async def add_context_dir(self, path: str, scope: str = "private") -> "ApiResponse":
