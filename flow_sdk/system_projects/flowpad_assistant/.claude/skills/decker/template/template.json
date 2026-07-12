@@ -1,0 +1,9 @@
+{
+  "metadata": {
+    "title": "New Deck Template",
+    "description": "A neutral, professional Reveal.js slide-deck template — re-skin via common/tokens.css.",
+    "page_types": ["cover", "agenda", "content", "media", "metrics", "closing"],
+    "reveal_version": "5.2.0"
+  },
+  "data": {}
+}

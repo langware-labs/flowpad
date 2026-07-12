@@ -1,0 +1,15 @@
+<section class="layout layout-cover-centered layout--center" data-layout="cover-centered" data-page-type="cover">
+  <style>
+    .layout-cover-centered { justify-content: center; }
+    .layout-cover-centered [data-slot="title"] { font-size: var(--fs-hero); font-weight: var(--fw-bold); line-height: var(--lh-tight); margin: 0; }
+    .layout-cover-centered .cover-meta { margin-top: var(--sp-6); color: var(--text-secondary); font-size: var(--fs-caption); }
+    .layout-cover-centered .cover-meta span { margin-right: var(--sp-4); }
+  </style>
+  <hr class="accent-rule" />
+  <h1 data-slot="title">Presentation Title</h1>
+  <p class="subtitle" data-slot="subtitle" data-optional>A short, supporting subtitle goes here</p>
+  <div class="cover-meta">
+    <span data-slot="presenter" data-optional>Jane Presenter</span>
+    <span data-slot="date" data-optional>January 2026</span>
+  </div>
+</section>

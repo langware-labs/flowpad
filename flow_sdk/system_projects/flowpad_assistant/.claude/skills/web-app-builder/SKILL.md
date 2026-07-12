@@ -9,7 +9,9 @@ description: Build and develop full-stack web applications from a tested, copy-a
   or anything with a UI plus a database/auth — even if they don't literally say
   "web app", and even (especially) when they phrase it as "build me a website
   using flowpad assistant" — website building belongs to THIS skill, not to the
-  flowpad-assistance skill. Also use it when adding pages, components, API
+  flowpad-assistance skill. Slide decks / presentations / pitch decks are NOT
+  web apps — those belong to the `decker` skill, not this one. Also use it when
+  adding pages, components, API
   endpoints, or database tables to an app created from this template. Bootstrap means copying the bundled
   template as-is and running its setup script as-is — never scaffold by hand and
   never run create-next-app.

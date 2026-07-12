@@ -45,18 +45,23 @@ export async function embedVibeAgent(proc: AgenticProcess): Promise<void> {
 }
 
 /**
- * Create and open a fresh Vibe process for a project without sending a prompt.
- * Used by the no-process Vibe workspace's "Start new chat" button; callers that
- * also have an initial message layer prompt/upload behavior on top.
+ * Create a fresh headless Vibe process for a project without sending a prompt,
+ * and (by default) open its workspace in Vibe mode. Pass `open: false` to only
+ * mint the process — e.g. to host a cold-opened asset tab as a child without
+ * navigating away from it (see `tabs/vibe-parent.ts`). Used by the no-process
+ * Vibe workspace's "Start new chat" button; callers with an initial message
+ * layer prompt/upload behavior on top.
  */
 export async function createVibeProcessForProject(opts: {
   projectId: string;
   workdir?: string;
-  navigation: OpenShell;
+  navigation?: OpenShell;
+  /** Open the process's workspace after creating it (default true). */
+  open?: boolean;
   model?: VibeModelTier;
   workerType?: WorkerType;
 }): Promise<AgenticProcess> {
-  const { projectId, workdir, navigation, model = VIBE_MODEL_DEFAULT, workerType = DEFAULT_WORKER_TYPE } = opts;
+  const { projectId, workdir, navigation, open = true, model = VIBE_MODEL_DEFAULT, workerType = DEFAULT_WORKER_TYPE } = opts;
   // Key the session to the project's id-based TypeId (NOT project.typeId, the
   // uname form `project-@local`) — VibeWorkspace's chat target must match this
   // exact string to attach to the same process.
@@ -80,7 +85,7 @@ export async function createVibeProcessForProject(opts: {
     { pty_mode: false },
   );
   await embedVibeAgent(proc);
-  void navigation.openShellProcess(proc.id, { viewMode: ViewMode.Vibe });
+  if (open) navigation?.openShellProcess(proc.id, { viewMode: ViewMode.Vibe });
   return proc;
 }
 
