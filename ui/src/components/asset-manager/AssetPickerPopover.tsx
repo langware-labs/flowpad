@@ -1,12 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { isReadOnlySource, type AssetDescriptor } from '@sdk';
+import { isReadOnlySource, TypeId, type AssetDescriptor } from '@sdk';
+import { DockPointer } from '@src/navigation/DockPointer';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { cn } from '@src/lib/utils';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Dialog, DialogContent, DialogTitle } from '@src/components/ui/dialog';
 import { useAssetTypes } from '@src/hooks/use-asset-types';
 import { useProcessAssets } from './useProcessAssets';
 import {
   displayLabelForTypeid,
+  isOpenableTypeid,
   makeIconForType,
   parseTypeid,
 } from './asset-row-helpers';
@@ -78,6 +82,7 @@ export function AssetPickerPopover({
   centered = false,
 }: AssetPickerPopoverProps) {
   const { t } = useLingui();
+  const { navigation } = useDockNavigation();
   const isControlled = controlledOpen !== undefined;
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
   const open = isControlled ? controlledOpen : uncontrolledOpen;
@@ -182,11 +187,34 @@ export function AssetPickerPopover({
   const handlePick = useCallback(
     (d: AssetDescriptor) => {
       onPick(d);
-      setOpen(false);
-      setQuery('');
-      setSelectedTypes([]);
+      handleOpenChange(false);
     },
-    [onPick, setOpen],
+    [onPick, handleOpenChange],
+  );
+
+  // Open the asset's content (read-only for read-only sources) via the canonical
+  // DockPointer factory — the same "click the type = open" affordance the
+  // AssetManagerPopover row exposes. Closes the picker so the opened asset is
+  // visible. The row's own click stays reserved for attach (onPick).
+  const handlePreview = useCallback(
+    (d: AssetDescriptor) => {
+      if (!isOpenableTypeid(d.typeid)) return;
+      const { type, id } = parseTypeid(d.typeid);
+      try {
+        navigation.openDock(
+          DockPointer.forAssetEditorByTypeId(
+            type,
+            new TypeId(type, id),
+            undefined,
+            isReadOnlySource(d.source) ? { readOnly: '1' } : undefined,
+          ),
+        );
+        handleOpenChange(false);
+      } catch (err) {
+        console.error('[AssetPickerPopover] failed to open asset', d.typeid, err);
+      }
+    },
+    [navigation, handleOpenChange],
   );
 
   const body = (
@@ -245,6 +273,7 @@ export function AssetPickerPopover({
               descriptor={d}
               iconForType={iconForType}
               onPick={handlePick}
+              onPreview={handlePreview}
             />
           ))
         )}
@@ -287,16 +316,19 @@ function PickRow({
   descriptor,
   iconForType,
   onPick,
+  onPreview,
 }: {
   descriptor: AssetDescriptor;
   iconForType: (type: string) => LucideIcon;
   onPick: (d: AssetDescriptor) => void;
+  onPreview: (d: AssetDescriptor) => void;
 }) {
   const { t } = useLingui();
   const { type } = parseTypeid(descriptor.typeid);
   const Icon = iconForType(type);
   const readOnly = isReadOnlySource(descriptor.source);
   const label = displayLabelForTypeid(descriptor.typeid);
+  const openable = isOpenableTypeid(descriptor.typeid);
 
   const revealInFinder = () =>
     void openExternalFromComputeNode('@local', descriptor.posix_path!, { select: true });
@@ -340,9 +372,38 @@ function PickRow({
             aria-label={t`Read-only source`}
           />
         ))}
+      {/* When the descriptor points at a real entity, the type pill doubles as
+          an "open the asset content" affordance (read-only for read-only
+          sources) instead of attaching — mirrors the AssetManagerPopover
+          chip-open affordance. stopPropagation keeps the row's attach click
+          from also firing. */}
       <span
-        className="flex-shrink-0 rounded border border-border bg-muted/40 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground"
-        title={descriptor.source}
+        role={openable ? 'button' : undefined}
+        tabIndex={openable ? 0 : undefined}
+        className={cn(
+          'flex-shrink-0 rounded border border-border bg-muted/40 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground',
+          openable && 'hover:bg-muted hover:text-foreground',
+        )}
+        title={openable ? (readOnly ? t`View ${label} (read-only)` : t`Open ${label}`) : descriptor.source}
+        onClick={
+          openable
+            ? (e) => {
+                e.stopPropagation();
+                onPreview(descriptor);
+              }
+            : undefined
+        }
+        onKeyDown={
+          openable
+            ? (e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onPreview(descriptor);
+                }
+              }
+            : undefined
+        }
       >
         {type}
       </span>
