@@ -36,6 +36,20 @@ import { stampTabRecencyForTarget } from '@src/tabs/tab-recency';
 import { showCleanupModal } from '@src/components/recovery/cleanup-modal';
 import { notify } from '@src/notifications';
 import { buildShellRedirectUrl, detectLayout, DockPointer } from '@src/navigation';
+import type { ViewMode } from '@src/contexts/view-mode-context';
+
+/**
+ * The URL-derived values that must SURVIVE the scope-align redirect in
+ * `reconcileProcessScope` — one home for "what the redirect carries" instead of
+ * a growing positional tail. The redirect rebuilds the URL from scratch (the
+ * loader `requestPath` contract is pathname-only), so anything not listed here
+ * is dropped; widening the contract to carry the whole search string is the
+ * tracked deeper fix.
+ */
+export interface ProcessRouteCarry {
+  scope?: ScopeFilter | null;
+  viewMode?: ViewMode | null;
+}
 import { ViewType } from '@sdk';
 import { projectScope, scopeFilterEqual, type ScopeFilter } from '@src/lib/scope-filter';
 import { replace } from 'react-router';
@@ -239,7 +253,7 @@ async function routeDefaultShell(shellUrl: ShellUrlBuilder): Promise<void> {
 async function reconcileProcessScope(
   processId: string,
   requestPath: string,
-  currentScope?: ScopeFilter | null,
+  carry?: ProcessRouteCarry,
 ): Promise<void> {
   // Resolve identity only (cache-first; a cheap get-by-id on cold nav).
   const proc =
@@ -247,7 +261,7 @@ async function reconcileProcessScope(
     (await AgenticProcess.getById<AgenticProcess>(processId).catch(() => null));
   if (!proc?.project_id) return; // projectless / unresolvable target — leave the seeded scope as-is
   const want = projectScope(proc.project_id);
-  if (currentScope && scopeFilterEqual(currentScope, want)) return; // already aligned — no redirect loop
+  if (carry?.scope && scopeFilterEqual(carry.scope, want)) return; // already aligned — no redirect loop
   // NOTE: this scope-align redirect drops the incoming URL's query options
   // (`?sideWindows=dir`, etc.) — `requestPath` is pathname-only (loaders.ts:73
   // strips the query before it reaches here) and this DockPointer seeds
@@ -255,8 +269,12 @@ async function reconcileProcessScope(
   // loader `requestPath` contract to include the search string (touches
   // detectLayout / buildShellRedirectUrl across all routes) — tracked separately;
   // not fixed here. See dir_panel_scroll.md.ts for the affected deep-link.
+  // ONE exception, threaded explicitly: `?viewMode`. Vibe is a rendering mode
+  // of the process's single shell URL — dropping the param here would silently
+  // land every project-owned vibe entry in standard mode.
   const url = new DockPointer(ViewType.SHELL, proc.terminalDockPointer.pointer, undefined, detectLayout(requestPath))
     .withScopeFilter(want)
+    .withViewMode(carry?.viewMode ?? null)
     .toUrl(requestPath);
   // eslint-disable-next-line @typescript-eslint/only-throw-error
   throw replace(url);
@@ -266,14 +284,14 @@ async function routeProcessPointer(
   processId: string,
   shellUrl: ShellUrlBuilder,
   requestPath: string,
-  currentScope?: ScopeFilter | null,
+  carry?: ProcessRouteCarry,
 ): Promise<void> {
   // Align the URL scope to the opened process's project (SSOT) BEFORE the
   // runtime phase. Throws a `replace()` redirect when diverged; on the re-run
   // the scopes match (no-op) and the runtime attaches under the right scope.
   // Independent of `loadProcess` outcome, so a degraded/soft/failed attach can
   // no longer strand the side menu on the ambient project.
-  await reconcileProcessScope(processId, requestPath, currentScope);
+  await reconcileProcessScope(processId, requestPath, carry);
 
   try {
     await loadProcess(processId);
@@ -427,7 +445,7 @@ async function buildShellCleanupForRoute(e: ShellLoadError): Promise<CleanupReco
 export async function loadShellRoute(
   pointer: string | undefined,
   requestPath: string = '/dock/shell',
-  currentScope?: ScopeFilter | null,
+  carry?: ProcessRouteCarry,
 ): Promise<void> {
   perfLog(`loadShellRoute(${pointer || 'no-pointer'}) start`);
 
@@ -463,7 +481,7 @@ export async function loadShellRoute(
 
   if (DockPointer.isAgenticProcessPointer(pointer)) {
     const processId = DockPointer.extractAgenticProcessId(pointer);
-    await routeProcessPointer(processId, shellUrl, requestPath, currentScope);
+    await routeProcessPointer(processId, shellUrl, requestPath, carry);
     perfLog('loadShellRoute done (agentic process path)');
     return;
   }

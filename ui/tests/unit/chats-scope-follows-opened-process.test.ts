@@ -61,7 +61,7 @@ describe('opening a chat scopes the side menu to the chat\'s project', () => {
     // Navigate to the process while the URL scope is the (ambient) project A.
     let caught: unknown;
     try {
-      await loadShellRoute(pointer, '/dock/shell', projectScope(AMBIENT_PROJECT_A));
+      await loadShellRoute(pointer, '/dock/shell', { scope: projectScope(AMBIENT_PROJECT_A) });
     } catch (e) {
       caught = e;
     }
@@ -78,7 +78,7 @@ describe('opening a chat scopes the side menu to the chat\'s project', () => {
 
     // Already aligned → no redirect-loop.
     await expect(
-      loadShellRoute(pointer, '/dock/shell', projectScope(PROCESS_PROJECT_B)),
+      loadShellRoute(pointer, '/dock/shell', { scope: projectScope(PROCESS_PROJECT_B) }),
     ).resolves.toBeUndefined();
   });
 
@@ -96,7 +96,7 @@ describe('opening a chat scopes the side menu to the chat\'s project', () => {
 
     let caught: unknown;
     try {
-      await loadShellRoute(pointer, '/dock/shell', projectScope(AMBIENT_PROJECT_A));
+      await loadShellRoute(pointer, '/dock/shell', { scope: projectScope(AMBIENT_PROJECT_A) });
     } catch (e) {
       caught = e;
     }

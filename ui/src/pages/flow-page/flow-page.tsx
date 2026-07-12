@@ -39,10 +39,11 @@ export default function FlowPage() {
   }, [table, setEnvVars]);
 
   const isVibe = useIsVibe();
-  // A Vibe "session" = a workspace surface: the process's own dock (the display
-  // URL) OR a child tab opened from inside it. Resolved by one hook so the
-  // "is this a workspace surface" shape lives in one place, reusable by any
-  // future workspace-with-children view. Null on the bare home (centered prompt).
+  // A Vibe "session" = a workspace surface: the process's own dock (its ONE
+  // shell URL — vibe is a view mode, not a URL family) OR a child tab opened
+  // from inside it. Resolved by one hook so the "is this a workspace surface"
+  // shape lives in one place, reusable by any future workspace-with-children
+  // view. Null on the bare home (centered prompt).
   const vibeSession = useVibeWorkspaceSession();
   // Any OTHER real dock URL in Vibe (project home, assets, a conversation…) is
   // not a workspace surface, but it is still a navigable destination — it must

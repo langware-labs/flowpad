@@ -12,6 +12,7 @@ import {
   TabLifecycleState,
   type TabLifecycleEntry,
 } from '@src/tabs/tab-lifecycle';
+import { setActiveTabParent } from '@src/tabs/tab-parent-context';
 import { ViewType } from '@src/types/ViewType';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -246,5 +247,87 @@ describe('excludeClosingTabs', () => {
     const lifecycles = new Map([entry(tab.id, TabLifecycleState.Closing)]);
 
     expect(excludeClosingTabs([tab], lifecycles)).toEqual([]);
+  });
+});
+
+describe('workspace child adoption guard', () => {
+  // The vibe workspace registers its PROCESS tab in the global parent slot; the
+  // chokepoint may adopt ONLY content-asset docks. A process/project dock
+  // materialized while the slot is set is a navigation AWAY from the workspace
+  // (its loader runs before the workspace unmounts) — adopting it produced the
+  // nested-workspace / process-under-process corruption.
+  const PARENT = '00000000-0000-4000-8000-00000000feed';
+  const MD = '30c05e11-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+
+  function assetDock(): DockPointer {
+    return new DockPointer(ViewType.ASSETS, `editor/markdown/typeid/markdown-${MD}`);
+  }
+  function processDock(): DockPointer {
+    return new DockPointer(ViewType.SHELL, `agentic_process-${MD}`);
+  }
+  function projectDock(): DockPointer {
+    return new DockPointer(ViewType.PROJECT, MD);
+  }
+
+  afterEach(() => setActiveTabParent(null));
+
+  async function materializedParent(d: DockPointer): Promise<string | null | undefined> {
+    setActiveTabParent(PARENT);
+    mockNoExistingTabs();
+    const spy = vi
+      .spyOn(Tab, 'getFromDockPointer')
+      .mockResolvedValue([new Tab({ id: nextTabId(), pointer: d.toJSON() ?? '', visible: true })]);
+    await setupTab(d);
+    expect(spy).toHaveBeenCalledTimes(1);
+    return (spy.mock.calls[0][1] as { parentTabId?: string | null } | undefined)?.parentTabId;
+  }
+
+  it('adopts a content-asset dock into the registered workspace', async () => {
+    expect(await materializedParent(assetDock())).toBe(PARENT);
+  });
+
+  it('never adopts a process dock', async () => {
+    expect(await materializedParent(processDock())).toBeNull();
+  });
+
+  it('never adopts a project dock', async () => {
+    expect(await materializedParent(projectDock())).toBeNull();
+  });
+
+  it('does not re-parent an EXISTING process tab on navigation (reuse fast-path)', async () => {
+    setActiveTabParent(PARENT);
+    const d = processDock();
+    const existing = new Tab({
+      id: nextTabId(),
+      pointer: d.toJSON() ?? '',
+      target_type: 'agentic_process',
+      target_id: MD,
+      project_id: 'p1',
+      visible: true,
+      parent_tab_id: null,
+    });
+    vi.spyOn(Tab, 'listAll').mockResolvedValue([existing]);
+    const spy = vi.spyOn(Tab, 'getFromDockPointer');
+    await setupTab(d);
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('still re-parents an existing asset tab into the active workspace', async () => {
+    setActiveTabParent(PARENT);
+    const d = assetDock();
+    const existing = new Tab({
+      id: nextTabId(),
+      pointer: d.toJSON() ?? '',
+      target_type: 'markdown',
+      target_id: MD,
+      project_id: 'p1',
+      visible: true,
+      parent_tab_id: null,
+    });
+    vi.spyOn(Tab, 'listAll').mockResolvedValue([existing]);
+    const spy = vi.spyOn(Tab, 'getFromDockPointer').mockResolvedValue([existing]);
+    await setupTab(d);
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect((spy.mock.calls[0][1] as { parentTabId?: string | null } | undefined)?.parentTabId).toBe(PARENT);
   });
 });

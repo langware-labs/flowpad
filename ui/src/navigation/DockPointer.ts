@@ -791,20 +791,6 @@ export class DockPointer implements IDockPointer {
   }
 
   /**
-   * Create dock pointer for the vibe DISPLAY surface of a process.
-   * URL structure: /dock/display/agentic_process-<id>
-   *
-   * Reuses the `agentic_process-<id>` pointer grammar (same as the shell dock),
-   * so `targetTypeId`/`tabHash` resolve the owning process for free. This is the
-   * always-present right pane in vibe mode — its "Display" tab identity, not the
-   * process's shell tab.
-   */
-  static forDisplay(processId: string, layout: Layout = Layout.DOCK): DockPointer {
-    const pointer = `${AgenticProcess.type}${TypeId.DELIMITER}${processId}`;
-    return new DockPointer(ViewType.DISPLAY, pointer, undefined, layout);
-  }
-
-  /**
    * Create dock pointer for HOME/LiveStatus view with optional tab and item
    * URL structure: /dock/home/<tab>?item=<item>&scope=<scope>&project=<project>
    *

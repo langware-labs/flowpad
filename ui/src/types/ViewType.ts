@@ -392,12 +392,4 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     // scope persists on the stored pointer so reopen restores the filter.
     scopeKeyed: true,
   },
-  // The vibe Display surface for a process. Not a manually-addable tab — it is
-  // the always-present right pane in vibe mode, addressed by its own URL.
-  [ViewType.DISPLAY]: {
-    title: 'Display',
-    iconName: 'Monitor',
-    tabLocation: 'dedicated',
-    canAddAsTab: false,
-  },
 };

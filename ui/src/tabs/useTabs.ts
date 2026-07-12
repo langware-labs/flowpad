@@ -49,13 +49,27 @@ export function terminalTabsForScope(
   return uniqueTabsByDockKey(terminals.filter((t) => tabInProject(t, projectId)));
 }
 
+/** THE strip-partition rule: a tab with a `parent_tab_id` is a workspace CHILD
+ *  (a content tab a vibe workspace opened) and renders ONLY in its workspace's
+ *  child strip — never as a top-level chip. Every top-level tab-list consumer
+ *  must apply (or consciously decline) this predicate; `terminalTabsForScope`
+ *  and `useTabProjectBuckets` decline — children are content tabs by the
+ *  backend invariant, so they never appear in the terminal rails, and they DO
+ *  count as a project's open tabs. */
+export function isWorkspaceChild(tab: Tab | ITab): boolean {
+  return tab.parent_tab_id != null;
+}
+
 /** Tabs for the current active project + projectless (the render view for the
- *  unified tab strip). */
+ *  unified tab strip). Workspace children excluded — see `isWorkspaceChild`. */
 export function useCurrentTabs(): Tab[] {
   const all = useAllTabs();
   const { project } = useContext();
   return useMemo(
-    () => uniqueTabsByDockKey(all.filter((t) => tabInProject(t, project?.id ?? null))),
+    () =>
+      uniqueTabsByDockKey(
+        all.filter((t) => !isWorkspaceChild(t) && tabInProject(t, project?.id ?? null)),
+      ),
     [all, project?.id],
   );
 }

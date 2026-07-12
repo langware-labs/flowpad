@@ -13,9 +13,9 @@ import { useLingui } from '@lingui/react/macro';
 interface WorkspaceChildStripProps {
   /** The workspace's fixed tab (the vibe display / process tab). Children are the
    *  tabs whose `parent_tab_id` is this tab's id. */
-  displayTab: Tab | null;
+  processTab: Tab | null;
   /** The display's dock pointer — the fixed "Display" chip target. */
-  displayDock: DockPointer;
+  processDock: DockPointer;
 }
 
 /**
@@ -29,7 +29,7 @@ interface WorkspaceChildStripProps {
  * (`parent_tab_id`) is minted by the opener context at the tab chokepoint, and
  * vibe-mode continuity by the navigation layer — so this component stays dumb.
  */
-export function WorkspaceChildStrip({ displayTab, displayDock }: WorkspaceChildStripProps) {
+export function WorkspaceChildStrip({ processTab, processDock }: WorkspaceChildStripProps) {
   const { t } = useLingui();
   const { currentDock, navigation } = useDockNavigation();
   const allTabs = useAllTabs();
@@ -39,21 +39,21 @@ export function WorkspaceChildStrip({ displayTab, displayDock }: WorkspaceChildS
   const lifecycles = useTabLifecycles();
   const children = useMemo(
     () =>
-      displayTab
+      processTab
         ? excludeClosingTabs(
-            allTabs.filter((tab) => tab.parent_tab_id === displayTab.id && tab.visible !== false),
+            allTabs.filter((tab) => tab.parent_tab_id === processTab.id && tab.visible !== false),
             lifecycles,
           )
         : [],
-    [allTabs, displayTab, lifecycles],
+    [allTabs, processTab, lifecycles],
   );
   // The child TABS only — the Display is NOT a tab (it renders as a fixed,
   // square header to the left of the strip). The strip starts after it.
   const items: TabStripItem[] = useTabStripItems(children);
 
-  const displayKey = displayDock.tabHash ?? 'workspace-display';
+  const processKey = processDock.tabHash ?? 'workspace-display';
   const activeKey = currentDock?.tabHash ?? '';
-  const displayActive = activeKey === displayKey;
+  const processActive = activeKey === processKey;
 
   const childByKey = useMemo(() => {
     const m = new Map<string, Tab>();
@@ -77,10 +77,10 @@ export function WorkspaceChildStrip({ displayTab, displayDock }: WorkspaceChildS
       if (!tab) return; // the Display chip is not closable
       // Closing the active child always returns to the Display (the workspace
       // home), never to an arbitrary sibling.
-      if (key === activeKey) navigation.openDock(displayDock);
+      if (key === activeKey) navigation.openDock(processDock);
       void closeTabWithLifecycle(tab).finally(() => void refreshAllTabs());
     },
-    [childByKey, activeKey, displayDock, navigation],
+    [childByKey, activeKey, processDock, navigation],
   );
 
   return (
@@ -90,12 +90,12 @@ export function WorkspaceChildStrip({ displayTab, displayDock }: WorkspaceChildS
           a closable tab. The child tab strip begins to its right. */}
       <button
         type="button"
-        onClick={() => navigation.openDock(displayDock)}
-        title={displayTab?.name || t`Display`}
-        aria-current={displayActive ? 'true' : undefined}
+        onClick={() => navigation.openDock(processDock)}
+        title={processTab?.name || t`Display`}
+        aria-current={processActive ? 'true' : undefined}
         data-testid="workspace-display-tab"
         className={`flex h-9 w-9 shrink-0 items-center justify-center border-r border-border transition-colors ${
-          displayActive
+          processActive
             ? 'bg-background text-foreground'
             : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'
         }`}
