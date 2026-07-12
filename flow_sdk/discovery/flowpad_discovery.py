@@ -56,6 +56,20 @@ class FlowpadDiscoveryResult:
     error: Optional[str] = None
 
 
+def _parse_server_json(path: Path) -> Optional[FlowpadServerInfo]:
+    """Read one server.json and return its info, or None if missing/corrupt."""
+    try:
+        data = json.loads(path.read_text())
+        return FlowpadServerInfo(
+            port=data["port"],
+            webhook_path=data["webhook_path"],
+            health_path=data["health_path"],
+            url=f"http://localhost:{data['port']}{data['webhook_path']}",
+        )
+    except (json.JSONDecodeError, KeyError, OSError):
+        return None
+
+
 class _ServerState:
     """Cached server state with rate-limited failure tracking."""
 
@@ -74,18 +88,7 @@ class _ServerState:
 
     def _read_server_info(self) -> Optional[FlowpadServerInfo]:
         """Read this state's JSON file and return FlowpadServerInfo if valid."""
-        if not self._path.exists():
-            return None
-        try:
-            data = json.loads(self._path.read_text())
-            return FlowpadServerInfo(
-                port=data["port"],
-                webhook_path=data["webhook_path"],
-                health_path=data["health_path"],
-                url=f"http://localhost:{data['port']}{data['webhook_path']}",
-            )
-        except (json.JSONDecodeError, KeyError, OSError):
-            return None
+        return _parse_server_json(self._path)
 
     def _discover(self) -> FlowpadDiscoveryResult:
         """Internal discovery using this state's path."""
@@ -352,22 +355,20 @@ def read_all_server_infos() -> list[FlowpadServerInfo]:
 
     Fast path — no health check. Skips missing or corrupt files.
 
+    Deduped by port: only one server can own a port, so a second file
+    claiming the same port is a leftover from a dead instance whose port
+    band was recycled. Without this, hook broadcasts POST the same payload
+    once per stale file into whichever live server holds the port now.
+
     Returns:
-        List of FlowpadServerInfo for all currently written server files.
+        List of FlowpadServerInfo, one per distinct port.
     """
-    infos = []
+    by_port: dict[int, FlowpadServerInfo] = {}
     for path in _enumerate_server_json_paths():
-        try:
-            data = json.loads(path.read_text())
-            infos.append(FlowpadServerInfo(
-                port=data["port"],
-                webhook_path=data["webhook_path"],
-                health_path=data["health_path"],
-                url=f"http://localhost:{data['port']}{data['webhook_path']}",
-            ))
-        except Exception:
-            pass
-    return infos
+        info = _parse_server_json(path)
+        if info is not None:
+            by_port.setdefault(info.port, info)
+    return list(by_port.values())
 
 
 def discover_all_flowpads() -> list[FlowpadDiscoveryResult]:
