@@ -645,6 +645,7 @@ msgstr "סינונים פעילים"
 msgid "Active log: {0}"
 msgstr "יומן פעיל: {0}"
 
+#: src/components/open-project-component/open-project-component.tsx
 #: src/components/terminal/ProjectsCounterChip.tsx
 msgid "Active projects"
 msgstr ""
@@ -8405,7 +8406,7 @@ msgstr "פתח תהליך"
 #: src/components/project-setup-screen/project-setup-screen.tsx
 #: src/components/project-sidebar/ProjectSidebar.tsx
 #: src/components/quick-access-sidebar/QuickAccessSideBar.tsx
-#: src/tabs/tab-row-item.tsx
+#: src/pages/flow-page/content-panel/unified-tab-strip.tsx
 msgid "Open Project"
 msgstr "פתח פרויקט"
 
@@ -9417,6 +9418,7 @@ msgstr "הגברת העדכניות"
 msgid "Recency Factor (k)"
 msgstr "גורם העדכניות (k)"
 
+#: src/components/open-project-component/open-project-component.tsx
 #: src/pages/discover-page/discover-page.tsx
 msgid "Recent"
 msgstr "אחרוני"
