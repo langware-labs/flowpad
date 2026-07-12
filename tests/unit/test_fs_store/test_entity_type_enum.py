@@ -55,7 +55,7 @@ EXPECTED = {
     "DOC_DB": "doc_db", "RECORD_ERROR": "record_error", "TEXT_FILE": "text_file",
     "WORKFLOW": "workflow", "MARKDOWN": "markdown", "MARKDOWN_INDEX": "markdown_index",
     "SPEC": "spec", "PROMPT": "prompt", "CONVERSATION": "conversation", "WHITEBOARD": "whiteboard",
-    "DATASET": "dataset",
+    "DATASET": "dataset", "SECRET_ORIGIN": "secret_origin",
     "COLLABORATION_ROOM": "collaboration_room", "USER_HOME_FOLDER": "user_home_folder",
     "REAL_PROJECT_CWD": "real_project_cwd", "SYSTEM_ROOT": "system_root",
     "CWD_ROOT": "cwd_root", "FOLDER": "folder", "USER": "user", "VISITOR": "visitor",
