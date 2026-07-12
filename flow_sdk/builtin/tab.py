@@ -22,6 +22,8 @@ expected to reset on such a rebuild anyway).
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import json as _json
 import logging
 import uuid
@@ -153,9 +155,14 @@ class Tab(Entity):
         tears down its PTY/worker; a markdown/skill survives untouched). A
         target without that method is a no-op.
         """
+        await self._soft_hide()
+        await self._dispatch_teardown()
+
+    async def _soft_hide(self) -> None:
+        """The membership-removal half of close — ONE definition of "soft-close"
+        shared by ``close`` and the fast HTTP handler (``_http_close``)."""
         self.visible = False
         await self.save()
-        await self._dispatch_teardown()
 
     async def _dispatch_teardown(self) -> None:
         target = await self._target_entity()
@@ -592,6 +599,14 @@ async def ensure_tab(
     ``ensure_file_entity``.
     """
     tid = tab_id_for(pointer)
+    # Reopen-race guard: a just-closed tab's background teardown may still be
+    # killing the shell/worker this pointer re-materializes. Wait for it so the
+    # reopen can't be reaped as a target orphan mid-teardown (awaits in-flight
+    # work only — a settled or absent task costs nothing).
+    pending = _PENDING_TEARDOWNS.get(tid)
+    if pending is not None:
+        with contextlib.suppress(Exception):
+            await pending
     # Never adopt the FE `<type>-<id>` synthetic as a durable name (backstop to the
     # `getTabName` guard): drop it to None so the null-name backfill / fresh create
     # below leave the label empty until a real name is stamped onto the target.
@@ -1069,11 +1084,44 @@ _action_registry.register(
 )
 
 
+# In-flight background teardowns keyed by tab id. Serves two purposes: the
+# strong reference that keeps each fire-and-forget task alive until done, and
+# the reopen-race guard — ``ensure_tab`` awaits a pending teardown for the same
+# deterministic tab id before re-showing the row, so a fast close→reopen can't
+# resurrect a tab whose shell/worker is still being torn down under it.
+_PENDING_TEARDOWNS: dict[str, asyncio.Task] = {}
+
+
+async def drain_pending_teardowns() -> None:
+    """Await every in-flight tab teardown (test hook — keeps event loops clean)."""
+    await asyncio.gather(*_PENDING_TEARDOWNS.values(), return_exceptions=True)
+
+
 async def _http_close(self: Tab):
-    """POST /graph/tab/<id>/close — soft-close then return the updated list."""
-    await self.close()
+    """POST /graph/tab/<id>/close — soft-close, respond immediately, tear down
+    in the background.
+
+    The membership flip (``visible=False``) + broadcast + list response happen
+    before the per-target teardown (PTY/worker kill can take seconds), so the
+    client drops the chip instantly. A teardown failure therefore no longer
+    surfaces as an HTTP error — the tab hides regardless and the failure is
+    logged (``Shell.close`` already swallowed its sub-failures anyway).
+    Programmatic callers keep the synchronous semantics via ``Tab.close``.
+    """
+    await self._soft_hide()
     await broadcast_tabs_changed()
-    return await _list_response(self.project_id)
+    response = await _list_response(self.project_id)
+    tab_id = self.id
+    task = asyncio.create_task(self._dispatch_teardown(), name=f"tab-teardown:{tab_id}")
+    _PENDING_TEARDOWNS[tab_id] = task
+
+    def _done(t: asyncio.Task) -> None:
+        _PENDING_TEARDOWNS.pop(tab_id, None)
+        if not t.cancelled() and t.exception() is not None:
+            logger.warning("tab teardown failed for %s", tab_id, exc_info=t.exception())
+
+    task.add_done_callback(_done)
+    return response
 
 
 _action_registry.register(

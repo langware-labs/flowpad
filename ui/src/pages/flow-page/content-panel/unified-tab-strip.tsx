@@ -25,7 +25,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useTabStripItems } from '@src/tabs/tab-row-item';
 import { resolveNextTab } from '@src/tabs/tab-candidates';
 import { applyPredictedOrder, refreshAllTabs, useAllTabs } from '@src/tabs/all-tabs-store';
-import { closeTabWithLifecycle } from '@src/tabs/tab-lifecycle';
+import { closeTabWithLifecycle, excludeClosingTabs, useTabLifecycles } from '@src/tabs/tab-lifecycle';
 import { uniqueTabsByDockKey, useCurrentTabs, useSyncContentTabNames } from '@src/tabs/useTabs';
 import { useTerminalStripController } from '@src/tabs/useTerminalStripController';
 import React, { useCallback, useEffect, useMemo } from 'react';
@@ -52,7 +52,14 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'proje
   useSyncContentTabNames();
   const currentTabs = useCurrentTabs();
   const globalTabs = useMemo(() => uniqueTabsByDockKey(allTabs), [allTabs]);
-  const tabs = scope === 'all' ? globalTabs : currentTabs;
+  // Optimistic close: drop `Closing` tabs from the WHOLE working set (not just
+  // the rendered items) — `baseItems`, `tabByKey`, and the mod+PgUp/PgDn cycling
+  // all derive from `tabs`, so a closing tab can't be re-selected mid-teardown.
+  const lifecycles = useTabLifecycles();
+  const tabs = useMemo(
+    () => excludeClosingTabs(scope === 'all' ? globalTabs : currentTabs, lifecycles),
+    [scope, globalTabs, currentTabs, lifecycles],
+  );
   const baseItems = useTabStripItems(tabs);
   const tabByKey = useMemo(() => {
     const m = new Map<string, Tab>();

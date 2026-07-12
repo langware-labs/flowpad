@@ -550,12 +550,21 @@ class Shell(Entity):
         session_id = launch_cmd.get("session_id") if isinstance(launch_cmd, dict) else None
         if session_id:
             seen = {p.pid for p in victims}
-            for proc in self._session_worker_procs(session_id, seen):
-                victims.append(proc)
-                try:
-                    victims.extend(c for c in proc.children(recursive=True) if c.pid not in seen)
-                except (psutil.NoSuchProcess, psutil.AccessDenied):
-                    pass
+
+            # Both the argv sweep and each match's ``children(recursive=True)``
+            # walk the full process table; run the whole collection off-loop so
+            # it can't stall other requests.
+            def _sweep() -> list[psutil.Process]:
+                out: list[psutil.Process] = []
+                for proc in self._session_worker_procs(session_id, seen):
+                    out.append(proc)
+                    try:
+                        out.extend(c for c in proc.children(recursive=True) if c.pid not in seen)
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        pass
+                return out
+
+            victims.extend(await asyncio.to_thread(_sweep))
 
         if not victims:
             return

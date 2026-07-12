@@ -253,21 +253,41 @@ export async function cleanupTab(dock: DockPointer, tab: Tab): Promise<void> {
   }
 }
 
+/**
+ * Close a tab through its lifecycle: `Closing` is set synchronously (the strip
+ * filters it out on the same tick), then adapter cleanup + backend close run.
+ * Failure is fully conveyed through the `CloseFailed` lifecycle entry — the
+ * promise never rejects (callers need no catch), resolving `[]` on failure.
+ */
 export async function closeTabWithLifecycle(tab: Tab): Promise<Tab[]> {
   const dockData = tab.dockPointer;
   const dock = dockData ? new DockPointer(dockData) : null;
   const key = tabKey(tab);
-  if (dock) {
-    await cleanupTab(dock, tab);
-  } else {
-    setEntry(key, TabLifecycleState.Closing, { tabId: tab.id });
-  }
   try {
+    if (dock) {
+      await cleanupTab(dock, tab);
+    } else {
+      setEntry(key, TabLifecycleState.Closing, { tabId: tab.id });
+    }
     return await Tab.closeById(tab.id);
   } catch (error) {
     setEntry(key, TabLifecycleState.CloseFailed, { tabId: tab.id, error });
-    throw error;
+    return [];
   }
+}
+
+/**
+ * Drop tabs whose lifecycle state is `Closing` — the strip's optimistic close:
+ * the chip vanishes on the click tick while the backend close/teardown runs.
+ * Only `Closing` is filtered, so a failed close (`CloseFailed`) resurfaces the
+ * chip with its error state, and the entry is GC'd by `syncTabLifecycleWithTabs`
+ * once the refreshed list drops the row for real.
+ */
+export function excludeClosingTabs(tabs: Tab[], lifecycles: ReadonlyMap<string, TabLifecycleEntry>): Tab[] {
+  const open = tabs.filter((tab) => lifecycles.get(tabKey(tab))?.state !== TabLifecycleState.Closing);
+  // Preserve input identity when nothing is closing (the common case) so
+  // downstream memos short-circuit on lifecycle traffic unrelated to closes.
+  return open.length === tabs.length ? tabs : open;
 }
 
 export function syncTabLifecycleWithTabs(tabs: Tab[]): void {
