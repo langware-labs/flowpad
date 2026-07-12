@@ -79,4 +79,25 @@ describe('MessageAttachment actions', () => {
     expect(ma.installed).toBe(true);
     expect(new MessageAttachment({ id: MA_ID }).targetTypeId).toBeNull();
   });
+
+  it('raw file row: same install/uninstall contract + installed getter', async () => {
+    const spy = vi.spyOn(dataManager, 'callAction').mockResolvedValue(undefined as never);
+    const fileId = '66666666-6666-4666-8666-666666666666';
+    const ma = new MessageAttachment({
+      id: MA_ID,
+      asset_type: 'file',
+      asset_id: fileId,
+      name: 'SAPAK-DEMO-SPEC.md',
+    });
+
+    // Contract identical to entity rows.
+    await ma.install('project', PROJECT_ID);
+    expect(lastAction(spy).bodyParameters).toEqual({ scope: 'project', project_id: PROJECT_ID, overwrite: false });
+    expect(ma.targetTypeId?.toString()).toBe(`file-${fileId}`);
+
+    // Installed-ness comes from the row's scope (a file never resolves as an entity).
+    expect(ma.installed).toBe(false);
+    ma.scope = 'project';
+    expect(ma.installed).toBe(true);
+  });
 });

@@ -133,11 +133,22 @@ async def handle_attachment_install(
     if scope not in (AttachmentScope.USER.value, AttachmentScope.PROJECT.value):
         return ApiFailResponse(message=f"invalid scope: {scope!r}", status_code=400)
 
-    main_subdir = _main_subdir_for(ma.asset_type)
-    if main_subdir is None:
-        return ApiFailResponse(
-            message=f"type {ma.asset_type!r} is not an installable file-backed asset", status_code=400
-        )
+    # Raw FILE attachments (the OS-file-picker lane) have no TypeInfo/RecordType
+    # and no schema-derived main_subdir — their staged entry dir already carries
+    # the canonical install relpath (``.claude/docs/<name>`` for markdown, else
+    # ``.claude/files/<name>``). They install into either scope; only markdown
+    # gets a follow-up index walk (the docs walker is the sole ``.claude`` file
+    # indexer today — see file_attachment_rel_subdir).
+    is_raw_file = ma.asset_type == "file"
+
+    if is_raw_file:
+        main_subdir = None
+    else:
+        main_subdir = _main_subdir_for(ma.asset_type)
+        if main_subdir is None:
+            return ApiFailResponse(
+                message=f"type {ma.asset_type!r} is not an installable file-backed asset", status_code=400
+            )
 
     # Resolve the target root. For git-mode installs the root is only a clone
     # PREFERENCE (the checkout may live elsewhere), so the user-scope layout
@@ -154,7 +165,11 @@ async def handle_attachment_install(
         root = Path(mount)
     else:
         project_id = None
-        if ma.transfer_mode != TransferMode.GIT.value:
+        if is_raw_file:
+            # Raw files are always user-installable (docs/ or files/ under
+            # ~/.claude); the staged entry relpath is already .claude-anchored.
+            root = _user_scope_root()
+        elif ma.transfer_mode != TransferMode.GIT.value:
             # Same predicate that stamped `user_scope_allowed` at stage time.
             if not user_scope_allowed_for(main_subdir, ma.transfer_mode):
                 return ApiFailResponse(
@@ -164,10 +179,17 @@ async def handle_attachment_install(
             root = _user_scope_root()
 
     entry_key = record_stem(ma.asset_type, ma.asset_id)
-    try:
-        record_type = RecordType(ma.asset_type)
-    except ValueError:
-        return ApiFailResponse(message=f"unknown record type: {ma.asset_type!r}", status_code=400)
+    if is_raw_file:
+        # Markdown → indexed as MARKDOWN by both scopes' docs walker; other
+        # blobs copy without a follow-up walk (no dedicated .claude/files/ walker
+        # yet). record_type=None means "copy, don't reindex".
+        from flow_sdk.builtin.flow_message_bundle import is_markdown_filename  # noqa: PLC0415
+        record_type = RecordType.MARKDOWN if is_markdown_filename(ma.name or "") else None
+    else:
+        try:
+            record_type = RecordType(ma.asset_type)
+        except ValueError:
+            return ApiFailResponse(message=f"unknown record type: {ma.asset_type!r}", status_code=400)
 
     try:
         if ma.transfer_mode == TransferMode.GIT.value:
@@ -196,10 +218,13 @@ async def handle_attachment_install(
                 return _staging_gone()
             assert root is not None  # copy mode always resolves a root above
             _restore_file_backed_entry(entry_dir, root, overwrite)
-            if scope == AttachmentScope.PROJECT.value:
-                await _reindex_received_assets(root, (record_type,), project_id=project_id)
-            else:
-                await _reindex_root(root, RecordType.USER_HOME_FOLDER, types=(record_type,))
+            # record_type is None for a non-markdown raw file: bytes are copied
+            # but there's no walker to materialize a row, so skip the reindex.
+            if record_type is not None:
+                if scope == AttachmentScope.PROJECT.value:
+                    await _reindex_received_assets(root, (record_type,), project_id=project_id)
+                else:
+                    await _reindex_root(root, RecordType.USER_HOME_FOLDER, types=(record_type,))
             if ma.git_origin:
                 origins = {entry_key: ma.git_origin}
                 entries = {(ma.asset_type, ma.asset_id)}

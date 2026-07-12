@@ -9,6 +9,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@src/components/ui/dialog';
+import { File } from 'lucide-react';
 import { iconForEntity } from '../EntityChip';
 import { AssetInstallActions } from './AssetInstallActions';
 import { StagedAssetViewer } from './StagedAssetViewer';
@@ -44,7 +45,9 @@ export function AssetReviewDialog({
   );
   const { data: liveAttachment } = useEntity<MessageAttachment>(maTypeId);
   const ma = liveAttachment ?? attachment;
-  const Icon = iconForEntity(targetTypeId.type);
+  // Raw files have no backend TypeInfo icon — use the generic File glyph
+  // (sanctioned call-site special-case, mirroring FlowMessageBubble's chip).
+  const Icon = targetTypeId.type === 'file' ? File : iconForEntity(targetTypeId.type);
   const typeWord =
     targetTypeId.type.charAt(0).toUpperCase() + targetTypeId.type.slice(1).replace(/_/g, ' ');
 
