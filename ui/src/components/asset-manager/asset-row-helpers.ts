@@ -1,4 +1,4 @@
-import { dataManager, isTypeId, TypeId } from '@sdk';
+import { dataManager, isTypeId, isValidUUIDv4, TypeId } from '@sdk';
 import type { LucideIcon } from 'lucide-react';
 import { lucideByName } from '@src/lib/lucide-by-name';
 import { ICON_BY_TYPE } from '@src/components/conversation/EntityChip';
@@ -41,6 +41,18 @@ export function parseTypeid(typeid: string): { type: string; id: string } {
   const dash = typeid.indexOf('-');
   if (dash < 0) return { type: typeid, id: '' };
   return { type: typeid.slice(0, dash), id: typeid.slice(dash + 1) };
+}
+
+/**
+ * Whether a descriptor's typeid points at a real backing entity that can be
+ * opened in an editor/viewer. Entity ids are always UUID v4/v5 (policy), so
+ * gate on that rather than the looser isTypeId grammar: an entity-less inline
+ * persona carries a name-form pseudo-typeid (e.g. `agent-team.lead`) that
+ * parses as well-formed but has nothing to open. Single source of truth for
+ * the "click to open" affordance shared by the asset picker and manager rows.
+ */
+export function isOpenableTypeid(typeid: string): boolean {
+  return isTypeId(typeid) && isValidUUIDv4(parseTypeid(typeid).id);
 }
 
 export function basename(path: string): string {
