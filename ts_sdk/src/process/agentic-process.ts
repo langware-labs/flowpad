@@ -19,6 +19,10 @@ import { Shell, ShellStatus } from '../entities/shell';
 import { FlowData, FlowDataSource } from '../flow_processing';
 import { FlowElementTypes } from '../flow_processing/flow-element-types';
 import { ActionInfo } from '../models/ActionInfo';
+import { toplog } from '../services/toplog';
+
+/** Elapsed ms since `t0` formatted for `process_load` trace lines. */
+const msSince = (t0: number): string => (performance.now() - t0).toFixed(1);
 import type { AssetDescriptor } from './asset-descriptor';
 import { DockPointerData } from '../models/DockPointer';
 import { TypeId } from '../models/TypeId';
@@ -2438,6 +2442,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     // (the cached ``status === RUNNING`` could outlive the actual worker).
     const actionInfo = new ActionInfo('open', AgenticProcess.type, this.id, 'POST');
     actionInfo.bodyParameters = options ?? {};
+    const tOpen = performance.now();
     const result = await dataManager.callAction<
       unknown,
       {
@@ -2448,6 +2453,10 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
         shell: Record<string, unknown>;
       } | null
     >(actionInfo);
+    toplog.log(
+      'process_load',
+      `AgenticProcess.start POST /open took ${msSince(tOpen)}ms proc=${this.id.slice(0, 8)} ok=${!!result}`,
+    );
     if (!result) throw new Error('Process could not be opened (process may be terminated)');
     if (result.status) {
       this.status = result.status as ProcessStatus;
@@ -2463,6 +2472,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       shell.ptyConnection.shellId = shell.id;
       if (shell.compute_node_id) shell.ptyConnection.computeNodeId = shell.compute_node_id;
     }
+    const tAttach = performance.now();
     await shell.attachPty({
       // Real xterm size only — undefined means "keep current size, just repaint".
       cols: options?.cols,
@@ -2470,6 +2480,10 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       timeout: options?.ptyTimeout,
       ptyId: result.pty_id,
     });
+    toplog.log(
+      'process_load',
+      `AgenticProcess.start attachPty took ${msSince(tAttach)}ms pty=${result.pty_id?.slice(0, 8)}`,
+    );
     // Successful open clears any prior user-stop intent.
     this._userInitiatedStop = false;
     // A successful open implies the process is not latched (the backend gate

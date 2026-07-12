@@ -12,6 +12,7 @@ import {
   isReadyForInput,
   PrefKey,
   Shell,
+  toplog,
   WorkerMode,
   type AgenticProcess,
   type MarkdownDoc,
@@ -1085,9 +1086,20 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
         let historyLastSeq = 0;
         try {
           const ptyId = shell.pty_pid ?? shell.id;
+          const tFetch = performance.now();
           const stream = await fetchPtyStream(ptyId);
+          const tReplay = performance.now();
+          toplog.log(
+            'process_load',
+            `onConnected pty-stream fetch took ${(tReplay - tFetch).toFixed(1)}ms events=${stream?.events.length ?? 0} pty=${ptyId.slice(0, 8)}`,
+          );
+          if (gen !== connectGen) return; // superseded — don't burn a full replay for a dead attach
           if (stream) {
             const replay = await replayPtyStream(stream);
+            toplog.log(
+              'process_load',
+              `onConnected replay took ${(performance.now() - tReplay).toFixed(1)}ms serializedKB=${replay ? (replay.serialized.length / 1024).toFixed(1) : 0}`,
+            );
             if (replay) {
               historySerialized = replay.serialized;
               historyLastSeq = replay.lastSeq;
@@ -1113,6 +1125,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
         const chunks = shell.getPtyChunks();
         const chunkDecoder = new TextDecoder('utf-8', { fatal: false });
         let wrote = Boolean(historySerialized);
+        const tBacklog = performance.now();
         for (const chunk of chunks) {
           ptySyncRef.current.processChunk(chunk);
           const text = chunkDecoder.decode(chunk.data, { stream: true });
@@ -1120,6 +1133,10 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
           term.write(text);
           wrote = true;
         }
+        toplog.log(
+          'process_load',
+          `onConnected backlog processChunk loop took ${(performance.now() - tBacklog).toFixed(1)}ms chunks=${chunks.length} lastSeq=${historyLastSeq}`,
+        );
 
         // Signal buffer ready after xterm processes the buffered writes.
         if (wrote) {

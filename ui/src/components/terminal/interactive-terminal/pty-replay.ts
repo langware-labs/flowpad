@@ -79,19 +79,36 @@ export async function replayPtyStream(stream: FramedPtyStream): Promise<ReplayRe
   const write = (text: string) =>
     (flush = new Promise<void>((resolve) => term.write(text, resolve)));
 
+  // Batch consecutive output events into ONE term.write per resize segment.
+  // xterm's WriteBuffer yields to the macrotask queue between write entries
+  // (12ms slices) — one entry per frame turns a busy main thread into a
+  // tens-of-seconds replay, since every slice waits behind the app's other
+  // work. Bytes are still decoded per-frame with the STREAMING decoder, so
+  // the multi-byte-split discipline is unchanged; only the write granularity
+  // is coarser (segment, not frame).
+  let pendingOutput: string[] = [];
+  const flushPendingOutput = () => {
+    if (pendingOutput.length) {
+      write(pendingOutput.join(''));
+      pendingOutput = [];
+    }
+  };
+
   try {
     for (const ev of stream.events) {
       if (ev[0] === 'o' && typeof ev[1] === 'string') {
-        write(decoder.decode(base64ToBytes(ev[1]), { stream: true }));
+        pendingOutput.push(decoder.decode(base64ToBytes(ev[1]), { stream: true }));
         if (typeof ev[2] === 'number' && ev[2] > lastSeq) lastSeq = ev[2];
       } else if (ev[0] === 'r' && Array.isArray(ev[1])) {
         const [c, r] = ev[1] as [number, number];
+        flushPendingOutput();
         await flush; // resize must not overtake queued output
         term.resize(c, r);
         cols = c;
         rows = r;
       }
     }
+    flushPendingOutput();
     await flush;
     const serialized = serializeAddon.serialize({ scrollback: REPLAY_SCROLLBACK });
     return { serialized, lastSeq, cols, rows };

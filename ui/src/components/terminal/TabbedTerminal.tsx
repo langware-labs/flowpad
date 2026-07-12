@@ -1,4 +1,4 @@
-import { AgenticProcess, Shell, Tab, TypeId } from '@sdk';
+import { AgenticProcess, Shell, Tab, toplog, TypeId } from '@sdk';
 import { useEntity } from '@src/hooks/entity-hooks';
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import { ProjectHome } from '@src/components/project-home/ProjectHome';
@@ -209,6 +209,9 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', scope =
   useEffect(() => {
     if (!activeKey) return;
     setMounted((prev) => {
+      // Warm switch = the panel is already in the Set (visibility flip only);
+      // cold = first visit mounts InteractiveTerminal (attach + replay).
+      toplog.log('process_load', `TabbedTerminal active flip → ${activeKey} (${prev.has(activeKey) ? 'warm' : 'cold mount'})`);
       if (prev.has(activeKey)) return prev;
       const next = new Set(prev);
       next.add(activeKey);

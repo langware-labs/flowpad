@@ -9,6 +9,7 @@ import {
   LocalConnectionStatus,
   makeConnectionSlot,
 } from './services/cloud_status';
+import { toplog } from './services/toplog';
 import { defineGlobal } from './utils/globals';
 
 type MessageType =
@@ -728,8 +729,14 @@ export class ConnectionManager extends EventEmitter {
       }
 
       const timeoutMs = options?.timeout ?? this.requestTimeoutMs;
+      const tSent = performance.now();
       const timeout = setTimeout(() => {
         this.pendingRequests.delete(message.message_id);
+        toplog.log(
+          'process_load',
+          `WS request TIMEOUT after ${(performance.now() - tSent).toFixed(0)}ms (budget ${timeoutMs}ms) ` +
+            `${message.method} action=${message.action ?? ''} target=${message.target_typeid?.type ?? ''}-${(message.target_typeid?.id ?? '').slice(0, 8)} pending=${this.pendingRequests.size}`,
+        );
         reject(new Error(`Request timeout for message_id: ${message.message_id}`));
       }, timeoutMs);
 
