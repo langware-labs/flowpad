@@ -24,6 +24,7 @@ context ref resolves. Local origins keep the legacy path-derived v5 id
 (``mint_uuid(canonical_posix_path(base))``), so existing local folders + their
 links are untouched (zero migration).
 """
+
 from typing import Optional
 
 from flow_sdk.api.api_types.api_field import APIField
@@ -116,6 +117,27 @@ class Folder(Entity):
             detected = None
         return detected if detected is not None else LocalOrigin(base=canonical)
 
+    @staticmethod
+    def derive_name(origin: FSOrigin, local_path: Optional[str] = None) -> Optional[str]:
+        """Human display name for a folder at this origin.
+
+        The leaf of the repo-relative position when there is one; for a repo
+        ROOT (``rel_path`` empty or ``"."``) fall through to the repository
+        name, then the local base/path leaf. ``"."`` is never a name — it was
+        what repo-root git folders used to get, rendering as a bare typeid.
+        """
+        candidates = (
+            origin.rel_path or "",
+            getattr(origin, "name", "") or "",
+            getattr(origin, "base", "") or "",
+            local_path or "",
+        )
+        for candidate in candidates:
+            leaf = candidate.strip().rstrip("/").rsplit("/", 1)[-1].strip()
+            if leaf and leaf != ".":
+                return leaf
+        return None
+
     @classmethod
     async def mint_for_origin(cls, origin: FSOrigin, *, local_path: Optional[str] = None) -> "Folder":
         """Get-or-create the Folder for ``origin`` (idempotent, keyed by
@@ -129,12 +151,11 @@ class Folder(Entity):
         # ``path`` (local cache) is set when the caller knows the local dir
         # (sender add-time); a bare received origin leaves it None until
         # ``resolve_location`` materializes it.
-        leaf_src = origin.rel_path or getattr(origin, "base", "") or getattr(origin, "name", "") or ""
         folder = cls(
             id=folder_id,
             origin=origin,
             path=local_path,
-            name=leaf_src.rstrip("/").rsplit("/", 1)[-1] or leaf_src or None,
+            name=cls.derive_name(origin, local_path),
         )
         await folder.save()
         return folder
