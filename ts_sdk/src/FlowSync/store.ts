@@ -161,6 +161,16 @@ export class DataManager<T extends Manageable> extends EventEmitter {
   }
 
   /**
+   * Single source of truth for a type's UX-friendly label — the backend-authored
+   * ``TypeInfo.display_name``. Null when unknown / unlabeled; callers fall back to
+   * ``humanizeType`` (see `labelForType` in the app).
+   */
+  public displayNameForType(type: string): string | null {
+    if (typeof type !== 'string') return null;
+    return this.typeInfos[type.toLowerCase()]?.display_name ?? null;
+  }
+
+  /**
    * Load the bootstrap ``types`` payload into the frontend SchemaRegistry.
    * Populates {@link typeInfos} and, for entity-backed types, derives the
    * {@link schemas} (JSONSchemaParser) map so getSchema()/APIEntity validation

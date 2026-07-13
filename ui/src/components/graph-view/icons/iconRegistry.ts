@@ -1,5 +1,6 @@
 import { FileText, type LucideIcon } from 'lucide-react';
 import { lucideByName } from '@src/lib/lucide-by-name';
+import { humanizeType } from '@src/tabs/provider-meta';
 import { dataManager } from '@sdk';
 
 /**
@@ -14,4 +15,14 @@ import { dataManager } from '@sdk';
 export function iconForType(type: string): LucideIcon {
   const name = dataManager?.iconForType?.(type);
   return (name && lucideByName(name)) || FileText;
+}
+
+/**
+ * Resolve the UX-friendly label for an entity type — the curated
+ * `TypeInfo.display_name` from the backend registry, falling back to the generic
+ * title-caser `humanizeType` when a type has no curated label. Mirror of
+ * `iconForType`; the single place app code turns a type string into a word.
+ */
+export function labelForType(type: string): string {
+  return dataManager?.displayNameForType?.(type) || humanizeType(type);
 }

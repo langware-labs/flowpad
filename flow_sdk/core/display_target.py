@@ -85,6 +85,7 @@ async def resolve_display_target(
                     "typeid": f"{rec_type}-{rec.id}",
                     "type": rec_type,
                     "id": str(rec.id),
+                    "name": getattr(rec, "name", None) or getattr(rec, "title", None) or None,
                     "path": resolved,
                 }
         return {"kind": DisplayTargetKind.VFS, "path": resolved}
@@ -233,9 +234,12 @@ def _has_markdown_index_frontmatter(path: "Path") -> bool:
 
 
 def _entity_payload(entity: Entity) -> dict:
+    # ``name`` rides along so downstream consumers (e.g. auto-bookmark titles) get
+    # a human label without re-fetching the entity we already loaded here.
     return {
         "kind": DisplayTargetKind.ENTITY,
         "typeid": f"{entity.get_type()}-{entity.id}",
         "type": entity.get_type(),
         "id": entity.id,
+        "name": getattr(entity, "name", None) or getattr(entity, "title", None) or None,
     }

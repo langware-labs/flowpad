@@ -54,6 +54,9 @@ export interface TypeInfo {
   creatable: boolean;
   api_visible: boolean;
   icon: string | null;
+  /** UX-friendly label for the type (e.g. "Skills"); backend-owned, null when the
+   *  type has no curated label — callers fall back to `humanizeType(type_name)`. */
+  display_name: string | null;
   parent_type: string | null;
   locations: string[];
   /** Fixed inner filename for folder-layout assets when one exists, e.g. SKILL.md. */

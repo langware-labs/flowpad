@@ -1,6 +1,7 @@
+import asyncio
 import logging
 from flow_sdk._compat import StrEnum
-from typing import Any, ClassVar, Dict, Optional
+from typing import Any, ClassVar, Dict, NamedTuple, Optional
 
 from flow_sdk.actions.action_registry import action as _action_registry
 from flow_sdk.api.api_types.api_field import APIField
@@ -150,6 +151,177 @@ async def mint_share_favorite(
 
 
 _FAVORITE_TYPES = {BookmarkType.FAVORITE.value, BookmarkType.FAVORITE_FOLDER.value}
+
+# ── Auto-bookmark: every `flow show` files its target into a nested favorites tree
+#    Auto / <type> / <item>. The tree is machine-built (source="auto"); leaves and
+#    both folder levels are found-or-created idempotently so repeated shows never
+#    duplicate. A new leaf is a CREATE op → the bookmarks query notifies watchers →
+#    the folder count badges tick live (see ui/src/hooks/use-favorites.ts).
+AUTO_ROOT_TITLE = "Auto"
+AUTO_SOURCE = "auto"
+# Folder labels for the non-entity display kinds (entity kinds get theirs from
+# TypeInfo.display_name). One source of truth, keyed by bucket.
+_AUTO_KIND_LABELS = {"file": "Files", "webapp": "Web Apps"}
+
+
+class _AutoTarget(NamedTuple):
+    """One classification of a resolved display target — everything the auto tree
+    needs, so the ``kind`` discriminant is switched exactly once."""
+
+    bucket: str        # subfolder key (data.auto_type) + which type-folder it lands in
+    label: str         # subfolder display title
+    entity_type: str   # nav-identity type (may differ from bucket: a file bucket navs as "vfs")
+    entity_id: str     # dedup key together with entity_type
+    asset_ref: str
+    extra: dict
+
+
+def _auto_classify(payload: Dict[str, Any]) -> _AutoTarget:
+    """Classify a resolved display target once. Entity → its type + curated
+    ``TypeInfo.display_name``; raw file → "Files" (nav by path); webapp → "Web Apps"
+    (nav by port)."""
+    kind = payload.get("kind")
+    if kind == "entity":
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+        t = str(payload.get("type") or "entity")
+        return _AutoTarget(t, SchemaRegistry.get_display_name(t), t,
+                           str(payload.get("id") or ""), str(payload.get("path") or ""), {})
+    if kind == "webapp":
+        port = payload.get("port")
+        return _AutoTarget("webapp", _AUTO_KIND_LABELS["webapp"], "webapp", str(port), "", {"port": port})
+    path = str(payload.get("path") or "")
+    return _AutoTarget("file", _AUTO_KIND_LABELS["file"], "vfs", path, path, {})
+
+
+def _auto_nice_name_from_path(path: str) -> str:
+    """A readable leaf title from a path — the parent folder name for a folder-main
+    file (``…/website-traffic-dashboard/SKILL.md`` → "website-traffic-dashboard"),
+    else the basename stem. Reuses the folder-main-file map from display_target."""
+    from pathlib import Path as _Path  # noqa: PLC0415
+
+    p = _Path(path)
+    try:
+        from flow_sdk.core.display_target import _folder_main_files  # noqa: PLC0415
+
+        if p.name in _folder_main_files():
+            return p.parent.name or p.name
+    except Exception:
+        pass
+    return p.stem or p.name
+
+
+def _auto_leaf_title(payload: Dict[str, Any], target: _AutoTarget) -> str:
+    """Best UX title for the leaf: the name ``resolve_display_target`` already loaded
+    (no second entity fetch), else a readable path name, else a short typed fallback."""
+    name = payload.get("name")
+    if name:
+        return str(name)
+    if payload.get("kind") == "webapp":
+        return f"localhost:{payload.get('port')}"
+    if target.asset_ref:
+        return _auto_nice_name_from_path(target.asset_ref)
+    return f"{target.entity_type}-{target.entity_id[:8]}" if target.entity_id else (target.entity_type or "item")
+
+
+async def mint_auto_favorite(*, owner, payload: Dict[str, Any]) -> "Bookmark | None":
+    """File a resolved ``flow show`` target into the ``Auto / <type> / item`` favorites
+    tree (best-effort, idempotent). Returns the leaf favorite, or ``None`` when the
+    payload can't be identified. All three levels are owned by ``owner`` and saved
+    unscoped (visible across projects) with ``notify=True`` so the UI ticks live.
+    """
+    target = _auto_classify(payload)
+    if not target.entity_id:
+        return None
+
+    # Scan only the auto tree (source="auto"), the two levels concurrently — never
+    # the owner's manual favorites.
+    try:
+        folders, leaves = await asyncio.gather(
+            Bookmark.get_all(
+                {"bookmark_type": BookmarkType.FAVORITE_FOLDER.value, "source": AUTO_SOURCE},
+                source_entity=owner,
+            ),
+            Bookmark.get_all(
+                {"bookmark_type": BookmarkType.FAVORITE.value, "source": AUTO_SOURCE},
+                source_entity=owner,
+            ),
+        )
+    except Exception:
+        logger.warning("[bookmark] mint_auto_favorite scan failed", exc_info=True)
+        return None
+
+    # 1) Auto root folder — keyed by data.auto_root.
+    root = next((f for f in folders if (f.data or {}).get("auto_root")), None)
+    if root is None:
+        root = Bookmark(
+            bookmark_type=BookmarkType.FAVORITE_FOLDER.value,
+            title=AUTO_ROOT_TITLE,
+            source=AUTO_SOURCE,
+            data={"auto_root": True},
+        )
+        await root.save(owner)
+
+    # 2) Per-type subfolder — keyed by (parent==root, data.auto_type==bucket).
+    sub = next(
+        (
+            f
+            for f in folders
+            if f.parent_id == str(root.id) and (f.data or {}).get("auto_type") == target.bucket
+        ),
+        None,
+    )
+    if sub is None:
+        sub = Bookmark(
+            bookmark_type=BookmarkType.FAVORITE_FOLDER.value,
+            title=target.label,
+            source=AUTO_SOURCE,
+            parent_id=str(root.id),
+            data={"auto_type": target.bucket},
+        )
+        await sub.save(owner)
+
+    # 3) Leaf — dedup by target within the auto tree (the query already scoped to
+    #    source=="auto", so a manual star of the same entity never collides).
+    #    Self-heal its parent if it drifted.
+    def _matches(b: "Bookmark") -> bool:
+        d = b.data or {}
+        return d.get("entity_type") == target.entity_type and str(d.get("entity_id") or "") == target.entity_id
+
+    leaf = next((b for b in leaves if _matches(b)), None)
+    if leaf is not None:
+        if leaf.parent_id != str(sub.id):
+            leaf.parent_id = str(sub.id)
+            try:
+                await leaf.save(owner)
+            except Exception:
+                logger.warning("[bookmark] auto leaf re-file failed", exc_info=True)
+        return leaf
+
+    icon = payload.get("icon")
+    if icon is None and payload.get("kind") == "entity":
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+        icon = SchemaRegistry.get_icon(target.entity_type)
+    leaf = Bookmark(
+        bookmark_type=BookmarkType.FAVORITE.value,
+        title=_auto_leaf_title(payload, target),
+        source=AUTO_SOURCE,
+        parent_id=str(sub.id),
+        data={
+            "entity_type": target.entity_type,
+            "entity_id": target.entity_id,
+            "icon": icon,
+            "nav": {"asset_ref": target.asset_ref},
+            **target.extra,
+        },
+    )
+    try:
+        await leaf.save(owner)
+    except Exception:
+        logger.warning("[bookmark] mint_auto_favorite leaf save failed", exc_info=True)
+        return None
+    return leaf
 
 
 def sort_container(siblings: "list[Bookmark]") -> "list[Bookmark]":

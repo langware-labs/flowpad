@@ -25,6 +25,7 @@ def _markdown_default_body(entity) -> str:
 MARKDOWN = TypeMetadata(
     type=EntityType.MARKDOWN,
     icon="BookOpen",
+    displayName="Documents",
     browseable_by=ViewMode.STANDARD,
     creatable=True,
     indexed_by_default=True,

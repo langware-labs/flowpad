@@ -21,6 +21,7 @@ class DeckMeta(BaseMeta):
 DECK = TypeMetadata(
     type=EntityType.DECK,
     icon="Play",
+    displayName="Decks",
     browseable_by=ViewMode.STANDARD,
     creatable=True,
     indexed_by_default=True,

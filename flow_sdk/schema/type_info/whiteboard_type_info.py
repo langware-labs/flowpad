@@ -11,6 +11,7 @@ from flow_sdk.fs_store.indexer.functions.whiteboard import (
 WHITEBOARD = TypeMetadata(
     type=EntityType.WHITEBOARD,
     icon="Palette",
+    displayName="Whiteboards",
     browseable_by=ViewMode.ADVANCED,
     creatable=True,
     indexed_by_default=True,

@@ -145,6 +145,100 @@ async def test_show_appends_display_stack_with_dedupe(bootstrapped_client, user)
 
 
 @pytest.mark.asyncio
+async def test_trailing_show_survives_stale_turn_save(bootstrapped_client, user):
+    """Regression: a `flow show` with a stale whole-row save AFTER it must survive.
+
+    The real vibe sequence that lost a skill: `flow show` #1 (a dashboard), then
+    the worker turn loads the AP (in-memory display_stack=[dashboard]), then
+    `flow show` #2 (a skill) appends, then the turn ends and saves the stale
+    object. Because show #2 was the LAST show there is no later `on_show` to
+    repair it, so the stale save must not clobber it.
+    """
+    pid = await create_agentic_process(bootstrapped_client, visible=False, pty_mode=False)
+
+    # show 1 — a fresh object (the CLI /show action path)
+    s1 = await AgenticProcess.get_by_id(pid)
+    await s1.on_show({"kind": "vfs", "path": "/ws/dashboard.html"})
+
+    # worker turn begins — loads the AP AFTER show 1 (holds display_stack=[dashboard])
+    turn_obj = await AgenticProcess.get_by_id(pid)
+    assert "display_stack" in (turn_obj.context_data or {})
+
+    # show 2 — the skill, via another fresh object
+    s2 = await AgenticProcess.get_by_id(pid)
+    await s2.on_show({"kind": "entity", "typeid": "skill-abc", "type": "skill", "id": "abc"})
+
+    # worker turn ends — the stale turn object saves status/session bookkeeping
+    turn_obj.status = "running"
+    await turn_obj.save()
+
+    row = await get_agentic_process(bootstrapped_client, pid)
+    entries = [e.get("path") or e.get("type") for e in row["context_data"]["display_stack"]]
+    assert "skill" in entries, f"trailing show clobbered by stale turn save: {entries}"
+    assert row["context_data"]["last_shown"].get("type") == "skill"
+
+
+@pytest.mark.asyncio
+async def test_show_auto_bookmarks_into_nested_type_tree(bootstrapped_client, user):
+    """Every `flow show` files its target into `Auto / <type> / item` (nested,
+    idempotent). Two types → two subfolders under one Auto root; re-showing the
+    same target does not duplicate the leaf."""
+    from flow_sdk.builtin.bookmark import Bookmark, BookmarkType
+    from flow_sdk.server.routes.bootstrap import get_or_create_local_user
+
+    owner = await get_or_create_local_user()
+
+    async def _favs():
+        folders = await Bookmark.get_all(
+            {"bookmark_type": BookmarkType.FAVORITE_FOLDER.value}, source_entity=owner
+        )
+        leaves = await Bookmark.get_all(
+            {"bookmark_type": BookmarkType.FAVORITE.value}, source_entity=owner
+        )
+        return folders, leaves
+
+    pid = await create_agentic_process(bootstrapped_client, visible=False, pty_mode=False)
+    base = f"/api/v1/graph/agentic_process/{pid}"
+
+    # A resolved skill entity show (payload shape from resolve_display_target).
+    ap = await AgenticProcess.get_by_id(pid)
+    await ap.on_show({
+        "kind": "entity", "typeid": "skill-s1", "type": "skill", "id": "s1",
+        "path": "/ws/proj/.claude/skills/traffic-dash/SKILL.md",
+    })
+    folders, leaves = await _favs()
+    root = next(f for f in folders if (f.data or {}).get("auto_root"))
+    assert root.title == "Auto"
+    skills = next(f for f in folders if (f.data or {}).get("auto_type") == "skill")
+    assert skills.title == "Skills" and skills.parent_id == str(root.id)
+    leaf = next(b for b in leaves if (b.data or {}).get("entity_id") == "s1")
+    assert leaf.source == "auto" and leaf.parent_id == str(skills.id)
+    assert leaf.title == "traffic-dash"  # folder-main file → parent folder name
+
+    # A markdown show → a SECOND subfolder under the SAME Auto root.
+    ap2 = await AgenticProcess.get_by_id(pid)
+    await ap2.on_show({
+        "kind": "entity", "typeid": "markdown-m1", "type": "markdown", "id": "m1",
+        "path": "/ws/proj/docs/release-notes.md",
+    })
+    folders, leaves = await _favs()
+    roots = [f for f in folders if (f.data or {}).get("auto_root")]
+    assert len(roots) == 1, "one Auto root, not one per type"
+    docs = next(f for f in folders if (f.data or {}).get("auto_type") == "markdown")
+    assert docs.title == "Documents" and docs.parent_id == str(root.id)
+
+    # Re-show the skill → idempotent (no duplicate leaf, no duplicate subfolder).
+    ap3 = await AgenticProcess.get_by_id(pid)
+    await ap3.on_show({
+        "kind": "entity", "typeid": "skill-s1", "type": "skill", "id": "s1",
+        "path": "/ws/proj/.claude/skills/traffic-dash/SKILL.md",
+    })
+    folders, leaves = await _favs()
+    assert len([f for f in folders if (f.data or {}).get("auto_type") == "skill"]) == 1
+    assert len([b for b in leaves if (b.data or {}).get("entity_id") == "s1"]) == 1
+
+
+@pytest.mark.asyncio
 async def test_on_show_unions_concurrent_appends(bootstrapped_client, user):
     """``on_show`` is read-modify-write against the freshest stack, so two
     independent process objects showing different targets don't lose each other."""

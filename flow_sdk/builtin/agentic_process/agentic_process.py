@@ -2238,11 +2238,34 @@ class AgenticProcess(Entity):
                 base = _union_display_stacks(base, latest_ctx.get("display_stack") or [])
         stack = _append_display_entry(base, payload, shown_at)
         self.context_data = {**context, "display_stack": stack, "last_shown": payload}
+        # This is the authoritative display write — the save() guard must trust
+        # this in-memory stack, not mirror the (older) DB over it.
+        self._set_display_authoritative(True)
         try:
             await self.save()
         except Exception:
             logger.warning("on_show: display persist failed", exc_info=True)
+        finally:
+            self._set_display_authoritative(False)
         await self.emit_entity_event("on_show", payload)
+        # Auto-file the shown target into the Auto/<type>/item favorites tree.
+        # Best-effort: a bookmark failure must never break `flow show`.
+        try:
+            await self._auto_bookmark_show(payload)
+        except Exception:
+            logger.warning("on_show: auto-bookmark failed", exc_info=True)
+
+    async def _auto_bookmark_show(self, payload: dict) -> None:
+        """Drop the shown target into the nested ``Auto / <type> / item`` favorites
+        tree (idempotent). Owned by the local user; unscoped so it shows across
+        projects. Every leaf create broadcasts, so the folder counters tick live."""
+        from flow_sdk.builtin.bookmark import mint_auto_favorite  # noqa: PLC0415
+        from flow_sdk.server.routes.bootstrap import get_or_create_local_user  # noqa: PLC0415
+
+        owner = await get_or_create_local_user()
+        if owner is None:
+            return
+        await mint_auto_favorite(owner=owner, payload=payload)
 
     @action.post(action_name="show")
     async def _http_show(self) -> ApiSuccessResponse | ApiFailResponse:
@@ -4051,9 +4074,17 @@ class AgenticProcess(Entity):
         # normal path-scan and transcript-only attribution rules aligned: a
         # project-scoped entity from another project should not be mislabeled as
         # a user asset just because it lives under the home catchall.
+        entity_scope = getattr(entity, "scope", None)
+        # System-scoped assets (the bundled flowpad_assistant skills/agents) are
+        # pip-installed under $HOME (~/.local/share/.../flowpad_assistant/.claude),
+        # so the USER_DIR prefix would otherwise claim them as personal user
+        # assets. They belong to the mounted assistant, never the user — drop
+        # them from USER_DIR unconditionally (they carry no project_id to test).
+        if src == AssetSource.USER_DIR and entity_scope == "system":
+            return None
         if (
             src == AssetSource.USER_DIR
-            and getattr(entity, "scope", None) == "project"
+            and entity_scope == "project"
             and str(getattr(entity, "project_id", None) or "") != own_project_id
         ):
             return None
@@ -4633,31 +4664,54 @@ class AgenticProcess(Entity):
             object.__getattribute__(self, "__dict__").get("_in_start_lifecycle", False)
         )
 
+    def _set_display_authoritative(self, value: bool) -> None:
+        """Mark that THIS save carries ``on_show``'s freshly-computed display state.
+
+        ``on_show`` is the sole authoritative writer of ``display_stack`` /
+        ``last_shown`` (it unions + dedups against the freshest DB row). While
+        this flag is True the ``save()`` guard trusts the in-memory display
+        verbatim; every OTHER save mirrors the DB instead (see
+        ``_preserve_latest_display_pin``).
+        """
+        object.__getattribute__(self, "__dict__")["_display_authoritative"] = bool(value)
+
+    def _is_display_authoritative(self) -> bool:
+        return bool(
+            object.__getattribute__(self, "__dict__").get("_display_authoritative", False)
+        )
+
     async def _preserve_latest_display_pin(self) -> None:
         """Keep the display state (``context_data.display_stack`` + ``last_shown``)
-        from being lost by a stale whole-row save.
+        from being lost — or corrupted — by a stale whole-row save.
 
-        A save from a copy constructed WITHOUT loading (neither field in memory)
-        would clobber the persisted display, so it re-attaches from the DB. When
-        the in-memory context already carries either field the fast path trusts it
-        (no DB read) — keeping every hot save cheap. ACCEPTED RACE: a copy that
-        LOADED the display earlier but predates a later ``on_show`` still writes
-        its stale (shorter) ``display_stack`` back on a whole-row save, dropping
-        the newer row; ``on_show`` unions to REPAIR it on the next show, and the
-        lost value is only a cosmetic history entry — not worth a per-save DB read
-        to prevent. (Same risk the original ``last_shown``-only guard carried.)"""
+        ``on_show`` is the SOLE authoritative writer of the display state: it
+        unions + dedups the new target against the freshest DB row, then saves
+        with ``_display_authoritative`` set, and this guard trusts that save
+        verbatim. EVERY OTHER save (status, session, transcript bookkeeping) must
+        NOT write its own copy of the display: an object loaded before a later
+        ``flow show`` still carries the pre-show stack in memory, and a naive
+        whole-row save would write that stale value back and drop the newer show
+        (the trailing-show clobber — a `flow show` with nothing after it never
+        gets a repair pass). So a non-authoritative save MIRRORS the DB's current
+        display, overwriting whatever it holds in memory. Costs one PK read per
+        such save — cheaper than a lost show, and shows are rare vs saves."""
         if not getattr(self, "exist_in_db", False):
             return
-        current_context = self.context_data if isinstance(self.context_data, dict) else {}
-        if "display_stack" in current_context or "last_shown" in current_context:
+        if self._is_display_authoritative():
             return
+        current_context = self.context_data if isinstance(self.context_data, dict) else {}
         latest = await AgenticProcess.get_by_id(self.id)
         if latest is None or latest is self:
             return
         latest_context = latest.context_data if isinstance(latest.context_data, dict) else {}
-        carry = {k: latest_context[k] for k in ("display_stack", "last_shown") if k in latest_context}
-        if carry:
-            self.context_data = {**current_context, **carry}
+        # Drop any stale in-memory display, then re-attach the DB's authoritative
+        # copy — so this save can neither clobber a newer show nor resurrect an
+        # entry ``on_show`` already deduped away.
+        rebuilt = {k: v for k, v in current_context.items() if k not in ("display_stack", "last_shown")}
+        for k in ("display_stack", "last_shown"):
+            if k in latest_context:
+                rebuilt[k] = latest_context[k]
+        self.context_data = rebuilt
 
     async def save(self, owner=None, notify: bool = True):
         """Override to maintain ``restart_required`` automatically.

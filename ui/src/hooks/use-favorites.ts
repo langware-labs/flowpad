@@ -19,6 +19,9 @@ function isFolderBookmark(b: Bookmark): boolean {
   return b.bookmark_type === BookmarkType.FAVORITE_FOLDER;
 }
 
+// Stable reference for "no children" so childrenOf() doesn't churn memo deps.
+const EMPTY_CHILDREN: Bookmark[] = [];
+
 import { sortContainer } from '@src/lib/container-sort';
 
 export { sortContainer };
@@ -55,15 +58,41 @@ export function useFavorites() {
   const folderIds = useMemo(() => new Set(folders.map((f) => f.id)), [folders]);
 
   // A dangling parent_id (folder deleted elsewhere before promotion landed)
-  // renders at root rather than hiding the favorite.
+  // renders at root rather than hiding the favorite/folder.
   const rootFavorites = useMemo(
     () => sortContainer(favorites.filter((b) => !b.parent_id || !folderIds.has(b.parent_id))),
     [favorites, folderIds],
   );
 
+  // Folders that sit at the top level — no parent, or a dangling one. Nested
+  // subfolders (parent_id → an existing folder, e.g. the auto-bookmark
+  // `Auto / <type>` tree) are rendered inside their parent via `childrenOf`,
+  // not at root. Mirror of `rootFavorites`.
+  const rootFolders = useMemo(
+    () => sortContainer(folders.filter((f) => !f.parent_id || !folderIds.has(f.parent_id))),
+    [folders, folderIds],
+  );
+
+  // All bookmarks grouped by parent_id (sorted once per group), so `childrenOf` is
+  // an O(1) lookup instead of a concat+filter+sort per call — matters because the
+  // recursive count badge calls it at every node on every render.
+  const childrenByParent = useMemo(() => {
+    const map = new Map<string, Bookmark[]>();
+    for (const b of [...folders, ...favorites]) {
+      const key = b.parent_id ?? '';
+      const list = map.get(key);
+      if (list) list.push(b);
+      else map.set(key, [b]);
+    }
+    for (const [key, list] of map) map.set(key, sortContainer(list));
+    return map;
+  }, [folders, favorites]);
+
+  // Direct children of a folder — BOTH nested subfolders and leaf favorites, so a
+  // folder tree of arbitrary depth (the machine-built auto tree) renders and drills down.
   const childrenOf = useCallback(
-    (folderId: string): Bookmark[] => sortContainer(favorites.filter((b) => b.parent_id === folderId)),
-    [favorites],
+    (folderId: string): Bookmark[] => childrenByParent.get(folderId) ?? EMPTY_CHILDREN,
+    [childrenByParent],
   );
 
   // Stamp value that lands a new/incoming member at the END of a container
@@ -199,6 +228,7 @@ export function useFavorites() {
   return {
     favorites,
     folders,
+    rootFolders,
     rootFavorites,
     childrenOf,
     refetch,
