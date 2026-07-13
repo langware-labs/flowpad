@@ -12,8 +12,8 @@ persistent **side chat next to a live "display"** — a web browser showing the 
 the agent builds.
 
 Vibe is deliberately built as a **pure overlay / lens** over the existing app,
-not a fork. Turning Vibe on changes only **theme + layout + chrome + which types
-the Assets browser offers** (see [What Vibe changes](#what-vibe-changes)); turning
+not a fork. Turning Vibe on changes only **theme + layout + chrome** (see
+[What Vibe changes](#what-vibe-changes)); turning
 it off leaves no special machinery behind. It reuses the existing chat, viewer,
 and navigation primitives wholesale, and — critically — changes **nothing** below
 the UI layer: the agentic-process / PTY / session lifecycle is byte-for-byte
@@ -56,13 +56,11 @@ Everything Vibe touches lives in the UI layer. Concretely:
 3. **Chrome-less creator surfaces** — on the curated `VIBE_CREATOR_SURFACES`
    ViewTypes (`content-panel.tsx`), Vibe strips the tab strip + navigator. Any
    *other* surface keeps normal Standard chrome even in Vibe.
-4. **Assets-browser type subset** — Vibe is rank `0`, below every backend
-   `browseable_by` tier (which the backend only ever emits as `standard`/`advanced`/
-   `dev` — see `flow_sdk/schema/view_mode.py`, which has **no** `vibe` member). So
-   `isBrowseableIn(required, 'vibe')` (`ts_sdk/src/FlowSync/schema.ts:28`) is
-   `false` for every type: the browse tree is effectively empty in Vibe. This is a
-   pure client-side ranking decision — `vibe` exists only as a *current* mode, never
-   as a type's minimum tier.
+4. **Assets tabs keep their Standard structure** — opening an Assets tab in Vibe
+   renders the same Standard asset catalog and navigator, so a deep-linked asset
+   can expand its type and select its row. The Vibe skin may change the surrounding
+   chrome, but it does not remove rows from an already-open Assets tab. Advanced-
+   and Dev-only types remain gated at their normal tiers.
 
 That is the whole surface area. See below for what it explicitly does not touch.
 
@@ -198,8 +196,7 @@ ordinary headless chat process:
   or the process (principle #2).
 
 **Conclusion:** the "pure overlay" hypothesis holds. Vibe changes theme, layout,
-chrome, and the Assets-browser type subset — and nothing about process/session
-behavior.
+and chrome — and nothing about Assets-tab structure or process/session behavior.
 
 ## What Vibe deliberately does NOT do (scoped-out / follow-ups)
 

@@ -84,6 +84,21 @@ async function backendGet(inst: ResolvedInstance, type: string, id: string): Pro
   return r?.status === 'SUCCESS' ? r.data : null;
 }
 
+/** The git artifact now rides the staged→install model: download stages a
+ *  MessageAttachment; INSTALL materializes the graph row (path='', no clone —
+ *  the checkout resolves at open). Poll for the staged row then install it. */
+async function installStagedArtifact(inst: ResolvedInstance, fmId: string, artifactId: string): Promise<void> {
+  const staged = await pollUntil(async () => {
+    const rows = (await inst.sdk.MessageAttachment.query(
+      new inst.sdk.QueryRequest({ type: 'message_attachment', query: { flow_message_id: fmId }, name: 'staged (test)' }),
+      true,
+    ).catch(() => [])) as any[];
+    return rows.find((r) => r.asset_id === artifactId) ?? null;
+  }, 10_000, 'staged artifact MessageAttachment');
+  const install = await post(inst.apiUrl, `/graph/message_attachment/${staged.id}/install`, { scope: 'user' });
+  expect(install.status, JSON.stringify(install.body)).toBeLessThan(400);
+}
+
 function makeGitFixture() {
   const root = mkdtempSync(path.join(os.tmpdir(), 'flowpad-git-artifact-share-'));
   tempRoots.push(root);
@@ -439,6 +454,8 @@ describe('hub: git-backed artifact share wizard', () => {
     const download = await post(bob.apiUrl, `/graph/flow_message/${bobFmId}/download_body`, {});
     expect(download.status, JSON.stringify(download.body)).toBeLessThan(400);
 
+    // Staged at download; explicit install materializes the graph row.
+    await installStagedArtifact(bob, bobFmId, artifactId);
     const receivedArtifact = await pollUntil(
       () => backendGet(bob, 'artifact', artifactId),
       10_000,
@@ -524,6 +541,8 @@ describe('hub: git-backed artifact share wizard', () => {
       const bobFmId = await findReadyMessage(conv.id!);
       const download = await post(bob.apiUrl, `/graph/flow_message/${bobFmId}/download_body`, {});
       expect(download.status, JSON.stringify(download.body)).toBeLessThan(400);
+      // Staged at download; install materializes the artifact so its chip resolves.
+      await installStagedArtifact(bob, bobFmId, artifactId);
       await pollUntil(
         () => backendGet(bob, 'artifact', artifactId),
         10_000,

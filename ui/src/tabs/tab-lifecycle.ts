@@ -4,6 +4,7 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { editorForType } from '@src/navigation/asset-doc-types';
 import { ViewType } from '@src/types/ViewType';
 import { getActiveTabParent } from './tab-parent-context';
+import { resolveColdOpenParent } from './vibe-parent';
 
 export enum TabLifecycleState {
   Opening = 'opening',
@@ -148,7 +149,13 @@ async function materializeTab(dock: DockPointer): Promise<{ tab: Tab | null; tab
   // process-under-process corruption arose. This is the ONLY grouping seam;
   // no navigation call site knows about children, and the backend enforces the
   // same invariant (`_PARENT_FORBIDDEN_TARGET_TYPES`) as the second belt.
-  const parentTabId = dockAddressesAsset(dock) ? getActiveTabParent() : null;
+  // A content-asset tab adopts a parent: the workspace's registered parent while
+  // it's mounted, else a COLD-open resolver (direct link / reload with nothing
+  // mounted) — today that's the vibe invariant "an asset opened in vibe renders
+  // inside a vibe workspace", resolved mode-agnostically in `resolveColdOpenParent`.
+  const parentTabId = dockAddressesAsset(dock)
+    ? (getActiveTabParent() ?? (await resolveColdOpenParent(dock, existingTab?.project_id ?? null)))
+    : null;
   // Mirror the backend's self-parent guard: a tab can never adopt itself, and
   // would otherwise re-resolve on every return navigation forever.
   const needsReparent =

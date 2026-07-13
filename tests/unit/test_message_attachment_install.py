@@ -218,6 +218,89 @@ async def test_redownload_refreshes_staging_and_preserves_install_state(tmp_path
     assert "SENTINEL-v2" in staged_md.read_text(encoding="utf-8"), "staging not refreshed"
 
 
+def _write_raw_file_bundle(tmp_path: Path, fm_id: str, fname: str, body: str) -> Path:
+    """A .flowmsg carrying one raw FILE attachment (the OS-file-picker lane)."""
+    fm_data = {
+        "id": fm_id,
+        "type": "flow_message",
+        "text": "Please see the Spec attached.",
+        "attachment": [{"attachment_type": "file", "data": f"attachment/files/{fname}"}],
+    }
+    zip_path = tmp_path / "file-bundle.flowmsg"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.writestr("header.json", json.dumps(fm_data))
+        zf.writestr(f"attachment/files/{fname}", body)
+    return zip_path
+
+
+async def _stage_raw_file(tmp_path: Path, fm_id: str, fname: str, body: str) -> MessageAttachment:
+    from flow_sdk.api.api_types.identifier import mint_uuid
+
+    await unpack_bundle(_write_raw_file_bundle(tmp_path, fm_id, fname, body), "local-user-id")
+    asset_id = mint_uuid(f"flow_message_file:{fm_id}:{fname}")
+    ma = await MessageAttachment.get_one(
+        {"id": MessageAttachment.allocate_deterministic_id(fm_id, f"file-@{asset_id}")}
+    )
+    assert ma is not None, "unpack did not stage the raw file"
+    return ma
+
+
+async def test_raw_file_install_project_then_user_then_uninstall(tmp_path, monkeypatch):
+    """A raw markdown file rides the full staged→install→uninstall lifecycle:
+    project scope copies to <project>/.claude/docs/<name> and indexes it as a
+    MARKDOWN record; user scope copies to <home>/.claude/docs/<name>; uninstall
+    removes the file and reverts to staged. Regression for SAPAK-DEMO-SPEC.md."""
+    import uuid
+
+    from flow_sdk.builtin.claude_memory_entities import Markdown
+
+    fm_id = str(uuid.uuid4())
+    fname = "SAPAK-DEMO-SPEC.md"
+    body = "# SAPAK Demo Spec\n\nStaged raw-file body.\n"
+    ma = await _stage_raw_file(tmp_path, fm_id, fname, body)
+    assert not ma.scope and ma.asset_type == "file" and ma.name == fname
+    assert ma.user_scope_allowed is True
+
+    # --- project scope --------------------------------------------------------
+    project_root = tmp_path / "proj"
+    project_root.mkdir()
+    project = Project(name="dst", fs_storage_mount_path=str(project_root))
+    await project.save(notify=False)
+
+    res = await handle_attachment_install(ma.id, "project", project.id)
+    assert isinstance(res, ApiSuccessResponse), getattr(res, "message", res)
+    installed = project_root / ".claude" / "docs" / fname
+    assert installed.exists() and "Staged raw-file body." in installed.read_text(encoding="utf-8")
+    # Markdown record materialized under the project (the .claude/docs walker
+    # emits it as a Docs/Markdown row stamped with the project).
+    md_rows = await Markdown.get_all({"project_id": project.id})
+    stem = fname.rsplit(".", 1)[0]
+    assert any(
+        stem in (getattr(m, "name", "") or getattr(m, "title", "") or "") for m in md_rows
+    ), f"install did not index the markdown ({[getattr(m, 'name', None) for m in md_rows]})"
+    updated = await MessageAttachment.get_one({"id": ma.id})
+    assert updated.scope == "project" and updated.project_id == project.id
+    assert updated.installed_root == str(project_root)
+
+    # --- uninstall reverts to staged -----------------------------------------
+    res2 = await handle_attachment_uninstall(ma.id)
+    assert isinstance(res2, ApiSuccessResponse), getattr(res2, "message", res2)
+    assert not installed.exists(), "uninstall left the installed file behind"
+    reset = await MessageAttachment.get_one({"id": ma.id})
+    assert not reset.scope and not reset.installed
+    assert fm_data_ops.staged_entry_dir(fm_id, ma.unpacked_path.split("/")[-1]).exists()
+
+    # --- user scope (install for me) ------------------------------------------
+    user_root = tmp_path / "home"
+    user_root.mkdir()
+    monkeypatch.setattr(ma_action, "_user_scope_root", lambda: user_root)
+    res3 = await handle_attachment_install(ma.id, "user", None)
+    assert isinstance(res3, ApiSuccessResponse), getattr(res3, "message", res3)
+    assert (user_root / ".claude" / "docs" / fname).exists()
+    again = await MessageAttachment.get_one({"id": ma.id})
+    assert again.scope == "user" and again.installed_root == str(user_root)
+
+
 async def test_staged_read_surface_lists_and_reads(tmp_path, ids):
     ma = await _stage(tmp_path, ids)
 

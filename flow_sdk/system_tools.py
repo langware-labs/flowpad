@@ -12,6 +12,7 @@ import os
 import platform
 import shutil
 import subprocess
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 
@@ -160,8 +161,92 @@ async def clear_index(types: list[str] | None = None) -> ClearIndexResult:
 # ---------------------------------------------------------------------------
 
 
+# Number of snapshots to retain per instance, for BOTH ``flowpad_db_*`` DB
+# backups and ``archive_*`` full archives. Each is a full copy (a DB file, or a
+# DB + the entire records tree), so unbounded retention silently grows the
+# instance dir into the tens of GB (oss hit 439 backups / 17 GB). Only the newest
+# backup is ever used for recovery (``find_last_valid_db_backup``); keeping a
+# handful gives a rollback margin. Override with ``FLOWPAD_BACKUP_RETENTION``
+# (0 or negative disables pruning).
+DEFAULT_BACKUP_RETENTION = 10
+
+
+def _backup_retention() -> int:
+    raw = os.environ.get("FLOWPAD_BACKUP_RETENTION")
+    if raw is None or raw.strip() == "":
+        return DEFAULT_BACKUP_RETENTION
+    try:
+        return int(raw)
+    except ValueError:
+        logger.warning(
+            "Invalid FLOWPAD_BACKUP_RETENTION=%r; using default %d",
+            raw, DEFAULT_BACKUP_RETENTION,
+        )
+        return DEFAULT_BACKUP_RETENTION
+
+
+def _prune_snapshots(
+    prefix: str,
+    remove: Callable[[Path], None],
+    label: str,
+    keep: int | None,
+    folder: Path | None,
+) -> int:
+    """Delete oldest ``<prefix>*`` entries in ``folder``, retaining the newest ``keep``.
+
+    Timestamped names (``<prefix>YYYYMMDD_HHMMSS``) sort lexically in chronological
+    order, so newest-first is a plain reverse sort — no mtime dependency. ``remove``
+    deletes one entry (``Path.unlink`` for files, ``shutil.rmtree`` for dirs).
+    ``folder`` defaults to :func:`get_backup_folder`; callers that already resolved
+    it can pass it to skip the extra lookup. Returns the count deleted. Failures are
+    logged and swallowed — a failed prune must never fail the op that triggered it.
+    """
+    if keep is None:
+        keep = _backup_retention()
+    if keep <= 0:
+        return 0
+    if folder is None:
+        folder = get_backup_folder()
+    entries = sorted(
+        (p for p in folder.iterdir() if p.name.startswith(prefix)),
+        key=lambda p: p.name,
+        reverse=True,
+    )
+    removed = 0
+    for stale in entries[keep:]:
+        try:
+            remove(stale)
+            removed += 1
+        except OSError as e:
+            logger.warning("Failed to prune old %s %s: %s", label, stale, e)
+    if removed:
+        logger.info("Pruned %d old %s(s), kept newest %d", removed, label, keep)
+    return removed
+
+
+def prune_old_backups(keep: int | None = None, folder: Path | None = None) -> int:
+    """Delete the oldest ``flowpad_db_*`` DB backup files, retaining the newest ``keep``.
+
+    ``archive_*`` folders are left alone (see :func:`prune_old_archives`).
+    """
+    return _prune_snapshots("flowpad_db_", Path.unlink, "DB backup", keep, folder)
+
+
+def prune_old_archives(keep: int | None = None, folder: Path | None = None) -> int:
+    """Delete the oldest ``archive_*`` archive dirs, retaining the newest ``keep``.
+
+    ``flowpad_db_*`` backup files are left alone (see :func:`prune_old_backups`).
+    """
+    return _prune_snapshots("archive_", shutil.rmtree, "archive", keep, folder)
+
+
 async def backup_db() -> BackupResult:
-    """Backup the SQLite database to the backups folder."""
+    """Backup the SQLite database to the backups folder.
+
+    After writing the new snapshot, prunes older ``flowpad_db_*`` backups down to
+    the retention limit (:data:`DEFAULT_BACKUP_RETENTION`) so the backups folder
+    stays bounded.
+    """
     db_path = get_db_path()
     if not db_path.exists():
         raise FileNotFoundError("Database file does not exist")
@@ -170,6 +255,8 @@ async def backup_db() -> BackupResult:
     backup_path = get_backup_folder() / f"flowpad_db_{timestamp}"
     shutil.copy2(db_path, backup_path)
     logger.info(f"Database backed up to: {backup_path}")
+
+    prune_old_backups(folder=backup_path.parent)
 
     return BackupResult(
         backup_path=str(backup_path),
@@ -470,7 +557,13 @@ async def clear_all_data() -> ClearAllResult:
 
 
 async def archive() -> ArchiveResult:
-    """Create a full archive: DB backup + records snapshot in a timestamped folder."""
+    """Create a full archive: DB backup + records snapshot in a timestamped folder.
+
+    After writing the new archive, prunes older ``archive_*`` dirs down to the
+    retention limit (:data:`DEFAULT_BACKUP_RETENTION`) so the backups folder stays
+    bounded — archives are heavier than plain DB snapshots (they also copy the
+    whole records tree), so unbounded accumulation is the larger disk risk.
+    """
     from flow_sdk.fs_store.record_paths import get_default_records_root  # noqa: PLC0415
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -488,6 +581,7 @@ async def archive() -> ArchiveResult:
         shutil.copytree(records_root, archive_dir / "records", dirs_exist_ok=True, ignore_dangling_symlinks=True)
 
     logger.info(f"Archive created at: {archive_dir}")
+    prune_old_archives(folder=archive_dir.parent)
     return ArchiveResult(
         archive_path=str(archive_dir),
         message=f"Archive created at {archive_dir}",

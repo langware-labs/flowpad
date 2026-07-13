@@ -139,13 +139,14 @@ export function CollapsedSidebar() {
   // Partition the nav config by the current view mode: 'visible' items ride the
   // top rail, 'collapsed' items live behind the chevron expander, 'hidden' drop.
   // Vibe is the stripped creator skin: its rail keeps only the top navigation
-  // (the back/refresh row, always rendered below) + a Home button, plus the
-  // shared bottom cluster (search / assistant / theme / user login). Everything
-  // in between (Chats, Inbox, Assets, …) is dropped.
+  // (the back/refresh row, always rendered below) + Home and Inbox buttons, plus
+  // the shared bottom cluster (search / assistant / theme / user login), with the
+  // Bookmarks flyout button rendered after. Everything else (Chats, Assets, …) is
+  // dropped.
   const isVibe = viewMode === ViewMode.Vibe;
   const effectiveMode: CoreViewMode = isVibe ? ViewMode.Standard : viewMode;
   const visibleItems = isVibe
-    ? navItems.filter((item) => item.viewType === null) // Home only
+    ? navItems.filter((item) => item.viewType === null || item.viewType === ViewType.INBOX) // Home + Inbox
     : navItems.filter((item) => item.vis[effectiveMode] === 'visible');
   const collapsedItems = isVibe ? [] : navItems.filter((item) => item.vis[effectiveMode] === 'collapsed');
 

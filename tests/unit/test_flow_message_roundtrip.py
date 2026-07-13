@@ -705,6 +705,131 @@ async def test_unpack_stages_before_fm_materializes_and_notifies_after(tmp_path)
 
 
 # ---------------------------------------------------------------------------
+# Raw FILE attachment staging (the File-picker lane, not the Asset lane)
+# ---------------------------------------------------------------------------
+
+
+class TestRawFileAttachmentStaging:
+    """A raw FILE attachment (attachment/files/<name>, attachment_type=file)
+    must join the staged reception flow like asset entries: unpack synthesizes
+    a per-file ``file-@<id>`` entry dir and upserts a MessageAttachment row so
+    the UI can render a dashed chip → review → install. Regression for the
+    SAPAK-DEMO-SPEC.md case: files sent via the OS-file-picker lane previously
+    staged nothing and could never surface in a projectless conversation."""
+
+    @pytest.mark.asyncio
+    async def test_unpack_stages_raw_file_attachment(self, tmp_path):
+        from flow_sdk.api.api_types.identifier import mint_uuid
+        from flow_sdk.builtin.conversation import Conversation
+        from flow_sdk.builtin.message_attachment import MessageAttachment
+        from flow_sdk.builtin.user import User
+        from flow_sdk.fs_store.operations import flow_message as fm_data_ops
+
+        fm_id = "fefe0001-0000-4000-8000-00000000000f"
+        fname = "SAPAK-DEMO-SPEC.md"
+        fm_data = {
+            "id": fm_id,
+            "type": "flow_message",
+            "text": "Please see the Spec attached.",
+            "shared_context_entities": [],
+            "attachment": [{
+                "attachment_type": "file",
+                "data": f"attachment/files/{fname}",
+            }],
+        }
+        zip_path = _write_flowmsg_zip(
+            tmp_path, fm_data,
+            {f"attachment/files/{fname}": b"# SAPAK Demo Spec\n\nbody\n"},
+        )
+
+        saved_fm = FlowMessage(text="carrier")
+        saved_fm.id = fm_id
+        staged_saves: list[MessageAttachment] = []
+
+        async def _ma_save(self, *args, **kwargs):  # noqa: ANN001
+            staged_saves.append(self)
+            return self
+
+        with (
+            patch.object(User, "get_one", new=AsyncMock(return_value=None)),
+            patch.object(FlowMessage, "get_one", new=AsyncMock(return_value=None)),
+            patch.object(FlowMessage, "save", new=AsyncMock(return_value=saved_fm)),
+            patch.object(Conversation, "get_one", new=AsyncMock(return_value=None)),
+            patch.object(MessageAttachment, "get_one", new=AsyncMock(return_value=None)),
+            patch.object(MessageAttachment, "save", new=_ma_save),
+            patch.object(MessageAttachment, "add_entity_op_notification", new=AsyncMock()),
+            patch("flow_sdk.discovery.notify.send_resource_sync", return_value=True),
+        ):
+            result = await unpack_bundle(zip_path, "local-user-id")
+
+        assert result is not None
+        # Exactly one staged row for the raw file, deterministic identity.
+        assert len(staged_saves) == 1, (
+            f"raw FILE attachment staged {len(staged_saves)} MessageAttachment rows (expected 1)"
+        )
+        ma = staged_saves[0]
+        asset_id = mint_uuid(f"flow_message_file:{fm_id}:{fname}")
+        entry_key = f"file-@{asset_id}"
+        assert ma.id == MessageAttachment.allocate_deterministic_id(fm_id, entry_key)
+        assert ma.asset_type == "file"
+        assert ma.asset_id == asset_id
+        assert not ma.scope  # staged, not installed
+        assert ma.name == fname
+        assert ma.user_scope_allowed is True
+        assert ma.unpacked_path == f"unpacked/attachment/{entry_key}"
+        # Synthesized entry dir: .md files use the .claude/docs/ layout so
+        # install mirrors to <root>/.claude/docs/<name> (indexed as MARKDOWN on
+        # both project and user scopes).
+        entry_dir = fm_data_ops.staged_entry_dir(fm_id, entry_key)
+        assert (entry_dir / ".claude" / "docs" / fname).is_file()
+
+    @pytest.mark.asyncio
+    async def test_unpack_does_not_stage_image_file_attachment(self, tmp_path):
+        """Images render inline right after download — no staged row for them."""
+        from flow_sdk.builtin.conversation import Conversation
+        from flow_sdk.builtin.message_attachment import MessageAttachment
+        from flow_sdk.builtin.user import User
+
+        fm_id = "fefe0002-0000-4000-8000-00000000000f"
+        fm_data = {
+            "id": fm_id,
+            "type": "flow_message",
+            "text": "screenshot",
+            "shared_context_entities": [],
+            "attachment": [{
+                "attachment_type": "file",
+                "data": "attachment/files/shot.png",
+            }],
+        }
+        zip_path = _write_flowmsg_zip(
+            tmp_path, fm_data, {"attachment/files/shot.png": b"\x89PNG fake"},
+        )
+
+        saved_fm = FlowMessage(text="carrier")
+        saved_fm.id = fm_id
+        staged_saves: list[MessageAttachment] = []
+
+        async def _ma_save(self, *args, **kwargs):  # noqa: ANN001
+            staged_saves.append(self)
+            return self
+
+        with (
+            patch.object(User, "get_one", new=AsyncMock(return_value=None)),
+            patch.object(FlowMessage, "get_one", new=AsyncMock(return_value=None)),
+            patch.object(FlowMessage, "save", new=AsyncMock(return_value=saved_fm)),
+            patch.object(Conversation, "get_one", new=AsyncMock(return_value=None)),
+            patch.object(MessageAttachment, "get_one", new=AsyncMock(return_value=None)),
+            patch.object(MessageAttachment, "save", new=_ma_save),
+            patch.object(MessageAttachment, "add_entity_op_notification", new=AsyncMock()),
+            patch("flow_sdk.discovery.notify.send_resource_sync", return_value=True),
+        ):
+            result = await unpack_bundle(zip_path, "local-user-id")
+
+        assert result is not None
+        assert staged_saves == []
+
+
+# ---------------------------------------------------------------------------
 # _pack_conversation_attachment + _pack_task_attachment + DB-only file-backed
 # ---------------------------------------------------------------------------
 

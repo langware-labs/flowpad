@@ -12,9 +12,20 @@ export interface SendReplyExtras {
    *  context (deduped against the conversation TypeIds already stamped by
    *  the backend). The wire field is ``shared_context_entities``. */
   sharedContextEntities?: string[];
-  /** Transfer policy for body-bundle attachments. Defaults to copy. */
+  /** Transfer policy + per-share opt-ins for body-bundle attachments. */
   shareConfig?: {
     transferMode?: 'copy' | 'git';
+    /** Mint a FAVORITE bookmark on the receiver at install. Default off. */
+    createBookmark?: boolean;
+  };
+}
+
+/** Serialize shareConfig to the backend's snake_case share_config shape.
+ *  Kept in one place so the multipart and JSON send paths agree. */
+function serializeShareConfig(cfg: SendReplyExtras['shareConfig']): Record<string, unknown> {
+  return {
+    transfer_mode: cfg?.transferMode ?? 'copy',
+    ...(cfg?.createBookmark ? { create_bookmark: true } : {}),
   };
 }
 
@@ -57,12 +68,7 @@ export async function sendReply(
       form.append('asset_references', JSON.stringify(extras!.assetReferences));
     }
     if (extras?.shareConfig) {
-      form.append(
-        'share_config',
-        JSON.stringify({
-          transfer_mode: extras.shareConfig.transferMode ?? 'copy',
-        }),
-      );
+      form.append('share_config', JSON.stringify(serializeShareConfig(extras.shareConfig)));
     }
     for (const ce of sharedCtxEntities) {
       form.append('shared_context_entities', ce);
@@ -74,7 +80,7 @@ export async function sendReply(
     const body: Record<string, unknown> = { message };
     if (extras?.promptText) body.prompt_text = extras.promptText;
     if (sharedCtxEntities.length > 0) body.shared_context_entities = sharedCtxEntities;
-    if (extras?.shareConfig) body.share_config = { transfer_mode: extras.shareConfig.transferMode ?? 'copy' };
+    if (extras?.shareConfig) body.share_config = serializeShareConfig(extras.shareConfig);
     action.bodyParameters = body;
     // Text-only send: prefer the WebSocket hop when the socket is open
     // (skips an HTTP round-trip), fall back to REST otherwise.

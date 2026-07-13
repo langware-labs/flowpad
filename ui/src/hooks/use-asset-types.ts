@@ -30,6 +30,15 @@ export interface AssetTypeInfo {
   vaults?: AssetTypeVault[];
 }
 
+export interface UseAssetTypesOptions {
+  /**
+   * The Assets tab keeps its normal Standard catalog while the surrounding app
+   * uses the Vibe skin. Other catalog consumers retain their existing view-mode
+   * filtering unless they opt in explicitly.
+   */
+  vibeAsStandard?: boolean;
+}
+
 /** Title-case a snake_case type name: "claude_memory" -> "Claude Memory". */
 function humanize(typeName: string): string {
   return typeName
@@ -62,13 +71,17 @@ function staticAssetTypes(mode: ViewMode): AssetTypeInfo[] {
  * Asset-type catalog for the asset browser.
  *
  * Static metadata (type_name/label/icon/creatable/browseable_by) comes from the
- * frontend SchemaRegistry — no per-type fetch — and is filtered by the current
- * view mode, so toggling the footer pill live-updates the catalog. The only
- * runtime piece is markdown ``vaults`` (per-project doc roots): we still fetch
- * ``/assets/types`` but consume ONLY its vaults, merging them onto markdown.
+ * frontend SchemaRegistry — no per-type fetch — and is filtered by the effective
+ * catalog mode. Most callers follow the current view mode; Assets tabs opt to
+ * retain the Standard catalog in Vibe so their tree structure stays navigable.
+ * The only runtime piece is markdown ``vaults`` (per-project doc roots): we still
+ * fetch ``/assets/types`` but consume ONLY its vaults, merging them onto markdown.
  */
-export function useAssetTypes(): { types: AssetTypeInfo[]; isLoading: boolean } {
-  const mode = useViewMode();
+export function useAssetTypes(options: UseAssetTypesOptions = {}): { types: AssetTypeInfo[]; isLoading: boolean } {
+  const currentMode = useViewMode();
+  const mode: ViewMode = options.vibeAsStandard && currentMode === 'vibe'
+    ? 'standard'
+    : currentMode;
   const [vaults, setVaults] = useState<AssetTypeVault[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 

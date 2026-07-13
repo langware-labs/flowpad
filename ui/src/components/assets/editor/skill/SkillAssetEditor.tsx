@@ -2,6 +2,7 @@ import { MarkdownEditor, type MarkdownHeaderExtrasCtx } from '@src/components/as
 import type { ExtraSideTab } from '@src/components/milkdown-editor/EditorWithSidePanel';
 import { EntityExecutionPanel } from '@src/components/entity-execution-panel';
 import { useEntityByPath } from '@src/hooks/use-entity-by-path';
+import { entityReloadKey } from '@src/utils/entity-reload-key';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { FSRef, ProcessKind, Skill } from '@sdk';
@@ -48,6 +49,11 @@ export function SkillAssetEditor({ fsRef, skill: providedSkill }: SkillAssetEdit
   const skillRef = useRef(skill);
   skillRef.current = skill;
   const skillKey = skill ? skill.typeId.toString() : null;
+
+  // Body re-read token: SKILL.md re-reads when the skill entity's `updated_date`
+  // advances (a reindex from an agent turn-end / invalidate re-parsed the folder).
+  // Scalar so it's stable across identity-only skill ref churn; dirty-guarded.
+  const reloadKey = entityReloadKey((skill as { updated_date?: unknown } | undefined)?.updated_date);
 
   // Stable across metadata updates (same skillKey ⇒ same SKILL.md path) so the
   // editor doesn't re-download the file on every eval flip.
@@ -182,6 +188,7 @@ export function SkillAssetEditor({ fsRef, skill: providedSkill }: SkillAssetEdit
       extraSideTabs={extraSideTabs}
       onDelete={skillKey ? onDelete : undefined}
       deleteLabel={skill?.name ?? undefined}
+      reloadKey={reloadKey}
     />
   );
 }

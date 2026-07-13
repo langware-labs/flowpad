@@ -20,10 +20,10 @@ import { renderHook } from '@testing-library/react';
 import { dataManager } from '@sdk';
 import apiClient from '@sdk/client';
 
-// View mode is an external context, not the unit under test — pin it so the
-// skill type (browseable_by='standard') passes the filter.
+let mode = 'standard';
+
 vi.mock('@src/contexts/view-mode-context', () => ({
-  useViewMode: () => 'standard',
+  useViewMode: () => mode,
 }));
 
 import { useAssetTypes } from '@src/hooks/use-asset-types';
@@ -40,8 +40,9 @@ function skillTypeInfo() {
   };
 }
 
-describe('useAssetTypes — folder_backed is available synchronously', () => {
+describe('useAssetTypes', () => {
   beforeEach(async () => {
+    mode = 'standard';
     await dataManager.loadTypes([skillTypeInfo() as never]);
     // Hold the /assets/types fetch PENDING so the async merge cannot mask the
     // race — the only way folder_backed can be set on first render is the sync
@@ -61,5 +62,12 @@ describe('useAssetTypes — folder_backed is available synchronously', () => {
     const skill = result.current.types.find((t) => t.type_name === 'skill');
     expect(skill).toBeDefined();
     expect(skill?.folder_backed).toBe(true);
+  });
+
+  it('keeps Skill available to an Assets tab in Vibe', () => {
+    mode = 'vibe';
+    const { result } = renderHook(() => useAssetTypes({ vibeAsStandard: true }));
+
+    expect(result.current.types.some((type) => type.type_name === 'skill')).toBe(true);
   });
 });

@@ -59,7 +59,12 @@ _FM_FIELDS = {"type", "id", "text", "instruction", "shared_context_entities", "a
 if TYPE_CHECKING:
     from flow_sdk.builtin.flow_message import FlowMessage
 
-from flow_sdk.builtin.flow_message import AttachmentType, FILE_VFS_PREFIX, PROMPT_FILE_VFS_PREFIX
+from flow_sdk.builtin.flow_message import (
+    AttachmentType,
+    FILE_VFS_PREFIX,
+    PROMPT_FILE_VFS_PREFIX,
+    is_image_filename,
+)
 
 _TRANSFER_MODE_COPY = "copy"
 _TRANSFER_MODE_GIT = "git"
@@ -74,6 +79,10 @@ _GIT_TRANSFERS_FILE = "git_transfers.json"
 # separate axis, and is intentionally left unrenamed.
 _FS_ORIGINS_FILE = "fs_origins.json"
 _LEGACY_ORIGINS_FILE = "git_origins.json"
+# Message-level sender share options (a small side-manifest, like the origin
+# maps). Currently just ``{"create_bookmark": bool}`` — the receiver stamps it
+# onto each staged MessageAttachment so install can mint a favorite.
+_SHARE_OPTIONS_FILE = "share_options.json"
 
 
 def _is_git_origin_dict(raw) -> bool:
@@ -1291,6 +1300,8 @@ async def _stage_attachment(
     git_origin: "dict | None",
     git_transfer: "dict | None" = None,
     transfer_mode: str = "copy",
+    user_scope_allowed: "bool | None" = None,
+    create_bookmark: bool = False,
     owner_typeid=None,
 ):
     """Upsert the MessageAttachment row for one staged bundle entry.
@@ -1299,6 +1310,10 @@ async def _stage_attachment(
     PRESERVING install state (scope/project_id/installed_root/installed_at).
     Saved with notify=False — CREATE data_ops are batched after the
     FlowMessage/Conversation sync (see ``_notify_staged_attachments``).
+
+    ``user_scope_allowed`` — when given, overrides the schema-derived policy
+    (raw ``file`` entries have no TypeInfo to derive it from, and are always
+    user-installable under ``~/.claude``).
     """
     from flow_sdk.builtin.message_attachment import MessageAttachment, user_scope_allowed_for  # noqa: PLC0415
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
@@ -1317,12 +1332,122 @@ async def _stage_attachment(
     ma.transfer_mode = transfer_mode
     ma.git_origin = git_origin
     ma.git_transfer = git_transfer
+    ma.create_bookmark = create_bookmark
     # Schema-derived, stamped ONCE here so the UI never re-encodes the policy
     # (the install action re-enforces it through the same predicate).
-    info = SchemaRegistry.get(entry_type)
-    ma.user_scope_allowed = user_scope_allowed_for(getattr(info, "main_subdir", None), transfer_mode)
+    if user_scope_allowed is not None:
+        ma.user_scope_allowed = user_scope_allowed
+    else:
+        info = SchemaRegistry.get(entry_type)
+        ma.user_scope_allowed = user_scope_allowed_for(getattr(info, "main_subdir", None), transfer_mode)
     await ma.save(owner_typeid, notify=False)
     return ma
+
+
+# ---------------------------------------------------------------------------
+# Raw FILE attachment staging (the OS-file-picker lane)
+# ---------------------------------------------------------------------------
+
+# A raw file attached via the File picker (attachment_type=file) is NOT an
+# asset entity — it has no TypeInfo/main_subdir/RecordType. To let it ride the
+# same staged→review→install lifecycle as asset entries, unpack synthesizes a
+# per-file ``file-@<id>`` entry dir whose in-bundle relpath is the canonical
+# install layout, so ``_restore_file_backed_entry`` (anchor-free verbatim
+# mirror) and the scoped reindex work unchanged.
+#
+# Markdown lands under ``.claude/docs/`` — indexed as MARKDOWN by BOTH the
+# project (REAL_PROJECT_CWD) and user (USER_HOME_FOLDER) ``markdown_flat_fn``
+# walkers, which key on ``<root>/.claude/docs/**/*.md``. Everything else lands
+# under ``.claude/files/`` (copied on install; no dedicated walker yet, so not
+# auto-indexed — tracked as out-of-scope).
+_FILE_ATTACHMENT_DOCS_SUBDIR = ".claude/docs"
+_FILE_ATTACHMENT_BLOB_SUBDIR = ".claude/files"
+_MARKDOWN_SUFFIXES = frozenset({".md", ".markdown"})
+# Videos the bubble renders inline as a card — no staged chip. Images use the
+# shared ``is_image_filename`` predicate (single source of truth for pictures).
+_INLINE_VIDEO_SUFFIXES = frozenset({".mp4", ".webm", ".mov", ".m4v", ".ogg"})
+# Transcripts (worker sessions / conversation.jsonl) ride as FILE attachments
+# but are consumed by ``_materialize_received_transcripts`` — never a user doc.
+_NON_STAGED_FILE_SUFFIXES = frozenset({".jsonl"})
+
+
+def is_markdown_filename(filename: str) -> bool:
+    return PurePosixPath(filename).suffix.lower() in _MARKDOWN_SUFFIXES
+
+
+def file_attachment_rel_subdir(filename: str) -> str:
+    """Install-layout subdir for a raw file, mirrored in its staged entry dir.
+    Single owner of the layout so stage-time and install-time agree."""
+    return _FILE_ATTACHMENT_DOCS_SUBDIR if is_markdown_filename(filename) else _FILE_ATTACHMENT_BLOB_SUBDIR
+
+
+def _should_stage_file_attachment(filename: str) -> bool:
+    if is_image_filename(filename) or PurePosixPath(filename).suffix.lower() in _INLINE_VIDEO_SUFFIXES:
+        return False  # renders inline as an image/video card
+    if PurePosixPath(filename).suffix.lower() in _NON_STAGED_FILE_SUFFIXES:
+        return False  # transcript, not a user document
+    return True
+
+
+async def _stage_file_attachments(
+    msg_data: dict,
+    tmp_root: Path,
+    top_fm_id: str,
+    staging_conv_id: "str | None",
+    owner_typeid,
+) -> list:
+    """Stage each raw FILE attachment as a MessageAttachment row.
+
+    Reads the FILE sources from ``attachment/files/<name>`` in the extracted
+    tree (BEFORE ``_rewrite_file_attachments`` rewrites the paths) and copies
+    them into a synthesized ``unpacked/attachment/file-@<id>/<subdir>/<name>``
+    entry dir under the message's staging area. Deterministic id ⇒ a re-unpack
+    upserts the same row, preserving install state. Images/videos and
+    transcripts are skipped (see ``_should_stage_file_attachment``)."""
+    from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
+    from flow_sdk.fs_store.operations import flow_message as fm_data_ops  # noqa: PLC0415
+
+    staged: list = []
+    for att in msg_data.get("attachment", []) or []:
+        if not isinstance(att, dict):
+            continue
+        if att.get("attachment_type") != AttachmentType.FILE.value:
+            continue
+        rel = att.get("data") or ""
+        if not rel.startswith("attachment/files/"):
+            continue
+        src = tmp_root / rel
+        if not src.is_file():  # is_file() is already False for a missing path
+            continue
+        filename = src.name
+        if not _should_stage_file_attachment(filename):
+            continue
+        asset_id = mint_uuid(f"flow_message_file:{top_fm_id}:{filename}")
+        entry_key = f"file-@{asset_id}"
+        # Synthesize the entry dir under the persisted staging tree, laid out
+        # at the canonical install relpath so install mirrors it verbatim.
+        entry_dir = fm_data_ops.staged_entry_dir(top_fm_id, entry_key)
+        dest = entry_dir / file_attachment_rel_subdir(filename) / filename
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dest)
+        ma = await _stage_attachment(
+            top_fm_id=top_fm_id,
+            conversation_id=staging_conv_id,
+            entry_key=entry_key,
+            entry_type="file",
+            entry_id=asset_id,
+            unpacked_path=fm_data_ops.staged_entry_rel_path(entry_key),
+            name=filename,
+            description=None,
+            git_origin=None,
+            transfer_mode="copy",
+            # A raw file is always user-installable (docs/ or files/ under
+            # ~/.claude); there's no TypeInfo for 'file' to derive this from.
+            user_scope_allowed=True,
+            owner_typeid=owner_typeid,
+        )
+        staged.append(ma)
+    return staged
 
 
 async def _notify_staged_attachments(mas: list) -> None:
@@ -1420,6 +1545,7 @@ async def pack_bundle(
     dest_dir: Path | None = None,
     *,
     transfer_mode: str = _TRANSFER_MODE_COPY,
+    create_bookmark: bool = False,
 ) -> Path:
     """Build a .flowmsg zip from a FlowMessage entity. Returns the zip path.
 
@@ -1472,6 +1598,10 @@ async def pack_bundle(
         if transfers:
             (tmp_root / _GIT_TRANSFERS_FILE).write_text(
                 json.dumps(transfers, default=_json_default, ensure_ascii=False), encoding="utf-8"
+            )
+        if create_bookmark:
+            (tmp_root / _SHARE_OPTIONS_FILE).write_text(
+                json.dumps({"create_bookmark": True}, ensure_ascii=False), encoding="utf-8"
             )
         return _zip_bundle(tmp_root, dest_dir, flow_message.id)
     finally:
@@ -1860,24 +1990,27 @@ async def unpack_bundle(
             except Exception:
                 logger.warning("[bundle] unreadable %s; ignoring", _GIT_TRANSFERS_FILE, exc_info=True)
 
-        git_received_entries: set[tuple[str, str]] = set()
+        # Message-level sender share options (currently: create_bookmark). Stamped
+        # onto each staged MessageAttachment so install can mint a favorite.
+        create_bookmark = False
+        _so_path = tmp_root / _SHARE_OPTIONS_FILE
+        if _so_path.exists():
+            try:
+                _share_opts = json.loads(_so_path.read_text(encoding="utf-8")) or {}
+                create_bookmark = bool(_share_opts.get("create_bookmark"))
+            except Exception:
+                logger.warning("[bundle] unreadable %s; ignoring", _SHARE_OPTIONS_FILE, exc_info=True)
+
+        # Every git-transfer entry (file-backed asset OR graph artifact) is STAGED
+        # like a file-backed asset — nothing materializes at download; the row +
+        # any favorite are gated behind an explicit install.
         for key, transfer in sorted(git_transfers_map.items()):
             parsed = _parse_entry_key(key)
             if parsed is None:
                 continue
-            if await _restore_git_reference_entity_entry(
-                tmp_root,
-                key,
-                transfer,
-                git_origins_map,
-                overwrite=overwrite,
-                owner_typeid=owner_typeid,
-            ):
-                git_received_entries.add(parsed)
-                continue
-            # Git-TRANSFER file-backed asset: today this used to clone/pull the
-            # repo and index the asset at download time. Now STAGED — the clone
-            # runs inside the explicit install action instead.
+            # Git-TRANSFER entry (file-backed asset OR a graph artifact). STAGED —
+            # the clone/pull (file-backed) or the graph-row materialize (artifact)
+            # runs inside the explicit install action, not at download.
             entry_type, entry_id = parsed
             gt_payload = _read_transfer_metadata(tmp_root, transfer)
             raw_origin = git_origins_map.get(key) or (transfer or {}).get("git_origin")
@@ -1893,6 +2026,7 @@ async def unpack_bundle(
                 git_origin=raw_origin if isinstance(raw_origin, dict) else None,
                 git_transfer=transfer if isinstance(transfer, dict) else None,
                 transfer_mode="git",
+                create_bookmark=create_bookmark,
                 owner_typeid=owner_typeid,
             ))
 
@@ -1926,6 +2060,7 @@ async def unpack_bundle(
                         name=snap_name,
                         description=snap_desc,
                         git_origin=(git_origins_map.get(name) or None),
+                        create_bookmark=create_bookmark,
                         owner_typeid=owner_typeid,
                     ))
                     # TASK rides the generic staged→install→reindex path like any
@@ -2063,12 +2198,6 @@ async def unpack_bundle(
                         inner_fm.id = fm_id
                         await inner_fm.save(owner_typeid)
 
-        # 4b. Git-reference artifacts materialized DB rows above — announce them
-        # (staged file-backed assets are announced as MessageAttachments after
-        # the FM/Conversation sync instead; nothing was copied or indexed here).
-        if git_received_entries:
-            await _notify_received_assets(git_received_entries)
-
         # 5. Resolve FILE attachment paths and materialize the top-level FlowMessage
         # via the unified write path. ``materialize_flow_message`` saves the
         # FM, appends a typed Pointer to conversation.jsonl, projects
@@ -2080,6 +2209,14 @@ async def unpack_bundle(
         # Persist any carried worker-session transcript BEFORE the rewrite
         # mutates attachment paths — it reads the FILE sources from tmp_root.
         _materialize_received_transcripts(msg_data, tmp_root)
+        # Stage raw FILE attachments (the OS-file-picker lane) as MessageAttachment
+        # rows so they join the same download→review→install flow as asset
+        # entities. Runs BEFORE _rewrite_file_attachments, which reads the FILE
+        # sources from ``attachment/files/`` in tmp_root and then rewrites their
+        # ``data`` to the receiver-side embedded VFS subpath.
+        staged_mas.extend(await _stage_file_attachments(
+            msg_data, tmp_root, top_fm_id, staging_conv_id, owner_typeid,
+        ))
         _rewrite_file_attachments(msg_data, tmp_root, top_fm_id)
         msg_data["id"] = top_fm_id
         if not msg_data.get("conversation_id") and conversation_id:
