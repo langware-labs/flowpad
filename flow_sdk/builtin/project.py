@@ -218,8 +218,10 @@ class Project(Entity):
 
         Same sync sidecar walk as ``include_dirs`` (and the same ordering),
         plus the ``origin_kind`` stamped at link time ("git" / "local") so the
-        UI can render git-backed folders distinctly. Entries linked before the
-        stamp existed — and legacy stashed dirs — default to "local".
+        UI can render git-backed folders distinctly, and the linked Folder's
+        ``typeid`` so the UI can reference the folder entity (e.g. as a
+        message attachment chip). Entries linked before the stamp existed —
+        and legacy stashed dirs — default to "local".
         """
         out: list[dict[str, str]] = []
         seen: set[str] = set()
@@ -228,11 +230,17 @@ class Project(Entity):
             p = entry.get("path")
             if isinstance(p, str) and p and p not in seen:
                 seen.add(p)
-                out.append({"path": p, "origin_kind": str(entry.get("origin_kind") or "local")})
+                out.append(
+                    {
+                        "path": p,
+                        "origin_kind": str(entry.get("origin_kind") or "local"),
+                        "typeid": str(tid),
+                    }
+                )
         for p in self.legacy_include_dirs_ or []:
             if p and p not in seen:
                 seen.add(p)
-                out.append({"path": p, "origin_kind": "local"})
+                out.append({"path": p, "origin_kind": "local", "typeid": ""})
         return out
 
     @computed_field

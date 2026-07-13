@@ -38,6 +38,9 @@ interface PushContextFolderDialogProps {
   /** Scoped project id — anchors the recent-conversation search and new
    *  project-local conversations. */
   projectId?: string | null;
+  /** The context folder's Folder entity typeid — attached to the message as
+   *  the git-link chip (recipients click it to pull a local copy). */
+  folderTypeId?: string | null;
   /** The actual git push (from useGitFolderStatus). */
   push: () => Promise<GitPushResult | null>;
   pushing: boolean;
@@ -58,6 +61,7 @@ export function PushContextFolderDialog({
   folderName,
   branch,
   projectId,
+  folderTypeId,
   push,
   pushing,
 }: PushContextFolderDialogProps) {
@@ -123,7 +127,16 @@ export function PushContextFolderDialog({
             },
           }
         : { kind: 'existing', conversationId: selected };
-    const convId = await send(target, { text: message.trim() });
+    // The git-link chip: the context folder's Folder entity rides as a
+    // TYPE_ID attachment in git transfer mode — metadata + origin only, zero
+    // repo bytes. Recipients click it to set up their own local copy.
+    const chipRefs = folderTypeId ? [folderTypeId] : undefined;
+    const convId = await send(target, {
+      text: message.trim(),
+      assetReferences: chipRefs,
+      sharedContextEntities: chipRefs,
+      shareConfig: chipRefs ? { transferMode: 'git' } : undefined,
+    });
     if (!convId) return; // sendError renders inline; keep the dialog open.
     notify.success({
       title: result.nothing ? t`Nothing new to push — message sent` : t`Pushed and message sent`,

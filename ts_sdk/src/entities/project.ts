@@ -63,6 +63,9 @@ export interface ProjectContextDirInfo {
   path: string;
   /** Origin kind stamped at link time — "git" for cloned repos, else "local". */
   origin_kind: string;
+  /** The linked Folder entity's typeid (e.g. "folder-<uuid>") — referenced by
+   *  UI surfaces like the push-notify message chip. Empty for legacy dirs. */
+  typeid?: string;
 }
 
 interface ProjectContextFolderResolveResponse {

@@ -129,13 +129,14 @@ async def test_context_dir_infos_carries_origin_kind(tmp_path, stub_git_detect):
     resp = await project.add_context_dir(git_ctx, scope="shared")
     assert resp.status == "SUCCESS"
 
-    assert project.context_dir_infos == [{"path": git_ctx, "origin_kind": "git"}]
-    assert resp.data["context_dir_infos"] == [{"path": git_ctx, "origin_kind": "git"}]
+    tid = project.context_of_type("folder", bucket="shared")[0]
+    expected = {"path": git_ctx, "origin_kind": "git", "typeid": str(tid)}
+    assert project.context_dir_infos == [expected]
+    assert resp.data["context_dir_infos"] == [expected]
 
     # A legacy sidecar entry (no origin_kind stamp) defaults to 'local'.
-    tid = project.context_of_type("folder", bucket="shared")[0]
     project.add_shared_context_entities(tid, data={"path": git_ctx})
-    assert project.context_dir_infos == [{"path": git_ctx, "origin_kind": "local"}]
+    assert project.context_dir_infos == [{"path": git_ctx, "origin_kind": "local", "typeid": str(tid)}]
 
     # include_dirs and context_dir_infos stay path-aligned.
     assert [i["path"] for i in project.context_dir_infos] == project.include_dirs
@@ -146,7 +147,8 @@ async def test_context_dir_infos_local_add(tmp_path):
     project = await _make_project(tmp_path)
     ctx = _ctx_dir(tmp_path)
     await project.add_context_dir(ctx)
-    assert project.context_dir_infos == [{"path": ctx, "origin_kind": "local"}]
+    tid = project.context_of_type("folder", bucket="private")[0]
+    assert project.context_dir_infos == [{"path": ctx, "origin_kind": "local", "typeid": str(tid)}]
 
 
 @pytest.mark.asyncio
