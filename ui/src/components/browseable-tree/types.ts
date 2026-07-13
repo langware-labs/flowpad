@@ -12,6 +12,13 @@ export interface BrowseableDragData {
   [key: string]: unknown;
 }
 
+/** One OS file from an external drag-drop, with its path relative to the drop
+ *  (posix, includes the file name — nested when a whole folder was dropped). */
+export interface DroppedFileEntry {
+  file: File;
+  relPath: string;
+}
+
 /**
  * Browseable — generic node in a tree menu.
  *
@@ -136,14 +143,17 @@ export interface Browseable {
   /** Side effect for a successful drop. */
   onDrop?: (dragData: BrowseableDragData) => void | Promise<void>;
 
+  /** Accept OS files/folders dropped from outside the app. Entries carry the
+   *  drop-relative path (`relPath`, posix, includes the file name) so a dropped
+   *  directory keeps its structure. Distinct from `onDrop`, which handles the
+   *  intra-app Browseable payload. */
+  onExternalFilesDrop?: (entries: DroppedFileEntry[]) => void | Promise<void>;
+
   /** Container-owned manual ordering of children: splice `dragId` into the
    *  gap next to the anchor sibling. Renderers that support reordering (the
    *  desktop grid's edge drop zones) call this; the anchor ids are siblings
    *  within THIS container. */
-  reorderChildren?: (
-    dragId: string,
-    anchor: { afterId?: string; beforeId?: string },
-  ) => void | Promise<void>;
+  reorderChildren?: (dragId: string, anchor: { afterId?: string; beforeId?: string }) => void | Promise<void>;
 }
 
 /**

@@ -5,7 +5,13 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { Button } from '@src/components/ui/button';
 import type { Browseable, BrowseableDragData, BrowseableTreeProps, ToolbarAction } from './types';
 import { useBrowseableTree } from './useBrowseableTree';
-import { hasBrowseableDrag, readBrowseableDrag, writeBrowseableDrag } from './drag';
+import {
+  collectDroppedEntries,
+  hasBrowseableDrag,
+  hasExternalFilesDrag,
+  readBrowseableDrag,
+  writeBrowseableDrag,
+} from './drag';
 import { subscribeRefresh } from './refresh-store';
 import { TreeSelectionContext, type TreeSelectionApi } from './useTreeSelection';
 import { useOpenTabHashes } from '@src/tabs/useTabs';
@@ -13,10 +19,7 @@ import { RAIL_DIM_WHEN_CLOSED } from '@src/lib/utils';
 
 /** Walk a root's currently-visible (expanded) subtree in render order,
  *  collecting the selectable rows. Powers Shift-range + Cmd/Ctrl+A. */
-function collectVisibleSelectable(
-  root: Browseable,
-  tree: ReturnType<typeof useBrowseableTree>,
-): Browseable[] {
+function collectVisibleSelectable(root: Browseable, tree: ReturnType<typeof useBrowseableTree>): Browseable[] {
   const out: Browseable[] = [];
   const walk = (node: Browseable) => {
     if (node.selectable && node.selectionKey) out.push(node);
@@ -137,7 +140,11 @@ export function BrowseableTree(props: BrowseableTreeProps) {
   }, [activePointer, activeKey, tree.expandParentsForPointer]);
 
   if (isLoading) {
-    return <div className={`p-4 text-center text-xs text-muted-foreground ${className}`}><Trans>Loading...</Trans></div>;
+    return (
+      <div className={`p-4 text-center text-xs text-muted-foreground ${className}`}>
+        <Trans>Loading...</Trans>
+      </div>
+    );
   }
 
   if (error) {
@@ -147,7 +154,11 @@ export function BrowseableTree(props: BrowseableTreeProps) {
   if (roots.length === 0) {
     return (
       <div className={`p-4 text-center ${className}`}>
-        {emptyState ?? <p className="text-xs text-muted-foreground"><Trans>No items</Trans></p>}
+        {emptyState ?? (
+          <p className="text-xs text-muted-foreground">
+            <Trans>No items</Trans>
+          </p>
+        )}
       </div>
     );
   }
@@ -205,7 +216,20 @@ interface RowProps {
   onDragEnd: () => void;
 }
 
-function BrowseableRow({ node, level, rootId, tree, selection, activePointer, activeKey, openTabHashes, onNavigate, dragData, onDragStart, onDragEnd }: RowProps) {
+function BrowseableRow({
+  node,
+  level,
+  rootId,
+  tree,
+  selection,
+  activePointer,
+  activeKey,
+  openTabHashes,
+  onNavigate,
+  dragData,
+  onDragStart,
+  onDragEnd,
+}: RowProps) {
   const { t } = useLingui();
   const expanded = tree.isExpanded(node.id);
   const loadState = tree.getLoadState(node.id);
@@ -229,12 +253,14 @@ function BrowseableRow({ node, level, rootId, tree, selection, activePointer, ac
   const isSelected = !!(
     // Stable-id match: a typeid URL (activeKey) selects this row even though its
     // `pointer` is the vfs form.
-    (node.selectionKey && activeKey && node.selectionKey === activeKey) ||
-    // Pointer-string match: the original path (vfs leaf, list/folder roots, etc.).
-    (node.pointer &&
-      activePointer &&
-      node.pointer.viewType === activePointer.viewType &&
-      node.pointer.pointer === activePointer.pointer)
+    (
+      (node.selectionKey && activeKey && node.selectionKey === activeKey) ||
+      // Pointer-string match: the original path (vfs leaf, list/folder roots, etc.).
+      (node.pointer &&
+        activePointer &&
+        node.pointer.viewType === activePointer.viewType &&
+        node.pointer.pointer === activePointer.pointer)
+    )
   );
 
   // Dim openable rows that aren't currently open as a tab (and aren't the active
@@ -246,7 +272,7 @@ function BrowseableRow({ node, level, rootId, tree, selection, activePointer, ac
   const hasChildrenHint = node.hasChildren === true || (node.hasChildren === 'unknown' && !!node.listChildren);
 
   const canSelect = !!(selection && node.selectable && node.selectionKey);
-  const multiSelected = canSelect && selection!.isSelected(node.selectionKey);
+  const multiSelected = canSelect && selection.isSelected(node.selectionKey);
 
   const handleRowClick = useCallback(
     (e: React.MouseEvent) => {
@@ -264,11 +290,11 @@ function BrowseableRow({ node, level, rootId, tree, selection, activePointer, ac
         const mod = e.metaKey || e.ctrlKey;
         if (mod || e.shiftKey) {
           e.preventDefault();
-          if (e.shiftKey) selection!.selectRange(node, rootId);
-          else selection!.toggle(node, rootId);
+          if (e.shiftKey) selection.selectRange(node, rootId);
+          else selection.toggle(node, rootId);
           return;
         }
-        selection!.anchorAndClear(node, rootId);
+        selection.anchorAndClear(node, rootId);
       }
 
       // Toggle expand on the row click for nodes that have children AND
@@ -320,10 +346,7 @@ function BrowseableRow({ node, level, rootId, tree, selection, activePointer, ac
   // absolutely-positioned compact toolbar when it appears
   // (h-5/w-5 buttons + gap-0.5 + px-0.5 + right-1). At rest the toolbar is
   // hidden, so the label keeps its full width.
-  const toolbarSpace =
-    node.toolbar && node.toolbar.length > 0
-      ? node.toolbar.length * 22 + 6
-      : 0;
+  const toolbarSpace = node.toolbar && node.toolbar.length > 0 ? node.toolbar.length * 22 + 6 : 0;
 
   const handleDragStart = useCallback(
     (e: React.DragEvent) => {
@@ -343,13 +366,16 @@ function BrowseableRow({ node, level, rootId, tree, selection, activePointer, ac
   const handleDragOver = useCallback(
     (e: React.DragEvent) => {
       const foreign = !dragData && !!node.onDrop && hasBrowseableDrag(e);
-      if (!canAcceptDrop && !foreign) return;
+      // OS files from outside the app (only the 'Files' type is visible
+      // pre-drop) — a copy into the node, not a move within the tree.
+      const external = !dragData && !!node.onExternalFilesDrop && hasExternalFilesDrag(e);
+      if (!canAcceptDrop && !foreign && !external) return;
       e.preventDefault();
       e.stopPropagation();
-      e.dataTransfer.dropEffect = 'move';
+      e.dataTransfer.dropEffect = external && !canAcceptDrop && !foreign ? 'copy' : 'move';
       setIsDropTarget(true);
     },
-    [canAcceptDrop, dragData, node.onDrop],
+    [canAcceptDrop, dragData, node.onDrop, node.onExternalFilesDrop],
   );
 
   const handleDragLeave = useCallback((e: React.DragEvent) => {
@@ -361,7 +387,25 @@ function BrowseableRow({ node, level, rootId, tree, selection, activePointer, ac
     async (e: React.DragEvent) => {
       // Payload: lifted state for intra-tree drags, MIME body for foreign ones.
       const payload = dragData ?? readBrowseableDrag(e);
-      if (!payload || !node.onDrop) return;
+      if (!payload) {
+        // No Browseable payload → an external OS drop. Entry handles expire
+        // with the event, so collect synchronously before any await.
+        if (!node.onExternalFilesDrop || !hasExternalFilesDrag(e)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDropTarget(false);
+        setIsDropping(true);
+        const collecting = collectDroppedEntries(e.dataTransfer);
+        try {
+          const entries = await collecting;
+          if (entries.length) await node.onExternalFilesDrop(entries);
+        } finally {
+          setIsDropping(false);
+          onDragEnd();
+        }
+        return;
+      }
+      if (!node.onDrop) return;
       if (node.canDrop && !node.canDrop(payload)) {
         setIsDropTarget(false);
         return;
@@ -410,7 +454,7 @@ function BrowseableRow({ node, level, rootId, tree, selection, activePointer, ac
         <div
           className={`flex min-w-0 flex-1 items-center gap-1 overflow-hidden ${
             toolbarSpace
-              ? 'transition-[padding] group-hover:pr-[var(--toolbar-space)] group-focus-within:pr-[var(--toolbar-space)]'
+              ? 'transition-[padding] group-focus-within:pr-[var(--toolbar-space)] group-hover:pr-[var(--toolbar-space)]'
               : ''
           }`}
           style={toolbarSpace ? ({ '--toolbar-space': `${toolbarSpace}px` } as React.CSSProperties) : undefined}
@@ -472,7 +516,7 @@ function BrowseableRow({ node, level, rootId, tree, selection, activePointer, ac
         </div>
 
         {node.toolbar && node.toolbar.length > 0 && (
-          <div className="pointer-events-none absolute right-1 top-1/2 z-10 flex -translate-y-1/2 items-center gap-0.5 rounded-md bg-background/80 px-0.5 opacity-0 shadow-sm backdrop-blur group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
+          <div className="pointer-events-none absolute right-1 top-1/2 z-10 flex -translate-y-1/2 items-center gap-0.5 rounded-md bg-background/80 px-0.5 opacity-0 shadow-sm backdrop-blur group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100">
             {node.toolbar.map((a) => (
               <ToolbarButton key={a.id} action={a} compact />
             ))}
@@ -546,7 +590,7 @@ export function ToolbarButton({ action, compact }: { action: ToolbarAction; comp
       variant="ghost"
       size="icon"
       className={compact ? 'h-5 w-5' : 'h-6 w-6'}
-      onClick={handleClick}
+      onClick={(e) => void handleClick(e)}
       disabled={busy}
       title={action.label}
       aria-label={action.label}

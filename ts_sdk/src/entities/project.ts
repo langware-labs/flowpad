@@ -58,6 +58,13 @@ export interface ProjectContextFolderResolveResult {
   [key: string]: unknown;
 }
 
+/** Mirror of the backend computed `Project.context_dir_infos` entries. */
+export interface ProjectContextDirInfo {
+  path: string;
+  /** Origin kind stamped at link time — "git" for cloned repos, else "local". */
+  origin_kind: string;
+}
+
 interface ProjectContextFolderResolveResponse {
   include_dirs?: unknown;
   context_folder_results?: unknown;
@@ -109,6 +116,9 @@ export class Project extends APIEntity<Project> {
    *  --add-dir set and browseable in the Explorer as their own root. Mirrors
    *  the backend Project.include_dirs. */
   include_dirs: string[] = [];
+  /** Per-context-folder info (path + origin_kind). Mirrors the backend
+   *  computed Project.context_dir_infos — same paths/order as include_dirs. */
+  context_dir_infos: ProjectContextDirInfo[] = [];
   /** Project secret pointers. Value-free metadata only; values are never
    *  exposed through the SDK and resolve only inside worker launch. */
   secret_origins: ProjectSecretOriginSummary[] = [];
@@ -121,6 +131,7 @@ export class Project extends APIEntity<Project> {
     this.host_member_id = (entity.host_member_id as string | null | undefined) ?? null;
     this.members = (entity.members as ProjectMember[] | undefined) ?? [];
     this.include_dirs = (entity.include_dirs as string[] | undefined) ?? [];
+    this.context_dir_infos = (entity.context_dir_infos as ProjectContextDirInfo[] | undefined) ?? [];
     this.secret_origins = (entity.secret_origins as ProjectSecretOriginSummary[] | undefined) ?? [];
   }
 
@@ -217,6 +228,12 @@ export class Project extends APIEntity<Project> {
     const dirs = (response as { include_dirs?: unknown } | null)?.include_dirs;
     if (Array.isArray(dirs)) {
       this.include_dirs = dirs.filter((d): d is string => typeof d === 'string');
+    }
+    const infos = (response as { context_dir_infos?: unknown } | null)?.context_dir_infos;
+    if (Array.isArray(infos)) {
+      this.context_dir_infos = infos.filter((item): item is ProjectContextDirInfo => (
+        !!item && typeof item === 'object' && typeof (item as ProjectContextDirInfo).path === 'string'
+      ));
     }
   }
 

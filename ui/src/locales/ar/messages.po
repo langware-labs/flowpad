@@ -659,6 +659,7 @@ msgid "add"
 msgstr ""
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/assets/AddGitFolderDialog.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
@@ -745,6 +746,12 @@ msgstr ""
 #: src/components/wiki-toolbar/WikiLinkInsertDialog.tsx
 #: src/components/wiki-toolbar/WikiToolbar.tsx
 msgid "Add entity link"
+msgstr ""
+
+#: src/components/assets/AddContextFolderDialog.tsx
+#: src/components/assets/AddGitFolderDialog.tsx
+#: src/components/quick-create/QuickCreateModal.tsx
+msgid "Add Git folder"
 msgstr ""
 
 #: src/components/hooks-view/HooksBrowser.tsx
@@ -1456,15 +1463,15 @@ msgstr ""
 msgid "bash progress"
 msgstr ""
 
-#: src/components/project-home/Secrets.tsx
+#: src/components/project-home/BindSecretDialog.tsx
 msgid "Bind"
 msgstr ""
 
-#: src/components/project-home/Secrets.tsx
+#: src/components/project-home/BindSecretDialog.tsx
 msgid "Bind an existing app secret to a project environment variable."
 msgstr ""
 
-#: src/components/project-home/Secrets.tsx
+#: src/components/project-home/BindSecretDialog.tsx
 #: src/components/project-home/Secrets.tsx
 msgid "Bind secret"
 msgstr ""
@@ -1645,6 +1652,7 @@ msgstr ""
 #: src/components/artifacts/artifact-form.tsx
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/assets/AddGitFolderDialog.tsx
 #: src/components/assets/delete-asset-modal.tsx
 #: src/components/assets/editor/markdown/ReviewSurface.tsx
 #: src/components/assets/editor/run/useRunOnFile.tsx
@@ -1674,7 +1682,7 @@ msgstr ""
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 #: src/components/project-activity-strip/ProjectActivityStrip.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
-#: src/components/project-home/Secrets.tsx
+#: src/components/project-home/BindSecretDialog.tsx
 #: src/components/project-selector/NewProjectDialog.tsx
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 #: src/components/project-sidebar/ProjectSidebar.tsx
@@ -1902,8 +1910,8 @@ msgid "Claude Code Status"
 msgstr ""
 
 #: src/components/open-project-component/open-project-component.tsx
-msgid "Claude project"
-msgstr ""
+#~ msgid "Claude project"
+#~ msgstr ""
 
 #: src/components/claude-terminal/claude-terminal.tsx
 msgid "Claude Terminal"
@@ -2245,8 +2253,8 @@ msgid "Codex (restored session)"
 msgstr ""
 
 #: src/components/open-project-component/open-project-component.tsx
-msgid "Codex project"
-msgstr ""
+#~ msgid "Codex project"
+#~ msgstr ""
 
 #: src/components/quick-create/QuickCreateMenu.tsx
 msgid "Codex session"
@@ -2494,6 +2502,10 @@ msgstr ""
 msgid "Context breakdown"
 msgstr ""
 
+#: src/components/quick-create/QuickCreateModal.tsx
+#~ msgid "Context folder"
+#~ msgstr ""
+
 #: src/components/project-home/ContextFolders.tsx
 msgid "Context folders"
 msgstr ""
@@ -2568,8 +2580,8 @@ msgid "Copilot"
 msgstr ""
 
 #: src/components/open-project-component/open-project-component.tsx
-msgid "Copilot project"
-msgstr ""
+#~ msgid "Copilot project"
+#~ msgstr ""
 
 #: src/components/quick-create/QuickCreateMenu.tsx
 msgid "Copilot session"
@@ -2826,6 +2838,7 @@ msgstr ""
 msgid "CPU:"
 msgstr ""
 
+#: src/components/assets/AddGitFolderDialog.tsx
 #: src/components/assets/AssetsNavigator.tsx
 #: src/components/assets/AssetsNavigator.tsx
 #: src/components/assets/AssetsPage.tsx
@@ -2839,6 +2852,10 @@ msgstr ""
 #: src/components/workflows-view/WorkflowsNavigator.tsx
 #: src/components/workflows-view/WorkflowStrip.tsx
 msgid "Create"
+msgstr ""
+
+#: src/components/assets/AddGitFolderDialog.tsx
+msgid "Create a brand-new repository"
 msgstr ""
 
 #. placeholder {0}: m.newFolderTarget?.label ?? 'this folder'
@@ -2892,7 +2909,6 @@ msgstr ""
 msgid "Create new"
 msgstr ""
 
-#: src/components/open-project-component/open-project-component.tsx
 #: src/components/open-project-component/open-project-component.tsx
 msgid "Create New"
 msgstr ""
@@ -3919,7 +3935,7 @@ msgid "Enable for user"
 msgstr ""
 
 #: src/components/account/secrets-section.tsx
-#: src/components/project-home/Secrets.tsx
+#: src/components/project-home/BindSecretDialog.tsx
 msgid "Enable secrets"
 msgstr ""
 
@@ -4049,7 +4065,7 @@ msgstr ""
 msgid "Entry details"
 msgstr ""
 
-#: src/components/project-home/Secrets.tsx
+#: src/components/project-home/BindSecretDialog.tsx
 msgid "Env var"
 msgstr ""
 
@@ -4076,8 +4092,8 @@ msgstr ""
 #: src/components/agent-layout/error-screen/error-screen.tsx
 #: src/components/api-keys-view/api-keys-view.tsx
 #: src/components/api-keys-view/api-keys-view.tsx
-#: src/components/project-home/Secrets.tsx
-#: src/components/project-home/Secrets.tsx
+#: src/components/project-home/BindSecretDialog.tsx
+#: src/components/project-home/BindSecretDialog.tsx
 msgid "Error"
 msgstr ""
 
@@ -4208,6 +4224,10 @@ msgstr ""
 msgid "Execution Mode"
 msgstr ""
 
+#: src/components/assets/AddGitFolderDialog.tsx
+msgid "Existing repo"
+msgstr ""
+
 #. placeholder {0}: call.exit_code
 #. placeholder {0}: entry.toolResult!.exitCode
 #: src/components/assets/editor/agent-trace/TraceDetailPanel.tsx
@@ -4313,7 +4333,7 @@ msgstr ""
 msgid "Failed to backup database"
 msgstr ""
 
-#: src/components/project-home/Secrets.tsx
+#: src/components/project-home/BindSecretDialog.tsx
 msgid "Failed to bind secret"
 msgstr ""
 
@@ -4410,7 +4430,7 @@ msgid "Failed to enable MCP"
 msgstr ""
 
 #: src/components/account/secrets-section.tsx
-#: src/components/project-home/Secrets.tsx
+#: src/components/project-home/BindSecretDialog.tsx
 msgid "Failed to enable secrets"
 msgstr ""
 
@@ -4518,14 +4538,13 @@ msgid "Failed to open file"
 msgstr ""
 
 #: src/components/quick-create/QuickCreateModal.tsx
-msgid "Failed to open folder"
-msgstr ""
+#~ msgid "Failed to open folder"
+#~ msgstr ""
 
 #: src/components/open-project-component/open-project-component.tsx
 #: src/components/project-setup-screen/project-setup-screen.tsx
 #: src/components/quick-create/QuickCreateDialog.tsx
 #: src/components/quick-create/QuickCreateMenu.tsx
-#: src/components/quick-create/QuickCreateModal.tsx
 msgid "Failed to open folder picker"
 msgstr ""
 
@@ -4615,7 +4634,6 @@ msgid "Failed to start services"
 msgstr ""
 
 #: src/components/quick-create/QuickCreateMenu.tsx
-#: src/components/quick-create/QuickCreateModal.tsx
 #: src/components/quick-create/QuickCreateModal.tsx
 msgid "Failed to start session"
 msgstr ""
@@ -5052,6 +5070,10 @@ msgstr ""
 msgid "From git"
 msgstr ""
 
+#: src/components/quick-create/QuickCreateModal.tsx
+#~ msgid "From Git"
+#~ msgstr ""
+
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 msgid "From:"
 msgstr ""
@@ -5125,8 +5147,11 @@ msgstr ""
 msgid "ghost"
 msgstr ""
 
+#: src/components/assets/ContextFolderBrowser.tsx
+msgid "git"
+msgstr ""
+
 #: src/components/chat-input.tsx
-#: src/components/quick-create/QuickCreateModal.tsx
 msgid "Git"
 msgstr ""
 
@@ -6376,7 +6401,6 @@ msgstr ""
 
 #: src/components/assets/ProjectPickerModal.tsx
 #: src/components/directory-tree/ProjectsDirectoryTree.tsx
-#: src/components/open-project-component/open-project-component.tsx
 msgid "Loading projects..."
 msgstr ""
 
@@ -6878,6 +6902,10 @@ msgstr ""
 msgid "my-awesome-project"
 msgstr ""
 
+#: src/components/assets/AddGitFolderDialog.tsx
+msgid "my-context"
+msgstr ""
+
 #: src/components/account/user-info.tsx
 msgid "N/A"
 msgstr ""
@@ -7014,6 +7042,7 @@ msgstr ""
 msgid "New Flow"
 msgstr ""
 
+#: src/components/quick-create/QuickCreateModal.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "New folder"
 msgstr ""
@@ -7030,7 +7059,6 @@ msgstr ""
 #: src/components/project-selector/NewProjectDialog.tsx
 #: src/components/project-selector/ProjectSelectorModal.tsx
 #: src/components/quick-create/QuickCreateMenu.tsx
-#: src/components/quick-create/QuickCreateModal.tsx
 msgid "New project"
 msgstr ""
 
@@ -7048,6 +7076,10 @@ msgstr ""
 
 #: src/components/execute-flow-view/instruction-panel/ephemeral-prompt-input.tsx
 msgid "New Prompt"
+msgstr ""
+
+#: src/components/assets/AddGitFolderDialog.tsx
+msgid "New repo"
 msgstr ""
 
 #: src/components/triggers-view/TriggersList.tsx
@@ -7246,7 +7278,6 @@ msgstr ""
 #: src/components/project-setup-screen/project-setup-screen.tsx
 #: src/components/quick-create/QuickCreateDialog.tsx
 #: src/components/quick-create/QuickCreateMenu.tsx
-#: src/components/quick-create/QuickCreateModal.tsx
 msgid "No compute node available"
 msgstr ""
 
@@ -7461,7 +7492,7 @@ msgstr ""
 msgid "No LLM index for this folder yet."
 msgstr ""
 
-#: src/components/project-home/Secrets.tsx
+#: src/components/project-home/BindSecretDialog.tsx
 msgid "No local app secrets"
 msgstr ""
 
@@ -7494,7 +7525,6 @@ msgid "no matches"
 msgstr ""
 
 #: src/components/assets/ProjectPickerModal.tsx
-#: src/components/open-project-component/open-project-component.tsx
 #: src/components/open-project-component/open-project-component.tsx
 #: src/components/project-selector/ProjectSelector.tsx
 msgid "No matches"
@@ -7635,7 +7665,6 @@ msgid "No projects"
 msgstr ""
 
 #: src/components/assets/ProjectPickerModal.tsx
-#: src/components/open-project-component/open-project-component.tsx
 #: src/components/open-project-component/open-project-component.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "No projects found"
@@ -8050,6 +8079,10 @@ msgstr ""
 msgid "Nothing to improve"
 msgstr ""
 
+#: src/components/assets/ContextFolderBrowser.tsx
+msgid "Nothing to push"
+msgstr ""
+
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Nothing to save"
 msgstr ""
@@ -8249,11 +8282,9 @@ msgid "Open Flowpad docs"
 msgstr ""
 
 #: src/components/assets/AddContextFolderDialog.tsx
-#: src/components/quick-create/QuickCreateModal.tsx
 msgid "Open folder"
 msgstr ""
 
-#: src/components/open-project-component/open-project-component.tsx
 #: src/components/open-project-component/open-project-component.tsx
 msgid "Open Folder"
 msgstr ""
@@ -9049,7 +9080,6 @@ msgstr ""
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/quick-create/QuickCreateMenu.tsx
 #: src/components/quick-create/QuickCreateModal.tsx
-#: src/components/quick-create/QuickCreateModal.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Project"
 msgstr ""
@@ -9130,7 +9160,6 @@ msgid "projected"
 msgstr ""
 
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
-#: src/components/open-project-component/open-project-component.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Projects"
 msgstr ""
@@ -9275,13 +9304,22 @@ msgstr ""
 msgid "Pulling…"
 msgstr ""
 
+#: src/components/assets/ContextFolderBrowser.tsx
 #: src/components/status-bar/GitPushButton.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Push"
 msgstr ""
 
+#: src/components/assets/ContextFolderBrowser.tsx
+msgid "Push failed"
+msgstr ""
+
 #: src/components/git/RepoPicker.tsx
 msgid "Pushed"
+msgstr ""
+
+#: src/components/assets/ContextFolderBrowser.tsx
+msgid "Pushed to remote"
 msgstr ""
 
 #: src/components/version-popover/version-popover.tsx
@@ -9745,6 +9783,14 @@ msgstr ""
 
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Repos"
+msgstr ""
+
+#: src/components/assets/AddGitFolderDialog.tsx
+msgid "Repository name"
+msgstr ""
+
+#: src/components/assets/AddGitFolderDialog.tsx
+msgid "Repository URL"
 msgstr ""
 
 #: src/components/GitHubConnectionDialog.tsx
@@ -10492,7 +10538,6 @@ msgstr ""
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/assets/ProjectPickerModal.tsx
 #: src/components/open-project-component/open-project-component.tsx
-#: src/components/open-project-component/open-project-component.tsx
 msgid "Search projects…"
 msgstr ""
 
@@ -10554,7 +10599,8 @@ msgid "Searching…"
 msgstr ""
 
 #: src/components/flowdata-renderer/SecretMessageComponent.tsx
-#: src/components/project-home/Secrets.tsx
+#: src/components/project-home/BindSecretDialog.tsx
+#: src/components/quick-create/QuickCreateModal.tsx
 msgid "Secret"
 msgstr ""
 
@@ -10620,8 +10666,8 @@ msgid "Select a project"
 msgstr ""
 
 #: src/components/open-project-component/open-project-component.tsx
-msgid "Select a project or open a new folder."
-msgstr ""
+#~ msgid "Select a project or open a new folder."
+#~ msgstr ""
 
 #: src/components/project-resource-list/ProjectResourceList.tsx
 #: src/pages/live-status/LiveStatus.tsx
@@ -10729,7 +10775,7 @@ msgstr ""
 msgid "Select Projects"
 msgstr ""
 
-#: src/components/project-home/Secrets.tsx
+#: src/components/project-home/BindSecretDialog.tsx
 msgid "Select secret"
 msgstr ""
 
@@ -10936,6 +10982,14 @@ msgstr ""
 msgid "Set up (runs an agentic process)"
 msgstr ""
 
+#: src/components/assets/AddGitFolderDialog.tsx
+msgid "Set up a git-backed context folder for this project."
+msgstr ""
+
+#: src/components/assets/AddGitFolderDialog.tsx
+msgid "Set up an existing git repository as the context folder"
+msgstr ""
+
 #: src/components/settings-view/SettingsView.tsx
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
@@ -11121,16 +11175,16 @@ msgid "Show scope overrides"
 msgstr ""
 
 #: src/components/open-project-component/open-project-component.tsx
-msgid "Show SDK-shipped system projects (Flowpad Assistant)"
-msgstr ""
+#~ msgid "Show SDK-shipped system projects (Flowpad Assistant)"
+#~ msgstr ""
 
 #: src/components/project-resource-list/ProjectResourceList.tsx
 msgid "Show Sessions"
 msgstr ""
 
 #: src/components/open-project-component/open-project-component.tsx
-msgid "Show system"
-msgstr ""
+#~ msgid "Show system"
+#~ msgstr ""
 
 #: src/components/account/danger-zone.tsx
 msgid "Show system skills"
@@ -11591,6 +11645,10 @@ msgstr ""
 msgid "Structure"
 msgstr ""
 
+#: src/components/quick-create/QuickCreateModal.tsx
+msgid "Sub agent"
+msgstr ""
+
 #: src/pages/live-status/LiveStatus.tsx
 msgid "sub-agent"
 msgstr ""
@@ -11708,7 +11766,6 @@ msgid "sys"
 msgstr ""
 
 #: src/components/lens-viewer/shared/transcript-features/TranscriptEntryItem.tsx
-#: src/components/open-project-component/open-project-component.tsx
 msgid "system"
 msgstr ""
 
@@ -11899,6 +11956,10 @@ msgstr ""
 
 #: src/components/lens-viewer/LensViewer.tsx
 msgid "The lens path could not be parsed."
+msgstr ""
+
+#: src/components/project-home/BindSecretDialog.tsx
+msgid "The local secrets store is not enabled yet."
 msgstr ""
 
 #: src/components/prompt-library/PromptEditDialog.tsx
@@ -12143,8 +12204,8 @@ msgid "To Do"
 msgstr ""
 
 #: src/components/open-project-component/open-project-component.tsx
-msgid "today"
-msgstr ""
+#~ msgid "today"
+#~ msgstr ""
 
 #: src/components/cron-view/CronForm.tsx
 msgid "Today"
@@ -12494,6 +12555,10 @@ msgstr ""
 
 #: src/components/skills-sidebar/SkillsSidebar.tsx
 msgid "Unpin skill"
+msgstr ""
+
+#: src/components/assets/ContextFolderBrowser.tsx
+msgid "Unpushed changes"
 msgstr ""
 
 #: src/components/inbox-view/InboxView.tsx

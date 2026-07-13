@@ -1,12 +1,10 @@
 import { useCallback, useMemo, useState } from 'react';
-import { Home, Link, Trash2 } from 'lucide-react';
-import {
-  AssetDocPointer,
-} from '@src/navigation/AssetDocPointer';
+import { FolderOpen, Home, Link, Trash2 } from 'lucide-react';
+import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { AssetEditor, AssetMode, AssetRoutingMethod } from '@src/navigation/asset-doc-types';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { dataContext, fsManager, fsStore, Project, RecordType, TypeId, VFSPath } from '@sdk';
+import { dataContext, fsManager, fsStore, launchWizard, Project, RecordType, TypeId, VFSPath } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { ViewType } from '@src/types/ViewType';
 import { notify } from '@src/notifications';
@@ -14,24 +12,37 @@ import { getDescriptor } from '@src/components/quick-create';
 import { useAssetStats } from '@src/hooks/use-asset-stats';
 import { useAssetTypes } from '@src/hooks/use-asset-types';
 import { useAssetTreeRefresh } from '@src/hooks/useAssetTreeRefresh';
-import { useProjectContextFolders } from '@src/hooks/use-project-context-folders';
+import { useProjectContextFolders, type ContextFolderScope } from '@src/hooks/use-project-context-folders';
 import { useSystemTools } from '@src/hooks/use-system-tools';
 import { useIsDev } from '@src/contexts/view-mode-context';
-import { assetScopeBucket, defaultScopeFilter, projectScope, scopeFilterKey, unionAssetBucket } from '@src/lib/scope-filter';
+import {
+  assetScopeBucket,
+  defaultScopeFilter,
+  projectScope,
+  scopeFilterKey,
+  unionAssetBucket,
+} from '@src/lib/scope-filter';
 import type { AssetScopeBucket, ScopeFilter } from '@src/lib/scope-filter';
 import { refreshNode } from '@src/components/browseable-tree/refresh-store';
 import { showDeleteAssetModal } from '@src/components/assets/delete-asset-modal';
+import type { GitFolderInput } from '@src/components/assets/AddGitFolderDialog';
 import { assetTypeRoot } from '@src/components/browseable-tree/adapters/assetTypeRoot';
 import { assetContextFoldersRoot } from '@src/components/browseable-tree/adapters/assetContextFoldersRoot';
 import { flatEntityRoots } from '@src/components/browseable-tree/adapters/flatEntityRoot';
-import { normalizeRel } from '@src/components/browseable-tree/adapters/fsFolderRoot';
+import {
+  basename as fsBasename,
+  fsFolderRoot,
+  normalizeRel,
+  type FsDragItem,
+} from '@src/components/browseable-tree/adapters/fsFolderRoot';
+import { useExplorerComputeNode } from '@src/components/explorer-view/useExplorerComputeNode';
 import {
   markdownFolderNodeId,
   markdownFolderRoot,
   type MarkdownDragItem,
   type MarkdownFolderTarget,
 } from '@src/components/browseable-tree/adapters/markdownFolderRoot';
-import type { Browseable, BrowseableRoot } from '@src/components/browseable-tree/types';
+import type { Browseable, BrowseableRoot, DroppedFileEntry } from '@src/components/browseable-tree/types';
 import type { MultiSelectAction } from '@src/components/navigator-panel/types';
 import type { AssetFilter } from './assetFilter';
 import { DEFAULT_ASSET_FILTER } from './assetFilter';
@@ -103,10 +114,7 @@ export function useAssetsModel() {
   const { projectId: urlProjectId, assetSubPointer } = isProjectView
     ? DockPointer.splitProjectPointer(currentDock?.pointer)
     : { projectId: null, assetSubPointer: currentDock?.pointer ?? '' };
-  const projectSeedScope = useMemo(
-    () => (urlProjectId ? defaultScopeFilter(urlProjectId) : null),
-    [urlProjectId],
-  );
+  const projectSeedScope = useMemo(() => (urlProjectId ? defaultScopeFilter(urlProjectId) : null), [urlProjectId]);
   const effectivePointer = isProjectView ? assetSubPointer : (currentDock?.pointer ?? '');
 
   const urlScope = useMemo<ScopeFilter>(
@@ -114,7 +122,7 @@ export function useAssetsModel() {
     [currentDock, projectSeedScope, currentProjectId],
   );
   const scopeProjectId =
-    urlProjectId ?? (urlScope.mode === 'project' ? urlScope.activeProjectId ?? null : currentProjectId);
+    urlProjectId ?? (urlScope.mode === 'project' ? (urlScope.activeProjectId ?? null) : currentProjectId);
   const scopeProjectName = scopeProjectId === currentProjectId ? currentProjectName : null;
 
   // The scoped project entity, watched so `include_dirs` edits (add/remove
@@ -129,11 +137,22 @@ export function useAssetsModel() {
   });
   const hasScopeProject = !!scopeProject;
   const {
-    contextDirs,
+    contextDirInfos,
     addPaths: handleAddContextPaths,
     pickAndAdd: handleBrowseContextDir,
     remove: removeContextDir,
   } = useProjectContextFolders(scopeProject);
+
+  // The compute node whose VFS backs the "Files" root and the fs-drop copy —
+  // the same resolution the body's fs/ file manager (ContextFolderBrowser) uses,
+  // so tree and table browse one VFS.
+  const { typeId: fsTypeId } = useExplorerComputeNode();
+  // The SCOPED project's mount (not the ambient active project's) — the Files
+  // root anchors at the project the tree is showing.
+  const filesAnchor = useMemo(() => {
+    if (!scopeProject) return '';
+    return normalizeRel(scopeProject.fs_storage_mount_path || scopeProject.name || '');
+  }, [scopeProject]);
 
   const [assetFilter] = useState<AssetFilter>(() => ({ ...DEFAULT_ASSET_FILTER }));
 
@@ -153,13 +172,8 @@ export function useAssetsModel() {
   const { data: openAsset } = useEntity(openAssetTypeId);
   // Single typed view of the resolved entity's optional fs fields (the SDK
   // entity type is generic here); reused for scope-bucketing and tree addressing.
-  const openAssetFields = openAsset as
-    | { asset_ref?: string; scope?: string | null; project_id?: string | null }
-    | null;
-  const openAssetBucket = useMemo<AssetScopeBucket>(
-    () => assetScopeBucket(openAssetFields),
-    [openAsset],
-  );
+  const openAssetFields = openAsset as { asset_ref?: string; scope?: string | null; project_id?: string | null } | null;
+  const openAssetBucket = useMemo<AssetScopeBucket>(() => assetScopeBucket(openAssetFields), [openAsset]);
   const [suppressedAssetId, setSuppressedAssetId] = useState<string | null>(null);
 
   const effectiveFilter = useMemo<AssetFilter>(() => {
@@ -169,10 +183,7 @@ export function useAssetsModel() {
   }, [assetFilter, urlScope, openAssetBucket, openAssetId, suppressedAssetId]);
 
   const { stats: assetStats, isLoading: statsLoading } = useAssetStats(effectiveFilter.scope);
-  const typeCounts = useMemo(
-    () => new Map(Object.entries(assetStats.per_type)),
-    [assetStats.per_type],
-  );
+  const typeCounts = useMemo(() => new Map(Object.entries(assetStats.per_type)), [assetStats.per_type]);
 
   // Dev mode sees every registered type regardless of count; everyone else only
   // sees types that actually have items in the current scope.
@@ -222,9 +233,10 @@ export function useAssetsModel() {
 
   const openScoped = useCallback(
     (scope: ScopeFilter) => {
-      const base = effectivePointer === AssetMode.PROJECT_HOME && scope.mode !== 'project'
-        ? DockPointer.forAssetList('all')
-        : (currentDock ?? DockPointer.forAssetList('all'));
+      const base =
+        effectivePointer === (AssetMode.PROJECT_HOME as string) && scope.mode !== 'project'
+          ? DockPointer.forAssetList('all')
+          : (currentDock ?? DockPointer.forAssetList('all'));
       navigation.openDock(base.withScopeFilter(scope));
     },
     [currentDock, effectivePointer, navigation],
@@ -243,9 +255,7 @@ export function useAssetsModel() {
       // Menu builders usually emit scope-less ASSETS pointers; stamp the active
       // URL scope so in-assets navigation keeps the same scope-keyed tab. A row
       // may intentionally carry its own scope (Project home), which wins.
-      navigation.openDock(
-        p.viewType === ViewType.ASSETS ? p.withScopeFilter(p.scopeFilter ?? urlScope) : p,
-      );
+      navigation.openDock(p.viewType === ViewType.ASSETS ? p.withScopeFilter(p.scopeFilter ?? urlScope) : p);
     },
     [navigation, urlScope],
   );
@@ -271,6 +281,110 @@ export function useAssetsModel() {
     [removeContextDir, effectivePointer, navigateAsset],
   );
 
+  // "Add Git folder" source, two steps: the tile opens a small form (existing
+  // repo URL vs. new repo name — AddGitFolderDialog); only its submit launches
+  // the git-context-folder wizard agent, seeded with that input, which does
+  // the clone/init + remote work in the Flowpad workspace as its own project
+  // and calls add-context-dir itself — the watched project entity then
+  // re-renders the rows. `done`/`cancel` need no follow-up; a wizard-level
+  // error surfaces here.
+  const [addGitFolderScope, setAddGitFolderScope] = useState<ContextFolderScope | null>(null);
+
+  const handleAddGitContextFolder = useCallback(
+    (scope: ContextFolderScope) => {
+      if (!scopeProjectId) return;
+      setAddGitFolderScope(scope);
+    },
+    [scopeProjectId],
+  );
+
+  const handleAddGitFolderSubmit = useCallback(
+    async (input: GitFolderInput) => {
+      if (!scopeProjectId) return;
+      const scope = addGitFolderScope ?? 'private';
+      setAddGitFolderScope(null);
+      try {
+        const result = await launchWizard<{ path?: string; newProjectId?: string }>('git-context-folder', {
+          title: 'Add Git folder',
+          targetTypeId: scopeProjectTypeId?.toString(),
+          payload: { projectId: scopeProjectId, scope, ...input },
+          prompt:
+            input.mode === 'existing'
+              ? `Set up the existing git repository ${input.url} as a context folder on this project.`
+              : `Create a new git repository named "${input.name}" and set it up as a context folder on this project.`,
+        });
+        if (result.status === 'error') {
+          notify.error({ title: 'Failed to add Git folder', message: result.errorStr ?? undefined });
+        }
+      } catch (err) {
+        notify.error({
+          title: 'Failed to add Git folder',
+          message: err instanceof Error ? err.message : undefined,
+        });
+      }
+    },
+    [addGitFolderScope, scopeProjectId, scopeProjectTypeId],
+  );
+
+  // Drop from the "Files" tree onto a context folder row → copy the file (or
+  // folder) into that context folder. Copy, not move — pulling something into
+  // the context shouldn't relocate it in the project.
+  const handleDropIntoContextDir = useCallback(
+    async (item: FsDragItem, dir: string) => {
+      if (!fsTypeId) return;
+      const name = fsBasename(item.relPath) || item.label;
+      const destAbs = `/${joinRelPath(normalizeRel(dir), name)}`;
+      const sourceAbs = `/${normalizeRel(item.relPath)}`;
+      try {
+        if (await fsManager.exists(fsTypeId, destAbs)) {
+          notify.error({ title: 'Destination already has an item with that name' });
+          return;
+        }
+        await fsManager.copy(fsTypeId, sourceAbs, destAbs);
+        fsStore.getState().invalidate(fsTypeId, `/${normalizeRel(dir)}`, 'browse');
+        notify.success({ title: `Copied "${name}" to ${fsBasename(dir) || dir}` });
+      } catch (err) {
+        console.error('[AssetsNavigator] Failed to copy into context folder:', err);
+        notify.error({ title: 'Failed to copy into context folder' });
+      }
+    },
+    [fsTypeId],
+  );
+
+  // OS files/folders dropped onto a context folder row → upload into that
+  // folder, preserving the dropped structure (each entry's relPath includes
+  // any nested directories; the fs upload creates intermediate dirs).
+  const handleExternalDropIntoContextDir = useCallback(
+    async (entries: DroppedFileEntry[], dir: string) => {
+      if (!fsTypeId) return;
+      const base = normalizeRel(dir);
+      try {
+        // Group by destination subdir so each fs upload lands a whole batch.
+        const byDest = new Map<string, File[]>();
+        for (const { file, relPath } of entries) {
+          const idx = relPath.lastIndexOf('/');
+          const subdir = idx >= 0 ? relPath.slice(0, idx) : '';
+          const dest = `/${subdir ? joinRelPath(base, subdir) : base}`;
+          byDest.set(dest, [...(byDest.get(dest) ?? []), file]);
+        }
+        for (const [dest, files] of byDest) {
+          await fsStore.getState().uploadFiles(fsTypeId, dest, files);
+        }
+        fsStore.getState().invalidate(fsTypeId, `/${base}`, 'browse');
+        notify.success({
+          title:
+            entries.length > 1
+              ? `Added ${entries.length} files to ${fsBasename(dir) || dir}`
+              : `Added "${entries[0]?.relPath}" to ${fsBasename(dir) || dir}`,
+        });
+      } catch (err) {
+        console.error('[AssetsNavigator] Failed to add dropped files to context folder:', err);
+        notify.error({ title: 'Failed to add files to context folder' });
+      }
+    },
+    [fsTypeId],
+  );
+
   // Multi-select toolbar resolver. Content adapts to the current selection: every
   // row that carries a `bulkDelete` (its adapter owns the actual delete) can be
   // deleted, while "Copy links" applies to entity rows only — so selecting a
@@ -288,7 +402,7 @@ export function useAssetsModel() {
           const deletable = items.filter((n) => n.bulkDelete);
           if (deletable.length === 0) return;
           showDeleteAssetModal({
-            name: deletable.length > 1 ? `${deletable.length} items` : deletable[0]?.label ?? 'item',
+            name: deletable.length > 1 ? `${deletable.length} items` : (deletable[0]?.label ?? 'item'),
             description:
               deletable.length > 1
                 ? `This permanently deletes ${deletable.length} selected items. This cannot be undone.`
@@ -517,7 +631,7 @@ export function useAssetsModel() {
         ]),
       );
     }
-    list.push(...displayTypes.map((t) => {
+    const typeRoots = displayTypes.map((t) => {
       if (t.type_name === 'markdown') {
         return markdownFolderRoot(t, {
           indexType,
@@ -525,8 +639,7 @@ export function useAssetsModel() {
           onCreateFolder: handleCreateFolder,
           onMoveItem: handleMoveMarkdownItem,
           filter: effectiveFilter,
-          onOpenKnowledgeBrowser: (absPath) =>
-            navigation.openDock(DockPointer.forKnowledgeBrowser(absPath, 'vfs')),
+          onOpenKnowledgeBrowser: (absPath) => navigation.openDock(DockPointer.forKnowledgeBrowser(absPath, 'vfs')),
         });
       }
       return assetTypeRoot(t, {
@@ -535,15 +648,40 @@ export function useAssetsModel() {
         creatableTypes,
         filter: effectiveFilter,
       });
-    }));
+    });
+    // Files — the scoped project's real on-disk tree, right below the Task
+    // section. Rows address the Assets body's fs/ file manager (the same body
+    // the context-folder rows use), and are draggable onto context folder rows.
+    if (hasScopeProject && fsTypeId && filesAnchor) {
+      const filesRoot = fsFolderRoot({
+        typeId: fsTypeId,
+        anchorRelPath: filesAnchor,
+        scope: effectiveFilter.scope,
+        label: 'Files',
+        rootIcon: <FolderOpen className="h-4 w-4 flex-shrink-0 text-muted-foreground" />,
+        pointerForRel: (rel) => DockPointer.forAssetFsFolder(rel),
+        ownsPointer: (p) => {
+          if (p.viewType !== ViewType.ASSETS) return false;
+          const rel = normalizeRel(DockPointer.parseAssetFsPointer(p.pointer) ?? '');
+          return !!rel && (rel === filesAnchor || rel.startsWith(`${filesAnchor}/`));
+        },
+        relForPointer: (p) => DockPointer.parseAssetFsPointer(p.pointer),
+        draggable: true,
+      });
+      const taskIdx = displayTypes.findIndex((t) => t.type_name === (RecordType.TASK as string));
+      typeRoots.splice(taskIdx >= 0 ? taskIdx + 1 : typeRoots.length, 0, filesRoot);
+    }
+    list.push(...typeRoots);
     // Context folders (project include_dirs) — shown whenever a project is in
     // scope (even with no dirs yet, so the "+" add action is reachable).
     if (hasScopeProject) {
       list.push(
         assetContextFoldersRoot({
-          dirs: contextDirs,
+          dirs: contextDirInfos,
           onAdd: () => setAddContextFolderDialogOpen(true),
           onRemove: handleRemoveContextDir,
+          onDropItem: handleDropIntoContextDir,
+          onExternalDrop: handleExternalDropIntoContextDir,
         }),
       );
     }
@@ -560,8 +698,12 @@ export function useAssetsModel() {
     isProjectView,
     scopeProjectId,
     hasScopeProject,
-    contextDirs,
+    fsTypeId,
+    filesAnchor,
+    contextDirInfos,
     handleRemoveContextDir,
+    handleDropIntoContextDir,
+    handleExternalDropIntoContextDir,
   ]);
 
   return {
@@ -592,5 +734,9 @@ export function useAssetsModel() {
     setAddContextFolderDialogOpen,
     handleAddContextPaths,
     handleBrowseContextDir,
+    handleAddGitContextFolder,
+    addGitFolderDialogOpen: addGitFolderScope !== null,
+    closeAddGitFolderDialog: () => setAddGitFolderScope(null),
+    handleAddGitFolderSubmit,
   } as const;
 }

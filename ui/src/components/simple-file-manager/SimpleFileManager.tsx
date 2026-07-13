@@ -5,7 +5,13 @@ import { Input } from '@src/components/ui/input';
 import { ScrollArea } from '@src/components/ui/scroll-area';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from '@src/components/ui/context-menu';
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from '@src/components/ui/context-menu';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@src/components/ui/table';
 import { useFS } from '@src/hooks/useFS';
 import {
@@ -251,6 +257,7 @@ export function SimpleFileManager({
   compact = false,
   className = '',
   onFsMutated,
+  isPathHighlighted,
 }: SimpleFileManagerProps) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
@@ -672,7 +679,9 @@ export function SimpleFileManager({
                 <ArrowUp className="h-4 w-4" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent><Trans>Go up</Trans></TooltipContent>
+            <TooltipContent>
+              <Trans>Go up</Trans>
+            </TooltipContent>
           </Tooltip>
 
           <Tooltip>
@@ -688,7 +697,9 @@ export function SimpleFileManager({
                 <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
               </Button>
             </TooltipTrigger>
-            <TooltipContent><Trans>Refresh</Trans></TooltipContent>
+            <TooltipContent>
+              <Trans>Refresh</Trans>
+            </TooltipContent>
           </Tooltip>
 
           {!compact && (
@@ -707,7 +718,9 @@ export function SimpleFileManager({
                     <FolderPlus className="h-4 w-4" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent><Trans>New folder</Trans></TooltipContent>
+                <TooltipContent>
+                  <Trans>New folder</Trans>
+                </TooltipContent>
               </Tooltip>
 
               <Tooltip>
@@ -722,7 +735,9 @@ export function SimpleFileManager({
                     <FilePlus className="h-4 w-4" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent><Trans>New file</Trans></TooltipContent>
+                <TooltipContent>
+                  <Trans>New file</Trans>
+                </TooltipContent>
               </Tooltip>
 
               <Tooltip>
@@ -737,7 +752,9 @@ export function SimpleFileManager({
                     <Upload className="h-4 w-4" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent><Trans>Upload files</Trans></TooltipContent>
+                <TooltipContent>
+                  <Trans>Upload files</Trans>
+                </TooltipContent>
               </Tooltip>
 
               <div className="mx-1 h-4 w-px bg-border" />
@@ -755,7 +772,9 @@ export function SimpleFileManager({
                     <Copy className="h-4 w-4" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent><Trans>Copy</Trans></TooltipContent>
+                <TooltipContent>
+                  <Trans>Copy</Trans>
+                </TooltipContent>
               </Tooltip>
 
               <Tooltip>
@@ -771,7 +790,9 @@ export function SimpleFileManager({
                     <Scissors className="h-4 w-4" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent><Trans>Cut</Trans></TooltipContent>
+                <TooltipContent>
+                  <Trans>Cut</Trans>
+                </TooltipContent>
               </Tooltip>
 
               <Tooltip>
@@ -787,7 +808,9 @@ export function SimpleFileManager({
                     <ClipboardPaste className="h-4 w-4" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent><Trans>Paste</Trans></TooltipContent>
+                <TooltipContent>
+                  <Trans>Paste</Trans>
+                </TooltipContent>
               </Tooltip>
 
               <div className="mx-1 h-4 w-px bg-border" />
@@ -805,7 +828,9 @@ export function SimpleFileManager({
                     <Edit2 className="h-4 w-4" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent><Trans>Rename</Trans></TooltipContent>
+                <TooltipContent>
+                  <Trans>Rename</Trans>
+                </TooltipContent>
               </Tooltip>
 
               <Tooltip>
@@ -821,7 +846,9 @@ export function SimpleFileManager({
                     <Download className="h-4 w-4" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent><Trans>Download</Trans></TooltipContent>
+                <TooltipContent>
+                  <Trans>Download</Trans>
+                </TooltipContent>
               </Tooltip>
 
               <Tooltip>
@@ -837,7 +864,9 @@ export function SimpleFileManager({
                     <Trash2 className="h-4 w-4" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent><Trans>Delete</Trans></TooltipContent>
+                <TooltipContent>
+                  <Trans>Delete</Trans>
+                </TooltipContent>
               </Tooltip>
             </>
           )}
@@ -891,7 +920,9 @@ export function SimpleFileManager({
                   <TableHead className="w-[25%] cursor-pointer" onClick={() => handleSort('modifiedAt')}>
                     <Trans>Modified</Trans> {sortField === 'modifiedAt' && (sortDirection === 'asc' ? '↑' : '↓')}
                   </TableHead>
-                  <TableHead className="w-[15%]"><Trans>Actions</Trans></TableHead>
+                  <TableHead className="w-[15%]">
+                    <Trans>Actions</Trans>
+                  </TableHead>
                 </TableRow>
               </TableHeader>
             )}
@@ -909,73 +940,90 @@ export function SimpleFileManager({
                   </TableCell>
                 </TableRow>
               ) : (
-                sortedFiles.map((item) => (
-                  <ContextMenu key={item.id}>
-                    <ContextMenuTrigger asChild>
-                      <TableRow
-                        className={`cursor-pointer ${selectedItems.has(item.id) ? 'bg-primary/10' : ''}`}
-                        onClick={(e) => handleItemClick(item, e)}
-                        onDoubleClick={() => handleItemDoubleClick(item)}
-                      >
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            {getFileIcon(item)}
-                            <span className="truncate">{item.name}</span>
-                          </div>
-                        </TableCell>
-                        {!compact && (
+                sortedFiles.map((item) => {
+                  const highlighted = !!isPathHighlighted?.(item.path, item.type === 'folder');
+                  return (
+                    <ContextMenu key={item.id}>
+                      <ContextMenuTrigger asChild>
+                        <TableRow
+                          className={`cursor-pointer ${selectedItems.has(item.id) ? 'bg-primary/10' : ''}`}
+                          onClick={(e) => handleItemClick(item, e)}
+                          onDoubleClick={() => handleItemDoubleClick(item)}
+                        >
+                          <TableCell>
+                            <div
+                              className={`flex items-center gap-2 ${highlighted ? 'text-amber-600 dark:text-amber-400' : ''}`}
+                            >
+                              {getFileIcon(item)}
+                              <span className="truncate">{item.name}</span>
+                            </div>
+                          </TableCell>
+                          {!compact && (
+                            <>
+                              <TableCell className="text-muted-foreground">{formatFileSize(item.size)}</TableCell>
+                              <TableCell className="text-muted-foreground">{formatDate(item.modifiedAt)}</TableCell>
+                              <TableCell>
+                                {item.type === 'file' && isEditableFile(item.name) && (
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-7 w-7"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleOpenInEditor(item);
+                                        }}
+                                      >
+                                        <ExternalLink className="h-4 w-4" />
+                                      </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                      <Trans>Open in Editor</Trans>
+                                    </TooltipContent>
+                                  </Tooltip>
+                                )}
+                              </TableCell>
+                            </>
+                          )}
+                        </TableRow>
+                      </ContextMenuTrigger>
+                      <ContextMenuContent>
+                        {item.type === 'folder' && (
                           <>
-                            <TableCell className="text-muted-foreground">{formatFileSize(item.size)}</TableCell>
-                            <TableCell className="text-muted-foreground">{formatDate(item.modifiedAt)}</TableCell>
-                            <TableCell>
-                              {item.type === 'file' && isEditableFile(item.name) && (
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <Button
-                                      variant="ghost"
-                                      size="icon"
-                                      className="h-7 w-7"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleOpenInEditor(item);
-                                      }}
-                                    >
-                                      <ExternalLink className="h-4 w-4" />
-                                    </Button>
-                                  </TooltipTrigger>
-                                  <TooltipContent><Trans>Open in Editor</Trans></TooltipContent>
-                                </Tooltip>
-                              )}
-                            </TableCell>
+                            <ContextMenuItem onClick={() => handleItemDoubleClick(item)}>
+                              <Trans>Open</Trans>
+                            </ContextMenuItem>
+                            <ContextMenuSeparator />
                           </>
                         )}
-                      </TableRow>
-                    </ContextMenuTrigger>
-                    <ContextMenuContent>
-                      {item.type === 'folder' && (
-                        <>
-                          <ContextMenuItem onClick={() => handleItemDoubleClick(item)}><Trans>Open</Trans></ContextMenuItem>
-                          <ContextMenuSeparator />
-                        </>
-                      )}
-                      <ContextMenuItem onClick={() => startRename(item)}><Trans>Rename</Trans></ContextMenuItem>
-                      <ContextMenuItem onClick={handleCopy}><Trans>Copy</Trans></ContextMenuItem>
-                      <ContextMenuItem onClick={handleCut}><Trans>Cut</Trans></ContextMenuItem>
-                      {item.type === 'file' && (
-                        <>
-                          <ContextMenuItem onClick={() => void handleDownload()}><Trans>Download</Trans></ContextMenuItem>
-                          <ContextMenuItem onClick={() => setSharePath(item.path)}>
-                            <Trans>Share to conversation</Trans>
-                          </ContextMenuItem>
-                        </>
-                      )}
-                      <ContextMenuSeparator />
-                      <ContextMenuItem className="text-destructive" onClick={() => setShowDeleteDialog(true)}>
-                        <Trans>Delete</Trans>
-                      </ContextMenuItem>
-                    </ContextMenuContent>
-                  </ContextMenu>
-                ))
+                        <ContextMenuItem onClick={() => startRename(item)}>
+                          <Trans>Rename</Trans>
+                        </ContextMenuItem>
+                        <ContextMenuItem onClick={handleCopy}>
+                          <Trans>Copy</Trans>
+                        </ContextMenuItem>
+                        <ContextMenuItem onClick={handleCut}>
+                          <Trans>Cut</Trans>
+                        </ContextMenuItem>
+                        {item.type === 'file' && (
+                          <>
+                            <ContextMenuItem onClick={() => void handleDownload()}>
+                              <Trans>Download</Trans>
+                            </ContextMenuItem>
+                            <ContextMenuItem onClick={() => setSharePath(item.path)}>
+                              <Trans>Share to conversation</Trans>
+                            </ContextMenuItem>
+                          </>
+                        )}
+                        <ContextMenuSeparator />
+                        <ContextMenuItem className="text-destructive" onClick={() => setShowDeleteDialog(true)}>
+                          <Trans>Delete</Trans>
+                        </ContextMenuItem>
+                      </ContextMenuContent>
+                    </ContextMenu>
+                  );
+                })
               )}
             </TableBody>
           </Table>
@@ -994,19 +1042,15 @@ export function SimpleFileManager({
         )}
       </div>
 
-      {shareSource && (
-        <ShareToConversationDialog
-          open
-          onClose={() => setSharePath(null)}
-          source={shareSource}
-        />
-      )}
+      {shareSource && <ShareToConversationDialog open onClose={() => setSharePath(null)} source={shareSource} />}
 
       {/* New Folder Dialog */}
       {showNewFolderDialog && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="w-80 rounded-lg bg-background p-4 shadow-lg">
-            <h3 className="mb-3 text-sm font-medium"><Trans>New Folder</Trans></h3>
+            <h3 className="mb-3 text-sm font-medium">
+              <Trans>New Folder</Trans>
+            </h3>
             <Input
               value={newFolderName}
               onChange={(e) => setNewFolderName(e.target.value)}
@@ -1043,7 +1087,9 @@ export function SimpleFileManager({
       {showNewFileDialog && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="w-80 rounded-lg bg-background p-4 shadow-lg">
-            <h3 className="mb-3 text-sm font-medium"><Trans>New File</Trans></h3>
+            <h3 className="mb-3 text-sm font-medium">
+              <Trans>New File</Trans>
+            </h3>
             <Input
               value={newFileName}
               onChange={(e) => setNewFileName(e.target.value)}
@@ -1080,7 +1126,9 @@ export function SimpleFileManager({
       {showRenameDialog && renameItem && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="w-80 rounded-lg bg-background p-4 shadow-lg">
-            <h3 className="mb-3 text-sm font-medium"><Trans>Rename</Trans></h3>
+            <h3 className="mb-3 text-sm font-medium">
+              <Trans>Rename</Trans>
+            </h3>
             <Input
               value={newItemName}
               onChange={(e) => setNewItemName(e.target.value)}
@@ -1107,8 +1155,12 @@ export function SimpleFileManager({
       {showDeleteDialog && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="w-80 rounded-lg bg-background p-4 shadow-lg">
-            <h3 className="mb-3 text-sm font-medium"><Trans>Delete {selectedCount} item(s)?</Trans></h3>
-            <p className="text-sm text-muted-foreground"><Trans>This action cannot be undone.</Trans></p>
+            <h3 className="mb-3 text-sm font-medium">
+              <Trans>Delete {selectedCount} item(s)?</Trans>
+            </h3>
+            <p className="text-sm text-muted-foreground">
+              <Trans>This action cannot be undone.</Trans>
+            </p>
             <div className="mt-4 flex justify-end gap-2">
               <Button variant="ghost" size="sm" onClick={() => setShowDeleteDialog(false)}>
                 <Trans>Cancel</Trans>

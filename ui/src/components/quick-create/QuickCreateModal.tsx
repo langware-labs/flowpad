@@ -1,30 +1,18 @@
 import { Trans, useLingui } from '@lingui/react/macro';
-import { ContextEntitiesEnum, dataContext, Project } from '@sdk';
+import { ContextEntitiesEnum, dataContext } from '@sdk';
 import { useProject } from '@sdk/react/hooks';
-import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
 import { CodexIcon } from '@src/components/icons/CodexIcon';
 import { CopilotIcon } from '@src/components/icons/CopilotIcon';
-import {
-  NewProjectDialog,
-  NewProjectFromGitDialog,
-  ProjectSelectorModal,
-  useEnsureProject,
-  useSelectExistingProject,
-} from '@src/components/project-selector';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@src/components/ui/dialog';
+import { ProjectSelectorModal } from '@src/components/project-selector';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
+import { BindSecretDialog } from '@src/components/project-home/BindSecretDialog';
 import { useAssetTypes } from '@src/hooks/use-asset-types';
 import { useProjects } from '@src/hooks/use-projects';
 import { notify } from '@src/notifications';
 import { cn } from '@src/lib/utils';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { Folder, FolderOpen, FolderPlus, GitBranch, type LucideIcon } from 'lucide-react';
+import { Folder, FolderOpen, GitBranch, KeyRound, type LucideIcon } from 'lucide-react';
 import { showInputPrompt } from '@src/components/ui/input-prompt-modal';
 import { useFavorites } from '@src/hooks/use-favorites';
 import { useCallback, useMemo, useState, type ComponentType } from 'react';
@@ -37,6 +25,10 @@ interface QuickCreateModalProps {
   /** Open the per-type create dialog (name / folder / scope) for an asset type. */
   onPick: (type: string) => void;
 }
+
+/** Registry types deliberately absent from this launcher (still creatable
+ *  from other surfaces like the Assets page and QuickCreateMenu). */
+const HIDDEN_ASSET_TYPES = new Set(['workflow', 'dynamic_workflow']);
 
 /** Icon components accept a className — both lucide icons and the brand SVGs. */
 type TileIcon = ComponentType<{ className?: string }>;
@@ -69,7 +61,9 @@ function DesktopTile({ Icon, label, iconClassName, disabled, onClick }: DesktopT
       )}
     >
       <Icon className={cn('h-7 w-7', iconClassName)} />
-      <span className="line-clamp-2 w-full break-words px-1 text-center text-[10px] font-medium leading-tight">{label}</span>
+      <span className="line-clamp-2 w-full break-words px-1 text-center text-[10px] font-medium leading-tight">
+        {label}
+      </span>
     </button>
   );
 }
@@ -89,18 +83,9 @@ export function QuickCreateModal({ open, onOpenChange, onPick }: QuickCreateModa
   const { types: serverTypes } = useAssetTypes();
   const { project: currentProject } = useProject();
   const { projects, isLoading: isLoadingProjects } = useProjects();
-  const { computeNode } = useAgentContext();
   const { navigation } = useDockNavigation();
-  const ensureProject = useEnsureProject();
-  const selectExisting = useSelectExistingProject();
   const [projectModalOpen, setProjectModalOpen] = useState(false);
-  const [newLocalProjectOpen, setNewLocalProjectOpen] = useState(false);
-  const [newGitProjectOpen, setNewGitProjectOpen] = useState(false);
-
-  const defaultWorkspacePath = useMemo(
-    () => dataContext.bootstrapInfo?.desktop_info?.paths?.workspace || '',
-    [],
-  );
+  const [bindSecretOpen, setBindSecretOpen] = useState(false);
 
   // Coding-agent sessions launch a live AgenticProcess immediately, then we
   // navigate to its terminal dock pointer (URL-first; the loader owns the view).
@@ -115,74 +100,6 @@ export function QuickCreateModal({ open, onOpenChange, onPick }: QuickCreateModa
       await navigation.openShellProcess(result.processId);
     },
     [navigation, onOpenChange],
-  );
-
-  const handlePickFolder = useCallback(async (): Promise<string | null> => {
-    if (!computeNode) {
-      notify.error({ title: t`No compute node available` });
-      return null;
-    }
-    try {
-      return await computeNode.openPathDialog();
-    } catch (err) {
-      console.error('[QuickCreateModal] Folder picker failed:', err);
-      notify.error({ title: t`Failed to open folder picker` });
-      return null;
-    }
-  }, [computeNode]);
-
-  const handleCreateLocalProject = useCallback(
-    async (rawName: string, rawParent: string) => {
-      const cleanName = rawName.trim();
-      const cleanParent = rawParent.trim().replace(/\\/g, '/').replace(/\/+$/, '');
-      if (!cleanName || !cleanParent) throw new Error('Name and parent folder required');
-      await ensureProject(`${cleanParent}/${cleanName}`);
-    },
-    [ensureProject],
-  );
-
-  // "Open folder" — pick an existing folder, ensure a Project for it, then
-  // launch a default-worker AgenticProcess there and land on its terminal.
-  const handleOpenFolder = useCallback(async () => {
-    onOpenChange(false);
-    const folder = await handlePickFolder();
-    if (!folder) return;
-    try {
-      const project = await ensureProject(folder);
-      const result = await navigation.openNewClaudeProcess({
-        cwd: project.fs_storage_mount_path ?? folder,
-        projectId: project.id,
-      });
-      if (!result) {
-        notify.error({ title: t`Failed to start session` });
-        return;
-      }
-      await navigation.openShellProcess(result.processId);
-    } catch (err) {
-      notify.error({ title: err instanceof Error ? err.message : t`Failed to open folder` });
-    }
-  }, [onOpenChange, handlePickFolder, ensureProject, navigation]);
-
-  const handleCreateGitProject = useCallback(
-    async (
-      url: string,
-      acceptSuggested?: string,
-      branch?: string,
-    ): Promise<{ ok: true } | { ok: false; suggestedName: string; attemptedName: string }> => {
-      if (!computeNode) {
-        throw new Error('No compute node available');
-      }
-      const result = await Project.createFromGitUrl(computeNode.id, url, acceptSuggested, branch);
-      if (result.kind === 'ok') {
-        await selectExisting(result.project);
-        return { ok: true };
-      }
-      if (result.kind === 'collision') {
-        return { ok: false, suggestedName: result.suggestedName, attemptedName: result.attemptedName };
-      }
-      throw new Error(result.message);
-    },
-    [computeNode, selectExisting],
   );
 
   const projectItems = useMemo(
@@ -209,18 +126,31 @@ export function QuickCreateModal({ open, onOpenChange, onPick }: QuickCreateModa
   );
 
   // Intersection of the UI registry and the server-reported `creatable` types,
-  // so the server stays authoritative for what's actually supported.
+  // so the server stays authoritative for what's actually supported. Types in
+  // HIDDEN_ASSET_TYPES are omitted from this launcher, and `agent` is surfaced
+  // under its user-facing "Sub agent" name.
   const assetItems = useMemo(() => {
     const serverCreatable = new Set(serverTypes.filter((t) => t.creatable).map((t) => t.type_name));
     const enforce = serverCreatable.size > 0;
-    return QUICK_CREATE_REGISTRY.filter((d) => !enforce || serverCreatable.has(d.type)).map((d) => ({
-      type: d.type,
-      Icon: d.Icon as TileIcon,
-      label: d.label ?? serverTypes.find((t) => t.type_name === d.type)?.label ?? d.type,
-    }));
-  }, [serverTypes]);
+    return QUICK_CREATE_REGISTRY.filter((d) => !HIDDEN_ASSET_TYPES.has(d.type))
+      .filter((d) => !enforce || serverCreatable.has(d.type))
+      .map((d) => ({
+        type: d.type,
+        Icon: d.Icon as TileIcon,
+        label:
+          d.type === 'agent'
+            ? t`Sub agent`
+            : (d.label ?? serverTypes.find((t) => t.type_name === d.type)?.label ?? d.type),
+      }));
+  }, [serverTypes, t]);
 
-  const sessionTiles: Array<{ key: string; Icon: TileIcon; label: string; iconClassName: string; onClick: () => void }> = [
+  const sessionTiles: Array<{
+    key: string;
+    Icon: TileIcon;
+    label: string;
+    iconClassName: string;
+    onClick: () => void;
+  }> = [
     {
       key: 'claude_code',
       Icon: ClaudeIcon,
@@ -244,29 +174,35 @@ export function QuickCreateModal({ open, onOpenChange, onPick }: QuickCreateModa
     },
   ];
 
-  const projectTiles: Array<{ key: string; Icon: LucideIcon; label: string; onClick: () => void }> = [
+  const folderTiles: Array<{ key: string; Icon: LucideIcon; label: string; onClick: () => void }> = [
     {
-      key: 'open-folder',
-      Icon: FolderOpen,
-      label: t`Open folder`,
-      onClick: () => void handleOpenFolder(),
-    },
-    {
-      key: 'new-local',
-      Icon: FolderPlus,
-      label: t`Project`,
-      onClick: () => {
-        onOpenChange(false);
-        setNewLocalProjectOpen(true);
-      },
-    },
-    {
-      key: 'new-git',
+      key: 'add-git-folder',
       Icon: GitBranch,
-      label: t`Git`,
+      label: t`Add Git folder`,
+      // Placeholder — the Git-folder flow is not wired up yet.
+      onClick: () => onOpenChange(false),
+    },
+  ];
+
+  // Project-attachment tiles — secret bindings live on the Project entity, not
+  // as creatable file assets, so they are hardcoded here rather than in
+  // QUICK_CREATE_REGISTRY. This is the entry point for adding them: the
+  // ProjectHome cards only render once non-empty.
+  const projectAttachmentTiles: Array<{
+    key: string;
+    Icon: TileIcon;
+    label: string;
+    disabled?: boolean;
+    onClick: () => void;
+  }> = [
+    {
+      key: 'secret',
+      Icon: KeyRound,
+      label: t`Secret`,
+      disabled: !currentProject,
       onClick: () => {
         onOpenChange(false);
-        setNewGitProjectOpen(true);
+        setBindSecretOpen(true);
       },
     },
   ];
@@ -297,7 +233,9 @@ export function QuickCreateModal({ open, onOpenChange, onPick }: QuickCreateModa
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle><Trans>Create new</Trans></DialogTitle>
+            <DialogTitle>
+              <Trans>Create new</Trans>
+            </DialogTitle>
             <DialogDescription>
               <button
                 type="button"
@@ -319,7 +257,9 @@ export function QuickCreateModal({ open, onOpenChange, onPick }: QuickCreateModa
 
           <div className="flex flex-col gap-4 pt-1">
             <section>
-              <h3 className="mb-2 text-xs font-medium text-muted-foreground"><Trans>New session</Trans></h3>
+              <h3 className="mb-2 text-xs font-medium text-muted-foreground">
+                <Trans>New session</Trans>
+              </h3>
               <div className="flex flex-wrap gap-3">
                 {sessionTiles.map((t) => (
                   <DesktopTile
@@ -333,36 +273,49 @@ export function QuickCreateModal({ open, onOpenChange, onPick }: QuickCreateModa
               </div>
             </section>
 
-            {assetItems.length > 0 && (
-              <section>
-                <h3 className="mb-2 text-xs font-medium text-muted-foreground"><Trans>New asset</Trans></h3>
-                <div className="flex flex-wrap gap-3">
-                  {assetItems.map((item) => (
-                    <DesktopTile
-                      key={item.type}
-                      Icon={item.Icon}
-                      label={item.label}
-                      onClick={() => {
-                        onOpenChange(false);
-                        onPick(item.type);
-                      }}
-                    />
-                  ))}
-                </div>
-              </section>
-            )}
+            <section>
+              <h3 className="mb-2 text-xs font-medium text-muted-foreground">
+                <Trans>New asset</Trans>
+              </h3>
+              <div className="flex flex-wrap gap-3">
+                {assetItems.map((item) => (
+                  <DesktopTile
+                    key={item.type}
+                    Icon={item.Icon}
+                    label={item.label}
+                    onClick={() => {
+                      onOpenChange(false);
+                      onPick(item.type);
+                    }}
+                  />
+                ))}
+                {projectAttachmentTiles.map((tile) => (
+                  <DesktopTile
+                    key={tile.key}
+                    Icon={tile.Icon}
+                    label={tile.label}
+                    disabled={tile.disabled}
+                    onClick={tile.onClick}
+                  />
+                ))}
+              </div>
+            </section>
 
             <section>
-              <h3 className="mb-2 text-xs font-medium text-muted-foreground"><Trans>New project</Trans></h3>
+              <h3 className="mb-2 text-xs font-medium text-muted-foreground">
+                <Trans>New folder</Trans>
+              </h3>
               <div className="flex flex-wrap gap-3">
-                {projectTiles.map((t) => (
+                {folderTiles.map((t) => (
                   <DesktopTile key={t.key} Icon={t.Icon} label={t.label} onClick={t.onClick} />
                 ))}
               </div>
             </section>
 
             <section>
-              <h3 className="mb-2 text-xs font-medium text-muted-foreground"><Trans>Desktop</Trans></h3>
+              <h3 className="mb-2 text-xs font-medium text-muted-foreground">
+                <Trans>Desktop</Trans>
+              </h3>
               <div className="flex flex-wrap gap-3">
                 {desktopTiles.map((t) => (
                   <DesktopTile key={t.key} Icon={t.Icon} label={t.label} onClick={t.onClick} />
@@ -381,18 +334,7 @@ export function QuickCreateModal({ open, onOpenChange, onPick }: QuickCreateModa
         onSelect={(id) => void handleProjectSelect(id)}
         isLoading={isLoadingProjects}
       />
-      <NewProjectDialog
-        open={newLocalProjectOpen}
-        onOpenChange={setNewLocalProjectOpen}
-        defaultParentFolder={defaultWorkspacePath}
-        onPickFolder={handlePickFolder}
-        onCreate={handleCreateLocalProject}
-      />
-      <NewProjectFromGitDialog
-        open={newGitProjectOpen}
-        onOpenChange={setNewGitProjectOpen}
-        onCreate={handleCreateGitProject}
-      />
+      <BindSecretDialog project={currentProject ?? null} open={bindSecretOpen} onOpenChange={setBindSecretOpen} />
     </>
   );
 }

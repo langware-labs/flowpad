@@ -45,6 +45,10 @@ export interface SimpleFileManagerProps {
    *  the affected parent folder's path, so the host can refresh its own tree
    *  (e.g. the Explorer navigator's `refreshNode`). */
   onFsMutated?: (parentRelPath: string) => void;
+  /** Row-highlight predicate (absolute node path + is-dir). Rows matching it
+   *  render in the highlight color — used by the git-backed context-folder
+   *  browser to mark files not yet pushed to the remote. */
+  isPathHighlighted?: (path: string, isDir: boolean) => boolean;
 }
 
 export type SortField = 'name' | 'size' | 'modifiedAt' | 'type';

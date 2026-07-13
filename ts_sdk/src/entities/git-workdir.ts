@@ -127,6 +127,11 @@ export class GitWorkdir {
     return this._call<GitStatus>('status');
   }
 
+  /** Repo-relative paths touched by commits ahead of @{u} (empty when no upstream). */
+  async unpushedFiles(): Promise<string[]> {
+    return (await this._call<{ files: string[] }>('unpushed-files')).files ?? [];
+  }
+
   /** Current branch name, or null if detached / not a git repo. */
   async getBranch(): Promise<string | null> {
     return (await this._call<{ branch: string | null }>('branch')).branch;

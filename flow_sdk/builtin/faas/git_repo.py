@@ -3,6 +3,7 @@
 Used by ComputeNode action handlers (git-ops catch-all).  Not a DB entity;
 instantiated per-request.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -18,6 +19,7 @@ from pydantic.alias_generators import to_camel
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.faas.compute_node import ComputeNode
+    from flow_sdk.responses.response import ApiResponse
 
 logger = logging.getLogger(__name__)
 
@@ -27,8 +29,10 @@ logger = logging.getLogger(__name__)
 # as process.py / project.py).
 # ---------------------------------------------------------------------------
 
+
 class _CamelModel(BaseModel):
     """Base for git response models — serializes to camelCase via alias_generator."""
+
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
 
@@ -93,6 +97,12 @@ class GitRevisionList(_CamelModel):
     unpushed: int = 0  # commits to this file ahead of @{u} (0 when no upstream)
 
 
+class GitUnpushedFiles(_CamelModel):
+    # Repo-relative paths changed in commits ahead of @{u} (empty when no
+    # upstream or no commits).
+    files: list[str] = []
+
+
 class GitRestoreResult(_CamelModel):
     ok: bool
     message: str
@@ -100,8 +110,14 @@ class GitRestoreResult(_CamelModel):
 
 # Typed publish outcome — mirrored by ``PushKind`` in ts_sdk git-workdir.ts.
 PushKind = Literal[
-    "pushed", "nothing", "conflict", "permission",
-    "no_remote", "network", "no_repo", "generic",
+    "pushed",
+    "nothing",
+    "conflict",
+    "permission",
+    "no_remote",
+    "network",
+    "no_repo",
+    "generic",
 ]
 
 
@@ -127,6 +143,7 @@ GIT_INIT_CONFIG: tuple[tuple[str, str], ...] = (
 # ---------------------------------------------------------------------------
 # GitRepo
 # ---------------------------------------------------------------------------
+
 
 class GitRepo:
     """Run git operations for a specific working directory via a ComputeNode."""
@@ -231,12 +248,12 @@ class GitRepo:
             for part in m.group(1).split(","):
                 part = part.strip()
                 if part.startswith("ahead "):
-                    ahead = int(part[len("ahead "):] or 0)
+                    ahead = int(part[len("ahead ") :] or 0)
                 elif part.startswith("behind "):
-                    behind = int(part[len("behind "):] or 0)
+                    behind = int(part[len("behind ") :] or 0)
             body = body[: m.start()].strip()
         if body.startswith("No commits yet on "):
-            return (body[len("No commits yet on "):].strip() or None, ahead, behind)
+            return (body[len("No commits yet on ") :].strip() or None, ahead, behind)
         if body.startswith("HEAD "):  # "HEAD (no branch)" — detached
             return (None, ahead, behind)
         return (body.split("...", 1)[0].strip() or None, ahead, behind)
@@ -259,9 +276,7 @@ class GitRepo:
         # ``## <branch>...<upstream> [ahead N, behind M]`` header line; the
         # remaining lines are the same porcelain v1 file entries parsed below.
         # rc != 0 ⇒ not a git repository (replaces the separate is_init probe).
-        status_out, status_rc = await self._run_git(
-            "status", "--porcelain=v1", "--branch", "--untracked-files=all"
-        )
+        status_out, status_rc = await self._run_git("status", "--porcelain=v1", "--branch", "--untracked-files=all")
         if status_rc != 0:
             return GitStatus(error="not a git repository")
 
@@ -300,8 +315,8 @@ class GitRepo:
                 continue
             if len(line) < 4:
                 continue
-            x = line[0]   # staged status char
-            y = line[1]   # unstaged status char
+            x = line[0]  # staged status char
+            y = line[1]  # unstaged status char
             path_part = line[3:]
 
             # Handle renames: "old -> new"
@@ -326,13 +341,15 @@ class GitRepo:
                 status = (x if x != " " else y) or "?"
                 ins, dels = None, None
 
-            files.append(GitStatusFile(
-                status=status,
-                path=display_path,
-                staged=x not in (" ", "?"),
-                insertions=ins,
-                deletions=dels,
-            ))
+            files.append(
+                GitStatusFile(
+                    status=status,
+                    path=display_path,
+                    staged=x not in (" ", "?"),
+                    insertions=ins,
+                    deletions=dels,
+                )
+            )
 
         return GitStatus(
             error=None,
@@ -417,7 +434,7 @@ class GitRepo:
         if path == prefix.rstrip("/"):
             return ""
         if path.startswith(prefix):
-            return path[len(prefix):]
+            return path[len(prefix) :]
         return None
 
     @classmethod
@@ -452,15 +469,9 @@ class GitRepo:
         pathspec, _ = self._scope_pathspec(file_path)
         status = await self.get_status()
         prefix = await self._workdir_prefix()
-        files = [
-            rel for f in status.files
-            if (rel := self._status_file_relative_to_workdir(f, prefix)) is not None
-        ]
+        files = [rel for f in status.files if (rel := self._status_file_relative_to_workdir(f, prefix)) is not None]
         if pathspec != "'.'":
-            files = [
-                f for f in files
-                if self._status_lookup_path(f.path).strip("./") == file_path.strip("./")
-            ]
+            files = [f for f in files if self._status_lookup_path(f.path).strip("./") == file_path.strip("./")]
 
         if await self.has_commit():
             diff, _ = await self._run_git("diff", "HEAD", "--", pathspec)
@@ -516,9 +527,7 @@ class GitRepo:
         # there's no upstream — treat that (and any parse miss) as 0, so no extra
         # `rev-parse @{u}` probe is needed.
         unpushed = 0
-        cnt_out, cnt_rc = await self._run_git(
-            "rev-list", "--count", "@{u}..HEAD", "--", pathspec
-        )
+        cnt_out, cnt_rc = await self._run_git("rev-list", "--count", "@{u}..HEAD", "--", pathspec)
         if cnt_rc == 0:
             try:
                 unpushed = int(cnt_out.strip() or "0")
@@ -526,14 +535,24 @@ class GitRepo:
                 unpushed = 0
         return GitRevisionList(revisions=revisions, version=current, unpushed=unpushed)
 
+    async def get_unpushed_files(self) -> GitUnpushedFiles:
+        """Repo-relative paths touched by commits ahead of the upstream.
+
+        `git diff @{u}..HEAD` exits non-zero when there is no upstream or no
+        HEAD — treat that as "nothing unpushed" rather than an error, matching
+        the tolerant `rev-list @{u}..HEAD` probe in `get_file_revisions`.
+        """
+        out, rc = await self._run_git("diff", "--name-only", "@{u}..HEAD")
+        if rc != 0:
+            return GitUnpushedFiles(files=[])
+        return GitUnpushedFiles(files=[line.strip() for line in out.splitlines() if line.strip()])
+
     async def compare_file_revision(self, file_path: str, commit_hash: str) -> GitFileDiff:
         """Unified diff of an asset between a past revision and the working tree —
         a single file, or the whole folder for a folder-backed asset (skill), so
         internal-file changes are shown."""
         pathspec, _ = self._scope_pathspec(file_path)
-        diff, _ = await self._run_git(
-            "diff", shlex.quote(commit_hash), "HEAD", "--", pathspec
-        )
+        diff, _ = await self._run_git("diff", shlex.quote(commit_hash), "HEAD", "--", pathspec)
         return GitFileDiff(diff=diff)
 
     async def get_file_at(self, file_path: str, commit_hash: str) -> GitFileContent:
@@ -563,9 +582,7 @@ class GitRepo:
         content change, so the next save re-versions it as a fresh revision.
         """
         pathspec, _ = self._scope_pathspec(file_path)
-        _, err, rc = await self._run_git_io(
-            "checkout", shlex.quote(commit_hash), "--", pathspec
-        )
+        _, err, rc = await self._run_git_io("checkout", shlex.quote(commit_hash), "--", pathspec)
         if rc != 0:
             return GitRestoreResult(ok=False, message=(err or "Restore failed").strip())
         return GitRestoreResult(ok=True, message=f"Restored to {commit_hash[:8]}")
@@ -592,9 +609,7 @@ class GitRepo:
             _, err, rc = await self._run_git_io("clean", "-f", "--", f"'{file_path}'")
             verb = "Deleted"
         else:
-            _, err, rc = await self._run_git_io(
-                "restore", "--staged", "--worktree", "--", f"'{file_path}'"
-            )
+            _, err, rc = await self._run_git_io("restore", "--staged", "--worktree", "--", f"'{file_path}'")
             verb = "Discarded changes to"
         if rc != 0:
             return GitRestoreResult(ok=False, message=(err or "Discard failed").strip())
@@ -643,29 +658,58 @@ class GitRepo:
         One of: ``permission | no_remote | network | conflict | generic``.
         """
         s = (stderr or "").lower()
-        if any(k in s for k in (
-            "permission denied", "denied", "403", "forbidden", "authentication failed",
-            "access rights", "not authorized", "could not read from remote repository",
-        )):
+        if any(
+            k in s
+            for k in (
+                "permission denied",
+                "denied",
+                "403",
+                "forbidden",
+                "authentication failed",
+                "access rights",
+                "not authorized",
+                "could not read from remote repository",
+            )
+        ):
             return "permission"
-        if any(k in s for k in (
-            "does not appear to be a git repository", "no configured push destination",
-            "no such remote", "'origin' does not", "no upstream",
-        )):
+        if any(
+            k in s
+            for k in (
+                "does not appear to be a git repository",
+                "no configured push destination",
+                "no such remote",
+                "'origin' does not",
+                "no upstream",
+            )
+        ):
             return "no_remote"
-        if any(k in s for k in (
-            "could not resolve host", "connection refused", "connection timed out",
-            "timed out", "network is unreachable", "failed to connect", "ssl",
-        )):
+        if any(
+            k in s
+            for k in (
+                "could not resolve host",
+                "connection refused",
+                "connection timed out",
+                "timed out",
+                "network is unreachable",
+                "failed to connect",
+                "ssl",
+            )
+        ):
             return "network"
         if any(k in s for k in ("non-fast-forward", "rejected", "fetch first", "behind", "unmerged")):
             return "conflict"
         return "generic"
 
     @staticmethod
-    def _push_result(branch: str | None, message: str, *, ok: bool = False,
-                     conflict: bool = False, nothing: bool = False,
-                     kind: PushKind | None = None) -> GitPushResult:
+    def _push_result(
+        branch: str | None,
+        message: str,
+        *,
+        ok: bool = False,
+        conflict: bool = False,
+        nothing: bool = False,
+        kind: PushKind | None = None,
+    ) -> GitPushResult:
         """Build the ``GitPushResult`` the publish UI consumes.
 
         ``kind`` is the typed outcome (``pushed|nothing|conflict|permission|
@@ -682,8 +726,7 @@ class GitRepo:
                 kind = "pushed"
             else:
                 kind = "generic"
-        return GitPushResult(ok=ok, conflict=conflict, nothing=nothing, kind=kind,
-                             branch=branch, message=message)
+        return GitPushResult(ok=ok, conflict=conflict, nothing=nothing, kind=kind, branch=branch, message=message)
 
     async def push(self) -> GitPushResult:
         """Stage everything, auto-commit, sync with remote, and push.
@@ -736,7 +779,7 @@ class GitRepo:
         if has_upstream:
             p_out, p_err, p_rc = await self._run_git_io("pull", "--rebase", "origin", shlex.quote(branch))
             if p_rc != 0:
-                combined = (p_err or p_out or "")
+                combined = p_err or p_out or ""
                 if "couldn't find remote ref" not in combined:
                     unmerged, _ = await self._run_git("ls-files", "--unmerged")
                     if unmerged.strip():
@@ -753,14 +796,19 @@ class GitRepo:
                     )
 
         # 6. Push (set upstream when the branch is new on the remote).
-        push_args = ["push", "origin", shlex.quote(branch)] if has_upstream else ["push", "-u", "origin", shlex.quote(branch)]
+        push_args = (
+            ["push", "origin", shlex.quote(branch)] if has_upstream else ["push", "-u", "origin", shlex.quote(branch)]
+        )
         ps_out, ps_err, ps_rc = await self._run_git_io(*push_args)
         if ps_rc != 0:
             combined = (ps_err or ps_out or "").strip()
             unmerged, _ = await self._run_git("ls-files", "--unmerged")
             kind = "conflict" if unmerged.strip() else self._classify_push_error(combined)
             return self._push_result(
-                branch, combined or "Push failed", conflict=(kind == "conflict"), kind=kind,
+                branch,
+                combined or "Push failed",
+                conflict=(kind == "conflict"),
+                kind=kind,
             )
 
         return self._push_result(branch, "Pushed", ok=True)
@@ -774,6 +822,7 @@ class GitRepo:
 
         Sub-paths:
             status              → get_status()           → GitStatus (camelCase)
+            unpushed-files      → get_unpushed_files()   → {files} (repo-rel, ahead of @{u})
             diff?filepath=...   → get_diff(filepath)     → GitDiffData
             branch              → get_branch()           → {branch}
             is-init             → is_init()              → {isInit}
@@ -786,7 +835,7 @@ class GitRepo:
             stage-file   (POST) → stage_file()           → {ok, message}  (requires ?file=)
             unstage-file (POST) → unstage_file()         → {ok, message}  (requires ?file=)
         """
-        from flow_sdk.responses.response import ApiSuccessResponse, ApiFailResponse  # noqa: PLC0415
+        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
 
         params = query_params or {}
 
@@ -800,14 +849,24 @@ class GitRepo:
             return ApiSuccessResponse(data=(await self.init()).model_dump(by_alias=True))
         if sub == "status":
             return ApiSuccessResponse(data=(await self.get_status()).model_dump(by_alias=True))
+        if sub == "unpushed-files":
+            return ApiSuccessResponse(data=(await self.get_unpushed_files()).model_dump(by_alias=True))
         if sub == "branch":
-            return ApiSuccessResponse(data=GitCurrentBranchData(branch=await self.get_branch()).model_dump(by_alias=True))
+            return ApiSuccessResponse(
+                data=GitCurrentBranchData(branch=await self.get_branch()).model_dump(by_alias=True)
+            )
         if sub == "is-init":
             return ApiSuccessResponse(data=GitIsInitData(is_init=await self.is_init()).model_dump(by_alias=True))
         if sub == "is-linked-worktree":
-            return ApiSuccessResponse(data=GitIsLinkedWorktreeData(is_linked_worktree=await self.is_linked_worktree()).model_dump(by_alias=True))
+            return ApiSuccessResponse(
+                data=GitIsLinkedWorktreeData(is_linked_worktree=await self.is_linked_worktree()).model_dump(
+                    by_alias=True
+                )
+            )
         if sub == "has-commit":
-            return ApiSuccessResponse(data=GitHasCommitData(has_commit=await self.has_commit()).model_dump(by_alias=True))
+            return ApiSuccessResponse(
+                data=GitHasCommitData(has_commit=await self.has_commit()).model_dump(by_alias=True)
+            )
         if sub == "diff":
             file_path = params.get("file", "")
             status = params.get("status", "M")
@@ -829,7 +888,9 @@ class GitRepo:
             commit_hash = params.get("hash", "")
             if not file_path or not commit_hash:
                 return ApiFailResponse(message="Missing required query parameter: file and hash", status_code=400)
-            return ApiSuccessResponse(data=(await self.compare_file_revision(file_path, commit_hash)).model_dump(by_alias=True))
+            return ApiSuccessResponse(
+                data=(await self.compare_file_revision(file_path, commit_hash)).model_dump(by_alias=True)
+            )
         if sub == "show":
             file_path = params.get("file", "")
             commit_hash = params.get("hash", "")
