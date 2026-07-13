@@ -24,7 +24,7 @@ def _markdown_default_body(entity) -> str:
 
 MARKDOWN = TypeMetadata(
     type=EntityType.MARKDOWN,
-    icon="BookOpen",
+    icon="WikiW",
     displayName="Documents",
     browseable_by=ViewMode.STANDARD,
     creatable=True,
@@ -36,4 +36,6 @@ MARKDOWN = TypeMetadata(
     gen_uuid_fn=markdown_gen_id,
     post_sync_fn=reconcile_folder_doc_edges,
     default_body_fn=_markdown_default_body,
+    # On receive, a note has no setup agent — it just opens (setup_skill=None).
+    reception_verb="Open",
 )
