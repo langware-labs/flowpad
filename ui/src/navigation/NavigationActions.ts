@@ -168,7 +168,10 @@ export class NavigationActions {
     const currentUrl = NavigationActions.getCurrentBrowserUrl();
 
     toplog.log('navigation', 'openDock', {
-      target: pointer === null ? null : `${(pointer as IDockPointer).viewType ?? '?'}:${(pointer as IDockPointer).pointer ?? ''}`,
+      target:
+        pointer === null
+          ? null
+          : `${(pointer as IDockPointer).viewType ?? '?'}:${(pointer as IDockPointer).pointer ?? ''}`,
       currentDock: NavigationActions.dockLabel(this.currentDock),
       currentUrl,
       extraOptions,
@@ -227,9 +230,8 @@ export class NavigationActions {
     }
 
     const layout = preserveWindowLayout(currentPath, dock.layout);
-    const targetDock = layout === dock.layout
-      ? dock
-      : new DockPointer(dock.viewType, dock.pointer, dock.options, layout);
+    const targetDock =
+      layout === dock.layout ? dock : new DockPointer(dock.viewType, dock.pointer, dock.options, layout);
     const fullUrl = targetDock.toUrl(currentPath);
 
     if (currentUrl === fullUrl || pendingDockNavigationUrl === fullUrl) {
@@ -370,6 +372,18 @@ export class NavigationActions {
 
   openAssetList(typeName: string): void {
     this.openDock(DockPointer.forAssetList(typeName));
+  }
+
+  /**
+   * Open the Assets dock at its default surface: the project home when a
+   * project is in context (project-home only renders under a project scope),
+   * else the global "all" list.
+   */
+  openAssets(): void {
+    const projectId = dataContext.project?.id ?? null;
+    this.openDock(
+      projectId ? DockPointer.forAssetProjectHome({ scope: projectScope(projectId) }) : DockPointer.forAssetList('all'),
+    );
   }
 
   openProject(
@@ -518,15 +532,13 @@ export class NavigationActions {
     }
   }
 
-  async openNewShell(
-    options?: {
-      cwd?: string;
-      startCommand?: string;
-      computeNode?: ComputeNode;
-      skipNavigate?: boolean;
-      projectId?: string;
-    },
-  ): Promise<{ shellId: string } | null> {
+  async openNewShell(options?: {
+    cwd?: string;
+    startCommand?: string;
+    computeNode?: ComputeNode;
+    skipNavigate?: boolean;
+    projectId?: string;
+  }): Promise<{ shellId: string } | null> {
     try {
       const cn = options?.computeNode ?? dataContext.computeNode;
       if (!cn) {
@@ -542,7 +554,7 @@ export class NavigationActions {
       const cwd =
         options?.cwd ||
         (options?.computeNode
-          ? options.computeNode.fs_storage_mount_path ?? undefined
+          ? (options.computeNode.fs_storage_mount_path ?? undefined)
           : dataContext.project?.fs_storage_mount_path) ||
         undefined;
       const newShell = Shell.create(cn, { name, workdir: cwd });

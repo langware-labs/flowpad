@@ -14,6 +14,7 @@ Contract under test (no LLM, no server):
   * Worker chain: the computed list flows through ``_project_context_dirs``
     stamping into ``resolved_add_dirs`` and the rendered ``--add-dir`` flags.
 """
+
 import json
 from uuid import uuid4
 
@@ -54,6 +55,7 @@ def stub_git_detect(monkeypatch):
     """Make ``Folder.detect_origin`` classify any path as git-backed, so
     shared-scope adds are exercisable without a real repo. Returns a resolver
     from canonical path → the folder id that will be minted (origin.key())."""
+
     async def _detect(path):
         return _git_origin_for(canonical_posix_path(path))
 
@@ -118,6 +120,36 @@ async def test_git_folder_allowed_in_shared_scope(tmp_path, stub_git_detect):
 
 
 @pytest.mark.asyncio
+async def test_context_dir_infos_carries_origin_kind(tmp_path, stub_git_detect):
+    """context_dir_infos mirrors include_dirs with the stamped origin_kind:
+    'git' for a git-backed add, 'local' otherwise (and as the tolerant default
+    for pre-stamp sidecar entries)."""
+    project = await _make_project(tmp_path)
+    git_ctx = _ctx_dir(tmp_path, "git-repo")
+    resp = await project.add_context_dir(git_ctx, scope="shared")
+    assert resp.status == "SUCCESS"
+
+    assert project.context_dir_infos == [{"path": git_ctx, "origin_kind": "git"}]
+    assert resp.data["context_dir_infos"] == [{"path": git_ctx, "origin_kind": "git"}]
+
+    # A legacy sidecar entry (no origin_kind stamp) defaults to 'local'.
+    tid = project.context_of_type("folder", bucket="shared")[0]
+    project.add_shared_context_entities(tid, data={"path": git_ctx})
+    assert project.context_dir_infos == [{"path": git_ctx, "origin_kind": "local"}]
+
+    # include_dirs and context_dir_infos stay path-aligned.
+    assert [i["path"] for i in project.context_dir_infos] == project.include_dirs
+
+
+@pytest.mark.asyncio
+async def test_context_dir_infos_local_add(tmp_path):
+    project = await _make_project(tmp_path)
+    ctx = _ctx_dir(tmp_path)
+    await project.add_context_dir(ctx)
+    assert project.context_dir_infos == [{"path": ctx, "origin_kind": "local"}]
+
+
+@pytest.mark.asyncio
 async def test_remove_context_dir_unlinks(tmp_path):
     project = await _make_project(tmp_path)
     ctx = _ctx_dir(tmp_path)
@@ -152,10 +184,9 @@ async def test_context_paths_never_on_the_wire(tmp_path, stub_git_detect):
     # Private add: force a LOCAL origin (bypass the stub) so it stays private-only.
     import flow_sdk.builtin.folder as folder_mod
     from flow_sdk.builtin.local_origin import LocalOrigin
+
     orig_detect = folder_mod.Folder.detect_origin
-    folder_mod.Folder.detect_origin = staticmethod(
-        lambda p: _as_coro(LocalOrigin(base=canonical_posix_path(p)))
-    )
+    folder_mod.Folder.detect_origin = staticmethod(lambda p: _as_coro(LocalOrigin(base=canonical_posix_path(p))))
     try:
         await project.add_context_dir(private_dir)  # local → private
     finally:
@@ -166,7 +197,7 @@ async def test_context_paths_never_on_the_wire(tmp_path, stub_git_detect):
     payload = json.dumps(body, default=str)
     assert "include_dirs" not in body
     assert private_dir not in payload  # private local path never on the wire
-    assert shared_dir not in payload   # shared folder's LOCAL sidecar path is local-only
+    assert shared_dir not in payload  # shared folder's LOCAL sidecar path is local-only
     # The shared LINK (folder typeid == origin.key()) travels via shared_context_entities.
     shared_tid = f"folder-{stub_git_detect(shared_dir)}"
     assert shared_tid in payload

@@ -1,11 +1,12 @@
 /**
  * React render of the side-menu entry: clicking the Assets icon opens the assets
- * dock via `navigation.openDock`, delegating the project-scope-keying to
- * NavigationActions.openDock (which seeds the active project's scope for
- * scope-aware views). Renders the REAL CollapsedSidebar in Advanced view (Assets
- * is Advanced/Dev-only); only the navigation hook (capture `openDock`) and the
- * heavy presentational leaves are stubbed. The scope-seeding itself is verified
- * where openDock is real (assets scope-contract / scope-hash unit tests).
+ * dock via `navigation.openAssets`, which resolves the default surface — the
+ * project home (scoped to the active project) when a project is in context,
+ * else the global "all" list. Renders the REAL CollapsedSidebar in Advanced view
+ * (Assets is Advanced/Dev-only); only the navigation hook (capture `openAssets`)
+ * and the heavy presentational leaves are stubbed. The surface/scope resolution
+ * itself lives in NavigationActions.openAssets and is exercised where openDock
+ * is real (assets scope-contract / scope-hash unit tests).
  */
 import { render, fireEvent } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -15,7 +16,7 @@ import { ContextEntitiesEnum, dataContext, dataManager, TypeId } from '@sdk';
 import { SidebarProvider } from '@src/components/ui/sidebar';
 import { setViewMode, ViewMode } from '@src/contexts/view-mode-context';
 
-const nav = vi.hoisted(() => ({ openDock: vi.fn(), openTab: vi.fn() }));
+const nav = vi.hoisted(() => ({ openDock: vi.fn(), openTab: vi.fn(), openAssets: vi.fn() }));
 vi.mock('@src/navigation/useDockNavigation', () => ({
   useDockNavigation: () => ({ navigation: nav, currentDock: null, isDockUrl: false, windowMode: false }),
 }));
@@ -44,7 +45,10 @@ const PROJECT_B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 async function setProject(projectId: string | null): Promise<void> {
   if (projectId) {
     dataManager.updateEntityFromJson({ type: 'project', id: projectId, name: 'Acme' });
-    await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, new TypeId('project', projectId));
+    await dataContext.setContextEntityTypeId(
+      ContextEntitiesEnum.CurrentProjectTypeId,
+      new TypeId('project', projectId),
+    );
   } else {
     await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, null);
   }
@@ -73,28 +77,24 @@ beforeEach(() => {
 afterEach(() => {
   nav.openDock.mockClear();
   nav.openTab.mockClear();
+  nav.openAssets.mockClear();
   setViewMode(ViewMode.Standard);
 });
 
-describe('side-menu Assets delegates scope-keying to openDock', () => {
+describe('side-menu Assets delegates to openAssets', () => {
   it.each([
     { label: 'project A active', projectId: PROJECT_A },
     { label: 'project B active', projectId: PROJECT_B },
     { label: 'no project', projectId: null },
-  ])('$label → opens a scope-less assets dock (openDock seeds the scope)', async ({ projectId }) => {
+  ])('$label → delegates to navigation.openAssets (it resolves surface + scope)', async ({ projectId }) => {
     await setProject(projectId);
     clickAssets();
 
-    expect(nav.openTab).not.toHaveBeenCalled(); // assets routes via openDock
-    expect(nav.openDock).toHaveBeenCalledTimes(1);
-    const dock = nav.openDock.mock.calls[0][0];
-    // The sidebar now always opens the SCOPE-LESS assets dock; the active
-    // project's scope is seeded CENTRALLY by NavigationActions.openDock for
-    // scope-aware views (SCOPE_SEEDED_VIEWS). That seeding is covered by the
-    // assets scope-contract / scope-hash unit tests where openDock is real — here
-    // openDock is mocked, so we assert only that the component delegates a
-    // scope-less pointer regardless of the active project.
-    expect(dock.tabHash).toBe('assets|all');
-    expect(dock.scopeFilter ?? null).toBeNull();
+    expect(nav.openTab).not.toHaveBeenCalled(); // assets routes via openAssets
+    expect(nav.openDock).not.toHaveBeenCalled(); // no direct pointer from the sidebar
+    // The sidebar delegates unconditionally; which surface opens (project-home
+    // scoped to the active project vs the global list) is openAssets's call,
+    // covered by the NavigationActions.openAssets unit test.
+    expect(nav.openAssets).toHaveBeenCalledTimes(1);
   });
 });

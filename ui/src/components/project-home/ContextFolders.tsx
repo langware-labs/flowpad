@@ -17,7 +17,9 @@ interface ContextFoldersProps {
  * folders (`include_dirs`): dirs auto-added to every agentic worker's --add-dir
  * set and browseable in the Explorer as their own root. Owns its own project
  * resolution, handlers, and drag state so ProjectHome stays a thin landing
- * surface. Renders nothing until a project resolves.
+ * surface. Renders nothing until a project resolves AND has at least one
+ * context folder — the first folder is added via the quick-create "Context
+ * folder" tile, so an empty project home stays uncluttered.
  */
 export const ContextFolders: React.FC<ContextFoldersProps> = ({ spawnProjectId }) => {
   const { t } = useLingui();
@@ -30,11 +32,15 @@ export const ContextFolders: React.FC<ContextFoldersProps> = ({ spawnProjectId }
     [spawnProjectId],
   );
   const { data: pinnedProject } = useEntity<Project>(spawnTypeId, { watch: true, enabled: !!spawnTypeId });
-  const project = (pinnedProject ?? dataCtx.project) as Project | null;
+  const project = pinnedProject ?? dataCtx.project;
   const computeNode = dataCtx.computeNode;
 
-  const { contextDirs, addPaths, pickAndAdd: handlePickFolder, remove: handleRemove } =
-    useProjectContextFolders(project);
+  const {
+    contextDirs,
+    addPaths,
+    pickAndAdd: handlePickFolder,
+    remove: handleRemove,
+  } = useProjectContextFolders(project);
   const resolvedProjectIdRef = useRef<string | null>(null);
   const resolvingProjectIdRef = useRef<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
@@ -45,7 +51,8 @@ export const ContextFolders: React.FC<ContextFoldersProps> = ({ spawnProjectId }
       return;
     }
     resolvingProjectIdRef.current = projectId;
-    void project.resolveContextFolders()
+    void project
+      .resolveContextFolders()
       .then(() => {
         resolvedProjectIdRef.current = projectId;
       })
@@ -77,7 +84,7 @@ export const ContextFolders: React.FC<ContextFoldersProps> = ({ spawnProjectId }
     [addPaths, handlePickFolder],
   );
 
-  if (!project) return null;
+  if (!project || contextDirs.length === 0) return null;
 
   return (
     <div className="flex w-full max-w-md flex-col gap-2" data-testid="project-context-folders">
@@ -126,7 +133,9 @@ export const ContextFolders: React.FC<ContextFoldersProps> = ({ spawnProjectId }
         data-testid="context-folder-dropzone"
       >
         <FolderPlus className="h-4 w-4" />
-        <span><Trans>Drop a folder here or click to add</Trans></span>
+        <span>
+          <Trans>Drop a folder here or click to add</Trans>
+        </span>
       </button>
     </div>
   );

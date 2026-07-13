@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef } from 'react';
-import { dataContext, type Project } from '@sdk';
+import { dataContext, type Project, type ProjectContextDirInfo } from '@sdk';
 
 export type ContextFolderScope = 'private' | 'shared';
 
@@ -22,6 +22,12 @@ export function useProjectContextFolders(project: Project | null | undefined) {
   const contextDirs = useMemo<string[]>(
     () => (project?.include_dirs ?? []).filter((d): d is string => !!d),
     [project?.include_dirs],
+  );
+
+  /** Same dirs with their origin kind ("git" for cloned repos, else "local"). */
+  const contextDirInfos = useMemo<ProjectContextDirInfo[]>(
+    () => (project?.context_dir_infos ?? []).filter((i): i is ProjectContextDirInfo => !!i?.path),
+    [project?.context_dir_infos],
   );
 
   /** Add each given absolute folder path (idempotent server-side). The scope
@@ -50,5 +56,5 @@ export function useProjectContextFolders(project: Project | null | undefined) {
     await p.removeContextDir(dir);
   }, []);
 
-  return { contextDirs, addPaths, pickAndAdd, remove } as const;
+  return { contextDirs, contextDirInfos, addPaths, pickAndAdd, remove } as const;
 }
