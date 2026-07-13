@@ -2871,6 +2871,10 @@ msgstr "יצירה כ-Markdown"
 msgid "Create as Whiteboard"
 msgstr "יצירה כ-Whiteboard"
 
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Create bookmark on the recipient's desktop"
+msgstr ""
+
 #: src/components/code-editor/CodeEditor.tsx
 msgid "Create File"
 msgstr "צור קובץ"
@@ -8148,6 +8152,7 @@ msgid "Open {0} on…"
 msgstr "פתח {0} ב…"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/asset-manager/AssetPickerPopover.tsx
 msgid "Open {label}"
 msgstr "פתח {label}"
 
@@ -11975,6 +11980,16 @@ msgstr "חשיבה:"
 msgid "This action cannot be undone."
 msgstr "לא ניתן לבטל פעולה זו."
 
+#. placeholder {0}: gitGate.dirtyFiles
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "This app has {0} uncommitted change(s). Commit and push before sharing — the recipient clones from git, so unsaved work won't travel."
+msgstr ""
+
+#. placeholder {0}: gitGate.unpushed
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "This app has {0} unpushed commit(s). Push before sharing — the recipient clones from the remote. Use the git push button in the status bar."
+msgstr ""
+
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "This asset has no file path."
 msgstr ""
@@ -12733,6 +12748,7 @@ msgid "View"
 msgstr "הצג"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/asset-manager/AssetPickerPopover.tsx
 msgid "View {label} (read-only)"
 msgstr "הצג {label} (קריאה בלבד)"
 
