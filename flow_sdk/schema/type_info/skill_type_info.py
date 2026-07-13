@@ -38,4 +38,10 @@ SKILL = TypeMetadata(
     gen_uuid_fn=skill_gen_id,
     asset_hash_fn=skill_asset_hash,
     default_body_fn=_skill_default_body,
+    # On receive, a skill is set up by running ITSELF in a Vibe session — the
+    # SELF sentinel (setup_skill == type) tells ``Entity.setup_on_receive`` to
+    # seed "Use the <this skill's name> skill …". Replaces the FE
+    # useRunReceivedSkill/TESTABLE_TYPES special-case.
+    setup_skill=EntityType.SKILL.value,
+    reception_verb="Run",
 )

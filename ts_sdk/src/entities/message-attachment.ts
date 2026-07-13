@@ -1,4 +1,4 @@
-import { APIEntity, dataManager, registerEntity } from '../APIEntity';
+import { APIEntity, dataManager, registerEntity, type ReceiveShowTarget } from '../APIEntity';
 import { IEntity } from '../IEntity';
 import { ActionInfo } from '../models/ActionInfo';
 import { TypeId } from '../models/TypeId';
@@ -25,6 +25,10 @@ export interface StagedFileContent {
   content: string;
   truncated: boolean;
 }
+
+// The DisplayTarget shape returned by install()/setup() lives on APIEntity (it is
+// generic to every entity); re-exported here for the historical import path.
+export type { ReceiveShowTarget } from '../APIEntity';
 
 /**
  * A received, staged bundle attachment awaiting explicit install.
@@ -112,8 +116,17 @@ export class MessageAttachment extends APIEntity<MessageAttachment> implements I
     return this.effectiveScope != null;
   }
 
-  /** Copy from staging into the chosen scope root and index it there. */
-  async install(scope: 'user' | 'project', projectId?: string, opts: { overwrite?: boolean } = {}): Promise<this> {
+  /**
+   * Copy from staging into the chosen scope root, index it, and run the per-type
+   * reception setup. Returns the DisplayTarget to navigate to (the received
+   * entity, or a spawned Vibe setup session), or null when there is nothing to
+   * show.
+   */
+  async install(
+    scope: 'user' | 'project',
+    projectId?: string,
+    opts: { overwrite?: boolean } = {},
+  ): Promise<ReceiveShowTarget | null> {
     if (!this.id) throw new Error('install requires this.id');
     const action = new ActionInfo('install', MessageAttachment.type, this.id, 'POST');
     action.bodyParameters = {
@@ -121,8 +134,8 @@ export class MessageAttachment extends APIEntity<MessageAttachment> implements I
       project_id: projectId ?? null,
       overwrite: opts.overwrite ?? false,
     };
-    await dataManager.callAction<unknown, unknown>(action);
-    return this;
+    const res = await dataManager.callAction<unknown, { entity?: unknown; show?: ReceiveShowTarget | null }>(action);
+    return res?.show ?? null;
   }
 
   /** Remove the installed copy (staged copy persists; chip reverts to staged). */

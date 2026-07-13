@@ -165,6 +165,19 @@ class Artifact(CodeRef):
     start_cmd: Optional[str] = APIField(default=None, description="Command to start/restart the service")
     health: Optional[str] = APIField(default=None, description="Health check endpoint path")
 
+    async def setup_on_receive(self, *, project_id=None, workdir=None) -> dict:
+        """The per-``artifact_type`` reception decision, owned here (not at the FE
+        call site): only a WEBAPP artifact is *set up* — served + shown in Vibe via
+        the ``artifact-setup`` skill. Any other artifact kind is a produced file, so
+        its DisplayTarget just opens that file by path. Prevents a non-webapp
+        artifact from wrongly spawning a setup session on install."""
+        if self.artifact_type == ArtifactType.WEBAPP:
+            return await super().setup_on_receive(project_id=project_id, workdir=workdir)
+        from flow_sdk.core.display_target import DisplayTargetKind, _entity_payload  # noqa: PLC0415
+        if self.path:
+            return {"kind": DisplayTargetKind.VFS, "path": self.path}
+        return _entity_payload(self)
+
     def __init__(self, **data):
         # Generate ID if not provided
         if "id" not in data:
