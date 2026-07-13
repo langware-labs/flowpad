@@ -115,10 +115,18 @@ There is no `Record.deindex()` method. De-indexing is done by the caller: the fs
 | Record CRUD via fs-records API | `FsRecordsActionsMixin._fs_records_action()` | `sync_to_db()` on every POST/PUT; DELETE removes the row + FTS directly |
 | Indexer scan/index pass | `FSIndexer.index()` / `.scan()` (`flow_sdk/fs_store/indexer/index_function.py`) | Walk roots, index per-type via registered indexer functions |
 | Discover-or-recover by path | `FsRecordsActionsMixin._handle_fs_records_discover_by_path()` | `sync_to_db()` after recovering a record by path |
+| GET-time freshness refresh | `Entity.check_and_refresh_record()` (via `handle_get_by_id`) | Re-sync iff `index_required`; then stamps the sentinel |
+| Push invalidate / agent turn-end | `reindex_paths()` → `discover_record_by_path(..., notify=True)` | Force re-parse of a changed-file set — see [Content Invalidation](invalidation.md) |
 | Explicit application code | anywhere | `await record.sync_to_db()` |
 | `Entity.get_all()` / `get_one()` | (none) | NOT triggered -- performance |
 
 `get_all()` and `get_one()` do not call `sync_to_db()`. Running it on every list query would cause O(N) filesystem reads per list request.
+
+The end-to-end **invalidation loop** (what triggers a re-index when a file
+changes out-of-band, and how the frontend re-reads the body afterward) is
+documented separately in [Content Invalidation](invalidation.md) — this document
+covers the middle (`sync_to_db` pipeline + `DataOpMessage`); that one covers the
+outer edges (trigger + FE `useFSRefContent` `reloadKey` re-read).
 
 ### Entities NOT FTS-indexed
 
