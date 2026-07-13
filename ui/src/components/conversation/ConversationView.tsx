@@ -30,6 +30,7 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useProcessesForTarget } from '@src/components/entity-execution-panel/hooks/useProcessesForTarget';
 import { mostRecentProcess } from '@src/utils/process-recency';
+import { useRemoteWorkerSessionForConversation } from '@src/hooks/useRemoteWorkerSessionForConversation';
 
 // Cap the initial messages window so long conversations don't fetch + watch
 // every FlowMessage they've ever held. Newest-first so the visible window is
@@ -82,6 +83,11 @@ export function ConversationView({
   // The run entity carries live worker status now (headless turns broadcast
   // mid-turn), so read it directly instead of deriving over the stream.
   const convRunStatus = convRun?.workerStatus ?? null;
+
+  // Resolve the conversation's worker session ONCE (the RemoteWorkerSession the
+  // backend binds on execute). Drives the session-aware run chip ("Run" vs
+  // "<Host>'s session · new run") and the open-worker-session icon.
+  const workerSession = useRemoteWorkerSessionForConversation(conversationId);
 
   // Member roster used to resolve a message's hub-authoritative sender_id to
   // a display name. `useMembers` is the single precedence point: the live
@@ -246,6 +252,14 @@ export function ConversationView({
     },
     [dockNavigation],
   );
+
+  // Open the conversation's worker session in its collaboration room view
+  // (SharedSessionView). No-op unless the session has a mapped project + room.
+  const { projectId: wsProjectId, roomId: wsRoomId, sessionId: wsSessionId } = workerSession;
+  const openWorkerSession = useCallback(() => {
+    if (!wsProjectId || !wsRoomId || !wsSessionId) return;
+    dockNavigation.openProject(wsProjectId, { roomId: wsRoomId, sessionId: wsSessionId });
+  }, [wsProjectId, wsRoomId, wsSessionId, dockNavigation]);
 
   const orderedItems = useMemo(() => buildConversationItems(pointers, draftMessages), [pointers, draftMessages]);
 
@@ -457,6 +471,10 @@ export function ConversationView({
                   run={convRun}
                   runStatus={convRunStatus}
                   onOpenRun={onOpenRun}
+                  workerSessionExists={workerSession.exists}
+                  workerSessionLabel={workerSession.label}
+                  workerSessionInFlight={workerSession.inFlight}
+                  onOpenWorkerSession={workerSession.exists ? openWorkerSession : undefined}
                   onImplementPlan={task && !openPlanSession ? runImplementPlan : undefined}
                   onOpenPlanSession={openPlanSession}
                   onViewPlan={runViewPlan}

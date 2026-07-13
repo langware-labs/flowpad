@@ -30,6 +30,7 @@ export function AttachmentActionsRow({ actions, preview }: AttachmentActionsRowP
       {preview}
       {actions.map((a) => {
         const Icon = a.icon;
+        const iconCls = `h-3 w-3${a.pulse ? ' animate-pulse' : ''}`;
         // 'link' renders its icon trailing (matches the old Open Plan affordance).
         return (
           <button
@@ -40,9 +41,9 @@ export function AttachmentActionsRow({ actions, preview }: AttachmentActionsRowP
             data-testid={a.testId}
             className={VARIANT_CLASS[a.variant]}
           >
-            {a.variant !== 'link' && <Icon className="h-3 w-3" />}
+            {a.variant !== 'link' && <Icon className={iconCls} />}
             {a.label}
-            {a.variant === 'link' && <Icon className="h-3 w-3" />}
+            {a.variant === 'link' && <Icon className={iconCls} />}
           </button>
         );
       })}
