@@ -648,6 +648,8 @@ async def test_git_transfer_packs_folder_chip_metadata_only_and_install_never_cl
         assert metadata["id"] == folder_id
         # The sender-local resolved path must NOT travel.
         assert "path" not in metadata, metadata
+        # Repo-root folders must carry a human name (never the "." degenerate).
+        assert metadata.get("name") not in (None, "", "."), metadata
         origins = json.loads(zf.read("git_origins.json").decode("utf-8"))
         assert origins[key]["kind"] == "git"
         # Repo bytes never ride the bundle.

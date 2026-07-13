@@ -508,6 +508,17 @@ async def _pack_git_reference_attachment(
         if origin is None or not getattr(origin, "transportable", False):
             logger.debug("[bundle] folder %s has no transportable origin — not packable as git reference", entry_id)
             return False
+        # Self-heal a degenerate name ("" / ".") from before Folder.derive_name
+        # existed — repo-root folders were named ".", rendering chips as bare
+        # typeids. Persist best-effort so the sender's own chip heals too.
+        if (ent.name or "").strip() in ("", "."):
+            healed = Folder.derive_name(origin, ent.path)
+            if healed:
+                ent.name = healed
+                try:
+                    await ent.save()
+                except Exception:
+                    logger.debug("[bundle] folder %s name heal failed", entry_id, exc_info=True)
         # The local resolved path is machine-local; the receiver derives its own.
         strip_fields = ("path",)
     else:
