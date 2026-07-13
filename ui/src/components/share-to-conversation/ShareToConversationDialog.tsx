@@ -71,6 +71,9 @@ interface ShareToConversationDialogProps {
   /** Override the submit button label (e.g. "Send invite" for Collaborate).
    *  Defaults to "Share". */
   submitLabel?: string;
+  /** Override the dialog heading (e.g. "Collaborate on this session").
+   *  Defaults to "Share". */
+  heading?: string;
   /** Keep the local `project_id` on a NEW conversation even when the recipient
    *  is remote. By default remote shares from arbitrary surfaces drop the
    *  active-project association (it'd be arbitrary); Collaborate opts in so the
@@ -114,6 +117,7 @@ export function ShareToConversationDialog({
   hideNote,
   titlePlaceholder,
   submitLabel,
+  heading,
   associateProjectOnRemote,
 }: ShareToConversationDialogProps) {
   const { t } = useLingui();
@@ -286,7 +290,7 @@ export function ShareToConversationDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Send className="h-5 w-5 text-primary" />
-            <Trans>Share</Trans>
+            {heading ?? <Trans>Share</Trans>}
           </DialogTitle>
         </DialogHeader>
 

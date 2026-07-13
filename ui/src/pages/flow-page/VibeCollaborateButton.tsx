@@ -67,6 +67,7 @@ export function VibeCollaborateButton({
           onClose={() => setShareOpen(false)}
           source={source}
           projectId={projectId}
+          heading={t`Collaborate on this session`}
           titlePlaceholder={t`What do you want to collaborate on?`}
           submitLabel={t`Send invite`}
           associateProjectOnRemote
