@@ -25,6 +25,7 @@ def _agent_default_body(entity) -> str:
 
 AGENT = TypeMetadata(
     type=EntityType.AGENT,
+    displayName="Agents",
     from_disk_fn=extract_agent,
     gen_uuid_fn=agent_gen_id,
     indexed_by_default=True,

@@ -31,6 +31,12 @@ class TypeMetadata:
 
     type: str
     icon: str | None = None
+    # UX-friendly, human-readable label for this type — used wherever the type
+    # is shown to the user as a word (e.g. the auto-bookmark folder title). Plural
+    # reads best for grouping surfaces ("Skills", "Documents"). None ⇒ callers
+    # fall back to ``humanize_type(type)`` (schema_registry). Presentational only —
+    # NOT part of the schema hash, so relabeling never triggers a reindex.
+    displayName: str | None = None
     # Minimum view mode at which this type appears in the Assets browser.
     # None ⇒ never browseable; visibility is cumulative (Standard ⊂ Advanced ⊂ Dev).
     browseable_by: ViewMode | None = None
@@ -92,6 +98,7 @@ class TypeMetadata:
         return TypeInfo(
             type_name=str(self.type),
             icon=self.icon,
+            display_name=self.displayName,
             browseable_by=self.browseable_by,
             creatable=self.creatable,
             indexed_by_default=self.indexed_by_default,

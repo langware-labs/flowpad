@@ -22,6 +22,7 @@ class SpreadsheetMeta(BaseMeta):
 SPREADSHEET = TypeMetadata(
     type=EntityType.SPREADSHEET,
     icon="Table",
+    displayName="Spreadsheets",
     browseable_by=ViewMode.STANDARD,
     # Not creatable from the browser: spreadsheets are existing files on disk
     # (opened/edited), not minted empty — so no default_body_fn is needed.
