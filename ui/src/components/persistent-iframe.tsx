@@ -20,6 +20,8 @@ export interface PersistentIframeHandle {
   postToGuest: (message: unknown) => void;
 }
 
+type IframeOwner = symbol;
+
 // Global iframe registry that keeps iframes in fixed DOM locations
 class IframeRegistry {
   private static instance: IframeRegistry;
@@ -27,8 +29,10 @@ class IframeRegistry {
   private containers = new Map<string, HTMLDivElement>();
   private loadingStates = new Map<string, boolean>();
   private errorStates = new Map<string, boolean>();
-  private currentTargets = new Map<string, HTMLElement>();
+  private ownerTargets = new Map<string, Map<IframeOwner, HTMLElement>>();
+  private activeOwners = new Map<string, IframeOwner>();
   private resizeObservers = new Map<string, ResizeObserver>();
+  private positionCleanups = new Map<string, () => void>();
 
   static getInstance(): IframeRegistry {
     if (!IframeRegistry.instance) {
@@ -131,13 +135,23 @@ class IframeRegistry {
     container.style.height = `${rect.height}px`;
   }
 
-  showIframeAt(src: string, targetElement: HTMLElement): boolean {
-    this.getOrCreateIframe(src, {});
+  private clearPositionTracking(src: string): void {
+    const resizeObserver = this.resizeObservers.get(src);
+    if (resizeObserver) {
+      resizeObserver.disconnect();
+      this.resizeObservers.delete(src);
+    }
+
+    this.positionCleanups.get(src)?.();
+    this.positionCleanups.delete(src);
+  }
+
+  private activateIframe(src: string, targetElement: HTMLElement, owner: IframeOwner): boolean {
     const container = this.containers.get(src);
 
     if (container && targetElement) {
-      // Store current target
-      this.currentTargets.set(src, targetElement);
+      this.activeOwners.set(src, owner);
+      this.clearPositionTracking(src);
 
       // Position iframe over the target
       this.updateIframePosition(src, targetElement);
@@ -147,60 +161,85 @@ class IframeRegistry {
 
       // Set up resize observer to keep position updated
       const resizeObserver = new ResizeObserver(() => {
-        this.updateIframePosition(src, targetElement);
+        if (this.activeOwners.get(src) === owner) {
+          this.updateIframePosition(src, targetElement);
+        }
       });
 
       resizeObserver.observe(targetElement);
       resizeObserver.observe(document.body); // Watch for layout changes
-
-      // Clean up previous observer
-      const oldObserver = this.resizeObservers.get(src);
-      if (oldObserver) {
-        oldObserver.disconnect();
-      }
-
       this.resizeObservers.set(src, resizeObserver);
 
       // Update position on scroll
-      const handleScroll = () => this.updateIframePosition(src, targetElement);
+      const handleScroll = () => {
+        if (this.activeOwners.get(src) === owner) {
+          this.updateIframePosition(src, targetElement);
+        }
+      };
       window.addEventListener('scroll', handleScroll, { passive: true });
       window.addEventListener('resize', handleScroll, { passive: true });
 
-      // Store cleanup function
-      const cleanup = () => {
+      this.positionCleanups.set(src, () => {
         window.removeEventListener('scroll', handleScroll);
         window.removeEventListener('resize', handleScroll);
-      };
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (container as any).__cleanup = cleanup;
+      });
 
       return true;
     }
     return false;
   }
 
-  hideIframe(src: string): void {
+  showIframeAt(src: string, targetElement: HTMLElement, owner: IframeOwner): boolean {
+    this.getOrCreateIframe(src, {});
+
+    // Already active over this exact target — the observers/listeners are in
+    // place and the position is current, so skip the teardown-and-rebuild.
+    if (this.activeOwners.get(src) === owner && this.ownerTargets.get(src)?.get(owner) === targetElement) {
+      return true;
+    }
+
+    const targets = this.ownerTargets.get(src) ?? new Map<IframeOwner, HTMLElement>();
+    targets.delete(owner);
+    targets.set(owner, targetElement);
+    this.ownerTargets.set(src, targets);
+
+    return this.activateIframe(src, targetElement, owner);
+  }
+
+  private hideContainer(src: string): void {
     const container = this.containers.get(src);
     if (container) {
       container.className = 'absolute opacity-0 pointer-events-none transition-opacity duration-200';
-
-      // Clean up observers and event listeners
-      const resizeObserver = this.resizeObservers.get(src);
-      if (resizeObserver) {
-        resizeObserver.disconnect();
-        this.resizeObservers.delete(src);
-      }
-
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const cleanup = (container as any).__cleanup;
-      if (cleanup) {
-        cleanup();
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        delete (container as any).__cleanup;
-      }
-
-      this.currentTargets.delete(src);
     }
+    this.clearPositionTracking(src);
+  }
+
+  hideIframe(src: string, owner: IframeOwner): void {
+    const targets = this.ownerTargets.get(src);
+    const wasActiveOwner = this.activeOwners.get(src) === owner;
+
+    targets?.delete(owner);
+    if (targets?.size === 0) {
+      this.ownerTargets.delete(src);
+    }
+
+    // A retiring component must not hide an iframe already claimed by its
+    // same-URL replacement.
+    if (!wasActiveOwner) return;
+
+    const fallback = targets
+      ? Array.from(targets.entries())
+          .reverse()
+          .find(([, target]) => target.isConnected)
+      : undefined;
+    if (fallback) {
+      const [fallbackOwner, fallbackTarget] = fallback;
+      this.activateIframe(src, fallbackTarget, fallbackOwner);
+      return;
+    }
+
+    this.activeOwners.delete(src);
+    this.hideContainer(src);
   }
 
   getLoadingState(src: string): boolean {
@@ -211,13 +250,10 @@ class IframeRegistry {
     return this.errorStates.get(src) ?? false;
   }
 
-  isVisible(src: string): boolean {
-    const container = this.containers.get(src);
-    return container?.classList.contains('opacity-100') ?? false;
-  }
-
   cleanup(src: string): void {
-    this.hideIframe(src);
+    this.ownerTargets.delete(src);
+    this.activeOwners.delete(src);
+    this.hideContainer(src);
 
     const container = this.containers.get(src);
     if (container?.parentElement) {
@@ -228,13 +264,6 @@ class IframeRegistry {
     this.iframes.delete(src);
     this.loadingStates.delete(src);
     this.errorStates.delete(src);
-    this.currentTargets.delete(src);
-
-    const resizeObserver = this.resizeObservers.get(src);
-    if (resizeObserver) {
-      resizeObserver.disconnect();
-      this.resizeObservers.delete(src);
-    }
   }
 
   refresh(src: string): void {
@@ -256,6 +285,7 @@ const PersistentIframe = forwardRef<PersistentIframeHandle, PersistentIframeProp
   ({ src, cacheKey, testId, onLoad, onError, onErrorRetry }, ref) => {
     const { t } = useLingui();
     const containerRef = useRef<HTMLDivElement>(null);
+    const ownerRef = useRef<IframeOwner>(Symbol('persistent-iframe-owner'));
     const [, forceUpdate] = useState({});
 
     // Force re-render to get updated loading/error states
@@ -313,20 +343,19 @@ const PersistentIframe = forwardRef<PersistentIframeHandle, PersistentIframeProp
     // Get current iframe states
     const isIframeLoading = registry.getLoadingState(src);
     const isIframeError = registry.getErrorState(src);
-    const isIframeVisible = registry.isVisible(src);
 
     const isLoading = isPreFetchedSourceLoading || isIframeLoading;
     const isError = isPreFetchedSourceNotAvailable || isPreFetchedSourceError || isIframeError;
 
     const showIframe = useCallback(() => {
       if (containerRef.current && !isError) {
-        registry.showIframeAt(src, containerRef.current);
+        registry.showIframeAt(src, containerRef.current, ownerRef.current);
         triggerUpdate();
       }
     }, [src, isError, triggerUpdate]);
 
     const hideIframe = useCallback(() => {
-      registry.hideIframe(src);
+      registry.hideIframe(src, ownerRef.current);
       triggerUpdate();
     }, [src, triggerUpdate]);
 
@@ -355,10 +384,10 @@ const PersistentIframe = forwardRef<PersistentIframeHandle, PersistentIframeProp
 
     // Auto-show iframe when ready and container is available
     useEffect(() => {
-      if (!isError && !isLoading && containerRef.current && !isIframeVisible) {
+      if (!isError && !isLoading && containerRef.current) {
         showIframe();
       }
-    }, [isError, isLoading, isIframeVisible, showIframe]);
+    }, [isError, isLoading, showIframe]);
 
     // Hide iframe when there's an error
     useEffect(() => {
