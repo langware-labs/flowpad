@@ -1,3 +1,7 @@
+---
+id: b60922bd-a6f6-4626-8db7-b2d8ee06032c
+---
+
 # Claude Vibe Workspace Browser Matrix
 
 ## Scope
