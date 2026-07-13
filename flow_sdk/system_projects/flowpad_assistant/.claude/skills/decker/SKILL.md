@@ -1,4 +1,5 @@
 ---
+id: 63709c7b-005d-475f-b395-2460b0759587
 name: decker
 description: Build slide-deck templates and generate full presentation decks from
   them — Reveal.js headless runtime + design-token CSS, each slide layout an
