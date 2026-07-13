@@ -68,7 +68,7 @@ export function VibeNewChat() {
         </h1>
         <div className="w-full">
           <SessionInput
-            placeholder={t`What would you like to build?`}
+            placeholder={t`What would you like to work on?`}
             value={draft}
             onChange={setDraft}
             allowAttachments
