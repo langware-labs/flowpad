@@ -2871,6 +2871,10 @@ msgstr "Create as Markdown"
 msgid "Create as Whiteboard"
 msgstr "Create as Whiteboard"
 
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Create bookmark on the recipient's desktop"
+msgstr "Create bookmark on the recipient's desktop"
+
 #: src/components/code-editor/CodeEditor.tsx
 msgid "Create File"
 msgstr "Create File"
@@ -8148,6 +8152,7 @@ msgid "Open {0} on…"
 msgstr "Open {0} on…"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/asset-manager/AssetPickerPopover.tsx
 msgid "Open {label}"
 msgstr "Open {label}"
 
@@ -11975,6 +11980,16 @@ msgstr "Thinking:"
 msgid "This action cannot be undone."
 msgstr "This action cannot be undone."
 
+#. placeholder {0}: gitGate.dirtyFiles
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "This app has {0} uncommitted change(s). Commit and push before sharing — the recipient clones from git, so unsaved work won't travel."
+msgstr "This app has {0} uncommitted change(s). Commit and push before sharing — the recipient clones from git, so unsaved work won't travel."
+
+#. placeholder {0}: gitGate.unpushed
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "This app has {0} unpushed commit(s). Push before sharing — the recipient clones from the remote. Use the git push button in the status bar."
+msgstr "This app has {0} unpushed commit(s). Push before sharing — the recipient clones from the remote. Use the git push button in the status bar."
+
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "This asset has no file path."
 msgstr "This asset has no file path."
@@ -12733,6 +12748,7 @@ msgid "View"
 msgstr "View"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/asset-manager/AssetPickerPopover.tsx
 msgid "View {label} (read-only)"
 msgstr "View {label} (read-only)"
 
