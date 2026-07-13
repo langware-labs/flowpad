@@ -126,6 +126,7 @@ class EntityType(StrEnum):
     DECK = "deck"
     # A flat tabular file asset — a .csv (editable) or .xlsx (read-only view)
     # discovered anywhere in a project, rendered in a grid editor.
+    SPREADSHEET = "spreadsheet"
     FLOWPAD_DIAGNOSIS = "flowpad_diagnosis"
     COLLABORATION_ROOM = "collaboration_room"
     # A host/guest remote-execution session that lives inside a CollaborationRoom

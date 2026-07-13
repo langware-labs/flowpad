@@ -17,6 +17,7 @@ export enum AssetEditor {
   WHITEBOARD = 'whiteboard',
   DECK_TEMPLATE = 'deck_template',
   DECK = 'deck',
+  SPREADSHEET = 'spreadsheet', // CSV (editable) / XLSX (read-only) grid — entity-backed
   AGENT_TRACE = 'agent_trace',
   DYNAMIC_WORKFLOW = 'dynamic_workflow',
   USAGE_REPORT = 'usage_report',
@@ -50,6 +51,7 @@ export const EDITOR_TYPES: Record<AssetEditor, RecordType[]> = {
   [AssetEditor.WHITEBOARD]: [RecordType.WHITEBOARD],
   [AssetEditor.DECK_TEMPLATE]: [RecordType.DECK_TEMPLATE],
   [AssetEditor.DECK]: [RecordType.DECK],
+  [AssetEditor.SPREADSHEET]: [RecordType.SPREADSHEET],
   [AssetEditor.AGENT_TRACE]: [RecordType.AGENT_TRACE],
   [AssetEditor.DYNAMIC_WORKFLOW]: [RecordType.DYNAMIC_WORKFLOW],
   [AssetEditor.USAGE_REPORT]: [RecordType.USAGE_REPORT],
@@ -89,6 +91,10 @@ export function isAssetEditor(v: string): v is AssetEditor {
 const EXT_TO_EDITOR: Record<string, AssetEditor> = {
   md: AssetEditor.MARKDOWN,
   markdown: AssetEditor.MARKDOWN,
+  // Tabular files — same dual routing as markdown (entity-backed AND
+  // extension-routed). XLSX opens read-only; CSV is editable.
+  csv: AssetEditor.SPREADSHEET,
+  xlsx: AssetEditor.SPREADSHEET,
   html: AssetEditor.HTML,
   htm: AssetEditor.HTML,
   ...Object.fromEntries([...IMAGE_EXTENSIONS].map((ext) => [ext, AssetEditor.IMAGE])),
