@@ -39,7 +39,7 @@ import {
   updateMessage,
   bulkUpdateMessages,
 } from './inbox-api';
-import { conversationFacets, actionsFor } from '@src/components/conversation/conversation-category';
+import { conversationFacets, actionsFor, compareConversationsByRecency } from '@src/components/conversation/conversation-category';
 import { CategoryChips } from '@src/components/conversation/CategoryChips';
 import { MembershipInvitations } from './MembershipInvitations';
 import { RowActions } from '@src/components/conversation/RowActions';
@@ -482,11 +482,7 @@ export function InboxView() {
     const list = searchActive
       ? conversations.filter((c) => c.id && matchIds.has(c.id))
       : [...conversations];
-    list.sort((a, b) => {
-      const ta = a.updated_date ? new Date(a.updated_date).getTime() : 0;
-      const tb = b.updated_date ? new Date(b.updated_date).getTime() : 0;
-      return tb - ta;
-    });
+    list.sort(compareConversationsByRecency);
     return list;
   }, [conversations, searchActive, matchIds]);
 
