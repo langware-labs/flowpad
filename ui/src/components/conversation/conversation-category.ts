@@ -90,6 +90,19 @@ export function conversationFacets(inp: CategoryInputs): ConversationFacets {
   return { kind, isInvitation, isArchived, isUnread };
 }
 
+// ── Recency sort — shared by InboxView + RecentConversationsStrip ────────────
+// Newest `updated_date` first, with a STABLE `id` tiebreaker. Without the
+// tiebreaker, rows with equal or missing `updated_date` fall back to the input
+// order — which is the server's non-deterministic result order — so the list
+// re-shuffled between fetches (i.e. on every inbox open). The tiebreaker makes
+// the sort a total order, so equal-timestamp rows keep a fixed position.
+export function compareConversationsByRecency(a: Conversation, b: Conversation): number {
+  const ta = a.updated_date ? new Date(a.updated_date).getTime() : 0;
+  const tb = b.updated_date ? new Date(b.updated_date).getTime() : 0;
+  if (tb !== ta) return tb - ta;
+  return (a.id ?? '').localeCompare(b.id ?? '');
+}
+
 // ── Chips — a per-row category label ─────────────────────────────────────────
 // Chips can co-occur (a community row can also be archived), so this returns a
 // list. Invitation rows keep their existing row treatment (violet left border +
