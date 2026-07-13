@@ -48,6 +48,13 @@ export interface FsFolderRootDeps {
   draggable?: boolean;
 }
 
+/** One filesystem entry inside a (possibly multi-item) drag. */
+export interface FsDragEntry {
+  relPath: string;
+  isDir: boolean;
+  label: string;
+}
+
 /** Drag payload for a real-filesystem row (file or folder), emitted when the
  *  root is built with `draggable`. `relPath` is entity-relative (no leading
  *  slash) on the root's compute-node TypeId. */
@@ -55,10 +62,18 @@ export interface FsDragItem extends BrowseableDragData {
   kind: 'fs-item';
   relPath: string;
   isDir: boolean;
+  /** All dragged entries when a multi-selection is dragged (includes the
+   *  primary row); absent for a single-item drag. */
+  items?: FsDragEntry[];
 }
 
 export function isFsDragItem(data: BrowseableDragData): data is FsDragItem {
   return data.kind === 'fs-item' && typeof data.relPath === 'string' && typeof data.isDir === 'boolean';
+}
+
+/** Normalize a drag payload to its entry list (multi-drag or single row). */
+export function fsDragEntries(data: FsDragItem): FsDragEntry[] {
+  return data.items?.length ? data.items : [{ relPath: data.relPath, isDir: data.isDir, label: data.label }];
 }
 
 // Re-exported so browse-side consumers keep one canonical rel-path form; the
@@ -108,6 +123,9 @@ function explorerPointerFor(typeId: TypeId, scope: ScopeFilter, rel: string): Do
   return DockPointer.forExplorer(path).withScopeFilter(scope);
 }
 
+/** Drop capabilities a folder node can expose, resolved per rel path. */
+export type FsFolderDrop = Pick<Browseable, 'canDrop' | 'onDrop' | 'onExternalFilesDrop'>;
+
 /** Per-root node context: which VFS the rows list, how they address the body
  *  (pointer grammar), and whether they can be dragged. One ctx per root keeps
  *  the recursive node builders free of per-variant branching. */
@@ -115,6 +133,10 @@ interface FsNodeCtx {
   typeId: TypeId;
   pointerFor: (rel: string) => DockPointer;
   draggable: boolean;
+  /** When present, EVERY folder node in the subtree becomes a drop target —
+   *  the factory binds the handlers to that folder's rel path (e.g. copy
+   *  dropped rows into that exact subfolder). */
+  folderDrop?: (rel: string) => FsFolderDrop;
 }
 
 function explorerCtx(typeId: TypeId, scope: ScopeFilter): FsNodeCtx {
@@ -153,6 +175,7 @@ function folderNode(ctx: FsNodeCtx, rel: string, label: string): Browseable {
     pointer: ctx.pointerFor(rel),
     listChildren: (opts) => listChildrenAt(ctx, rel, opts),
     dragData: dragDataFor(ctx, id, rel, label, true),
+    ...(ctx.folderDrop ? ctx.folderDrop(rel) : {}),
   };
 }
 
@@ -165,6 +188,27 @@ export function fsFolderNode(typeId: TypeId, scope: ScopeFilter, absRel: string,
   return folderNode(explorerCtx(typeId, scope), rel, label ?? (basename(rel) || rel));
 }
 
+/** Assets-body variant of `fsFolderNode`: rows address the Assets fs/ file
+ *  manager (`/dock/assets/fs/<rel>`) instead of the Explorer, and are
+ *  draggable. Used by the Assets navigator's context-folder rows so a context
+ *  folder expands into its real on-disk tree. `folderDrop` (optional) makes
+ *  every folder in the subtree a drop target bound to its own rel path. */
+export function assetsFsFolderNode(
+  typeId: TypeId,
+  absRel: string,
+  label?: string,
+  folderDrop?: (rel: string) => FsFolderDrop,
+): Browseable {
+  const rel = normalizeRel(absRel);
+  const ctx: FsNodeCtx = {
+    typeId,
+    pointerFor: (r) => DockPointer.forAssetFsFolder(r),
+    draggable: true,
+    folderDrop,
+  };
+  return folderNode(ctx, rel, label ?? (basename(rel) || rel));
+}
+
 /** Imperative single-folder listing — the same `fsStore` path SimpleFileManager
  *  uses, so the tree and the table share one browse cache. Folders sort before
  *  files; both alphabetical. */
@@ -175,7 +219,12 @@ async function listChildrenAt(ctx: FsNodeCtx, dirRel: string, opts?: { refresh?:
   const dirs: Browseable[] = [];
   const files: Browseable[] = [];
   for (const item of result.items as FSItem[]) {
-    const childRel = normalizeRel(item.relativePath || '');
+    // Items read back from the fsStore cache have been through Immer, which
+    // strips class GETTERS (`relativePath`) — only enumerable instance fields
+    // survive (see the FSItem.name comment). Parse the surviving raw
+    // `vfs_abs_path` field instead, or the whole listing reads as empty on a
+    // cache hit (fresh fetches worked; re-reads showed "Empty").
+    const childRel = normalizeRel(VFSPath.parse(item.vfs_abs_path).entitySubPath);
     if (!childRel) continue;
     const name = basename(childRel) || item.name || childRel;
     if (item.is_dir) dirs.push(folderNode(ctx, childRel, name));

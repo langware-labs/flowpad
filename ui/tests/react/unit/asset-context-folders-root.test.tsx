@@ -105,6 +105,31 @@ describe('assetContextFoldersRoot', () => {
     expect(plain[0].onExternalFilesDrop).toBeUndefined();
   });
 
+  it('expanded subfolder nodes are drop targets bound to their own path', async () => {
+    const { TypeId } = await import('@sdk');
+    const onDropItem = vi.fn();
+    const root = assetContextFoldersRoot({
+      dirs: DIRS,
+      fsTypeId: new TypeId('compute_node', '@local'),
+      onAdd: vi.fn(),
+      onRemove: vi.fn(),
+      onDropItem,
+    });
+    // Deep-link chain into a subfolder — same nodes listChildren would build.
+    const chain = await root.pathFor(DockPointer.forAssetFsFolder('/Users/alice/notes/2026/plans'));
+    const plans = chain[chain.length - 1];
+    expect(plans.label).toBe('plans');
+
+    const file = fsDrag('Users/alice/project/report.md');
+    expect(plans.canDrop!(file)).toBe(true);
+    await plans.onDrop!(file);
+    // The drop lands in the exact subfolder, not the context-dir root.
+    expect(onDropItem).toHaveBeenCalledWith(file, '/Users/alice/notes/2026/plans');
+
+    // Guards still apply per subfolder (already directly inside → no-op).
+    expect(plans.canDrop!(fsDrag('Users/alice/notes/2026/plans/report.md'))).toBe(false);
+  });
+
   it('pathFor resolves a subfolder pointer to its owning context-dir row', async () => {
     const root = assetContextFoldersRoot({ dirs: DIRS, onAdd: vi.fn(), onRemove: vi.fn() });
     const chain = await root.pathFor(DockPointer.forAssetFsFolder('/Users/alice/notes/2026/plans'));

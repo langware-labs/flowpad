@@ -84,11 +84,21 @@ creating a duplicate.
 to `/api/v1/graph/project/<projectId>/add-context-dir`. A non-success
 response means the folder was NOT attached — show the message and stop.
 
-3. Close the wizard with:
+3. **Ask for approval before closing — NEVER close the wizard on your own.**
+   Running the close command dismisses the wizard window immediately, so it
+   is the user's call. Present a short summary of what you did (repo path,
+   remote URL, the new Flowpad project, and which project it was attached to
+   under which scope) and ask the user to confirm. Only after they explicitly
+   approve, close the wizard with:
 
 ```bash
 flow wizard <wizard-process-id> close '{"status":"done","data":{"path":"<dir>","newProjectId":"<new-project-id>"}}'
 ```
 
-If the flow cannot complete, close with `status:"error"` and an `errorStr`.
-If the user cancels, close with `status:"cancel"`.
+   If they are not satisfied, keep helping (rename, change remote, re-attach)
+   and ask again when done.
+
+If the flow cannot complete, explain what failed and ask the user how to
+proceed; close with `status:"error"` and an `errorStr` only once they agree
+there is nothing more to do. If the user cancels, close with
+`status:"cancel"`.

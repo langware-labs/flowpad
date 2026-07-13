@@ -27,10 +27,15 @@ import { refreshNode } from '@src/components/browseable-tree/refresh-store';
 import { showDeleteAssetModal } from '@src/components/assets/delete-asset-modal';
 import type { GitFolderInput } from '@src/components/assets/AddGitFolderDialog';
 import { assetTypeRoot } from '@src/components/browseable-tree/adapters/assetTypeRoot';
-import { assetContextFoldersRoot } from '@src/components/browseable-tree/adapters/assetContextFoldersRoot';
+import {
+  assetContextFolderNodeId,
+  assetContextFoldersRoot,
+} from '@src/components/browseable-tree/adapters/assetContextFoldersRoot';
 import { flatEntityRoots } from '@src/components/browseable-tree/adapters/flatEntityRoot';
 import {
   basename as fsBasename,
+  fsDragEntries,
+  fsFolderNodeId,
   fsFolderRoot,
   normalizeRel,
   type FsDragItem,
@@ -326,29 +331,63 @@ export function useAssetsModel() {
     [addGitFolderScope, scopeProjectId, scopeProjectTypeId],
   );
 
-  // Drop from the "Files" tree onto a context folder row → copy the file (or
-  // folder) into that context folder. Copy, not move — pulling something into
-  // the context shouldn't relocate it in the project.
+  // Tree node id of a drop destination: the context-folder row itself when
+  // `dir` IS a context dir, else the expanded subfolder's fs node — so the
+  // refresh hits the node the user actually dropped on.
+  const contextTreeNodeId = useCallback(
+    (dir: string) => {
+      const rel = normalizeRel(dir);
+      const isTop = contextDirInfos.some((info) => normalizeRel(info.path) === rel);
+      return isTop || !fsTypeId ? assetContextFolderNodeId(dir) : fsFolderNodeId(fsTypeId, rel);
+    },
+    [contextDirInfos, fsTypeId],
+  );
+
+  // Drop from a Files row (tree or body table) onto a context folder row or
+  // any folder inside it → copy the file(s)/folder(s) into that exact folder.
+  // Copy, not move — pulling something into the context shouldn't relocate it
+  // in the project. A multi-selection drag carries every selected entry
+  // (fsDragEntries).
   const handleDropIntoContextDir = useCallback(
     async (item: FsDragItem, dir: string) => {
       if (!fsTypeId) return;
-      const name = fsBasename(item.relPath) || item.label;
-      const destAbs = `/${joinRelPath(normalizeRel(dir), name)}`;
-      const sourceAbs = `/${normalizeRel(item.relPath)}`;
-      try {
-        if (await fsManager.exists(fsTypeId, destAbs)) {
-          notify.error({ title: 'Destination already has an item with that name' });
-          return;
+      const destRel = normalizeRel(dir);
+      const entries = fsDragEntries(item);
+      let copied = 0;
+      const failed: string[] = [];
+      for (const entry of entries) {
+        const name = fsBasename(entry.relPath) || entry.label;
+        // Per-entry try: one bad entry must not abort the rest of a
+        // multi-selection drop.
+        try {
+          const destAbs = `/${joinRelPath(destRel, name)}`;
+          const sourceAbs = `/${normalizeRel(entry.relPath)}`;
+          if (await fsManager.exists(fsTypeId, destAbs)) {
+            failed.push(`"${name}" already exists`);
+            continue;
+          }
+          await fsManager.copy(fsTypeId, sourceAbs, destAbs);
+          copied++;
+        } catch (err) {
+          console.error(`[AssetsNavigator] Failed to copy "${name}" into context folder:`, err);
+          failed.push(`"${name}" failed`);
         }
-        await fsManager.copy(fsTypeId, sourceAbs, destAbs);
-        fsStore.getState().invalidate(fsTypeId, `/${normalizeRel(dir)}`, 'browse');
-        notify.success({ title: `Copied "${name}" to ${fsBasename(dir) || dir}` });
-      } catch (err) {
-        console.error('[AssetsNavigator] Failed to copy into context folder:', err);
-        notify.error({ title: 'Failed to copy into context folder' });
+      }
+      if (copied) {
+        fsStore.getState().invalidate(fsTypeId, `/${destRel}`, 'browse');
+        refreshNode(contextTreeNodeId(dir));
+        notify.success({
+          title:
+            copied > 1
+              ? `Copied ${copied} items to ${fsBasename(dir) || dir}`
+              : `Copied "${fsBasename(entries[0].relPath) || entries[0].label}" to ${fsBasename(dir) || dir}`,
+        });
+      }
+      if (failed.length) {
+        notify.error({ title: 'Not copied into context folder', message: failed.join(', ') });
       }
     },
-    [fsTypeId],
+    [fsTypeId, contextTreeNodeId],
   );
 
   // OS files/folders dropped onto a context folder row → upload into that
@@ -371,6 +410,7 @@ export function useAssetsModel() {
           await fsStore.getState().uploadFiles(fsTypeId, dest, files);
         }
         fsStore.getState().invalidate(fsTypeId, `/${base}`, 'browse');
+        refreshNode(contextTreeNodeId(dir));
         notify.success({
           title:
             entries.length > 1
@@ -382,7 +422,7 @@ export function useAssetsModel() {
         notify.error({ title: 'Failed to add files to context folder' });
       }
     },
-    [fsTypeId],
+    [fsTypeId, contextTreeNodeId],
   );
 
   // Multi-select toolbar resolver. Content adapts to the current selection: every
@@ -678,6 +718,7 @@ export function useAssetsModel() {
       list.push(
         assetContextFoldersRoot({
           dirs: contextDirInfos,
+          fsTypeId,
           onAdd: () => setAddContextFolderDialogOpen(true),
           onRemove: handleRemoveContextDir,
           onDropItem: handleDropIntoContextDir,

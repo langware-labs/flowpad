@@ -34,6 +34,8 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ShareToConversationDialog } from '@src/components/share-to-conversation/ShareToConversationDialog';
+import { writeBrowseableDrag } from '@src/components/browseable-tree/drag';
+import { attachMultiDragGhost, buildRowDragItem } from './drag-payload';
 import { fileShareSource } from '@src/hooks/share-sources';
 import { FileItem, SimpleFileManagerProps, SortDirection, SortField } from './types';
 
@@ -946,13 +948,41 @@ export function SimpleFileManager({
                     <ContextMenu key={item.id}>
                       <ContextMenuTrigger asChild>
                         <TableRow
-                          className={`cursor-pointer ${selectedItems.has(item.id) ? 'bg-primary/10' : ''}`}
+                          className={`cursor-pointer select-none ${selectedItems.has(item.id) ? 'bg-primary/10' : ''}`}
                           onClick={(e) => handleItemClick(item, e)}
                           onDoubleClick={() => handleItemDoubleClick(item)}
+                          // Rows carry the same FsDragItem payload the
+                          // navigator's Files tree writes, so they can drop
+                          // anywhere it can — e.g. onto a context-folder row
+                          // (copy into the folder). Without `draggable` the
+                          // browser falls back to text selection on drag.
+                          // Dragging a row that is part of the current
+                          // multi-selection drags the WHOLE selection.
+                          draggable
+                          onDragStart={(e) => {
+                            const dragItem = buildRowDragItem(item, selectedItems, sortedFiles, typeidObj);
+                            writeBrowseableDrag(e, dragItem);
+                            if (dragItem.items?.length) {
+                              // Multi-selection: ghost lists every dragged name.
+                              attachMultiDragGhost(
+                                e,
+                                dragItem.items.map((en) => en.label),
+                              );
+                            } else {
+                              // Single row: ghost is just the icon + name, not
+                              // the full-width table row.
+                              const ghost = e.currentTarget.querySelector('[data-drag-ghost]');
+                              if (ghost instanceof HTMLElement) e.dataTransfer.setDragImage(ghost, 12, 12);
+                            }
+                          }}
                         >
                           <TableCell>
+                            {/* w-fit + data-drag-ghost: this compact icon+name
+                                block is what setDragImage shows while dragging,
+                                instead of the full-width row. */}
                             <div
-                              className={`flex items-center gap-2 ${highlighted ? 'text-amber-600 dark:text-amber-400' : ''}`}
+                              data-drag-ghost
+                              className={`flex w-fit max-w-full items-center gap-2 ${highlighted ? 'text-amber-600 dark:text-amber-400' : ''}`}
                             >
                               {getFileIcon(item)}
                               <span className="truncate">{item.name}</span>

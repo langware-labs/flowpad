@@ -1,17 +1,17 @@
 import { FolderOpen, GitBranch, Loader2, Upload } from 'lucide-react';
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { Project, TypeId } from '@sdk';
 import { useEntity } from '@src/hooks/entity-hooks';
 import { useGitFolderStatus } from '@src/hooks/use-git-folder-status';
 import { useProjectContextFolders } from '@src/hooks/use-project-context-folders';
-import { notify } from '@src/notifications';
 import { Button } from '@src/components/ui/button';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useExplorerComputeNode } from '@src/components/explorer-view/useExplorerComputeNode';
-import { normalizeRel } from '@src/components/browseable-tree/adapters/fsFolderRoot';
+import { basename, normalizeRel } from '@src/components/browseable-tree/adapters/fsFolderRoot';
 import { SimpleFileManager } from '@src/components/simple-file-manager';
+import { PushContextFolderDialog } from './PushContextFolderDialog';
 
 interface ContextFolderBrowserProps {
   /** Compute-node-relative path (no leading slash) from the `fs/` pointer. */
@@ -32,8 +32,11 @@ interface ContextFolderBrowserProps {
  *
  * When the browsed path lies inside a GIT-backed context folder, the browser
  * decorates: files the remote doesn't have yet render in amber, and a header
- * strip shows the branch plus a Push button (stage-all → commit → pull
- * --rebase → push). Push failures surface as an error notification.
+ * strip shows the branch plus a Push button. Push opens
+ * {@link PushContextFolderDialog}: message + optional recipients (contacts
+ * groups expand in one click) + target conversation; the actual push
+ * (stage-all → commit → pull --rebase → push) runs on submit and failures
+ * surface in the dialog and as an error notification.
  */
 export function ContextFolderBrowser({ relPath, onNavigate, projectId }: ContextFolderBrowserProps) {
   const { t } = useLingui();
@@ -79,15 +82,7 @@ export function ContextFolderBrowser({ relPath, onNavigate, projectId }: Context
     [navigation],
   );
 
-  const handlePush = useCallback(async () => {
-    const result = await push();
-    if (!result) return;
-    if (result.ok) {
-      notify.success({ title: result.nothing ? t`Nothing to push` : t`Pushed to remote` });
-    } else {
-      notify.error({ title: t`Push failed`, message: result.message });
-    }
-  }, [push, t]);
+  const [pushDialogOpen, setPushDialogOpen] = useState(false);
 
   if (!typeId) {
     return (
@@ -122,7 +117,7 @@ export function ContextFolderBrowser({ relPath, onNavigate, projectId }: Context
               variant="outline"
               size="sm"
               className="h-6 gap-1.5 px-2 text-xs"
-              onClick={() => void handlePush()}
+              onClick={() => setPushDialogOpen(true)}
               disabled={pushing}
               data-testid="context-folder-git-push"
             >
@@ -131,6 +126,17 @@ export function ContextFolderBrowser({ relPath, onNavigate, projectId }: Context
             </Button>
           )}
         </div>
+      )}
+      {gitWorkdir && (
+        <PushContextFolderDialog
+          open={pushDialogOpen}
+          onOpenChange={setPushDialogOpen}
+          folderName={basename(normalizeRel(gitWorkdir)) || gitWorkdir}
+          branch={status?.branch ?? null}
+          projectId={projectId}
+          push={push}
+          pushing={pushing}
+        />
       )}
       <div className="min-h-0 flex-1">
         <SimpleFileManager
