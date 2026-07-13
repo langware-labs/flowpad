@@ -1,9 +1,23 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Archive, Inbox as InboxIcon, LifeBuoy, Mail, MailOpen, MailPlus, RefreshCw, Search, SquarePen, Trash2, X } from 'lucide-react';
+import {
+  Archive,
+  Inbox as InboxIcon,
+  LifeBuoy,
+  Mail,
+  MailOpen,
+  MailPlus,
+  RefreshCw,
+  Search,
+  SquarePen,
+  Trash2,
+  UsersRound,
+  X,
+} from 'lucide-react';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react/macro';
 import { notify } from '@src/notifications';
 import { NewConversationDialog } from '@src/components/new-conversation-dialog/NewConversationDialog';
+import { CreateContactsGroupDialog } from '@src/components/contact-picker/CreateContactsGroupDialog';
 import {
   Conversation,
   FlowMessage,
@@ -35,10 +49,7 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { LoginRequiredOverlay } from '@src/components/login-required-overlay';
 import { useInboxStore } from '@src/store/use-inbox-store';
 import { formatTimeAgo } from '@src/components/project-activity-strip/project-activity-utils';
-import {
-  updateMessage,
-  bulkUpdateMessages,
-} from './inbox-api';
+import { updateMessage, bulkUpdateMessages } from './inbox-api';
 import { conversationFacets, actionsFor } from '@src/components/conversation/conversation-category';
 import { CategoryChips } from '@src/components/conversation/CategoryChips';
 import { MembershipInvitations } from './MembershipInvitations';
@@ -112,7 +123,21 @@ interface ConversationListRowProps {
   refSetter: (el: HTMLDivElement | null) => void;
 }
 
-export function ConversationListRow({ conv, isFocused, viewMode, searchActive, onArchive, onUnarchive, onToggleRead, selected, onToggleSelect, onRequestDelete, cloudUserId, onVisibilityChange, refSetter }: ConversationListRowProps) {
+export function ConversationListRow({
+  conv,
+  isFocused,
+  viewMode,
+  searchActive,
+  onArchive,
+  onUnarchive,
+  onToggleRead,
+  selected,
+  onToggleSelect,
+  onRequestDelete,
+  cloudUserId,
+  onVisibilityChange,
+  refSetter,
+}: ConversationListRowProps) {
   const { navigation } = useDockNavigation();
 
   // For invitation rows the first message IS the only message; for regular
@@ -121,21 +146,12 @@ export function ConversationListRow({ conv, isFocused, viewMode, searchActive, o
   const pointers = conv.conversationMessageIds ?? [];
   const firstPtr = pointers[0];
   const lastPtr = pointers[pointers.length - 1];
-  const firstTypeId = useMemo(
-    () => (firstPtr?.id ? new TypeId(FlowMessage.type, firstPtr.id) : null),
-    [firstPtr?.id],
-  );
-  const latestTypeId = useMemo(
-    () => (lastPtr?.id ? new TypeId(FlowMessage.type, lastPtr.id) : null),
-    [lastPtr?.id],
-  );
+  const firstTypeId = useMemo(() => (firstPtr?.id ? new TypeId(FlowMessage.type, firstPtr.id) : null), [firstPtr?.id]);
+  const latestTypeId = useMemo(() => (lastPtr?.id ? new TypeId(FlowMessage.type, lastPtr.id) : null), [lastPtr?.id]);
   const { data: firstMessage } = useEntity<FlowMessage>(firstTypeId);
   const { data: latestMessage } = useEntity<FlowMessage>(latestTypeId);
 
-  const invitationTypeId = useMemo(
-    () => firstMessage?.firstContextOfType?.('invitation') ?? null,
-    [firstMessage],
-  );
+  const invitationTypeId = useMemo(() => firstMessage?.firstContextOfType?.('invitation') ?? null, [firstMessage]);
   const invitationId = invitationTypeId?.id ?? null;
   const { data: invitation } = useEntity<Invitation>(invitationTypeId);
 
@@ -235,7 +251,7 @@ export function ConversationListRow({ conv, isFocused, viewMode, searchActive, o
       seen.add(key);
     };
     pushName(latestMessage?.sender_name);
-    for (const p of (conv.participants ?? [])) {
+    for (const p of conv.participants ?? []) {
       pushName(p?.name || (p?.email ? p.email.split('@')[0] : ''));
     }
     return names.length > 0 ? names : [t`Unknown`];
@@ -252,16 +268,15 @@ export function ConversationListRow({ conv, isFocused, viewMode, searchActive, o
   // title source, so it must not feed the subject. Fall back to the email-style
   // "(no subject)" placeholder only when there's no title. The snippet (latest
   // message preview) still renders after it.
-  const subject = isInvitationRow
-    ? t`You've been invited to a conversation`
-    : (conv.title?.trim() || t`(no subject)`);
+  const subject = isInvitationRow ? t`You've been invited to a conversation` : conv.title?.trim() || t`(no subject)`;
   // ``FlowMessage.text`` is typed string but older rows in the local DB can
   // hold non-string payloads (object-shaped values from earlier schema
   // iterations); ``?.replace`` would TypeError on those. Coerce first.
   const rawText = isInvitationRow ? firstMessage?.text : latestMessage?.text;
-  const snippetSource =
-    rawText === PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT ? '' : rawText;
-  const snippet = String(snippetSource ?? '').replace(/\s+/g, ' ').trim();
+  const snippetSource = rawText === PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT ? '' : rawText;
+  const snippet = String(snippetSource ?? '')
+    .replace(/\s+/g, ' ')
+    .trim();
   const time = formatGmailTime(conv.updated_date);
   const ago = formatTimeAgo(conv.updated_date);
   const isUnread = facets.isUnread;
@@ -305,17 +320,12 @@ export function ConversationListRow({ conv, isFocused, viewMode, searchActive, o
         isInvitationRow ? 'cursor-default' : 'cursor-pointer'
       } items-center gap-3 border-b border-border/40 px-3 text-sm transition-colors hover:bg-accent/40 hover:shadow-sm ${
         selected ? 'bg-primary/10' : isFocused ? 'bg-primary/10' : ''
-      } ${isUnread ? 'bg-background' : 'bg-muted/20'} ${
-        isInvitationRow ? 'border-l-2 border-l-violet-500/60' : ''
-      }`}
+      } ${isUnread ? 'bg-background' : 'bg-muted/20'} ${isInvitationRow ? 'border-l-2 border-l-violet-500/60' : ''}`}
     >
       {/* Multi-select tick. Stops propagation so ticking a row never opens it.
           Always visible per line but faded (light border, dimmed) so it doesn't
           compete with the message content; brightens on hover and when ticked. */}
-      <span
-        onClick={(e) => e.stopPropagation()}
-        className="flex shrink-0 items-center"
-      >
+      <span onClick={(e) => e.stopPropagation()} className="flex shrink-0 items-center">
         <Checkbox
           checked={!!selected}
           onCheckedChange={() => convId && onToggleSelect?.(convId)}
@@ -333,9 +343,7 @@ export function ConversationListRow({ conv, isFocused, viewMode, searchActive, o
         title={senderLabel}
         className={`flex w-44 shrink-0 items-center gap-1 ${isUnread ? 'font-semibold text-foreground' : 'text-muted-foreground'}`}
       >
-        {isInvitationRow && (
-          <MailPlus className="h-3.5 w-3.5 flex-shrink-0 text-violet-500" aria-label="invitation" />
-        )}
+        {isInvitationRow && <MailPlus className="h-3.5 w-3.5 flex-shrink-0 text-violet-500" aria-label="invitation" />}
         <span className="min-w-0 flex-1 truncate">{senderLabel}</span>
         {!isInvitationRow && count > 1 && (
           <span className="ml-1 shrink-0 font-normal text-muted-foreground">({count})</span>
@@ -406,12 +414,12 @@ export function InboxView() {
   const { cloudUser } = useAuth();
   const cloudUserId = cloudUser?.id ?? null;
   const { connection } = useCloudStatus();
-  const hubReachable =
-    connection.status === 'connected' || connection.status === 'verified';
+  const hubReachable = connection.status === 'connected' || connection.status === 'verified';
 
   // Bulk-delete + per-row-delete dialog state.
   const [bulkDialogOpen, setBulkDialogOpen] = useState(false);
   const [showNewConversation, setShowNewConversation] = useState(false);
+  const [showNewContactsGroup, setShowNewContactsGroup] = useState(false);
   const [rowDelete, setRowDelete] = useState<RowDeleteAction | null>(null);
   // Multi-select: ids of rows ticked for a bulk mark-read/unread/archive/delete.
   // Constrained to currently-visible rows when actions run, so a stale id left
@@ -465,9 +473,7 @@ export function InboxView() {
   }, [matchedMessages]);
 
   const sorted = useMemo(() => {
-    const list = searchActive
-      ? conversations.filter((c) => c.id && matchIds.has(c.id))
-      : [...conversations];
+    const list = searchActive ? conversations.filter((c) => c.id && matchIds.has(c.id)) : [...conversations];
     list.sort((a, b) => {
       const ta = a.updated_date ? new Date(a.updated_date).getTime() : 0;
       const tb = b.updated_date ? new Date(b.updated_date).getTime() : 0;
@@ -505,7 +511,9 @@ export function InboxView() {
         // non-fatal — leave the badge as-is.
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [setUnreadCount, conversations.length]);
 
   // On inbox mount: pull any pending bundles from the hub so conversations
@@ -513,11 +521,12 @@ export function InboxView() {
   // 404 in the rendered rows. Fire-and-forget — the entity-update channel
   // will refresh rows once the FMs land locally.
   useEffect(() => {
-    void fetchConversations().then(() => refetch()).catch(() => {});
+    void fetchConversations()
+      .then(() => refetch())
+      .catch(() => {});
     // Run once per mount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
 
   const handleRefresh = useCallback(async () => {
     setFetching(true);
@@ -529,20 +538,29 @@ export function InboxView() {
     }
   }, [refetch]);
 
-  const handleArchive = useCallback(async (convId: string) => {
-    await archiveConversation({ conversation_id: convId });
-    void refetch();
-  }, [refetch]);
+  const handleArchive = useCallback(
+    async (convId: string) => {
+      await archiveConversation({ conversation_id: convId });
+      void refetch();
+    },
+    [refetch],
+  );
 
-  const handleUnarchive = useCallback(async (convId: string) => {
-    await unarchiveConversation({ conversation_id: convId });
-    void refetch();
-  }, [refetch]);
+  const handleUnarchive = useCallback(
+    async (convId: string) => {
+      await unarchiveConversation({ conversation_id: convId });
+      void refetch();
+    },
+    [refetch],
+  );
 
-  const handleToggleRead = useCallback(async (id: string, isRead: boolean) => {
-    await updateMessage(id, { is_read: isRead });
-    void refetch();
-  }, [refetch]);
+  const handleToggleRead = useCallback(
+    async (id: string, isRead: boolean) => {
+      await updateMessage(id, { is_read: isRead });
+      void refetch();
+    },
+    [refetch],
+  );
 
   const handleMarkAllRead = useCallback(async () => {
     await bulkUpdateMessages({ is_read: true });
@@ -562,10 +580,7 @@ export function InboxView() {
   // archived conversations. Drives the BulkConfirmDialog summary and the
   // hub-reachability gate. Mirrors the server-side classification in
   // ``handle_conversation_delete_archived``.
-  const archivedConvs = useMemo(
-    () => conversations.filter((c) => c.archived_at),
-    [conversations],
-  );
+  const archivedConvs = useMemo(() => conversations.filter((c) => c.archived_at), [conversations]);
   // Classify a conversation by the user's relationship to it — drives both the
   // bulk-delete confirm summary and the hub-reachability gate. Shared by the
   // "Delete all archived" flow and the multi-select "Delete" flow.
@@ -577,24 +592,27 @@ export function InboxView() {
     // we just give the user a reasonable preview.
     return !!pointers[0] && (c.title || '').toLowerCase() === 'invitation';
   }, []);
-  const bucketsFor = useCallback((convs: Conversation[]) => {
-    let ownerCount = 0;
-    let nonOwnerCount = 0;
-    let invitationCount = 0;
-    let localCount = 0;
-    for (const c of convs) {
-      if (seemsInvitationConv(c)) {
-        invitationCount += 1;
-      } else if (!c.remote) {
-        localCount += 1;
-      } else if (cloudUserId && c.created_by === cloudUserId) {
-        ownerCount += 1;
-      } else {
-        nonOwnerCount += 1;
+  const bucketsFor = useCallback(
+    (convs: Conversation[]) => {
+      let ownerCount = 0;
+      let nonOwnerCount = 0;
+      let invitationCount = 0;
+      let localCount = 0;
+      for (const c of convs) {
+        if (seemsInvitationConv(c)) {
+          invitationCount += 1;
+        } else if (!c.remote) {
+          localCount += 1;
+        } else if (cloudUserId && c.created_by === cloudUserId) {
+          ownerCount += 1;
+        } else {
+          nonOwnerCount += 1;
+        }
       }
-    }
-    return { ownerCount, nonOwnerCount, invitationCount, localCount };
-  }, [cloudUserId, seemsInvitationConv]);
+      return { ownerCount, nonOwnerCount, invitationCount, localCount };
+    },
+    [cloudUserId, seemsInvitationConv],
+  );
   const buckets = useMemo(() => bucketsFor(archivedConvs), [bucketsFor, archivedConvs]);
   const needsHub = buckets.ownerCount + buckets.nonOwnerCount + buckets.invitationCount > 0;
 
@@ -609,8 +627,7 @@ export function InboxView() {
   const selectedBuckets = useMemo(() => bucketsFor(selectedConvs), [bucketsFor, selectedConvs]);
   const selectedNeedsHub =
     selectedBuckets.ownerCount + selectedBuckets.nonOwnerCount + selectedBuckets.invitationCount > 0;
-  const allVisibleSelected =
-    visibleCount > 0 && [...visibleIds].every((id) => selectedIds.has(id));
+  const allVisibleSelected = visibleCount > 0 && [...visibleIds].every((id) => selectedIds.has(id));
 
   const clearSelection = useCallback(() => setSelectedIds(new Set()), []);
   const toggleSelect = useCallback((convId: string) => {
@@ -635,12 +652,15 @@ export function InboxView() {
     return pointers[pointers.length - 1]?.id ?? null;
   };
 
-  const handleBulkMarkRead = useCallback(async (isRead: boolean) => {
-    const ids = selectedConvs.map(latestMessageId).filter((id): id is string => !!id);
-    await Promise.all(ids.map((id) => updateMessage(id, { is_read: isRead })));
-    clearSelection();
-    void refetch();
-  }, [selectedConvs, clearSelection, refetch]);
+  const handleBulkMarkRead = useCallback(
+    async (isRead: boolean) => {
+      const ids = selectedConvs.map(latestMessageId).filter((id): id is string => !!id);
+      await Promise.all(ids.map((id) => updateMessage(id, { is_read: isRead })));
+      clearSelection();
+      void refetch();
+    },
+    [selectedConvs, clearSelection, refetch],
+  );
 
   const handleBulkArchive = useCallback(async () => {
     await Promise.all(
@@ -814,7 +834,6 @@ export function InboxView() {
     });
   }, []);
 
-
   const inArchivedView = viewMode === 'archived';
   const inUnreadView = viewMode === 'unread';
   const inCommunityView = viewMode === 'community';
@@ -871,9 +890,7 @@ export function InboxView() {
         type="button"
         onClick={() => setView(mode)}
         className={`flex h-7 items-center gap-1 rounded-md px-2 text-xs font-medium transition-colors ${
-          active
-            ? 'bg-background text-foreground shadow-sm'
-            : 'text-muted-foreground hover:text-foreground'
+          active ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
         }`}
         data-testid={`inbox-view-${mode}`}
         aria-pressed={active}
@@ -881,9 +898,7 @@ export function InboxView() {
         <Icon className="h-3.5 w-3.5" />
         <span>{label}</span>
         {active && visibleCount > 0 && (
-          <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-            {visibleCount}
-          </span>
+          <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">{visibleCount}</span>
         )}
       </button>
     );
@@ -893,7 +908,9 @@ export function InboxView() {
   return (
     <div className="relative flex h-full flex-col">
       {!cloudUser && (
-        <LoginRequiredOverlay description={t`Sign in to your Flowpad Cloud account to view your inbox and conversations.`} />
+        <LoginRequiredOverlay
+          description={t`Sign in to your Flowpad Cloud account to view your inbox and conversations.`}
+        />
       )}
       <div className="flex shrink-0 items-center border-b px-3 py-1.5">
         {/* LEFT — view selector. flex-1 here + on RIGHT keeps the CENTER truly centered. */}
@@ -938,7 +955,7 @@ export function InboxView() {
             </div>
           )}
         </div>
-        {/* CENTER — new conversation */}
+        {/* CENTER — new conversation / new contacts group */}
         <div className="flex shrink-0 items-center">
           <Button
             variant="ghost"
@@ -950,6 +967,17 @@ export function InboxView() {
           >
             <SquarePen className="mr-1 h-3.5 w-3.5" />
             <Trans>New</Trans>
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 text-xs"
+            onClick={() => setShowNewContactsGroup(true)}
+            data-testid="inbox-new-contacts-group-button"
+            title={t`Create a contacts group — add its members to any conversation in one click`}
+          >
+            <UsersRound className="mr-1 h-3.5 w-3.5" />
+            <Trans>New group</Trans>
           </Button>
         </div>
         {/* RIGHT — actions for the current view */}
@@ -1013,71 +1041,71 @@ export function InboxView() {
               </Button>
             </div>
           ) : (
-          <>
-          {inCommunityView && (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7"
-              onClick={() => void loadCommunityTickets()}
-              disabled={communityLoading}
-              title={t`Refresh community tickets`}
-              data-testid="inbox-community-refresh-button"
-            >
-              <RefreshCw className={`h-3.5 w-3.5 ${communityLoading ? 'animate-spin' : ''}`} />
-            </Button>
-          )}
-          {!inArchivedView && !inCommunityView && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 text-xs"
-              onClick={() => void handleMarkAllRead()}
-              disabled={isLoading || visibleCount === 0}
-            >
-              <Trans>Mark all read</Trans>
-            </Button>
-          )}
-          {/* Archive all archives every conversation regardless of read state;
+            <>
+              {inCommunityView && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7"
+                  onClick={() => void loadCommunityTickets()}
+                  disabled={communityLoading}
+                  title={t`Refresh community tickets`}
+                  data-testid="inbox-community-refresh-button"
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 ${communityLoading ? 'animate-spin' : ''}`} />
+                </Button>
+              )}
+              {!inArchivedView && !inCommunityView && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 text-xs"
+                  onClick={() => void handleMarkAllRead()}
+                  disabled={isLoading || visibleCount === 0}
+                >
+                  <Trans>Mark all read</Trans>
+                </Button>
+              )}
+              {/* Archive all archives every conversation regardless of read state;
               hide it in the Archived view where it makes no sense. */}
-          {!inArchivedView && !inUnreadView && !inCommunityView && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
-              onClick={() => void handleArchiveAll()}
-              disabled={isLoading || visibleCount === 0}
-              data-testid="inbox-archive-all-button"
-            >
-              <Trans>Archive all</Trans>
-            </Button>
-          )}
-          {inArchivedView && (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
-              onClick={() => void handleDeleteArchived()}
-              disabled={isLoading || visibleCount === 0}
-              data-testid="inbox-delete-archived-button"
-            >
-              <Trash2 className="mr-1 h-3.5 w-3.5" />
-              <Trans>Delete all</Trans>
-            </Button>
-          )}
-          {!inCommunityView && (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7"
-              onClick={() => void handleRefresh()}
-              disabled={fetching}
-              title={t`Fetch new messages from hub`}
-            >
-              <RefreshCw className={`h-3.5 w-3.5 ${fetching ? 'animate-spin' : ''}`} />
-            </Button>
-          )}
-          </>
+              {!inArchivedView && !inUnreadView && !inCommunityView && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
+                  onClick={() => void handleArchiveAll()}
+                  disabled={isLoading || visibleCount === 0}
+                  data-testid="inbox-archive-all-button"
+                >
+                  <Trans>Archive all</Trans>
+                </Button>
+              )}
+              {inArchivedView && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
+                  onClick={() => void handleDeleteArchived()}
+                  disabled={isLoading || visibleCount === 0}
+                  data-testid="inbox-delete-archived-button"
+                >
+                  <Trash2 className="mr-1 h-3.5 w-3.5" />
+                  <Trans>Delete all</Trans>
+                </Button>
+              )}
+              {!inCommunityView && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7"
+                  onClick={() => void handleRefresh()}
+                  disabled={fetching}
+                  title={t`Fetch new messages from hub`}
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 ${fetching ? 'animate-spin' : ''}`} />
+                </Button>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -1086,11 +1114,15 @@ export function InboxView() {
         {/* Community staff queue — hub-sourced tickets, including unpicked ones
             that don't appear in the local conversation list. */}
         {inCommunityView && communityLoading && communityTickets.length === 0 && (
-          <div className="flex h-32 items-center justify-center text-sm text-muted-foreground"><Trans>Loading…</Trans></div>
+          <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
+            <Trans>Loading…</Trans>
+          </div>
         )}
         {inCommunityView && !communityLoading && communityTickets.length === 0 && (
           <div className="flex h-48 flex-col items-center justify-center gap-3 text-muted-foreground">
-            <span className="text-sm"><Trans>No community tickets</Trans></span>
+            <span className="text-sm">
+              <Trans>No community tickets</Trans>
+            </span>
             <Button variant="outline" size="sm" onClick={() => void loadCommunityTickets()} disabled={communityLoading}>
               <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${communityLoading ? 'animate-spin' : ''}`} />
               <Trans>Refresh</Trans>
@@ -1114,7 +1146,9 @@ export function InboxView() {
                   <div className="truncate text-xs text-muted-foreground">{ticket.preview}</div>
                 )}
               </div>
-              <span className="shrink-0 text-[11px] text-muted-foreground"><Trans>{ticket.message_count} msg</Trans></span>
+              <span className="shrink-0 text-[11px] text-muted-foreground">
+                <Trans>{ticket.message_count} msg</Trans>
+              </span>
               {ticket.picked_up && (
                 <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
                   <Trans>Joined</Trans>
@@ -1127,24 +1161,27 @@ export function InboxView() {
                 className="shrink-0 rounded bg-violet-600 px-2 py-0.5 text-[11px] font-medium text-white hover:bg-violet-700 disabled:opacity-50"
                 data-testid="community-ticket-pickup-button"
               >
-                {pickingUpId === ticket.conversation_id
-                  ? t`Picking up…`
-                  : ticket.picked_up ? t`Open` : t`Pick up`}
+                {pickingUpId === ticket.conversation_id ? t`Picking up…` : ticket.picked_up ? t`Open` : t`Pick up`}
               </button>
             </div>
           ))}
 
         {!inCommunityView && initialLoading && (
-          <div className="flex h-32 items-center justify-center text-sm text-muted-foreground"><Trans>Loading…</Trans></div>
+          <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">
+            <Trans>Loading…</Trans>
+          </div>
         )}
 
         {!inCommunityView && !initialLoading && visibleCount === 0 && (
           <div className="flex h-48 flex-col items-center justify-center gap-3 text-muted-foreground">
             <span className="text-sm">
-              {searchActive ? t`No matching conversations`
-                : inArchivedView ? t`No archived conversations`
-                : inUnreadView ? t`No unread conversations`
-                : t`No conversations`}
+              {searchActive
+                ? t`No matching conversations`
+                : inArchivedView
+                  ? t`No archived conversations`
+                  : inUnreadView
+                    ? t`No unread conversations`
+                    : t`No conversations`}
             </span>
             {!inArchivedView && !searchActive && (
               <Button variant="outline" size="sm" onClick={() => void handleRefresh()} disabled={fetching}>
@@ -1173,11 +1210,10 @@ export function InboxView() {
           </div>
         )}
 
-        {!inCommunityView && !initialLoading && (
-          <MembershipInvitations recipientEmail={cloudUser?.email ?? null} />
-        )}
+        {!inCommunityView && !initialLoading && <MembershipInvitations recipientEmail={cloudUser?.email ?? null} />}
 
-        {!inCommunityView && !initialLoading &&
+        {!inCommunityView &&
+          !initialLoading &&
           sorted.map((conv) => (
             <ConversationListRow
               key={conv.id ?? ''}
@@ -1185,9 +1221,9 @@ export function InboxView() {
               isFocused={false}
               viewMode={viewMode}
               searchActive={searchActive}
-              onArchive={handleArchive}
-              onUnarchive={handleUnarchive}
-              onToggleRead={handleToggleRead}
+              onArchive={(convId) => void handleArchive(convId)}
+              onUnarchive={(convId) => void handleUnarchive(convId)}
+              onToggleRead={(messageId, isRead) => void handleToggleRead(messageId, isRead)}
               selected={!!conv.id && selectedIds.has(conv.id)}
               onToggleSelect={toggleSelect}
               onRequestDelete={handleRowDelete}
@@ -1200,19 +1236,16 @@ export function InboxView() {
           ))}
       </div>
 
-      <NewConversationDialog
-        open={showNewConversation}
-        onClose={() => setShowNewConversation(false)}
-      />
+      <NewConversationDialog open={showNewConversation} onClose={() => setShowNewConversation(false)} />
+
+      <CreateContactsGroupDialog open={showNewContactsGroup} onOpenChange={setShowNewContactsGroup} />
 
       <BulkConfirmDialog
         open={bulkDialogOpen}
         onOpenChange={setBulkDialogOpen}
         title={t`Delete archived conversations`}
         intro={
-          needsHub
-            ? t`This sends a cloud action per conversation:`
-            : t`These conversations exist only on this device.`
+          needsHub ? t`This sends a cloud action per conversation:` : t`These conversations exist only on this device.`
         }
         buckets={[
           {

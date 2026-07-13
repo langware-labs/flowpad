@@ -1659,6 +1659,8 @@ msgstr ""
 #: src/components/assets/editor/whiteboard/WhiteboardAssetEditor.tsx
 #: src/components/assets/editor/workflow/WorkflowAssetEditor.tsx
 #: src/components/assets/ProjectPickerModal.tsx
+#: src/components/assets/PushContextFolderDialog.tsx
+#: src/components/contact-picker/CreateContactsGroupDialog.tsx
 #: src/components/conversation/asset-review/TestPromptDialog.tsx
 #: src/components/conversation/ExecutePromptDialog.tsx
 #: src/components/conversation/PromptComposerDialog.tsx
@@ -2490,6 +2492,11 @@ msgstr "מידע חיבור"
 msgid "Contacts"
 msgstr "אנשי קשר"
 
+#. placeholder {0}: name.trim()
+#: src/components/contact-picker/CreateContactsGroupDialog.tsx
+msgid "Contacts group \"{0}\" created"
+msgstr ""
+
 #: src/components/hooks-view/HooksTable.tsx
 msgid "Content"
 msgstr "תוכן"
@@ -2543,6 +2550,7 @@ msgstr "המשך דרך דוא״ל"
 msgid "Continue with Google"
 msgstr "המשך עם Google"
 
+#: src/components/assets/PushContextFolderDialog.tsx
 #: src/components/conversation/ConversationRoute.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
 msgid "Conversation"
@@ -2842,6 +2850,7 @@ msgstr "מעבד:"
 #: src/components/assets/AssetsNavigator.tsx
 #: src/components/assets/AssetsNavigator.tsx
 #: src/components/assets/AssetsPage.tsx
+#: src/components/contact-picker/CreateContactsGroupDialog.tsx
 #: src/components/cron-view/CronForm.tsx
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 #: src/components/project-selector/NewProjectDialog.tsx
@@ -2856,6 +2865,10 @@ msgstr "צור"
 
 #: src/components/assets/AddGitFolderDialog.tsx
 msgid "Create a brand-new repository"
+msgstr ""
+
+#: src/components/inbox-view/InboxView.tsx
+msgid "Create a contacts group — add its members to any conversation in one click"
 msgstr ""
 
 #. placeholder {0}: m.newFolderTarget?.label ?? 'this folder'
@@ -3765,6 +3778,10 @@ msgstr "משך זמן"
 msgid "e.g. Alex"
 msgstr "לדוגמא Alex"
 
+#: src/components/contact-picker/CreateContactsGroupDialog.tsx
+msgid "e.g. My class"
+msgstr ""
+
 #: src/components/join-room-dialog/JoinRoomDialog.tsx
 msgid "e.g. Retry logic review"
 msgstr "לדוגמה: בדיקת לוגיקה חוזרת"
@@ -4370,6 +4387,10 @@ msgstr "יצירה נכשלה"
 #: src/components/artifacts/artifact-form.tsx
 msgid "Failed to create artifact"
 msgstr "נכשל ליצור ארטיפקט"
+
+#: src/components/contact-picker/CreateContactsGroupDialog.tsx
+msgid "Failed to create contacts group"
+msgstr ""
 
 #: src/components/collaboration/sidebar/NewDocButton.tsx
 #~ msgid "Failed to create doc"
@@ -5261,6 +5282,10 @@ msgstr "תצוגת גרף"
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "Group Events"
 msgstr "אירועים בקבוצה"
+
+#: src/components/contact-picker/CreateContactsGroupDialog.tsx
+msgid "Group name"
+msgstr ""
 
 #: src/components/terminal/openers/AskInstallOneOfDialog.tsx
 msgid "Harness is required"
@@ -6728,6 +6753,7 @@ msgid "members"
 msgstr "חברים"
 
 #: src/components/account/organization-panel.tsx
+#: src/components/contact-picker/CreateContactsGroupDialog.tsx
 #: src/components/project-home/ProjectHome.tsx
 msgid "Members"
 msgstr "חברים"
@@ -6753,6 +6779,10 @@ msgstr "זיכרון:"
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Merge conflicts"
 msgstr "קונפליקטים בהיתוך"
+
+#: src/components/assets/PushContextFolderDialog.tsx
+msgid "Message"
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
 msgid "Message (optional)"
@@ -7022,6 +7052,10 @@ msgstr "צ'אט חדש"
 msgid "New Claude Session"
 msgstr "פגישת Claude חדשה"
 
+#: src/components/contact-picker/CreateContactsGroupDialog.tsx
+msgid "New contacts group"
+msgstr ""
+
 #: src/components/collaboration/sidebar/NewDocButton.tsx
 #: src/components/collaboration/sidebar/NewDocButton.tsx
 #: src/components/collaboration/sidebar/NewDocButton.tsx
@@ -7054,6 +7088,10 @@ msgstr "תיקייה חדשה"
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "New Folder"
 msgstr "תיקייה חדשה"
+
+#: src/components/inbox-view/InboxView.tsx
+msgid "New group"
+msgstr ""
 
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "New name"
@@ -8057,6 +8095,10 @@ msgstr "אין דבר בהקשר הפרטי עדיין."
 msgid "Nothing indexed yet. <0>Refresh Index</0> to populate."
 msgstr "עדיין לא אינדקס. <0>Refresh Index</0> כדי לאכלס."
 
+#: src/components/assets/PushContextFolderDialog.tsx
+msgid "Nothing new to push — message sent"
+msgstr ""
+
 #: src/components/conversation/ConversationContextPanel.tsx
 msgid "Nothing shared in this conversation."
 msgstr "אין שום דבר משותף בשיחה זו."
@@ -8082,7 +8124,7 @@ msgstr "אין מה לעשות."
 msgid "Nothing to improve"
 msgstr "אין מה לשפר"
 
-#: src/components/assets/ContextFolderBrowser.tsx
+#: src/components/assets/PushContextFolderDialog.tsx
 msgid "Nothing to push"
 msgstr ""
 
@@ -8105,6 +8147,10 @@ msgstr "התראות"
 #: src/components/inbox-view/InboxView.tsx
 msgid "Notifies the inviter"
 msgstr "מודיע למזמין"
+
+#: src/components/assets/PushContextFolderDialog.tsx
+msgid "Notify (optional)"
+msgstr ""
 
 #: src/components/hooks-manager/TriggerForm.tsx
 msgid "Notify Entity (Increment Counter)"
@@ -8804,6 +8850,14 @@ msgstr "בחרו איש קשר או הזינו כתובת אימייל"
 msgid "Pick a contact to see your conversations with them."
 msgstr "בחר איש קשר כדי לראות את השיחות שלך איתו."
 
+#: src/components/assets/PushContextFolderDialog.tsx
+msgid "Pick a contacts group or people — empty = just push"
+msgstr ""
+
+#: src/components/contact-picker/CreateContactsGroupDialog.tsx
+msgid "Pick a group in any conversation to add all its members at once."
+msgstr ""
+
 #: src/components/open-project-component/open-project-component.tsx
 msgid "Pick a project"
 msgstr "בחר פרויקט"
@@ -9310,20 +9364,45 @@ msgid "Pulling…"
 msgstr "משיכה…"
 
 #: src/components/assets/ContextFolderBrowser.tsx
+#: src/components/assets/PushContextFolderDialog.tsx
 #: src/components/status-bar/GitPushButton.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Push"
 msgstr "דחף"
 
-#: src/components/assets/ContextFolderBrowser.tsx
+#: src/components/assets/PushContextFolderDialog.tsx
+msgid "Push {folderName}"
+msgstr ""
+
+#: src/components/assets/PushContextFolderDialog.tsx
+msgid "Push & notify"
+msgstr ""
+
+#: src/components/assets/PushContextFolderDialog.tsx
 msgid "Push failed"
+msgstr ""
+
+#: src/components/assets/PushContextFolderDialog.tsx
+msgid "Push to {branch} — optionally tell people about it."
+msgstr ""
+
+#: src/components/assets/PushContextFolderDialog.tsx
+msgid "Push to the remote — optionally tell people about it."
 msgstr ""
 
 #: src/components/git/RepoPicker.tsx
 msgid "Pushed"
 msgstr "דחוף"
 
-#: src/components/assets/ContextFolderBrowser.tsx
+#: src/components/assets/PushContextFolderDialog.tsx
+msgid "Pushed {folderName}"
+msgstr ""
+
+#: src/components/assets/PushContextFolderDialog.tsx
+msgid "Pushed and message sent"
+msgstr ""
+
+#: src/components/assets/PushContextFolderDialog.tsx
 msgid "Pushed to remote"
 msgstr ""
 
@@ -11535,6 +11614,10 @@ msgstr ""
 msgid "Start new conversation · {effectiveTitle}"
 msgstr "התחל שיחה חדשה · {effectiveTitle}"
 
+#: src/components/assets/PushContextFolderDialog.tsx
+msgid "Start new conversation · {title}"
+msgstr ""
+
 #: src/components/project-home/ProjectHome.tsx
 msgid "Start new session"
 msgstr ""
@@ -12974,6 +13057,10 @@ msgstr "סימנייה ברוכה הבאה וערך עדכוני ראשון, ז�
 #: src/components/floating-chat/FloatingChatWindow.tsx
 msgid "What can flowpad do for you ?"
 msgstr "מה יכול Flowpad לעשות בשבילך?"
+
+#: src/components/assets/PushContextFolderDialog.tsx
+msgid "What changed? Sent to the recipients below…"
+msgstr ""
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "What do you need help with?"

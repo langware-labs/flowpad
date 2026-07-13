@@ -1659,6 +1659,8 @@ msgstr "Can't open terminal"
 #: src/components/assets/editor/whiteboard/WhiteboardAssetEditor.tsx
 #: src/components/assets/editor/workflow/WorkflowAssetEditor.tsx
 #: src/components/assets/ProjectPickerModal.tsx
+#: src/components/assets/PushContextFolderDialog.tsx
+#: src/components/contact-picker/CreateContactsGroupDialog.tsx
 #: src/components/conversation/asset-review/TestPromptDialog.tsx
 #: src/components/conversation/ExecutePromptDialog.tsx
 #: src/components/conversation/PromptComposerDialog.tsx
@@ -2490,6 +2492,11 @@ msgstr "Connection Info"
 msgid "Contacts"
 msgstr "Contacts"
 
+#. placeholder {0}: name.trim()
+#: src/components/contact-picker/CreateContactsGroupDialog.tsx
+msgid "Contacts group \"{0}\" created"
+msgstr "Contacts group \"{0}\" created"
+
 #: src/components/hooks-view/HooksTable.tsx
 msgid "Content"
 msgstr "Content"
@@ -2543,6 +2550,7 @@ msgstr "Continue with Email"
 msgid "Continue with Google"
 msgstr "Continue with Google"
 
+#: src/components/assets/PushContextFolderDialog.tsx
 #: src/components/conversation/ConversationRoute.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
 msgid "Conversation"
@@ -2842,6 +2850,7 @@ msgstr "CPU:"
 #: src/components/assets/AssetsNavigator.tsx
 #: src/components/assets/AssetsNavigator.tsx
 #: src/components/assets/AssetsPage.tsx
+#: src/components/contact-picker/CreateContactsGroupDialog.tsx
 #: src/components/cron-view/CronForm.tsx
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 #: src/components/project-selector/NewProjectDialog.tsx
@@ -2857,6 +2866,10 @@ msgstr "Create"
 #: src/components/assets/AddGitFolderDialog.tsx
 msgid "Create a brand-new repository"
 msgstr "Create a brand-new repository"
+
+#: src/components/inbox-view/InboxView.tsx
+msgid "Create a contacts group — add its members to any conversation in one click"
+msgstr "Create a contacts group — add its members to any conversation in one click"
 
 #. placeholder {0}: m.newFolderTarget?.label ?? 'this folder'
 #: src/components/assets/AssetsNavigator.tsx
@@ -3765,6 +3778,10 @@ msgstr "Duration"
 msgid "e.g. Alex"
 msgstr "e.g. Alex"
 
+#: src/components/contact-picker/CreateContactsGroupDialog.tsx
+msgid "e.g. My class"
+msgstr "e.g. My class"
+
 #: src/components/join-room-dialog/JoinRoomDialog.tsx
 msgid "e.g. Retry logic review"
 msgstr "e.g. Retry logic review"
@@ -4370,6 +4387,10 @@ msgstr "Failed to create"
 #: src/components/artifacts/artifact-form.tsx
 msgid "Failed to create artifact"
 msgstr "Failed to create artifact"
+
+#: src/components/contact-picker/CreateContactsGroupDialog.tsx
+msgid "Failed to create contacts group"
+msgstr "Failed to create contacts group"
 
 #: src/components/collaboration/sidebar/NewDocButton.tsx
 #~ msgid "Failed to create doc"
@@ -5261,6 +5282,10 @@ msgstr "Graph view"
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "Group Events"
 msgstr "Group Events"
+
+#: src/components/contact-picker/CreateContactsGroupDialog.tsx
+msgid "Group name"
+msgstr "Group name"
 
 #: src/components/terminal/openers/AskInstallOneOfDialog.tsx
 msgid "Harness is required"
@@ -6728,6 +6753,7 @@ msgid "members"
 msgstr "members"
 
 #: src/components/account/organization-panel.tsx
+#: src/components/contact-picker/CreateContactsGroupDialog.tsx
 #: src/components/project-home/ProjectHome.tsx
 msgid "Members"
 msgstr "Members"
@@ -6753,6 +6779,10 @@ msgstr "Memory:"
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Merge conflicts"
 msgstr "Merge conflicts"
+
+#: src/components/assets/PushContextFolderDialog.tsx
+msgid "Message"
+msgstr "Message"
 
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
 msgid "Message (optional)"
@@ -7022,6 +7052,10 @@ msgstr "New chat"
 msgid "New Claude Session"
 msgstr "New Claude Session"
 
+#: src/components/contact-picker/CreateContactsGroupDialog.tsx
+msgid "New contacts group"
+msgstr "New contacts group"
+
 #: src/components/collaboration/sidebar/NewDocButton.tsx
 #: src/components/collaboration/sidebar/NewDocButton.tsx
 #: src/components/collaboration/sidebar/NewDocButton.tsx
@@ -7054,6 +7088,10 @@ msgstr "New folder"
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "New Folder"
 msgstr "New Folder"
+
+#: src/components/inbox-view/InboxView.tsx
+msgid "New group"
+msgstr "New group"
 
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "New name"
@@ -8057,6 +8095,10 @@ msgstr "Nothing in private context yet."
 msgid "Nothing indexed yet. <0>Refresh Index</0> to populate."
 msgstr "Nothing indexed yet. <0>Refresh Index</0> to populate."
 
+#: src/components/assets/PushContextFolderDialog.tsx
+msgid "Nothing new to push — message sent"
+msgstr "Nothing new to push — message sent"
+
 #: src/components/conversation/ConversationContextPanel.tsx
 msgid "Nothing shared in this conversation."
 msgstr "Nothing shared in this conversation."
@@ -8082,7 +8124,7 @@ msgstr "Nothing to do."
 msgid "Nothing to improve"
 msgstr "Nothing to improve"
 
-#: src/components/assets/ContextFolderBrowser.tsx
+#: src/components/assets/PushContextFolderDialog.tsx
 msgid "Nothing to push"
 msgstr "Nothing to push"
 
@@ -8105,6 +8147,10 @@ msgstr "Notifications"
 #: src/components/inbox-view/InboxView.tsx
 msgid "Notifies the inviter"
 msgstr "Notifies the inviter"
+
+#: src/components/assets/PushContextFolderDialog.tsx
+msgid "Notify (optional)"
+msgstr "Notify (optional)"
 
 #: src/components/hooks-manager/TriggerForm.tsx
 msgid "Notify Entity (Increment Counter)"
@@ -8804,6 +8850,14 @@ msgstr "Pick a contact or enter an email"
 msgid "Pick a contact to see your conversations with them."
 msgstr "Pick a contact to see your conversations with them."
 
+#: src/components/assets/PushContextFolderDialog.tsx
+msgid "Pick a contacts group or people — empty = just push"
+msgstr "Pick a contacts group or people — empty = just push"
+
+#: src/components/contact-picker/CreateContactsGroupDialog.tsx
+msgid "Pick a group in any conversation to add all its members at once."
+msgstr "Pick a group in any conversation to add all its members at once."
+
 #: src/components/open-project-component/open-project-component.tsx
 msgid "Pick a project"
 msgstr "Pick a project"
@@ -9310,20 +9364,45 @@ msgid "Pulling…"
 msgstr "Pulling…"
 
 #: src/components/assets/ContextFolderBrowser.tsx
+#: src/components/assets/PushContextFolderDialog.tsx
 #: src/components/status-bar/GitPushButton.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Push"
 msgstr "Push"
 
-#: src/components/assets/ContextFolderBrowser.tsx
+#: src/components/assets/PushContextFolderDialog.tsx
+msgid "Push {folderName}"
+msgstr "Push {folderName}"
+
+#: src/components/assets/PushContextFolderDialog.tsx
+msgid "Push & notify"
+msgstr "Push & notify"
+
+#: src/components/assets/PushContextFolderDialog.tsx
 msgid "Push failed"
 msgstr "Push failed"
+
+#: src/components/assets/PushContextFolderDialog.tsx
+msgid "Push to {branch} — optionally tell people about it."
+msgstr "Push to {branch} — optionally tell people about it."
+
+#: src/components/assets/PushContextFolderDialog.tsx
+msgid "Push to the remote — optionally tell people about it."
+msgstr "Push to the remote — optionally tell people about it."
 
 #: src/components/git/RepoPicker.tsx
 msgid "Pushed"
 msgstr "Pushed"
 
-#: src/components/assets/ContextFolderBrowser.tsx
+#: src/components/assets/PushContextFolderDialog.tsx
+msgid "Pushed {folderName}"
+msgstr "Pushed {folderName}"
+
+#: src/components/assets/PushContextFolderDialog.tsx
+msgid "Pushed and message sent"
+msgstr "Pushed and message sent"
+
+#: src/components/assets/PushContextFolderDialog.tsx
 msgid "Pushed to remote"
 msgstr "Pushed to remote"
 
@@ -11535,6 +11614,10 @@ msgstr "Start new conversation"
 msgid "Start new conversation · {effectiveTitle}"
 msgstr "Start new conversation · {effectiveTitle}"
 
+#: src/components/assets/PushContextFolderDialog.tsx
+msgid "Start new conversation · {title}"
+msgstr "Start new conversation · {title}"
+
 #: src/components/project-home/ProjectHome.tsx
 msgid "Start new session"
 msgstr "Start new session"
@@ -12974,6 +13057,10 @@ msgstr "Welcome bookmark + feed entry, seeded on first run. Status: {onboardingS
 #: src/components/floating-chat/FloatingChatWindow.tsx
 msgid "What can flowpad do for you ?"
 msgstr "What can flowpad do for you ?"
+
+#: src/components/assets/PushContextFolderDialog.tsx
+msgid "What changed? Sent to the recipients below…"
+msgstr "What changed? Sent to the recipients below…"
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "What do you need help with?"

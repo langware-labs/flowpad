@@ -1,14 +1,22 @@
 import { Folder, FolderPlus, FolderTree, GitBranch, X } from 'lucide-react';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { ViewType } from '@src/types/ViewType';
-import type { ProjectContextDirInfo } from '@sdk';
+import type { ProjectContextDirInfo, TypeId } from '@sdk';
 import type {
   Browseable,
   BrowseableDragData,
   BrowseableRoot,
   DroppedFileEntry,
 } from '@src/components/browseable-tree/types';
-import { basename, isFsDragItem, normalizeRel, type FsDragItem } from './fsFolderRoot';
+import {
+  assetsFsFolderNode,
+  basename,
+  fsDragEntries,
+  isFsDragItem,
+  normalizeRel,
+  type FsDragItem,
+  type FsFolderDrop,
+} from './fsFolderRoot';
 
 /**
  * assetContextFoldersRoot — the Assets navigator's "Context folders" root.
@@ -26,6 +34,9 @@ export interface AssetContextFoldersRootDeps {
   /** The project's context folders (absolute canonical posix path + origin
    *  kind — "git" rows render with a git icon). */
   dirs: ProjectContextDirInfo[];
+  /** Compute node whose VFS backs the folders. When present, each context
+   *  folder row expands into its real on-disk tree (lazy fs browse). */
+  fsTypeId?: TypeId | null;
   /** "Add context folder" toolbar action (native folder picker → add). */
   onAdd: () => void | Promise<void>;
   /** Per-row remove action. */
@@ -49,18 +60,44 @@ function parentRel(rel: string): string {
 
 function canDropIntoDir(dir: string, data: BrowseableDragData): boolean {
   if (!isFsDragItem(data)) return false;
-  const src = normalizeRel(data.relPath);
   const dest = normalizeRel(dir);
-  if (!src) return false;
-  // No-op / cycle guards: already directly inside the target, or dropping a
-  // folder into itself or its own descendant.
-  if (parentRel(src) === dest) return false;
-  if (data.isDir && (src === dest || dest.startsWith(`${src}/`))) return false;
-  return true;
+  // Every dragged entry (one row, or a multi-selection) must be droppable.
+  return fsDragEntries(data).every(({ relPath, isDir }) => {
+    const src = normalizeRel(relPath);
+    if (!src) return false;
+    // No-op / cycle guards: already directly inside the target, or dropping a
+    // folder into itself or its own descendant.
+    if (parentRel(src) === dest) return false;
+    if (isDir && (src === dest || dest.startsWith(`${src}/`))) return false;
+    return true;
+  });
+}
+
+/** Drop handlers for any folder INSIDE a context dir, bound to that folder's
+ *  own path — so a drop lands in the exact subfolder it was released on. */
+function subfolderDrop(
+  onDropItem: AssetContextFoldersRootDeps['onDropItem'],
+  onExternalDrop: AssetContextFoldersRootDeps['onExternalDrop'],
+): ((rel: string) => FsFolderDrop) | undefined {
+  if (!onDropItem && !onExternalDrop) return undefined;
+  return (rel: string) => {
+    const abs = `/${normalizeRel(rel)}`;
+    return {
+      canDrop: onDropItem ? (data: BrowseableDragData) => canDropIntoDir(abs, data) : undefined,
+      onDrop: onDropItem
+        ? async (data: BrowseableDragData) => {
+            if (!isFsDragItem(data) || !canDropIntoDir(abs, data)) return;
+            await onDropItem(data, abs);
+          }
+        : undefined,
+      onExternalFilesDrop: onExternalDrop ? (entries: DroppedFileEntry[]) => onExternalDrop(entries, abs) : undefined,
+    };
+  };
 }
 
 function dirNode(
   info: ProjectContextDirInfo,
+  fsTypeId: AssetContextFoldersRootDeps['fsTypeId'],
   onRemove: AssetContextFoldersRootDeps['onRemove'],
   onDropItem: AssetContextFoldersRootDeps['onDropItem'],
   onExternalDrop: AssetContextFoldersRootDeps['onExternalDrop'],
@@ -68,7 +105,14 @@ function dirNode(
   const dir = info.path;
   const isGit = info.origin_kind === 'git';
   const rel = normalizeRel(dir);
+  // With a compute node the row is a real expandable fs folder (lazy browse,
+  // same cache as the body's file manager); without one it stays a leaf.
+  // Its whole subtree accepts drops, each folder bound to its own path.
+  const fsNode = fsTypeId
+    ? assetsFsFolderNode(fsTypeId, rel, undefined, subfolderDrop(onDropItem, onExternalDrop))
+    : null;
   return {
+    ...fsNode,
     id: assetContextFolderNodeId(dir),
     kind: 'folder',
     label: basename(rel) || rel,
@@ -77,8 +121,7 @@ function dirNode(
     ) : (
       <Folder className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
     ),
-    // Leaf in the tree — the body's file explorer does the deep browsing.
-    hasChildren: false,
+    hasChildren: !!fsNode,
     pointer: DockPointer.forAssetFsFolder(rel),
     canDrop: onDropItem ? (data) => canDropIntoDir(dir, data) : undefined,
     onDrop: onDropItem
@@ -100,7 +143,7 @@ function dirNode(
 }
 
 export function assetContextFoldersRoot(deps: AssetContextFoldersRootDeps): BrowseableRoot {
-  const { dirs, onAdd, onRemove, onDropItem, onExternalDrop } = deps;
+  const { dirs, fsTypeId, onAdd, onRemove, onDropItem, onExternalDrop } = deps;
   const root: BrowseableRoot = {
     id: 'asset-context-folders-root',
     kind: 'root',
@@ -109,7 +152,7 @@ export function assetContextFoldersRoot(deps: AssetContextFoldersRootDeps): Brow
     hasChildren: dirs.length > 0,
     pointer: null,
     listChildren: (): Promise<Browseable[]> =>
-      Promise.resolve(dirs.map((info) => dirNode(info, onRemove, onDropItem, onExternalDrop))),
+      Promise.resolve(dirs.map((info) => dirNode(info, fsTypeId, onRemove, onDropItem, onExternalDrop))),
     toolbar: [
       {
         id: 'add',
@@ -125,7 +168,20 @@ export function assetContextFoldersRoot(deps: AssetContextFoldersRootDeps): Brow
         const dr = normalizeRel(info.path);
         return rel === dr || rel.startsWith(`${dr}/`);
       });
-      return Promise.resolve(match ? [root, dirNode(match, onRemove, onDropItem, onExternalDrop)] : [root]);
+      if (!match) return Promise.resolve([root]);
+      const chain: Browseable[] = [root, dirNode(match, fsTypeId, onRemove, onDropItem, onExternalDrop)];
+      // Deep-link below the context dir: chain the intermediate fs folder
+      // nodes (same ids listChildren produces) so the tree auto-expands.
+      if (fsTypeId) {
+        const dirRel = normalizeRel(match.path);
+        const extra = rel === dirRel ? '' : rel.slice(dirRel.length).replace(/^\/+/, '');
+        let cur = dirRel;
+        for (const seg of extra ? extra.split('/') : []) {
+          cur = `${cur}/${seg}`;
+          chain.push(assetsFsFolderNode(fsTypeId, cur, seg, subfolderDrop(onDropItem, onExternalDrop)));
+        }
+      }
+      return Promise.resolve(chain);
     },
   };
   return root;
