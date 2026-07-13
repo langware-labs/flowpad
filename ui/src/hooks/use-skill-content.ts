@@ -58,7 +58,7 @@ function serializeSkillMd(name: string, description: string, body: string): stri
  */
 export function useSkillContent(
   fsRef: FsRef | null,
-  options?: { autoSave?: boolean; autoSaveMs?: number },
+  options?: { autoSave?: boolean; autoSaveMs?: number; reloadKey?: string | number },
 ): SkillContentState {
   const { content, setContent, ...rest } = useFSRefContent(fsRef, options);
 

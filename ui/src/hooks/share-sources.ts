@@ -66,6 +66,16 @@ export interface ShareSource {
   isProcess?: boolean;
   /** Static body transfer policy for this source. */
   shareConfig?: ConversationSendPayload['shareConfig'];
+  /** Offer the "Create bookmark" checkbox — the shared thing is a navigable
+   *  entity the receiver could favorite (assets/artifacts, not raw files or
+   *  message forwards). */
+  bookmarkable?: boolean;
+  /** For git-transfer shares: the local checkout that must be clean AND pushed
+   *  before sharing (the receiver clones from the remote, so uncommitted or
+   *  unpushed work would silently not travel — or break the clone). When set,
+   *  the dialog BLOCKS Share while the repo has uncommitted or unpushed
+   *  commits, directing the user to the git push button. */
+  gitGate?: { computeNodeId: string; workdir: string };
   prepare(opts: SharePrepOptions): Promise<SharePrepPayload>;
 }
 
@@ -94,6 +104,7 @@ export function genericEntityShareSource(
     label: opts.label ?? ref,
     typeLabel: opts.typeLabel ?? typeId.type,
     defaultTitle: opts.label,
+    bookmarkable: true,
     prepare: resolveOnce(() =>
       Promise.resolve({
         assetReferences: [ref],
@@ -112,14 +123,20 @@ export function artifactShareSource(
   opts: { label?: string; typeLabel?: string } = {},
 ): ShareSource {
   const ref = artifact.typeId.toString();
-  const shareConfig = isCompleteGitOrigin(artifact.git_origin)
-    ? { transferMode: 'git' as const }
-    : undefined;
+  const isGit = isCompleteGitOrigin(artifact.git_origin);
+  const shareConfig = isGit ? { transferMode: 'git' as const } : undefined;
+  // Git shares clone from the remote, so gate on a clean, pushed local checkout.
+  // Artifacts run on the local compute node; the artifact's own path is inside
+  // the repo (git status resolves the root from any subdir).
+  const gitGate =
+    isGit && artifact.path ? { computeNodeId: '@local', workdir: artifact.path } : undefined;
   return {
     label: opts.label ?? artifact.displayName ?? ref,
     typeLabel: opts.typeLabel ?? artifact.artifact_type ?? Artifact.type,
     defaultTitle: opts.label ?? artifact.displayName,
     shareConfig,
+    bookmarkable: true,
+    gitGate,
     prepare: resolveOnce(() =>
       Promise.resolve({
         assetReferences: [ref],

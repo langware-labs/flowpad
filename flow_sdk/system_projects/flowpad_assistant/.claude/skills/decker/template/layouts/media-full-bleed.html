@@ -1,0 +1,14 @@
+<section class="layout layout-media-full-bleed" data-layout="media-full-bleed" data-page-type="media">
+  <style>
+    .layout-media-full-bleed { padding: 0; position: relative; }
+    .layout-media-full-bleed figure[data-slot="media"] { margin: 0; width: 100%; height: 100%; }
+    .layout-media-full-bleed figure[data-slot="media"] img,
+    .layout-media-full-bleed figure[data-slot="media"] video { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .layout-media-full-bleed figcaption[data-slot="caption"] { position: absolute; left: var(--safe-area); bottom: var(--safe-area); margin: 0; padding: var(--sp-2) var(--sp-4); background: var(--surface); border-radius: var(--radius-sm); color: var(--text); font-size: var(--fs-caption); }
+    .layout-media-full-bleed .media-placeholder { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; background: var(--surface); color: var(--text-secondary); font-size: var(--fs-caption); }
+  </style>
+  <figure data-slot="media" data-media-kind="image">
+    <div class="media-placeholder">Media placeholder</div>
+  </figure>
+  <figcaption class="caption" data-slot="caption" data-optional>A caption describing the media</figcaption>
+</section>

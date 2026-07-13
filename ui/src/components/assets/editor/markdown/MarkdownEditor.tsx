@@ -99,6 +99,14 @@ interface MarkdownEditorProps {
   onDelete?: () => Promise<void>;
   /** Display name shown in the delete confirmation. Defaults to the filename. */
   deleteLabel?: string;
+  /**
+   * External change token (typically the backing entity's `updated_date`). When
+   * it changes, the body is re-read from disk — closes the
+   * `file change → reindex → updated_date → refresh` loop so an out-of-band edit
+   * (e.g. an agent editing this open doc) refreshes the view. Ignored while the
+   * buffer is dirty (unsaved edits win).
+   */
+  reloadKey?: string | number;
 }
 
 /**
@@ -120,6 +128,7 @@ export function MarkdownEditor({
   learningPanel,
   onDelete,
   deleteLabel,
+  reloadKey,
 }: MarkdownEditorProps) {
   return (
     <MarkdownEditorContent
@@ -133,6 +142,7 @@ export function MarkdownEditor({
       learningPanel={learningPanel}
       onDelete={onDelete}
       deleteLabel={deleteLabel}
+      reloadKey={reloadKey}
     />
   );
 }
@@ -179,6 +189,7 @@ function MarkdownEditorContent({
   learningPanel,
   onDelete,
   deleteLabel,
+  reloadKey,
 }: {
   fsRef: FSRef;
   sourcePath: string;
@@ -190,6 +201,7 @@ function MarkdownEditorContent({
   learningPanel?: React.ReactNode;
   onDelete?: MarkdownEditorProps['onDelete'];
   deleteLabel?: MarkdownEditorProps['deleteLabel'];
+  reloadKey?: string | number;
 }) {
   const { t } = useLingui();
   const { navigation, currentDock } = useDockNavigation();
@@ -264,7 +276,7 @@ function MarkdownEditorContent({
     recreate,
     reload,
     lastSync,
-  } = useMarkdownContent(fsRef, { autoSave: true, autoSaveMs: 2000 });
+  } = useMarkdownContent(fsRef, { autoSave: true, autoSaveMs: 2000, reloadKey });
 
   const [propsExpanded, setPropsExpanded] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);

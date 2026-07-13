@@ -51,6 +51,11 @@ export function chipStateFor(
   ma: MessageAttachment | undefined,
   forceShow: boolean,
 ): EntityChipDisplayState {
+  // Raw FILE rows (the OS-file-picker lane) never resolve as an entity —
+  // installing copies bytes into a folder, it does not mint a resolvable
+  // entity. So installed-ness comes from the MA row's own scope, and entity
+  // resolution is irrelevant for them.
+  if (ma?.asset_type === 'file') return ma.installed ? 'installed' : 'staged';
   if (entityResolved) return 'installed';
   // A staged (or installed-but-not-yet-synced) attachment renders as staged
   // until the asset entity actually resolves locally.

@@ -9,7 +9,9 @@ description: Build and develop full-stack web applications from a tested, copy-a
   or anything with a UI plus a database/auth — even if they don't literally say
   "web app", and even (especially) when they phrase it as "build me a website
   using flowpad assistant" — website building belongs to THIS skill, not to the
-  flowpad-assistance skill. Also use it when adding pages, components, API
+  flowpad-assistance skill. Slide decks / presentations / pitch decks are NOT
+  web apps — those belong to the `decker` skill, not this one. Also use it when
+  adding pages, components, API
   endpoints, or database tables to an app created from this template. Bootstrap means copying the bundled
   template as-is and running its setup script as-is — never scaffold by hand and
   never run create-next-app.
@@ -171,3 +173,11 @@ full show/navigate contract. Optionally, ALSO register the services as results
 ```
 
 Outside FlowPad, just print the URLs (http://localhost:3000, :8080).
+
+## Testing the app — use the `web-tester` skill
+
+When the user asks to **test / QA / validate / smoke-test / check** the app in a
+browser, don't hand-roll Playwright here — route to the **web-tester** skill. With
+the dev server running, it sweeps the app's routes headlessly (console/JS errors,
+failed requests, screenshots, broken links, basic a11y) and reports pass/fail,
+keeping all debug artifacts in an isolated temp folder (never in this project).

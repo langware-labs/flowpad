@@ -1,0 +1,31 @@
+<section class="layout layout-metrics-grid" data-layout="metrics-grid" data-page-type="metrics">
+  <style>
+    .layout-metrics-grid .metrics { margin-top: var(--sp-6); }
+    .layout-metrics-grid .metric { display: flex; flex-direction: column; gap: var(--sp-2); }
+    .layout-metrics-grid .metric .metric-delta { margin-top: var(--sp-1); }
+  </style>
+  <h2 data-slot="title">By the numbers</h2>
+  <div class="grid grid--cols-3 metrics" data-slot="items">
+    <template data-item>
+      <div class="metric card">
+        <span class="metric-value" data-slot="metric-value">0</span>
+        <span class="metric-label" data-slot="metric-label">label</span>
+        <span class="metric-delta" data-slot="metric-delta" data-optional>+0%</span>
+      </div>
+    </template>
+    <div class="metric card">
+      <span class="metric-value">12k</span>
+      <span class="metric-label">Active users</span>
+      <span class="metric-delta">+38% QoQ</span>
+    </div>
+    <div class="metric card">
+      <span class="metric-value">99.9%</span>
+      <span class="metric-label">Uptime</span>
+    </div>
+    <div class="metric card">
+      <span class="metric-value">$1.2M</span>
+      <span class="metric-label">ARR</span>
+      <span class="metric-delta">+2.1x YoY</span>
+    </div>
+  </div>
+</section>

@@ -56,6 +56,15 @@ interface Options {
    * loaded content on mount) never marks a phantom edit. Defaults to identity.
    */
   normalize?: (content: string) => string;
+  /**
+   * External change token. When it changes, the body is re-read from disk —
+   * this closes the `file change → reindex → entity updated_date → refresh`
+   * loop: feed the resolved entity's ``updated_date`` here so an out-of-band
+   * write (e.g. an agent editing an open doc) refreshes the rendered content.
+   * Guarded: a change is IGNORED while the buffer is dirty, so an external
+   * update never clobbers unsaved edits (the user's save wins).
+   */
+  reloadKey?: string | number;
 }
 
 /**
@@ -111,15 +120,35 @@ export function useFSRefContent(fsRef: FsRef | null, options?: Options): FsRefCo
     () => loaded && normalize(content) !== normalize(remoteContent),
     [loaded, content, remoteContent, normalize],
   );
+  // Live dirty flag for the reloadKey guard below (avoids adding `dirty` to the
+  // load effect's deps, which would re-fire it on every keystroke).
+  const dirtyRef = useRef(dirty);
+  dirtyRef.current = dirty;
+
+  // Distinguish an external `reloadKey` change (a background disk edit) from a
+  // path change / explicit reload(): only the former must yield to unsaved edits.
+  const reloadKey = options?.reloadKey;
+  const prevPathRef = useRef(path);
+  const prevReloadTriggerRef = useRef(reloadTrigger);
 
   // ── Load ──────────────────────────────────────────────────────────────────
-  // Keyed on `path` (stable string) + `reloadTrigger`, NOT the fsRef object —
-  // see fsRefRef note above. Reads the live `fsRefRef.current` so the closure
-  // always uses the current fsManager binding even though the effect didn't
-  // re-run for an identity-only change.
+  // Keyed on `path` (stable string) + `reloadTrigger` + `reloadKey`, NOT the
+  // fsRef object — see fsRefRef note above. Reads the live `fsRefRef.current` so
+  // the closure always uses the current fsManager binding even though the effect
+  // didn't re-run for an identity-only change.
   useEffect(() => {
     const fsRef = fsRefRef.current;
     if (!fsRef) return;
+    // Guard: a bare `reloadKey` bump (path + manual reload unchanged) is an
+    // external change signal — skip the re-read while the buffer is dirty so an
+    // out-of-band write never discards the user's unsaved edits (their save wins).
+    const pathChanged = prevPathRef.current !== path;
+    const manualReload = prevReloadTriggerRef.current !== reloadTrigger;
+    prevPathRef.current = path;
+    prevReloadTriggerRef.current = reloadTrigger;
+    if (!pathChanged && !manualReload && dirtyRef.current) {
+      return;
+    }
     let cancelled = false;
     setLoaded(false);
     setLoadError(null);
@@ -156,7 +185,7 @@ export function useFSRefContent(fsRef: FsRef | null, options?: Options): FsRefCo
     void load();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [path, reloadTrigger]);
+  }, [path, reloadTrigger, reloadKey]);
 
   // ── Re-create (missing-file recovery) ────────────────────────────────────
   const recreate = useCallback(async () => {

@@ -16,6 +16,7 @@ import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
 import { guardCloudAction } from '@src/services/privacy-guard';
 import { useLocalUser } from '@src/components/conversation/useLocalUser';
 import type { ShareSource } from '@src/hooks/share-sources';
+import { useGitShareGate } from '@src/hooks/use-git-share-gate';
 import { ContactPicker } from '@src/components/contact-picker/ContactPicker';
 import { AddressBookButton } from '@src/components/contact-picker/AddressBookButton';
 import { FileAttachmentPicker } from '@src/components/conversation/FileAttachmentPicker';
@@ -116,6 +117,10 @@ export function ShareToConversationDialog({
   const [note, setNote] = useState('');
   const [files, setFiles] = useState<File[]>([]);
   const [attachTranscript, setAttachTranscript] = useState(true);
+  // "Create bookmark" opt-in (default off): the receiver mints a favorite
+  // pointing at the shared asset when it installs. Only offered for bookmarkable
+  // sources (assets/artifacts).
+  const [createBookmark, setCreateBookmark] = useState(false);
   // Which conversation row is selected (a conversation id, or NEW_CONVERSATION).
   // Click selects; double-click or the Share button commits.
   const [selected, setSelected] = useState<string>(NEW_CONVERSATION);
@@ -164,6 +169,7 @@ export function ShareToConversationDialog({
     setNote(defaultNoteRef.current ?? '');
     setFiles([]);
     setAttachTranscript(true);
+    setCreateBookmark(false);
     setSharedConversationId(null);
     setLocalError(null);
     resetDraft();
@@ -186,9 +192,11 @@ export function ShareToConversationDialog({
   const canStartNew = participants.length > 0 && (isRemote || !!effectiveProjectId) && titleOk;
   const hasContacts = participants.length > 0;
   const isNewSelected = selected === NEW_CONVERSATION;
-  const canShareSelected = isNewSelected
-    ? canStartNew
-    : conversations.some((c) => c.id === selected);
+  // Git-transfer shares are blocked until the local checkout is clean + pushed.
+  const gitGate = useGitShareGate(source.gitGate, open);
+  const canShareSelected =
+    !gitGate.blocked && !gitGate.loading &&
+    (isNewSelected ? canStartNew : conversations.some((c) => c.id === selected));
 
   const doShare = async (existingId: string | null) => {
     if (busy) return;
@@ -211,12 +219,18 @@ export function ShareToConversationDialog({
         attachTranscript,
         files,
       });
+      // `createBookmark` can only be true when the checkbox rendered, which
+      // requires `source.bookmarkable` — no need to re-check it here.
+      const baseShareConfig = prepared.shareConfig ?? source.shareConfig;
+      const mergedShareConfig = createBookmark
+        ? { ...(baseShareConfig ?? {}), createBookmark: true }
+        : baseShareConfig;
       payload = {
         text: note.trim(),
         files: prepared.files,
         assetReferences: prepared.assetReferences,
         sharedContextEntities: prepared.sharedContextEntities,
-        shareConfig: prepared.shareConfig ?? source.shareConfig,
+        shareConfig: mergedShareConfig,
       };
       const target: SendTarget = existingId
         ? { kind: 'existing', conversationId: existingId }
@@ -371,6 +385,38 @@ export function ShareToConversationDialog({
                   </label>
                 )}
                 <FileAttachmentPicker files={files} onChange={setFiles} disabled={busy} />
+              </div>
+            )}
+
+            {source.bookmarkable && (
+              <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                <input
+                  type="checkbox"
+                  checked={createBookmark}
+                  onChange={(e) => setCreateBookmark(e.target.checked)}
+                  disabled={busy}
+                  data-testid="share-create-bookmark"
+                />
+                <Trans>Create bookmark on the recipient's desktop</Trans>
+              </label>
+            )}
+
+            {gitGate.blocked && (
+              <div
+                className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400"
+                data-testid="share-git-blocked"
+              >
+                {gitGate.dirtyFiles > 0 ? (
+                  <Trans>
+                    This app has {gitGate.dirtyFiles} uncommitted change(s). Commit and push before
+                    sharing — the recipient clones from git, so unsaved work won't travel.
+                  </Trans>
+                ) : (
+                  <Trans>
+                    This app has {gitGate.unpushed} unpushed commit(s). Push before sharing — the
+                    recipient clones from the remote. Use the git push button in the status bar.
+                  </Trans>
+                )}
               </div>
             )}
 

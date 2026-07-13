@@ -1,4 +1,4 @@
-# Test Index — generated 2026-07-10T23:10:00 (Claude Vibe Workspace E2E run)
+# Test Index — verified 2026-07-12T10:48:00Z (Browserbase Live View E2E run)
 
 ## agentic-process (playwright.config: yes)
 - agentic-process/codex_chat_terminal_full_matrix.md — md.ts: NO
@@ -162,6 +162,7 @@
 ## ui (playwright.config: NO)
 
 ## vibe (playwright.config: NO)
+- vibe/vibe_bugs.md — md.ts: NO
 - vibe/vibe_workspace_matrix.md — md.ts: NO (12 serial DebugMCP scenarios)
 
 ## whiteboard (playwright.config: yes)

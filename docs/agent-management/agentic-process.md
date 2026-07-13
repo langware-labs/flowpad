@@ -1,5 +1,6 @@
 ---
-id: 9c2406fc-f5c9-5f32-8932-f6d36f8fa3f9
+id: 57eef62d-9115-4cf9-82a7-18c2d6545a54
+version: 2
 ---
 
 # AgenticProcess
@@ -12,20 +13,20 @@ The current implementation is not an `AgenticProcessor` child model. Processes a
 
 A process is described by **two orthogonal booleans**, not one mode selector. Older text in this file (and some field docstrings) treated `visible` as *the* mode selector and said "routing stays `headless == !visible`" — that is stale. The **transport** the worker runs over is chosen by `pty_mode`; `visible` only answers "is this shown as a terminal tab." Every execution router in the code keys on `pty_mode`, never on `visible` (`agentic_process.py:1824`, `:2210`, `:1843`, `:3843`; `load-process.ts:199`; `InteractiveTerminal.tsx:166`).
 
-| Axis                     | Field       | `true`                                                     | `false`                                                                 |
-| ------------------------ | ----------- | ---------------------------------------------------------- | ---------------------------------------------------------------------- |
-| **Transport** (worker)   | `pty_mode`  | Interactive PTY: long-lived worker in a `Shell`-owned PTY  | Headless JSON-stream: `-p --output-format stream-json`, one subprocess per turn, no `Shell`/PTY |
-| **Visibility** (UI)      | `visible`   | Shown as a terminal tab / loader attaches an xterm         | Not attached as a terminal tab (chat surface, or backgrounded)         |
+| Axis                   | Field      | `true`                                                    | `false`                                                                                         |
+| ---------------------- | ---------- | --------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| **Transport** (worker) | `pty_mode` | Interactive PTY: long-lived worker in a `Shell`-owned PTY | Headless JSON-stream: `-p --output-format stream-json`, one subprocess per turn, no `Shell`/PTY |
+| **Visibility** (UI)    | `visible`  | Shown as a terminal tab / loader attaches an xterm        | Not attached as a terminal tab (chat surface, or backgrounded)                                  |
 
-In this codebase **"headless" is a synonym for `pty_mode === false`** (the JSON-stream transport). It is *not* a separate axis from `pty_mode` — it is the name for one pole of it. The genuine orthogonality is `pty_mode` (transport) ⟂ `visible` (tab shown), enforced deliberately: `set-visible` (`agentic_process.py:1783`) flips the tab without ever touching transport, and `prompt()`'s docstring is explicit that routing is "on the transport intent `pty_mode` (NOT tab-visibility)".
+In this codebase **"headless" is a synonym for** **`pty_mode === false`** (the JSON-stream transport). It is *not* a separate axis from `pty_mode` — it is the name for one pole of it. The genuine orthogonality is `pty_mode` (transport) ⟂ `visible` (tab shown), enforced deliberately: `set-visible` (`agentic_process.py:1783`) flips the tab without ever touching transport, and `prompt()`'s docstring is explicit that routing is "on the transport intent `pty_mode` (NOT tab-visibility)".
 
 **Reachable quadrants** (the two axes are seeded in lock-step at launch, so the diagonal is the common case, but they can be pulled apart):
 
-| `visible` | `pty_mode` | State                                                                                       |
-| --------- | ---------- | ------------------------------------------------------------------------------------------- |
-| `true`    | `true`     | Interactive PTY terminal tab (normal terminal).                                             |
-| `false`   | `true`     | Backgrounded/hidden PTY — worker still alive, no tab. Dead-PTY detection still applies (`agentic_process.py:3840`). |
-| `false`   | `false`    | Headless JSON-stream (server-side automation, or a chat tab whose strip membership is the `Tab` entity). |
+| `visible` | `pty_mode` | State                                                                                                                                                                                                    |
+| --------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `true`    | `true`     | Interactive PTY terminal tab (normal terminal).                                                                                                                                                          |
+| `false`   | `true`     | Backgrounded/hidden PTY — worker still alive, no tab. Dead-PTY detection still applies (`agentic_process.py:3840`).                                                                                      |
+| `false`   | `false`    | Headless JSON-stream (server-side automation, or a chat tab whose strip membership is the `Tab` entity).                                                                                                 |
 | `true`    | `false`    | Not produced by any launch path — `_perform_open` forces `pty_mode=True` whenever `visible=True` (`agentic_process.py:991`). Only constructible by calling `set-visible` on an already-headless process. |
 
 The asymmetry is deliberate: `visible=True ⟹ pty_mode=True` is enforced (you cannot show an interactive terminal with no PTY), but `visible=False` does **not** imply headless (a PTY session can be hidden). Note also that `visible` is no longer the tab-strip membership flag — the `Tab` entity owns that (see `docs/tab-management.md`); `visible` now only gates the PTY/xterm runtime.
@@ -50,7 +51,7 @@ The asymmetry is deliberate: `visible=True ⟹ pty_mode=True` is enforced (you c
 > `visible` / tab-strip membership and the `Tab` entity → `docs/tab-management.md`.
 > PTY lifecycle, replay buffer, and attach → `docs/pty-terminal-spec.md`, `docs/agent-management/pty-websocket.md`.
 > The chat⇄terminal mode-switch UX → `switch-mode` action below and `docs/agent-management/claude-session-manager.md`.
-> This doc is the reference for the **transport axis (`pty_mode`) and its relation to `visible`/headless**.
+> This doc is the reference for the **transport axis (`pty_mode`) and its relation to** **`visible`/headless**.
 
 ***
 
@@ -60,34 +61,34 @@ The asymmetry is deliberate: `visible=True ⟹ pty_mode=True` is enforced (you c
 
 `AgenticProcess` is a SQLite/API entity. Important fields are:
 
-| Field                                                          | Type                   | Description                                                                                                                  |
-| -------------------------------------------------------------- | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `status`                                                       | `ProcessStatus` string | Stored container lifecycle: `new`, `starting`, `running`, `stopping`, `stopped`, `failed`.                                   |
-| `worker_status`                                                | `WorkerStatus` string  | Computed on serialization from the worker transcript; not stored as an entity field.                                         |
-| `ready_for_input`                                              | `bool`                 | Computed on serialization by `is_ready_for_input()`.                                                                         |
-| `process_type`                                                 | `ProcessKind \| None`  | Usage discriminator: `chat`, `execution`, `analysis`, `conversation`, or `wizard`. It does not choose the transport; `wizard` is a short-lived popup assistant completed by a typed result event. |
-| `session_id`                                                   | `str \| None`          | Persistent worker session/conversation ID. For Claude this is the Claude session UUID and JSONL transcript ID.               |
+| Field                                                          | Type                   | Description                                                                                                                                                                                                                                                                   |
+| -------------------------------------------------------------- | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `status`                                                       | `ProcessStatus` string | Stored container lifecycle: `new`, `starting`, `running`, `stopping`, `stopped`, `failed`.                                                                                                                                                                                    |
+| `worker_status`                                                | `WorkerStatus` string  | Computed on serialization from the worker transcript; not stored as an entity field.                                                                                                                                                                                          |
+| `ready_for_input`                                              | `bool`                 | Computed on serialization by `is_ready_for_input()`.                                                                                                                                                                                                                          |
+| `process_type`                                                 | `ProcessKind \| None`  | Usage discriminator: `chat`, `execution`, `analysis`, `conversation`, or `wizard`. It does not choose the transport; `wizard` is a short-lived popup assistant completed by a typed result event.                                                                             |
+| `session_id`                                                   | `str \| None`          | Persistent worker session/conversation ID. For Claude this is the Claude session UUID and JSONL transcript ID.                                                                                                                                                                |
 | `pty_mode`                                                     | `bool`                 | **Transport intent** (persisted, default `true`). `true` → interactive PTY; `false` → headless JSON-stream. This — not `visible` — is what every execution router keys on. Seeds `visible` at launch and is kept durable across reload so a chat vs terminal choice survives. |
-| `visible`                                                      | `bool`                 | **Tab-visibility only** (default `false`). Whether the loader attaches a PTY/xterm. Decoupled from transport via `set-visible`; does not route prompts. No longer the tab-strip membership flag (that is the `Tab` entity).                        |
-| `shell_id`                                                     | `str \| None`          | Linked `Shell` entity ID for visible PTY mode. `None` in headless print mode.                                                |
-| `sidecar_shell_id`                                             | `str \| None`          | Optional sidecar shell link; cleared on process exit/close paths.                                                            |
-| `cli_config`                                                   | `dict`                 | Serialized worker CLI options. Built by the frontend or `ComputeNode.createProcess`; deserialized through the driver.        |
-| `workdir`                                                      | `str \| None`          | Working directory for the worker. Also used to set Claude `CLAUDE_PROJECT_DIR`.                                              |
-| `context_data`                                                 | `dict`                 | Extra persisted context such as `instructions`, `project_id`, `max_thinking_tokens`, resume bookkeeping, and internal flags. |
-| `instruction_content`                                          | `str \| None`          | Stored prompt/instruction content when supplied by callers.                                                                  |
-| `asset_ref`                                                    | `str \| None`          | Source asset reference when the process is attached to a file-backed record.                                                 |
-| `favorite_index`                                               | `int \| None`          | Optional UI ordering/pin value.                                                                                              |
-| `use_worker_history`                                           | `bool`                 | Whether history should be loaded from the worker transcript.                                                                 |
-| `shell_mode`                                                   | `bool`                 | `false` by default: direct PTY spawn. `true`: legacy shell intermediary path.                                                |
-| `project_id`                                                   | `str \| None`          | Owning project. Resolved from context, ancestry, or `@local`.                                                                |
-| `project_encoded_name`                                         | `str \| None`          | Encoded project name used for transcript navigation.                                                                         |
-| `collaboration_room_id`                                        | `str \| None`          | Collaboration room this process belongs to, if any.                                                                          |
-| `target_typeid_str`                                            | `str \| None`          | Serialized TypeId of the entity this process is attached to.                                                                 |
-| `exe_folder`, `input_folder`, `output_folder`, `assets_folder` | `FSRef \| None`        | Per-process execution folders under the process record directory.                                                            |
-| `additional_dirs`                                              | `list[str]`            | Extra directories exposed to the worker, passed as `--add-dir` where supported. The generated process assets dir is appended here when needed. |
-| `embedded_agent_ids`                                           | `list[str]`            | Names of embedded agents materialized into the process assets folder.                                                        |
-| `embedded_asset_refs`                                          | `list[TypeId]`         | Agent/skill refs materialized under the process assets folder.                                                               |
-| `worker_type`                                                  | `WorkerType \| None`   | Optional worker selector. `None` resolves via `FLOWPAD_DEFAULT_WORKER`, defaulting to `claude`.                              |
+| `visible`                                                      | `bool`                 | **Tab-visibility only** (default `false`). Whether the loader attaches a PTY/xterm. Decoupled from transport via `set-visible`; does not route prompts. No longer the tab-strip membership flag (that is the `Tab` entity).                                                   |
+| `shell_id`                                                     | `str \| None`          | Linked `Shell` entity ID for visible PTY mode. `None` in headless print mode.                                                                                                                                                                                                 |
+| `sidecar_shell_id`                                             | `str \| None`          | Optional sidecar shell link; cleared on process exit/close paths.                                                                                                                                                                                                             |
+| `cli_config`                                                   | `dict`                 | Serialized worker CLI options. Built by the frontend or `ComputeNode.createProcess`; deserialized through the driver.                                                                                                                                                         |
+| `workdir`                                                      | `str \| None`          | Working directory for the worker. Also used to set Claude `CLAUDE_PROJECT_DIR`.                                                                                                                                                                                               |
+| `context_data`                                                 | `dict`                 | Extra persisted context such as `instructions`, `project_id`, `max_thinking_tokens`, resume bookkeeping, and internal flags.                                                                                                                                                  |
+| `instruction_content`                                          | `str \| None`          | Stored prompt/instruction content when supplied by callers.                                                                                                                                                                                                                   |
+| `asset_ref`                                                    | `str \| None`          | Source asset reference when the process is attached to a file-backed record.                                                                                                                                                                                                  |
+| `favorite_index`                                               | `int \| None`          | Optional UI ordering/pin value.                                                                                                                                                                                                                                               |
+| `use_worker_history`                                           | `bool`                 | Whether history should be loaded from the worker transcript.                                                                                                                                                                                                                  |
+| `shell_mode`                                                   | `bool`                 | `false` by default: direct PTY spawn. `true`: legacy shell intermediary path.                                                                                                                                                                                                 |
+| `project_id`                                                   | `str \| None`          | Owning project. Resolved from context, ancestry, or `@local`.                                                                                                                                                                                                                 |
+| `project_encoded_name`                                         | `str \| None`          | Encoded project name used for transcript navigation.                                                                                                                                                                                                                          |
+| `collaboration_room_id`                                        | `str \| None`          | Collaboration room this process belongs to, if any.                                                                                                                                                                                                                           |
+| `target_typeid_str`                                            | `str \| None`          | Serialized TypeId of the entity this process is attached to.                                                                                                                                                                                                                  |
+| `exe_folder`, `input_folder`, `output_folder`, `assets_folder` | `FSRef \| None`        | Per-process execution folders under the process record directory.                                                                                                                                                                                                             |
+| `additional_dirs`                                              | `list[str]`            | Extra directories exposed to the worker, passed as `--add-dir` where supported. The generated process assets dir is appended here when needed.                                                                                                                                |
+| `embedded_agent_ids`                                           | `list[str]`            | Names of embedded agents materialized into the process assets folder.                                                                                                                                                                                                         |
+| `embedded_asset_refs`                                          | `list[TypeId]`         | Agent/skill refs materialized under the process assets folder.                                                                                                                                                                                                                |
+| `worker_type`                                                  | `WorkerType \| None`   | Optional worker selector. `None` resolves via `FLOWPAD_DEFAULT_WORKER`, defaulting to `claude`.                                                                                                                                                                               |
 
 ### Related Shell Fields
 
@@ -110,13 +111,13 @@ There is no process-level `pty_pid` in the current `AgenticProcess` entity.
 
 Drivers own:
 
-| Driver method                              | Purpose                                             |
-| ------------------------------------------ | --------------------------------------------------- |
-| `cli_options(process)`                     | Build worker-specific CLI options from the process. |
-| `headless_prompt(process, instruction)`     | Run one headless turn.                              |
-| `transcript_path(process)`                 | Locate this process's transcript/event log.         |
-| `tail_status(path)`                        | Map transcript tail to `WorkerStatus`.              |
-| `load_history(process)`                    | Convert transcript history into `FlowData`.         |
+| Driver method                              | Purpose                                                                                                                |
+| ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
+| `cli_options(process)`                     | Build worker-specific CLI options from the process.                                                                    |
+| `headless_prompt(process, instruction)`    | Run one headless turn.                                                                                                 |
+| `transcript_path(process)`                 | Locate this process's transcript/event log.                                                                            |
+| `tail_status(path)`                        | Map transcript tail to `WorkerStatus`.                                                                                 |
+| `load_history(process)`                    | Convert transcript history into `FlowData`.                                                                            |
 | `compose_prompt(instruction, agents_json)` | Compatibility hook; current drivers pass prompts through because embedded-agent/persona instructions are asset-backed. |
 
 Current drivers:
@@ -373,15 +374,15 @@ enum WorkerStatus {
 
 > The old `WAITING = 'waiting'` value never existed in code — the mid-turn "user
 > message received" state is `working`. See
-> [docs/agent/agentic_process_statuses.md](../agent/agentic_process_statuses.md).
+> [docs/agent/agentic\_process\_statuses.md](../agent/agentic_process_statuses.md).
 
 Worker status sets are mirrored between Python and TypeScript:
 
-| Helper                | Values                                                          |
-| --------------------- | --------------------------------------------------------------- |
-| `isWorkerRunning()`   | `working`, `thinking`, `tool_call`, `tool_running`, `api_error` |
-| `isWorkerTerminal()`  | `complete`, `error`, `interrupted`, `inactive`, `api_timeout`   |
-| Busy worker statuses  | `initializing`, `working`, `thinking`, `tool_call`, `tool_running` (`worker_busy`) |
+| Helper               | Values                                                                             |
+| -------------------- | ---------------------------------------------------------------------------------- |
+| `isWorkerRunning()`  | `working`, `thinking`, `tool_call`, `tool_running`, `api_error`                    |
+| `isWorkerTerminal()` | `complete`, `error`, `interrupted`, `inactive`, `api_timeout`                      |
+| Busy worker statuses | `initializing`, `working`, `thinking`, `tool_call`, `tool_running` (`worker_busy`) |
 
 ### Ready For Input
 
@@ -403,7 +404,7 @@ visible=true  -> INTERACTIVE
 visible=false -> CLI
 ```
 
-> ⚠️ **`WorkerMode` is a display projection, not the transport.** It is derived from `visible`, whereas the actual execution transport is `pty_mode`. In the lock-stepped common case they agree, but in the decoupled quadrants they can disagree — e.g. a hidden PTY session (`visible=false`, `pty_mode=true`) reports `WorkerMode.CLI` while its worker is still a live PTY. Never route execution on `WorkerMode`; route on `pty_mode`. This visible-vs-pty_mode split is a candidate for consolidation (see the arch note in the return report).
+> ⚠️ **`WorkerMode`** **is a display projection, not the transport.** It is derived from `visible`, whereas the actual execution transport is `pty_mode`. In the lock-stepped common case they agree, but in the decoupled quadrants they can disagree — e.g. a hidden PTY session (`visible=false`, `pty_mode=true`) reports `WorkerMode.CLI` while its worker is still a live PTY. Never route execution on `WorkerMode`; route on `pty_mode`. This visible-vs-pty\_mode split is a candidate for consolidation (see the arch note in the return report).
 
 Python: `flow_sdk/builtin/agentic_process/status_predicates.py`
 TypeScript: `ts_sdk/src/process/agentic-types.ts`
@@ -494,22 +495,22 @@ Serialization mapping:
 
 For Claude, `ClaudeCliOptions` supports:
 
-| Option                                | CLI effect                                            |
-| ------------------------------------- | ----------------------------------------------------- |
-| `permission_mode='bypassPermissions'` | `--dangerously-skip-permissions`                      |
-| `chrome`                              | `--chrome`                                            |
-| `debug`                               | `--debug`                                             |
-| `worktree`                            | `--worktree`                                          |
-| `verbose`                             | `--verbose`                                           |
-| `output_format`                       | `--output-format <value>`                             |
-| `session_id`                          | `--session-id <session_id>`                           |
-| `resume` + `session_id`               | `--resume <session_id>`                               |
-| `fork_session_id`                     | `--resume <source> --fork-session --session-id <new>` |
-| `model`                               | `--model <model>`                                     |
-| `effort`                              | `--effort <effort>`                                   |
-| `agents_json`                         | legacy Claude `--agents '<json>'` when present        |
+| Option                                | CLI effect                                                                                |
+| ------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `permission_mode='bypassPermissions'` | `--dangerously-skip-permissions`                                                          |
+| `chrome`                              | `--chrome`                                                                                |
+| `debug`                               | `--debug`                                                                                 |
+| `worktree`                            | `--worktree`                                                                              |
+| `verbose`                             | `--verbose`                                                                               |
+| `output_format`                       | `--output-format <value>`                                                                 |
+| `session_id`                          | `--session-id <session_id>`                                                               |
+| `resume` + `session_id`               | `--resume <session_id>`                                                                   |
+| `fork_session_id`                     | `--resume <source> --fork-session --session-id <new>`                                     |
+| `model`                               | `--model <model>`                                                                         |
+| `effort`                              | `--effort <effort>`                                                                       |
+| `agents_json`                         | legacy Claude `--agents '<json>'` when present                                            |
 | `additional_dirs` / `add_dirs`        | repeated `--add-dir <path>`; includes generated assets dir when instructions/assets exist |
-| `print_mode`                          | `-p`                                                  |
+| `print_mode`                          | `-p`                                                                                      |
 
 For Codex, `CodexCliOptions` builds `codex exec` arguments such as `--json`, `--ephemeral`, `-C <workdir>`, `-m <model>`, and `--dangerously-bypass-approvals-and-sandbox`.
 
@@ -538,11 +539,11 @@ At launch/turn time, `prepare_system_instruction_assets()` combines
 persona/body blocks, writes the files above, and appends the assets dir to
 `additional_dirs`. The generated instructions are delivered per worker:
 
-| Worker | Delivery |
-| ------ | -------- |
-| Claude | `--append-system-prompt-file <assets>/CLAUDE.md` |
-| Codex | `developer_instructions` config (`-c developer_instructions=...`) |
-| Copilot | `COPILOT_CUSTOM_INSTRUCTIONS_DIRS=<assets>` |
+| Worker  | Delivery                                                          |
+| ------- | ----------------------------------------------------------------- |
+| Claude  | `--append-system-prompt-file <assets>/CLAUDE.md`                  |
+| Codex   | `developer_instructions` config (`-c developer_instructions=...`) |
+| Copilot | `COPILOT_CUSTOM_INSTRUCTIONS_DIRS=<assets>`                       |
 
 This keeps the actual user prompt clean. `compose_prompt()` no longer carries
 embedded-agent bodies.
@@ -582,27 +583,27 @@ POST /api/v1/graph/compute_node/<id>/upsertSessionProcess
 
 ### AgenticProcess Actions
 
-| Action                  | Method     | Description                                                                       |
-| ----------------------- | ---------- | --------------------------------------------------------------------------------- |
-| `open`                  | `POST`     | Start or reopen visible PTY mode through `AgenticProcess.start()`.                |
-| `exit`                  | `POST`     | Stop worker and PTY while preserving the linked `Shell` entity.                   |
-| `restart`               | `POST`     | `exit()` then `start()`.                                                          |
-| `close`                 | `POST`     | Permanent teardown: close/delete linked `Shell`, clear shell links, stop process. |
-| `fork`                  | `POST`     | Create a sibling process that forks from this process's `session_id`.             |
-| `execute`               | `POST`     | Execute an instruction through `prompt()`; routes by `pty_mode`.                  |
-| `prompt`                | `POST`     | Print-mode streaming HTTP prompt; the print-mode branch is taken when `pty_mode=false`. |
-| `cancel-prompt`         | `POST`     | Cancel an in-flight print-mode worker.                                            |
-| `execute-plan`          | `POST`     | Inject a plan execution prompt into an active PTY session.                        |
-| `update-plan`           | `POST`     | Inject a plan-update prompt into an active PTY session.                           |
-| `entity-event`          | `POST`     | Generic event ingress. Wizard completion posts `wizard.close` here, and the process emits `wizard.closed`. |
+| Action                  | Method     | Description                                                                                                  |
+| ----------------------- | ---------- | ------------------------------------------------------------------------------------------------------------ |
+| `open`                  | `POST`     | Start or reopen visible PTY mode through `AgenticProcess.start()`.                                           |
+| `exit`                  | `POST`     | Stop worker and PTY while preserving the linked `Shell` entity.                                              |
+| `restart`               | `POST`     | `exit()` then `start()`.                                                                                     |
+| `close`                 | `POST`     | Permanent teardown: close/delete linked `Shell`, clear shell links, stop process.                            |
+| `fork`                  | `POST`     | Create a sibling process that forks from this process's `session_id`.                                        |
+| `execute`               | `POST`     | Execute an instruction through `prompt()`; routes by `pty_mode`.                                             |
+| `prompt`                | `POST`     | Print-mode streaming HTTP prompt; the print-mode branch is taken when `pty_mode=false`.                      |
+| `cancel-prompt`         | `POST`     | Cancel an in-flight print-mode worker.                                                                       |
+| `execute-plan`          | `POST`     | Inject a plan execution prompt into an active PTY session.                                                   |
+| `update-plan`           | `POST`     | Inject a plan-update prompt into an active PTY session.                                                      |
+| `entity-event`          | `POST`     | Generic event ingress. Wizard completion posts `wizard.close` here, and the process emits `wizard.closed`.   |
 | `load-embedded-agent`   | `POST`     | Materialize agent markdown into `<assets>/.claude/agents/<name>.md`; generated instruction files include it. |
-| `attach-embedded-asset` | `POST`     | Materialize an agent/skill under the process assets dir.                          |
-| `detach-embedded-asset` | `POST`     | Remove a materialized embedded asset.                                             |
-| `list-embedded-assets`  | `GET`      | Return current embedded asset TypeIds.                                            |
-| `get-history`           | `GET`      | Load transcript history as `FlowData`.                                            |
-| `status`                | `GET/POST` | Return stored `status`, computed `worker_status`, and `ready_for_input`.          |
-| `add-dir`               | `POST`     | Append a directory to `additional_dirs`.                                          |
-| `input-dir`             | `GET`      | Return/create the process input directory.                                        |
+| `attach-embedded-asset` | `POST`     | Materialize an agent/skill under the process assets dir.                                                     |
+| `detach-embedded-asset` | `POST`     | Remove a materialized embedded asset.                                                                        |
+| `list-embedded-assets`  | `GET`      | Return current embedded asset TypeIds.                                                                       |
+| `get-history`           | `GET`      | Load transcript history as `FlowData`.                                                                       |
+| `status`                | `GET/POST` | Return stored `status`, computed `worker_status`, and `ready_for_input`.                                     |
+| `add-dir`               | `POST`     | Append a directory to `additional_dirs`.                                                                     |
+| `input-dir`             | `GET`      | Return/create the process input directory.                                                                   |
 
 ### Shell Actions Used By PTY Mode
 
@@ -645,34 +646,34 @@ The current files are under `ts_sdk/src/process/`, not `ts_sdk/src/agentic_proce
 
 `IAgenticProcess` includes:
 
-| Property                                                       | Description                                    |
-| -------------------------------------------------------------- | ---------------------------------------------- |
-| `status`                                                       | Stored `ProcessStatus`.                        |
-| `worker_status` / `workerStatus`                               | Computed `WorkerStatus`.                       |
-| `ready_for_input`                                              | Server-computed readiness flag.                |
+| Property                                                       | Description                                                                                  |
+| -------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `status`                                                       | Stored `ProcessStatus`.                                                                      |
+| `worker_status` / `workerStatus`                               | Computed `WorkerStatus`.                                                                     |
+| `ready_for_input`                                              | Server-computed readiness flag.                                                              |
 | `process_type`                                                 | Usage discriminator such as `chat`, `conversation`, or `wizard`; not the transport selector. |
-| `session_id`                                                   | Persistent worker session ID.                  |
-| `shell_id`                                                     | Linked `Shell` for PTY mode.                   |
-| `visible`                                                      | Tab visibility only (transport is `pty_mode`). |
-| `cli_config`                                                   | Serialized worker CLI options.                 |
-| `context_data`                                                 | Persisted extra context.                       |
-| `workdir`                                                      | Worker working directory.                      |
-| `shell_mode`                                                   | Direct PTY spawn vs legacy shell intermediary. |
-| `additional_dirs`                                              | Extra `--add-dir` directories, including generated process assets when present. |
-| `embedded_asset_refs`                                          | Embedded agent/skill refs.                     |
-| `project_id`, `project_encoded_name`                           | Project linkage.                               |
-| `exe_folder`, `input_folder`, `output_folder`, `assets_folder` | Execution folder refs.                         |
+| `session_id`                                                   | Persistent worker session ID.                                                                |
+| `shell_id`                                                     | Linked `Shell` for PTY mode.                                                                 |
+| `visible`                                                      | Tab visibility only (transport is `pty_mode`).                                               |
+| `cli_config`                                                   | Serialized worker CLI options.                                                               |
+| `context_data`                                                 | Persisted extra context.                                                                     |
+| `workdir`                                                      | Worker working directory.                                                                    |
+| `shell_mode`                                                   | Direct PTY spawn vs legacy shell intermediary.                                               |
+| `additional_dirs`                                              | Extra `--add-dir` directories, including generated process assets when present.              |
+| `embedded_asset_refs`                                          | Embedded agent/skill refs.                                                                   |
+| `project_id`, `project_encoded_name`                           | Project linkage.                                                                             |
+| `exe_folder`, `input_folder`, `output_folder`, `assets_folder` | Execution folder refs.                                                                       |
 
 Convenience getters:
 
-| Getter                                   | Description                                                                                                 |
-| ---------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Getter                                   | Description                                                                                                            |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | `cliOptions`                             | Deserializes `cli_config` through the active worker driver and injects `session_id`, `workdir`, and `additional_dirs`. |
-| `shellEntity`                            | Cached linked `Shell`, if available.                                                                        |
-| `compute_node_id` / `compute_node_uname` | Delegated from the linked shell.                                                                            |
-| `ptyConnection`                          | Delegated from the linked shell.                                                                            |
-| `completed` / `error` / `historyLoaded`  | Client-side stream state.                                                                                   |
-| `workDirVfs`                             | `workdir` converted to `VFSPath`.                                                                           |
+| `shellEntity`                            | Cached linked `Shell`, if available.                                                                                   |
+| `compute_node_id` / `compute_node_uname` | Delegated from the linked shell.                                                                                       |
+| `ptyConnection`                          | Delegated from the linked shell.                                                                                       |
+| `completed` / `error` / `historyLoaded`  | Client-side stream state.                                                                                              |
+| `workDirVfs`                             | `workdir` converted to `VFSPath`.                                                                                      |
 
 ### Static Methods
 
@@ -701,7 +702,7 @@ Convenience getters:
 | `fork(visible?)`                            | PTY  | Create and open a forked sibling process.                                                                                            |
 | `prompt(text, abortController?)`            | CLI  | Streaming print-mode prompt over HTTP.                                                                                               |
 | `cancelPrompt()`                            | CLI  | Cancel the active print-mode subprocess.                                                                                             |
-| `executeInstruction(instruction, options?)` | Both | Calls backend `execute`; backend routes by `pty_mode`.                                                                                |
+| `executeInstruction(instruction, options?)` | Both | Calls backend `execute`; backend routes by `pty_mode`.                                                                               |
 | `wait()`                                    | Both | Wait for terminal `workerStatus`/failed lifecycle.                                                                                   |
 | `output()`                                  | Both | Async iterator over collected and live `FlowData`.                                                                                   |
 | `getOutputs()`                              | Both | Synchronous access to collected `FlowData`.                                                                                          |
@@ -726,17 +727,17 @@ Convenience getters:
 
 The following names appear in older docs or compatibility shims but are not the current model:
 
-| Stale concept                            | Current term / behavior                                                                                                              |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `AgenticProcessor` parent                | Use `ComputeNode.createProcess` / direct `AgenticProcess`; the current entity is standalone.                                         |
-| `ts_sdk/src/agentic_processor/*`         | Current SDK paths are `ts_sdk/src/process/*`.                                                                                        |
-| `flow_sdk/builtin/agentic_processor.py`  | Current backend entity file is `flow_sdk/builtin/agentic_process/agentic_process.py`.                                                |
-| `worker_session_id`                      | Use `session_id` on `AgenticProcess`. Some old compatibility code may accept or expose the old name, but it is not canonical.        |
-| process-level `pty_pid`                  | PTY state is on `Shell.pty_pid`; process links via `shell_id`.                                                                       |
-| `startPty()`, `resumePty()`, `killPty()` | Use `start()`/`open`, `restart()` or `start()` after stale shell, `exit()`/`close()`.                                                |
-| `state.status`                           | Use stored `status` plus computed `worker_status`; there is no persisted `ProcessorState` status source on current `AgenticProcess`. |
-| AMD processor/debug run loop             | Not part of the current `AgenticProcess` backend file. Current execution is worker CLI prompt/PTY plus FlowData history.             |
-| `visible` as the mode selector           | `visible` is tab-visibility only. The transport selector is `pty_mode`. All execution routers key on `pty_mode`, never `visible`.    |
+| Stale concept                            | Current term / behavior                                                                                                                                                                                       |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `AgenticProcessor` parent                | Use `ComputeNode.createProcess` / direct `AgenticProcess`; the current entity is standalone.                                                                                                                  |
+| `ts_sdk/src/agentic_processor/*`         | Current SDK paths are `ts_sdk/src/process/*`.                                                                                                                                                                 |
+| `flow_sdk/builtin/agentic_processor.py`  | Current backend entity file is `flow_sdk/builtin/agentic_process/agentic_process.py`.                                                                                                                         |
+| `worker_session_id`                      | Use `session_id` on `AgenticProcess`. Some old compatibility code may accept or expose the old name, but it is not canonical.                                                                                 |
+| process-level `pty_pid`                  | PTY state is on `Shell.pty_pid`; process links via `shell_id`.                                                                                                                                                |
+| `startPty()`, `resumePty()`, `killPty()` | Use `start()`/`open`, `restart()` or `start()` after stale shell, `exit()`/`close()`.                                                                                                                         |
+| `state.status`                           | Use stored `status` plus computed `worker_status`; there is no persisted `ProcessorState` status source on current `AgenticProcess`.                                                                          |
+| AMD processor/debug run loop             | Not part of the current `AgenticProcess` backend file. Current execution is worker CLI prompt/PTY plus FlowData history.                                                                                      |
+| `visible` as the mode selector           | `visible` is tab-visibility only. The transport selector is `pty_mode`. All execution routers key on `pty_mode`, never `visible`.                                                                             |
 | "Routing stays `headless == !visible`"   | Stale phrasing still present in `agentic_process.py:461` and `agentic-process.ts:174`. Routing is `!pty_mode`; `visible` and `pty_mode` are only lock-stepped at launch, and `set-visible` can decouple them. |
 
 ***
@@ -757,7 +758,7 @@ The following names appear in older docs or compatibility shims but are not the 
 | `flow_sdk/builtin/agentic_process/cli_drivers/codex/cli.py`              | Codex CLI option builder.                                                                    |
 | `flow_sdk/builtin/agentic_process/cli_drivers/codex/stream_worker.py`    | `codex exec --json --ephemeral` print-mode worker.                                           |
 | `flow_sdk/builtin/shell.py`                                              | Shell entity that owns PTY sessions and worker OS process metadata.                          |
-| `flow_sdk/cli/commands/wizard_cmd.py`                                     | `flow wizard <process> close <json>` command used by wizard agents.                          |
+| `flow_sdk/cli/commands/wizard_cmd.py`                                    | `flow wizard <process> close <json>` command used by wizard agents.                          |
 | `flow_sdk/builtin/faas/scan_actions.py`                                  | `ComputeNode.createProcess` and `upsertSessionProcess` implementations.                      |
 | `flow_sdk/fs_records/agent_status.py`                                    | `WorkerStatus` and Claude transcript tail-status derivation.                                 |
 | `flow_sdk/fs_records/agentic_process_lifecycle.py`                       | `ProcessStatus` lifecycle enum and helpers.                                                  |
@@ -765,18 +766,18 @@ The following names appear in older docs or compatibility shims but are not the 
 
 ### TypeScript SDK
 
-| File                                               | Role                                                                      |
-| -------------------------------------------------- | ------------------------------------------------------------------------- |
-| `ts_sdk/src/process/agentic-process.ts`            | `AgenticProcess` class, spawn/start/prompt/execute/history methods.       |
-| `ts_sdk/src/process/agentic-context.ts`            | `AgenticContext`, spawn options, context serialization.                   |
-| `ts_sdk/src/process/agentic-types.ts`              | `ProcessStatus`, `WorkerStatus`, `WorkerMode`, display/readiness helpers. |
-| `ts_sdk/src/process/process-types.ts`              | `ProcessKind` usage discriminator, including `wizard`.                    |
+| File                                               | Role                                                                        |
+| -------------------------------------------------- | --------------------------------------------------------------------------- |
+| `ts_sdk/src/process/agentic-process.ts`            | `AgenticProcess` class, spawn/start/prompt/execute/history methods.         |
+| `ts_sdk/src/process/agentic-context.ts`            | `AgenticContext`, spawn options, context serialization.                     |
+| `ts_sdk/src/process/agentic-types.ts`              | `ProcessStatus`, `WorkerStatus`, `WorkerMode`, display/readiness helpers.   |
+| `ts_sdk/src/process/process-types.ts`              | `ProcessKind` usage discriminator, including `wizard`.                      |
 | `ts_sdk/src/process/wizard.ts`                     | `launchWizard`, `completeWizard`, prompt builder, and typed result helpers. |
-| `ts_sdk/src/process/index.ts`                      | Process module exports.                                                   |
-| `ts_sdk/src/entities/compute-node/compute-node.ts` | Frontend `createProcess()` and `upsertSessionProcess()` calls.            |
-| `ts_sdk/src/entities/shell.ts`                     | Shell entity consumed by PTY mode.                                        |
-| `ts_sdk/src/services/shell/ptyConnection.ts`       | Frontend PTY attachment/input stream.                                     |
-| `ts_sdk/src/cli_workers/claude-cli.ts`             | TypeScript Claude CLI option builder.                                     |
+| `ts_sdk/src/process/index.ts`                      | Process module exports.                                                     |
+| `ts_sdk/src/entities/compute-node/compute-node.ts` | Frontend `createProcess()` and `upsertSessionProcess()` calls.              |
+| `ts_sdk/src/entities/shell.ts`                     | Shell entity consumed by PTY mode.                                          |
+| `ts_sdk/src/services/shell/ptyConnection.ts`       | Frontend PTY attachment/input stream.                                       |
+| `ts_sdk/src/cli_workers/claude-cli.ts`             | TypeScript Claude CLI option builder.                                       |
 
 ### Frontend/UI References
 

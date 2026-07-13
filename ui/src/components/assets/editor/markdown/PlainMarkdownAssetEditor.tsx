@@ -9,6 +9,7 @@ import { WorkflowRunsPanel } from '@src/components/workflows-view/WorkflowRunsPa
 import type { ProcessEntry } from '@src/components/workflows-view/workflow-run-store';
 import { useProcessesForTarget } from '@src/components/entity-execution-panel';
 import { useEntityByPath } from '@src/hooks/use-entity-by-path';
+import { entityReloadKey } from '@src/utils/entity-reload-key';
 import { useIsAdvanced } from '@src/contexts/view-mode-context';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useSideWindows } from '@src/navigation/useSideWindows';
@@ -40,6 +41,10 @@ export function PlainMarkdownAssetEditor({ fsRef, assetType }: PlainMarkdownAsse
   const { entity } = useEntityByPath<APIEntity<APIEntity<any>>>(assetType, fsRef);
   const chatTarget = entity ? entity.typeId.toString() : null;
   const assetRef = (entity as { asset_ref?: string } | null)?.asset_ref;
+  // Body re-read token: the live entity's `updated_date` advances when a
+  // reindex (agent turn-end / invalidate) re-parses the file, so a stable scalar
+  // of it drives MarkdownEditor's out-of-band refresh. Guarded against unsaved edits.
+  const reloadKey = entityReloadKey((entity as { updated_date?: unknown } | null)?.updated_date);
   const localTypeId = dataContext.computeNodeTypeId;
   // Memoize: useFSRefContent's load effect is keyed on fsRef identity, so a
   // fresh FrontMatterFsRef every render re-downloads the file on every re-render.
@@ -132,6 +137,7 @@ export function PlainMarkdownAssetEditor({ fsRef, assetType }: PlainMarkdownAsse
         extraSideTabs={[runsTab]}
         onDelete={deletable?.delete ? onDelete : undefined}
         deleteLabel={deletable?.name ?? undefined}
+        reloadKey={reloadKey}
       />
       {mcpModal}
     </>

@@ -1545,6 +1545,36 @@ class FsRecordsActionsMixin:
         except Exception:
             logging.exception("[fs-records] system-assets index failed (non-fatal)")
 
+    async def _handle_fs_records_invalidate(self, request_info) -> ApiResponse:
+        """POST /fs-records/invalidate
+
+        Body: ``{"paths": [...], "deleted_paths": [...]}``. Force-reindex each
+        changed path (resolving inner files to their owning folder asset),
+        mint type-inferred new files, and orphan/re-sync deleted ones — each
+        with a ``notify=True`` broadcast. The push trigger for the
+        ``file change → reindex → entity change → refresh`` loop; called by the
+        agentic turn-end seam and any client with a changed-file set.
+        """
+        from flow_sdk.fs_store.reindex import reindex_paths  # noqa: PLC0415
+
+        try:
+            body = await request_info.request.json()
+        except Exception:
+            body = {}
+        if not isinstance(body, dict):
+            return ApiFailResponse(message="Body must be a JSON object", status_code=400)
+        paths = body.get("paths") or []
+        deleted = body.get("deleted_paths") or []
+        if not isinstance(paths, list) or not isinstance(deleted, list):
+            return ApiFailResponse(
+                message="'paths' and 'deleted_paths' must be lists", status_code=400
+            )
+        try:
+            result = await reindex_paths(paths, deleted)
+        except Exception as e:
+            return ApiFailResponse(message=f"Invalidate failed: {e}", status_code=500)
+        return ApiSuccessResponse(data=result.as_dict())
+
     async def _handle_fs_records_discover_by_path(
         self,
         record_type: str,
@@ -1739,6 +1769,11 @@ class FsRecordsActionsMixin:
         # Index: POST /fs-records/index or /fs-records/index?type=X
         if segments and segments[0] == "index" and method == "post":
             return await self._handle_fs_records_index(request_info)
+
+        # Invalidate a changed-file set (push reindex + broadcast):
+        # POST /fs-records/invalidate  body: {paths: [...], deleted_paths: [...]}
+        if segments and segments[0] == "invalidate" and method == "post":
+            return await self._handle_fs_records_invalidate(request_info)
 
         # Index sessions (scoped to a project): POST /fs-records/index-sessions
         if segments and segments[0] == "index-sessions" and method == "post":
@@ -2140,7 +2175,7 @@ def _normalize_asset_path(p: str) -> str:
     return p
 
 
-async def discover_record_by_path(record_type: str, path: str):
+async def discover_record_by_path(record_type: str, path: str, *, notify: bool = False):
     """Find-or-recover ONE record by absolute path — the interactive fast path.
 
     If the source exists, parse JUST this file/folder via the type's
@@ -2153,6 +2188,11 @@ async def discover_record_by_path(record_type: str, path: str):
     Shared by that route and ``AgenticProcess.show`` (a `flow show file` on a
     just-created skill/agent must resolve the entity so the bespoke editor
     renders). Returns the matched record or ``None``.
+
+    ``notify`` (default False keeps the interactive callers silent): when True,
+    the fresh-parse ``sync_to_db`` broadcasts the entity op — this is the
+    force-reindex path used by ``reindex_paths`` so a changed file re-parses AND
+    pushes a ``data_op_msg`` (bumped ``updated_date``) to watching clients.
     """
     import asyncio as _asyncio  # noqa: PLC0415
 
@@ -2214,7 +2254,7 @@ async def discover_record_by_path(record_type: str, path: str):
                         ref_path = str(ref) if ref else ""
                     synced = False
                     try:
-                        await rec.sync_to_db(notify=False)
+                        await rec.sync_to_db(notify=notify)
                         synced = True
                     except Exception as _se:
                         logging.debug(f"[fs-records] targeted sync skipped for {record_type}: {_se}")

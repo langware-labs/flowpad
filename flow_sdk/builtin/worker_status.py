@@ -213,6 +213,23 @@ _USER_INPUT_TOOLS: frozenset[str] = frozenset({
 })
 
 
+# Synthetic "user" entries Claude Code injects when the human aborts a turn
+# (Escape / Ctrl-C) — ``[Request interrupted by user]`` /
+# ``[Request interrupted by user for tool use]``. Matched as a PREFIX (not a bare
+# ``"interrupted"`` substring) so a genuine human prompt that merely mentions the
+# word can't be misread as an abort.
+_INTERRUPT_MARKER_PREFIX = "[request interrupted"
+
+
+def _last_user_is_interrupt(chunk: str) -> bool:
+    """True when the most-recent ``user`` entry is a synthetic interrupt marker.
+
+    A fresh prompt submitted after the interrupt replaces that user text, so this
+    only reports True while the abort is genuinely the last thing the user did.
+    """
+    return _last_user_text(chunk).strip().lower().startswith(_INTERRUPT_MARKER_PREFIX)
+
+
 def _pending_user_input_tool(chunk: str) -> bool:
     """True when an unresolved user-input ``tool_use`` (``AskUserQuestion`` /
     ``ExitPlanMode``) sits at the tail — i.e. Claude asked and is blocked on the
@@ -529,6 +546,21 @@ def _tail_status(path: "str | _Path") -> WorkerStatus:
     if any(name in chunk for name in _USER_INPUT_TOOLS) and _pending_user_input_tool(chunk):
         return WorkerStatus.PENDING_USER
 
+    # A user interrupt (Escape / Ctrl-C) is an idle, resumable terminal state —
+    # but Claude writes trailing ``last-prompt`` / ``system`` envelope markers
+    # AFTER the ``[Request interrupted by user]`` entry. Those markers make
+    # ``_scan_reversed`` report ``last_type == "last-prompt"``, and the
+    # ``last-prompt`` branch below — seeing no completed assistant turn in-window
+    # (the killed turn's assistant message is beyond the tail, or never got an
+    # ``end_turn``) — would pin the worker at WORKING forever ("stuck working"
+    # after an interrupted session). Detect the interrupt by the most-recent user
+    # text and surface it directly, exactly as the pending-user-input-tool check
+    # does above, so the trailing envelope run can't mask it. The cheap substring
+    # gate skips the reversed json-parse pass on the hot path unless the marker is
+    # literally present in the tail (it must be, verbatim, for a prefix match).
+    if _INTERRUPT_MARKER_PREFIX in chunk.lower() and _last_user_is_interrupt(chunk):
+        return WorkerStatus.INTERRUPTED
+
     # Claude 2.x writes ``last-prompt`` as an idle marker — but in PTY mode it
     # can appear *between* an assistant ``stop_reason=tool_use`` and the actual
     # tool execution (which the JSONL records via a subsequent
@@ -566,8 +598,9 @@ def _tail_status(path: "str | _Path") -> WorkerStatus:
         if assistant_stop != "end_turn":
             return WorkerStatus.WORKING
         return WorkerStatus.COMPLETE
-    if last_type == "user" and "interrupted" in _last_user_text(chunk).lower():
-        return WorkerStatus.INTERRUPTED
+    # (A user interrupt is caught by the priority ``_last_user_is_interrupt`` check
+    # above — before the ``last-prompt`` branch — so no separate ``last_type ==
+    # "user"`` interrupt case is needed here.)
     if last_stop_reason == "end_turn":
         return WorkerStatus.COMPLETE
     if last_stop_reason == "stop_sequence":

@@ -1,0 +1,54 @@
+/* ---------------------------------------------------------------------------
+ * tokens.css — the ONE file a template-customization pass edits to re-skin
+ * every layout. Layouts and theme.css reference these vars only; changing a
+ * value here re-themes the whole deck. Tuned for a 1280x720 (16:9) slide.
+ * ------------------------------------------------------------------------- */
+:root {
+  /* Color scale */
+  --bg: #0f1115;              /* deck background */
+  --surface: #1a1d24;        /* raised panels, cards, metric tiles */
+  --text: #eef1f6;           /* primary text */
+  --text-secondary: #9aa3b2; /* captions, labels, secondary copy */
+  --accent: #4f8cff;         /* single accent — kickers, values, rules */
+  --accent-contrast: #ffffff;/* text/icon color that sits ON the accent */
+  --border: #2b3040;         /* hairline separators */
+
+  /* Type scale (for a 1280x720 slide) */
+  --fs-hero: 72px;
+  --fs-title: 44px;
+  --fs-subtitle: 28px;
+  --fs-body: 22px;
+  --fs-caption: 16px;
+
+  /* Font stacks */
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial,
+    sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas,
+    monospace;
+
+  /* Weights & rhythm */
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-bold: 700;
+  --lh-tight: 1.1;
+  --lh-body: 1.5;
+  --tracking-kicker: 0.12em;
+
+  /* Spacing scale */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+  --sp-7: 48px;
+  --sp-8: 64px;
+
+  /* Radii */
+  --radius-sm: 6px;
+  --radius-md: 12px;
+  --radius-lg: 20px;
+
+  /* 16:9 safe-area padding applied inside every slide */
+  --safe-area: 64px;
+}

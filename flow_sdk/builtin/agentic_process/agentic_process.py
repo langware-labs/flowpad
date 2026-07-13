@@ -98,6 +98,21 @@ INSTANT_EXIT_WINDOW_SECONDS = 5.0
 LOCAL_COMPUTE_NODE_MISSING_FAILURE = "Compute node not found for local shell session (@local)"
 
 
+def _iter_touched_paths(entries: "Iterable") -> "Iterator[str]":
+    """Paths of files a turn wrote/edited, from its transcript entries.
+
+    The single place the "a file's content changed" entry-set is encoded; the
+    turn-end reindex collector consumes it. Reads/plan entries are excluded."""
+    from flow_sdk.transcript_analyzer.entries.file_edit import FileEditEntry  # noqa: PLC0415
+    from flow_sdk.transcript_analyzer.entries.file_write import FileWriteEntry  # noqa: PLC0415
+
+    for e in entries:
+        if isinstance(e, (FileWriteEntry, FileEditEntry)):
+            p = getattr(e, "path", None)
+            if p:
+                yield p
+
+
 def _shell_compute_is_local(shell: "Shell") -> bool:
     from flow_sdk.config import ComputeProviderType  # noqa: PLC0415
 
@@ -1880,6 +1895,9 @@ class AgenticProcess(Entity):
             await self.notify_updated()
         except Exception:
             logger.exception("%s: terminal notify_updated failed", log_prefix)
+        # Push-reindex the files this headless turn wrote/edited (see
+        # _schedule_turn_end_reindex — transcript-tail sourced, fire-and-forget).
+        self._schedule_turn_end_reindex("headless")
         try:
             self._schedule_queue_drain("complete")
         except Exception:
@@ -2809,6 +2827,10 @@ class AgenticProcess(Entity):
                     await self.notify_updated()
                 except Exception:
                     logger.warning("prompt: end-of-turn notify_updated failed", exc_info=True)
+                # Push-reindex the files this streaming turn wrote/edited so their
+                # entities re-parse + broadcast (updated_date bump → FE body
+                # re-read). Fire-and-forget; transcript-tail sourced.
+                self._schedule_turn_end_reindex("http_prompt")
 
         turn_task = asyncio.create_task(_run_turn())
 
@@ -5799,6 +5821,64 @@ class AgenticProcess(Entity):
                     change = "create" if isinstance(entry, FileWriteEntry) else "update"
                     await self._track_markdown_doc(path, change)
 
+    def _schedule_turn_end_reindex(self, source: str) -> None:
+        """Push-reindex the files this turn wrote/edited (fire-and-forget).
+
+        Single seam called from every turn-end path — the PTY streamer flush,
+        the driver headless tail (``end_headless_turn``), and the streaming
+        ``_http_prompt`` turn. Sources the touched set from the watermarked
+        transcript tail so it's transport-agnostic and each turn only reindexes
+        its own new file-ops. Their entities re-parse + broadcast a
+        ``data_op_msg`` (updated_date bump → frontend body re-read)."""
+        try:
+            touched = self._collect_touched_from_transcript_tail()
+            if touched:
+                asyncio.create_task(
+                    self._reindex_touched(touched), name=f"ap-reindex-{self.id[:8]}"
+                )
+        except Exception:
+            logger.debug(
+                "AP %s: turn-end reindex schedule failed [%s]", self.id, source, exc_info=True
+            )
+
+    async def _reindex_touched(self, paths: list[str]) -> None:
+        """Force-reindex the turn's touched files (fire-and-forget, off the turn
+        path). Each resolves to its owning entity, re-parses from disk, and
+        broadcasts a ``data_op_msg`` so watching clients refresh."""
+        try:
+            from flow_sdk.fs_store.reindex import reindex_paths  # noqa: PLC0415
+            result = await reindex_paths(paths)
+            logger.debug(
+                "AP %s turn-end reindex: %s (in=%d)",
+                self.id, result.as_dict()["counts"], len(paths),
+            )
+        except Exception:
+            logger.debug(
+                "AgenticProcess %s: reindex_touched failed", self.id, exc_info=True
+            )
+
+    def _collect_touched_from_transcript_tail(self) -> list[str]:
+        """Files this turn wrote/edited, read from the transcript tail.
+
+        The headless turn-end seam (``end_headless_turn``) has no streamer
+        ``_pending_entries`` to drain — the stream-json turn ingests via stdout,
+        not the JSONL the TranscriptStreamer tails. So derive the touched set
+        directly from the on-disk transcript, watermarked by entry count so each
+        turn only reindexes its OWN new file-ops (not every file the session
+        ever touched)."""
+        tf = self._load_transcript()
+        if tf is None:
+            return []
+        try:
+            entries = list(tf.entries)
+        except Exception:
+            return []
+        wm = int(getattr(self, "_reindex_entry_watermark", 0) or 0)
+        object.__setattr__(self, "_reindex_entry_watermark", len(entries))
+        # entries[wm:] clamps to [] when wm > len (a truncated/rotated transcript)
+        # — safer than re-scanning all, which would re-reindex the whole history.
+        return list(_iter_touched_paths(entries[wm:]))
+
     async def _flush_transcript_change(self) -> None:
         """Run after the debounce window on this AP's transcript.
 
@@ -5872,6 +5952,10 @@ class AgenticProcess(Entity):
             # transcript that lands here), so no driver coupling.
             if not current_busy and prev_busy:
                 self._schedule_queue_drain("ready")
+                # Same turn-end edge: push-reindex the files this turn wrote/edited
+                # so their entities re-parse + broadcast (updated_date bump →
+                # frontend body re-read). Fire-and-forget; never blocks the turn.
+                self._schedule_turn_end_reindex("flush")
                 # Same turn-end edge: the transcript just gained a turn's content, so
                 # a nameless process can now adopt its subject as a default name.
                 # Gating here (once per turn) instead of every debounce tick avoids

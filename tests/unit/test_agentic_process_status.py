@@ -360,6 +360,63 @@ def test_tail_status_pending_user_question_survives_trailing_meta(tmp_path: Path
     assert _tail_status(f) == WorkerStatus.PENDING_USER
 
 
+def test_tail_status_interrupt_behind_trailing_meta_is_interrupted(tmp_path: Path):
+    """A user interrupt buried under trailing ``last-prompt``/``system`` envelope
+    markers must classify as INTERRUPTED — not WORKING.
+
+    The real regressed case: the user hits Escape mid-turn, Claude writes the
+    synthetic ``[Request interrupted by user]`` ``user`` entry, then appends
+    ``system``/``last-prompt`` acks. ``_scan_reversed`` then reports
+    ``last_type == "last-prompt"``, and with the killed turn's assistant message
+    beyond the tail window the ``last-prompt`` branch used to return WORKING —
+    pinning the process at "working forever" until the session was resumed.
+    """
+    f = tmp_path / "session.jsonl"
+    _write_jsonl(f, [
+        {"type": "assistant", "message": {"role": "assistant", "stop_reason": "tool_use", "content": [
+            {"type": "tool_use", "id": "toolu_x", "name": "Bash", "input": {}},
+        ]}},
+        {"type": "user", "message": {"role": "user", "content": [
+            {"type": "text", "text": "[Request interrupted by user]"},
+        ]}},
+        {"type": "system", "subtype": "init"},
+        {"type": "last-prompt"},
+        {"type": "permission-mode"},
+    ])
+    os.utime(f, None)
+    assert _tail_status(f) == WorkerStatus.INTERRUPTED
+
+
+def test_tail_status_interrupt_for_tool_use_is_interrupted(tmp_path: Path):
+    """The ``for tool use`` interrupt variant classifies the same way."""
+    f = tmp_path / "session.jsonl"
+    _write_jsonl(f, [
+        {"type": "user", "message": {"role": "user", "content": [
+            {"type": "text", "text": "[Request interrupted by user for tool use]"},
+        ]}},
+        {"type": "last-prompt"},
+    ])
+    os.utime(f, None)
+    assert _tail_status(f) == WorkerStatus.INTERRUPTED
+
+
+def test_tail_status_fresh_prompt_after_interrupt_is_working(tmp_path: Path):
+    """A real prompt submitted AFTER an interrupt supersedes the abort marker —
+    the worker is genuinely WORKING again and must not read as INTERRUPTED."""
+    f = tmp_path / "session.jsonl"
+    _write_jsonl(f, [
+        {"type": "user", "message": {"role": "user", "content": [
+            {"type": "text", "text": "[Request interrupted by user]"},
+        ]}},
+        {"type": "user", "message": {"role": "user", "content": [
+            {"type": "text", "text": "actually, do this instead"},
+        ]}},
+        {"type": "last-prompt"},
+    ])
+    os.utime(f, None)
+    assert _tail_status(f) == WorkerStatus.WORKING
+
+
 def test_tail_status_answered_user_question_falls_through(tmp_path: Path):
     """Once the user answers, the ``tool_result`` (paired by ``tool_use_id``)
     resolves the question and the tail classifies normally (here → COMPLETE)."""

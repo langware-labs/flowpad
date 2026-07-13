@@ -33,3 +33,31 @@ describe('chipStateFor', () => {
     expect(chipStateFor(false, undefined, true)).toBe('unavailable');
   });
 });
+
+/**
+ * Raw FILE rows (asset_type='file' — the OS-file-picker lane) never resolve as
+ * entities: installed-ness comes from the MA row itself (`ma.installed`), not
+ * entity resolution. Regression for the SAPAK-DEMO-SPEC.md case where a
+ * downloaded file could never surface in a projectless conversation.
+ */
+describe('chipStateFor — raw file rows', () => {
+  const fileStaged = new MessageAttachment({
+    id: '88888888-8888-4888-8888-888888888888', asset_type: 'file', scope: null,
+  });
+  const fileInstalledUser = new MessageAttachment({
+    id: '99999999-9999-4999-8999-999999999999', asset_type: 'file', scope: 'user',
+  });
+  const fileInstalledProject = new MessageAttachment({
+    id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', asset_type: 'file', scope: 'project',
+  });
+
+  it('staged until installed', () => {
+    expect(chipStateFor(false, fileStaged, false)).toBe('staged');
+    expect(chipStateFor(false, fileStaged, true)).toBe('staged');
+  });
+
+  it('installed from the MA row scope — entity resolution is irrelevant', () => {
+    expect(chipStateFor(false, fileInstalledUser, false)).toBe('installed');
+    expect(chipStateFor(false, fileInstalledProject, true)).toBe('installed');
+  });
+});

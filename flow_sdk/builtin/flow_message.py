@@ -509,10 +509,12 @@ class FlowMessage(Entity):
                 return False
         return True
 
-    async def to_file(self, dest_dir: Path | None = None, *, transfer_mode: str = "copy") -> Path:
+    async def to_file(
+        self, dest_dir: Path | None = None, *, transfer_mode: str = "copy", create_bookmark: bool = False,
+    ) -> Path:
         """Pack this FlowMessage + attachments into a .flowmsg zip. Returns path to zip."""
         from flow_sdk.builtin.flow_message_bundle import pack_bundle
-        return await pack_bundle(self, dest_dir, transfer_mode=transfer_mode)
+        return await pack_bundle(self, dest_dir, transfer_mode=transfer_mode, create_bookmark=create_bookmark)
 
     @classmethod
     async def from_file(cls, zip_path: Path, local_user_id: str, *, overwrite: bool = False) -> "FlowMessage":
@@ -626,6 +628,7 @@ class FlowMessage(Entity):
 
     async def upload_body(
         self, *, on_progress: Optional[ProgressCallback] = None, transfer_mode: str = "copy",
+        create_bookmark: bool = False,
     ) -> "FlowMessage":
         """Pack the body, upload it to the hub, and stamp body_status=READY.
 
@@ -670,7 +673,9 @@ class FlowMessage(Entity):
             # single-threaded event loop — a racing caller sees either no entry
             # (and becomes the owner) or our task (and awaits it).
             task = _upload_body_inflight[self.id] = asyncio.ensure_future(
-                self._upload_body_once(on_progress=on_progress, transfer_mode=transfer_mode)
+                self._upload_body_once(
+                    on_progress=on_progress, transfer_mode=transfer_mode, create_bookmark=create_bookmark,
+                )
             )
             try:
                 await task
@@ -688,6 +693,7 @@ class FlowMessage(Entity):
 
     async def _upload_body_once(
         self, *, on_progress: Optional[ProgressCallback] = None, transfer_mode: str = "copy",
+        create_bookmark: bool = False,
     ) -> None:
         """The single real body upload — pack the bundle, POST it to the hub's
         ``fs/upload``, then flip body_status=READY via ``set_body_status``. Runs
@@ -697,7 +703,7 @@ class FlowMessage(Entity):
         from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
         from flow_sdk.utils.hub import hub_post
 
-        zip_path = await self.to_file(transfer_mode=transfer_mode)
+        zip_path = await self.to_file(transfer_mode=transfer_mode, create_bookmark=create_bookmark)
         try:
             content = zip_path.read_bytes()
             await hub_post(

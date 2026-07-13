@@ -8,7 +8,6 @@ import {
   FLOWPAD_ASSISTANT_PROJECT_NAME,
   isReadOnlySource,
   isTypeId,
-  isValidUUIDv4,
   Project,
   QueryRequest,
   TypeId,
@@ -45,11 +44,10 @@ import { useAssetTypes } from '@src/hooks/use-asset-types';
 import {
   basename as _basename,
   displayLabelForTypeid as _displayLabelForTypeid,
+  isOpenableTypeid as _isOpenableTypeid,
   makeIconForType,
   parseTypeid as _parseTypeid,
 } from './asset-row-helpers';
-import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
-import { editorForType } from '@src/navigation/asset-doc-types';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { cn } from '@src/lib/utils';
@@ -957,28 +955,22 @@ function AssetRow({
   const readOnly = isReadOnlySource(descriptor.source);
   const label = _displayLabelForTypeid(descriptor.typeid);
   const canImprove = used && !!normalizePath(descriptor.posix_path);
-  // Entity-less personas (e.g. a name-keyed agents_json entry with no backing
-  // entity) carry a name-form pseudo-typeid — there is nothing to open. Entity
-  // ids are always UUIDs (v4/v5 policy), so gate on that rather than the looser
-  // isTypeId grammar: a persona NAME like `team.lead` or `research-2` would
-  // otherwise parse as a well-formed prop_id/key TypeId and render openable.
-  const openable = isTypeId(descriptor.typeid) && isValidUUIDv4(id);
+  const openable = _isOpenableTypeid(descriptor.typeid);
 
   const onChipClick = useCallback(() => {
     if (!openable || !id) return;
     try {
-      // Open by the asset's TypeId in the canonical grammar
-      // (editor/<editor>/typeid/<type>-<id>). Read-only sources open in viewer
-      // mode (readOnly=1), passed as a real `?readOnly=1` query string via the
-      // DockPointer options (not embedded in the path).
-      const editor = editorForType(type);
-      if (!editor) return;
+      // Open by the asset's TypeId via the canonical DockPointer factory
+      // (grammar editor/<editor>/typeid/<type>-<id>). Read-only sources open in
+      // viewer mode (readOnly=1), passed as a real `?readOnly=1` query string
+      // via the DockPointer options (not embedded in the path).
       navigation.openDock(
-        AssetDocPointer.forTypeId(
-          editor,
+        DockPointer.forAssetEditorByTypeId(
+          type,
           new TypeId(type, id),
+          undefined,
           readOnly ? { readOnly: '1' } : undefined,
-        ).toDockPointer(),
+        ),
       );
     } catch (err) {
       console.error('[AssetRow] failed to open asset', descriptor.typeid, err);

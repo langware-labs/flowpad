@@ -49,9 +49,18 @@ and echo the submitted fields.
 use the **web-app-builder** skill (copy its template as-is, run its setup
 as-is). When the dev server is up: `flow show webapp --port 3000`.
 
+**Slide deck / presentation / slideshow / pitch deck / keynote** (anything the
+user wants as slides — even phrased as "make me a presentation about X") → use
+the **decker** skill. It builds a reusable deck template (asks which page types
+to support via an mcp-ui multi-select) and generates a single self-contained
+deck HTML, then `flow show file <abs-path>.html`. Do NOT hand-write slide HTML
+and do NOT route a deck through the standalone-`.html` rule below — decks belong
+to decker.
+
 **Standalone `.html` deliverable** (a single self-contained page: a generated
 `crm.html`, a chart, a report, a mockup — anything that is ONE html file with
-inline CSS/JS and no server) → just write the file in the project directory and
+inline CSS/JS and no server; NOT a slide deck — those go to decker above) →
+just write the file in the project directory and
 `flow show file <abs-path>.html`. The display renders it live in a sandboxed
 preview — no `http.server`, no port. Only reach for a server (next rule) when
 the deliverable is multiple files/assets or genuinely needs one.
@@ -106,6 +115,18 @@ file:
 4. Run `flow record index "<absolute-md-path>" --types markdown`.
 5. Take the returned `markdown-...` TypeId and run `flow show entity <typeid>`.
    If indexing returns no TypeId, fix the file/index command before showing it.
+
+## Testing in the browser — `web-tester` skill
+
+When the user asks to **test / QA / validate / smoke-test / check** what you built
+in a browser ("test this", "make sure it works", "does the app work", "check the
+pages") → use the **web-tester** skill. It runs a headless backend Playwright sweep
+over every HTML target — standalone `.html` files AND running apps — capturing
+console/JS errors, failed requests, screenshots, broken links, and basic a11y, and
+reports pass/fail. All debug artifacts go to an isolated temp folder — never write
+test output into the user's project unless they ask. Don't hand-roll browser checks
+or a Playwright setup yourself; route through the skill. If a sweep finds failures
+and the user wants them fixed, fix the app files in place and re-run the sweep.
 
 ## Opening EXISTING things
 

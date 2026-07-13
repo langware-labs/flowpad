@@ -6,6 +6,7 @@
 
 ## Testing Environment
 
+- Focused run (2026-07-12, Browserbase local Live View): dedicated `browserbase-14` backend `http://localhost:6014`; current-source production bundle served through Caddy at `http://localhost:5114`; one ngrok origin carried both frontend and `/api`/WebSocket proxy traffic. Browserbase Chromium navigated the public app to `/dock/search`; local Google Chrome 150 embedded Browserbase `debuggerFullscreenUrl`. All experiment daemons and public ports were closed after evidence capture. Result: `ui/tests/manual_regression/_results/2026-07-12T12-37-14/`.
 - Current focused run (2026-07-10, Claude Vibe Workspace): dedicated `vibe-12` backend `http://localhost:6012`, frontend `http://localhost:5012`, Chrome Canary 152 through DebugMCP/CDP. The instance was reset backend-only with keychain preservation before every scenario and killed at cycle end. Live projects were mounted under `/tmp` so Vite did not reload on fixture/evidence writes.
 - Current cycle (2026-07-07, Phases 11+12 only): main backend 9008 restarted by user request mid-cycle (manual detached start; frontend 4098 stayed up); hub 8093 UP all cycle. Dedicated instances launched+killed by the cycle: qa7 (be 6007/fe 5007, the workhorse), qa5 (be 6005, whiteboard agent), qa3 (be 6004, bounded fixture HOME for corpus-bound search tests). Host: 14 cores; load oscillated 4→46 all day from the user's own live sessions (which also edited ui/src + ran their own playwright mid-cycle — see 2026-07-07 learnings for the contamination rules). Python 3.10.17, Node v22.15.0.
 - Backend: `http://localhost:9008` (port set via `LOCAL_SERVER_PORT=9008` in `.env.local`)
@@ -21,6 +22,13 @@
 - Last cycle (2026-05-30, record-removal branch): backend 9008 + frontend 4098 both reachable (HTTP 200) throughout. Phases 1-4 green (1522 / 441 / 51 / 907). 1 real fix (bootstrap `types` shape, 4 tests). No port conflicts this run.
 
 ## Learnings
+
+### 2026-07-12 — Browserbase remote control shown in a local iframe
+
+- A single frontend ngrok endpoint is sufficient only when it is also the browser-visible API origin. Keep Browserbase on the ngrok origin and proxy `/api` plus the WebSocket locally; otherwise a bundle compiled for `localhost` points the remote browser at Browserbase's own machine and HTTPS blocks the HTTP backend as mixed content.
+- Free ngrok endpoints inject a one-time warning page. Set `ngrok-skip-browser-warning` on the Browserbase context before the first navigation; a 200 root response alone does not prove Flowpad HTML was served.
+- Tunneling the Vite dev graph was too slow (roughly 700 module requests and the existing 30-second navigation cap fired). A current-source production bundle behind Caddy loaded within the unchanged cap. Do not raise the Playwright timeout.
+- Machine-readable local Live View evidence is available without piercing app state: assert the Browserbase `devtools-fullscreen` frame reaches `readyState=complete` and owns a non-empty streaming canvas, then retain both the remote screenshot and the local host-page screenshot for visual correlation.
 
 ### 2026-07-10 - Claude Vibe Workspace Open/Run/Skill browser matrix
 

@@ -406,33 +406,32 @@ export function FlowMessageBubble({
   // a project is the review modal's explicit step.
   const triggerDownload = () => void handleDownloadBody();
 
-  // `body_downloaded` only means "the bytes are on local disk" — and a FILE
-  // attachment's bytes live in the message's own (project-independent) embedded
-  // storage, so the flag flips true even on a conversation that was never
-  // assigned a project (e.g. a received bundle whose body got unpacked). But
-  // the live chips expose download / open-in-editor / reveal-in-folder, all of
-  // which resolve through a raw local path with no project context — exactly
-  // the gate `triggerDownload` already enforces. So treat the message as
-  // "downloaded" (render live chips) only once a project is actually resolved;
-  // until then fall through to the gated DownloadAttachmentsButton, whose first
-  // click routes through the project picker and resumes after a pick (the bytes
-  // are already present, so nothing re-downloads). Drafts never reach here —
-  // they return early via MessageComposer above.
-  const showLiveChips = downloaded && attachmentProjectId != null;
-
   // Image attachments whose bytes are already local render as image cards right
   // away — viewing or downloading a picture needs no project context, so they
-  // skip the project-mapping gate the other chips wait behind. This is what the
-  // sender sees the instant they send (their bytes are already on disk): the
-  // picture itself, not a "Download" button for something they just attached.
+  // skip staging entirely (the backend never stages image/video files). This is
+  // what the sender sees the instant they send (their bytes are already on
+  // disk): the picture itself, not a "Download" button.
   const localImageItems = attachmentItems.filter(
     (i) => i.state === AttachmentChipState.Downloaded && !!i.url && isImagePath(i.filename),
   );
-  // The gated chip list and the aggregate "Download N" button must not re-count
-  // what's already surfaced without a download: the images shown inline above,
-  // and prompt entities (their text is previewed in the prompt row and they
-  // materialize on Approve & Execute, not via this button).
-  const gatedItems = showLiveChips ? attachmentItems.filter((i) => !localImageItems.includes(i)) : [];
+  // Staged/installed RAW FILE chips (the OS-file-picker lane). A received file
+  // is staged as a MessageAttachment (asset_type='file') and rides the same
+  // download→review→install lifecycle as asset entities — no project gate:
+  // review/install resolve their own target. Images never get a staged row.
+  const fileAttachments = (messageAttachments ?? []).filter((ma) => ma.asset_type === 'file');
+  const stagedFileNames = new Set(fileAttachments.map((ma) => ma.name ?? ''));
+  // The SENDER's own downloaded files have no staged MA row (staging happens on
+  // receive/unpack). Render them ungated so the sender sees their file
+  // immediately — open/reveal work off the local path, no project needed.
+  const senderLocalFileItems = attachmentItems.filter(
+    (i) =>
+      i.state === AttachmentChipState.Downloaded &&
+      !localImageItems.includes(i) &&
+      !stagedFileNames.has(i.filename),
+  );
+  // The "Download N" button must not re-count what's already surfaced without a
+  // download: images shown inline above, and prompt entities (previewed in the
+  // prompt row, materialized on Approve & Execute).
   const promptEntityCount = entities.filter((t) => t.type === Prompt.type).length;
   const pendingAssetCount = assetCount - localImageItems.length - promptEntityCount;
 
@@ -526,42 +525,46 @@ export function FlowMessageBubble({
             ))}
           </div>
         )}
-        {showLiveChips ? (
-          <>
-            {gatedItems.map((item) => (
-              <AttachmentChip
-                key={item.key}
-                url={item.url ?? ''}
-                filename={item.filename}
-                state={item.state}
-                downloading={item.state === AttachmentChipState.Ready && downloading}
-                onDownload={item.state === AttachmentChipState.Ready ? triggerDownload : undefined}
-                onOpenInEditor={
-                  item.localPath ? () => navigation.openDock(dockPointerForLocalFile(item.localPath!)) : undefined
-                }
-                onRevealInFolder={
-                  item.localPath
-                    ? () => void openExternalFromComputeNode('@local', item.localPath!, { select: true })
-                    : undefined
-                }
-              />
+        {/* Received raw files: dashed staged chip → review modal → install
+            (solid). No project gate — the review modal resolves the target. */}
+        {fileAttachments.length > 0 && (
+          <div className="flex flex-wrap gap-1">
+            {fileAttachments.map((ma) => (
+              <MessageFileChip key={`file:${ma.id}`} attachment={ma} projectId={attachmentProjectId} />
             ))}
-            {gatedItems.length > 1 && (
-              <a
-                href={localBundleUrl(messageId)}
-                download
-                className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              >
-                <Download className="h-3 w-3" />
-                <Trans>Download all attachments</Trans>
-              </a>
-            )}
-          </>
-        ) : hasBody && pendingAssetCount > 0 && (!downloaded || attachmentItems.length > 0) ? (
-          // Show the Download button only when there's actually something to pull
-          // (`!downloaded`) or a FILE attachment that still needs project-mapping
-          // to open. An entity-only message whose entity is already local (e.g. the
-          // sender's own forwarded diagnosis) needs neither — its chip renders above.
+          </div>
+        )}
+        {/* Sender's own local files (no staged row): open/reveal off local_path. */}
+        {senderLocalFileItems.map((item) => (
+          <AttachmentChip
+            key={item.key}
+            url={item.url ?? ''}
+            filename={item.filename}
+            state={item.state}
+            onOpenInEditor={
+              item.localPath ? () => navigation.openDock(dockPointerForLocalFile(item.localPath!)) : undefined
+            }
+            onRevealInFolder={
+              item.localPath
+                ? () => void openExternalFromComputeNode('@local', item.localPath!, { select: true })
+                : undefined
+            }
+          />
+        ))}
+        {senderLocalFileItems.length > 1 && (
+          <a
+            href={localBundleUrl(messageId)}
+            download
+            className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <Download className="h-3 w-3" />
+            <Trans>Download all attachments</Trans>
+          </a>
+        )}
+        {/* Download button ONLY while bytes are still remote. Once downloaded,
+            files render as staged chips above and entities as chips — nothing
+            left to pull, so no project-less dead-end button (the SAPAK bug). */}
+        {hasBody && !downloaded && pendingAssetCount > 0 ? (
           <DownloadAttachmentsButton
             count={pendingAssetCount}
             labels={assetLabels}
@@ -640,6 +643,48 @@ export function FlowMessageBubble({
  *               clickable — opens the review/install modal (no navigation).
  *   hidden    — pre-download (`forceShow` false); the Download button carries it.
  */
+/**
+ * A staged/installed RAW FILE attachment (asset_type='file' — the OS-file-picker
+ * lane). Unlike entity chips, a file never resolves to an entity: installed-ness
+ * comes from the MA row's scope. Renders as a dashed File chip (staged) or solid
+ * File chip (installed); clicking opens the review modal (install / uninstall +
+ * content preview live there), matching the entity-chip flow.
+ */
+function MessageFileChip({
+  attachment,
+  projectId,
+}: {
+  attachment: MessageAttachment;
+  projectId?: string | null;
+}) {
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const typeId = new TypeId('file', String(attachment.asset_id ?? ''));
+  return (
+    <>
+      <EntityChip
+        entity={{
+          typeId,
+          type: 'file',
+          id: String(attachment.asset_id ?? ''),
+          name: attachment.name ?? 'file',
+          icon: File,
+        }}
+        staged={!attachment.installed}
+        onClick={() => setReviewOpen(true)}
+      />
+      {reviewOpen && (
+        <AssetReviewDialog
+          open={reviewOpen}
+          onClose={() => setReviewOpen(false)}
+          attachment={attachment}
+          targetTypeId={typeId}
+          attachmentProjectId={projectId ?? null}
+        />
+      )}
+    </>
+  );
+}
+
 function MessageEntityChip({
   typeId,
   conversationId,

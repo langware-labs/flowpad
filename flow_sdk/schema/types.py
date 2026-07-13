@@ -118,6 +118,9 @@ class EntityType(StrEnum):
     USAGE_REPORT = "usage_report"
     ASSET_CLEANUP_REPORT = "asset_cleanup_report"
     DATASET = "dataset"
+    # A reusable slide-deck template — a folder of layout HTML components +
+    # shared design tokens under assets/deck-templates/ (see the decker skill).
+    DECK_TEMPLATE = "deck_template"
     FLOWPAD_DIAGNOSIS = "flowpad_diagnosis"
     COLLABORATION_ROOM = "collaboration_room"
     # A host/guest remote-execution session that lives inside a CollaborationRoom

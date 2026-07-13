@@ -89,7 +89,7 @@ function isValidFolderName(name: string): boolean {
  */
 export function useAssetsModel() {
   const { currentDock, navigation } = useDockNavigation();
-  const { types: allTypes, isLoading: typesLoading } = useAssetTypes();
+  const { types: allTypes, isLoading: typesLoading } = useAssetTypes({ vibeAsStandard: true });
   const { indexType } = useSystemTools();
   const [newTypeTarget, setNewTypeTarget] = useState<string | null>(null);
   const [newTypeDialogOpen, setNewTypeDialogOpen] = useState(false);
