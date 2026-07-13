@@ -39,6 +39,7 @@ INDEXABLE_TYPES: list[RecordType] = [
     RecordType.DATASET,
     RecordType.DECK_TEMPLATE,
     RecordType.DECK,
+    RecordType.SPREADSHEET,
     RecordType.USAGE_REPORT,
     RecordType.ASSET_CLEANUP_REPORT,
 ]
@@ -104,6 +105,7 @@ def build_default_indexer() -> FSIndexer:
     )
     from flow_sdk.fs_store.indexer.functions.prompt import prompt_project_fn
     from flow_sdk.fs_store.indexer.functions.skill import skill_fn
+    from flow_sdk.fs_store.indexer.functions.spreadsheet import spreadsheet_in_folder_fn
     from flow_sdk.fs_store.indexer.functions.spec import spec_project_fn
     from flow_sdk.fs_store.indexer.functions.task import task_fn
     from flow_sdk.fs_store.indexer.functions.todo import todo_fn
@@ -220,6 +222,7 @@ def build_default_indexer() -> FSIndexer:
 
     # FOLDER (transient scaffold emitted by project_folder_walker_fn) expanders
     idx.add_function(RecordType.FOLDER, markdown_in_folder_fn, RecordType.MARKDOWN)
+    idx.add_function(RecordType.FOLDER, spreadsheet_in_folder_fn, RecordType.SPREADSHEET)
     idx.add_function(RecordType.FOLDER, workflow_frontmatter_fn, RecordType.WORKFLOW)
     idx.add_function(RecordType.CWD_ROOT, claude_hook_files_fn, RecordType.CLAUDE_HOOK_SOURCE)
 
