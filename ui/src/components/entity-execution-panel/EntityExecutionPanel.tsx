@@ -28,6 +28,7 @@ import { History, MessageSquarePlus, Settings, Trash2, X } from 'lucide-react';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ExecutionSettingsPopover } from './ExecutionSettingsPopover';
+import { ProcessNameBar } from './ProcessNameBar';
 import { notify } from '@src/notifications/notify';
 import { CompactExecutionInput } from './CompactExecutionInput';
 import { splitLiveGroup, useTurnGroups, type TurnGroup } from '@src/components/floating-chat/groupTurnEvents';
@@ -100,6 +101,12 @@ interface EntityExecutionPanelProps {
    * "Recent" together on the left.
    */
   historyOnLeft?: boolean;
+  /** Optional content rendered immediately after the (left-placed) history
+   *  trigger — e.g. Vibe's "Collaborate" button next to the "Recent" pill. */
+  afterHistorySlot?: React.ReactNode;
+  /** Show an editable one-liner with the active process's name directly below
+   *  the header (Vibe). Off by default so other consumers are unchanged. */
+  showProcessNameBar?: boolean;
   /** Header label inside the history dropdown. Defaults to "Past executions". */
   pastSessionsLabel?: string;
   /** Empty-state text shown inside the history dropdown. Defaults to "No past executions". */
@@ -227,6 +234,8 @@ export function EntityExecutionPanel({
   historyLabel = 'Execution history',
   historyTriggerLabel,
   historyOnLeft = false,
+  afterHistorySlot,
+  showProcessNameBar = false,
   pastSessionsLabel = 'Past executions',
   noPastSessionsLabel = 'No past executions',
   emptyStateText = 'Ask about this document. The conversation will persist.',
@@ -697,6 +706,7 @@ export function EntityExecutionPanel({
         historyLabel={historyLabel}
         historyTriggerLabel={historyTriggerLabel}
         historyOnLeft={historyOnLeft}
+        afterHistorySlot={afterHistorySlot}
         pastSessionsLabel={pastSessionsLabel}
         noPastSessionsLabel={noPastSessionsLabel}
         settingsSlot={
@@ -727,6 +737,7 @@ export function EntityExecutionPanel({
           </>
         }
       />
+      {showProcessNameBar && activeProcess && <ProcessNameBar process={activeProcess} />}
       <AutoScrollContainer ref={scrollRef} className="flex-1 overflow-y-auto">
         {showEmptyState && (
           <div className="p-3 text-sm text-muted-foreground">
@@ -825,6 +836,7 @@ function ExecutionHistoryHeader({
   historyLabel,
   historyTriggerLabel,
   historyOnLeft,
+  afterHistorySlot,
   pastSessionsLabel,
   noPastSessionsLabel,
 }: {
@@ -846,6 +858,8 @@ function ExecutionHistoryHeader({
   historyTriggerLabel?: string;
   /** Render the history trigger on the left (next to leadingSlot). */
   historyOnLeft?: boolean;
+  /** Optional node rendered right after the left-placed history pill. */
+  afterHistorySlot?: React.ReactNode;
   pastSessionsLabel: string;
   noPastSessionsLabel: string;
 }) {
@@ -978,6 +992,7 @@ function ExecutionHistoryHeader({
     >
       {leadingSlot}
       {historyOnLeft && historyDropdown}
+      {historyOnLeft && afterHistorySlot}
       {cursorLine != null && (
         <span
           className="text-[11px] tabular-nums text-muted-foreground"

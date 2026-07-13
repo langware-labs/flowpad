@@ -34,6 +34,7 @@ import { setActiveTabParent } from '@src/tabs/tab-parent-context';
 import { setupTabAndAdopt } from '@src/tabs/setup-tab-and-adopt';
 import { notify } from '@src/notifications/notify';
 import { WorkspaceChildStrip } from './workspace-child-strip';
+import { VibeCollaborateButton } from './VibeCollaborateButton';
 import { ContentPanel } from './content-panel/content-panel';
 import { createVibeProcessForProject, embedVibeAgent, launchVibeSessionForProject } from './use-start-vibe-session';
 import { ViewMode } from '@src/contexts/view-mode-context';
@@ -575,6 +576,13 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
           // next to the green "New" pill (not the bare icon on the right).
           historyTriggerLabel={t`Recent`}
           historyOnLeft
+          showProcessNameBar
+          afterHistorySlot={
+            <VibeCollaborateButton
+              projectId={project?.id ?? null}
+              sessionTypeId={activeProcess?.typeId ?? null}
+            />
+          }
           pastSessionsLabel={t`Past builds`}
           noPastSessionsLabel={t`No past builds`}
           defaultProjectId={project?.id ?? null}
