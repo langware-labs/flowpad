@@ -95,6 +95,9 @@ EXPECTED = {
     # migration. DYNAMIC_WORKFLOW's adding commit missed this freeze; WORKFLOW_RUN
     # is the workflow-run-as-transcript feature.
     "DYNAMIC_WORKFLOW": "dynamic_workflow", "WORKFLOW_RUN": "workflow_run",
+    # Deck-template feature — additive member; brand-new type, no existing
+    # value changed, so no migration.
+    "DECK_TEMPLATE": "deck_template",
 }
 
 
