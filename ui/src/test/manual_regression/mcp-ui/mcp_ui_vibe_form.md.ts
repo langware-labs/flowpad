@@ -29,7 +29,7 @@ test.describe('MCP UI Vibe demo', () => {
     await page.evaluate(() => window.setView('vibe'));
     await dismissWelcomeModal(page);
 
-    const promptInput = page.locator('textarea[aria-label^="What would you like to build"], textarea[placeholder^="What would you like to build"]').first();
+    const promptInput = page.locator('textarea[aria-label^="What would you like to work on"], textarea[placeholder^="What would you like to work on"]').first();
     await promptInput.waitFor({ state: 'visible', timeout: 30_000 });
     await promptInput.fill(PROMPT);
     await promptInput.press('Enter');

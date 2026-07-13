@@ -347,9 +347,12 @@ msgstr ""
 msgid "{sessionCount} sessions"
 msgstr ""
 
-#. placeholder {0}: children.length
 #: src/components/browseable-tree/adapters/useFavoritesRoots.tsx
-msgid "{title} — {0} items"
+#~ msgid "{title} — {0} items"
+#~ msgstr ""
+
+#: src/components/browseable-tree/adapters/useFavoritesRoots.tsx
+msgid "{title} — {count} items"
 msgstr ""
 
 #: src/components/triggers-view/TriggerInvocationsPanel.tsx
@@ -808,6 +811,10 @@ msgstr ""
 msgid "Address book"
 msgstr ""
 
+#: src/components/conversation/ExecutePromptDialog.tsx
+msgid "Advanced"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Advanced mode"
 msgstr ""
@@ -929,6 +936,14 @@ msgstr ""
 #: src/components/wiki-toolbar/WikiLinkInsertDialog.tsx
 #: src/components/wiki-toolbar/WikiLinkInsertDialog.tsx
 msgid "All types"
+msgstr ""
+
+#: src/components/conversation/ExecutePromptDialog.tsx
+msgid "Allow"
+msgstr ""
+
+#: src/components/conversation/ExecutePromptDialog.tsx
+msgid "Allow {who} to run prompt on this computer"
 msgstr ""
 
 #: src/components/tools/ToolsPanel.tsx
@@ -2250,6 +2265,18 @@ msgstr ""
 
 #: src/components/quick-create/QuickCreateMenu.tsx
 msgid "Codex session"
+msgstr ""
+
+#: src/pages/flow-page/VibeCollaborateButton.tsx
+msgid "Collaborate"
+msgstr ""
+
+#: src/pages/flow-page/VibeCollaborateButton.tsx
+msgid "Collaborate on this session"
+msgstr ""
+
+#: src/pages/flow-page/VibeCollaborateButton.tsx
+msgid "Collaboration"
 msgstr ""
 
 #: src/components/browseable-tree/BrowseableTree.tsx
@@ -3633,6 +3660,10 @@ msgstr ""
 msgid "Document"
 msgstr ""
 
+#: src/components/conversation/ExecutePromptDialog.tsx
+msgid "Don't ask again"
+msgstr ""
+
 #: src/components/search-index/ActivityProgressModal.tsx
 msgid "done"
 msgstr ""
@@ -4173,8 +4204,8 @@ msgid "Every project is selected"
 msgstr ""
 
 #: src/components/conversation/ExecutePromptDialog.tsx
-msgid "Execute"
-msgstr ""
+#~ msgid "Execute"
+#~ msgstr ""
 
 #: src/components/spec-editor/SpecEditor.tsx
 msgid "Execute Plan"
@@ -4185,8 +4216,8 @@ msgid "Execute Plan (clear context)"
 msgstr ""
 
 #: src/components/conversation/ExecutePromptDialog.tsx
-msgid "Execute prompt from {who}"
-msgstr ""
+#~ msgid "Execute prompt from {who}"
+#~ msgstr ""
 
 #: src/components/spec-editor/SpecEditor.tsx
 msgid "Execute the plan, clearing context first. Full trust mode ON."
@@ -4521,7 +4552,7 @@ msgstr ""
 msgid "Failed to open folder"
 msgstr ""
 
-#: src/components/open-project-component/open-project-component.tsx
+#: src/components/open-project-component/use-open-project.ts
 #: src/components/project-setup-screen/project-setup-screen.tsx
 #: src/components/quick-create/QuickCreateDialog.tsx
 #: src/components/quick-create/QuickCreateMenu.tsx
@@ -4542,7 +4573,7 @@ msgid "Failed to open logs folder"
 msgstr ""
 
 #: src/components/open-project-component/open-project-component.tsx
-#: src/components/open-project-component/open-project-component.tsx
+#: src/components/open-project-component/use-open-project.ts
 #: src/tabs/useTerminalStripController.tsx
 msgid "Failed to open project"
 msgstr ""
@@ -6103,6 +6134,10 @@ msgstr ""
 msgid "Learn about your data"
 msgstr ""
 
+#: src/components/conversation/ExecutePromptDialog.tsx
+msgid "Learn more"
+msgstr ""
+
 #: src/components/inbox-view/InboxView.tsx
 msgid "Leave"
 msgstr ""
@@ -6930,6 +6965,10 @@ msgstr ""
 msgid "never run"
 msgstr ""
 
+#: src/components/conversation/ExecutePromptDialog.tsx
+msgid "Never run prompts from untrusted sources."
+msgstr ""
+
 #: src/components/inbox-view/InboxView.tsx
 #: src/components/inbox-view/InboxView.tsx
 msgid "Never synced to cloud"
@@ -7242,7 +7281,7 @@ msgstr ""
 #: src/components/assets/ContextFolderBrowser.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
-#: src/components/open-project-component/open-project-component.tsx
+#: src/components/open-project-component/use-open-project.ts
 #: src/components/project-setup-screen/project-setup-screen.tsx
 #: src/components/quick-create/QuickCreateDialog.tsx
 #: src/components/quick-create/QuickCreateMenu.tsx
@@ -8195,6 +8234,10 @@ msgstr ""
 msgid "Open Backup Folder"
 msgstr ""
 
+#: src/pages/flow-page/VibeCollaborateButton.tsx
+msgid "Open collaboration"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Open command in external terminal"
 msgstr ""
@@ -8221,6 +8264,10 @@ msgstr ""
 #: src/components/terminal/openers/TerminalOpenerToolbar.tsx
 #: src/tabs/useTerminalStripController.tsx
 msgid "Open docker terminal"
+msgstr ""
+
+#: src/pages/flow-page/vibe-new-chat.tsx
+msgid "Open existing project"
 msgstr ""
 
 #: src/components/project-setup-screen/project-setup-screen.tsx
@@ -8415,6 +8462,7 @@ msgid "Open project folder"
 msgstr ""
 
 #: src/components/status-bar.tsx
+#: src/components/status-bar.tsx
 msgid "Open project view"
 msgstr ""
 
@@ -8520,6 +8568,11 @@ msgstr ""
 msgid "Open transcript"
 msgstr ""
 
+#: src/components/conversation/MessageRunStatus.tsx
+#: src/components/conversation/MessageRunStatus.tsx
+msgid "Open worker session"
+msgstr ""
+
 #: src/components/account/secrets-section.tsx
 msgid "OPENAI_API_KEY"
 msgstr ""
@@ -8528,7 +8581,7 @@ msgstr ""
 msgid "Opened Asset compare."
 msgstr ""
 
-#: src/components/open-project-component/open-project-component.tsx
+#: src/components/open-project-component/use-open-project.ts
 msgid "Opened existing project"
 msgstr ""
 
@@ -8886,7 +8939,7 @@ msgstr ""
 msgid "Please make sure the server is running."
 msgstr ""
 
-#: src/components/open-project-component/open-project-component.tsx
+#: src/components/open-project-component/use-open-project.ts
 msgid "Please provide a valid project path"
 msgstr ""
 
@@ -9420,6 +9473,7 @@ msgstr ""
 
 #: src/components/open-project-component/open-project-component.tsx
 #: src/pages/discover-page/discover-page.tsx
+#: src/pages/flow-page/vibe-workspace.tsx
 msgid "Recent"
 msgstr ""
 
@@ -10019,7 +10073,6 @@ msgid "Rules"
 msgstr ""
 
 #: src/components/assets/editor/skill/UsagePanel.tsx
-#: src/components/conversation/asset-review/AssetInstallActions.tsx
 #: src/components/conversation/asset-review/TestPromptDialog.tsx
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 msgid "Run"
@@ -10102,8 +10155,8 @@ msgid "Run the skill \"{name}\" on the current context."
 msgstr ""
 
 #: src/components/conversation/ExecutePromptDialog.tsx
-msgid "Run this prompt in the shared session now. Optionally let future prompts from {who} run automatically."
-msgstr ""
+#~ msgid "Run this prompt in the shared session now. Optionally let future prompts from {who} run automatically."
+#~ msgstr ""
 
 #: src/components/assets/editor/workflow/WorkflowAssetEditor.tsx
 #: src/components/workflows-view/WorkflowStrip.tsx
@@ -10793,6 +10846,10 @@ msgstr ""
 
 #: src/components/account/system-diagnoses.tsx
 msgid "Send failed."
+msgstr ""
+
+#: src/pages/flow-page/VibeCollaborateButton.tsx
+msgid "Send invite"
 msgstr ""
 
 #: src/components/entity-execution-panel/CompactExecutionInput.tsx
@@ -12905,8 +12962,16 @@ msgstr ""
 msgid "What do you need help with?"
 msgstr ""
 
+#: src/pages/flow-page/VibeCollaborateButton.tsx
+msgid "What do you want to collaborate on?"
+msgstr ""
+
 #: src/pages/flow-page/vibe-workspace.tsx
 msgid "What do you want to work on"
+msgstr ""
+
+#: src/components/status-bar.tsx
+msgid "What is a Flowpad project?"
 msgstr ""
 
 #: src/components/account/secrets-section.tsx
@@ -12934,12 +12999,12 @@ msgid "What went wrong? (leave empty for a full sweep)"
 msgstr ""
 
 #: src/pages/home-landing/HomeLanding.tsx
-msgid "What would you like to build, {firstName}?"
-msgstr ""
+#~ msgid "What would you like to build, {firstName}?"
+#~ msgstr ""
 
 #: src/pages/flow-page/vibe-new-chat.tsx
-msgid "What would you like to build?"
-msgstr ""
+#~ msgid "What would you like to build?"
+#~ msgstr ""
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "What would you like to fix?"
@@ -12949,6 +13014,11 @@ msgstr ""
 msgid "What would you like to work on today?"
 msgstr ""
 
+#: src/pages/home-landing/HomeLanding.tsx
+msgid "What would you like to work on, {firstName}?"
+msgstr ""
+
+#: src/pages/flow-page/vibe-new-chat.tsx
 #: src/pages/home-landing/HomeLanding.tsx
 msgid "What would you like to work on?"
 msgstr ""
@@ -13074,7 +13144,7 @@ msgstr ""
 msgid "You don’t belong to an organization yet. Organizations are set up in Flowpad Cloud; once you’re added, your organization and its members appear here."
 msgstr ""
 
-#: src/components/open-project-component/open-project-component.tsx
+#: src/components/open-project-component/use-open-project.ts
 #: src/components/project-setup-screen/project-setup-screen.tsx
 msgid "You must be logged in"
 msgstr ""
