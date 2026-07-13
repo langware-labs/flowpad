@@ -9,6 +9,7 @@ import { AssetEditor, AssetRoutingMethod, EDITOR_TYPES, editorForType, isFileOnl
 import { HtmlPreview } from '@src/components/html-preview/HtmlPreview';
 import { McpAppPreview } from '@src/components/mcp-app-preview/McpAppPreview';
 import { MediaViewer } from '@src/components/media-viewer/MediaViewer';
+import { PdfViewer } from '@src/components/pdf-viewer/PdfViewer';
 import { EntityResolutionGate } from './EntityResolutionGate';
 import { MissingAssetCard } from './MissingAssetCard';
 import { PlainMarkdownAssetEditor } from './markdown/PlainMarkdownAssetEditor';
@@ -134,6 +135,10 @@ export function AssetEditorRouter({ pointer }: AssetEditorRouterProps) {
   if (ptr.editor === AssetEditor.IMAGE || ptr.editor === AssetEditor.VIDEO || ptr.editor === AssetEditor.AUDIO) {
     // The enum values ARE the kind strings ('image' | 'video' | 'audio').
     return <MediaViewer path={ptr.value} kind={ptr.editor} />;
+  }
+  if (ptr.editor === AssetEditor.PDF) {
+    // PdfViewer parses both the vpath and plain-path forms itself, like MediaViewer.
+    return <PdfViewer path={ptr.value} />;
   }
 
   // A typeid pointer whose entity has SETTLED with nothing usable (404 /
