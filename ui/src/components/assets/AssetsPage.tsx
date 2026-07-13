@@ -232,7 +232,7 @@ function FolderBreadcrumb({
 export function AssetsPage() {
   const { t } = useLingui();
   const { currentDock, navigation } = useDockNavigation();
-  const { types: allTypes } = useAssetTypes();
+  const { types: allTypes } = useAssetTypes({ vibeAsStandard: true });
   const { busy, resetAndRescan } = useSystemTools();
 
   const [refreshKey, setRefreshKey] = useState(0);

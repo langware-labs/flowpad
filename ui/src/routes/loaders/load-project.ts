@@ -18,8 +18,9 @@ import {
   Shell,
   TypeId,
 } from '@sdk';
-import { applyProjectViewMode } from '@src/contexts/view-mode-context';
+import { applyProjectViewMode, getViewMode, ViewMode } from '@src/contexts/view-mode-context';
 import { DockPointer } from '@src/navigation';
+import { agenticProcessIdForProjectEntry } from '@src/tabs/project-entry';
 import { resolveNextTab, tabTargetKey } from '@src/tabs/tab-candidates';
 import { getTerminalTabsSnapshot } from '@src/tabs/useTabs';
 import { redirect } from 'react-router';
@@ -206,7 +207,10 @@ async function tagShellWithRoom(shell: Shell, roomId: string): Promise<void> {
   }
 }
 
-export async function loadProjectRoute(pointer: string | undefined): Promise<void> {
+export async function loadProjectRoute(
+  pointer: string | undefined,
+  opts: { viewMode?: string | null } = {},
+): Promise<void> {
   const { projectTypeId, roomId, tabTypeId, conversationId } =
     DockPointer.parseProjectPointer(pointer);
   const { assetSubPointer } = DockPointer.splitProjectPointer(pointer);
@@ -214,6 +218,27 @@ export async function loadProjectRoute(pointer: string | undefined): Promise<voi
   if (!projectTypeId) {
     // No project id in URL — page renders its empty state; nothing to load.
     return;
+  }
+
+  // Vibe is a WORKSPACE mode: a BARE project dock (`/dock/project/<id>`) has no
+  // workspace surface — `flow-page` falls through to the standard project home
+  // (`ContentPanel`) because `useVibeWorkspaceSession` only recognizes SHELL/
+  // process docks. The in-app project picker (`open-project-component`) already
+  // resolves a Vibe project-open to a workspace surface; a DIRECT project URL
+  // must do the same, or "open in vibe mode" silently lands on the project home.
+  // Redirect to the workspace the picker would: the project's process shell if
+  // it has one, else the process-less Vibe home. Only a bare project dock
+  // redirects — deeper project URLs (a conversation, an asset, a room tab) keep
+  // their own surface. The targets are SHELL/HOME view types, so this never
+  // re-enters loadProjectRoute (no redirect loop).
+  const isBareProjectDock = !roomId && !conversationId && !assetSubPointer && !hasTabSegment && !tabTypeId;
+  if (isBareProjectDock && (opts.viewMode ?? getViewMode()) === ViewMode.Vibe) {
+    const processId = await agenticProcessIdForProjectEntry(projectTypeId.id).catch(() => null);
+    const target = processId
+      ? DockPointer.forShell(new TypeId(AgenticProcess.type, processId).toString()).withViewMode(ViewMode.Vibe)
+      : DockPointer.forHome(undefined, undefined, { vibeNoProcess: true }).withViewMode(ViewMode.Vibe);
+    // eslint-disable-next-line @typescript-eslint/only-throw-error
+    throw redirect(target.toUrl());
   }
 
   // Prefetch project + room into the entity cache so the page's `useEntity`

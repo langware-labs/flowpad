@@ -95,7 +95,7 @@ export async function loadDockPointer(
         await loadShellRoute(dock.pointer, context.requestPath, { scope: dock.scopeFilter, viewMode: dock.viewMode });
         break;
       case ViewType.PROJECT:
-        await loadProjectRoute(dock.pointer);
+        await loadProjectRoute(dock.pointer, { viewMode: dock.viewMode });
         break;
       case ViewType.CONVERSATION:
         await loadConversationRoute(dock.pointer);
