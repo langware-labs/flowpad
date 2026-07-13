@@ -40,6 +40,13 @@ export enum AssetMode {
 /** Default wiki space (the local compute node). */
 export const DEFAULT_WIKI_SPACE = '@local';
 
+/**
+ * Query-param key carrying a wiki page's heading anchor (a GFM slug like
+ * "auto-run"). Lives in `DockPointer.options`, mirroring `HIGHLIGHT_PARAM`, so a
+ * wiki link can deep-link into a section without changing the path grammar.
+ */
+export const WIKI_FRAGMENT_PARAM = 'wikiFragment';
+
 /** The local compute node's TypeId — the always-available `@local` filesystem
  *  root. Single source for `new TypeId('compute_node', '@local')`. */
 export const LOCAL_COMPUTE_NODE = new TypeId('compute_node', DEFAULT_WIKI_SPACE);

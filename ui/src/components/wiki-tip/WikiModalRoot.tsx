@@ -13,6 +13,7 @@ export function WikiModalRoot() {
   const setOpen = useWikiModalStore((s) => s.setOpen);
   const wikiword = useWikiModalStore((s) => s.wikiword);
   const space = useWikiModalStore((s) => s.space);
+  const fragment = useWikiModalStore((s) => s.fragment);
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -21,7 +22,7 @@ export function WikiModalRoot() {
           <DialogTitle>[[{wikiword}]]</DialogTitle>
         </DialogHeader>
         <div className="h-[70vh] overflow-auto">
-          {open && wikiword ? <WikiResolveView name={wikiword} space={space} /> : null}
+          {open && wikiword ? <WikiResolveView name={wikiword} space={space} fragment={fragment} /> : null}
         </div>
       </DialogContent>
     </Dialog>

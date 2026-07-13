@@ -107,6 +107,12 @@ interface MarkdownEditorProps {
    * buffer is dirty (unsaved edits win).
    */
   reloadKey?: string | number;
+  /**
+   * Optional heading slug (a GFM slug like "auto-run"). When set, the body
+   * scrolls to that heading once it renders — the deep-link target for wiki
+   * fragment URLs (`…/wiki/<name>` + `?wikiFragment=<slug>`).
+   */
+  fragment?: string;
 }
 
 /**
@@ -129,6 +135,7 @@ export function MarkdownEditor({
   onDelete,
   deleteLabel,
   reloadKey,
+  fragment,
 }: MarkdownEditorProps) {
   return (
     <MarkdownEditorContent
@@ -143,6 +150,7 @@ export function MarkdownEditor({
       onDelete={onDelete}
       deleteLabel={deleteLabel}
       reloadKey={reloadKey}
+      fragment={fragment}
     />
   );
 }
@@ -168,12 +176,19 @@ function normalizeDirection(value: string | undefined): 'ltr' | 'rtl' | undefine
   return v === 'ltr' || v === 'rtl' ? v : undefined;
 }
 
-function goToSlug(slug: string): void {
-  const direct = document.getElementById(slug);
-  const heading = direct ?? Array.from(
-    document.querySelectorAll<HTMLElement>('.ProseMirror :is(h1,h2,h3,h4,h5,h6)')
-  ).find((h) => gfmSlug(h.textContent ?? '') === slug);
-  heading?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+/** Resolve the rendered heading matching `slug` (Milkdown's own ids first, then
+ *  a GFM-slug scan of the rendered headings), or null if not present yet. */
+function findHeading(slug: string): HTMLElement | null {
+  return document.getElementById(slug)
+    ?? Array.from(
+      document.querySelectorAll<HTMLElement>('.ProseMirror :is(h1,h2,h3,h4,h5,h6)')
+    ).find((h) => gfmSlug(h.textContent ?? '') === slug)
+    ?? null;
+}
+
+/** Scroll to the heading matching `slug`, if present. */
+function goToSlug(slug: string, smooth = true): void {
+  findHeading(slug)?.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: 'start' });
 }
 
 // ── Editor content ────────────────────────────────────────────────────────────
@@ -190,6 +205,7 @@ function MarkdownEditorContent({
   onDelete,
   deleteLabel,
   reloadKey,
+  fragment,
 }: {
   fsRef: FSRef;
   sourcePath: string;
@@ -202,6 +218,7 @@ function MarkdownEditorContent({
   onDelete?: MarkdownEditorProps['onDelete'];
   deleteLabel?: MarkdownEditorProps['deleteLabel'];
   reloadKey?: string | number;
+  fragment?: string;
 }) {
   const { t } = useLingui();
   const { navigation, currentDock } = useDockNavigation();
@@ -403,12 +420,14 @@ function MarkdownEditorContent({
       return;
     }
 
-    // /dock/assets/wiki/<name> → keep the URL at the wiki form; the
-    // wiki route view (WikiResolveView) does the name resolution.
-    const wikiMatch = href.match(/\/dock\/assets\/wiki\/([^?#]+)/);
+    // /dock/assets/wiki/<name>[#<frag>] → keep the URL at the wiki form; the
+    // wiki route view (WikiResolveView) does the name resolution. A trailing
+    // `#<frag>` deep-links to a heading (rides as a query param, not the path).
+    const wikiMatch = href.match(/\/dock\/assets\/wiki\/([^?#]+)(?:#([^?\s]+))?/);
     if (wikiMatch) {
       const name = decodeURIComponent(wikiMatch[1]).replace(/\.md$/i, '');
-      navigation.openDock(DockPointer.forWiki(name));
+      const frag = wikiMatch[2] ? decodeURIComponent(wikiMatch[2]) : undefined;
+      navigation.openDock(DockPointer.forWiki(name, undefined, undefined, frag));
       return;
     }
 
@@ -417,6 +436,44 @@ function MarkdownEditorContent({
     const assetType = currentDock?.pointer?.split('/')?.[1] ?? 'claude_memory';
     navigation.openDock(DockPointer.forAssetEditor(assetType, resolvedPath));
   }, [sourcePathStr, currentDock, navigation]);
+
+  // Deep-link scroll: when opened with a `fragment` (wiki anchor), scroll to the
+  // matching heading once, after the body paints. Milkdown renders headings — and
+  // keeps growing the document — a few frames after content loads, so scrolling
+  // once on first sight lands short; we cache the heading and re-correct across
+  // frames until its position holds steady (bounded). Gated per-fragment (a ref,
+  // and no `body` dependency) so typing in the body never re-yanks the viewport
+  // back to the anchor.
+  const scrolledFragmentRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!fragment || isLoading || isMissing) return;
+    if (scrolledFragmentRef.current === fragment) return;
+    const slug = fragment.toLowerCase();
+    let raf = 0;
+    let framesLeft = 60;
+    let stable = 0;
+    let lastTop = Number.NaN;
+    let heading: HTMLElement | null = null;
+    const attempt = () => {
+      heading ??= findHeading(slug); // scan the DOM only until the heading exists
+      if (heading) {
+        heading.scrollIntoView({ block: 'start' });
+        const top = Math.round(heading.getBoundingClientRect().top);
+        if (top === lastTop) {
+          if (++stable >= 2) {
+            scrolledFragmentRef.current = fragment; // settled — don't re-scroll on edits
+            return;
+          }
+        } else {
+          stable = 0;
+          lastTop = top;
+        }
+      }
+      if (framesLeft-- > 0) raf = requestAnimationFrame(attempt);
+    };
+    raf = requestAnimationFrame(attempt);
+    return () => cancelAnimationFrame(raf);
+  }, [fragment, isLoading, isMissing]);
 
   // ── Loading ────────────────────────────────────────────────────────────────
   if (isLoading) {
