@@ -108,6 +108,42 @@ class PathQueryOptions:
     offset: int = 0
 
 
+# Sane upper bound for an asset epoch (year ~2200). ``asset_hash_fn`` is
+# contractually a freshness stat that today returns the deepest inner-file
+# mtime, but a future impl could return a byte-hash — reject any value outside a
+# plausible epoch range so it can never poison ``updated_date`` with a garbage
+# far-future timestamp; the caller falls back to the folder mtime.
+_MAX_ASSET_EPOCH = 7_258_118_400.0
+
+
+def _asset_updated_epoch(record_type: str, src_path: str) -> float | None:
+    """Best "real last-modified" epoch for a source path, or None.
+
+    ``getmtime(src_path)`` catches add/remove of children; for folder-backed
+    types the registered ``asset_hash_fn`` returns the deepest INNER-file mtime
+    (a dir's own mtime misses child-content edits). MAX of the two so BOTH an
+    added file (folder mtime moves) and an edited inner file (asset_hash moves)
+    advance the stamp — this is what drives the FE body-reindex reactivity loop.
+    """
+    epoch: float | None = None
+    try:
+        epoch = os.path.getmtime(src_path)
+    except OSError:
+        pass
+    try:
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+        info = SchemaRegistry.get(record_type)
+        hash_fn = getattr(info, "asset_hash_fn", None) if info else None
+        if hash_fn is not None:
+            from flow_sdk.fs_store.fs_ref import FSRef  # noqa: PLC0415
+            val = float(hash_fn(FSRef(src_path)))
+            if 0 < val <= _MAX_ASSET_EPOCH:
+                epoch = val if epoch is None else max(epoch, val)
+    except (OSError, ValueError, TypeError):
+        pass  # non-mtime asset_hash_fn or bad path → keep getmtime
+    return epoch
+
+
 class Entity(DBEntity):
     env_vars: SerializeAsAny[EntityEnvVars[EnvVar] | None] = Field(default=None)
     visitor_role: str | None = Field(default=None)
@@ -652,18 +688,20 @@ class Entity(DBEntity):
             stamp["project_id"] = str(rec_pid)
 
         # Real last-modified: when the record carries no explicit updated_date,
-        # derive it from the source file's mtime so search/listing reflect actual
-        # activity rather than the index/sync instant. Resolves the source path
-        # from whichever field the extractor set (asset_ref / source_file / path),
-        # falling back to now() only when none resolves. One generic hook for
-        # every file-backed indexed type (sessions, markdown, plans, tasks, …) —
-        # no per-extractor stamping.
+        # derive it from the source's mtime so search/listing reflect actual
+        # activity rather than the index/sync instant (see _asset_updated_epoch —
+        # it also folds inner-file mtimes for folder types so a child-content edit
+        # advances the stamp, which drives the FE body-reindex reactivity loop).
+        # Falls back to now() when no path resolves. One generic hook for every
+        # file-backed indexed type — no per-extractor stamping.
         _asset_mtime = None
         if data.get("updated_date") is None and src_path:
-            try:
-                _asset_mtime = datetime.fromtimestamp(os.path.getmtime(src_path), tz=timezone.utc)
-            except OSError:
-                pass
+            _epoch = _asset_updated_epoch(record_type, src_path)
+            if _epoch is not None:
+                try:
+                    _asset_mtime = datetime.fromtimestamp(_epoch, tz=timezone.utc)
+                except (OSError, ValueError, OverflowError):
+                    pass
 
         if entity is None:
             create_kwargs = {"id": entity_uuid, "type": record_type}

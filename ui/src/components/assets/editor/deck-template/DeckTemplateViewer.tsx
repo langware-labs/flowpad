@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { FSRef, type DeckTemplate } from '@sdk';
 import { Dialog, DialogContent } from '@src/components/ui/dialog';
+import { entityReloadKey } from '@src/utils/entity-reload-key';
 
 /**
  * DeckTemplateViewer — a gallery of a deck template's layouts.
@@ -70,6 +71,12 @@ export function DeckTemplateViewer({ fsRef, deckTemplate }: DeckTemplateViewerPr
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<LayoutEntry | null>(null);
 
+  // Re-read the deck's layout/CSS files when the entity's `updated_date`
+  // advances — a reindex (agent turn-end / invalidate re-parsed the folder)
+  // bumps it, closing the `file change → reindex → refresh` loop for this
+  // read-only viewer (no dirty state to guard). See useFSRefContent reloadKey.
+  const reloadKey = entityReloadKey((deckTemplate as { updated_date?: unknown } | undefined)?.updated_date);
+
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -99,7 +106,9 @@ export function DeckTemplateViewer({ fsRef, deckTemplate }: DeckTemplateViewerPr
     return () => {
       cancelled = true;
     };
-  }, [fsRef]);
+    // reloadKey (entity updated_date) re-reads on out-of-band reindex.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fsRef, reloadKey]);
 
   const title = deckTemplate?.name || deckTemplate?.title || 'Deck template';
 
