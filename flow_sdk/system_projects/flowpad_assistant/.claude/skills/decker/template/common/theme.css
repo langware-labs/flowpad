@@ -3,6 +3,17 @@
  * Every value comes from a token (var(--…)); no hardcoded colors/sizes here.
  * ------------------------------------------------------------------------- */
 
+/* Container / letterbox background. Reveal scales the 16:9 slide to fit its
+ * viewport and letterboxes the remainder; reveal.css defaults that area to
+ * WHITE (.reveal-viewport{background:#fff}). Paint it the deck's own bg so the
+ * gutters (and fullscreen bars on a non-16:9 screen) match the deck instead of
+ * flashing white. Without this the deck looks like a slide floating in white. */
+html,
+body,
+.reveal-viewport {
+  background: var(--bg);
+}
+
 /* Reveal slide reset — normalize the section that Reveal renders */
 .reveal .slides section {
   box-sizing: border-box;

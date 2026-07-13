@@ -1,4 +1,4 @@
-import { Agent, AgentTrace, APIEntity, AssetCleanupReport, dataManager, DeckTemplate, DynamicWorkflow, FSRef, Skill, Task, TypeId, UsageReport, VFSPath, Whiteboard, Workflow } from '@sdk';
+import { Agent, AgentTrace, APIEntity, AssetCleanupReport, dataManager, Deck, DeckTemplate, DynamicWorkflow, FSRef, Skill, Task, TypeId, UsageReport, VFSPath, Whiteboard, Workflow } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { useMemo } from 'react';
 import { RefreshCw } from 'lucide-react';
@@ -22,6 +22,7 @@ import { UsageReportAssetEditor } from './usage-report/UsageReportAssetEditor';
 import { AssetCleanupReportAssetEditor } from './asset-cleanup/AssetCleanupReportAssetEditor';
 import { WhiteboardAssetEditor } from './whiteboard/WhiteboardAssetEditor';
 import { DeckTemplateViewer } from './deck-template/DeckTemplateViewer';
+import { DeckViewer } from './deck/DeckViewer';
 import { WorkflowAssetEditor } from './workflow/WorkflowAssetEditor';
 
 interface AssetEditorRouterProps {
@@ -226,6 +227,15 @@ export function AssetEditorRouter({ pointer }: AssetEditorRouterProps) {
           render={(deckTemplate) => (
             <DeckTemplateViewer fsRef={fsRef} deckTemplate={deckTemplate} />
           )}
+        />
+      );
+    case AssetEditor.DECK:
+      return (
+        <EntityResolutionGate<Deck>
+          type={Deck.type}
+          fsRef={fsRef}
+          typeLabel="deck"
+          render={(deck) => <DeckViewer fsRef={fsRef} deck={deck} />}
         />
       );
     case AssetEditor.AGENT_TRACE:
