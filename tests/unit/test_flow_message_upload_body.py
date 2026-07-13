@@ -50,7 +50,7 @@ async def test_upload_body_happy_path(tmp_path: Path) -> None:
     ):
         await fm.upload_body(transfer_mode="git")
 
-    to_file.assert_awaited_once_with(transfer_mode="git")
+    to_file.assert_awaited_once_with(transfer_mode="git", create_bookmark=False)
 
     # No PUT: the hub auto-stamps body_status=UPLOADING server-side
     # (_attachments_require_body during message-header creation), so the
