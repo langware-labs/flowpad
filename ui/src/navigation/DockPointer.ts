@@ -491,9 +491,15 @@ export class DockPointer implements IDockPointer {
    * Pointer format: "wiki/<encoded name>"
    * URL: /dock/assets/wiki/<encoded name>
    */
-  static forWiki(name: string, layout: Layout = Layout.DOCK, space?: string): DockPointer {
-    // Canonical grammar: wiki/<space>/<name> (space default @local).
-    return AssetDocPointer.forWiki(name, space).toDockPointer(layout);
+  static forWiki(
+    name: string,
+    layout: Layout = Layout.DOCK,
+    space?: string,
+    fragment?: string,
+  ): DockPointer {
+    // Canonical grammar: wiki/<space>/<name> (space default @local). An optional
+    // `fragment` deep-links to a heading; it rides as a query param, not the path.
+    return AssetDocPointer.forWiki(name, space, undefined, fragment).toDockPointer(layout);
   }
 
   /**
