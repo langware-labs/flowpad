@@ -1,0 +1,180 @@
+"""Indexer tests for the DECK type.
+
+Covers the slot functions end-to-end:
+- ``deck_fn`` walker emits one FSRef per ``assets/decks/<slug>/`` folder carrying
+  a ``deck.json`` build record.
+- ``extract_deck`` denormalizes num_slides / html_file and resolves the
+  ``template_ref`` provenance edge from the sibling template's ``.flow/id`` capsule.
+- ``deck_gen_id`` adopts a valid manifest id else mints via the capsule (idempotent).
+- ``deck_asset_hash`` tracks deck.json + the assembled HTML.
+
+Pure-sync; the walker/slot functions are called directly. Modeled on
+``test_indexer_deck_template.py``.
+"""
+from __future__ import annotations
+
+import json
+import os
+import uuid
+from pathlib import Path
+
+import pytest
+
+from flow_sdk.fs_store.fs_ref import FSRef
+from flow_sdk.fs_store.indexer import IndexerOptions
+from flow_sdk.fs_store.indexer.functions._folder_capsule import write_folder_capsule_id
+from flow_sdk.fs_store.indexer.functions.deck import (
+    deck_asset_hash,
+    deck_fn,
+    deck_gen_id,
+    extract_deck,
+)
+from flow_sdk.fs_store.record_types import RecordType
+
+# do not increase timeout without approval — these are pure-sync parses (<1s).
+pytestmark = pytest.mark.timeout(5)
+
+
+def _seed_deck(
+    project: Path,
+    slug: str,
+    *,
+    manifest: dict | None = None,
+    html_name: str | None = None,
+) -> Path:
+    deck = project / "assets" / "decks" / slug
+    deck.mkdir(parents=True)
+    (deck / "deck.json").write_text(json.dumps(manifest or {"title": slug, "slides": []}), encoding="utf-8")
+    (deck / (html_name or f"{slug}.html")).write_text("<html><body>deck</body></html>", encoding="utf-8")
+    return deck
+
+
+def _seed_template(project: Path, slug: str, *, capsule_id: str | None = None) -> Path:
+    tpl = project / "assets" / "deck-templates" / slug
+    (tpl / "layouts").mkdir(parents=True)
+    (tpl / "template.json").write_text(json.dumps({"metadata": {"title": slug}, "data": {}}), encoding="utf-8")
+    if capsule_id:
+        write_folder_capsule_id(tpl, capsule_id)
+    return tpl
+
+
+# ── walker ────────────────────────────────────────────────────────────────────
+
+def test_walker_emits_one_ref_per_deck(tmp_path: Path) -> None:
+    _seed_deck(tmp_path, "A")
+    _seed_deck(tmp_path, "B")
+    (tmp_path / "assets" / "decks" / "no-manifest").mkdir(parents=True)  # skipped
+
+    node = FSRef(tmp_path, record_type=RecordType.REAL_PROJECT_CWD)
+    refs = deck_fn([node], IndexerOptions(verbose=False))
+
+    assert len(refs) == 2
+    assert all(r.record_type == RecordType.DECK for r in refs)
+    assert sorted(Path(r.path).name for r in refs) == ["A", "B"]
+
+
+def test_walker_no_decks_dir(tmp_path: Path) -> None:
+    node = FSRef(tmp_path, record_type=RecordType.REAL_PROJECT_CWD)
+    assert deck_fn([node], IndexerOptions(verbose=False)) == []
+
+
+# ── id minting ────────────────────────────────────────────────────────────────
+
+def test_gen_id_adopts_valid_manifest_id(tmp_path: Path) -> None:
+    valid = str(uuid.uuid4())
+    deck = _seed_deck(tmp_path, "adopt", manifest={"id": valid, "title": "A", "slides": []})
+    assert deck_gen_id(FSRef(deck)) == valid
+
+
+def test_gen_id_mints_v4_capsule_when_absent(tmp_path: Path) -> None:
+    deck = _seed_deck(tmp_path, "mint")
+    first = deck_gen_id(FSRef(deck))
+    second = deck_gen_id(FSRef(deck))
+    assert first == second
+    assert uuid.UUID(first).version == 4
+
+
+# ── extractor ─────────────────────────────────────────────────────────────────
+
+def test_extract_denormalizes_slides_and_html(tmp_path: Path) -> None:
+    deck = _seed_deck(tmp_path, "brand", manifest={
+        "title": "Brand Deck",
+        "description": "a pitch",
+        "slides": [
+            {"layout": "cover-centered", "slots": {"title": "Hello"}},
+            {"layout": "closing-centered", "slots": {"title": "Thanks"}},
+        ],
+    })
+    rec = extract_deck(FSRef(deck))[0]
+    assert rec.type == RecordType.DECK
+    assert rec.name == "Brand Deck"
+    m = rec.meta_dict()["metadata"]
+    assert m["num_slides"] == 2
+    assert m["html_file"] == "brand.html"
+    # slide slot text is searchable
+    assert "Hello" in rec.content and "Thanks" in rec.content
+
+
+def test_extract_prefers_foldername_html(tmp_path: Path) -> None:
+    deck = _seed_deck(tmp_path, "pick", html_name="pick.html")
+    (deck / "other.html").write_text("<html></html>", encoding="utf-8")
+    assert extract_deck(FSRef(deck))[0].meta_dict()["metadata"]["html_file"] == "pick.html"
+
+
+def test_extract_ignores_mcp_html(tmp_path: Path) -> None:
+    deck = tmp_path / "assets" / "decks" / "mcp"
+    deck.mkdir(parents=True)
+    (deck / "deck.json").write_text(json.dumps({"title": "M", "slides": []}), encoding="utf-8")
+    (deck / "picker.mcp.html").write_text("<html></html>", encoding="utf-8")
+    (deck / "mcp.html").write_text("<html></html>", encoding="utf-8")
+    assert extract_deck(FSRef(deck))[0].meta_dict()["metadata"]["html_file"] == "mcp.html"
+
+
+def test_extract_non_deck_folder_returns_empty(tmp_path: Path) -> None:
+    plain = tmp_path / "assets" / "decks" / "empty"
+    plain.mkdir(parents=True)
+    assert extract_deck(FSRef(plain)) == []
+
+
+# ── provenance (template_ref) ──────────────────────────────────────────────────
+
+def test_template_ref_resolves_from_capsule(tmp_path: Path) -> None:
+    tpl_id = str(uuid.uuid4())
+    _seed_template(tmp_path, "aurora", capsule_id=tpl_id)
+    deck = _seed_deck(tmp_path, "pitch", manifest={
+        "title": "Pitch", "template": "../../deck-templates/aurora", "slides": [],
+    })
+    assert extract_deck(FSRef(deck))[0].meta_dict()["metadata"]["template_ref"] == tpl_id
+
+
+def test_template_ref_none_when_template_uncapsuled(tmp_path: Path) -> None:
+    _seed_template(tmp_path, "aurora")  # no capsule written
+    deck = _seed_deck(tmp_path, "pitch", manifest={
+        "title": "Pitch", "template": "../../deck-templates/aurora", "slides": [],
+    })
+    assert extract_deck(FSRef(deck))[0].meta_dict()["metadata"]["template_ref"] is None
+
+
+def test_template_ref_none_when_no_template_field(tmp_path: Path) -> None:
+    deck = _seed_deck(tmp_path, "solo", manifest={"title": "Solo", "slides": []})
+    assert extract_deck(FSRef(deck))[0].meta_dict()["metadata"]["template_ref"] is None
+
+
+# ── extract/gen agreement (production order: gen stamps capsule, extract reads it) ──
+
+def test_extract_id_agrees_with_gen_id(tmp_path: Path) -> None:
+    deck = _seed_deck(tmp_path, "agree")
+    gen = deck_gen_id(FSRef(deck))  # stamps the capsule first, as in production
+    assert extract_deck(FSRef(deck))[0].id == gen
+
+
+# ── asset hash ─────────────────────────────────────────────────────────────────
+
+def test_asset_hash_tracks_manifest_and_html_edits(tmp_path: Path) -> None:
+    deck = _seed_deck(tmp_path, "hash")
+    before = deck_asset_hash(FSRef(deck))
+    os.utime(deck / "deck.json", (before + 100, before + 100))
+    after = deck_asset_hash(FSRef(deck))
+    assert after > before
+    os.utime(deck / "hash.html", (after + 100, after + 100))
+    assert deck_asset_hash(FSRef(deck)) > after

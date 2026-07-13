@@ -121,6 +121,11 @@ class EntityType(StrEnum):
     # A reusable slide-deck template — a folder of layout HTML components +
     # shared design tokens under assets/deck-templates/ (see the decker skill).
     DECK_TEMPLATE = "deck_template"
+    # A generated presentation — a folder under assets/decks/ holding the
+    # self-contained deck HTML + its deck.json build record (see decker skill).
+    DECK = "deck"
+    # A flat tabular file asset — a .csv (editable) or .xlsx (read-only view)
+    # discovered anywhere in a project, rendered in a grid editor.
     FLOWPAD_DIAGNOSIS = "flowpad_diagnosis"
     COLLABORATION_ROOM = "collaboration_room"
     # A host/guest remote-execution session that lives inside a CollaborationRoom

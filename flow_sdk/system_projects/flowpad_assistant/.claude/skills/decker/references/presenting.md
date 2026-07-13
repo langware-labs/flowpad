@@ -3,36 +3,36 @@
 ## Inside FlowPad
 
 ```bash
-flow show file "<absolute path to deck>.html"
+flow record index "<project root>"
+flow show file "<project root>/assets/decks/<deck name>"   # the FOLDER
 ```
 
-Run it exactly once — exit 0 means the Vibe display is now rendering the deck.
-`show` drives the calling process's display; it never moves the user's browser
-tab (that would be `flow navigate`, which is not needed here).
+Run `show` once — exit 0 means the display is now rendering the deck. Because the
+deck is a `deck` entity (its folder carries a `deck.json` marker), showing the
+**folder** resolves to the entity and opens the bespoke **deck viewer**, which
+frames the deck full-bleed (no white letterbox), grants fullscreen, and links to
+the source template. `show` drives the calling process's display; it never moves
+the user's browser tab.
 
-### How the render works (and what it forbids)
+### The deck viewer
 
-Flowpad renders a shown `.html` in an iframe with `sandbox="allow-scripts"`
-and the file injected as `srcDoc`:
+- The deck (a self-contained Reveal HTML) renders in a 16:9 frame centered in a
+  dark surface — Reveal always sees a 16:9 container, so no white gutters.
+- **Fullscreen**: the viewer's ⛶ button (or Reveal's `F` — the viewer's iframe
+  grants the fullscreen permission). Reveal's own arrows/keys/overview drive the
+  slides inside.
+- **Open in a new tab**: the ↗ button opens the portable file in a real browser
+  tab, where presenter view (`S`) and everything else is unrestricted.
+- **Template**: a link back to the `deck_template` this deck was built from.
 
-- **No base URL / no same-origin** → relative `src`/`href` resolve to nothing
-  and network fetches are blocked. The deck must stay a single self-contained
-  file (the assembler guarantees this — don't hand-edit external refs in).
-- **No `localStorage`, no URL hash/history** → Reveal runs with
-  `hash: false, history: false` (set in the template's `common/deck.js`).
-  Deep-linking to a slide number is not available in-display.
-- **Fullscreen** may be blocked (the host iframe doesn't grant the fullscreen
-  permission). Overview and keyboard navigation work normally.
+Reveal runs headless with `hash:false, history:false` (set in `common/deck.js`)
+because the deck renders in a sandboxed `srcDoc` iframe (no same-origin, no URL
+hash). Do not name a deck `*.mcp.html` — that routes to the MCP-Apps renderer.
 
-Do not name a deck `*.mcp.html` — that extension routes to the MCP-Apps
-renderer, not the plain HTML preview.
-
-### Reveal controls (headless config)
+### Reveal controls
 
 - ←/→ (or Space): previous/next slide; Home/End: first/last.
-- `Esc` or `O`: overview grid; `F`: fullscreen (browser tab only, see above).
-- `S`: speaker/presenter view — opens a popup; works when the deck is opened
-  directly in a browser tab, not inside the sandboxed display.
+- `Esc` or `O`: overview grid; `F`: fullscreen; `S`: presenter view (new-tab only).
 
 ## Outside FlowPad
 
