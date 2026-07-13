@@ -28,16 +28,21 @@ to a plain local folder (no git icon, Push fails with "no remote").
 
 ## Mode `existing` — set up the given repository
 
+Prefer REUSING an existing local checkout and pulling; clone ONLY when no
+local checkout of this repository exists yet (a first local copy has no other
+way to materialize).
+
 1. Validate `url` with `git ls-remote <url>`; on failure show the git error
    and ask the user for a corrected URL.
 2. Pick the destination inside the Flowpad workspace:
    `~/Flowpad workspace/<repo-leaf>`. If that path already exists:
    - reuse it when its `origin` remote matches the URL (run `git -C <dir>
      remote get-url origin`), after a `git -C <dir> pull --ff-only` (best
-     effort — a failed pull is fine, keep the checkout);
+     effort — a failed pull is fine, keep the checkout). No clone happens in
+     this case;
    - otherwise append `-2`, `-3`, … until a free path is found.
-3. Clone with `git clone <url> <dest>`. Report progress/failures to the user
-   conversationally.
+3. Only when no matching checkout was found: `git clone <url> <dest>`.
+   Report progress/failures to the user conversationally.
 
 ## Mode `new` — create the named repository
 
@@ -52,9 +57,13 @@ git -C <dir> add -A && git -C <dir> commit -m "Initial commit"
 ```
 
 2. Set up the remote — ask the user which they prefer:
-   - **Create one on GitHub**: if the `gh` CLI is available and authenticated
-     (`gh auth status`), ask private or public, confirm, then
-     `gh repo create <name> --private|--public --source <dir> --push`.
+   - **Create one on GitHub** (default): if the `gh` CLI is available and
+     authenticated (`gh auth status`), create the repo **public** —
+     `gh repo create <name> --public --source <dir> --push`. Explain the
+     access model: public means anyone (in particular, every contact the
+     user later notifies) can READ/clone it, while WRITE stays with the
+     creator only. If the user explicitly prefers `--private`, honor it but
+     warn that notified contacts will NOT be able to pull the repo.
    - **Use an existing empty remote**: ask for the URL, then
      `git -C <dir> remote add origin <url>` and `git -C <dir> push -u origin main`.
      On push failure show the git error and help fix it.

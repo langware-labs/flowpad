@@ -1,4 +1,20 @@
-import { APIEntity, Artifact, createConversationForShare, FlowMessage, isImagePath, MessageAttachment, Prompt, TypeId, User, type AgenticProcess, type WorkerStatus } from '@sdk';
+import {
+  APIEntity,
+  Artifact,
+  createConversationForShare,
+  dataContext,
+  FlowMessage,
+  gitOriginCloneUrl,
+  isImagePath,
+  launchWizard,
+  MessageAttachment,
+  Prompt,
+  TypeId,
+  User,
+  type AgenticProcess,
+  type GitOrigin,
+  type WorkerStatus,
+} from '@sdk';
 import { isValidIdentifier } from '@sdk/models/TypeId';
 import { useEntity } from '@sdk/react/hooks';
 import { Trans, useLingui } from '@lingui/react/macro';
@@ -79,7 +95,9 @@ export function DownloadAttachmentsButton({
       </div>
       <div className="flex min-w-0 flex-col">
         <span className="truncate text-sm font-medium text-foreground">
-          <Trans>{count} {count === 1 ? 'asset' : 'assets'} attached</Trans>
+          <Trans>
+            {count} {count === 1 ? 'asset' : 'assets'} attached
+          </Trans>
         </span>
         <span className="text-[11px] uppercase tracking-wide text-muted-foreground">{sub}</span>
         {typeChips.length > 0 && (
@@ -219,7 +237,10 @@ export function FlowMessageBubble({
   // rendered received messages as authored by the recipient's own profile
   // name, e.g. the local git user.name).
   const creatorIsLocalArtifact = !!(
-    creator?.id && localUser?.id && creator.id === localUser.id && fm?.sender_id !== localUser.id
+    creator?.id &&
+    localUser?.id &&
+    creator.id === localUser.id &&
+    fm?.sender_id !== localUser.id
   );
   const { navigation } = useDockNavigation();
   const [overrideName, setOverrideName] = useState<string | null>(null);
@@ -299,7 +320,9 @@ export function FlowMessageBubble({
       <div className="flex gap-2 opacity-60">
         <div className="h-8 w-8 shrink-0 animate-pulse rounded-full bg-muted" />
         <div className="flex min-w-0 flex-1 flex-col gap-1 pt-1">
-          <span className="text-[11px] italic text-muted-foreground/70"><Trans>Loading message…</Trans></span>
+          <span className="text-[11px] italic text-muted-foreground/70">
+            <Trans>Loading message…</Trans>
+          </span>
         </div>
       </div>
     );
@@ -317,9 +340,7 @@ export function FlowMessageBubble({
   }
 
   const isCurrentUser = !!(fm.sender_id && localUser?.id && fm.sender_id === localUser.id);
-  const creatorLabel = creatorIsLocalArtifact
-    ? null
-    : creator?.name?.trim() || creator?.email?.trim() || null;
+  const creatorLabel = creatorIsLocalArtifact ? null : creator?.name?.trim() || creator?.email?.trim() || null;
   // Identity is hub-authoritative — but the bubble must NOT flash the alert
   // glyph on legitimate gaps (cold-load before roster fetch returns,
   // departed members, cross-instance bundle imports). Tiered chain:
@@ -425,9 +446,7 @@ export function FlowMessageBubble({
   // immediately — open/reveal work off the local path, no project needed.
   const senderLocalFileItems = attachmentItems.filter(
     (i) =>
-      i.state === AttachmentChipState.Downloaded &&
-      !localImageItems.includes(i) &&
-      !stagedFileNames.has(i.filename),
+      i.state === AttachmentChipState.Downloaded && !localImageItems.includes(i) && !stagedFileNames.has(i.filename),
   );
   // The "Download N" button must not re-count what's already surfaced without a
   // download: images shown inline above, and prompt entities (previewed in the
@@ -453,7 +472,9 @@ export function FlowMessageBubble({
           >
             <AlertCircle className="mt-0.5 h-3 w-3 shrink-0" />
             <div className="min-w-0 flex-1">
-              <div className="font-medium"><Trans>Could not download</Trans></div>
+              <div className="font-medium">
+                <Trans>Could not download</Trans>
+              </div>
               <div className="break-all text-[10px] text-orange-700/80 dark:text-orange-300/80">
                 {downloadError.method} {downloadError.path} {downloadError.statusCode}: {downloadError.message}
               </div>
@@ -650,13 +671,7 @@ export function FlowMessageBubble({
  * File chip (installed); clicking opens the review modal (install / uninstall +
  * content preview live there), matching the entity-chip flow.
  */
-function MessageFileChip({
-  attachment,
-  projectId,
-}: {
-  attachment: MessageAttachment;
-  projectId?: string | null;
-}) {
+function MessageFileChip({ attachment, projectId }: { attachment: MessageAttachment; projectId?: string | null }) {
   const [reviewOpen, setReviewOpen] = useState(false);
   const typeId = new TypeId('file', String(attachment.asset_id ?? ''));
   return (
@@ -705,6 +720,38 @@ function MessageEntityChip({
   const { data } = useEntity<APIEntity<any>>(typeId);
   const state = chipStateFor(!!data, attachment, forceShow);
   if (state === 'hidden') return null;
+  // Git-link chip: a git context folder shared through push-notify. The chip
+  // carries only the repo origin (no bytes); clicking launches the
+  // git-context-folder wizard, which reuses+pulls an existing local checkout
+  // (or clones once when none exists), registers it as a project, and
+  // attaches it as a context folder. After a completed run the staged
+  // attachment is marked installed (metadata-only, no clone).
+  const folderOrigin: GitOrigin | null =
+    typeId.type === 'folder'
+      ? ((attachment?.git_origin ??
+          (data as unknown as { origin?: Record<string, unknown> } | null)?.origin ??
+          null) as GitOrigin | null)
+      : null;
+  const handleFolderPull = folderOrigin
+    ? async () => {
+        const url = gitOriginCloneUrl(folderOrigin);
+        if (!url) return;
+        const targetProjectId = projectId ?? dataContext.project?.id ?? null;
+        const result = await launchWizard('git-context-folder', {
+          title: `Pull ${attachment?.name ?? 'git folder'}`,
+          targetTypeId: typeId.toString(),
+          payload: { projectId: targetProjectId, scope: 'private', mode: 'existing', url },
+        });
+        if (result.status === 'done' && attachment && !attachment.installed) {
+          try {
+            await attachment.install(targetProjectId ? 'project' : 'user', targetProjectId ?? undefined);
+          } catch {
+            // Install here only flips the chip state — the checkout succeeded
+            // in the wizard, so a bookkeeping failure stays quiet.
+          }
+        }
+      }
+    : null;
   // "Run icon near the skill": one-click install-if-needed + run in a Vibe
   // session (see useRunReceivedSkill). Only for skills with a staged/installed
   // attachment — not artifacts or plain shares.
@@ -739,7 +786,7 @@ function MessageEntityChip({
           <EntityChip
             entity={{ typeId, type: typeId.type, id: typeId.id, name: attachment!.name ?? typeId.type }}
             staged
-            onClick={() => setReviewOpen(true)}
+            onClick={handleFolderPull ? () => void handleFolderPull() : () => setReviewOpen(true)}
           />
           {runButton}
         </span>
@@ -748,11 +795,12 @@ function MessageEntityChip({
       </>
     );
   }
-  const artifact = typeId.type === Artifact.type && data
-    ? data instanceof Artifact
-      ? data
-      : new Artifact(data as unknown as Partial<Artifact>)
-    : null;
+  const artifact =
+    typeId.type === Artifact.type && data
+      ? data instanceof Artifact
+        ? data
+        : new Artifact(data as unknown as Partial<Artifact>)
+      : null;
   // Installed via a MessageAttachment: the chip KEEPS opening the review modal
   // (uninstall / test live there — requirement: "if already installed,
   // uninstall appears instead"). The asset itself opens via the modal-adjacent
@@ -767,9 +815,11 @@ function MessageEntityChip({
           onClick={
             artifact
               ? () => void openArtifact(artifact, { navigation, currentProjectId: projectId ?? null })
-              : attachment
-                ? () => setReviewOpen(true)
-                : undefined
+              : handleFolderPull
+                ? () => void handleFolderPull()
+                : attachment
+                  ? () => setReviewOpen(true)
+                  : undefined
           }
           projectId={projectId}
         />

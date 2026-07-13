@@ -51,15 +51,17 @@ export function ContextFolderBrowser({ relPath, onNavigate, projectId }: Context
   const initialPath = rel ? `/${rel}` : '/';
 
   // The git-backed context folder containing the browsed path (if any) — the
-  // repo root the status/push operations bind to.
-  const gitWorkdir = useMemo(() => {
+  // repo root the status/push operations bind to, plus its Folder entity
+  // typeid (referenced as the git-link chip on push-notify messages).
+  const gitDir = useMemo(() => {
     const match = contextDirInfos.find((info) => {
       if (info.origin_kind !== 'git') return false;
       const dirRel = normalizeRel(info.path);
       return !!dirRel && (rel === dirRel || rel.startsWith(`${dirRel}/`));
     });
-    return match ? `/${normalizeRel(match.path)}` : null;
+    return match ? { workdir: `/${normalizeRel(match.path)}`, typeid: match.typeid || null } : null;
   }, [contextDirInfos, rel]);
+  const gitWorkdir = gitDir?.workdir ?? null;
 
   const { status, hasUnpushed, isPathUnpushed, refresh, push, pushing } = useGitFolderStatus(
     gitWorkdir,
@@ -134,6 +136,7 @@ export function ContextFolderBrowser({ relPath, onNavigate, projectId }: Context
           folderName={basename(normalizeRel(gitWorkdir)) || gitWorkdir}
           branch={status?.branch ?? null}
           projectId={projectId}
+          folderTypeId={gitDir?.typeid ?? null}
           push={push}
           pushing={pushing}
         />
