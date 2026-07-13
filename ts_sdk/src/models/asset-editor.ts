@@ -27,6 +27,7 @@ export enum AssetEditor {
   IMAGE = 'image',
   VIDEO = 'video',
   AUDIO = 'audio',
+  PDF = 'pdf', // native browser render of a .pdf via <iframe>/<embed>
 }
 
 /** editor → record types it edits. `code` is file-only (no record type). */
@@ -56,6 +57,7 @@ export const EDITOR_TYPES: Record<AssetEditor, RecordType[]> = {
   [AssetEditor.IMAGE]: [],
   [AssetEditor.VIDEO]: [],
   [AssetEditor.AUDIO]: [],
+  [AssetEditor.PDF]: [],
 };
 
 /** True for editors that render raw files and have no backing record type. */
@@ -95,6 +97,7 @@ const EXT_TO_EDITOR: Record<string, AssetEditor> = {
   wav: AssetEditor.AUDIO,
   m4a: AssetEditor.AUDIO,
   ogg: AssetEditor.AUDIO,
+  pdf: AssetEditor.PDF,
 };
 
 /** MCP-app suffix rule — `.mcp.html` needs a suffix check because its last-dot
