@@ -1,7 +1,9 @@
 import { GitWorkdir, type GitRevision } from '@sdk';
-import { GitCompare, RotateCcw } from 'lucide-react';
+import { GitBranch, GitCompare, RotateCcw } from 'lucide-react';
 import React, { useCallback, useState } from 'react';
 import { formatTimeAgo } from '@src/utils/format-time-ago';
+import { Button } from '@src/components/ui/button';
+import { useProject } from '@src/hooks/useProject';
 import { RevisionDiffModal } from './RevisionDiffModal';
 
 interface RevisionsPanelProps {
@@ -33,6 +35,35 @@ export const RevisionsPanel: React.FC<RevisionsPanelProps> = ({
 }) => {
   const [compare, setCompare] = useState<GitRevision | null>(null);
   const [restoringHash, setRestoringHash] = useState<string | null>(null);
+  const [settingUp, setSettingUp] = useState(false);
+  const [setupError, setSetupError] = useState<string | null>(null);
+  const { project } = useProject();
+
+  // Init a git repo at the *project* working tree so the whole project (this
+  // file included) gets local revisions. On success, refresh so the panel flips
+  // to the history/empty-history state. Mirrors GitPanel.handleGitInit.
+  const handleSetupGit = useCallback(async () => {
+    if (!project) return;
+    setSettingUp(true);
+    setSetupError(null);
+    try {
+      const gw = await project.getGitWorkdir();
+      if (!gw) {
+        setSetupError('No working directory for this project.');
+        return;
+      }
+      const result = await gw.init();
+      if (result.ok) {
+        refresh();
+      } else {
+        setSetupError(result.message || 'git init failed');
+      }
+    } catch (e) {
+      setSetupError(String(e));
+    } finally {
+      setSettingUp(false);
+    }
+  }, [project, refresh]);
 
   const handleRestore = useCallback(
     async (rev: GitRevision) => {
@@ -52,6 +83,33 @@ export const RevisionsPanel: React.FC<RevisionsPanelProps> = ({
   );
 
   if (!hasRepo) {
+    return (
+      <div
+        className="flex h-full flex-col items-center justify-center gap-3 p-4 text-center"
+        data-testid="revisions-no-repo"
+      >
+        <p className="text-xs text-muted-foreground">
+          Revisions require git. Set it up to record local revisions for this project.
+        </p>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-7 gap-1.5 text-xs"
+          disabled={settingUp || !project}
+          onClick={() => { void handleSetupGit(); }}
+          data-testid="revisions-setup-git"
+        >
+          <GitBranch className="h-3.5 w-3.5" />
+          {settingUp ? 'Setting up…' : 'Setup git'}
+        </Button>
+        {setupError && (
+          <p className="text-[10px] text-red-500">{setupError}</p>
+        )}
+      </div>
+    );
+  }
+
+  if (revisions.length === 0) {
     return (
       <div className="flex h-full items-center justify-center p-4 text-center text-xs text-muted-foreground">
         No revision history yet. Saving this asset records its first revision.
