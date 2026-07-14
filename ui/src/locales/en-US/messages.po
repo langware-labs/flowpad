@@ -5405,6 +5405,10 @@ msgstr "Hide from Recent conversations"
 msgid "Hide hidden files"
 msgstr "Hide hidden files"
 
+#: src/components/task-bar/TaskCard.tsx
+msgid "Hide member tasks"
+msgstr "Hide member tasks"
+
 #: src/components/navigator-panel/NavigatorPanel.tsx
 #: src/components/webapp-viewer.tsx
 msgid "Hide panel"
@@ -6753,6 +6757,14 @@ msgstr "member"
 msgid "Member"
 msgstr "Member"
 
+#: src/components/task-bar/TaskCard.tsx
+msgid "member task"
+msgstr "member task"
+
+#: src/components/task-bar/TaskCard.tsx
+msgid "member tasks"
+msgstr "member tasks"
+
 #: src/components/collaboration/RoomHeader.tsx
 msgid "members"
 msgstr "members"
@@ -7006,6 +7018,7 @@ msgid "new"
 msgstr "new"
 
 #: src/components/assets/AssetListView.tsx
+#: src/components/assets/filters/taskFilters.tsx
 #: src/components/chats-navigator/ChatsFilterBar.tsx
 #: src/components/inbox-view/InboxView.tsx
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
@@ -8216,8 +8229,8 @@ msgid "Only one ZIP file can be uploaded at a time"
 msgstr "Only one ZIP file can be uploaded at a time"
 
 #: src/components/task-bar/TaskDetailPanel.tsx
-msgid "open"
-msgstr "open"
+#~ msgid "open"
+#~ msgstr "open"
 
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
@@ -11256,6 +11269,10 @@ msgstr "Show hidden files"
 msgid "Show in folder (selects file for drag-and-drop)"
 msgstr "Show in folder (selects file for drag-and-drop)"
 
+#: src/components/task-bar/TaskCard.tsx
+msgid "Show member tasks"
+msgstr "Show member tasks"
+
 #: src/components/workers/WorkerToolbar.tsx
 #: src/components/workers/WorkerToolbar.tsx
 msgid "Show other workers"
@@ -12307,8 +12324,8 @@ msgid "To"
 msgstr "To"
 
 #: src/components/assets/filters/taskFilters.tsx
-msgid "To Do"
-msgstr "To Do"
+#~ msgid "To Do"
+#~ msgstr "To Do"
 
 #: src/components/open-project-component/open-project-component.tsx
 #~ msgid "today"

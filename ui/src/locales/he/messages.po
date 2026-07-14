@@ -5405,6 +5405,10 @@ msgstr "הסתרה מהשיחות האחרונות"
 msgid "Hide hidden files"
 msgstr "הסתר קבצים נסתרים"
 
+#: src/components/task-bar/TaskCard.tsx
+msgid "Hide member tasks"
+msgstr ""
+
 #: src/components/navigator-panel/NavigatorPanel.tsx
 #: src/components/webapp-viewer.tsx
 msgid "Hide panel"
@@ -6753,6 +6757,14 @@ msgstr "חבר"
 msgid "Member"
 msgstr "חבר"
 
+#: src/components/task-bar/TaskCard.tsx
+msgid "member task"
+msgstr ""
+
+#: src/components/task-bar/TaskCard.tsx
+msgid "member tasks"
+msgstr ""
+
 #: src/components/collaboration/RoomHeader.tsx
 msgid "members"
 msgstr "חברים"
@@ -7006,6 +7018,7 @@ msgid "new"
 msgstr "חדש"
 
 #: src/components/assets/AssetListView.tsx
+#: src/components/assets/filters/taskFilters.tsx
 #: src/components/chats-navigator/ChatsFilterBar.tsx
 #: src/components/inbox-view/InboxView.tsx
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
@@ -8216,8 +8229,8 @@ msgid "Only one ZIP file can be uploaded at a time"
 msgstr "ניתן להעלות רק קובץ ZIP אחד בכל פעם"
 
 #: src/components/task-bar/TaskDetailPanel.tsx
-msgid "open"
-msgstr "פתוח"
+#~ msgid "open"
+#~ msgstr "פתוח"
 
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
@@ -11256,6 +11269,10 @@ msgstr "הצג קבצים נסתרים"
 msgid "Show in folder (selects file for drag-and-drop)"
 msgstr "הצג בתיקייה (בוחר קובץ לגרירה)"
 
+#: src/components/task-bar/TaskCard.tsx
+msgid "Show member tasks"
+msgstr ""
+
 #: src/components/workers/WorkerToolbar.tsx
 #: src/components/workers/WorkerToolbar.tsx
 msgid "Show other workers"
@@ -12307,8 +12324,8 @@ msgid "To"
 msgstr "אל"
 
 #: src/components/assets/filters/taskFilters.tsx
-msgid "To Do"
-msgstr "לביצוע"
+#~ msgid "To Do"
+#~ msgstr "לביצוע"
 
 #: src/components/open-project-component/open-project-component.tsx
 #~ msgid "today"

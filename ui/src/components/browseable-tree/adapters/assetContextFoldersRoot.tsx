@@ -1,4 +1,4 @@
-import { Folder, FolderPlus, FolderTree, GitBranch, X } from 'lucide-react';
+import { Folder, FolderPlus, FolderTree, GitBranch, Trash2 } from 'lucide-react';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { ViewType } from '@src/types/ViewType';
 import type { ProjectContextDirInfo, TypeId } from '@sdk';
@@ -150,7 +150,7 @@ function dirNode(
     toolbar: [
       {
         id: 'remove',
-        icon: <X className="h-3 w-3" />,
+        icon: <Trash2 className="h-3 w-3" />,
         label: 'Remove context folder',
         run: () => onRemove(dir),
       },
