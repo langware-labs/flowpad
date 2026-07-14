@@ -11,6 +11,31 @@ import { ActionInfo } from '../models/ActionInfo';
  * that rides `conversation_id`'s messages. `status` is a host-authoritative
  * projection so the guest can render live state without a local worker.
  */
+/** Live-session lifecycle. Mirrors flow_sdk.builtin.remote_worker_session.
+ *  RemoteWorkerSessionStatus exactly: DRAFT (guest-local, nothing shared) →
+ *  PENDING (first prompt sent, awaiting host approval) → IDLE⇄RUNNING (active
+ *  turns, PAUSED as a host-side hold) → ENDED/DECLINED (terminal). */
+export enum RemoteWorkerSessionStatus {
+  DRAFT = 'draft',
+  PENDING = 'pending',
+  IDLE = 'idle',
+  RUNNING = 'running',
+  PAUSED = 'paused',
+  ERROR = 'error',
+  ENDED = 'ended',
+  DECLINED = 'declined',
+}
+
+/** Approved and accepting prompts (the two active turn sub-states). */
+export function isSessionActive(status: string | null | undefined): boolean {
+  return status === RemoteWorkerSessionStatus.IDLE || status === RemoteWorkerSessionStatus.RUNNING;
+}
+
+/** Absorbing states — the session accepts no further prompts. */
+export function isSessionTerminal(status: string | null | undefined): boolean {
+  return status === RemoteWorkerSessionStatus.ENDED || status === RemoteWorkerSessionStatus.DECLINED;
+}
+
 export interface IRemoteWorkerSession extends IEntity {
   conversation_id?: string | null;
   collaboration_room_id?: string | null;
@@ -63,5 +88,31 @@ export class RemoteWorkerSession
     const info = new ActionInfo('disconnect', this.typeId.type, this.typeId.id, 'POST');
     await dataManager.callAction(info);
     this.status = 'ended';
+  }
+
+  private async lifecycleAction(verb: string, optimistic: RemoteWorkerSessionStatus): Promise<void> {
+    const info = new ActionInfo(verb, this.typeId.type, this.typeId.id, 'POST');
+    await dataManager.callAction(info);
+    this.status = optimistic;
+  }
+
+  /** Host approves a PENDING session; queued prompts re-drive server-side. */
+  public approve(): Promise<void> {
+    return this.lifecycleAction('approve', RemoteWorkerSessionStatus.IDLE);
+  }
+
+  /** Host declines a PENDING session (terminal). */
+  public decline(): Promise<void> {
+    return this.lifecycleAction('decline', RemoteWorkerSessionStatus.DECLINED);
+  }
+
+  /** Host holds the session — inbound prompts bounce until resume. */
+  public pause(): Promise<void> {
+    return this.lifecycleAction('pause', RemoteWorkerSessionStatus.PAUSED);
+  }
+
+  /** Host lifts a pause (PAUSED → IDLE). */
+  public resume(): Promise<void> {
+    return this.lifecycleAction('resume', RemoteWorkerSessionStatus.IDLE);
   }
 }

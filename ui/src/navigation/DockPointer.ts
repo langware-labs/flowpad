@@ -293,6 +293,15 @@ export class DockPointer implements IDockPointer {
   }
 
   /**
+   * Live-session dock — /dock/live_session/<sessionId>. Top-level (not nested
+   * under project/room) because the GUEST holds a session before any host
+   * project or CollaborationRoom exists (DRAFT/PENDING states).
+   */
+  static forLiveSession(sessionId: string, layout: Layout = Layout.DOCK): DockPointer {
+    return new DockPointer(ViewType.LIVE_SESSION, sessionId, {}, layout);
+  }
+
+  /**
    * Triggers dock. The selected trigger id (and the transient "creating" mode)
    * ride in OPTIONS, never `pointer`, so the Triggers tabHash stays `triggers|`
    * — selection/creation are URL-addressable + reload-safe but stay in ONE tab

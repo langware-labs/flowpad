@@ -134,6 +134,14 @@ class Conversation(Entity):
     # sender (delivered/received UPDATE frames are filtered by hub-side
     # Conversation._fanout_status_update). Co-recipients still see them.
     message_status_visible: bool = APIField(default=True)
+    # Conversation-scoped default transfer mode for asset shares. When True,
+    # asset shares into this conversation ride as Git-origin metadata (the
+    # receiver clones/pulls on an explicit Download) instead of copied bytes.
+    # Hub-synced and fanned to all participants (rides ``_fanout_self_update``),
+    # so the choice is remembered and inherited by later replies from either
+    # side. Defaults False (copy) — the sender opts in per conversation via the
+    # Share dialog's Git toggle. Plain-text replies never change it.
+    git_sharing_enabled: bool = APIField(default=False)
     # Strip-only dismissal. When set, the Recent Conversations strip hides
     # this row UNTIL a FlowMessage newer than ``dismissed_at`` is appended
     # (auto-revive on new activity). The Inbox ignores this field entirely.
@@ -475,6 +483,8 @@ class Conversation(Entity):
         shared_context_entities: Optional[list] = None,
         cloned_from_id: Optional[str] = None,
         cloned_from_sender_id: Optional[str] = None,
+        remote_worker_session_id: Optional[str] = None,
+        kind: Optional[str] = None,
     ) -> dict:
         """Append a FlowMessage to this conversation on the hub.
 
@@ -526,6 +536,14 @@ class Conversation(Entity):
             body["cloned_from_id"] = cloned_from_id
         if cloned_from_sender_id:
             body["cloned_from_sender_id"] = cloned_from_sender_id
+        # Live-session key + SESSION_EVENT discriminator. The hub drops these
+        # until its FlowMessage schema mirrors them (unknown-field drop) — the
+        # authoritative carrier is the remote_worker_session TYPE_ID attachment
+        # already in ``attachment``; receivers re-derive via derive_session_fields.
+        if remote_worker_session_id:
+            body["remote_worker_session_id"] = remote_worker_session_id
+        if kind:
+            body["kind"] = kind
         body["conversation_id"] = self.id
         path = build_hub_url(self, action="add_message")
         async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:

@@ -75,6 +75,7 @@ export enum ViewType {
   GRAPH_CONTEXT = 'graph_context', // Frozen-context viewer - /dock/graph_context/<id>
   DIAGNOSIS = 'diagnosis', // Single FlowpadDiagnosis viewer - /dock/diagnosis/<id>
   DESKTOP = 'desktop', // Full-page favorites desktop (BrowseableGrid) - /dock/desktop
+  LIVE_SESSION = 'live_session', // Live remote-worker session (terminal chat) - /dock/live_session/<id>
 }
 
 /**
