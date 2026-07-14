@@ -56,7 +56,7 @@ export function SharedSessionView({ sessionId }: Props) {
   return (
     <div className="flex h-full flex-col">
       {isHost ? (
-        <div className="flex items-center justify-between gap-3 border-b border-amber-500/40 bg-amber-500/10 px-4 py-2">
+        <div className="sticky top-0 z-10 flex flex-shrink-0 items-center justify-between gap-3 border-b border-amber-500/40 bg-amber-500/10 px-4 py-2">
           <div className="flex items-center gap-2 text-sm text-amber-700 dark:text-amber-300">
             <Radio className="h-4 w-4 flex-shrink-0" />
             <span>
@@ -74,12 +74,12 @@ export function SharedSessionView({ sessionId }: Props) {
           </Button>
         </div>
       ) : (
-        <div className="flex items-center gap-2 border-b px-4 py-2 text-xs text-muted-foreground">
+        <div className="sticky top-0 z-10 flex flex-shrink-0 items-center gap-2 border-b bg-background px-4 py-2 text-xs text-muted-foreground">
           <Radio className="h-3.5 w-3.5 flex-shrink-0" />
           <Trans>Running on the host's machine · status: {session.status}</Trans>
         </div>
       )}
-      <div className="min-h-0 flex-1">
+      <div className="min-h-0 flex-1 overflow-y-auto">
         {conversationId ? (
           <ConversationView conversationId={conversationId} />
         ) : (
