@@ -345,6 +345,16 @@ class ScanActionsMixin:
             permission_mode = context_data.pop("permission_mode", "bypassPermissions")
             agents_json = context_data.pop("agents_json", None)
             output_format = context_data.pop("output_format", None)
+            # A ``stream-json`` process is headless by contract (print-mode, no
+            # PTY — see ts_sdk agentic-context.ts). ``pty_mode`` defaults True
+            # when omitted, so a caller that requests stream-json output but
+            # forgets ``pty_mode=False`` would be born PTY-transport and hang:
+            # its first queued prompt never drains (``_queue_ready`` withholds
+            # cold-start from PTY processes, which expect a dock loader that an
+            # invisible worker never gets). Enforce the contract here so no
+            # headless caller can strand its worker.
+            if output_format == "stream-json":
+                pty_mode = False
             if worker_type == WorkerType.CODEX:
                 cli_opts = CodexCliOptions(
                     model=model,

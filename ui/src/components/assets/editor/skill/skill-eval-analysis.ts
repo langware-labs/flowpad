@@ -33,13 +33,15 @@ export async function loadSkillsByName(): Promise<Map<string, Skill>> {
 /**
  * Shared createProcess → attach-skill → prompt triad behind every launcher below.
  * Resolves the skill to attach (surfacing a "not installed" error), spawns the
- * process with the given options, attaches the skill, and seeds the prompt.
+ * process with the given options, names it (so it isn't a bare id fragment in the
+ * agentic-process footer), attaches the skill, and seeds the prompt.
  */
 async function runSkillWorker(
   attachSkillName: string,
   createOpts: Parameters<ComputeNode['createProcess']>[0],
   prompt: string,
   notInstalledTitle: string,
+  processName?: string,
 ): Promise<AgenticProcess | null> {
   const skill = (await loadSkillsByName()).get(attachSkillName) ?? null;
   if (!skill) {
@@ -50,6 +52,17 @@ async function runSkillWorker(
   if (!computeNode) throw new Error('No local compute node');
 
   const proc: AgenticProcess = await computeNode.createProcess(createOpts);
+  // Give the worker a human name up front — otherwise it shows as a bare id
+  // fragment in the footer (these headless workers never hit the turn-end
+  // seam that would stamp a default name from the generic seed prompt).
+  // renameById pins auto_rename=false, so the name stays stable.
+  if (processName) {
+    try {
+      await AgenticProcess.renameById(proc.id, processName);
+    } catch (err) {
+      console.error(`[skillWorker] name ${attachSkillName} process failed`, err);
+    }
+  }
   try {
     await proc.embeddedAssets.attach(skill.typeId.toString());
   } catch (err) {
@@ -194,6 +207,7 @@ export function launchAssetAnalysis({
       `annotations.by_asset["${assetKey}"] with { asset_ref: "${assetPath}", typeid: "${assetTypeid}", findings: [...] }. ` +
       `Each finding must include concrete evidence from the transcript and be specific enough for a correction worker to apply.`,
     'Cannot analyze asset',
+    `Improve ${assetLabel} — analyze`,
   );
 }
 
@@ -332,6 +346,7 @@ export function launchAssetCorrect({
       `Map each change to its finding and keep unrelated behavior unchanged.\n\n` +
       JSON.stringify(findings, null, 2),
     'Cannot improve asset',
+    `Improve ${assetLabel} — apply`,
   );
 }
 
