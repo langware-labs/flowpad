@@ -98,6 +98,9 @@ EXPECTED = {
     # Deck-template feature — additive member; brand-new type, no existing
     # value changed, so no migration.
     "DECK_TEMPLATE": "deck_template",
+    # Deck viewer + spreadsheet editor features — additive members; brand-new
+    # types, no existing value changed, so no migration.
+    "DECK": "deck", "SPREADSHEET": "spreadsheet",
 }
 
 
