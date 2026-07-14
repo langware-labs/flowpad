@@ -98,12 +98,10 @@ class Project(Entity):
     last_mode: str | None = APIField(
         default=None,
         description="Last UI view mode used in this project (vibe|standard|advanced|dev). "
-                    "Applied on project load so the mode is remembered per project.",
+        "Applied on project load so the mode is remembered per project.",
     )
     fs_storage_provider: StorageProvider | None = StorageProvider.SANDBOX
-    fs_storage_mount_path: str | None = APIField(
-        default=None, description="Full path to the project folder"
-    )
+    fs_storage_mount_path: str | None = APIField(default=None, description="Full path to the project folder")
     # Legacy stash for the removed stored ``include_dirs`` field. Context
     # folders are now Folder entities linked via the base-Entity context
     # buckets (see the computed ``include_dirs`` property); any raw
@@ -158,13 +156,13 @@ class Project(Entity):
         default=0,
         persist=Persist.FALSE,
         description="Total session count across providers (Claude + Codex) at this project's cwd. "
-                    "Denormalized from the matching ProjectFsRecord at indexer-write time.",
+        "Denormalized from the matching ProjectFsRecord at indexer-write time.",
     )
     last_session_at: str | None = APIField(
         default=None,
         persist=Persist.FALSE,
         description="ISO timestamp of the most recent session activity at this project's cwd, "
-                    "denormalized from the matching ProjectFsRecord. Null if no sessions yet.",
+        "denormalized from the matching ProjectFsRecord. Null if no sessions yet.",
     )
 
     @model_validator(mode="before")
@@ -217,6 +215,38 @@ class Project(Entity):
 
     @computed_field
     @property
+    def context_dir_infos(self) -> list[dict[str, str]]:
+        """Per-context-folder info the UI needs beyond the bare path.
+
+        Same sync sidecar walk as ``include_dirs`` (and the same ordering),
+        plus the ``origin_kind`` stamped at link time ("git" / "local") so the
+        UI can render git-backed folders distinctly, and the linked Folder's
+        ``typeid`` so the UI can reference the folder entity (e.g. as a
+        message attachment chip). Entries linked before the stamp existed —
+        and legacy stashed dirs — default to "local".
+        """
+        out: list[dict[str, str]] = []
+        seen: set[str] = set()
+        for tid in self.context_of_type("folder", bucket="both"):
+            entry = self.get_context_entry_data(tid) or {}
+            p = entry.get("path")
+            if isinstance(p, str) and p and p not in seen:
+                seen.add(p)
+                out.append(
+                    {
+                        "path": p,
+                        "origin_kind": str(entry.get("origin_kind") or "local"),
+                        "typeid": str(tid),
+                    }
+                )
+        for p in self.legacy_include_dirs_ or []:
+            if p and p not in seen:
+                seen.add(p)
+                out.append({"path": p, "origin_kind": "local", "typeid": ""})
+        return out
+
+    @computed_field
+    @property
     def secret_origins(self) -> list[dict[str, Any]]:
         """Project secret pointer summaries, derived from SecretOrigin links.
 
@@ -233,14 +263,16 @@ class Project(Entity):
                 seen.add(key)
                 entry = dict(self.get_context_entry_data(tid) or {})
                 locator = entry.get("locator") if isinstance(entry.get("locator"), dict) else {}
-                out.append({
-                    "typeid": key,
-                    "name": entry.get("name") or "",
-                    "env_var": entry.get("env_var") or "",
-                    "kind": entry.get("kind") or locator.get("kind") or "",
-                    "locator": locator,
-                    "scope": entry.get("scope") or scope,
-                })
+                out.append(
+                    {
+                        "typeid": key,
+                        "name": entry.get("name") or "",
+                        "env_var": entry.get("env_var") or "",
+                        "kind": entry.get("kind") or locator.get("kind") or "",
+                        "locator": locator,
+                        "scope": entry.get("scope") or scope,
+                    }
+                )
         return out
 
     @model_validator(mode="after")
@@ -266,9 +298,7 @@ class Project(Entity):
                     os_root = drive + os.sep
                 else:
                     os_root = os.sep
-                self.fs_storage_mount_path = os.path.normpath(
-                    os.path.join(os_root, self.name)
-                )
+                self.fs_storage_mount_path = os.path.normpath(os.path.join(os_root, self.name))
                 self.name = os.path.basename(self.fs_storage_mount_path)
             else:
                 # Simple name like "my_first_project"
@@ -276,18 +306,11 @@ class Project(Entity):
 
         # Prevent project mount path from being the user's home directory.
         home_dir = os.path.expanduser("~").rstrip(os.sep)
-        if (
-            self.fs_storage_mount_path
-            and self.fs_storage_mount_path.rstrip(os.sep) == home_dir
-        ):
-            self.fs_storage_mount_path = os.path.join(
-                AGENT_MOUNT_FOLDER, self.name or "home"
-            )
+        if self.fs_storage_mount_path and self.fs_storage_mount_path.rstrip(os.sep) == home_dir:
+            self.fs_storage_mount_path = os.path.join(AGENT_MOUNT_FOLDER, self.name or "home")
 
         # Create the project folder if it doesn't exist.
-        if self.fs_storage_mount_path and not os.path.exists(
-            self.fs_storage_mount_path
-        ):
+        if self.fs_storage_mount_path and not os.path.exists(self.fs_storage_mount_path):
             try:
                 os.makedirs(self.fs_storage_mount_path, exist_ok=True)
             except OSError as e:
@@ -295,13 +318,9 @@ class Project(Entity):
                 # (e.g. decoded Claude project paths on read-only mounts). Debug,
                 # not warning — otherwise enumerating many such projects floods
                 # the log with hundreds of non-actionable lines.
-                logging.debug(
-                    f"Project: could not create mount path {self.fs_storage_mount_path!r}: {e}"
-                )
+                logging.debug(f"Project: could not create mount path {self.fs_storage_mount_path!r}: {e}")
         if self.fs_storage_mount_path:
-            self.fs_storage_mount_path = canonical_posix_path(
-                self.fs_storage_mount_path
-            )
+            self.fs_storage_mount_path = canonical_posix_path(self.fs_storage_mount_path)
         return self
 
     @classmethod
@@ -345,6 +364,7 @@ class Project(Entity):
         reintroduce a v5 project id.
         """
         from flow_sdk.fs_store.identifier import is_valid_entity_id
+
         rid = data.get("id") or ""
         if rid and is_valid_entity_id(rid):
             return rid
@@ -400,10 +420,12 @@ class Project(Entity):
         # stamped with the path-derived alias still resolve via ``record_projects``
         # (``derive_id_for_path`` is injected server-side by resolve_project_scope),
         # so the entity id no longer needs to equal the alias.
-        proj = cls.model_validate({
-            "fs_storage_mount_path": canonical,
-            "name": os.path.basename(canonical.rstrip(os.sep)) or canonical,
-        })
+        proj = cls.model_validate(
+            {
+                "fs_storage_mount_path": canonical,
+                "name": os.path.basename(canonical.rstrip(os.sep)) or canonical,
+            }
+        )
         proj.id = cls.allocate_id(proj.model_dump())
         await proj.save()
         return proj
@@ -428,11 +450,7 @@ class Project(Entity):
         ``Project`` entity created (or updated) on ``rec.sync_to_db()``.
         """
         data = record.meta_dict()
-        mount_path = (
-            data.get("fs_storage_mount_path")
-            or data.get("cwd")
-            or data.get("real_path")
-        )
+        mount_path = data.get("fs_storage_mount_path") or data.get("cwd") or data.get("real_path")
         if not mount_path:
             name = data.get("name", "")
             if name and os.path.isabs(name):
@@ -489,8 +507,7 @@ class Project(Entity):
         # Drop record-only fields the Project entity doesn't carry — provenance
         # flags stay on ProjectFsRecord (backend only). Only denormalized
         # activity hints surface on the entity.
-        for record_only in ("claude_project", "codex_project", "encoded_path",
-                            "last_indexed_at", "real_path", "cwd"):
+        for record_only in ("claude_project", "codex_project", "encoded_path", "last_indexed_at", "real_path", "cwd"):
             create_kwargs.pop(record_only, None)
         proj = cls(**create_kwargs)
         proj.id = cls.allocate_id(create_kwargs)
@@ -519,6 +536,7 @@ class Project(Entity):
             "host_member_id",
             "members",
             "include_dirs",
+            "context_dir_infos",
             "secret_origins",
             "shared_secret_origins",
             "shared_context_origins",
@@ -647,6 +665,7 @@ class Project(Entity):
         from pathlib import Path
 
         from flow_sdk.fs_store.fs_ref import FSRef
+
         return FSRef(Path(self.fs_storage_mount_path))
 
     async def git_workdir(self):
@@ -662,6 +681,7 @@ class Project(Entity):
         if compute_node is None:
             return None
         from flow_sdk.builtin.faas.git_repo import GitRepo
+
         return GitRepo(self.fs_storage_mount_path, compute_node)
 
     async def get_compute_node(self):
@@ -675,9 +695,7 @@ class Project(Entity):
         project_compute_nodes = await ComputeNode.get_all(source_entity=self.typeid)
         if project_compute_nodes:
             if len(project_compute_nodes) > 1:
-                logging.warning(
-                    f"Multiple compute nodes found for project {self.typeid}"
-                )
+                logging.warning(f"Multiple compute nodes found for project {self.typeid}")
                 project_compute_nodes = list(
                     sorted(
                         project_compute_nodes,
@@ -713,9 +731,7 @@ class Project(Entity):
 
         project = await cls.get_ancestor(process_typeid)
         if not project:
-            logging.warning(
-                f"No project or compute node found for process {process_typeid}"
-            )
+            logging.warning(f"No project or compute node found for process {process_typeid}")
             new_project = cls()
             await new_project.save()
             await new_project.attach_child(process_typeid)
@@ -728,24 +744,18 @@ class Project(Entity):
         return await cls.get_mcp_connector_for_process(flow_typeid)
 
     @action.post(action_name="initialize")
-    async def initialize(
-        self, initialize_options: ProjectInitializeOptions | None = None
-    ):
+    async def initialize(self, initialize_options: ProjectInitializeOptions | None = None):
         if not initialize_options:
             initialize_options = ProjectInitializeOptions()
 
         mcp_connector = await self.get_mcp_connector()
         if initialize_options.mcp_connector_init:
-            process_env_list = await get_env_vars_context(
-                get_current_request_info().user, self
-            )
+            process_env_list = await get_env_vars_context(get_current_request_info().user, self)
             async with mcp_connector.initialize(initialize_options, process_env_list):
                 pass
 
         compute_node = await self.get_compute_node()
-        return ApiSuccessResponse(
-            data={"compute_node": compute_node.model_dump() if compute_node else None}
-        )
+        return ApiSuccessResponse(data={"compute_node": compute_node.model_dump() if compute_node else None})
 
     async def _get_process_by_source_impl(self, asset_ref: str):
         """Find an existing process entity associated with the given asset_ref."""
@@ -759,10 +769,7 @@ class Project(Entity):
 
         for child in child_processes:
             process_entity = child.value
-            if (
-                isinstance(process_entity, Flow)
-                and process_entity.asset_ref == asset_ref
-            ):
+            if isinstance(process_entity, Flow) and process_entity.asset_ref == asset_ref:
                 return ApiSuccessResponse(data=process_entity)
 
         return ApiSuccessResponse(data=None)
@@ -779,9 +786,7 @@ class Project(Entity):
     @action.get(action_name="get-compute-node")
     async def get_compute_node_action(self):
         compute_node = await self.get_compute_node()
-        return ApiSuccessResponse(
-            data={"compute_node": compute_node.model_dump() if compute_node else None}
-        )
+        return ApiSuccessResponse(data={"compute_node": compute_node.model_dump() if compute_node else None})
 
     @action.get(action_name="get-assets")
     async def get_assets_action(self, types: str | None = None, limit: int = 1000):
@@ -804,9 +809,16 @@ class Project(Entity):
             scan_path_asset_descriptors,
         )
 
-        requested = [t.strip() for t in types.split(",") if t.strip()] if types else [
-            "skill", "agent", "markdown", "spec",
-        ]
+        requested = (
+            [t.strip() for t in types.split(",") if t.strip()]
+            if types
+            else [
+                "skill",
+                "agent",
+                "markdown",
+                "spec",
+            ]
+        )
         limit = max(1, min(int(limit), 2000))
 
         sources, _seen = collect_base_source_dirs(self)
@@ -827,33 +839,42 @@ class Project(Entity):
 
             # Own-project OR global (project_id unset) — one query; $IS_NULL is
             # unary, single-operand [field] shape.
-            spec_rows = await Spec.get_all(QueryFilter.parse(
-                {
-                    "match": {"op": "$OR", "operands": [
-                        {"project_id": str(self.id)},
-                        {"op": "$IS_NULL", "operands": ["project_id"]},
-                    ]},
-                    "limit": limit - len(descriptors),
-                },
-                "spec",
-            ))
+            spec_rows = await Spec.get_all(
+                QueryFilter.parse(
+                    {
+                        "match": {
+                            "op": "$OR",
+                            "operands": [
+                                {"project_id": str(self.id)},
+                                {"op": "$IS_NULL", "operands": ["project_id"]},
+                            ],
+                        },
+                        "limit": limit - len(descriptors),
+                    },
+                    "spec",
+                )
+            )
             for spec_entity in spec_rows:
                 spec_project_id = getattr(spec_entity, "project_id", None)
-                descriptors.append(AssetDescriptor(
-                    typeid=f"spec-{spec_entity.id}",
-                    source=(
-                        AssetSource.PROJECT_DIR
-                        if str(spec_project_id or "") == str(self.id)
-                        else AssetSource.USER_DIR
-                    ),
-                    posix_path=None,
-                    project_id=str(spec_project_id) if spec_project_id else None,
-                ))
+                descriptors.append(
+                    AssetDescriptor(
+                        typeid=f"spec-{spec_entity.id}",
+                        source=(
+                            AssetSource.PROJECT_DIR
+                            if str(spec_project_id or "") == str(self.id)
+                            else AssetSource.USER_DIR
+                        ),
+                        posix_path=None,
+                        project_id=str(spec_project_id) if spec_project_id else None,
+                    )
+                )
 
-        return ApiSuccessResponse(data={
-            "assets": [d.to_row() for d in descriptors],
-            "truncated": len(descriptors) >= limit,
-        })
+        return ApiSuccessResponse(
+            data={
+                "assets": [d.to_row() for d in descriptors],
+                "truncated": len(descriptors) >= limit,
+            }
+        )
 
     @action.get(action_name="get-worker-sessions")
     async def _get_worker_sessions_action(self):
@@ -988,7 +1009,8 @@ class Project(Entity):
             if canonical in covered:
                 continue
             folder = await Folder.mint_for_path(canonical)
-            self.add_private_context_entities(folder.typeid, data={"path": canonical})
+            kind = folder.origin.kind if folder.origin else "local"
+            self.add_private_context_entities(folder.typeid, data={"path": canonical, "origin_kind": kind})
             covered.add(canonical)
         self.legacy_include_dirs_ = []
         # Drop the stale on-disk key (best-effort): save_metadata is a
@@ -1068,7 +1090,7 @@ class Project(Entity):
         if scope == "shared" and not origin.transportable:
             return ApiFailResponse(
                 message="Only git-backed folders can be shared. Add this folder as private, "
-                        "or use a folder inside a git repository."
+                "or use a folder inside a git repository."
             )
         bucket = "shared" if scope == "shared" else "private"
         already_linked = any(
@@ -1078,15 +1100,17 @@ class Project(Entity):
         is_new = canonical not in self.include_dirs
         if not already_linked:
             folder = await Folder.mint_for_origin(origin, local_path=canonical)
+            entry_data = {"path": canonical, "origin_kind": origin.kind}
             if scope == "shared":
-                self.add_shared_context_entities(folder.typeid, data={"path": canonical})
+                self.add_shared_context_entities(folder.typeid, data=entry_data)
             else:
-                self.add_private_context_entities(folder.typeid, data={"path": canonical})
+                self.add_private_context_entities(folder.typeid, data=entry_data)
             await self.save()
         if is_new:
             from flow_sdk.builtin.agentic_process.agentic_process import (
                 _index_additional_dir,
             )
+
             await _index_additional_dir(canonical)
         return ApiSuccessResponse(data=self.model_dump(mode="json"))
 
@@ -1120,7 +1144,10 @@ class Project(Entity):
             resolved = data.get("path") if data.get("kind") == "ready" else None
             if isinstance(resolved, str) and resolved:
                 canonical = canonical_posix_path(resolved)
-                self.add_shared_context_entities(folder.typeid, data={"path": canonical})
+                self.add_shared_context_entities(
+                    folder.typeid,
+                    data={"path": canonical, "origin_kind": folder.origin.kind},
+                )
                 result["path"] = canonical
                 changed = True
             results.append(result)
@@ -1173,9 +1200,7 @@ class Project(Entity):
         if local_workspace:
             # Add project as child of workspace
             await local_workspace.attach_child(self.typeid)
-            logging.info(
-                f"Connected project {self.id} to @local workspace {local_workspace.id}"
-            )
+            logging.info(f"Connected project {self.id} to @local workspace {local_workspace.id}")
 
         # Get (self-healing) the @local compute node. It is a shared singleton
         # resolved via ComputeNode.get_local(), NOT a project-owned resource —
@@ -1191,9 +1216,7 @@ class Project(Entity):
             data={
                 "workspace": local_workspace.model_dump() if local_workspace else None,
                 "agent": None,
-                "compute_node": local_compute_node.model_dump()
-                if local_compute_node
-                else None,
+                "compute_node": local_compute_node.model_dump() if local_compute_node else None,
             }
         )
 

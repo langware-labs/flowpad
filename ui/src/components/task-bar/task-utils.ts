@@ -3,7 +3,6 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import type { NavigationActions } from '@src/navigation/NavigationActions';
 import { SkillsScope } from '@src/components/assets/editor/skill/skillEditorUtils';
 
-
 export const TaskEventType = {
   TASK_CREATED: 'task_created',
   TASK_UPDATED: 'task_updated',
@@ -63,16 +62,22 @@ export function getClassificationInfo(task: Task): ClassificationInfo | null {
   return { category, title, command };
 }
 
-/** Get the analysis report machine path from a task, or null. */
+/** Get the analysis report machine path from a task, or null. The fields are
+ *  only ever written by analysis-producing flows (analysis tasks and the
+ *  Analyze Status wizard), so no task_type gate. */
 export function getAnalysisPath(task: Task): string | null {
-  if (task.task_type !== TaskType.ANALYSIS) return null;
   return task.analysis_path ?? null;
 }
 
 /** Get the analysis JSON machine path from a task, or null. */
 export function getAnalysisJsonPath(task: Task): string | null {
-  if (task.task_type !== TaskType.ANALYSIS) return null;
   return task.analysis_json_path ?? null;
+}
+
+/** True when an Analyze Status run left its stamps on a (non-analysis) task —
+ *  a process to watch plus a report to open. Lights the AnalysisProgressRow. */
+export function hasStatusAnalysis(task: Task): boolean {
+  return !!task.process_id && (!!task.analysis_path || !!task.analysis_json_path);
 }
 
 export interface ArtifactInfo {
@@ -166,9 +171,7 @@ export function getArtifactPaths(task: Task): ArtifactInfo[] {
 /** Open an analysis report in its type-appropriate viewer (reports are .md). */
 export function openAnalysisReport(analysisPath: string, navigation: NavigationActions): void {
   const computeNodeTypeId = dataContext.computeNode?.typeId;
-  const path = computeNodeTypeId
-    ? VFSPath.fromMachinePath(analysisPath, computeNodeTypeId).absVfsPath
-    : analysisPath;
+  const path = computeNodeTypeId ? VFSPath.fromMachinePath(analysisPath, computeNodeTypeId).absVfsPath : analysisPath;
   navigation.openFile(path);
 }
 

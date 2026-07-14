@@ -6,20 +6,32 @@
  * Supports bulk selection mode with checkbox replacing the priority dot.
  */
 
-import { Archive, Check, CheckCircle, ChevronRight, FileText, Loader2, Trash2, X } from 'lucide-react';
+import {
+  Archive,
+  Check,
+  CheckCircle,
+  ChevronDown,
+  ChevronRight,
+  FileText,
+  Loader2,
+  Trash2,
+  User,
+  X,
+} from 'lucide-react';
 import { useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import type { Task } from '@sdk';
+import { ActionInfo, dataManager, Task } from '@sdk';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useAnalysisTaskProgress } from '@src/hooks/use-analysis-task-progress';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
-import { formatDueDate, getPriorityColor } from './constants';
+import { formatDueDate, getPriorityColor, statusLabel } from './constants';
 import {
   getAnalysisJsonPath,
   getAnalysisPath,
   getArtifactPaths,
   getTaskTypeLabel,
+  hasStatusAnalysis,
   openArtifact,
   TaskStatus,
   TaskType,
@@ -34,6 +46,8 @@ interface TaskCardProps {
   bulkMode?: boolean;
   isSelected?: boolean;
   onToggleSelect?: (taskId: string) => void;
+  /** Member tasks nested under this (group) task — accessible ones only. */
+  memberTasks?: Task[];
 }
 
 function AnalysisProgressRow({ task }: { task: Task }) {
@@ -57,7 +71,11 @@ function AnalysisProgressRow({ task }: { task: Task }) {
           <div className="flex items-center gap-1.5">
             {activityLabel && <span className="text-[9px] font-medium">{activityLabel}</span>}
             {statusMessage && <span className="truncate">{statusMessage}</span>}
-            {!activityLabel && !statusMessage && <span><Trans>Analysis in progress...</Trans></span>}
+            {!activityLabel && !statusMessage && (
+              <span>
+                <Trans>Analysis in progress...</Trans>
+              </span>
+            )}
             {elapsedTime && (
               <span className="ml-auto shrink-0 text-[9px] text-muted-foreground/70">({elapsedTime})</span>
             )}
@@ -65,7 +83,9 @@ function AnalysisProgressRow({ task }: { task: Task }) {
         )}
         {isComplete && (
           <div className="flex items-center gap-1.5">
-            <span className="text-[9px] font-medium text-green-600 dark:text-green-400"><Trans>Analysis complete</Trans></span>
+            <span className="text-[9px] font-medium text-green-600 dark:text-green-400">
+              <Trans>Analysis complete</Trans>
+            </span>
             {analysisPath && (
               <button
                 type="button"
@@ -92,9 +112,39 @@ function AnalysisProgressRow({ task }: { task: Task }) {
             )}
           </div>
         )}
-        {isError && <span className="text-[9px] font-medium text-red-500"><Trans>Analysis failed</Trans></span>}
+        {isError && (
+          <span className="text-[9px] font-medium text-red-500">
+            <Trans>Analysis failed</Trans>
+          </span>
+        )}
       </div>
     </div>
+  );
+}
+
+/** One member task nested under a group task: assignee + own status. The
+ *  title is the parent's (single source of truth) so it isn't repeated. */
+function MemberTaskRow({ member, onExpand }: { member: Task; onExpand: (task: Task) => void }) {
+  const status = member.status ?? 'to_do';
+  return (
+    <button
+      type="button"
+      className="flex w-full items-center gap-2 border-t border-border/60 bg-muted/20 py-1.5 pl-7 pr-3 text-left text-xs hover:bg-muted/50"
+      onClick={() => onExpand(member)}
+      data-testid="member-task-row"
+    >
+      {status === TaskStatus.DONE ? (
+        <CheckCircle className="h-3.5 w-3.5 shrink-0 text-green-500" />
+      ) : status === TaskStatus.IN_PROGRESS ? (
+        <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-amber-500" />
+      ) : (
+        <User className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+      )}
+      <span className="min-w-0 flex-1 truncate">{member.assignee || 'Unassigned'}</span>
+      <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">
+        {statusLabel(status)}
+      </span>
+    </button>
   );
 }
 
@@ -116,7 +166,9 @@ function ArtifactsRow({ task }: { task: Task }) {
       <FileText className="h-3 w-3 shrink-0 text-primary" />
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-[9px] font-medium"><Trans>Artifacts:</Trans></span>
+          <span className="text-[9px] font-medium">
+            <Trans>Artifacts:</Trans>
+          </span>
           {artifacts.map((artifact, index) => (
             <button
               key={index}
@@ -149,20 +201,34 @@ export function TaskCard({
   bulkMode,
   isSelected,
   onToggleSelect,
+  memberTasks,
 }: TaskCardProps) {
   const { t } = useLingui();
   const [confirmRemove, setConfirmRemove] = useState(false);
+  const [membersOpen, setMembersOpen] = useState(false);
   const isAlreadyArchived = task.status === 'archived' || !!task.archived_at;
   const actionLabel = isAlreadyArchived ? t`Delete` : t`Archive`;
   const ActionIcon = isAlreadyArchived ? Trash2 : Archive;
   const dueDateLabel = formatDueDate(task.due_at);
   const isAnalysisTask = task.task_type === TaskType.ANALYSIS;
+  const members = memberTasks ?? [];
 
   const handleClick = () => {
     if (bulkMode && task.id && onToggleSelect) {
       onToggleSelect(task.id);
     } else {
       onExpand(task);
+    }
+  };
+
+  const toggleMembers = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const next = !membersOpen;
+    setMembersOpen(next);
+    // Opening the group → opportunistic status catch-up (no hub→local push
+    // for tasks). The merged saves notify watchers, so rows repaint live.
+    if (next && task.id) {
+      void dataManager.callAction(new ActionInfo('sync-group', Task.type, task.id, 'POST')).catch(() => undefined);
     }
   };
 
@@ -198,11 +264,30 @@ export function TaskCard({
           {dueDateLabel && <div className="truncate text-xs text-muted-foreground">{dueDateLabel}</div>}
         </div>
 
+        {!bulkMode && members.length > 0 && (
+          <span
+            role="button"
+            tabIndex={0}
+            onClick={toggleMembers}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') toggleMembers(e as unknown as React.MouseEvent);
+            }}
+            className="flex shrink-0 items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground hover:bg-muted/80"
+            title={membersOpen ? t`Hide member tasks` : t`Show member tasks`}
+            data-testid="member-tasks-toggle"
+          >
+            {membersOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+            {members.length} {members.length === 1 ? t`member task` : t`member tasks`}
+          </span>
+        )}
         {!bulkMode && <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
       </button>
 
+      {/* Member tasks (group task) — nested, accessible ones only */}
+      {!bulkMode && membersOpen && members.map((m) => <MemberTaskRow key={m.id} member={m} onExpand={onExpand} />)}
+
       {/* Analysis progress sub-row */}
-      {isAnalysisTask && <AnalysisProgressRow task={task} />}
+      {(isAnalysisTask || hasStatusAnalysis(task)) && <AnalysisProgressRow task={task} />}
 
       {/* Generic artifacts row for non-analysis tasks */}
       {!isAnalysisTask && <ArtifactsRow task={task} />}

@@ -44,16 +44,44 @@ from flow_sdk.fs_store.record_types import RecordType
 # ``project_id``/``project_name``) are deliberately absent, so a received task is
 # runnable and maps its own local project.
 TASK_FRONTMATTER_FIELDS = (
-    "task_type", "priority", "tags",
-    "due_at", "start_date", "completed_at", "spec_type",
-    "shared_by_id", "shared_process_id",
-    "active_form", "analysis_json_path", "analysis_path", "artifacts",
-    "git_origin", "classification_category", "classification_command",
-    "classification_path", "classification_title", "command",
-    "error_fingerprint", "folder_name", "output_dir", "process_id",
-    "recipient_email", "result_uname", "sender_email", "sender_name",
-    "session_id", "skill_name", "skill_path", "skill_scope",
-    "task_type_label", "team_space_id", "worker_session_id",
+    "task_type",
+    "kind",
+    "parent_id",
+    "assignee",
+    "submission_url",
+    "priority",
+    "tags",
+    "due_at",
+    "start_date",
+    "completed_at",
+    "spec_type",
+    "shared_by_id",
+    "shared_process_id",
+    "active_form",
+    "analysis_json_path",
+    "analysis_path",
+    "artifacts",
+    "git_origin",
+    "classification_category",
+    "classification_command",
+    "classification_path",
+    "classification_title",
+    "command",
+    "error_fingerprint",
+    "folder_name",
+    "output_dir",
+    "process_id",
+    "recipient_email",
+    "result_uname",
+    "sender_email",
+    "sender_name",
+    "session_id",
+    "skill_name",
+    "skill_path",
+    "skill_scope",
+    "task_type_label",
+    "team_space_id",
+    "worker_session_id",
 )
 
 # ---------------------------------------------------------------------------
@@ -71,6 +99,11 @@ class TaskType(StrEnum):
     TASK = "Task"
     ANALYSIS = "analysis"
     SKILL_CREATION = "skill_creation"
+
+
+class TaskKind(StrEnum):
+    STANDARD = "standard"
+    GROUP = "group"
 
 
 # ---------------------------------------------------------------------------
@@ -115,8 +148,10 @@ def task_fn(
 def _unwrap_task_envelope(data: Any) -> dict:
     """Some manifest.json files wrap the task fields under a ``data`` key
     (legacy/external format). Unwrap when present so callers see flat fields."""
-    if isinstance(data, dict) and isinstance(data.get("data"), dict) and (
-        "id" in data["data"] or "task_id" in data["data"]
+    if (
+        isinstance(data, dict)
+        and isinstance(data.get("data"), dict)
+        and ("id" in data["data"] or "task_id" in data["data"])
     ):
         return data["data"]
     return data if isinstance(data, dict) else {}
@@ -159,9 +194,7 @@ def _read_task_md_fields(task_md: Path) -> dict:
 
 def _mint_task_id(key: str) -> str:
     """Adopt ``key`` when it's a valid entity id, else derive a stable v5."""
-    return key if is_valid_entity_id(key) else mint_uuid(
-        f"{RecordType.TASK}:{key}", namespace=uuid.NAMESPACE_DNS
-    )
+    return key if is_valid_entity_id(key) else mint_uuid(f"{RecordType.TASK}:{key}", namespace=uuid.NAMESPACE_DNS)
 
 
 def _task_id_from_fields(fields: dict, task_dir: Path) -> str:
@@ -220,6 +253,7 @@ def task_asset_hash(ref: FSRef) -> float:
 # ---------------------------------------------------------------------------
 # Extractor
 # ---------------------------------------------------------------------------
+
 
 def _strip_leading_heading(body: str) -> str:
     """Drop a single leading ``# Title`` line written by ``_task_default_body``."""

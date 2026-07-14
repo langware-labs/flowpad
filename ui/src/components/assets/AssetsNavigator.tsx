@@ -4,6 +4,7 @@ import { AssetTypeCountsContext } from '@src/components/browseable-tree/adapters
 import { ScopeFilterIconBar } from '@src/components/scope-filter/ScopeFilterIconBar';
 import { InputDialog } from '@src/components/ui/input-dialog';
 import { AddContextFolderDialog } from './AddContextFolderDialog';
+import { AddGitFolderDialog } from './AddGitFolderDialog';
 import { useAssetsModel } from './useAssetsModel';
 import { useLingui } from '@lingui/react/macro';
 import { useMemo } from 'react';
@@ -48,9 +49,7 @@ export function AssetsNavigator() {
         />
       ),
     },
-    wrapTree: (tree) => (
-      <AssetTypeCountsContext.Provider value={m.typeCounts}>{tree}</AssetTypeCountsContext.Provider>
-    ),
+    wrapTree: (tree) => <AssetTypeCountsContext.Provider value={m.typeCounts}>{tree}</AssetTypeCountsContext.Provider>,
   };
 
   return (
@@ -79,6 +78,14 @@ export function AssetsNavigator() {
         onOpenChange={m.setAddContextFolderDialogOpen}
         onAddPaths={m.handleAddContextPaths}
         onBrowse={m.handleBrowseContextDir}
+        onAddGit={m.handleAddGitContextFolder}
+      />
+      <AddGitFolderDialog
+        open={m.addGitFolderDialogOpen}
+        onOpenChange={(next) => {
+          if (!next) m.closeAddGitFolderDialog();
+        }}
+        onSubmit={m.handleAddGitFolderSubmit}
       />
     </>
   );

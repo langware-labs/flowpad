@@ -1,14 +1,9 @@
-import { ConversationParticipant, normalizeEmail, User } from '@sdk';
+import { ContactsGroup, ConversationParticipant, normalizeEmail, User } from '@sdk';
 import { Input } from '@src/components/ui/input';
-import { X } from 'lucide-react';
+import { UsersRound, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import {
-  EMAIL_RE,
-  filterContacts,
-  participantFromContact,
-  participantKey,
-  useContacts,
-} from './use-contacts';
+import { EMAIL_RE, filterContacts, participantFromContact, participantKey, useContacts } from './use-contacts';
+import { filterGroups, mergeGroupMembers, useContactsGroups } from './use-contacts-groups';
 
 interface ContactPickerProps {
   /** Currently selected contacts as ConversationParticipant entries. */
@@ -22,6 +17,10 @@ interface ContactPickerProps {
   enabled?: boolean;
   placeholder?: string;
   testId?: string;
+  /** Offer contacts GROUPS in the dropdown (default on). Selecting a group
+   *  bulk-adds its members as individual chips (deduped) — groups never
+   *  become chips themselves. The group-create dialog turns this off. */
+  includeGroups?: boolean;
 }
 
 /**
@@ -42,15 +41,18 @@ export function ContactPicker({
   enabled = true,
   placeholder = 'Search by name or email — Enter to add',
   testId = 'contact-input',
+  includeGroups = true,
 }: ContactPickerProps) {
   const [filterText, setFilterText] = useState('');
   const [listOpen, setListOpen] = useState(false);
 
   const { contacts } = useContacts(excludeUserId, enabled);
+  const { groups } = useContactsGroups(enabled && includeGroups);
 
-  const filteredContacts = useMemo(
-    () => filterContacts(contacts, filterText),
-    [contacts, filterText],
+  const filteredContacts = useMemo(() => filterContacts(contacts, filterText), [contacts, filterText]);
+  const filteredGroups = useMemo(
+    () => (includeGroups ? filterGroups(groups, filterText) : []),
+    [includeGroups, groups, filterText],
   );
 
   const isFull = typeof max === 'number' && value.length >= max;
@@ -76,10 +78,23 @@ export function ContactPicker({
     setListOpen(false);
   };
 
+  // Bulk-add a group's members (deduped); the group itself is never a chip.
+  const addGroup = (group: ContactsGroup) => {
+    if (isFull) return;
+    const next = mergeGroupMembers(value, group);
+    const capped = typeof max === 'number' ? next.slice(0, max) : next;
+    if (capped.length === value.length) return;
+    onChange(capped);
+    setFilterText('');
+    setListOpen(false);
+  };
+
   const trimmed = filterText.trim();
   const showList = !isFull && (trimmed.length > 0 || listOpen);
   const listSource = trimmed.length > 0 ? filteredContacts : contacts;
   const visibleContacts = listOpen && !trimmed ? listSource : listSource.slice(0, 8);
+  const groupSource = trimmed.length > 0 ? filteredGroups : groups;
+  const visibleGroups = listOpen && !trimmed ? groupSource : groupSource.slice(0, 4);
 
   const removeParticipant = (participant: ConversationParticipant) => {
     const key = participantKey(participant);
@@ -135,8 +150,25 @@ export function ContactPicker({
         />
       )}
 
-      {showList && visibleContacts.length > 0 && (
+      {showList && (visibleContacts.length > 0 || visibleGroups.length > 0) && (
         <div className="max-h-40 overflow-y-auto rounded-md border border-border">
+          {/* Groups first — one click adds every member. */}
+          {visibleGroups.map((g) => (
+            <button
+              key={g.id}
+              type="button"
+              className="flex w-full items-center justify-between gap-2 px-2 py-1.5 text-left text-sm hover:bg-muted disabled:opacity-50"
+              onClick={() => addGroup(g)}
+              disabled={disabled}
+              data-testid={`contact-group-option-${g.id}`}
+            >
+              <span className="flex min-w-0 items-center gap-1.5">
+                <UsersRound className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
+                <span className="truncate">{g.displayName}</span>
+              </span>
+              <span className="shrink-0 text-xs text-muted-foreground">{(g.contacts ?? []).length} members</span>
+            </button>
+          ))}
           {visibleContacts.map((u) => (
             <button
               key={u.id}
@@ -146,9 +178,7 @@ export function ContactPicker({
               disabled={alreadyAdded(participantFromContact(u)) || disabled}
             >
               <span className="truncate">{u.name || u.email || 'unknown'}</span>
-              {u.name && u.email && (
-                <span className="truncate text-xs text-muted-foreground">{u.email}</span>
-              )}
+              {u.name && u.email && <span className="truncate text-xs text-muted-foreground">{u.email}</span>}
             </button>
           ))}
         </div>

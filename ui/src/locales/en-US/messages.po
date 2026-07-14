@@ -295,6 +295,10 @@ msgstr "{completedCount}/{totalCount} completed"
 msgid "{count} {0} attached"
 msgstr "{count} {0} attached"
 
+#: src/components/assets/ContextFolderGitBadge.tsx
+msgid "{count} pending change(s) — click to view diff"
+msgstr "{count} pending change(s) — click to view diff"
+
 #: src/components/execute-flow-view/worker-sessions-panel.tsx
 msgid "{days}d ago"
 msgstr "{days}d ago"
@@ -662,6 +666,7 @@ msgid "add"
 msgstr "add"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/assets/AddGitFolderDialog.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
@@ -749,6 +754,12 @@ msgstr "Add custom label..."
 #: src/components/wiki-toolbar/WikiToolbar.tsx
 msgid "Add entity link"
 msgstr "Add entity link"
+
+#: src/components/assets/AddContextFolderDialog.tsx
+#: src/components/assets/AddGitFolderDialog.tsx
+#: src/components/quick-create/QuickCreateModal.tsx
+msgid "Add Git folder"
+msgstr "Add Git folder"
 
 #: src/components/hooks-view/HooksBrowser.tsx
 #: src/components/hooks-view/HooksTable.tsx
@@ -1298,6 +1309,7 @@ msgstr "Asset…"
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/assets/AssetsNavigator.tsx
 #: src/components/assets/AssetsPage.tsx
+#: src/components/assets/AssetsPage.tsx
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 msgid "Assets"
 msgstr "Assets"
@@ -1471,15 +1483,15 @@ msgstr "Bash Command *"
 msgid "bash progress"
 msgstr "bash progress"
 
-#: src/components/project-home/Secrets.tsx
+#: src/components/project-home/BindSecretDialog.tsx
 msgid "Bind"
 msgstr "Bind"
 
-#: src/components/project-home/Secrets.tsx
+#: src/components/project-home/BindSecretDialog.tsx
 msgid "Bind an existing app secret to a project environment variable."
 msgstr "Bind an existing app secret to a project environment variable."
 
-#: src/components/project-home/Secrets.tsx
+#: src/components/project-home/BindSecretDialog.tsx
 #: src/components/project-home/Secrets.tsx
 msgid "Bind secret"
 msgstr "Bind secret"
@@ -1660,12 +1672,15 @@ msgstr "Can't open terminal"
 #: src/components/artifacts/artifact-form.tsx
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/assets/AddGitFolderDialog.tsx
 #: src/components/assets/delete-asset-modal.tsx
 #: src/components/assets/editor/markdown/ReviewSurface.tsx
 #: src/components/assets/editor/run/useRunOnFile.tsx
 #: src/components/assets/editor/whiteboard/WhiteboardAssetEditor.tsx
 #: src/components/assets/editor/workflow/WorkflowAssetEditor.tsx
 #: src/components/assets/ProjectPickerModal.tsx
+#: src/components/assets/PushContextFolderDialog.tsx
+#: src/components/contact-picker/CreateContactsGroupDialog.tsx
 #: src/components/conversation/asset-review/TestPromptDialog.tsx
 #: src/components/conversation/ExecutePromptDialog.tsx
 #: src/components/conversation/PromptComposerDialog.tsx
@@ -1689,7 +1704,7 @@ msgstr "Can't open terminal"
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 #: src/components/project-activity-strip/ProjectActivityStrip.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
-#: src/components/project-home/Secrets.tsx
+#: src/components/project-home/BindSecretDialog.tsx
 #: src/components/project-selector/NewProjectDialog.tsx
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 #: src/components/project-sidebar/ProjectSidebar.tsx
@@ -1917,8 +1932,8 @@ msgid "Claude Code Status"
 msgstr "Claude Code Status"
 
 #: src/components/open-project-component/open-project-component.tsx
-msgid "Claude project"
-msgstr "Claude project"
+#~ msgid "Claude project"
+#~ msgstr "Claude project"
 
 #: src/components/claude-terminal/claude-terminal.tsx
 msgid "Claude Terminal"
@@ -2260,8 +2275,8 @@ msgid "Codex (restored session)"
 msgstr "Codex (restored session)"
 
 #: src/components/open-project-component/open-project-component.tsx
-msgid "Codex project"
-msgstr "Codex project"
+#~ msgid "Codex project"
+#~ msgstr "Codex project"
 
 #: src/components/quick-create/QuickCreateMenu.tsx
 msgid "Codex session"
@@ -2509,6 +2524,11 @@ msgstr "Connection Info"
 msgid "Contacts"
 msgstr "Contacts"
 
+#. placeholder {0}: name.trim()
+#: src/components/contact-picker/CreateContactsGroupDialog.tsx
+msgid "Contacts group \"{0}\" created"
+msgstr "Contacts group \"{0}\" created"
+
 #: src/components/hooks-view/HooksTable.tsx
 msgid "Content"
 msgstr "Content"
@@ -2520,6 +2540,10 @@ msgstr "Contents"
 #: src/components/lens-viewer/ClaudeContextViewer.tsx
 msgid "Context breakdown"
 msgstr "Context breakdown"
+
+#: src/components/quick-create/QuickCreateModal.tsx
+#~ msgid "Context folder"
+#~ msgstr "Context folder"
 
 #: src/components/project-home/ContextFolders.tsx
 msgid "Context folders"
@@ -2558,6 +2582,7 @@ msgstr "Continue with Email"
 msgid "Continue with Google"
 msgstr "Continue with Google"
 
+#: src/components/assets/PushContextFolderDialog.tsx
 #: src/components/conversation/ConversationRoute.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
 msgid "Conversation"
@@ -2595,8 +2620,8 @@ msgid "Copilot"
 msgstr "Copilot"
 
 #: src/components/open-project-component/open-project-component.tsx
-msgid "Copilot project"
-msgstr "Copilot project"
+#~ msgid "Copilot project"
+#~ msgstr "Copilot project"
 
 #: src/components/quick-create/QuickCreateMenu.tsx
 msgid "Copilot session"
@@ -2853,9 +2878,11 @@ msgstr "CPU Usage (%)"
 msgid "CPU:"
 msgstr "CPU:"
 
+#: src/components/assets/AddGitFolderDialog.tsx
 #: src/components/assets/AssetsNavigator.tsx
 #: src/components/assets/AssetsNavigator.tsx
 #: src/components/assets/AssetsPage.tsx
+#: src/components/contact-picker/CreateContactsGroupDialog.tsx
 #: src/components/cron-view/CronForm.tsx
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 #: src/components/project-selector/NewProjectDialog.tsx
@@ -2867,6 +2894,14 @@ msgstr "CPU:"
 #: src/components/workflows-view/WorkflowStrip.tsx
 msgid "Create"
 msgstr "Create"
+
+#: src/components/assets/AddGitFolderDialog.tsx
+msgid "Create a brand-new repository"
+msgstr "Create a brand-new repository"
+
+#: src/components/inbox-view/InboxView.tsx
+msgid "Create a contacts group — add its members to any conversation in one click"
+msgstr "Create a contacts group — add its members to any conversation in one click"
 
 #. placeholder {0}: m.newFolderTarget?.label ?? 'this folder'
 #: src/components/assets/AssetsNavigator.tsx
@@ -2919,7 +2954,6 @@ msgstr "Create it"
 msgid "Create new"
 msgstr "Create new"
 
-#: src/components/open-project-component/open-project-component.tsx
 #: src/components/open-project-component/open-project-component.tsx
 msgid "Create New"
 msgstr "Create New"
@@ -3780,6 +3814,10 @@ msgstr "Duration"
 msgid "e.g. Alex"
 msgstr "e.g. Alex"
 
+#: src/components/contact-picker/CreateContactsGroupDialog.tsx
+msgid "e.g. My class"
+msgstr "e.g. My class"
+
 #: src/components/join-room-dialog/JoinRoomDialog.tsx
 msgid "e.g. Retry logic review"
 msgstr "e.g. Retry logic review"
@@ -3950,7 +3988,7 @@ msgid "Enable for user"
 msgstr "Enable for user"
 
 #: src/components/account/secrets-section.tsx
-#: src/components/project-home/Secrets.tsx
+#: src/components/project-home/BindSecretDialog.tsx
 msgid "Enable secrets"
 msgstr "Enable secrets"
 
@@ -4083,7 +4121,7 @@ msgstr "Entry"
 msgid "Entry details"
 msgstr "Entry details"
 
-#: src/components/project-home/Secrets.tsx
+#: src/components/project-home/BindSecretDialog.tsx
 msgid "Env var"
 msgstr "Env var"
 
@@ -4110,8 +4148,8 @@ msgstr "error"
 #: src/components/agent-layout/error-screen/error-screen.tsx
 #: src/components/api-keys-view/api-keys-view.tsx
 #: src/components/api-keys-view/api-keys-view.tsx
-#: src/components/project-home/Secrets.tsx
-#: src/components/project-home/Secrets.tsx
+#: src/components/project-home/BindSecretDialog.tsx
+#: src/components/project-home/BindSecretDialog.tsx
 msgid "Error"
 msgstr "Error"
 
@@ -4242,6 +4280,10 @@ msgstr "Execution Log"
 msgid "Execution Mode"
 msgstr "Execution Mode"
 
+#: src/components/assets/AddGitFolderDialog.tsx
+msgid "Existing repo"
+msgstr "Existing repo"
+
 #. placeholder {0}: call.exit_code
 #. placeholder {0}: entry.toolResult!.exitCode
 #: src/components/assets/editor/agent-trace/TraceDetailPanel.tsx
@@ -4347,7 +4389,7 @@ msgstr "Failed to add comment"
 msgid "Failed to backup database"
 msgstr "Failed to backup database"
 
-#: src/components/project-home/Secrets.tsx
+#: src/components/project-home/BindSecretDialog.tsx
 msgid "Failed to bind secret"
 msgstr "Failed to bind secret"
 
@@ -4381,6 +4423,10 @@ msgstr "Failed to create"
 #: src/components/artifacts/artifact-form.tsx
 msgid "Failed to create artifact"
 msgstr "Failed to create artifact"
+
+#: src/components/contact-picker/CreateContactsGroupDialog.tsx
+msgid "Failed to create contacts group"
+msgstr "Failed to create contacts group"
 
 #: src/components/collaboration/sidebar/NewDocButton.tsx
 #~ msgid "Failed to create doc"
@@ -4444,7 +4490,7 @@ msgid "Failed to enable MCP"
 msgstr "Failed to enable MCP"
 
 #: src/components/account/secrets-section.tsx
-#: src/components/project-home/Secrets.tsx
+#: src/components/project-home/BindSecretDialog.tsx
 msgid "Failed to enable secrets"
 msgstr "Failed to enable secrets"
 
@@ -4552,14 +4598,13 @@ msgid "Failed to open file"
 msgstr "Failed to open file"
 
 #: src/components/quick-create/QuickCreateModal.tsx
-msgid "Failed to open folder"
-msgstr "Failed to open folder"
+#~ msgid "Failed to open folder"
+#~ msgstr "Failed to open folder"
 
 #: src/components/open-project-component/use-open-project.ts
 #: src/components/project-setup-screen/project-setup-screen.tsx
 #: src/components/quick-create/QuickCreateDialog.tsx
 #: src/components/quick-create/QuickCreateMenu.tsx
-#: src/components/quick-create/QuickCreateModal.tsx
 msgid "Failed to open folder picker"
 msgstr "Failed to open folder picker"
 
@@ -4649,7 +4694,6 @@ msgid "Failed to start services"
 msgstr "Failed to start services"
 
 #: src/components/quick-create/QuickCreateMenu.tsx
-#: src/components/quick-create/QuickCreateModal.tsx
 #: src/components/quick-create/QuickCreateModal.tsx
 msgid "Failed to start session"
 msgstr "Failed to start session"
@@ -5086,6 +5130,10 @@ msgstr "from first"
 msgid "From git"
 msgstr "From git"
 
+#: src/components/quick-create/QuickCreateModal.tsx
+#~ msgid "From Git"
+#~ msgstr "From Git"
+
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 msgid "From:"
 msgstr "From:"
@@ -5159,8 +5207,11 @@ msgstr "Get Started"
 msgid "ghost"
 msgstr "ghost"
 
+#: src/components/assets/ContextFolderBrowser.tsx
+msgid "git"
+msgstr "git"
+
 #: src/components/chat-input.tsx
-#: src/components/quick-create/QuickCreateModal.tsx
 msgid "Git"
 msgstr "Git"
 
@@ -5267,6 +5318,10 @@ msgstr "Graph view"
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "Group Events"
 msgstr "Group Events"
+
+#: src/components/contact-picker/CreateContactsGroupDialog.tsx
+msgid "Group name"
+msgstr "Group name"
 
 #: src/components/terminal/openers/AskInstallOneOfDialog.tsx
 msgid "Harness is required"
@@ -5380,6 +5435,10 @@ msgstr "Hide from Recent conversations"
 #: src/components/code-editor/CodeEditor.tsx
 msgid "Hide hidden files"
 msgstr "Hide hidden files"
+
+#: src/components/task-bar/TaskCard.tsx
+msgid "Hide member tasks"
+msgstr "Hide member tasks"
 
 #: src/components/navigator-panel/NavigatorPanel.tsx
 #: src/components/webapp-viewer.tsx
@@ -6414,7 +6473,6 @@ msgstr "Loading project resources..."
 
 #: src/components/assets/ProjectPickerModal.tsx
 #: src/components/directory-tree/ProjectsDirectoryTree.tsx
-#: src/components/open-project-component/open-project-component.tsx
 msgid "Loading projects..."
 msgstr "Loading projects..."
 
@@ -6734,11 +6792,20 @@ msgstr "member"
 msgid "Member"
 msgstr "Member"
 
+#: src/components/task-bar/TaskCard.tsx
+msgid "member task"
+msgstr "member task"
+
+#: src/components/task-bar/TaskCard.tsx
+msgid "member tasks"
+msgstr "member tasks"
+
 #: src/components/collaboration/RoomHeader.tsx
 msgid "members"
 msgstr "members"
 
 #: src/components/account/organization-panel.tsx
+#: src/components/contact-picker/CreateContactsGroupDialog.tsx
 #: src/components/project-home/ProjectHome.tsx
 msgid "Members"
 msgstr "Members"
@@ -6764,6 +6831,10 @@ msgstr "Memory:"
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Merge conflicts"
 msgstr "Merge conflicts"
+
+#: src/components/assets/PushContextFolderDialog.tsx
+msgid "Message"
+msgstr "Message"
 
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
 msgid "Message (optional)"
@@ -6916,6 +6987,10 @@ msgstr "My Schedule"
 msgid "my-awesome-project"
 msgstr "my-awesome-project"
 
+#: src/components/assets/AddGitFolderDialog.tsx
+msgid "my-context"
+msgstr "my-context"
+
 #: src/components/account/user-info.tsx
 msgid "N/A"
 msgstr "N/A"
@@ -6982,6 +7057,7 @@ msgid "new"
 msgstr "new"
 
 #: src/components/assets/AssetListView.tsx
+#: src/components/assets/filters/taskFilters.tsx
 #: src/components/chats-navigator/ChatsFilterBar.tsx
 #: src/components/inbox-view/InboxView.tsx
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
@@ -7033,6 +7109,10 @@ msgstr "New chat"
 msgid "New Claude Session"
 msgstr "New Claude Session"
 
+#: src/components/contact-picker/CreateContactsGroupDialog.tsx
+msgid "New contacts group"
+msgstr "New contacts group"
+
 #: src/components/collaboration/sidebar/NewDocButton.tsx
 #: src/components/collaboration/sidebar/NewDocButton.tsx
 #: src/components/collaboration/sidebar/NewDocButton.tsx
@@ -7056,6 +7136,7 @@ msgstr "New Files ({0})"
 msgid "New Flow"
 msgstr "New Flow"
 
+#: src/components/quick-create/QuickCreateModal.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "New folder"
 msgstr "New folder"
@@ -7065,6 +7146,10 @@ msgstr "New folder"
 msgid "New Folder"
 msgstr "New Folder"
 
+#: src/components/inbox-view/InboxView.tsx
+msgid "New group"
+msgstr "New group"
+
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "New name"
 msgstr "New name"
@@ -7072,7 +7157,6 @@ msgstr "New name"
 #: src/components/project-selector/NewProjectDialog.tsx
 #: src/components/project-selector/ProjectSelectorModal.tsx
 #: src/components/quick-create/QuickCreateMenu.tsx
-#: src/components/quick-create/QuickCreateModal.tsx
 msgid "New project"
 msgstr "New project"
 
@@ -7091,6 +7175,10 @@ msgstr "New prompt"
 #: src/components/execute-flow-view/instruction-panel/ephemeral-prompt-input.tsx
 msgid "New Prompt"
 msgstr "New Prompt"
+
+#: src/components/assets/AddGitFolderDialog.tsx
+msgid "New repo"
+msgstr "New repo"
 
 #: src/components/triggers-view/TriggersList.tsx
 msgid "New schedule trigger"
@@ -7288,7 +7376,6 @@ msgstr "No community tickets"
 #: src/components/project-setup-screen/project-setup-screen.tsx
 #: src/components/quick-create/QuickCreateDialog.tsx
 #: src/components/quick-create/QuickCreateMenu.tsx
-#: src/components/quick-create/QuickCreateModal.tsx
 msgid "No compute node available"
 msgstr "No compute node available"
 
@@ -7503,7 +7590,7 @@ msgstr "No line changes vs the stamped baseline."
 msgid "No LLM index for this folder yet."
 msgstr "No LLM index for this folder yet."
 
-#: src/components/project-home/Secrets.tsx
+#: src/components/project-home/BindSecretDialog.tsx
 msgid "No local app secrets"
 msgstr "No local app secrets"
 
@@ -7536,7 +7623,6 @@ msgid "no matches"
 msgstr "no matches"
 
 #: src/components/assets/ProjectPickerModal.tsx
-#: src/components/open-project-component/open-project-component.tsx
 #: src/components/open-project-component/open-project-component.tsx
 #: src/components/project-selector/ProjectSelector.tsx
 msgid "No matches"
@@ -7677,7 +7763,6 @@ msgid "No projects"
 msgstr "No projects"
 
 #: src/components/assets/ProjectPickerModal.tsx
-#: src/components/open-project-component/open-project-component.tsx
 #: src/components/open-project-component/open-project-component.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "No projects found"
@@ -8067,6 +8152,10 @@ msgstr "Nothing in private context yet."
 msgid "Nothing indexed yet. <0>Refresh Index</0> to populate."
 msgstr "Nothing indexed yet. <0>Refresh Index</0> to populate."
 
+#: src/components/assets/PushContextFolderDialog.tsx
+msgid "Nothing new to push — message sent"
+msgstr "Nothing new to push — message sent"
+
 #: src/components/conversation/ConversationContextPanel.tsx
 msgid "Nothing shared in this conversation."
 msgstr "Nothing shared in this conversation."
@@ -8092,6 +8181,10 @@ msgstr "Nothing to do."
 msgid "Nothing to improve"
 msgstr "Nothing to improve"
 
+#: src/components/assets/PushContextFolderDialog.tsx
+msgid "Nothing to push"
+msgstr "Nothing to push"
+
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Nothing to save"
 msgstr "Nothing to save"
@@ -8112,9 +8205,17 @@ msgstr "Notifications"
 msgid "Notifies the inviter"
 msgstr "Notifies the inviter"
 
+#: src/components/assets/PushContextFolderDialog.tsx
+#~ msgid "Notify (optional)"
+#~ msgstr "Notify (optional)"
+
 #: src/components/hooks-manager/TriggerForm.tsx
 msgid "Notify Entity (Increment Counter)"
 msgstr "Notify Entity (Increment Counter)"
+
+#: src/components/assets/PushContextFolderDialog.tsx
+msgid "Notify people about this push"
+msgstr "Notify people about this push"
 
 #: src/components/InputSection.tsx
 msgid "OAuth connection established successfully"
@@ -8167,8 +8268,8 @@ msgid "Only one ZIP file can be uploaded at a time"
 msgstr "Only one ZIP file can be uploaded at a time"
 
 #: src/components/task-bar/TaskDetailPanel.tsx
-msgid "open"
-msgstr "open"
+#~ msgid "open"
+#~ msgstr "open"
 
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
@@ -8301,11 +8402,9 @@ msgid "Open Flowpad docs"
 msgstr "Open Flowpad docs"
 
 #: src/components/assets/AddContextFolderDialog.tsx
-#: src/components/quick-create/QuickCreateModal.tsx
 msgid "Open folder"
 msgstr "Open folder"
 
-#: src/components/open-project-component/open-project-component.tsx
 #: src/components/open-project-component/open-project-component.tsx
 msgid "Open Folder"
 msgstr "Open Folder"
@@ -8826,6 +8925,18 @@ msgstr "Pick a contact or enter an email"
 msgid "Pick a contact to see your conversations with them."
 msgstr "Pick a contact to see your conversations with them."
 
+#: src/components/assets/PushContextFolderDialog.tsx
+msgid "Pick a contacts group or people"
+msgstr "Pick a contacts group or people"
+
+#: src/components/assets/PushContextFolderDialog.tsx
+#~ msgid "Pick a contacts group or people — empty = just push"
+#~ msgstr "Pick a contacts group or people — empty = just push"
+
+#: src/components/contact-picker/CreateContactsGroupDialog.tsx
+msgid "Pick a group in any conversation to add all its members at once."
+msgstr "Pick a group in any conversation to add all its members at once."
+
 #: src/components/open-project-component/open-project-component.tsx
 msgid "Pick a project"
 msgstr "Pick a project"
@@ -9107,7 +9218,6 @@ msgstr "Progress"
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/quick-create/QuickCreateMenu.tsx
 #: src/components/quick-create/QuickCreateModal.tsx
-#: src/components/quick-create/QuickCreateModal.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Project"
 msgstr "Project"
@@ -9188,7 +9298,6 @@ msgid "projected"
 msgstr "projected"
 
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
-#: src/components/open-project-component/open-project-component.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Projects"
 msgstr "Projects"
@@ -9333,14 +9442,49 @@ msgstr "Pull failed."
 msgid "Pulling…"
 msgstr "Pulling…"
 
+#: src/components/assets/ContextFolderGitBadge.tsx
+#: src/components/assets/PushContextFolderDialog.tsx
 #: src/components/status-bar/GitPushButton.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Push"
 msgstr "Push"
 
+#: src/components/assets/ContextFolderGitBadge.tsx
+#: src/components/assets/PushContextFolderDialog.tsx
+msgid "Push {folderName}"
+msgstr "Push {folderName}"
+
+#: src/components/assets/PushContextFolderDialog.tsx
+msgid "Push & notify"
+msgstr "Push & notify"
+
+#: src/components/assets/PushContextFolderDialog.tsx
+msgid "Push failed"
+msgstr "Push failed"
+
+#: src/components/assets/PushContextFolderDialog.tsx
+msgid "Push to {branch} — optionally tell people about it."
+msgstr "Push to {branch} — optionally tell people about it."
+
+#: src/components/assets/PushContextFolderDialog.tsx
+msgid "Push to the remote — optionally tell people about it."
+msgstr "Push to the remote — optionally tell people about it."
+
 #: src/components/git/RepoPicker.tsx
 msgid "Pushed"
 msgstr "Pushed"
+
+#: src/components/assets/PushContextFolderDialog.tsx
+msgid "Pushed {folderName}"
+msgstr "Pushed {folderName}"
+
+#: src/components/assets/PushContextFolderDialog.tsx
+msgid "Pushed and message sent"
+msgstr "Pushed and message sent"
+
+#: src/components/assets/PushContextFolderDialog.tsx
+msgid "Pushed to remote"
+msgstr "Pushed to remote"
 
 #: src/components/version-popover/version-popover.tsx
 msgid "PyPI unavailable"
@@ -9805,6 +9949,14 @@ msgstr "Reporting needs an internet connection"
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Repos"
 msgstr "Repos"
+
+#: src/components/assets/AddGitFolderDialog.tsx
+msgid "Repository name"
+msgstr "Repository name"
+
+#: src/components/assets/AddGitFolderDialog.tsx
+msgid "Repository URL"
+msgstr "Repository URL"
 
 #: src/components/GitHubConnectionDialog.tsx
 msgid "Repository URL:"
@@ -10552,7 +10704,6 @@ msgstr "Search nodes…"
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/assets/ProjectPickerModal.tsx
 #: src/components/open-project-component/open-project-component.tsx
-#: src/components/open-project-component/open-project-component.tsx
 msgid "Search projects…"
 msgstr "Search projects…"
 
@@ -10614,7 +10765,8 @@ msgid "Searching…"
 msgstr "Searching…"
 
 #: src/components/flowdata-renderer/SecretMessageComponent.tsx
-#: src/components/project-home/Secrets.tsx
+#: src/components/project-home/BindSecretDialog.tsx
+#: src/components/quick-create/QuickCreateModal.tsx
 msgid "Secret"
 msgstr "Secret"
 
@@ -10680,8 +10832,8 @@ msgid "Select a project"
 msgstr "Select a project"
 
 #: src/components/open-project-component/open-project-component.tsx
-msgid "Select a project or open a new folder."
-msgstr "Select a project or open a new folder."
+#~ msgid "Select a project or open a new folder."
+#~ msgstr "Select a project or open a new folder."
 
 #: src/components/project-resource-list/ProjectResourceList.tsx
 #: src/pages/live-status/LiveStatus.tsx
@@ -10789,7 +10941,7 @@ msgstr "Select Project"
 msgid "Select Projects"
 msgstr "Select Projects"
 
-#: src/components/project-home/Secrets.tsx
+#: src/components/project-home/BindSecretDialog.tsx
 msgid "Select secret"
 msgstr "Select secret"
 
@@ -11000,6 +11152,14 @@ msgstr "Set up"
 msgid "Set up (runs an agentic process)"
 msgstr "Set up (runs an agentic process)"
 
+#: src/components/assets/AddGitFolderDialog.tsx
+msgid "Set up a git-backed context folder for this project."
+msgstr "Set up a git-backed context folder for this project."
+
+#: src/components/assets/AddGitFolderDialog.tsx
+msgid "Set up an existing git repository as the context folder"
+msgstr "Set up an existing git repository as the context folder"
+
 #: src/components/settings-view/SettingsView.tsx
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
@@ -11166,6 +11326,10 @@ msgstr "Show hidden files"
 msgid "Show in folder (selects file for drag-and-drop)"
 msgstr "Show in folder (selects file for drag-and-drop)"
 
+#: src/components/task-bar/TaskCard.tsx
+msgid "Show member tasks"
+msgstr "Show member tasks"
+
 #: src/components/workers/WorkerToolbar.tsx
 #: src/components/workers/WorkerToolbar.tsx
 msgid "Show other workers"
@@ -11187,16 +11351,16 @@ msgid "Show scope overrides"
 msgstr "Show scope overrides"
 
 #: src/components/open-project-component/open-project-component.tsx
-msgid "Show SDK-shipped system projects (Flowpad Assistant)"
-msgstr "Show SDK-shipped system projects (Flowpad Assistant)"
+#~ msgid "Show SDK-shipped system projects (Flowpad Assistant)"
+#~ msgstr "Show SDK-shipped system projects (Flowpad Assistant)"
 
 #: src/components/project-resource-list/ProjectResourceList.tsx
 msgid "Show Sessions"
 msgstr "Show Sessions"
 
 #: src/components/open-project-component/open-project-component.tsx
-msgid "Show system"
-msgstr "Show system"
+#~ msgid "Show system"
+#~ msgstr "Show system"
 
 #: src/components/account/danger-zone.tsx
 msgid "Show system skills"
@@ -11538,6 +11702,10 @@ msgstr "Start new conversation"
 msgid "Start new conversation · {effectiveTitle}"
 msgstr "Start new conversation · {effectiveTitle}"
 
+#: src/components/assets/PushContextFolderDialog.tsx
+msgid "Start new conversation · {title}"
+msgstr "Start new conversation · {title}"
+
 #: src/components/project-home/ProjectHome.tsx
 msgid "Start new session"
 msgstr "Start new session"
@@ -11657,6 +11825,10 @@ msgstr "stored line"
 msgid "Structure"
 msgstr "Structure"
 
+#: src/components/quick-create/QuickCreateModal.tsx
+msgid "Sub agent"
+msgstr "Sub agent"
+
 #: src/pages/live-status/LiveStatus.tsx
 msgid "sub-agent"
 msgstr "sub-agent"
@@ -11774,7 +11946,6 @@ msgid "sys"
 msgstr "sys"
 
 #: src/components/lens-viewer/shared/transcript-features/TranscriptEntryItem.tsx
-#: src/components/open-project-component/open-project-component.tsx
 msgid "system"
 msgstr "system"
 
@@ -11966,6 +12137,10 @@ msgstr "The in-app terminal is always the primary shell. This setting controls w
 #: src/components/lens-viewer/LensViewer.tsx
 msgid "The lens path could not be parsed."
 msgstr "The lens path could not be parsed."
+
+#: src/components/project-home/BindSecretDialog.tsx
+msgid "The local secrets store is not enabled yet."
+msgstr "The local secrets store is not enabled yet."
 
 #: src/components/prompt-library/PromptEditDialog.tsx
 msgid "The prompt text…"
@@ -12200,17 +12375,18 @@ msgstr "Tip: Press Ctrl+Enter to save"
 msgid "Title"
 msgstr "Title"
 
+#: src/components/assets/PushContextFolderDialog.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "To"
 msgstr "To"
 
 #: src/components/assets/filters/taskFilters.tsx
-msgid "To Do"
-msgstr "To Do"
+#~ msgid "To Do"
+#~ msgstr "To Do"
 
 #: src/components/open-project-component/open-project-component.tsx
-msgid "today"
-msgstr "today"
+#~ msgid "today"
+#~ msgstr "today"
 
 #: src/components/cron-view/CronForm.tsx
 msgid "Today"
@@ -12561,6 +12737,10 @@ msgstr "Unpin {0}"
 #: src/components/skills-sidebar/SkillsSidebar.tsx
 msgid "Unpin skill"
 msgstr "Unpin skill"
+
+#: src/components/assets/ContextFolderBrowser.tsx
+msgid "Unpushed changes"
+msgstr "Unpushed changes"
 
 #: src/components/inbox-view/InboxView.tsx
 #: src/components/inbox-view/InboxView.tsx
@@ -12966,6 +13146,10 @@ msgstr "Welcome bookmark + feed entry, seeded on first run. Status: {onboardingS
 #: src/components/floating-chat/FloatingChatWindow.tsx
 msgid "What can flowpad do for you ?"
 msgstr "What can flowpad do for you ?"
+
+#: src/components/assets/PushContextFolderDialog.tsx
+msgid "What changed? Sent to the recipients below…"
+msgstr "What changed? Sent to the recipients below…"
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "What do you need help with?"
