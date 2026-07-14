@@ -14,10 +14,10 @@
  * flips the UI SKIN (chat pane over the PTY ⇄ raw xterm) and the TRANSPORT
  * (`switchMode` → `pty_mode` true⇄false). One live session underneath both.
  *
- * Two clients, one backend (instance `dev-1`):
+ * Two clients, one backend (the explicit `SHARE_INST_1`):
  *   • the browser PAGE drives the toggle / types tokens (production path:
  *     click → handleToggleView → switchMode);
- *   • an SDK realm (`getInstance('dev-1')`) creates the watched process and is
+ *   • an SDK realm (`getInstance(INSTANCE)`) creates the watched process and is
  *     the AUTHORITATIVE observer — `loadHistory({force})` re-reads the on-disk
  *     transcript so a token hit means the worker actually took it (not the
  *     optimistic echo), and `workerStatus` is the backend's idle signal.
@@ -39,9 +39,9 @@
  * USER turn (which contains the token verbatim) — see `tokenInStream`. A slow
  * turn trips the tight per-step budget — a regression, never something to wait out.
  *
- * Lifecycle is external (like every hub test): `scripts/instance_ctl.sh launch
- * dev-1` + the hub up, else the suite SKIPS. Run:
- *   cd ui && FLOWPAD_HUB_URL=http://localhost:8093 \
+ * Lifecycle is external (like every hub test): the caller launches the named
+ * pair and exports the canonical hub environment before this suite runs:
+ *   cd ui && FLOWPAD_HUB_URL=<cycle-hub-url> \
  *     npx vitest run --project hub chat_terminal_switch_stress.ui
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -54,11 +54,15 @@ import {
   resetConsoleErrors,
   type InstancePage,
 } from './_browser';
-import { getInstance, instanceAvailable, type ResolvedInstance } from './_instances';
+import {
+  HUB_INST_1 as INSTANCE,
+  getInstance,
+  instanceAvailable,
+  type ResolvedInstance,
+} from './_instances';
 import { hubAvailable } from './_hub';
 import { trackTypeId } from '../_cleanup';
 
-const INSTANCE = 'dev-1';
 const COUNT_TARGET = 10;
 // Per-step budgets are the real guards (NOT the it() envelope). A "say the
 // token" turn on the small model must be fast; a slow turn is a regression.
@@ -79,7 +83,7 @@ describe('chat⇄terminal switch stress in the browser — one session, 10 itera
   let available = false;
 
   beforeAll(async () => {
-    if (!(await hubAvailable()).ok || !(await instanceAvailable(INSTANCE))) {
+    if (!(await hubAvailable()).ok || !instanceAvailable(INSTANCE)) {
       // eslint-disable-next-line no-console
       console.warn(`[skip] hub or instance '${INSTANCE}' not up — launch via scripts/instance_ctl.sh`);
       return;
@@ -87,10 +91,10 @@ describe('chat⇄terminal switch stress in the browser — one session, 10 itera
     available = true;
     browser = await launchBrowser();
 
-    // SDK realm (authoritative observer + process factory) bound to dev-1.
+    // SDK realm (authoritative observer + process factory) bound to instance 1.
     inst = await getInstance(INSTANCE);
     const cn = await inst.sdk.ComputeNode.getById('@local');
-    expect(cn, 'no @local compute node on dev-1').toBeTruthy();
+    expect(cn, `no @local compute node on ${INSTANCE}`).toBeTruthy();
 
     // Run the worker in an OUT-OF-REPO tmpdir: a worker writing under the checkout
     // trips the instance backend's file-watch and destabilises it mid-run.
@@ -101,7 +105,7 @@ describe('chat⇄terminal switch stress in the browser — one session, 10 itera
 
     // Production START path: visible auto-start opens a live PTY and seeds the
     // launch prompt that mints the session_id. The process boots in TERMINAL
-    // (pty_mode=true); the dev instance is Advanced so the dock shows the xterm,
+    // (pty_mode=true); the selected instance is Advanced so the dock shows the xterm,
     // and iteration 1's toggle is the first chat switch. `visible:false` would
     // never drain the launch prompt (no auto-start) → no session; that mismatch
     // was the original boot flake.

@@ -485,18 +485,74 @@ async def test_activate_is_noop_on_a_soft_closed_tab() -> None:
         target_type=_TabTargetProbe.get_type(),
         target_id=str(uuid.uuid4()),
     )
+    stale_visible = await Tab.get_one({"id": tab.id})
+    assert stale_visible is not None and stale_visible.visible is True
     await tab.close()
     assert tab.visible is False
     reloaded = await Tab.get_one({"id": tab.id})
     assert reloaded is not None
     before = reloaded.last_active_at
 
-    await _http_activate(reloaded)
+    response = await _http_activate(stale_visible)
 
     after = await Tab.get_one({"id": tab.id})
     assert after is not None
     assert after.last_active_at == before, "activate must NOT stamp recency on a closed tab"
     assert after.visible is False, "activate must NOT re-show a soft-closed tab"
+    assert response.data["last_active_at"] == before
+
+
+@pytest.mark.asyncio
+async def test_activate_stale_snapshot_cannot_clobber_newer_unrelated_field() -> None:
+    """The fire-and-forget recency write must not full-save its stale snapshot."""
+    from flow_sdk.core.entity.entity_model import _http_activate
+
+    probe = _TabTargetProbe(id=str(uuid.uuid4()), torn_down=False)
+    await probe.save()
+    stale = await _TabTargetProbe.get_one({"id": probe.id})
+    newer = await _TabTargetProbe.get_one({"id": probe.id})
+    assert stale is not None and newer is not None
+
+    newer.torn_down = True
+    await newer.save()
+    assert stale.torn_down is False, "precondition: activate receives a stale snapshot"
+
+    notifications = []
+    stale.observe(notifications.append)
+    response = await _http_activate(stale)
+
+    persisted = await _TabTargetProbe.get_one({"id": probe.id})
+    assert persisted is not None
+    assert persisted.torn_down is True, (
+        "activate may update recency only; it must preserve a newer unrelated field"
+    )
+    assert persisted.last_active_at == response.data["last_active_at"]
+    assert stale.last_active_at == persisted.last_active_at
+    assert len(notifications) == 1, "activate must retain its UPDATE notification"
+    assert notifications[0].data.torn_down is True, (
+        "the notification must carry the fresh persisted row, not the stale snapshot"
+    )
+
+
+@pytest.mark.asyncio
+async def test_activate_deleted_snapshot_fails_without_phantom_notification() -> None:
+    """A delete race cannot report or broadcast a recency update that did not persist."""
+    from flow_sdk.core.entity.entity_model import _http_activate
+
+    probe = _TabTargetProbe(id=str(uuid.uuid4()))
+    await probe.save()
+    stale = await _TabTargetProbe.get_one({"id": probe.id})
+    assert stale is not None
+    notifications = []
+    stale.observe(notifications.append)
+    await probe.delete()
+
+    response = await _http_activate(stale)
+
+    assert response.status == "FAIL"
+    assert response.status_code == 404
+    assert notifications == []
+    assert await _TabTargetProbe.get_one({"id": probe.id}) is None
 
 
 @pytest.mark.asyncio

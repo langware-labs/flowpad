@@ -20,6 +20,7 @@ import asyncio
 import os
 import sys
 import uuid
+from contextlib import asynccontextmanager
 
 import psutil
 import pytest
@@ -178,6 +179,37 @@ async def test_wait_for_input_ready_times_out_when_never_ready():
 # ---------------------------------------------------------------------------
 
 
+@asynccontextmanager
+async def live_worker():
+    """Spawn a real child process and yield it only AFTER its execve has
+    completed, so ``psutil.cmdline()`` already sees the final argv.
+
+    The child prints a ``ready`` line as its first act post-exec; awaiting that
+    line on its stdout is a deterministic exec barrier — no polling. Between fork
+    and exec ``psutil.cmdline()`` transiently returns ``[]`` (widens under
+    full-suite load), which would make ``worker_alive()`` spuriously False; the
+    barrier removes that window entirely. Production only ever probes established
+    workers, never microseconds post-spawn, so this mirrors real conditions.
+
+    The child's argv[0] is ``sys.executable``, so its cmdline basename matches
+    ``worker_name = os.path.basename(sys.executable)`` — what ``worker_alive``'s
+    matcher compares against.
+    """
+    proc = await asyncio.create_subprocess_exec(
+        sys.executable,
+        "-c",
+        "print('ready', flush=True)\nimport time; time.sleep(60)",
+        stdout=asyncio.subprocess.PIPE,
+    )
+    try:
+        assert proc.stdout is not None
+        await proc.stdout.readline()  # deterministic exec barrier — no polling
+        yield proc
+    finally:
+        proc.terminate()
+        await proc.wait()
+
+
 @pytest.mark.asyncio
 @pytest.mark.timeout(5)  # do not increase timeout without approval
 async def test_worker_alive_false_without_worker_pid():
@@ -226,14 +258,12 @@ async def test_worker_alive_true_when_cmdline_matches():
     """Live PTY + a live worker_pid whose cmdline basename matches worker_name."""
     shell = make_shell()
     await shell.start()
-    proc = await asyncio.create_subprocess_exec(sys.executable, "-c", "import time; time.sleep(30)")
     try:
-        shell.worker_pid = proc.pid
-        shell.worker_name = os.path.basename(sys.executable)
-        assert await shell.worker_alive() is True
+        async with live_worker() as proc:
+            shell.worker_pid = proc.pid
+            shell.worker_name = os.path.basename(sys.executable)
+            assert await shell.worker_alive() is True
     finally:
-        proc.terminate()
-        await proc.wait()
         await kill_pty(shell)
 
 
@@ -244,14 +274,12 @@ async def test_worker_alive_false_when_cmdline_mismatches():
     False (the process is alive but is not our worker)."""
     shell = make_shell()
     await shell.start()
-    proc = await asyncio.create_subprocess_exec(sys.executable, "-c", "import time; time.sleep(30)")
     try:
-        shell.worker_pid = proc.pid
-        shell.worker_name = "definitely_not_the_worker_binary"
-        assert await shell.worker_alive() is False
+        async with live_worker() as proc:
+            shell.worker_pid = proc.pid
+            shell.worker_name = "definitely_not_the_worker_binary"
+            assert await shell.worker_alive() is False
     finally:
-        proc.terminate()
-        await proc.wait()
         await kill_pty(shell)
 
 

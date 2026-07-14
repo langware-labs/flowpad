@@ -1,97 +1,179 @@
 /**
- * Realm-per-instance harness: bring up a real, bootstrapped SDK client per named
- * instance (dev-1, dev-2, …) in ONE process — each in its OWN module realm.
- *
- * "Each instance == its own window": there is no shared `currentSdk` pointer and
- * no `run()` scope. Instead, before importing `@sdk` we point the runtime config
- * at the instance's backend (`globalThis.__FLOWPAD_API_URL__`, honoured by
- * `load_config`) and `vi.resetModules()` so the next `import('@sdk')` re-evaluates
- * the whole graph fresh — its own `dataManager` / `apiClient` / `connectionManager`
- * / `config` singletons, bound to that backend. Two `getInstance` calls give two
- * fully isolated SDK clients whose entity classes (`sdk.Skill`, `sdk.Conversation`)
- * each route to their own backend with no cross-talk.
- *
- * Reads the instance's `.env.<name>.local` (written by
- * `scripts/instance_ctl.sh launch <name>`) for its backend port and hub email.
+ * Realm-per-instance harness: boot one isolated SDK realm per explicitly named
+ * instance. Hub tests write real data, so an env file alone is not proof that
+ * an instance is safe to use: the generated env, launcher registry, canonical
+ * hub/identity contract, and both launcher PIDs must all agree first.
  */
-import { promises as fs } from 'node:fs';
+import { readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import * as path from 'node:path';
-import { vi } from 'vitest';
+
+import { createSdkRealm } from '../_sdk_realm';
 import { pickPendingInvitation } from './_matrix';
-import { parseDotEnv } from './_hub';
+import { HUB_URL, parseDotEnv } from './_hub';
 
 /** The freshly-evaluated `@sdk` module namespace for one realm/instance. */
 export type SdkRealm = typeof import('@sdk');
 
-// ui/tests/hub → worktree root (where instance_ctl writes .env.<name>.local).
+// ui/tests/hub -> worktree root (where instance_ctl writes .env.<name>.local).
 export const WORKTREE_ROOT = path.resolve(__dirname, '../../..');
 
-/** Read an instance's `.env.<name>.local` into a key→value map ({} if absent). */
-export async function readEnvFile(name: string): Promise<Record<string, string>> {
+/** Canonical two-client identities. There are deliberately no named defaults. */
+export const HUB_INST_1 = process.env.SHARE_INST_1?.trim() || '';
+export const HUB_INST_2 = process.env.SHARE_INST_2?.trim() || '';
+
+/** Read a generated instance env synchronously ({} if absent or unsafe). */
+function readEnvFileSync(name: string): Record<string, string> {
+  if (!name || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name)) return {};
   try {
-    return parseDotEnv(await fs.readFile(path.join(WORKTREE_ROOT, `.env.${name}.local`), 'utf-8'));
+    return parseDotEnv(readFileSync(path.join(WORKTREE_ROOT, `.env.${name}.local`), 'utf-8'));
   } catch {
     return {};
   }
 }
 
-export interface ResolvedInstance {
+/** Public file-reader shape retained for browser/CLI helpers that await it. */
+export function readEnvFile(name: string): Promise<Record<string, string>> {
+  return Promise.resolve(readEnvFileSync(name));
+}
+
+interface LauncherRegistry {
+  name?: unknown;
+  frontend_port?: unknown;
+  backend_port?: unknown;
+  hub_url?: unknown;
+  email?: unknown;
+  env_file?: unknown;
+  backend_pid?: unknown;
+  frontend_pid?: unknown;
+}
+
+export interface LaunchedInstance {
   name: string;
   apiUrl: string;
   email: string;
-  /** This realm's `@sdk` namespace — its singletons + entity classes. */
-  sdk: SdkRealm;
+  env: Record<string, string>;
 }
 
-/** True when `.env.<name>.local` exists with a backend port (i.e. launched). */
-export async function instanceAvailable(name: string): Promise<boolean> {
-  const env = await readEnvFile(name);
-  return !!env.LOCAL_SERVER_PORT;
+function normalizeUrl(value: unknown): string {
+  return typeof value === 'string' ? value.replace(/\/$/, '') : '';
+}
+
+function pidIsLive(value: unknown): boolean {
+  const pid = Number(value);
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function canonicalIdentity(name: string): { email: string; password: string } | null {
+  const pair =
+    name === HUB_INST_1
+      ? { email: process.env.ALICE_EMAIL?.trim() || '', password: process.env.ALICE_PW || '' }
+      : name === HUB_INST_2
+        ? { email: process.env.BOB_EMAIL?.trim() || '', password: process.env.BOB_PW || '' }
+        : null;
+  return pair?.email && pair.password ? pair : null;
 }
 
 /**
- * Bring up an isolated SDK realm for the named instance and bootstrap it. Throws
- * if it isn't launched (caller should skip, like the hub tests skip when the hub
- * is down).
+ * Resolve a launcher-owned instance synchronously. No launch, network probe,
+ * retry, poll, or wait occurs here; a stale/mismatched identity fails closed.
  */
+export function resolveLaunchedInstance(name: string): LaunchedInstance | null {
+  const identity = canonicalIdentity(name);
+  if (!identity || !HUB_URL || HUB_INST_1 === HUB_INST_2) return null;
+
+  const env = readEnvFileSync(name);
+  const backendPort = env.LOCAL_SERVER_PORT;
+  const frontendPort = env.VITE_PORT;
+  if (
+    env.FLOW_INSTANCE !== name ||
+    !/^\d+$/.test(backendPort || '') ||
+    !/^\d+$/.test(frontendPort || '') ||
+    env.VITE_API_URL !== `http://localhost:${backendPort}` ||
+    normalizeUrl(env.FLOWPAD_HUB_URL) !== HUB_URL ||
+    env.FLOWPAD_CLOUD_USER_EMAIL !== identity.email ||
+    env.FLOWPAD_CLOUD_USER_PASSWORD !== identity.password
+  ) {
+    return null;
+  }
+
+  const flowHome = path.resolve(process.env.FLOW_HOME || path.join(homedir(), '.flow'));
+  let launcher: LauncherRegistry;
+  try {
+    launcher = JSON.parse(
+      readFileSync(path.join(flowHome, 'instances', name, 'launcher.json'), 'utf-8'),
+    ) as LauncherRegistry;
+  } catch {
+    return null;
+  }
+
+  const expectedEnvFile = path.join(WORKTREE_ROOT, `.env.${name}.local`);
+  const launcherEnvFile =
+    typeof launcher.env_file === 'string' ? path.resolve(launcher.env_file) : '';
+  if (
+    launcher.name !== name ||
+    Number(launcher.backend_port) !== Number(backendPort) ||
+    Number(launcher.frontend_port) !== Number(frontendPort) ||
+    normalizeUrl(launcher.hub_url) !== HUB_URL ||
+    launcher.email !== identity.email ||
+    launcherEnvFile !== expectedEnvFile ||
+    !pidIsLive(launcher.backend_pid) ||
+    !pidIsLive(launcher.frontend_pid)
+  ) {
+    return null;
+  }
+
+  return {
+    name,
+    apiUrl: `http://localhost:${backendPort}`,
+    email: identity.email,
+    env,
+  };
+}
+
+export interface ResolvedInstance extends LaunchedInstance {
+  /** This realm's `@sdk` namespace - its singletons + entity classes. */
+  sdk: SdkRealm;
+}
+
+/** True only for a canonical, matching, launcher-owned live instance. */
+export function instanceAvailable(name: string): boolean {
+  return resolveLaunchedInstance(name) !== null;
+}
+
+/** Bring up and bootstrap an isolated SDK realm for a validated instance. */
 export async function getInstance(name: string): Promise<ResolvedInstance> {
-  const env = await readEnvFile(name);
-  const port = env.LOCAL_SERVER_PORT;
-  if (!port) {
+  const launched = resolveLaunchedInstance(name);
+  if (!launched) {
     throw new Error(
-      `instance '${name}' not launched (no .env.${name}.local). Run: scripts/instance_ctl.sh launch ${name}`,
+      `hub instance '${name}' is not a matching live launcher-owned instance ` +
+        '(check SHARE_INST_1/2, canonical credentials, generated env, launcher identity, and PIDs)',
     );
   }
-  const apiUrl = `http://localhost:${port}`;
-  const email = env.FLOWPAD_CLOUD_USER_EMAIL || `${name}@local.test`;
 
-  // Point the next module realm at this backend, then re-evaluate the SDK graph
-  // (resetModules gives this instance its own dataManager/apiClient/ws/config).
-  (globalThis as any).__FLOWPAD_API_URL__ = apiUrl;
-  vi.resetModules();
-  const sdk: SdkRealm = await import('@sdk');
+  // The helper scopes the runtime override to module evaluation and owns the
+  // realm's socket until hub/_setup.ts disposes all realms from this file.
+  const { sdk } = await createSdkRealm(launched.apiUrl);
 
   const bootstrapInfo = await sdk.dataManager.bootstrap('localhost', true);
   await sdk.dataManager.loadTypes(bootstrapInfo.types || []);
-  // Best-effort: the skill flow resolves over HTTP; a WS hiccup (e.g. jsdom has
-  // no WebSocket) shouldn't fail bootstrap — live updates only.
+  // HTTP remains authoritative when the test DOM has no usable WebSocket.
   try {
     if (!sdk.connectionManager.connected) await sdk.connectionManager.connect();
   } catch {
     /* HTTP still works without the socket */
   }
 
-  return { name, apiUrl, email, sdk };
+  return { ...launched, sdk };
 }
 
-/** Find the pending invitation for `convId` on the receiver's freshly-synced
- *  local DB. `fetchConversations()` is the production hub catch-up (pulls the
- *  conversation + invitation lists from the hub into local SQL); without it
- *  `Invitation.query` only sees stale rows. Matches the EMBEDDED conversation
- *  id (the hub stamps `target_url_path` null but embeds `conversation`); a
- *  newest-unaccepted fallback is unsafe on a shared hub — stale/concurrent
- *  invitations to the same recipient make it accept the wrong conversation.
- *  Mirrors `matrix.bob`. */
+/** Find the exact pending invitation after the receiver's production catch-up. */
 export async function findPendingInvitation(inst: ResolvedInstance, convId: string): Promise<any> {
   await inst.sdk.fetchConversations();
   const all: any[] = await (inst.sdk.Invitation as any).query({ query: {} }, true);

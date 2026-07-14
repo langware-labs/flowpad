@@ -12,9 +12,9 @@
  *    This is the bare-shell analog of the agentic test's `os-status worker_alive`
  *    — a deterministic, HTTP-only recovery proof, independent of WS reconnection.
  *
- * Runs against the disposable `dev-1` instance so it never touches the main
- * :9007 backend. Skips unless dev-1 is launched
- * (`scripts/instance_ctl.sh launch dev-1`) and restarts it via instance_ctl.
+ * Runs only against the explicitly selected disposable FLOW_INSTANCE. The
+ * launcher registry must match that name + backend port and hold a live backend
+ * PID before this suite can relaunch the instance via instance_ctl.
  *
  * NOTE on timeout: this genuinely restarts a server (instance_ctl relaunch + a
  * ~5s-interval watchdog respawn), which is ~tens of seconds — the long test
@@ -23,25 +23,48 @@
  */
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { v4 as uuidv4 } from 'uuid';
+import * as sdk from '@sdk';
+import { apiTestSetup } from '../utils/test-utils';
 
+const INSTANCE = process.env.FLOW_INSTANCE || '';
 const REPO_ROOT = path.resolve(__dirname, '../../..');
-const ENV_FILE = path.join(REPO_ROOT, '.env.dev-1.local');
+const ENV_FILE = path.join(REPO_ROOT, `.env.${INSTANCE}.local`);
+const LAUNCHER = path.join(os.homedir(), `.flow/instances/${INSTANCE}/launcher.json`);
 const PORT = (() => {
   if (!existsSync(ENV_FILE)) return null;
   const m = readFileSync(ENV_FILE, 'utf8').match(/^LOCAL_SERVER_PORT=(\d+)/m);
   return m ? m[1] : null;
 })();
 
-// "Skips unless dev-1 is launched": the env file alone is not enough — dev-1 may
-// be registered but its backend down (the launcher leaves .env.dev-1.local behind
-// after a kill). Probe liveness so a down dev-1 SKIPS cleanly instead of failing
-// beforeAll's bootstrap. The test genuinely needs a running dev-1 to restart.
-const DEV1_LIVE = (() => {
-  if (!PORT) return false;
+function launcherMatchesLiveBackend(): boolean {
+  if (!INSTANCE || !PORT || !existsSync(LAUNCHER)) return false;
+  try {
+    const launcher = JSON.parse(readFileSync(LAUNCHER, 'utf8')) as Record<string, unknown>;
+    const backendPid = Number(launcher.backend_pid);
+    if (
+      launcher.name !== INSTANCE ||
+      Number(launcher.backend_port) !== Number(PORT) ||
+      !Number.isInteger(backendPid) ||
+      backendPid <= 0
+    ) {
+      return false;
+    }
+    process.kill(backendPid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// The registry proves instance identity and PID liveness; this existing probe
+// additionally proves the selected backend is ready before the suite starts.
+const INSTANCE_READY = (() => {
+  if (!launcherMatchesLiveBackend()) return false;
   try {
     execFileSync('curl', ['-sf', '--max-time', '2', `http://localhost:${PORT}/api/v1/graph/bootstrap`], {
       stdio: 'ignore',
@@ -79,10 +102,9 @@ function waitForEcho(manager: any, shellId: string, keyword: string, timeoutMs: 
   });
 }
 
-const suite = DEV1_LIVE ? describe : describe.skip;
+const suite = INSTANCE_READY ? describe : describe.skip;
 
-suite('Bare PTY recovered by backend watchdog after server restart (dev-1)', () => {
-  let sdk: any;
+suite(`Bare PTY recovered by backend watchdog after server restart (instance=${INSTANCE || 'unset'})`, () => {
   let manager: any;
   let cn: any;
   let cnId: string;
@@ -93,18 +115,17 @@ suite('Bare PTY recovered by backend watchdog after server restart (dev-1)', () 
   // `attach` never creates a PTY — it returns `reattached` only when the handle
   // exists, so it's our read-only probe that the watchdog rebuilt the shell.
   const attach = () =>
-    sdk.apiClient.post(termUrl('attach'), { shell_id: shellId, pty_id: shellId, connection_id: manager.id, rows: 24, cols: 80 });
+    sdk.apiClient.post(termUrl('attach'), {
+      shell_id: shellId,
+      pty_id: shellId,
+      connection_id: manager.id,
+      rows: 24,
+      cols: 80,
+    });
 
   beforeAll(async () => {
-    // Realm: point the SDK graph at dev-1's backend before importing it.
-    (globalThis as any).__FLOWPAD_API_URL__ = `http://localhost:${PORT}`;
-    vi.resetModules();
-    sdk = await import('@sdk');
-
-    const info = await sdk.dataManager.bootstrap('localhost', true);
-    await sdk.dataManager.loadTypes(info.types || []);
+    await apiTestSetup();
     manager = sdk.ConnectionManager.getInstance();
-    if (!manager.connected) await manager.connect();
 
     cn = new sdk.ComputeNode({
       name: 'pty-restart-node',
@@ -135,7 +156,7 @@ suite('Bare PTY recovered by backend watchdog after server restart (dev-1)', () 
 
     // 3. Restart the backend (synchronous; kills the PTY children + clears the
     //    in-memory PtyState). The fresh backend boots the recovery watchdog.
-    execFileSync('scripts/instance_ctl.sh', ['launch', 'dev-1'], { cwd: REPO_ROOT, stdio: 'ignore' });
+    execFileSync('scripts/instance_ctl.sh', ['launch', INSTANCE], { cwd: REPO_ROOT, stdio: 'ignore' });
 
     // 4. Re-init the compute node provider so the PTY can rebind on the node.
     await cn.setup();

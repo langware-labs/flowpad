@@ -11,9 +11,9 @@
  *
  * Isolation, two layers (see `prepareCleanRealm`):
  *  • SDK module singletons (sdkConfig/dataManager/apiClient/connectionManager/
- *    dataContext/initPromise/…) ARE fresh per instance — `vi.resetModules()` +
- *    re-`import('@sdk')` rebuilds the graph, and `load_config()` binds it to this
- *    backend via `globalThis.__FLOWPAD_API_URL__`.
+ *    dataContext/initPromise/…) ARE fresh per instance — `createSdkMainRealm`
+ *    rebuilds the graph, scopes config evaluation to this backend, and returns
+ *    an explicit disposal handle.
  *  • The jsdom `window`/`globalThis`/`localStorage` is ONE object shared by all
  *    iterations (single worker). `initSdk` reads `localStorage`/`window.location`
  *    and writes `window.appReady`/`window.context`, so we explicitly clear that
@@ -30,6 +30,7 @@
  */
 import { afterAll, describe, expect, it } from 'vitest';
 import { launchInstance, killInstance, prepareCleanRealm } from './_backend_lifecycle';
+import type { OwnedSdkMainRealm } from '../_sdk_realm';
 
 const RUNS = 10;
 const results: Array<{ run: number; name: string; ok: boolean; launchMs?: number; initMs?: number; note?: string }> = [];
@@ -49,8 +50,10 @@ describe('init-sdk benchmark (fresh instance per timing)', () => {
         return;
       }
 
+      let realm: OwnedSdkMainRealm | undefined;
       try {
-        const { sdk, main } = await prepareCleanRealm(port);
+        realm = await prepareCleanRealm(port);
+        const { sdk, main } = realm;
 
         const tInit = performance.now();
         await main.initSdk(); // the real app-startup init (errors are swallowed inside)
@@ -69,6 +72,7 @@ describe('init-sdk benchmark (fresh instance per timing)', () => {
         results.push({ run: i, name, ok: false, launchMs, note: `init sdk threw: ${(err as Error).message}` });
         expect.soft(err, 'init sdk should not throw').toBeUndefined();
       } finally {
+        realm?.dispose();
         await killInstance(name);
       }
     });

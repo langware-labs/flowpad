@@ -1,24 +1,17 @@
 /**
- * Resolve a LIVE backend for the headless tests — no mocks, ever.
+ * Resolve the explicit, disposable FLOW_INSTANCE selected for headless tests.
  *
- * Order of preference:
- *   1. An `instance_ctl` instance (default `dev-1`) if it's been launched —
- *      `.env.<name>.local` carries its `LOCAL_SERVER_PORT`. This is the isolated,
- *      reproducible target (own DB + hub user), matching the hub harness.
- *   2. The default dev backend from the repo-root `.env.local`
- *      (`LOCAL_SERVER_PORT`) — i.e. whatever `uv run -m flow_sdk.server.run` is
- *      serving.
- *
- * Either way we health-ping `/health/status` before returning; if nothing is
- * reachable we return `null` and the test skips itself (the same posture the hub
- * tests take when the hub is down — a smoke test must not fail just because no
- * backend happens to be running locally).
+ * Headless tests write real entities, so they must never guess a developer
+ * instance or fall back to the user's default backend. The generated env file,
+ * launcher registry, live launcher PID, and bootstrap response must all agree on
+ * the same named instance before a test may touch it.
  */
 import { promises as fs } from 'node:fs';
+import { homedir } from 'node:os';
 import * as path from 'node:path';
 import { parseDotEnv } from '../hub/_hub';
 
-// ui/tests/headless → repo root (where .env.local and .env.<name>.local live).
+// ui/tests/headless → repo root (where instance_ctl writes .env.<name>.local).
 const REPO_ROOT = path.resolve(__dirname, '../../..');
 
 async function readEnvFile(file: string): Promise<Record<string, string>> {
@@ -29,15 +22,44 @@ async function readEnvFile(file: string): Promise<Record<string, string>> {
   }
 }
 
-async function isHealthy(apiUrl: string): Promise<boolean> {
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+async function readLauncher(instanceName: string): Promise<Record<string, unknown> | null> {
+  const flowHome = path.resolve(process.env.FLOW_HOME || path.join(homedir(), '.flow'));
+  const launcherPath = path.join(flowHome, 'instances', instanceName, 'launcher.json');
   try {
-    const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 2000);
-    const res = await fetch(`${apiUrl}/health/status`, { signal: ctrl.signal });
-    clearTimeout(t);
-    return res.ok;
+    const parsed: unknown = JSON.parse(await fs.readFile(launcherPath, 'utf-8'));
+    return isRecord(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function launcherPidIsLive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
   } catch {
     return false;
+  }
+}
+
+async function hasReadyBootstrap(apiUrl: string): Promise<boolean> {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 2000);
+  try {
+    const res = await fetch(`${apiUrl}/api/v1/graph/bootstrap`, { signal: ctrl.signal });
+    if (!res.ok) return false;
+    const payload: unknown = await res.json();
+    if (!isRecord(payload)) return false;
+    const data = isRecord(payload.data) ? payload.data : payload;
+    return Array.isArray(data.types) && data.types.length > 0;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(t);
   }
 }
 
@@ -47,31 +69,33 @@ export interface LiveBackend {
   source: string;
 }
 
-/**
- * Return the first reachable backend, or `null` if none is up.
- * Pass an explicit instance name to prefer it (default `dev-1`).
- */
-export async function resolveLiveBackend(instanceName = 'dev-1'): Promise<LiveBackend | null> {
-  const candidates: Array<{ apiUrl: string; source: string }> = [];
-
+/** Return the selected launched backend, or null when any identity check fails. */
+export async function resolveLiveBackend(instanceName: string): Promise<LiveBackend | null> {
+  if (!instanceName) return null;
   const inst = await readEnvFile(`.env.${instanceName}.local`);
-  if (inst.LOCAL_SERVER_PORT) {
-    candidates.push({
-      apiUrl: `http://localhost:${inst.LOCAL_SERVER_PORT}`,
-      source: `instance ${instanceName} (.env.${instanceName}.local)`,
-    });
+  const port = inst.LOCAL_SERVER_PORT;
+  if (inst.FLOW_INSTANCE !== instanceName || !port || !/^\d+$/.test(port)) return null;
+
+  const launcher = await readLauncher(instanceName);
+  if (!launcher) return null;
+  const backendPid = Number(launcher.backend_pid);
+  const expectedEnvFile = path.join(REPO_ROOT, `.env.${instanceName}.local`);
+  const launcherEnvFile = typeof launcher.env_file === 'string' ? path.resolve(launcher.env_file) : '';
+  if (
+    launcher.name !== instanceName ||
+    Number(launcher.backend_port) !== Number(port) ||
+    launcherEnvFile !== expectedEnvFile ||
+    !Number.isInteger(backendPid) ||
+    backendPid <= 0 ||
+    !launcherPidIsLive(backendPid)
+  ) {
+    return null;
   }
 
-  const root = await readEnvFile('.env.local');
-  if (root.LOCAL_SERVER_PORT) {
-    candidates.push({
-      apiUrl: `http://localhost:${root.LOCAL_SERVER_PORT}`,
-      source: 'default dev backend (.env.local)',
-    });
-  }
-
-  for (const c of candidates) {
-    if (await isHealthy(c.apiUrl)) return c;
-  }
-  return null;
+  const apiUrl = `http://localhost:${port}`;
+  if (!(await hasReadyBootstrap(apiUrl))) return null;
+  return {
+    apiUrl,
+    source: `FLOW_INSTANCE=${instanceName} (.env.${instanceName}.local + launcher.json)`,
+  };
 }

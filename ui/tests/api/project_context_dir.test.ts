@@ -13,12 +13,13 @@
  * Runs against a fresh, isolated backend instance (own data dir + port, no hub,
  * no frontend) so it is CI-safe and never touches the dev backend.
  */
-import { type ChildProcess, spawn } from 'node:child_process';
+import { type ChildProcess, execFileSync, spawn } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { createSdkRealm } from '../_sdk_realm';
 
 const REPO_ROOT = path.resolve(__dirname, '../../..');
 const INSTANCE = process.env.TEST_INSTANCE || 'ctxfast';
@@ -26,6 +27,7 @@ const PORT = Number(process.env.TEST_PORT || 6081);
 
 let proc: ChildProcess | undefined;
 let sdk: any;
+let disposeSdkRealm: (() => void) | undefined;
 let tmpRoot = '';
 let contextDir = '';
 
@@ -47,19 +49,23 @@ async function waitHealthy(port: number, budgetMs: number): Promise<boolean> {
 
 beforeAll(async () => {
   const logPath = `/tmp/project_context_dir.${INSTANCE}.log`;
-  const logFd = (await fs.open(logPath, 'w')).fd;
-  proc = spawn('uv', ['run', '-m', 'flow_sdk.server.run'], {
-    cwd: REPO_ROOT,
-    env: {
-      ...process.env,
-      FLOW_INSTANCE: INSTANCE,
-      LOCAL_SERVER_PORT: String(PORT),
-      MINIHUB_RELOAD: 'False',
-      FLOWPAD_SKIP_DOTENV: 'true',
-      FLOWPAD_SKIP_LOCK: 'true',
-    },
-    stdio: ['ignore', logFd, logFd],
-  });
+  const logHandle = await fs.open(logPath, 'w');
+  try {
+    proc = spawn('uv', ['run', '-m', 'flow_sdk.server.run'], {
+      cwd: REPO_ROOT,
+      env: {
+        ...process.env,
+        FLOW_INSTANCE: INSTANCE,
+        LOCAL_SERVER_PORT: String(PORT),
+        MINIHUB_RELOAD: 'False',
+        FLOWPAD_SKIP_DOTENV: 'true',
+        FLOWPAD_SKIP_LOCK: 'true',
+      },
+      stdio: ['ignore', logHandle.fd, logHandle.fd],
+    });
+  } finally {
+    await logHandle.close();
+  }
   const up = await waitHealthy(PORT, 60_000);
   if (!up) throw new Error(`backend '${INSTANCE}' did not come up on :${PORT} — see ${logPath}`);
 
@@ -75,14 +81,15 @@ beforeAll(async () => {
     '---\nname: ctx_skill\ndescription: dummy context-folder skill\n---\n\nHello from a context folder.\n',
   );
 
-  (globalThis as any).__FLOWPAD_API_URL__ = `http://localhost:${PORT}`;
-  vi.resetModules();
-  sdk = await import('@sdk');
+  const realm = await createSdkRealm(`http://localhost:${PORT}`);
+  sdk = realm.sdk;
+  disposeSdkRealm = realm.dispose;
   const info = await sdk.dataManager.bootstrap('localhost', true);
   await sdk.dataManager.loadTypes(info.types || []);
 }, 90_000);
 
 afterAll(async () => {
+  disposeSdkRealm?.();
   proc?.kill('SIGTERM');
   if (tmpRoot) await fs.rm(tmpRoot, { recursive: true, force: true }).catch(() => {});
 });
@@ -136,8 +143,15 @@ describe('project context folders (include_dirs)', () => {
     const project = await new sdk.Project({ name: `ctxproj2-${Date.now()}` }).save();
     const sharedDir = path.join(tmpRoot, 'shared-ctx');
     await fs.mkdir(sharedDir, { recursive: true });
+    execFileSync('git', ['init', '--quiet'], { cwd: sharedDir });
+    execFileSync(
+      'git',
+      ['remote', 'add', 'origin', 'https://github.com/flowpad-e2e/context-fixture.git'],
+      { cwd: sharedDir },
+    );
 
-    // Shared scope: same derived include_dirs surface, different bucket.
+    // Shared scope requires a transportable origin. The local repository and
+    // synthetic remote exercise real git-origin detection without network I/O.
     await project.addContextDir(sharedDir, 'shared');
     expect(project.include_dirs).toContain(sharedDir);
     const reloaded = await sdk.Project.getById(project.id);
