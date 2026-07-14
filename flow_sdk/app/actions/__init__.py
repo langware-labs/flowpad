@@ -7,6 +7,7 @@ from . import execute_prompt
 from . import task_receive_action
 from . import flow_message_action
 from . import message_attachment_action
+from . import git_share_preflight_action
 from . import share_action
 from . import context_share_action
 from . import context_resolve_action

@@ -2981,6 +2981,8 @@ async def _upsert_hub_conversation_metadata(
             payload["created_by"] = hub_conv["initiated_by"]
         if hub_conv.get("message_status_visible") is not None:
             payload["message_status_visible"] = bool(hub_conv["message_status_visible"])
+        if hub_conv.get("git_sharing_enabled") is not None:
+            payload["git_sharing_enabled"] = bool(hub_conv["git_sharing_enabled"])
         # Carry the hub's updated_date so the local row records the hub
         # timestamp — the LWW decision point that lets conversation-list detect
         # "this conversation changed" by comparing parent updated_date alone,
@@ -3036,6 +3038,11 @@ async def _upsert_hub_conversation_metadata(
         hub_conv["message_status_visible"]
     ):
         existing.message_status_visible = bool(hub_conv["message_status_visible"])
+        changed = True
+    if hub_conv.get("git_sharing_enabled") is not None and existing.git_sharing_enabled != bool(
+        hub_conv["git_sharing_enabled"]
+    ):
+        existing.git_sharing_enabled = bool(hub_conv["git_sharing_enabled"])
         changed = True
     if not existing.remote:
         existing.remote = True
