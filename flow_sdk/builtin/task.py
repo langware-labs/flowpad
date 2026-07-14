@@ -1,11 +1,10 @@
 from datetime import datetime
-from flow_sdk._compat import StrEnum
-from typing import Any, ClassVar, Dict, List, Optional
+from typing import Any, List, Optional
 
+from flow_sdk._compat import StrEnum
 from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.builtin.git_origin import GitOrigin
 from flow_sdk.core import Entity
-from flow_sdk.db.drivers.db_base_record import TypeId
 
 
 class TaskEventType(StrEnum):
@@ -23,6 +22,11 @@ class TaskType(StrEnum):
     TASK = "Task"
     ANALYSIS = "analysis"
     SKILL_CREATION = "skill_creation"
+
+
+class TaskKind(StrEnum):
+    STANDARD = "standard"
+    GROUP = "group"
 
 
 class Task(Entity):
@@ -43,6 +47,15 @@ class Task(Entity):
     reporter: Optional[str] = APIField(None)
     workspace_id: Optional[str] = APIField(None)  # Should be a reference to organisation entity
     task_type: str = APIField(TaskType.TASK)
+    # Group tasks: ``group`` = the overview task that owns one child ("member
+    # task") per contacts-group member; children stay ``standard``.
+    kind: str = APIField(TaskKind.STANDARD)
+    # Group-task parent pointer; "" = top-level. Children own only their
+    # status — every display field resolves from the parent at render time.
+    parent_id: str = APIField("")
+    # The member's deliverable (repo / PR / doc / app URL). Unlike
+    # ``git_origin`` this rides hub reflection, so it reaches the owner.
+    submission_url: Optional[str] = APIField(None)
     priority: Optional[str] = APIField(None)
     tags: List[str] = APIField([])
     shared_by_id: Optional[str] = APIField(None)

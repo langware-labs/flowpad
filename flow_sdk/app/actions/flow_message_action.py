@@ -132,9 +132,7 @@ async def _learn_normalized_participants(participants: list[dict]) -> int:
         # remote defaults False: a learned contact is a LOCAL mirror minted at a
         # local uuid5 id, not a hub entity at the same id — marking it remote
         # would wrongly route ops through hub-reflection.
-        contact = await User.upsert_contact(
-            user_id=user_id, email=email, name=name, picture=picture
-        )
+        contact = await User.upsert_contact(user_id=user_id, email=email, name=name, picture=picture)
         if contact is not None:
             upserted += 1
     return upserted
@@ -286,7 +284,10 @@ async def handle_open_flow_message(fm_id: str) -> ApiResponse:
 
     logger.warning(
         "[open_flow_message] fm_id=%s attachment_filename=%r conv_id=%s task_id=%s",
-        fm_id, attachment_filename, conversation_id, task_id,
+        fm_id,
+        attachment_filename,
+        conversation_id,
+        task_id,
     )
 
     return await handle_notification_deep_link(
@@ -2076,6 +2077,19 @@ async def inbox_bulk_update() -> ApiResponse:
 # ---------------------------------------------------------------------------
 
 
+# Membership-invitation targets that get a pre-accept local mirror. Exactly
+# the container types whose local entity displays by ``name`` and has no
+# on-disk asset folder — the only shape the {id, name, icon} mirror payload
+# fits (see the allowlist rationale at the call site).
+_PRE_ACCEPT_MIRROR_TYPES: frozenset[str] = frozenset(
+    {
+        BuiltinEntityType.ORGANIZATION.value,
+        BuiltinEntityType.TEAM.value,
+        BuiltinEntityType.PROJECT.value,
+    }
+)
+
+
 def _membership_cls(target_type: str | None):
     """Entity class for a membership target type (organization / team / project / …).
 
@@ -2111,17 +2125,26 @@ async def _materialize_membership_invitation(
     target_name = target.get("name")
     target_role = target.get("role")
 
-    # Mirror the target org/team so name/icon resolve locally (best-effort —
-    # the invitation row still renders from target_* even if this fails).
-    try:
-        cls = _membership_cls(target_type)
-        await materialize_remote_membership_entity(
-            cls,
-            {"id": target_id, "name": target_name, "icon": target.get("icon")},
-            someone_typeid,
-        )
-    except Exception as e:  # noqa: BLE001
-        logger.warning("[inv-materialize] membership target mirror failed: %s", e)
+    # Mirror the target org/team/project so name/icon resolve locally
+    # (best-effort — the invitation row still renders from target_* even if
+    # this fails). ALLOWLIST, not denylist: the mirror payload is just
+    # {id, name, icon}, which only fits the membership containers that
+    # display by ``name``. For anything else — task today; any title-only or
+    # folder-backed type tomorrow — it would birth a field-less husk row
+    # pre-accept (and, for asset types, mint an "untitled" folder on disk);
+    # the Invitation row alone carries the display name until accept
+    # materializes the real entity (e.g.
+    # ``materialize_accepted_task_invitation`` for tasks).
+    if target_type in _PRE_ACCEPT_MIRROR_TYPES:
+        try:
+            cls = _membership_cls(target_type)
+            await materialize_remote_membership_entity(
+                cls,
+                {"id": target_id, "name": target_name, "icon": target.get("icon")},
+                someone_typeid,
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.warning("[inv-materialize] membership target mirror failed: %s", e)
 
     fields = {
         "recipient_email": normalize_email(hub_inv.get("recipient_email")) or "",
@@ -2420,9 +2443,7 @@ async def _sync_remote_children(parent_tid: TypeId, child_type: str, someone_typ
     # expand=blobs: blob fields (e.g. comment raw_content) are db-excluded from the
     # hub row and served only on request — without this the pull materializes
     # children with EMPTY bodies (the live-push path carries them; catch-up must too).
-    children = await hub_get(
-        parent_etype, parent_tid.id, action=child_type, params={"expand": "blobs"}
-    )
+    children = await hub_get(parent_etype, parent_tid.id, action=child_type, params={"expand": "blobs"})
     child_list: list[dict] = []
     if isinstance(children, list):
         child_list = children
@@ -2448,9 +2469,7 @@ async def _sync_remote_children(parent_tid: TypeId, child_type: str, someone_typ
     return hub_ids
 
 
-async def _reconcile_deleted_children(
-    conv, child_type: str, hub_ids: set[str], someone_typeid: str | None
-) -> None:
+async def _reconcile_deleted_children(conv, child_type: str, hub_ids: set[str], someone_typeid: str | None) -> None:
     """Catch-up's delete half: prune local ``remote`` children of this
     conversation whose hub row is gone (id not in ``hub_ids``).
 
@@ -2584,7 +2603,9 @@ async def _rebind_orphan_children(conv, child_type: str, someone_typeid: str | N
             except Exception as e:  # noqa: BLE001
                 logger.warning(
                     "[subtree-sync] rebind %s-%s failed (non-fatal): %s",
-                    child_type, ent.id, e,
+                    child_type,
+                    ent.id,
+                    e,
                 )
 
 
@@ -2903,8 +2924,7 @@ async def _upsert_hub_conversation_metadata(
             try:
                 await _learn_normalized_participants(norm_roster)
             except Exception as learn_err:  # noqa: BLE001
-                logger.debug("[conv-upsert] address-book learn failed for conv=%s: %s",
-                             conv_id[:8], learn_err)
+                logger.debug("[conv-upsert] address-book learn failed for conv=%s: %s", conv_id[:8], learn_err)
     if existing is None:
         payload: dict = {"id": conv_id, "remote": True}
         for k in ("title", "participants", "remote_project_id", "remote_project_name", "shared_context_entities"):
@@ -3607,12 +3627,27 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
     # role — that IS the membership, no conversation/bundle to pull. Mirror the
     # target locally as remote=True so the Organization tab / member list shows
     # it immediately, and notify so the UI repaints.
-    if membership_target is not None:
+    if membership_target is not None and membership_target.target_type == BuiltinEntityType.TASK.value:
+        # Member-task invitation: pull the real task (+ its group parent) from
+        # the hub — the generic membership mirror below only carries name/icon
+        # and would materialize a husk.
+        try:
+            from flow_sdk.app.actions.group_task_action import (  # noqa: PLC0415
+                materialize_accepted_task_invitation,
+            )
+
+            child_task = await materialize_accepted_task_invitation(membership_target.target_id, someone_typeid)
+            if child_task is not None:
+                await child_task.notify_updated()
+        except Exception as e:  # noqa: BLE001
+            logger.warning("[invitation-accept] task target materialize failed: %s", e)
+    elif membership_target is not None:
         try:
             cls = _membership_cls(membership_target.target_type)
             from flow_sdk.app.actions.membership_sync import (  # noqa: PLC0415
                 materialize_remote_membership_entity,
             )
+
             target_payload = {
                 "id": membership_target.target_id,
                 "name": membership_target.target_name,

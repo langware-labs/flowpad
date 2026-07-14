@@ -357,7 +357,12 @@ function BrowseableRow({
   // absolutely-positioned compact toolbar when it appears
   // (h-5/w-5 buttons + gap-0.5 + px-0.5 + right-1). At rest the toolbar is
   // hidden, so the label keeps its full width.
-  const toolbarSpace = node.toolbar && node.toolbar.length > 0 ? node.toolbar.length * 22 + 6 : 0;
+  //
+  // Badge rows reserve the space PERMANENTLY (see the padding class below) —
+  // and always at least TWO button slots, so count badges line up across
+  // sibling rows whose toolbars differ (refresh-only vs refresh+add).
+  const toolbarSpace =
+    node.toolbar && node.toolbar.length > 0 ? Math.max(node.toolbar.length, node.badge ? 2 : 0) * 22 + 6 : 0;
 
   const handleDragStart = useCallback(
     (e: React.DragEvent) => {
@@ -465,7 +470,13 @@ function BrowseableRow({
         <div
           className={`flex min-w-0 flex-1 items-center gap-1 overflow-hidden ${
             toolbarSpace
-              ? 'transition-[padding] group-focus-within:pr-[var(--toolbar-space)] group-hover:pr-[var(--toolbar-space)]'
+              ? node.badge
+                ? // A badge sits right-aligned in this zone — reserve the
+                  // hover-toolbar slot PERMANENTLY so the badge doesn't jump
+                  // left when the toolbar fades in (git pills stay put while
+                  // the remove button appears beside them).
+                  'pr-[var(--toolbar-space)]'
+                : 'transition-[padding] group-focus-within:pr-[var(--toolbar-space)] group-hover:pr-[var(--toolbar-space)]'
               : ''
           }`}
           style={toolbarSpace ? ({ '--toolbar-space': `${toolbarSpace}px` } as React.CSSProperties) : undefined}

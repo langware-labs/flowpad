@@ -114,6 +114,28 @@ export function TaskBar() {
     );
   }, [tabFiltered, search]);
 
+  // ── Group-task nesting ──
+  // Member tasks (parent_id) nest under their parent's card; a child whose
+  // parent isn't in the loaded set (deleted / inaccessible) stays a top-level
+  // row (flat fallback). Children are grouped from the FULL task set so a
+  // member row shows regardless of its own tab bucket.
+  const loadedIds = useMemo(() => new Set(tasks.map((t) => t.id).filter(Boolean)), [tasks]);
+  const childrenByParent = useMemo(() => {
+    const m = new Map<string, Task[]>();
+    for (const t of tasks) {
+      if (t.parent_id && loadedIds.has(t.parent_id)) {
+        const arr = m.get(t.parent_id);
+        if (arr) arr.push(t);
+        else m.set(t.parent_id, [t]);
+      }
+    }
+    return m;
+  }, [tasks, loadedIds]);
+  const topLevelTasks = useMemo(
+    () => filteredTasks.filter((t) => !t.parent_id || !loadedIds.has(t.parent_id)),
+    [filteredTasks, loadedIds],
+  );
+
   const handleCreate = async () => {
     try {
       const task = await new Task({ title: 'Untitled task' }).save();
@@ -215,7 +237,9 @@ export function TaskBar() {
       {/* Header */}
       <div className="flex items-center justify-between border-b border-border p-3">
         <div className="flex items-center gap-2">
-          <h3 className="text-sm font-semibold"><Trans>Tasks</Trans></h3>
+          <h3 className="text-sm font-semibold">
+            <Trans>Tasks</Trans>
+          </h3>
           {tabFiltered.length > 0 && (
             <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
               {tabFiltered.length}
@@ -224,7 +248,7 @@ export function TaskBar() {
         </div>
         <div className="flex items-center gap-0.5">
           <button
-            onClick={handleCreate}
+            onClick={() => void handleCreate()}
             className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             title={t`New task`}
           >
@@ -290,12 +314,12 @@ export function TaskBar() {
             {/* Panel 1: Task list */}
             <div className="task-bar-panel">
               <div className="flex-1 space-y-0.5 overflow-y-auto p-2">
-                {filteredTasks.length === 0 ? (
+                {topLevelTasks.length === 0 ? (
                   <div className="task-bar-empty">
                     <span>No {selectedTab} tasks</span>
                   </div>
                 ) : (
-                  filteredTasks.map((task) => (
+                  topLevelTasks.map((task) => (
                     <TaskCard
                       key={task.id}
                       task={task}
@@ -305,6 +329,7 @@ export function TaskBar() {
                       bulkMode={bulkMode}
                       isSelected={!!(task.id && selectedIds.has(task.id))}
                       onToggleSelect={handleToggleSelect}
+                      memberTasks={task.id ? childrenByParent.get(task.id) : undefined}
                     />
                   ))
                 )}
@@ -500,7 +525,9 @@ export function Automations({
       {/* Header */}
       <div className="flex items-center justify-between border-b border-border p-3">
         <div className="flex items-center gap-2">
-          <h3 className="text-sm font-semibold"><Trans>Automations</Trans></h3>
+          <h3 className="text-sm font-semibold">
+            <Trans>Automations</Trans>
+          </h3>
           {filtered.length > 0 && (
             <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
               {filtered.length}
