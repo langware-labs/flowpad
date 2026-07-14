@@ -111,19 +111,22 @@ async def _maybe_mint_bookmark(ma: MessageAttachment, someone_typeid) -> None:
         logger.warning("[message_attachment] bookmark mint failed for %s", ma.asset_id, exc_info=True)
 
 
-async def _setup_after_install(ma: MessageAttachment, installed_root: str | None) -> dict | None:
+async def _setup_after_install(
+    ma: MessageAttachment, installed_root: str | None, *, auto_run: bool = True,
+) -> dict | None:
     """The per-type reception dispatch: what to SHOW post-install.
 
     A type with no ``setup_skill`` just opens the received entity — its target is
     built from ``(asset_type, asset_id)`` with no entity load (the common markdown/
     file case). Only a type that actually spawns a setup session loads the entity
-    and calls ``Entity.setup_on_receive``. Best-effort — a setup failure never
-    fails the install."""
+    and calls ``Entity.setup_on_receive``. ``auto_run=False`` forces that plain
+    open even for a setup-capable type — Git Download defers setup to the explicit
+    ``setup`` action. Best-effort — a setup failure never fails the install."""
     from flow_sdk.core.display_target import entity_target  # noqa: PLC0415
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
     info = SchemaRegistry.get(ma.asset_type)
-    if info is None or not getattr(info, "setup_skill", None):
+    if not auto_run or info is None or not getattr(info, "setup_skill", None):
         return entity_target(ma.asset_type, ma.asset_id, name=ma.name)
 
     cls = SchemaRegistry.get_entity_cls(ma.asset_type)
@@ -155,7 +158,12 @@ async def _finalize_install(
     ma.installed_at = datetime.now(UTC)
     await ma.save(someone_typeid, notify=True)
     await _maybe_mint_bookmark(ma, someone_typeid)
-    show = await _setup_after_install(ma, installed_root)
+    # Git Download clones + indexes only — setup NEVER runs automatically (it's a
+    # separate, explicit action; see ``handle_attachment_setup``). Copy-mode
+    # install keeps its existing behavior: setup-capable types spawn setup here.
+    show = await _setup_after_install(
+        ma, installed_root, auto_run=ma.transfer_mode != TransferMode.GIT.value,
+    )
     return ApiSuccessResponse(data={"entity": ma, "show": show})
 
 
@@ -437,6 +445,28 @@ async def handle_attachment_install(
 
 
 # ---------------------------------------------------------------------------
+# setup — explicit, optional, git only
+# ---------------------------------------------------------------------------
+
+
+async def handle_attachment_setup(attachment_id: str) -> ApiResponse:
+    """Run a received asset's optional setup — ONLY when the receiver clicks it.
+
+    Git Download clones + indexes but never auto-runs setup (see
+    ``_finalize_install``); this is the separate action the reception UI wires to
+    the ``TypeInfo.reception_verb`` button for setup-capable types. Returns the
+    ``show`` DisplayTarget (a spawned setup session, or the entity when the type
+    has no setup skill) so the FE routes it through ``openDisplayTarget``."""
+    ma = await _load_ma(attachment_id)
+    if ma is None:
+        return _not_found(attachment_id)
+    if not ma.scope:
+        return ApiFailResponse(message="download the asset before running setup", status_code=409)
+    show = await _setup_after_install(ma, ma.installed_root)
+    return ApiSuccessResponse(data={"entity": ma, "show": show})
+
+
+# ---------------------------------------------------------------------------
 # uninstall
 # ---------------------------------------------------------------------------
 
@@ -615,6 +645,18 @@ async def install_attachment_action() -> ApiResponse:
     except Exception as e:
         logger.error("[message_attachment] install error: %s", e, exc_info=True)
         return ApiFailResponse(message=f"install failed: {e}")
+
+
+@action.post(action_name="setup", types=["message_attachment"])
+async def setup_attachment_action() -> ApiResponse:
+    try:
+        request_info = get_current_request_info()
+        if not request_info or not request_info.target_entity_typeid:
+            return ApiFailResponse(message="No request info found", status_code=400)
+        return await handle_attachment_setup(str(request_info.target_entity_typeid.id))
+    except Exception as e:
+        logger.error("[message_attachment] setup error: %s", e, exc_info=True)
+        return ApiFailResponse(message=f"setup failed: {e}")
 
 
 @action.post(action_name="uninstall", types=["message_attachment"])

@@ -18,7 +18,6 @@ import {
   Artifact,
   dataManager,
   fsManager,
-  isCompleteGitOrigin,
   TypeId,
   type ConversationSendPayload,
 } from '@sdk';
@@ -70,12 +69,13 @@ export interface ShareSource {
    *  entity the receiver could favorite (assets/artifacts, not raw files or
    *  message forwards). */
   bookmarkable?: boolean;
-  /** For git-transfer shares: the local checkout that must be clean AND pushed
-   *  before sharing (the receiver clones from the remote, so uncommitted or
-   *  unpushed work would silently not travel — or break the clone). When set,
-   *  the dialog BLOCKS Share while the repo has uncommitted or unpushed
-   *  commits, directing the user to the git push button. */
-  gitGate?: { computeNodeId: string; workdir: string };
+  /** The asset TypeId to preflight for Git-sharing eligibility. Presence gates
+   *  the Share dialog's Git toggle (only asset/artifact sources set it — never
+   *  sessions, forwards, collaboration invites, or raw files). The backend
+   *  ``git_share_preflight`` action resolves whether this asset lives in a clean,
+   *  pushed Git worktree with a usable origin; the toggle enables only when it
+   *  does, and packing revalidates (never silently falls back to copy). */
+  gitPreflightRef?: TypeId;
   prepare(opts: SharePrepOptions): Promise<SharePrepPayload>;
 }
 
@@ -105,6 +105,9 @@ export function genericEntityShareSource(
     typeLabel: opts.typeLabel ?? typeId.type,
     defaultTitle: opts.label,
     bookmarkable: true,
+    // File-backed assets may be shared by their Git origin — the dialog's Git
+    // toggle preflights this ref; eligibility is decided backend-side.
+    gitPreflightRef: typeId,
     prepare: resolveOnce(() =>
       Promise.resolve({
         assetReferences: [ref],
@@ -115,33 +118,29 @@ export function genericEntityShareSource(
 }
 
 /**
- * Artifact share. Git-backed artifacts ride as a metadata declaration plus
- * GitOrigin; the receiver resolves the checkout from git when opening.
+ * Artifact share. When the sender opts into Git mode (the dialog's Git toggle),
+ * a Git-backed artifact rides as a metadata declaration plus GitOrigin and the
+ * receiver resolves the checkout from git on Download; otherwise it copies.
+ * Git mode is opt-in per conversation — never auto-forced from the artifact's
+ * origin — so artifacts and generic assets share one path.
  */
 export function artifactShareSource(
   artifact: Artifact,
   opts: { label?: string; typeLabel?: string } = {},
 ): ShareSource {
   const ref = artifact.typeId.toString();
-  const isGit = isCompleteGitOrigin(artifact.git_origin);
-  const shareConfig = isGit ? { transferMode: 'git' as const } : undefined;
-  // Git shares clone from the remote, so gate on a clean, pushed local checkout.
-  // Artifacts run on the local compute node; the artifact's own path is inside
-  // the repo (git status resolves the root from any subdir).
-  const gitGate =
-    isGit && artifact.path ? { computeNodeId: '@local', workdir: artifact.path } : undefined;
   return {
     label: opts.label ?? artifact.displayName ?? ref,
     typeLabel: opts.typeLabel ?? artifact.artifact_type ?? Artifact.type,
     defaultTitle: opts.label ?? artifact.displayName,
-    shareConfig,
     bookmarkable: true,
-    gitGate,
+    // Eligibility (clean + pushed worktree with a usable origin) is resolved by
+    // the backend preflight against this ref, not the artifact's cached origin.
+    gitPreflightRef: artifact.typeId,
     prepare: resolveOnce(() =>
       Promise.resolve({
         assetReferences: [ref],
         sharedContextEntities: [ref],
-        ...(shareConfig ? { shareConfig } : {}),
       }),
     ),
   };

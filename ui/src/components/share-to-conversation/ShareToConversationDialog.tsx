@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Check, MessageSquarePlus, Send } from 'lucide-react';
+import { Check, GitBranch, MessageSquarePlus, Send } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import {
+  Conversation,
   hasRemoteParticipant,
   normalizeEmail,
   type ConversationParticipant,
@@ -16,7 +17,8 @@ import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
 import { guardCloudAction } from '@src/services/privacy-guard';
 import { useLocalUser } from '@src/components/conversation/useLocalUser';
 import type { ShareSource } from '@src/hooks/share-sources';
-import { useGitShareGate } from '@src/hooks/use-git-share-gate';
+import { useGitSharePreflight } from '@src/hooks/use-git-share-preflight';
+import { WikiTip } from '@src/components/wiki-tip/WikiTip';
 import { ContactPicker } from '@src/components/contact-picker/ContactPicker';
 import { AddressBookButton } from '@src/components/contact-picker/AddressBookButton';
 import { FileAttachmentPicker } from '@src/components/conversation/FileAttachmentPicker';
@@ -140,6 +142,11 @@ export function ShareToConversationDialog({
   // pointing at the shared asset when it installs. Only offered for bookmarkable
   // sources (assets/artifacts).
   const [createBookmark, setCreateBookmark] = useState(false);
+  // Conversation-scoped "Git sharing" opt-in: when on (and the asset is
+  // eligible), the share rides the asset's Git origin instead of copied bytes.
+  // Initialized from the selected conversation (new → off) and committed on
+  // submit so later replies inherit it. Only meaningful for git-capable sources.
+  const [gitSharing, setGitSharing] = useState(false);
   // Which conversation row is selected (a conversation id, or NEW_CONVERSATION).
   // Click selects; double-click or the Share button commits.
   const [selected, setSelected] = useState<string>(NEW_CONVERSATION);
@@ -189,6 +196,7 @@ export function ShareToConversationDialog({
     setFiles([]);
     setAttachTranscript(true);
     setCreateBookmark(false);
+    setGitSharing(false);
     setSharedConversationId(null);
     setLocalError(null);
     resetDraft();
@@ -211,15 +219,41 @@ export function ShareToConversationDialog({
   const canStartNew = participants.length > 0 && (isRemote || !!effectiveProjectId) && titleOk;
   const hasContacts = participants.length > 0;
   const isNewSelected = selected === NEW_CONVERSATION;
-  // Git-transfer shares are blocked until the local checkout is clean + pushed.
-  const gitGate = useGitShareGate(source.gitGate, open);
+
+  // Git sharing: eligibility is asset-only (backend preflight); the toggle's
+  // initial value follows the selected conversation's remembered default.
+  const gitCapable = source.gitPreflightRef != null;
+  const preflight = useGitSharePreflight(source.gitPreflightRef, open && gitCapable);
+  // Re-init the toggle ONLY when the selection changes (a ref keeps the effect
+  // off the conversation list's identity, so a background refetch can't clobber
+  // a manual toggle within one selection).
+  const conversationsRef = useRef(conversations);
+  conversationsRef.current = conversations;
+  useEffect(() => {
+    if (!gitCapable) return;
+    const conv = conversationsRef.current.find((c) => c.id === selected);
+    setGitSharing(selected === NEW_CONVERSATION ? false : conv?.git_sharing_enabled ?? false);
+  }, [selected, gitCapable]);
+
+  // Git mode is on-and-eligible; blocked = on but not (yet) shareable. A blocked
+  // toggle stops the share entirely — we never silently downgrade to a copy.
+  const gitMode = gitCapable && gitSharing && preflight.available;
+  const gitBlocked = gitCapable && gitSharing && (preflight.loading || !preflight.available);
   const canShareSelected =
-    !gitGate.blocked && !gitGate.loading &&
+    !gitBlocked &&
     (isNewSelected ? canStartNew : conversations.some((c) => c.id === selected));
 
   const doShare = async (existingId: string | null) => {
     if (busy) return;
     setLocalError(null);
+    // Fail closed: Git is on but the asset isn't (yet) eligible. Never fall back
+    // to a silent copy — the sender must turn Git off to share it as a copy.
+    if (gitBlocked) {
+      setLocalError(
+        preflight.reason ?? t`This asset can't be shared with Git. Turn Git sharing off to send a copy.`,
+      );
+      return;
+    }
     if (isRemote) {
       const gate = await ensureCloudLogin();
       if (!gate.ok) {
@@ -239,11 +273,12 @@ export function ShareToConversationDialog({
         files,
       });
       // `createBookmark` can only be true when the checkbox rendered, which
-      // requires `source.bookmarkable` — no need to re-check it here.
-      const baseShareConfig = prepared.shareConfig ?? source.shareConfig;
-      const mergedShareConfig = createBookmark
-        ? { ...(baseShareConfig ?? {}), createBookmark: true }
-        : baseShareConfig;
+      // requires `source.bookmarkable` — no need to re-check it here. Git mode
+      // (on + eligible) sets the body transfer policy; it's independent of the
+      // Create Bookmark opt-in.
+      let mergedShareConfig = prepared.shareConfig ?? source.shareConfig;
+      if (gitMode) mergedShareConfig = { ...(mergedShareConfig ?? {}), transferMode: 'git' as const };
+      if (createBookmark) mergedShareConfig = { ...(mergedShareConfig ?? {}), createBookmark: true };
       payload = {
         text: note.trim(),
         files: prepared.files,
@@ -274,6 +309,20 @@ export function ShareToConversationDialog({
         convId = await send(target, payload);
       }
       if (convId) {
+        // Remember the Git-sharing choice on the conversation so later replies
+        // (from either side) inherit it. Best-effort — the share already
+        // succeeded; a failed preference write must not surface as a share error.
+        if (gitCapable) {
+          const conv =
+            conversations.find((c) => c.id === convId) ?? new Conversation({ id: convId });
+          if ((conv.git_sharing_enabled ?? false) !== gitSharing) {
+            try {
+              await conv.setGitSharingEnabled(gitSharing);
+            } catch (prefErr) {
+              console.warn('[share] failed to persist git_sharing_enabled', prefErr);
+            }
+          }
+        }
         setSharedConversationId(convId);
         onShared?.(convId);
       }
@@ -425,21 +474,57 @@ export function ShareToConversationDialog({
               </label>
             )}
 
-            {gitGate.blocked && (
-              <div
-                className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400"
-                data-testid="share-git-blocked"
-              >
-                {gitGate.dirtyFiles > 0 ? (
-                  <Trans>
-                    This app has {gitGate.dirtyFiles} uncommitted change(s). Commit and push before
-                    sharing — the recipient clones from git, so unsaved work won't travel.
-                  </Trans>
-                ) : (
-                  <Trans>
-                    This app has {gitGate.unpushed} unpushed commit(s). Push before sharing — the
-                    recipient clones from the remote. Use the git push button in the status bar.
-                  </Trans>
+            {gitCapable && (
+              <div className="flex flex-col gap-1.5">
+                <WikiTip wikiword="Git sharing" buttonLabel={t`What is Git sharing?`}>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={gitSharing}
+                    aria-label={t`Share using Git origin`}
+                    onClick={() => {
+                      // Can turn OFF anytime; can only turn ON when eligible.
+                      if (!gitSharing && !preflight.available) return;
+                      setGitSharing((v) => !v);
+                    }}
+                    disabled={busy || preflight.loading || (!preflight.available && !gitSharing)}
+                    data-testid="share-git-toggle"
+                    data-state={gitSharing ? 'on' : 'off'}
+                    className={cn(
+                      'flex items-center gap-2 rounded-md border px-2 py-1.5 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-50',
+                      gitSharing
+                        ? 'border-primary bg-primary/10 text-foreground'
+                        : 'border-input bg-background text-muted-foreground hover:bg-muted/50',
+                    )}
+                  >
+                    <GitBranch className="h-3.5 w-3.5 shrink-0" />
+                    <span className="flex-1 text-left">
+                      <Trans>Share using Git origin</Trans>
+                    </span>
+                    <span
+                      aria-hidden
+                      className={cn(
+                        'flex h-4 w-7 shrink-0 items-center rounded-full p-0.5 transition-colors',
+                        gitSharing ? 'justify-end bg-primary' : 'justify-start bg-muted-foreground/30',
+                      )}
+                    >
+                      <span className="h-3 w-3 rounded-full bg-background" />
+                    </span>
+                  </button>
+                </WikiTip>
+                {gitBlocked && (
+                  <div
+                    className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400"
+                    data-testid="share-git-blocked"
+                  >
+                    {preflight.loading ? (
+                      <Trans>Checking Git eligibility…</Trans>
+                    ) : (
+                      preflight.reason ?? (
+                        <Trans>This asset can't be shared with Git. Turn Git sharing off to send a copy.</Trans>
+                      )
+                    )}
+                  </div>
                 )}
               </div>
             )}
