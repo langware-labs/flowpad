@@ -1980,7 +1980,9 @@ class AgenticProcess(Entity):
         task.add_done_callback(lambda t: self._log_drain_task_exc(t, source))
 
     async def end_headless_turn(self, log_prefix: str) -> None:
-        """Shared tail of every driver's headless ``_run_turn`` finally.
+        """Shared tail of every headless turn's ``_run_turn`` finally — both the
+        driver background turns and the ``_http_prompt`` streaming (UI chat)
+        turn end here.
 
         Clears the ``_turn_in_flight`` override BEFORE the terminal
         ``notify_updated`` so the broadcast carries the real JSONL-derived
@@ -2000,14 +2002,10 @@ class AgenticProcess(Entity):
         # Push-reindex the files this headless turn wrote/edited (see
         # _schedule_turn_end_reindex — transcript-tail sourced, fire-and-forget).
         self._schedule_turn_end_reindex("headless")
-        # Turn-end default-name stamp, headless edition. The PTY seam for this
-        # lives in ``_flush_transcript_change``'s busy→idle edge, but that flush
-        # only runs for transcript-watcher-attached (PTY) processes — a headless
-        # turn ends HERE, so without this call a headless process never even
-        # attempts the stamp and stays nameless on every surface.
+        # Turn-end default-name stamp — a headless turn never reaches the PTY
+        # flush seam, so this tail is its only chance to name itself.
         try:
-            if await self.stamp_default_name():
-                await self.notify_updated()
+            await self.stamp_default_name()
         except Exception:
             logger.debug("%s: default-name stamp failed", log_prefix, exc_info=True)
         try:
@@ -2957,36 +2955,11 @@ class AgenticProcess(Entity):
                 # Signal end-of-stream to downstream consumers.
                 await handler.on_flow_data(None)
                 unregister_prompt_worker(self.id, worker)
-                # Broadcast the turn's end (busy → False) to entity watchers.
-                # Every exit lands here — complete, crash, AND cancel-prompt
-                # kill — so the UI flips Stop→Send without waiting for a poll.
-                # Runs after the pop, outside the lock scope it matters for.
-                try:
-                    await self.notify_updated()
-                except Exception:
-                    logger.warning("prompt: end-of-turn notify_updated failed", exc_info=True)
-                # Push-reindex the files this streaming turn wrote/edited so their
-                # entities re-parse + broadcast (updated_date bump → FE body
-                # re-read). Fire-and-forget; transcript-tail sourced.
-                self._schedule_turn_end_reindex("http_prompt")
-                # Turn-end queue drain — EVERY exit of an HTTP streaming turn
-                # (complete, crash, AND cancel-prompt) lands here, and prompts
-                # enqueued mid-turn bail "not_ready" on their own enqueue edge;
-                # without this seam they'd park until the next enqueue/prompt.
-                # Mirrors the Python-path tail (``end_headless_turn``).
-                try:
-                    self._schedule_queue_drain("complete")
-                except Exception:
-                    logger.debug("prompt: turn-end drain schedule failed", exc_info=True)
-                # Turn-end default-name stamp for the streaming (UI chat) turn —
-                # this seam is the only turn-end a chat process hits (no PTY
-                # flush, no driver headless tail), so without it a chat process
-                # stays nameless on every surface. Non-pinning; notify on write.
-                try:
-                    if await self.stamp_default_name():
-                        await self.notify_updated()
-                except Exception:
-                    logger.debug("prompt: default-name stamp failed", exc_info=True)
+                # Shared turn-end tail (broadcast, reindex, default-name stamp,
+                # queue drain) — every exit lands here: complete, crash, AND
+                # cancel-prompt kill, so the UI flips Stop→Send without polling
+                # and mid-turn enqueued prompts don't park until the next edge.
+                await self.end_headless_turn("prompt")
 
         try:
             turn_task = asyncio.create_task(_run_turn())
@@ -5811,7 +5784,9 @@ class AgenticProcess(Entity):
         still replace it. Idempotent, first-writer-wins — a no-op once the process
         carries any name, when the user already pinned it (``auto_rename=False``),
         or before a session/subject exists (``get_worker_session_name`` returns
-        ``None`` until the transcript has a title). Returns True iff it wrote a name.
+        ``None`` until the transcript has a title). On a write it broadcasts the
+        entity and mirrors the tab itself, so callers just fire-and-forget it
+        from their turn-end seams. Returns True iff it wrote a name.
         """
         if (self.name or "").strip():
             return False
@@ -5819,23 +5794,23 @@ class AgenticProcess(Entity):
             return False
         if not self.session_id:
             return False
-        try:
-            from flow_sdk.builtin.worker_history import (  # noqa: PLC0415
-                WorkerType,
-                _normalize_worker_type,
-                get_worker_session_name,
-            )
+        from flow_sdk.builtin.worker_history import (  # noqa: PLC0415
+            WorkerType,
+            _normalize_worker_type,
+            get_worker_session_name,
+        )
 
-            # Only Claude carries an on-file subject; resolving transcript_path is an
-            # O(#project-dirs) scan, so skip it for Codex/Copilot (which would ignore
-            # it anyway — they title only through an owning-process name).
-            jsonl_path = self.transcript_path if _normalize_worker_type(self.worker_type) is WorkerType.CLAUDE else None
-            # prompt_fallback: headless (SDK-launched) sessions never get a
-            # slug/aiTitle on file, so without the first-user-prompt rung the
-            # stamp would no-op forever and every surface falls back to the
-            # "Claude Code tab" / id-fragment synthetics.
+        # Only Claude carries an on-file subject (and the first-prompt fallback);
+        # a Codex/Copilot process titles only through its own name, which the
+        # guard above just proved empty — nothing can resolve, so don't pay the
+        # per-flush resolver (a DB lookup) for it.
+        if _normalize_worker_type(self.worker_type) is not WorkerType.CLAUDE:
+            return False
+        try:
+            # prompt_fallback: see get_worker_session_name — headless sessions
+            # have no on-file title, so the first user prompt is the last rung.
             candidate = await get_worker_session_name(
-                self.worker_type, self.session_id, jsonl_path=jsonl_path, prompt_fallback=True
+                self.worker_type, self.session_id, jsonl_path=self.transcript_path, prompt_fallback=True
             )
         except Exception:
             logger.debug("AgenticProcess %s: default-name resolve failed", self.id, exc_info=True)
@@ -5853,6 +5828,12 @@ class AgenticProcess(Entity):
             from flow_sdk.builtin.tab import broadcast_tabs_changed  # noqa: PLC0415
 
             await broadcast_tabs_changed()
+        # Broadcast the entity itself so live name consumers (footer list, chat
+        # header) refresh — owned here so every stamp seam gets it for free.
+        try:
+            await self.notify_updated()
+        except Exception:
+            logger.debug("AgenticProcess %s: stamp notify failed", self.id, exc_info=True)
         logger.info("AgenticProcess %s: stamped default name %r", self.id, candidate[:80])
         return True
 
@@ -6422,19 +6403,12 @@ class AgenticProcess(Entity):
                 self._schedule_turn_end_reindex("flush")
             if not current_busy:
                 # Default-name stamp on ANY idle flush, not the busy→idle edge:
-                # each flush hydrates a FRESH AgenticProcess object, so
-                # ``prev_busy`` is None on its first (often only) flush and an
-                # edge-gated stamp never fires for headless/chat processes.
-                # Stamping on THIS object also prevents the trailing clobber —
-                # ``_emit_status_report`` above whole-row-saves this hydration,
-                # and a name-less hydration would wipe a name another object
-                # (e.g. the prompt request's turn-end stamp) just persisted.
-                # Cheap: no-ops on the ``name``/``auto_rename``/``session_id``
-                # guards once named; the resolve itself is a head/tail read.
-                # Non-pinning; notify on the write.
+                # each flush hydrates a fresh object, so ``prev_busy`` starts
+                # None and an edge gate would never fire. Naming THIS hydration
+                # also keeps ``_emit_status_report``'s whole-row save above from
+                # clobbering a name stamped elsewhere. No-op once named.
                 try:
-                    if await self.stamp_default_name():
-                        await self.notify_updated()
+                    await self.stamp_default_name()
                 except Exception:
                     logger.debug("AgenticProcess %s: default-name stamp failed", self.id, exc_info=True)
         except asyncio.CancelledError:
