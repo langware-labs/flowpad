@@ -144,6 +144,28 @@ def _asset_updated_epoch(record_type: str, src_path: str) -> float | None:
     return epoch
 
 
+# Fire-and-forget setup runs scheduled by ``Entity.setup_on_receive``. Held in a
+# module set so the event loop keeps a strong ref (a bare create_task can be GC'd
+# mid-run); discarded on completion.
+_RECEPTION_SETUP_TASKS: set = set()
+
+
+def _schedule_setup_prompt(ap, seed: str) -> None:
+    """Run ``ap.prompt(seed)`` in the background so the install request returns the
+    Vibe target immediately — the setup agent populates the display asynchronously."""
+    import asyncio  # noqa: PLC0415
+
+    async def _run() -> None:
+        try:
+            await ap.prompt(seed)
+        except Exception:
+            service_log.warn(f"[reception] setup prompt failed for {ap.id}", exc_info=True)
+
+    task = asyncio.create_task(_run(), name=f"setup-{ap.id[:8]}")
+    _RECEPTION_SETUP_TASKS.add(task)
+    task.add_done_callback(_RECEPTION_SETUP_TASKS.discard)
+
+
 class Entity(DBEntity):
     env_vars: SerializeAsAny[EntityEnvVars[EnvVar] | None] = Field(default=None)
     visitor_role: str | None = Field(default=None)
@@ -1223,6 +1245,73 @@ class Entity(DBEntity):
         re-declared on concrete entity classes.
         """
         return SchemaRegistry.get(self.get_type())
+
+    async def setup_on_receive(self, *, project_id: str | None = None, workdir: str | None = None) -> dict:
+        """Reception hook: the DisplayTarget to navigate to after this entity is
+        installed from a share.
+
+        Generic on the base entity — behavior comes from the type's
+        ``TypeInfo.setup_skill`` (declared next to the type, never branched here).
+        No skill ⇒ just open the received entity. A skill ⇒ spawn a headless Vibe
+        ``AgenticProcess`` seeded to run that skill against this entity and return
+        ITS target, so the receiver lands in the live Vibe session while the agent
+        sets the app up. The seed runs in the background (see
+        ``_schedule_setup_prompt``) so the install request returns immediately.
+        Best-effort: any spawn failure falls back to opening the entity itself.
+        """
+        from flow_sdk.core.display_target import _entity_payload  # noqa: PLC0415
+
+        skill = getattr(self.type_info, "setup_skill", None)
+        if not skill:
+            return _entity_payload(self)
+        return await self._spawn_setup_session(skill, project_id=project_id, workdir=workdir)
+
+    async def _setup_workdir(self, project_id: str | None) -> str | None:
+        """Resolve a workdir for a setup session: the entity's own folder (an
+        artifact's served ``path``) when it is a real directory, else the mounted
+        project root, else None."""
+        from pathlib import Path as _Path  # noqa: PLC0415
+
+        raw = getattr(self, "path", None)
+        if raw and _Path(str(raw)).is_dir():
+            return str(raw)
+        if project_id:
+            from flow_sdk.builtin.project import Project  # noqa: PLC0415
+            proj = await Project.get_one({"id": project_id})
+            mount = (getattr(proj, "fs_storage_mount_path", "") or "").strip() if proj else ""
+            return mount or None
+        return None
+
+    async def _spawn_setup_session(self, skill: str, *, project_id: str | None = None, workdir: str | None = None) -> dict:
+        """Spawn the headless Vibe setup process and return its DisplayTarget. Split
+        out of ``setup_on_receive`` so open-existing and install share one spawn."""
+        from flow_sdk.core.display_target import _entity_payload  # noqa: PLC0415
+
+        typeid_str = f"{self.get_type()}-{self.id}"
+        # SELF sentinel (skill type == setup_skill): run the received entity as its
+        # own skill; else run the declared built-in (e.g. "artifact-setup").
+        skill_name = (getattr(self, "name", None) or self.id) if skill == self.get_type() else skill
+        try:
+            from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess  # noqa: PLC0415
+            from flow_sdk.flowpad_types.enums import ProcessKind  # noqa: PLC0415
+
+            # ``project_id``/``workdir`` are binding-frozen — set in the ctor only.
+            ap = AgenticProcess(
+                workdir=workdir,
+                project_id=project_id,
+                target_typeid_str=(f"project-{project_id}" if project_id else typeid_str),
+                visible=False,
+                pty_mode=False,
+                process_type=ProcessKind.CHAT,
+                load_flowpad_assistant=True,
+                context_data={"source_artifact_id": self.id, "launched_from": "artifact_setup"},
+            )
+            await ap.save()
+            _schedule_setup_prompt(ap, f"Use the {skill_name} skill to set up {typeid_str}.")
+            return _entity_payload(ap)
+        except Exception:
+            service_log.warn(f"[reception] setup_on_receive spawn failed for {typeid_str}; opening entity", exc_info=True)
+            return _entity_payload(self)
 
     @property
     def frontmatter(self):
@@ -2663,6 +2752,25 @@ async def _http_unfavorite(self: Entity):
     return ApiSuccessResponse(data={"deleted": deleted, "favorited": False})
 
 
+async def _http_setup(self: Entity):
+    """Open / set up an already-materialized entity — the reception hook reused for
+    the open-an-existing surfaces (artifact favorites/cards/chips, skill run).
+
+    Returns the DisplayTarget to navigate to: ``setup_on_receive`` opens the entity
+    directly (no setup skill) or spawns a headless Vibe setup session and returns
+    ITS target. Project/workdir default to the entity's own binding; the caller may
+    override ``project_id`` (e.g. the conversation-mapped project)."""
+    from flow_sdk.responses.response import ApiSuccessResponse  # noqa: PLC0415
+    from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
+
+    request_info = get_current_request_info()
+    body = await request_info.get_post_data() if request_info is not None else {}
+    project_id = (body.get("project_id") if isinstance(body, dict) else None) or getattr(self, "project_id", None)
+    workdir = await self._setup_workdir(project_id)
+    show = await self.setup_on_receive(project_id=project_id, workdir=workdir)
+    return ApiSuccessResponse(data={"show": show})
+
+
 _action_registry.register(
     action_name="favorite",
     function_name="favorite",
@@ -2674,6 +2782,13 @@ _action_registry.register(
     action_name="unfavorite",
     function_name="unfavorite",
     handler=_http_unfavorite,
+    methods="post",
+    types="all",
+)
+_action_registry.register(
+    action_name="setup",
+    function_name="setup",
+    handler=_http_setup,
     methods="post",
     types="all",
 )

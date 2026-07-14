@@ -166,30 +166,64 @@ export function agenticProcessShareSource(
     defaultTitle: opts.defaultTitle ?? opts.label,
     supportsFiles: true,
     isProcess: true,
-    prepare: resolveOnce(async (o) => {
-      const proc = await dataManager
-        .getByTypeId<AgenticProcess>(new TypeId(AgenticProcess.type, typeId.id))
-        .catch(() => null);
-      const projectPath = (proc as { workdir?: string } | null)?.workdir ?? undefined;
+    prepare: resolveOnce((o) => prepareProcessTranscript(typeId, o)),
+  };
+}
 
-      let files = o.files ?? [];
-      const transcript = await loadOptionalTranscript(files, {
-        attach: o.attachTranscript !== false,
-        proc: proc ?? undefined,
-        projectPath,
-      });
-      files = transcript.files;
+/** Shared transcript prep for the AgenticProcess (session) shares: resolves the
+ *  process, optionally attaches the raw jsonl, and rides the ClaudeTranscript
+ *  (`claude_session-<id>`) as the chip + shared context. */
+async function prepareProcessTranscript(
+  typeId: TypeId,
+  o: SharePrepOptions,
+): Promise<SharePrepPayload> {
+  const proc = await dataManager
+    .getByTypeId<AgenticProcess>(new TypeId(AgenticProcess.type, typeId.id))
+    .catch(() => null);
+  const projectPath = (proc as { workdir?: string } | null)?.workdir ?? undefined;
 
-      const sessionId = proc?.session_id ?? null;
-      const transcriptRef = sessionId ? `claude_session-${sessionId}` : null;
-      const processRef = `${AgenticProcess.type}-${typeId.id}`;
-      return {
-        // The chip: the transcript when a session exists, else the process.
-        assetReferences: [transcriptRef ?? processRef],
-        sharedContextEntities: transcriptRef ? [transcriptRef, processRef] : [processRef],
-        files: files.length > 0 ? files : undefined,
-      };
-    }),
+  let files = o.files ?? [];
+  const transcript = await loadOptionalTranscript(files, {
+    attach: o.attachTranscript !== false,
+    proc: proc ?? undefined,
+    projectPath,
+  });
+  files = transcript.files;
+
+  const sessionId = proc?.session_id ?? null;
+  const transcriptRef = sessionId ? `claude_session-${sessionId}` : null;
+  const processRef = `${AgenticProcess.type}-${typeId.id}`;
+  return {
+    // The chip: the transcript when a session exists, else the process.
+    assetReferences: [transcriptRef ?? processRef],
+    sharedContextEntities: transcriptRef ? [transcriptRef, processRef] : [processRef],
+    files: files.length > 0 ? files : undefined,
+  };
+}
+
+/**
+ * Collaborate on the current vibe workspace: like {@link agenticProcessShareSource}
+ * (attaches the session transcript, offers the transcript checkbox) but framed as
+ * a collaboration — the user names what they want to collaborate on (`requiresTitle`).
+ * When no session process is active yet (`typeId` is null), falls back to a
+ * title-only invite with nothing attached, so the modal still works.
+ */
+export function collaborateShareSource(
+  typeId: TypeId | null,
+  opts: { label?: string } = {},
+): ShareSource {
+  return {
+    label: opts.label ?? 'Collaborate',
+    typeLabel: 'COLLABORATE',
+    requiresTitle: true,
+    // A process gives us a transcript to attach (+ the checkbox); without one
+    // the invite is title-only.
+    ...(typeId ? { supportsFiles: true, isProcess: true } : {}),
+    prepare: resolveOnce((o) =>
+      typeId
+        ? prepareProcessTranscript(typeId, o)
+        : Promise.resolve({ assetReferences: [], sharedContextEntities: [] }),
+    ),
   };
 }
 

@@ -38,6 +38,8 @@ INDEXABLE_TYPES: list[RecordType] = [
     RecordType.WHITEBOARD,
     RecordType.DATASET,
     RecordType.DECK_TEMPLATE,
+    RecordType.DECK,
+    RecordType.SPREADSHEET,
     RecordType.USAGE_REPORT,
     RecordType.ASSET_CLEANUP_REPORT,
 ]
@@ -86,6 +88,7 @@ def build_default_indexer() -> FSIndexer:
     from flow_sdk.fs_store.indexer.functions.codex_sessions import codex_sessions_fn
     from flow_sdk.fs_store.indexer.functions.copilot_sessions import copilot_sessions_fn
     from flow_sdk.fs_store.indexer.functions.dataset import dataset_fn
+    from flow_sdk.fs_store.indexer.functions.deck import deck_fn
     from flow_sdk.fs_store.indexer.functions.deck_template import deck_template_fn
     from flow_sdk.fs_store.indexer.functions.dynamic_workflows import dynamic_workflows_fn
     from flow_sdk.fs_store.indexer.functions.markdown import (
@@ -102,6 +105,7 @@ def build_default_indexer() -> FSIndexer:
     )
     from flow_sdk.fs_store.indexer.functions.prompt import prompt_project_fn
     from flow_sdk.fs_store.indexer.functions.skill import skill_fn
+    from flow_sdk.fs_store.indexer.functions.spreadsheet import spreadsheet_in_folder_fn
     from flow_sdk.fs_store.indexer.functions.spec import spec_project_fn
     from flow_sdk.fs_store.indexer.functions.task import task_fn
     from flow_sdk.fs_store.indexer.functions.todo import todo_fn
@@ -191,6 +195,7 @@ def build_default_indexer() -> FSIndexer:
     idx.add_function(RecordType.REAL_PROJECT_CWD, task_fn, RecordType.TASK)
     idx.add_function(RecordType.REAL_PROJECT_CWD, dataset_fn, RecordType.DATASET)
     idx.add_function(RecordType.REAL_PROJECT_CWD, deck_template_fn, RecordType.DECK_TEMPLATE)
+    idx.add_function(RecordType.REAL_PROJECT_CWD, deck_fn, RecordType.DECK)
     idx.add_function(RecordType.REAL_PROJECT_CWD, claude_hook_files_fn, RecordType.CLAUDE_HOOK_SOURCE)
     idx.add_function(RecordType.REAL_PROJECT_CWD, mcp_source_files_fn, RecordType.MCP_SERVER_SOURCE)
     idx.add_function(RecordType.REAL_PROJECT_CWD, command_fn, RecordType.COMMAND)
@@ -213,9 +218,11 @@ def build_default_indexer() -> FSIndexer:
     idx.add_function(RecordType.CWD_ROOT, project_folder_walker_fn, RecordType.FOLDER)
     idx.add_function(RecordType.CWD_ROOT, mcp_source_files_fn, RecordType.MCP_SERVER_SOURCE)
     idx.add_function(RecordType.CWD_ROOT, deck_template_fn, RecordType.DECK_TEMPLATE)
+    idx.add_function(RecordType.CWD_ROOT, deck_fn, RecordType.DECK)
 
     # FOLDER (transient scaffold emitted by project_folder_walker_fn) expanders
     idx.add_function(RecordType.FOLDER, markdown_in_folder_fn, RecordType.MARKDOWN)
+    idx.add_function(RecordType.FOLDER, spreadsheet_in_folder_fn, RecordType.SPREADSHEET)
     idx.add_function(RecordType.FOLDER, workflow_frontmatter_fn, RecordType.WORKFLOW)
     idx.add_function(RecordType.CWD_ROOT, claude_hook_files_fn, RecordType.CLAUDE_HOOK_SOURCE)
 

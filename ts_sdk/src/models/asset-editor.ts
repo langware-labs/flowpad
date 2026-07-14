@@ -16,6 +16,8 @@ export enum AssetEditor {
   WORKFLOW = 'workflow',
   WHITEBOARD = 'whiteboard',
   DECK_TEMPLATE = 'deck_template',
+  DECK = 'deck',
+  SPREADSHEET = 'spreadsheet', // CSV (editable) / XLSX (read-only) grid — entity-backed
   AGENT_TRACE = 'agent_trace',
   DYNAMIC_WORKFLOW = 'dynamic_workflow',
   USAGE_REPORT = 'usage_report',
@@ -27,6 +29,7 @@ export enum AssetEditor {
   IMAGE = 'image',
   VIDEO = 'video',
   AUDIO = 'audio',
+  PDF = 'pdf', // native browser render of a .pdf via <iframe>/<embed>
 }
 
 /** editor → record types it edits. `code` is file-only (no record type). */
@@ -47,6 +50,8 @@ export const EDITOR_TYPES: Record<AssetEditor, RecordType[]> = {
   [AssetEditor.WORKFLOW]: [RecordType.WORKFLOW],
   [AssetEditor.WHITEBOARD]: [RecordType.WHITEBOARD],
   [AssetEditor.DECK_TEMPLATE]: [RecordType.DECK_TEMPLATE],
+  [AssetEditor.DECK]: [RecordType.DECK],
+  [AssetEditor.SPREADSHEET]: [RecordType.SPREADSHEET],
   [AssetEditor.AGENT_TRACE]: [RecordType.AGENT_TRACE],
   [AssetEditor.DYNAMIC_WORKFLOW]: [RecordType.DYNAMIC_WORKFLOW],
   [AssetEditor.USAGE_REPORT]: [RecordType.USAGE_REPORT],
@@ -56,6 +61,7 @@ export const EDITOR_TYPES: Record<AssetEditor, RecordType[]> = {
   [AssetEditor.IMAGE]: [],
   [AssetEditor.VIDEO]: [],
   [AssetEditor.AUDIO]: [],
+  [AssetEditor.PDF]: [],
 };
 
 /** True for editors that render raw files and have no backing record type. */
@@ -85,6 +91,10 @@ export function isAssetEditor(v: string): v is AssetEditor {
 const EXT_TO_EDITOR: Record<string, AssetEditor> = {
   md: AssetEditor.MARKDOWN,
   markdown: AssetEditor.MARKDOWN,
+  // Tabular files — same dual routing as markdown (entity-backed AND
+  // extension-routed). XLSX opens read-only; CSV is editable.
+  csv: AssetEditor.SPREADSHEET,
+  xlsx: AssetEditor.SPREADSHEET,
   html: AssetEditor.HTML,
   htm: AssetEditor.HTML,
   ...Object.fromEntries([...IMAGE_EXTENSIONS].map((ext) => [ext, AssetEditor.IMAGE])),
@@ -95,6 +105,7 @@ const EXT_TO_EDITOR: Record<string, AssetEditor> = {
   wav: AssetEditor.AUDIO,
   m4a: AssetEditor.AUDIO,
   ogg: AssetEditor.AUDIO,
+  pdf: AssetEditor.PDF,
 };
 
 /** MCP-app suffix rule — `.mcp.html` needs a suffix check because its last-dot

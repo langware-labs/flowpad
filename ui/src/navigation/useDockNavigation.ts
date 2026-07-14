@@ -2,6 +2,7 @@ import { Layout } from '@sdk';
 import { defineGlobal } from '@sdk/utils';
 import { useMemo } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router';
+import { ViewType } from '@src/types/ViewType';
 import { DockPointer } from './DockPointer';
 import { NavigationActions } from './NavigationActions';
 import { detectLayout } from './url-builder';
@@ -68,6 +69,19 @@ export function useCurrentDock(): DockPointer | null {
     }
     return null;
   }, [location.pathname, location.search, params.viewType]);
+}
+
+/**
+ * True when the current URL is a vibe *home* surface — the bare home (no dock
+ * URL) or the HOME view (incl. the `vibeNoProcess` landing) — as opposed to a
+ * vibe workspace or any other dock. This is the single predicate for "is there
+ * no active session here worth preserving": consumed by `flow-page` to pick the
+ * home hero and by the project-open flow to decide whether switching a project
+ * should resume its last build process (it shouldn't, on home).
+ */
+export function useIsVibeHome(): boolean {
+  const currentDock = useCurrentDock();
+  return currentDock === null || currentDock.viewType === ViewType.HOME;
 }
 
 export function useDockNavigation(): UseDockNavigationReturn {

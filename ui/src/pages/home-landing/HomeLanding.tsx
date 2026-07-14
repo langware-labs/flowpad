@@ -196,7 +196,7 @@ export function HomeLanding() {
               </p>
               <div className="w-full">
                 <SessionInput
-                  placeholder={t`What would you like to build, ${firstName}?`}
+                  placeholder={t`What would you like to work on, ${firstName}?`}
                   value={draftPrompt}
                   onChange={setDraftPrompt}
                   allowAttachments

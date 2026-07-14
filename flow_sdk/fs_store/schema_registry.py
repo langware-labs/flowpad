@@ -204,6 +204,13 @@ _BUILTIN_DEFAULT_TYPES: list[str] = [
 # ---------------------------------------------------------------------------
 
 
+def humanize_type(type_name: str) -> str:
+    """``"agentic_process"`` → ``"Agentic Process"``. The generic title-caser used
+    as the fallback label when a type has no curated ``display_name`` — the Python
+    mirror of the frontend ``humanizeType`` (``ui/src/tabs/provider-meta.tsx``)."""
+    return " ".join(w[:1].upper() + w[1:] for w in type_name.replace("-", " ").replace("_", " ").split())
+
+
 @dataclass
 class TypeInfo:
     """Metadata for a single record/entity type."""
@@ -222,6 +229,11 @@ class TypeInfo:
     icon: str | None = None
     parent_type: str | None = None
     locations: list[str] = field(default_factory=list)
+    # UX-friendly label for the type (e.g. "Skills"). Presentational, surfaced to
+    # the FE via ``to_dict``; deliberately NOT in ``schema_hash`` so relabeling a
+    # type never forces a reindex. Read through ``get_display_name`` (falls back to
+    # ``humanize_type``).
+    display_name: str | None = None
 
     # --- Runtime refs (NOT in hash, NOT persisted) ---
     entity_cls: type | None = field(default=None, compare=False, repr=False)
@@ -287,6 +299,14 @@ class TypeInfo:
     # (the markdown-asset family); a ``.js``/``.py``/… asset overrides it so its
     # backing file matches the indexer's glob. Runtime-only.
     main_ext: str = ".md"
+    # Reception seam (runtime-only; not in the schema hash). ``setup_skill`` is the
+    # built-in skill that sets a received attachment of this type up in a Vibe
+    # session (``None`` ⇒ just open it; a value equal to ``type_name`` ⇒ run the
+    # received entity as its own skill). ``reception_verb`` is the receive CTA verb
+    # (label = ``"<reception_verb> the <typeLabel>"``). Read by
+    # ``Entity.setup_on_receive`` and surfaced to the FE via ``to_dict``.
+    setup_skill: str | None = None
+    reception_verb: str = "Open"
 
     def asset_ref_for(self, folder: Path) -> Path:
         """Where a folder-layout type's asset_ref points, given its folder.
@@ -372,6 +392,7 @@ class TypeInfo:
             "creatable": self.creatable,
             "api_visible": self.api_visible,
             "icon": self.icon,
+            "display_name": self.display_name,
             "parent_type": self.parent_type,
             "locations": self.locations,
             "main_subdir": self.main_subdir,
@@ -383,6 +404,11 @@ class TypeInfo:
             # every save) → a resolved-but-file-missing row can self-heal with a
             # single save. The editor uses this to rebuild an orphaned asset.
             "owns_main_ref": self.owns_main_ref,
+            # Reception seam — the FE reads these to render the receive CTA label
+            # (``"<reception_verb> the <typeLabel>"``) and to know a type sets up
+            # via a skill in Vibe.
+            "setup_skill": self.setup_skill,
+            "reception_verb": self.reception_verb,
             "schema_hash": self.schema_hash,
         }
 
@@ -398,6 +424,7 @@ class TypeInfo:
             creatable=data.get("creatable", False),
             api_visible=data.get("api_visible", False),
             icon=data.get("icon"),
+            display_name=data.get("display_name"),
             parent_type=data.get("parent_type"),
             locations=data.get("locations", []),
         )
@@ -521,6 +548,12 @@ class SchemaRegistry:
                         )
             if info.icon is not None:
                 existing.icon = info.icon
+            if info.display_name is not None:
+                existing.display_name = info.display_name
+            if info.setup_skill is not None:
+                existing.setup_skill = info.setup_skill
+            if info.reception_verb != "Open":
+                existing.reception_verb = info.reception_verb
             if info.creatable and not existing.creatable:
                 existing.creatable = True
             if info.browseable_by is not None and (
@@ -624,6 +657,16 @@ class SchemaRegistry:
     def get_icon(cls, type_name: str) -> str | None:
         info = cls.get(type_name)
         return info.icon if info else None
+
+    @classmethod
+    def get_display_name(cls, type_name: str) -> str:
+        """UX-friendly label for a type — curated ``TypeInfo.display_name`` when set,
+        else the generic title-caser ``humanize_type`` (parity with the frontend
+        ``humanizeType`` fallback)."""
+        info = cls.get(type_name)
+        if info and info.display_name:
+            return info.display_name
+        return humanize_type(type_name)
 
     @classmethod
     def browseable_by(cls, type_name: str) -> ViewMode | None:

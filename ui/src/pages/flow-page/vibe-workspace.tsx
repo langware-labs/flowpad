@@ -34,6 +34,7 @@ import { setActiveTabParent } from '@src/tabs/tab-parent-context';
 import { setupTabAndAdopt } from '@src/tabs/setup-tab-and-adopt';
 import { notify } from '@src/notifications/notify';
 import { WorkspaceChildStrip } from './workspace-child-strip';
+import { VibeCollaborateButton } from './VibeCollaborateButton';
 import { ContentPanel } from './content-panel/content-panel';
 import { createVibeProcessForProject, embedVibeAgent, launchVibeSessionForProject } from './use-start-vibe-session';
 import { ViewMode } from '@src/contexts/view-mode-context';
@@ -559,7 +560,10 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
               // built-in icon button (hidden by the function-form leadingSlot),
               // and tests use it as the vibe-workspace mount signal.
               data-testid="entity-execution-new"
-              className="inline-flex h-6 items-center gap-1 rounded-full border border-border px-2 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+              // Green (theme-aware): the primary "create" affordance stands out
+              // against the neutral "Recent" pill next to it, in both light and
+              // dark themes.
+              className="inline-flex h-6 items-center gap-1 rounded-full border border-green-500/30 bg-green-500/10 px-2 text-xs font-medium text-green-600 transition-colors hover:bg-green-500/20 hover:text-green-700 dark:text-green-400 dark:hover:text-green-300"
             >
               <Plus className="h-3 w-3" />
               {t`New`}
@@ -568,6 +572,17 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
           emptyStateText={t`What do you want to work on`}
           newSessionLabel={t`New build`}
           historyLabel={t`Build history`}
+          // Surface history as a first-class "Recent" pill sitting on the left
+          // next to the green "New" pill (not the bare icon on the right).
+          historyTriggerLabel={t`Recent`}
+          historyOnLeft
+          showProcessNameBar
+          afterHistorySlot={
+            <VibeCollaborateButton
+              projectId={project?.id ?? null}
+              sessionTypeId={activeProcess?.typeId ?? null}
+            />
+          }
           pastSessionsLabel={t`Past builds`}
           noPastSessionsLabel={t`No past builds`}
           defaultProjectId={project?.id ?? null}

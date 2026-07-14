@@ -31,6 +31,12 @@ class TypeMetadata:
 
     type: str
     icon: str | None = None
+    # UX-friendly, human-readable label for this type — used wherever the type
+    # is shown to the user as a word (e.g. the auto-bookmark folder title). Plural
+    # reads best for grouping surfaces ("Skills", "Documents"). None ⇒ callers
+    # fall back to ``humanize_type(type)`` (schema_registry). Presentational only —
+    # NOT part of the schema hash, so relabeling never triggers a reindex.
+    displayName: str | None = None
     # Minimum view mode at which this type appears in the Assets browser.
     # None ⇒ never browseable; visibility is cumulative (Standard ⊂ Advanced ⊂ Dev).
     browseable_by: ViewMode | None = None
@@ -87,11 +93,22 @@ class TypeMetadata:
     owns_main_ref: bool = False
     # Per-type pydantic metadata model — the FS↔DB schema (see TypeInfo.meta_model).
     meta_model: Any = None
+    # Reception seam: when a received attachment of this type is installed, the
+    # built-in skill (if any) that sets it up in a Vibe session. ``None`` ⇒ the
+    # received entity is simply opened (no setup agent). The sentinel value equal
+    # to ``type`` means "run the received entity as its own skill" (skill type).
+    # Read by ``Entity.setup_on_receive``.
+    setup_skill: str | None = None
+    # Reception seam: the verb the receive UI shows for this type — the CTA label
+    # is ``"<reception_verb> the <typeLabel>"`` (e.g. "Set up the app", "Run the
+    # skill", "Open the note"). Declared next to the type like ``main_subdir``.
+    reception_verb: str = "Open"
 
     def to_type_info(self) -> TypeInfo:
         return TypeInfo(
             type_name=str(self.type),
             icon=self.icon,
+            display_name=self.displayName,
             browseable_by=self.browseable_by,
             creatable=self.creatable,
             indexed_by_default=self.indexed_by_default,
@@ -112,6 +129,8 @@ class TypeMetadata:
             default_body_fn=self.default_body_fn,
             owns_main_ref=self.owns_main_ref,
             meta_model=self.meta_model,
+            setup_skill=self.setup_skill,
+            reception_verb=self.reception_verb,
             locations=["index"],
             metadata=self,
         )

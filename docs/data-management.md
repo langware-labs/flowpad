@@ -203,6 +203,13 @@ How SQLite Entities stay in sync with filesystem Records. Covers the "index" nam
 
 ---
 
+### [Content Invalidation](data-management/invalidation.md)
+The generic `file change → re-index → entity change → refresh` loop that keeps an open asset editor in sync when its backing file is written out-of-band (an agent turn, an external editor, or an explicit push). Covers the three re-index triggers (GET-time `check_and_refresh_record`, the `POST /fs-records/invalidate` push endpoint → `reindex_paths`, and the agentic turn-end seam fired from all three transports), inner-file→owning-folder resolution + forced fresh re-parse via `discover_record_by_path(..., notify=True)`, the `updated_date = max(folder mtime, inner-file mtime)` change token, and the frontend `useFSRefContent` `reloadKey` body re-read with its unsaved-edits dirty guard. The middle (sync + broadcast) is [Entity-Index Sync](data-management/entity-index-sync.md).
+
+**Key source files:** `flow_sdk/fs_store/reindex.py`, `flow_sdk/builtin/faas/fs_records_actions.py` (`_handle_fs_records_invalidate`, `discover_record_by_path`), `flow_sdk/builtin/agentic_process/agentic_process.py` (turn-end seams), `flow_sdk/core/entity/entity_model.py` (`_asset_updated_epoch`), `ui/src/hooks/use-fs-ref-content.ts`, `ui/src/utils/entity-reload-key.ts`
+
+---
+
 ### [Schema Registry](data-management/schema-registry.md)
 Unified type system for Record + Entity layers. `TypeInfo` per type (structural fields + hash + runtime refs + `locations`), `SchemaRegistry` class with O(1) registration/lookup, entity-side auto-registration via `DBBaseRecord.__init_subclass__` with merge semantics (record-side per-type behavior registered via `register_all` in `schema/type_info/`), per-type `type_info.json` hash-gated persistence, `TypeInfo.scans`/`append_scan`/`append_index` JSONL readers/writers, inheritance index for subtype discovery, convenience methods (`get_entity_cls`, `is_entity_type`, `get_all_entity_types`, `is_api_visible`, `is_creatable`, etc. — note there is no `get_record_cls`), duplicate entity registration guard (`ValueError` on `entity_cls` conflict, schema_registry.py:389), and index orchestration (`clear_index`, `get_index_status`). The Entity `type_registry` (`schema/entity_factory.py`) remains a backward-compat shim that delegates to SchemaRegistry. (The `fs_store/factory/type_registry.py` shim and the `SchemaRecord` class no longer exist.)
 
@@ -243,6 +250,8 @@ The webhook listener (`POST /api/v1/webhook/listen`) that drives real-time entit
 | How do I find all entities under a filesystem folder? | `Entity.assets_by_path(PathQueryOptions)` / `GET /api/v1/assets/by-path`. See [Record Model](data-management/record-model.md#asset_ref-and-folder-queries). |
 | How do I read/write Records via HTTP? | [ComputeNode fs-records Action](data-management/compute-node-fs-records.md) |
 | How does the DB stay in sync with disk? | [Entity-Index Sync](data-management/entity-index-sync.md) |
+| How does an open editor refresh when its file changes on disk? | [Content Invalidation](data-management/invalidation.md) |
+| How do I push a changed-file set to re-index (invalidate)? | `POST /fs-records/invalidate` — [Content Invalidation](data-management/invalidation.md#edge-1--the-trigger-what-causes-a-re-index) |
 | How does Claude Code write entity data? | [MCP Operations](data-management/mcp-operations.md) |
 | What types are registered and what are their schemas? | [Schema Registry](data-management/schema-registry.md) |
 | How do I scan or index all records? | [Scan and Discovery](data-management/scan-and-discovery.md) + [Schema Registry](data-management/schema-registry.md) |

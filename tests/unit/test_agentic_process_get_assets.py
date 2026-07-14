@@ -818,6 +818,40 @@ async def test_foreign_project_skill_under_home_is_hidden(tree):
 
 
 @pytest.mark.asyncio
+async def test_system_scope_assistant_skill_under_home_is_hidden(tree):
+    """A SYSTEM-scoped skill (the bundled flowpad_assistant assets) lives under
+    the real $HOME in prod — the pip package sits at
+    ``~/.local/share/uv/tools/flowpad/.../flowpad_assistant/.claude/skills/`` —
+    so the user_home prefix swallows it. Like the foreign-project case, it must
+    NOT be attributed to USER_DIR: it belongs to the mounted assistant/system,
+    not the user, and mislabeling it makes the assistant's built-in skills show
+    up in the Assets panel as ``USER · SHLOM`` personal assets.
+    """
+    sys_root = tree["user_home"] / ".local" / "flowpad_assistant"
+    sys_skill_path = sys_root / ".claude" / "skills" / "sys_skill"
+    sys_skill_path.mkdir(parents=True, exist_ok=True)
+
+    sys_skill_ent = await Skill(
+        id=str(uuid.uuid4()), name=f"sys_skill_{uuid.uuid4().hex[:6]}",
+        asset_ref=canonical_posix_path(sys_skill_path),
+        scope="system",
+    ).save()
+    try:
+        proc = _make_proc()
+        descs = await proc.get_asset_descriptors()
+        user_ids = {d.typeid.split("-", 1)[1] for d in _by_source(descs, AssetSource.USER_DIR)}
+        assert sys_skill_ent.id not in user_ids, (
+            "system-scoped assistant skill under $HOME was mislabeled as a "
+            "USER_DIR (personal) asset"
+        )
+    finally:
+        try:
+            await sys_skill_ent.delete()
+        except Exception:
+            pass
+
+
+@pytest.mark.asyncio
 async def test_get_asset_descriptors_read_only_partition(tree, monkeypatch):
     """Every descriptor returned by get_asset_descriptors() agrees with
     is_readonly_source — no surprise/dynamic mismatches between actual

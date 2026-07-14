@@ -1,4 +1,4 @@
-import { Agent, AgentTrace, APIEntity, AssetCleanupReport, dataManager, DeckTemplate, DynamicWorkflow, FSRef, Skill, Task, TypeId, UsageReport, VFSPath, Whiteboard, Workflow } from '@sdk';
+import { Agent, AgentTrace, APIEntity, AssetCleanupReport, dataManager, Deck, DeckTemplate, DynamicWorkflow, FSRef, Skill, Spreadsheet, Task, TypeId, UsageReport, VFSPath, Whiteboard, Workflow } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { useMemo } from 'react';
 import { RefreshCw } from 'lucide-react';
@@ -9,6 +9,7 @@ import { AssetEditor, AssetRoutingMethod, EDITOR_TYPES, editorForType, isFileOnl
 import { HtmlPreview } from '@src/components/html-preview/HtmlPreview';
 import { McpAppPreview } from '@src/components/mcp-app-preview/McpAppPreview';
 import { MediaViewer } from '@src/components/media-viewer/MediaViewer';
+import { PdfViewer } from '@src/components/pdf-viewer/PdfViewer';
 import { EntityResolutionGate } from './EntityResolutionGate';
 import { MissingAssetCard } from './MissingAssetCard';
 import { PlainMarkdownAssetEditor } from './markdown/PlainMarkdownAssetEditor';
@@ -21,6 +22,8 @@ import { UsageReportAssetEditor } from './usage-report/UsageReportAssetEditor';
 import { AssetCleanupReportAssetEditor } from './asset-cleanup/AssetCleanupReportAssetEditor';
 import { WhiteboardAssetEditor } from './whiteboard/WhiteboardAssetEditor';
 import { DeckTemplateViewer } from './deck-template/DeckTemplateViewer';
+import { DeckViewer } from './deck/DeckViewer';
+import { SpreadsheetAssetEditor } from './spreadsheet/SpreadsheetAssetEditor';
 import { WorkflowAssetEditor } from './workflow/WorkflowAssetEditor';
 
 interface AssetEditorRouterProps {
@@ -135,6 +138,10 @@ export function AssetEditorRouter({ pointer }: AssetEditorRouterProps) {
     // The enum values ARE the kind strings ('image' | 'video' | 'audio').
     return <MediaViewer path={ptr.value} kind={ptr.editor} />;
   }
+  if (ptr.editor === AssetEditor.PDF) {
+    // PdfViewer parses both the vpath and plain-path forms itself, like MediaViewer.
+    return <PdfViewer path={ptr.value} />;
+  }
 
   // A typeid pointer whose entity has SETTLED with nothing usable (404 /
   // fetch error / resolved-but-no-asset_ref — e.g. a tab pointing at a
@@ -220,6 +227,26 @@ export function AssetEditorRouter({ pointer }: AssetEditorRouterProps) {
           typeLabel="deck template"
           render={(deckTemplate) => (
             <DeckTemplateViewer fsRef={fsRef} deckTemplate={deckTemplate} />
+          )}
+        />
+      );
+    case AssetEditor.DECK:
+      return (
+        <EntityResolutionGate<Deck>
+          type={Deck.type}
+          fsRef={fsRef}
+          typeLabel="deck"
+          render={(deck) => <DeckViewer fsRef={fsRef} deck={deck} />}
+        />
+      );
+    case AssetEditor.SPREADSHEET:
+      return (
+        <EntityResolutionGate<Spreadsheet>
+          type={Spreadsheet.type}
+          fsRef={fsRef}
+          typeLabel="spreadsheet"
+          render={(spreadsheet) => (
+            <SpreadsheetAssetEditor fsRef={fsRef!} spreadsheet={spreadsheet} />
           )}
         />
       );

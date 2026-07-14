@@ -54,6 +54,9 @@ export interface TypeInfo {
   creatable: boolean;
   api_visible: boolean;
   icon: string | null;
+  /** UX-friendly label for the type (e.g. "Skills"); backend-owned, null when the
+   *  type has no curated label — callers fall back to `humanizeType(type_name)`. */
+  display_name: string | null;
   parent_type: string | null;
   locations: string[];
   /** Fixed inner filename for folder-layout assets when one exists, e.g. SKILL.md. */
@@ -67,6 +70,13 @@ export interface TypeInfo {
    *  save, e.g. task/spec), so an orphaned row (file missing / no asset_ref) can
    *  self-heal with a single save. Defaults false for hand-edited files (markdown/skill). */
   owns_main_ref?: boolean;
+  /** Reception seam: the verb the receive UI shows for this type — the install
+   *  CTA reads ``"<reception_verb> the <typeLabel>"`` (e.g. "Set up the app"). */
+  reception_verb?: string;
+  /** Reception seam: the built-in skill that sets a received attachment of this
+   *  type up in a Vibe session (null ⇒ it just opens). Presentational hint only —
+   *  the backend owns the actual dispatch in ``Entity.setup_on_receive``. */
+  setup_skill?: string | null;
   schema_hash: string;
   schema: JSONSchemaProperty | null;
 }

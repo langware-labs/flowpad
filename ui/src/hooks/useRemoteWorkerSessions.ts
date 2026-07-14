@@ -16,6 +16,18 @@ const sessionsQuery = new QueryRequest({
   query: null,
 });
 
+/** Newest-activity-first comparator for RemoteWorkerSessions (last_activity_at,
+ *  falling back to started_at). Shared with
+ *  {@link useRemoteWorkerSessionForConversation} so the ordering can't drift. */
+export function byWorkerSessionActivityDesc(
+  a: RemoteWorkerSession,
+  b: RemoteWorkerSession,
+): number {
+  const at = Date.parse(a.last_activity_at ?? a.started_at ?? '') || 0;
+  const bt = Date.parse(b.last_activity_at ?? b.started_at ?? '') || 0;
+  return bt - at;
+}
+
 /**
  * The shared sessions (RemoteWorkerSession) that live inside a collaboration
  * room, newest activity first. Host/guest display names are denormalized onto
@@ -33,11 +45,7 @@ export function useRemoteWorkerSessions(
     () =>
       sessions
         .filter((s) => (collaborationRoomId ? s.collaboration_room_id === collaborationRoomId : true))
-        .sort((a, b) => {
-          const at = Date.parse(a.last_activity_at ?? a.started_at ?? '') || 0;
-          const bt = Date.parse(b.last_activity_at ?? b.started_at ?? '') || 0;
-          return bt - at;
-        })
+        .sort(byWorkerSessionActivityDesc)
         .map<SharedSessionRow>((s) => ({
           id: s.id,
           hostName: s.host_name ?? s.host_user_id ?? 'unknown',
