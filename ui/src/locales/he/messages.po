@@ -295,6 +295,10 @@ msgstr "{completedCount}/{totalCount} הושלמו"
 msgid "{count} {0} attached"
 msgstr "{count} {0} מצורפים"
 
+#: src/components/assets/ContextFolderGitBadge.tsx
+msgid "{count} pending change(s) — click to view diff"
+msgstr ""
+
 #: src/components/execute-flow-view/worker-sessions-panel.tsx
 msgid "{days}d ago"
 msgstr "לפני {days}י׳"
@@ -1289,6 +1293,7 @@ msgstr "נכס…"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/assets/AssetsNavigator.tsx
+#: src/components/assets/AssetsPage.tsx
 #: src/components/assets/AssetsPage.tsx
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 msgid "Assets"
@@ -8149,12 +8154,16 @@ msgid "Notifies the inviter"
 msgstr "מודיע למזמין"
 
 #: src/components/assets/PushContextFolderDialog.tsx
-msgid "Notify (optional)"
-msgstr ""
+#~ msgid "Notify (optional)"
+#~ msgstr ""
 
 #: src/components/hooks-manager/TriggerForm.tsx
 msgid "Notify Entity (Increment Counter)"
 msgstr "הודע לישות (הגדל מונה)"
+
+#: src/components/assets/PushContextFolderDialog.tsx
+msgid "Notify people about this push"
+msgstr ""
 
 #: src/components/InputSection.tsx
 msgid "OAuth connection established successfully"
@@ -8851,8 +8860,12 @@ msgid "Pick a contact to see your conversations with them."
 msgstr "בחר איש קשר כדי לראות את השיחות שלך איתו."
 
 #: src/components/assets/PushContextFolderDialog.tsx
-msgid "Pick a contacts group or people — empty = just push"
+msgid "Pick a contacts group or people"
 msgstr ""
+
+#: src/components/assets/PushContextFolderDialog.tsx
+#~ msgid "Pick a contacts group or people — empty = just push"
+#~ msgstr ""
 
 #: src/components/contact-picker/CreateContactsGroupDialog.tsx
 msgid "Pick a group in any conversation to add all its members at once."
@@ -9363,13 +9376,14 @@ msgstr "משיכה נכשלה."
 msgid "Pulling…"
 msgstr "משיכה…"
 
-#: src/components/assets/ContextFolderBrowser.tsx
+#: src/components/assets/ContextFolderGitBadge.tsx
 #: src/components/assets/PushContextFolderDialog.tsx
 #: src/components/status-bar/GitPushButton.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Push"
 msgstr "דחף"
 
+#: src/components/assets/ContextFolderGitBadge.tsx
 #: src/components/assets/PushContextFolderDialog.tsx
 msgid "Push {folderName}"
 msgstr ""
@@ -12287,6 +12301,7 @@ msgstr "טיפ: לחץ על Ctrl+Enter כדי לשמור"
 msgid "Title"
 msgstr "כותרת"
 
+#: src/components/assets/PushContextFolderDialog.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "To"
 msgstr "אל"

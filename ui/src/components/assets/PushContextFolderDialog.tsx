@@ -70,6 +70,7 @@ export function PushContextFolderDialog({
   const { cloudUser } = useAuth();
   const { send, busy: sendBusy, error: sendError, resetDraft } = useSendToConversation();
 
+  const [notifyChecked, setNotifyChecked] = useState(false);
   const [participants, setParticipants] = useState<ConversationParticipant[]>([]);
   const [message, setMessage] = useState('');
   const [selected, setSelected] = useState<string>(NEW_CONVERSATION);
@@ -86,6 +87,7 @@ export function PushContextFolderDialog({
 
   useEffect(() => {
     if (!open) return;
+    setNotifyChecked(false);
     setParticipants([]);
     setMessage('');
     setSelected(NEW_CONVERSATION);
@@ -93,13 +95,16 @@ export function PushContextFolderDialog({
     resetDraft();
   }, [open, resetDraft]);
 
-  const notifying = participants.length > 0;
+  const notifying = notifyChecked && participants.length > 0;
   const isRemote = hasRemoteParticipant(participants);
   const isNewSelected = selected === NEW_CONVERSATION;
   const title = t`Pushed ${folderName}`;
-  // Push-only is always allowed; notifying additionally needs a message and a
-  // valid conversation home (remote recipients, or a project for local convs).
-  const canSubmit = !busy && (!notifying || (message.trim().length > 0 && (isRemote || !!effectiveProjectId)));
+  // Push-only is always allowed; with "Notify" checked the submit additionally
+  // needs recipients, a message, and a valid conversation home (remote
+  // recipients, or a project for local convs).
+  const canSubmit =
+    !busy &&
+    (!notifyChecked || (participants.length > 0 && message.trim().length > 0 && (isRemote || !!effectiveProjectId)));
 
   const handleSubmit = async () => {
     if (!canSubmit) return;
@@ -169,46 +174,61 @@ export function PushContextFolderDialog({
         </DialogHeader>
 
         <div className="flex min-w-0 flex-col gap-4 text-sm">
-          <div className="flex flex-col gap-1.5">
-            <label className="text-[11px] uppercase tracking-widest text-muted-foreground">
-              <Trans>Message</Trans>
-            </label>
-            <textarea
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              placeholder={t`What changed? Sent to the recipients below…`}
-              rows={2}
+          <label className="flex items-center gap-2 text-xs text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={notifyChecked}
+              onChange={(e) => setNotifyChecked(e.target.checked)}
               disabled={busy}
-              className="w-full resize-none rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-              data-testid="push-message-input"
+              data-testid="push-notify-checkbox"
             />
-          </div>
+            <Trans>Notify people about this push</Trans>
+          </label>
 
-          <div className="flex flex-col gap-1.5">
-            <label className="text-[11px] uppercase tracking-widest text-muted-foreground">
-              <Trans>Notify (optional)</Trans>
-            </label>
-            <div className="flex items-end gap-2">
-              <div className="flex-1">
-                <ContactPicker
+          {notifyChecked && (
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[11px] uppercase tracking-widest text-muted-foreground">
+                <Trans>Message</Trans>
+              </label>
+              <textarea
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+                placeholder={t`What changed? Sent to the recipients below…`}
+                rows={2}
+                disabled={busy}
+                className="w-full resize-none rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                data-testid="push-message-input"
+              />
+            </div>
+          )}
+
+          {notifyChecked && (
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[11px] uppercase tracking-widest text-muted-foreground">
+                <Trans>To</Trans>
+              </label>
+              <div className="flex items-end gap-2">
+                <div className="flex-1">
+                  <ContactPicker
+                    value={participants}
+                    onChange={setParticipants}
+                    excludeUserId={cloudUser?.id ?? ctx.user?.id}
+                    enabled={open && notifyChecked}
+                    disabled={busy}
+                    placeholder={t`Pick a contacts group or people`}
+                    testId="push-contact-picker"
+                  />
+                </div>
+                <AddressBookButton
                   value={participants}
                   onChange={setParticipants}
                   excludeUserId={cloudUser?.id ?? ctx.user?.id}
-                  enabled={open}
+                  enabled={open && notifyChecked}
                   disabled={busy}
-                  placeholder={t`Pick a contacts group or people — empty = just push`}
-                  testId="push-contact-picker"
                 />
               </div>
-              <AddressBookButton
-                value={participants}
-                onChange={setParticipants}
-                excludeUserId={cloudUser?.id ?? ctx.user?.id}
-                enabled={open}
-                disabled={busy}
-              />
             </div>
-          </div>
+          )}
 
           {notifying && (
             <div className="flex flex-col gap-1.5">
@@ -270,7 +290,7 @@ export function PushContextFolderDialog({
               className="gap-1.5"
             >
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
-              {notifying ? t`Push & notify` : t`Push`}
+              {notifyChecked ? t`Push & notify` : t`Push`}
             </Button>
           </div>
         </div>

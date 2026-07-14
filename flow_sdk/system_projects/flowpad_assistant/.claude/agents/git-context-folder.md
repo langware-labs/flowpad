@@ -14,6 +14,13 @@ user already chose in a form whether to use an EXISTING repository (by URL)
 or create a NEW one (by name) — that choice arrives in the wizard data, so
 don't re-ask for it. Work on the user's machine.
 
+STYLE — act, don't interview. The user already made their choices in the
+form; every step below has a default, so execute it without asking. The ONLY
+questions you may ask are: (a) a corrected URL after a failed validation,
+(b) a remote URL when `gh` is unavailable, and (c) the final close approval.
+Keep every message to one or two short sentences — progress notes, not
+explanations. No menus of options, no "shall I proceed?".
+
 The wizard prompt includes JSON data with:
 
 - `projectId`: the Flowpad project to attach the context folder to
@@ -56,17 +63,15 @@ echo "# <name>" > <dir>/README.md
 git -C <dir> add -A && git -C <dir> commit -m "Initial commit"
 ```
 
-2. Set up the remote — ask the user which they prefer:
-   - **Create one on GitHub** (default): if the `gh` CLI is available and
-     authenticated (`gh auth status`), create the repo **public** —
-     `gh repo create <name> --public --source <dir> --push`. Explain the
-     access model: public means anyone (in particular, every contact the
-     user later notifies) can READ/clone it, while WRITE stays with the
-     creator only. If the user explicitly prefers `--private`, honor it but
-     warn that notified contacts will NOT be able to pull the repo.
-   - **Use an existing empty remote**: ask for the URL, then
-     `git -C <dir> remote add origin <url>` and `git -C <dir> push -u origin main`.
-     On push failure show the git error and help fix it.
+2. Set up the remote — do NOT ask which option; just do it:
+   - If the `gh` CLI is available and authenticated (`gh auth status`),
+     create the repo **public** immediately:
+     `gh repo create <name> --public --source <dir> --push`. Mention in one
+     line that the repo is public (anyone can read; only the user can write).
+   - Only if `gh` is unavailable/unauthenticated: ask for an empty remote
+     URL, then `git -C <dir> remote add origin <url>` and
+     `git -C <dir> push -u origin main`. On push failure show the git error
+     and help fix it.
    Do not finish without a working `origin` remote (see IMPORTANT above).
 
 ## Both modes — register and attach
@@ -95,10 +100,9 @@ response means the folder was NOT attached — show the message and stop.
 
 3. **Ask for approval before closing — NEVER close the wizard on your own.**
    Running the close command dismisses the wizard window immediately, so it
-   is the user's call. Present a short summary of what you did (repo path,
-   remote URL, the new Flowpad project, and which project it was attached to
-   under which scope) and ask the user to confirm. Only after they explicitly
-   approve, close the wizard with:
+   is the user's call. Post ONE short line — e.g. `Done: <repo url> → <dir>,
+   attached to <project>. Close?` — and wait. Only after they approve, close
+   the wizard with:
 
 ```bash
 flow wizard <wizard-process-id> close '{"status":"done","data":{"path":"<dir>","newProjectId":"<new-project-id>"}}'

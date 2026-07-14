@@ -295,6 +295,10 @@ msgstr ""
 msgid "{count} {0} attached"
 msgstr ""
 
+#: src/components/assets/ContextFolderGitBadge.tsx
+msgid "{count} pending change(s) — click to view diff"
+msgstr ""
+
 #: src/components/execute-flow-view/worker-sessions-panel.tsx
 msgid "{days}d ago"
 msgstr ""
@@ -1289,6 +1293,7 @@ msgstr ""
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/assets/AssetsNavigator.tsx
+#: src/components/assets/AssetsPage.tsx
 #: src/components/assets/AssetsPage.tsx
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 msgid "Assets"
@@ -8146,11 +8151,15 @@ msgid "Notifies the inviter"
 msgstr ""
 
 #: src/components/assets/PushContextFolderDialog.tsx
-msgid "Notify (optional)"
-msgstr ""
+#~ msgid "Notify (optional)"
+#~ msgstr ""
 
 #: src/components/hooks-manager/TriggerForm.tsx
 msgid "Notify Entity (Increment Counter)"
+msgstr ""
+
+#: src/components/assets/PushContextFolderDialog.tsx
+msgid "Notify people about this push"
 msgstr ""
 
 #: src/components/InputSection.tsx
@@ -8846,8 +8855,12 @@ msgid "Pick a contact to see your conversations with them."
 msgstr ""
 
 #: src/components/assets/PushContextFolderDialog.tsx
-msgid "Pick a contacts group or people — empty = just push"
+msgid "Pick a contacts group or people"
 msgstr ""
+
+#: src/components/assets/PushContextFolderDialog.tsx
+#~ msgid "Pick a contacts group or people — empty = just push"
+#~ msgstr ""
 
 #: src/components/contact-picker/CreateContactsGroupDialog.tsx
 msgid "Pick a group in any conversation to add all its members at once."
@@ -9358,13 +9371,14 @@ msgstr ""
 msgid "Pulling…"
 msgstr ""
 
-#: src/components/assets/ContextFolderBrowser.tsx
+#: src/components/assets/ContextFolderGitBadge.tsx
 #: src/components/assets/PushContextFolderDialog.tsx
 #: src/components/status-bar/GitPushButton.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Push"
 msgstr ""
 
+#: src/components/assets/ContextFolderGitBadge.tsx
 #: src/components/assets/PushContextFolderDialog.tsx
 msgid "Push {folderName}"
 msgstr ""
@@ -12278,6 +12292,7 @@ msgstr ""
 msgid "Title"
 msgstr ""
 
+#: src/components/assets/PushContextFolderDialog.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "To"
 msgstr ""

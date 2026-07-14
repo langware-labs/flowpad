@@ -136,7 +136,7 @@ export function useAssetsModel() {
     () => (scopeProjectId ? new TypeId(Project.type, scopeProjectId) : null),
     [scopeProjectId],
   );
-  const { data: scopeProject } = useEntity<Project>(scopeProjectTypeId, {
+  const { data: scopeProject, refetch: refetchScopeProject } = useEntity<Project>(scopeProjectTypeId, {
     watch: true,
     enabled: !!scopeProjectTypeId,
   });
@@ -321,6 +321,12 @@ export function useAssetsModel() {
         if (result.status === 'error') {
           notify.error({ title: 'Failed to add Git folder', message: result.errorStr ?? undefined });
         }
+        if (result.status === 'done') {
+          // The wizard mutated the project via its own HTTP calls — force a
+          // fresh entity fetch so the Context-folders rows appear without a
+          // page reload (the WS update can race/miss computed fields).
+          await refetchScopeProject();
+        }
       } catch (err) {
         notify.error({
           title: 'Failed to add Git folder',
@@ -328,7 +334,7 @@ export function useAssetsModel() {
         });
       }
     },
-    [addGitFolderScope, scopeProjectId, scopeProjectTypeId],
+    [addGitFolderScope, scopeProjectId, scopeProjectTypeId, refetchScopeProject],
   );
 
   // Tree node id of a drop destination: the context-folder row itself when
@@ -723,6 +729,7 @@ export function useAssetsModel() {
           onRemove: handleRemoveContextDir,
           onDropItem: handleDropIntoContextDir,
           onExternalDrop: handleExternalDropIntoContextDir,
+          projectId: scopeProjectId,
         }),
       );
     }

@@ -34,7 +34,12 @@ function collectVisibleSelectable(root: Browseable, tree: ReturnType<typeof useB
  * Generic Notion-like tree menu.
  *
  * Invariants (mirrors the design doc):
- *  - Clicking a row with `pointer !== null` navigates (via `onNavigate`).
+ *  - Clicking a row with `pointer !== null` navigates (via `onNavigate`) —
+ *    it does NOT expand; expansion belongs to the chevron. A pointer-less
+ *    parent row still expands on click (header rows stay usable).
+ *  - Double-clicking a row expands it as well — click+dblclick together =
+ *    show in the body AND expand in the tree. (On an already-selected
+ *    renamable row, double-click enters inline rename instead.)
  *  - Clicking a toolbar button runs a side effect; it never navigates.
  *  - Clicking the chevron toggles expansion; it does not navigate.
  *  - Selection is derived from `activePointer` — never stored locally.
@@ -297,12 +302,9 @@ function BrowseableRow({
         selection.anchorAndClear(node, rootId);
       }
 
-      // Toggle expand on the row click for nodes that have children AND
-      // navigate if the node has a pointer. Matches Notion's behavior where
-      // clicking a page both navigates AND expands.
-      if (hasChildrenHint) {
-        void tree.toggleExpand(node);
-      }
+      // Label click NAVIGATES only — expansion belongs to the chevron (or a
+      // double-click). A pointer-less parent still expands on click so header
+      // rows (pointer: null) stay usable.
       // Click resolves as `pointer ?? activate` (see types.ts invariant) —
       // activate is the imperative fallback for nodes whose navigation can't
       // be a pure DockPointer.
@@ -310,17 +312,26 @@ function BrowseableRow({
         onNavigate(node.pointer);
       } else if (node.activate) {
         void node.activate();
+      } else if (hasChildrenHint) {
+        void tree.toggleExpand(node);
       }
     },
     [editing, canSelect, selection, rootId, hasChildrenHint, node, tree, onNavigate],
   );
 
-  // Inline rename: double-click a *selected* row to edit its label in place.
+  // Double-click: inline rename on a *selected* renamable row; otherwise
+  // expand — combined with the single click that already fired, a double
+  // click both shows the content (right pane) AND expands (left pane).
   const handleDoubleClick = useCallback(() => {
-    if (!canRename || !isSelected) return;
-    setDraft(node.label);
-    setEditing(true);
-  }, [canRename, isSelected, node.label]);
+    if (canRename && isSelected) {
+      setDraft(node.label);
+      setEditing(true);
+      return;
+    }
+    if (hasChildrenHint) {
+      void tree.toggleExpand(node);
+    }
+  }, [canRename, isSelected, node, hasChildrenHint, tree]);
 
   const commitRename = useCallback(async () => {
     setEditing(false);
