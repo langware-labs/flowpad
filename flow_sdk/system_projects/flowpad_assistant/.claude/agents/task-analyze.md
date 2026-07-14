@@ -83,8 +83,9 @@ The frontend already ran `sync-group`, so the local member-task rows are as
 fresh as the hub has. Never contact the hub yourself; if the owner was
 offline, say "as of last sync" in the report.
 
-1. Stamp `process_id` on the PARENT. Read the parent's `task.md` and
-   `spec.md` — the plan is the requirements you verify submissions against.
+1. Stamp `process_id` on the PARENT. Read the parent's `task.md`; the
+   requirements you verify submissions against are its `spec.md` when present,
+   else the task's description + attached files (`artifacts`).
 2. Enumerate member tasks: tasks whose `parent_id` equals `taskId`
    (`flow record search`, or read the sibling `tasks/*--m-*/task.md` folders
    and match `parent_id`). Read each child's `status`, `completed_at`,

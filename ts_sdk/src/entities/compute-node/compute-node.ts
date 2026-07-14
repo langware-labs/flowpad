@@ -777,9 +777,9 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
    * Open a native OS folder-picker dialog and return the selected path.
    * Returns null if the user cancelled.
    */
-  async openPathDialog(initialDir?: string): Promise<string | null> {
+  async openPathDialog(initialDir?: string, mode: 'folder' | 'file' = 'folder'): Promise<string | null> {
     const action = new ActionInfo('pick-folder', ComputeNode.type, this.id, 'POST');
-    if (initialDir) action.bodyParameters = { initial_dir: initialDir };
+    action.bodyParameters = { ...(initialDir ? { initial_dir: initialDir } : {}), mode };
     const response = await dataManager.callAction<void, { path: string | null }>(action);
     return (response as any)?.path ?? null;
   }
