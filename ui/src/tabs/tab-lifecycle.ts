@@ -163,11 +163,26 @@ async function materializeTab(dock: DockPointer): Promise<{ tab: Tab | null; tab
     !!existingTab &&
     existingTab.id !== parentTabId &&
     existingTab.parent_tab_id !== parentTabId;
+  // A lens dock can't trust the row's denormalized project_id: the loader
+  // activates the TARGET entity's project on every load, and the indexer may
+  // re-stamp that target through the disk→DB path (`sync_to_db`), which skips
+  // the backend tab reconcile — so a reused snapshot goes stale and the strip
+  // (which filters tabs by `project_id === activeProject`) hides the very tab
+  // being shown ("no selected tab", RCA 2026-07-14). Re-check the row against
+  // the SAME resolution `getFromDockPointer` persists (one cache-first target
+  // GET, which also pre-warms the lens loader's own fetch): on agreement reuse
+  // as usual; on drift fall through to the full mint, which re-derives and
+  // self-heals the row.
+  const lensProjectStale =
+    dock.viewType === ViewType.LENS &&
+    !!existingTab &&
+    (await Tab.resolveDockTarget(dock)).projectId !== (existingTab.project_id ?? null);
   // Reuse an existing tab verbatim EXCEPT a project-less content tab (see the
-  // project self-heal below) OR one that needs re-parenting into the active
-  // workspace. Both cases fall through to `getFromDockPointer`, which re-derives
-  // project_id from the asset and adopts the parent, self-healing the row.
-  if (existingTab && (existingTab.project_id || !dockAddressesAsset(dock)) && !needsReparent) {
+  // project self-heal below), a stale lens tab (above), or one that needs
+  // re-parenting into the active workspace. All three fall through to
+  // `getFromDockPointer`, which re-derives project_id from the asset and adopts
+  // the parent, self-healing the row.
+  if (existingTab && !lensProjectStale && (existingTab.project_id || !dockAddressesAsset(dock)) && !needsReparent) {
     return { tab: existingTab, tabs: existing };
   }
 
