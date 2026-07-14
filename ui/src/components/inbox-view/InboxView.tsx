@@ -18,6 +18,7 @@ import {
   deleteConversation,
   dismissConversation,
   fetchConversations,
+  isInvitationGoneError,
   leaveConversation,
   listCommunityTickets,
   pickupConversation,
@@ -299,7 +300,11 @@ export function ConversationListRow({ conv, isFocused, viewMode, searchActive, o
     try {
       await acceptInvitation({ invitation_id: invitationId });
     } catch (e) {
-      console.error('[InboxView] acceptInvitation failed', e);
+      if (isInvitationGoneError(e)) {
+        notify.warning({ title: 'Invitation no longer valid', id: 'membership-invite' });
+      } else {
+        console.error('[InboxView] acceptInvitation failed', e);
+      }
     } finally {
       setAccepting(false);
     }
