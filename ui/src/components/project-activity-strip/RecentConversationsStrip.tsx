@@ -9,6 +9,7 @@ import {
   acceptInvitation,
   dismissConversation,
   fetchConversations,
+  isInvitationGoneError,
   isTypeId,
 } from '@sdk';
 import { useAuth } from '@sdk/react/hooks';
@@ -172,7 +173,12 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
       await acceptInvitation({ invitation_id: invId });
       await refetch();
     } catch (e) {
-      console.error('[RecentConversationsStrip] acceptInvitation failed', e);
+      if (isInvitationGoneError(e)) {
+        // Orphan — the backend removed the stale local mirror; refetch drops it.
+        await refetch();
+      } else {
+        console.error('[RecentConversationsStrip] acceptInvitation failed', e);
+      }
     } finally {
       setAcceptingId(null);
     }

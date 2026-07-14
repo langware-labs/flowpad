@@ -872,6 +872,30 @@ async def _decline_linked_invitation(conv_id: str) -> None:
         logger.warning("[conv-delete] local invitation delete failed conv=%s: %s", conv_id[:8], e)
 
 
+async def _self_heal_gone_invitation(inv_id: str, *, context: str) -> ApiFailResponse:
+    """Remove an orphaned local invitation whose hub node is gone and return the
+    shared 410 ``{gone}`` signal the FE renders as "Invitation no longer valid".
+
+    Reached from both accept and decline when the hub answers 404/target-missing:
+    the local id equals the hub id, so a hub 404 means the mirror is stale.
+    Best-effort local delete (clears the DB row + entity/tab caches); a failure
+    still returns the gone signal so the FE drops the row.
+    """
+    from flow_sdk.builtin.invitation import Invitation as LocalInvitation  # noqa: PLC0415
+
+    try:
+        orphan = await LocalInvitation.get_one({"id": inv_id})
+        if orphan is not None:
+            await orphan.delete()
+    except Exception as del_e:  # noqa: BLE001
+        logger.warning("[%s] orphan local delete failed inv=%s: %s", context, inv_id[:8], del_e)
+    return ApiFailResponse(
+        message="Invitation no longer valid",
+        status_code=410,
+        data={"gone": True, "id": inv_id},
+    )
+
+
 async def _hub_delete_conversation(conv_id: str) -> None:
     from flow_sdk.utils.hub import hub_delete  # noqa: PLC0415
 
@@ -1169,10 +1193,16 @@ async def handle_invitation_decline(
     try:
         await _hub_decline_invitation(invitation_id)
     except HubError as e:
-        return ApiFailResponse(
-            data={"id": invitation_id, "hub_status": e.status_code},
-            message=f"Hub {e.status_code}: {e.reason}",
-        )
+        # Hub has nothing there for us (404 / target_not_found): the local
+        # invitation is an orphan. Self-heal — remove it locally and report the
+        # same 410 {gone} signal accept uses, so the FE drops the row with
+        # "Invitation no longer valid". Other hub errors are transient.
+        if not _is_hub_target_missing(e):
+            return ApiFailResponse(
+                data={"id": invitation_id, "hub_status": e.status_code},
+                message=f"Hub {e.status_code}: {e.reason}",
+            )
+        return await _self_heal_gone_invitation(invitation_id, context="invitation-decline")
 
     # Locate the local invitation + its target conversation (the conv id
     # is stamped into the invitation message via ``Conversation.share``).
@@ -3527,6 +3557,13 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
                         "[invitation-accept] accept redirected to a non-conversation entity landing (asset target): %s",
                         location[:160],
                     )
+            elif resp.status_code in (404, 410):
+                # Hub says the invitation is gone (404) or expired (410): the
+                # local mirror is an orphan (local id == hub id, so a 404 here
+                # means the hub node no longer exists). Self-heal the stale row
+                # and return the 410 {gone} signal. Any OTHER status (5xx, 401,
+                # transport) is transient — fall through, do NOT delete.
+                return await _self_heal_gone_invitation(inv_id, context="invitation-accept")
             else:
                 return ApiFailResponse(message=f"Accept failed ({resp.status_code}): {resp.text[:200]}")
         if resp.status_code == 409:
