@@ -11,8 +11,14 @@ import { firstUnapprovedPromptIdx } from './prompt-attachment';
  * MessageBubble surgery.
  */
 
+// Live-session messages retire the per-message CTA: approval is session-scoped
+// (the host approves the SESSION once, from the group header / session view),
+// so a prompt carrying a session id never renders "Approve & run".
 const approveVisible = (ctx: AttachmentActionContext): boolean =>
-  ctx.isFromOther && firstUnapprovedPromptIdx(ctx.fm) >= 0 && !!ctx.handlers.approveAndExecute;
+  ctx.isFromOther &&
+  !ctx.fm.remote_worker_session_id &&
+  firstUnapprovedPromptIdx(ctx.fm) >= 0 &&
+  !!ctx.handlers.approveAndExecute;
 
 /** Trim a session label so the chip stays "alive candy" (small pill), not a
  *  paragraph. See feedback_chip_design. */

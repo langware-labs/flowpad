@@ -108,6 +108,14 @@ class FlowMessageExistsError(Exception):
         super().__init__(f"FlowMessage entities already exist: {conflicts}")
 
 
+class GitShareOriginError(Exception):
+    """Raised when an asset explicitly shared in Git mode has no valid Git origin
+    at pack time. Fails the share/upload VISIBLY — never silently falls back to
+    copying bytes (the sender selected Git; a copy would misrepresent the share).
+    The dialog's preflight blocks ineligible assets up front; this is the pack-time
+    backstop for an origin that vanished between preflight and packing."""
+
+
 # ---------------------------------------------------------------------------
 # pack_bundle
 # ---------------------------------------------------------------------------
@@ -212,6 +220,35 @@ async def _pack_flowpad_diagnosis_attachment(entry_id: str, attachment_dir: Path
     )
 
 
+async def _pack_remote_worker_session_attachment(entry_id: str, attachment_dir: Path) -> None:
+    """Write ``attachment/remote_worker_session-@<id>/header.json`` — the
+    live-session snapshot.
+
+    Metadata-only entity: the header IS the record, re-materialized on the
+    receiver via ``RemoteWorkerSession.apply_snapshot`` (guest adopts
+    host-authoritative fields by activity clock; a host row is never
+    regressed). Serialized at pack/upload time, so every session message —
+    prompts, PromptResult replies, SESSION_EVENT lines — ships the session's
+    state as of that turn for free. ``host_process_id`` / ``project_id`` are
+    host-local (path-leaking) and never travel — the include list is
+    ``RemoteWorkerSession.SNAPSHOT_FIELDS``."""
+    from flow_sdk.builtin.remote_worker_session import RemoteWorkerSession
+
+    rws = await RemoteWorkerSession.get_one({"id": entry_id})
+    if not rws:
+        return
+    rws_dir = attachment_dir / f"{EntityType.REMOTE_WORKER_SESSION.value}-@{entry_id}"
+    rws_dir.mkdir(parents=True, exist_ok=True)
+    rws_data = rws.model_dump(
+        mode="python",
+        include=set(RemoteWorkerSession.SNAPSHOT_FIELDS),
+        context={"skip_api_serializer": True},
+    )
+    (rws_dir / "header.json").write_text(
+        json.dumps(rws_data, default=_json_default, ensure_ascii=False), encoding="utf-8"
+    )
+
+
 async def _pack_conversation_attachment(
     entry_id: str, flow_message: "FlowMessage", attachment_dir: Path,
 ) -> None:
@@ -302,6 +339,8 @@ async def _pack_attachment_entry(
         await _pack_claude_session_attachment(entry_id, attachment_dir)
     elif entry_type == EntityType.FLOWPAD_DIAGNOSIS.value:
         await _pack_flowpad_diagnosis_attachment(entry_id, attachment_dir)
+    elif entry_type == EntityType.REMOTE_WORKER_SESSION.value:
+        await _pack_remote_worker_session_attachment(entry_id, attachment_dir)
     else:
         if await _pack_git_reference_attachment(
             entry_type,
@@ -491,7 +530,12 @@ async def _pack_git_reference_attachment(
     if origin is None and getattr(ent, "path", None):
         origin = await asyncio.to_thread(GitOrigin.for_asset_path, str(ent.path), repo_cache)
     if origin is None:
-        return False
+        # Git mode explicitly selected but the artifact has no valid Git origin.
+        # Fail closed — never silently fall through to a copy carrier.
+        raise GitShareOriginError(
+            f"{_entry_key(entry_type, entry_id)} was shared with Git but has no valid "
+            f"Git origin — turn Git sharing off for this artifact."
+        )
 
     key = _entry_key(entry_type, entry_id)
     if origins is not None:
@@ -602,6 +646,16 @@ async def _pack_file_backed_attachment(
     )
     if origin is not None and origins is not None:
         origins[_entry_key(entry_type, entry_id)] = origin.model_dump(mode="python")
+
+    # Fail closed: Git mode was explicitly selected but this on-disk asset has no
+    # valid Git origin. Never fall through to the copy path below (that would ship
+    # bytes under a Git share). Structural / no-source entries (src_root is None)
+    # are not Git-shareable assets and are handled by the render path.
+    if transfer_mode == _TRANSFER_MODE_GIT and src_root is not None and origin is None:
+        raise GitShareOriginError(
+            f"{_entry_key(entry_type, entry_id)} was shared with Git but is not in a "
+            f"Git repository with a usable origin — turn Git sharing off for this asset."
+        )
 
     if (
         transfer_mode == _TRANSFER_MODE_GIT
@@ -2332,6 +2386,29 @@ async def unpack_bundle(
                             await diag.save(owner_typeid)
                         elif _fill_merge_entity(existing_diag, diag_payload, ("id", "type")):
                             await existing_diag.save(owner_typeid)
+
+                elif entry_type == EntityType.REMOTE_WORKER_SESSION.value:
+                    # Live-session snapshot: materialize/refresh the local
+                    # session row from the packed header, hub-free. Merge
+                    # discipline lives in ``apply_snapshot`` — a host row is
+                    # never regressed by an inbound snapshot; a guest row
+                    # adopts host-authoritative fields only when the
+                    # snapshot's activity clock is fresher.
+                    rws_data = _read_entity_header(entry_dir)
+                    if rws_data is not None:
+                        from flow_sdk.builtin.remote_worker_session import RemoteWorkerSession  # noqa: PLC0415
+                        from flow_sdk.cli.app_config import get_user as _get_cloud_user  # noqa: PLC0415
+                        rws_id = rws_data.get("id") or entry_id
+                        existing_rws = await RemoteWorkerSession.get_one({"id": rws_id})
+                        cloud_uid = (_get_cloud_user() or {}).get("id")
+                        local_is_host = bool(
+                            (existing_rws is not None and getattr(existing_rws, "host_process_id", None))
+                            or (cloud_uid and rws_data.get("host_user_id") == cloud_uid)
+                        )
+                        rws = RemoteWorkerSession.apply_snapshot(
+                            existing_rws, {**rws_data, "id": rws_id}, local_is_host=local_is_host,
+                        )
+                        await rws.save(owner_typeid)
 
                 elif entry_type == BuiltinEntityType.CONVERSATION.value:
                     jsonl_file = entry_dir / "conversation.jsonl"

@@ -95,10 +95,18 @@ def _build_reply_flow_message(
     sender_name: str,
     is_draft: bool = False,
     shared_context_entities: Optional[list[str]] = None,
+    remote_worker_session_id: Optional[str] = None,
+    kind: Optional[str] = None,
 ) -> "FlowMessage":
     """Build (but do not save) the FlowMessage entity for a conversation reply.
 
     The caller is responsible for attaching any uploaded files and then saving.
+
+    ``remote_worker_session_id`` / ``kind``: live-session grouping key and the
+    SESSION_EVENT discriminator. Stamped on the header here; the authoritative
+    wire carrier is the ``remote_worker_session-<id>`` TYPE_ID attachment the
+    caller appends (the hub drops unknown header fields until its schema
+    mirrors these).
     """
     from flow_sdk.builtin.flow_message import Attachment, AttachmentType, FlowMessage
 
@@ -123,6 +131,8 @@ def _build_reply_flow_message(
         "sender_name": sender_name,
         "conversation_id": conv_id,
         "is_draft": is_draft,
+        **({"remote_worker_session_id": remote_worker_session_id} if remote_worker_session_id else {}),
+        **({"kind": kind} if kind else {}),
         # The sender authored this message → it is read from their side. Without
         # this the sender's own outgoing message persists is_read=False and the
         # inbox row's unread facet (``!latestMessage.is_read``, which does NOT
@@ -501,8 +511,10 @@ async def _send_conversation_message_header(conv: "Conversation", reply_fm: "Flo
     under the same key.
     """
     try:
+        from flow_sdk.builtin.flow_message import FlowMessageKind  # noqa: PLC0415
         attachments = [a.model_dump(mode="python") for a in (reply_fm.attachment or [])]
         shared_context_entities = [str(c) for c in (reply_fm.shared_context_entities or [])]
+        sendable_kind = FlowMessageKind.sendable(reply_fm.kind.value) if reply_fm.kind else None
         await conv.add_message(
             reply_fm.text,
             sender_name=reply_fm.sender_name or None,
@@ -512,6 +524,8 @@ async def _send_conversation_message_header(conv: "Conversation", reply_fm: "Flo
             shared_context_entities=shared_context_entities or None,
             cloned_from_id=reply_fm.cloned_from_id or None,
             cloned_from_sender_id=reply_fm.cloned_from_sender_id or None,
+            remote_worker_session_id=reply_fm.remote_worker_session_id or None,
+            kind=sendable_kind.value if sendable_kind else None,
         )
         return True
     except Exception as e:  # noqa: BLE001
@@ -780,6 +794,12 @@ async def handle_add_message(
         shared_context_entities = [shared_context_entities]
     elif not isinstance(shared_context_entities, list):
         shared_context_entities = []
+    # Live-session grouping key + the one sendable non-default kind (the enum
+    # owns the whitelist, so add-message stays agnostic to which kinds exist).
+    from flow_sdk.builtin.flow_message import FlowMessageKind  # noqa: PLC0415
+    remote_worker_session_id = (body.get("remote_worker_session_id") or "").strip() or None
+    sendable_kind = FlowMessageKind.sendable((body.get("kind") or "").strip() or None)
+    message_kind = sendable_kind.value if sendable_kind else None
 
     if not conversation_id:
         return ApiFailResponse(message="conversation_id is required")
@@ -855,6 +875,9 @@ async def handle_add_message(
         and not prompt_files
         and not asset_references
         and not raw_attachments
+        # Session messages always ride the HTTP slow path: the WS bridge body
+        # is text-only and would drop the session-snapshot carrier attachment.
+        and not remote_worker_session_id
     ):
         hub_response = await _try_send_reply_via_hub(
             conv_id=conv.id,
@@ -873,6 +896,8 @@ async def handle_add_message(
         sender_name=sender_name,
         is_draft=is_draft,
         shared_context_entities=shared_context_entities,
+        remote_worker_session_id=remote_worker_session_id,
+        kind=message_kind,
     )
 
     if raw_attachments:
@@ -905,6 +930,23 @@ async def handle_add_message(
             reply_fm, sender_id, prompt_text, prompt_files,
             project_id=getattr(conv, "project_id", None) or None,
         )
+
+    if remote_worker_session_id:
+        # Authoritative wire carrier for the live-session key (the hub drops
+        # the header field until its schema mirrors it): a
+        # ``remote_worker_session-<id>`` TYPE_ID attachment. The bundle packer
+        # serializes the session row at upload time, so every session message
+        # ships a fresh snapshot. Skip when the caller already attached one.
+        from flow_sdk.builtin.flow_message import Attachment, AttachmentType  # noqa: PLC0415
+        session_att_data = f"remote_worker_session-{remote_worker_session_id}"
+        if not any(
+            a.attachment_type == AttachmentType.TYPE_ID and a.data == session_att_data
+            for a in (reply_fm.attachment or [])
+        ):
+            reply_fm.attachment = [
+                *(reply_fm.attachment or []),
+                Attachment(attachment_type=AttachmentType.TYPE_ID, data=session_att_data),
+            ]
 
     # A conversation reply goes to the hub whenever it's hub-mirrored
     # (``conv.remote`` is the load-bearing signal). Local-only conversations

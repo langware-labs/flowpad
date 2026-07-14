@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react/macro';
-import { LifeBuoy, RefreshCw } from 'lucide-react';
+import { LifeBuoy, Radio, RefreshCw } from 'lucide-react';
 import {
   Conversation,
   fetchConversations,
@@ -9,21 +9,30 @@ import {
   pickupConversation,
   QueryFilter,
   QueryRequest,
+  RemoteWorkerSession,
+  RemoteWorkerSessionStatus,
   TypeId,
 } from '@sdk';
 import { useAuth, useEntitiesQuery, useEntity, useProject } from '@sdk/react/hooks';
 import type { ITask } from '@sdk/entities/task';
 import { ConversationKind } from '@sdk/entities/conversation';
 import { syncConversationMessages } from '@src/components/inbox-view/inbox-api';
-import { markFlowMessagesReceived } from '@sdk/entities/flow-message';
+import { FlowMessageKind, markFlowMessagesReceived } from '@sdk/entities/flow-message';
 import { FlowMessageBubble } from './FlowMessageBubble';
+import { LiveSessionGroup, SessionEventLine } from './LiveSessionGroup';
 import { MessageComposer } from './MessageComposer';
 import { useApproveAndExecute } from './useApproveAndExecute';
 import { ExecutePromptDialog } from './ExecutePromptDialog';
 import { useImplementPlan } from './useImplementPlan';
 import { useLocalUser } from './useLocalUser';
 import { useMembers } from '@src/hooks/use-members';
-import { buildConversationItems, ConversationItemKind, shouldShowSoloSendNotice } from './conversation-items';
+import {
+  buildConversationItems,
+  ConversationItemKind,
+  groupConversationItems,
+  shouldShowSoloSendNotice,
+  type ConversationItem,
+} from './conversation-items';
 import { resolveAttachmentProjectId } from './conversation-context-aggregation';
 import { useConversationMessageAttachments } from './useMessageAttachments';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -263,6 +272,83 @@ export function ConversationView({
 
   const orderedItems = useMemo(() => buildConversationItems(pointers, draftMessages), [pointers, draftMessages]);
 
+  // Consecutive live-session runs collapse into indented SESSION_GROUP rows
+  // (keyed by fm.remote_worker_session_id). Bodies come from the live query —
+  // messages outside the query window degrade to flat rendering.
+  const groupedItems = useMemo(
+    () => groupConversationItems(orderedItems, (id) => messagesById.get(id) ?? null),
+    [orderedItems, messagesById],
+  );
+
+  // One row of the feed — a normal bubble, a draft bubble, or (for
+  // kind=session_event messages) a slim centered system line. Shared by the
+  // flat feed and the children of a LiveSessionGroup.
+  const renderConversationItem = (item: ConversationItem) => {
+    if (item.kind === ConversationItemKind.POINTER) {
+      const id = item.messageId;
+      const fm = messagesById.get(id) ?? null;
+      if (fm?.kind === FlowMessageKind.SESSION_EVENT) {
+        return <SessionEventLine key={item.key} text={fm.text ?? ''} />;
+      }
+      // One plan session per conversation. Once any session exists (or
+      // is in-flight) every spec-bearing bubble shows the "Open" link
+      // pointing at the same session — and the chip is suppressed
+      // everywhere so we never offer to spawn a duplicate.
+      return (
+        <FlowMessageBubble
+          key={item.key}
+          messageId={id}
+          fm={fm}
+          timestamp={item.timestamp}
+          task={task}
+          participants={participants}
+          rosterReady={rosterReady}
+          onApproveAndExecute={canApproveAndExecute ? runApprove : undefined}
+          run={convRun}
+          runStatus={convRunStatus}
+          onOpenRun={onOpenRun}
+          workerSessionExists={workerSession.exists}
+          workerSessionLabel={workerSession.label}
+          workerSessionInFlight={workerSession.inFlight}
+          onOpenWorkerSession={workerSession.exists ? openWorkerSession : undefined}
+          onImplementPlan={task && !openPlanSession ? runImplementPlan : undefined}
+          onOpenPlanSession={openPlanSession}
+          onViewPlan={runViewPlan}
+          isSelected={(selectedMessageIds ?? []).includes(id)}
+          onSelect={onSelectMessage ? () => onSelectMessage(id) : undefined}
+          isConversationOwner={isConversationOwner}
+          onDeleteMessage={handleDeleteMessage}
+          conversationStatusVisible={conversationStatusVisible}
+          isCommunity={isCommunityConversation}
+          attachmentProjectId={attachmentProjectId}
+          messageAttachments={attachmentsByMessage.get(id)}
+        />
+      );
+    }
+    const id = item.draft.id ?? '';
+    return (
+      <FlowMessageBubble
+        key={item.key}
+        messageId={id}
+        fm={item.draft}
+        timestamp={
+          item.draft.created_date instanceof Date
+            ? item.draft.created_date.toISOString()
+            : (item.draft.created_date ?? '')
+        }
+        task={task}
+        participants={participants}
+        rosterReady={rosterReady}
+        isDraft
+        onDraftSent={() => void refetch()}
+        isSelected={!!id && (selectedMessageIds ?? []).includes(id)}
+        onSelect={onSelectMessage && id ? () => onSelectMessage(id) : undefined}
+        conversationStatusVisible={conversationStatusVisible}
+        attachmentProjectId={attachmentProjectId}
+      />
+    );
+  };
+
   // "You're the only participant" notice — computed, never persisted. Shown
   // under the last message when the local user sends into a shared
   // conversation whose roster has shrunk to just them (everyone else left),
@@ -407,6 +493,68 @@ export function ConversationView({
     lastItem,
     lastMessageSenderId,
   });
+  // ── Start live session ────────────────────────────────────────────────
+  // 1:1 conversations only (v1): the OTHER participant is the host. The click
+  // mints the session id locally (uuid4 — validate-on-adopt backend-side),
+  // saves a guest-local DRAFT row, and ONLY navigates (URL-first: the live-
+  // session loader/view own everything else). Disabled while a non-terminal
+  // session already exists or in multi-party rosters.
+  const otherParticipant = useMemo(
+    () => (participants ?? []).find((p) => p.user_id !== cloudUserId) ?? null,
+    [participants, cloudUserId],
+  );
+  const canStartLiveSession =
+    conversation?.remote === true &&
+    rosterReady &&
+    (participants ?? []).length === 2 &&
+    !!cloudUserId &&
+    !!otherParticipant &&
+    !workerSession.hasLiveSession;
+  const liveSessionDisabledReason = !conversation?.remote
+    ? t`Live sessions need a shared conversation`
+    : (participants ?? []).length !== 2
+      ? t`Live sessions are 1:1 — available in two-person conversations`
+      : workerSession.hasLiveSession
+        ? t`A live session is already running in this conversation`
+        : null;
+  const [startingSession, setStartingSession] = useState(false);
+  const handleStartLiveSession = useCallback(async () => {
+    if (!canStartLiveSession || startingSession) return;
+    setStartingSession(true);
+    try {
+      const sessionId = crypto.randomUUID();
+      const draft = new RemoteWorkerSession({
+        id: sessionId,
+        conversation_id: conversationId,
+        status: RemoteWorkerSessionStatus.DRAFT,
+        guest_user_id: cloudUserId,
+        guest_name: cloudUser?.name ?? cloudUser?.email ?? null,
+        host_user_id: otherParticipant?.user_id ?? null,
+        host_name: otherParticipant?.name ?? otherParticipant?.email ?? null,
+      });
+      await draft.save();
+      dockNavigation.openDock(DockPointer.forLiveSession(sessionId));
+    } catch (err) {
+      console.error('[conversation] start live session failed', err);
+    } finally {
+      setStartingSession(false);
+    }
+  }, [
+    canStartLiveSession,
+    startingSession,
+    conversationId,
+    cloudUserId,
+    cloudUser,
+    otherParticipant,
+    dockNavigation,
+  ]);
+  const openLiveSession = useCallback(
+    (sessionId: string) => {
+      dockNavigation.openDock(DockPointer.forLiveSession(sessionId));
+    },
+    [dockNavigation],
+  );
+
   const handlePickup = useCallback(async () => {
     setPickingUp(true);
     try {
@@ -422,6 +570,33 @@ export function ConversationView({
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-end gap-1">
+        {(conversation?.remote === true || workerSession.hasLiveSession) && (
+          <button
+            type="button"
+            onClick={() =>
+              workerSession.hasLiveSession && workerSession.sessionId
+                ? openLiveSession(workerSession.sessionId)
+                : void handleStartLiveSession()
+            }
+            disabled={!canStartLiveSession && !workerSession.hasLiveSession}
+            title={
+              workerSession.hasLiveSession
+                ? t`Open the live session`
+                : (liveSessionDisabledReason ?? t`Work on the other participant's machine`)
+            }
+            data-testid="start-live-session-button"
+            className="flex items-center gap-1 rounded border border-emerald-500/40 bg-emerald-500/15 px-2 py-0.5 text-[11px] font-medium text-emerald-600 transition-colors hover:bg-emerald-500/25 disabled:opacity-50 dark:text-emerald-400"
+          >
+            <Radio className="h-3 w-3" />
+            {workerSession.hasLiveSession ? (
+              <Trans>Live session</Trans>
+            ) : startingSession ? (
+              <Trans>Starting…</Trans>
+            ) : (
+              <Trans>Start live session</Trans>
+            )}
+          </button>
+        )}
         {canPickup && (
           <button
             type="button"
@@ -451,66 +626,21 @@ export function ConversationView({
         </p>
       ) : (
         <div className="flex flex-col gap-3">
-          {orderedItems.map((item) => {
-            if (item.kind === ConversationItemKind.POINTER) {
-              const id = item.messageId;
-              // One plan session per conversation. Once any session exists (or
-              // is in-flight) every spec-bearing bubble shows the "Open" link
-              // pointing at the same session — and the chip is suppressed
-              // everywhere so we never offer to spawn a duplicate.
+          {groupedItems.map((item) => {
+            if (item.kind === ConversationItemKind.SESSION_GROUP) {
               return (
-                <FlowMessageBubble
+                <LiveSessionGroup
                   key={item.key}
-                  messageId={id}
-                  fm={messagesById.get(id) ?? null}
-                  timestamp={item.timestamp}
-                  task={task}
-                  participants={participants}
-                  rosterReady={rosterReady}
-                  onApproveAndExecute={canApproveAndExecute ? runApprove : undefined}
-                  run={convRun}
-                  runStatus={convRunStatus}
-                  onOpenRun={onOpenRun}
-                  workerSessionExists={workerSession.exists}
-                  workerSessionLabel={workerSession.label}
-                  workerSessionInFlight={workerSession.inFlight}
-                  onOpenWorkerSession={workerSession.exists ? openWorkerSession : undefined}
-                  onImplementPlan={task && !openPlanSession ? runImplementPlan : undefined}
-                  onOpenPlanSession={openPlanSession}
-                  onViewPlan={runViewPlan}
-                  isSelected={(selectedMessageIds ?? []).includes(id)}
-                  onSelect={onSelectMessage ? () => onSelectMessage(id) : undefined}
-                  isConversationOwner={isConversationOwner}
-                  onDeleteMessage={handleDeleteMessage}
-                  conversationStatusVisible={conversationStatusVisible}
-                  isCommunity={isCommunityConversation}
-                  attachmentProjectId={attachmentProjectId}
-                  messageAttachments={attachmentsByMessage.get(id)}
-                />
+                  sessionId={item.sessionId}
+                  promptCount={item.promptCount}
+                  replyCount={item.replyCount}
+                  onOpenSession={() => openLiveSession(item.sessionId)}
+                >
+                  {item.children.map((child) => renderConversationItem(child))}
+                </LiveSessionGroup>
               );
             }
-            const id = item.draft.id ?? '';
-            return (
-              <FlowMessageBubble
-                key={item.key}
-                messageId={id}
-                fm={item.draft}
-                timestamp={
-                  item.draft.created_date instanceof Date
-                    ? item.draft.created_date.toISOString()
-                    : (item.draft.created_date ?? '')
-                }
-                task={task}
-                participants={participants}
-                rosterReady={rosterReady}
-                isDraft
-                onDraftSent={() => void refetch()}
-                isSelected={!!id && (selectedMessageIds ?? []).includes(id)}
-                onSelect={onSelectMessage && id ? () => onSelectMessage(id) : undefined}
-                conversationStatusVisible={conversationStatusVisible}
-                attachmentProjectId={attachmentProjectId}
-              />
-            );
+            return renderConversationItem(item);
           })}
         </div>
       )}
