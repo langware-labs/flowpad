@@ -1,4 +1,4 @@
-import { AgenticProcess, ClaudeSession, Layout, Project, Shell, TypeId, VFSPath, type IDockPointer } from '@sdk';
+import { AgenticProcess, ClaudeSession, Layout, Project, RemoteWorkerSession, Shell, TypeId, VFSPath, type IDockPointer } from '@sdk';
 import { VIEW_SLOTS, ViewSlot, ViewType, VIEWER_REGISTRY } from '../types/ViewType';
 import { NavigationError, NavigationErrorType } from './NavigationError';
 import { buildDockUrl, parseDockUrl, parseQueryParams } from './url-builder';
@@ -1295,6 +1295,16 @@ export class DockPointer implements IDockPointer {
       if (lens?.category === 'claude' && lens.type === 'transcript' && lens.ref && !lens.ref.includes('/')) {
         return DockPointer.tryTypeId(ClaudeSession.type, lens.ref);
       }
+    }
+    // A live-session dock targets its RemoteWorkerSession entity (id = session
+    // id). The viewType STRING ('live_session') differs from the entity TYPE
+    // ('remote_worker_session'), so it must be surfaced explicitly — the generic
+    // fallback below would mint the tab against a non-existent 'live_session'
+    // target, leaving it untitled and projectless (Global-scoped). Puts the
+    // session on the same entity rail as every other tab: the mint resolves its
+    // title (host/guest) and the loader its project.
+    if (this.viewType === ViewType.LIVE_SESSION) {
+      return DockPointer.tryTypeId(RemoteWorkerSession.type, pointer);
     }
     // A PROJECT-rebased asset dock (`/dock/project/<id>/<assetSubPointer>`, the
     // output of `rebaseAssetsOntoProject`) carries its target in the asset
