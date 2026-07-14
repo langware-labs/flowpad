@@ -45,10 +45,11 @@ export function GroupTaskDialog({ task, open, onOpenChange }: GroupTaskDialogPro
     if (!selected || !task.id || busy) return;
     setBusy(true);
     try {
-      const result = await dataManager.callAction<{ group_id: string }, CreateGroupTaskResult>(
-        new ActionInfo('create-group-task', Task.type, task.id, 'POST'),
-        { group_id: selected.id },
-      );
+      // callAction reads the POST body from the ActionInfo itself — a second
+      // argument would be silently ignored.
+      const actionInfo = new ActionInfo('create-group-task', Task.type, task.id, 'POST');
+      actionInfo.bodyParameters = { group_id: selected.id };
+      const result = await dataManager.callAction<{ group_id: string }, CreateGroupTaskResult>(actionInfo);
       const created = result?.created?.length ?? 0;
       const failed = result?.failed ?? [];
       if (failed.length) {

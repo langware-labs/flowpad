@@ -1,4 +1,3 @@
-import { MarkdownEditor } from '@src/components/assets/editor/markdown/MarkdownEditor';
 import { SharedTaskView } from '@src/components/task-bar/SharedTaskView';
 import { missingDoneGateFields, PRIORITY_CONFIG, STATUS_LABELS } from '@src/components/task-bar/constants';
 import { Input } from '@src/components/ui/input';
@@ -9,10 +8,12 @@ import { ActionInfo, dataManager, FSRef, Task } from '@sdk';
 import { cn } from '@src/lib/utils';
 import { notify } from '@src/notifications';
 import { Archive, ArrowLeft, Users } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { AnalyzeStatusButton } from './AnalyzeStatusButton';
 import { DoneGateDialog } from './DoneGateDialog';
+import { MemberTasksSection } from './MemberTasksSection';
 import { OwnerButton } from './OwnerButton';
+import { TaskAttachments } from './TaskAttachments';
 
 interface TaskAssetEditorProps {
   /** FSRef to the task folder. task.md / spec.md are resolved via child(). */
@@ -44,14 +45,14 @@ function toDateInput(v?: Date | string | null): string {
 /**
  * Task asset editor — the redesigned task surface. Task is a folder asset:
  * `task.md` holds the fields (owns_main_ref ⇒ the entity is the source of truth,
- * re-rendered on every save) and the inner `spec.md` holds the plan. So the
- * metadata is edited through a purpose-built header bound to the entity, and the
- * plan rides the shared `MarkdownEditor` on `spec.md`. Received tasks
+ * re-rendered on every save). The metadata is edited through a purpose-built
+ * header bound to the entity, and the body is the Attachments section (the
+ * files/folders this task is about, stored in `artifacts`). Received tasks
  * (`shared_by_id`) fall through to the collaboration `SharedTaskView`.
  *
  * Member tasks (`parent_id` set — one member's copy of a group task) render a
  * read-only view of the PARENT's display fields (single source of truth) with
- * only their own status editable; the plan is not shared, so no Plan section.
+ * only their own status editable.
  */
 export function TaskAssetEditor({ fsRef, task: providedTask }: TaskAssetEditorProps) {
   const { entity: discoveredTask } = useEntityByPath<Task>(
@@ -61,20 +62,14 @@ export function TaskAssetEditor({ fsRef, task: providedTask }: TaskAssetEditorPr
   const task = providedTask ?? discoveredTask;
   const { navigation } = useDockNavigation();
 
-  // Keyed on the STABLE typeId so a metadata save() (which hands back a new task
-  // ref) doesn't remount the plan editor / churn the spec.md fsRef.
+  // Keyed on the STABLE typeId so a metadata save() (which hands back a new
+  // task ref) doesn't churn child state.
   const taskRef = useRef(task);
   taskRef.current = task;
   const taskKey = task ? task.typeId.toString() : null;
   const parentId = task?.parent_id || null;
 
   const parent = useParentTask(parentId);
-
-  const specRef = useMemo(
-    () => taskRef.current?.specDoc ?? fsRef.child('spec.md'),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [taskKey],
-  );
 
   const [title, setTitle] = useState(task?.title ?? '');
   useEffect(() => setTitle(task?.title ?? ''), [taskKey]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -300,14 +295,10 @@ export function TaskAssetEditor({ fsRef, task: providedTask }: TaskAssetEditorPr
           )}
         </div>
       ) : (
-        <div className="flex min-h-0 flex-1 flex-col">
-          <div className="border-b px-6 py-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-            Plan
-          </div>
-          <div className="min-h-0 flex-1">
-            <MarkdownEditor fsRef={specRef} chatTarget={taskKey} />
-          </div>
-        </div>
+        <>
+          <MemberTasksSection task={task} />
+          <TaskAttachments task={task} save={save} />
+        </>
       )}
 
       <DoneGateDialog
