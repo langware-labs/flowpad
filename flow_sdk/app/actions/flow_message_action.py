@@ -2288,6 +2288,10 @@ async def _materialize_invitation(hub_inv: dict, someone_typeid: str) -> tuple[O
                 conversation_id=conv_id,
                 someone_typeid=someone_typeid,
                 notify=False,
+                # Pointer ts must be the message's hub clock, not "now" —
+                # the UI sorts bubbles by pointer ts, and this materialize
+                # can run after later messages already landed.
+                bundle_ts=str(msg_payload.get("created_date") or "").strip() or None,
             )
         except Exception as e:  # noqa: BLE001
             logger.warning("[inv-materialize] preview msg failed: %s", e)
@@ -2307,6 +2311,16 @@ async def _materialize_invitation(hub_inv: dict, someone_typeid: str) -> tuple[O
 
         synth_fm_id = str(_uuid.uuid5(_uuid.NAMESPACE_OID, f"invitation-preview-{inv_id}"))
         message_text = (local_inv.message or "").strip()
+        # The invite logically precedes every message in the conversation, but
+        # this synth path runs on a slower async leg and loses the race against
+        # live message materialization — a "now" clock would sort the notice
+        # AFTER the first real message (the UI orders bubbles by pointer ts).
+        # Backdate to the invitation's own hub clock (conv clock as fallback).
+        invite_ts = (
+            str(hub_inv.get("created_date") or "").strip()
+            or str(embedded_conv.get("created_date") or "").strip()
+            or None
+        )
         synth_payload = {
             "id": synth_fm_id,
             "text": (message_text or "You've been invited to a conversation"),
@@ -2320,6 +2334,8 @@ async def _materialize_invitation(hub_inv: dict, someone_typeid: str) -> tuple[O
             # recipient (who did NOT author the invite). The real inviter must
             # come from the hub (a preview_message), not be guessed here.
         }
+        if invite_ts:
+            synth_payload["created_date"] = invite_ts
         try:
             with remote_reflection():
                 inv_fm = await materialize_flow_message(
@@ -2327,6 +2343,7 @@ async def _materialize_invitation(hub_inv: dict, someone_typeid: str) -> tuple[O
                     conversation_id=conv_id,
                     someone_typeid=someone_typeid,
                     notify=False,
+                    bundle_ts=invite_ts,
                 )
         except Exception as e:  # noqa: BLE001
             logger.warning("[inv-materialize] synth preview failed: %s", e)
@@ -2609,6 +2626,38 @@ async def _rebind_orphan_children(conv, child_type: str, someone_typeid: str | N
                 )
 
 
+def _parse_pointer_ts(value: str | None) -> Optional[datetime]:
+    """Parse a Pointer's ISO ts for comparison; None when unparseable.
+    Naive stamps are read as UTC so aware/naive mixes stay comparable."""
+    try:
+        dt = datetime.fromisoformat((value or "").strip().replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return None
+    return dt.replace(tzinfo=UTC) if dt.tzinfo is None else dt
+
+
+def _clamp_invitation_ts(invitations: list[Pointer], merged: list[Pointer]) -> list[Pointer]:
+    """Clamp each invitation pointer's ts to the earliest hub-message ts.
+
+    Prepending the invitation isn't enough on its own: the UI re-sorts rows
+    by pointer ts (conversation-items.ts), so an invitation whose ts
+    post-dates the first real message would swap back after first paint.
+    On the resulting tie, the stable sort keeps the prepended invitation
+    first. Idempotent, so it also self-heals pointers written before this
+    fix. Pointers with an unparseable ts are clamped too (fail-first).
+    """
+    if not invitations or not merged:
+        return invitations
+    hub_keys = [(key, p.ts) for p in merged if (key := _parse_pointer_ts(p.ts)) is not None]
+    if not hub_keys:
+        return invitations
+    earliest_key, earliest_ts = min(hub_keys, key=lambda kv: kv[0])
+    return [
+        p if (k := _parse_pointer_ts(p.ts)) is not None and k <= earliest_key else Pointer(p.typeid, earliest_ts)
+        for p in invitations
+    ]
+
+
 async def _fetch_conversation_messages(conv_id: str, someone_typeid: str) -> None:
     """Bring local message state for a single conversation up to the hub's.
 
@@ -2706,6 +2755,11 @@ async def _fetch_conversation_messages(conv_id: str, someone_typeid: str) -> Non
                     for m in child_list
                 ]
                 dropped = 0
+                # Invitation placeholders are the conversation's logical first
+                # message, but their own ts post-dates the first real message
+                # (the synth path loses a materialization race), so neither
+                # appending nor ts-sorting puts them right — prepend them.
+                invitations: list[Pointer] = []
                 for ptr in message_pointers(rec):
                     if ptr.id in hub_ids:
                         continue  # hub-confirmed; already in merged
@@ -2726,13 +2780,15 @@ async def _fetch_conversation_messages(conv_id: str, someone_typeid: str) -> Non
                         or bool(getattr(fm, "is_draft", False))
                         or not fm.remote
                     )
-                    if keep:
-                        merged.append(ptr)
-                    else:
+                    if not keep:
                         # remote=True and absent from the hub list ⇒ deleted
                         # hub-side (or access revoked) — drop the stale copy.
                         dropped += 1
-                write_pointers(rec, merged)
+                    elif fm is not None and fm.kind == FlowMessageKind.INVITATION:
+                        invitations.append(ptr)
+                    else:
+                        merged.append(ptr)
+                write_pointers(rec, _clamp_invitation_ts(invitations, merged) + merged)
                 await project_pointers_to_entity(rec, notify=True)
                 if dropped:
                     logger.info(
