@@ -146,6 +146,10 @@ class AssetUsageKind(str, Enum):
     EMBEDDED_ASSET = "embedded_asset"
     INLINE_PERSONA = "inline_persona"
     TRANSCRIPT_FILE_READ = "transcript_file_read"
+    # Skill invoked through the native ``Skill`` tool (Claude ``/rca``), which
+    # yields a ``SkillCallEntry`` and NO ``SKILL.md`` file read — so file-read
+    # attribution alone would leave the skill unmarked in the asset view.
+    SKILL_INVOKED = "skill_invoked"
 
 
 # Sources whose underlying file/state lives outside this AgenticProcess —
@@ -4019,26 +4023,42 @@ class AgenticProcess(Entity):
 
     # ── Asset descriptors (read-only unified view) ────────────────────────────
 
-    def _transcript_file_reads(self) -> list[tuple[object, str]]:
+    @staticmethod
+    def _transcript_file_reads(transcript) -> list[tuple[object, str]]:
+        """``(entry, canonical_path)`` for each file read in ``transcript``."""
         from flow_sdk.fs_store.path_utils import canonical_posix_path
-        from flow_sdk.transcript_analyzer.entries.file_read import FileReadEntry
+        from flow_sdk.transcript_analyzer.entry import EntryKind
 
-        try:
-            transcript = self._load_transcript()
-        except Exception:
-            transcript = None
         if transcript is None:
             return []
-
         reads: list[tuple[object, str]] = []
-        for entry in getattr(transcript, "entries", []) or []:
-            if not isinstance(entry, FileReadEntry) or not getattr(entry, "path", None):
+        for entry in transcript.filter(kind=EntryKind.FILE_READ):
+            if not getattr(entry, "path", None):
                 continue
             try:
                 reads.append((entry, canonical_posix_path(entry.path)))
             except Exception:
                 continue
         return reads
+
+    @staticmethod
+    def _transcript_skill_calls(transcript) -> list:
+        """Native ``Skill``-tool invocations (Claude ``/rca``) in ``transcript``.
+
+        These carry a ``skill_name`` but produce no ``SKILL.md`` file read, so
+        they are the only signal that a skill run via the Skill tool was used.
+        """
+        from flow_sdk.transcript_analyzer.entry import EntryKind
+
+        if transcript is None:
+            return []
+        return [
+            e
+            for e in transcript.filter(kind=EntryKind.SKILL_CALL)
+            if (getattr(e, "skill_name", "") or "").strip()
+        ]
+
+    @staticmethod
 
     @staticmethod
     def _usage_from_file_read(entry: object, read_path: str) -> AssetUsage:
@@ -4123,6 +4143,47 @@ class AgenticProcess(Entity):
                 ):
                     continue
                 descriptor.usage.append(self._usage_from_file_read(entry, read_path))
+
+    @staticmethod
+    def _annotate_skill_invocations(
+        descriptors: list[AssetDescriptor],
+        skill_calls: list,
+    ) -> None:
+        """Attach native Skill-tool invocations to skill descriptors in-place.
+
+        A skill run via the ``Skill`` tool (Claude ``/rca``) leaves a
+        ``SkillCallEntry`` but NO ``SKILL.md`` read, so ``_annotate_asset_usage``
+        (file-read only) misses it. Match the invocation's ``skill_name`` to each
+        skill descriptor's folder slug — the runtime's ``input.skill`` and the
+        folder name are the same literal — and mark it used. Descriptors that
+        share a slug (same skill under USER_DIR + PROJECT_DIR) are both marked,
+        matching the "duplicates are intentional" contract.
+        """
+        from pathlib import Path
+
+        if not skill_calls:
+            return
+        # One representative entry per slug (skill_calls already have non-empty
+        # skill_name) so a skill invoked N times yields a single usage badge.
+        first_by_slug: dict[str, object] = {}
+        for entry in skill_calls:
+            first_by_slug.setdefault((entry.skill_name or "").strip(), entry)
+
+        for descriptor in descriptors:
+            if not descriptor.posix_path or not descriptor.typeid.startswith("skill-"):
+                continue
+            slug = Path(descriptor.posix_path.rstrip("/")).name
+            entry = first_by_slug.get(slug)
+            if entry is None:
+                continue
+            descriptor.usage.append(
+                AssetUsage(
+                    kind=AssetUsageKind.SKILL_INVOKED,
+                    entry_id=getattr(entry, "entry_id", None) or getattr(entry, "id", None),
+                    timestamp=getattr(entry, "timestamp", None),
+                    label=f"Invoked via /{slug}",
+                )
+            )
 
     async def _entity_for_transcript_read(self, read_path: str):
         """Resolve a read path to the owning file-backed entity, if any."""
@@ -4273,8 +4334,13 @@ class AgenticProcess(Entity):
             limit=10000,
         ))
 
-        reads = self._transcript_file_reads()
+        # Parse the transcript once; derive file-read and skill-invocation usage
+        # from the same in-memory entries via the first-class ``filter`` selector.
+        transcript = self._load_transcript()
+        reads = self._transcript_file_reads(transcript)
+        skill_calls = self._transcript_skill_calls(transcript)
         self._annotate_asset_usage(descriptors, reads)
+        self._annotate_skill_invocations(descriptors, skill_calls)
         await self._append_transcript_asset_descriptors(descriptors, reads, sources)
         return descriptors
 

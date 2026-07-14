@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import {
   AgenticProcess,
@@ -99,6 +99,18 @@ function basename(path: string): string {
 
 function descriptorKey(descriptor: AssetDescriptor): string {
   return `${descriptor.typeid}@${normalizePath(descriptor.posix_path)}`;
+}
+
+/** Sticky group header inside the asset list (Used / Available). */
+function AssetSectionHeader({ testid, children }: { testid: string; children: React.ReactNode }) {
+  return (
+    <div
+      className="sticky top-0 z-[1] border-b bg-muted/20 px-3 py-1 text-[10px] uppercase tracking-wider text-muted-foreground"
+      data-testid={testid}
+    >
+      {children}
+    </div>
+  );
 }
 
 function normalizeTranscriptWorker(workerType: string | null | undefined): TranscriptWorkerType {
@@ -345,6 +357,12 @@ export function AssetManagerPopover({
         })
       : descriptors;
     return [...filtered].sort((a, b) => {
+      // Used assets always float to the top — fast access to what the process
+      // actually touched — regardless of the By-source / By-name selector, which
+      // only orders within each group.
+      const ua = assetDescriptorHasUsage(a);
+      const ub = assetDescriptorHasUsage(b);
+      if (ua !== ub) return ua ? -1 : 1;
       if (sortBy === 'name') {
         const la = _displayLabelForTypeid(a.typeid).toLowerCase();
         const lb = _displayLabelForTypeid(b.typeid).toLowerCase();
@@ -359,6 +377,12 @@ export function AssetManagerPopover({
       return a.typeid.localeCompare(b.typeid);
     });
   }, [descriptors, entityVersion, listFilter, sortBy]);
+
+  // Boundary between the used-first and available groups (-1 = all used).
+  const firstAvailIdx = useMemo(
+    () => rows.findIndex((r) => !assetDescriptorHasUsage(r)),
+    [rows],
+  );
 
   const filteredDirs = useMemo(() => {
     const q = listFilter.trim().toLowerCase();
@@ -730,18 +754,35 @@ export function AssetManagerPopover({
                   {listFilter.trim() ? <Trans>No matches.</Trans> : <Trans>No assets visible to this process.</Trans>}
                 </div>
               )}
-              {rows.map((d, idx) => (
-                <AssetRow
-                  key={`${d.typeid}|${d.source}|${idx}`}
-                  descriptor={d}
-                  iconForType={iconForType}
-                  attached={attachedSet.has(d.typeid)}
-                  used={assetDescriptorHasUsage(d)}
-                  busy={busyAssetKey === descriptorKey(d)}
-                  onDetach={onDetach}
-                  onImprove={openImproveDialog}
-                />
-              ))}
+              {rows.map((d, idx) => {
+                // rows are sorted used-first, so `firstAvailIdx` is the single
+                // boundary between the "Used" and "Available" groups. Emit a
+                // sticky header at the top of each non-empty group.
+                const used = assetDescriptorHasUsage(d);
+                return (
+                  <Fragment key={`${d.typeid}|${d.source}|${idx}`}>
+                    {idx === 0 && used && (
+                      <AssetSectionHeader testid="asset-manager-section-used">
+                        <Trans>Used assets</Trans>
+                      </AssetSectionHeader>
+                    )}
+                    {idx === firstAvailIdx && (
+                      <AssetSectionHeader testid="asset-manager-section-available">
+                        <Trans>Available assets</Trans>
+                      </AssetSectionHeader>
+                    )}
+                    <AssetRow
+                      descriptor={d}
+                      iconForType={iconForType}
+                      attached={attachedSet.has(d.typeid)}
+                      used={used}
+                      busy={busyAssetKey === descriptorKey(d)}
+                      onDetach={onDetach}
+                      onImprove={openImproveDialog}
+                    />
+                  </Fragment>
+                );
+              })}
             </div>
 
             {footer}
