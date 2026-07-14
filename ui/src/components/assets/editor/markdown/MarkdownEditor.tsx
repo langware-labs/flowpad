@@ -113,6 +113,15 @@ interface MarkdownEditorProps {
    * fragment URLs (`…/wiki/<name>` + `?wikiFragment=<slug>`).
    */
   fragment?: string;
+  /**
+   * Override the missing-file copy (note + action-button label) — e.g. the
+   * task Plan section shows "This task has no spec yet." / "Add spec" instead
+   * of the generic "Note: File is missing / Re-create it". The editor keeps
+   * ownership of the layout, button, and `recreate` wiring; custom copy also
+   * drops the raw source-path line (a missing file is a normal state for
+   * such surfaces, not an error worth a path dump).
+   */
+  missingFileCopy?: { note: React.ReactNode; actionLabel: React.ReactNode };
 }
 
 /**
@@ -136,6 +145,7 @@ export function MarkdownEditor({
   deleteLabel,
   reloadKey,
   fragment,
+  missingFileCopy,
 }: MarkdownEditorProps) {
   return (
     <MarkdownEditorContent
@@ -151,6 +161,7 @@ export function MarkdownEditor({
       deleteLabel={deleteLabel}
       reloadKey={reloadKey}
       fragment={fragment}
+      missingFileCopy={missingFileCopy}
     />
   );
 }
@@ -206,6 +217,7 @@ function MarkdownEditorContent({
   deleteLabel,
   reloadKey,
   fragment,
+  missingFileCopy,
 }: {
   fsRef: FSRef;
   sourcePath: string;
@@ -219,6 +231,7 @@ function MarkdownEditorContent({
   deleteLabel?: MarkdownEditorProps['deleteLabel'];
   reloadKey?: string | number;
   fragment?: string;
+  missingFileCopy?: MarkdownEditorProps['missingFileCopy'];
 }) {
   const { t } = useLingui();
   const { navigation, currentDock } = useDockNavigation();
@@ -517,11 +530,15 @@ function MarkdownEditorContent({
           showLearningMode={showLearningMode}
         />
         <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
-          <p className="text-sm font-medium text-foreground"><Trans>Note: File is missing</Trans></p>
-          <p className="break-all font-mono text-xs text-muted-foreground">{sourcePathStr}</p>
+          <p className="text-sm font-medium text-foreground">
+            {missingFileCopy?.note ?? <Trans>Note: File is missing</Trans>}
+          </p>
+          {!missingFileCopy && (
+            <p className="break-all font-mono text-xs text-muted-foreground">{sourcePathStr}</p>
+          )}
           <Button variant="outline" size="sm" onClick={() => void recreate()}>
             <FilePlus2 className="mr-1 h-4 w-4" />
-            <Trans>Re-create it</Trans>
+            {missingFileCopy?.actionLabel ?? <Trans>Re-create it</Trans>}
           </Button>
         </div>
       </div>
