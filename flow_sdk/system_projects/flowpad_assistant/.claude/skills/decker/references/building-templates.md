@@ -70,10 +70,11 @@ one via the `.flow/id` capsule):
 }
 ```
 
-Then:
+Then index the **project root** (not the template folder — the walker scans
+`<root>/assets/deck-templates/`, so indexing the template folder finds nothing):
 
 ```bash
-flow record index "<project root>/assets/deck-templates/<template name>"
+flow record index "<project root>"
 ```
 
 The folder becomes a `deck_template` entity (layout list is scanned from disk
@@ -83,5 +84,5 @@ future sessions back through this skill.
 ## Adding layouts to an existing template
 
 Same as step 3: write the fragment per the slot inventory, preview with a
-one-slide deck, then re-run `flow record index` on the template folder so the
+one-slide deck, then re-run `flow record index "<project root>"` so the
 entity's layout list updates.

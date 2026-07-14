@@ -1,7 +1,6 @@
-import { AssetEditor, VFSPath } from '@sdk';
+import { AssetEditor } from '@sdk';
 import { AlertCircle } from 'lucide-react';
-import { useFS } from '@src/hooks/useFS';
-import { useProject } from '@src/hooks/useProject';
+import { useDownloadUrl } from '@src/hooks/use-download-url';
 
 /**
  * Render an image/video/audio file inline via the backend fs `download`
@@ -17,12 +16,7 @@ export function MediaViewer({
   path: string;
   kind: AssetEditor.IMAGE | AssetEditor.VIDEO | AssetEditor.AUDIO;
 }) {
-  const { project } = useProject();
-  const parsed = VFSPath.parse(path);
-  const typeId = parsed.typeId ?? project?.typeId;
-  const subPath = parsed.typeId ? parsed.machinePath : path;
-  const fs = useFS(typeId);
-  const url = fs ? fs.getDownloadUrl(subPath) : null;
+  const { url, subPath } = useDownloadUrl(path);
 
   if (!url) {
     return (

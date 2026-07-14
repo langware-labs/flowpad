@@ -4,6 +4,7 @@ import { GitPushButton } from '@src/components/status-bar/GitPushButton';
 import { GitStatusPill } from '@src/components/status-bar/GitStatusPill';
 import { OpenProjectComponent } from '@src/components/open-project-component/open-project-component';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
+import { WikiTip } from '@src/components/wiki-tip';
 import { useProjects } from '@src/hooks/use-projects';
 import { useContext } from '@src/hooks/useContext';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -116,16 +117,24 @@ export function StatusBar({ className = '' }: StatusBarProps) {
           <ArrowLeftRight className="h-3 w-3 shrink-0" />
           <span className="hidden sm:inline" style={glowStyle}><Trans>Switch Project</Trans></span>
         </button>
-        <button
-          onClick={() => navigation.openDock(DockPointer.forProject(project.id))}
-          className="shrink-0 whitespace-nowrap text-xs font-medium transition-colors hover:underline"
-          style={isRoot ? glowStyle : { color: 'var(--muted-foreground)' }}
-          title={isRoot ? rootTooltip : projectPath ? t`Open project view — ${projectPath}` : t`Open project view`}
+        {/* One-line tip: the project path plus a W-square button that opens the
+            "Flowpad project" wiki page in a modal (like the skill preview). */}
+        <WikiTip
+          wikiword="Flowpad project"
+          label={isRoot ? rootTooltip : projectPath ?? t`Open project view`}
+          buttonLabel={t`What is a Flowpad project?`}
         >
-          {project.displayName.length > 20
-            ? `${project.displayName.slice(0, 20)}…`
-            : project.displayName}
-        </button>
+          <button
+            onClick={() => navigation.openDock(DockPointer.forProject(project.id))}
+            className="shrink-0 whitespace-nowrap text-xs font-medium transition-colors hover:underline"
+            style={isRoot ? glowStyle : { color: 'var(--muted-foreground)' }}
+            aria-label={isRoot ? rootTooltip : projectPath ? t`Open project view — ${projectPath}` : t`Open project view`}
+          >
+            {project.displayName.length > 20
+              ? `${project.displayName.slice(0, 20)}…`
+              : project.displayName}
+          </button>
+        </WikiTip>
         {projectPath && computeNode && (
           <Tooltip delayDuration={0}>
             <TooltipTrigger asChild>

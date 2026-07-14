@@ -13,7 +13,9 @@ import flow_sdk.builtin.codex_session  # noqa: F401
 import flow_sdk.builtin.command  # noqa: F401
 import flow_sdk.builtin.copilot_session  # noqa: F401
 import flow_sdk.builtin.dataset  # noqa: F401
+import flow_sdk.builtin.deck  # noqa: F401
 import flow_sdk.builtin.deck_template  # noqa: F401
+import flow_sdk.builtin.spreadsheet  # noqa: F401
 import flow_sdk.builtin.dynamic_workflow  # noqa: F401
 import flow_sdk.builtin.markdown_index  # noqa: F401
 import flow_sdk.builtin.project  # noqa: F401
@@ -33,7 +35,9 @@ import flow_sdk.fs_store.indexer.functions.claude_sessions  # noqa: F401
 import flow_sdk.fs_store.indexer.functions.codex_sessions  # noqa: F401
 import flow_sdk.fs_store.indexer.functions.copilot_sessions  # noqa: F401
 import flow_sdk.fs_store.indexer.functions.dataset  # noqa: F401
+import flow_sdk.fs_store.indexer.functions.deck  # noqa: F401
 import flow_sdk.fs_store.indexer.functions.deck_template  # noqa: F401
+import flow_sdk.fs_store.indexer.functions.spreadsheet  # noqa: F401
 import flow_sdk.fs_store.indexer.functions.dynamic_workflows  # noqa: F401
 import flow_sdk.fs_store.indexer.functions.markdown  # noqa: F401
 import flow_sdk.fs_store.indexer.functions.markdown_index  # noqa: F401

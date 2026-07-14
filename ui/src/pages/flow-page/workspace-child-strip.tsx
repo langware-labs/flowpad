@@ -94,12 +94,20 @@ export function WorkspaceChildStrip({ processTab, processDock }: WorkspaceChildS
         title={processTab?.name || t`Display`}
         aria-current={processActive ? 'true' : undefined}
         data-testid="workspace-display-tab"
-        className={`flex h-9 w-9 shrink-0 items-center justify-center border-r border-border transition-colors ${
+        className={`relative flex h-9 w-9 shrink-0 items-center justify-center border-r border-border transition-colors ${
           processActive
-            ? 'bg-background text-foreground'
+            ? // Match the child tabs' active treatment (TabStrip): raised body
+              // surface + shadow + a primary top accent. The narrow square loses
+              // a plain bg swap, so it needs the same strong, theme-aware cue.
+              'bg-background text-primary shadow-sm'
             : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'
         }`}
       >
+        {/* Active accent — mirrors the tab chip's top bar so the Display reads
+            as the selected tab it is; absolute so it never shifts the icon. */}
+        {processActive && (
+          <span className="pointer-events-none absolute inset-x-0 top-0 h-0.5 bg-primary" />
+        )}
         <Monitor className="h-4 w-4" />
       </button>
       <div className="min-w-0 flex-1">

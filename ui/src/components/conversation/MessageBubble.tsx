@@ -48,6 +48,11 @@ interface MessageBubbleProps {
    *  Implement Plan / Open Session state — View Plan always renders when the
    *  bubble has a spec and the local user is the recipient. */
   onViewPlan?: (specId: string) => void;
+  /** Whether the conversation already has a worker session — flips the Execute
+   *  chip from "Run" to "<Host>'s session · new run". */
+  workerSessionExists?: boolean;
+  workerSessionLabel?: string | null;
+  workerSessionInFlight?: boolean;
   /** Optional content rendered below the message body (e.g. attachment chips). */
   footer?: ReactNode;
   /** Visual selection — drives the Context tab. */
@@ -173,6 +178,9 @@ export function MessageBubble({
   onImplementPlan,
   onOpenPlanSession,
   onViewPlan,
+  workerSessionExists = false,
+  workerSessionLabel = null,
+  workerSessionInFlight = false,
   footer,
   isSelected,
   onSelect,
@@ -199,6 +207,9 @@ export function MessageBubble({
     messageId: flowMessageId,
     isFromOther,
     hasPlanSession: !!onOpenPlanSession,
+    workerSessionExists,
+    workerSessionLabel,
+    workerSessionInFlight,
     handlers: {
       approveAndExecute: onApproveAndExecute,
       implementPlan: onImplementPlan,

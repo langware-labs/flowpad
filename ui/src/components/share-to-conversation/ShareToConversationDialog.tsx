@@ -65,6 +65,21 @@ interface ShareToConversationDialogProps {
    *  personal note is noise (e.g. forwarding a diagnosis). A `defaultNote`, if
    *  given, is still sent as the message caption. */
   hideNote?: boolean;
+  /** Override the Title input placeholder (e.g. collaboration framing instead
+   *  of the default "What do you need help with?"). */
+  titlePlaceholder?: string;
+  /** Override the submit button label (e.g. "Send invite" for Collaborate).
+   *  Defaults to "Share". */
+  submitLabel?: string;
+  /** Override the dialog heading (e.g. "Collaborate on this session").
+   *  Defaults to "Share". */
+  heading?: string;
+  /** Keep the local `project_id` on a NEW conversation even when the recipient
+   *  is remote. By default remote shares from arbitrary surfaces drop the
+   *  active-project association (it'd be arbitrary); Collaborate opts in so the
+   *  new conversation stays scoped to the workspace that started it (the hub
+   *  body still strips project_id — this only affects the sender's local row). */
+  associateProjectOnRemote?: boolean;
 }
 
 const MAX_CONVERSATIONS = 5;
@@ -100,6 +115,10 @@ export function ShareToConversationDialog({
   commit,
   hideTitle,
   hideNote,
+  titlePlaceholder,
+  submitLabel,
+  heading,
+  associateProjectOnRemote,
 }: ShareToConversationDialogProps) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
@@ -237,7 +256,7 @@ export function ShareToConversationDialog({
         : {
             kind: 'new',
             params: {
-              project_id: isRemote ? null : effectiveProjectId,
+              project_id: isRemote && !associateProjectOnRemote ? null : effectiveProjectId,
               participants,
               title: effectiveTitle,
               shared_context_entities: prepared.sharedContextEntities,
@@ -271,7 +290,7 @@ export function ShareToConversationDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Send className="h-5 w-5 text-primary" />
-            <Trans>Share</Trans>
+            {heading ?? <Trans>Share</Trans>}
           </DialogTitle>
         </DialogHeader>
 
@@ -347,7 +366,12 @@ export function ShareToConversationDialog({
                 <Input
                   value={titleInput}
                   onChange={(e) => setTitleInput(e.target.value)}
-                  placeholder={source.requiresTitle ? t`What do you need help with?` : defaultTitle || t`Conversation title`}
+                  placeholder={
+                    titlePlaceholder ??
+                    (source.requiresTitle
+                      ? t`What do you need help with?`
+                      : defaultTitle || t`Conversation title`)
+                  }
                   disabled={busy}
                   data-testid="share-title-input"
                 />
@@ -492,7 +516,7 @@ export function ShareToConversationDialog({
                 className="gap-1.5"
               >
                 <Send className="h-4 w-4" />
-                {busy ? t`Sharing…` : t`Share`}
+                {busy ? t`Sharing…` : submitLabel ?? t`Share`}
               </Button>
             </div>
           </div>

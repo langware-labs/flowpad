@@ -1,9 +1,12 @@
 ---
-id: 9d2a4c0e-1f8b-4e5a-9c11-330033003300
+id: 6daf0ca3-5f0c-415f-8722-ed3dd14af945
 type: workflow
 name: whiteboard_scope
-description: Whiteboard scope Sc1-Sc2 — project-scoped creation + user-vs-project coexistence
-tags: [whiteboard, scope]
+description: Whiteboard scope Sc1-Sc2 — project-scoped creation + user-vs-project
+  coexistence
+tags:
+- whiteboard
+- scope
 ---
 
 # Whiteboard — Scope (Sc1–Sc2)

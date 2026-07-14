@@ -1,16 +1,15 @@
 import { dataManager, MessageAttachment, Project, TypeId } from '@sdk';
 import { useProject } from '@sdk/react/hooks';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { FolderDown, Globe, Loader2, Play, Trash2 } from 'lucide-react';
+import { FolderDown, Globe, Loader2, Trash2 } from 'lucide-react';
 import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import { Button } from '@src/components/ui/button';
 import { ProjectSelectorModal, projectListToSelectorItems } from '@src/components/project-selector';
 import { canonicalPath, useEnsureProject } from '@src/components/project-selector/use-ensure-project';
 import { useAllProjects } from '@src/hooks/use-all-projects';
 import { notify } from '@src/notifications';
-import { TESTABLE_TYPES } from './test-prompt';
-import { TestPromptDialog } from './TestPromptDialog';
-import { useRunSkillWithProjectPrompt } from './useRunReceivedSkill';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { openDisplayTarget } from '@src/navigation/open-display-target';
 
 /** One install-scope toggle: shows Uninstall when THIS scope is installed,
  *  Install (disabled while the other scope holds the install) otherwise. */
@@ -80,17 +79,20 @@ export function AssetInstallActions({
   const { t } = useLingui();
   const [busy, setBusy] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [testOpen, setTestOpen] = useState(false);
   const { projects, isLoading: projectsLoading } = useAllProjects({ enabled: pickerOpen });
   const projectItems = useMemo(() => projectListToSelectorItems(projects), [projects]);
   const ensureProject = useEnsureProject();
   const { project: currentProject } = useProject();
-  const { start: startSkillRun, picker: runPicker } = useRunSkillWithProjectPrompt();
+  const { navigation } = useDockNavigation();
 
   const installedScope = attachment.effectiveScope;
   // Schema-derived, stamped backend-side at stage time — no type list here.
   const userScopeAllowed = attachment.user_scope_allowed !== false;
-  const testable = TESTABLE_TYPES.has(attachment.asset_type ?? '');
+  // Reception verb, sourced from the backend TypeInfo (no per-type FE map). A type
+  // with a setup_skill gets its own CTA verb ("Set up", "Run"); everything else
+  // keeps the plain "Install in project".
+  const typeInfo = dataManager.getTypeInfo?.(attachment.asset_type ?? '');
+  const setupLabel = typeInfo?.setup_skill ? (typeInfo.reception_verb ?? null) : null;
 
   // Preselection: the conversation-mapped project wins; fall back to the
   // active project. Selector ids are canonical PATHS (ConversationRoute
@@ -118,8 +120,9 @@ export function AssetInstallActions({
     async (scope: 'user' | 'project', projectId?: string) => {
       setBusy(true);
       try {
-        await attachment.install(scope, projectId);
+        const show = await attachment.install(scope, projectId);
         notify.success({ title: t`Installed`, message: attachment.name ?? attachment.asset_type ?? '' });
+        openDisplayTarget(show, navigation);
       } catch (err) {
         console.error('[asset-review] install failed', err);
         notify.error({ title: t`Install failed` });
@@ -127,7 +130,7 @@ export function AssetInstallActions({
         setBusy(false);
       }
     },
-    [attachment, t],
+    [attachment, navigation, t],
   );
 
   const doUninstall = useCallback(async () => {
@@ -151,8 +154,9 @@ export function AssetInstallActions({
       try {
         const project = await ensureProject(picked.path, { select: false });
         if (!project.id) throw new Error('picked project has no id');
-        await attachment.install('project', project.id);
+        const show = await attachment.install('project', project.id);
         notify.success({ title: t`Installed in project`, message: project.displayName });
+        openDisplayTarget(show, navigation);
       } catch (err) {
         console.error('[asset-review] project install failed', err);
         notify.error({ title: t`Install failed` });
@@ -160,7 +164,7 @@ export function AssetInstallActions({
         setBusy(false);
       }
     },
-    [attachment, ensureProject, projectItems, t],
+    [attachment, ensureProject, projectItems, navigation, t],
   );
 
   return (
@@ -169,7 +173,7 @@ export function AssetInstallActions({
         scope="project"
         installedScope={installedScope}
         busy={busy}
-        installLabel={<Trans>Install in project</Trans>}
+        installLabel={setupLabel ?? <Trans>Install in project</Trans>}
         uninstallLabel={<Trans>Uninstall from project</Trans>}
         installIcon={<FolderDown className="h-3.5 w-3.5" />}
         onInstall={openPicker}
@@ -189,12 +193,6 @@ export function AssetInstallActions({
           disabledTitle={t`Already installed in a project — uninstall first`}
         />
       )}
-      {testable && (
-        <Button size="sm" variant="outline" disabled={busy} onClick={() => setTestOpen(true)} data-testid="asset-test-it">
-          <Play className="h-3.5 w-3.5" />
-          <Trans>Run</Trans>
-        </Button>
-      )}
       <ProjectSelectorModal
         open={pickerOpen}
         onOpenChange={setPickerOpen}
@@ -202,19 +200,8 @@ export function AssetInstallActions({
         selectedId={preselectedPath}
         onSelect={(id) => void handleProjectPick(id)}
         isLoading={projectsLoading}
-        title={t`Install in project`}
+        title={setupLabel ?? t`Install in project`}
       />
-      {testOpen && (
-        <TestPromptDialog
-          open={testOpen}
-          onClose={() => setTestOpen(false)}
-          assetName={attachment.name ?? attachment.asset_type ?? ''}
-          onRun={(prompt) =>
-            startSkillRun(attachment, conversationProjectId ?? currentProject?.id ?? null, prompt)
-          }
-        />
-      )}
-      {runPicker}
     </div>
   );
 }

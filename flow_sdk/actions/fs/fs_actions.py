@@ -219,8 +219,10 @@ async def download(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> Strea
         filename = fs_info.vpath.filename
         media_type = _get_media_type(filename)
         # Use inline disposition for media so browsers can render them in
-        # <img>/<video>/<audio> tags instead of forcing a download
-        is_inline = media_type.startswith(("image/", "video/", "audio/"))
+        # <img>/<video>/<audio> tags instead of forcing a download. PDFs are an
+        # explicit literal MIME (not an X/ family) so they render inline in the
+        # native <iframe>/<embed> PDF viewer rather than triggering a download.
+        is_inline = media_type.startswith(("image/", "video/", "audio/")) or media_type == "application/pdf"
         headers = {
             "Content-Disposition": make_content_disposition(filename, inline=is_inline),
         }

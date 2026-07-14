@@ -23,19 +23,36 @@ export function useEntitiesQuery<T extends APIEntity<T>>(
   const scopeJsonStringified = JSON.stringify(request.scope?.filter((s) => s != null).map((s) => s.toString()) ?? []);
 
   // State refs to track query state
-  const stateRef = useRef<{
+  type QueryState = {
     data: T[] | undefined;
     isLoading: boolean;
     error: ApiError | null;
     isError: boolean;
     isSuccess: boolean;
-  }>({
-    data: undefined,
-    isLoading: enabled,
-    error: null,
-    isError: false,
-    isSuccess: false,
-  });
+  };
+  // Seed state from the in-memory query cache so a remount (e.g. reopening the
+  // inbox, which fully unmounts/remounts its view) renders the already-known rows
+  // on the first frame instead of flashing an empty ``undefined``/loading state.
+  // ``getCachedQueryResults`` is a synchronous keyed read; a miss (cold load)
+  // yields the loading state, so cold starts are unchanged. Reused on resubscribe.
+  const seedState = (): QueryState => {
+    const cached = enabled ? dataManager.getCachedQueryResults<T>(request) : undefined;
+    if (cached) {
+      // New array ref (matches the watch-callback / refetch convention below) so
+      // React reliably detects the change.
+      return { data: [...cached], isLoading: false, error: null, isError: false, isSuccess: true };
+    }
+    return { data: undefined, isLoading: enabled, error: null, isError: false, isSuccess: false };
+  };
+  // Lazy one-time seed: useRef evaluates its argument on EVERY render, so the
+  // cache read + array clone must not live in the initializer. Start from a cheap
+  // loading literal and replace it with the real seed exactly once.
+  const stateRef = useRef<QueryState>({ data: undefined, isLoading: enabled, error: null, isError: false, isSuccess: false });
+  const seededRef = useRef(false);
+  if (!seededRef.current) {
+    seededRef.current = true;
+    stateRef.current = seedState();
+  }
 
   // Cache the snapshot to prevent unnecessary re-renders
   const snapshotRef = useRef(stateRef.current);
@@ -64,17 +81,13 @@ export function useEntitiesQuery<T extends APIEntity<T>>(
         };
       }
 
-      // IMPORTANT: Set loading state immediately when subscribing
-      // This ensures that when request changes, we show loading state right away
-      // instead of showing stale data from the previous request
-      stateRef.current = {
-        data: undefined,
-        isLoading: true,
-        error: null,
-        isError: false,
-        isSuccess: false,
-      };
-      callback(); // Trigger re-render immediately with loading state
+      // On (re)subscribe, seed from THIS request's cache (see seedState above)
+      // rather than blanking to ``undefined``/loading. On a request change this
+      // reads the new request's cache — never the stale previous request's data,
+      // the original reason this reset existed — and on a warm remount it keeps
+      // the known rows on screen instead of flashing the empty loading state.
+      stateRef.current = seedState();
+      callback(); // Trigger re-render immediately with the seeded state
 
       let unsubscribe: (() => void) | undefined;
 

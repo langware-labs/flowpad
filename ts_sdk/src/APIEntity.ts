@@ -16,6 +16,22 @@ import { normalizeEmail } from './utils/utils';
 import { Callable } from './types';
 
 /**
+ * The DisplayTarget an `install()` / `setup()` returns — what the receiver should
+ * navigate to (`openDisplayTarget`). Mirrors the backend `_entity_payload` /
+ * `resolve_display_target` shape. `kind:'entity'` pointing at an `agentic_process`
+ * is a spawned Vibe setup session; other entities open in their editor; `webapp`
+ * opens the port preview.
+ */
+export interface ReceiveShowTarget {
+  kind?: 'entity' | 'vfs' | 'webapp';
+  typeid?: string;
+  type?: string;
+  id?: string;
+  path?: string;
+  port?: number | string;
+}
+
+/**
  * One row of an entity's member roster, as returned by the generic ``members``
  * action (``APIEntity.fetchMembers``). The hub normalizes ``user_email`` →
  * ``email`` etc. server-side (see ``_hub_reflect._normalize_hub_response``);
@@ -881,6 +897,19 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     const info = new ActionInfo('set-group', this.typeId.type, this.typeId.id, 'POST');
     info.bodyParameters = { group_id: groupId };
     await dataManager.callAction<unknown, unknown>(info);
+  }
+
+  /**
+   * Open / set up this entity — the reception hook reused for the open-an-existing
+   * surfaces (artifact favorites/cards/chips, skill run). Returns the DisplayTarget
+   * to navigate to (`openDisplayTarget`): the entity itself, or a spawned Vibe setup
+   * session. `projectId` optionally overrides the entity's own project binding.
+   */
+  public async setup(projectId?: string | null): Promise<ReceiveShowTarget | null> {
+    const info = new ActionInfo('setup', this.typeId.type, this.typeId.id, 'POST');
+    info.bodyParameters = { project_id: projectId ?? null };
+    const res = await dataManager.callAction<unknown, { show?: ReceiveShowTarget | null }>(info);
+    return res?.show ?? null;
   }
 
   /**
