@@ -33,9 +33,15 @@ class FsRecordsActionsMixin:
             return str(display_name)
         return getattr(ent, "name", None) or getattr(ent, "title", "") or ""
 
-    async def _resolve_scoped_roots(self, sf):
+    async def _resolve_scoped_roots(self, sf, *, foreground: bool = False):
         """Translate a ``ScopeFilter`` into a narrowed indexer ``roots`` tuple
         (or ``None`` to use the indexer's default roots).
+
+        ``foreground=True`` marks an explicit user-scoped request (the user
+        opened these exact projects) — a project inside a macOS-protected folder
+        is then walked (one expected OS prompt). Background/all-projects fanouts
+        pass ``foreground=False`` so protected-folder projects are gated by the
+        per-folder consent state instead of silently tripping a TCC popup.
 
         Mapping:
           - sf is None                         → None (default_roots())
@@ -127,6 +133,25 @@ class FsRecordsActionsMixin:
                         mount,
                     )
                     continue
+                # macOS-TCC / cross-OS gate: a project inside a protected folder
+                # (Documents/Desktop/Downloads/media) must not be walked by a
+                # background scan — that first read pops an OS consent dialog.
+                # foreground (explicit open) walks it; media is always skipped;
+                # an un-decided folder queues an in-app consent request instead.
+                from flow_sdk.fs_store.indexer.special_folders import (  # noqa: PLC0415
+                    IndexDecision,
+                    gate_root,
+                )
+                decision = gate_root(mount_path, foreground=foreground)
+                if decision is not IndexDecision.WALK:
+                    logging.debug(
+                        "fs-records/_resolve_scoped_roots: gating project %s — "
+                        "mount %r is in a protected folder (decision=%s)",
+                        pid,
+                        mount,
+                        decision.value,
+                    )
+                    continue
                 roots.append(
                     FSRef(
                         mount_path,
@@ -135,6 +160,13 @@ class FsRecordsActionsMixin:
                         project_id=pid,
                     )
                 )
+
+        # Surface any consent requests queued by the gate above (deduped by
+        # folder). Fire-and-forget WS event → the UI renders Index/Skip.
+        from flow_sdk.fs_store.indexer.consent_notify import (  # noqa: PLC0415
+            surface_pending_consent,
+        )
+        surface_pending_consent()
 
         if not roots:
             # Distinguish two empty-result cases. When the caller passed a
@@ -160,11 +192,14 @@ class FsRecordsActionsMixin:
         from flow_sdk.fs_store.operations.all_projects import get_all_scope_filter  # noqa: PLC0415
         from flow_sdk.server.search_filters import ScopeFilter, resolve_project_scope  # noqa: PLC0415
 
+        # An explicit ``?projects=`` is a foreground open of those exact projects
+        # — walk them even inside a protected folder (one expected OS prompt).
+        foreground = qp.get("projects") is not None
         if qp.get("user") is not None or qp.get("projects") is not None:
             scope_filter = await resolve_project_scope(ScopeFilter.from_query_params(qp))
         else:
             scope_filter = await get_all_scope_filter(create_missing=create_missing)
-        return await self._resolve_scoped_roots(scope_filter)
+        return await self._resolve_scoped_roots(scope_filter, foreground=foreground)
 
     @staticmethod
     async def _resolve_asset_ref(ent) -> str:
@@ -596,6 +631,9 @@ class FsRecordsActionsMixin:
         from flow_sdk.fs_store.operations.all_projects import get_all_scope_filter  # noqa: PLC0415
         from flow_sdk.server.search_filters import ScopeFilter, resolve_project_scope  # noqa: PLC0415
         scope_explicit = qp.get("user") is not None or qp.get("projects") is not None
+        # ``?projects=`` = foreground open of those exact projects → walk even
+        # inside a protected folder; ``?user=`` / all-projects fanout is gated.
+        foreground = qp.get("projects") is not None
         if scope_explicit:
             scope_filter = await resolve_project_scope(ScopeFilter.from_query_params(qp))
         else:
@@ -603,7 +641,7 @@ class FsRecordsActionsMixin:
             # missing Project rows, and carry the cwd metadata into
             # _resolve_scoped_roots so the helper is not scanned twice.
             scope_filter = await get_all_scope_filter(create_missing=False)
-        scoped_roots = await self._resolve_scoped_roots(scope_filter)
+        scoped_roots = await self._resolve_scoped_roots(scope_filter, foreground=foreground)
         if isinstance(scoped_roots, ApiFailResponse):
             return scoped_roots
 

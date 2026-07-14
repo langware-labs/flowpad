@@ -348,7 +348,18 @@ def default_roots() -> list[FSRef]:
     # media library) — each first access trips a macOS TCC prompt attributed to
     # Flowpad. USER_HOME_FOLDER already covers home via targeted expanders, so a
     # home-rooted CWD_ROOT adds nothing but that recursive walk.
-    if not is_home_or_ancestor(cwd, settings.user_home):
+    # macOS-TCC / cross-OS gate: never auto-walk a backend cwd that sits inside a
+    # protected folder (Documents/Desktop/Downloads/media). gate_root walks only
+    # when un-gated or explicitly allowed, and queues an in-app consent request
+    # on ASK; media/skip/denied drop it.
+    from flow_sdk.fs_store.indexer.special_folders import (  # noqa: PLC0415
+        IndexDecision,
+        gate_root,
+    )
+    if (
+        not is_home_or_ancestor(cwd, settings.user_home)
+        and gate_root(cwd, foreground=False) is IndexDecision.WALK
+    ):
         roots.append(
             FSRef(
                 cwd,
