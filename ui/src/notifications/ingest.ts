@@ -6,9 +6,11 @@ import { notify } from './notify';
 /**
  * Maps backend WS signals into `notify()` calls — the single ingest point.
  *
- * The multi-toast "Cloud sign-in expired" storm is fixed here: every hub error
- * of a given status class uses ONE stable id, so N broadcasts collapse to one
- * live toast that updates in place (was one sonner toast per event).
+ * Hub-error toast storms are fixed here: every hub error of a given status
+ * class uses ONE stable id, so N broadcasts collapse to one live toast that
+ * updates in place (was one sonner toast per event). 401s never toast at all —
+ * logged-out is a normal state (login CTA overlay) and an expired/revoked
+ * credential is only console/backend-logged.
  *
  * Owns: the `hub_client_error` listener, the one-shot bootstrap notice, and the
  * `on_flow_data` hook_op listener (skill / incoming-task badges) that used to
@@ -58,16 +60,16 @@ function handleHubClientError(msg: HubClientErrorMsg): void {
   } else if (statusCode === 401) {
     // A 401 while we were never authenticated (or after an explicit logout) is
     // the *normal* logged-out state — not an error. The inbox/conversation
-    // surfaces show a Login CTA overlay for that case, so swallow the toast.
-    // Only surface "sign-in expired" when a previously-valid cloud session
-    // actually lapsed (we still believe we're logged in).
+    // surfaces show a Login CTA overlay for that case, so stay silent.
     if (cloudManager.loginStatus !== 'logged_in') return;
-    notify.error({
-      id: 'cloud-auth-expired',
-      title: 'Cloud sign-in expired',
-      message: 'Please sign in again to keep using cloud features.',
-      actions: [{ label: 'Sign in', command: 'cloud.signin' }, detail],
-    });
+    // A 401 while we still believe we're logged in means the hub expired or
+    // revoked the stored credential. No toast: the backend WARNs on every hub
+    // 401 and the cloud surfaces show the login CTA, so a toast just nags on
+    // every WS re-watch retry. Leave a console trail for diagnosis instead.
+    console.warn(
+      `[cloud] hub rejected ${method} ${path} with 401 while logged in — sign-in expired/revoked`,
+      rawMessage,
+    );
   } else if (statusCode === 403) {
     notify.error({
       id: 'cloud-access-denied',
@@ -153,7 +155,13 @@ async function handleFlowData(_typeId: unknown, flowData: Record<string, unknown
         title: `Generating: ${context.skill_name}`,
         category: ViewType.ASSETS,
         actions: context.session_id
-          ? [{ label: 'View Session', command: 'terminal.resume', args: { sessionId: context.session_id, ...(context.cwd ? { cwd: context.cwd } : {}) } }]
+          ? [
+              {
+                label: 'View Session',
+                command: 'terminal.resume',
+                args: { sessionId: context.session_id, ...(context.cwd ? { cwd: context.cwd } : {}) },
+              },
+            ]
           : undefined,
       });
     } else if (eventName === 'skill_ready' && context?.skill_name) {
@@ -183,7 +191,9 @@ async function handleFlowData(_typeId: unknown, flowData: Record<string, unknown
       title: taskTitle,
       category: ViewType.TASKS,
       typeId: taskTypeId,
-      actions: [{ label: 'View', href: taskTypeId ? `/dock/${ViewType.TASKS}/${taskTypeId}` : `/dock/${ViewType.TASKS}` }],
+      actions: [
+        { label: 'View', href: taskTypeId ? `/dock/${ViewType.TASKS}/${taskTypeId}` : `/dock/${ViewType.TASKS}` },
+      ],
     });
 
     // Side-effect: open the incoming-task dialog (kept out of `notify`).
@@ -194,11 +204,17 @@ async function handleFlowData(_typeId: unknown, flowData: Record<string, unknown
   }
 }
 
+// Event-bus adapter: the bus expects a void listener; fire-and-forget the
+// async handler through one stable reference so off() can unsubscribe it.
+function onFlowDataEvent(typeId: unknown, flowData: Record<string, unknown>): void {
+  void handleFlowData(typeId, flowData);
+}
+
 /** Wire all WS-driven notifications. Call once at app start; returns a cleanup fn. */
 export function initNotificationIngest(): () => void {
   flushBootstrapNotice();
   cloudManager.on('hub_client_error', handleHubClientError);
-  connectionManager.on('on_flow_data', handleFlowData);
+  connectionManager.on('on_flow_data', onFlowDataEvent);
 
   // Dev-only test bridge: lets browser automation drive the real ingest path
   // (hub errors, hook_op flow data) and the dispatcher directly. Stripped from
@@ -214,6 +230,6 @@ export function initNotificationIngest(): () => void {
 
   return () => {
     cloudManager.off('hub_client_error', handleHubClientError);
-    connectionManager.off('on_flow_data', handleFlowData);
+    connectionManager.off('on_flow_data', onFlowDataEvent);
   };
 }

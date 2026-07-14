@@ -1,4 +1,4 @@
-import type { BrowseableDragData } from './types';
+import type { BrowseableDragData, DroppedFileEntry } from './types';
 
 /**
  * The cross-surface drag contract for Browseable containers. Every Browseable
@@ -34,4 +34,52 @@ export function readBrowseableDrag(e: React.DragEvent): BrowseableDragData | nul
   } catch {
     return null;
   }
+}
+
+/** True when the drag carries OS files (Finder/Explorer), readable pre-drop. */
+export function hasExternalFilesDrag(e: React.DragEvent): boolean {
+  return e.dataTransfer.types.includes('Files');
+}
+
+/**
+ * Flatten an external OS drop into files with drop-relative paths.
+ *
+ * Uses the (WebKit-prefixed but universally shipped) `webkitGetAsEntry` walk so
+ * a dropped DIRECTORY yields every file under it with its nested `relPath`;
+ * plain file drops fall back to `dataTransfer.files`. Entry handles die once
+ * the drop event finishes, so callers must invoke this synchronously from the
+ * drop handler (before any await) — hence items are snapshotted first.
+ */
+export async function collectDroppedEntries(dataTransfer: DataTransfer): Promise<DroppedFileEntry[]> {
+  const items = Array.from(dataTransfer.items ?? []);
+  const entries = items
+    .filter((item) => item.kind === 'file')
+    .map((item) => (item.webkitGetAsEntry ? item.webkitGetAsEntry() : null));
+  if (!entries.some(Boolean)) {
+    return Array.from(dataTransfer.files ?? []).map((file) => ({ file, relPath: file.name }));
+  }
+
+  const out: DroppedFileEntry[] = [];
+  const readEntry = async (entry: FileSystemEntry, prefix: string): Promise<void> => {
+    if (entry.isFile) {
+      const file = await new Promise<File>((resolve, reject) => (entry as FileSystemFileEntry).file(resolve, reject));
+      out.push({ file, relPath: prefix ? `${prefix}/${entry.name}` : entry.name });
+      return;
+    }
+    if (entry.isDirectory) {
+      const reader = (entry as FileSystemDirectoryEntry).createReader();
+      // readEntries returns results in chunks; loop until an empty batch.
+      for (;;) {
+        const batch = await new Promise<FileSystemEntry[]>((resolve, reject) => reader.readEntries(resolve, reject));
+        if (!batch.length) break;
+        for (const child of batch) {
+          await readEntry(child, prefix ? `${prefix}/${entry.name}` : entry.name);
+        }
+      }
+    }
+  };
+  for (const entry of entries) {
+    if (entry) await readEntry(entry, '');
+  }
+  return out;
 }

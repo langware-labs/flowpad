@@ -11,8 +11,7 @@ import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import { Button } from '@src/components/ui/button';
 import { Loader2 } from 'lucide-react';
 import { notify } from '@src/notifications';
-import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
-import { humanizeType } from '@src/tabs/provider-meta';
+import { iconForType, labelForType } from '@src/components/graph-view/icons/iconRegistry';
 
 /**
  * Inbox rows for entity-share invitations (organization, team, workspace,
@@ -67,18 +66,24 @@ function MembershipInvitationRow({ invitation, onResolved }: { invitation: Invit
   const [busy, setBusy] = useState<'accept' | 'decline' | null>(null);
   const targetType: string = inv.target_type;
   const Icon = iconForType(targetType);
-  // Any shareable entity type can be a target — label by its type
-  // ("Organization invitation", "Skill invitation", …), never assume org.
-  const kindLabel = `${humanizeType(targetType)} invitation`;
-  const targetName: string = inv.target_name || `a ${humanizeType(targetType).toLowerCase()}`;
-  const inviterName: string | null = (inv.inviter_name || '').trim() || null;
+  // Label + noun come from the backend type registry (never a hardcoded per-type
+  // map), so coverage tracks the icon and can't drift as new target types ship.
+  const typeLabel = labelForType(targetType);
+  const kindLabel = `${typeLabel} invitation`;
+  const noun = `the ${typeLabel.toLowerCase()}`;
+  const targetLabel = inv.target_name ? `${noun} “${inv.target_name}”` : noun;
+  const who = inv.sender_name ? `${inv.sender_name} invited you` : 'You’ve been invited';
 
   const accept = useCallback(async () => {
     if (!invitation.id) return;
     setBusy('accept');
     try {
       await acceptInvitation({ invitation_id: invitation.id });
-      notify.success({ title: 'Joined', message: `You joined ${targetName}.`, id: 'membership-invite' });
+      notify.success({
+        title: 'Invitation accepted',
+        message: `${targetLabel} is now available in your workspace.`,
+        id: 'membership-invite',
+      });
       onResolved();
     } catch (err) {
       if (isInvitationGoneError(err)) {
@@ -96,7 +101,7 @@ function MembershipInvitationRow({ invitation, onResolved }: { invitation: Invit
     } finally {
       setBusy(null);
     }
-  }, [invitation.id, targetName, onResolved]);
+  }, [invitation.id, targetLabel, onResolved]);
 
   const decline = useCallback(async () => {
     if (!invitation.id) return;
@@ -126,9 +131,10 @@ function MembershipInvitationRow({ invitation, onResolved }: { invitation: Invit
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm font-medium">{kindLabel}</div>
         <div className="truncate text-xs text-muted-foreground">
-          {inviterName ? `${inviterName} invited you` : 'You’ve been invited'} to {targetName}
+          {who} to {targetLabel}
           {inv.target_role ? ` as ${inv.target_role}` : ''}.
         </div>
+        {inv.message && <div className="truncate text-xs text-muted-foreground/80">{inv.message}</div>}
       </div>
       <Button size="sm" disabled={busy !== null} onClick={() => void accept()}>
         {busy === 'accept' && <Loader2 className="h-4 w-4 animate-spin" />}

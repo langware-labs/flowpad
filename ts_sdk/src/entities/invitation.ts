@@ -16,9 +16,9 @@ export interface IInvitation extends IEntity {
   target_id?: string;
   target_name?: string;
   target_role?: string;
-  // Who sent the invitation (mirrored from the hub's InvitedBy edge).
-  inviter_id?: string;
-  inviter_name?: string;
+  /** The inviter (resolved hub-side from the InvitedBy edge). */
+  sender_name?: string;
+  sender_user_id?: string;
 }
 
 @registerEntity
@@ -33,8 +33,8 @@ export class Invitation extends APIEntity<Invitation> implements IInvitation {
   target_id?: string;
   target_name?: string;
   target_role?: string;
-  inviter_id?: string;
-  inviter_name?: string;
+  sender_name?: string;
+  sender_user_id?: string;
   static type: string = 'invitation';
 
   constructor(entity: Partial<IInvitation> = {}) {
@@ -49,8 +49,8 @@ export class Invitation extends APIEntity<Invitation> implements IInvitation {
     this.target_id = entity.target_id;
     this.target_name = entity.target_name;
     this.target_role = entity.target_role;
-    this.inviter_id = entity.inviter_id;
-    this.inviter_name = entity.inviter_name;
+    this.sender_name = entity.sender_name;
+    this.sender_user_id = entity.sender_user_id;
   }
 }
 

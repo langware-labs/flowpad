@@ -11,11 +11,12 @@ transport. Importing ``flow_sdk.models.entities`` wires the full registry so
 ``SchemaRegistry.get_entity_cls('skill')`` returns the real ``Skill`` class and
 the unpack reindex materializes a real entity from disk.
 """
+
 from __future__ import annotations
 
+import json
 import subprocess
 import zipfile
-import json
 from pathlib import Path
 
 import pytest
@@ -23,11 +24,10 @@ import pytest
 # Wire the FULL entity registry (pytest does not run the server's startup
 # registration) so get_entity_cls('skill') resolves and the reindex materializes.
 import flow_sdk.models.entities  # noqa: F401
-
 from flow_sdk.app.actions.message_attachment_action import handle_attachment_install
-from flow_sdk.builtin.conversation import Conversation
 from flow_sdk.builtin.artifact import Artifact, ArtifactReferenceType, ArtifactType
 from flow_sdk.builtin.claude_memory_entities import Docs
+from flow_sdk.builtin.conversation import Conversation
 from flow_sdk.builtin.flow_message import Attachment, AttachmentType, FlowMessage
 from flow_sdk.builtin.flow_message_bundle import _resolve_git_checkout, pack_bundle, unpack_bundle
 from flow_sdk.builtin.git_origin import GitOrigin
@@ -60,6 +60,7 @@ async def _install_staged(fm_id: str, key: str, *, scope: str, project_id: str |
     assert isinstance(res, ApiSuccessResponse), f"install failed: {getattr(res, 'message', res)!r}"
     return ma
 
+
 REL_PATH = "tools/kit/.claude/skills/foo"
 SKILL_ID = "a1a1a1a1-0000-4000-8000-000000000111"
 CONV_ID = "c1c1c1c1-0000-4000-8000-000000000222"
@@ -84,11 +85,14 @@ GIT_MARKDOWN_CLONE_ID = "a1a1a1a1-0000-4000-8000-000000001777"
 GIT_MARKDOWN_CLONE_CONV_ID = "c1c1c1c1-0000-4000-8000-000000001888"
 GIT_MARKDOWN_CLONE_FM_ID = "f1f1f1f1-0000-4000-8000-000000001999"
 GIT_MARKDOWN_CLONE_TOKEN = "gitmarkdowncloneepsilon"
+GIT_FOLDER_CONV_ID = "c1c1c1c1-0000-4000-8000-000000002222"
+GIT_FOLDER_FM_ID = "f1f1f1f1-0000-4000-8000-000000002333"
 
 
 def _init_repo(root: Path) -> None:
     def g(*a):
         subprocess.run(["git", *a], cwd=root, check=True, capture_output=True, text=True)
+
     g("init", "-q")
     g("remote", "add", "origin", "https://github.com/Acme/Reflect.git")
     g("checkout", "-q", "-b", "feature/demo")
@@ -108,9 +112,7 @@ async def test_skill_reflects_same_repo_path_through_real_pack_unpack(tmp_path):
     skill_dir = sender_repo / REL_PATH
     skill_dir.mkdir(parents=True)
     # Pin the id into frontmatter so the receiver's gen_uuid adopts the SAME id.
-    (skill_dir / "SKILL.md").write_text(
-        f"---\nid: {SKILL_ID}\nname: foo\n---\n\n# foo skill\n", encoding="utf-8"
-    )
+    (skill_dir / "SKILL.md").write_text(f"---\nid: {SKILL_ID}\nname: foo\n---\n\n# foo skill\n", encoding="utf-8")
     _init_repo(sender_repo)
 
     sender_skill = Skill(id=SKILL_ID, name="foo", asset_ref=str(skill_dir))
@@ -120,8 +122,7 @@ async def test_skill_reflects_same_repo_path_through_real_pack_unpack(tmp_path):
         text="here is the skill",
         sender_name="gx7",
         conversation_id=CONV_ID,
-        attachment=[Attachment(attachment_type=AttachmentType.TYPE_ID,
-                               data=f"{EntityType.SKILL.value}-{SKILL_ID}")],
+        attachment=[Attachment(attachment_type=AttachmentType.TYPE_ID, data=f"{EntityType.SKILL.value}-{SKILL_ID}")],
     )
     fm.id = FM_ID
 
@@ -143,14 +144,12 @@ async def test_skill_reflects_same_repo_path_through_real_pack_unpack(tmp_path):
 
     # --- Unpack stages; explicit install places + reindexes + stamps ----------
     await unpack_bundle(zip_path, local_user_id="gx8")
-    await _install_staged(FM_ID, f"{EntityType.SKILL.value}-@{SKILL_ID}",
-                          scope="project", project_id=project.id)
+    await _install_staged(FM_ID, f"{EntityType.SKILL.value}-@{SKILL_ID}", scope="project", project_id=project.id)
 
     # 1) The skill reconstructed at the SAME repo-relative path (not flattened).
     expected = recv_proj / REL_PATH / "SKILL.md"
     assert expected.exists(), (
-        f"skill did not reconstruct at {expected}; "
-        f"found: {[str(p) for p in recv_proj.rglob('SKILL.md')]}"
+        f"skill did not reconstruct at {expected}; found: {[str(p) for p in recv_proj.rglob('SKILL.md')]}"
     )
 
     # 2) The materialized receiver entity carries git_origin (same id, adopted).
@@ -190,8 +189,9 @@ async def test_git_transfer_indexes_existing_receiver_worktree_without_copying_b
         text="here is the skill by git",
         sender_name="gx7",
         conversation_id=GIT_ONLY_CONV_ID,
-        attachment=[Attachment(attachment_type=AttachmentType.TYPE_ID,
-                               data=f"{EntityType.SKILL.value}-{GIT_ONLY_SKILL_ID}")],
+        attachment=[
+            Attachment(attachment_type=AttachmentType.TYPE_ID, data=f"{EntityType.SKILL.value}-{GIT_ONLY_SKILL_ID}")
+        ],
     )
     fm.id = GIT_ONLY_FM_ID
 
@@ -210,8 +210,9 @@ async def test_git_transfer_indexes_existing_receiver_worktree_without_copying_b
 
     await sender_skill.delete()
     await unpack_bundle(zip_path, local_user_id="gx8")
-    await _install_staged(GIT_ONLY_FM_ID, f"{EntityType.SKILL.value}-@{GIT_ONLY_SKILL_ID}",
-                          scope="project", project_id=project.id)
+    await _install_staged(
+        GIT_ONLY_FM_ID, f"{EntityType.SKILL.value}-@{GIT_ONLY_SKILL_ID}", scope="project", project_id=project.id
+    )
 
     recv_skill = await Skill.get_one({"id": GIT_ONLY_SKILL_ID})
     assert recv_skill is not None, "receiver never materialized the git-backed skill"
@@ -255,8 +256,9 @@ async def test_git_transfer_clones_remote_when_receiver_has_no_checkout(tmp_path
         text="clone the skill by git",
         sender_name="gx7",
         conversation_id=GIT_CLONE_CONV_ID,
-        attachment=[Attachment(attachment_type=AttachmentType.TYPE_ID,
-                               data=f"{EntityType.SKILL.value}-{GIT_CLONE_SKILL_ID}")],
+        attachment=[
+            Attachment(attachment_type=AttachmentType.TYPE_ID, data=f"{EntityType.SKILL.value}-{GIT_CLONE_SKILL_ID}")
+        ],
     )
     fm.id = GIT_CLONE_FM_ID
     zip_path = await pack_bundle(fm, dest_dir=tmp_path, transfer_mode="git")
@@ -274,8 +276,7 @@ async def test_git_transfer_clones_remote_when_receiver_has_no_checkout(tmp_path
 
     # No project mapped → the user installs into the user scope; the git-mode
     # restore resolves its own checkout (clones into the agent workspace).
-    await _install_staged(GIT_CLONE_FM_ID, f"{EntityType.SKILL.value}-@{GIT_CLONE_SKILL_ID}",
-                          scope="user")
+    await _install_staged(GIT_CLONE_FM_ID, f"{EntityType.SKILL.value}-@{GIT_CLONE_SKILL_ID}", scope="user")
     assert expected.exists(), f"receiver did not clone/index git transfer into {expected}"
     recv_skill = await Skill.get_one({"id": GIT_CLONE_SKILL_ID})
     assert recv_skill is not None
@@ -369,8 +370,9 @@ async def test_git_transfer_packs_graph_artifact_metadata_without_copying_app_fi
         text="webapp by git",
         sender_name="gx7",
         conversation_id=GIT_ARTIFACT_CONV_ID,
-        attachment=[Attachment(attachment_type=AttachmentType.TYPE_ID,
-                               data=f"{EntityType.ARTIFACT.value}-{GIT_ARTIFACT_ID}")],
+        attachment=[
+            Attachment(attachment_type=AttachmentType.TYPE_ID, data=f"{EntityType.ARTIFACT.value}-{GIT_ARTIFACT_ID}")
+        ],
     )
     fm.id = GIT_ARTIFACT_FM_ID
     # create_bookmark=True: the receiver must mint a FAVORITE pointing at the
@@ -469,7 +471,9 @@ async def test_git_transfer_markdown_doc_indexes_from_receiver_worktree_and_is_s
     _git(sender_repo, "push", "-q", "-u", "origin", "feature/markdown-git-transfer")
 
     recv_repo = tmp_path / "recv_markdown_repo"
-    _git(tmp_path, "clone", "-q", "--branch", "feature/markdown-git-transfer", origin.resolve().as_uri(), str(recv_repo))
+    _git(
+        tmp_path, "clone", "-q", "--branch", "feature/markdown-git-transfer", origin.resolve().as_uri(), str(recv_repo)
+    )
 
     sender_doc_entity = Docs(
         id=GIT_MARKDOWN_ID,
@@ -483,8 +487,9 @@ async def test_git_transfer_markdown_doc_indexes_from_receiver_worktree_and_is_s
         text="markdown by git",
         sender_name="gx7",
         conversation_id=GIT_MARKDOWN_CONV_ID,
-        attachment=[Attachment(attachment_type=AttachmentType.TYPE_ID,
-                               data=f"{EntityType.MARKDOWN.value}-{GIT_MARKDOWN_ID}")],
+        attachment=[
+            Attachment(attachment_type=AttachmentType.TYPE_ID, data=f"{EntityType.MARKDOWN.value}-{GIT_MARKDOWN_ID}")
+        ],
     )
     fm.id = GIT_MARKDOWN_FM_ID
     zip_path = await pack_bundle(fm, dest_dir=tmp_path, transfer_mode="git")
@@ -504,8 +509,9 @@ async def test_git_transfer_markdown_doc_indexes_from_receiver_worktree_and_is_s
 
     await sender_doc_entity.delete()
     await unpack_bundle(zip_path, local_user_id="gx8")
-    await _install_staged(GIT_MARKDOWN_FM_ID, f"{EntityType.MARKDOWN.value}-@{GIT_MARKDOWN_ID}",
-                          scope="project", project_id=project.id)
+    await _install_staged(
+        GIT_MARKDOWN_FM_ID, f"{EntityType.MARKDOWN.value}-@{GIT_MARKDOWN_ID}", scope="project", project_id=project.id
+    )
 
     received_doc = await Docs.get_one({"id": GIT_MARKDOWN_ID})
     assert received_doc is not None, "receiver never materialized the git-backed markdown doc"
@@ -563,8 +569,11 @@ async def test_git_transfer_markdown_doc_clones_remote_and_is_searchable(tmp_pat
         text="clone markdown by git",
         sender_name="gx7",
         conversation_id=GIT_MARKDOWN_CLONE_CONV_ID,
-        attachment=[Attachment(attachment_type=AttachmentType.TYPE_ID,
-                               data=f"{EntityType.MARKDOWN.value}-{GIT_MARKDOWN_CLONE_ID}")],
+        attachment=[
+            Attachment(
+                attachment_type=AttachmentType.TYPE_ID, data=f"{EntityType.MARKDOWN.value}-{GIT_MARKDOWN_CLONE_ID}"
+            )
+        ],
     )
     fm.id = GIT_MARKDOWN_CLONE_FM_ID
     zip_path = await pack_bundle(fm, dest_dir=tmp_path, transfer_mode="git")
@@ -581,9 +590,9 @@ async def test_git_transfer_markdown_doc_clones_remote_and_is_searchable(tmp_pat
 
     # Git-mode user-scope install: the checkout resolves itself (no .claude
     # layout gate — the root is only a clone preference in git mode).
-    await _install_staged(GIT_MARKDOWN_CLONE_FM_ID,
-                          f"{EntityType.MARKDOWN.value}-@{GIT_MARKDOWN_CLONE_ID}",
-                          scope="user")
+    await _install_staged(
+        GIT_MARKDOWN_CLONE_FM_ID, f"{EntityType.MARKDOWN.value}-@{GIT_MARKDOWN_CLONE_ID}", scope="user"
+    )
     assert expected.exists(), f"receiver did not clone/index git markdown transfer into {expected}"
     received_doc = await Docs.get_one({"id": GIT_MARKDOWN_CLONE_ID})
     assert received_doc is not None
@@ -595,3 +604,73 @@ async def test_git_transfer_markdown_doc_clones_remote_and_is_searchable(tmp_pat
     assert any(result.id == GIT_MARKDOWN_CLONE_ID for result in results), (
         "cloned git-transferred markdown materialized but was not searchable via FTS"
     )
+
+
+async def test_git_transfer_packs_folder_chip_metadata_only_and_install_never_clones(tmp_path):
+    """A git context-folder chip (push-notify): pack ships ONLY name + origin —
+    no repo bytes, no sender-local path — and install mints the receiver Folder
+    from the origin WITHOUT touching the filesystem (the wizard clones/pulls
+    later, on the receiver's explicit chip click)."""
+    from flow_sdk.builtin.folder import Folder  # noqa: PLC0415
+
+    origin_bare = tmp_path / "ctx-origin.git"
+    subprocess.run(["git", "init", "--bare", "-q", str(origin_bare)], check=True, capture_output=True)
+    sender_repo = tmp_path / "sender_ctx_repo"
+    _git(tmp_path, "clone", "-q", origin_bare.resolve().as_uri(), str(sender_repo))
+    _git(sender_repo, "checkout", "-q", "-b", "main")
+    _git(sender_repo, "config", "user.email", "t@t.co")
+    _git(sender_repo, "config", "user.name", "t")
+    (sender_repo / "notes.md").write_text("class notes\n", encoding="utf-8")
+    _git(sender_repo, "add", "-A")
+    _git(sender_repo, "commit", "-qm", "notes")
+    _git(sender_repo, "push", "-q", "-u", "origin", "main")
+
+    folder = await Folder.mint_for_path(str(sender_repo))
+    assert folder.origin is not None and folder.origin.transportable, "sender folder must be git-backed"
+    folder_id = folder.id
+
+    fm = FlowMessage(
+        text="pushed my-class",
+        sender_name="gx7",
+        conversation_id=GIT_FOLDER_CONV_ID,
+        attachment=[Attachment(attachment_type=AttachmentType.TYPE_ID, data=f"{EntityType.FOLDER.value}-{folder_id}")],
+    )
+    fm.id = GIT_FOLDER_FM_ID
+    zip_path = await pack_bundle(fm, dest_dir=tmp_path, transfer_mode="git")
+
+    key = f"{EntityType.FOLDER.value}-@{folder_id}"
+    with zipfile.ZipFile(zip_path) as zf:
+        names = zf.namelist()
+        assert "git_origins.json" in names and "git_transfers.json" in names
+        metadata_name = f"metadata/{key}/metadata.json"
+        assert metadata_name in names
+        metadata = json.loads(zf.read(metadata_name).decode("utf-8"))
+        assert metadata["id"] == folder_id
+        # The sender-local resolved path must NOT travel.
+        assert "path" not in metadata, metadata
+        # Repo-root folders must carry a human name (never the "." degenerate).
+        assert metadata.get("name") not in (None, "", "."), metadata
+        origins = json.loads(zf.read("git_origins.json").decode("utf-8"))
+        assert origins[key]["kind"] == "git"
+        # Repo bytes never ride the bundle.
+        assert not any(name.endswith("notes.md") for name in names), names
+
+    await folder.delete()
+    await unpack_bundle(zip_path, local_user_id="gx8")
+
+    # STAGED at download — no Folder row, and certainly no clone.
+    assert await Folder.get_one({"id": folder_id}) is None, "folder must be staged, not materialized"
+    staged = await MessageAttachment.get_one({"asset_id": folder_id})
+    assert staged is not None, "receiver never staged the git folder chip"
+    assert staged.asset_type == EntityType.FOLDER.value
+    assert staged.transfer_mode == "git"
+    assert not staged.scope
+
+    # INSTALL: metadata-only mint — Folder row exists, origin intact, local
+    # path UNSET (no clone ran; the chip's wizard resolves a checkout later).
+    resp = await handle_attachment_install(str(staged.id), scope="user", project_id=None)
+    assert isinstance(resp, ApiSuccessResponse), resp
+    received = await Folder.get_one({"id": folder_id})
+    assert received is not None, "install never minted the receiver Folder"
+    assert not received.path, "install must not clone or set a local path"
+    assert received.origin is not None and received.origin.key() == folder.origin.key()
