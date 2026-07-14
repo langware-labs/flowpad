@@ -25,6 +25,7 @@ output, terminal-capability handshake answered):
 
 import asyncio
 import base64
+import json
 import re
 from pathlib import Path
 from types import SimpleNamespace
@@ -506,3 +507,128 @@ def test_inactivity_after_user_turn_lands_preserves_success_result():
         "subtype": "success",
         "reason": "transcript-inactivity",
     }
+
+
+# ── LAST-RESORT blind delivery: composer marker never matches (regex drift) ──
+
+
+class _HangShell:
+    """Composer-gated fake whose marker NEVER matches — ``wait_for_composer_ready``
+    blocks forever (regex drift, or an unrecognized interstitial owns the
+    screen). Its blind write lands a real user row in the transcript so the
+    poll loop can observe submission.
+    """
+
+    def __init__(self, transcript_path: Path, session_id: str):
+        self.transcript_path = transcript_path
+        self.session_id = session_id
+        self.submitted: list[str] = []
+
+    async def wait_for_composer_ready(self, pattern) -> bool:
+        assert isinstance(pattern, re.Pattern)
+        await asyncio.Event().wait()  # marker never appears — gate hangs
+        return False  # pragma: no cover - unreachable
+
+    async def write(self, text: str) -> None:
+        self.submitted.append(text)
+        self._land_user_row(text)
+
+    async def write_then_submit(self, text: str) -> None:  # pragma: no cover - claude uses write()
+        self.submitted.append(text)
+        self._land_user_row(text)
+
+    def _land_user_row(self, text: str) -> None:
+        line = json.dumps(
+            {
+                "type": "user",
+                "message": {"role": "user", "content": [{"type": "text", "text": text}]},
+                "uuid": "22222222-2222-4222-8222-222222222222",
+                "sessionId": self.session_id,
+                "timestamp": "2026-07-14T00:00:00.000Z",
+            }
+        )
+        with open(self.transcript_path, "a", encoding="utf-8") as f:
+            f.write(line + "\n")
+
+
+class _NeverReadyDriver:
+    """Composer-gated claude-shaped driver whose readiness marker never matches."""
+
+    name = "claude"
+    pty_composer_ready_pattern = re.compile(r"THIS_MARKER_NEVER_APPEARS_IN_OUTPUT")
+    pty_submits_on_paste = True  # claude contract: single paste-with-Enter write
+
+    def transcript_descriptor(self, proc):
+        raise NotImplementedError  # force the transcript_path fallback
+
+    def transcript_path(self, proc):
+        return proc._transcript_path
+
+
+@pytest.mark.timeout(5)
+async def test_blind_last_resort_when_composer_marker_never_matches(tmp_path):
+    """The cold-PTY dead-end fix: when the composer marker never matches, the
+    gated delivery hangs and the turn would previously die as submission-error
+    with the prompt NEVER typed. The last-resort path types the prompt ONCE
+    blindly at the inactivity boundary; when the user row then lands, the turn
+    resolves as success — no submission-error."""
+    from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
+
+    session_id = "sess-blind"
+    transcript = tmp_path / f"{session_id}.jsonl"
+    transcript.write_text("")  # exists, empty → watermark 0
+
+    shell = _HangShell(transcript, session_id)
+
+    async def _shell():
+        return shell
+
+    inactivity_landed: list[bool] = []
+    real_inactivity = AgenticProcess._pty_inactivity_result
+
+    def _spy_inactivity(landed):
+        inactivity_landed.append(landed)
+        return real_inactivity(landed)
+
+    fake = SimpleNamespace(
+        id="proc-blind",
+        driver=_NeverReadyDriver(),
+        session_id=session_id,
+        shell=_shell,
+        _transcript_path=transcript,
+    )
+    fake._typed_pty_delivery = AgenticProcess._typed_pty_delivery.__get__(fake)
+    fake._cold_pty_delivery_plan = AgenticProcess._cold_pty_delivery_plan
+    fake._pty_turn_complete = AgenticProcess._pty_turn_complete
+    fake._pty_inactivity_result = _spy_inactivity
+
+    sent: list[bytes] = []
+
+    async def _send(data: bytes):
+        sent.append(data)
+
+    async def _is_running():
+        return True  # hot composer-gated path → needs_initial_type, no start_pty
+
+    async def _persist(_desc):
+        return None
+
+    async def _notify():
+        return None
+
+    fake.send = _send
+    fake.is_running = _is_running
+    fake._persist_transcript_session_id = _persist
+    fake.notify_updated = _notify
+
+    resp = AgenticProcess._run_pty_prompt.__get__(fake)(MARKER, inactivity_timeout=0.4)
+    async for _chunk in resp.body_iterator:
+        pass
+
+    # Prompt was typed exactly once, blindly (marker never matched).
+    assert shell.submitted == [MARKER]
+    # The user row landed after the blind delivery → success, never a
+    # submission-error (no _pty_inactivity_result(False) call).
+    assert inactivity_landed, "expected a terminal inactivity result"
+    assert False not in inactivity_landed
+    assert inactivity_landed[-1] is True
