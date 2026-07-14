@@ -66,10 +66,6 @@ class SpecialFolder:
     kind: FolderKind
     os_prompts: bool       # True where the OS shows a consent dialog (macOS)
 
-    @property
-    def pref_key(self) -> str:
-        return PREF_PREFIX + self.category
-
 
 def _home() -> Path:
     """Instance user_home (sandboxed in tests), falling back to ``Path.home()``."""
