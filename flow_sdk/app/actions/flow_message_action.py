@@ -2146,6 +2146,7 @@ async def _materialize_membership_invitation(
         except Exception as e:  # noqa: BLE001
             logger.warning("[inv-materialize] membership target mirror failed: %s", e)
 
+    inviter = hub_inv.get("inviter") if isinstance(hub_inv.get("inviter"), dict) else {}
     fields = {
         "recipient_email": normalize_email(hub_inv.get("recipient_email")) or "",
         "accepted": bool(hub_inv.get("accepted") or False),
@@ -2155,6 +2156,8 @@ async def _materialize_membership_invitation(
         "target_id": target_id,
         "target_name": target_name,
         "target_role": target_role,
+        "sender_name": inviter.get("name"),
+        "sender_user_id": inviter.get("user_id"),
         "remote": True,
     }
     existing_inv = await LocalInvitation.get_one({"id": inv_id})

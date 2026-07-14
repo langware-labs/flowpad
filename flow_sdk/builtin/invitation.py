@@ -1,17 +1,16 @@
-import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from flow_sdk._compat import UTC
-from typing import ClassVar, List, Optional
+from typing import List, Optional
 
 from pydantic import BaseModel, field_validator
 
-from flow_sdk.builtin.user import normalize_email
-from flow_sdk.config import default_service_config
+from flow_sdk._compat import UTC
 from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.api.type_id import TypeId
-from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
+from flow_sdk.builtin.user import normalize_email
+from flow_sdk.config import default_service_config
 from flow_sdk.core.entity.entity_model import Entity
+from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 
 
 class InvitationTarget(BaseModel):
@@ -55,6 +54,10 @@ class Invitation(Entity):
     target_id: Optional[str] = APIField(None)
     target_name: Optional[str] = APIField(None)
     target_role: Optional[str] = APIField(None)
+    # The inviter, resolved hub-side from the InvitedBy edge — so the inbox row
+    # can say WHO invited ("<name> invited you to …"), not just what.
+    sender_name: Optional[str] = APIField(None)
+    sender_user_id: Optional[str] = APIField(None)
 
     @field_validator("recipient_email", mode="before")
     @classmethod

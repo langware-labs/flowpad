@@ -18,7 +18,6 @@ request body before dispatching, which makes a second request.json() call hang
 
 import logging
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Optional, Tuple
 
 from pydantic import ValidationError
@@ -36,12 +35,7 @@ from flow_sdk.core.flow.models.webhook_flow_data import (
     WebhookPayload,
     WebhookType,
 )
-from flow_sdk.external_apis.llm.llm_drivers.flow_data import (
-    FlowData,
-    FlowDataSource,
-    FlowDataType,
-    FlowElementType,
-)
+from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
 
@@ -79,6 +73,7 @@ async def _route_to_source_process(
     # The renderer reads attributes (`hook-op-event-name`, `workflow-label`,
     # `hook-message`, …) instead of digging into payload_data itself.
     from flow_sdk.app.actions._webhook_to_flowdata import convert_webhook_event
+
     fds = convert_webhook_event(payload_data)
     if not fds:
         return
@@ -99,7 +94,9 @@ async def _route_to_source_process(
             from flow_sdk.builtin.agentic_process import AgenticProcess
             from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter
 
-            processes = await AgenticProcess.get_all(entities_filter=QueryFilter(match=ExpressionNode(**{field_name: field_value})))
+            processes = await AgenticProcess.get_all(
+                entities_filter=QueryFilter(match=ExpressionNode(**{field_name: field_value}))
+            )
             for proc in processes or []:
                 await _send_flow_data_message(proc.get_type(), proc.id, flow_msg)
                 return True
@@ -161,6 +158,7 @@ async def _broadcast_to_sniffer(
     # Translate via the shared dispatcher so the global sniffer view receives
     # the same canonical FlowData shape as the per-process trace gutter.
     from flow_sdk.app.actions._webhook_to_flowdata import convert_webhook_event
+
     fds = convert_webhook_event(payload_data)
     if not fds:
         return
@@ -173,9 +171,7 @@ async def _broadcast_to_sniffer(
         fd.attributes["warning"] = warning
 
     try:
-        await sniffer_hook.emit_flow_data(
-            {"flow_value": fd.flow_value, "attributes": fd.attributes}
-        )
+        await sniffer_hook.emit_flow_data({"flow_value": fd.flow_value, "attributes": fd.attributes})
     except Exception as e:
         logger.debug(f"Sniffer broadcast failed (non-critical): {e}")
 
@@ -216,6 +212,7 @@ def _extract_agentic_process_id(execution_scope: list) -> str | None:
     TypeId strings (e.g. "agentic_process:uuid").
     """
     from flow_sdk.builtin.agentic_process import AgenticProcess
+
     for entry in execution_scope:
         if isinstance(entry, dict) and entry.get("type") == AgenticProcess.get_type() and entry.get("id"):
             return entry["id"]
@@ -229,6 +226,7 @@ def _extract_agentic_process_id(execution_scope: list) -> str | None:
 async def _close_worktree_process(agentic_process_id: str) -> None:
     """Close the tab for a worktree agentic process after ExitWorktree completes."""
     from flow_sdk.builtin.agentic_process import AgenticProcess
+
     process = await AgenticProcess.get_by_id(agentic_process_id)
     if not process:
         logger.warning("[ExitWorktree] Process %s not found", agentic_process_id)
@@ -261,7 +259,6 @@ async def handle_agent_hook(webhook_data: AgentHookData) -> ApiSuccessResponse |
     hook_event_name = hook_data_dict.get("hook_event_name") or raw.get("hook_event_name", "")
     hook_session_id = hook_data_dict.get("session_id") or raw.get("session_id", "")
     hook_tool_name = hook_data_dict.get("tool_name") or raw.get("tool_name", "")
-    hook_tool_input = hook_data_dict.get("tool_input") or raw.get("tool_input", {})
     execution_scope = hook_data_dict.get("execution_scope") or raw.get("execution_scope") or []
     cwd = raw.get("cwd")
     agentic_process_id = _extract_agentic_process_id(execution_scope)
@@ -275,9 +272,16 @@ async def handle_agent_hook(webhook_data: AgentHookData) -> ApiSuccessResponse |
 
     # Auto-approve ExitPlanMode PermissionRequest if flag is set, then clear flag.
     # `flow hooks report --wait-for-response` makes this synchronous.
-    if hook_event_name == HookEventType.PERMISSION_REQUEST and hook_tool_name == "ExitPlanMode" and agentic_process_id and agentic_process_id in _plan_auto_approve_by_agentic_process:
+    if (
+        hook_event_name == HookEventType.PERMISSION_REQUEST
+        and hook_tool_name == "ExitPlanMode"
+        and agentic_process_id
+        and agentic_process_id in _plan_auto_approve_by_agentic_process
+    ):
         _plan_auto_approve_by_agentic_process.discard(agentic_process_id)
-        logger.info(f"[auto-approve] APPROVED ExitPlanMode for agentic_process {agentic_process_id} (session={hook_session_id})")
+        logger.info(
+            f"[auto-approve] APPROVED ExitPlanMode for agentic_process {agentic_process_id} (session={hook_session_id})"
+        )
         return ApiSuccessResponse(
             data={
                 "hookSpecificOutput": {
@@ -288,7 +292,10 @@ async def handle_agent_hook(webhook_data: AgentHookData) -> ApiSuccessResponse |
         )
 
     # Clear auto-approve flag on UserPromptSubmit
-    if hook_event_name == HookEventType.USER_PROMPT_SUBMIT  and agentic_process_id in _plan_auto_approve_by_agentic_process:
+    if (
+        hook_event_name == HookEventType.USER_PROMPT_SUBMIT
+        and agentic_process_id in _plan_auto_approve_by_agentic_process
+    ):
         _plan_auto_approve_by_agentic_process.discard(agentic_process_id)
         logger.info("[auto-approve] Cleared stale flag for entity %s on UserPromptSubmit", agentic_process_id)
 
@@ -326,12 +333,11 @@ async def handle_agent_hook(webhook_data: AgentHookData) -> ApiSuccessResponse |
     from flow_sdk.builtin.agentic_process.cli_drivers.claude.hook_to_flowdata import (
         convert_hook_event,
     )
+
     converted_fds = convert_hook_event(payload_data)
     for fd in converted_fds:
         try:
-            await agent_hook.emit_flow_data(
-                {"flow_value": fd.flow_value, "attributes": fd.attributes}
-            )
+            await agent_hook.emit_flow_data({"flow_value": fd.flow_value, "attributes": fd.attributes})
         except Exception as e:
             logger.debug(f"AgentHook emit_flow_data failed (non-critical): {e}")
 
@@ -350,9 +356,7 @@ async def handle_agent_hook(webhook_data: AgentHookData) -> ApiSuccessResponse |
         if target_process is not None:
             for fd in converted_fds:
                 try:
-                    await target_process.emit_flow_data(
-                        {"flow_value": fd.flow_value, "attributes": fd.attributes}
-                    )
+                    await target_process.emit_flow_data({"flow_value": fd.flow_value, "attributes": fd.attributes})
                 except Exception as exc:
                     logger.debug("AgenticProcess sniffer emit_flow_data failed (non-critical): %s", exc)
     except Exception as exc:
@@ -391,8 +395,6 @@ def _apply_entity_fields(entity, payload: dict) -> None:
     for field_name in valid_fields:
         if field_name in payload:
             setattr(entity, field_name, payload[field_name])
-
-
 
 
 async def _handle_relationship_sync(
@@ -512,7 +514,6 @@ async def _handle_relationship_sync(
         return ApiFailResponse(message=error_msg)
 
 
-
 async def _reflect_entity(
     record_type: str,
     operation: SyncOperation,
@@ -561,9 +562,7 @@ async def _reflect_entity(
                 logger.debug(
                     f"[_reflect_entity] {record_type} id={external_id} already exists locally, skipping reflection"
                 )
-                return ApiSuccessResponse(
-                    data={f"{record_type}_id": existing_by_id.id, "action": "noop"}
-                ), None
+                return ApiSuccessResponse(data={f"{record_type}_id": existing_by_id.id, "action": "noop"}), None
 
             existing = await entity_cls.get_by_uname(external_id)
             if existing:
@@ -625,7 +624,7 @@ async def _reflect_entity(
                 pass  # notify_updated may not exist on all entity types in flow-cli
 
             # Log final state after save
-            if record_type == "task":
+            if record_type == BuiltinEntityType.TASK.value:
                 logger.info(
                     f"[_reflect_entity] Updated task {existing.id}: status={existing.status}, title={existing.title}"
                 )
@@ -658,7 +657,7 @@ async def _handle_hook_op_event(
     event_name = sync_payload.event_name
     record_type = sync_payload.type
 
-    if record_type == "skill":
+    if record_type == BuiltinEntityType.SKILL.value:
         if event_name == "skill_activated":
             notification_fields = sync_payload.event_data.get("notification", {})
             notification = SkillNotification(**notification_fields)
@@ -699,7 +698,7 @@ async def _handle_hook_op_event(
             logger.debug(f"hook_op event: {event_name}")
             return ApiSuccessResponse(data={"status": "received", "routed_to": 0})
 
-    if record_type == "log":
+    if record_type == BuiltinEntityType.LOG.value:
         logger.info(f"Skillit log event: {event_name or 'unknown'}")
         return ApiSuccessResponse(data={"status": "received"})
 

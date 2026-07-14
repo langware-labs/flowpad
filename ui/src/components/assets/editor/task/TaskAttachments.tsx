@@ -79,6 +79,14 @@ export function TaskAttachments({ task, save }: TaskAttachmentsProps) {
     [gitDirs],
   );
 
+  // Received tasks carry folder-relative attachment entries
+  // (`attachments/<name>` — packed into the task folder by the sender's
+  // bundle); resolve them against the task folder for open/git checks.
+  const absolutePath = useCallback(
+    (path: string) => (path.startsWith('/') ? path : `${(task.asset_ref || '').replace(/\/$/, '')}/${path}`),
+    [task.asset_ref],
+  );
+
   const persist = useCallback(
     (next: Attachment[]) => void save({ artifacts: next as unknown as Task['artifacts'] }),
     [save],
@@ -224,7 +232,7 @@ export function TaskAttachments({ task, save }: TaskAttachmentsProps) {
                   </span>
                   <button
                     type="button"
-                    onClick={() => openArtifact(a.path, navigation)}
+                    onClick={() => openArtifact(absolutePath(a.path), navigation)}
                     className="min-w-0 flex-1 truncate text-left hover:underline"
                     title={a.path}
                   >

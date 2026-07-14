@@ -1,11 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
-import {
-  Invitation,
-  QueryRequest,
-  acceptInvitation,
-  declineInvitation,
-  normalizeEmail,
-} from '@sdk';
+import { Invitation, QueryRequest, acceptInvitation, declineInvitation, normalizeEmail } from '@sdk';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import { Button } from '@src/components/ui/button';
 import { Loader2 } from 'lucide-react';
@@ -49,26 +43,46 @@ export function MembershipInvitations({ recipientEmail }: { recipientEmail: stri
   );
 }
 
-function MembershipInvitationRow({
-  invitation,
-  onResolved,
-}: {
-  invitation: Invitation;
-  onResolved: () => void;
-}) {
+/** Row title per target type — the row must say WHAT is being shared, not
+ *  default everything to "Organization". */
+const KIND_LABELS: Record<string, string> = {
+  organization: 'Organization invitation',
+  team: 'Team invitation',
+  workspace: 'Workspace invitation',
+  project: 'Project invitation',
+  task: 'Task invitation',
+};
+
+/** "the task", "the project", … — reads naturally in the body sentence. */
+const TARGET_NOUNS: Record<string, string> = {
+  organization: 'the organization',
+  team: 'the team',
+  workspace: 'the workspace',
+  project: 'the project',
+  task: 'the task',
+};
+
+function MembershipInvitationRow({ invitation, onResolved }: { invitation: Invitation; onResolved: () => void }) {
   const inv = invitation as any;
   const [busy, setBusy] = useState<'accept' | 'decline' | null>(null);
   const targetType: string = inv.target_type;
   const Icon = iconForType(targetType);
-  const kindLabel = targetType === 'team' ? 'Team invitation' : 'Organization invitation';
-  const targetName: string = inv.target_name || (targetType === 'team' ? 'a team' : 'an organization');
+  const kindLabel = KIND_LABELS[targetType] ?? 'Invitation';
+  const targetName: string = inv.target_name || TARGET_NOUNS[targetType] || 'a shared item';
+  const noun = TARGET_NOUNS[targetType];
+  const targetLabel = inv.target_name && noun ? `${noun} “${inv.target_name}”` : targetName;
+  const who = inv.sender_name ? `${inv.sender_name} invited you` : 'You’ve been invited';
 
   const accept = useCallback(async () => {
     if (!invitation.id) return;
     setBusy('accept');
     try {
       await acceptInvitation({ invitation_id: invitation.id });
-      notify.success({ title: 'Joined', message: `You joined ${targetName}.`, id: 'membership-invite' });
+      notify.success({
+        title: 'Invitation accepted',
+        message: `${targetLabel} is now available in your workspace.`,
+        id: 'membership-invite',
+      });
       onResolved();
     } catch (err) {
       notify.error({
@@ -99,14 +113,15 @@ function MembershipInvitationRow({
   }, [invitation.id, onResolved]);
 
   return (
-    <div className="flex items-center gap-3 border-b border-border/40 border-l-2 border-l-violet-500 px-3 py-2">
+    <div className="flex items-center gap-3 border-b border-l-2 border-border/40 border-l-violet-500 px-3 py-2">
       <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm font-medium">{kindLabel}</div>
         <div className="truncate text-xs text-muted-foreground">
-          You’ve been invited to {targetName}
+          {who} to {targetLabel}
           {inv.target_role ? ` as ${inv.target_role}` : ''}.
         </div>
+        {inv.message && <div className="truncate text-xs text-muted-foreground/80">{inv.message}</div>}
       </div>
       <Button size="sm" disabled={busy !== null} onClick={() => void accept()}>
         {busy === 'accept' && <Loader2 className="h-4 w-4 animate-spin" />}

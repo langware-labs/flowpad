@@ -10,6 +10,7 @@ import {
 } from '@src/components/ui/dialog';
 import { useContactsGroups } from '@src/components/contact-picker/use-contacts-groups';
 import { WikiLabel } from '@src/components/wiki-tip';
+import { useTaskAssignmentMessage } from '@src/hooks/use-task-assignment-message';
 import { cn } from '@src/lib/utils';
 import { notify } from '@src/notifications';
 import { Users } from 'lucide-react';
@@ -37,7 +38,9 @@ interface CreateGroupTaskResult {
 export function GroupTaskDialog({ task, open, onOpenChange }: GroupTaskDialogProps) {
   const { groups } = useContactsGroups(open);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
+  const { sendAssignment } = useTaskAssignmentMessage(task);
 
   const selected = groups.find((g) => g.id === selectedId) ?? null;
 
@@ -64,6 +67,18 @@ export function GroupTaskDialog({ task, open, onOpenChange }: GroupTaskDialogPro
           title: 'Group task created',
           message: `${created} member task(s) created for "${selected.displayName ?? selected.name}".`,
         });
+      }
+      // The assignment message (push-notify channel): one conversation to all
+      // members, with the task chip + git-folder chips for its attachments.
+      const recipients = (selected.contacts ?? []).filter((c) => !!c.email);
+      if (recipients.length) {
+        const convId = await sendAssignment(recipients, message);
+        if (!convId) {
+          notify.warning({
+            title: 'Members assigned, but the message failed',
+            message: 'The member tasks were created; the notification message did not go through.',
+          });
+        }
       }
       onOpenChange(false);
     } catch (e) {
@@ -115,6 +130,17 @@ export function GroupTaskDialog({ task, open, onOpenChange }: GroupTaskDialogPro
             </button>
           ))}
         </div>
+
+        {selected && (
+          <textarea
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            placeholder="Optional message to the members…"
+            rows={2}
+            data-testid="group-task-message"
+            className="w-full resize-none rounded-md border bg-transparent px-2 py-1.5 text-sm outline-none placeholder:text-muted-foreground focus:ring-1 focus:ring-ring"
+          />
+        )}
 
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={busy}>
