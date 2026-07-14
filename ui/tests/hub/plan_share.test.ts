@@ -41,14 +41,13 @@ import { hubAvailable } from './_hub';
 import { pollUntil } from './_matrix';
 import { testEntityName, trackForCleanup } from '../_cleanup';
 import {
+  HUB_INST_1 as INST_1,
+  HUB_INST_2 as INST_2,
   findPendingInvitation,
   getInstance,
   instanceAvailable,
   type ResolvedInstance,
 } from './_instances';
-
-const INST_1 = process.env.SHARE_INST_1 || 'dev-1';
-const INST_2 = process.env.SHARE_INST_2 || 'dev-2';
 
 let skipReason: string | null = null;
 let alice: ResolvedInstance;
@@ -59,7 +58,7 @@ const createdProjects: Array<{ apiUrl: string; id: string; dir: string }> = [];
 beforeAll(async () => {
   const hub = await hubAvailable();
   if (!hub.ok) return void (skipReason = hub.reason ?? 'hub unreachable');
-  if (!(await instanceAvailable(INST_1)) || !(await instanceAvailable(INST_2))) {
+  if (!instanceAvailable(INST_1) || !instanceAvailable(INST_2)) {
     return void (skipReason = `launch ${INST_1} + ${INST_2} via scripts/instance_ctl.sh`);
   }
   alice = await getInstance(INST_1);

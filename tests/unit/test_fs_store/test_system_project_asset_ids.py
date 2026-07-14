@@ -29,6 +29,30 @@ def _capsule_files() -> list[Path]:
     return files
 
 
+def _skill_capsule_snapshots() -> list[tuple[Path, str | None, str | None]]:
+    """Freeze shipped skill ids before any test can backfill ``.flow/id``."""
+    snapshots: list[tuple[Path, str | None, str | None]] = []
+    for path in sorted(_SYSTEM_PROJECTS.glob("*/.claude/skills/*/SKILL.md")):
+        frontmatter_id = _fm_id(path)
+        capsule_path = path.parent / ".flow" / "id"
+        capsule_id = (
+            capsule_path.read_text(encoding="utf-8").strip()
+            if capsule_path.is_file()
+            else None
+        )
+        snapshots.append(
+            (
+                path,
+                str(frontmatter_id) if frontmatter_id is not None else None,
+                capsule_id,
+            )
+        )
+    return snapshots
+
+
+_SKILL_CAPSULE_SNAPSHOTS = _skill_capsule_snapshots()
+
+
 def test_capsule_file_set_is_nonempty() -> None:
     assert _capsule_files(), f"no system-project assets found under {_SYSTEM_PROJECTS}"
 
@@ -43,4 +67,35 @@ def test_system_asset_ships_valid_capsule_id(path: Path) -> None:
     assert is_valid_entity_id(str(raw)), (
         f"{path.name} ships id: {raw!r}, which is not a valid v4/v5 entity id — "
         f"the indexer rejects it and mints a fresh id on every install. Bake in a v4."
+    )
+
+
+@pytest.mark.parametrize(
+    ("path", "frontmatter_id", "capsule_id"),
+    _SKILL_CAPSULE_SNAPSHOTS,
+    ids=[
+        str(path.relative_to(_SYSTEM_PROJECTS))
+        for path, _frontmatter_id, _capsule_id in _SKILL_CAPSULE_SNAPSHOTS
+    ],
+)
+def test_system_skill_ships_matching_folder_capsule_id(
+    path: Path,
+    frontmatter_id: str | None,
+    capsule_id: str | None,
+) -> None:
+    capsule_path = path.parent / ".flow" / "id"
+    assert capsule_id is not None, (
+        f"{path.relative_to(_SYSTEM_PROJECTS)} ships without {capsule_path.name!r} "
+        "folder identity; an index pass could mutate or remint the installed asset."
+    )
+    assert frontmatter_id is not None, f"{path.name} ships without a frontmatter id"
+    assert is_valid_entity_id(frontmatter_id), (
+        f"{path.name} frontmatter id {frontmatter_id!r} is not a valid v4/v5 entity id"
+    )
+    assert is_valid_entity_id(capsule_id), (
+        f"{capsule_path} contains {capsule_id!r}, not a valid v4/v5 entity id"
+    )
+    assert capsule_id == frontmatter_id, (
+        f"{capsule_path} id {capsule_id!r} does not match "
+        f"{path.name} frontmatter id {frontmatter_id!r}"
     )

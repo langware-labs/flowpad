@@ -25,6 +25,7 @@ ordering is alphabetical (pytest default).
 from __future__ import annotations
 
 import asyncio
+import os
 import time
 import uuid
 from datetime import datetime, timezone
@@ -34,8 +35,8 @@ import httpx
 import pytest
 
 
-# Sibling flowpad-app checkout holds the SECOND seeded hub user's (bob's)
-# credentials — same resolution as tests/hub_tests/test_members_basic_operations.py.
+# The cycle env holds the second hub user's (bob's) credentials. The sibling
+# flowpad-app checkout remains a local-development fallback.
 REPO_APP = Path(__file__).resolve().parents[2].parent / "flowpad-app"
 
 
@@ -332,10 +333,10 @@ async def test_invitations_through_same_pipeline(hub_base_url, hub_login_payload
         pytest.skip("hub login payload lacked an email; can't test invitation flow")
 
     app_env = _read_env_local(REPO_APP)
-    sender_email = app_env.get("FLOWPAD_CLOUD_USER_EMAIL")
-    sender_pw = app_env.get("FLOWPAD_CLOUD_USER_PASSWORD")
+    sender_email = os.environ.get("BOB_EMAIL") or app_env.get("FLOWPAD_CLOUD_USER_EMAIL")
+    sender_pw = os.environ.get("BOB_PW") or app_env.get("FLOWPAD_CLOUD_USER_PASSWORD")
     if not sender_email or not sender_pw:
-        pytest.skip("missing FLOWPAD_CLOUD_USER_{EMAIL,PASSWORD} in flowpad-app/.env.local")
+        pytest.skip("missing BOB_EMAIL/BOB_PW and flowpad-app fallback credentials")
     if sender_email.strip().lower() == recipient_email.lower():
         pytest.skip("sender and recipient are the same hub user; need two distinct seeded users")
 

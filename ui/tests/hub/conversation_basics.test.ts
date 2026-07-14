@@ -38,7 +38,7 @@ beforeAll(async () => {
   }
   const alice = await getAliceCreds();
   if (!alice) {
-    skipReason = 'missing FLOWPAD_CLOUD_USER_{EMAIL,PASSWORD} in flowpad-oss/.env.local';
+    skipReason = 'missing ALICE_EMAIL/ALICE_PW';
     return;
   }
   hubToken = (await hubLogin(alice.email, alice.password)).token;

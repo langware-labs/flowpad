@@ -7,11 +7,12 @@ Standard invite pattern (no shortcuts):
   4. Validate BOTH users' worldview on the hub: querying as alice AND as bob,
      the conversation exists and BOTH messages are visible to each.
 
-Credentials come from the two project ``.env.local`` files (alice ← flowpad-oss,
-bob ← flowpad-app), same as ``test_two_client_loop``.
+Credentials come from the cycle's ``ALICE_*``/``BOB_*`` environment, with the
+two project ``.env.local`` files as local-development fallbacks.
 """
 from __future__ import annotations
 
+import os
 import time
 from pathlib import Path
 
@@ -73,10 +74,12 @@ async def test_conversation_worldview_consistent_for_both(hub_base_url):
     in both alice's and bob's hub worldview."""
     oss_env = _read_env_local(REPO_OSS)
     app_env = _read_env_local(REPO_APP)
-    alice_email, alice_pw = oss_env.get("FLOWPAD_CLOUD_USER_EMAIL"), oss_env.get("FLOWPAD_CLOUD_USER_PASSWORD")
-    bob_email, bob_pw = app_env.get("FLOWPAD_CLOUD_USER_EMAIL"), app_env.get("FLOWPAD_CLOUD_USER_PASSWORD")
+    alice_email = os.environ.get("ALICE_EMAIL") or oss_env.get("FLOWPAD_CLOUD_USER_EMAIL")
+    alice_pw = os.environ.get("ALICE_PW") or oss_env.get("FLOWPAD_CLOUD_USER_PASSWORD")
+    bob_email = os.environ.get("BOB_EMAIL") or app_env.get("FLOWPAD_CLOUD_USER_EMAIL")
+    bob_pw = os.environ.get("BOB_PW") or app_env.get("FLOWPAD_CLOUD_USER_PASSWORD")
     if not (alice_email and alice_pw and bob_email and bob_pw):
-        pytest.skip("missing FLOWPAD_CLOUD_USER_{EMAIL,PASSWORD} in flowpad-oss or flowpad-app .env.local")
+        pytest.skip("missing cycle actor credentials and .env.local fallbacks")
 
     alice_tok, alice_user = await _login(hub_base_url, alice_email, alice_pw)
     bob_tok, bob_user = await _login(hub_base_url, bob_email, bob_pw)

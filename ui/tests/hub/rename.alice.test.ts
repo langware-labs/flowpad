@@ -18,8 +18,8 @@
  * hub); the local backend↔backend fan-out bridge is orthogonal and not relied on.
  *
  * Run:
- *   VITE_API_URL=http://localhost:<alice-be> RENAME_BOB_EMAIL=<bob>@local.test \
- *     RENAME_ALICE_EMAIL=<alice>@local.test RENAME_ALICE_PASSWORD=<pw> \
+ *   FLOW_INSTANCE=$SHARE_INST_1 BOB_EMAIL=<bob>@local.test \
+ *     ALICE_EMAIL=<alice>@local.test ALICE_PW=<pw> \
  *     npm run test:vitest:hub -- rename.alice
  */
 import { promises as fsp } from 'node:fs';
@@ -62,11 +62,11 @@ beforeAll(async () => {
     console.log('[rename.alice] skip:', skipReason);
     return;
   }
-  bobEmail = process.env.RENAME_BOB_EMAIL || null;
-  const aEmail = process.env.RENAME_ALICE_EMAIL;
-  const aPass = process.env.RENAME_ALICE_PASSWORD;
+  bobEmail = process.env.BOB_EMAIL || null;
+  const aEmail = process.env.ALICE_EMAIL;
+  const aPass = process.env.ALICE_PW;
   if (!bobEmail || !aEmail || !aPass) {
-    skipReason = 'set RENAME_BOB_EMAIL + RENAME_ALICE_EMAIL + RENAME_ALICE_PASSWORD';
+    skipReason = 'set BOB_EMAIL + ALICE_EMAIL + ALICE_PW';
     console.log('[rename.alice] skip:', skipReason);
     return;
   }

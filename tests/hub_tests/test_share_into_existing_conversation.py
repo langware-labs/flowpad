@@ -8,10 +8,11 @@ asset — routes through ``add_message`` only. ``add_message`` never calls
 conversation must stay at exactly 1.
 
 Mirrors the harness in ``test_share_with_recipients.py`` (env-mode alice login
-via fixtures; bob driven over raw HTTP from flowpad-app/.env.local).
+via fixtures; bob driven over raw HTTP from the cycle env, with a repo fallback).
 """
 from __future__ import annotations
 
+import os
 import time
 import uuid
 from pathlib import Path
@@ -58,10 +59,10 @@ async def test_message_into_existing_conversation_sends_no_new_invite(
     login_as(hub_login_payload)
 
     app_env = _read_env_local(REPO_APP)
-    bob_email = app_env.get("FLOWPAD_CLOUD_USER_EMAIL")
-    bob_pw = app_env.get("FLOWPAD_CLOUD_USER_PASSWORD")
+    bob_email = os.environ.get("BOB_EMAIL") or app_env.get("FLOWPAD_CLOUD_USER_EMAIL")
+    bob_pw = os.environ.get("BOB_PW") or app_env.get("FLOWPAD_CLOUD_USER_PASSWORD")
     if not bob_email or not bob_pw:
-        pytest.skip("missing FLOWPAD_CLOUD_USER_{EMAIL,PASSWORD} in flowpad-app/.env.local")
+        pytest.skip("missing BOB_EMAIL/BOB_PW and flowpad-app fallback credentials")
 
     async with httpx.AsyncClient(timeout=5.0) as h:
         r = await h.post(f"{hub_base_url}/api/v1/login", json={"email": bob_email, "password": bob_pw})

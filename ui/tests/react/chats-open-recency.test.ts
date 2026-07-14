@@ -19,8 +19,8 @@
  *   4. closing tabs is not an activity signal — entries survive and order
  *      still reflects last-open recency.
  *
- * Faithful, no-mock: sessions are REAL JSONL transcripts under
- * `~/.claude/projects/<dir>/` (exactly what the backend's worker-history
+ * Faithful, no-mock: sessions are REAL JSONL transcripts under the explicit
+ * `$FLOWPAD_CLAUDE_HOME/projects/<dir>/` (exactly what worker-history
  * walks), with a real shared `cwd` (the heal 500s without one); the "open from
  * the left menu" is the REAL production path minus the router —
  * `AgenticProcess.getByWorkerId` (the heal the navigator calls) + the
@@ -55,13 +55,19 @@ const OVER_WINDOW_MS = STABILITY_MS + 600;
 // ── Real on-disk session fixtures (what worker-history actually reads) ──────
 
 const RUN = randomUUID();
+const FLOW_INSTANCE = process.env.FLOW_INSTANCE?.trim() || '';
+const CLAUDE_HOME = process.env.FLOWPAD_CLAUDE_HOME;
+if (!CLAUDE_HOME || !path.isAbsolute(CLAUDE_HOME)) {
+  throw new Error('FLOWPAD_CLAUDE_HOME must be an absolute cycle-owned path for chats-open-recency');
+}
+const FLOW_HOME = path.resolve(process.env.FLOW_HOME || path.join(os.homedir(), '.flow'));
 /** NON-scratch encoded dir name so worker-history does not filter it (unlike
  *  `-history-merge-test-`, which is scratch-listed). */
-const FIXTURE_DIR = path.join(os.homedir(), '.claude', 'projects', `-rca-chats-open-recency-${RUN}`);
+const FIXTURE_DIR = path.join(CLAUDE_HOME, 'projects', `-rca-chats-open-recency-${RUN}`);
 /** Shared real cwd for every fixture session: the `get_by_worker_id` heal
  *  refuses (500) a session with an unknown working directory, and a /tmp cwd
  *  would be scratch-filtered out of worker-history. */
-const FIXTURE_CWD = path.join(os.homedir(), `.rca-chats-fixture-cwd-${RUN}`);
+const FIXTURE_CWD = path.join(FLOW_HOME, 'instances', FLOW_INSTANCE, 'react-fixtures', `chats-open-recency-${RUN}`);
 
 function writeSession(sessionId: string, prompt: string, ts: Date): void {
   fs.mkdirSync(FIXTURE_DIR, { recursive: true });
@@ -185,9 +191,7 @@ describe('useChatHistory — open/close recency + highlight linkage matrix', () 
     // (URL-first: the URL now holds p.id). The hook must expose that linkage.
     await waitFor(
       () => {
-        const entry = rendered.result.current.buckets
-          .flatMap((b) => b.entries)
-          .find((e) => e.worker_id === S3);
+        const entry = rendered.result.current.buckets.flatMap((b) => b.entries).find((e) => e.worker_id === S3);
         expect(entry?.agentic_process_id).toBe(p.id);
       },
       { timeout: 5000 },
@@ -237,8 +241,7 @@ describe('useChatHistory — open/close recency + highlight linkage matrix', () 
 
     // Precondition, not behavior: the two real activate stamps must have
     // landed inside the window, or the scenario didn't happen as designed.
-    const stampOf = (id: string) =>
-      Number(AgenticProcess.getByIdFromCache<AgenticProcess>(id)?.last_active_at ?? NaN);
+    const stampOf = (id: string) => Number(AgenticProcess.getByIdFromCache<AgenticProcess>(id)?.last_active_at ?? NaN);
     await waitFor(
       () => {
         const delta = Math.abs(stampOf(o1.p.id) - stampOf(o2.p.id));

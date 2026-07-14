@@ -4,11 +4,9 @@
  * Shell/AgenticProcess row.
  *
  * The real select path runs here: the router fires the production loaders
- * (`loadAgentApp` → `loadProcess`), which today call `process.activate()` /
- * `shell.activate()` — stamping the TARGET entity. Nothing calls
- * `Tab.activateById`, so the Tab's `last_active_at` stays null and the
- * close-reselect (`resolveActive`) skips its recency tier and falls back to
- * `tab_order` — closing the active tab does not pop the previously-active one.
+ * (`loadAgentApp` → `loadProcess`), materializes the project-owned Tab, then
+ * stamps that Tab through `stampTabRecencyForTarget`. The close resolver reads
+ * the same Tab's `last_active_at`, so this test protects the full handoff.
  *
  * Faithful boundary: the only mock is the SDK backend action boundary
  * (`dataManager.callAction`), modelled on the real backend's generic `activate`
@@ -16,9 +14,9 @@
  * entity row. So a Tab-targeted activate bumps that tab; a Shell/Process-
  * targeted activate does not touch any tab row — exactly the production split.
  *
- * Bug: after a full select, NO `activate` is ever sent to the Tab → the
- * process's tab `last_active_at` is never stamped (assertion below fails).
- * Fix: the loader stamps the Tab on select (`Tab.activateById`) → it is stamped.
+ * Regression contract: the fake backend must preserve the `project_id` posted
+ * by `new_tab`; otherwise exact project scoping correctly hides the fake row
+ * before the recency assertion can observe the Tab-level `activate`.
  */
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -64,13 +62,20 @@ function projectDock(): DockPointer {
   return DockPointer.forProject(PROJECT_ID);
 }
 
-function tabRow(id: string, dock: DockPointer, targetType: string | null, targetId: string | null, name: string): TabRow {
+function tabRow(
+  id: string,
+  dock: DockPointer,
+  targetType: string | null,
+  targetId: string | null,
+  projectId: string | null,
+  name: string,
+): TabRow {
   return {
     id,
     pointer: dock.toJSON() ?? '',
     target_type: targetType,
     target_id: targetId,
-    project_id: null,
+    project_id: projectId,
     name,
     icon_key: targetType === AgenticProcess.type ? 'claude' : null,
     worktree: false,
@@ -228,17 +233,36 @@ describe('selecting a tab stamps recency on the Tab entity', () => {
 
       if (action.name === 'new_tab' && target === null) {
         const pointer = String(action.bodyParameters.pointer ?? '');
+        const projectId = (action.bodyParameters.project_id as string | null) ?? null;
         const existing = backendTabs.find((tab) => tab.pointer === pointer);
         if (!existing) {
           if (pointer === projectDock().toJSON()) {
             backendTabs = [
               ...backendTabs,
-              new Tab(tabRow('40000000-0000-4000-8000-000000000002', projectDock(), Project.type, PROJECT_ID, 'Flowpad Project')),
+              new Tab(
+                tabRow(
+                  '40000000-0000-4000-8000-000000000002',
+                  projectDock(),
+                  Project.type,
+                  PROJECT_ID,
+                  projectId,
+                  'Flowpad Project',
+                ),
+              ),
             ];
           } else if (pointer === processDock(NEW_PROCESS_ID).toJSON()) {
             backendTabs = [
               ...backendTabs,
-              new Tab(tabRow(NEW_PROCESS_TAB_ID, processDock(NEW_PROCESS_ID), AgenticProcess.type, NEW_PROCESS_ID, 'New Claude')),
+              new Tab(
+                tabRow(
+                  NEW_PROCESS_TAB_ID,
+                  processDock(NEW_PROCESS_ID),
+                  AgenticProcess.type,
+                  NEW_PROCESS_ID,
+                  projectId,
+                  'New Claude',
+                ),
+              ),
             ];
           }
         }

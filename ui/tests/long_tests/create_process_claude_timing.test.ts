@@ -8,8 +8,8 @@
  * spawn of the AgenticProcess + Shell + claude PTY.
  *
  * Isolation mirrors `init_sdk_bench.test.ts`: a fresh disposable instance
- * (`launchInstance`) + a fresh SDK realm (`vi.resetModules()` + re-`import('@sdk')`
- * bound to this backend via `globalThis.__FLOWPAD_API_URL__`).
+ * (`launchInstance`) + a fresh, owned SDK realm (`createSdkRealm`, scoped to
+ * that backend and explicitly disposed).
  *
  * This only TIMES createProcess — it does not execute an instruction. The
  * worker is closed and the instance killed in `finally`.
@@ -19,6 +19,7 @@
 import { describe, expect, it } from 'vitest';
 import { stressDescribe } from './_stress_gate';
 import { launchInstance, killInstance, prepareCleanRealm } from './_backend_lifecycle';
+import type { OwnedSdkMainRealm } from '../_sdk_realm';
 
 type SdkRealm = typeof import('@sdk');
 
@@ -34,9 +35,11 @@ stressDescribe('createProcess(claude) timing on a fresh instance', () => {
       throw new Error(`${name} failed to launch / become healthy`);
     }
 
+    let realm: OwnedSdkMainRealm | undefined;
     try {
       // Real app-startup init against the fresh backend (errors are swallowed inside).
-      const { sdk, main } = await prepareCleanRealm(port);
+      realm = await prepareCleanRealm(port);
+      const { sdk, main } = realm;
       await main.initSdk();
       expect((window as Record<string, unknown>).appReady, 'initSdk should complete').toBe(true);
 
@@ -68,6 +71,7 @@ stressDescribe('createProcess(claude) timing on a fresh instance', () => {
         /* best-effort */
       }
     } finally {
+      realm?.dispose();
       await killInstance(name);
     }
   });
