@@ -124,6 +124,40 @@ GIT_INIT_CONFIG: tuple[tuple[str, str], ...] = (
 )
 
 
+# Standard .gitignore seeded into a freshly-initialized Flowpad repo. Only
+# written when the workdir had no .gitignore of its own (never clobbers a user's
+# file). Covers the common noise so local revisions/commits stay clean.
+DEFAULT_GITIGNORE = """\
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.idea/
+.vscode/
+*.swp
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+
+# Node
+node_modules/
+npm-debug.log*
+
+# Build output
+dist/
+build/
+*.log
+
+# Flowpad
+.mcp_servers
+"""
+
+
 # ---------------------------------------------------------------------------
 # GitRepo
 # ---------------------------------------------------------------------------
@@ -203,7 +237,23 @@ class GitRepo:
             return GitRestoreResult(ok=False, message=(err or "git init failed").strip())
         for key, value in GIT_INIT_CONFIG:
             await self._run_git("config", key, shlex.quote(value))
+        await self._seed_gitignore()
         return GitRestoreResult(ok=True, message="Initialized git repository")
+
+    async def _seed_gitignore(self) -> None:
+        """Write DEFAULT_GITIGNORE at the repo root, but only if absent.
+
+        Non-fatal: a fresh repo is usable without it, so any read/write failure
+        is logged and swallowed (same policy as the init config loop above).
+        Never overwrites a user's existing .gitignore.
+        """
+        gitignore_path = os.path.join(self.work_dir, ".gitignore")
+        try:
+            if await self._compute_node.exists(gitignore_path):
+                return
+            await self._compute_node.write_files(gitignore_path, DEFAULT_GITIGNORE)
+        except Exception:
+            logger.debug("failed to seed .gitignore in %s", self.work_dir, exc_info=True)
 
     async def get_branch(self) -> str | None:
         """Return the current branch name, or None if detached / not a repo."""
