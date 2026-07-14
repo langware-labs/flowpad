@@ -2,6 +2,7 @@ import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { IEntity } from '../IEntity';
 import { ActionInfo } from '../models';
 import { IDockPointer } from '../models/DockPointer';
+import { TypeId } from '../models/TypeId';
 import { EntityTypes } from '../schema/types';
 import { dockOptionsToScopeFilter } from '../utils/scope-filter';
 import { Project } from './project';
@@ -270,16 +271,20 @@ export class Tab extends APIEntity<Tab> implements ITab {
    * `project_id`; a target-less dock → null. No-tab docks (home, bare shell)
    * return [].
    */
-  static async getFromDockPointer(
-    dock: IDockPointer,
-    opts: { parentTabId?: string | null } = {},
-  ): Promise<Tab[]> {
-    const pointerJson = dock.toJSON?.();
-    if (!pointerJson) return [];
-
-    // An entity dock resolves via `getByTypeId` (already cache-first internally);
-    // a vfs asset dock via the pure `getEntityByPath`. One cast names the fields
-    // we read off the heterogeneous target (project + terminal-display).
+  /**
+   * Resolve a dock's TARGET entity and the `project_id` its tab must carry —
+   * the single resolution `getFromDockPointer` persists and callers (e.g. the
+   * lens staleness gate in `materializeTab`) compare against. Cache-first: an
+   * entity dock resolves via `getByTypeId`; a vfs asset dock via
+   * `getEntityByPath` (the pure, no-recovery path lookup).
+   */
+  static async resolveDockTarget(dock: IDockPointer): Promise<{
+    targetTypeId: TypeId | null;
+    target: (APIEntity<any> & TerminalTargetFields & { project_id?: string | null; cwd?: string | null; workdir?: string | null }) | null;
+    projectId: string | null;
+  }> {
+    // One cast names the fields we read off the heterogeneous target
+    // (project + terminal-display).
     let targetTypeId = dock.targetTypeId ?? null;
     const target = (
       targetTypeId
@@ -316,6 +321,18 @@ export class Tab extends APIEntity<Tab> implements ITab {
       const byPath = cwd ? await Project.getProjectByPath(cwd) : null;
       projectId = byPath?.id ?? scopeProjectId ?? null;
     }
+
+    return { targetTypeId, target, projectId };
+  }
+
+  static async getFromDockPointer(
+    dock: IDockPointer,
+    opts: { parentTabId?: string | null } = {},
+  ): Promise<Tab[]> {
+    const pointerJson = dock.toJSON?.();
+    if (!pointerJson) return [];
+
+    const { targetTypeId, target, projectId } = await Tab.resolveDockTarget(dock);
 
     const { iconKey, worktree } = displayForTarget(targetTypeId?.type ?? null, target);
 
