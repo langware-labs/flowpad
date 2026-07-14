@@ -19,6 +19,8 @@ export interface SearchResult {
   project_id?: string;
   project_name?: string;
   asset_type?: string;
+  /** Group-task member pointer — member tasks are hidden from asset lists. */
+  parent_id?: string;
 }
 
 export interface ColumnActions {

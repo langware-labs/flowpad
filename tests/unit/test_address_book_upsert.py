@@ -96,8 +96,12 @@ async def test_scan_address_book_learns_all_rosters():
         {"user_id": "hub-ziv", "email": "ziv@thinkz.ai", "name": "Ziv Lavy"},
     ])
 
+    # The session DB is not reset between tests (see the scoped test below), so an
+    # unscoped scan also sees conversations other tests created. Assert at least
+    # this test's two were scanned, not that they're the only two; the rosters
+    # learned below prove both of these conversations were actually processed.
     result = await scan_address_book()
-    assert result["scanned_conversations"] == 2
+    assert result["scanned_conversations"] >= 2
 
     assert await User.get_by_identity(email="gadi@langware.ai") is not None
     assert await User.get_by_identity(user_id="hub-nir") is not None  # email-less learned

@@ -54,11 +54,10 @@ class Invitation(Entity):
     target_id: Optional[str] = APIField(None)
     target_name: Optional[str] = APIField(None)
     target_role: Optional[str] = APIField(None)
-    # Who sent the invitation — mirrored from the hub's ``inviter`` enrichment
-    # (resolved from the InvitedBy edge) so the inbox row can say
-    # "<inviter> invited you to <target>" instead of an anonymous notice.
-    inviter_id: Optional[str] = APIField(None)
-    inviter_name: Optional[str] = APIField(None)
+    # The inviter, resolved hub-side from the InvitedBy edge — so the inbox row
+    # can say WHO invited ("<name> invited you to …"), not just what.
+    sender_name: Optional[str] = APIField(None)
+    sender_user_id: Optional[str] = APIField(None)
 
     @field_validator("recipient_email", mode="before")
     @classmethod

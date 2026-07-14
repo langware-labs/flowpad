@@ -95,16 +95,16 @@ def test_common_fields_mirror_expiration_and_inviter():
     )
     assert fields["recipient_email"] == "bob@langware.ai"
     assert fields["expiration_at"] == datetime(2026, 7, 2, 11, 26, 37, 242319, tzinfo=UTC)
-    assert fields["inviter_id"] == "u-1"
-    assert fields["inviter_name"] == "Gadi 20"
+    assert fields["sender_user_id"] == "u-1"
+    assert fields["sender_name"] == "Gadi 20"
 
     # Absent / unparsable values degrade to None, never to a raw string
     # (assignment on a loaded entity is unvalidated — a str would poison
     # ``is_expired``).
     fields = _invitation_common_fields({"recipient_email": "a@b.c", "expiration_at": "not-a-date"})
     assert fields["expiration_at"] is None
-    assert fields["inviter_id"] is None
-    assert fields["inviter_name"] is None
+    assert fields["sender_user_id"] is None
+    assert fields["sender_name"] is None
 
 
 def _local_inv(*, remote: bool, accepted: bool, expired: bool):

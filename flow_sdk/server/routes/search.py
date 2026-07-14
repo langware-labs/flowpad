@@ -37,6 +37,7 @@ async def _entity_asset_ref(ent) -> str:
         rec = await ent.get_record()
         if rec is None:
             from flow_sdk.fs_store.fs_record import FSRecord
+
             ent_name = getattr(ent, "name", None) or getattr(ent, "uname", None)
             if ent_name:
                 rec = FSRecord.load_or_none(ent.type or ent.get_type(), ent_name)
@@ -50,12 +51,7 @@ async def _entity_asset_ref(ent) -> str:
 
 
 async def _entity_to_result(ent) -> dict:
-    name = (
-        getattr(ent, "name", None)
-        or getattr(ent, "uname", None)
-        or getattr(ent, "title", None)
-        or ""
-    )
+    name = getattr(ent, "name", None) or getattr(ent, "uname", None) or getattr(ent, "title", None) or ""
     result = {
         "record_id": ent.id,
         "record_type": ent.type or ent.get_type(),
@@ -68,8 +64,22 @@ async def _entity_to_result(ent) -> dict:
         "created_at": str(getattr(ent, "created_date", "") or ""),
         "modified_at": str(getattr(ent, "updated_date", "") or ""),
     }
-    # Extra fields for per-type column rendering
-    for field in ("uname", "title", "description", "file_path", "filename", "work_dir", "session_id", "asset_type", "parent_path", "vault_root"):
+    # Extra fields for per-type column rendering. ``parent_id`` lets the Assets
+    # tree hide member tasks (group-task children live in the task editor's
+    # Member tasks section, not the left pane).
+    for field in (
+        "uname",
+        "title",
+        "description",
+        "file_path",
+        "filename",
+        "work_dir",
+        "session_id",
+        "asset_type",
+        "parent_path",
+        "vault_root",
+        "parent_id",
+    ):
         val = getattr(ent, field, None)
         if val:
             result[field] = val
@@ -83,24 +93,41 @@ async def search_records(
     offset: int = Query(default=0, ge=0, description="Offset for pagination"),
     record_type: Optional[str] = Query(default=None, description="Filter by record type"),
     status: Optional[str] = Query(default=None, description="Filter by record status"),
-    user: Optional[str] = Query(default=None, description="ScopeFilter.user: include user-scope records. 'true' (default if absent) or 'false'."),
-    projects: Optional[str] = Query(default=None, description="ScopeFilter.projects: comma-separated project entity IDs to include."),
+    user: Optional[str] = Query(
+        default=None, description="ScopeFilter.user: include user-scope records. 'true' (default if absent) or 'false'."
+    ),
+    projects: Optional[str] = Query(
+        default=None, description="ScopeFilter.projects: comma-separated project entity IDs to include."
+    ),
     tags: Optional[str] = Query(default=None, description="Comma-separated tags to filter by"),
-    parent_path: Optional[str] = Query(default=None, description="Filter to records whose parent_path is exactly this absolute path (direct children only)"),
-    vault_root: Optional[str] = Query(default=None, description="Filter to records whose vault_root is exactly this absolute path (descendants at any depth)"),
-    include_system: bool = Query(default=False, description="Include entities from SDK-shipped system projects. Default off."),
+    parent_path: Optional[str] = Query(
+        default=None,
+        description="Filter to records whose parent_path is exactly this absolute path (direct children only)",
+    ),
+    vault_root: Optional[str] = Query(
+        default=None,
+        description="Filter to records whose vault_root is exactly this absolute path (descendants at any depth)",
+    ),
+    include_system: bool = Query(
+        default=False, description="Include entities from SDK-shipped system projects. Default off."
+    ),
     col_weights: Optional[str] = Query(default=None, description="Comma-separated BM25 column weights (6 values)"),
     recency_boost: Optional[float] = Query(default=None, description="SQL-side additive recency penalty per day"),
-    recency_factor: Optional[float] = Query(default=None, description="Python-side multiplicative recency decay per day (k in bm25/(1+days*k))"),
-    overfetch: Optional[int] = Query(default=None, ge=0, description="Extra rows to fetch beyond limit for recency blend"),
+    recency_factor: Optional[float] = Query(
+        default=None, description="Python-side multiplicative recency decay per day (k in bm25/(1+days*k))"
+    ),
+    overfetch: Optional[int] = Query(
+        default=None, ge=0, description="Extra rows to fetch beyond limit for recency blend"
+    ),
     type_scores: Optional[str] = Query(default=None, description="JSON object of type→score adjustments"),
 ):
     """Search indexed records using FTS5 full-text search, or browse all when query is empty."""
+    import json as _json  # noqa: PLC0415
+
     from flow_sdk.core.entity.entity_model import Entity
     from flow_sdk.db.drivers.query import QueryFilter  # noqa: PLC0415
     from flow_sdk.db.drivers.sqlite.sqlite_driver import SearchCalibration  # noqa: PLC0415
     from flow_sdk.server.search_filters import ScopeFilter, resolve_project_scope  # noqa: PLC0415
-    import json as _json  # noqa: PLC0415
 
     # Build the unified ScopeFilter. If `user` param is absent (legacy
     # caller), pass None so the filter is disabled (back-compat for any
@@ -149,6 +176,7 @@ async def search_records(
         qf = QueryFilter(type=record_type or "entity")
         if status:
             from flow_sdk.db.drivers.query import ExpressionNode  # noqa: PLC0415
+
             qf.match = ExpressionNode(**{"status": status})
         qf.order_by = {"updated_date": "desc"}
         all_entities = await Entity.get_all(qf)
@@ -159,12 +187,14 @@ async def search_records(
         all_entities = apply_tag_filter(all_entities, tag_list)
 
         total_count = len(all_entities)
-        page = all_entities[offset:offset + limit]
+        page = all_entities[offset : offset + limit]
         results = [await _entity_to_result(e) for e in page]
-        return JSONResponse(content={
-            "status": "SUCCESS",
-            "data": {"results": results, "query": "", "total": total_count, "indexer_ready": True},
-        })
+        return JSONResponse(
+            content={
+                "status": "SUCCESS",
+                "data": {"results": results, "query": "", "total": total_count, "indexer_ready": True},
+            }
+        )
 
     # Sanitize the FTS query: the unicode61 tokenizer used for entities_fts
     # treats '-' as a word separator, AND FTS5 syntax interprets a hyphen
@@ -194,10 +224,12 @@ async def search_records(
         )
     except Exception:
         logger.warning("FTS search failed (index may not be ready), returning empty results", exc_info=True)
-        return JSONResponse(content={
-            "status": "SUCCESS",
-            "data": {"results": [], "query": q, "total": 0, "indexer_ready": False},
-        })
+        return JSONResponse(
+            content={
+                "status": "SUCCESS",
+                "data": {"results": [], "query": q, "total": 0, "indexer_ready": False},
+            }
+        )
 
     entities = apply_scope_filter(entities, scope_filter)
     entities = apply_folder_filter(entities, parent_path, vault_root)
@@ -205,7 +237,7 @@ async def search_records(
     entities = apply_tag_filter(entities, tag_list)
 
     total_count = len(entities)
-    page = entities[offset:offset + limit]
+    page = entities[offset : offset + limit]
     results = [await _entity_to_result(e) for e in page]
 
     # Resolve project_name for each unique project_id in one batched read so
@@ -214,6 +246,7 @@ async def search_records(
     if pid_set:
         try:
             from flow_sdk.builtin.project import Project  # noqa: PLC0415
+
             projs = await Project.get_all()
             pid_to_name = {}
             for p in projs:
@@ -229,7 +262,9 @@ async def search_records(
         except Exception:
             logger.warning("project_name resolution failed", exc_info=True)
 
-    return JSONResponse(content={
-        "status": "SUCCESS",
-        "data": {"results": results, "query": q, "total": total_count, "indexer_ready": True},
-    })
+    return JSONResponse(
+        content={
+            "status": "SUCCESS",
+            "data": {"results": results, "query": q, "total": total_count, "indexer_ready": True},
+        }
+    )

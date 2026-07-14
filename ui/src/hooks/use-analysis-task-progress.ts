@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { AgenticProcess, ProcessStatus, isProcessActive, type Task } from '@sdk';
 import { useProcessState } from './use-process-state';
 import { useWorkflowProgressInfo } from './use-workflow-progress-info';
-import { isActionTask, TaskType } from '@src/components/task-bar/task-utils';
+import { hasStatusAnalysis, isActionTask, TaskType } from '@src/components/task-bar/task-utils';
 
 interface AnalysisTaskProgress {
   isRunning: boolean;
@@ -22,7 +22,13 @@ export function useAnalysisTaskProgress(task: Task | null): AnalysisTaskProgress
   const [process, setProcess] = useState<AgenticProcess | null>(null);
 
   const processId =
-    task && (task.task_type === TaskType.ANALYSIS || task.task_type === TaskType.CLASSIFICATION || isActionTask(task))
+    task &&
+    (task.task_type === TaskType.ANALYSIS ||
+      task.task_type === TaskType.CLASSIFICATION ||
+      isActionTask(task) ||
+      // Analyze Status wizard runs stamp process_id + analysis paths on
+      // ordinary tasks — watch those too.
+      hasStatusAnalysis(task))
       ? (task.process_id ?? undefined)
       : undefined;
   const analysisPath = task?.analysis_path ?? null;
@@ -67,7 +73,7 @@ export function useAnalysisTaskProgress(task: Task | null): AnalysisTaskProgress
   const processComplete = processState.status === ProcessStatus.STOPPED;
   const processError = processState.status === ProcessStatus.FAILED;
 
-  const isRunning = taskIsDone ? false : (processId ? processRunning : taskIsRunning);
+  const isRunning = taskIsDone ? false : processId ? processRunning : taskIsRunning;
   const isComplete = taskIsDone || processComplete;
   const isError = !taskIsDone && processError;
 

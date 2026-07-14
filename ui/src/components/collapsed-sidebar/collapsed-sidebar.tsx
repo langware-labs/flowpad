@@ -6,9 +6,15 @@ import { Button } from '@src/components/ui/button';
 import { useNavigationState } from '@src/hooks/use-navigation-state';
 import { UserDropdown } from '@src/pages/flow-page/content-panel/user-dropdown/user-dropdown';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { DockPointer } from '@src/navigation/DockPointer';
 import { ViewType } from '@src/types/ViewType';
-import { Sidebar, SidebarContent, SidebarGroup, SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@src/components/ui/sidebar';
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarGroup,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+} from '@src/components/ui/sidebar';
 import { useInboxStore } from '@src/store/use-inbox-store';
 import { useSpotlightStore } from '@src/store/use-spotlight-store';
 import { BookmarksSlider } from '@src/components/bookmarks-slider/BookmarksSlider';
@@ -76,7 +82,6 @@ type NavItem = {
   viewType: ViewType | null;
   vis: NavVisMap;
 };
-
 
 export function CollapsedSidebar() {
   const { navigation, currentDock } = useDockNavigation();
@@ -174,10 +179,9 @@ export function CollapsedSidebar() {
         // else global (the single "Assets" tab). Scope rides the navigation
         // scope filter (URL options), so the tab identity is the scope.
         if (viewType === ViewType.ASSETS) {
-          // Default scope (project mode when a project is active, else all) is
-          // seeded centrally in NavigationActions.openDock for any scope-less
-          // assets dock — no need to compute it here.
-          navigation.openDock(DockPointer.forAssetList('all'));
+          // Default surface: project home when a project is active (scope-keyed
+          // to it), else the global "all" list — resolved in openAssets.
+          navigation.openAssets();
           return;
         }
         navigation.openTab(viewType);
@@ -215,101 +219,101 @@ export function CollapsedSidebar() {
 
   return (
     <>
-    <Sidebar collapsible="none" className={`flex ${RAIL_WIDTH_CLASS} flex-col border-r`}>
-      <SidebarContent className="flex-1">
-        <SidebarGroup className="px-0 py-2">
-          <SidebarMenu>
-            <SidebarMenuItem className="flex flex-row">
-              <SidebarMenuButton
-                tooltip={t`Back`}
-                onClick={goBack}
-                disabled={!canGoBack}
-                className="h-6 w-1/2 justify-center px-0"
-              >
-                <ArrowLeft className="h-3 w-3" />
-              </SidebarMenuButton>
-              <SidebarMenuButton
-                tooltip={t`Refresh`}
-                onClick={() => window.location.reload()}
-                className="h-6 w-1/2 justify-center px-0"
-              >
-                <RefreshCw className="h-3 w-3" />
-              </SidebarMenuButton>
-            </SidebarMenuItem>
+      <Sidebar collapsible="none" className={`flex ${RAIL_WIDTH_CLASS} flex-col border-r`}>
+        <SidebarContent className="flex-1">
+          <SidebarGroup className="px-0 py-2">
+            <SidebarMenu>
+              <SidebarMenuItem className="flex flex-row">
+                <SidebarMenuButton
+                  tooltip={t`Back`}
+                  onClick={goBack}
+                  disabled={!canGoBack}
+                  className="h-6 w-1/2 justify-center px-0"
+                >
+                  <ArrowLeft className="h-3 w-3" />
+                </SidebarMenuButton>
+                <SidebarMenuButton
+                  tooltip={t`Refresh`}
+                  onClick={() => window.location.reload()}
+                  className="h-6 w-1/2 justify-center px-0"
+                >
+                  <RefreshCw className="h-3 w-3" />
+                </SidebarMenuButton>
+              </SidebarMenuItem>
 
-            {visibleItems.map((item) =>
-              renderNavItem(item, undefined, item.viewType === ViewType.INBOX ? unreadCount : undefined),
-            )}
+              {visibleItems.map((item) =>
+                renderNavItem(item, undefined, item.viewType === ViewType.INBOX ? unreadCount : undefined),
+              )}
 
-            {/* Bookmarks — vibe-mode only. Opens the favorites desktop as a
+              {/* Bookmarks — vibe-mode only. Opens the favorites desktop as a
                 left slide-in flyout (not a dock tab), so it toggles local state
                 rather than routing through handleClick/openTab. The
                 data-left-slider-ignore marker keeps this click from registering
                 as an outside-dismiss and fighting the toggle. */}
-            {isVibe && (
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  tooltip={t`Bookmarks`}
-                  isActive={bookmarksOpen}
-                  onClick={() => setBookmarksOpen((v) => !v)}
-                  data-left-slider-ignore
-                  className="relative w-full justify-center px-2"
-                >
-                  <Bookmark className="h-5 w-5" />
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            )}
+              {isVibe && (
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    tooltip={t`Bookmarks`}
+                    isActive={bookmarksOpen}
+                    onClick={() => setBookmarksOpen((v) => !v)}
+                    data-left-slider-ignore
+                    className="relative w-full justify-center px-2"
+                  >
+                    <Bookmark className="h-5 w-5" />
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              )}
 
-            {/* Discover — full-page marketplace; a top-level route, not a dock tab,
+              {/* Discover — full-page marketplace; a top-level route, not a dock tab,
                 so it navigates directly rather than via navigation.openTab.
                 Dev-only affordance (never shown in Vibe, which is not Dev). */}
-            <DevOnly reserve={false}>
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  tooltip={t`Discover`}
-                  isActive={onDiscover}
-                  onClick={() => void navigate('/discover')}
-                  className="relative w-full justify-center px-2"
-                >
-                  <Compass className="h-5 w-5" />
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            </DevOnly>
-
-            {collapsedItems.length > 0 && (
-              <div onMouseEnter={() => setSecondaryExpanded(true)} onMouseLeave={() => setSecondaryExpanded(false)}>
-                <div className="flex justify-center py-1">
-                  <div
-                    className={`flex h-5 w-8 items-center justify-center rounded-sm text-muted-foreground/50 transition-all duration-200 hover:bg-sidebar-accent hover:text-muted-foreground ${
-                      secondaryExpanded ? 'rotate-180' : ''
-                    }`}
+              <DevOnly reserve={false}>
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    tooltip={t`Discover`}
+                    isActive={onDiscover}
+                    onClick={() => void navigate('/discover')}
+                    className="relative w-full justify-center px-2"
                   >
-                    <ChevronDown className="h-3.5 w-3.5" />
-                  </div>
-                </div>
+                    <Compass className="h-5 w-5" />
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              </DevOnly>
 
-                {collapsedItems.map((item) => {
-                  const isActive = currentView === item.viewType;
-                  const shouldShow = secondaryExpanded || isActive;
-
-                  return (
+              {collapsedItems.length > 0 && (
+                <div onMouseEnter={() => setSecondaryExpanded(true)} onMouseLeave={() => setSecondaryExpanded(false)}>
+                  <div className="flex justify-center py-1">
                     <div
-                      key={item.title}
-                      className={`overflow-hidden transition-all duration-200 ease-in-out ${
-                        shouldShow ? 'max-h-10 opacity-100' : 'max-h-0 opacity-0'
+                      className={`flex h-5 w-8 items-center justify-center rounded-sm text-muted-foreground/50 transition-all duration-200 hover:bg-sidebar-accent hover:text-muted-foreground ${
+                        secondaryExpanded ? 'rotate-180' : ''
                       }`}
                     >
-                      {renderNavItem(item)}
+                      <ChevronDown className="h-3.5 w-3.5" />
                     </div>
-                  );
-                })}
-              </div>
-            )}
-          </SidebarMenu>
-        </SidebarGroup>
-      </SidebarContent>
+                  </div>
 
-      {/* {isDesktop && cloudApiUrl && (
+                  {collapsedItems.map((item) => {
+                    const isActive = currentView === item.viewType;
+                    const shouldShow = secondaryExpanded || isActive;
+
+                    return (
+                      <div
+                        key={item.title}
+                        className={`overflow-hidden transition-all duration-200 ease-in-out ${
+                          shouldShow ? 'max-h-10 opacity-100' : 'max-h-0 opacity-0'
+                        }`}
+                      >
+                        {renderNavItem(item)}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </SidebarMenu>
+          </SidebarGroup>
+        </SidebarContent>
+
+        {/* {isDesktop && cloudApiUrl && (
         <div className="border-t border-sidebar-border p-2">
           <SidebarMenuButton
             tooltip={
@@ -328,34 +332,34 @@ export function CollapsedSidebar() {
         </div>
       )} */}
 
-      <div className="flex flex-col items-center gap-1 p-2">
-        {devMode && (
+        <div className="flex flex-col items-center gap-1 p-2">
+          {devMode && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 animate-pulse text-orange-500 shadow-[0_0_8px_2px_rgba(249,115,22,0.6)] ring-1 ring-orange-500"
+              onClick={() => window.setDev(false)}
+              title={t`Dev mode ON — click to disable`}
+            >
+              <Bug className="h-4 w-4" />
+            </Button>
+          )}
           <Button
             variant="ghost"
             size="icon"
-            className="h-8 w-8 text-orange-500 ring-1 ring-orange-500 shadow-[0_0_8px_2px_rgba(249,115,22,0.6)] animate-pulse"
-            onClick={() => window.setDev(false)}
-            title={t`Dev mode ON — click to disable`}
+            className="h-8 w-8"
+            onClick={() => useSpotlightStore.getState().openSpotlight()}
+            title={t`Search (⌘K)`}
+            data-testid="sidebar-search-button"
           >
-            <Bug className="h-4 w-4" />
+            <Search className="h-4 w-4" />
           </Button>
-        )}
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8"
-          onClick={() => useSpotlightStore.getState().openSpotlight()}
-          title={t`Search (⌘K)`}
-          data-testid="sidebar-search-button"
-        >
-          <Search className="h-4 w-4" />
-        </Button>
-        <FlowpadAssistantButton />
-        <ThemeToggle />
-        <UserDropdown />
-      </div>
-    </Sidebar>
-    {isVibe && <BookmarksSlider open={bookmarksOpen} onOpenChange={setBookmarksOpen} />}
+          <FlowpadAssistantButton />
+          <ThemeToggle />
+          <UserDropdown />
+        </div>
+      </Sidebar>
+      {isVibe && <BookmarksSlider open={bookmarksOpen} onOpenChange={setBookmarksOpen} />}
     </>
   );
 }

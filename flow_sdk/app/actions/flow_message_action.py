@@ -2130,9 +2130,22 @@ def _invitation_common_fields(hub_inv: dict) -> dict:
         "sent": bool(hub_inv.get("sent") or False),
         "message": hub_inv.get("message"),
         "expiration_at": expiration_at or None,
-        "inviter_id": inviter.get("user_id"),
-        "inviter_name": inviter.get("name"),
+        "sender_user_id": inviter.get("user_id"),
+        "sender_name": inviter.get("name"),
     }
+
+
+# Membership-invitation targets that get a pre-accept local mirror. Exactly
+# the container types whose local entity displays by ``name`` and has no
+# on-disk asset folder — the only shape the {id, name, icon} mirror payload
+# fits (see the allowlist rationale at the call site).
+_PRE_ACCEPT_MIRROR_TYPES: frozenset[str] = frozenset(
+    {
+        BuiltinEntityType.ORGANIZATION.value,
+        BuiltinEntityType.TEAM.value,
+        BuiltinEntityType.PROJECT.value,
+    }
+)
 
 
 def _membership_cls(target_type: str | None):
@@ -2172,17 +2185,26 @@ async def _materialize_membership_invitation(
     target_name = target.get("name")
     target_role = target.get("role")
 
-    # Mirror the target org/team so name/icon resolve locally (best-effort —
-    # the invitation row still renders from target_* even if this fails).
-    try:
-        cls = _membership_cls(target_type)
-        await materialize_remote_membership_entity(
-            cls,
-            {"id": target_id, "name": target_name, "icon": target.get("icon")},
-            someone_typeid,
-        )
-    except Exception as e:  # noqa: BLE001
-        logger.warning("[inv-materialize] membership target mirror failed: %s", e)
+    # Mirror the target org/team/project so name/icon resolve locally
+    # (best-effort — the invitation row still renders from target_* even if
+    # this fails). ALLOWLIST, not denylist: the mirror payload is just
+    # {id, name, icon}, which only fits the membership containers that
+    # display by ``name``. For anything else — task today; any title-only or
+    # folder-backed type tomorrow — it would birth a field-less husk row
+    # pre-accept (and, for asset types, mint an "untitled" folder on disk);
+    # the Invitation row alone carries the display name until accept
+    # materializes the real entity (e.g.
+    # ``materialize_accepted_task_invitation`` for tasks).
+    if target_type in _PRE_ACCEPT_MIRROR_TYPES:
+        try:
+            cls = _membership_cls(target_type)
+            await materialize_remote_membership_entity(
+                cls,
+                {"id": target_id, "name": target_name, "icon": target.get("icon")},
+                someone_typeid,
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.warning("[inv-materialize] membership target mirror failed: %s", e)
 
     fields = {
         **_invitation_common_fields(hub_inv),
@@ -2325,6 +2347,10 @@ async def _materialize_invitation(hub_inv: dict, someone_typeid: str) -> tuple[O
                 conversation_id=conv_id,
                 someone_typeid=someone_typeid,
                 notify=False,
+                # Pointer ts must be the message's hub clock, not "now" —
+                # the UI sorts bubbles by pointer ts, and this materialize
+                # can run after later messages already landed.
+                bundle_ts=str(msg_payload.get("created_date") or "").strip() or None,
             )
         except Exception as e:  # noqa: BLE001
             logger.warning("[inv-materialize] preview msg failed: %s", e)
@@ -2344,6 +2370,16 @@ async def _materialize_invitation(hub_inv: dict, someone_typeid: str) -> tuple[O
 
         synth_fm_id = str(_uuid.uuid5(_uuid.NAMESPACE_OID, f"invitation-preview-{inv_id}"))
         message_text = (local_inv.message or "").strip()
+        # The invite logically precedes every message in the conversation, but
+        # this synth path runs on a slower async leg and loses the race against
+        # live message materialization — a "now" clock would sort the notice
+        # AFTER the first real message (the UI orders bubbles by pointer ts).
+        # Backdate to the invitation's own hub clock (conv clock as fallback).
+        invite_ts = (
+            str(hub_inv.get("created_date") or "").strip()
+            or str(embedded_conv.get("created_date") or "").strip()
+            or None
+        )
         synth_payload = {
             "id": synth_fm_id,
             "text": (message_text or "You've been invited to a conversation"),
@@ -2357,6 +2393,8 @@ async def _materialize_invitation(hub_inv: dict, someone_typeid: str) -> tuple[O
             # recipient (who did NOT author the invite). The real inviter must
             # come from the hub (a preview_message), not be guessed here.
         }
+        if invite_ts:
+            synth_payload["created_date"] = invite_ts
         try:
             with remote_reflection():
                 inv_fm = await materialize_flow_message(
@@ -2364,6 +2402,7 @@ async def _materialize_invitation(hub_inv: dict, someone_typeid: str) -> tuple[O
                     conversation_id=conv_id,
                     someone_typeid=someone_typeid,
                     notify=False,
+                    bundle_ts=invite_ts,
                 )
         except Exception as e:  # noqa: BLE001
             logger.warning("[inv-materialize] synth preview failed: %s", e)
@@ -2646,6 +2685,38 @@ async def _rebind_orphan_children(conv, child_type: str, someone_typeid: str | N
                 )
 
 
+def _parse_pointer_ts(value: str | None) -> Optional[datetime]:
+    """Parse a Pointer's ISO ts for comparison; None when unparseable.
+    Naive stamps are read as UTC so aware/naive mixes stay comparable."""
+    try:
+        dt = datetime.fromisoformat((value or "").strip().replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return None
+    return dt.replace(tzinfo=UTC) if dt.tzinfo is None else dt
+
+
+def _clamp_invitation_ts(invitations: list[Pointer], merged: list[Pointer]) -> list[Pointer]:
+    """Clamp each invitation pointer's ts to the earliest hub-message ts.
+
+    Prepending the invitation isn't enough on its own: the UI re-sorts rows
+    by pointer ts (conversation-items.ts), so an invitation whose ts
+    post-dates the first real message would swap back after first paint.
+    On the resulting tie, the stable sort keeps the prepended invitation
+    first. Idempotent, so it also self-heals pointers written before this
+    fix. Pointers with an unparseable ts are clamped too (fail-first).
+    """
+    if not invitations or not merged:
+        return invitations
+    hub_keys = [(key, p.ts) for p in merged if (key := _parse_pointer_ts(p.ts)) is not None]
+    if not hub_keys:
+        return invitations
+    earliest_key, earliest_ts = min(hub_keys, key=lambda kv: kv[0])
+    return [
+        p if (k := _parse_pointer_ts(p.ts)) is not None and k <= earliest_key else Pointer(p.typeid, earliest_ts)
+        for p in invitations
+    ]
+
+
 async def _fetch_conversation_messages(conv_id: str, someone_typeid: str) -> None:
     """Bring local message state for a single conversation up to the hub's.
 
@@ -2743,6 +2814,11 @@ async def _fetch_conversation_messages(conv_id: str, someone_typeid: str) -> Non
                     for m in child_list
                 ]
                 dropped = 0
+                # Invitation placeholders are the conversation's logical first
+                # message, but their own ts post-dates the first real message
+                # (the synth path loses a materialization race), so neither
+                # appending nor ts-sorting puts them right — prepend them.
+                invitations: list[Pointer] = []
                 for ptr in message_pointers(rec):
                     if ptr.id in hub_ids:
                         continue  # hub-confirmed; already in merged
@@ -2763,13 +2839,15 @@ async def _fetch_conversation_messages(conv_id: str, someone_typeid: str) -> Non
                         or bool(getattr(fm, "is_draft", False))
                         or not fm.remote
                     )
-                    if keep:
-                        merged.append(ptr)
-                    else:
+                    if not keep:
                         # remote=True and absent from the hub list ⇒ deleted
                         # hub-side (or access revoked) — drop the stale copy.
                         dropped += 1
-                write_pointers(rec, merged)
+                    elif fm is not None and fm.kind == FlowMessageKind.INVITATION:
+                        invitations.append(ptr)
+                    else:
+                        merged.append(ptr)
+                write_pointers(rec, _clamp_invitation_ts(invitations, merged) + merged)
                 await project_pointers_to_entity(rec, notify=True)
                 if dropped:
                     logger.info(
@@ -3707,7 +3785,21 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
     # role — that IS the membership, no conversation/bundle to pull. Mirror the
     # target locally as remote=True so the Organization tab / member list shows
     # it immediately, and notify so the UI repaints.
-    if membership_target is not None:
+    if membership_target is not None and membership_target.target_type == BuiltinEntityType.TASK.value:
+        # Member-task invitation: pull the real task (+ its group parent) from
+        # the hub — the generic membership mirror below only carries name/icon
+        # and would materialize a husk.
+        try:
+            from flow_sdk.app.actions.group_task_action import (  # noqa: PLC0415
+                materialize_accepted_task_invitation,
+            )
+
+            child_task = await materialize_accepted_task_invitation(membership_target.target_id, someone_typeid)
+            if child_task is not None:
+                await child_task.notify_updated()
+        except Exception as e:  # noqa: BLE001
+            logger.warning("[invitation-accept] task target materialize failed: %s", e)
+    elif membership_target is not None:
         try:
             cls = _membership_cls(membership_target.target_type)
             from flow_sdk.app.actions.membership_sync import (  # noqa: PLC0415

@@ -1,13 +1,7 @@
 import React, { useCallback, useState } from 'react';
-import { FolderOpen, Lock, Users } from 'lucide-react';
+import { FolderOpen, GitBranch, Lock, Users } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@src/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import type { ContextFolderScope } from '@src/hooks/use-project-context-folders';
 import { ProjectPickerModal } from './ProjectPickerModal';
@@ -21,6 +15,9 @@ interface AddContextFolderDialogProps {
   /** "Open folder" source: native folder picker → add. Owned by the host
    *  (it holds the compute node). */
   onBrowse: (scope: ContextFolderScope) => void | Promise<void>;
+  /** "Add Git folder" source: wizard agent sets up a new git repo (init +
+   *  remote) and attaches it. Owned by the host (it launches the wizard). */
+  onAddGit: (scope: ContextFolderScope) => void | Promise<void>;
 }
 
 /** A desktop-icon-style source tile (icon above a small label), mirroring the
@@ -55,12 +52,14 @@ function SourceTile({
  *   - "Project folder": pick projects (the simple project select); each
  *     selected project's folder (cwd) is added as a context folder.
  *   - "Open folder": the native folder picker.
+ *   - "Add Git folder": wizard agent sets up a new git repo as a context folder.
  */
 export function AddContextFolderDialog({
   open,
   onOpenChange,
   onAddPaths,
   onBrowse,
+  onAddGit,
 }: AddContextFolderDialogProps): React.ReactElement {
   const { t } = useLingui();
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
@@ -82,6 +81,11 @@ export function AddContextFolderDialog({
     void onBrowse(scope);
   }, [onBrowse, onOpenChange, scope]);
 
+  const handleAddGit = useCallback(() => {
+    onOpenChange(false);
+    void onAddGit(scope);
+  }, [onAddGit, onOpenChange, scope]);
+
   const scopeOptions: { value: ContextFolderScope; icon: React.ReactNode; label: React.ReactNode; title: string }[] = [
     {
       value: 'private',
@@ -100,9 +104,11 @@ export function AddContextFolderDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="sm:max-w-xs" data-testid="add-context-folder-dialog">
+        <DialogContent className="sm:max-w-sm" data-testid="add-context-folder-dialog">
           <DialogHeader>
-            <DialogTitle><Trans>Add context folder</Trans></DialogTitle>
+            <DialogTitle>
+              <Trans>Add context folder</Trans>
+            </DialogTitle>
             <DialogDescription>
               <Trans>Include another folder in this project's context.</Trans>
             </DialogDescription>
@@ -119,6 +125,12 @@ export function AddContextFolderDialog({
               label={<Trans>Open folder</Trans>}
               onClick={handleBrowse}
               testId="add-context-folder-browse"
+            />
+            <SourceTile
+              icon={<GitBranch className="h-8 w-8" />}
+              label={<Trans>Add Git folder</Trans>}
+              onClick={handleAddGit}
+              testId="add-context-folder-git"
             />
           </div>
           <div className="flex items-center justify-center gap-1" role="radiogroup">

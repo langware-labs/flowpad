@@ -23,6 +23,8 @@ export interface SearchResult {
   project_id?: string;
   project_name?: string;
   asset_type?: string;
+  /** Group-task member pointer — member tasks are hidden from asset lists. */
+  parent_id?: string;
 }
 
 export interface UseAssetSearchParams {
@@ -94,8 +96,12 @@ export function useAssetSearch(params: UseAssetSearchParams): UseAssetSearchResu
         .then((data: unknown) => {
           if (cancelledRef.current) return;
           const d = data as { results?: SearchResult[]; total?: number } | null;
-          setResults(d?.results ?? []);
-          setTotal(d?.total ?? 0);
+          const rows = d?.results ?? [];
+          // Member tasks (group-task children) live in their group task's
+          // editor ("Member tasks" section), not the asset lists.
+          const visible = recordType === 'task' ? rows.filter((r) => !r.parent_id) : rows;
+          setResults(visible);
+          setTotal((d?.total ?? 0) - (rows.length - visible.length));
           setIsLoading(false);
         })
         .catch(() => {
