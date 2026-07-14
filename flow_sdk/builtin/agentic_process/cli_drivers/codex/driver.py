@@ -16,12 +16,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
-    apply_worker_env,
-    apply_worker_secret_env,
     AgenticContext,
     AgenticProcessContextKey,
     WorkerCLIOptions,
     WorkerSpawnError,
+    apply_worker_env,
+    apply_worker_secret_env,
     latch_spawn_failure,
     restart_payload_from_cli_options,
 )
@@ -30,9 +30,13 @@ from flow_sdk.builtin.agentic_process.cli_drivers.codex.session_history import (
     codex_transcript_path_for_process,
     find_codex_session_jsonl,
     find_latest_codex_session_jsonl,
-    load_session_history as _codex_load_session_history,
-    load_transcript_history as _codex_load_transcript_history,
     read_codex_rollout_meta,
+)
+from flow_sdk.builtin.agentic_process.cli_drivers.codex.session_history import (
+    load_session_history as _codex_load_session_history,
+)
+from flow_sdk.builtin.agentic_process.cli_drivers.codex.session_history import (
+    load_transcript_history as _codex_load_transcript_history,
 )
 from flow_sdk.builtin.agentic_process.cli_drivers.codex.status import codex_tail_status
 from flow_sdk.builtin.agentic_process.cli_drivers.codex.stream_worker import (
@@ -151,65 +155,81 @@ class CodexDriver:
         )
 
         worker = CodexCLIStreamWorker.for_process(process.id)
-        from flow_sdk.builtin.agentic_process.agentic_process import _PROMPT_WORKERS
-        _PROMPT_WORKERS[process.id] = worker  # type: ignore[assignment]
+        from flow_sdk.builtin.agentic_process.agentic_process import (
+            register_prompt_worker,
+            unregister_prompt_worker,
+        )
 
-        # Touch the transcript file so ``tail_status`` returns INITIALIZING
-        # (rather than None) before the worker writes its first event. Mirrors
-        # the Claude path's eager session_id assignment.
+        register_prompt_worker(process.id, worker)
+        # Setup between registration and task scheduling can raise. The caller's
+        # admission ``finally`` can no longer clean the slot — register_prompt_worker
+        # popped the admission and moved ownership to ``_PROMPT_WORKERS``. Until
+        # _run_turn is scheduled (its ``finally`` owns unregister), THIS frame owns
+        # the worker slot: a raise here would leak it → prompt_worker_active pinned
+        # True forever (permanent 409 + busy). Hand ownership off on success.
         try:
-            transcript_path = worker.transcript_path
-            if transcript_path is not None and not transcript_path.exists():
-                transcript_path.parent.mkdir(parents=True, exist_ok=True)
-                transcript_path.touch()
-        except OSError:
-            logger.debug("CodexDriver.headless_prompt: failed to pre-touch transcript", exc_info=True)
-
-        from flow_sdk.builtin.process_lifecycle import ProcessStatus
-        if process.status != ProcessStatus.RUNNING.value:
-            process.status = ProcessStatus.RUNNING.value
+            # Touch the transcript file so ``tail_status`` returns INITIALIZING
+            # (rather than None) before the worker writes its first event. Mirrors
+            # the Claude path's eager session_id assignment.
             try:
-                await process.save()
-            except Exception:
-                logger.debug("CodexDriver.headless_prompt: lifecycle save failed", exc_info=True)
+                transcript_path = worker.transcript_path
+                if transcript_path is not None and not transcript_path.exists():
+                    transcript_path.parent.mkdir(parents=True, exist_ok=True)
+                    transcript_path.touch()
+            except OSError:
+                logger.debug("CodexDriver.headless_prompt: failed to pre-touch transcript", exc_info=True)
 
-        process_ref = process
-        process_id = process.id
+            from flow_sdk.builtin.process_lifecycle import ProcessStatus
 
-        # Multi-turn correctness: see ClaudeDriver.headless_prompt + the
-        # AgenticProcess._discover_status_from_transcript override.
-        object.__setattr__(process_ref, "_turn_in_flight", True)
-        try:
-            await process_ref.notify_updated()
-        except Exception:
-            logger.exception("CodexDriver.headless_prompt: start-of-turn notify_updated failed")
+            if process.status != ProcessStatus.RUNNING.value:
+                process.status = ProcessStatus.RUNNING.value
+                try:
+                    await process.save()
+                except Exception:
+                    logger.debug("CodexDriver.headless_prompt: lifecycle save failed", exc_info=True)
 
-        # Session adoption (and its restart-snapshot bookkeeping) is owned by
-        # AgenticProcess.adopt_worker_session; the turn-scoped adopter trusts
-        # only the turn-initial report (spurious-rotation guard).
-        adopt_session = process_ref.make_turn_session_adopter("CodexDriver.headless_prompt")
+            process_ref = process
+            process_id = process.id
 
-        async def _run_turn() -> None:
+            # Multi-turn correctness: see ClaudeDriver.headless_prompt + the
+            # AgenticProcess._discover_status_from_transcript override.
+            object.__setattr__(process_ref, "_turn_in_flight", True)
             try:
-                async for fd in worker.execute(prompt=full_prompt, context=context):
-                    await adopt_session(worker.get_session_id())
-                    try:
-                        await process_ref.emit_flow_data(fd.model_dump())
-                    except Exception:
-                        logger.debug("CodexDriver.headless_prompt: emit_flow_data failed", exc_info=True)
-            except WorkerSpawnError as e:
-                # No subprocess ever started — end the process FAILED with the
-                # start_failure latch (the ERROR frame was already emitted).
-                await latch_spawn_failure(process_ref, e)
+                await process_ref.notify_updated()
             except Exception:
-                logger.exception("CodexDriver.headless_prompt: worker error")
-            finally:
-                _PROMPT_WORKERS.pop(process_id, None)
-                # Terminal status broadcast + completion-driven queue advance
-                # (see AgenticProcess.end_headless_turn).
-                await process_ref.end_headless_turn("CodexDriver.headless_prompt")
+                logger.exception("CodexDriver.headless_prompt: start-of-turn notify_updated failed")
 
-        asyncio.create_task(_run_turn(), name=f"codex-{process.id[:8]}")
+            # Session adoption (and its restart-snapshot bookkeeping) is owned by
+            # AgenticProcess.adopt_worker_session; the turn-scoped adopter trusts
+            # only the turn-initial report (spurious-rotation guard).
+            adopt_session = process_ref.make_turn_session_adopter("CodexDriver.headless_prompt")
+
+            async def _run_turn() -> None:
+                try:
+                    async for fd in worker.execute(prompt=full_prompt, context=context):
+                        await adopt_session(worker.get_session_id())
+                        try:
+                            await process_ref.emit_flow_data(fd.model_dump())
+                        except Exception:
+                            logger.debug("CodexDriver.headless_prompt: emit_flow_data failed", exc_info=True)
+                except WorkerSpawnError as e:
+                    # No subprocess ever started — end the process FAILED with the
+                    # start_failure latch (the ERROR frame was already emitted).
+                    await latch_spawn_failure(process_ref, e)
+                except Exception:
+                    logger.exception("CodexDriver.headless_prompt: worker error")
+                finally:
+                    unregister_prompt_worker(process_id, worker)
+                    # Terminal status broadcast + completion-driven queue advance
+                    # (see AgenticProcess.end_headless_turn).
+                    await process_ref.end_headless_turn("CodexDriver.headless_prompt")
+
+            asyncio.create_task(_run_turn(), name=f"codex-{process.id[:8]}")
+        except BaseException:
+            # _run_turn never took ownership of the slot — release it here so the
+            # next turn is not permanently rejected with a 409.
+            unregister_prompt_worker(process.id, worker)
+            raise
         return ApiSuccessResponse(data={"status": "started", "worker": self.name})
 
     def stream_worker(self, process: "AgenticProcess") -> CodexCLIStreamWorker:
@@ -318,6 +338,7 @@ class CodexDriver:
         the Claude driver's ``flow-records-agentic`` invariant.
         """
         from flow_sdk.instance_settings import get_instance_settings
+
         sessions_root = get_instance_settings().codex_sessions_dir
         if not sessions_root.is_dir():
             return set()

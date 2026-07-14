@@ -5,8 +5,10 @@ shared under its own id (the Conversation model) with no separate cloud id. The
 path-derived value survives only as a record-match alias (``derive_id_for_path``).
 """
 import uuid
+from unittest.mock import patch
 
 from flow_sdk.builtin.project import Project
+from flow_sdk.fs_store.path_utils import canonical_posix_path
 
 
 def test_new_project_id_is_uuid4_not_path_derived():
@@ -25,6 +27,31 @@ def test_allocate_id_honors_valid_supplied_id_else_uuid4():
     got = Project.allocate_id({"fs_storage_mount_path": "/tmp/x"})
     assert uuid.UUID(got).version == 4
     assert got != Project.derive_id_for_path("/tmp/x"), "must not fall back to the path alias"
+
+
+def test_allocate_id_rejects_v7_through_no_key_minter():
+    """A foreign UUID version is rejected and the opaque-id minter owns fallback."""
+    foreign_v7 = "018f0000-0000-7000-8000-000000000000"
+    fallback_v4 = "11111111-1111-4111-8111-111111111111"
+
+    with patch("flow_sdk.builtin.project.mint_uuid", return_value=fallback_v4) as mock_mint:
+        assert Project.allocate_id({"id": foreign_v7}) == fallback_v4
+
+    mock_mint.assert_called_once_with()
+
+
+def test_path_alias_routes_through_exact_dns_minter_key():
+    """The legacy record alias keeps its exact bytes while minting centrally."""
+    path = "/flowpad/project_alias_routing"
+    key = f"project:{canonical_posix_path(path)}"
+    # Stable legacy uuid5 bytes for the exact DNS-namespace key above.
+    assert Project.derive_id_for_path(path) == "fc980f08-65ca-5b26-9f96-e12812c819cf"
+
+    sentinel_v5 = "22222222-2222-5222-8222-222222222222"
+    with patch("flow_sdk.builtin.project.mint_uuid", return_value=sentinel_v5) as mock_mint:
+        assert Project.derive_id_for_path(path) == sentinel_v5
+
+    mock_mint.assert_called_once_with(key, namespace=uuid.NAMESPACE_DNS)
 
 
 def test_hub_body_publishes_under_own_id():

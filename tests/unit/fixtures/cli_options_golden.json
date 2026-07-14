@@ -2663,16 +2663,18 @@
           "workdir": "/repo",
           "worker_type": "codex"
         },
-        "shell_dash": "cd /repo && codex --dangerously-bypass-approvals-and-sandbox -c 'projects.\"/repo\".trust_level=\"trusted\"' -C /repo -m gpt-5.2 --add-dir /extra resume s1 -- $'-rf danger'",
-        "shell_instr": "cd /repo && codex --dangerously-bypass-approvals-and-sandbox -c 'projects.\"/repo\".trust_level=\"trusted\"' -C /repo -m gpt-5.2 --add-dir /extra resume s1 -- $'fix the bug'",
-        "shell_multi": "cd /repo && codex --dangerously-bypass-approvals-and-sandbox -c 'projects.\"/repo\".trust_level=\"trusted\"' -C /repo -m gpt-5.2 --add-dir /extra resume s1 -- $'line one\\nline two'",
-        "shell_none": "cd /repo && codex --dangerously-bypass-approvals-and-sandbox -c 'projects.\"/repo\".trust_level=\"trusted\"' -C /repo -m gpt-5.2 --add-dir /extra resume s1",
+        "shell_dash": "cd /repo && codex --dangerously-bypass-approvals-and-sandbox -c check_for_update_on_startup=false -c 'projects={\"/repo\"={trust_level=\"trusted\"}}' -C /repo -m gpt-5.2 --add-dir /extra resume s1 -- $'-rf danger'",
+        "shell_instr": "cd /repo && codex --dangerously-bypass-approvals-and-sandbox -c check_for_update_on_startup=false -c 'projects={\"/repo\"={trust_level=\"trusted\"}}' -C /repo -m gpt-5.2 --add-dir /extra resume s1 -- $'fix the bug'",
+        "shell_multi": "cd /repo && codex --dangerously-bypass-approvals-and-sandbox -c check_for_update_on_startup=false -c 'projects={\"/repo\"={trust_level=\"trusted\"}}' -C /repo -m gpt-5.2 --add-dir /extra resume s1 -- $'line one\\nline two'",
+        "shell_none": "cd /repo && codex --dangerously-bypass-approvals-and-sandbox -c check_for_update_on_startup=false -c 'projects={\"/repo\"={trust_level=\"trusted\"}}' -C /repo -m gpt-5.2 --add-dir /extra resume s1",
         "spawn_dash": {
           "argv": [
             "codex",
             "--dangerously-bypass-approvals-and-sandbox",
             "-c",
-            "projects.\"/repo\".trust_level=\"trusted\"",
+            "check_for_update_on_startup=false",
+            "-c",
+            "projects={\"/repo\"={trust_level=\"trusted\"}}",
             "-C",
             "/repo",
             "-m",
@@ -2689,7 +2691,9 @@
             "codex",
             "--dangerously-bypass-approvals-and-sandbox",
             "-c",
-            "projects.\"/repo\".trust_level=\"trusted\"",
+            "check_for_update_on_startup=false",
+            "-c",
+            "projects={\"/repo\"={trust_level=\"trusted\"}}",
             "-C",
             "/repo",
             "-m",
@@ -2706,7 +2710,9 @@
             "codex",
             "--dangerously-bypass-approvals-and-sandbox",
             "-c",
-            "projects.\"/repo\".trust_level=\"trusted\"",
+            "check_for_update_on_startup=false",
+            "-c",
+            "projects={\"/repo\"={trust_level=\"trusted\"}}",
             "-C",
             "/repo",
             "-m",
@@ -2723,7 +2729,9 @@
             "codex",
             "--dangerously-bypass-approvals-and-sandbox",
             "-c",
-            "projects.\"/repo\".trust_level=\"trusted\"",
+            "check_for_update_on_startup=false",
+            "-c",
+            "projects={\"/repo\"={trust_level=\"trusted\"}}",
             "-C",
             "/repo",
             "-m",
@@ -2752,16 +2760,18 @@
           "workdir": "/repo",
           "worker_type": "codex"
         },
-        "shell_dash": "cd '/repo'; codex --dangerously-bypass-approvals-and-sandbox -c 'projects.\"/repo\".trust_level=\"trusted\"' -C /repo -m gpt-5.2 --add-dir /extra resume s1 ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('LXJmIGRhbmdlcg==')))",
-        "shell_instr": "cd '/repo'; codex --dangerously-bypass-approvals-and-sandbox -c 'projects.\"/repo\".trust_level=\"trusted\"' -C /repo -m gpt-5.2 --add-dir /extra resume s1 ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('Zml4IHRoZSBidWc=')))",
-        "shell_multi": "cd '/repo'; codex --dangerously-bypass-approvals-and-sandbox -c 'projects.\"/repo\".trust_level=\"trusted\"' -C /repo -m gpt-5.2 --add-dir /extra resume s1 ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('bGluZSBvbmUKbGluZSB0d28=')))",
-        "shell_none": "cd '/repo'; codex --dangerously-bypass-approvals-and-sandbox -c 'projects.\"/repo\".trust_level=\"trusted\"' -C /repo -m gpt-5.2 --add-dir /extra resume s1",
+        "shell_dash": "cd '/repo'; codex --dangerously-bypass-approvals-and-sandbox -c check_for_update_on_startup=false -c 'projects={\"/repo\"={trust_level=\"trusted\"}}' -C /repo -m gpt-5.2 --add-dir /extra resume s1 ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('LXJmIGRhbmdlcg==')))",
+        "shell_instr": "cd '/repo'; codex --dangerously-bypass-approvals-and-sandbox -c check_for_update_on_startup=false -c 'projects={\"/repo\"={trust_level=\"trusted\"}}' -C /repo -m gpt-5.2 --add-dir /extra resume s1 ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('Zml4IHRoZSBidWc=')))",
+        "shell_multi": "cd '/repo'; codex --dangerously-bypass-approvals-and-sandbox -c check_for_update_on_startup=false -c 'projects={\"/repo\"={trust_level=\"trusted\"}}' -C /repo -m gpt-5.2 --add-dir /extra resume s1 ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('bGluZSBvbmUKbGluZSB0d28=')))",
+        "shell_none": "cd '/repo'; codex --dangerously-bypass-approvals-and-sandbox -c check_for_update_on_startup=false -c 'projects={\"/repo\"={trust_level=\"trusted\"}}' -C /repo -m gpt-5.2 --add-dir /extra resume s1",
         "spawn_dash": {
           "argv": [
             "codex",
             "--dangerously-bypass-approvals-and-sandbox",
             "-c",
-            "projects.\"/repo\".trust_level=\"trusted\"",
+            "check_for_update_on_startup=false",
+            "-c",
+            "projects={\"/repo\"={trust_level=\"trusted\"}}",
             "-C",
             "/repo",
             "-m",
@@ -2778,7 +2788,9 @@
             "codex",
             "--dangerously-bypass-approvals-and-sandbox",
             "-c",
-            "projects.\"/repo\".trust_level=\"trusted\"",
+            "check_for_update_on_startup=false",
+            "-c",
+            "projects={\"/repo\"={trust_level=\"trusted\"}}",
             "-C",
             "/repo",
             "-m",
@@ -2795,7 +2807,9 @@
             "codex",
             "--dangerously-bypass-approvals-and-sandbox",
             "-c",
-            "projects.\"/repo\".trust_level=\"trusted\"",
+            "check_for_update_on_startup=false",
+            "-c",
+            "projects={\"/repo\"={trust_level=\"trusted\"}}",
             "-C",
             "/repo",
             "-m",
@@ -2812,7 +2826,9 @@
             "codex",
             "--dangerously-bypass-approvals-and-sandbox",
             "-c",
-            "projects.\"/repo\".trust_level=\"trusted\"",
+            "check_for_update_on_startup=false",
+            "-c",
+            "projects={\"/repo\"={trust_level=\"trusted\"}}",
             "-C",
             "/repo",
             "-m",
@@ -2841,31 +2857,39 @@
           "workdir": null,
           "worker_type": "codex"
         },
-        "shell_dash": "cd . && codex -- $'-rf danger'",
-        "shell_instr": "cd . && codex -- $'fix the bug'",
-        "shell_multi": "cd . && codex -- $'line one\\nline two'",
-        "shell_none": "cd . && codex",
+        "shell_dash": "cd . && codex -c check_for_update_on_startup=false -- $'-rf danger'",
+        "shell_instr": "cd . && codex -c check_for_update_on_startup=false -- $'fix the bug'",
+        "shell_multi": "cd . && codex -c check_for_update_on_startup=false -- $'line one\\nline two'",
+        "shell_none": "cd . && codex -c check_for_update_on_startup=false",
         "spawn_dash": {
           "argv": [
-            "codex"
+            "codex",
+            "-c",
+            "check_for_update_on_startup=false"
           ],
           "env": {}
         },
         "spawn_instr": {
           "argv": [
-            "codex"
+            "codex",
+            "-c",
+            "check_for_update_on_startup=false"
           ],
           "env": {}
         },
         "spawn_multi": {
           "argv": [
-            "codex"
+            "codex",
+            "-c",
+            "check_for_update_on_startup=false"
           ],
           "env": {}
         },
         "spawn_none": {
           "argv": [
-            "codex"
+            "codex",
+            "-c",
+            "check_for_update_on_startup=false"
           ],
           "env": {}
         }
@@ -2884,31 +2908,39 @@
           "workdir": null,
           "worker_type": "codex"
         },
-        "shell_dash": "cd '.'; codex ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('LXJmIGRhbmdlcg==')))",
-        "shell_instr": "cd '.'; codex ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('Zml4IHRoZSBidWc=')))",
-        "shell_multi": "cd '.'; codex ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('bGluZSBvbmUKbGluZSB0d28=')))",
-        "shell_none": "cd '.'; codex",
+        "shell_dash": "cd '.'; codex -c check_for_update_on_startup=false ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('LXJmIGRhbmdlcg==')))",
+        "shell_instr": "cd '.'; codex -c check_for_update_on_startup=false ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('Zml4IHRoZSBidWc=')))",
+        "shell_multi": "cd '.'; codex -c check_for_update_on_startup=false ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('bGluZSBvbmUKbGluZSB0d28=')))",
+        "shell_none": "cd '.'; codex -c check_for_update_on_startup=false",
         "spawn_dash": {
           "argv": [
-            "codex"
+            "codex",
+            "-c",
+            "check_for_update_on_startup=false"
           ],
           "env": {}
         },
         "spawn_instr": {
           "argv": [
-            "codex"
+            "codex",
+            "-c",
+            "check_for_update_on_startup=false"
           ],
           "env": {}
         },
         "spawn_multi": {
           "argv": [
-            "codex"
+            "codex",
+            "-c",
+            "check_for_update_on_startup=false"
           ],
           "env": {}
         },
         "spawn_none": {
           "argv": [
-            "codex"
+            "codex",
+            "-c",
+            "check_for_update_on_startup=false"
           ],
           "env": {}
         }
@@ -4221,10 +4253,10 @@
           "workdir": "/repo",
           "worker_type": "copilot"
         },
-        "shell_dash": "cd /repo && copilot --allow-all -C /repo --model claude-haiku-4.5 --resume=abc -- $'-rf danger'",
-        "shell_instr": "cd /repo && copilot --allow-all -C /repo --model claude-haiku-4.5 --resume=abc -- $'fix the bug'",
-        "shell_multi": "cd /repo && copilot --allow-all -C /repo --model claude-haiku-4.5 --resume=abc -- $'line one\\nline two'",
-        "shell_none": "cd /repo && copilot --allow-all -C /repo --model claude-haiku-4.5 --resume=abc",
+        "shell_dash": "cd /repo && COPILOT_ALLOW_ALL=true copilot --allow-all -C /repo --model claude-haiku-4.5 --resume=abc -- $'-rf danger'",
+        "shell_instr": "cd /repo && COPILOT_ALLOW_ALL=true copilot --allow-all -C /repo --model claude-haiku-4.5 --resume=abc -- $'fix the bug'",
+        "shell_multi": "cd /repo && COPILOT_ALLOW_ALL=true copilot --allow-all -C /repo --model claude-haiku-4.5 --resume=abc -- $'line one\\nline two'",
+        "shell_none": "cd /repo && COPILOT_ALLOW_ALL=true copilot --allow-all -C /repo --model claude-haiku-4.5 --resume=abc",
         "spawn_dash": {
           "argv": [
             "copilot",
@@ -4235,7 +4267,9 @@
             "claude-haiku-4.5",
             "--resume=abc"
           ],
-          "env": {}
+          "env": {
+            "COPILOT_ALLOW_ALL": "true"
+          }
         },
         "spawn_instr": {
           "argv": [
@@ -4247,7 +4281,9 @@
             "claude-haiku-4.5",
             "--resume=abc"
           ],
-          "env": {}
+          "env": {
+            "COPILOT_ALLOW_ALL": "true"
+          }
         },
         "spawn_multi": {
           "argv": [
@@ -4259,7 +4295,9 @@
             "claude-haiku-4.5",
             "--resume=abc"
           ],
-          "env": {}
+          "env": {
+            "COPILOT_ALLOW_ALL": "true"
+          }
         },
         "spawn_none": {
           "argv": [
@@ -4271,7 +4309,9 @@
             "claude-haiku-4.5",
             "--resume=abc"
           ],
-          "env": {}
+          "env": {
+            "COPILOT_ALLOW_ALL": "true"
+          }
         }
       },
       "win32": {
@@ -4292,10 +4332,10 @@
           "workdir": "/repo",
           "worker_type": "copilot"
         },
-        "shell_dash": "cd '/repo'; copilot --allow-all -C /repo --model claude-haiku-4.5 --resume=abc ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('LXJmIGRhbmdlcg==')))",
-        "shell_instr": "cd '/repo'; copilot --allow-all -C /repo --model claude-haiku-4.5 --resume=abc ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('Zml4IHRoZSBidWc=')))",
-        "shell_multi": "cd '/repo'; copilot --allow-all -C /repo --model claude-haiku-4.5 --resume=abc ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('bGluZSBvbmUKbGluZSB0d28=')))",
-        "shell_none": "cd '/repo'; copilot --allow-all -C /repo --model claude-haiku-4.5 --resume=abc",
+        "shell_dash": "cd '/repo'; $env:COPILOT_ALLOW_ALL = 'true'; copilot --allow-all -C /repo --model claude-haiku-4.5 --resume=abc ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('LXJmIGRhbmdlcg==')))",
+        "shell_instr": "cd '/repo'; $env:COPILOT_ALLOW_ALL = 'true'; copilot --allow-all -C /repo --model claude-haiku-4.5 --resume=abc ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('Zml4IHRoZSBidWc=')))",
+        "shell_multi": "cd '/repo'; $env:COPILOT_ALLOW_ALL = 'true'; copilot --allow-all -C /repo --model claude-haiku-4.5 --resume=abc ([System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('bGluZSBvbmUKbGluZSB0d28=')))",
+        "shell_none": "cd '/repo'; $env:COPILOT_ALLOW_ALL = 'true'; copilot --allow-all -C /repo --model claude-haiku-4.5 --resume=abc",
         "spawn_dash": {
           "argv": [
             "copilot",
@@ -4306,7 +4346,9 @@
             "claude-haiku-4.5",
             "--resume=abc"
           ],
-          "env": {}
+          "env": {
+            "COPILOT_ALLOW_ALL": "true"
+          }
         },
         "spawn_instr": {
           "argv": [
@@ -4318,7 +4360,9 @@
             "claude-haiku-4.5",
             "--resume=abc"
           ],
-          "env": {}
+          "env": {
+            "COPILOT_ALLOW_ALL": "true"
+          }
         },
         "spawn_multi": {
           "argv": [
@@ -4330,7 +4374,9 @@
             "claude-haiku-4.5",
             "--resume=abc"
           ],
-          "env": {}
+          "env": {
+            "COPILOT_ALLOW_ALL": "true"
+          }
         },
         "spawn_none": {
           "argv": [
@@ -4342,7 +4388,9 @@
             "claude-haiku-4.5",
             "--resume=abc"
           ],
-          "env": {}
+          "env": {
+            "COPILOT_ALLOW_ALL": "true"
+          }
         }
       }
     },
