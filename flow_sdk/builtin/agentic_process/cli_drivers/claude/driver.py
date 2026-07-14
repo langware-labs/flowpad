@@ -119,7 +119,6 @@ class ClaudeDriver:
         required for multi-step prompts (the legacy PTY path forces single-tool
         turns).
         """
-        logger.info("AP %s ENTRY ClaudeDriver.headless_prompt", process.id)  # TEMP loop-close diag
         try:
             await process.get_project()
         except Exception:
