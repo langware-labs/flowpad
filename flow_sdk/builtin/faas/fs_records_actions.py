@@ -93,6 +93,10 @@ class FsRecordsActionsMixin:
             from flow_sdk.builtin.project import Project  # noqa: PLC0415
             from flow_sdk.db.drivers.query import QueryFilter  # noqa: PLC0415
             from flow_sdk.fs_store.indexer.roots import is_home_or_ancestor  # noqa: PLC0415
+            from flow_sdk.fs_store.indexer.special_folders import (  # noqa: PLC0415
+                IndexDecision,
+                gate_root,
+            )
             from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
             _home = get_instance_settings().user_home
             for pid in sf.projects:
@@ -138,10 +142,6 @@ class FsRecordsActionsMixin:
                 # background scan — that first read pops an OS consent dialog.
                 # foreground (explicit open) walks it; media is always skipped;
                 # an un-decided folder queues an in-app consent request instead.
-                from flow_sdk.fs_store.indexer.special_folders import (  # noqa: PLC0415
-                    IndexDecision,
-                    gate_root,
-                )
                 decision = gate_root(mount_path, foreground=foreground)
                 if decision is not IndexDecision.WALK:
                     logging.debug(

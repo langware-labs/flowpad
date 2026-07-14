@@ -349,16 +349,18 @@ def default_roots() -> list[FSRef]:
     # Flowpad. USER_HOME_FOLDER already covers home via targeted expanders, so a
     # home-rooted CWD_ROOT adds nothing but that recursive walk.
     # macOS-TCC / cross-OS gate: never auto-walk a backend cwd that sits inside a
-    # protected folder (Documents/Desktop/Downloads/media). gate_root walks only
-    # when un-gated or explicitly allowed, and queues an in-app consent request
-    # on ASK; media/skip/denied drop it.
+    # protected folder (Documents/Desktop/Downloads/media). Walk only when the
+    # folder is un-gated or explicitly allowed; media/skip/denied/ask drop it.
+    # This is a PURE decision — default_roots() runs at indexer construction, so
+    # it must not queue a user-facing consent event (that is owned by the
+    # request-time scan path in _resolve_scoped_roots, which drains + surfaces).
     from flow_sdk.fs_store.indexer.special_folders import (  # noqa: PLC0415
         IndexDecision,
-        gate_root,
+        indexing_decision,
     )
     if (
         not is_home_or_ancestor(cwd, settings.user_home)
-        and gate_root(cwd, foreground=False) is IndexDecision.WALK
+        and indexing_decision(cwd, foreground=False) is IndexDecision.WALK
     ):
         roots.append(
             FSRef(
