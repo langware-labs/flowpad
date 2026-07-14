@@ -3,7 +3,6 @@ import { cn } from '@src/lib/utils';
 import { useRef } from 'react';
 import flowpadIcon from '@src/assets/flowpad-icon.png';
 import { useFloatingChat } from './FloatingChatContext';
-import { useAssistantMessageCount } from './useAssistantMessageCount';
 import { useLingui } from '@lingui/react/macro';
 
 /**
@@ -23,50 +22,30 @@ export function FlowpadAssistantButton() {
   const { t } = useLingui();
   const { open, toggle } = useFloatingChat();
   const ref = useRef<HTMLButtonElement | null>(null);
-  // Same "ask assistance" icon in every state; once the assistant conversation
-  // has messages, surface the count as a small badge (hidden while it's 0).
-  const messageCount = useAssistantMessageCount(open);
 
   return (
-    // `relative` wrapper so the badge sits OUTSIDE the button's `overflow-hidden`
-    // (which clips the round icon) and isn't cropped.
-    <div className="relative">
-      <Button
-        ref={ref}
-        type="button"
-        variant="ghost"
-        size="icon"
-        onClick={() => {
-          const r = ref.current?.getBoundingClientRect();
-          toggle(r ? { x: r.left, y: r.top, width: r.width, height: r.height } : null);
-        }}
-        aria-pressed={open}
-        title={
-          messageCount > 0
-            ? t`Flowpad Assistant — ${messageCount} messages`
-            : t`Flowpad Assistant`
-        }
-        data-testid="flowpad-assistant-button"
-        className={cn(
-          'h-8 w-8 overflow-hidden rounded-full p-0',
-          open && 'bg-accent text-accent-foreground',
-        )}
-      >
-        <img
-          src={flowpadIcon}
-          alt={t`Flowpad Assistant`}
-          className="h-full w-full object-contain"
-        />
-      </Button>
-      {messageCount > 0 && (
-        <span
-          className="pointer-events-none absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[9px] font-bold leading-none text-primary-foreground ring-2 ring-background"
-          data-testid="flowpad-assistant-badge"
-          aria-hidden
-        >
-          {messageCount > 99 ? '99+' : messageCount}
-        </span>
+    <Button
+      ref={ref}
+      type="button"
+      variant="ghost"
+      size="icon"
+      onClick={() => {
+        const r = ref.current?.getBoundingClientRect();
+        toggle(r ? { x: r.left, y: r.top, width: r.width, height: r.height } : null);
+      }}
+      aria-pressed={open}
+      title={t`Flowpad Assistant`}
+      data-testid="flowpad-assistant-button"
+      className={cn(
+        'h-8 w-8 overflow-hidden rounded-full p-0',
+        open && 'bg-accent text-accent-foreground',
       )}
-    </div>
+    >
+      <img
+        src={flowpadIcon}
+        alt={t`Flowpad Assistant`}
+        className="h-full w-full object-contain"
+      />
+    </Button>
   );
 }
