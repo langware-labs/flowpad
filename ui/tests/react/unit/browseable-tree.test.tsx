@@ -4,16 +4,8 @@ import React from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { ViewType } from '@src/types/ViewType';
-import {
-  BrowseableTree,
-  createMockBrowseable,
-  mockPointerFor,
-} from '@src/components/browseable-tree';
-import type {
-  Browseable,
-  BrowseableRoot,
-  ToolbarAction,
-} from '@src/components/browseable-tree';
+import { BrowseableTree, createMockBrowseable, mockPointerFor } from '@src/components/browseable-tree';
+import type { Browseable, BrowseableRoot, ToolbarAction } from '@src/components/browseable-tree';
 
 // ---- inline factories (mirror the directory-tree test conventions) ----
 
@@ -40,7 +32,7 @@ function makeRoot(
     typeof childList === 'function'
       ? childList
       : childList !== undefined
-        ? async () => childList
+        ? () => Promise.resolve(childList)
         : undefined;
   const root: BrowseableRoot = {
     id,
@@ -48,17 +40,12 @@ function makeRoot(
     label: opts.label ?? id,
     icon: opts.icon,
     badge: opts.badge,
-    hasChildren: opts.hasChildren ?? (childList !== undefined),
+    hasChildren: opts.hasChildren ?? childList !== undefined,
     pointer: opts.pointer === undefined ? mockPointerFor(id) : opts.pointer,
     toolbar: opts.toolbar,
     listChildren,
-    ownsPointer:
-      opts.ownsPointer ?? ((p) => !!p.pointer && p.pointer.startsWith(`mock/${id}`)),
-    pathFor:
-      opts.pathFor ??
-      (async () => {
-        return [root];
-      }),
+    ownsPointer: opts.ownsPointer ?? ((p) => !!p.pointer && p.pointer.startsWith(`mock/${id}`)),
+    pathFor: opts.pathFor ?? (() => Promise.resolve([root])),
   };
   return root;
 }
@@ -89,9 +76,7 @@ describe('BrowseableTree', () => {
     });
 
     it('empty roots → custom empty state', () => {
-      render(
-        <BrowseableTree roots={[]} activePointer={null} emptyState={<div>Custom Empty</div>} />,
-      );
+      render(<BrowseableTree roots={[]} activePointer={null} emptyState={<div>Custom Empty</div>} />);
       expect(screen.getByText('Custom Empty')).toBeInTheDocument();
     });
 
@@ -111,9 +96,7 @@ describe('BrowseableTree', () => {
       const user = userEvent.setup();
       const onNavigate = vi.fn();
       const root = makeRoot('alpha');
-      render(
-        <BrowseableTree roots={[root]} activePointer={null} onNavigate={onNavigate} />,
-      );
+      render(<BrowseableTree roots={[root]} activePointer={null} onNavigate={onNavigate} />);
       await user.click(screen.getByText('alpha'));
       expect(onNavigate).toHaveBeenCalledTimes(1);
       const arg = onNavigate.mock.calls[0][0] as DockPointer;
@@ -124,9 +107,7 @@ describe('BrowseableTree', () => {
       const user = userEvent.setup();
       const onNavigate = vi.fn();
       const root = makeRoot('hdr', { pointer: null });
-      render(
-        <BrowseableTree roots={[root]} activePointer={null} onNavigate={onNavigate} />,
-      );
+      render(<BrowseableTree roots={[root]} activePointer={null} onNavigate={onNavigate} />);
       await user.click(screen.getByText('hdr'));
       expect(onNavigate).not.toHaveBeenCalled();
     });
@@ -157,18 +138,32 @@ describe('BrowseableTree', () => {
       });
     });
 
-    it('clicking the row toggles expansion AND navigates', async () => {
+    it('clicking the row navigates WITHOUT expanding; double-click also expands', async () => {
       const user = userEvent.setup();
       const onNavigate = vi.fn();
       const root = makeRoot('alpha', {
         children: [makeLeaf('c1')],
       });
-      render(
-        <BrowseableTree roots={[root]} activePointer={null} onNavigate={onNavigate} />,
-      );
+      render(<BrowseableTree roots={[root]} activePointer={null} onNavigate={onNavigate} />);
 
+      // Single click: navigation only — expansion belongs to the chevron.
       await user.click(screen.getByText('alpha'));
       expect(onNavigate).toHaveBeenCalledTimes(1);
+      expect(screen.queryByText('c1')).not.toBeInTheDocument();
+
+      // Double click: navigates (per-click) AND expands.
+      await user.dblClick(screen.getByText('alpha'));
+      await waitFor(() => expect(screen.getByText('c1')).toBeInTheDocument());
+    });
+
+    it('a pointer-less parent row still expands on click (header rows stay usable)', async () => {
+      const user = userEvent.setup();
+      const onNavigate = vi.fn();
+      const root = makeRoot('alpha', { children: [makeLeaf('c1')] });
+      root.pointer = null;
+      render(<BrowseableTree roots={[root]} activePointer={null} onNavigate={onNavigate} />);
+      await user.click(screen.getByText('alpha'));
+      expect(onNavigate).not.toHaveBeenCalled();
       await waitFor(() => expect(screen.getByText('c1')).toBeInTheDocument());
     });
 
@@ -176,9 +171,7 @@ describe('BrowseableTree', () => {
       const user = userEvent.setup();
       const onNavigate = vi.fn();
       const root = makeRoot('alpha', { children: [makeLeaf('c1')] });
-      render(
-        <BrowseableTree roots={[root]} activePointer={null} onNavigate={onNavigate} />,
-      );
+      render(<BrowseableTree roots={[root]} activePointer={null} onNavigate={onNavigate} />);
       await user.click(screen.getByTestId('browseable-chevron-alpha'));
       expect(onNavigate).not.toHaveBeenCalled();
       await waitFor(() => expect(screen.getByText('c1')).toBeInTheDocument());
@@ -205,9 +198,7 @@ describe('BrowseableTree', () => {
       render(<BrowseableTree roots={[root]} activePointer={null} />);
       await user.click(screen.getByTestId('browseable-chevron-alpha'));
 
-      await waitFor(() =>
-        expect(screen.getByText('Loading…')).toBeInTheDocument(),
-      );
+      await waitFor(() => expect(screen.getByText('Loading…')).toBeInTheDocument());
 
       resolve([makeLeaf('c1')]);
 
@@ -218,9 +209,7 @@ describe('BrowseableTree', () => {
     it('shows an error message when listChildren rejects', async () => {
       const user = userEvent.setup();
       const root = makeRoot('alpha', {
-        children: async () => {
-          throw new Error('nope');
-        },
+        children: () => Promise.reject(new Error('nope')),
       });
       render(<BrowseableTree roots={[root]} activePointer={null} />);
       await user.click(screen.getByTestId('browseable-chevron-alpha'));
@@ -322,21 +311,18 @@ describe('BrowseableTree', () => {
       const child = makeLeaf('alpha/child-0', { hasChildren: true });
       const root = makeRoot('alpha', {
         children: [child],
-        pathFor: async (p) => {
-          if (p.pointer === 'mock/alpha/child-0/leaf') return [root, child, leaf];
-          if (p.pointer === 'mock/alpha/child-0') return [root, child];
-          return [root];
+        pathFor: (p) => {
+          if (p.pointer === 'mock/alpha/child-0/leaf') return Promise.resolve([root, child, leaf]);
+          if (p.pointer === 'mock/alpha/child-0') return Promise.resolve([root, child]);
+          return Promise.resolve([root]);
         },
       });
       // Wire child.listChildren so the tree can render grandchildren after expand
-      (child as Browseable & { listChildren?: () => Promise<Browseable[]> }).listChildren =
-        async () => [leaf];
+      (child as Browseable & { listChildren?: () => Promise<Browseable[]> }).listChildren = () =>
+        Promise.resolve([leaf]);
 
       render(
-        <BrowseableTree
-          roots={[root]}
-          activePointer={new DockPointer(ViewType.ASSETS, 'mock/alpha/child-0/leaf')}
-        />,
+        <BrowseableTree roots={[root]} activePointer={new DockPointer(ViewType.ASSETS, 'mock/alpha/child-0/leaf')} />,
       );
 
       await waitFor(() => {
@@ -353,12 +339,7 @@ describe('BrowseableTree', () => {
         children: [makeLeaf('c1')],
         ownsPointer: () => false,
       });
-      render(
-        <BrowseableTree
-          roots={[root]}
-          activePointer={new DockPointer(ViewType.ASSETS, 'mock/foreign')}
-        />,
-      );
+      render(<BrowseableTree roots={[root]} activePointer={new DockPointer(ViewType.ASSETS, 'mock/foreign')} />);
       // c1 should not appear — root was never expanded
       await Promise.resolve();
       expect(screen.queryByText('c1')).not.toBeInTheDocument();
@@ -385,9 +366,7 @@ describe('BrowseableTree', () => {
       const root = makeRoot('alpha', {
         toolbar: [{ id: 'scan', icon: <span>R</span>, label: 'Scan', run: () => {} }],
       });
-      render(
-        <BrowseableTree roots={[root]} activePointer={null} onNavigate={onNavigate} />,
-      );
+      render(<BrowseableTree roots={[root]} activePointer={null} onNavigate={onNavigate} />);
       await user.click(screen.getByTestId('browseable-toolbar-scan'));
       expect(onNavigate).not.toHaveBeenCalled();
     });
@@ -397,9 +376,7 @@ describe('BrowseableTree', () => {
       let resolve!: () => void;
       const gate = new Promise<void>((r) => (resolve = r));
       const root = makeRoot('alpha', {
-        toolbar: [
-          { id: 'scan', icon: <span>R</span>, label: 'Scan', run: async () => gate },
-        ],
+        toolbar: [{ id: 'scan', icon: <span>R</span>, label: 'Scan', run: async () => gate }],
       });
       render(<BrowseableTree roots={[root]} activePointer={null} />);
       const btn = screen.getByTestId('browseable-toolbar-scan');
@@ -433,13 +410,7 @@ describe('BrowseableTree', () => {
 
     it('applies aria-label from header title onto the tree', () => {
       const root = makeRoot('alpha');
-      render(
-        <BrowseableTree
-          roots={[root]}
-          activePointer={null}
-          header={{ title: 'Wiki' }}
-        />,
-      );
+      render(<BrowseableTree roots={[root]} activePointer={null} header={{ title: 'Wiki' }} />);
       const tree = screen.getByRole('tree');
       expect(tree).toHaveAttribute('aria-label', 'Wiki');
     });
@@ -484,7 +455,7 @@ describe('BrowseableTree', () => {
   describe('Dedupe of concurrent loads', () => {
     it('listChildren is called only once for rapid successive expands', async () => {
       const user = userEvent.setup();
-      const listChildren = vi.fn(async () => [makeLeaf('c1')]);
+      const listChildren = vi.fn(() => Promise.resolve([makeLeaf('c1')]));
       const root = makeRoot('alpha', { children: listChildren });
 
       render(<BrowseableTree roots={[root]} activePointer={null} />);

@@ -140,6 +140,7 @@ class EntityType(StrEnum):
     CWD_ROOT = "cwd_root"
     FOLDER = "folder"
     SECRET_ORIGIN = "secret_origin"
+    CONTACTS_GROUP = "contacts_group"
 
     # ── DB / hub entity types (formerly BuiltinEntityType-only) ──────────────
     USER = "user"

@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef } from 'react';
-import { dataContext, type Project } from '@sdk';
+import { dataContext, type Project, type ProjectContextDirInfo } from '@sdk';
 
 export type ContextFolderScope = 'private' | 'shared';
 
@@ -19,9 +19,23 @@ export function useProjectContextFolders(project: Project | null | undefined) {
   const projectRef = useRef<Project | null>(null);
   projectRef.current = project ?? null;
 
+  // CONTENT-keyed memos, not identity-keyed: entity updates fill the SAME
+  // array instance in place (store.deepAssign), so the reference never changes
+  // and an identity dep would freeze these at their first (often pre-fetch,
+  // empty) snapshot — the "context folders vanish until another refresh" race.
+  const contextDirsKey = JSON.stringify(project?.include_dirs ?? []);
   const contextDirs = useMemo<string[]>(
     () => (project?.include_dirs ?? []).filter((d): d is string => !!d),
-    [project?.include_dirs],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [contextDirsKey],
+  );
+
+  /** Same dirs with their origin kind ("git" for cloned repos, else "local"). */
+  const contextDirInfosKey = JSON.stringify(project?.context_dir_infos ?? []);
+  const contextDirInfos = useMemo<ProjectContextDirInfo[]>(
+    () => (project?.context_dir_infos ?? []).filter((i): i is ProjectContextDirInfo => !!i?.path),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [contextDirInfosKey],
   );
 
   /** Add each given absolute folder path (idempotent server-side). The scope
@@ -50,5 +64,5 @@ export function useProjectContextFolders(project: Project | null | undefined) {
     await p.removeContextDir(dir);
   }, []);
 
-  return { contextDirs, addPaths, pickAndAdd, remove } as const;
+  return { contextDirs, contextDirInfos, addPaths, pickAndAdd, remove } as const;
 }

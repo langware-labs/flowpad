@@ -156,6 +156,11 @@ except ImportError as e:
     print(f"[WARN] Failed to import Group: {e}")
 
 try:
+    from flow_sdk.builtin.contacts_group import ContactsGroup  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import ContactsGroup: {e}")
+
+try:
     from flow_sdk.builtin.prompt import Prompt  # noqa: F401
 except ImportError as e:
     print(f"[WARN] Failed to import Prompt: {e}")
@@ -221,7 +226,14 @@ except ImportError as e:
     print(f"[WARN] Failed to import Comment: {e}")
 
 try:
-    from flow_sdk.builtin.claude_memory_entities import Markdown, Docs, ClaudeMemory, ClaudeRules, ClaudePlan, ClaudeMd  # noqa: F401
+    from flow_sdk.builtin.claude_memory_entities import (  # noqa: F401
+        ClaudeMd,
+        ClaudeMemory,
+        ClaudePlan,
+        ClaudeRules,
+        Docs,
+        Markdown,
+    )
 except ImportError as e:
     print(f"[WARN] Failed to import claude memory entities: {e}")
 

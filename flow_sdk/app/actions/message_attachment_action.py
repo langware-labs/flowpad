@@ -11,6 +11,7 @@ the user installs them here — the ONLY place reception copies bytes into a
 work area and runs an index walk. Uninstall removes the installed copy and the
 entity; the staged copy persists so the attachment reverts to reviewable.
 """
+
 from __future__ import annotations
 
 import logging
@@ -70,13 +71,15 @@ def _user_scope_root() -> Path:
     if claude_home.name != ".claude":
         logger.warning(
             "[message_attachment] claude_home %s is not named .claude — "
-            "user-scope install root may not match discovery", claude_home,
+            "user-scope install root may not match discovery",
+            claude_home,
         )
     return claude_home.parent
 
 
 def _main_subdir_for(asset_type: str) -> str | None:
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
     info = SchemaRegistry.get(asset_type)
     return getattr(info, "main_subdir", None) if info else None
 
@@ -175,9 +178,10 @@ async def _install_artifact_reference(
     overwrite: bool,
     someone_typeid,
 ) -> ApiResponse:
-    """Install a staged git-reference ARTIFACT: materialize its graph row from the
-    staged metadata (path='' — the checkout resolves later at open, via the git
-    wizard). No clone here. Then mint the favorite if opted in."""
+    """Install a staged git-reference graph entity (artifact or folder):
+    materialize its graph row from the staged metadata (path unset — the
+    checkout resolves later at open, via the git wizard). No clone here. Then
+    mint the favorite if opted in."""
     from flow_sdk.builtin.flow_message_bundle import (  # noqa: PLC0415
         FlowMessageExistsError,
         _notify_received_assets,
@@ -185,7 +189,7 @@ async def _install_artifact_reference(
     )
 
     if not ma.git_transfer:
-        return ApiFailResponse(message="artifact git transfer metadata missing", status_code=410)
+        return ApiFailResponse(message="git transfer metadata missing", status_code=410)
     unpacked_root = unpacked_dir(ma.flow_message_id)
     if not unpacked_root.exists():
         return _staging_gone()
@@ -206,7 +210,7 @@ async def _install_artifact_reference(
             data={"asset_conflict": True, "conflicts": getattr(e, "conflicts", None)},
         )
     if not ok:
-        return ApiFailResponse(message="artifact reference restore failed", status_code=500)
+        return ApiFailResponse(message="git reference restore failed", status_code=500)
     await _notify_received_assets({(ma.asset_type, ma.asset_id)})
     # A graph artifact has no copied bytes → no installed_root; the checkout
     # resolves at open. Project scope still records project_id.
@@ -310,7 +314,6 @@ async def handle_attachment_install(
         index_attachments,
     )
     from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
-
     from flow_sdk.schema.types import EntityType  # noqa: PLC0415
 
     ma = await _load_ma(attachment_id)
@@ -319,14 +322,19 @@ async def handle_attachment_install(
     if scope not in (AttachmentScope.USER.value, AttachmentScope.PROJECT.value):
         return ApiFailResponse(message=f"invalid scope: {scope!r}", status_code=400)
 
-    # ARTIFACT is a graph entity (no main_subdir walker), materialized here from
-    # its shipped declaration. Git mode records a reference (no bytes; the checkout
-    # resolves at open); copy mode mirrors the shipped folder bytes and serves them.
+    # Git-reference graph entities (ARTIFACT, and FOLDER for git context-folder
+    # chips): materialized from the staged metadata here. No bytes copied, no
+    # clone (that happens at open / via the chip's wizard).
+    if (
+        ma.asset_type in (EntityType.ARTIFACT.value, EntityType.FOLDER.value)
+        and ma.transfer_mode == TransferMode.GIT.value
+    ):
+        return await _install_artifact_reference(
+            ma, scope, project_id, overwrite=overwrite, someone_typeid=someone_typeid,
+        )
+    # Copy mode: a webapp ARTIFACT can't be a git reference — mirror the shipped
+    # folder bytes and serve them.
     if ma.asset_type == EntityType.ARTIFACT.value:
-        if ma.transfer_mode == TransferMode.GIT.value:
-            return await _install_artifact_reference(
-                ma, scope, project_id, overwrite=overwrite, someone_typeid=someone_typeid,
-            )
         return await _install_webapp_artifact_copy(
             ma, scope, project_id, overwrite=overwrite, someone_typeid=someone_typeid,
         )
@@ -356,6 +364,7 @@ async def handle_attachment_install(
         if not project_id:
             return ApiFailResponse(message="project_id is required for scope=project", status_code=400)
         from flow_sdk.builtin.project import Project  # noqa: PLC0415
+
         project = await Project.get_one({"id": project_id})
         mount = (getattr(project, "fs_storage_mount_path", "") or "").strip() if project else ""
         if not mount:
@@ -382,6 +391,7 @@ async def handle_attachment_install(
         # blobs copy without a follow-up walk (no dedicated .claude/files/ walker
         # yet). record_type=None means "copy, don't reindex".
         from flow_sdk.builtin.flow_message_bundle import is_markdown_filename  # noqa: PLC0415
+
         record_type = RecordType.MARKDOWN if is_markdown_filename(ma.name or "") else None
     else:
         try:
@@ -440,7 +450,11 @@ async def handle_attachment_install(
         )
 
     return await _finalize_install(
-        ma, scope, project_id, str(root) if root is not None else None, someone_typeid,
+        ma,
+        scope,
+        project_id,
+        str(root) if root is not None else None,
+        someone_typeid,
     )
 
 
@@ -515,6 +529,7 @@ async def handle_attachment_uninstall(attachment_id: str, *, someone_typeid=None
                 removed_dirs.add(dest.parent)
         # Prune now-empty dirs up to (not including) the install root.
         import shutil  # noqa: PLC0415
+
         for d in sorted(removed_dirs, key=lambda p: len(p.parts), reverse=True):
             cur = d
             while cur != root and root_resolved in cur.resolve().parents:
@@ -583,14 +598,16 @@ async def handle_staged_files(attachment_id: str) -> ApiResponse:
         files.append({"path": rel, "size": p.stat().st_size, "is_main": is_main})
     if main_rel is None:
         main_rel = next((f["path"] for f in files if f["path"].endswith(".md")), None)
-    return ApiSuccessResponse(data={
-        "files": files,
-        "main_file": main_rel,
-        "root": ma.unpacked_path,
-        # Absolute staged dir — "Test it" references the skill by path when it
-        # isn't installed yet (a local-disk path handed to a local process).
-        "abs_root": str(entry_dir),
-    })
+    return ApiSuccessResponse(
+        data={
+            "files": files,
+            "main_file": main_rel,
+            "root": ma.unpacked_path,
+            # Absolute staged dir — "Test it" references the skill by path when it
+            # isn't installed yet (a local-disk path handed to a local process).
+            "abs_root": str(entry_dir),
+        }
+    )
 
 
 async def handle_staged_file_content(attachment_id: str, rel_path: str) -> ApiResponse:
@@ -694,7 +711,8 @@ async def staged_file_content_action() -> ApiResponse:
             return ApiFailResponse(message="No request info found", status_code=400)
         rel_path = str(request_info.request.query_params.get("path") or "")
         return await handle_staged_file_content(
-            str(request_info.target_entity_typeid.id), rel_path,
+            str(request_info.target_entity_typeid.id),
+            rel_path,
         )
     except Exception as e:
         logger.error("[message_attachment] staged-file-content error: %s", e, exc_info=True)

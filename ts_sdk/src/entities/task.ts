@@ -6,12 +6,23 @@ import { TypeId } from '../models/TypeId';
 import { IEntity } from '../IEntity';
 import type { GitOrigin } from '../models/GitOrigin';
 
+export enum TaskKind {
+  STANDARD = 'standard',
+  GROUP = 'group',
+}
+
 export interface ITask extends IEntity {
   title?: string;
   /** Folder-backed asset: tasks/<name>/ holding task.md + inner spec.md. */
   asset_ref?: string;
   description?: string;
   status?: string;
+  /** TaskKind: 'group' = overview task owning one member task per group member. */
+  kind?: string;
+  /** Group-task parent pointer; '' = top-level. Children own only their status. */
+  parent_id?: string;
+  /** The member's deliverable (repo / PR / doc / app URL); rides hub reflection. */
+  submission_url?: string | null;
   last_viewed_at?: Date;
   due_at?: Date;
   start_date?: string | null;
@@ -71,6 +82,9 @@ export class Task extends APIEntity<Task> implements ITask {
   asset_ref?: string;
   description?: string;
   status?: string;
+  kind?: string;
+  parent_id?: string;
+  submission_url?: string | null;
   last_viewed_at?: Date;
   due_at?: Date;
   start_date?: string | null;
@@ -126,6 +140,9 @@ export class Task extends APIEntity<Task> implements ITask {
     this.asset_ref = entity.asset_ref;
     this.description = entity.description;
     this.status = entity.status;
+    this.kind = entity.kind;
+    this.parent_id = entity.parent_id;
+    this.submission_url = entity.submission_url;
     this.last_viewed_at = entity.last_viewed_at;
     this.due_at = entity.due_at;
     this.start_date = entity.start_date;

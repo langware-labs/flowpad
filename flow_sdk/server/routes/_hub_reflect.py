@@ -19,8 +19,8 @@ from typing import Any
 from flow_sdk.actions.action_registry import Action
 from flow_sdk.cli.auth.hub_login import is_logged_in
 from flow_sdk.core.entity.entity_model import Entity
-from flow_sdk.instance_settings.privacy_mode import is_local_mode
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
+from flow_sdk.instance_settings.privacy_mode import is_local_mode
 from flow_sdk.utils.hub import HubError, hub_delete, hub_get, hub_post, hub_put
 
 logger = logging.getLogger(__name__)
@@ -109,6 +109,12 @@ async def reflect_to_hub(a: Action, entity: Entity, body: dict[str, Any], method
         # consistent (the hub is the source of truth for every differing scalar).
         hub_resp = await hub_put(et, hub_id, body or {})
         updates = _merge_hub_entity_into_local(entity, hub_resp)
+        # A reflected PUT REPLACES the local update — so body fields the hub
+        # doesn't model (absent from its response, e.g. a task's local-only
+        # ``artifacts`` attachments) would be silently dropped. Apply those
+        # from the incoming body, with hub-returned fields staying
+        # authoritative (they overwrite on key collision below).
+        updates = {**_hub_unknown_updates_from_body(entity, body, hub_resp), **updates}
         if updates:
             entity.apply_field_updates(updates)
             await entity.save(notify=True)  # local row + data_op broadcast to watchers
@@ -202,9 +208,27 @@ def _merge_hub_entity_into_local(entity: Entity, hub_resp: Any) -> dict[str, Any
     return updates
 
 
-async def mirror_hub_response_into_local(
-    entity: Entity, action_name: str, hub_resp: Any
-) -> None:
+def _hub_unknown_updates_from_body(entity: Entity, body: dict[str, Any] | None, hub_resp: Any) -> dict[str, Any]:
+    """The incoming update's LOCAL-ONLY field changes — API fields the hub's
+    response doesn't carry (the hub doesn't model them), which a plain local
+    update would have applied. Restores those semantics for reflected PUTs so
+    a remote entity can still persist its hub-unknown fields locally.
+    """
+    if not isinstance(body, dict):
+        return {}
+    hub_keys = set(hub_resp.keys()) if isinstance(hub_resp, dict) else set()
+    updates: dict[str, Any] = {}
+    for k, v in body.items():
+        if k in ("id", "type") or k in hub_keys:
+            continue
+        if not entity.is_api_field(k):
+            continue
+        if getattr(entity, k, _MISSING) != v:
+            updates[k] = v
+    return updates
+
+
+async def mirror_hub_response_into_local(entity: Entity, action_name: str, hub_resp: Any) -> None:
     """Write hub-provided state back into the local entity row.
 
     Opportunistic: only writes fields the entity already exposes. Generic

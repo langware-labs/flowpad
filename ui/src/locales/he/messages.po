@@ -295,6 +295,10 @@ msgstr "{completedCount}/{totalCount} הושלמו"
 msgid "{count} {0} attached"
 msgstr "{count} {0} מצורפים"
 
+#: src/components/assets/ContextFolderGitBadge.tsx
+msgid "{count} pending change(s) — click to view diff"
+msgstr ""
+
 #: src/components/execute-flow-view/worker-sessions-panel.tsx
 msgid "{days}d ago"
 msgstr "לפני {days}י׳"
@@ -662,6 +666,7 @@ msgid "add"
 msgstr "הוספה"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/assets/AddGitFolderDialog.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
@@ -749,6 +754,12 @@ msgstr "הוסף תווית מותאמת אישית..."
 #: src/components/wiki-toolbar/WikiToolbar.tsx
 msgid "Add entity link"
 msgstr "הוסף קישור לישות"
+
+#: src/components/assets/AddContextFolderDialog.tsx
+#: src/components/assets/AddGitFolderDialog.tsx
+#: src/components/quick-create/QuickCreateModal.tsx
+msgid "Add Git folder"
+msgstr ""
 
 #: src/components/hooks-view/HooksBrowser.tsx
 #: src/components/hooks-view/HooksTable.tsx
@@ -1298,6 +1309,7 @@ msgstr "נכס…"
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/assets/AssetsNavigator.tsx
 #: src/components/assets/AssetsPage.tsx
+#: src/components/assets/AssetsPage.tsx
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 msgid "Assets"
 msgstr "נכסים"
@@ -1471,15 +1483,15 @@ msgstr "פקודת Bash *"
 msgid "bash progress"
 msgstr "התקדמות bash"
 
-#: src/components/project-home/Secrets.tsx
+#: src/components/project-home/BindSecretDialog.tsx
 msgid "Bind"
 msgstr ""
 
-#: src/components/project-home/Secrets.tsx
+#: src/components/project-home/BindSecretDialog.tsx
 msgid "Bind an existing app secret to a project environment variable."
 msgstr ""
 
-#: src/components/project-home/Secrets.tsx
+#: src/components/project-home/BindSecretDialog.tsx
 #: src/components/project-home/Secrets.tsx
 msgid "Bind secret"
 msgstr ""
@@ -1660,12 +1672,15 @@ msgstr ""
 #: src/components/artifacts/artifact-form.tsx
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/assets/AddGitFolderDialog.tsx
 #: src/components/assets/delete-asset-modal.tsx
 #: src/components/assets/editor/markdown/ReviewSurface.tsx
 #: src/components/assets/editor/run/useRunOnFile.tsx
 #: src/components/assets/editor/whiteboard/WhiteboardAssetEditor.tsx
 #: src/components/assets/editor/workflow/WorkflowAssetEditor.tsx
 #: src/components/assets/ProjectPickerModal.tsx
+#: src/components/assets/PushContextFolderDialog.tsx
+#: src/components/contact-picker/CreateContactsGroupDialog.tsx
 #: src/components/conversation/asset-review/TestPromptDialog.tsx
 #: src/components/conversation/ExecutePromptDialog.tsx
 #: src/components/conversation/PromptComposerDialog.tsx
@@ -1689,7 +1704,7 @@ msgstr ""
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 #: src/components/project-activity-strip/ProjectActivityStrip.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
-#: src/components/project-home/Secrets.tsx
+#: src/components/project-home/BindSecretDialog.tsx
 #: src/components/project-selector/NewProjectDialog.tsx
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 #: src/components/project-sidebar/ProjectSidebar.tsx
@@ -1917,8 +1932,8 @@ msgid "Claude Code Status"
 msgstr "סטטוס Claude Code"
 
 #: src/components/open-project-component/open-project-component.tsx
-msgid "Claude project"
-msgstr "פרויקט Claude"
+#~ msgid "Claude project"
+#~ msgstr "פרויקט Claude"
 
 #: src/components/claude-terminal/claude-terminal.tsx
 msgid "Claude Terminal"
@@ -2260,8 +2275,8 @@ msgid "Codex (restored session)"
 msgstr "קודקס (סשן שוחזר)"
 
 #: src/components/open-project-component/open-project-component.tsx
-msgid "Codex project"
-msgstr "פרויקט Codex"
+#~ msgid "Codex project"
+#~ msgstr "פרויקט Codex"
 
 #: src/components/quick-create/QuickCreateMenu.tsx
 msgid "Codex session"
@@ -2509,6 +2524,11 @@ msgstr "מידע חיבור"
 msgid "Contacts"
 msgstr "אנשי קשר"
 
+#. placeholder {0}: name.trim()
+#: src/components/contact-picker/CreateContactsGroupDialog.tsx
+msgid "Contacts group \"{0}\" created"
+msgstr ""
+
 #: src/components/hooks-view/HooksTable.tsx
 msgid "Content"
 msgstr "תוכן"
@@ -2520,6 +2540,10 @@ msgstr "תוכן"
 #: src/components/lens-viewer/ClaudeContextViewer.tsx
 msgid "Context breakdown"
 msgstr "פירוק Context"
+
+#: src/components/quick-create/QuickCreateModal.tsx
+#~ msgid "Context folder"
+#~ msgstr ""
 
 #: src/components/project-home/ContextFolders.tsx
 msgid "Context folders"
@@ -2558,6 +2582,7 @@ msgstr "המשך דרך דוא״ל"
 msgid "Continue with Google"
 msgstr "המשך עם Google"
 
+#: src/components/assets/PushContextFolderDialog.tsx
 #: src/components/conversation/ConversationRoute.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
 msgid "Conversation"
@@ -2595,8 +2620,8 @@ msgid "Copilot"
 msgstr "Copilot"
 
 #: src/components/open-project-component/open-project-component.tsx
-msgid "Copilot project"
-msgstr "פרויקט Copilot"
+#~ msgid "Copilot project"
+#~ msgstr "פרויקט Copilot"
 
 #: src/components/quick-create/QuickCreateMenu.tsx
 msgid "Copilot session"
@@ -2853,9 +2878,11 @@ msgstr "שימוש CPU (%)"
 msgid "CPU:"
 msgstr "מעבד:"
 
+#: src/components/assets/AddGitFolderDialog.tsx
 #: src/components/assets/AssetsNavigator.tsx
 #: src/components/assets/AssetsNavigator.tsx
 #: src/components/assets/AssetsPage.tsx
+#: src/components/contact-picker/CreateContactsGroupDialog.tsx
 #: src/components/cron-view/CronForm.tsx
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 #: src/components/project-selector/NewProjectDialog.tsx
@@ -2867,6 +2894,14 @@ msgstr "מעבד:"
 #: src/components/workflows-view/WorkflowStrip.tsx
 msgid "Create"
 msgstr "צור"
+
+#: src/components/assets/AddGitFolderDialog.tsx
+msgid "Create a brand-new repository"
+msgstr ""
+
+#: src/components/inbox-view/InboxView.tsx
+msgid "Create a contacts group — add its members to any conversation in one click"
+msgstr ""
 
 #. placeholder {0}: m.newFolderTarget?.label ?? 'this folder'
 #: src/components/assets/AssetsNavigator.tsx
@@ -2919,7 +2954,6 @@ msgstr "צור"
 msgid "Create new"
 msgstr "צור חדש"
 
-#: src/components/open-project-component/open-project-component.tsx
 #: src/components/open-project-component/open-project-component.tsx
 msgid "Create New"
 msgstr "צור חדש"
@@ -3780,6 +3814,10 @@ msgstr "משך זמן"
 msgid "e.g. Alex"
 msgstr "לדוגמא Alex"
 
+#: src/components/contact-picker/CreateContactsGroupDialog.tsx
+msgid "e.g. My class"
+msgstr ""
+
 #: src/components/join-room-dialog/JoinRoomDialog.tsx
 msgid "e.g. Retry logic review"
 msgstr "לדוגמה: בדיקת לוגיקה חוזרת"
@@ -3950,7 +3988,7 @@ msgid "Enable for user"
 msgstr "הפעל עבור משתמש"
 
 #: src/components/account/secrets-section.tsx
-#: src/components/project-home/Secrets.tsx
+#: src/components/project-home/BindSecretDialog.tsx
 msgid "Enable secrets"
 msgstr "הפעל סודות"
 
@@ -4083,7 +4121,7 @@ msgstr "ערך"
 msgid "Entry details"
 msgstr "פרטי כניסה"
 
-#: src/components/project-home/Secrets.tsx
+#: src/components/project-home/BindSecretDialog.tsx
 msgid "Env var"
 msgstr ""
 
@@ -4110,8 +4148,8 @@ msgstr "שגיאה"
 #: src/components/agent-layout/error-screen/error-screen.tsx
 #: src/components/api-keys-view/api-keys-view.tsx
 #: src/components/api-keys-view/api-keys-view.tsx
-#: src/components/project-home/Secrets.tsx
-#: src/components/project-home/Secrets.tsx
+#: src/components/project-home/BindSecretDialog.tsx
+#: src/components/project-home/BindSecretDialog.tsx
 msgid "Error"
 msgstr "שגיאה"
 
@@ -4242,6 +4280,10 @@ msgstr "יומן ביצוע"
 msgid "Execution Mode"
 msgstr "מצב ביצוע"
 
+#: src/components/assets/AddGitFolderDialog.tsx
+msgid "Existing repo"
+msgstr ""
+
 #. placeholder {0}: call.exit_code
 #. placeholder {0}: entry.toolResult!.exitCode
 #: src/components/assets/editor/agent-trace/TraceDetailPanel.tsx
@@ -4347,7 +4389,7 @@ msgstr "הוספת תגובה נכשלה"
 msgid "Failed to backup database"
 msgstr "גיבוי בסיס הנתונים נכשל"
 
-#: src/components/project-home/Secrets.tsx
+#: src/components/project-home/BindSecretDialog.tsx
 msgid "Failed to bind secret"
 msgstr ""
 
@@ -4381,6 +4423,10 @@ msgstr "יצירה נכשלה"
 #: src/components/artifacts/artifact-form.tsx
 msgid "Failed to create artifact"
 msgstr "נכשל ליצור ארטיפקט"
+
+#: src/components/contact-picker/CreateContactsGroupDialog.tsx
+msgid "Failed to create contacts group"
+msgstr ""
 
 #: src/components/collaboration/sidebar/NewDocButton.tsx
 #~ msgid "Failed to create doc"
@@ -4444,7 +4490,7 @@ msgid "Failed to enable MCP"
 msgstr "נכשל בהפעלת MCP"
 
 #: src/components/account/secrets-section.tsx
-#: src/components/project-home/Secrets.tsx
+#: src/components/project-home/BindSecretDialog.tsx
 msgid "Failed to enable secrets"
 msgstr "כשל בהפעלת סודות"
 
@@ -4552,14 +4598,13 @@ msgid "Failed to open file"
 msgstr "פתיחת הקובץ נכשלה"
 
 #: src/components/quick-create/QuickCreateModal.tsx
-msgid "Failed to open folder"
-msgstr "כישלון בפתיחת תיקייה"
+#~ msgid "Failed to open folder"
+#~ msgstr "כישלון בפתיחת תיקייה"
 
 #: src/components/open-project-component/use-open-project.ts
 #: src/components/project-setup-screen/project-setup-screen.tsx
 #: src/components/quick-create/QuickCreateDialog.tsx
 #: src/components/quick-create/QuickCreateMenu.tsx
-#: src/components/quick-create/QuickCreateModal.tsx
 msgid "Failed to open folder picker"
 msgstr "נכשל בפתיחת בוחר התיקייה"
 
@@ -4649,7 +4694,6 @@ msgid "Failed to start services"
 msgstr "נכשל הפעלת השירותים"
 
 #: src/components/quick-create/QuickCreateMenu.tsx
-#: src/components/quick-create/QuickCreateModal.tsx
 #: src/components/quick-create/QuickCreateModal.tsx
 msgid "Failed to start session"
 msgstr "כישלון בהתחלת הפגישה"
@@ -5086,6 +5130,10 @@ msgstr "מהראשון"
 msgid "From git"
 msgstr "מ-Git"
 
+#: src/components/quick-create/QuickCreateModal.tsx
+#~ msgid "From Git"
+#~ msgstr ""
+
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 msgid "From:"
 msgstr "מ:"
@@ -5159,8 +5207,11 @@ msgstr "בואו נתחיל"
 msgid "ghost"
 msgstr "רפאים"
 
+#: src/components/assets/ContextFolderBrowser.tsx
+msgid "git"
+msgstr ""
+
 #: src/components/chat-input.tsx
-#: src/components/quick-create/QuickCreateModal.tsx
 msgid "Git"
 msgstr "Git"
 
@@ -5267,6 +5318,10 @@ msgstr "תצוגת גרף"
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "Group Events"
 msgstr "אירועים בקבוצה"
+
+#: src/components/contact-picker/CreateContactsGroupDialog.tsx
+msgid "Group name"
+msgstr ""
 
 #: src/components/terminal/openers/AskInstallOneOfDialog.tsx
 msgid "Harness is required"
@@ -5380,6 +5435,10 @@ msgstr "הסתרה מהשיחות האחרונות"
 #: src/components/code-editor/CodeEditor.tsx
 msgid "Hide hidden files"
 msgstr "הסתר קבצים נסתרים"
+
+#: src/components/task-bar/TaskCard.tsx
+msgid "Hide member tasks"
+msgstr ""
 
 #: src/components/navigator-panel/NavigatorPanel.tsx
 #: src/components/webapp-viewer.tsx
@@ -6414,7 +6473,6 @@ msgstr "טעינת משאבי הפרויקט..."
 
 #: src/components/assets/ProjectPickerModal.tsx
 #: src/components/directory-tree/ProjectsDirectoryTree.tsx
-#: src/components/open-project-component/open-project-component.tsx
 msgid "Loading projects..."
 msgstr "טוען פרויקטים..."
 
@@ -6734,11 +6792,20 @@ msgstr "חבר"
 msgid "Member"
 msgstr "חבר"
 
+#: src/components/task-bar/TaskCard.tsx
+msgid "member task"
+msgstr ""
+
+#: src/components/task-bar/TaskCard.tsx
+msgid "member tasks"
+msgstr ""
+
 #: src/components/collaboration/RoomHeader.tsx
 msgid "members"
 msgstr "חברים"
 
 #: src/components/account/organization-panel.tsx
+#: src/components/contact-picker/CreateContactsGroupDialog.tsx
 #: src/components/project-home/ProjectHome.tsx
 msgid "Members"
 msgstr "חברים"
@@ -6764,6 +6831,10 @@ msgstr "זיכרון:"
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Merge conflicts"
 msgstr "קונפליקטים בהיתוך"
+
+#: src/components/assets/PushContextFolderDialog.tsx
+msgid "Message"
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
 msgid "Message (optional)"
@@ -6916,6 +6987,10 @@ msgstr "הלוח שלי"
 msgid "my-awesome-project"
 msgstr "my-awesome-project"
 
+#: src/components/assets/AddGitFolderDialog.tsx
+msgid "my-context"
+msgstr ""
+
 #: src/components/account/user-info.tsx
 msgid "N/A"
 msgstr "לא זמין"
@@ -6982,6 +7057,7 @@ msgid "new"
 msgstr "חדש"
 
 #: src/components/assets/AssetListView.tsx
+#: src/components/assets/filters/taskFilters.tsx
 #: src/components/chats-navigator/ChatsFilterBar.tsx
 #: src/components/inbox-view/InboxView.tsx
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
@@ -7033,6 +7109,10 @@ msgstr "צ'אט חדש"
 msgid "New Claude Session"
 msgstr "פגישת Claude חדשה"
 
+#: src/components/contact-picker/CreateContactsGroupDialog.tsx
+msgid "New contacts group"
+msgstr ""
+
 #: src/components/collaboration/sidebar/NewDocButton.tsx
 #: src/components/collaboration/sidebar/NewDocButton.tsx
 #: src/components/collaboration/sidebar/NewDocButton.tsx
@@ -7056,6 +7136,7 @@ msgstr "קבצים חדשים ({0})"
 msgid "New Flow"
 msgstr "זרימה חדשה"
 
+#: src/components/quick-create/QuickCreateModal.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "New folder"
 msgstr "תיקייה חדשה"
@@ -7065,6 +7146,10 @@ msgstr "תיקייה חדשה"
 msgid "New Folder"
 msgstr "תיקייה חדשה"
 
+#: src/components/inbox-view/InboxView.tsx
+msgid "New group"
+msgstr ""
+
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "New name"
 msgstr "שם חדש"
@@ -7072,7 +7157,6 @@ msgstr "שם חדש"
 #: src/components/project-selector/NewProjectDialog.tsx
 #: src/components/project-selector/ProjectSelectorModal.tsx
 #: src/components/quick-create/QuickCreateMenu.tsx
-#: src/components/quick-create/QuickCreateModal.tsx
 msgid "New project"
 msgstr "פרויקט חדש"
 
@@ -7091,6 +7175,10 @@ msgstr "בקשה חדשה"
 #: src/components/execute-flow-view/instruction-panel/ephemeral-prompt-input.tsx
 msgid "New Prompt"
 msgstr "הנושא החדש"
+
+#: src/components/assets/AddGitFolderDialog.tsx
+msgid "New repo"
+msgstr ""
 
 #: src/components/triggers-view/TriggersList.tsx
 msgid "New schedule trigger"
@@ -7288,7 +7376,6 @@ msgstr "אין כרטיסי קהילה"
 #: src/components/project-setup-screen/project-setup-screen.tsx
 #: src/components/quick-create/QuickCreateDialog.tsx
 #: src/components/quick-create/QuickCreateMenu.tsx
-#: src/components/quick-create/QuickCreateModal.tsx
 msgid "No compute node available"
 msgstr "אין צומת חישוב זמין"
 
@@ -7503,7 +7590,7 @@ msgstr "אין שינויים בשורות בהשוואה לקו הבסיס המ
 msgid "No LLM index for this folder yet."
 msgstr "אין אינדקס LLM לתיקייה זו עדיין."
 
-#: src/components/project-home/Secrets.tsx
+#: src/components/project-home/BindSecretDialog.tsx
 msgid "No local app secrets"
 msgstr ""
 
@@ -7536,7 +7623,6 @@ msgid "no matches"
 msgstr "אין התאמות"
 
 #: src/components/assets/ProjectPickerModal.tsx
-#: src/components/open-project-component/open-project-component.tsx
 #: src/components/open-project-component/open-project-component.tsx
 #: src/components/project-selector/ProjectSelector.tsx
 msgid "No matches"
@@ -7677,7 +7763,6 @@ msgid "No projects"
 msgstr "אין פרויקטים"
 
 #: src/components/assets/ProjectPickerModal.tsx
-#: src/components/open-project-component/open-project-component.tsx
 #: src/components/open-project-component/open-project-component.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "No projects found"
@@ -8067,6 +8152,10 @@ msgstr "אין דבר בהקשר הפרטי עדיין."
 msgid "Nothing indexed yet. <0>Refresh Index</0> to populate."
 msgstr "עדיין לא אינדקס. <0>Refresh Index</0> כדי לאכלס."
 
+#: src/components/assets/PushContextFolderDialog.tsx
+msgid "Nothing new to push — message sent"
+msgstr ""
+
 #: src/components/conversation/ConversationContextPanel.tsx
 msgid "Nothing shared in this conversation."
 msgstr "אין שום דבר משותף בשיחה זו."
@@ -8092,6 +8181,10 @@ msgstr "אין מה לעשות."
 msgid "Nothing to improve"
 msgstr "אין מה לשפר"
 
+#: src/components/assets/PushContextFolderDialog.tsx
+msgid "Nothing to push"
+msgstr ""
+
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Nothing to save"
 msgstr ""
@@ -8112,9 +8205,17 @@ msgstr "התראות"
 msgid "Notifies the inviter"
 msgstr "מודיע למזמין"
 
+#: src/components/assets/PushContextFolderDialog.tsx
+#~ msgid "Notify (optional)"
+#~ msgstr ""
+
 #: src/components/hooks-manager/TriggerForm.tsx
 msgid "Notify Entity (Increment Counter)"
 msgstr "הודע לישות (הגדל מונה)"
+
+#: src/components/assets/PushContextFolderDialog.tsx
+msgid "Notify people about this push"
+msgstr ""
 
 #: src/components/InputSection.tsx
 msgid "OAuth connection established successfully"
@@ -8167,8 +8268,8 @@ msgid "Only one ZIP file can be uploaded at a time"
 msgstr "ניתן להעלות רק קובץ ZIP אחד בכל פעם"
 
 #: src/components/task-bar/TaskDetailPanel.tsx
-msgid "open"
-msgstr "פתוח"
+#~ msgid "open"
+#~ msgstr "פתוח"
 
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
@@ -8301,11 +8402,9 @@ msgid "Open Flowpad docs"
 msgstr "פתיחת מסמכי Flowpad"
 
 #: src/components/assets/AddContextFolderDialog.tsx
-#: src/components/quick-create/QuickCreateModal.tsx
 msgid "Open folder"
 msgstr "פתח תיקייה"
 
-#: src/components/open-project-component/open-project-component.tsx
 #: src/components/open-project-component/open-project-component.tsx
 msgid "Open Folder"
 msgstr "פתח תיקייה"
@@ -8826,6 +8925,18 @@ msgstr "בחרו איש קשר או הזינו כתובת אימייל"
 msgid "Pick a contact to see your conversations with them."
 msgstr "בחר איש קשר כדי לראות את השיחות שלך איתו."
 
+#: src/components/assets/PushContextFolderDialog.tsx
+msgid "Pick a contacts group or people"
+msgstr ""
+
+#: src/components/assets/PushContextFolderDialog.tsx
+#~ msgid "Pick a contacts group or people — empty = just push"
+#~ msgstr ""
+
+#: src/components/contact-picker/CreateContactsGroupDialog.tsx
+msgid "Pick a group in any conversation to add all its members at once."
+msgstr ""
+
 #: src/components/open-project-component/open-project-component.tsx
 msgid "Pick a project"
 msgstr "בחר פרויקט"
@@ -9107,7 +9218,6 @@ msgstr "התקדמות"
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/quick-create/QuickCreateMenu.tsx
 #: src/components/quick-create/QuickCreateModal.tsx
-#: src/components/quick-create/QuickCreateModal.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Project"
 msgstr "פרויקט"
@@ -9188,7 +9298,6 @@ msgid "projected"
 msgstr "משוער"
 
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
-#: src/components/open-project-component/open-project-component.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Projects"
 msgstr "פרויקטים"
@@ -9333,14 +9442,49 @@ msgstr "משיכה נכשלה."
 msgid "Pulling…"
 msgstr "משיכה…"
 
+#: src/components/assets/ContextFolderGitBadge.tsx
+#: src/components/assets/PushContextFolderDialog.tsx
 #: src/components/status-bar/GitPushButton.tsx
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 msgid "Push"
 msgstr "דחף"
 
+#: src/components/assets/ContextFolderGitBadge.tsx
+#: src/components/assets/PushContextFolderDialog.tsx
+msgid "Push {folderName}"
+msgstr ""
+
+#: src/components/assets/PushContextFolderDialog.tsx
+msgid "Push & notify"
+msgstr ""
+
+#: src/components/assets/PushContextFolderDialog.tsx
+msgid "Push failed"
+msgstr ""
+
+#: src/components/assets/PushContextFolderDialog.tsx
+msgid "Push to {branch} — optionally tell people about it."
+msgstr ""
+
+#: src/components/assets/PushContextFolderDialog.tsx
+msgid "Push to the remote — optionally tell people about it."
+msgstr ""
+
 #: src/components/git/RepoPicker.tsx
 msgid "Pushed"
 msgstr "דחוף"
+
+#: src/components/assets/PushContextFolderDialog.tsx
+msgid "Pushed {folderName}"
+msgstr ""
+
+#: src/components/assets/PushContextFolderDialog.tsx
+msgid "Pushed and message sent"
+msgstr ""
+
+#: src/components/assets/PushContextFolderDialog.tsx
+msgid "Pushed to remote"
+msgstr ""
 
 #: src/components/version-popover/version-popover.tsx
 msgid "PyPI unavailable"
@@ -9805,6 +9949,14 @@ msgstr ""
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Repos"
 msgstr "ריפוזיטוריים"
+
+#: src/components/assets/AddGitFolderDialog.tsx
+msgid "Repository name"
+msgstr ""
+
+#: src/components/assets/AddGitFolderDialog.tsx
+msgid "Repository URL"
+msgstr ""
 
 #: src/components/GitHubConnectionDialog.tsx
 msgid "Repository URL:"
@@ -10552,7 +10704,6 @@ msgstr "חפש צמתים…"
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/assets/ProjectPickerModal.tsx
 #: src/components/open-project-component/open-project-component.tsx
-#: src/components/open-project-component/open-project-component.tsx
 msgid "Search projects…"
 msgstr "חיפוש פרויקטים…"
 
@@ -10614,7 +10765,8 @@ msgid "Searching…"
 msgstr "מחפש…"
 
 #: src/components/flowdata-renderer/SecretMessageComponent.tsx
-#: src/components/project-home/Secrets.tsx
+#: src/components/project-home/BindSecretDialog.tsx
+#: src/components/quick-create/QuickCreateModal.tsx
 msgid "Secret"
 msgstr "סוד"
 
@@ -10680,8 +10832,8 @@ msgid "Select a project"
 msgstr "בחר פרויקט"
 
 #: src/components/open-project-component/open-project-component.tsx
-msgid "Select a project or open a new folder."
-msgstr "בחר פרויקט או פתח תיקייה חדשה."
+#~ msgid "Select a project or open a new folder."
+#~ msgstr "בחר פרויקט או פתח תיקייה חדשה."
 
 #: src/components/project-resource-list/ProjectResourceList.tsx
 #: src/pages/live-status/LiveStatus.tsx
@@ -10789,7 +10941,7 @@ msgstr "בחר פרויקט"
 msgid "Select Projects"
 msgstr "בחר פרויקטים"
 
-#: src/components/project-home/Secrets.tsx
+#: src/components/project-home/BindSecretDialog.tsx
 msgid "Select secret"
 msgstr ""
 
@@ -11000,6 +11152,14 @@ msgstr "הגדר"
 msgid "Set up (runs an agentic process)"
 msgstr "הגדר (מפעיל תהליך אגנטי)"
 
+#: src/components/assets/AddGitFolderDialog.tsx
+msgid "Set up a git-backed context folder for this project."
+msgstr ""
+
+#: src/components/assets/AddGitFolderDialog.tsx
+msgid "Set up an existing git repository as the context folder"
+msgstr ""
+
 #: src/components/settings-view/SettingsView.tsx
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
@@ -11166,6 +11326,10 @@ msgstr "הצג קבצים נסתרים"
 msgid "Show in folder (selects file for drag-and-drop)"
 msgstr "הצג בתיקייה (בוחר קובץ לגרירה)"
 
+#: src/components/task-bar/TaskCard.tsx
+msgid "Show member tasks"
+msgstr ""
+
 #: src/components/workers/WorkerToolbar.tsx
 #: src/components/workers/WorkerToolbar.tsx
 msgid "Show other workers"
@@ -11187,16 +11351,16 @@ msgid "Show scope overrides"
 msgstr "הצג עקיפות טווח"
 
 #: src/components/open-project-component/open-project-component.tsx
-msgid "Show SDK-shipped system projects (Flowpad Assistant)"
-msgstr "הצג פרויקטים של מערכת שנשלחו עם SDK (Flowpad Assistant)"
+#~ msgid "Show SDK-shipped system projects (Flowpad Assistant)"
+#~ msgstr "הצג פרויקטים של מערכת שנשלחו עם SDK (Flowpad Assistant)"
 
 #: src/components/project-resource-list/ProjectResourceList.tsx
 msgid "Show Sessions"
 msgstr "הצג הפעלות"
 
 #: src/components/open-project-component/open-project-component.tsx
-msgid "Show system"
-msgstr "הצג מערכת"
+#~ msgid "Show system"
+#~ msgstr "הצג מערכת"
 
 #: src/components/account/danger-zone.tsx
 msgid "Show system skills"
@@ -11538,6 +11702,10 @@ msgstr ""
 msgid "Start new conversation · {effectiveTitle}"
 msgstr "התחל שיחה חדשה · {effectiveTitle}"
 
+#: src/components/assets/PushContextFolderDialog.tsx
+msgid "Start new conversation · {title}"
+msgstr ""
+
 #: src/components/project-home/ProjectHome.tsx
 msgid "Start new session"
 msgstr ""
@@ -11657,6 +11825,10 @@ msgstr "שורה שמורה"
 msgid "Structure"
 msgstr "מבנה"
 
+#: src/components/quick-create/QuickCreateModal.tsx
+msgid "Sub agent"
+msgstr ""
+
 #: src/pages/live-status/LiveStatus.tsx
 msgid "sub-agent"
 msgstr "תת-סוכן"
@@ -11774,7 +11946,6 @@ msgid "sys"
 msgstr ""
 
 #: src/components/lens-viewer/shared/transcript-features/TranscriptEntryItem.tsx
-#: src/components/open-project-component/open-project-component.tsx
 msgid "system"
 msgstr "מערכת"
 
@@ -11966,6 +12137,10 @@ msgstr "הטרמינל בתוך האפליקציה הוא תמיד ה-shell הר
 #: src/components/lens-viewer/LensViewer.tsx
 msgid "The lens path could not be parsed."
 msgstr "לא ניתן לנתח את נתיב העדשה."
+
+#: src/components/project-home/BindSecretDialog.tsx
+msgid "The local secrets store is not enabled yet."
+msgstr ""
 
 #: src/components/prompt-library/PromptEditDialog.tsx
 msgid "The prompt text…"
@@ -12200,17 +12375,18 @@ msgstr "טיפ: לחץ על Ctrl+Enter כדי לשמור"
 msgid "Title"
 msgstr "כותרת"
 
+#: src/components/assets/PushContextFolderDialog.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "To"
 msgstr "אל"
 
 #: src/components/assets/filters/taskFilters.tsx
-msgid "To Do"
-msgstr "לביצוע"
+#~ msgid "To Do"
+#~ msgstr "לביצוע"
 
 #: src/components/open-project-component/open-project-component.tsx
-msgid "today"
-msgstr "היום"
+#~ msgid "today"
+#~ msgstr "היום"
 
 #: src/components/cron-view/CronForm.tsx
 msgid "Today"
@@ -12561,6 +12737,10 @@ msgstr "בטל נעיצת {0}"
 #: src/components/skills-sidebar/SkillsSidebar.tsx
 msgid "Unpin skill"
 msgstr "הסר הצמדה"
+
+#: src/components/assets/ContextFolderBrowser.tsx
+msgid "Unpushed changes"
+msgstr ""
 
 #: src/components/inbox-view/InboxView.tsx
 #: src/components/inbox-view/InboxView.tsx
@@ -12966,6 +13146,10 @@ msgstr "סימנייה ברוכה הבאה וערך עדכוני ראשון, ז�
 #: src/components/floating-chat/FloatingChatWindow.tsx
 msgid "What can flowpad do for you ?"
 msgstr "מה יכול Flowpad לעשות בשבילך?"
+
+#: src/components/assets/PushContextFolderDialog.tsx
+msgid "What changed? Sent to the recipients below…"
+msgstr ""
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "What do you need help with?"

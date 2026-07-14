@@ -68,8 +68,7 @@ export function parseAssetPointer(pointer: string | null | undefined): AssetPoin
       return { ...empty, mode: 'wiki', typeName: 'markdown', wikiName: ptr.wikiName || null };
     }
     // editor mode: typeName = the editor; vfsPath only exists for the vfs method.
-    const vfsPath =
-      ptr.method === AssetRoutingMethod.VFS ? VFSPath.parse(ptr.value).entitySubPath || null : null;
+    const vfsPath = ptr.method === AssetRoutingMethod.VFS ? VFSPath.parse(ptr.value).entitySubPath || null : null;
     return { ...empty, mode: 'editor', typeName: ptr.editor || null, vfsPath };
   } catch {
     return empty;
@@ -86,11 +85,7 @@ function resolveAssetIcon(iconName: string | null, className = 'h-4 w-4 flex-shr
  * mirrors the URL construction inside useAssetSearch but without the
  * debounce/pagination machinery (we want a single flat list for the tree).
  */
-async function fetchAssetsOfType(
-  typeName: string,
-  filter: AssetFilter,
-  limit: number,
-): Promise<SearchResult[]> {
+async function fetchAssetsOfType(typeName: string, filter: AssetFilter, limit: number): Promise<SearchResult[]> {
   const urlParams = new URLSearchParams();
   urlParams.set('record_type', typeName);
   urlParams.set('offset', '0');
@@ -98,10 +93,11 @@ async function fetchAssetsOfType(
   if (filter.query.length >= 2) urlParams.set('q', filter.query);
   applyFilterToParams(urlParams, filter);
   try {
-    const data = (await apiClient.get(`/search?${urlParams.toString()}`)) as
-      | { results?: SearchResult[] }
-      | null;
-    return data?.results ?? [];
+    const data = (await apiClient.get(`/search?${urlParams.toString()}`)) as { results?: SearchResult[] } | null;
+    const results = data?.results ?? [];
+    // Member tasks (group-task children) live in their group task's editor
+    // ("Member tasks" section), not the asset tree.
+    return typeName === 'task' ? results.filter((r) => !r.parent_id) : results;
   } catch {
     return [];
   }
@@ -122,12 +118,20 @@ function assetNodeId(typeName: string, path: string): string {
 /**
  * Build a child Browseable from a SearchResult.
  */
-function assetChild(typeName: string, iconName: string | null, result: SearchResult, folderBacked: boolean, rootId: string, onAfterDelete?: () => void): Browseable {
+function assetChild(
+  typeName: string,
+  iconName: string | null,
+  result: SearchResult,
+  folderBacked: boolean,
+  rootId: string,
+  onAfterDelete?: () => void,
+): Browseable {
   const label = result.name || basename(result.asset_ref) || '(untitled)';
   // Projects open in their collaboration space rather than the asset editor.
-  const pointer = typeName === 'project'
-    ? DockPointer.forProject(result.record_id)
-    : DockPointer.forAssetEditor(typeName, result.asset_ref);
+  const pointer =
+    typeName === 'project'
+      ? DockPointer.forProject(result.record_id)
+      : DockPointer.forAssetEditor(typeName, result.asset_ref);
   // Projects open in their collaboration space and aren't deleted from the
   // asset sidebar; everything else (markdown, agent, skill, workflow, plan,
   // claude_md, …) routes through the same /graph/<type>/<id> DELETE endpoint.
@@ -294,7 +298,7 @@ export function assetTypeRoot(type: AssetTypeInfo, deps: AssetTypeRootDeps): Bro
       const parsed = parseAssetPointer(p.pointer);
       return parsed.typeName === type.type_name;
     },
-    pathFor: async (p) => {
+    pathFor: (p) => {
       const parsed = parseAssetPointer(p.pointer);
       if (parsed.mode === 'list') {
         // The type's own list view (`list/<type>`) is the active pointer: the
@@ -304,12 +308,12 @@ export function assetTypeRoot(type: AssetTypeInfo, deps: AssetTypeRootDeps): Bro
         // entities into the sidebar — a duplicate `/search` for data already on
         // screen. The root still highlights via `ownsPointer`/active-pointer
         // match, and the user can expand it manually to load children on demand.
-        return [];
+        return Promise.resolve([]);
       }
       if (parsed.mode === null) {
-        return [root];
+        return Promise.resolve([root]);
       }
-      if (!parsed.vfsPath) return [root];
+      if (!parsed.vfsPath) return Promise.resolve([root]);
       const leaf: Browseable = {
         id: assetNodeId(type.type_name, parsed.vfsPath),
         kind: 'asset',
@@ -318,7 +322,7 @@ export function assetTypeRoot(type: AssetTypeInfo, deps: AssetTypeRootDeps): Bro
         hasChildren: false,
         pointer: DockPointer.forAssetEditor(type.type_name, parsed.vfsPath),
       };
-      return [root, leaf];
+      return Promise.resolve([root, leaf]);
     },
   };
   return root;
