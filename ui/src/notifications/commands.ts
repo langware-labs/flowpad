@@ -1,5 +1,5 @@
 import { toast as sonnerToast } from 'sonner';
-import { oauthService, OAUTH_PROVIDERS, copyToClipboard, AgenticProcess } from '@sdk';
+import { copyToClipboard, AgenticProcess } from '@sdk';
 import { gitResolvePrompt } from '@src/components/status-bar/gitResolvePrompt';
 import { closeTerminalTab } from '@src/tabs/useTabs';
 import { useBadgeStore } from './store';
@@ -46,10 +46,6 @@ export function runAction(action: NotificationAction, id: string): void {
 
 // --- Static commands (module-level deps; no React hooks) ---------------------
 
-registerCommand('cloud.signin', () => {
-  void oauthService.connect(OAUTH_PROVIDERS.FLOWPAD_CLOUD);
-});
-
 registerCommand('terminal.terminate', (args) => {
   if (args.typeId) void closeTerminalTab(String(args.typeId));
 });
@@ -75,7 +71,8 @@ registerCommand('notification.dismiss', (_args, ctx) => {
 registerCommand('debug.logHubError', (args) => {
   console.warn('[hub error]', args);
 
-  const str = (v: unknown) => String(v ?? '').trim();
+  const str = (v: unknown) =>
+    (typeof v === 'string' ? v : typeof v === 'number' || typeof v === 'boolean' ? String(v) : '').trim();
   const requestLine = `${str(args.method)} ${str(args.path)}`.trim() + (args.statusCode ? ` → ${args.statusCode}` : '');
   const detail = [requestLine, str(args.message)].filter(Boolean).join('\n');
 
