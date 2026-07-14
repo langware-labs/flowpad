@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Project, Task, TypeId } from '@sdk';
+import { dataContext, Project, Task, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { useProjectContextFolders } from '@src/hooks/use-project-context-folders';
 
@@ -18,7 +18,12 @@ export function useTaskGitAttachmentFolders(task: Task | null | undefined): {
   loosePaths: string[];
   isGitPath: (path: string) => boolean;
 } {
-  const { data: project } = useEntity<Project>(task?.project_id ? new TypeId(Project.type, task.project_id) : null);
+  // Tasks created from the TaskBar may carry no project_id — fall back to the
+  // currently scoped project, whose context folders are what the task's
+  // attachments were picked from. Without this, ZERO git dirs resolve and a
+  // git context folder gets misclassified as a loose FILE attachment.
+  const projectId = task?.project_id ?? dataContext.project?.id ?? null;
+  const { data: project } = useEntity<Project>(projectId ? new TypeId(Project.type, projectId) : null);
   const { contextDirInfos } = useProjectContextFolders(project ?? null);
 
   return useMemo(() => {

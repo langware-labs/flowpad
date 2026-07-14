@@ -17,8 +17,10 @@ export function useTaskAssignmentMessage(task: Task | null | undefined) {
   const { send, busy } = useSendToConversation();
   const { gitFolderTypeids, loosePaths } = useTaskGitAttachmentFolders(task);
 
-  /** Read each loose attachment off the local VFS as a regular File. A path
-   *  that can't be read (deleted/moved since attach) is skipped — the message
+  /** Read each loose attachment off the local VFS as a regular File. Only
+   *  real FILES ride — a directory can't be a message attachment (a folder
+   *  outside the context dirs is simply not sendable this way). A path that
+   *  can't be read (deleted/moved since attach) is skipped — the message
    *  still goes out with the rest. */
   const collectLooseFiles = useCallback(async (): Promise<File[]> => {
     const cn = dataContext.computeNodeTypeId;
@@ -28,9 +30,15 @@ export function useTaskAssignmentMessage(task: Task | null | undefined) {
       try {
         const rel = VFSPath.fromMachinePath(p, cn).entitySubPath;
         if (!rel) continue;
+        // Directory guard: stat via the parent listing; skip non-files.
+        const name = p.split('/').pop() || '';
+        const parentRel = rel.includes('/') ? rel.slice(0, rel.lastIndexOf('/')) : '/';
+        const listing = await fsManager.listDirectory(cn, parentRel);
+        const item = listing.items.find((i) => i.name === name);
+        if (!item || item.is_dir) continue;
         const blob = await fsManager.download(cn, rel, { asBlob: true });
         if (blob instanceof Blob) {
-          files.push(new File([blob], p.split('/').pop() || 'attachment'));
+          files.push(new File([blob], name || 'attachment'));
         }
       } catch {
         // Unreadable attachment (moved/deleted) — send the rest.
