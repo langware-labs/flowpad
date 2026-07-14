@@ -32,7 +32,16 @@ import { VFSPath } from '../utils/vfs-path';
 import { AgenticContext, IAgenticProcessOptions, ISpawnWorkerOptions, PermissionMode } from './agentic-context';
 import { PROCESS_STATUS_KIND, ProcessStatusReport, parseStatusReport } from './process-status-report';
 import type { ProcessKind } from './process-types';
-import { ProcessIconKey, ProcessStatus, WorkerMode, WorkerStatus, isProcessRunning, isReadyForInput, isWorkerRunning, isWorkerTerminal } from './agentic-types';
+import {
+  ProcessIconKey,
+  ProcessStatus,
+  WorkerMode,
+  WorkerStatus,
+  isProcessRunning,
+  isReadyForInput,
+  isWorkerRunning,
+  isWorkerTerminal,
+} from './agentic-types';
 import type {
   TranscriptFormat as TranscriptFormatType,
   TranscriptSource as TranscriptSourceType,
@@ -134,9 +143,7 @@ interface HistoryMatchCandidate {
  * `historyFallbackKey` instead.
  */
 function historyIdentityKey(item: FlowData): string | null {
-  const processEntry = item.processEntry as
-    | { transcript_entry?: { id?: unknown; kind?: unknown } }
-    | null;
+  const processEntry = item.processEntry as { transcript_entry?: { id?: unknown; kind?: unknown } } | null;
   const transcriptEntry = processEntry?.transcript_entry;
   const id = transcriptEntry?.id ?? item.attributes['transcript-entry-id'];
   if (id === undefined || id === null || id === '') return null;
@@ -555,7 +562,12 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
         ...(opts.processType ? { processType: opts.processType } : {}),
         ...(opts.target ? { targetVfsPath: opts.target } : {}),
       },
-      { visible: ptyMode, pty_mode: ptyMode, watchProcess: false, ...(opts.launchPrompt ? { launchPrompt: opts.launchPrompt } : {}) },
+      {
+        visible: ptyMode,
+        pty_mode: ptyMode,
+        watchProcess: false,
+        ...(opts.launchPrompt ? { launchPrompt: opts.launchPrompt } : {}),
+      },
     );
     process.openTerminalDock();
     return process;
@@ -1384,6 +1396,29 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    *  state. Set by ``_handleError``; never set autonomously by the SDK. */
   private _error: Error | null = null;
 
+  /**
+   * Client-side settlement of the current turn. ``pending`` masks a terminal
+   * raw status left over from the previous turn until the backend-owned
+   * ``busy`` edge closes the new one. ``complete`` / ``error`` also let a
+   * headless crash settle consumers when the provider transcript never writes
+   * a terminal record and therefore leaves ``workerStatus`` stale.
+   */
+  private _turnOutcome: 'pending' | 'complete' | 'error' | null = null;
+
+  /** Per-turn terminal frame observed on the headless FlowData stream. */
+  private _observedTurnEnd: 'complete' | 'error' | null = null;
+  private _observedTurnError: Error | null = null;
+
+  /**
+   * True once this client has seen ANY FlowData frame for the current headless
+   * turn — i.e. it is streaming the turn and its END frame is still expected.
+   * Distinguishes a streaming client (wait for END; never settle a pending turn
+   * from a possibly-stale raw worker_status) from a passive client that only
+   * watches entity busy edges (no stream, so it must settle from worker_status
+   * on busy:false or it hangs). Reset per turn by ``beginHeadlessTurn``.
+   */
+  private _observedTurnFrame: boolean = false;
+
   /** History loading state */
   private _historyLoaded: boolean = false;
   private _historyLoading: Promise<void> | null = null;
@@ -1587,13 +1622,21 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   }
 
   /**
-   * Whether this process has reached a terminal worker_status (complete /
-   * error / interrupted). Derived from ``workerStatus`` — the SDK keeps no
-   * separate completion flag; backend's projection is the single source of
-   * truth and we mirror it.
+   * Whether this process has reached logical turn completion.
+   *
+   * ``workerStatus`` is the raw transcript projection, so it may become
+   * terminal while the headless driver is still flushing its final FlowData.
+   * The backend-owned ``busy`` projection is the turn-lifecycle authority:
+   * only terminal + idle means consumers may close their output stream.
    */
   get completed(): boolean {
-    return isWorkerTerminal(this.workerStatus);
+    if (this.busy || this._turnOutcome === 'pending') return false;
+    return (
+      this._turnOutcome === 'complete' ||
+      this._turnOutcome === 'error' ||
+      this.status === ProcessStatus.FAILED ||
+      isWorkerTerminal(this.workerStatus)
+    );
   }
 
   /**
@@ -1601,6 +1644,80 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    */
   get error(): Error | null {
     return this._error;
+  }
+
+  /** Resolve an already-settled failure even when no live error event was seen. */
+  private completionError(): Error | null {
+    if (this._error) return this._error;
+    if (this.status === ProcessStatus.FAILED) return new Error('Process failed');
+    switch (this.workerStatus) {
+      case WorkerStatus.ERROR:
+        return new Error('Process error');
+      case WorkerStatus.INTERRUPTED:
+        return new Error('Process was terminated');
+      case WorkerStatus.INACTIVE:
+        return new Error('Process became inactive before completing');
+      case WorkerStatus.API_TIMEOUT:
+        return new Error('Process timed out');
+      default:
+        return null;
+    }
+  }
+
+  /** Start a headless turn without trusting a terminal status from its predecessor. */
+  private beginHeadlessTurn(): void {
+    this._turnOutcome = 'pending';
+    this._observedTurnEnd = null;
+    this._observedTurnError = null;
+    this._observedTurnFrame = false;
+    this._error = null;
+  }
+
+  /**
+   * Observe the current print-mode turn's own stream terminator. Unlike the raw
+   * transcript projection, END belongs to this exact worker invocation, so an
+   * inherited COMPLETE from a resumed/forked session cannot settle the new turn.
+   */
+  private observeHeadlessTurnFrame(flowData: FlowData): void {
+    if (this.pty_mode) return;
+
+    // A separately hydrated watcher may miss/coalesce the busy-start entity
+    // edge. Its first live worker frame still establishes a new turn locally.
+    if (this._turnOutcome === null) this.beginHeadlessTurn();
+    if (this._turnOutcome !== 'pending') return;
+    // A frame for the pending turn means this client is streaming it — its END
+    // frame is the authoritative terminator, so the busy:false edge must not
+    // settle it from a raw worker_status before that END arrives.
+    this._observedTurnFrame = true;
+
+    if (flowData.elementType === FlowElementTypes.ERROR) {
+      this._observedTurnError = new Error(String(flowData.content || 'Headless process error'));
+    } else if (
+      flowData.elementType === FlowElementTypes.STATUS &&
+      flowData.attributes?.subtype === 'exit-error'
+    ) {
+      this._observedTurnError = new Error(String(flowData.content || 'Headless process exited with an error'));
+    } else if (
+      flowData.elementType === FlowElementTypes.RESULT &&
+      flowData.attributes?.outcome === 'error'
+    ) {
+      this._observedTurnError = new Error('Headless process reported an error result');
+    }
+
+    if (flowData.elementType === FlowElementTypes.END) {
+      this._observedTurnEnd = this._observedTurnError ? 'error' : 'complete';
+      this.settleObservedHeadlessTurn();
+    }
+  }
+
+  /** Finalize only after both this turn's END frame and backend idle are visible. */
+  private settleObservedHeadlessTurn(): void {
+    if (this.busy || this._turnOutcome !== 'pending' || this._observedTurnEnd === null) return;
+    if (this._observedTurnEnd === 'error') {
+      this._handleError(this._observedTurnError ?? new Error('Headless process ended with an error'));
+    } else {
+      this._handleComplete();
+    }
   }
 
   /**
@@ -1617,22 +1734,14 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    *   console.log(`[${flowData.elementType}]`, flowData.data);
    * }
    * ```
-   */
+  */
   async *output(): AsyncGenerator<FlowData, void, unknown> {
-    // First yield all already-collected outputs from the flowDataStream
-    for (const data of this.flowDataStream.items) {
-      yield data;
-    }
-
-    // If the worker has already reached a terminal state, we're done.
-    if (isWorkerTerminal(this.workerStatus)) {
-      return;
-    }
-
-    // Wait for more outputs via event-driven promise queue
+    // Subscribe before yielding the existing snapshot. Every yield returns
+    // control to the event loop; subscribing afterwards would lose frames that
+    // arrive while the consumer is processing those existing items.
     const queue: FlowData[] = [];
     let resolver: ((v: FlowData | null) => void) | null = null;
-    let completed = false;
+    let completed = this.completed;
 
     const dataHandler = (data: FlowData) => {
       if (resolver) {
@@ -1662,14 +1771,29 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     const unsubData = this.on('flow_data', dataHandler);
     const unsubComplete = this.on('complete', completeHandler);
     const unsubError = this.on('error', errorHandler);
+    // No async boundary exists between listener registration and this copy, so
+    // a live frame belongs either to the snapshot or the queue, never both.
+    const existing = [...this.flowDataStream.items];
 
     try {
-      while (!completed) {
-        // Check queue first
+      for (const data of existing) {
+        yield data;
+      }
+
+      while (true) {
+        // Drain every frame that arrived before the terminal edge. A backend
+        // can emit the final CHAT/RESULT burst and COMPLETE back-to-back; the
+        // generator may still be paused at its previous yield while those
+        // frames queue. Checking `completed` before the queue would silently
+        // discard that terminal burst.
         const queued = queue.shift();
         if (queued !== undefined) {
           yield queued;
           continue;
+        }
+
+        if (completed) {
+          break;
         }
 
         // Wait for next event
@@ -1678,7 +1802,9 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
         });
 
         if (data === null) {
-          break;
+          // A terminal event and a final frame can be dispatched back-to-back.
+          // Loop once more so the queue is drained before observing completion.
+          continue;
         }
         yield data;
       }
@@ -1828,9 +1954,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
         // callers only force-reload when no turn is in flight (post-switchMode
         // reconcile behind the isReadyForInput toggle gate; the chat pane's
         // useTurnCompletionReconcile on the busy→ready edge).
-        const newItems = force
-          ? historyItems
-          : reconcileHistoryOverlap(historyItems, this.flowDataStream.items);
+        const newItems = force ? historyItems : reconcileHistoryOverlap(historyItems, this.flowDataStream.items);
         if (newItems.length > 0) this.flowDataStream.append(newItems);
         // Close any open groups after loading history
         this.flowDataStream.closeOpenGroups();
@@ -1839,12 +1963,10 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
         // terminal state by the time we mounted. Fire the matching
         // handler so consumers waiting on the ``complete`` / ``error``
         // event resolve instead of hanging.
-        if (isWorkerTerminal(this.workerStatus)) {
-          if (this.workerStatus === WorkerStatus.COMPLETE) {
-            this._handleComplete();
-          } else {
-            this._handleError(new Error(`Process ended with worker status: ${this.workerStatus}`));
-          }
+        if (this.completed && this._turnOutcome === null) {
+          const error = this.completionError();
+          if (error) this._handleError(error);
+          else this._handleComplete();
         }
 
         console.log(`[AgenticProcess] Loaded ${historyItems.length} history items for process ${this.id}`);
@@ -1909,8 +2031,9 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * @throws Error if execution fails
    */
   async waitForComplete(): Promise<void> {
-    if (isWorkerTerminal(this.workerStatus)) {
-      if (this._error) throw this._error;
+    if (this.completed) {
+      const error = this.completionError();
+      if (error) throw error;
       return;
     }
 
@@ -2197,15 +2320,21 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       throw new Error('Process failed to start');
     }
 
-    if (isWorkerRunning(this.workerStatus)) {
+    if (this.busy || isWorkerRunning(this.workerStatus)) {
       throw new Error('Process is already running');
     }
 
-    // Clear the cached error from any prior turn. We do NOT touch
-    // ``workerStatus`` — that's backend-owned. ``headless_prompt`` on the
-    // server flips its projection to ``running`` and broadcasts, and the
-    // resulting entity-op is what the SDK mirrors as the new turn's edge.
-    this._error = null;
+    // Do not trust the prior session's raw terminal status for a new headless
+    // invocation. The current turn settles from its own FlowData END frame.
+    const priorTurnState = {
+      outcome: this._turnOutcome,
+      error: this._error,
+      observedEnd: this._observedTurnEnd,
+      observedError: this._observedTurnError,
+      observedFrame: this._observedTurnFrame,
+    };
+    if (!this.pty_mode) this.beginHeadlessTurn();
+    else this._error = null;
 
     // Optimistically echo user message into the stream
     this.appendUserMessage(instruction);
@@ -2214,7 +2343,18 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     const actionInfo = new ActionInfo('execute', AgenticProcess.type, this.id, 'POST');
     actionInfo.bodyParameters = { instruction, ...(workerSessionId ? { worker_session_id: workerSessionId } : {}) };
 
-    await dataManager.callAction(actionInfo);
+    try {
+      await dataManager.callAction(actionInfo);
+    } catch (error) {
+      // No backend turn was accepted, so do not leave the local pending latch
+      // masking the process's last authoritative status.
+      this._turnOutcome = priorTurnState.outcome;
+      this._error = priorTurnState.error;
+      this._observedTurnEnd = priorTurnState.observedEnd;
+      this._observedTurnError = priorTurnState.observedError;
+      this._observedTurnFrame = priorTurnState.observedFrame;
+      throw error;
+    }
 
     // If sync, wait for execution to complete
     if (sync) {
@@ -2231,8 +2371,9 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * transition; the SDK only reacts.
    */
   private async waitForExecutionComplete(): Promise<void> {
-    if (isWorkerTerminal(this.workerStatus)) {
-      if (this._error) throw this._error;
+    if (this.completed) {
+      const error = this.completionError();
+      if (error) throw error;
       return;
     }
 
@@ -2261,8 +2402,9 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
 
       // Race: a terminal broadcast could land between the entry check above
       // and listener installation. Re-check after subscribing.
-      if (isWorkerTerminal(this.workerStatus)) {
-        done(this._error ? 'reject' : 'resolve', this._error ?? undefined);
+      if (this.completed) {
+        const error = this.completionError();
+        done(error ? 'reject' : 'resolve', error ?? undefined);
       }
     });
   }
@@ -2273,28 +2415,24 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * Use this after async execute() calls to wait for completion.
    */
   async wait(): Promise<void> {
-    if (isWorkerTerminal(this.workerStatus)) {
+    if (this.completed) {
+      const error = this.completionError();
+      if (error) throw error;
       return;
     }
 
     return new Promise((resolve, reject) => {
       const checkState = () => {
-        if (this.workerStatus === WorkerStatus.COMPLETE) {
+        if (!this.completed) return;
+        const error = this.completionError();
+        if (!error) {
           unsubState();
           unsubError();
           resolve();
-        } else if (this.workerStatus === WorkerStatus.ERROR) {
+        } else {
           unsubState();
           unsubError();
-          reject(new Error(this._error?.message || 'Process error'));
-        } else if (this.workerStatus === WorkerStatus.INTERRUPTED) {
-          unsubState();
-          unsubError();
-          reject(new Error('Process was terminated'));
-        } else if (this.status === ProcessStatus.FAILED) {
-          unsubState();
-          unsubError();
-          reject(new Error(this._error?.message || 'Process failed'));
+          reject(error);
         }
       };
 
@@ -2679,6 +2817,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       return;
     }
     super.handleFlowData(flowData);
+    this.observeHeadlessTurnFrame(flowData);
   }
 
   /**
@@ -2773,7 +2912,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     // Wait for flow data until the process completes
     const queue: FlowData[] = [];
     let resolver: ((v: FlowData | null) => void) | null = null;
-    let stepComplete = false;
+    let stepComplete = this.completed;
 
     const dataHandler = (data: FlowData) => {
       if (resolver) {
@@ -2785,7 +2924,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     };
 
     const stateHandler = () => {
-      if (isWorkerTerminal(this.workerStatus)) {
+      if (this.completed) {
         stepComplete = true;
         if (resolver) {
           resolver(null);
@@ -2802,12 +2941,21 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       }
     };
 
+    const errorHandler = () => {
+      stepComplete = true;
+      if (resolver) {
+        resolver(null);
+        resolver = null;
+      }
+    };
+
     const unsubData = this.on('flow_data', dataHandler);
     const unsubState = this.on('state_change', stateHandler);
     const unsubComplete = this.on('complete', completeHandler);
+    const unsubError = this.on('error', errorHandler);
 
     try {
-      while (!stepComplete) {
+      while (true) {
         // Check queue first
         const queued = queue.shift();
         if (queued !== undefined) {
@@ -2815,8 +2963,12 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
           continue;
         }
 
+        if (stepComplete) {
+          break;
+        }
+
         // Worker already terminal — drain and exit.
-        if (isWorkerTerminal(this.workerStatus)) {
+        if (this.completed) {
           break;
         }
 
@@ -2826,7 +2978,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
         });
 
         if (data === null) {
-          break;
+          continue;
         }
         yield data;
       }
@@ -2834,6 +2986,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       unsubData();
       unsubState();
       unsubComplete();
+      unsubError();
     }
   }
 
@@ -2857,6 +3010,8 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * @internal
    */
   protected onEntityUpdate(data: Partial<IAgenticProcess>): void {
+    const wasBusy = this.busy;
+    let workerStatusChanged = false;
     // Reflected ``queue`` must REPLACE, not merge. ``deepAssign`` (which runs
     // right after this hook) recurses into arrays and merges them by index,
     // never shrinking the target — so a dequeue/clear would leave stale tail
@@ -2902,14 +3057,22 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     if (pendingVisible !== undefined && 'visible' in data && data.visible !== pendingVisible) {
       delete data.visible;
     }
+    const updateIsHeadless = (data.pty_mode ?? this.pty_mode) === false;
+    if (updateIsHeadless && data.busy === true && !wasBusy) {
+      // Reset before applying any failure fields from the same payload, so a
+      // combined {busy:true,status:failed} update cannot clear its own error.
+      this.beginHeadlessTurn();
+    }
     // Skip no-op transitions: castAndDeepAssign() runs this hook for every
     // WS entity-op AND for every REST-response write-through, so the same
     // status often arrives many times. Without the equality guard, downstream
     // `state_change` listeners (ProcessToolbar, useProcessState, useActiveTerminals)
     // would re-render at the broadcast frequency even when nothing changed.
+    let statusEnteredFailed = false;
     if (data.status && data.status !== this.status) {
       const oldStatus = this.status;
       this.status = data.status as ProcessStatus;
+      statusEnteredFailed = this.status === ProcessStatus.FAILED;
       this.emit('state_change', {
         field: 'status',
         oldValue: oldStatus,
@@ -2919,9 +3082,6 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       // Note: ``Shell`` also emits ``'status'`` for WS connection state — different
       // object, benign name overlap.
       this.emit('status', this.status, oldStatus);
-      if (this.status === ProcessStatus.FAILED && !isWorkerTerminal(this.workerStatus)) {
-        this._handleError(new Error(`Process ended with lifecycle status: ${this.status}`));
-      }
     }
     // Guard on the value being a real boolean (not truthiness) so a
     // ``true → false`` turn-end flip still applies and emits — else the
@@ -2938,16 +3098,54 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     if (data.worker_status && data.worker_status !== this.workerStatus) {
       const oldWorker = this.workerStatus;
       this.workerStatus = data.worker_status as WorkerStatus;
+      workerStatusChanged = true;
       this.emit('state_change', {
         field: 'workerStatus',
         oldValue: oldWorker,
         newValue: this.workerStatus,
       });
-      if (this.workerStatus === WorkerStatus.COMPLETE) {
-        this._handleComplete();
-      } else if (this.workerStatus === WorkerStatus.ERROR || this.workerStatus === WorkerStatus.INTERRUPTED) {
-        this._handleError(new Error(`Process ended with worker status: ${this.workerStatus}`));
+    }
+
+    // Apply every wire field before deciding settlement. A single entity-op can
+    // carry lifecycle, busy, and worker-status changes together.
+    //
+    // Settle from FAILED only on the TRANSITION into it, never on a statusless
+    // op that merely observes an already-FAILED status. A fresh headless turn
+    // (beginHeadlessTurn above, on the busy:true edge) leaves ``status`` at a
+    // stale FAILED inherited from the prior turn; firing ``_handleError`` on
+    // every subsequent name-stamp / transcript-debounce op would re-settle that
+    // fresh pending turn as an error.
+    if (statusEnteredFailed) {
+      this._handleError(new Error(`Process ended with lifecycle status: ${this.status}`));
+    }
+    if (this.busy) return;
+
+    // A current headless invocation settles from its OWN FlowData END marker,
+    // not a raw worker_status that may be inherited from a resumed/forked turn.
+    // On the busy:false edge while the turn is still pending:
+    //   - END already observed → settle from it now that the backend is idle.
+    //   - This client is streaming the turn (saw frames) but END hasn't arrived
+    //     yet → keep waiting; that END is the authoritative per-turn terminator.
+    //   - Passive client (only entity edges, never any FlowData) → it will never
+    //     see an END frame, so fall through to the worker_status fallback below
+    //     instead of pinning ``completed`` at false forever.
+    if (!this.pty_mode && this._turnOutcome === 'pending') {
+      if (this._observedTurnEnd !== null) {
+        this.settleObservedHeadlessTurn();
+        return;
       }
+      if (this._observedTurnFrame) return;
+    }
+
+    if (
+      this._turnOutcome !== 'complete' &&
+      this._turnOutcome !== 'error' &&
+      (wasBusy || workerStatusChanged) &&
+      isWorkerTerminal(this.workerStatus)
+    ) {
+      const error = this.completionError();
+      if (error) this._handleError(error);
+      else this._handleComplete();
     }
   }
 
@@ -2961,8 +3159,13 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * call site in ``onEntityUpdate`` is gated by ``newValue !== oldValue`` so
    * this is naturally one-per-edge.
    * @internal
-   */
+  */
   _handleComplete(): void {
+    if (this._turnOutcome === 'complete' || this._turnOutcome === 'error') return;
+    this._turnOutcome = 'complete';
+    this._observedTurnEnd = 'complete';
+    this._observedTurnError = null;
+    this._error = null;
     this.flowDataStream.closeOpenGroups();
     this.flowDataStream.markComplete();
     this.emit('complete');
@@ -2973,8 +3176,12 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * state. Same authority model as ``_handleComplete``: backend decides;
    * SDK reacts.
    * @internal
-   */
+  */
   _handleError(error: Error): void {
+    if (this._turnOutcome === 'complete' || this._turnOutcome === 'error') return;
+    this._turnOutcome = 'error';
+    this._observedTurnEnd = 'error';
+    this._observedTurnError = error;
     this._error = error;
     this.emit('error', error);
   }

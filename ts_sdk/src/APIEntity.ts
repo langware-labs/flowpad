@@ -741,7 +741,13 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     if (!Array.isArray(scope)) {
       scope = [scope];
     }
-    const entity = await dataManager.save<T>(this.typeId, scope);
+    // Capture the user's intended write NOW. DataManager serializes saves per
+    // entity, so this call may wait behind an older request; the shared cached
+    // entity can be mutated in that interval by the older response or a WS
+    // DataOp. A JSON round-trip is also the exact wire normalization Axios
+    // would perform (Dates -> strings, undefined fields omitted).
+    const entityJson = JSON.parse(JSON.stringify(this.toJSON())) as IEntity;
+    const entity = await dataManager.save<T>(this.typeId, scope, entityJson);
     if (isNew) {
       this.markAsExpanded();
       this._isLoaded = true;

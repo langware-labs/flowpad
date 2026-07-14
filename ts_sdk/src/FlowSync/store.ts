@@ -63,7 +63,15 @@ class EntityRef<T> {
    */
   notFound: boolean = false;
   entityPendingPromises: PendingPromise<T>[] = [];
-  pendingUpdate: any = null;
+  /** Latest WS state received while an HTTP read/save owns this ref. */
+  pendingUpdate: IEntity | null = null;
+  /**
+   * Save serialization is independent of ``status``. Status is observable
+   * cache state and can be touched by reads/notifications; it must never be
+   * the mutex that decides whether two writes may overlap.
+   */
+  saveTail: Promise<void> = Promise.resolve();
+  saveInFlight: boolean = false;
 
   constructor(entity: T | null = null) {
     this.entity = entity;
@@ -501,6 +509,16 @@ export class DataManager<T extends Manageable> extends EventEmitter {
 
     switch (op) {
       case 'create': {
+        const existingRef = this.entities.get(typeId);
+        if (existingRef && (existingRef.saveInFlight || existingRef.status === EntityStatus.FETCHING)) {
+          // An in-flight save OR GET owns this ref (same guard as the 'update'
+          // branch). Applying the create now would let a slower GET response
+          // (whose body predates the create) merge back on top and erase it.
+          // Buffer instead; fetchByTypeId/save flush it via applyPendingUpdate
+          // once the request resolves, so the create's fields win.
+          this.bufferPendingUpdate(existingRef, data);
+          break;
+        }
         const entity = this.castAndDeepAssign(data);
         this.register_new_entity(typeId, entity);
         this._notifyAllAliases(typeId, entity, entity);
@@ -511,9 +529,11 @@ export class DataManager<T extends Manageable> extends EventEmitter {
           return;
         }
         const ref = this.getRef(typeId);
-        if (!ref.entity) {
-          // Entity fetch is in-flight — buffer the update; fetchByTypeId will apply it on completion
-          ref.pendingUpdate = data;
+        if (ref.saveInFlight || ref.status === EntityStatus.FETCHING || !ref.entity) {
+          // An HTTP read/save owns this ref. Buffer the update and leave the
+          // status FETCHING: marking READY here lets a later save overlap the
+          // active request, while merging now lets an older response erase it.
+          this.bufferPendingUpdate(ref, data);
           return;
         }
         ref.entity = this.castAndDeepAssign(data);
@@ -532,6 +552,21 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       }
     }
     this.resolvePendingRequests();
+  }
+
+  private bufferPendingUpdate(ref: EntityRef<T>, data: IEntity): void {
+    // DataOps are normally full entities, but merging also preserves fields
+    // when a producer sends a partial update. Later arrivals win per field.
+    ref.pendingUpdate = ref.pendingUpdate ? { ...ref.pendingUpdate, ...data } : { ...data };
+  }
+
+  private applyPendingUpdate(typeId: TypeId, ref: EntityRef<T>): boolean {
+    if (!ref.pendingUpdate || !ref.entity) return false;
+    const pending = ref.pendingUpdate;
+    ref.pendingUpdate = null;
+    ref.entity = this.castAndDeepAssign(pending);
+    this._notifyAllAliases(typeId, ref.entity, ref.entity);
+    return true;
   }
 
   async saveAllDirty() {
@@ -958,10 +993,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     ref.status = EntityStatus.READY;
 
     // Apply any update that arrived via WebSocket while the GET was in-flight
-    if (ref.pendingUpdate) {
-      ref.entity = this.castAndDeepAssign(ref.pendingUpdate);
-      ref.pendingUpdate = null;
-    }
+    this.applyPendingUpdate(typeId, ref);
 
     return ref.entity as U | null;
   }
@@ -1078,15 +1110,39 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     })) as any;
   }
 
-  public async save<U extends T>(selfTypeId: TypeId, scope: TypeId[] = []): Promise<U> {
+  public async save<U extends T>(selfTypeId: TypeId, scope: TypeId[] = [], entityJson?: IEntity): Promise<U> {
     const ref = this.entities.get(selfTypeId);
     if (!ref) {
       throw new Error('Can not create, Entity not defined');
     }
-    // Serialize on any in-flight request for this ref. A loop, not a single
-    // await: a concurrent save() can flip the ref back to FETCHING between our
-    // wake-up and our own status check. A rejection belongs to the *other*
-    // request — this save is a fresh attempt, so swallow it and re-check.
+    const entity = ref.entity;
+    if (!entity) {
+      throw new Error('Can not create, Empty ref entity');
+    }
+    // APIEntity supplies a snapshot captured at its save() call. Keep the
+    // fallback for internal callers such as saveAllDirty, and clone either
+    // form before enqueueing so no caller can mutate a queued payload.
+    const capturedJson = JSON.parse(JSON.stringify(entityJson ?? entity.toJSON())) as IEntity;
+    const capturedScope = [...scope];
+
+    const operation = ref.saveTail.then(() => this.saveSnapshot<U>(ref, selfTypeId, capturedScope, capturedJson));
+    // A failed write rejects its own caller but must not poison the queue.
+    ref.saveTail = operation.then(
+      () => undefined,
+      () => undefined,
+    );
+    return await operation;
+  }
+
+  private async saveSnapshot<U extends T>(
+    ref: EntityRef<T>,
+    selfTypeId: TypeId,
+    scope: TypeId[],
+    entityJson: IEntity,
+  ): Promise<U> {
+    // A GET/refresh may already own the ref. Save ordering itself is handled
+    // by saveTail above; this loop only preserves the existing read-vs-write
+    // exclusion contract.
     while (ref.status === EntityStatus.FETCHING) {
       await this.waitForTypeId(selfTypeId).catch(() => {});
     }
@@ -1095,7 +1151,6 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     if (!entity) {
       throw new Error('Can not create, Empty ref entity');
     }
-    const entityJson = entity.toJSON();
     const entityType = entity.typeId.type;
     if (!entityType) {
       throw new Error('Can not create, Entity type not found');
@@ -1104,10 +1159,11 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     for (const parent_type_id of scope) {
       scope_path = `${scope_path}/${parent_type_id.type}/${parent_type_id.id}`;
     }
+    ref.saveInFlight = true;
+    ref.status = EntityStatus.FETCHING;
     try {
       let newEntityJson: IEntity | null = null;
       if (!entity.saved) {
-        ref.status = EntityStatus.FETCHING;
         const endpoint = `${GRAPH_API_PREFIX}${scope_path}/${entity.typeId.type}`;
         newEntityJson = (await apiClient.post<IEntity>(endpoint, entityJson)) as IEntity;
       } else {
@@ -1118,7 +1174,6 @@ export class DataManager<T extends Manageable> extends EventEmitter {
         if (!entity.typeId.id) {
           throw new Error('Entity missing id on ref');
         }
-        ref.status = EntityStatus.FETCHING;
         const endpoint = `${GRAPH_API_PREFIX}${scope_path}/${entity.typeId.type}/${entity.typeId.id}`;
         // A remote entity's save reflects to the hub: the server forwards the PUT,
         // merges the hub's authoritative response (incl. server times) back onto the
@@ -1132,6 +1187,9 @@ export class DataManager<T extends Manageable> extends EventEmitter {
         throw new Error('No data returned');
       }
       ref.entity = this.castAndDeepAssign(newEntityJson);
+      // A WS update may have arrived after the request began. Apply it after
+      // the HTTP snapshot so the older response cannot erase newer state.
+      this.applyPendingUpdate(selfTypeId, ref);
       ref.status = EntityStatus.READY;
       ref.error = null;
       if (ref.entity) {
@@ -1145,8 +1203,16 @@ export class DataManager<T extends Manageable> extends EventEmitter {
         ref.error = error;
         console.log(error.stack);
       }
+      // Preserve an authoritative update even when the HTTP transport failed.
+      // The save promise still rejects, but the cache no longer discards WS
+      // state that arrived while the request was active.
+      if (this.applyPendingUpdate(selfTypeId, ref)) {
+        ref.status = EntityStatus.READY;
+        ref.error = null;
+      }
       throw error;
     } finally {
+      ref.saveInFlight = false;
       this.resolvePendingRequests();
     }
   }
