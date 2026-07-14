@@ -96,7 +96,19 @@ def test_interactive_spawn_args_use_bare_copilot():
         "claude-haiku-4.5",
         "--resume=abc",
     ]
-    assert env == {}
+    assert env == {"COPILOT_ALLOW_ALL": "true"}
+
+
+def test_interactive_non_bypass_does_not_inject_folder_trust_override():
+    cmd = CopilotCliOptions(
+        workdir="/repo",
+        json_stream=False,
+        permission_mode="default",
+    )
+
+    _argv, env = cmd.to_spawn_args()
+
+    assert "COPILOT_ALLOW_ALL" not in env
 
 
 def test_to_json_roundtrip():

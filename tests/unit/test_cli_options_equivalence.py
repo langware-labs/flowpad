@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import sys
 from pathlib import Path
 
@@ -129,6 +130,12 @@ _CASES = [
 )
 def test_cli_options_match_golden(vendor, cid, kwargs, platform, monkeypatch):
     monkeypatch.setattr(sys, "platform", platform)  # restored after the test
+    # argv[0] is basename-normalized to "claude" in _capture, so PATH resolution
+    # is irrelevant to the golden. Stub shutil.which: on Python 3.12+ the real
+    # which() dispatches to Windows-only _winapi under a faked sys.platform=="win32"
+    # and raises AttributeError on non-Windows hosts. None → _resolve_binary returns
+    # ["claude"], reproducing the frozen golden byte-for-byte on every platform.
+    monkeypatch.setattr(shutil, "which", lambda *a, **k: None)
     golden = json.loads(GOLDEN.read_text(encoding="utf-8"))
     assert _capture(vendor, kwargs, platform) == golden[vendor][cid][platform], (
         f"{vendor}/{cid}/{platform} diverged from the frozen golden — the consolidation changed output"

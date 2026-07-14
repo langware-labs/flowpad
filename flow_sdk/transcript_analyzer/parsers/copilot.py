@@ -18,9 +18,7 @@ from ..entries.usage import UsageEntry
 from ..entry import TranscriptEntry
 
 
-def _tool_or_skill_entry(
-    *, tool_name: str, tool_use_id: str, tool_input: dict, **base: Any
-) -> TranscriptEntry:
+def _tool_or_skill_entry(*, tool_name: str, tool_use_id: str, tool_input: dict, **base: Any) -> TranscriptEntry:
     """Copilot's native ``skill`` tool maps onto :class:`SkillCallEntry`;
     every other tool stays a generic :class:`ToolUseEntry`."""
     if str(tool_name).lower() == "skill":
@@ -32,9 +30,7 @@ def _tool_or_skill_entry(
             tool_input=ti,
             **base,
         )
-    return ToolUseEntry(
-        tool_name=tool_name, tool_use_id=tool_use_id, tool_input=tool_input, **base
-    )
+    return ToolUseEntry(tool_name=tool_name, tool_use_id=tool_use_id, tool_input=tool_input, **base)
 
 
 class CopilotParser:
@@ -67,15 +63,22 @@ class CopilotParser:
 
         if event_type == "system.message":
             data = _data(raw)
-            return [SystemEntry(
-                subtype=event_type,
-                payload={"role": data.get("role"), "content": data.get("content")},
-                **self._base(raw, line_index),
-            )]
+            return [
+                SystemEntry(
+                    subtype=event_type,
+                    payload={"role": data.get("role"), "content": data.get("content")},
+                    **self._base(raw, line_index),
+                )
+            ]
 
         if event_type == "user.message":
             data = _data(raw)
-            text = str(data.get("content") or "")
+            # Copilot's stdin transport records the line terminator used to
+            # submit the prompt as part of ``data.content``. It is transport
+            # framing, not user text. Remove exactly one terminator (preserving
+            # any additional intentional trailing newlines) so normalized
+            # prompts match the text supplied to Flowpad.
+            text = _strip_stdin_line_ending(str(data.get("content") or ""))
             return [UserMessageEntry(text=text, **self._base(raw, line_index))]
 
         if event_type in {"assistant.turn_start", "assistant.turn_end"}:
@@ -87,13 +90,15 @@ class CopilotParser:
             if not thinking:
                 return [MetaEntry(meta_kind=event_type, payload=data, **self._base(raw, line_index))]
             reasoning_id = str(data.get("reasoningId") or raw.get("id") or "")
-            return [AssistantMessageEntry(
-                text="",
-                thinking=thinking,
-                entry_id=reasoning_id or None,
-                model=self._current_model,
-                **self._base(raw, line_index),
-            )]
+            return [
+                AssistantMessageEntry(
+                    text="",
+                    thinking=thinking,
+                    entry_id=reasoning_id or None,
+                    model=self._current_model,
+                    **self._base(raw, line_index),
+                )
+            ]
 
         if event_type in {"assistant.reasoning_delta", "assistant.message_start", "assistant.message_delta"}:
             return [MetaEntry(meta_kind=event_type, payload=_data(raw), **self._base(raw, line_index))]
@@ -126,12 +131,14 @@ class CopilotParser:
         content = str(data.get("content") or "")
         message_id = str(data.get("messageId") or raw.get("id") or "")
         if content:
-            out.append(AssistantMessageEntry(
-                text=content,
-                entry_id=message_id or None,
-                model=self._current_model,
-                **base,
-            ))
+            out.append(
+                AssistantMessageEntry(
+                    text=content,
+                    entry_id=message_id or None,
+                    model=self._current_model,
+                    **base,
+                )
+            )
 
         # Copilot only reports ``outputTokens`` per assistant message (no
         # input/cache/reasoning breakdown in the transcript). Emit the one
@@ -148,17 +155,19 @@ class CopilotParser:
                 if call_id:
                     self._tool_names[call_id] = name
                     self._seen_tool_uses.add(call_id)
-                out.append(_tool_or_skill_entry(
-                    tool_name=name,
-                    tool_use_id=call_id or f"{base['id']}:tool:{idx}",
-                    tool_input=_coerce_arguments(request.get("arguments")),
-                    id=f"{base['id']}:tool_use:{idx}",
-                    session_id=base["session_id"],
-                    timestamp=base["timestamp"],
-                    worker=base["worker"],
-                    parent_id=base["parent_id"],
-                    model=self._current_model,
-                ))
+                out.append(
+                    _tool_or_skill_entry(
+                        tool_name=name,
+                        tool_use_id=call_id or f"{base['id']}:tool:{idx}",
+                        tool_input=_coerce_arguments(request.get("arguments")),
+                        id=f"{base['id']}:tool_use:{idx}",
+                        session_id=base["session_id"],
+                        timestamp=base["timestamp"],
+                        worker=base["worker"],
+                        parent_id=base["parent_id"],
+                        model=self._current_model,
+                    )
+                )
         if out:
             return out
         return [MetaEntry(meta_kind="assistant.message", payload=data, **base)]
@@ -173,18 +182,20 @@ class CopilotParser:
         out_toks = _as_int(data.get("outputTokens"))
         if not out_toks or out_toks <= 0:
             return []
-        return [UsageEntry(
-            count=out_toks,
-            io="output",
-            unit="token",
-            id=f"{base['id']}:usage",
-            entry_id=f"{message_id}:usage" if message_id else None,
-            session_id=base["session_id"],
-            timestamp=base["timestamp"],
-            worker=base["worker"],
-            parent_id=base["parent_id"],
-            model=self._current_model,
-        )]
+        return [
+            UsageEntry(
+                count=out_toks,
+                io="output",
+                unit="token",
+                id=f"{base['id']}:usage",
+                entry_id=f"{message_id}:usage" if message_id else None,
+                session_id=base["session_id"],
+                timestamp=base["timestamp"],
+                worker=base["worker"],
+                parent_id=base["parent_id"],
+                model=self._current_model,
+            )
+        ]
 
     def _tool_execution_start(self, raw: dict, line_index: int) -> list[TranscriptEntry]:
         data = _data(raw)
@@ -199,13 +210,15 @@ class CopilotParser:
             return [MetaEntry(meta_kind="tool.execution_start", payload=data, **base)]
         if call_id:
             self._seen_tool_uses.add(call_id)
-        return [_tool_or_skill_entry(
-            tool_name=name,
-            tool_use_id=call_id or base["id"],
-            tool_input=_coerce_arguments(data.get("arguments")),
-            model=self._current_model,
-            **base,
-        )]
+        return [
+            _tool_or_skill_entry(
+                tool_name=name,
+                tool_use_id=call_id or base["id"],
+                tool_input=_coerce_arguments(data.get("arguments")),
+                model=self._current_model,
+                **base,
+            )
+        ]
 
     def _tool_execution_complete(self, raw: dict, line_index: int) -> list[TranscriptEntry]:
         data = _data(raw)
@@ -218,15 +231,17 @@ class CopilotParser:
         exit_code = _as_int(metrics.get("exit_code"))
         output = result.get("detailedContent") or result.get("content") or ""
         is_error = (data.get("success") is False) or (exit_code not in (None, 0))
-        return [ToolResultEntry(
-            tool_use_id=call_id,
-            tool_name=self._tool_names.get(call_id),
-            tool_output=str(output),
-            is_error=is_error,
-            exit_code=exit_code,
-            model=self._current_model,
-            **self._base(raw, line_index),
-        )]
+        return [
+            ToolResultEntry(
+                tool_use_id=call_id,
+                tool_name=self._tool_names.get(call_id),
+                tool_output=str(output),
+                is_error=is_error,
+                exit_code=exit_code,
+                model=self._current_model,
+                **self._base(raw, line_index),
+            )
+        ]
 
     def _capture_common_state(self, raw: dict) -> None:
         event_type = str(raw.get("type") or "")
@@ -273,6 +288,14 @@ class CopilotEventsParser(CopilotParser):
 def _data(raw: dict) -> dict[str, Any]:
     data = raw.get("data")
     return data if isinstance(data, dict) else {}
+
+
+def _strip_stdin_line_ending(text: str) -> str:
+    if text.endswith("\r\n"):
+        return text[:-2]
+    if text.endswith("\n"):
+        return text[:-1]
+    return text
 
 
 def _coerce_arguments(value: Any) -> dict:
