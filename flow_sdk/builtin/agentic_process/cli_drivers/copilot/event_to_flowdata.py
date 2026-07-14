@@ -32,7 +32,12 @@ class CopilotEventConverter:
             self._capture_session(event)
             return _result(event)
         if event_type == "flowpad.interrupted":
-            return [_error("copilot turn interrupted"), final_end_frame()]
+            # User-requested cancel is not an error: emit the canonical
+            # turn-abort STATUS (``turn-terminated``) so the chat marks the
+            # in-flight tool calls terminated instead of painting a crash.
+            from flow_sdk.builtin.agentic_process.turn_abort import abort_status_frame  # noqa: PLC0415 — avoid import cycle at module load
+
+            return [abort_status_frame(), final_end_frame()]
         if event_type == "flowpad.error":
             message = str(event.get("message") or "copilot exited with an error")
             return [_error(message), final_end_frame()]
