@@ -115,3 +115,6 @@ def test_group_kind_round_trips(tmp_path):
     assert rec.kind == "group"
     # Empty parent_id is dropped from frontmatter (not a leak, just clean yaml).
     assert "parent_id" not in (folder / "task.md").read_text(encoding="utf-8")
+
+
+# ── bundle packing of loose attachments ─────────────────────────────────────

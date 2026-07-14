@@ -9,6 +9,7 @@ import {
   launchWizard,
   MessageAttachment,
   Prompt,
+  Task,
   TypeId,
   User,
   type AgenticProcess,
@@ -752,6 +753,17 @@ function MessageEntityChip({
         }
       }
     : null;
+  // Assigned-task chip: one click unpacks — installs the staged task folder
+  // (task.md) so it lands in the task list. Git context folders referenced by
+  // the task ride as their own folder chips (the wizard-clone path above);
+  // loose attachment files ride as ordinary file attachments on the message.
+  const handleTaskInstall =
+    typeId.type === Task.type && attachment && !attachment.installed
+      ? async () => {
+          const targetProjectId = projectId ?? dataContext.project?.id ?? null;
+          await attachment.install(targetProjectId ? 'project' : 'user', targetProjectId ?? undefined);
+        }
+      : null;
   // "Run icon near the skill": one-click install-if-needed + run in a Vibe
   // session (see useRunReceivedSkill). Only for skills with a staged/installed
   // attachment — not artifacts or plain shares.
@@ -786,7 +798,13 @@ function MessageEntityChip({
           <EntityChip
             entity={{ typeId, type: typeId.type, id: typeId.id, name: attachment!.name ?? typeId.type }}
             staged
-            onClick={handleFolderPull ? () => void handleFolderPull() : () => setReviewOpen(true)}
+            onClick={
+              handleFolderPull
+                ? () => void handleFolderPull()
+                : handleTaskInstall
+                  ? () => void handleTaskInstall()
+                  : () => setReviewOpen(true)
+            }
           />
           {runButton}
         </span>
