@@ -1,17 +1,16 @@
-import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from flow_sdk._compat import UTC
-from typing import ClassVar, List, Optional
+from typing import List, Optional
 
 from pydantic import BaseModel, field_validator
 
-from flow_sdk.builtin.user import normalize_email
-from flow_sdk.config import default_service_config
+from flow_sdk._compat import UTC
 from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.api.type_id import TypeId
-from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
+from flow_sdk.builtin.user import normalize_email
+from flow_sdk.config import default_service_config
 from flow_sdk.core.entity.entity_model import Entity
+from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 
 
 class InvitationTarget(BaseModel):
@@ -55,6 +54,11 @@ class Invitation(Entity):
     target_id: Optional[str] = APIField(None)
     target_name: Optional[str] = APIField(None)
     target_role: Optional[str] = APIField(None)
+    # Who sent the invitation — mirrored from the hub's ``inviter`` enrichment
+    # (resolved from the InvitedBy edge) so the inbox row can say
+    # "<inviter> invited you to <target>" instead of an anonymous notice.
+    inviter_id: Optional[str] = APIField(None)
+    inviter_name: Optional[str] = APIField(None)
 
     @field_validator("recipient_email", mode="before")
     @classmethod
@@ -74,7 +78,9 @@ class Invitation(Entity):
         self.expiration_at = datetime.now(UTC) + timedelta(days=default_service_config.invitation_expires_in_days)
 
     def is_expired(self) -> bool:
-        return datetime.now(UTC) > self.expiration_at
+        # None-safe: rows hydrated via ``model_validate`` bypass ``__init__``
+        # and may carry no expiration; those never expire locally.
+        return self.expiration_at is not None and datetime.now(UTC) > self.expiration_at
 
     @classmethod
     def from_membership_request(cls, membership_request: "MembershipRequest") -> "Invitation":
