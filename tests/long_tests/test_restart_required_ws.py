@@ -77,6 +77,24 @@ def _wait_for_proc_update(
     )
 
 
+def _update_matches_mutation(
+    data: dict,
+    payload: dict[str, Any],
+    *,
+    restart_required: bool,
+) -> bool:
+    """Match the update caused by this one-field PUT, not stale WS traffic."""
+    if data.get("restart_required") is not restart_required:
+        return False
+    field, expected = next(iter(payload.items()))
+    actual = data.get(field)
+    if isinstance(expected, dict):
+        return isinstance(actual, dict) and all(
+            actual.get(key) == value for key, value in expected.items()
+        )
+    return actual == expected
+
+
 def _drain(ws, *, max_messages: int = 50) -> None:
     """Try to consume up to ``max_messages`` pending messages without blocking."""
     # TestClient WS receive_json blocks; use a short-timeout receive variant.
@@ -116,14 +134,10 @@ def _setup_running_process(tc, worker_type: str) -> str:
     async def _create() -> str:
         from flow_sdk.builtin.agentic_process import AgenticProcess
         proc = AgenticProcess(id=str(uuid.uuid4()), worker_type=worker_type)
-        # Headless baseline. pty_mode defaults to True, but with pty_mode=True the
-        # codex cli_options FORCES json_stream=False/ephemeral=False regardless of
-        # cli_config (commit 624ddb89) — so mutating those cli_config fields would
-        # leave the launch shape (hence the snapshot) unchanged, correctly NOT
-        # flipping restart_required. We test them as tracked fields, so the running
-        # baseline must be headless (pty_mode=False) where they actually drive the
-        # codex exec argv. (claude's snapshot is independent of pty_mode, so this is
-        # a no-op for the claude parametrization.)
+        # Use a headless baseline so Codex's negative transport cases exercise
+        # real raw launch-shape changes: json_stream, ephemeral, and pty_mode alter
+        # the transport payload, but R03 intentionally excludes them from restart
+        # comparison. Claude's snapshot is independent of pty_mode.
         proc.pty_mode = False
         # NEW state — save-hook is a no-op (gate: status != RUNNING).
         await proc.save()
@@ -192,15 +206,6 @@ CODEX_TRACKED_MUTATIONS: list[tuple[str, dict[str, Any]]] = [
     ("cli_config.env_vars",        {"cli_config": {"env_vars": {"FOO": "bar"}}}),
     ("cli_config.agents_json",     {"cli_config": {"agents_json": {"x": {"description": "y"}}}}),
     ("cli_config.skill_names",     {"cli_config": {"skill_names": ["reviewer"]}}),
-    ("cli_config.json_stream",     {"cli_config": {"json_stream": False}}),
-    ("cli_config.ephemeral",       {"cli_config": {"ephemeral": False}}),
-    # pty_mode is now the transport selector that drives codex's argv (commit
-    # 85ec7bb6/624ddb89: `if process.pty_mode: json_stream=False, ephemeral=False`).
-    # The running baseline is headless (pty_mode=False, see _setup_running_process);
-    # flipping it to True changes the launch snapshot → restart_required flips.
-    # (`visible` no longer touches the codex snapshot — it moved to
-    # CODEX_NEGATIVE_MUTATIONS, parity with claude.)
-    ("pty_mode",                   {"pty_mode": True}),
 ]
 
 
@@ -211,6 +216,13 @@ def _tracked_mutations(worker_type: str) -> list[tuple[str, dict[str, Any]]]:
         "codex": CODEX_TRACKED_MUTATIONS,
     }[family]
     return GENERIC_TRACKED_MUTATIONS + worker_mutations
+
+
+TRACKED_CASES = [
+    (worker_type, label, payload)
+    for worker_type in WORKER_TYPES
+    for label, payload in _tracked_mutations(worker_type)
+]
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -239,6 +251,12 @@ CODEX_NEGATIVE_MUTATIONS: list[tuple[str, dict[str, Any]]] = [
     ("cli_config.debug",         {"cli_config": {"debug": True}}),
     ("cli_config.worktree",      {"cli_config": {"worktree": True}}),
     ("cli_config.output_format", {"cli_config": {"output_format": "stream-json"}}),
+    # R03: these alter Codex's raw active-transport shape, but both restart
+    # comparators intentionally strip json_stream/ephemeral. A PTY↔CLI switch
+    # replaces the transport itself and must not create a phantom restart glow.
+    ("cli_config.json_stream",   {"cli_config": {"json_stream": False}}),
+    ("cli_config.ephemeral",     {"cli_config": {"ephemeral": False}}),
+    ("pty_mode",                 {"pty_mode": True}),
 ]
 
 
@@ -265,9 +283,15 @@ NEGATIVE_CASES = [
 
 # do not increase timeout without approval
 @pytest.mark.timeout(30)
-@pytest.mark.parametrize("worker_type", WORKER_TYPES)
-def test_restart_required_full_cycle(worker_type: str):
-    """Walk every tracked field: mutate → flag ON → restart-equivalent → flag OFF."""
+@pytest.mark.parametrize(
+    "worker_type,label,payload",
+    TRACKED_CASES,
+    ids=[f"{worker_type}:{label}" for worker_type, label, _ in TRACKED_CASES],
+)
+def test_restart_required_full_cycle(
+    worker_type: str, label: str, payload: dict[str, Any]
+):
+    """For one isolated tracked field: flag ON → restart-equivalent → flag OFF."""
     from starlette.testclient import TestClient
     from flow_sdk.server.app import app
 
@@ -290,27 +314,33 @@ def test_restart_required_full_cycle(worker_type: str):
             resp = tc.get(f"/api/v1/graph/agentic_process/{proc_id}")
             assert resp.json()["data"]["restart_required"] is False
 
-            for label, payload in _tracked_mutations(worker_type):
-                # Mutate.
-                resp = tc.put(f"/api/v1/graph/agentic_process/{proc_id}", json=payload)
-                assert resp.status_code == 200, f"[{label}] PUT failed: {resp.text}"
+            # Every parameter gets a fresh process/baseline. This prevents a
+            # shallow cli_config replacement (or driver-derived field coupling)
+            # from making one mutation pass because a previous field disappeared.
+            resp = tc.put(f"/api/v1/graph/agentic_process/{proc_id}", json=payload)
+            assert resp.status_code == 200, f"[{label}] PUT failed: {resp.text}"
 
-                # Wait for the WS update where restart_required flipped True.
-                # Background sync_to_db chains can emit out-of-order broadcasts
-                # carrying stale entity state; the predicate filters those out.
-                msg = _wait_for_proc_update(
-                    ws, proc_id, matches=lambda d: d.get("restart_required") is True,
-                )
-                assert msg["data"]["restart_required"] is True, label
+            msg = _wait_for_proc_update(
+                ws,
+                proc_id,
+                matches=lambda d: _update_matches_mutation(
+                    d, payload, restart_required=True
+                ),
+            )
+            assert msg["data"]["restart_required"] is True, label
 
-                # Simulate a successful restart: resync hash + clear flag.
-                _resync_hash(tc, proc_id)
-                msg = _wait_for_proc_update(
-                    ws, proc_id, matches=lambda d: d.get("restart_required") is False,
-                )
-                assert msg["data"]["restart_required"] is False, (
-                    f"[{label}] flag did not clear after restart"
-                )
+            # Simulate a successful restart: resync hash + clear flag.
+            _resync_hash(tc, proc_id)
+            msg = _wait_for_proc_update(
+                ws,
+                proc_id,
+                matches=lambda d: _update_matches_mutation(
+                    d, payload, restart_required=False
+                ),
+            )
+            assert msg["data"]["restart_required"] is False, (
+                f"[{label}] flag did not clear after restart"
+            )
 
 
 # do not increase timeout without approval
@@ -347,12 +377,13 @@ def test_negative_field_does_not_flip(worker_type: str, label: str, payload: dic
             # appears in the data payload). Background sync_to_db chains may
             # emit additional out-of-order broadcasts that don't reflect our
             # mutation; ignore those.
-            field, expected_val = next(iter(payload.items()))
-
-            def _matches(d: dict) -> bool:
-                return d.get(field) == expected_val
-
-            msg = _wait_for_proc_update(ws, proc_id, matches=_matches)
+            msg = _wait_for_proc_update(
+                ws,
+                proc_id,
+                matches=lambda d: _update_matches_mutation(
+                    d, payload, restart_required=False
+                ),
+            )
             assert msg["data"]["restart_required"] is False, (
                 f"[{label}] flag flipped on non-tracked field — should have stayed False"
             )

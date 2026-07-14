@@ -1,8 +1,9 @@
 """ClaudeCLIStreamWorker — print-mode Claude Code with per-event streaming.
 
 Spawns ``claude -p --output-format stream-json --verbose`` as a subprocess,
-reads stdout line-by-line, converts each JSON event into FlowData via
-``claude_event_to_flowdata.convert_line``, and yields it to the caller.
+reads stdout line-by-line, parses each line once, and converts the event
+into FlowData via ``claude_event_to_flowdata.convert_event``, yielding it to
+the caller.
 
 Contrast with ``claude_cli_worker.ClaudeCLIWorker`` (sibling) which uses
 ``proc.communicate()`` — fully buffered, emits one CHAT block at the end.

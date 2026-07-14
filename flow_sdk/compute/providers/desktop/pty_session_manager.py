@@ -57,12 +57,19 @@ class PtyState(BaseModel):
     terminal_id: Optional[str] = None
     last_seq_received: Optional[int] = None
     seq: int = 0  # Monotonic output-chunk counter (activity signal; no data stored)
+    # Persisted stream seq at the start of this OS PTY generation. Composer
+    # readiness scans only frames after this boundary so a pre-restart banner
+    # or trust screen cannot authorize input into the new process.
+    generation_start_seq: int = 0
     compute_node_id: Optional[str] = None
     cols: int = 80
     rows: int = 24
     provider_session_data: Dict[str, Any] = Field(default_factory=dict)
     pty_stream_file: Any = None
     output_queues: list = Field(default_factory=list)  # asyncio.Queue feeds for Pty.output()
+    # Composer-readiness subscribers need the persisted output sequence beside
+    # each chunk so their subscribe-then-snapshot handoff can discard overlap.
+    sequenced_output_queues: list = Field(default_factory=list)
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 

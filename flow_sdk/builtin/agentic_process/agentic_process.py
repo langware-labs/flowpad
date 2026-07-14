@@ -3089,10 +3089,10 @@ class AgenticProcess(Entity):
 
         ``landed`` is the turn's transcript-confirmation event — if the user
         turn landed while we waited (e.g. the launch-arg path already injected
-        it), nothing is typed (no duplicate). Returns False when the PTY is
-        unusable (no shell, or it closed before the composer appeared) so the
-        caller can skip the Enter-nudge retries instead of poking a dead or
-        blocked screen.
+        it), nothing is typed (no duplicate). Returns False when the gate could
+        not confirm composer-readiness (no shell, or the PTY closed before the
+        marker appeared) — the caller then falls back to a blind, last-resort
+        delivery rather than dead-ending the turn with the prompt undelivered.
         """
         shell = await self.shell()
         if shell is None:
@@ -3101,7 +3101,8 @@ class AgenticProcess(Entity):
         if pattern is not None:
             if not await shell.wait_for_composer_ready(pattern):
                 logger.warning(
-                    "prompt-pty: composer never became ready for %s — prompt NOT typed",
+                    "prompt-pty: composer never became ready for %s — gated delivery "
+                    "skipped; caller will fall back to blind delivery",
                     self.id,
                 )
                 return False
@@ -3368,17 +3369,36 @@ class AgenticProcess(Entity):
                     # needed) then press Enter on a bounded retry. ``user_turn_
                     # landed`` is set by the poll loop below when the USER_MESSAGE
                     # entry appears.
-                    async def _nudge_submit() -> None:
-                        if needs_initial_type:
-                            # Composer-gated typed delivery (QA C09b): waits for
-                            # the vendor's composer-ready marker before typing
-                            # (legacy settle-sleep for pattern-less vendors).
-                            if not await self._typed_pty_delivery(message, landed=user_turn_landed):
-                                # PTY unusable / composer never appeared —
-                                # blind Enter retries would only poke a dead or
-                                # blocked screen (or accept an interstitial the
-                                # user never saw).
-                                return
+                    # Set once the prompt has been typed WITHOUT the composer gate
+                    # (the last-resort path). Guards against a double type: the
+                    # poll-loop trigger and the inline gate-failed trigger share it.
+                    blind_delivered = asyncio.Event()
+
+                    async def _blind_deliver() -> None:
+                        """Last-resort: type the prompt WITHOUT the composer gate.
+
+                        Fires when the composer-ready marker never matched — the
+                        gate returned False (PTY closed), or it is still pending
+                        while the turn is about to fail as ``user-turn-not-landed``
+                        (regex drift, or an unrecognized interstitial owns the
+                        screen). Typing it once blindly is strictly better than
+                        dead-ending the turn with the prompt never delivered.
+                        """
+                        blind_delivered.set()
+                        if user_turn_landed.is_set():
+                            return
+                        shell = await self.shell()
+                        if shell is None:
+                            return
+                        try:
+                            if submits_on_paste:
+                                await shell.write(message)
+                            else:
+                                await shell.write_then_submit(message)
+                        except Exception:
+                            logger.debug("prompt-pty: blind delivery write failed", exc_info=True)
+
+                    async def _nudge_enter_only() -> None:
                         # Preserve the established per-TUI nudge cadence even
                         # now that Claude's initial text also goes through the
                         # composer gate: paste-with-Enter vendors use the short
@@ -3395,6 +3415,27 @@ class AgenticProcess(Entity):
                                 await self.send(b"\r")
                             except Exception:
                                 return
+
+                    async def _nudge_submit() -> None:
+                        if needs_initial_type:
+                            # Composer-gated typed delivery (QA C09b): waits for
+                            # the vendor's composer-ready marker before typing
+                            # (legacy settle-sleep for pattern-less vendors).
+                            if not await self._typed_pty_delivery(message, landed=user_turn_landed):
+                                # The gate could not confirm readiness (PTY closed,
+                                # or marker never matched). Do NOT dead-end the
+                                # turn: type the prompt once blindly so a booted-
+                                # but-unrecognized composer still receives it,
+                                # then fall through to the Enter-nudge cadence.
+                                logger.warning(
+                                    "prompt-pty: composer gate did not confirm readiness for %s "
+                                    "(%s) — typing the prompt blindly as a last resort (process %s)",
+                                    self.id,
+                                    worker_type,
+                                    self.id,
+                                )
+                                await _blind_deliver()
+                        await _nudge_enter_only()
 
                     nudge_task = asyncio.create_task(_nudge_submit())
 
@@ -3473,6 +3514,38 @@ class AgenticProcess(Entity):
                                         return
 
                         if time.monotonic() - last_activity >= inactivity_timeout:
+                            landed = user_turn_landed.is_set()
+                            # LAST-RESORT delivery (no new timeout — the existing
+                            # inactivity signal is the trigger): a composer-gated
+                            # turn reached the inactivity boundary with the user
+                            # row still absent AND the prompt was never typed
+                            # blindly. The gated delivery is stuck (the composer
+                            # marker never matched — regex drift, or an
+                            # unrecognized interstitial owns the screen). Cancel
+                            # the stuck gated delivery, type the prompt ONCE
+                            # blindly, and give the poll loop one more inactivity
+                            # window to observe the result before failing.
+                            if not landed and needs_initial_type and not blind_delivered.is_set():
+                                logger.warning(
+                                    "prompt-pty: composer marker never matched for %s (%s) and the "
+                                    "user turn never landed — typing the prompt blindly as a last "
+                                    "resort before submission-error; CHECK THE VENDOR COMPOSER "
+                                    "REGEX FOR DRIFT (process %s)",
+                                    self.id,
+                                    worker_type,
+                                    self.id,
+                                )
+                                if nudge_task is not None and not nudge_task.done():
+                                    nudge_task.cancel()
+                                    try:
+                                        await nudge_task
+                                    except BaseException:
+                                        pass
+                                await _blind_deliver()
+                                nudge_task = asyncio.create_task(_nudge_enter_only())
+                                last_activity = time.monotonic()
+                                await asyncio.sleep(poll_interval)
+                                continue
                             logger.info(
                                 "prompt-pty: closing stream after %.1fs of transcript inactivity (process %s)",
                                 inactivity_timeout,
@@ -3485,7 +3558,6 @@ class AgenticProcess(Entity):
                             # signal only after the provider transcript contains
                             # this turn's user row; otherwise surface delivery as
                             # an error instead of manufacturing a false success.
-                            landed = user_turn_landed.is_set()
                             if not landed:
                                 logger.warning(
                                     "prompt-pty: transcript went inactive before the user turn landed (process %s)",
