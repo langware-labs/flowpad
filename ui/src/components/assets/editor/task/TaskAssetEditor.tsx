@@ -209,7 +209,14 @@ export function TaskAssetEditor({ fsRef, task: providedTask }: TaskAssetEditorPr
           Plan
         </div>
         <div className="min-h-0 flex-1">
-          <MarkdownEditor fsRef={specRef} chatTarget={taskKey} />
+          <MarkdownEditor
+            fsRef={specRef}
+            chatTarget={taskKey}
+            // A task without a spec.md is a normal young task, not a broken
+            // file — offer to start the plan instead of the generic
+            // missing-file note.
+            missingFileCopy={{ note: 'This task has no spec yet.', actionLabel: 'Add spec' }}
+          />
         </div>
       </div>
     </div>

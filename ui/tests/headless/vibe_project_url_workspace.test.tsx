@@ -24,26 +24,25 @@
  * regardless of whether the fix lands as a loader redirect or a flow-page surface
  * pick. On the buggy code that testid never mounts (the project home renders).
  *
- * Prereq: a live backend — `scripts/instance_ctl.sh launch dev-1` or
- * `uv run -m flow_sdk.server.run`. Skips itself when none is reachable.
- * Run: `cd ui && npm run test:vitest:headless`
+ * Prereq: an explicitly selected disposable instance_ctl backend.
+ * Run: `cd ui && FLOW_INSTANCE=<disposable-name> npm run test:vitest:headless`
  */
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { act, waitFor } from '@testing-library/react';
 import { setupLiveBackend, bootApp } from './_harness';
 import { trackForCleanup, testEntityName } from '../_cleanup';
+import { createSdkRealm } from '../_sdk_realm';
 
 const backend = setupLiveBackend('[vibe project url]');
 
 describe('vibe project URL lands in the vibe workspace (no mocks)', () => {
   it('/dock/project/<id>?viewMode=vibe renders the vibe workspace, not the project home', async () => {
-    if (!backend.current) return; // soft-skip when no backend is up
+    const live = backend.current;
+    if (!live) throw new Error('headless backend preflight did not resolve FLOW_INSTANCE');
 
     // Point the realm at the live backend and re-evaluate the SDK graph so the
     // project we create and the app we boot share ONE realm bound to this backend.
-    (globalThis as any).__FLOWPAD_API_URL__ = backend.current.apiUrl;
-    vi.resetModules();
-    const sdk = await import('@sdk');
+    const { sdk } = await createSdkRealm(live.apiUrl);
     await sdk.initSdk();
 
     // A fresh project has NO vibe process → the correct vibe surface is
@@ -96,9 +95,12 @@ describe('vibe project URL lands in the vibe workspace (no mocks)', () => {
 
     if (surface !== 'workspace') {
       console.error(
-        '[vibe project url][DEBUG] rendered surface:', surface,
-        '| pathname:', router.state.location.pathname + router.state.location.search,
-        '| data-view:', document.documentElement.getAttribute('data-view'),
+        '[vibe project url][DEBUG] rendered surface:',
+        surface,
+        '| pathname:',
+        router.state.location.pathname + router.state.location.search,
+        '| data-view:',
+        document.documentElement.getAttribute('data-view'),
       );
     }
     // The bug: a vibe-mode project URL renders the standard project home instead

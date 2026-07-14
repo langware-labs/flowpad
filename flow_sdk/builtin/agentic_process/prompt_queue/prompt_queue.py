@@ -47,6 +47,12 @@ class PromptQueue:
 
     # ── read (corruption-tolerant) ───────────────────────────────────────────
 
+    def exists(self) -> bool:
+        """True iff the queue file has ever been written (something was
+        enqueued). A cheap stat — lets turn-end drain scheduling skip the
+        lock + JSON read + log append for the common never-queued process."""
+        return self._path.exists()
+
     def read(self) -> dict:
         """Current state. Returns the default on missing/corrupt — never raises."""
         try:

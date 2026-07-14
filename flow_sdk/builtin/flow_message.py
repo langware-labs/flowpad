@@ -49,9 +49,26 @@ class FlowMessageKind(str, Enum):
                  hub Invitation as the first row of a conversation; its
                  ``context_entities`` carry the backing Invitation TypeId so
                  the UI can read invitation_id off it for the Accept action.
+    SESSION_EVENT — a live-session lifecycle line ("Dana approved the live
+                 session"), rendered as a slim system line, not a bubble. It
+                 doubles as the session-snapshot carrier: its
+                 ``remote_worker_session-<id>`` TYPE_ID attachment ships the
+                 fresh session state in the body bundle. The hub may strip
+                 the ``kind`` header field (unknown-field drop) — receivers
+                 re-derive it from the attachment marker via
+                 ``derive_session_fields``.
     """
     USER = "user"
     INVITATION = "invitation"
+    SESSION_EVENT = "session_event"
+
+    @classmethod
+    def sendable(cls, value: "str | None") -> "FlowMessageKind | None":
+        """The kind a caller may set via ``add_message``, or None to fall back
+        to USER. USER is implicit; INVITATION is a local-only first-row
+        placeholder no caller mints; only SESSION_EVENT is an explicitly
+        sendable non-default kind."""
+        return cls.SESSION_EVENT if value == cls.SESSION_EVENT.value else None
 
 
 class DeliveryStatus(str, Enum):
@@ -164,7 +181,7 @@ def is_image_filename(name: str) -> bool:
 # message-level ``body_downloaded`` signal, or a message carrying one would be
 # stuck behind the Download button forever.
 _NON_MATERIALIZING_TYPE_IDS = frozenset(
-    {"conversation", "flow_message", "task", "claude_session"}
+    {"conversation", "flow_message", "task", "claude_session", "remote_worker_session"}
 )
 
 # Body-bearing indexed types whose VALUE is a markdown body: a record folder
@@ -173,6 +190,46 @@ _NON_MATERIALIZING_TYPE_IDS = frozenset(
 # bundle). Such a stub must NOT count as "downloaded" — otherwise the bundle
 # carrying the real body is never (re-)pulled and the entity renders blank.
 _BODY_BEARING_TYPE_IDS = frozenset({"spec", "markdown", "plan"})
+
+# Marker key inside a ``remote_worker_session-<id>`` attachment's
+# ``prompt_preview`` (a hub-known field, so it survives the hub's
+# unknown-field drop): ``{"live_session_event": "approved"}`` flags the
+# message as a lifecycle system line (kind=SESSION_EVENT).
+LIVE_SESSION_EVENT_MARKER_KEY = "live_session_event"
+
+
+def derive_session_fields(fm: "FlowMessage") -> None:
+    """Refill live-session header fields the hub may have stripped (F1).
+
+    The hub validates FlowMessage through its own pydantic model and silently
+    drops unknown fields, so ``remote_worker_session_id`` / ``kind=session_event``
+    can arrive empty even though the sender stamped them. The
+    ``remote_worker_session-<id>`` TYPE_ID attachment is the authoritative
+    carrier (``data`` and ``prompt_preview`` are hub-known Attachment fields):
+    derive the session id from it, and flip ``kind`` to SESSION_EVENT when its
+    ``prompt_preview`` carries the lifecycle-event marker. Idempotent; called
+    from ``materialize_flow_message`` so every arrival path (hub WS, bundle
+    unpack, catch-up sync) is covered.
+    """
+    import json as _json  # noqa: PLC0415
+
+    session_prefix = "remote_worker_session-"
+    for a in fm.attachment or []:
+        if a.attachment_type != AttachmentType.TYPE_ID:
+            continue
+        data = a.data or ""
+        if not data.startswith(session_prefix):
+            continue
+        if not fm.remote_worker_session_id:
+            fm.remote_worker_session_id = data[len(session_prefix):] or None
+        if fm.kind == FlowMessageKind.USER and a.prompt_preview:
+            try:
+                marker = _json.loads(a.prompt_preview)
+            except (ValueError, TypeError):
+                marker = None
+            if isinstance(marker, dict) and marker.get(LIVE_SESSION_EVENT_MARKER_KEY):
+                fm.kind = FlowMessageKind.SESSION_EVENT
+        break
 
 
 def _type_id_attachment_present(fm_id: "str | None", data: str) -> bool:
@@ -295,6 +352,12 @@ class FlowMessage(Entity):
     # schema; the hub drops unknown fields, so keep the two models in sync).
     cloned_from_id: Optional[str] = APIField(None, description="Id of the source FlowMessage this one was forwarded from")
     cloned_from_sender_id: Optional[str] = APIField(None, description="Original sender of the source message")
+    # Live-session grouping key. Stamped at send time by the guest (who mints
+    # the session id) and on PromptResult replies by the host. The hub drops
+    # unknown header fields until its schema mirrors this one, so the
+    # ``remote_worker_session-<id>`` TYPE_ID attachment is the authoritative
+    # wire carrier — ``derive_session_fields`` refills this on receive.
+    remote_worker_session_id: Optional[str] = APIField(None, description="Live session this message belongs to (grouping key)")
     is_read: bool = APIField(default=False)
     is_archived: bool = APIField(default=False)
     # Receipt state — mirrors the hub-side schema. Monotonic:

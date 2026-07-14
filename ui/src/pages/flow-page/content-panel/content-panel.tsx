@@ -30,7 +30,7 @@ import { SearchView } from '@src/pages/search-view/SearchView';
 import { ConnectionStatus, dataContext, navigator, type OAuthConnection } from '@sdk';
 import { useAuth, useContext } from '@sdk/react/hooks';
 import { AssetsPage } from '@src/components/assets/AssetsPage';
-import { CollaborationPage } from '@src/components/collaboration';
+import { CollaborationPage, LiveSessionView } from '@src/components/collaboration';
 import { ConnectionsManager } from '@src/components/connections-manager';
 import { CapabilitiesView } from '@src/components/capabilities-view';
 import { ConversationRoute } from '@src/components/conversation';
@@ -375,6 +375,12 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
           <ProcessTerminal key={currentDock.pointer} processId={currentDock.pointer} />
         ) : (
           <div className="flex h-full items-center justify-center text-muted-foreground"><Trans>No process ID specified</Trans></div>
+        );
+      case ViewType.LIVE_SESSION:
+        return currentDock?.pointer ? (
+          <LiveSessionView key={currentDock.pointer} sessionId={currentDock.pointer} />
+        ) : (
+          <div className="flex h-full items-center justify-center text-muted-foreground"><Trans>No live session specified</Trans></div>
         );
       case ViewType.ASSETS:
         return <AssetsPage />;

@@ -26,15 +26,16 @@
  * flaky on a busy host (each passes individually); per-`describe` contexts
  * would isolate them further.
  *
- * Requires: local hub (8093) + two launched instances with frontends. Defaults
- * to dev-1/dev-2; override with MATRIX_INST_1 / MATRIX_INST_2 (a fresh pair is
- * recommended — see below). Skips when the hub or instances aren't up.
+ * Requires the explicit SHARE_INST_1/SHARE_INST_2 pair with live frontends and
+ * the cycle-owned FLOWPAD_HUB_URL. Skips when the hub or instances aren't up.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Browser } from 'playwright';
 import { testEntityName, trackForCleanup, trackTypeId } from '../_cleanup';
 import { hubAvailable } from './_hub';
 import {
+  HUB_INST_1 as INST_1,
+  HUB_INST_2 as INST_2,
   getInstance,
   instanceAvailable,
   type ResolvedInstance,
@@ -53,14 +54,6 @@ import {
   type InstancePage,
 } from './_browser';
 
-// Instance names are overridable so the matrix can run on a FRESH pair
-// (recommended — long-lived instances accumulate stale invitations that the
-// receiver-side accept step then has to wade through):
-//   scripts/instance_ctl.sh launch mx3 && scripts/instance_ctl.sh launch mx4
-//   MATRIX_INST_1=mx3 MATRIX_INST_2=mx4 npx vitest run --project hub share_matrix
-const INST_1 = process.env.MATRIX_INST_1 || 'dev-1';
-const INST_2 = process.env.MATRIX_INST_2 || 'dev-2';
-
 let skipReason: string | null = null;
 let dev1: ResolvedInstance;
 let dev2: ResolvedInstance;
@@ -73,7 +66,7 @@ const ts = Date.now();
 beforeAll(async () => {
   const hub = await hubAvailable();
   if (!hub.ok) return void (skipReason = hub.reason ?? 'hub unreachable');
-  if (!(await instanceAvailable(INST_1)) || !(await instanceAvailable(INST_2))) {
+  if (!instanceAvailable(INST_1) || !instanceAvailable(INST_2)) {
     return void (skipReason = `launch ${INST_1} + ${INST_2} via scripts/instance_ctl.sh`);
   }
   dev1 = await getInstance(INST_1);

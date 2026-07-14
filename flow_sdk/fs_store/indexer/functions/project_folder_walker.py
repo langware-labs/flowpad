@@ -33,11 +33,35 @@ def project_folder_walker_fn(
     nodes: list[FSRef], opts: IndexerOptions,
 ) -> list[FSRef]:
     """Walk each project root, emit one FOLDER FSRef per surviving directory."""
+    import os  # noqa: PLC0415
+
+    from flow_sdk.fs_store.indexer.special_folders import (  # noqa: PLC0415
+        FolderKind,
+        classify_special_folder,
+        mark_denied,
+    )
+
     out: list[FSRef] = []
     for node in nodes:
         root_path = Path(node.path)
         if not root_path.is_dir():
             continue
+        # A protected-folder root only reaches here when it was explicitly
+        # allowed / opened. The FIRST real read is where macOS shows its prompt;
+        # if the user clicks "Don't Allow", the read raises EPERM. Detect that
+        # once, mark the folder ``denied`` (so we never re-read → never re-prompt),
+        # and skip — instead of letting gitignore_walk swallow it silently and
+        # re-prompt on every future scan.
+        _sf = classify_special_folder(root_path)
+        if _sf is not None and _sf.kind is FolderKind.TRISTATE:
+            try:
+                with os.scandir(root_path) as _it:
+                    next(_it, None)
+            except PermissionError:
+                mark_denied(root_path)
+                continue
+            except OSError:
+                continue
         for dir_path, _subdirs, _files in gitignore_walk(
             root_path,
             gitignore=opts.gitignore,

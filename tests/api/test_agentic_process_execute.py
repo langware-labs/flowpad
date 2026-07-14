@@ -329,14 +329,22 @@ async def test_disconnect_mid_turn_shielded_turn_completes_durably(
 async def test_cancel_prompt_abort_marker_replays_in_history(
     bootstrapped_client, user, tmp_path, monkeypatch
 ):
-    """Stop on a headless codex turn writes a flowpad-owned abort marker that
-    the history endpoint replays as a terminated-turn STATUS frame (issue D09).
+    """Stop on a KILLED headless codex turn writes a flowpad-owned abort marker
+    that the history endpoint replays as a terminated-turn STATUS frame (D09).
 
-    Pre-fix there was NO durable abort record anywhere: the SIGTERM'd codex CLI
+    Pre-fix there was NO durable abort record anywhere: the killed codex CLI
     writes nothing, so after a hard reload the cancelled call replayed as still
-    running. (The unmatched-call rendering itself is pinned in
+    running. Cancel is now SIGINT-first — a codex that honours it records its
+    OWN ``turn_aborted`` in the rollout and the sidecar marker is skipped
+    (``cancelled_gracefully``) — so this test pins the ESCALATION path: the
+    fake ignores SIGINT, gets force-killed, and the marker must be written.
+    (The unmatched-call rendering itself is pinned in
     tests/unit/test_turn_abort_marker.py and the UI replay test.)
     """
+    # Shrink (never raise) the SIGINT grace so the escalation kill is prompt.
+    monkeypatch.setattr(
+        "flow_sdk.builtin.agentic_process.cli_drivers.codex.stream_worker.CANCEL_GRACE_SECONDS", 0.5
+    )
     thread_started = json.dumps(
         # A timestamp like every real codex event — without one the replay
         # stamps parse-time "now", which would sort after the abort marker.
@@ -346,10 +354,10 @@ async def test_cancel_prompt_abort_marker_replays_in_history(
         monkeypatch,
         CodexCLIStreamWorker,
         # A long "real" command: announce the thread, then hang like a
-        # long-running tool until cancel-prompt SIGTERMs us. ``exec`` so the
-        # sleep replaces bash and the SIGTERM reaches the pipe holder (a forked
-        # sleep would survive bash and keep stdout open for its full 30s).
-        ["bash", "-c", f"printf '%s\\n' {json.dumps(thread_started)}; exec sleep 30"],
+        # long-running tool. ``trap '' INT`` makes the fake IGNORE the graceful
+        # SIGINT (like a wedged CLI) so cancel-prompt must escalate to the
+        # force-kill path — the one that owes the durable sidecar marker.
+        ["bash", "-c", f"printf '%s\\n' {json.dumps(thread_started)}; trap '' INT; sleep 30"],
         env=dict(os.environ),
         stdin="",
     )

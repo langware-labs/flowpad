@@ -32,3 +32,30 @@ def read_instance_pref(key: str, default: Any) -> Any:
     if not isinstance(prefs, dict) or key not in prefs:
         return default
     return prefs[key]
+
+
+def write_instance_pref(key: str, value: Any) -> bool:
+    """Merge one dotted PrefKey into the instance preferences.json.
+
+    Read-modify-write preserving every other key (the same merge contract the
+    frontend store and ``bootstrap._write_pref`` use, so writers never clobber
+    each other). Returns True on success, False on any I/O error — never raises.
+    """
+    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
+    path = get_instance_settings().instance_dir / "preferences.json"
+    prefs: dict = {}
+    if path.exists():
+        try:
+            parsed = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(parsed, dict):
+                prefs = parsed
+        except (OSError, json.JSONDecodeError):
+            prefs = {}
+    prefs[key] = value
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(prefs, indent=2), encoding="utf-8")
+        return True
+    except OSError:
+        return False

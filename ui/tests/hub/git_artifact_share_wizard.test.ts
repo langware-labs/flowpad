@@ -26,9 +26,11 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs';
-import { HUB_URL, hubAvailable, hubLogin } from './_hub';
+import { HUB_URL, getAliceCreds, hubAvailable, hubLogin } from './_hub';
 import { pollUntil } from './_matrix';
 import {
+  HUB_INST_1 as INST_1,
+  HUB_INST_2 as INST_2,
   WORKTREE_ROOT,
   findPendingInvitation,
   getInstance,
@@ -46,8 +48,6 @@ import {
   type InstancePage,
 } from './_browser';
 
-const INST_1 = process.env.SHARE_INST_1 || 'dev-1';
-const INST_2 = process.env.SHARE_INST_2 || 'dev-2';
 const REL_PATH = 'apps/shared-webapp';
 const BRANCH = 'feature/git-artifact-share';
 const BODY_FILENAME = 'body.flowmsg';
@@ -149,11 +149,9 @@ function freePort(): Promise<number> {
 }
 
 async function downloadHubBundle(fmId: string, zipPath: string): Promise<void> {
-  const env = await readEnvFile(alice.name);
-  const email = env.FLOWPAD_CLOUD_USER_EMAIL || alice.email;
-  const password = env.FLOWPAD_CLOUD_USER_PASSWORD;
-  if (!email || !password) throw new Error(`missing hub password for ${alice.name}`);
-  const login = await hubLogin(email, password);
+  const creds = await getAliceCreds();
+  if (!creds || creds.email !== alice.email) throw new Error(`missing canonical hub credentials for ${alice.name}`);
+  const login = await hubLogin(creds.email, creds.password);
   const r = await fetch(`${HUB_URL}/api/v1/graph/flow_message/${fmId}/fs/download/${BODY_FILENAME}`, {
     headers: { Authorization: `Bearer ${login.token}` },
   });
@@ -366,12 +364,8 @@ async function flowCliAsync(inst: ResolvedInstance, args: string[], cwd: string)
 beforeAll(async () => {
   const hub = await hubAvailable();
   if (!hub.ok) return void (skipReason = hub.reason ?? 'hub unreachable');
-  if (!(await instanceAvailable(INST_1)) || !(await instanceAvailable(INST_2))) {
+  if (!instanceAvailable(INST_1) || !instanceAvailable(INST_2)) {
     return void (skipReason = `launch ${INST_1} + ${INST_2} via scripts/instance_ctl.sh`);
-  }
-  const aliceEnv = await readEnvFile(INST_1);
-  if (!aliceEnv.FLOWPAD_CLOUD_USER_EMAIL || !aliceEnv.FLOWPAD_CLOUD_USER_PASSWORD) {
-    return void (skipReason = `${INST_1} is missing FLOWPAD_CLOUD_USER_EMAIL/PASSWORD`);
   }
   alice = await getInstance(INST_1);
   bob = await getInstance(INST_2);

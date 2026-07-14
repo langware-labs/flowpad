@@ -976,11 +976,35 @@ def _claude_file_title_sync(jsonl_path: Path) -> tuple[Optional[str], Optional[s
         return (None, None)
 
 
+def _claude_first_prompt_sync(jsonl_path: Path) -> Optional[str]:
+    """First real user prompt in a Claude transcript head, whitespace-collapsed.
+
+    The ``prompt_fallback`` rung of :func:`get_worker_session_name` — see its
+    docstring for why headless sessions need it. Head-bounded like the envelope
+    reads (``_iter_head_json``); returns ``None`` when no user line is found.
+    ``_extract_text`` also rejects ``<``-prefixed text, so synthetic envelopes
+    (``<command-name>`` etc.) can't become a display name.
+    """
+    try:
+        from flow_sdk.fs_store.indexer.functions.claude_sessions import _extract_text, _iter_head_json
+
+        for raw in _iter_head_json(jsonl_path):
+            if raw.get("type") != "user" or raw.get("isMeta"):
+                continue
+            text = _extract_text((raw.get("message") or {}).get("content"))
+            if text:
+                return " ".join(text.split())
+    except OSError as e:
+        logger.debug("[worker_history] claude first-prompt read failed for %s: %s", jsonl_path, e)
+    return None
+
+
 async def get_worker_session_name(
     worker_type: object,
     session_id: str,
     *,
     jsonl_path: Optional[Path] = None,
+    prompt_fallback: bool = False,
 ) -> Optional[str]:
     """Generic display title for ONE worker session — the same value that
     ``WorkerHistoryEntry.name`` (and therefore the ``history_entry`` list) carries,
@@ -991,6 +1015,12 @@ async def get_worker_session_name(
     (Codex/Copilot carry no on-file title, so they name only through an owning
     process). Returns ``None`` when nothing names it, so the caller can leave the
     existing label untouched. ``jsonl_path`` (when known) skips a path re-resolve.
+
+    ``prompt_fallback=True`` adds a LAST-resort rung: the transcript's first
+    user prompt. The history list must NOT use it (it renders name and
+    last-prompt as two separate lines), but the default-name stamp does —
+    headless (SDK-launched) sessions carry no on-file title at all, and
+    without this rung they stay nameless on every UI surface.
     """
     if not session_id:
         return None
@@ -1005,14 +1035,27 @@ async def get_worker_session_name(
 
     custom_title: Optional[str] = None
     slug: Optional[str] = None
+    first_prompt: Optional[str] = None
     if wt is WorkerType.CLAUDE and jsonl_path is not None:
-        custom_title, slug = await asyncio.to_thread(_claude_file_title_sync, jsonl_path)
+
+        def _read_title_fields() -> tuple[Optional[str], Optional[str], Optional[str]]:
+            title, s = _claude_file_title_sync(jsonl_path)
+            prompt = None
+            if prompt_fallback and not (ap_name or title or s):
+                prompt = _claude_first_prompt_sync(jsonl_path)
+            return title, s, prompt
+
+        # One thread hop for both file reads — the prompt rung only runs when
+        # the title slots came back empty, so it rides the same offload.
+        custom_title, slug, first_prompt = await asyncio.to_thread(_read_title_fields)
 
     # Same arg→priority mapping as ``_collect_claude_entries_sync``:
-    # AgenticProcess.name > Claude custom_title > Claude slug.
+    # AgenticProcess.name > Claude custom_title > Claude slug. ``first_prompt``
+    # is only ever set when the three title slots are all empty, so it rides
+    # the last rung and gets the same trim / 80-char cap / not-an-id filter.
     return _pick_name(
         custom_title=ap_name,
         slug=custom_title,
-        display=slug,
+        display=slug or first_prompt,
         session_id=session_id,
     )

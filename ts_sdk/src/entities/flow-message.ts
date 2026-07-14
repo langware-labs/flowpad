@@ -36,10 +36,15 @@ export enum BodyStatus {
  *  - INVITATION : a local-only placeholder FlowMessage representing a pending
  *                 hub Invitation as the first row of a conversation; its
  *                 ``context_entities`` carry the backing Invitation TypeId so
- *                 the UI can read invitation_id off it for the Accept action. */
+ *                 the UI can read invitation_id off it for the Accept action.
+ *  - SESSION_EVENT : a live-session lifecycle line ("Dana approved the live
+ *                 session") rendered as a slim system line, not a bubble.
+ *                 Doubles as the session-snapshot carrier via its
+ *                 remote_worker_session TYPE_ID attachment. */
 export enum FlowMessageKind {
   USER = 'user',
   INVITATION = 'invitation',
+  SESSION_EVENT = 'session_event',
 }
 
 /** Single source of truth for the body filename on the hub blob store.
@@ -155,6 +160,11 @@ export interface IFlowMessage extends IEntity {
    *  attachments require a packed body; sender flips to READY after upload.
    *  Receivers gate downloads on READY. */
   body_status?: BodyStatus;
+  /** Live-session grouping key. Stamped at send time by the guest (who mints
+   *  the session id) and on PromptResult replies by the host; receivers
+   *  re-derive it from the `remote_worker_session-<id>` TYPE_ID attachment
+   *  when the hub stripped the header field. */
+  remote_worker_session_id?: string | null;
   /** Transient, server-derived (API responses only — never stored). True once
    *  this message has a body AND that body has been pulled + unpacked locally,
    *  i.e. every renderable body attachment is on disk (files materialized,
@@ -196,6 +206,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
   body_unpacked?: boolean;
   cloned_from_id?: string | null;
   cloned_from_sender_id?: string | null;
+  remote_worker_session_id?: string | null;
   static type: string = 'flow_message';
 
   constructor(entity: Partial<IFlowMessage> = {}) {
@@ -221,6 +232,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
     this.body_unpacked = entity.body_unpacked ?? false;
     this.cloned_from_id = entity.cloned_from_id ?? null;
     this.cloned_from_sender_id = entity.cloned_from_sender_id ?? null;
+    this.remote_worker_session_id = entity.remote_worker_session_id ?? null;
   }
 
   /** Promote a draft message to a real reply: flips is_draft=false, appends to conversation.jsonl, pushes to hub. */

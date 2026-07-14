@@ -14,10 +14,7 @@
 import { execFile, spawn } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
-import { vi } from 'vitest';
-
-type SdkRealm = typeof import('@sdk');
-type SdkMain = typeof import('@sdk/main');
+import { createSdkMainRealm, type OwnedSdkMainRealm } from '../_sdk_realm';
 
 const REPO_ROOT = path.resolve(__dirname, '../../..');
 const INSTANCE_CTL = path.join(REPO_ROOT, 'scripts', 'instance_ctl.sh');
@@ -97,7 +94,7 @@ export async function killInstance(name: string): Promise<void> {
  * the module registry, then re-import the SDK graph + its `main` entrypoint
  * (both resolve into the same fresh realm, sharing its singletons).
  */
-export async function prepareCleanRealm(port: number): Promise<{ sdk: SdkRealm; main: SdkMain }> {
+export async function prepareCleanRealm(port: number): Promise<OwnedSdkMainRealm> {
   // Wipe the shared window context so this instance doesn't inherit the prior run's
   // persisted context entities / appReady flag.
   try {
@@ -109,11 +106,7 @@ export async function prepareCleanRealm(port: number): Promise<{ sdk: SdkRealm; 
   delete (window as Record<string, unknown>).context;
   delete (window as Record<string, unknown>).sniffer;
 
-  (globalThis as any).__FLOWPAD_API_URL__ = `http://localhost:${port}`;
-  vi.resetModules();
-  const sdk: SdkRealm = await import('@sdk');
-  const main: SdkMain = await import('@sdk/main');
-  return { sdk, main };
+  return createSdkMainRealm(`http://localhost:${port}`);
 }
 
 /** Bounce ONLY the backend: kill its PID, re-spawn `uv run -m flow_sdk.server.run`
@@ -131,12 +124,17 @@ export async function restartBackend(name: string, budgetMs = 60_000): Promise<n
 
   const envFile = path.join(REPO_ROOT, `.env.${name}.local`);
   const logPath = path.join(flowHome(), 'instances', name, 'restart-backend.log');
-  const logFd = await fs.open(logPath, 'a').then((h) => h.fd);
-  const child = spawn(
-    'bash',
-    ['-c', `set -a; source '${envFile}'; set +a; cd '${REPO_ROOT}'; exec uv run -m flow_sdk.server.run`],
-    { cwd: REPO_ROOT, detached: true, stdio: ['ignore', logFd, logFd] },
-  );
+  const logHandle = await fs.open(logPath, 'a');
+  let child: ReturnType<typeof spawn>;
+  try {
+    child = spawn(
+      'bash',
+      ['-c', `set -a; source '${envFile}'; set +a; cd '${REPO_ROOT}'; exec uv run -m flow_sdk.server.run`],
+      { cwd: REPO_ROOT, detached: true, stdio: ['ignore', logHandle.fd, logHandle.fd] },
+    );
+  } finally {
+    await logHandle.close();
+  }
   child.unref();
   // Update the registry so a later kill/restart targets the new backend.
   try {

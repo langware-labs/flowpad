@@ -3,14 +3,19 @@ import { defineConfig, mergeConfig } from 'vitest/config';
 import { loadEnv } from 'vite';
 import viteConfig from '../../vite.config';
 
-// Backend port comes from `.env.local` (LOCAL_SERVER_PORT) exactly like the hub
-// project. We do NOT default it — a wrong guess silently points the SDK at a
-// non-existent backend and the whole-app boot fails opaquely. If it's unset the
-// smoke test skips itself (see `_backend.ts`), so a bare port is enough here.
-const env = loadEnv('test', path.resolve(__dirname, '../../..'), '');
-const port = env.LOCAL_SERVER_PORT || '9007';
+// FLOW_INSTANCE selects the matching Vite mode, so the compile-time SDK URL and
+// jsdom origin agree with the same `.env.<name>.local` that `_backend.ts`
+// validates. The root Vitest config evaluates every project config even when a
+// different project runs, so missing selection is hard-failed later by the
+// headless setup hook rather than thrown during config evaluation.
+const instanceName = process.env.FLOW_INSTANCE || '';
+const mode = instanceName || 'test';
+const env = loadEnv(mode, path.resolve(__dirname, '../../..'), '');
+const instanceEnvMatches = !!instanceName && env.FLOW_INSTANCE === instanceName;
+const port = instanceEnvMatches ? env.LOCAL_SERVER_PORT : '';
+const apiUrl = instanceEnvMatches ? env.VITE_API_URL || (port ? `http://localhost:${port}` : '') : '';
 const resolvedViteConfig =
-  typeof viteConfig === 'function' ? viteConfig({ mode: 'test', command: 'serve' } as any) : viteConfig;
+  typeof viteConfig === 'function' ? viteConfig({ mode, command: 'serve' } as any) : viteConfig;
 
 export default mergeConfig(
   resolvedViteConfig,
@@ -30,8 +35,9 @@ export default mergeConfig(
       name: 'headless',
       environment: 'jsdom',
       environmentOptions: {
-        // The SDK reads window.location for its WS origin; pin it at the backend.
-        jsdom: { url: `http://localhost:${port}` },
+        // The SDK reads window.location for its WS origin; pin it at the selected
+        // backend. Missing selection stays origin-only until the setup hook reds.
+        jsdom: { url: port ? `http://localhost:${port}` : 'http://localhost' },
       },
       // reactSetup gives the jsdom DOM shims (matchMedia / ResizeObserver / …);
       // _setup adds the few extra browser primitives a FULL app boot touches
@@ -84,6 +90,9 @@ export default mergeConfig(
       jsxDev: false,
     },
     define: {
+      __API_URL__: JSON.stringify(apiUrl),
+      __REACT_INSTANCE_NAME__: JSON.stringify(instanceName),
+      __REACT_BACKEND_PORT__: JSON.stringify(port),
       'process.env.NODE_ENV': '"test"',
     },
   }),

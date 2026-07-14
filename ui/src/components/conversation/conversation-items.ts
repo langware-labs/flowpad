@@ -1,11 +1,15 @@
 import type { FlowMessage } from '@sdk';
 import type { ConversationMessagePointer } from '@sdk/entities/conversation';
+import { promptAttachmentsOf } from './attachment-actions/prompt-attachment';
 
 /** Discriminator for `ConversationItem`. POINTER rows resolve via the
- * conversation.jsonl pointer index; DRAFT rows are local-only `FlowMessage`s. */
+ * conversation.jsonl pointer index; DRAFT rows are local-only `FlowMessage`s;
+ * SESSION_GROUP rows are a run of consecutive live-session messages collapsed
+ * into one indented group (see `groupConversationItems`). */
 export enum ConversationItemKind {
   POINTER = 'pointer',
   DRAFT = 'draft',
+  SESSION_GROUP = 'session_group',
 }
 
 /**
@@ -15,6 +19,22 @@ export enum ConversationItemKind {
 export type ConversationItem =
   | { kind: ConversationItemKind.POINTER; key: string; messageId: string; timestamp: string; sortAt: number }
   | { kind: ConversationItemKind.DRAFT; key: string; draft: FlowMessage; sortAt: number };
+
+/** A run of consecutive same-session messages, collapsed into one group row.
+ *  `children` keep their original order; SESSION_EVENT lines render inside. */
+export interface SessionGroupItem {
+  kind: ConversationItemKind.SESSION_GROUP;
+  key: string;
+  sessionId: string;
+  children: ConversationItem[];
+  /** Messages carrying a runnable prompt (guest → host turns). */
+  promptCount: number;
+  /** Messages carrying a `prompt_result-` attachment (host → guest replies). */
+  replyCount: number;
+  sortAt: number;
+}
+
+export type GroupedConversationItem = ConversationItem | SessionGroupItem;
 
 function safeTime(value: string | Date | null | undefined, fallback: number): number {
   if (!value) return fallback;
@@ -55,6 +75,74 @@ export function buildConversationItems(
   }
   items.sort((a, b) => a.sortAt - b.sortAt);
   return items;
+}
+
+function messageHasPromptResult(fm: FlowMessage): boolean {
+  return (fm.attachment ?? []).some(
+    (a) => a?.attachment_type === 'type_id' && (a.data ?? '').startsWith('prompt_result-'),
+  );
+}
+
+function itemFlowMessage(
+  item: ConversationItem,
+  getFm: (id: string) => FlowMessage | null,
+): FlowMessage | null {
+  if (item.kind === ConversationItemKind.DRAFT) return item.draft;
+  if (item.kind === ConversationItemKind.POINTER) return getFm(item.messageId);
+  return null;
+}
+
+/**
+ * Partition consecutive same-live-session runs into SESSION_GROUP rows.
+ *
+ * The grouping key is `fm.remote_worker_session_id` (stamped at send time /
+ * re-derived from the carrier attachment on receive). Messages whose body
+ * hasn't resolved yet (`getFm` → null) and messages without a session id stay
+ * flat — safe degradation for old conversations and cold live-query windows.
+ * A run breaks on any non-session message, so interleaved human chatter keeps
+ * its place in the timeline (inline runs, not a sticky card).
+ */
+export function groupConversationItems(
+  items: readonly ConversationItem[],
+  getFm: (id: string) => FlowMessage | null,
+): GroupedConversationItem[] {
+  const out: GroupedConversationItem[] = [];
+  let run: SessionGroupItem | null = null;
+
+  const flush = () => {
+    if (!run) return;
+    // A single-message "run" still groups — the session framing (indent +
+    // chip) is what tells the reader this line ran on another machine.
+    out.push(run);
+    run = null;
+  };
+
+  for (const item of items) {
+    const fm = itemFlowMessage(item, getFm);
+    const sid = fm?.remote_worker_session_id ?? null;
+    if (!sid || !fm) {
+      flush();
+      out.push(item);
+      continue;
+    }
+    if (run && run.sessionId !== sid) flush();
+    if (!run) {
+      run = {
+        kind: ConversationItemKind.SESSION_GROUP,
+        key: `session:${sid}:${item.key}`,
+        sessionId: sid,
+        children: [],
+        promptCount: 0,
+        replyCount: 0,
+        sortAt: item.sortAt,
+      };
+    }
+    run.children.push(item);
+    if (promptAttachmentsOf(fm).length > 0) run.promptCount += 1;
+    if (messageHasPromptResult(fm)) run.replyCount += 1;
+  }
+  flush();
+  return out;
 }
 
 export interface SoloSendNoticeParams {

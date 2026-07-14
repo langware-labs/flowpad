@@ -306,6 +306,12 @@ class DBDriver(Generic[RecordType]):
     async def update(self, entity: DBBaseRecord, updated_by: TypeId | None = None):
         raise NotImplementedError("update is not implemented")
 
+    async def stamp_last_active_at(
+        self, entity_id: str, timestamp_ms: int
+    ) -> tuple[Optional[RecordType], bool]:
+        """Atomically update only recency; return ``(current, stamped)``."""
+        raise NotImplementedError("stamp_last_active_at is not implemented")
+
     async def save(self, entity: DBBaseRecord, owner: TypeId | None = None):
         raise NotImplementedError("create is not implemented")
 

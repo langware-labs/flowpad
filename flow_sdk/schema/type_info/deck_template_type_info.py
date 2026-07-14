@@ -28,6 +28,11 @@ DECK_TEMPLATE = TypeMetadata(
     index_fields=["description"],
     main_subdir="assets/deck-templates",
     main_layout="folder",
+    # template.json is the folder's main document (see builtin/deck_template.py).
+    # Declaring it — like DECK does with deck.json — lets file-resolving callers
+    # (e.g. the asset "Improve" flow's resolveImproveTarget) find the editable
+    # main file instead of erroring "no main file metadata".
+    main_file="template.json",
     from_disk_fn=extract_deck_template,
     gen_uuid_fn=deck_template_gen_id,
     asset_hash_fn=deck_template_asset_hash,

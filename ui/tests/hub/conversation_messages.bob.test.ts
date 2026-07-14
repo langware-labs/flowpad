@@ -2,7 +2,7 @@
  * BOB side of the two-vitest ping-pong. Companion: ``conversation_messages.test.ts``
  * (alice). Run concurrently, bob pointed at a bob-logged-in backend:
  *
- *   VITE_API_URL=http://localhost:<bob-be> npx vitest run --project hub \
+ *   FLOW_INSTANCE=$SHARE_INST_2 npx vitest run --project hub-paired \
  *     tests/hub/conversation_messages.bob.test.ts
  *
  * Protocol (documented in the alice file): bob polls the rendezvous file for

@@ -31,6 +31,8 @@ import { ExecutionSettingsPopover } from './ExecutionSettingsPopover';
 import { ProcessNameBar } from './ProcessNameBar';
 import { notify } from '@src/notifications/notify';
 import { CompactExecutionInput } from './CompactExecutionInput';
+import { QueueChip } from './QueueChip';
+import { useInputHistory } from '@src/hooks/use-input-history';
 import { splitLiveGroup, useTurnGroups, type TurnGroup } from '@src/components/floating-chat/groupTurnEvents';
 import { TurnGroupsList } from './TurnGroupsList';
 import { ChatActivityLine } from './ChatActivityLine';
@@ -53,6 +55,9 @@ import {
 } from '@src/components/workers/worker-types';
 
 const EMPTY_TURN_GROUPS: TurnGroup[] = [];
+
+const isUserMessage = (m: FlowData) =>
+  m.elementType === FlowElementTypes.USER_MESSAGE || (m.attributes && m.attributes.role === 'user');
 
 interface EntityExecutionPanelProps {
   /**
@@ -403,6 +408,31 @@ export function EntityExecutionPanel({
   // 5. In-flight tracking for the send button gate.
   const [sending, setSending] = useState(false);
 
+  // Prompt history (ArrowUp/Down browsing in the composer). Seeded from the
+  // loaded transcript's user messages so "1 up = last prompt" survives
+  // reloads, then extended live by every send/enqueue. Keyed on the USER-
+  // message count (not `messages` identity, which churns on every streamed
+  // chunk) so the strip/dedup work only runs when a prompt is actually added.
+  const inputHistory = useInputHistory();
+  const userMessageCount = useMemo(
+    () => messages.reduce((n, m) => n + (isUserMessage(m) ? 1 : 0), 0),
+    [messages],
+  );
+  useEffect(() => {
+    inputHistory.seed(
+      messages
+        .filter(isUserMessage)
+        .map((m) => String(m.content ?? '').trim())
+        // Strip vendor-synthetic interrupt records (claude's "[Request
+        // interrupted by user…]" tool_result rows render as user messages —
+        // sometimes merged onto the next typed prompt) so history holds only
+        // what the user actually typed.
+        .map((text) => text.replace(/^(\[Request interrupted[^\]]*\]\s*)+/, '').trim())
+        .filter(Boolean),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inputHistory, userMessageCount, activeProcess?.id]);
+
   // Pre-first-send settings — applied at lazy-create time.
   const [pendingAttachedRefs, setPendingAttachedRefs] = useState<string[]>([]);
   const [pendingProjectId, setPendingProjectId] = useState<string | null>(null);
@@ -495,7 +525,26 @@ export function EntityExecutionPanel({
   }, [activeProcess]);
 
   const handleSend = useCallback(async (text: string, opts?: { forceNewProcess?: boolean }) => {
-    if (!targetStr || sending) return;
+    if (!targetStr) return;
+    inputHistory.addToHistory(text);
+
+    // Mid-turn sends ENQUEUE instead of racing a second turn: the backend
+    // owns the queue and auto-drains it as the worker frees up (the composer
+    // stays usable while busy; the queue chip shows the pending count).
+    const turnBusy = !!activeProcess && isBusy(activeProcess);
+    if (!opts?.forceNewProcess && activeProcess && (turnBusy || sending)) {
+      const composed = promptContext ? `${promptContext.text}\n\n${text}` : text;
+      try {
+        await activeProcess.enqueue(composed);
+        if (promptContext) onPromptContextConsumed?.();
+      } catch (err) {
+        console.error('[EntityExecutionPanel] enqueue failed', err);
+        notify.error({ title: t`Message not queued`, message: err instanceof Error ? err.message : String(err) });
+      }
+      return;
+    }
+
+    if (sending) return;
     setSending(true);
     try {
       let proc = opts?.forceNewProcess ? null : activeProcess;
@@ -554,7 +603,7 @@ export function EntityExecutionPanel({
     } finally {
       setSending(false);
     }
-  }, [activeProcess, sending, targetStr, effectiveProjectId, effectiveWorkdir, effectiveModel, effectiveWorkerType, onProcessCreated, pendingProjectId, pendingAttachedRefs, processType, transport, promptContext, onPromptContextConsumed, selectedProcessId, t]);
+  }, [activeProcess, sending, targetStr, effectiveProjectId, effectiveWorkdir, effectiveModel, effectiveWorkerType, onProcessCreated, pendingProjectId, pendingAttachedRefs, processType, transport, promptContext, onPromptContextConsumed, selectedProcessId, inputHistory, t]);
 
   const handleStop = useCallback(async () => {
     if (!activeProcess) return;
@@ -639,13 +688,13 @@ export function EntityExecutionPanel({
   // needed. `activeProcess` is a `StatusBearingProcess` (status + workerStatus).
   const indicatorProcess: StatusBearingProcess | null = activeProcess;
 
-  // One boolean gates the composer: the backend's turn-in-flight `busy` boolean
-  // (serialized alongside `status`; read via `isBusy`). A dead/complete PTY, a PENDING_USER worker (asked a
-  // question), and a headless worker between turns all read as ¬busy, so the
-  // textarea stays sendable exactly when the backend prompt action would admit
-  // the turn — no transport special-casing and no PENDING_USER carve-out needed.
+  // The backend's turn-in-flight `busy` boolean (serialized alongside
+  // `status`; read via `isBusy`) drives the Stop button and routes mid-turn
+  // sends to the queue. The composer itself stays USABLE while busy — typing
+  // + Enter enqueues (handleSend's turn-busy branch) instead of being locked
+  // out, so the only hard gate is having a target at all.
   const busy = !!indicatorProcess && isBusy(indicatorProcess);
-  const sendDisabled = !targetStr || sending || busy;
+  const sendDisabled = !targetStr;
   const modelSettingsNode = modelSelectSlot?.({
     value: effectiveModel,
     disabled: !targetStr || sending || busy || modelSavePending,
@@ -794,6 +843,9 @@ export function EntityExecutionPanel({
         statusSlot={statusSlot}
         placeholder={placeholder}
         onPasteImages={handlePasteImages}
+        leadingSlot={<QueueChip process={activeProcess} />}
+        history={inputHistory}
+        animateEnqueue
       />
       <ConfirmDialog
         open={!!pendingDelete}

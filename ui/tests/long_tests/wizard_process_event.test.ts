@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import * as net from 'net';
 import * as os from 'os';
 import * as path from 'path';
+import { createSdkRealm } from '../_sdk_realm';
 
 async function freePort(): Promise<number> {
   return await new Promise((resolve, reject) => {
@@ -43,6 +44,8 @@ describe('wizard process lifecycle over the real SDK transport', () => {
   let server: ChildProcessWithoutNullStreams | null = null;
   let serverExit: Promise<unknown> | null = null;
   let serverLog = '';
+  let sdk: typeof import('@sdk');
+  let disposeSdkRealm: (() => void) | undefined;
 
   beforeAll(async () => {
     const port = await freePort();
@@ -79,11 +82,13 @@ describe('wizard process lifecycle over the real SDK transport', () => {
     });
 
     await waitForServer(baseUrl);
-    (globalThis as any).__FLOWPAD_API_URL__ = baseUrl;
+    const realm = await createSdkRealm(baseUrl);
+    sdk = realm.sdk;
+    disposeSdkRealm = realm.dispose;
   }, 45_000);
 
   afterAll(async () => {
-    delete (globalThis as any).__FLOWPAD_API_URL__;
+    disposeSdkRealm?.();
     if (server && server.exitCode === null && !server.killed) {
       server.kill('SIGTERM');
       await Promise.race([
@@ -97,7 +102,6 @@ describe('wizard process lifecycle over the real SDK transport', () => {
   });
 
   it('completeWizard resolves awaitWizardResult through a real watched AgenticProcess', async () => {
-    const sdk = await import('@sdk');
     const {
       AgenticProcess,
       ComputeNode,

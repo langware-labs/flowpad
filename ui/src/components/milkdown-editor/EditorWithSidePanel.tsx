@@ -15,6 +15,12 @@ const BACKLINKS_TAB: TabDescriptor = {
   description: 'Documents that link here',
 };
 
+// Vibe/Standard keep the markdown rail deliberately small. Context is supplied
+// only by surfaces that support it; Revisions is supplied by MarkdownEditor.
+// Everything else (Backlinks and asset-specific tools such as Runs/Eval) is a
+// power-user option and remains available in Advanced/Dev.
+const NON_ADVANCED_SIDE_TAB_IDS = new Set(['context', 'revisions']);
+
 /**
  * Extra tab a caller can inject alongside Backlinks. The `panel` is the
  * ReactNode rendered when the tab is active. Used by asset types (workflow
@@ -76,8 +82,9 @@ export function EditorWithSidePanel({
     if (windows.length > 0) closeAll();
   }, [advanced, windows, closeAll]);
 
-  // Full registry of openable windows (Backlinks + caller extras), in
-  // display order. Drives both the open-tab descriptors and the collapsed rail.
+  // Registry of openable windows (Backlinks + caller extras), in display order.
+  // Filtering here covers both the open drawer tabs and the collapsed rail, so
+  // a persisted Advanced URL cannot leak a power-user tab into a simpler mode.
   const registry = useMemo<TabDescriptor[]>(() => {
     const extras: TabDescriptor[] = (extraTabs ?? []).map(({ id, label, icon, description }) => ({
       id,
@@ -85,8 +92,9 @@ export function EditorWithSidePanel({
       icon,
       description,
     }));
-    return [BACKLINKS_TAB, ...extras];
-  }, [extraTabs]);
+    const all = [BACKLINKS_TAB, ...extras];
+    return advanced ? all : all.filter((tab) => NON_ADVANCED_SIDE_TAB_IDS.has(tab.id));
+  }, [advanced, extraTabs]);
 
   const panels = useMemo<Record<string, ReactNode>>(() => {
     const map: Record<string, ReactNode> = {
@@ -106,6 +114,7 @@ export function EditorWithSidePanel({
         .map((d) => ({ ...d, closable: true })),
     [windows, registry],
   );
+  const visibleActive = active && openTabs.some((tab) => tab.id === active) ? active : null;
 
   return (
     <div className="flex h-full w-full" data-testid="md-editor-with-side-panel">
@@ -120,7 +129,7 @@ export function EditorWithSidePanel({
           data-testid="md-side-window"
           tabTestIdPrefix="md-side-tab"
           tabs={openTabs}
-          activeTab={active ?? openTabs[openTabs.length - 1].id}
+          activeTab={visibleActive ?? openTabs[openTabs.length - 1].id}
           onActiveTabChange={select}
           onCloseTab={close}
           truncateLabels
@@ -129,29 +138,30 @@ export function EditorWithSidePanel({
           {panels}
         </TabbedSideDrawer>
       )}
-      {/* The rail is always present (like the terminal's ribbon): every
-          registered window can be opened — or re-activated, when already open —
-          at any time, whether the drawer is collapsed or showing other windows. */}
-      <CollapsedSideRail data-testid="md-side-window-collapsed">
-        {openTabs.length === 0 && (
-          <SideRailButton
-            icon={PanelRightOpen}
-            label="Expand side window"
-            onClick={() => open(registry[0].id)}
-            testId="md-side-window-expand"
-          />
-        )}
-        {registry.map((tab) => (
-          <SideRailButton
-            key={tab.id}
-            icon={tab.icon}
-            label={tab.label}
-            active={windows.includes(tab.id)}
-            onClick={() => open(tab.id)}
-            testId={`md-side-tab-collapsed-${tab.id}`}
-          />
-        ))}
-      </CollapsedSideRail>
+      {/* When this mode has registered windows, the rail can open or re-activate
+          each one at any time, whether the drawer is collapsed or already open. */}
+      {registry.length > 0 && (
+        <CollapsedSideRail data-testid="md-side-window-collapsed">
+          {advanced && openTabs.length === 0 && (
+            <SideRailButton
+              icon={PanelRightOpen}
+              label="Expand side window"
+              onClick={() => open(registry[0].id)}
+              testId="md-side-window-expand"
+            />
+          )}
+          {registry.map((tab) => (
+            <SideRailButton
+              key={tab.id}
+              icon={tab.icon}
+              label={tab.label}
+              active={windows.includes(tab.id)}
+              onClick={() => open(tab.id)}
+              testId={`md-side-tab-collapsed-${tab.id}`}
+            />
+          ))}
+        </CollapsedSideRail>
+      )}
     </div>
   );
 }

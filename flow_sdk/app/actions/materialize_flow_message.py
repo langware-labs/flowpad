@@ -20,7 +20,7 @@ from typing import Optional
 
 from flow_sdk._compat import UTC
 from flow_sdk.builtin.conversation import Conversation
-from flow_sdk.builtin.flow_message import FlowMessage
+from flow_sdk.builtin.flow_message import FlowMessage, derive_session_fields
 from flow_sdk.core.entity.entity_model import remote_reflection
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.discovery.notify import send_resource_sync
@@ -207,6 +207,9 @@ async def materialize_flow_message(
             merged = FlowMessage.merge_hub_payload(existing, payload)
             merged["remote"] = True
             fm = FlowMessage.model_validate(merged)
+            # Refill live-session fields the hub may have stripped (unknown-
+            # field drop) from the authoritative attachment carrier.
+            derive_session_fields(fm)
             # Pure reflection: preserve the hub's created_by/updated_by/dates
             # verbatim, never the local sync user.
             with remote_reflection():
@@ -229,6 +232,10 @@ async def materialize_flow_message(
         fm = FlowMessage.model_validate(payload)
         if not payload.get("id"):
             fm.id = FlowMessage.allocate_id(payload)
+        # Refill live-session fields the hub may have stripped (unknown-field
+        # drop) from the authoritative attachment carrier. Covers every arrival
+        # path — hub WS, bundle unpack, catch-up sync — in this one chokepoint.
+        derive_session_fields(fm)
         # Save with notify=False — the CREATE is emitted explicitly below. Remote
         # rows reflect (preserve hub attribution); local rows stamp normally.
         with (remote_reflection() if remote else nullcontext()):

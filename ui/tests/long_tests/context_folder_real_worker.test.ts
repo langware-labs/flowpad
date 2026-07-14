@@ -19,6 +19,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { createSdkRealm } from '../_sdk_realm';
 
 const REPO_ROOT = path.resolve(__dirname, '../../..');
 const INSTANCE = process.env.TEST_INSTANCE || 'ctxworker';
@@ -26,6 +27,7 @@ const PORT = Number(process.env.TEST_PORT || 6082);
 
 let proc: ChildProcess | undefined;
 let sdk: any;
+let disposeSdkRealm: (() => void) | undefined;
 let tmpRoot = '';
 
 async function waitHealthy(port: number, budgetMs: number): Promise<boolean> {
@@ -58,33 +60,37 @@ function isClaudeUnavailable(content: string): boolean {
 beforeAll(async () => {
   const logPath = `/tmp/context_folder_real_worker.${INSTANCE}.log`;
   const logHandle = await fs.open(logPath, 'w');
-  proc = spawn('uv', ['run', '-m', 'flow_sdk.server.run'], {
-    cwd: REPO_ROOT,
-    env: {
-      ...process.env,
-      FLOW_INSTANCE: INSTANCE,
-      LOCAL_SERVER_PORT: String(PORT),
-      MINIHUB_RELOAD: 'False',
-      FLOWPAD_SKIP_DOTENV: 'true',
-      FLOWPAD_SKIP_LOCK: 'true',
-      FLOWPAD_DEFAULT_WORKER: 'claude',
-    },
-    stdio: ['ignore', logHandle.fd, logHandle.fd],
-  });
+  try {
+    proc = spawn('uv', ['run', '-m', 'flow_sdk.server.run'], {
+      cwd: REPO_ROOT,
+      env: {
+        ...process.env,
+        FLOW_INSTANCE: INSTANCE,
+        LOCAL_SERVER_PORT: String(PORT),
+        MINIHUB_RELOAD: 'False',
+        FLOWPAD_SKIP_DOTENV: 'true',
+        FLOWPAD_SKIP_LOCK: 'true',
+        FLOWPAD_DEFAULT_WORKER: 'claude',
+      },
+      stdio: ['ignore', logHandle.fd, logHandle.fd],
+    });
+  } finally {
+    await logHandle.close();
+  }
   const up = await waitHealthy(PORT, 60_000);
   if (!up) throw new Error(`backend '${INSTANCE}' did not come up on :${PORT} — see ${logPath}`);
 
   tmpRoot = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'ctx-real-worker-')));
 
-  (globalThis as any).__FLOWPAD_API_URL__ = `http://localhost:${PORT}`;
-  const { vi } = await import('vitest');
-  vi.resetModules();
-  sdk = await import('@sdk');
+  const realm = await createSdkRealm(`http://localhost:${PORT}`);
+  sdk = realm.sdk;
+  disposeSdkRealm = realm.dispose;
   const info = await sdk.dataManager.bootstrap('localhost', true);
   await sdk.dataManager.loadTypes(info.types || []);
 }, 90_000);
 
 afterAll(async () => {
+  disposeSdkRealm?.();
   proc?.kill('SIGTERM');
   if (tmpRoot) await fs.rm(tmpRoot, { recursive: true, force: true }).catch(() => {});
 });

@@ -42,6 +42,11 @@ function buildClassifyInstruction(outputDir: string): string {
   ].join('\n');
 }
 
+interface WorkerHistoryCandidate {
+  worker_type?: string;
+  worker_id?: string;
+}
+
 // ── Test suite ──────────────────────────────────────────────────────────────
 
 describe('classify_session', () => {
@@ -50,9 +55,7 @@ describe('classify_session', () => {
     try {
       await fetch(`${window.location.origin}/health/status`, { signal: AbortSignal.timeout(2000) });
     } catch {
-      throw new Error(
-        'Server not running — start it with: uv run -m flow_sdk.server.run',
-      );
+      throw new Error('Server not running — start it with: uv run -m flow_sdk.server.run');
     }
 
     await apiTestSetup(getTestSignupInfo(), ctx.task.name);
@@ -73,31 +76,42 @@ describe('classify_session', () => {
     const computeNode = await get_local_compute_node();
     const localFsTypeId = new TypeId(ComputeNode.type, '@local');
 
-    // ── 1. Fetch the most recent Claude session ─────────────────────────────
-    const sessionsRaw = await apiClient.get<any>(
-      `${GRAPH_API_PREFIX}/${ComputeNode.type}/@local/fs-records/claude_session?limit=1`,
+    // ── 1. Fetch the most recent live Claude session ────────────────────────
+    // worker-history scans the provider's current on-disk history. The generic
+    // fs-records collection is a shadow index and may retain orphaned rows after
+    // a fixture removes its source transcript.
+    const historyRaw = await apiClient.get<WorkerHistoryCandidate[] | { data?: WorkerHistoryCandidate[] }>(
+      `${GRAPH_API_PREFIX}/${ComputeNode.type}/@local/worker-history?limit=50`,
     );
-    const sessions: any[] = Array.isArray(sessionsRaw)
-      ? sessionsRaw
-      : Array.isArray((sessionsRaw as any)?.data)
-        ? (sessionsRaw as any).data
-        : [];
+    const history = Array.isArray(historyRaw) ? historyRaw : Array.isArray(historyRaw?.data) ? historyRaw.data : [];
+    const candidate = history.find((entry) => entry.worker_type === 'claude' && typeof entry.worker_id === 'string');
 
-    expect(sessions.length, 'Need at least one Claude session on disk').toBeGreaterThan(0);
+    if (!candidate?.worker_id) {
+      throw new Error('Need at least one live Claude session on disk');
+    }
 
-    const session = sessions[0];
-    const sessionId: string = session.session_id ?? session.id;
-    const cwd: string = session.cwd ?? normalizedHome;
+    // Resolve once more through the authoritative provider lookup before the
+    // fork. This proves both the transcript and its original cwd still exist.
+    const session = await computeNode.findSession(candidate.worker_id, 'claude');
+    if (!session?.cwd) {
+      throw new Error('Selected Claude session or its original cwd no longer resolves on disk');
+    }
+
+    const sessionId = session.session_id;
+    const cwd = session.cwd;
 
     console.log(`[classify] forking session ${sessionId} in ${cwd}`);
 
     // ── 2. Fork session into a new AgenticProcess ───────────────────────────
-    const agenticProcess = await computeNode.createProcess({
-      workdir: cwd,
-      permissionMode: 'bypassPermissions',
-      resumeSessionId: sessionId,
-      forkSession: true,
-    });
+    const agenticProcess = await computeNode.createProcess(
+      {
+        workdir: cwd,
+        permissionMode: 'bypassPermissions',
+        resumeSessionId: sessionId,
+        forkSession: true,
+      },
+      { visible: false, pty_mode: false },
+    );
     await agenticProcess.watch();
 
     console.log(`[classify] created process ${agenticProcess.id}`);

@@ -151,7 +151,7 @@ async def test_upload_body_accepts_git_transfer_mode(bootstrapped_client, tmp_pa
         )
 
     assert r.status_code == 200, r.text
-    to_file.assert_awaited_once_with(transfer_mode="git")
+    to_file.assert_awaited_once_with(transfer_mode="git", create_bookmark=False)
 
 
 @pytest.mark.asyncio
