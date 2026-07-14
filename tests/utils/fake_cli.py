@@ -25,12 +25,13 @@ def fake_stream_argv(lines: list[dict], delay_ms: int = 0) -> list[str]:
 def patch_build_spawn(monkeypatch, worker_cls, argv, env=None, stdin=None):
     """Monkeypatch ``worker_cls._build_spawn`` to return a fixed spawn tuple.
 
-    Returns a 2-tuple ``(argv, env)`` when *stdin* is ``None`` (claude's shape)
-    or a 3-tuple ``(argv, env, stdin)`` otherwise (copilot/codex deliver the
-    prompt over the child's stdin). The stub ignores the differently-ordered
-    ``prompt``/``context`` positionals the two worker families pass.
+    Always returns the 3-tuple ``(argv, env, stdin)`` every worker unpacks.
+    ``stdin=None`` means "no stdin payload" (the child gets DEVNULL); a string
+    is written to the child's stdin pipe (all three vendors deliver the prompt
+    over stdin). The stub ignores the differently-ordered ``prompt``/``context``
+    positionals the worker families pass.
     """
-    spawn = (argv, env or {}) if stdin is None else (argv, env or {}, stdin)
+    spawn = (argv, env or {}, stdin)
 
     def _stub(self, *args, **kwargs):  # noqa: ANN001
         return spawn

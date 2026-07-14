@@ -154,9 +154,11 @@ async def test_close_session_terminates_and_writes_interrupted(tmp_path: Path, m
     patch_build_spawn(monkeypatch, CopilotCLIStreamWorker, ["bash", "-c", "sleep 60"], stdin="")
     ctx = AgenticContext(workdir=str(tmp_path))
 
+    out: list = []
+
     async def _run():
-        async for _fd in worker.execute(prompt="hi", context=ctx):
-            pass
+        async for fd in worker.execute(prompt="hi", context=ctx):
+            out.append(fd)
 
     task = asyncio.create_task(_run())
     await asyncio.sleep(0.2)
@@ -164,3 +166,11 @@ async def test_close_session_terminates_and_writes_interrupted(tmp_path: Path, m
     await asyncio.wait_for(task, timeout=CANCEL_GRACE_SECONDS + 2)
 
     assert '"type":"flowpad.interrupted"' in transcript.read_text(encoding="utf-8")
+    # A user-requested cancel renders as the canonical turn-abort STATUS —
+    # never an ERROR frame (a stop must not look like a crash in the chat).
+    subtypes = [fd.attributes.get("subtype") for fd in out]
+    assert "turn_aborted" in subtypes
+    assert any(fd.attributes.get("turn-terminated") == "true" for fd in out)
+    from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowElementType
+
+    assert not any(fd.attributes.get("element-type") == FlowElementType.ERROR for fd in out)

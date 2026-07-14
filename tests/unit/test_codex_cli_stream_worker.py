@@ -286,6 +286,7 @@ async def test_headless_prompt_missing_binary_ends_process_failed(tmp_path: Path
     class _FakeProcess:
         id = "aaaaaaaa-1111-4111-9111-000000000001"
         typeid = None
+        driver = CodexDriver()
 
         def __init__(self) -> None:
             self.workdir = str(tmp_path)
@@ -356,6 +357,32 @@ async def test_nonzero_exit_yields_status_and_end(tmp_path: Path, monkeypatch: p
 
     assert any(fd.attributes.get("subtype") == "exit-error" for fd in out)
     assert out[-1].attributes["element-type"] == FlowElementType.END
+
+
+@pytest.mark.asyncio
+async def test_cancel_reports_abort_not_exit_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """A user-requested cancel (SIGINT-first close_session) classifies the
+    non-zero exit as the canonical turn-abort STATUS, never ``exit-error``."""
+    worker = CodexCLIStreamWorker(transcript_path=tmp_path / "codex.jsonl")
+    patch_build_spawn(monkeypatch, CodexCLIStreamWorker, ["bash", "-c", "sleep 60"], stdin="")
+    ctx = AgenticContext(workdir=str(tmp_path))
+
+    out: list = []
+
+    async def _run():
+        async for fd in worker.execute(prompt="hi", context=ctx):
+            out.append(fd)
+
+    task = asyncio.create_task(_run())
+    await asyncio.sleep(0.2)
+    await worker.close_session()
+    await asyncio.wait_for(task, timeout=CANCEL_GRACE_SECONDS + 2)
+
+    assert worker._proc is not None and worker._proc.returncode not in (0, None)
+    subtypes = [fd.attributes.get("subtype") for fd in out]
+    assert "turn_aborted" in subtypes
+    assert "exit-error" not in subtypes
+    assert any(fd.attributes.get("turn-terminated") == "true" for fd in out)
 
 
 @pytest.mark.asyncio
