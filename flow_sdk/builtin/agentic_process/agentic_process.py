@@ -1993,7 +1993,6 @@ class AgenticProcess(Entity):
         what actually advances a multi-entry queue (VIBE-005).
         """
         object.__setattr__(self, "_turn_in_flight", False)
-        logger.info("%s: end_headless_turn for AP %s", log_prefix, self.id)  # TEMP loop-close diag
         try:
             await self.notify_updated()
         except Exception:
@@ -2454,7 +2453,6 @@ class AgenticProcess(Entity):
         Args:
             instruction: The prompt text to send.
         """
-        logger.info("AP %s ENTRY prompt()", self.id)  # TEMP loop-close diag
         if not self.pty_mode:
             admission = try_admit_prompt(self.id)
             if admission is None:
@@ -2800,7 +2798,6 @@ class AgenticProcess(Entity):
 
     @action.post(action_name="prompt")
     async def _http_prompt(self) -> Any:
-        logger.info("AP %s ENTRY _http_prompt", self.id)  # TEMP loop-close diag
         from starlette.responses import StreamingResponse  # local import — starlette is an app-layer dep
 
         request_info = get_current_request_info()
@@ -5816,9 +5813,6 @@ class AgenticProcess(Entity):
         or before a session/subject exists (``get_worker_session_name`` returns
         ``None`` until the transcript has a title). Returns True iff it wrote a name.
         """
-        logger.info(  # TEMP loop-close diag
-            "AP %s stamp entry: name=%r auto_rename=%r session=%s", self.id, self.name, self.auto_rename, self.session_id
-        )
         if (self.name or "").strip():
             return False
         if self.auto_rename is False:
@@ -5843,11 +5837,8 @@ class AgenticProcess(Entity):
             candidate = await get_worker_session_name(
                 self.worker_type, self.session_id, jsonl_path=jsonl_path, prompt_fallback=True
             )
-            logger.info(  # TEMP loop-close diag
-                "AP %s stamp: jsonl=%s candidate=%r", self.id, jsonl_path, candidate
-            )
         except Exception:
-            logger.info("AgenticProcess %s: default-name resolve failed", self.id, exc_info=True)  # TEMP diag (was debug)
+            logger.debug("AgenticProcess %s: default-name resolve failed", self.id, exc_info=True)
             return False
         candidate = (candidate or "").strip()
         if not candidate:
@@ -6423,20 +6414,24 @@ class AgenticProcess(Entity):
             # Drain the prompt queue on the turn-end edge (busy→not-busy). Single
             # AP-level seam for both PTY *and* headless turns (both write the
             # transcript that lands here), so no driver coupling.
-            logger.info(  # TEMP loop-close diag
-                "AP %s flush: busy %s->%s status=%s name=%r", self.id, prev_busy, current_busy, self.status, self.name
-            )
             if not current_busy and prev_busy:
                 self._schedule_queue_drain("ready")
                 # Same turn-end edge: push-reindex the files this turn wrote/edited
                 # so their entities re-parse + broadcast (updated_date bump →
                 # frontend body re-read). Fire-and-forget; never blocks the turn.
                 self._schedule_turn_end_reindex("flush")
-                # Same turn-end edge: the transcript just gained a turn's content, so
-                # a nameless process can now adopt its subject as a default name.
-                # Gating here (once per turn) instead of every debounce tick avoids
-                # re-running the subject resolve (a jsonl parse + DB read) on each
-                # flush of an un-stamped worker. Non-pinning; notify on the write.
+            if not current_busy:
+                # Default-name stamp on ANY idle flush, not the busy→idle edge:
+                # each flush hydrates a FRESH AgenticProcess object, so
+                # ``prev_busy`` is None on its first (often only) flush and an
+                # edge-gated stamp never fires for headless/chat processes.
+                # Stamping on THIS object also prevents the trailing clobber —
+                # ``_emit_status_report`` above whole-row-saves this hydration,
+                # and a name-less hydration would wipe a name another object
+                # (e.g. the prompt request's turn-end stamp) just persisted.
+                # Cheap: no-ops on the ``name``/``auto_rename``/``session_id``
+                # guards once named; the resolve itself is a head/tail read.
+                # Non-pinning; notify on the write.
                 try:
                     if await self.stamp_default_name():
                         await self.notify_updated()
