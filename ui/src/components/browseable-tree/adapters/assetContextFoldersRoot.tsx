@@ -17,6 +17,7 @@ import {
   type FsDragItem,
   type FsFolderDrop,
 } from './fsFolderRoot';
+import { ContextFolderGitBadge } from '@src/components/assets/ContextFolderGitBadge';
 
 /**
  * assetContextFoldersRoot — the Assets navigator's "Context folders" root.
@@ -47,6 +48,8 @@ export interface AssetContextFoldersRootDeps {
   /** OS drop handler: files/folders dragged in from outside the app are
    *  uploaded into the context folder (structure preserved via relPath). */
   onExternalDrop?: (entries: DroppedFileEntry[], dir: string) => void | Promise<void>;
+  /** Scoped project id — anchors the git rows' push-dialog conversations. */
+  projectId?: string | null;
 }
 
 export function assetContextFolderNodeId(dir: string): string {
@@ -101,6 +104,7 @@ function dirNode(
   onRemove: AssetContextFoldersRootDeps['onRemove'],
   onDropItem: AssetContextFoldersRootDeps['onDropItem'],
   onExternalDrop: AssetContextFoldersRootDeps['onExternalDrop'],
+  projectId: AssetContextFoldersRootDeps['projectId'],
 ): Browseable {
   const dir = info.path;
   const isGit = info.origin_kind === 'git';
@@ -122,6 +126,18 @@ function dirNode(
       <Folder className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
     ),
     hasChildren: !!fsNode,
+    // Git rows carry the status-bar pill pair (changes count + Push) as an
+    // always-visible badge; renders nothing while the repo is clean.
+    badge:
+      isGit && fsTypeId ? (
+        <ContextFolderGitBadge
+          workdir={`/${rel}`}
+          computeNodeId={fsTypeId.id}
+          folderName={basename(rel) || rel}
+          folderTypeId={info.typeid || null}
+          projectId={projectId}
+        />
+      ) : undefined,
     pointer: DockPointer.forAssetFsFolder(rel),
     canDrop: onDropItem ? (data) => canDropIntoDir(dir, data) : undefined,
     onDrop: onDropItem
@@ -143,7 +159,7 @@ function dirNode(
 }
 
 export function assetContextFoldersRoot(deps: AssetContextFoldersRootDeps): BrowseableRoot {
-  const { dirs, fsTypeId, onAdd, onRemove, onDropItem, onExternalDrop } = deps;
+  const { dirs, fsTypeId, onAdd, onRemove, onDropItem, onExternalDrop, projectId } = deps;
   const root: BrowseableRoot = {
     id: 'asset-context-folders-root',
     kind: 'root',
@@ -152,7 +168,7 @@ export function assetContextFoldersRoot(deps: AssetContextFoldersRootDeps): Brow
     hasChildren: dirs.length > 0,
     pointer: null,
     listChildren: (): Promise<Browseable[]> =>
-      Promise.resolve(dirs.map((info) => dirNode(info, fsTypeId, onRemove, onDropItem, onExternalDrop))),
+      Promise.resolve(dirs.map((info) => dirNode(info, fsTypeId, onRemove, onDropItem, onExternalDrop, projectId))),
     toolbar: [
       {
         id: 'add',
@@ -169,7 +185,7 @@ export function assetContextFoldersRoot(deps: AssetContextFoldersRootDeps): Brow
         return rel === dr || rel.startsWith(`${dr}/`);
       });
       if (!match) return Promise.resolve([root]);
-      const chain: Browseable[] = [root, dirNode(match, fsTypeId, onRemove, onDropItem, onExternalDrop)];
+      const chain: Browseable[] = [root, dirNode(match, fsTypeId, onRemove, onDropItem, onExternalDrop, projectId)];
       // Deep-link below the context dir: chain the intermediate fs folder
       // nodes (same ids listChildren produces) so the tree auto-expands.
       if (fsTypeId) {

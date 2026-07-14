@@ -591,7 +591,15 @@ export function AssetsPage() {
       <div className="flex h-[52px] flex-shrink-0 items-center gap-1 border-b px-3">
         <BookOpen className="h-4 w-4 text-muted-foreground" />
         <span className="ml-1 text-sm font-medium">
-          {isProjectView ? <Trans>Project assets</Trans> : <Trans>Assets</Trans>}
+          {/* A context folder gets its own name as the pane title; everything
+              else keeps the generic Assets heading. */}
+          {isFsMode && fsRelPath ? (
+            fsRelPath.replace(/\/+$/, '').split('/').pop() || <Trans>Assets</Trans>
+          ) : isProjectView ? (
+            <Trans>Project assets</Trans>
+          ) : (
+            <Trans>Assets</Trans>
+          )}
         </span>
         <ProjectChip projectId={chipProjectId} className="ml-1.5" />
         <div className="ml-auto flex items-center gap-2">

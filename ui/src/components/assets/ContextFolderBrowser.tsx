@@ -1,17 +1,15 @@
-import { FolderOpen, GitBranch, Loader2, Upload } from 'lucide-react';
-import { useCallback, useMemo, useState } from 'react';
+import { FolderOpen, GitBranch } from 'lucide-react';
+import { useCallback, useMemo } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { Project, TypeId } from '@sdk';
 import { useEntity } from '@src/hooks/entity-hooks';
 import { useGitFolderStatus } from '@src/hooks/use-git-folder-status';
 import { useProjectContextFolders } from '@src/hooks/use-project-context-folders';
-import { Button } from '@src/components/ui/button';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useExplorerComputeNode } from '@src/components/explorer-view/useExplorerComputeNode';
-import { basename, normalizeRel } from '@src/components/browseable-tree/adapters/fsFolderRoot';
+import { normalizeRel } from '@src/components/browseable-tree/adapters/fsFolderRoot';
 import { SimpleFileManager } from '@src/components/simple-file-manager';
-import { PushContextFolderDialog } from './PushContextFolderDialog';
 
 interface ContextFolderBrowserProps {
   /** Compute-node-relative path (no leading slash) from the `fs/` pointer. */
@@ -31,12 +29,10 @@ interface ContextFolderBrowserProps {
  * double-clicking a file dispatches through `navigation.openFile`.
  *
  * When the browsed path lies inside a GIT-backed context folder, the browser
- * decorates: files the remote doesn't have yet render in amber, and a header
- * strip shows the branch plus a Push button. Push opens
- * {@link PushContextFolderDialog}: message + optional recipients (contacts
- * groups expand in one click) + target conversation; the actual push
- * (stage-all → commit → pull --rebase → push) runs on submit and failures
- * surface in the dialog and as an error notification.
+ * decorates: files the remote doesn't have yet render in amber, and a slim
+ * header strip shows the branch + an unpushed badge. The git ACTIONS (changes
+ * diff + push/notify) live on the folder's tree row — see
+ * {@link ContextFolderGitBadge} — not in this pane.
  */
 export function ContextFolderBrowser({ relPath, onNavigate, projectId }: ContextFolderBrowserProps) {
   const { t } = useLingui();
@@ -51,22 +47,17 @@ export function ContextFolderBrowser({ relPath, onNavigate, projectId }: Context
   const initialPath = rel ? `/${rel}` : '/';
 
   // The git-backed context folder containing the browsed path (if any) — the
-  // repo root the status/push operations bind to, plus its Folder entity
-  // typeid (referenced as the git-link chip on push-notify messages).
-  const gitDir = useMemo(() => {
+  // repo root the status probes bind to.
+  const gitWorkdir = useMemo(() => {
     const match = contextDirInfos.find((info) => {
       if (info.origin_kind !== 'git') return false;
       const dirRel = normalizeRel(info.path);
       return !!dirRel && (rel === dirRel || rel.startsWith(`${dirRel}/`));
     });
-    return match ? { workdir: `/${normalizeRel(match.path)}`, typeid: match.typeid || null } : null;
+    return match ? `/${normalizeRel(match.path)}` : null;
   }, [contextDirInfos, rel]);
-  const gitWorkdir = gitDir?.workdir ?? null;
 
-  const { status, hasUnpushed, isPathUnpushed, refresh, push, pushing } = useGitFolderStatus(
-    gitWorkdir,
-    typeId?.id ?? '@local',
-  );
+  const { status, hasUnpushed, isPathUnpushed, refresh } = useGitFolderStatus(gitWorkdir, typeId?.id ?? '@local');
 
   const handlePathChange = useCallback(
     (path: string) => {
@@ -83,8 +74,6 @@ export function ContextFolderBrowser({ relPath, onNavigate, projectId }: Context
     },
     [navigation],
   );
-
-  const [pushDialogOpen, setPushDialogOpen] = useState(false);
 
   if (!typeId) {
     return (
@@ -113,33 +102,7 @@ export function ContextFolderBrowser({ relPath, onNavigate, projectId }: Context
               </span>
             )}
           </span>
-          {hasUnpushed && (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-6 gap-1.5 px-2 text-xs"
-              onClick={() => setPushDialogOpen(true)}
-              disabled={pushing}
-              data-testid="context-folder-git-push"
-            >
-              {pushing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Upload className="h-3 w-3" />}
-              <Trans>Push</Trans>
-            </Button>
-          )}
         </div>
-      )}
-      {gitWorkdir && (
-        <PushContextFolderDialog
-          open={pushDialogOpen}
-          onOpenChange={setPushDialogOpen}
-          folderName={basename(normalizeRel(gitWorkdir)) || gitWorkdir}
-          branch={status?.branch ?? null}
-          projectId={projectId}
-          folderTypeId={gitDir?.typeid ?? null}
-          push={push}
-          pushing={pushing}
-        />
       )}
       <div className="min-h-0 flex-1">
         <SimpleFileManager
