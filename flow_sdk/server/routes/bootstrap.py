@@ -1275,39 +1275,20 @@ def _preferences_path() -> Path:
 
 
 def _read_pref(key: str, default: Any) -> Any:
-    """Read a single key from the instance preferences.json (the same file the
-    frontend prefMan owns). Returns ``default`` if the file/key is missing."""
-    path = _preferences_path()
-    if not path.exists():
-        return default
-    try:
-        prefs = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return default
-    if not isinstance(prefs, dict) or key not in prefs:
-        return default
-    return prefs[key]
+    """Read a single key from the instance preferences.json. Thin wrapper over
+    the shared, import-light reader (``flow_sdk.preferences``)."""
+    from flow_sdk.preferences import read_instance_pref  # noqa: PLC0415
+
+    return read_instance_pref(key, default)
 
 
 def _write_pref(key: str, value: Any) -> None:
     """Merge a single key into preferences.json (read-modify-write), preserving
-    every other key the frontend owns — the backend mirror of the store's
-    merge-on-save, so the two writers never clobber each other."""
-    path = _preferences_path()
-    prefs: dict = {}
-    if path.exists():
-        try:
-            parsed = json.loads(path.read_text(encoding="utf-8"))
-            if isinstance(parsed, dict):
-                prefs = parsed
-        except (OSError, json.JSONDecodeError):
-            prefs = {}
-    prefs[key] = value
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(prefs, indent=2), encoding="utf-8")
-    except OSError as e:
-        logging.warning(f"[onboarding] failed to write {key} to {path}: {e}")
+    every other key the frontend owns. Thin wrapper over the shared writer."""
+    from flow_sdk.preferences import write_instance_pref  # noqa: PLC0415
+
+    if not write_instance_pref(key, value):
+        logging.warning(f"[onboarding] failed to write {key} to preferences.json")
 
 
 async def create_onboarding_assets(user: User) -> None:
@@ -1482,6 +1463,13 @@ def setup_desktop_filesystem() -> None:
         # Indexer engine: "python" (FSIndexer) | "rust" (external RSIndexer via
         # FLOWPAD_RS_INDEXER_BIN; falls back to python when unavailable).
         "preferences.advanced.indexer_backend": "python",
+        # Per-folder indexing consent (macOS-TCC / cross-OS special folders).
+        # "ask" (default) → surface an in-app consent request before walking;
+        # "skip" → never walk; "allow" → walk (one expected OS prompt); "denied"
+        # → OS refused post-allow, don't re-ask. See special_folders.py.
+        "preferences.indexing.folders.documents": "ask",
+        "preferences.indexing.folders.desktop": "ask",
+        "preferences.indexing.folders.downloads": "ask",
         # Onboarding gate: true (or missing) → seed onboarding assets on start, then
         # the seeder flips it to false. Flip back on to re-seed on the next start.
         _ONBOARDING_WELCOME_KEY: _ONBOARDING_WELCOME_DEFAULT,
