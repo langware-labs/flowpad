@@ -32,6 +32,7 @@ ENV_DESKTOP_DB = "DESKTOP_DB"
 ENV_SQLITE_DATABASE_PATH = "SQLITE_DATABASE_PATH"
 ENV_FS_RECORD_PATH = "FS_RECORD_PATH"
 ENV_FLOWPAD_CLAUDE_HOME = "FLOWPAD_CLAUDE_HOME"
+ENV_CLAUDE_CONFIG_DIR = "CLAUDE_CONFIG_DIR"
 ENV_CODEX_HOME = "CODEX_HOME"
 ENV_FLOWPAD_HUB_URL = "FLOWPAD_HUB_URL"
 ENV_MINIHUB_HOST = "MINIHUB_HOST"
@@ -49,6 +50,11 @@ ENV_SOD_ENC_KEY = "SOD_ENC_KEY"
 DEFAULT_PROD_PORT = 9007
 DEFAULT_DB_DRIVER = "sqlite"
 DEFAULT_MINIHUB_HOST = "0.0.0.0"
+
+
+def _canonical_lexical_path(path: str | os.PathLike[str]) -> Path:
+    """Normalize a configured path without touching the filesystem."""
+    return Path(os.path.abspath(os.path.expanduser(os.fspath(path))))
 
 # Phase B additions — instance identity + sod accessor.
 INSTANCE_NAME_RE = re.compile(r"^[a-z0-9_-]{1,32}$")
@@ -304,8 +310,29 @@ class BaseInstanceSettings:
 
     @staticmethod
     def _resolve_claude_home() -> Path:
-        env = os.environ.get(ENV_FLOWPAD_CLAUDE_HOME)
-        return Path(env) if env else Path.home() / ".claude"
+        """Resolve the one transcript/config root shared with Claude Code.
+
+        ``FLOWPAD_CLAUDE_HOME`` is Flowpad's explicit override;
+        ``CLAUDE_CONFIG_DIR`` is Claude Code's native override. Letting both
+        point at different roots makes Flowpad miss transcripts the worker has
+        already materialized, so reject that split before any worker starts.
+
+        Paths are canonicalized lexically (``~`` expansion, absolute path,
+        ``.``/``..`` collapse) without resolving symlinks or requiring the
+        directory to exist.
+        """
+        flowpad_raw = os.environ.get(ENV_FLOWPAD_CLAUDE_HOME)
+        claude_raw = os.environ.get(ENV_CLAUDE_CONFIG_DIR)
+        flowpad_home = _canonical_lexical_path(flowpad_raw) if flowpad_raw else None
+        claude_home = _canonical_lexical_path(claude_raw) if claude_raw else None
+
+        if flowpad_home is not None and claude_home is not None and flowpad_home != claude_home:
+            raise ValueError(
+                f"{ENV_FLOWPAD_CLAUDE_HOME} and {ENV_CLAUDE_CONFIG_DIR} must point to the same directory "
+                f"(got {flowpad_home} and {claude_home})"
+            )
+
+        return flowpad_home or claude_home or _canonical_lexical_path(Path.home() / ".claude")
 
     @staticmethod
     def _resolve_codex_home() -> Path:

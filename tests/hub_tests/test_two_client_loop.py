@@ -25,8 +25,8 @@ This test exercises the *standard hub invitation pattern* end-to-end — no
     5. bob calls ``POST /graph/conversation/<id>/join`` — appends himself to
        ``participants`` so ``_fanout_message`` can deliver to his WS.
 
-Credentials come from the two project ``.env.local`` files (alice ←
-flowpad-oss; bob ← flowpad-app).
+Credentials come from the cycle's ``ALICE_*``/``BOB_*`` environment, with the
+two project ``.env.local`` files as local-development fallbacks.
 
 The flow_sdk hub WebSocket manager loads credentials from the keyring
 singleton, so it doesn't support two simultaneous identities in a single
@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import time
 import uuid
 from pathlib import Path
@@ -85,12 +86,12 @@ async def test_two_client_loop(hub_base_url):
     """Alice + Bob ping-pong increment loop using the standard invite pattern, STOP_AT=20."""
     oss_env = _read_env_local(REPO_OSS)
     app_env = _read_env_local(REPO_APP)
-    alice_email = oss_env.get("FLOWPAD_CLOUD_USER_EMAIL")
-    alice_pw = oss_env.get("FLOWPAD_CLOUD_USER_PASSWORD")
-    bob_email = app_env.get("FLOWPAD_CLOUD_USER_EMAIL")
-    bob_pw = app_env.get("FLOWPAD_CLOUD_USER_PASSWORD")
+    alice_email = os.environ.get("ALICE_EMAIL") or oss_env.get("FLOWPAD_CLOUD_USER_EMAIL")
+    alice_pw = os.environ.get("ALICE_PW") or oss_env.get("FLOWPAD_CLOUD_USER_PASSWORD")
+    bob_email = os.environ.get("BOB_EMAIL") or app_env.get("FLOWPAD_CLOUD_USER_EMAIL")
+    bob_pw = os.environ.get("BOB_PW") or app_env.get("FLOWPAD_CLOUD_USER_PASSWORD")
     if not (alice_email and alice_pw and bob_email and bob_pw):
-        pytest.skip("missing FLOWPAD_CLOUD_USER_{EMAIL,PASSWORD} in flowpad-oss or flowpad-app .env.local")
+        pytest.skip("missing cycle actor credentials and .env.local fallbacks")
 
     alice_tok, alice_user = await _login(hub_base_url, alice_email, alice_pw)
     bob_tok, bob_user = await _login(hub_base_url, bob_email, bob_pw)

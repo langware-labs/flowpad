@@ -3,6 +3,8 @@ import { imageFilesFromClipboardData } from '@src/utils/clipboard-image';
 import { Send, Square } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useLingui } from '@lingui/react/macro';
+import { caretOnFirstLine, caretOnLastLine, type InputHistory } from '@src/hooks/use-input-history';
+import { PromptHistoryList } from './PromptHistoryList';
 
 interface CompactExecutionInputProps {
   onSend: (text: string) => void | Promise<void>;
@@ -11,7 +13,7 @@ interface CompactExecutionInputProps {
   className?: string;
   /** Optional node rendered between the textarea and the Send button (e.g. a status indicator). */
   statusSlot?: ReactNode;
-  /** When true, the agent is mid-turn: show a Stop button instead of Send. */
+  /** When true, the agent is mid-turn: show a Stop button; sends enqueue. */
   running?: boolean;
   /** Interrupt the in-flight turn. Presentational only — the pane owns the logic. */
   onStop?: () => void | Promise<void>;
@@ -28,13 +30,27 @@ interface CompactExecutionInputProps {
    * send, mirroring the PTY paste behaviour. Omit to leave paste as plain text.
    */
   onPasteImages?: (files: File[]) => Promise<string[] | void> | string[] | void;
+  /**
+   * Prompt-history navigation (ArrowUp/Down at the first/last line browses;
+   * a list of past prompts renders under the textarea while browsing when
+   * there is more than one entry). The owner holds the `useInputHistory`
+   * instance so it can seed from the transcript and record sends.
+   */
+  history?: InputHistory;
+  /**
+   * When a send happens while `running` (it will be enqueued), animate a
+   * ghost of the composed text shrinking into the queue chip (rendered in
+   * `leadingSlot` with data-testid="entity-execution-queue-chip") so the user
+   * sees where the prompt went. Skipped under prefers-reduced-motion.
+   */
+  animateEnqueue?: boolean;
 }
 
 /**
  * Textarea + send/stop input for the chat surfaces. Deliberately minimal — no
  * uploads, tools panel, codebase connectors, or login flows. Enter sends;
- * Shift+Enter inserts a newline; Cmd/Ctrl+Enter also sends. While `running`,
- * the Send button becomes a Stop button wired to `onStop`.
+ * Shift+Enter inserts a newline; Cmd/Ctrl+Enter also sends; Escape stops the
+ * in-flight turn. While `running`, a Stop button appears and sends enqueue.
  */
 export function CompactExecutionInput({
   onSend,
@@ -48,10 +64,13 @@ export function CompactExecutionInput({
   onPasteImages,
   leadingSlot,
   onShiftTab,
+  history,
+  animateEnqueue = false,
 }: CompactExecutionInputProps) {
   const { t } = useLingui();
   const [value, setValue] = useState('');
   const taRef = useRef<HTMLTextAreaElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
 
   // Autosize the textarea up to ~200px. Keep overflow hidden until the content
   // genuinely exceeds the cap — otherwise the border-box border leaves a ~2px
@@ -65,12 +84,63 @@ export function CompactExecutionInput({
     ta.style.overflowY = full > 200 ? 'auto' : 'hidden';
   }, [value]);
 
+  // Ghost animation: clone the composed text over the textarea and CSS-shrink
+  // it into the queue chip so the user sees where the queued prompt went.
+  const runEnqueueAnimation = useCallback((text: string) => {
+    if (typeof window === 'undefined') return;
+    const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)');
+    if (reducedMotion?.matches) return;
+    const ta = taRef.current;
+    const target =
+      rootRef.current?.querySelector('[data-testid="entity-execution-queue-chip"]') ??
+      rootRef.current?.querySelector('[data-queue-chip-anchor]');
+    if (!ta || !target) return;
+    const from = ta.getBoundingClientRect();
+    const to = target.getBoundingClientRect();
+    const ghost = document.createElement('div');
+    ghost.textContent = text.length > 120 ? `${text.slice(0, 120)}…` : text;
+    ghost.setAttribute('data-testid', 'entity-execution-enqueue-ghost');
+    Object.assign(ghost.style, {
+      position: 'fixed',
+      left: `${from.left}px`,
+      top: `${from.top}px`,
+      width: `${from.width}px`,
+      maxHeight: `${from.height}px`,
+      overflow: 'hidden',
+      padding: '8px 12px',
+      borderRadius: '12px',
+      border: '1px solid var(--border, rgba(127,127,127,0.4))',
+      background: 'var(--background, transparent)',
+      fontSize: '13px',
+      opacity: '0.9',
+      zIndex: '9999',
+      pointerEvents: 'none',
+      transformOrigin: 'left center',
+      transition: 'transform 260ms ease-in, opacity 260ms ease-in',
+      willChange: 'transform, opacity',
+    } as Partial<CSSStyleDeclaration>);
+    document.body.appendChild(ghost);
+    const remove = () => ghost.remove();
+    ghost.addEventListener('transitionend', remove, { once: true });
+    // Lifecycle guard, not a wait: remove the ghost even if transitionend
+    // never fires (e.g. the tab is backgrounded mid-animation).
+    window.setTimeout(remove, 600);
+    requestAnimationFrame(() => {
+      const dx = to.left + to.width / 2 - from.left;
+      const dy = to.top + to.height / 2 - (from.top + from.height / 2);
+      ghost.style.transform = `translate(${dx}px, ${dy}px) scale(0.05)`;
+      ghost.style.opacity = '0.2';
+    });
+  }, []);
+
   const send = useCallback(async () => {
     const text = value.trim();
     if (!text || disabled) return;
     setValue('');
+    history?.exitBrowsing();
+    if (running && animateEnqueue) runEnqueueAnimation(text);
     await onSend(text);
-  }, [value, disabled, onSend]);
+  }, [value, disabled, onSend, history, running, animateEnqueue, runEnqueueAnimation]);
 
   // Image paste: hand the image files to the owner (upload + open Files tab),
   // then splice the returned reference line(s) into the textarea at the caret.
@@ -104,26 +174,64 @@ export function CompactExecutionInput({
     [onPasteImages, disabled, value],
   );
 
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if (onShiftTab && e.key === 'Tab' && e.shiftKey) {
+        e.preventDefault();
+        onShiftTab();
+        return;
+      }
+      if (e.key === 'Escape') {
+        // Escape = stop while a turn is running; otherwise it exits history
+        // browsing and restores the stashed draft.
+        if (running && onStop) {
+          e.preventDefault();
+          void onStop();
+          return;
+        }
+        if (history?.browsing) {
+          e.preventDefault();
+          setValue(history.exitBrowsing());
+        }
+        return;
+      }
+      if (history && e.key === 'ArrowUp') {
+        if (caretOnFirstLine(e.currentTarget)) {
+          e.preventDefault();
+          setValue(history.navigateUp(value));
+        }
+        return;
+      }
+      if (history && e.key === 'ArrowDown') {
+        if (caretOnLastLine(e.currentTarget) && history.browsing) {
+          e.preventDefault();
+          setValue(history.navigateDown(value));
+        }
+        return;
+      }
+      if (e.key === 'Enter' && !e.shiftKey && (!e.nativeEvent.isComposing || e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        void send();
+      }
+    },
+    [onShiftTab, running, onStop, history, value, send],
+  );
+
   const showStop = running && !!onStop;
+  // PromptHistoryList itself owns the "only with more than one prompt" rule.
+  const showHistoryList = !!history && history.browsing;
 
   return (
-    <div className={cn('flex flex-shrink-0 flex-col gap-1.5', !bare && 'border-t bg-background px-3 py-2.5', className)}>
+    <div
+      ref={rootRef}
+      className={cn('flex flex-shrink-0 flex-col gap-1.5', !bare && 'border-t bg-background px-3 py-2.5', className)}
+    >
       <textarea
         ref={taRef}
         value={value}
         onChange={(e) => setValue(e.target.value)}
         onPaste={handlePaste}
-        onKeyDown={(e) => {
-          if (onShiftTab && e.key === 'Tab' && e.shiftKey) {
-            e.preventDefault();
-            onShiftTab();
-            return;
-          }
-          if (e.key === 'Enter' && !e.shiftKey && (!e.nativeEvent.isComposing || e.metaKey || e.ctrlKey)) {
-            e.preventDefault();
-            void send();
-          }
-        }}
+        onKeyDown={handleKeyDown}
         disabled={disabled}
         placeholder={placeholder ?? t`Message the agent…`}
         rows={1}
@@ -131,11 +239,38 @@ export function CompactExecutionInput({
         className="min-h-[48px] w-full resize-none overflow-y-hidden rounded-xl border bg-background px-4 py-3 text-[15px] outline-none transition-colors focus:border-primary disabled:opacity-50"
         data-testid="entity-execution-input"
       />
+      {showHistoryList && (
+        <PromptHistoryList
+          entries={history.entries}
+          index={history.index}
+          onPick={(i) => setValue(history.select(i))}
+        />
+      )}
       <div className="flex min-h-8 items-center justify-between gap-2">
-        <div className="flex min-w-0 flex-1 items-center gap-1.5">{leadingSlot}</div>
+        <div className="flex min-w-0 flex-1 items-center gap-1.5" data-queue-chip-anchor>
+          {leadingSlot}
+        </div>
         <div className="ml-auto flex shrink-0 items-center gap-2">
           {statusSlot}
-          {showStop ? (
+          {/* While running, Send stays available for non-empty drafts (it
+              enqueues); Stop sits beside it. */}
+          {(!showStop || value.trim()) && (
+            <button
+              type="button"
+              onMouseDown={(e) => {
+                e.preventDefault();
+                void send();
+              }}
+              disabled={disabled || !value.trim()}
+              title={showStop ? t`Queue message` : t`Send`}
+              aria-label={showStop ? t`Queue message` : t`Send message`}
+              className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-primary"
+              data-testid="entity-execution-send"
+            >
+              <Send className="h-3.5 w-3.5" />
+            </button>
+          )}
+          {showStop && (
             <button
               type="button"
               onMouseDown={(e) => {
@@ -148,21 +283,6 @@ export function CompactExecutionInput({
               data-testid="entity-execution-stop"
             >
               <Square className="h-3.5 w-3.5 fill-current" />
-            </button>
-          ) : (
-            <button
-              type="button"
-              onMouseDown={(e) => {
-                e.preventDefault();
-                void send();
-              }}
-              disabled={disabled || !value.trim()}
-              title={t`Send`}
-              aria-label={t`Send message`}
-              className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-primary"
-              data-testid="entity-execution-send"
-            >
-              <Send className="h-3.5 w-3.5" />
             </button>
           )}
         </div>

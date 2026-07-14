@@ -35,6 +35,7 @@ import os
 import re
 import shlex
 import shutil
+import signal
 import sys
 import uuid
 from abc import ABC, abstractmethod
@@ -292,6 +293,52 @@ async def terminate_asyncio_process_tree(
     )
 
 
+async def interrupt_then_terminate_asyncio_process_tree(
+    process: asyncio.subprocess.Process,
+    grace_seconds: float,
+    *,
+    run_id: str | None = None,
+) -> bool:
+    """SIGINT the root first, then run the standard tree teardown for survivors.
+
+    SIGINT lets a CLI wind its turn down itself — record its own abort in its
+    session store and reap its tool children — which keeps the vendor
+    transcript coherent for resume. Descendants are snapshotted BEFORE the
+    signal so a child reparented by the root's exit is still reachable even
+    without a run-id marker. Anything alive after the grace (root or
+    descendants) goes through the existing force-kill path — the same
+    ``grace_seconds`` budget the plain teardown uses.
+
+    Returns ``True`` when the root wound down on its own (already exited, or
+    exited within the SIGINT grace before any force-kill was needed) — i.e. the
+    CLI had the chance to record its own abort. ``False`` means the root ignored
+    SIGINT and had to be force-killed, so it recorded nothing.
+    """
+    # Already exited before we signalled → it wound down on its own.
+    wound_down_cleanly = process.returncode is not None
+    descendants = _process_descendants(process.pid) if process.returncode is None else []
+    if process.returncode is None:
+        try:
+            process.send_signal(signal.SIGINT)
+        except ProcessLookupError:
+            pass
+        try:
+            await asyncio.wait_for(process.wait(), timeout=max(grace_seconds, 0.0))
+            wound_down_cleanly = True
+        except asyncio.TimeoutError:
+            logger.warning(
+                "CLI root ignored SIGINT within grace; escalating to tree kill (pid=%s)",
+                process.pid,
+            )
+    await _kill_asyncio_process_tree(
+        process,
+        descendants,
+        run_id,
+        sweep_run_marker=True,
+    )
+    return wound_down_cleanly
+
+
 async def wait_for_asyncio_process_or_kill_tree(
     process: asyncio.subprocess.Process,
     grace_seconds: float,
@@ -352,10 +399,10 @@ class WorkerSpawnError(RuntimeError):
 class WorkerExecutionInfo(BaseModel):
     """Info about a worker process launched via ``Shell.launch()``."""
 
-    pid: int | None          # OS PID of the worker (None if not detected within timeout)
-    name: str                # executable name, e.g. "claude"
-    cmd: str | None          # first 200 chars of the shell command string
-    started_at: str          # ISO timestamp
+    pid: int | None  # OS PID of the worker (None if not detected within timeout)
+    name: str  # executable name, e.g. "claude"
+    cmd: str | None  # first 200 chars of the shell command string
+    started_at: str  # ISO timestamp
 
 
 class AgenticProcessContextKey(StrEnum):
@@ -372,6 +419,10 @@ def apply_worker_env(env: dict[str, str], process: "AgenticProcess") -> dict[str
       commands (show/record/context/…) resolve their calling process.
     * ``PATH`` — pinned to this backend's `flow` CLI (version-skew guard,
       see :func:`flow_cli_env_path`).
+    * ``CLAUDE_CONFIG_DIR`` — for explicitly configured Claude roots, pinned
+      to the same canonical root Flowpad uses for transcript discovery. The
+      native default stays unset because Claude keeps ``~/.claude.json`` beside
+      its default ``~/.claude/`` transcript directory.
 
     ``setdefault`` semantics for the scope (an explicit override wins);
     mutates and returns ``env``.
@@ -382,6 +433,32 @@ def apply_worker_env(env: dict[str, str], process: "AgenticProcess") -> dict[str
         "FLOWPAD_EXECUTION_SCOPE",
         _json.dumps([{"type": process.get_type(), "id": process.id}]),
     )
+    if process.driver.name == "claude":
+        from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+        from flow_sdk.instance_settings.base_settings import (  # noqa: PLC0415
+            ENV_CLAUDE_CONFIG_DIR,
+            ENV_FLOWPAD_CLAUDE_HOME,
+            _canonical_lexical_path,
+        )
+
+        claude_home = get_instance_settings().claude_home
+        worker_override = env.get(ENV_CLAUDE_CONFIG_DIR)
+        if worker_override is not None:
+            worker_home = _canonical_lexical_path(worker_override)
+            if worker_home != claude_home:
+                raise ValueError(
+                    f"Claude worker {ENV_CLAUDE_CONFIG_DIR} must match Flowpad's configured Claude home "
+                    f"(got {worker_home} and {claude_home})"
+                )
+        root_is_explicit = bool(
+            os.environ.get(ENV_FLOWPAD_CLAUDE_HOME)
+            or os.environ.get(ENV_CLAUDE_CONFIG_DIR)
+            or worker_override is not None
+        )
+        if root_is_explicit:
+            env[ENV_CLAUDE_CONFIG_DIR] = str(claude_home)
+        else:
+            env.pop(ENV_CLAUDE_CONFIG_DIR, None)
     pinned = flow_cli_env_path(env.get("PATH"))
     if pinned:
         env["PATH"] = pinned
@@ -575,6 +652,15 @@ class AgenticWorker(ABC):
     def manages_history(self) -> bool:
         return False
 
+    @property
+    def cancelled_gracefully(self) -> bool:
+        """True when ``close_session()`` stopped the turn via the vendor's own
+        cancellation channel (so the vendor recorded its own abort in its
+        session store). The cancel choke point skips the flowpad abort sidecar
+        marker in that case — a marker would replay as a duplicate
+        turn-terminated STATUS. Kill-based cancels leave this False."""
+        return False
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # WorkerCLIOptions — cross-platform shell command builder
@@ -667,9 +753,7 @@ class WorkerCLIOptions:
         ONLY arg builder a vendor writes — the shell string is derived from it."""
         raise NotImplementedError
 
-    def cli_cmd(
-        self, instruction: str | None = None, system_prompt_append: str | None = None
-    ) -> list[str]:
+    def cli_cmd(self, instruction: str | None = None, system_prompt_append: str | None = None) -> list[str]:
         """Canonical argv. The single source of truth; the shell string and the
         spawn tuple both derive from this."""
         argv: list[str] = [*self._resolve_binary(), *self._emit_flags()]
@@ -682,9 +766,7 @@ class WorkerCLIOptions:
             argv.extend(["--", instruction])
         return argv
 
-    def stdin_text(
-        self, instruction: str | None = None, system_prompt_append: str | None = None
-    ) -> str | None:
+    def stdin_text(self, instruction: str | None = None, system_prompt_append: str | None = None) -> str | None:
         """The text to pipe to the worker's stdin, or None for argv-channel
         vendors. For stdin vendors with no system-prompt flag, the addition is
         prepended into the prompt body (their only sink)."""
@@ -751,18 +833,10 @@ class WorkerCLIOptions:
     def _build_posix(self, args: list[str], instruction: str | None) -> str:
         workdir = self.workdir or "."
         cd_part = f"cd {shlex.quote(workdir)}"
-        env_part = " ".join(
-            f"{k}={shlex.quote(v)}" for k, v in self.env_vars.items()
-        )
+        env_part = " ".join(f"{k}={shlex.quote(v)}" for k, v in self.env_vars.items())
         cmd = f"{cd_part} && {env_part} {' '.join(args)}" if env_part else f"{cd_part} && {' '.join(args)}"
         if instruction:
-            escaped = (
-                instruction
-                .replace("\\", "\\\\")
-                .replace("'", "\\'")
-                .replace("\r", "")
-                .replace("\n", "\\n")
-            )
+            escaped = instruction.replace("\\", "\\\\").replace("'", "\\'").replace("\r", "").replace("\n", "\\n")
             cmd += f" -- $'{escaped}'"
         return cmd
 
@@ -779,10 +853,7 @@ class WorkerCLIOptions:
         cmd_part = " ".join(args)
         if instruction:
             prompt_b64 = _b64.b64encode(instruction.encode("utf-8")).decode("ascii")
-            decode_cmd = (
-                f"[System.Text.Encoding]::UTF8.GetString"
-                f"([Convert]::FromBase64String('{prompt_b64}'))"
-            )
+            decode_cmd = f"[System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('{prompt_b64}'))"
             cmd_part += f" ({decode_cmd})"
         return f"{cd_part}; {env_part}{cmd_part}"
 
@@ -890,8 +961,7 @@ def build_worker_spawn_env(
     if folder is None:
         raise WorkerSpawnError(
             worker_type,
-            f"{worker_type} CLI not found — no {worker_capability_kind(worker_type)} "
-            "installation discovered",
+            f"{worker_type} CLI not found — no {worker_capability_kind(worker_type)} installation discovered",
         )
     env = dict(os.environ if base_env is None else base_env)
     env.update(env_from_opts)
@@ -918,8 +988,7 @@ def resolve_worker_argv0(worker_type: str, argv: list[str], env: dict[str, str])
     if resolved is None:
         raise WorkerSpawnError(
             worker_type,
-            f"{worker_type} executable {argv[0]!r} not found on worker PATH "
-            f"({env.get('PATH')})",
+            f"{worker_type} executable {argv[0]!r} not found on worker PATH ({env.get('PATH')})",
         )
     argv[0] = resolved
     return argv
@@ -958,12 +1027,15 @@ def factory(cli_json: dict, worker_type: str) -> WorkerCLIOptions:
     """
     if worker_type == "claude":
         from flow_sdk.builtin.agentic_process.cli_drivers.claude.cli import ClaudeCliOptions
+
         return ClaudeCliOptions.from_json(cli_json)
     if worker_type == "codex":
         from flow_sdk.builtin.agentic_process.cli_drivers.codex.cli import CodexCliOptions
+
         return CodexCliOptions.from_json(cli_json)
     if worker_type == "copilot":
         from flow_sdk.builtin.agentic_process.cli_drivers.copilot.cli import CopilotCliOptions
+
         return CopilotCliOptions.from_json(cli_json)
     raise ValueError(f"Unknown worker_type: {worker_type!r}")
 
@@ -1027,7 +1099,8 @@ async def pump_composer_ready(
     """
     buf = initial[-_COMPOSER_SCAN_WINDOW:]
     while True:
-        if pattern.search(strip_pty_controls(buf)):
+        text = strip_pty_controls(buf)
+        if pattern.search(text):
             return True
         chunk = await next_chunk()
         if chunk is None:
@@ -1230,12 +1303,15 @@ def get_driver(worker_type: Any) -> WorkerDriver:
 
     if name == "claude":
         from flow_sdk.builtin.agentic_process.cli_drivers.claude.driver import ClaudeDriver
+
         driver: WorkerDriver = ClaudeDriver()
     elif name == "codex":
         from flow_sdk.builtin.agentic_process.cli_drivers.codex.driver import CodexDriver
+
         driver = CodexDriver()
     elif name == "copilot":
         from flow_sdk.builtin.agentic_process.cli_drivers.copilot.driver import CopilotDriver
+
         driver = CopilotDriver()
     else:
         raise ValueError(f"No WorkerDriver registered for worker_type={worker_type!r}")

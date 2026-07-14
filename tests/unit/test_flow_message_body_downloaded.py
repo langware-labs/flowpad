@@ -119,3 +119,25 @@ def test_body_downloaded_is_not_emitted_for_db_storage(records_root):
     fm = FlowMessage(id=str(uuid.uuid4()), text="here", attachment=[_skill_attachment(str(uuid.uuid4()))])
     stored = fm.model_dump(context={"skip_api_serializer": True})
     assert "body_downloaded" not in stored
+
+
+def test_session_carrier_attachment_never_gates_download(records_root):
+    """[LIVE-SESSION] A ``remote_worker_session-<id>`` TYPE_ID carrier is a
+    non-materializing type (entity ROW only, never a record folder): it must
+    not peg the message behind the Download button, alone or alongside a
+    materialized asset."""
+    sid = str(uuid.uuid4())
+    carrier = Attachment(
+        attachment_type=AttachmentType.TYPE_ID, data=f"remote_worker_session-{sid}"
+    )
+    fm = FlowMessage(id=str(uuid.uuid4()), text="turn", attachment=[carrier])
+    assert fm.model_dump()["body_downloaded"] is True
+
+    # Carrier + a materialized asset: still downloaded (the carrier is ignored).
+    eid = str(uuid.uuid4())
+    _materialize(records_root, "skill", eid)
+    fm2 = FlowMessage(
+        id=str(uuid.uuid4()), text="turn",
+        attachment=[carrier, _skill_attachment(eid)],
+    )
+    assert fm2.model_dump()["body_downloaded"] is True

@@ -1071,17 +1071,26 @@ class Entity(DBEntity):
         """If the source asset changed since the last index, re-sync. Returns
         True if a refresh happened. Freshness is the record's own on-disk
         ``index_required`` (source hash vs the index sentinel) — no DB read."""
-        record = await self.get_record()
-        if record is None:
-            return False
-        if not record.index_required:
-            return False
-        try:
-            await record.sync_to_db()
-            record.write_hash()
-        except Exception:
-            pass
-        return True
+        from flow_sdk.fs_store.fs_record import record_sync_guard
+
+        async with record_sync_guard(self.get_type(), self.id):
+            record = await self.get_record()
+            if record is None:
+                return False
+            # Project records intentionally mirror their mount as
+            # ``fs_storage_mount_path`` rather than a generic ``asset_ref``.
+            # Bind that derived ref before checking the sentinel; otherwise an
+            # unbound fresh record hashes as "" and every GET becomes a false
+            # disk->DB writer.
+            record.ensure_asset_ref()
+            if not record.index_required:
+                return False
+            try:
+                await record.sync_to_db()
+                record.write_hash()
+            except Exception:
+                pass
+            return True
 
     # ==================== Wiki link capability ====================
     # Mirrors Record.get_links / Record.get_backlinks. Both call into the
@@ -1924,15 +1933,26 @@ class Entity(DBEntity):
         # Captured before the write flips ``exist_in_db``: a fresh entity can't yet
         # have a Tab pointing at it, so the project-reconcile below is update-only.
         was_create = not self.exist_in_db
-        await super().save(user_id, notify=notify)
-        # Sync metadata down to disk + upsert main_ref iff missing (Record
-        # contract: writes go through main_ref FSRef, no per-type store()).
-        # The disk→DB adopt path (from_record) suppresses this via the
-        # _SUPPRESS_STORE contextvar so the source-of-truth file is never
+        suppress_store = _SUPPRESS_STORE.get()
+        from flow_sdk.fs_store.fs_record import record_sync_guard
+
+        # Keep a normal DB write and its filesystem mirror indivisible with
+        # respect to the opposite disk→DB path.  ``record_sync_guard`` is
+        # explicitly same-task reentrant: ``FSRecord.sync_to_db`` owns it when
+        # it reaches this save through ``from_record``.
+        async with record_sync_guard(self.get_type(), self.id):
+            await super().save(user_id, notify=notify)
+            if not suppress_store:
+                # Sync metadata down to disk + upsert main_ref iff missing
+                # (Record contract: writes go through main_ref FSRef, no
+                # per-type store()).
+                await self.store()
+
+        # The disk→DB adopt path (from_record) suppresses disk write-back via
+        # the _SUPPRESS_STORE contextvar so the source-of-truth file is never
         # rewritten — structural loop suppression, override-agnostic (all
         # save() overrides funnel through this base).
-        if not _SUPPRESS_STORE.get():
-            await self.store()
+        if not suppress_store:
             # Reconcile dependent content Tabs when this entity's project changes.
             # ``tab.project_id`` is a denormalized snapshot of the target's project
             # taken at tab creation; without this a (re)assignment leaves the tab
@@ -2876,24 +2896,65 @@ async def _http_activate(self: Entity):
     resolver's recency seed (docs/tab-management.md Part 3 §4). Loaders call
     this fire-and-forget on tab activation. Never touches membership:
     membership promotion is explicit-only (``tabs/open``)."""
-    from flow_sdk.responses.response import ApiSuccessResponse  # noqa: PLC0415
+    from flow_sdk.api.api_types.messages import DataOpMessage, OperationType  # noqa: PLC0415
+    from flow_sdk.fs_store.fs_record import record_sync_guard  # noqa: PLC0415
+    from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
     from flow_sdk.utils.serialization import now_epoch_ms  # noqa: PLC0415
 
-    # A soft-closed (``visible=False``) Tab is not a resolver candidate, and
-    # activation is recency-only — it NEVER re-shows membership (reopen goes
-    # through ``tabs/open`` → ``ensure_tab``, which is the sole re-show path). So
-    # stamping a hidden tab has no legitimate consumer and one real hazard: a late,
-    # out-of-order recency stamp. The activate is fired fire-and-forget on select
-    # (``stampTabRecencyForTarget``); when a tab is clicked and then closed a moment
-    # later, that stamp can arrive AFTER the close (seconds late under backend load)
-    # and re-seed the just-closed tab as most-recent, pulling the close self-heal
-    # back onto a dead tab. No-op it — a closed tab's recency is meaningless.
-    if self.get_type() == "tab" and getattr(self, "visible", True) is False:
-        return ApiSuccessResponse(data={"last_active_at": self.last_active_at})
+    stamped_at = now_epoch_ms()
+    async with record_sync_guard(self.get_type(), self.id):
+        persisted, did_stamp = await self._db.stamp_last_active_at(self.id, stamped_at)
+        if persisted is None:
+            return ApiFailResponse(
+                message=f"Entity no longer exists: {self.typeid}", status_code=404
+            )
 
-    self.last_active_at = now_epoch_ms()
-    await self.save()
-    return ApiSuccessResponse(data={"last_active_at": self.last_active_at})
+        # A soft-closed (``visible=False``) Tab is not a resolver candidate, and
+        # activation is recency-only — it NEVER re-shows membership (reopen goes
+        # through ``tabs/open`` → ``ensure_tab``, which is the sole re-show path).
+        # Inspect the authoritative row inside the writer transaction above, not
+        # ``self``: this request snapshot can predate the close it races with.
+        if not did_stamp:
+            return ApiSuccessResponse(data={"last_active_at": persisted.last_active_at})
+
+        # Generic activate historically flowed through ``Entity.save``.  Some
+        # types (notably ShellMeta) deliberately persist recency to their record,
+        # so retain that contract with a one-field merge from the authoritative
+        # row.  Never full-save ``self``: it may be the stale request snapshot.
+        if "last_active_at" in persisted.metadata_payload():
+            record = await persisted.get_record()
+            if record is not None:
+                import asyncio  # noqa: PLC0415
+
+                try:
+                    await asyncio.to_thread(
+                        record.save_metadata_field, "last_active_at", stamped_at
+                    )
+                except Exception as exc:
+                    from flow_sdk.fs_store.operations.record_error import (  # noqa: PLC0415
+                        from_exception,
+                    )
+
+                    from_exception(record, exc, trigger="activate").save()
+
+        # Keep the action receiver coherent without clearing any unrelated
+        # pending mutation it may carry.  The DB write above is deliberately
+        # recency-only.
+        was_dirty = self._dirty
+        self.last_active_at = stamped_at
+        self._dirty = was_dirty
+
+        # Publish before releasing the record guard, so a newer normal save
+        # cannot emit first and then be followed by this older full-row update.
+        # The payload is the freshly persisted row, never stale ``self``.
+        change = DataOpMessage(
+            data=persisted,
+            op=OperationType.UPDATE,
+            to_entity=self.typeid,
+        )
+        await self.add_entity_op_notification(change)
+        self._notify_observers(change)
+        return ApiSuccessResponse(data={"last_active_at": stamped_at})
 
 
 _action_registry.register(

@@ -303,6 +303,12 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     tabLocation: 'dedicated',
     canAddAsTab: false,
   },
+  [ViewType.LIVE_SESSION]: {
+    title: 'Live Session',
+    iconName: 'Activity',
+    tabLocation: 'dedicated',
+    canAddAsTab: false,
+  },
   [ViewType.SEARCH]: {
     title: 'Search',
     iconName: 'SearchIcon',

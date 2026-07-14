@@ -9,8 +9,8 @@ location, history loading, and the prompt-composition compatibility hook.
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
+import re
 from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import uuid4
@@ -57,10 +57,11 @@ class ClaudeDriver:
     name = "claude"
     preassign_interactive_session_id = True
     pty_submits_on_paste = True
-    # Cold boot delivers the first prompt as a launch arg (pre-filled input,
-    # Enter-only nudge confirmed via the transcript) — nothing is TYPED into a
-    # cold PTY, so there is no composer gate to declare.
-    pty_composer_ready_pattern = None
+    # Real Claude Code 2.1.207 PTY captures paint the rotating ``Try \"…\"``
+    # placeholder only after the main composer is live. The welcome banner is
+    # earlier and therefore is not a readiness signal. Accept either the
+    # regular or non-breaking space Claude paints after the prompt glyph.
+    pty_composer_ready_pattern = re.compile(r'❯[ \t\u00a0]+Try "')
     pins_resume_cwd = True  # pins CLAUDE_PROJECT_DIR + workdir to the source session's cwd
 
     # ── CLI shape ────────────────────────────────────────────────────────────
@@ -176,6 +177,7 @@ class ClaudeDriver:
 
         # Lifecycle: flip to RUNNING before launching the worker.
         from flow_sdk.builtin.process_lifecycle import ProcessStatus
+
         if process.status != ProcessStatus.RUNNING.value:
             process.status = ProcessStatus.RUNNING.value
             try:
@@ -190,65 +192,81 @@ class ClaudeDriver:
                 )
 
         worker = ClaudeCLIStreamWorker()
-        from flow_sdk.builtin.agentic_process.agentic_process import _PROMPT_WORKERS
-        _PROMPT_WORKERS[process.id] = worker
+        from flow_sdk.builtin.agentic_process.agentic_process import (
+            register_prompt_worker,
+            unregister_prompt_worker,
+        )
 
-        composed = self.compose_prompt(instruction, process.get_agents_json())
-        process_ref = process
-        process_id = process.id
-
-        # Multi-turn correctness: see AgenticProcess._discover_status_from_transcript.
-        # Flip the projection to RUNNING for the duration of this turn and
-        # broadcast it now so the closing notify_updated (which carries the
-        # JSONL-derived COMPLETE) is a real edge for SDK mirrors.
-        object.__setattr__(process_ref, "_turn_in_flight", True)
+        register_prompt_worker(process.id, worker)
+        # Setup between registration and task scheduling can raise (compose_prompt
+        # / get_agents_json / make_turn_session_adopter). The caller's admission
+        # ``finally`` can no longer clean the slot — register_prompt_worker popped
+        # the admission and moved ownership to ``_PROMPT_WORKERS``. Until _run_turn
+        # is scheduled (and its own ``finally`` owns unregister), THIS frame owns
+        # the worker slot: a raise here would otherwise leak it → prompt_worker_active
+        # pinned True forever (permanent 409 + busy). Hand ownership off on success.
         try:
-            await process_ref.notify_updated()
-        except Exception:
-            logger.exception("ClaudeDriver.headless_prompt: start-of-turn notify_updated failed")
+            composed = self.compose_prompt(instruction, process.get_agents_json())
+            process_ref = process
+            process_id = process.id
 
-        # Session adoption (and its restart-snapshot bookkeeping) is owned by
-        # AgenticProcess.adopt_worker_session; the turn-scoped adopter trusts
-        # only the turn-initial report (spurious-rotation guard).
-        adopt_session = process_ref.make_turn_session_adopter("ClaudeDriver.headless_prompt")
-
-        async def _run_turn() -> None:
+            # Multi-turn correctness: see AgenticProcess._discover_status_from_transcript.
+            # Flip the projection to RUNNING for the duration of this turn and
+            # broadcast it now so the closing notify_updated (which carries the
+            # JSONL-derived COMPLETE) is a real edge for SDK mirrors.
+            object.__setattr__(process_ref, "_turn_in_flight", True)
             try:
-                async for fd in worker.execute(prompt=composed, context=context):
-                    await adopt_session(worker.get_session_id())
-                    try:
-                        await process_ref.emit_flow_data(fd.model_dump())
-                    except Exception:
-                        logger.exception("ClaudeDriver.headless_prompt: emit_flow_data failed")
-            except WorkerSpawnError as e:
-                # No subprocess ever started — end the process FAILED with the
-                # start_failure latch (the ERROR frame was already emitted).
-                await latch_spawn_failure(process_ref, e)
+                await process_ref.notify_updated()
             except Exception:
-                logger.exception("ClaudeDriver.headless_prompt: worker error")
-            finally:
-                _PROMPT_WORKERS.pop(process_id, None)
-                # If the fork materialised on disk (the new session's JSONL
-                # was written), drop ``fork_session_id`` from cli_config so
-                # subsequent launches plain ``--resume`` the new session
-                # instead of trying to re-fork from the parent — which
-                # errors with "Session ID is already in use" against the
-                # now-existing new session. Guarded by transcript existence
-                # so an early-failed fork keeps the parent reference for
-                # retry.
-                if self.transcript_path(process_ref) is not None:
-                    cli_cfg_next = dict(process_ref.cli_config or {})
-                    if cli_cfg_next.pop("fork_session_id", None) is not None:
-                        process_ref.cli_config = cli_cfg_next
-                        try:
-                            await process_ref.save()
-                        except Exception:
-                            logger.debug("ClaudeDriver.headless_prompt: fork-strip save failed", exc_info=True)
-                # Terminal status broadcast + completion-driven queue advance
-                # (see AgenticProcess.end_headless_turn).
-                await process_ref.end_headless_turn("ClaudeDriver.headless_prompt")
+                logger.exception("ClaudeDriver.headless_prompt: start-of-turn notify_updated failed")
 
-        asyncio.create_task(_run_turn(), name=f"claude-{process.id[:8]}")
+            # Session adoption (and its restart-snapshot bookkeeping) is owned by
+            # AgenticProcess.adopt_worker_session; the turn-scoped adopter trusts
+            # only the turn-initial report (spurious-rotation guard).
+            adopt_session = process_ref.make_turn_session_adopter("ClaudeDriver.headless_prompt")
+
+            async def _run_turn() -> None:
+                try:
+                    async for fd in worker.execute(prompt=composed, context=context):
+                        await adopt_session(worker.get_session_id())
+                        try:
+                            await process_ref.emit_flow_data(fd.model_dump())
+                        except Exception:
+                            logger.exception("ClaudeDriver.headless_prompt: emit_flow_data failed")
+                except WorkerSpawnError as e:
+                    # No subprocess ever started — end the process FAILED with the
+                    # start_failure latch (the ERROR frame was already emitted).
+                    await latch_spawn_failure(process_ref, e)
+                except Exception:
+                    logger.exception("ClaudeDriver.headless_prompt: worker error")
+                finally:
+                    unregister_prompt_worker(process_id, worker)
+                    # If the fork materialised on disk (the new session's JSONL
+                    # was written), drop ``fork_session_id`` from cli_config so
+                    # subsequent launches plain ``--resume`` the new session
+                    # instead of trying to re-fork from the parent — which
+                    # errors with "Session ID is already in use" against the
+                    # now-existing new session. Guarded by transcript existence
+                    # so an early-failed fork keeps the parent reference for
+                    # retry.
+                    if self.transcript_path(process_ref) is not None:
+                        cli_cfg_next = dict(process_ref.cli_config or {})
+                        if cli_cfg_next.pop("fork_session_id", None) is not None:
+                            process_ref.cli_config = cli_cfg_next
+                            try:
+                                await process_ref.save()
+                            except Exception:
+                                logger.debug("ClaudeDriver.headless_prompt: fork-strip save failed", exc_info=True)
+                    # Terminal status broadcast + completion-driven queue advance
+                    # (see AgenticProcess.end_headless_turn).
+                    await process_ref.end_headless_turn("ClaudeDriver.headless_prompt")
+
+            asyncio.create_task(_run_turn(), name=f"claude-{process.id[:8]}")
+        except BaseException:
+            # _run_turn never took ownership of the slot — release it here so the
+            # next turn is not permanently rejected with a 409.
+            unregister_prompt_worker(process.id, worker)
+            raise
         return ApiSuccessResponse(data={"status": "started", "worker": self.name})
 
     def stream_worker(self, process: "AgenticProcess") -> ClaudeCLIStreamWorker:
@@ -275,6 +293,7 @@ class ClaudeDriver:
         if not process.session_id:
             return None
         from flow_sdk.fs_store.indexer.functions.claude_sessions import get_claude_session
+
         record = get_claude_session(process.session_id)
         if record and record.jsonl_path:
             path = Path(record.jsonl_path)
@@ -333,10 +352,8 @@ class ClaudeDriver:
         agentic-process records path. Tests assert this set doesn't grow.
         """
         from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
         claude_projects = get_instance_settings().claude_projects_dir
         if not claude_projects.is_dir():
             return set()
-        return {
-            d.name for d in claude_projects.iterdir()
-            if d.is_dir() and "flow-records-agentic" in d.name
-        }
+        return {d.name for d in claude_projects.iterdir() if d.is_dir() and "flow-records-agentic" in d.name}

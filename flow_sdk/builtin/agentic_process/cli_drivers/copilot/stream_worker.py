@@ -55,6 +55,20 @@ class CopilotCLIStreamWorker(AgenticWorker):
     def transcript_path(self) -> Path | None:
         return self._transcript_path
 
+    @property
+    def cancelled_gracefully(self) -> bool:
+        """True once this turn was interrupted — copilot self-records the abort.
+
+        Copilot's CLI emits no terminal on kill, so ``execute`` writes a synthetic
+        ``flowpad.interrupted`` event into its OWN transcript (rendered as a
+        turn-terminated STATUS on replay). The cancel choke point therefore skips
+        the flowpad sidecar marker for copilot too — otherwise the sidecar marker
+        AND the synthetic event both replay as duplicate turn-terminated STATUS
+        frames (``merge_abort_markers`` has no dedup). Symmetric to claude/codex,
+        whose CLIs record their own aborts on a graceful interrupt.
+        """
+        return self._interrupted
+
     async def execute(
         self,
         prompt: str,
@@ -111,7 +125,7 @@ class CopilotCLIStreamWorker(AgenticWorker):
                 tee_fh.close()
             for fd in self._converter.convert_event(event):
                 yield fd
-            return
+            raise WorkerSpawnError("copilot", str(event["message"])) from exc
 
         try:
             assert self._proc.stdin is not None

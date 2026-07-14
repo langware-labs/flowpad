@@ -30,6 +30,8 @@ import { hubAvailable } from './_hub';
 import { pollUntil } from './_matrix';
 import { trackForCleanup } from '../_cleanup';
 import {
+  HUB_INST_1 as INST_1,
+  HUB_INST_2 as INST_2,
   findPendingInvitation,
   getInstance,
   instanceAvailable,
@@ -88,11 +90,11 @@ function makeGitFixture() {
 beforeAll(async () => {
   const hub = await hubAvailable();
   if (!hub.ok) return void (skipReason = hub.reason ?? 'hub unreachable');
-  if (!(await instanceAvailable('dev-1')) || !(await instanceAvailable('dev-2'))) {
-    return void (skipReason = 'launch dev-1 + dev-2 via scripts/instance_ctl.sh');
+  if (!instanceAvailable(INST_1) || !instanceAvailable(INST_2)) {
+    return void (skipReason = `launch ${INST_1} + ${INST_2} via scripts/instance_ctl.sh`);
   }
-  dev1 = await getInstance('dev-1');
-  dev2 = await getInstance('dev-2');
+  dev1 = await getInstance(INST_1);
+  dev2 = await getInstance(INST_2);
 }, 30_000);
 
 beforeEach((context: any) => {

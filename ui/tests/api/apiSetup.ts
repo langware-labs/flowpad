@@ -5,7 +5,9 @@
 // that forgets to clean up. See `installLeakTripwire` in `../_cleanup` for the
 // mechanism (sweeps for the `e2etest-*` marker; no-ops when offline).
 import { installLeakTripwire } from '../_cleanup';
+import { assertClaudeTranscriptHomesAligned } from './_claude_transcript_home';
 
+assertClaudeTranscriptHomesAligned();
 installLeakTripwire(['skill']);
 
 // The `@lingui/react` shim is registered in its own setup file (../_lingui-mock,

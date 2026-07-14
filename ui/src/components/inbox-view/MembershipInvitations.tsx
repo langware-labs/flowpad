@@ -1,5 +1,12 @@
 import { useCallback, useMemo, useState } from 'react';
-import { Invitation, QueryRequest, acceptInvitation, declineInvitation, normalizeEmail } from '@sdk';
+import {
+  Invitation,
+  QueryRequest,
+  acceptInvitation,
+  declineInvitation,
+  isInvitationGoneError,
+  normalizeEmail,
+} from '@sdk';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import { Button } from '@src/components/ui/button';
 import { Loader2 } from 'lucide-react';
@@ -74,6 +81,13 @@ function MembershipInvitationRow({ invitation, onResolved }: { invitation: Invit
       notify.success({ title: 'Joined', message: `You joined ${targetName}.`, id: 'membership-invite' });
       onResolved();
     } catch (err) {
+      if (isInvitationGoneError(err)) {
+        // Orphan: the backend already removed the stale local row — just tell
+        // the user and refetch so it drops (and stays gone across refresh).
+        notify.warning({ title: 'Invitation no longer valid', id: 'membership-invite' });
+        onResolved();
+        return;
+      }
       notify.error({
         title: 'Accept failed',
         message: err instanceof Error ? err.message : 'Unknown error.',
@@ -91,6 +105,11 @@ function MembershipInvitationRow({ invitation, onResolved }: { invitation: Invit
       await declineInvitation({ invitation_id: invitation.id });
       onResolved();
     } catch (err) {
+      if (isInvitationGoneError(err)) {
+        notify.warning({ title: 'Invitation no longer valid', id: 'membership-invite' });
+        onResolved();
+        return;
+      }
       notify.error({
         title: 'Decline failed',
         message: err instanceof Error ? err.message : 'Unknown error.',

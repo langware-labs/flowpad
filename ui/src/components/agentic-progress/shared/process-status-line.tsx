@@ -26,12 +26,13 @@ import { getStatusLabel, processStatusConfig, workerStatusConfig } from './statu
  *   subscript via ``<sub>``, but only when defined, not ``UNKNOWN``, and
  *   distinct from the main label (identical labels collapse to a single token).
  * - Open-in-Terminal button is only rendered when ``onOpenInTerminal`` is passed.
- *   It is disabled unless ``isReadyForInput(process)`` — i.e. the worker is at
- *   ``IDLE`` / ``COMPLETE`` / ``INTERRUPTED`` and the process is in ``RUNNING``
- *   lifecycle state. Tooltip explains why it's disabled.
- * - For processes already in ``WorkerMode.Interactive`` (``visible=true``) the
- *   terminal tab is already open somewhere; we still allow the click — it just
- *   re-navigates to the existing tab. Icon tint signals the mode.
+ *   For an interactive PTY it is enabled when ``isReadyForInput(process)``
+ *   (``RUNNING && !busy``), or when the turn is done/resumable; for a headless
+ *   worker it requires a done/resumable turn or saved stopped/failed session.
+ *   Tooltip explains why it's disabled.
+ * - For processes already in ``WorkerMode.Interactive`` (``pty_mode=true``) the
+ *   terminal PTY already exists; we still allow the click — it focuses or
+ *   re-opens that terminal dock. Icon tint signals the mode.
  */
 interface ProcessStatusLineProps {
   process: StatusBearingProcess;
@@ -111,9 +112,9 @@ export function ProcessStatusLine({
   const mode = getWorkerMode(process);
   const styles = sizeStyles[size];
   // Two distinct gates depending on worker mode:
-  // - Interactive PTY (visible=true): clickable when the worker is ready for
+  // - Interactive PTY (pty_mode=true): clickable when the worker is ready for
   //   input — clicking just focuses the existing tab.
-  // - Headless (visible=false): clickable ONLY when the worker has explicitly
+  // - Headless (pty_mode=false): clickable ONLY when the worker has explicitly
   //   reported COMPLETE / INTERRUPTED / PENDING_USER for a real turn, OR the
   //   lifecycle reached STOPPED / FAILED with a session to resume. We exclude
   //   `WorkerStatus.IDLE` deliberately — the Python side uses IDLE as the
@@ -145,8 +146,8 @@ export function ProcessStatusLine({
     workerTurnDone ||
     resumableInactive ||
     (!!process.session_id && (status === ProcessStatus.STOPPED || status === ProcessStatus.FAILED));
-  // Interactive (visible=true): the tab already exists, so a click just
-  // re-focuses it — allow it whenever the worker is ready OR the turn is done
+  // Interactive (pty_mode=true): the PTY already exists, so a click focuses or
+  // re-opens its dock — allow it whenever the worker is ready OR the turn is done
   // (incl. PENDING_USER, or an INACTIVE turn we still hold the session for).
   // Without this the icon goes dead once the user opens the terminal (which
   // flips the process to visible=true) and the worker settles into PENDING_USER

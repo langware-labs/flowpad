@@ -22,6 +22,10 @@ interface MessageComposerProps {
   /** Conversation to append to. Falls back to the draft's `conversation_id`. */
   conversationId?: string;
   disabled?: boolean;
+  /** Live-session composer: every send is stamped with this session id (the
+   *  backend appends the snapshot-carrier attachment). Set by LiveSessionView;
+   *  the plain conversation composer leaves it unset. */
+  liveSessionId?: string;
   /** Fires after a successful send (fresh reply OR draft promoted to a reply). */
   onSent?: () => void;
   /** Optional queued prompt provided by per-message Add-prompt chips. */
@@ -120,6 +124,7 @@ function PendingFileChip({
 export function MessageComposer({
   conversationId,
   disabled,
+  liveSessionId,
   onSent,
   queuedPrompt,
   onQueuedPromptChange,
@@ -259,6 +264,7 @@ export function MessageComposer({
     // Assets (skill/agent/markdown/spec) ride as assetReferences.
     const refs = assetRefs.map((a) => a.typeid);
     if (refs.length > 0) extras.assetReferences = refs;
+    if (liveSessionId) extras.remoteWorkerSessionId = liveSessionId;
     return Object.keys(extras).length > 0 ? extras : undefined;
   };
 
@@ -268,6 +274,16 @@ export function MessageComposer({
     if (!trimmed && !effectivePrompt && files.length === 0 && assetRefs.length === 0) {
       return;
     }
+    // Live session: the typed text IS the prompt that runs on the host, so it
+    // must ride as a PROMPT attachment (not a plain message body) — otherwise
+    // the host's execute gate (`_is_prompt_attachment`) never fires and
+    // build_merged_prompt is empty. Route the textarea text through the prompt
+    // path and send an empty body (the backend synthesizes the placeholder).
+    const liveSessionPrompt: QueuedPrompt | null =
+      liveSessionId && trimmed && !effectivePrompt ? { text: trimmed, files: files } : null;
+    const outgoingPrompt = liveSessionPrompt ?? effectivePrompt;
+    const messageBody = liveSessionPrompt ? '' : trimmed;
+    const outgoingFiles = liveSessionPrompt ? undefined : files.length > 0 ? files : undefined;
     setSending(true);
     setError(null);
     try {
@@ -285,9 +301,9 @@ export function MessageComposer({
       if (draft) await discardDraftFlowMessage(draft);
       await sendReply(
         { conversationId: effectiveConversationId },
-        trimmed,
-        files.length > 0 ? files : undefined,
-        buildExtras(effectivePrompt),
+        messageBody,
+        outgoingFiles,
+        buildExtras(outgoingPrompt),
       );
       if (!isDraftMode) {
         setText('');

@@ -1,4 +1,4 @@
-import { QueryRequest, RemoteWorkerSession } from '@sdk';
+import { isSessionTerminal, QueryRequest, RemoteWorkerSession } from '@sdk';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import { byWorkerSessionActivityDesc } from '@src/hooks/useRemoteWorkerSessions';
 import { useMemo } from 'react';
@@ -17,6 +17,10 @@ export interface ConversationWorkerSession {
   label: string;
   /** True while the session's worker is mid-turn. */
   inFlight: boolean;
+  /** Lifecycle status of the resolved session (null when none). */
+  status: string | null;
+  /** True when a NON-terminal session exists (gates "Start live session"). */
+  hasLiveSession: boolean;
 }
 
 // Module-const query — a fresh QueryRequest per render makes useEntitiesQuery
@@ -51,11 +55,14 @@ export function useRemoteWorkerSessionForConversation(
   const { data: sessions = [] } = useEntitiesQuery<RemoteWorkerSession>(sessionsQuery);
 
   return useMemo(() => {
-    const session = conversationId
+    const candidates = conversationId
       ? sessions
           .filter((s) => s.conversation_id === conversationId)
-          .sort(byWorkerSessionActivityDesc)[0] ?? null
-      : null;
+          .sort(byWorkerSessionActivityDesc)
+      : [];
+    // Prefer the freshest NON-terminal session (an old ENDED/DECLINED run must
+    // not shadow a newly started one); fall back to the freshest overall.
+    const session = candidates.find((s) => !isSessionTerminal(s.status)) ?? candidates[0] ?? null;
 
     const hostName = session?.host_name ?? session?.host_user_id ?? null;
     return {
@@ -65,6 +72,8 @@ export function useRemoteWorkerSessionForConversation(
       sessionId: session?.id ?? null,
       label: sessionChipLabel({ hostName }),
       inFlight: !!session && IN_FLIGHT_STATUSES.has((session.status ?? '').toLowerCase()),
+      status: session?.status ?? null,
+      hasLiveSession: !!session && !isSessionTerminal(session.status),
     };
   }, [sessions, conversationId]);
 }

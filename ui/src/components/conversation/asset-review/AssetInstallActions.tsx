@@ -1,7 +1,7 @@
 import { dataManager, MessageAttachment, Project, TypeId } from '@sdk';
 import { useProject } from '@sdk/react/hooks';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { FolderDown, Globe, Loader2, Trash2 } from 'lucide-react';
+import { Download, FolderDown, Globe, Loader2, Play, Trash2 } from 'lucide-react';
 import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import { Button } from '@src/components/ui/button';
 import { ProjectSelectorModal, projectListToSelectorItems } from '@src/components/project-selector';
@@ -78,6 +78,10 @@ export function AssetInstallActions({
 }) {
   const { t } = useLingui();
   const [busy, setBusy] = useState(false);
+  // Transient failure reason for a Git Download/Setup — shown inline; the
+  // Download button stays clickable so the receiver can retry (each attachment
+  // retries independently; a pull failure never indexes stale content).
+  const [gitError, setGitError] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const { projects, isLoading: projectsLoading } = useAllProjects({ enabled: pickerOpen });
   const projectItems = useMemo(() => projectListToSelectorItems(projects), [projects]);
@@ -133,6 +137,44 @@ export function AssetInstallActions({
     [attachment, navigation, t],
   );
 
+  // Git "Download": clone/pull the origin + index (no scope picker — placement
+  // is repo-determined). Setup never runs here; it's a separate action below.
+  const isGit = attachment.transfer_mode === 'git';
+  const downloaded = attachment.effectiveScope != null;
+  const doGitDownload = useCallback(async () => {
+    setBusy(true);
+    setGitError(null);
+    try {
+      // No install-scope selection for git: placement is repo-determined
+      // (_resolve_git_checkout reuses/clones the checkout; the reindex derives
+      // the owning project from the checkout path). 'user' scope carries no
+      // project-mount dependency.
+      const show = await attachment.install('user');
+      notify.success({ title: t`Downloaded`, message: attachment.name ?? attachment.asset_type ?? '' });
+      openDisplayTarget(show, navigation);
+    } catch (err) {
+      console.error('[asset-review] git download failed', err);
+      const reason = err instanceof Error ? err.message : t`Download failed`;
+      setGitError(reason);
+      notify.error({ title: t`Download failed`, message: reason });
+    } finally {
+      setBusy(false);
+    }
+  }, [attachment, navigation, t]);
+
+  const doGitSetup = useCallback(async () => {
+    setBusy(true);
+    try {
+      const show = await attachment.runSetup();
+      openDisplayTarget(show, navigation);
+    } catch (err) {
+      console.error('[asset-review] git setup failed', err);
+      notify.error({ title: t`Setup failed` });
+    } finally {
+      setBusy(false);
+    }
+  }, [attachment, navigation, t]);
+
   const doUninstall = useCallback(async () => {
     setBusy(true);
     try {
@@ -166,6 +208,48 @@ export function AssetInstallActions({
     },
     [attachment, ensureProject, projectItems, navigation, t],
   );
+
+  // Git-shared assets never enter Copy & Install. A single Download clones/pulls
+  // + indexes; Setup (when the type has a setup skill) is a separate optional
+  // action offered only after a successful Download.
+  if (isGit) {
+    const spinner = busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null;
+    return (
+      <div className="flex flex-col gap-1.5">
+        <div className="flex flex-wrap items-center gap-2">
+          {!downloaded && (
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={busy}
+              onClick={() => void doGitDownload()}
+              data-testid="asset-git-download"
+            >
+              {spinner ?? <Download className="h-3.5 w-3.5" />}
+              {gitError ? <Trans>Retry download</Trans> : <Trans>Download</Trans>}
+            </Button>
+          )}
+          {downloaded && setupLabel && (
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={busy}
+              onClick={() => void doGitSetup()}
+              data-testid="asset-git-setup"
+            >
+              {spinner ?? <Play className="h-3.5 w-3.5" />}
+              {setupLabel}
+            </Button>
+          )}
+        </div>
+        {gitError && (
+          <p className="text-xs text-destructive" data-testid="asset-git-error">
+            {gitError}
+          </p>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-wrap items-center gap-2">

@@ -211,13 +211,13 @@ class PtySession(Pty):
     def _signal_output_queues(self) -> None:
         """Send None sentinel to all output() iterators to stop them."""
         session = self._mgr.states.get(self._pty_key)
-        if not session or not session.output_queues:
+        if not session or not (session.output_queues or session.sequenced_output_queues):
             return
         loop = None
         try:
             loop = asyncio.get_event_loop()
         except RuntimeError:
             pass
-        for q in list(session.output_queues):
+        for q in list(session.output_queues) + list(session.sequenced_output_queues):
             if loop and not loop.is_closed():
                 asyncio.run_coroutine_threadsafe(q.put(None), loop)

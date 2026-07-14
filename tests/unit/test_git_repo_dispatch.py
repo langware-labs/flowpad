@@ -3,9 +3,9 @@
 Uses a mocked ComputeNode (no real git process) following the pattern from
 tests/unit/test_git_diff.py.
 """
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
-from flow_sdk.builtin.faas.git_repo import GitRepo
+from flow_sdk.builtin.faas.git_repo import DEFAULT_GITIGNORE, GitRepo
 from flow_sdk.flowpad_types.compute_types import CLICommand
 
 
@@ -39,6 +39,17 @@ def make_repo(responses: list) -> GitRepo:
 
     mock_node.run_command = run_command
     return GitRepo("/repo", mock_node)
+
+
+def fresh_init_responses() -> list:
+    """The git call sequence a non-repo init runs: rev-parse (not a repo) →
+    git init → config ×3. Shared by the init/gitignore tests so a change to
+    init's git calls is edited in one place, not copy-pasted per test."""
+    return [
+        make_cmd("", exit_code=128),  # rev-parse fails → not a repo
+        make_cmd(""),                 # git init --initial-branch=main
+        make_cmd(""), make_cmd(""), make_cmd(""),  # config ×3
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -234,14 +245,7 @@ async def test_dispatch_init_already_a_repo():
 
 async def test_dispatch_init_fresh_dir():
     """Non-repo → git init + identity/push config, ok=True."""
-    responses = [
-        make_cmd("", exit_code=128),  # rev-parse fails → not a repo
-        make_cmd(""),                 # git init --initial-branch=main
-        make_cmd(""),                 # config user.name
-        make_cmd(""),                 # config user.email
-        make_cmd(""),                 # config push.autoSetupRemote
-    ]
-    result = await make_repo(responses).dispatch("init", method="POST")
+    result = await make_repo(fresh_init_responses()).dispatch("init", method="POST")
     assert result.status == "SUCCESS"
     assert result.data["ok"] is True
 
@@ -261,6 +265,45 @@ async def test_dispatch_init_requires_post():
     result = await make_repo([]).dispatch("init", method="GET")
     assert result.status == "FAIL"
     assert result.status_code == 405
+
+
+async def test_init_seeds_gitignore_when_absent():
+    """Fresh init writes DEFAULT_GITIGNORE when the repo has no .gitignore."""
+    repo = make_repo(fresh_init_responses())
+    repo._compute_node.exists = AsyncMock(return_value=False)
+    repo._compute_node.write_files = AsyncMock(return_value=["/repo/.gitignore"])
+
+    result = await repo.dispatch("init", method="POST")
+
+    assert result.data["ok"] is True
+    repo._compute_node.write_files.assert_awaited_once()
+    path, data = repo._compute_node.write_files.await_args.args
+    assert path.endswith(".gitignore")
+    assert data == DEFAULT_GITIGNORE
+
+
+async def test_init_preserves_existing_gitignore():
+    """Fresh init never clobbers a user's existing .gitignore."""
+    repo = make_repo(fresh_init_responses())
+    repo._compute_node.exists = AsyncMock(return_value=True)
+    repo._compute_node.write_files = AsyncMock()
+
+    result = await repo.dispatch("init", method="POST")
+
+    assert result.data["ok"] is True
+    repo._compute_node.write_files.assert_not_awaited()
+
+
+async def test_init_already_a_repo_skips_gitignore():
+    """Idempotent re-init on an existing repo does not touch .gitignore."""
+    repo = make_repo([make_cmd("true", exit_code=0)])  # rev-parse → is_init
+    repo._compute_node.exists = AsyncMock(return_value=False)
+    repo._compute_node.write_files = AsyncMock()
+
+    result = await repo.dispatch("init", method="POST")
+
+    assert result.data["ok"] is True
+    repo._compute_node.write_files.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------

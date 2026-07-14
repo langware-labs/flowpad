@@ -587,6 +587,17 @@ class DataContext extends EventEmitter {
   private setupConnectionListeners() {
     const connectionManager = ConnectionManager.getInstance();
 
+    // Keep the context mirror on the manager's synchronous event channel.
+    // The manager used to dynamically import this module on every lifecycle
+    // edge, creating an async back-reference that could outlive a reset SDK
+    // realm and reject after teardown.  Initial adoption also covers a context
+    // constructed after the socket has already begun connecting.
+    this.setLocalConnectionStatus(connectionManager.connectionStatus);
+    connectionManager.on(
+      'connection_status_changed',
+      (slot: { status: LocalConnectionStatus }) => this.setLocalConnectionStatus(slot.status),
+    );
+
     connectionManager.on('on_open', () => {
       runInAction(() => {
         this.connection = connectionManager.getSocket();

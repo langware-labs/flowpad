@@ -27,13 +27,14 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { createSdkRealm } from '../_sdk_realm';
 
 const REPO_ROOT = path.resolve(__dirname, '../../..');
 const INSTANCE = process.env.TEST_INSTANCE || 'reindexflow';
 const PORT = Number(process.env.TEST_PORT || 6087);
-
 let proc: ChildProcess | undefined;
 let sdk: any;
+let disposeSdkRealm: (() => void) | undefined;
 let tmpRoot = '';
 
 // SDK handles (populated in beforeAll after the realm import)
@@ -117,27 +118,46 @@ function subscribeUpdated(typeId: any) {
 beforeAll(async () => {
   const logPath = `/tmp/reindex_flow_real_worker.${INSTANCE}.log`;
   const logHandle = await fs.open(logPath, 'w');
-  proc = spawn('uv', ['run', '-m', 'flow_sdk.server.run'], {
-    cwd: REPO_ROOT,
-    env: {
-      ...process.env,
-      FLOW_INSTANCE: INSTANCE,
-      LOCAL_SERVER_PORT: String(PORT),
-      MINIHUB_RELOAD: 'False',
-      FLOWPAD_SKIP_DOTENV: 'true',
-      FLOWPAD_SKIP_LOCK: 'true',
-      FLOWPAD_DEFAULT_WORKER: 'claude',
-    },
-    stdio: ['ignore', logHandle.fd, logHandle.fd],
-  });
+  const backendEnv = {
+    ...process.env,
+    FLOW_INSTANCE: INSTANCE,
+    LOCAL_SERVER_PORT: String(PORT),
+    MINIHUB_RELOAD: 'False',
+    FLOWPAD_SKIP_DOTENV: 'true',
+    FLOWPAD_SKIP_LOCK: 'true',
+    FLOWPAD_DEFAULT_WORKER: 'claude',
+  };
+  const claudeConfigDir = backendEnv.CLAUDE_CONFIG_DIR;
+  if (claudeConfigDir) {
+    // An explicit Claude config root owns both credentials and transcripts;
+    // make Flowpad observe that same root.
+    backendEnv.FLOWPAD_CLAUDE_HOME = claudeConfigDir;
+  } else {
+    // Native Claude keeps credentials beside ~/.claude, not inside it. Merely
+    // setting CLAUDE_CONFIG_DIR=~/.claude creates a different auth realm, so
+    // keep both overrides absent and let Flowpad resolve the native default.
+    delete backendEnv.FLOWPAD_CLAUDE_HOME;
+    delete backendEnv.CLAUDE_CONFIG_DIR;
+  }
+  try {
+    proc = spawn('uv', ['run', '-m', 'flow_sdk.server.run'], {
+      cwd: REPO_ROOT,
+      env: backendEnv,
+      stdio: ['ignore', logHandle.fd, logHandle.fd],
+    });
+  } finally {
+    // spawn duplicates the descriptor into the child; retaining this FileHandle
+    // in the Vitest worker leaks it until garbage collection.
+    await logHandle.close();
+  }
   const up = await waitHealthy(PORT, 60_000);
   if (!up) throw new Error(`backend '${INSTANCE}' did not come up on :${PORT} — see ${logPath}`);
 
   tmpRoot = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'reindex-flow-')));
 
-  (globalThis as any).__FLOWPAD_API_URL__ = `http://localhost:${PORT}`;
-  vi.resetModules();
-  sdk = await import('@sdk');
+  const realm = await createSdkRealm(`http://localhost:${PORT}`);
+  sdk = realm.sdk;
+  disposeSdkRealm = realm.dispose;
   const info = await sdk.dataManager.bootstrap('localhost', true);
   await sdk.dataManager.loadTypes(info.types || []);
 
@@ -154,6 +174,10 @@ beforeAll(async () => {
 }, 90_000);
 
 afterAll(async () => {
+  // Dispose the one-off realm before terminating its backend so its connection
+  // manager cannot keep retrying :6087 while later files use the live QA
+  // backend.
+  disposeSdkRealm?.();
   proc?.kill('SIGTERM');
   if (tmpRoot) await fs.rm(tmpRoot, { recursive: true, force: true }).catch(() => {});
 });

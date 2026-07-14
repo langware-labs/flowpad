@@ -19,23 +19,30 @@
  *      real `sender_id` is kept on the wire, and the reply materialises on the
  *      guest even though the staffer is not in the guest's contacts.
  *
- * Requires the local hub (8093) + dev-1/dev-2 launched via
- * `scripts/instance_ctl.sh`. The staff happy-path (steps 3-4) additionally
- * requires the hub to have been started with the staff instance's email in
- * `COMMUNITY_STAFF_EMAILS` (granted `editor` on the community project at seed) —
- * otherwise that block skips with a clear message. Steps 1-2 always run.
+ * Requires the explicit SHARE_INST_1/SHARE_INST_2 pair and cycle hub. The staff
+ * happy-path additionally requires the hub to have been started with the staff
+ * instance's email in `COMMUNITY_STAFF_EMAILS` (granted `editor` on the
+ * community project at seed); missing staff authorization is a real failure.
  */
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { hubAvailable, hubLogin, HUB_URL } from './_hub';
+import { getAliceCreds, getBobCreds, hubAvailable, hubLogin, HUB_URL } from './_hub';
 import { pollUntil } from './_matrix';
-import { getInstance, instanceAvailable, type ResolvedInstance } from './_instances';
+import {
+  HUB_INST_1 as GUEST_INSTANCE,
+  HUB_INST_2 as STAFF_INSTANCE,
+  getInstance,
+  instanceAvailable,
+  type ResolvedInstance,
+} from './_instances';
 
 // Must equal the hub's COMMUNITY_DISPLAY_NAME (flowpad/config.py).
 const COMMUNITY_DISPLAY_NAME = 'Flowpad Support';
 
 let skipReason: string | null = null;
-let guest: ResolvedInstance; // dev-1
-let staff: ResolvedInstance; // dev-2
+let guest: ResolvedInstance;
+let staff: ResolvedInstance;
+let guestPassword = '';
+let staffPassword = '';
 let communityProjectId: string | null = null;
 
 async function fetchCommunityProjectId(): Promise<string | null> {
@@ -52,12 +59,20 @@ async function fetchCommunityProjectId(): Promise<string | null> {
 beforeAll(async () => {
   const hub = await hubAvailable();
   if (!hub.ok) return void (skipReason = hub.reason ?? 'hub unreachable');
-  if (!(await instanceAvailable('dev-1')) || !(await instanceAvailable('dev-2'))) {
-    return void (skipReason = 'launch dev-1 + dev-2 via scripts/instance_ctl.sh');
+  if (!instanceAvailable(GUEST_INSTANCE) || !instanceAvailable(STAFF_INSTANCE)) {
+    return void (skipReason = `launch ${GUEST_INSTANCE} + ${STAFF_INSTANCE} via scripts/instance_ctl.sh`);
   }
+  const guestCreds = await getAliceCreds();
+  const staffCreds = await getBobCreds();
+  if (!guestCreds || !staffCreds) return void (skipReason = 'missing canonical ALICE/BOB credentials');
   // Order matters: each call re-evaluates the SDK graph into its own realm.
-  guest = await getInstance('dev-1');
-  staff = await getInstance('dev-2');
+  guest = await getInstance(GUEST_INSTANCE);
+  staff = await getInstance(STAFF_INSTANCE);
+  if (guest.email !== guestCreds.email || staff.email !== staffCreds.email) {
+    throw new Error('community instance identities do not match canonical ALICE_EMAIL/BOB_EMAIL');
+  }
+  guestPassword = guestCreds.password;
+  staffPassword = staffCreds.password;
   communityProjectId = await fetchCommunityProjectId();
   if (!communityProjectId) {
     skipReason = 'hub /version did not return community_project_id (restart hub from source)';
@@ -93,7 +108,7 @@ describe('community support center — authorization', () => {
     const convId = started.conversation_id;
     expect(convId).toBeTruthy();
 
-    const guestAuth = await hubLogin(guest.email, `${guest.name}-pw-1234`);
+    const guestAuth = await hubLogin(guest.email, guestPassword);
     const authHeader = { Authorization: `Bearer ${guestAuth.token}` };
 
     // The guest holds only the `guest` conversation role (read + add_message +
@@ -127,18 +142,17 @@ describe('community support center — authorization', () => {
   });
 
   it('guest opens a ticket; staff discovers + picks up; reply is masked to the brand', async () => {
-    // Staff happy-path needs dev-2 to be a real member of the community project
+    // Staff happy-path needs instance 2 to be a real member of the community project
     // (granted via COMMUNITY_STAFF_EMAILS at hub seed). If not onboarded, the
-    // queue read 403s — soft-skip with a clear message rather than fail. The
-    // negative test above still proves the exposure is closed.
+    // queue read fails loudly; returning here would falsely pass the staff path.
     try {
       await staff.sdk.listCommunityTickets();
-    } catch {
-      console.warn(
-        `[community test] staff '${staff.email}' is not a community-project member; ` +
-          `restart the hub with COMMUNITY_STAFF_EMAILS=${staff.email} to run the staff path.`,
+    } catch (error) {
+      throw new Error(
+        `[community test] staff '${staff.email}' cannot read the community queue; ` +
+          `the hub must include COMMUNITY_STAFF_EMAILS=${staff.email}`,
+        { cause: error },
       );
-      return;
     }
 
     const ts = Date.now();
@@ -186,7 +200,7 @@ describe('community support center — authorization', () => {
 
     // 4. Staff reply — posted directly to the hub. Masking happens in the hub's
     //    add_message_action, whose response returns the stored (masked) FM.
-    const staffAuth = await hubLogin(staff.email, `${staff.name}-pw-1234`);
+    const staffAuth = await hubLogin(staff.email, staffPassword);
     const replyText = `try restarting it ${ts}`;
     const replyResp = await fetch(`${HUB_URL}/api/v1/graph/conversation/${convId}/add_message`, {
       method: 'POST',

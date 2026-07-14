@@ -109,10 +109,16 @@ async def test_add_message_git_share_config_reaches_background_upload(
     conv.remote = True
     await conv.save()
 
-    upload_calls: list[str] = []
+    upload_calls: list[tuple[str, bool]] = []
 
-    async def fake_upload(_fm, _conv_id, *, transfer_mode: str = "copy") -> None:
-        upload_calls.append(transfer_mode)
+    async def fake_upload(
+        _fm,
+        _conv_id,
+        *,
+        transfer_mode: str = "copy",
+        create_bookmark: bool = False,
+    ) -> None:
+        upload_calls.append((transfer_mode, create_bookmark))
 
     tasks: list[asyncio.Task] = []
     real_create_task = asyncio.create_task
@@ -147,7 +153,7 @@ async def test_add_message_git_share_config_reaches_background_upload(
     assert resp.status_code == 200, resp.text
     assert tasks, "body upload task was not scheduled"
     await asyncio.gather(*tasks)
-    assert upload_calls == ["git"]
+    assert upload_calls == [("git", False)]
 
 
 @pytest.mark.timeout(30)  # do not increase timeout without approval

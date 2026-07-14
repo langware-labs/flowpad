@@ -14,6 +14,7 @@ import asyncio
 import collections
 import logging
 import os
+import re
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
@@ -48,6 +49,20 @@ logger = logging.getLogger(__name__)
 # agentic_process.py. Process-local (PTYs are process-local), so no cross-process
 # coordination is needed.
 _START_PTY_LOCKS: dict[str, asyncio.Lock] = collections.defaultdict(asyncio.Lock)
+
+
+async def _next_unseen_pty_output(
+    queue: asyncio.Queue,
+    snapshot_max_seq: int,
+) -> bytes | None:
+    """Return the next chunk not already included in a disk snapshot."""
+    while True:
+        item = await queue.get()
+        if item is None:
+            return None
+        seq, chunk = item
+        if seq > snapshot_max_seq:
+            return chunk
 
 
 class ShellStatus(StrEnum):
@@ -637,7 +652,10 @@ class Shell(Entity):
         """
         await self._wait_for_shell_ready(timeout=timeout)
 
-    async def wait_for_composer_ready(self, pattern: "re.Pattern[str]") -> bool:
+    async def wait_for_composer_ready(
+        self,
+        pattern: "re.Pattern[str]",
+    ) -> bool:
         """Block until ``pattern`` appears in this PTY's ANSI-stripped output.
 
         The vendor-marker gate for typed first deliveries (QA C09b): output
@@ -666,13 +684,24 @@ class Shell(Entity):
         if session is None:
             return False
         q: asyncio.Queue = asyncio.Queue()
-        session.output_queues.append(q)
+        session.sequenced_output_queues.append(q)
         try:
-            initial = await self.read()
-            return await pump_composer_ready(pattern, initial, q.get)
+            stream = session.pty_stream_file
+            if stream is not None:
+                initial, snapshot_max_seq = stream.read_output_snapshot_after_seq(
+                    session.generation_start_seq
+                )
+            else:
+                initial, snapshot_max_seq = b"", session.generation_start_seq
+
+            return await pump_composer_ready(
+                pattern,
+                initial,
+                lambda: _next_unseen_pty_output(q, snapshot_max_seq),
+            )
         finally:
             try:
-                session.output_queues.remove(q)
+                session.sequenced_output_queues.remove(q)
             except ValueError:
                 pass
 
