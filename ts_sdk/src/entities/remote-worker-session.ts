@@ -80,6 +80,14 @@ export class RemoteWorkerSession
     return !!this.host_user_id && userId === this.host_user_id;
   }
 
+  /** Tab / chip label. A RemoteWorkerSession has no name/uname/title, so the
+   *  default chain would fall back to the synthetic `remote_worker_session-<id>`;
+   *  name it after the counterpart instead (mirrors CollaborationRoom's join). */
+  getDisplayName(): string | null {
+    const other = this.guest_name || this.host_name;
+    return other ? `Live session · ${other}` : 'Live session';
+  }
+
   /**
    * Host cuts off remote access to their machine: marks the session ENDED and
    * best-effort stops the host worker so no further guest prompts run.
