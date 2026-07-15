@@ -6,14 +6,27 @@ import { useEffect, useRef, useState, type PointerEventHandler, type ReactNode }
 /** Rail-anchored offset (matches RAIL_WIDTH_CLASS = w-[50px]). The slider floats
  *  against the rail's right edge. */
 const RAIL_OFFSET = 50;
+/** Where the menu sits when the owner passes no anchor. */
+const ANCHOR_FALLBACK_TOP = 8;
+/** Cap before the body scrolls. */
+const MAX_HEIGHT = '60vh';
+/** Breathing room at the viewport's bottom edge. */
+const VIEWPORT_GUTTER = 8;
 
 /**
- * LeftSlider — a generic left-edge slide-in overlay, anchored at the rail's
- * right edge. A transient, non-modal flyout: it floats over content (the rail
- * stays interactive) and dismisses on outside pointer-down, Escape, and — unless
- * a hover-driven owner opts out with `idleMs={null}` — 5s of idle (see
- * `useIdleAutoClose`). Reusable layout element — the `headerRight` slot is the
- * canonical home for a scope filter, so any "scoped menu" drops in.
+ * LeftSlider — a generic left-edge slide-in MENU, anchored beside the rail
+ * control that opens it. A transient, non-modal flyout: it floats over content
+ * (the rail stays interactive) and dismisses on outside pointer-down, Escape,
+ * and — unless a hover-driven owner opts out with `idleMs={null}` — 5s of idle
+ * (see `useIdleAutoClose`). Reusable layout element — the `headerRight` slot is
+ * the canonical home for a scope filter, so any "scoped menu" drops in.
+ *
+ * Sized to its CONTENT, capped by `maxHeight`, not stretched to the viewport.
+ * That is the flyout-menu pattern rather than the navigation-drawer one, and the
+ * distinction is behavioural, not cosmetic: a full-height surface says "I am
+ * staying", which contradicts a menu that dismisses when you move the pointer
+ * away. Hugging the content also means a short menu barely overlaps the rail
+ * even mid-animation.
  *
  * The toggle control that opens this must carry `data-left-slider-ignore` so a
  * click on it doesn't register as an outside-dismiss (which would fight the
@@ -25,6 +38,7 @@ export function LeftSlider({
   title,
   headerRight,
   width = 320,
+  anchorTop = ANCHOR_FALLBACK_TOP,
   idleMs,
   onPointerEnter,
   onPointerLeave,
@@ -35,6 +49,9 @@ export function LeftSlider({
   title?: ReactNode;
   headerRight?: ReactNode;
   width?: number;
+  /** Viewport y the menu's top edge aligns to — pass the trigger's own top so
+   *  the menu reads as belonging to it. */
+  anchorTop?: number;
   /** `null` opts out of the idle auto-close — for a hover-driven slider that
    *  owns its own dismissal via pointer-leave. See useIdleAutoClose. */
   idleMs?: number | null;
@@ -95,9 +112,16 @@ export function LeftSlider({
       aria-label={typeof title === 'string' ? title : undefined}
       onPointerEnter={onPointerEnter}
       onPointerLeave={onPointerLeave}
-      style={{ left: RAIL_OFFSET, width }}
+      style={{
+        left: RAIL_OFFSET,
+        top: anchorTop,
+        width,
+        // Clamp to what's left below the anchor, or a menu opened from a low
+        // control would run off the bottom of the viewport.
+        maxHeight: `min(${MAX_HEIGHT}, calc(100vh - ${anchorTop}px - ${VIEWPORT_GUTTER}px))`,
+      }}
       className={cn(
-        'fixed inset-y-0 z-40 flex flex-col border-r border-border bg-background shadow-lg',
+        'fixed z-40 flex flex-col overflow-hidden rounded-lg border border-border bg-background shadow-lg',
         'transition-transform duration-200 ease-in-out',
         // `-translate-x-full` parks the panel at left = RAIL_OFFSET - width, so
         // while it is animating in or out it sits directly ON TOP of the rail

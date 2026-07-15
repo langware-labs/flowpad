@@ -11,16 +11,33 @@ beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
 
 describe('useHoverIntent', () => {
-  const setup = () => renderHook(() => useHoverIntent({ openMs: 100, closeMs: 300 }));
+  const setup = () => renderHook(() => useHoverIntent({ dwellMs: 500, closeMs: 500 }));
 
-  it('opens only after the dwell — a pointer sweeping past never opens it', () => {
+  it('opens only once the pointer comes to REST — not merely on entry', () => {
     const { result } = setup();
 
     act(() => result.current.hoverProps.onPointerEnter(mouse));
-    act(() => void vi.advanceTimersByTime(99));
+    act(() => void vi.advanceTimersByTime(499));
     expect(result.current.open).toBe(false);
 
     act(() => void vi.advanceTimersByTime(1));
+    expect(result.current.open).toBe(true);
+  });
+
+  it('a pointer still MOVING never opens it — the anti-flicker rule', () => {
+    // Crossing the rail to reach another icon must not pop the menu. Each move
+    // restarts the dwell, so travelling through never opens it however long the
+    // journey takes.
+    const { result } = setup();
+    act(() => result.current.hoverProps.onPointerEnter(mouse));
+    for (let i = 0; i < 20; i++) {
+      act(() => void vi.advanceTimersByTime(100));      // 2s of travel...
+      act(() => result.current.hoverProps.onPointerMove(mouse));
+    }
+    expect(result.current.open).toBe(false);
+
+    // ...and it opens as soon as the pointer settles.
+    act(() => void vi.advanceTimersByTime(500));
     expect(result.current.open).toBe(true);
   });
 
@@ -28,9 +45,9 @@ describe('useHoverIntent', () => {
     const { result } = setup();
 
     act(() => result.current.hoverProps.onPointerEnter(mouse));
-    act(() => void vi.advanceTimersByTime(50));
+    act(() => void vi.advanceTimersByTime(200));
     act(() => result.current.hoverProps.onPointerLeave(mouse));
-    act(() => void vi.advanceTimersByTime(1000));
+    act(() => void vi.advanceTimersByTime(2000));
 
     expect(result.current.open).toBe(false);
   });
@@ -40,25 +57,30 @@ describe('useHoverIntent', () => {
     act(() => result.current.set(true));
 
     act(() => result.current.hoverProps.onPointerLeave(mouse));
-    act(() => void vi.advanceTimersByTime(299));
+    act(() => void vi.advanceTimersByTime(499));
     expect(result.current.open).toBe(true);
 
     act(() => void vi.advanceTimersByTime(1));
     expect(result.current.open).toBe(false);
   });
 
-  it('re-entering during the grace cancels the close — the rail→panel crossing', () => {
-    // The case the whole shared-intent design exists for: leaving the rail
-    // button fires leave, entering the panel fires enter, and the menu must not
-    // flicker shut in between.
+  it('re-entering during the grace cancels the close — the trigger→panel crossing', () => {
     const { result } = setup();
     act(() => result.current.set(true));
 
     act(() => result.current.hoverProps.onPointerLeave(mouse));
-    act(() => void vi.advanceTimersByTime(200));
+    act(() => void vi.advanceTimersByTime(300));
     act(() => result.current.hoverProps.onPointerEnter(mouse));
-    act(() => void vi.advanceTimersByTime(1000));
+    act(() => void vi.advanceTimersByTime(2000));
 
+    expect(result.current.open).toBe(true);
+  });
+
+  it('moving INSIDE an open surface does not re-arm anything', () => {
+    const { result } = setup();
+    act(() => result.current.set(true));
+    act(() => result.current.hoverProps.onPointerMove(mouse));
+    act(() => void vi.advanceTimersByTime(2000));
     expect(result.current.open).toBe(true);
   });
 
@@ -67,9 +89,8 @@ describe('useHoverIntent', () => {
 
     act(() => result.current.hoverProps.onPointerEnter(mouse));
     act(() => result.current.set(false));
-    act(() => void vi.advanceTimersByTime(1000));
+    act(() => void vi.advanceTimersByTime(2000));
 
-    // The pending open must not resurrect what the click just closed.
     expect(result.current.open).toBe(false);
   });
 
@@ -77,7 +98,7 @@ describe('useHoverIntent', () => {
     const { result } = setup();
 
     act(() => result.current.hoverProps.onPointerEnter(touch));
-    act(() => void vi.advanceTimersByTime(1000));
+    act(() => void vi.advanceTimersByTime(2000));
 
     expect(result.current.open).toBe(false);
   });
@@ -86,7 +107,7 @@ describe('useHoverIntent', () => {
     const { result, unmount } = setup();
     act(() => result.current.hoverProps.onPointerEnter(mouse));
     unmount();
-    expect(() => vi.advanceTimersByTime(1000)).not.toThrow();
+    expect(() => vi.advanceTimersByTime(2000)).not.toThrow();
   });
 });
 

@@ -23,7 +23,7 @@ import { useInboxStore } from '@src/store/use-inbox-store';
 import { useSpotlightStore } from '@src/store/use-spotlight-store';
 import { BookmarksSlider } from '@src/components/bookmarks-slider/BookmarksSlider';
 import { useUnopenedFavoritesCount } from '@src/hooks/use-unopened-favorites-count';
-import { HOVER_CLOSE_GRACE_MS, HOVER_OPEN_MS, useHoverIntent } from '@src/hooks/use-hover-intent';
+import { useHoverIntent } from '@src/hooks/use-hover-intent';
 import { useLingui } from '@lingui/react/macro';
 
 /**
@@ -59,7 +59,7 @@ import {
   Webhook,
   Zap,
 } from 'lucide-react';
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 
 // Per-item placement in the left rail, resolved by the current view mode.
@@ -94,9 +94,20 @@ export function CollapsedSidebar() {
   const onDiscover = location.pathname === '/discover';
   const { goBack, canGoBack } = useNavigationState();
   const [secondaryExpanded, setSecondaryExpanded] = useState(false);
-  // Hover-driven: the rail button and the slider panel share ONE intent, so
-  // travelling from one to the other never closes (see useHoverIntent).
-  const bookmarks = useHoverIntent({ openMs: HOVER_OPEN_MS, closeMs: HOVER_CLOSE_GRACE_MS });
+  // Rest-to-open; the rail button and panel share one intent (see useHoverIntent).
+  const bookmarks = useHoverIntent();
+  // Align the menu's top edge with the button that opens it, so it reads as
+  // belonging to that icon. Measured rather than a constant: the rail's layout
+  // shifts with view mode and the collapsed-items expander.
+  //
+  // useLayoutEffect, not useEffect: a passive effect lands AFTER paint, so the
+  // menu would render one frame at the fallback top and then jump to the button.
+  const bookmarksBtnRef = useRef<HTMLButtonElement>(null);
+  const [bookmarksAnchorTop, setBookmarksAnchorTop] = useState<number | undefined>(undefined);
+  useLayoutEffect(() => {
+    if (!bookmarks.open) return;
+    setBookmarksAnchorTop(bookmarksBtnRef.current?.getBoundingClientRect().top);
+  }, [bookmarks.open]);
   const devMode = useDevMode();
   const { unreadCount } = useInboxStore();
   const unopenedFavorites = useUnopenedFavoritesCount();
@@ -283,7 +294,10 @@ export function CollapsedSidebar() {
 
   return (
     <>
-      <Sidebar collapsible="none" className={`flex ${RAIL_WIDTH_CLASS} flex-col border-r`}>
+      {/* Above the slider (z-40): the slider's closed transform parks it over the
+          rail, where it would otherwise paint an opaque strip and swallow the
+          rail's hover. On top, the menu emerges from behind the rail instead. */}
+      <Sidebar collapsible="none" className={`relative z-50 flex ${RAIL_WIDTH_CLASS} flex-col border-r`}>
         <SidebarContent className="flex-1">
           <SidebarGroup className="px-0 py-2">
             <SidebarMenu>
@@ -323,7 +337,10 @@ export function CollapsedSidebar() {
               {isVibe && (
                 <SidebarMenuItem>
                   <SidebarMenuButton
-                    tooltip={t`Bookmarks`}
+                    ref={bookmarksBtnRef}
+                    // No tooltip: SidebarMenuButton places them side="right", i.e.
+                    // on top of the menu this opens. aria-label carries the name.
+                    aria-label={t`Bookmarks`}
                     isActive={bookmarks.open}
                     {...bookmarks.hoverProps}
                     onClick={() => bookmarks.set(!bookmarks.open)}
@@ -431,7 +448,14 @@ export function CollapsedSidebar() {
           <UserDropdown />
         </div>
       </Sidebar>
-      {isVibe && <BookmarksSlider open={bookmarks.open} onOpenChange={bookmarks.set} hoverProps={bookmarks.hoverProps} />}
+      {isVibe && (
+        <BookmarksSlider
+          open={bookmarks.open}
+          onOpenChange={bookmarks.set}
+          hoverProps={bookmarks.hoverProps}
+          anchorTop={bookmarksAnchorTop}
+        />
+      )}
     </>
   );
 }

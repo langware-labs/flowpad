@@ -23,9 +23,12 @@ export function BookmarksSlider({
   open,
   onOpenChange,
   hoverProps,
+  anchorTop,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Viewport y of the rail button, so the menu aligns to what opened it. */
+  anchorTop?: number;
   /** The SAME hover intent as the rail button's, so travelling from the button
    *  into the panel cancels the pending close instead of dismissing. Required,
    *  not optional: this component turns the idle auto-close OFF, so hover IS
@@ -58,6 +61,7 @@ export function BookmarksSlider({
       // LeftSlider documents headerRight as the canonical scope-filter home;
       // the menu body is rows only.
       headerRight={scopeBar}
+      anchorTop={anchorTop}
       idleMs={null}
       onPointerEnter={hoverProps.onPointerEnter}
       onPointerLeave={hoverProps.onPointerLeave}
