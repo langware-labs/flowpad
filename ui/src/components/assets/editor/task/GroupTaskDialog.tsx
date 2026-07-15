@@ -1,4 +1,4 @@
-import { ActionInfo, ContactsGroup, dataManager, Task } from '@sdk';
+import { ActionInfo, ContactsGroup, dataManager, normalizeEmail, Task, TypeId } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import {
   Dialog,
@@ -26,6 +26,9 @@ interface CreateGroupTaskResult {
   created?: string[];
   skipped?: string[];
   failed?: { email: string | null; error: string }[];
+  /** Member-task typeids (no PII in the payload) — the recipient match runs
+   *  locally against each task row's `assignee`. */
+  children?: string[];
 }
 
 /**
@@ -68,17 +71,30 @@ export function GroupTaskDialog({ task, open, onOpenChange }: GroupTaskDialogPro
           message: `${created} member task(s) created for "${selected.displayName ?? selected.name}".`,
         });
       }
-      // The assignment message (push-notify channel): one conversation to all
-      // members, with the task chip + git-folder chips for its attachments.
-      const recipients = (selected.contacts ?? []).filter((c) => !!c.email);
-      if (recipients.length) {
-        const convId = await sendAssignment(recipients, message);
-        if (!convId) {
-          notify.warning({
-            title: 'Members assigned, but the message failed',
-            message: 'The member tasks were created; the notification message did not go through.',
-          });
-        }
+      // The assignment message (push-notify channel): ONE conversation PER
+      // member, each carrying that member's OWN member-task chip (not the
+      // group overview) + the git-folder chips. Members never share a thread
+      // — consistent with the member-isolation model. The response carries
+      // only typeids (no PII); the recipient match reads each local task
+      // row's `assignee`.
+      const childByAssignee = new Map<string, string>();
+      for (const tid of result?.children ?? []) {
+        const child = await dataManager.getByTypeId<Task>(new TypeId(tid));
+        const assignee = normalizeEmail(child?.assignee);
+        if (assignee) childByAssignee.set(assignee, tid);
+      }
+      let messageFailures = 0;
+      for (const recipient of (selected.contacts ?? []).filter((c) => !!c.email)) {
+        const childTypeid = childByAssignee.get(normalizeEmail(recipient.email) ?? '');
+        if (!childTypeid) continue; // member failed above — already reported
+        const convId = await sendAssignment([recipient], message, childTypeid);
+        if (!convId) messageFailures += 1;
+      }
+      if (messageFailures > 0) {
+        notify.warning({
+          title: 'Members assigned, but some messages failed',
+          message: `The member tasks were created; ${messageFailures} notification message(s) did not go through.`,
+        });
       }
       onOpenChange(false);
     } catch (e) {
