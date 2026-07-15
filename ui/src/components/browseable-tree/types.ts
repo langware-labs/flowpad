@@ -233,10 +233,9 @@ export interface BrowseableTreeProps {
   roots: BrowseableRoot[];
 
   /** Dwell (ms) before hovering a row expands it — menu mode. Undefined (the
-   *  default) binds no hover handler at all, so ordinary navigators are
-   *  structurally unaffected. Hover only ever EXPANDS; collapse stays on the
-   *  chevron/click, and an explicit collapse suppresses hover until the pointer
-   *  leaves the row. */
+   *  default) schedules nothing, so ordinary navigators never expand on hover.
+   *  Hover only ever EXPANDS; collapse stays on the chevron/click, and an
+   *  explicit collapse suppresses hover until the pointer leaves the row. */
   hoverExpandMs?: number;
 
   /** The currently-active pointer (from URL). Drives both row selection and

@@ -27,8 +27,11 @@ export function BookmarksSlider({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** The SAME hover intent as the rail button's, so travelling from the button
-   *  into the panel cancels the pending close instead of dismissing. */
-  hoverProps?: { onPointerEnter: PointerEventHandler; onPointerLeave: PointerEventHandler };
+   *  into the panel cancels the pending close instead of dismissing. Required,
+   *  not optional: this component turns the idle auto-close OFF, so hover IS
+   *  the close. Omitting it wouldn't degrade gracefully — the panel would
+   *  simply never close on leave. */
+  hoverProps: { onPointerEnter: PointerEventHandler; onPointerLeave: PointerEventHandler };
 }) {
   const { t } = useLingui();
   const { filter, scopeBar } = useFavoritesScope();
@@ -56,8 +59,8 @@ export function BookmarksSlider({
       // the menu body is rows only.
       headerRight={scopeBar}
       idleMs={null}
-      onPointerEnter={hoverProps?.onPointerEnter}
-      onPointerLeave={hoverProps?.onPointerLeave}
+      onPointerEnter={hoverProps.onPointerEnter}
+      onPointerLeave={hoverProps.onPointerLeave}
     >
       <FavoritesTreeMenu filter={filter} />
     </LeftSlider>

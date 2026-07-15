@@ -295,33 +295,22 @@ export function useFavoritesRoots(opts?: {
  * The same favorites, shaped for BrowseableTree (the menu renderer) rather than
  * the grid.
  *
- * `BrowseableRoot` requires `ownsPointer`/`pathFor`, which exist solely to power
- * deep-link auto-expand (`useBrowseableTree.expandParentsForPointer`). That is
- * deliberately a no-op here, and the stubs are honest rather than lazy:
- *  - the slider closes on the first navigation, so nothing ever deep-links into
- *    an open menu;
- *  - auto-expanding a folder just because the open doc happens to be favorited
- *    inside it would fight hover-expand — the menu would open a subtree the
- *    user never pointed at;
- *  - a real `pathFor` would need a pointer→bookmark reverse index the adapter
- *    doesn't have (`pointerForFavorite` is one-way).
- * Row highlighting still works: it's a pure pointer-string match, independent of
- * `pathFor`. Only top-level nodes must be roots — `listChildren` keeps handing
- * back plain `Browseable`s, which is what the tree wants.
+ * `BrowseableRoot` requires `ownsPointer`/`pathFor`, which exist only to power
+ * deep-link auto-expand. Both are no-ops here: the slider closes on the first
+ * navigation, so nothing ever deep-links into an open menu. Row highlighting is
+ * a pure pointer-string match and still works. Only top-level nodes must be
+ * roots — `listChildren` keeps handing back plain `Browseable`s.
  */
-export function useFavoritesTreeRoots(opts?: { filter?: (b: Bookmark) => boolean }): {
-  roots: BrowseableRoot[];
-} {
+export function useFavoritesTreeRoots(opts?: { filter?: (b: Bookmark) => boolean }): BrowseableRoot[] {
   const { roots } = useFavoritesRoots({ filter: opts?.filter, iconClassName: 'h-4 w-4' });
   return useMemo(
-    () => ({
-      roots: roots.map((n) => ({
+    () =>
+      roots.map((n) => ({
         ...n,
         kind: 'root' as const,
         ownsPointer: () => false,
         pathFor: () => Promise.resolve([]),
       })),
-    }),
     [roots],
   );
 }
