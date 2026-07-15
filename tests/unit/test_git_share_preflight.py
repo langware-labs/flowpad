@@ -17,6 +17,7 @@ from flow_sdk.app.actions.git_share_preflight_action import git_share_preflight
 from flow_sdk.builtin.flow_message_bundle import (
     GitShareOriginError,
     _pack_file_backed_attachment,
+    _pack_git_reference_attachment,
 )
 from flow_sdk.schema.types import EntityType
 
@@ -24,6 +25,9 @@ pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
 ENTITY_ID = "7ce48c47-abab-4c9c-9780-a7198d12a260"
 KEY = f"{EntityType.SKILL.value}-@{ENTITY_ID}"
+
+FOLDER_ID = "1f0a2b3c-4d5e-4f60-8712-9a0b1c2d3e4f"
+FOLDER_KEY = f"{EntityType.FOLDER.value}-@{FOLDER_ID}"
 
 
 # --------------------------------------------------------------------------- #
@@ -89,6 +93,26 @@ def _stub_lookup(monkeypatch, asset_ref: str) -> None:
 async def _preflight(monkeypatch, asset_ref: str) -> dict:
     _stub_lookup(monkeypatch, asset_ref)
     return await git_share_preflight(EntityType.SKILL.value, ENTITY_ID)
+
+
+def _stub_folder(monkeypatch, path: str | None, *, name: str = "widgets"):
+    """A real Folder entity (never saved) returned by the id lookup. Constructed
+    from ``path`` only, so it carries the LocalOrigin the ctor synthesizes —
+    exactly the stale-origin shape a directory git-init'd later would have."""
+    from flow_sdk.builtin.folder import Folder  # noqa: PLC0415
+
+    ent = Folder(id=FOLDER_ID, name=name, **({"path": path} if path else {}))
+
+    async def _get_one(query):  # noqa: ARG001
+        return ent
+
+    monkeypatch.setattr(Folder, "get_one", staticmethod(_get_one))
+    return ent
+
+
+async def _folder_preflight(monkeypatch, path: str | None) -> dict:
+    _stub_folder(monkeypatch, path)
+    return await git_share_preflight(EntityType.FOLDER.value, FOLDER_ID)
 
 
 # --------------------------------------------------------------------------- #
@@ -181,6 +205,95 @@ async def test_not_file_backed(tmp_path, monkeypatch):
 
 
 # --------------------------------------------------------------------------- #
+# FOLDER preflight — a context folder has no asset_ref by design, so it resolves
+# through its own local `path`. These are the states the share gate branches on.
+# --------------------------------------------------------------------------- #
+
+@pytest.mark.asyncio
+async def test_folder_eligible_clean_pushed_repo(tmp_path, monkeypatch):
+    repo = tmp_path / "repo"
+    _init_pushed(repo)
+    res = await _folder_preflight(monkeypatch, str(repo))
+    assert res["available"] is True
+    assert res["code"] is None
+    assert res["git_origin"] and res["git_origin"]["branch"] == "main"
+
+
+@pytest.mark.asyncio
+async def test_folder_not_in_repo(tmp_path, monkeypatch):
+    # The LocalOrigin case: a plain directory. No special-casing — find_project_root
+    # simply finds no .git, and "isn't inside a Git repository" is already the
+    # right words. This is state 1 of the share gate ("Setup git").
+    plain = tmp_path / "plain"
+    plain.mkdir()
+    (plain / "notes.md").write_text("# notes\n", encoding="utf-8")
+    res = await _folder_preflight(monkeypatch, str(plain))
+    assert res["available"] is False
+    assert res["code"] == "not-in-repo"
+
+
+@pytest.mark.asyncio
+async def test_folder_missing_remote(tmp_path, monkeypatch):
+    repo = tmp_path / "repo"
+    _init(repo, remote=None)
+    _skill(repo)
+    _commit(repo)
+    res = await _folder_preflight(monkeypatch, str(repo))
+    assert res["available"] is False
+    assert res["code"] == "missing-remote"
+
+
+@pytest.mark.asyncio
+async def test_folder_no_commit(tmp_path, monkeypatch):
+    repo = tmp_path / "repo"
+    _init(repo)
+    _skill(repo)
+    res = await _folder_preflight(monkeypatch, str(repo))
+    assert res["available"] is False
+    assert res["code"] == "no-commit"
+
+
+@pytest.mark.asyncio
+async def test_folder_dirty(tmp_path, monkeypatch):
+    repo = tmp_path / "repo"
+    _init_pushed(repo)
+    (repo / "uncommitted.md").write_text("# new\n", encoding="utf-8")
+    res = await _folder_preflight(monkeypatch, str(repo))
+    assert res["available"] is False
+    assert res["code"] == "dirty"
+
+
+@pytest.mark.asyncio
+async def test_folder_unpushed(tmp_path, monkeypatch):
+    repo = tmp_path / "repo"
+    _init_pushed(repo)
+    (repo / "later.md").write_text("# later\n", encoding="utf-8")
+    _commit(repo, "later")  # committed but never pushed
+    res = await _folder_preflight(monkeypatch, str(repo))
+    assert res["available"] is False
+    assert res["code"] == "unpushed"
+
+
+@pytest.mark.asyncio
+async def test_folder_subdir_of_repo_resolves_repo_root(tmp_path, monkeypatch):
+    repo = tmp_path / "repo"
+    _init_pushed(repo)
+    sub = repo / ".claude" / "skills" / "foo"
+    res = await _folder_preflight(monkeypatch, str(sub))
+    assert res["available"] is True
+    assert res["git_origin"]["rel_path"] == ".claude/skills/foo"
+
+
+@pytest.mark.asyncio
+async def test_folder_without_local_path_is_unresolved_not_unbacked(monkeypatch):
+    # A received folder that was never resolved on this machine. It IS
+    # file-backed — saying otherwise would be a lie the user can't act on.
+    res = await _folder_preflight(monkeypatch, None)
+    assert res["available"] is False
+    assert res["code"] == "unresolved-folder"
+
+
+# --------------------------------------------------------------------------- #
 # Fail-closed packing — never silently downgrade an explicit Git share to copy
 # --------------------------------------------------------------------------- #
 
@@ -222,3 +335,54 @@ async def test_git_pack_in_repo_is_metadata_only_no_bytes(tmp_path, monkeypatch)
     assert transfers.get(KEY, {}).get("transfer_mode") == "git"
     # …and NO asset bytes rode in the bundle (only metadata travels).
     assert not (attachment_dir / KEY / ".claude" / "skills" / "foo" / "SKILL.md").exists()
+
+
+@pytest.mark.asyncio
+async def test_git_pack_folder_without_origin_raises_not_silently_nothing(tmp_path, monkeypatch):
+    """A folder with no transportable origin must RAISE under git mode.
+
+    Regression: this used to `return False`, and the caller packs nothing for a
+    folder (FOLDER has no main_subdir) — so the share silently delivered a chip
+    with no origin and no bytes. Failing closed is the whole contract.
+    """
+    plain = tmp_path / "plain"
+    plain.mkdir()
+    (plain / "notes.md").write_text("# notes\n", encoding="utf-8")
+    _stub_folder(monkeypatch, str(plain))
+
+    attachment_dir = tmp_path / "bundle" / "attachment"
+    attachment_dir.mkdir(parents=True)
+    transfers: dict = {}
+    with pytest.raises(GitShareOriginError):
+        await _pack_git_reference_attachment(
+            EntityType.FOLDER.value, FOLDER_ID, attachment_dir, {}, None,
+            transfers=transfers, transfer_mode="git",
+        )
+    assert transfers == {}
+
+
+@pytest.mark.asyncio
+async def test_git_pack_folder_probes_live_origin_when_stored_is_stale(tmp_path, monkeypatch):
+    """A folder git-init'd AFTER it was minted still carries a LocalOrigin.
+
+    Preflight probes live and says available, so packing must agree rather than
+    reject the very share preflight just green-lit.
+    """
+    repo = tmp_path / "repo"
+    _init_pushed(repo)
+    ent = _stub_folder(monkeypatch, str(repo))
+    assert ent.origin is not None and not ent.origin.transportable, "precondition: stale local origin"
+
+    attachment_dir = tmp_path / "bundle" / "attachment"
+    attachment_dir.mkdir(parents=True)
+    origins: dict = {}
+    transfers: dict = {}
+    packed = await _pack_git_reference_attachment(
+        EntityType.FOLDER.value, FOLDER_ID, attachment_dir, origins, None,
+        transfers=transfers, transfer_mode="git",
+    )
+    assert packed is True
+    assert transfers[FOLDER_KEY]["transfer_mode"] == "git"
+    assert origins[FOLDER_KEY]["branch"] == "main"
+    # Metadata only — no repository bytes travel.
+    assert not (attachment_dir / FOLDER_KEY).exists()

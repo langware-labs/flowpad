@@ -519,6 +519,28 @@ def _write_graph_git_transfer_metadata(
     return rel.as_posix()
 
 
+async def _resolve_git_reference_origin(ent, stored, repo_cache: dict | None):
+    """The GitOrigin to ship for a graph entity: ``stored`` if usable, else a
+    LIVE probe of the entity's local ``path``.
+
+    The stored origin goes stale — a directory git-init'd (or given a remote)
+    after the entity was minted still carries whatever it had then, and a Folder
+    keeps a non-transportable LocalOrigin forever. Preflight probes live, so
+    packing must too or the two contradict each other on the same asset. Returns
+    None when neither yields a transportable origin; the CALLER owns what that
+    means (a folder must fail closed, an artifact falls through to a byte copy).
+    """
+    from flow_sdk.builtin.git_origin import GitOrigin  # noqa: PLC0415
+
+    if stored is not None and getattr(stored, "transportable", False):
+        return stored
+    path = getattr(ent, "path", None)
+    if not path:
+        return None
+    live = await asyncio.to_thread(GitOrigin.for_asset_path, str(path), repo_cache)
+    return live if live is not None and getattr(live, "transportable", False) else None
+
+
 async def _pack_git_reference_attachment(
     entry_type: str,
     entry_id: str,
@@ -552,10 +574,15 @@ async def _pack_git_reference_attachment(
         ent = await Folder.get_one({"id": entry_id})
         if ent is None:
             return False
-        origin = ent.origin
-        if origin is None or not getattr(origin, "transportable", False):
-            logger.debug("[bundle] folder %s has no transportable origin — not packable as git reference", entry_id)
-            return False
+        origin = await _resolve_git_reference_origin(ent, ent.origin, repo_cache)
+        if origin is None:
+            # Fail closed. Returning False here fell through to a caller that
+            # packs NOTHING for a folder (no main_subdir), silently delivering a
+            # chip with no origin and no bytes.
+            raise GitShareOriginError(
+                f"{_entry_key(entry_type, entry_id)} was shared with Git but is not in a "
+                f"Git repository with a usable origin — set up Git for this folder first."
+            )
         # Self-heal a degenerate name ("" / ".") from before Folder.derive_name
         # existed — repo-root folders were named ".", rendering chips as bare
         # typeids. Persist best-effort so the sender's own chip heals too.
@@ -579,15 +606,17 @@ async def _pack_git_reference_attachment(
         raw_origin = getattr(ent, "git_origin", None)
         if raw_origin is None and isinstance(getattr(ent, "metadata", None), dict):
             raw_origin = ent.metadata.get("git_origin")
-        origin = None
+        stored = None
         if raw_origin is not None:
             try:
-                origin = raw_origin if isinstance(raw_origin, GitOrigin) else GitOrigin.model_validate(raw_origin)
+                stored = raw_origin if isinstance(raw_origin, GitOrigin) else GitOrigin.model_validate(raw_origin)
             except Exception:
-                origin = None
-        if origin is None and getattr(ent, "path", None):
-            origin = await asyncio.to_thread(GitOrigin.for_asset_path, str(ent.path), repo_cache)
+                stored = None
+        origin = await _resolve_git_reference_origin(ent, stored, repo_cache)
         if origin is None:
+            # Unlike a folder, an artifact HAS a byte-copy carrier to fall
+            # through to (`_pack_webapp_artifact_attachment`), so this is a
+            # handoff, not a silent drop.
             return False
 
     key = _entry_key(entry_type, entry_id)

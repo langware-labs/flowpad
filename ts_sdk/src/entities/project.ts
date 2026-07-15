@@ -260,6 +260,19 @@ export class Project extends APIEntity<Project> {
     this.adoptContextDirs(await dataManager.callAction(actionInfo));
   }
 
+  /** Get-or-create the `Folder` entity for a directory, WITHOUT attaching it as
+   *  a context folder. Folder ids are deterministic (a Folder's id is its origin
+   *  key), so this is a safe get-or-create: it never links, never indexes, and
+   *  returns the same typeid for the same directory forever. Use it when a
+   *  surface needs an entity for a directory the user is merely browsing (e.g.
+   *  the Assets header's Share); use `addContextDir` when the folder should
+   *  actually join the project's context. */
+  async folderForPath(path: string): Promise<{ typeid: string; path: string; origin_kind: string | null }> {
+    const actionInfo = new ActionInfo('folder-for-path', Project.type, this.typeId.id, 'POST');
+    actionInfo.bodyParameters = { path };
+    return dataManager.callAction(actionInfo);
+  }
+
   /** Detach a context folder. No-op if not attached. */
   async removeContextDir(path: string): Promise<void> {
     const actionInfo = new ActionInfo('remove-context-dir', Project.type, this.typeId.id, 'POST');
