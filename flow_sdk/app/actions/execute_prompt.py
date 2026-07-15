@@ -459,105 +459,44 @@ def _assistant_text(msg: dict) -> str:
     return "\n\n".join(t for t in out if t)
 
 
-def _read_transcript_assistant_ids(ap: "AgenticProcess") -> set[str]:
-    """Assistant ``message.id``s already in the transcript — the BASELINE
-    captured BEFORE a new prompt.
-
-    On a resumed multi-turn session ``ap.prompt()`` returns as soon as the
-    worker is spawned, not when the new turn's reply is durably written, and
-    ``stream_transcript`` then exits on the PRIOR turn's terminal marker. Without
-    a baseline the capture returns the previous turn's reply (an off-by-one:
-    turn N gets turn N-1's text). Recording which assistant messages already
-    exist lets the capture ignore them and wait for the genuinely-new one."""
-    import json  # noqa: PLC0415
-    ids: set[str] = set()
-    try:
-        path = ap.driver.transcript_path(ap)
-    except Exception:  # noqa: BLE001
-        path = None
-    if not path:
-        return ids
-    try:
-        with open(path, encoding="utf-8") as f:
-            for line in f:
-                try:
-                    entry = json.loads(line)
-                except Exception:  # noqa: BLE001
-                    continue
-                msg = entry.get("message") if isinstance(entry, dict) else None
-                if isinstance(msg, dict) and msg.get("role") == "assistant" and msg.get("id"):
-                    ids.add(msg["id"])
-    except OSError:
-        pass
-    return ids
-
-
-async def _capture_assistant_reply(
-    ap: "AgenticProcess", baseline_ids: "set[str] | None" = None
-) -> str:
-    """Run the turn to completion and return ONLY the NEW turn's assistant CHAT
-    text.
+async def _capture_assistant_reply(ap: "AgenticProcess") -> str:
+    """Run the turn to completion and return ONLY the latest turn's assistant
+    CHAT text.
 
     ``stream_transcript`` replays the whole JSONL from the top, and a resumed
     Claude session re-emits every prior turn — so a fixed line offset can't
-    isolate the new turn (it leaks every earlier reply). We drop the collected
-    text every time a genuine user prompt appears, so only the assistant text
-    following the LAST user prompt survives.
-
-    ``baseline_ids``: assistant ``message.id``s that already existed BEFORE this
-    turn's prompt (see ``_read_transcript_assistant_ids``). Any assistant
-    message in the baseline is a PRIOR turn's reply and is skipped — this is
-    what fixes the resumed-session off-by-one. Because ``ap.prompt`` can return
-    before the new turn is written, we re-stream (bounded) until a non-baseline
-    reply appears rather than returning a stale prior turn.
+    isolate the new turn. We drop the collected text every time a genuine user
+    prompt appears, so only the assistant text following the LAST user prompt
+    (this turn's reply) survives. ``stream_transcript`` itself is resume-aware
+    (it won't end on the prior turn's terminal marker while this turn's worker
+    is live), so by the time it returns the transcript holds THIS turn and the
+    turn-slicing yields the correct reply — no baseline bookkeeping needed.
 
     Claude can also write an assistant message more than once (streaming +
     finalized snapshot share ``message.id``); we key on the id with last-write-
     wins so a repeated snapshot can't duplicate the text within a turn.
     """
-    import asyncio  # noqa: PLC0415
     from collections import OrderedDict
 
-    baseline = baseline_ids or set()
-
-    async def _one_pass() -> str:
-        turn: "OrderedDict[str, str]" = OrderedDict()
-        noid = 0
-        async for entry in ap.stream_transcript():
-            msg = entry.get("message") if isinstance(entry, dict) else None
-            if not isinstance(msg, dict):
+    turn: "OrderedDict[str, str]" = OrderedDict()
+    noid = 0
+    async for entry in ap.stream_transcript():
+        msg = entry.get("message") if isinstance(entry, dict) else None
+        if not isinstance(msg, dict):
+            continue
+        if _is_user_turn_boundary(msg):
+            turn.clear()  # new turn — discard everything from prior turns
+            continue
+        if msg.get("role") == "assistant":
+            text = _assistant_text(msg)
+            if not text:
                 continue
-            if _is_user_turn_boundary(msg):
-                turn.clear()  # new turn — discard everything from prior turns
-                continue
-            if msg.get("role") == "assistant":
-                mid = msg.get("id")
-                if mid and mid in baseline:
-                    continue  # a prior turn's reply — never this turn's
-                text = _assistant_text(msg)
-                if not text:
-                    continue
-                if not mid:
-                    mid = f"_noid_{noid}"
-                    noid += 1
-                turn[mid] = text  # last write wins for a repeated snapshot id
-        return "\n\n".join(turn.values()).strip()
-
-    # First pass usually suffices (single turn, or the worker already wrote the
-    # new reply). When a resumed worker hasn't flushed the new turn yet, the
-    # pass returns empty (all baseline) — re-stream, bounded, waiting for THIS
-    # turn's output rather than returning a stale prior turn. Not a timeout
-    # widening: each pass ends at the worker's own terminal marker; the bound
-    # only covers the resume write-lag when a baseline exists (no baseline → the
-    # first empty pass is authoritative and returns immediately).
-    reply = ""
-    for attempt in range(7):
-        if attempt:
-            await asyncio.sleep(2)
-        reply = await _one_pass()
-        if reply or not baseline:
-            return reply
-    return reply
+            mid = msg.get("id")
+            if not mid:
+                mid = f"_noid_{noid}"
+                noid += 1
+            turn[mid] = text  # last write wins for a repeated snapshot id
+    return "\n\n".join(turn.values()).strip()
 
 
 # ── "is the conversation open" + draft-waiting notification ─────────────────
@@ -726,14 +665,11 @@ async def execute_prompt_from_message(
             except Exception as e:  # noqa: BLE001
                 logger.warning("[execute_prompt] approved event emit failed: %s", e)
 
-        # Snapshot the transcript's assistant messages BEFORE the run so the
-        # capture ignores prior turns' replies on a resumed session (fixes the
-        # multi-turn off-by-one where turn N returned turn N-1's text). Off the
-        # event loop — the JSONL scan is blocking and the transcript can be long.
-        import asyncio  # noqa: PLC0415
-        baseline_ids = await asyncio.to_thread(_read_transcript_assistant_ids, ap)
+        # stream_transcript is resume-aware (waits out the live turn worker), so
+        # the capture yields THIS turn's reply even on a resumed multi-turn
+        # session — no pre-prompt snapshot needed here.
         await ap.prompt(prompt_text)
-        reply = await _capture_assistant_reply(ap, baseline_ids=baseline_ids)
+        reply = await _capture_assistant_reply(ap)
 
         rws.mark_activity(RemoteWorkerSessionStatus.IDLE)
         await rws.save()

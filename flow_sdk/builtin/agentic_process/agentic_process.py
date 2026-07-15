@@ -17,7 +17,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from functools import cached_property
+from functools import cached_property, lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, ClassVar, List
 from uuid import uuid4
@@ -140,7 +140,14 @@ class AssetSource(str, Enum):
     WORKDIR = "workdir"  # process workdir if distinct from project/user
     ADDITIONAL_DIR = "additional_dir"  # additional_dirs entries (excl. auto-appended assets dir)
     CONTEXT_DIR = "context_dir"  # project.include_dirs (context folders)
-    TRANSCRIPT = "transcript"  # file-backed entity read in transcript only
+    SYSTEM = "system"  # bundled flowpad_assistant assets (entity scope="system")
+    # Not attributable to any of this process's source dirs. Deliberately NOT
+    # "outside every source dir" — a foreign project's asset under $HOME is
+    # rejected by the cross-project rule in ``_source_match_for_asset`` and
+    # lands here despite living inside one. The fact that it was seen in the
+    # transcript is carried by ``AssetUsageKind.TRANSCRIPT_FILE_READ``, on the
+    # usage axis; this enum only ever answers "where does it live".
+    EXTERNAL = "external"
 
 
 class AssetUsageKind(str, Enum):
@@ -164,7 +171,8 @@ READONLY_ASSET_SOURCES: frozenset[AssetSource] = frozenset(
         AssetSource.WORKDIR,
         AssetSource.ADDITIONAL_DIR,
         AssetSource.CONTEXT_DIR,
-        AssetSource.TRANSCRIPT,
+        AssetSource.SYSTEM,
+        AssetSource.EXTERNAL,
     }
 )
 
@@ -239,6 +247,23 @@ class SystemInstructionAssets:
 # Markdown / spec / plan / claude_rules etc. are intentionally excluded —
 # they're documentation, not things the agent runs.
 EXECUTABLE_ASSET_TYPES: list[str] = ["skill", "agent"]
+
+
+@lru_cache(maxsize=1)
+def _system_assets_root() -> str | None:
+    """Canonical path of the SDK-shipped Flowpad Assistant project, or None.
+
+    The counterpart of the ``"system"`` branch in ``indexer.roots.classify_path``,
+    which is what stamps ``entity.scope`` in the first place — same root, same
+    resolution, so a scope tag and a path prefix can be compared without drifting.
+    """
+    from flow_sdk.config import flowpad_assistant_project_root
+    from flow_sdk.fs_store.path_utils import canonical_posix_path
+
+    try:
+        return canonical_posix_path(flowpad_assistant_project_root().resolve())
+    except (OSError, ValueError):
+        return None
 
 
 def add_source_dir(
@@ -326,6 +351,15 @@ async def scan_path_asset_descriptors(
         if match is None:
             continue
         src_dir, src = match
+        # The bundled assistant's catalog is represented by a single "mounted"
+        # marker in the asset UI, not one row per shipped skill — listing it here
+        # would flood the available list. Its assets still surface individually
+        # when a run actually used one (see _append_transcript_asset_descriptors).
+        # Only reachable via the USER_DIR home catchall, which is exactly where
+        # this row used to be dropped outright, so this stays a no-op for the
+        # assistant's OWN project view (that wins the match as PROJECT_DIR).
+        if src == AssetSource.SYSTEM:
+            continue
         ent_project_id = getattr(ent, "project_id", None)
         descriptors.append(
             AssetDescriptor(
@@ -2576,7 +2610,12 @@ class AgenticProcess(Entity):
 
         Yields parsed dicts, one per transcript line. Stops when the worker's
         ``tail_status`` (driver-supplied) reaches a terminal state, with a
-        small settling window to avoid racing late writes.
+        small settling window to avoid racing late writes — BUT never while this
+        process's turn worker is still live (``prompt_worker_active``). On a
+        resumed multi-turn session the JSONL already ends with the PRIOR turn's
+        terminal marker, so honoring it would exit before the new turn is
+        written and the caller would capture the prior turn's reply (the
+        multi-turn off-by-one). Gating on the live worker waits for THIS turn.
 
         Vendor specifics — where the transcript lives, how to interpret its
         tail — come from ``self.driver``; this method is otherwise vendor-
@@ -2692,6 +2731,17 @@ class AgenticProcess(Entity):
             except OSError:
                 cur_size = offset
             now = time.monotonic()
+
+            # Resume-aware guard: while THIS process's turn worker is still live,
+            # any terminal/soft-terminal marker in the JSONL is the PRIOR turn's
+            # (a resumed session appends the new turn only after the worker has
+            # run) — don't exit on it, or the caller captures the prior turn's
+            # reply (the multi-turn off-by-one). The worker registry is
+            # process-global, so this holds even when the watcher hydrated a
+            # different AgenticProcess object than the one that launched the turn.
+            if prompt_worker_active(self.id):
+                _terminal = False
+                _post_tool_idle = False
 
             if _terminal:
                 if _terminal_since is None or _terminal_size != cur_size:
@@ -4421,9 +4471,25 @@ class AgenticProcess(Entity):
         # System-scoped assets (the bundled flowpad_assistant skills/agents) are
         # pip-installed under $HOME (~/.local/share/.../flowpad_assistant/.claude),
         # so the USER_DIR prefix would otherwise claim them as personal user
-        # assets. They belong to the mounted assistant, never the user — drop
-        # them from USER_DIR unconditionally (they carry no project_id to test).
+        # assets. They belong to the mounted assistant, never the user — attribute
+        # them to SYSTEM instead.
+        #
+        # Deliberately USER_DIR-only, and deliberately NOT hoisted above the
+        # prefix match: the assistant is itself a Project whose mount is the
+        # assistant root, so a deeper source dir (PROJECT_DIR for the assistant
+        # project, or an editable install nested in a project tree) legitimately
+        # wins the longest-prefix match and must keep winning. Claiming those for
+        # SYSTEM would empty the assistant project's own asset list.
+        #
+        # ``scope`` is a persisted column and ``_stamp_scope`` never clobbers an
+        # explicit value, so trust it only when the path agrees — otherwise the
+        # returned source_dir would not be a prefix of posix_path, breaking the
+        # invariant every other descriptor upholds. A disagreement falls back to
+        # the previous behaviour: no match at all.
         if src == AssetSource.USER_DIR and entity_scope == "system":
+            sys_root = _system_assets_root()
+            if sys_root and (asset_path == sys_root or asset_path.startswith(sys_root + "/")):
+                return sys_root, AssetSource.SYSTEM
             return None
         if (
             src == AssetSource.USER_DIR
@@ -4572,7 +4638,7 @@ class AgenticProcess(Entity):
                 entity,
                 own_project_id,
             )
-            source_dir, source = match if match is not None else (None, AssetSource.TRANSCRIPT)
+            source_dir, source = match if match is not None else (None, AssetSource.EXTERNAL)
             typeid = f"{entity.type or entity.get_type()}-{entity.id}"
             key = (typeid, source)
             if key in descriptor_by_key:
