@@ -66,6 +66,24 @@ def flowpad_assistant_project_root() -> Path:
     return system_projects_root() / FLOWPAD_ASSISTANT_DIRNAME
 
 
+def is_system_project_path(path: str | Path) -> bool:
+    """True when ``path`` is an SDK-shipped system project dir, for ANY install.
+
+    ``system_projects_root()`` resolves to the CURRENTLY-RUNNING SDK, so it
+    can't recognise the same shipped project under a different install (an
+    editable checkout vs. a wheel, or an older interpreter's site-packages).
+    Those copies get their own Project entities — minted per cwd off worker
+    session history — and only the running one carries ``system=True`` from
+    ``_ensure_system_projects``. Systemness is a property of the LOCATION, so
+    match it structurally: ``<any-install>/flow_sdk/system_projects/<name>``.
+    """
+    p = Path(path)
+    return (
+        p.parent.name == SYSTEM_PROJECTS_DIRNAME
+        and p.parent.parent.name == "flow_sdk"
+    )
+
+
 def _active_server_json_path() -> Path:
     """Per-instance server.json path. InstanceSettings handles the dev/prod split."""
     return _server_json_path()
