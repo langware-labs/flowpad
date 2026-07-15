@@ -17,6 +17,8 @@ interface WikiResolveViewProps {
   name: string;
   /** The space the name resolves within (default @local). */
   space?: string;
+  /** Optional heading slug (e.g. "auto-run") to scroll to once rendered. */
+  fragment?: string;
 }
 
 interface ResolveResult {
@@ -36,7 +38,7 @@ type CreateAsType = 'markdown' | 'whiteboard';
  *
  * On miss: type picker offering "Create as markdown" / "Create as whiteboard".
  */
-export function WikiResolveView({ name, space = '@local' }: WikiResolveViewProps) {
+export function WikiResolveView({ name, space = '@local', fragment }: WikiResolveViewProps) {
   const { computeNode } = useAgentContext();
   const typeIdStr = computeNode?.typeId?.toString();
   const { navigation } = useDockNavigation();
@@ -182,5 +184,5 @@ export function WikiResolveView({ name, space = '@local' }: WikiResolveViewProps
     : new FSRef(data.asset_ref.replace(/^\//, ''), computeNode.typeId);
   void typeIdStr;
   const chatTarget = `markdown-${data.id}`;
-  return <MarkdownEditor fsRef={editorRef} chatTarget={chatTarget} />;
+  return <MarkdownEditor fsRef={editorRef} chatTarget={chatTarget} fragment={fragment} />;
 }

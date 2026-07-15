@@ -99,6 +99,15 @@ triggers (each -> _schedule_queue_drain(source), fire-and-forget):
   "enable"   POST set-queue-enabled {true}
   "ready"    _flush_transcript_change ready-edge: worker transitions into
              IDLE / COMPLETE / INTERRUPTED
+  "complete" every turn-end tail — end_headless_turn (Python prompt path)
+             AND the HTTP streaming turn's _run_turn finally (complete,
+             crash, AND cancel-prompt all land there). This edge is what
+             advances the queue for chat-surface turns: their enqueue-edge
+             drain bails not_ready mid-turn.
+
+_schedule_queue_drain short-circuits when the queue file doesn't exist
+(nothing was ever enqueued) so the per-turn-end trigger costs one stat for
+the common never-queued process, not a lock + JSON read + drain_check log.
 
 _maybe_drain_queue(source):              [serialized by _QUEUE_LOCKS[id]]
   empty or disabled        -> log drain_check(empty_or_disabled), stop

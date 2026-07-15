@@ -22,6 +22,28 @@ def test_write_and_read(tmp_path: Path):
     assert base64.b64decode(frames["events"][0][1]) == b"chunk1"
 
 
+def test_generation_scoped_read_excludes_stale_composer_history(tmp_path: Path):
+    f = PtyStreamFile(tmp_path / "session.pty")
+    f.write(b"old composer marker", seq=1)
+    f.write(b"current boot interstitial", seq=2)
+
+    assert f.read_output_after_seq(1) == b"current boot interstitial"
+
+    f.write(b"current composer marker", seq=3)
+    assert f.read_output_after_seq(1) == (
+        b"current boot interstitialcurrent composer marker"
+    )
+
+
+def test_output_snapshot_reports_upper_sequence(tmp_path: Path):
+    f = PtyStreamFile(tmp_path / "snapshot.pty")
+    f.write(b"old generation", seq=4)
+    f.write(b"current A", seq=5)
+    f.write(b"current B", seq=6)
+
+    assert f.read_output_snapshot_after_seq(4) == (b"current Acurrent B", 6)
+
+
 def test_resize_frames_interleave(tmp_path: Path):
     """Resize frames land at their exact positions between output frames."""
     f = PtyStreamFile(tmp_path / "session.pty", cols=100, rows=30)

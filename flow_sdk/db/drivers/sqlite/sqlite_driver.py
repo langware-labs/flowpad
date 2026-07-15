@@ -17,7 +17,7 @@ from typing import Any, AsyncIterator, Callable, Dict, List, Optional, Set, Tupl
 from flow_sdk._compat import UTC
 
 from fastapi import HTTPException
-from sqlalchemy import and_, asc, delete, desc, or_, select, text, update
+from sqlalchemy import and_, asc, delete, desc, func, or_, select, text, update
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
@@ -1060,6 +1060,51 @@ class SQLiteDBDriver(DBDriver):
 
             # Create new entity - _create_entity checks unique constraints
             return await self._create_entity(entity, owner, session)
+
+    async def stamp_last_active_at(
+        self, entity_id: str, timestamp_ms: int
+    ) -> tuple[DBBaseRecord | None, bool]:
+        """Atomically stamp recency without rewriting a stale entity snapshot.
+
+        The writer transaction first hydrates the authoritative row so a stale
+        pre-close Tab activation still observes ``visible=False`` and no-ops.
+        Otherwise ``json_set`` changes only ``last_active_at`` in one UPDATE
+        statement, preserving every other persisted field.
+        """
+        async with self._session_ctx() as session:
+            current_result = await session.execute(
+                select(EntitySchema).where(EntitySchema.id == entity_id)
+            )
+            schema = current_result.scalar_one_or_none()
+            if schema is None:
+                return None, False
+
+            current = self._schema_to_entity(schema)
+            if current.get_type() == "tab" and getattr(current, "visible", True) is False:
+                return current, False
+
+            # Match the audit behavior of the former ``Entity.save()`` path,
+            # but derive it from the authoritative row.  In particular,
+            # apply_update_fields preserves an existing updated_date (the old
+            # save path did not reset it) while updating actor/provenance.
+            self.apply_update_fields(current)
+            await session.execute(
+                update(EntitySchema)
+                .where(EntitySchema.id == entity_id)
+                .values(
+                    updated_by=current.updated_by,
+                    updated_date=current.updated_date,
+                    updated_through=current.updated_through,
+                    data=func.json_set(
+                        func.coalesce(EntitySchema.data, "{}"),
+                        "$.last_active_at",
+                        timestamp_ms,
+                    )
+                )
+            )
+            current.last_active_at = timestamp_ms
+            current._dirty = False
+            return current, True
 
     async def _create_entity(self, entity: DBBaseRecord, owner: TypeId | None, session: AsyncSession) -> DBBaseRecord:
         """Create a new entity.

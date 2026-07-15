@@ -217,3 +217,68 @@ async def test_approve_prompt_still_flips_legacy_prompt(bootstrapped_client, use
     fm = await FlowMessage.get_one({"id": fm_id})
     legacy = [a for a in fm.attachment if a.attachment_type == AttachmentType.PROMPT]
     assert legacy and legacy[0].approved_by
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_send_with_session_id_stamps_field_and_carrier(bootstrapped_client, user):
+    """[LIVE-SESSION] ``add_message`` with ``remote_worker_session_id`` stamps
+    the FlowMessage header field AND auto-appends the authoritative
+    ``remote_worker_session-<id>`` TYPE_ID carrier attachment (the hub drops
+    the header field until its schema mirrors it)."""
+    client = bootstrapped_client
+    conv_id = await _make_conversation(client)
+    session_id = "a1a1a1a1-0000-4000-8000-0000000000f1"
+
+    resp = await client.post(
+        f"/api/v1/graph/conversation/{conv_id}/add_message",
+        json={
+            "message": "run this in my live session",
+            "prompt_text": PROMPT_TEXT,
+            "is_draft": True,
+            "remote_worker_session_id": session_id,
+        },
+    )
+    assert resp.json().get("status") == "SUCCESS", resp.text
+    fm_id = resp.json()["data"]["flow_message_id"]
+
+    fm = await FlowMessage.get_one({"id": fm_id})
+    assert fm.remote_worker_session_id == session_id
+    carriers = [
+        a for a in (fm.attachment or [])
+        if a.attachment_type == AttachmentType.TYPE_ID
+        and a.data == f"remote_worker_session-{session_id}"
+    ]
+    assert len(carriers) == 1
+    # kind is only settable to session_event explicitly; a plain send stays USER.
+    assert fm.kind == "user"
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_session_event_kind_honored_and_others_rejected(bootstrapped_client, user):
+    """[LIVE-SESSION] ``kind=session_event`` is honored; any other kind value
+    (e.g. the local-only ``invitation``) is ignored and stays USER."""
+    client = bootstrapped_client
+    conv_id = await _make_conversation(client)
+    session_id = "a1a1a1a1-0000-4000-8000-0000000000f2"
+
+    resp = await client.post(
+        f"/api/v1/graph/conversation/{conv_id}/add_message",
+        json={
+            "message": "Alice approved the live session",
+            "is_draft": True,
+            "remote_worker_session_id": session_id,
+            "kind": "session_event",
+        },
+    )
+    assert resp.json().get("status") == "SUCCESS", resp.text
+    fm = await FlowMessage.get_one({"id": resp.json()["data"]["flow_message_id"]})
+    assert fm.kind == "session_event"
+    assert fm.remote_worker_session_id == session_id
+
+    resp = await client.post(
+        f"/api/v1/graph/conversation/{conv_id}/add_message",
+        json={"message": "sneaky", "is_draft": True, "kind": "invitation"},
+    )
+    assert resp.json().get("status") == "SUCCESS", resp.text
+    fm2 = await FlowMessage.get_one({"id": resp.json()["data"]["flow_message_id"]})
+    assert fm2.kind == "user"

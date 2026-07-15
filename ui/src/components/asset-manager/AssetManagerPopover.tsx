@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import {
   AgenticProcess,
@@ -44,14 +44,17 @@ import { useAssetTypes } from '@src/hooks/use-asset-types';
 import {
   basename as _basename,
   displayLabelForTypeid as _displayLabelForTypeid,
+  improvableMainFile,
   isOpenableTypeid as _isOpenableTypeid,
   makeIconForType,
+  normalizePath,
   parseTypeid as _parseTypeid,
 } from './asset-row-helpers';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { cn } from '@src/lib/utils';
 import { invalidateGitStatus } from '@src/lib/git-status-cache';
+import { animateMinimizeToProcessChip } from '@src/lib/minimize-to-element';
 import { notify } from '@src/notifications';
 import type { WorkerType as TranscriptWorkerType } from '@src/hooks/use-transcript';
 import {
@@ -81,24 +84,26 @@ interface AssetImproveTarget {
   computeNodeId: string;
 }
 
-function normalizePath(path: string | null | undefined): string {
-  return (path ?? '').replace(/\\/g, '/').replace(/\/+/g, '/').replace(/\/$/, '');
-}
-
 function dirname(path: string): string {
   const n = normalizePath(path);
   const idx = n.lastIndexOf('/');
   return idx >= 0 ? n.slice(0, idx) || '/' : '.';
 }
 
-function basename(path: string): string {
-  const n = normalizePath(path);
-  const idx = n.lastIndexOf('/');
-  return idx >= 0 ? n.slice(idx + 1) : n;
-}
-
 function descriptorKey(descriptor: AssetDescriptor): string {
   return `${descriptor.typeid}@${normalizePath(descriptor.posix_path)}`;
+}
+
+/** Sticky group header inside the asset list (Used / Available). */
+function AssetSectionHeader({ testid, children }: { testid: string; children: React.ReactNode }) {
+  return (
+    <div
+      className="sticky top-0 z-[1] border-b bg-muted/20 px-3 py-1 text-[10px] uppercase tracking-wider text-muted-foreground"
+      data-testid={testid}
+    >
+      {children}
+    </div>
+  );
 }
 
 function normalizeTranscriptWorker(workerType: string | null | undefined): TranscriptWorkerType {
@@ -146,6 +151,10 @@ export function AssetManagerPopover({
   const [sortBy, setSortBy] = useState<'source' | 'name'>('source');
   const [fixDescriptor, setFixDescriptor] = useState<AssetDescriptor | null>(null);
   const [fixText, setFixText] = useState('');
+  // The improve input dialog — on submit it genie-flies into the footer's
+  // process chip (where the named "Improve <asset>" worker then appears), so the
+  // run visibly moves to the footer instead of vanishing behind a toast.
+  const improveDialogRef = useRef<HTMLDivElement | null>(null);
   const [busyAssetKey, setBusyAssetKey] = useState<string | null>(null);
   const [dirtyImprove, setDirtyImprove] = useState<{ target: AssetImproveTarget; issueRequest: string } | null>(null);
   const [processHydrationVersion, setProcessHydrationVersion] = useState(0);
@@ -345,6 +354,12 @@ export function AssetManagerPopover({
         })
       : descriptors;
     return [...filtered].sort((a, b) => {
+      // Used assets always float to the top — fast access to what the process
+      // actually touched — regardless of the By-source / By-name selector, which
+      // only orders within each group.
+      const ua = assetDescriptorHasUsage(a);
+      const ub = assetDescriptorHasUsage(b);
+      if (ua !== ub) return ua ? -1 : 1;
       if (sortBy === 'name') {
         const la = _displayLabelForTypeid(a.typeid).toLowerCase();
         const lb = _displayLabelForTypeid(b.typeid).toLowerCase();
@@ -359,6 +374,12 @@ export function AssetManagerPopover({
       return a.typeid.localeCompare(b.typeid);
     });
   }, [descriptors, entityVersion, listFilter, sortBy]);
+
+  // Boundary between the used-first and available groups (-1 = all used).
+  const firstAvailIdx = useMemo(
+    () => rows.findIndex((r) => !assetDescriptorHasUsage(r)),
+    [rows],
+  );
 
   const filteredDirs = useMemo(() => {
     const q = listFilter.trim().toLowerCase();
@@ -426,7 +447,7 @@ export function AssetManagerPopover({
       const { type } = _parseTypeid(descriptor.typeid);
       const typeInfo = assetTypeByName.get(type);
       const folderBacked = !!typeInfo?.folder_backed;
-      const file = folderBacked ? typeInfo?.main_file ?? '' : basename(assetPath);
+      const file = improvableMainFile(descriptor, assetTypeByName);
       if (!file) {
         notify.error({ title: t`Cannot improve asset`, message: t`This folder-backed asset has no main file metadata.` });
         return null;
@@ -558,6 +579,9 @@ export function AssetManagerPopover({
     if (!issueRequest) return;
     const target = resolveImproveTarget(fixDescriptor);
     if (!target) return;
+    // Fly the dialog into the footer chip before it unmounts (the ghost is
+    // cloned, so closing immediately is fine) — the run now lives there.
+    animateMinimizeToProcessChip(improveDialogRef.current);
     setFixDescriptor(null);
     setFixText('');
     await runImprovement(target, issueRequest);
@@ -730,18 +754,36 @@ export function AssetManagerPopover({
                   {listFilter.trim() ? <Trans>No matches.</Trans> : <Trans>No assets visible to this process.</Trans>}
                 </div>
               )}
-              {rows.map((d, idx) => (
-                <AssetRow
-                  key={`${d.typeid}|${d.source}|${idx}`}
-                  descriptor={d}
-                  iconForType={iconForType}
-                  attached={attachedSet.has(d.typeid)}
-                  used={assetDescriptorHasUsage(d)}
-                  busy={busyAssetKey === descriptorKey(d)}
-                  onDetach={onDetach}
-                  onImprove={openImproveDialog}
-                />
-              ))}
+              {rows.map((d, idx) => {
+                // rows are sorted used-first, so `firstAvailIdx` is the single
+                // boundary between the "Used" and "Available" groups. Emit a
+                // sticky header at the top of each non-empty group.
+                const used = assetDescriptorHasUsage(d);
+                return (
+                  <Fragment key={`${d.typeid}|${d.source}|${idx}`}>
+                    {idx === 0 && used && (
+                      <AssetSectionHeader testid="asset-manager-section-used">
+                        <Trans>Used assets</Trans>
+                      </AssetSectionHeader>
+                    )}
+                    {idx === firstAvailIdx && (
+                      <AssetSectionHeader testid="asset-manager-section-available">
+                        <Trans>Available assets</Trans>
+                      </AssetSectionHeader>
+                    )}
+                    <AssetRow
+                      descriptor={d}
+                      iconForType={iconForType}
+                      attached={attachedSet.has(d.typeid)}
+                      used={used}
+                      improvable={!!improvableMainFile(d, assetTypeByName)}
+                      busy={busyAssetKey === descriptorKey(d)}
+                      onDetach={onDetach}
+                      onImprove={openImproveDialog}
+                    />
+                  </Fragment>
+                );
+              })}
             </div>
 
             {footer}
@@ -813,7 +855,7 @@ export function AssetManagerPopover({
     </Popover>
 
     <Dialog open={!!fixDescriptor} onOpenChange={(next) => { if (!next) setFixDescriptor(null); }}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent ref={improveDialogRef} className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle><Trans>What would you like to fix?</Trans></DialogTitle>
           <DialogDescription>
@@ -938,12 +980,14 @@ function AssetRow({
   iconForType,
   attached,
   used,
+  improvable,
   busy,
   onDetach,
   onImprove,
 }: RowSharedProps & {
   attached: boolean;
   used: boolean;
+  improvable: boolean;
   busy: boolean;
   onDetach: (ref: string) => void | Promise<void>;
   onImprove: (descriptor: AssetDescriptor) => void;
@@ -954,7 +998,11 @@ function AssetRow({
   const Icon = iconForType(type);
   const readOnly = isReadOnlySource(descriptor.source);
   const label = _displayLabelForTypeid(descriptor.typeid);
-  const canImprove = used && !!normalizePath(descriptor.posix_path);
+  // Only offer the wand when improvement can actually run — a used asset whose
+  // main file resolves (see improvableMainFile). Gating on `used && posix_path`
+  // alone showed the wand on folder-backed types with no resolvable main file
+  // (e.g. a deck_template missing its main_file), which then errored on click.
+  const canImprove = used && improvable;
   const openable = _isOpenableTypeid(descriptor.typeid);
 
   const onChipClick = useCallback(() => {

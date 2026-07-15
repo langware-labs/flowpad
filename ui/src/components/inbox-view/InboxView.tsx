@@ -32,6 +32,7 @@ import {
   deleteConversation,
   dismissConversation,
   fetchConversations,
+  isInvitationGoneError,
   leaveConversation,
   listCommunityTickets,
   pickupConversation,
@@ -49,8 +50,11 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { LoginRequiredOverlay } from '@src/components/login-required-overlay';
 import { useInboxStore } from '@src/store/use-inbox-store';
 import { formatTimeAgo } from '@src/components/project-activity-strip/project-activity-utils';
-import { updateMessage, bulkUpdateMessages } from './inbox-api';
-import { conversationFacets, actionsFor } from '@src/components/conversation/conversation-category';
+import {
+  updateMessage,
+  bulkUpdateMessages,
+} from './inbox-api';
+import { conversationFacets, actionsFor, compareConversationsByRecency } from '@src/components/conversation/conversation-category';
 import { CategoryChips } from '@src/components/conversation/CategoryChips';
 import { MembershipInvitations } from './MembershipInvitations';
 import { RowActions } from '@src/components/conversation/RowActions';
@@ -111,6 +115,11 @@ interface ConversationListRowProps {
   /** Toggle this row's membership in the multi-select set. Optional — see
    *  ``selected``. */
   onToggleSelect?: (convId: string) => void;
+  /** True while the inbox is in multi-select mode (≥1 row ticked, toolbar
+   *  showing). In this mode a body click toggles selection instead of opening
+   *  the conversation — so the user can build up / trim the set without
+   *  navigating away. Clearing the selection restores open-on-click. */
+  selectMode?: boolean;
   /** Caller resolves the appropriate dialog/action mode based on the row's
    *  role + the current cloud user id. */
   onRequestDelete: (action: RowDeleteAction) => void;
@@ -123,21 +132,7 @@ interface ConversationListRowProps {
   refSetter: (el: HTMLDivElement | null) => void;
 }
 
-export function ConversationListRow({
-  conv,
-  isFocused,
-  viewMode,
-  searchActive,
-  onArchive,
-  onUnarchive,
-  onToggleRead,
-  selected,
-  onToggleSelect,
-  onRequestDelete,
-  cloudUserId,
-  onVisibilityChange,
-  refSetter,
-}: ConversationListRowProps) {
+export function ConversationListRow({ conv, isFocused, viewMode, searchActive, onArchive, onUnarchive, onToggleRead, selected, onToggleSelect, selectMode, onRequestDelete, cloudUserId, onVisibilityChange, refSetter }: ConversationListRowProps) {
   const { navigation } = useDockNavigation();
 
   // For invitation rows the first message IS the only message; for regular
@@ -282,6 +277,15 @@ export function ConversationListRow({
   const isUnread = facets.isUnread;
 
   const handleClick = () => {
+    // Multi-select mode: a body click toggles this row's selection instead of
+    // opening it, so the user can build up / trim the bulk set without being
+    // navigated away (and losing the selection). Applies to every row kind,
+    // including invitations — the checkbox is shown for them too. Clearing the
+    // selection (X / clear-all) restores open-on-click below.
+    if (selectMode) {
+      if (convId) onToggleSelect?.(convId);
+      return;
+    }
     if (isInvitationRow) return; // primary action is Accept
     if (!conv.id) return;
     // Auto-mark the latest message as read on open — Gmail behavior. Without
@@ -300,7 +304,11 @@ export function ConversationListRow({
     try {
       await acceptInvitation({ invitation_id: invitationId });
     } catch (e) {
-      console.error('[InboxView] acceptInvitation failed', e);
+      if (isInvitationGoneError(e)) {
+        notify.warning({ title: 'Invitation no longer valid', id: 'membership-invite' });
+      } else {
+        console.error('[InboxView] acceptInvitation failed', e);
+      }
     } finally {
       setAccepting(false);
     }
@@ -317,7 +325,7 @@ export function ConversationListRow({
       onClick={handleClick}
       data-selected={selected ? 'true' : 'false'}
       className={`group relative flex h-9 ${
-        isInvitationRow ? 'cursor-default' : 'cursor-pointer'
+        isInvitationRow && !selectMode ? 'cursor-default' : 'cursor-pointer'
       } items-center gap-3 border-b border-border/40 px-3 text-sm transition-colors hover:bg-accent/40 hover:shadow-sm ${
         selected ? 'bg-primary/10' : isFocused ? 'bg-primary/10' : ''
       } ${isUnread ? 'bg-background' : 'bg-muted/20'} ${isInvitationRow ? 'border-l-2 border-l-violet-500/60' : ''}`}
@@ -473,12 +481,10 @@ export function InboxView() {
   }, [matchedMessages]);
 
   const sorted = useMemo(() => {
-    const list = searchActive ? conversations.filter((c) => c.id && matchIds.has(c.id)) : [...conversations];
-    list.sort((a, b) => {
-      const ta = a.updated_date ? new Date(a.updated_date).getTime() : 0;
-      const tb = b.updated_date ? new Date(b.updated_date).getTime() : 0;
-      return tb - ta;
-    });
+    const list = searchActive
+      ? conversations.filter((c) => c.id && matchIds.has(c.id))
+      : [...conversations];
+    list.sort(compareConversationsByRecency);
     return list;
   }, [conversations, searchActive, matchIds]);
 
@@ -1226,6 +1232,7 @@ export function InboxView() {
               onToggleRead={(messageId, isRead) => void handleToggleRead(messageId, isRead)}
               selected={!!conv.id && selectedIds.has(conv.id)}
               onToggleSelect={toggleSelect}
+              selectMode={selectedCount > 0}
               onRequestDelete={handleRowDelete}
               cloudUserId={cloudUserId}
               onVisibilityChange={handleRowVisibility}

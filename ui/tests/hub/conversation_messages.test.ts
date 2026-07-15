@@ -36,7 +36,7 @@ beforeAll(async () => {
   }
   const bob = await getBobCreds();
   if (!bob) {
-    skipReason = 'missing FLOWPAD_CLOUD_USER_{EMAIL,PASSWORD} in flowpad-app/.env.local';
+    skipReason = 'missing BOB_EMAIL/BOB_PW';
     return;
   }
   bobEmail = bob.email;

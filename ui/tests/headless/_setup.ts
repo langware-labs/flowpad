@@ -8,7 +8,6 @@
  * scrollIntoView / hasPointerCapture and the afterEach cleanup; this file only
  * adds what a full RouterProvider boot additionally touches.
  */
-import { afterAll } from 'vitest';
 import { installCleanup } from '../_cleanup';
 
 // Guaranteed teardown + leak sweep for any test-created entities (skills, etc.).
@@ -62,10 +61,3 @@ if (typeof Element !== 'undefined') {
 if (typeof window !== 'undefined' && typeof window.scrollTo !== 'function') {
   (window as any).scrollTo = function scrollTo() {};
 }
-
-// Reset the per-realm backend override after the whole file so it never leaks
-// into another project's run on the shared (single-threaded) globalThis. Mirrors
-// tests/hub/_setup.ts.
-afterAll(() => {
-  delete (globalThis as Record<string, unknown>).__FLOWPAD_API_URL__;
-});

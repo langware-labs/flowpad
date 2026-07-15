@@ -29,8 +29,8 @@
  *
  * Realm correctness
  * -----------------
- * Headless/hub tests do `vi.resetModules()` + `await import('@sdk')` per test,
- * so the SDK singletons (apiClient/dataManager) are realm-bound and change per
+ * Headless/hub tests create a fresh owned SDK realm per test, so the SDK
+ * singletons (apiClient/dataManager) are realm-bound and change per
  * test. We therefore grab the CURRENT realm lazily via `await import('@sdk')`
  * INSIDE the teardown hook — which runs after the just-finished test built its
  * realm and before the next test resets it — so apiClient carries the right
@@ -50,6 +50,7 @@
  */
 
 import { afterAll, afterEach } from 'vitest';
+import { disposeAllOwnedSdkRealms } from './_sdk_realm';
 
 /**
  * Marker prefix for entities created by tests. The leak sweep keys off this, so
@@ -275,13 +276,19 @@ export function installCleanup(opts: { sweepTypes?: string[] } = {}): void {
   });
 
   afterAll(async () => {
-    await purgeTracked(); // anything tracked at file scope (beforeAll creates)
-    // Sweep this file's residue by name (RUN_ID) — catches untracked creates AND
-    // rows the backend re-materialised after the tracked delete (see
-    // purgeRunScoped). Runs BEFORE the assert so the assert only fires on
-    // genuinely un-purgeable leaks.
-    await purgeRunScoped();
-    await assertNoLeaks();
+    try {
+      await purgeTracked(); // anything tracked at file scope (beforeAll creates)
+      // Sweep this file's residue by name (RUN_ID) — catches untracked creates AND
+      // rows the backend re-materialised after the tracked delete (see
+      // purgeRunScoped). Runs BEFORE the assert so the assert only fires on
+      // genuinely un-purgeable leaks.
+      await purgeRunScoped();
+      await assertNoLeaks();
+    } finally {
+      // Dispose only realms created through the test realm lifecycle owner,
+      // after their final entity cleanup requests have completed.
+      disposeAllOwnedSdkRealms();
+    }
   });
 }
 

@@ -43,6 +43,11 @@ export enum PrefKey {
   ONBOARDING_DISMISSED = 'preferences.ui.onboarding_dismissed',
   SHOW_SYSTEM_PROJECTS = 'preferences.ui.show_system_projects',
   INDEXING_APPROVED = 'preferences.indexing.approved',
+  // Per-folder indexing consent (macOS-TCC / cross-OS special folders):
+  // 'ask' | 'skip' | 'allow' | 'denied'. Mirrors flow_sdk special_folders.py.
+  INDEX_FOLDER_DOCUMENTS = 'preferences.indexing.folders.documents',
+  INDEX_FOLDER_DESKTOP = 'preferences.indexing.folders.desktop',
+  INDEX_FOLDER_DOWNLOADS = 'preferences.indexing.folders.downloads',
   // terminal
   TRACE_FILTERS = 'preferences.terminal.trace_filters',
   COLUMN_VISIBILITY = 'preferences.terminal.column_visibility',
@@ -119,6 +124,31 @@ export interface PrefInfo {
 
 /** Default notification sound — stable key from the ui sound manifest (DEFAULT_SOUND_KEY). */
 const DEFAULT_SOUND_KEY = 'supershort-ping';
+
+/**
+ * Per-folder indexing-consent tri-state (plus the OS-refused terminal state).
+ * Shared by every `preferences.indexing.folders.*` pref. Mirrors the states in
+ * flow_sdk/fs_store/indexer/special_folders.py.
+ */
+export const INDEX_FOLDER_OPTIONS: PrefOption[] = [
+  { value: 'ask', label: 'Ask' },
+  { value: 'allow', label: 'Always index' },
+  { value: 'skip', label: 'Never index' },
+  { value: 'denied', label: 'Blocked by system' },
+];
+
+/** One PrefInfo for a per-folder indexing-consent pref (Documents/Desktop/…). */
+function indexFolderPref(key: PrefKey, folder: string): PrefInfo {
+  return {
+    key,
+    category: 'indexing',
+    label: `Index ${folder} folder`,
+    description: `Ask before indexing projects in your ${folder} folder.`,
+    dataType: PrefDataType.STRING,
+    defaultValue: 'ask',
+    options: INDEX_FOLDER_OPTIONS,
+  };
+}
 
 export const PREF_REGISTRY: Record<PrefKey, PrefInfo> = {
   [PrefKey.SHOW_SYSTEM_SKILLS]: {
@@ -282,6 +312,9 @@ export const PREF_REGISTRY: Record<PrefKey, PrefInfo> = {
     dataType: PrefDataType.BOOL,
     defaultValue: false,
   },
+  [PrefKey.INDEX_FOLDER_DOCUMENTS]: indexFolderPref(PrefKey.INDEX_FOLDER_DOCUMENTS, 'Documents'),
+  [PrefKey.INDEX_FOLDER_DESKTOP]: indexFolderPref(PrefKey.INDEX_FOLDER_DESKTOP, 'Desktop'),
+  [PrefKey.INDEX_FOLDER_DOWNLOADS]: indexFolderPref(PrefKey.INDEX_FOLDER_DOWNLOADS, 'Downloads'),
   [PrefKey.TRACE_FILTERS]: {
     key: PrefKey.TRACE_FILTERS,
     legacyLocalStorageKey: 'traceFilters',

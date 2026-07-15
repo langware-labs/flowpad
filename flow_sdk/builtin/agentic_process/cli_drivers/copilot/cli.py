@@ -90,6 +90,12 @@ class CopilotCliOptions(WorkerCLIOptions):
         return head + allow_all + self._common_tail()
 
     def _sync_custom_instruction_env(self) -> None:
+        # Copilot CLI 1.0.70 consults this child-process env at its folder-trust
+        # gate. ``--allow-all`` alone does not bypass that interactive dialog.
+        # Set it only for interactive full-access launches; it neither reads nor
+        # mutates the user's persistent ``~/.copilot/config.json``.
+        if not self.json_stream and self._allow_all_enabled():
+            self.env_vars["COPILOT_ALLOW_ALL"] = "true"
         if not self.custom_instruction_dirs:
             return
         existing = self.env_vars.get("COPILOT_CUSTOM_INSTRUCTIONS_DIRS") or os.environ.get("COPILOT_CUSTOM_INSTRUCTIONS_DIRS", "")

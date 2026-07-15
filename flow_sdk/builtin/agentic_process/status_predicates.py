@@ -23,15 +23,15 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from flow_sdk._compat import StrEnum
-from flow_sdk.builtin.worker_status import (
-    WorkerStatus,
-    is_running as is_worker_running,
-    is_terminal as is_worker_terminal,
-)
 from flow_sdk.builtin.process_lifecycle import (
     ProcessStatus,
     is_running as is_process_running,
     is_startable as is_process_startable,
+)
+from flow_sdk.builtin.worker_status import (
+    WorkerStatus,
+    is_running as is_worker_running,
+    is_terminal as is_worker_terminal,
 )
 
 if TYPE_CHECKING:
@@ -87,13 +87,15 @@ def get_worker_mode(process: "AgenticProcess") -> WorkerMode:
 # just re-prompt past, so it maps to a *ready* process status. While a turn is
 # genuinely retrying the prompt lock (or ``_turn_in_flight``) is held, which
 # keeps the process ``busy`` regardless of this set.
-_BUSY_WORKER_STATUSES: frozenset[WorkerStatus] = frozenset({
-    WorkerStatus.INITIALIZING,
-    WorkerStatus.WORKING,
-    WorkerStatus.THINKING,
-    WorkerStatus.TOOL_CALL,
-    WorkerStatus.TOOL_RUNNING,
-})
+_BUSY_WORKER_STATUSES: frozenset[WorkerStatus] = frozenset(
+    {
+        WorkerStatus.INITIALIZING,
+        WorkerStatus.WORKING,
+        WorkerStatus.THINKING,
+        WorkerStatus.TOOL_CALL,
+        WorkerStatus.TOOL_RUNNING,
+    }
+)
 
 
 def is_turn_busy(
@@ -102,21 +104,23 @@ def is_turn_busy(
 ) -> bool:
     """True when a turn is in flight — the single ``busy`` boolean.
 
-    ``busy`` is a function of process state, resolved from three signals (any
+    ``busy`` is a function of process state, resolved from four signals (any
     one → busy):
 
       1. the per-process prompt lock is held (headless / chat-over-PTY turn), OR
-      2. ``_turn_in_flight`` is set (a worker spinning up before its transcript
+      2. a print-mode worker is registered globally (covers separately hydrated
+         transcript-watcher instances), OR
+      3. ``_turn_in_flight`` is set (a worker spinning up before its transcript
          lands), OR
-      3. the raw ``worker_status`` is a mid-turn activity state
+      4. the raw ``worker_status`` is a mid-turn activity state
          (``_BUSY_WORKER_STATUSES``) — **INTERACTIVE (PTY) transport only**.
 
     A native-xterm turn holds no lock and sets no ``_turn_in_flight`` flag, so
     (3) is the only signal that keeps it ``busy`` — that is why the ``switch-mode``
     409 must key on this predicate, not the lock alone.
 
-    Signal (3) is transport-gated: every CLI-mode (headless ``claude -p``) turn
-    already holds the prompt lock or ``_turn_in_flight`` for its whole duration,
+    Signal (4) is transport-gated: every CLI-mode (headless ``claude -p``) turn
+    already has a registered worker, prompt lock, or ``_turn_in_flight`` for its whole duration,
     so for CLI mode the transcript tail adds nothing — and it lies. A killed or
     crashed print-mode CLI never writes its terminal transcript entry, leaving a
     mid-turn tail forever; counting it would pin ``busy`` True with no live turn
@@ -130,10 +134,16 @@ def is_turn_busy(
     # load time. ``_PROMPT_LOCKS`` is the single runtime source; both headless
     # (``prompt``) and chat-over-PTY turns hold it for the turn's duration.
     try:
-        from flow_sdk.builtin.agentic_process.agentic_process import prompt_lock_locked
+        from flow_sdk.builtin.agentic_process.agentic_process import (
+            prompt_lock_locked,
+            prompt_worker_active,
+        )
     except Exception:
         prompt_lock_locked = None
+        prompt_worker_active = None
     if prompt_lock_locked is not None and prompt_lock_locked(process.id):
+        return True
+    if prompt_worker_active is not None and prompt_worker_active(process.id):
         return True
     if getattr(process, "_turn_in_flight", False):
         return True
@@ -179,11 +189,7 @@ def is_ready_from_busy(
         return True
     if status == ProcessStatus.NEW.value and pty_mode is False:
         return True
-    return (
-        status == ProcessStatus.STOPPED.value
-        and pty_mode is False
-        and bool(session_id)
-    )
+    return status == ProcessStatus.STOPPED.value and pty_mode is False and bool(session_id)
 
 
 def is_ready_for_input(

@@ -60,3 +60,40 @@ export function basename(path: string): string {
   const slash = trimmed.lastIndexOf('/');
   return slash >= 0 ? trimmed.slice(slash + 1) : trimmed;
 }
+
+/**
+ * Canonicalize a filesystem/VFS path for comparison and basename extraction:
+ * backslashes → `/`, collapse repeated `/`, drop a trailing `/`. Shared by the
+ * asset-manager popover (its `dirname`/`descriptorKey`) and `improvableMainFile`
+ * so the normalization can't drift between the two.
+ */
+export function normalizePath(path: string | null | undefined): string {
+  return (path ?? '').replace(/\\/g, '/').replace(/\/+/g, '/').replace(/\/$/, '');
+}
+
+/** The subset of a type's TypeInfo that decides its improvable main file. */
+export interface ImprovableTypeInfo {
+  folder_backed?: boolean;
+  main_file?: string | null;
+}
+
+/**
+ * The main file the asset "Improve" flow would edit for a descriptor, or `null`
+ * when it can't be resolved — in which case the wand must be HIDDEN rather than
+ * shown-then-errored ("no main file metadata"). Single source of truth shared by
+ * the row's `canImprove` gate and `resolveImproveTarget`, so the affordance is
+ * offered iff improvement can actually run:
+ *   - folder-backed type → its TypeInfo `main_file` (empty ⇒ not improvable)
+ *   - flat type          → the path basename
+ */
+export function improvableMainFile(
+  descriptor: { typeid: string; posix_path?: string | null },
+  typeInfoByName: Map<string, ImprovableTypeInfo>,
+): string | null {
+  const assetPath = normalizePath(descriptor.posix_path);
+  if (!assetPath) return null;
+  const { type } = parseTypeid(descriptor.typeid);
+  const ti = typeInfoByName.get(type);
+  const file = ti?.folder_backed ? ti.main_file ?? '' : basename(assetPath);
+  return file || null;
+}

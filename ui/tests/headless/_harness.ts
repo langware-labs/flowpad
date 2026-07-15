@@ -1,8 +1,8 @@
 /**
  * Shared boot harness for the headless tests.
  *
- * Both headless tests resolve a live backend (soft-skipping when none is up) and
- * then mount the REAL app exactly like `main.tsx`. That preamble lived in two
+ * Headless tests resolve the explicit disposable FLOW_INSTANCE and then mount
+ * the REAL app exactly like `main.tsx`. That preamble lived in two
  * places; it lives here now so the ThemeProvider wiring and the boot-spinner wait
  * (and its `// do not increase timeout` budget) can't drift between files.
  */
@@ -17,18 +17,25 @@ import { resolveLiveBackend, type LiveBackend } from './_backend';
 
 /**
  * Resolve a live backend once per file and register `cleanup()` after each test.
- * Returns a ref whose `.current` is null until `beforeAll` runs (and stays null
- * when no backend is reachable — the test then soft-skips). `logPrefix` tags the
- * skip notice so failures point at the right file.
+ * Returns a ref whose `.current` is null until `beforeAll` runs. Missing or
+ * mismatched infrastructure fails the hook: Phase 8 never turns an infra outage
+ * into a passing test. `logPrefix` tags the error with the owning file.
  */
 export function setupLiveBackend(logPrefix: string): { current: LiveBackend | null } {
   const ref: { current: LiveBackend | null } = { current: null };
   beforeAll(async () => {
-    ref.current = await resolveLiveBackend();
+    const instanceName = process.env.FLOW_INSTANCE?.trim() || '';
+    if (!instanceName) {
+      throw new Error(
+        `${logPrefix} FLOW_INSTANCE is required. Launch a disposable named instance, then run ` +
+          '`FLOW_INSTANCE=<name> npm run test:vitest:headless`.',
+      );
+    }
+    ref.current = await resolveLiveBackend(instanceName);
     if (!ref.current) {
-      console.warn(
-        `${logPrefix} no live backend reachable — skipping. Launch one with ` +
-          '`scripts/instance_ctl.sh launch dev-1` or `uv run -m flow_sdk.server.run`.',
+      throw new Error(
+        `${logPrefix} FLOW_INSTANCE='${instanceName}' is not a matching live instance_ctl backend ` +
+          `(expected .env.${instanceName}.local, launcher identity/port/live PID, and ready bootstrap).`,
       );
     }
   });
@@ -41,11 +48,10 @@ export function setupLiveBackend(logPrefix: string): { current: LiveBackend | nu
  * like `main.tsx`) and wait for the root loader to resolve — the HydrateFallback
  * spinner (`.animate-spin`) is shown while `loadRoot`/`initSdk` runs, then gone.
  *
- * The caller must already have pointed the realm at the backend
- * (`globalThis.__FLOWPAD_API_URL__ = …` + `vi.resetModules()`), and — if it needs
- * the SDK *before* the app mounts (e.g. to create an entity) — imported `@sdk`
- * after that reset. `bootApp` imports the router from the SAME realm (no further
- * reset), so the entity it created and the app it boots share one backend binding.
+ * The caller must already have created a backend-bound realm with
+ * `createSdkRealm`. `bootApp` imports the router from that SAME module graph (no
+ * further reset), so an entity seeded through the returned SDK and the app it
+ * boots share one backend binding.
  */
 export async function bootApp(): Promise<{ router: any; container: HTMLElement }> {
   const { router } = await import('@src/router');

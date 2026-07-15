@@ -375,3 +375,33 @@ async def test_open_gate_retry_clears_latch():
     from flow_sdk.responses.response import ApiFailResponse
     assert isinstance(result, ApiFailResponse)
     assert result.message == "STOP_TEST"
+
+
+@pytest.mark.asyncio
+async def test_open_missing_fork_source_fails_before_shell_spawn():
+    """A vanished fork parent must not degrade into ``--resume <new-id>``."""
+    from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeCliOptions
+    from flow_sdk.responses.response import ApiFailResponse
+
+    source_id = "missing-fork-source"
+    process = AgenticProcess.fork(source_id, workdir="/project", visible=True)
+    cmd = ClaudeCliOptions(
+        workdir="/project",
+        session_id=process.session_id,
+        resume=True,
+        fork_session_id=source_id,
+    )
+
+    with patch.object(AgenticProcess, "reap_if_orphaned", new_callable=AsyncMock, return_value=False), \
+         patch.object(AgenticProcess, "get_project", new_callable=AsyncMock), \
+         patch.object(AgenticProcess, "prepare_system_instruction_assets", new_callable=AsyncMock, return_value=[]), \
+         patch.object(AgenticProcess, "_apply_system_instruction_assets"), \
+         patch.object(AgenticProcess, "_finalized_restart_cli_options", return_value=cmd), \
+         patch.object(AgenticProcess, "_find_resumable_session", new_callable=AsyncMock, return_value=None), \
+         patch.object(AgenticProcess, "_get_or_create_shell", new_callable=AsyncMock) as create_shell:
+        result = await process._perform_open(None, True)
+
+    assert isinstance(result, ApiFailResponse)
+    assert result.status_code == 404
+    assert source_id in (result.message or "")
+    create_shell.assert_not_awaited()

@@ -26,6 +26,7 @@ import os
 import shutil
 import tempfile
 import zipfile
+from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from pathlib import Path, PurePosixPath
@@ -117,6 +118,14 @@ class FlowMessageExistsError(Exception):
     def __init__(self, conflicts: list[dict]):
         self.conflicts = conflicts  # [{"type": ..., "id": ...}]
         super().__init__(f"FlowMessage entities already exist: {conflicts}")
+
+
+class GitShareOriginError(Exception):
+    """Raised when an asset explicitly shared in Git mode has no valid Git origin
+    at pack time. Fails the share/upload VISIBLY — never silently falls back to
+    copying bytes (the sender selected Git; a copy would misrepresent the share).
+    The dialog's preflight blocks ineligible assets up front; this is the pack-time
+    backstop for an origin that vanished between preflight and packing."""
 
 
 # ---------------------------------------------------------------------------
@@ -223,6 +232,35 @@ async def _pack_flowpad_diagnosis_attachment(entry_id: str, attachment_dir: Path
     )
 
 
+async def _pack_remote_worker_session_attachment(entry_id: str, attachment_dir: Path) -> None:
+    """Write ``attachment/remote_worker_session-@<id>/header.json`` — the
+    live-session snapshot.
+
+    Metadata-only entity: the header IS the record, re-materialized on the
+    receiver via ``RemoteWorkerSession.apply_snapshot`` (guest adopts
+    host-authoritative fields by activity clock; a host row is never
+    regressed). Serialized at pack/upload time, so every session message —
+    prompts, PromptResult replies, SESSION_EVENT lines — ships the session's
+    state as of that turn for free. ``host_process_id`` / ``project_id`` are
+    host-local (path-leaking) and never travel — the include list is
+    ``RemoteWorkerSession.SNAPSHOT_FIELDS``."""
+    from flow_sdk.builtin.remote_worker_session import RemoteWorkerSession
+
+    rws = await RemoteWorkerSession.get_one({"id": entry_id})
+    if not rws:
+        return
+    rws_dir = attachment_dir / f"{EntityType.REMOTE_WORKER_SESSION.value}-@{entry_id}"
+    rws_dir.mkdir(parents=True, exist_ok=True)
+    rws_data = rws.model_dump(
+        mode="python",
+        include=set(RemoteWorkerSession.SNAPSHOT_FIELDS),
+        context={"skip_api_serializer": True},
+    )
+    (rws_dir / "header.json").write_text(
+        json.dumps(rws_data, default=_json_default, ensure_ascii=False), encoding="utf-8"
+    )
+
+
 async def _pack_conversation_attachment(
     entry_id: str,
     flow_message: "FlowMessage",
@@ -319,6 +357,8 @@ async def _pack_attachment_entry(
         await _pack_claude_session_attachment(entry_id, attachment_dir)
     elif entry_type == EntityType.FLOWPAD_DIAGNOSIS.value:
         await _pack_flowpad_diagnosis_attachment(entry_id, attachment_dir)
+    elif entry_type == EntityType.REMOTE_WORKER_SESSION.value:
+        await _pack_remote_worker_session_attachment(entry_id, attachment_dir)
     else:
         if await _pack_git_reference_attachment(
             entry_type,
@@ -326,6 +366,14 @@ async def _pack_attachment_entry(
             attachment_dir,
             origins,
             repo_cache,
+            transfers,
+            transfer_mode,
+        ):
+            return
+        if await _pack_webapp_artifact_attachment(
+            entry_type,
+            entry_id,
+            attachment_dir,
             transfers,
             transfer_mode,
         ):
@@ -560,6 +608,59 @@ async def _pack_git_reference_attachment(
     return True
 
 
+async def _pack_webapp_artifact_attachment(
+    entry_type: str,
+    entry_id: str,
+    attachment_dir: Path,
+    transfers: dict | None,
+    transfer_mode: str,
+) -> bool:
+    """Copy-mode carrier for a folder-backed webapp ``artifact`` with no git remote.
+
+    ``artifact`` is a graph entity (no ``main_subdir``, no walker), so the
+    file-backed packer never handles it and the git-reference packer only fires in
+    git mode. A Claude-Design-handoff app (a real local folder, not pushed
+    anywhere) must ship its BYTES so the receiver can serve it with no clone: the
+    folder is copied under ``attachment/<key>/webapps/<slug>/`` and the artifact
+    declaration is written as ``metadata/<key>/metadata.json``, recorded in
+    ``git_transfers.json`` with ``transfer_mode="copy"`` so the staging loop picks
+    it up. The receiver mirrors the folder into the target project and materializes
+    the row pointing ``path`` at the served folder (see
+    ``_restore_webapp_artifact_entry``). Returns True when it handled the entry.
+    """
+    if transfer_mode != _TRANSFER_MODE_COPY or transfers is None:
+        return False
+    if entry_type != EntityType.ARTIFACT.value:
+        return False
+
+    from flow_sdk.builtin.artifact import Artifact  # noqa: PLC0415
+
+    ent = await Artifact.get_one({"id": entry_id})
+    if ent is None:
+        return False
+    raw_path = getattr(ent, "path", None)
+    if not raw_path:
+        return False
+    src = Path(str(raw_path))
+    if not src.is_dir():
+        return False  # only a folder artifact rides as bytes; nothing to serve otherwise
+
+    key = _entry_key(entry_type, entry_id)
+    slug = _safe_entity_name(ent)
+    dest = attachment_dir / key / "webapps" / slug
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(src, dest, dirs_exist_ok=True, ignore=_ASSET_PACK_IGNORE)
+    metadata_path = _write_graph_git_transfer_metadata(attachment_dir.parent, entry_type, entry_id, ent)
+    transfers[key] = {
+        "transfer_mode": _TRANSFER_MODE_COPY,
+        "metadata_path": metadata_path,
+        "entity_mode": "metadata",
+        "slug": slug,
+        "bytes_rel": f"webapps/{slug}",
+    }
+    return True
+
+
 async def _pack_file_backed_attachment(
     entry_type: str,
     entry_id: str,
@@ -602,7 +703,22 @@ async def _pack_file_backed_attachment(
     if origin is not None and origins is not None:
         origins[_entry_key(entry_type, entry_id)] = origin.model_dump(mode="python")
 
-    if transfer_mode == _TRANSFER_MODE_GIT and origin is not None and src_root is not None and transfers is not None:
+    # Fail closed: Git mode was explicitly selected but this on-disk asset has no
+    # valid Git origin. Never fall through to the copy path below (that would ship
+    # bytes under a Git share). Structural / no-source entries (src_root is None)
+    # are not Git-shareable assets and are handled by the render path.
+    if transfer_mode == _TRANSFER_MODE_GIT and src_root is not None and origin is None:
+        raise GitShareOriginError(
+            f"{_entry_key(entry_type, entry_id)} was shared with Git but is not in a "
+            f"Git repository with a usable origin — turn Git sharing off for this asset."
+        )
+
+    if (
+        transfer_mode == _TRANSFER_MODE_GIT
+        and origin is not None
+        and src_root is not None
+        and transfers is not None
+    ):
         key = _entry_key(entry_type, entry_id)
         metadata_path = _write_git_transfer_metadata(
             attachment_dir.parent,
@@ -825,6 +941,61 @@ async def _reindex_git_origin_scopes(
     for scope, types in scopes.items():
         if scope.is_dir():
             await _reindex_root(scope, RecordType.REAL_PROJECT_CWD, types=tuple(types), project_id=project_id)
+
+
+@dataclass(frozen=True)
+class ReceivedAsset:
+    """One just-copied file-backed attachment awaiting indexing.
+
+    Carries everything ``index_attachments`` needs per item so the single entry
+    point can serve both the interactive install (one item) and any batch
+    reception path. ``record_type is None`` ⇒ bytes were copied but there is no
+    walker (a raw non-markdown file) — copy-only, no walk. ``git_origin`` set ⇒
+    the asset lives at a repo-relative nested scope and its provenance is stamped.
+    """
+
+    root: Path
+    scope: str  # AttachmentScope value ("user" | "project")
+    asset_type: str
+    asset_id: str
+    entry_key: str
+    record_type: object | None = None
+    git_origin: dict | None = None
+
+
+async def index_attachments(
+    attachments: "list[ReceivedAsset]", *, project_id: str | None, owner
+) -> None:
+    """Index a batch of just-copied file-backed attachments — the single reception
+    indexer.
+
+    Consolidates the per-attachment reindex block that used to live inline in
+    ``handle_attachment_install``: the copy-scope walk (project → ``REAL_PROJECT_CWD``
+    via ``_reindex_received_assets``; user → ``USER_HOME_FOLDER`` via
+    ``_reindex_root``, now threading ``project_id`` uniformly), the git-origin
+    nested-scope re-walk, and the git-origin stamping. It preserves the three
+    "don't index here" cases by construction: raw non-markdown files arrive with
+    ``record_type=None`` (copy-only); git-**transfer** and git-**reference**
+    attachments index via their own restore path and are never passed in.
+    """
+    from flow_sdk.builtin.message_attachment import AttachmentScope  # noqa: PLC0415
+    from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
+
+    for item in attachments:
+        if item.record_type is not None:
+            if item.scope == AttachmentScope.PROJECT.value:
+                await _reindex_received_assets(item.root, (item.record_type,), project_id=project_id)
+            else:
+                await _reindex_root(
+                    item.root, RecordType.USER_HOME_FOLDER, types=(item.record_type,), project_id=project_id
+                )
+        if item.git_origin:
+            origins = {item.entry_key: item.git_origin}
+            entries = {(item.asset_type, item.asset_id)}
+            if item.scope == AttachmentScope.PROJECT.value:
+                await _reindex_git_origin_scopes(item.root, entries, origins, project_id=project_id)
+            await _stamp_git_origins(entries, origins, owner)
+        await _notify_received_assets({(item.asset_type, item.asset_id)})
 
 
 def _parse_entry_key(key: str) -> tuple[str, str] | None:
@@ -1246,6 +1417,74 @@ async def _restore_git_reference_entity_entry(
     artifact.id = entry_id
     await artifact.save(owner_typeid)
     return True
+
+
+async def _restore_webapp_artifact_entry(
+    entry_dir: Path,
+    project_root: Path,
+    transfer: dict,
+    unpacked_root: Path,
+    *,
+    asset_id: str,
+    project_id: str | None,
+    overwrite: bool,
+    owner_typeid: str | None,
+) -> Path | None:
+    """Install a copy-mode folder webapp artifact: mirror its staged bytes into the
+    project and materialize the ``Artifact`` row pointing ``path`` at the served
+    folder (no clone).
+
+    The counterpart of ``_pack_webapp_artifact_attachment``. ``entry_dir`` holds
+    only ``webapps/<slug>/…`` (the declaration rode separately at
+    ``metadata/<key>/metadata.json``), so ``_restore_file_backed_entry`` mirrors it
+    verbatim under ``project_root``. Returns the served folder path, or None.
+    """
+    from flow_sdk.builtin.artifact import Artifact, ArtifactReferenceType, ArtifactType  # noqa: PLC0415
+
+    slug = str(transfer.get("slug") or "")
+    bytes_rel = str(transfer.get("bytes_rel") or (f"webapps/{slug}" if slug else ""))
+    if not slug or not bytes_rel:
+        return None
+
+    # Mirror the staged webapps/<slug>/ subtree under the project root (anchor-free,
+    # verbatim — raises FlowMessageExistsError on a real collision when overwrite=False).
+    _restore_file_backed_entry(entry_dir, project_root, overwrite)
+    served = project_root / PurePosixPath(bytes_rel)
+    if not served.is_dir():
+        return None
+
+    # Materialize the row from the shipped declaration — pick only the artifact's
+    # own fields (never the sender-local project_id / audit columns).
+    payload = _read_transfer_metadata(unpacked_root, transfer)
+    picked = {
+        k: payload.get(k)
+        for k in ("name", "description", "port", "start_cmd", "health", "ref_type", "artifact_type")
+        if payload.get(k) is not None
+    }
+    new_payload = {
+        "type": EntityType.ARTIFACT.value,
+        "id": asset_id,
+        "path": str(served),
+        "project_id": project_id,
+        "metadata": dict(payload.get("metadata") or {}),
+        **picked,
+    }
+    new_payload.setdefault("name", f"artifact-{asset_id[:8]}")
+    new_payload.setdefault("ref_type", ArtifactReferenceType.FOLDER.value)
+    new_payload.setdefault("artifact_type", ArtifactType.WEBAPP.value)
+
+    existing = await Artifact.get_one({"id": asset_id})
+    if existing is not None and not overwrite:
+        # Idempotent re-receive: heal a missing path, leave the rest untouched.
+        if not (getattr(existing, "path", "") or ""):
+            existing.path = str(served)
+            await existing.save(owner_typeid)
+        return served
+
+    artifact = Artifact.model_validate(new_payload)
+    artifact.id = asset_id
+    await artifact.save(owner_typeid)
+    return served
 
 
 async def _stamp_git_origins(
@@ -2124,23 +2363,34 @@ async def unpack_bundle(
             entry_type, entry_id = parsed
             gt_payload = _read_transfer_metadata(tmp_root, transfer)
             raw_origin = git_origins_map.get(key) or (transfer or {}).get("git_origin")
-            staged_mas.append(
-                await _stage_attachment(
-                    top_fm_id=top_fm_id,
-                    conversation_id=staging_conv_id,
-                    entry_key=key,
-                    entry_type=entry_type,
-                    entry_id=entry_id,
-                    unpacked_path=str(transfer.get("metadata_path") or ""),
-                    name=(gt_payload.get("name") or None),
-                    description=(gt_payload.get("description") or None),
-                    git_origin=raw_origin if isinstance(raw_origin, dict) else None,
-                    git_transfer=transfer if isinstance(transfer, dict) else None,
-                    transfer_mode="git",
-                    create_bookmark=create_bookmark,
-                    owner_typeid=owner_typeid,
-                )
-            )
+            # The transfers manifest carries both git transfers AND copy-mode
+            # webapp-artifact byte carriers. Honor the per-entry mode: git points
+            # unpacked_path at the metadata file; copy points it at the staged
+            # bytes dir (attachment/<key>/) and forces project-only install (a
+            # webapp can't live under ~/.claude).
+            _tmode = (transfer or {}).get("transfer_mode") or "git"
+            if _tmode == _TRANSFER_MODE_COPY:
+                _unpacked = fm_data_ops.staged_entry_rel_path(key)
+                _user_scope: bool | None = False
+            else:
+                _unpacked = str(transfer.get("metadata_path") or "")
+                _user_scope = None
+            staged_mas.append(await _stage_attachment(
+                top_fm_id=top_fm_id,
+                conversation_id=staging_conv_id,
+                entry_key=key,
+                entry_type=entry_type,
+                entry_id=entry_id,
+                unpacked_path=_unpacked,
+                name=(gt_payload.get("name") or None),
+                description=(gt_payload.get("description") or None),
+                git_origin=raw_origin if isinstance(raw_origin, dict) else None,
+                git_transfer=transfer if isinstance(transfer, dict) else None,
+                transfer_mode=_tmode,
+                user_scope_allowed=_user_scope,
+                create_bookmark=create_bookmark,
+                owner_typeid=owner_typeid,
+            ))
 
         if attachment_dir.exists():
             for entry_dir in sorted(attachment_dir.iterdir(), key=_entry_sort_key):
@@ -2251,6 +2501,29 @@ async def unpack_bundle(
                             await diag.save(owner_typeid)
                         elif _fill_merge_entity(existing_diag, diag_payload, ("id", "type")):
                             await existing_diag.save(owner_typeid)
+
+                elif entry_type == EntityType.REMOTE_WORKER_SESSION.value:
+                    # Live-session snapshot: materialize/refresh the local
+                    # session row from the packed header, hub-free. Merge
+                    # discipline lives in ``apply_snapshot`` — a host row is
+                    # never regressed by an inbound snapshot; a guest row
+                    # adopts host-authoritative fields only when the
+                    # snapshot's activity clock is fresher.
+                    rws_data = _read_entity_header(entry_dir)
+                    if rws_data is not None:
+                        from flow_sdk.builtin.remote_worker_session import RemoteWorkerSession  # noqa: PLC0415
+                        from flow_sdk.cli.app_config import get_user as _get_cloud_user  # noqa: PLC0415
+                        rws_id = rws_data.get("id") or entry_id
+                        existing_rws = await RemoteWorkerSession.get_one({"id": rws_id})
+                        cloud_uid = (_get_cloud_user() or {}).get("id")
+                        local_is_host = bool(
+                            (existing_rws is not None and getattr(existing_rws, "host_process_id", None))
+                            or (cloud_uid and rws_data.get("host_user_id") == cloud_uid)
+                        )
+                        rws = RemoteWorkerSession.apply_snapshot(
+                            existing_rws, {**rws_data, "id": rws_id}, local_is_host=local_is_host,
+                        )
+                        await rws.save(owner_typeid)
 
                 elif entry_type == BuiltinEntityType.CONVERSATION.value:
                     jsonl_file = entry_dir / "conversation.jsonl"

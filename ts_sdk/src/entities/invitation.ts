@@ -9,8 +9,9 @@ export interface IInvitation extends IEntity {
   expiration_at?: string | Date;
   sent?: boolean;
   message?: string;
-  // Membership invitations (organization / team) carry a target descriptor
-  // instead of a backing conversation, so the inbox renders a generic row.
+  // Membership invitations (organization / team / workspace / project) carry
+  // a target descriptor instead of a backing conversation, so the inbox
+  // renders a membership row.
   target_type?: string;
   target_id?: string;
   target_name?: string;
@@ -72,4 +73,14 @@ export async function declineInvitation(
   action.bodyParameters = params;
   const res = await dataManager.callAction<DeclineInvitationParams, DeclineInvitationResult>(action);
   return res!;
+}
+
+/** True when an accept/decline failed because the invitation no longer exists
+ *  on the hub (its node was deleted/reset). The backend self-heals — it removes
+ *  the orphaned local mirror and answers HTTP 410 with ``data.gone``. Callers
+ *  should treat this as "the row is already gone": show a soft "Invitation no
+ *  longer valid" notice and refetch, rather than a hard error. */
+export function isInvitationGoneError(err: unknown): boolean {
+  const e = err as { response?: { status?: number; data?: { data?: { gone?: boolean } } } };
+  return e?.response?.status === 410 || e?.response?.data?.data?.gone === true;
 }

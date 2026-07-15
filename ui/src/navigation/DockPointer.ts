@@ -1,4 +1,4 @@
-import { AgenticProcess, ClaudeSession, Layout, Project, Shell, TypeId, VFSPath, type IDockPointer } from '@sdk';
+import { AgenticProcess, ClaudeSession, Layout, Project, RemoteWorkerSession, Shell, TypeId, VFSPath, type IDockPointer } from '@sdk';
 import { VIEW_SLOTS, ViewSlot, ViewType, VIEWER_REGISTRY } from '../types/ViewType';
 import { NavigationError, NavigationErrorType } from './NavigationError';
 import { buildDockUrl, parseDockUrl, parseQueryParams } from './url-builder';
@@ -293,6 +293,15 @@ export class DockPointer implements IDockPointer {
   }
 
   /**
+   * Live-session dock — /dock/live_session/<sessionId>. Top-level (not nested
+   * under project/room) because the GUEST holds a session before any host
+   * project or CollaborationRoom exists (DRAFT/PENDING states).
+   */
+  static forLiveSession(sessionId: string, layout: Layout = Layout.DOCK): DockPointer {
+    return new DockPointer(ViewType.LIVE_SESSION, sessionId, {}, layout);
+  }
+
+  /**
    * Triggers dock. The selected trigger id (and the transient "creating" mode)
    * ride in OPTIONS, never `pointer`, so the Triggers tabHash stays `triggers|`
    * — selection/creation are URL-addressable + reload-safe but stay in ONE tab
@@ -491,9 +500,15 @@ export class DockPointer implements IDockPointer {
    * Pointer format: "wiki/<encoded name>"
    * URL: /dock/assets/wiki/<encoded name>
    */
-  static forWiki(name: string, layout: Layout = Layout.DOCK, space?: string): DockPointer {
-    // Canonical grammar: wiki/<space>/<name> (space default @local).
-    return AssetDocPointer.forWiki(name, space).toDockPointer(layout);
+  static forWiki(
+    name: string,
+    layout: Layout = Layout.DOCK,
+    space?: string,
+    fragment?: string,
+  ): DockPointer {
+    // Canonical grammar: wiki/<space>/<name> (space default @local). An optional
+    // `fragment` deep-links to a heading; it rides as a query param, not the path.
+    return AssetDocPointer.forWiki(name, space, undefined, fragment).toDockPointer(layout);
   }
 
   /**
@@ -1280,6 +1295,16 @@ export class DockPointer implements IDockPointer {
       if (lens?.category === 'claude' && lens.type === 'transcript' && lens.ref && !lens.ref.includes('/')) {
         return DockPointer.tryTypeId(ClaudeSession.type, lens.ref);
       }
+    }
+    // A live-session dock targets its RemoteWorkerSession entity (id = session
+    // id). The viewType STRING ('live_session') differs from the entity TYPE
+    // ('remote_worker_session'), so it must be surfaced explicitly — the generic
+    // fallback below would mint the tab against a non-existent 'live_session'
+    // target, leaving it untitled and projectless (Global-scoped). Puts the
+    // session on the same entity rail as every other tab: the mint resolves its
+    // title (host/guest) and the loader its project.
+    if (this.viewType === ViewType.LIVE_SESSION) {
+      return DockPointer.tryTypeId(RemoteWorkerSession.type, pointer);
     }
     // A PROJECT-rebased asset dock (`/dock/project/<id>/<assetSubPointer>`, the
     // output of `rebaseAssetsOntoProject`) carries its target in the asset

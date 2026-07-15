@@ -85,6 +85,7 @@ export function useFavoritesRoots(opts?: {
   const {
     favorites,
     folders,
+    rootFolders,
     rootFavorites,
     childrenOf,
     removeFavorite,
@@ -155,23 +156,45 @@ export function useFavoritesRoots(opts?: {
       };
     };
 
+    // Recursive count of visible LEAF favorites under a folder (descends through
+    // nested subfolders). So `Auto` shows the grand total while each `Auto/<type>`
+    // shows its own. Cycle-guarded (a malformed parent_id loop can't hang render).
+    const countLeaves = (folderId: string, seen: Set<string> = new Set()): number => {
+      if (!folderId || seen.has(folderId)) return 0;
+      seen.add(folderId);
+      return childrenOf(folderId)
+        .filter(filter)
+        .reduce(
+          (n, k) =>
+            n + (k.bookmark_type === BookmarkType.FAVORITE_FOLDER ? countLeaves(k.id ?? '', seen) : 1),
+          0,
+        );
+    };
+
     const asFolder = (folder: Bookmark): Browseable => {
       const title = folder.name || folder.title || folder.displayName;
       const allChildren = folder.id ? childrenOf(folder.id) : [];
       const children = allChildren.filter(filter);
+      // Badge counts leaf descendants recursively, so a folder-of-folders (the
+      // Auto root) still reflects how many items are filed beneath it.
+      const count = folder.id ? countLeaves(folder.id) : 0;
       return {
         kind: 'favorite_folder',
         id: folder.id ?? '',
         label: title,
         icon: <Folder className="h-6 w-6" />,
         badge:
-          children.length > 0 ? (
+          count > 0 ? (
             <span className="rounded-full bg-primary px-1 text-[9px] font-semibold leading-[13px] text-primary-foreground">
-              {children.length}
+              {count}
             </span>
           ) : undefined,
         hasChildren: children.length > 0 ? true : 'unknown',
-        listChildren: () => Promise.resolve(children.map(asLeaf)),
+        // Render nested subfolders as folders (recursive) and leaves as tiles.
+        listChildren: () =>
+          Promise.resolve(
+            children.map((c) => (c.bookmark_type === BookmarkType.FAVORITE_FOLDER ? asFolder(c) : asLeaf(c))),
+          ),
         pointer: null,
         selectionKey: folder.id,
         onRename: (next) => renameFavorite(folder, next),
@@ -198,7 +221,7 @@ export function useFavoritesRoots(opts?: {
         tooltip: (
           <div className="text-xs font-medium">
             <Trans>
-              {title} — {children.length} items
+              {title} — {count} items
             </Trans>
           </div>
         ),
@@ -220,7 +243,9 @@ export function useFavoritesRoots(opts?: {
       if (dragged) await reorder(dragged, anchor, '');
     };
 
-    const visibleFolders = folders.filter(filter);
+    // Only TOP-LEVEL folders render at root; nested subfolders surface inside
+    // their parent via asFolder's recursive listChildren.
+    const visibleFolders = rootFolders.filter(filter);
     const visibleRootFavorites = rootFavorites.filter(filter);
 
     return {
@@ -236,6 +261,7 @@ export function useFavoritesRoots(opts?: {
   }, [
     favorites,
     folders,
+    rootFolders,
     rootFavorites,
     childrenOf,
     summaries,

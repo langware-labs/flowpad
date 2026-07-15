@@ -1,3 +1,7 @@
+---
+id: 166a48fd-0c92-4201-aaf6-f4f56863a8ca
+---
+
 # Vibe Display surface
 
 The **Display** is the right-hand pane of vibe mode: a persistent, always-present

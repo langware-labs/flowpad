@@ -68,11 +68,21 @@ missing media.
 - Video is discouraged in v1: data-URI mp4s inflate the deck fast. If truly
   needed, keep clips tiny.
 
-## 5. Show it
+## 5. Index and show it
+
+A generated deck is a first-class `deck` entity (folder under `assets/decks/`).
+Persist it, then present it via the entity — the deck opens in the bespoke
+**deck viewer** (full-bleed, fullscreen, provenance link to its template):
 
 ```bash
-flow show file "<absolute path>/<deck name>.html"
+flow record index "<project root>"          # persist the deck as a browseable entity
+flow show file "<project root>/assets/decks/<deck name>"   # the FOLDER, not the .html
 ```
 
+`flow show file` on the deck **folder** resolves to the `deck` entity (via its
+`deck.json` marker) and routes to the deck viewer — no id to parse. (Showing the
+raw `<deck name>.html` file instead falls back to the generic HTML preview: no
+fullscreen, no provenance — so show the folder.)
+
 See [presenting.md](presenting.md). To iterate: edit `deck.json` (or the
-template), rebuild, and show again.
+template), rebuild the `.html`, re-index, and show again.

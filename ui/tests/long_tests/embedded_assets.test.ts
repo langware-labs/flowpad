@@ -7,11 +7,12 @@
  *   2. list returns the current ref set.
  *   3. detach reverses (ref gone, file gone).
  *
- * Real backend required at localhost:9008. Real Claude not needed — we don't
- * prompt the process, we just exercise the three new actions on the server.
+ * Uses the backend selected by the long-test tier (including FLOW_INSTANCE).
+ * Real Claude is not needed — we don't prompt the process, we just exercise
+ * the three embedded-asset actions on the server.
  */
 
-import { AgenticProcess, dataManager } from '@sdk';
+import { AgenticProcess, apiClient, dataManager } from '@sdk';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { apiTestSetup, getTestSignupInfo } from '../utils/test-utils';
 import * as fs from 'fs';
@@ -63,10 +64,7 @@ You are a test agent.
     // it too, or every run leaks an `ea-test-agent-<ts>` into the asset list.
     // fs-records DELETE = full purge (entity row + FTS + shadow record dir).
     if (agentRecordId) {
-      await fetch(
-        `http://localhost:9008/api/v1/graph/compute_node/@local/fs-records/agent/${agentRecordId}`,
-        { method: 'DELETE' },
-      );
+      await apiClient.delete(`/graph/compute_node/@local/fs-records/agent/${agentRecordId}`);
       agentRecordId = null;
     }
   });
@@ -75,22 +73,14 @@ You are a test agent.
     const proc = await new AgenticProcess({ workdir }).save([]);
 
     // Force a reindex of agents so the fixture file is picked up by /search.
-    const reindexResp = await fetch(
-      'http://localhost:9008/api/v1/graph/compute_node/@local/fs-records/index?type=agent',
-      { method: 'POST' },
-    );
-    expect(reindexResp.ok, `reindex failed: ${reindexResp.status}`).toBe(true);
+    await apiClient.post('/graph/compute_node/@local/fs-records/index?type=agent', {});
 
-    // Resolve the agent's uuid via /search so we use the same TypeId shape the UI sends.
-    const searchUrl = new URL('/api/v1/search', 'http://localhost:9008');
-    searchUrl.searchParams.set('record_type', 'agent');
-    searchUrl.searchParams.set('q', agentName);
-    const searchResp = await fetch(searchUrl.toString(), {
-      headers: { 'Content-Type': 'application/json' },
-    });
-    expect(searchResp.ok, `search failed: ${searchResp.status}`).toBe(true);
-    const searchRaw = (await searchResp.json()) as { data?: { results?: Array<{ record_id: string; name: string; record_type: string }> } };
-    const hit = searchRaw.data?.results?.find((r) => r.name === agentName);
+    // Resolve the agent's uuid via the configured API client so we use the same
+    // TypeId shape the UI sends. apiClient unwraps the standard response envelope.
+    const searchData = (await apiClient.get('/search', {
+      params: { record_type: 'agent', q: agentName },
+    })) as { results?: Array<{ record_id: string; name: string; record_type: string }> };
+    const hit = searchData.results?.find((r) => r.name === agentName);
     expect(hit, `search did not find agent "${agentName}" — ensure indexer picked it up`).toBeDefined();
     agentRecordId = hit!.record_id;
 

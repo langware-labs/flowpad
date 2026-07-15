@@ -28,10 +28,14 @@ than savings:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import uuid
+from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Any, ClassVar, Generic, TypeVar
+from weakref import WeakValueDictionary
 
 from flow_sdk.fs_store.fs_ref import FSRef
 
@@ -51,6 +55,47 @@ _HASH_GLOB = "*.hash"
 
 # Instance attribute names that don't belong in serialized meta (system state).
 _SYSTEM_ATTRS: frozenset[str] = frozenset({"type", "id", "_asset_ref"})
+
+# Entity.save is DB -> disk while FSRecord.sync_to_db is disk -> DB.  They must
+# not observe the same record between those two stores.  Locks are loop-scoped
+# (asyncio locks cannot cross pytest/server event loops) and weakly held so a
+# long-lived server does not retain one lock for every record it ever touched.
+_RECORD_SYNC_LOCKS: "WeakValueDictionary[tuple[object, str, str], asyncio.Lock]" = (
+    WeakValueDictionary()
+)
+_HELD_RECORD_SYNC_KEYS: "ContextVar[frozenset[tuple[object, str, str]]]" = ContextVar(
+    "_held_record_sync_keys", default=frozenset()
+)
+
+
+@asynccontextmanager
+async def record_sync_guard(record_type: str, record_id: str):
+    """Serialize opposite-direction DB/disk syncs for one record.
+
+    Reentrant only in the same asyncio Task.  A child task inherits contextvars,
+    so task identity is part of the held key; it must still wait for its parent
+    rather than accidentally bypassing the lock.
+    """
+    loop = asyncio.get_running_loop()
+    task = asyncio.current_task()
+    held_key = (task, str(record_type), str(record_id))
+    held = _HELD_RECORD_SYNC_KEYS.get()
+    if held_key in held:
+        yield
+        return
+
+    lock_key = (loop, str(record_type), str(record_id))
+    lock = _RECORD_SYNC_LOCKS.get(lock_key)
+    if lock is None:
+        lock = asyncio.Lock()
+        _RECORD_SYNC_LOCKS[lock_key] = lock
+
+    async with lock:
+        token = _HELD_RECORD_SYNC_KEYS.set(held | {held_key})
+        try:
+            yield
+        finally:
+            _HELD_RECORD_SYNC_KEYS.reset(token)
 
 
 def record_stem(record_type: str, uid: str) -> str:
@@ -692,6 +737,18 @@ class FSRecord(Generic[M]):
 
     async def sync_to_db(self, fts_batch: list | None = None, notify: bool = True) -> None:
         """Persist this FSRecord into the Entity DB + FTS + wiki.
+
+        The whole opposite-direction transition shares the same per-record
+        guard as ``Entity.save``.  ``Entity.from_record`` eventually re-enters
+        the guard in this same task, which is deliberately supported.
+        """
+        async with record_sync_guard(self.type, str(self.id)):
+            await self._sync_to_db_unlocked(fts_batch=fts_batch, notify=notify)
+
+    async def _sync_to_db_unlocked(
+        self, fts_batch: list | None = None, notify: bool = True
+    ) -> None:
+        """Implementation of :meth:`sync_to_db`; caller owns its record guard.
 
         Pipeline (single shared session for cache coherence):
           1. Entity row via ``Entity.from_record(self)``

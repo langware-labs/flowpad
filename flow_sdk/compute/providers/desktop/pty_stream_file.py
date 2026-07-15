@@ -285,6 +285,55 @@ class PtyStreamFile:
             base64.b64decode(ev[1]) for ev in frames["events"] if ev[0] == "o"
         )
 
+    def read_output_after_seq(self, seq: int) -> bytes:
+        """Concatenate output frames strictly newer than one PTY generation.
+
+        Recovery deliberately appends to the same stream file and continues
+        its monotonic sequence. Consumers deciding whether the *current* OS
+        process is ready must ignore older generations even though terminal
+        replay retains them for the user.
+        """
+        frames = self.read_frames()
+        if frames is None:
+            return b""
+        return b"".join(
+            base64.b64decode(event[1])
+            for event in frames["events"]
+            if (
+                event[0] == "o"
+                and len(event) > 2
+                and isinstance(event[2], int)
+                and event[2] > seq
+            )
+        )
+
+    def read_output_snapshot_after_seq(self, seq: int) -> tuple[bytes, int]:
+        """Atomically snapshot output newer than ``seq`` and its upper seq.
+
+        A live subscriber registers before calling this method. The PTY writer
+        uses the same lock, so an output frame is either absent from this
+        snapshot and arrives through the subscriber, or included here and
+        safely discarded from the sequenced subscriber as overlap.
+        """
+        with self._lock:
+            frames = self.read_frames()
+        if frames is None:
+            return b"", seq
+        current = [
+            event
+            for event in frames["events"]
+            if (
+                event[0] == "o"
+                and len(event) > 2
+                and isinstance(event[2], int)
+                and event[2] > seq
+            )
+        ]
+        return (
+            b"".join(base64.b64decode(event[1]) for event in current),
+            max((event[2] for event in current), default=seq),
+        )
+
     @staticmethod
     def _parse_header(line: bytes) -> dict:
         try:

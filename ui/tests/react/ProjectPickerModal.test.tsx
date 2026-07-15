@@ -52,6 +52,15 @@ describe('ProjectPickerModal', () => {
     await waitFor(() => expect(screen.getByText('Project Alpha')).toBeDefined());
     fireEvent.click(screen.getByText('Project Alpha'));
     fireEvent.click(screen.getByText('Confirm'));
-    expect(onConfirm).toHaveBeenCalledWith(['project-alpha-id']);
+    expect(onConfirm).toHaveBeenCalledWith(
+      ['project-alpha-id'],
+      [
+        expect.objectContaining({
+          id: 'project-alpha-id',
+          cwd: '/tmp/project-alpha',
+          record_project_id: 'project-alpha-record-id',
+        }),
+      ],
+    );
   });
 });

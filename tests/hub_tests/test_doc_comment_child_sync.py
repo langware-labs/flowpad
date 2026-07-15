@@ -219,11 +219,17 @@ def shared(two_backends):
     """Build the shared conversation ONCE for the module (~6s); each per-op test
     then runs only its two cells so no single test crowds the 30s cap."""
     stamp = uuid.uuid4().hex[:8]
+    cleanup_path = Path(os.path.expanduser("~/docs")) / f"comment-sync-{stamp}.md"
     c = httpx.Client(timeout=15.0)
-    md_id, md_ref, conv_id, md_path = _build_shared(c, two_backends, stamp)
-    yield {**two_backends, "client": c, "md_id": md_id, "md_ref": md_ref, "conv_id": conv_id,
-           "md_path": md_path, "stamp": stamp}
-    c.close()
+    try:
+        md_id, md_ref, conv_id, md_path = _build_shared(c, two_backends, stamp)
+        yield {**two_backends, "client": c, "md_id": md_id, "md_ref": md_ref, "conv_id": conv_id,
+               "md_path": md_path, "stamp": stamp}
+    finally:
+        try:
+            c.close()
+        finally:
+            cleanup_path.unlink(missing_ok=True)
 
 
 def test_doc_comment_create_sync(shared):

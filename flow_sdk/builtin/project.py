@@ -3,6 +3,7 @@ import os
 import random
 import string
 import sys
+import uuid
 from datetime import datetime, timezone
 from typing import Any, List, Optional
 
@@ -21,6 +22,7 @@ from flow_sdk.core.flow.flow_source_control import ComputeSourceControlInitializ
 from flow_sdk.core.flow.mcp_server import MCPConnector, mcp_connector_pool
 from flow_sdk.core.flow.models.execution.env_context import get_env_vars_context
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
+from flow_sdk.fs_store.identifier import mint_uuid
 from flow_sdk.fs_store.path_utils import canonical_posix_path
 from flow_sdk.request_context.methods import (
     get_current_request_info,
@@ -333,11 +335,10 @@ class Project(Entity):
         """
         if not path:
             return None
-        import uuid
-
-        from flow_sdk.fs_store.path_utils import canonical_posix_path
-
-        return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"project:{canonical_posix_path(path)}"))
+        return mint_uuid(
+            f"project:{canonical_posix_path(path)}",
+            namespace=uuid.NAMESPACE_DNS,
+        )
 
     @classmethod
     def allocate_id(cls, data: dict) -> str:
@@ -362,14 +363,12 @@ class Project(Entity):
         the base derives ``uuid5(type:id)`` from a non-uuid slug, which would
         reintroduce a v5 project id.
         """
-        import uuid
-
         from flow_sdk.fs_store.identifier import is_valid_entity_id
 
         rid = data.get("id") or ""
         if rid and is_valid_entity_id(rid):
             return rid
-        return str(uuid.uuid4())
+        return mint_uuid()
 
     @classmethod
     async def find_by_cwd(cls, cwd: str) -> "Project | None":

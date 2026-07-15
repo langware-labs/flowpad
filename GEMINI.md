@@ -1,5 +1,5 @@
 ---
-id: a8d8552f-8872-47ad-8820-ed29fb10051a
+id: 05bf0fcd-c484-4d27-ab97-3608a87d4140
 ---
 
 # Claude Guidelines for flow-cli

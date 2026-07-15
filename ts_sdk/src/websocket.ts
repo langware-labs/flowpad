@@ -267,6 +267,7 @@ export class ConnectionManager extends EventEmitter {
   private reconnectAttempts: number = 0;
   private baseReconnectDelay: number = 500; // ms
   private isReconnecting: boolean = false;
+  private disposed: boolean = false;
 
   // Local WS connection slot — same enum vocabulary as the cloud side
   // (narrower: no auth_rejected/verified since the local server is the
@@ -286,7 +287,6 @@ export class ConnectionManager extends EventEmitter {
     const prev = this._connection.status;
     const prevError = this._connection.error;
     this._connection = { status, error };
-    void import('./FlowSync/context').then((mod) => mod.dataContext.setLocalConnectionStatus?.(status));
     if (prev !== status || prevError !== error) {
       this.emit('connection_status_changed', this._connection);
     }
@@ -303,12 +303,36 @@ export class ConnectionManager extends EventEmitter {
     this.isReconnecting = false;
   }
 
+  /**
+   * Permanently tear down this manager and its socket.
+   *
+   * A normal transport close must reconnect, but an SDK realm that is being
+   * discarded (for example, an isolated test/client realm) must not keep
+   * retrying its old backend after the realm has been replaced.
+   */
+  public dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+
+    for (const pending of this.pendingRequests.values()) {
+      clearTimeout(pending.timeout);
+      pending.reject(new Error('Connection manager disposed'));
+    }
+    this.pendingRequests.clear();
+
+    this.socket?.close(1000, 'connection manager disposed');
+    this.removeAllListeners();
+  }
+
   constructor() {
     super();
     ConnectionManager.instance = this;
   }
 
   public async connect(): Promise<void> {
+    if (this.disposed) {
+      throw new Error('Connection manager disposed');
+    }
     if (this.socket?.readyState === WebSocket.OPEN) {
       return;
     }
@@ -446,12 +470,12 @@ export class ConnectionManager extends EventEmitter {
 
   onClose(event: CloseEvent) {
     this.emit('on_close');
-    const willReconnect = !this.isReconnecting;
+    const willReconnect = !this.disposed && !this.isReconnecting;
     this.reportLifecycle('ws_close', {
       code: event.code,
       was_clean: event.wasClean,
       reason: event.reason || '',
-      action: willReconnect ? 'reconnect' : 'skip_reconnect_in_flight',
+      action: willReconnect ? 'reconnect' : this.disposed ? 'disposed' : 'skip_reconnect_in_flight',
     });
     // Reconnect on ANY close, clean or not. Nothing in the product ever
     // intentionally closes the local WS, so every close is a transport loss —
@@ -478,7 +502,7 @@ export class ConnectionManager extends EventEmitter {
    * (which was a memory leak when the server was down for a long time).
    */
   private async reconnect(): Promise<void> {
-    if (this.isReconnecting) {
+    if (this.disposed || this.isReconnecting) {
       return;
     }
 
@@ -492,6 +516,11 @@ export class ConnectionManager extends EventEmitter {
     console.log(`[ConnectionManager] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts})`);
     this.reportLifecycle('ws_reconnect_scheduled', { attempt: this.reconnectAttempts, delay_ms: Math.round(delay) });
     await new Promise((resolve) => setTimeout(resolve, delay));
+
+    if (this.disposed) {
+      this.isReconnecting = false;
+      return;
+    }
 
     try {
       await this.connect();
@@ -507,7 +536,7 @@ export class ConnectionManager extends EventEmitter {
       });
       this.isReconnecting = false;
       // Schedule next attempt without recursive await (avoids Promise chain memory leak)
-      setTimeout(() => void this.reconnect(), 0);
+      if (!this.disposed) setTimeout(() => void this.reconnect(), 0);
     }
   }
 

@@ -6,7 +6,7 @@ import { EnvVarType } from '@src/types/envVarTypes';
 import { useEntityEnv } from '@sdk/react/hooks';
 import { SidebarProvider } from '@src/components/ui/sidebar';
 import { useIsVibe } from '@src/components/view-mode';
-import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { useDockNavigation, useIsVibeHome } from '@src/navigation/useDockNavigation';
 import { ViewType } from '@src/types/ViewType';
 import { useEffect, useMemo } from 'react';
 import { ContentPanel } from './content-panel/content-panel';
@@ -53,8 +53,8 @@ export default function FlowPage() {
   // VibeNewChat hero. Without this, clicking e.g. the footer project name
   // (→ /dock/project/<id>) fell through to VibeNewChat and the project home
   // never opened.
-  const { isDockUrl, currentDock } = useDockNavigation();
-  const isVibeHome = !isDockUrl || currentDock?.viewType === ViewType.HOME;
+  const { currentDock } = useDockNavigation();
+  const isVibeHome = useIsVibeHome();
   const isVibeNoProcess = currentDock?.viewType === ViewType.HOME && currentDock.options?.vibeNoProcess === 'true';
 
   // Vibe mode: a stripped Lovable-style skin that still carries the left rail in

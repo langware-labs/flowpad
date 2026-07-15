@@ -60,7 +60,7 @@ beforeAll(async () => {
   // (Bob authenticates himself through his own backend in matrix.bob.)
   const bob = await getBobCreds();
   if (!bob) {
-    skipReason = 'missing bob creds in REPO_APP/.env.local';
+    skipReason = 'missing BOB_EMAIL/BOB_PW';
     console.log('[matrix.alice] skip:', skipReason);
     return;
   }

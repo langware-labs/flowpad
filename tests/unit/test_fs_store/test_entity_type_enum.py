@@ -170,6 +170,10 @@ EXPECTED = {
     # Deck-template feature — additive member; brand-new type, no existing
     # value changed, so no migration.
     "DECK_TEMPLATE": "deck_template",
+    # Deck and spreadsheet features (47d82b8e, 7531a7c0) — additive members;
+    # brand-new types, no existing value changed, so no migration. Their
+    # introducing commits missed this freeze.
+    "DECK": "deck", "SPREADSHEET": "spreadsheet",
 }
 
 

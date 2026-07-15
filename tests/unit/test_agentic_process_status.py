@@ -23,10 +23,10 @@ import pytest
 
 from flow_sdk.builtin.agentic_process import AgenticProcess, ProcessStatus, WorkerStatus
 from flow_sdk.builtin.agentic_process.status_predicates import (
+    WorkerMode,
     get_worker_mode,
     is_ready_for_input,
     is_ready_from_busy,
-    WorkerMode,
 )
 from flow_sdk.builtin.worker_status import (
     _IGNORED_TYPES,
@@ -35,7 +35,6 @@ from flow_sdk.builtin.worker_status import (
     _TERMINAL_STATUSES,
     _tail_status,
 )
-
 
 FIXTURE_PATH = Path(__file__).parent.parent.parent / "test_fixtures" / "status_sets.json"
 
@@ -126,35 +125,20 @@ def test_classify_execution_mode_truth_table():
 
     # Live PTY / CLI split — keyed on the transport ``pty_mode``, not ``visible``.
     for s in ("running", "starting"):
-        assert (
-            classify_execution_mode(status=s, worker_status=None, pty_mode=True)
-            == ExecutionMode.INTERACTIVE
-        )
-        assert (
-            classify_execution_mode(status=s, worker_status=None, pty_mode=False)
-            == ExecutionMode.BACKGROUND
-        )
+        assert classify_execution_mode(status=s, worker_status=None, pty_mode=True) == ExecutionMode.INTERACTIVE
+        assert classify_execution_mode(status=s, worker_status=None, pty_mode=False) == ExecutionMode.BACKGROUND
 
     # Error worker_status wins over transport, for both PTY and CLI.
     for w in ("error", "api_timeout", "inactive"):
-        assert (
-            classify_execution_mode(status="running", worker_status=w, pty_mode=True)
-            == ExecutionMode.ERROR
-        )
-        assert (
-            classify_execution_mode(status="running", worker_status=w, pty_mode=False)
-            == ExecutionMode.ERROR
-        )
+        assert classify_execution_mode(status="running", worker_status=w, pty_mode=True) == ExecutionMode.ERROR
+        assert classify_execution_mode(status="running", worker_status=w, pty_mode=False) == ExecutionMode.ERROR
 
     # Dead PTY pid → Error; CLI without pid liveness stays Background.
     assert (
         classify_execution_mode(status="running", worker_status=None, pty_mode=True, pid_alive=False)
         == ExecutionMode.ERROR
     )
-    assert (
-        classify_execution_mode(status="running", worker_status=None, pty_mode=False)
-        == ExecutionMode.BACKGROUND
-    )
+    assert classify_execution_mode(status="running", worker_status=None, pty_mode=False) == ExecutionMode.BACKGROUND
 
 
 def test_classify_execution_mode_hidden_live_pty_is_interactive():
@@ -163,10 +147,7 @@ def test_classify_execution_mode_hidden_live_pty_is_interactive():
     contract that the old ``visible``-keyed classifier got wrong."""
     from flow_sdk.builtin.worker_status import ExecutionMode, classify_execution_mode
 
-    assert (
-        classify_execution_mode(status="running", worker_status=None, pty_mode=True)
-        == ExecutionMode.INTERACTIVE
-    )
+    assert classify_execution_mode(status="running", worker_status=None, pty_mode=True) == ExecutionMode.INTERACTIVE
     # And a dead-PID hidden PTY still surfaces as Error (rule 2 keys on pty_mode).
     assert (
         classify_execution_mode(status="running", worker_status=None, pty_mode=True, pid_alive=False)
@@ -256,20 +237,26 @@ def test_tail_status_empty_file_is_initializing(tmp_path: Path):
 def test_tail_status_end_turn_is_complete(tmp_path: Path):
     """Assistant stop_reason=end_turn → COMPLETE."""
     f = tmp_path / "session.jsonl"
-    _write_jsonl(f, [
-        {"type": "user", "message": {"role": "user"}},
-        {"type": "assistant", "message": {"role": "assistant", "stop_reason": "end_turn", "content": []}},
-    ])
+    _write_jsonl(
+        f,
+        [
+            {"type": "user", "message": {"role": "user"}},
+            {"type": "assistant", "message": {"role": "assistant", "stop_reason": "end_turn", "content": []}},
+        ],
+    )
     assert _tail_status(f) == WorkerStatus.COMPLETE
 
 
 def test_tail_status_stop_sequence_is_error(tmp_path: Path):
     """Assistant stop_reason=stop_sequence → ERROR."""
     f = tmp_path / "session.jsonl"
-    _write_jsonl(f, [
-        {"type": "user", "message": {"role": "user"}},
-        {"type": "assistant", "message": {"role": "assistant", "stop_reason": "stop_sequence", "content": []}},
-    ])
+    _write_jsonl(
+        f,
+        [
+            {"type": "user", "message": {"role": "user"}},
+            {"type": "assistant", "message": {"role": "assistant", "stop_reason": "stop_sequence", "content": []}},
+        ],
+    )
     assert _tail_status(f) == WorkerStatus.ERROR
 
 
@@ -281,26 +268,31 @@ def test_tail_status_last_prompt_after_stop_sequence_is_error(tmp_path: Path):
     ``last-prompt`` marker is an ack, not proof that the worker is still busy.
     """
     f = tmp_path / "session.jsonl"
-    _write_jsonl(f, [
-        {"type": "user", "message": {"role": "user"}},
-        {
-            "type": "assistant",
-            "message": {
-                "role": "assistant",
-                "model": "<synthetic>",
-                "stop_reason": "stop_sequence",
-                "stop_sequence": "",
-                "content": [{
-                    "type": "text",
-                    "text": "You've reached your Fable 5 limit. Run /usage-credits to continue or switch models with /model.",
-                }],
+    _write_jsonl(
+        f,
+        [
+            {"type": "user", "message": {"role": "user"}},
+            {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "model": "<synthetic>",
+                    "stop_reason": "stop_sequence",
+                    "stop_sequence": "",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": "You've reached your Fable 5 limit. Run /usage-credits to continue or switch models with /model.",
+                        }
+                    ],
+                },
+                "error": "rate_limit",
+                "isApiErrorMessage": True,
+                "apiErrorStatus": 429,
             },
-            "error": "rate_limit",
-            "isApiErrorMessage": True,
-            "apiErrorStatus": 429,
-        },
-        {"type": "last-prompt"},
-    ])
+            {"type": "last-prompt"},
+        ],
+    )
     os.utime(f, None)
     assert _tail_status(f) == WorkerStatus.ERROR
 
@@ -308,10 +300,13 @@ def test_tail_status_last_prompt_after_stop_sequence_is_error(tmp_path: Path):
 def test_tail_status_thinking(tmp_path: Path):
     """Active file + assistant with no stop_reason → THINKING."""
     f = tmp_path / "session.jsonl"
-    _write_jsonl(f, [
-        {"type": "user", "message": {"role": "user"}},
-        {"type": "assistant", "message": {"role": "assistant", "stop_reason": None, "content": []}},
-    ])
+    _write_jsonl(
+        f,
+        [
+            {"type": "user", "message": {"role": "user"}},
+            {"type": "assistant", "message": {"role": "assistant", "stop_reason": None, "content": []}},
+        ],
+    )
     os.utime(f, None)
     assert _tail_status(f) == WorkerStatus.THINKING
 
@@ -319,10 +314,13 @@ def test_tail_status_thinking(tmp_path: Path):
 def test_tail_status_tool_call(tmp_path: Path):
     """Active file + stop_reason=tool_use → TOOL_CALL."""
     f = tmp_path / "session.jsonl"
-    _write_jsonl(f, [
-        {"type": "user", "message": {"role": "user"}},
-        {"type": "assistant", "message": {"role": "assistant", "stop_reason": "tool_use", "content": []}},
-    ])
+    _write_jsonl(
+        f,
+        [
+            {"type": "user", "message": {"role": "user"}},
+            {"type": "assistant", "message": {"role": "assistant", "stop_reason": "tool_use", "content": []}},
+        ],
+    )
     os.utime(f, None)
     assert _tail_status(f) == WorkerStatus.TOOL_CALL
 
@@ -333,12 +331,22 @@ def test_tail_status_pending_user_question_is_pending_user(tmp_path: Path):
     the user and is idle awaiting their answer, so the spinner must not spin.
     """
     f = tmp_path / "session.jsonl"
-    _write_jsonl(f, [
-        {"type": "user", "message": {"role": "user"}},
-        {"type": "assistant", "message": {"role": "assistant", "stop_reason": "tool_use", "content": [
-            {"type": "tool_use", "id": "toolu_ask1", "name": "AskUserQuestion", "input": {}},
-        ]}},
-    ])
+    _write_jsonl(
+        f,
+        [
+            {"type": "user", "message": {"role": "user"}},
+            {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "stop_reason": "tool_use",
+                    "content": [
+                        {"type": "tool_use", "id": "toolu_ask1", "name": "AskUserQuestion", "input": {}},
+                    ],
+                },
+            },
+        ],
+    )
     os.utime(f, None)
     assert _tail_status(f) == WorkerStatus.PENDING_USER
 
@@ -347,15 +355,25 @@ def test_tail_status_pending_user_question_survives_trailing_meta(tmp_path: Path
     """Trailing ``last-prompt``/``mode``/``permission-mode`` markers after the
     asking turn must not mask the pending question (the real regressed case)."""
     f = tmp_path / "session.jsonl"
-    _write_jsonl(f, [
-        {"type": "user", "message": {"role": "user"}},
-        {"type": "assistant", "message": {"role": "assistant", "stop_reason": "tool_use", "content": [
-            {"type": "tool_use", "id": "toolu_ask2", "name": "AskUserQuestion", "input": {}},
-        ]}},
-        {"type": "last-prompt"},
-        {"type": "mode"},
-        {"type": "permission-mode"},
-    ])
+    _write_jsonl(
+        f,
+        [
+            {"type": "user", "message": {"role": "user"}},
+            {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "stop_reason": "tool_use",
+                    "content": [
+                        {"type": "tool_use", "id": "toolu_ask2", "name": "AskUserQuestion", "input": {}},
+                    ],
+                },
+            },
+            {"type": "last-prompt"},
+            {"type": "mode"},
+            {"type": "permission-mode"},
+        ],
+    )
     os.utime(f, None)
     assert _tail_status(f) == WorkerStatus.PENDING_USER
 
@@ -372,17 +390,33 @@ def test_tail_status_interrupt_behind_trailing_meta_is_interrupted(tmp_path: Pat
     pinning the process at "working forever" until the session was resumed.
     """
     f = tmp_path / "session.jsonl"
-    _write_jsonl(f, [
-        {"type": "assistant", "message": {"role": "assistant", "stop_reason": "tool_use", "content": [
-            {"type": "tool_use", "id": "toolu_x", "name": "Bash", "input": {}},
-        ]}},
-        {"type": "user", "message": {"role": "user", "content": [
-            {"type": "text", "text": "[Request interrupted by user]"},
-        ]}},
-        {"type": "system", "subtype": "init"},
-        {"type": "last-prompt"},
-        {"type": "permission-mode"},
-    ])
+    _write_jsonl(
+        f,
+        [
+            {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "stop_reason": "tool_use",
+                    "content": [
+                        {"type": "tool_use", "id": "toolu_x", "name": "Bash", "input": {}},
+                    ],
+                },
+            },
+            {
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "[Request interrupted by user]"},
+                    ],
+                },
+            },
+            {"type": "system", "subtype": "init"},
+            {"type": "last-prompt"},
+            {"type": "permission-mode"},
+        ],
+    )
     os.utime(f, None)
     assert _tail_status(f) == WorkerStatus.INTERRUPTED
 
@@ -390,12 +424,21 @@ def test_tail_status_interrupt_behind_trailing_meta_is_interrupted(tmp_path: Pat
 def test_tail_status_interrupt_for_tool_use_is_interrupted(tmp_path: Path):
     """The ``for tool use`` interrupt variant classifies the same way."""
     f = tmp_path / "session.jsonl"
-    _write_jsonl(f, [
-        {"type": "user", "message": {"role": "user", "content": [
-            {"type": "text", "text": "[Request interrupted by user for tool use]"},
-        ]}},
-        {"type": "last-prompt"},
-    ])
+    _write_jsonl(
+        f,
+        [
+            {
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "[Request interrupted by user for tool use]"},
+                    ],
+                },
+            },
+            {"type": "last-prompt"},
+        ],
+    )
     os.utime(f, None)
     assert _tail_status(f) == WorkerStatus.INTERRUPTED
 
@@ -404,15 +447,30 @@ def test_tail_status_fresh_prompt_after_interrupt_is_working(tmp_path: Path):
     """A real prompt submitted AFTER an interrupt supersedes the abort marker —
     the worker is genuinely WORKING again and must not read as INTERRUPTED."""
     f = tmp_path / "session.jsonl"
-    _write_jsonl(f, [
-        {"type": "user", "message": {"role": "user", "content": [
-            {"type": "text", "text": "[Request interrupted by user]"},
-        ]}},
-        {"type": "user", "message": {"role": "user", "content": [
-            {"type": "text", "text": "actually, do this instead"},
-        ]}},
-        {"type": "last-prompt"},
-    ])
+    _write_jsonl(
+        f,
+        [
+            {
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "[Request interrupted by user]"},
+                    ],
+                },
+            },
+            {
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "actually, do this instead"},
+                    ],
+                },
+            },
+            {"type": "last-prompt"},
+        ],
+    )
     os.utime(f, None)
     assert _tail_status(f) == WorkerStatus.WORKING
 
@@ -421,15 +479,31 @@ def test_tail_status_answered_user_question_falls_through(tmp_path: Path):
     """Once the user answers, the ``tool_result`` (paired by ``tool_use_id``)
     resolves the question and the tail classifies normally (here → COMPLETE)."""
     f = tmp_path / "session.jsonl"
-    _write_jsonl(f, [
-        {"type": "assistant", "message": {"role": "assistant", "stop_reason": "tool_use", "content": [
-            {"type": "tool_use", "id": "toolu_ask3", "name": "AskUserQuestion", "input": {}},
-        ]}},
-        {"type": "user", "message": {"role": "user", "content": [
-            {"type": "tool_result", "tool_use_id": "toolu_ask3", "content": "ok"},
-        ]}},
-        {"type": "assistant", "message": {"role": "assistant", "stop_reason": "end_turn", "content": []}},
-    ])
+    _write_jsonl(
+        f,
+        [
+            {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "stop_reason": "tool_use",
+                    "content": [
+                        {"type": "tool_use", "id": "toolu_ask3", "name": "AskUserQuestion", "input": {}},
+                    ],
+                },
+            },
+            {
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": [
+                        {"type": "tool_result", "tool_use_id": "toolu_ask3", "content": "ok"},
+                    ],
+                },
+            },
+            {"type": "assistant", "message": {"role": "assistant", "stop_reason": "end_turn", "content": []}},
+        ],
+    )
     os.utime(f, None)
     assert _tail_status(f) == WorkerStatus.COMPLETE
 
@@ -437,10 +511,13 @@ def test_tail_status_answered_user_question_falls_through(tmp_path: Path):
 def test_tail_status_tool_running(tmp_path: Path):
     """Active file + last entry type=progress → TOOL_RUNNING."""
     f = tmp_path / "session.jsonl"
-    _write_jsonl(f, [
-        {"type": "user", "message": {"role": "user"}},
-        {"type": "progress", "message": {"phase": "tool"}},
-    ])
+    _write_jsonl(
+        f,
+        [
+            {"type": "user", "message": {"role": "user"}},
+            {"type": "progress", "message": {"phase": "tool"}},
+        ],
+    )
     os.utime(f, None)
     assert _tail_status(f) == WorkerStatus.TOOL_RUNNING
 
@@ -452,11 +529,14 @@ def test_tail_status_last_prompt_after_end_turn_is_complete(tmp_path: Path):
     and Claude appends a ``last-prompt`` ack. This must stay terminal.
     """
     f = tmp_path / "session.jsonl"
-    _write_jsonl(f, [
-        {"type": "user", "message": {"role": "user"}},
-        {"type": "assistant", "message": {"role": "assistant", "stop_reason": "end_turn", "content": []}},
-        {"type": "last-prompt"},
-    ])
+    _write_jsonl(
+        f,
+        [
+            {"type": "user", "message": {"role": "user"}},
+            {"type": "assistant", "message": {"role": "assistant", "stop_reason": "end_turn", "content": []}},
+            {"type": "last-prompt"},
+        ],
+    )
     os.utime(f, None)
     assert _tail_status(f) == WorkerStatus.COMPLETE
 
@@ -480,19 +560,27 @@ def test_tail_status_last_prompt_with_end_turn_past_tail_window_is_complete(tmp_
     # ack/envelope run is appended — exactly the on-disk shape that pinned a
     # finished worker at WORKING.
     big_blob = "x" * 6000
-    _write_jsonl(f, [
-        {"type": "user", "message": {"role": "user"}},
-        {"type": "assistant", "message": {
-            "role": "assistant", "stop_reason": "end_turn",
-            "content": [{"type": "text", "text": big_blob}]}},
-        {"type": "system", "subtype": "info"},
-        {"type": "last-prompt"},
-        {"type": "last-prompt"},
-        # Trailing ignored session-envelope run, exactly as Claude Code writes it.
-        {"type": "ai-title"},
-        {"type": "mode"},
-        {"type": "permission-mode"},
-    ])
+    _write_jsonl(
+        f,
+        [
+            {"type": "user", "message": {"role": "user"}},
+            {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "stop_reason": "end_turn",
+                    "content": [{"type": "text", "text": big_blob}],
+                },
+            },
+            {"type": "system", "subtype": "info"},
+            {"type": "last-prompt"},
+            {"type": "last-prompt"},
+            # Trailing ignored session-envelope run, exactly as Claude Code writes it.
+            {"type": "ai-title"},
+            {"type": "mode"},
+            {"type": "permission-mode"},
+        ],
+    )
     os.utime(f, None)
     # Sanity: the end_turn really is stranded past the 4 KB tail window.
     raw = f.read_bytes()
@@ -512,18 +600,28 @@ def test_tail_status_last_prompt_between_tool_calls_is_not_complete(tmp_path: Pa
     WORKING so the stream keeps reading.
     """
     f = tmp_path / "session.jsonl"
-    _write_jsonl(f, [
-        {"type": "user", "message": {"role": "user"}},
-        {"type": "assistant", "message": {
-            "role": "assistant", "stop_reason": "tool_use",
-            "content": [{"type": "tool_use", "id": "tu1", "name": "Bash", "input": {}}],
-        }},
-        {"type": "user", "message": {
-            "role": "user",
-            "content": [{"type": "tool_result", "tool_use_id": "tu1", "content": "ok"}],
-        }},
-        {"type": "last-prompt"},
-    ])
+    _write_jsonl(
+        f,
+        [
+            {"type": "user", "message": {"role": "user"}},
+            {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "stop_reason": "tool_use",
+                    "content": [{"type": "tool_use", "id": "tu1", "name": "Bash", "input": {}}],
+                },
+            },
+            {
+                "type": "user",
+                "message": {
+                    "role": "user",
+                    "content": [{"type": "tool_result", "tool_use_id": "tu1", "content": "ok"}],
+                },
+            },
+            {"type": "last-prompt"},
+        ],
+    )
     os.utime(f, None)
     assert _tail_status(f) == WorkerStatus.WORKING
 
@@ -532,9 +630,12 @@ def test_tail_status_waiting(tmp_path: Path):
     """Active file + last entry is a fresh user message (<90s) → WORKING."""
     f = tmp_path / "session.jsonl"
     now_iso = time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime())
-    _write_jsonl(f, [
-        {"type": "user", "timestamp": now_iso, "message": {"role": "user"}},
-    ])
+    _write_jsonl(
+        f,
+        [
+            {"type": "user", "timestamp": now_iso, "message": {"role": "user"}},
+        ],
+    )
     os.utime(f, None)
     assert _tail_status(f) == WorkerStatus.WORKING
 
@@ -542,10 +643,13 @@ def test_tail_status_waiting(tmp_path: Path):
 def test_tail_status_api_error(tmp_path: Path):
     """Active file + system subtype=api_error → API_ERROR."""
     f = tmp_path / "session.jsonl"
-    _write_jsonl(f, [
-        {"type": "user", "message": {"role": "user"}},
-        {"type": "system", "subtype": "api_error", "message": "529 overloaded"},
-    ])
+    _write_jsonl(
+        f,
+        [
+            {"type": "user", "message": {"role": "user"}},
+            {"type": "system", "subtype": "api_error", "message": "529 overloaded"},
+        ],
+    )
     os.utime(f, None)
     assert _tail_status(f) == WorkerStatus.API_ERROR
 
@@ -553,10 +657,13 @@ def test_tail_status_api_error(tmp_path: Path):
 def test_tail_status_inactive_stale_file(tmp_path: Path):
     """Stale file (mtime >5 min ago) with no terminal signal → INACTIVE."""
     f = tmp_path / "session.jsonl"
-    _write_jsonl(f, [
-        {"type": "user", "message": {"role": "user"}},
-        {"type": "assistant", "message": {"role": "assistant", "stop_reason": None, "content": []}},
-    ])
+    _write_jsonl(
+        f,
+        [
+            {"type": "user", "message": {"role": "user"}},
+            {"type": "assistant", "message": {"role": "assistant", "stop_reason": None, "content": []}},
+        ],
+    )
     old = time.time() - 600
     os.utime(f, (old, old))
     assert _tail_status(f) == WorkerStatus.INACTIVE
@@ -565,9 +672,12 @@ def test_tail_status_inactive_stale_file(tmp_path: Path):
 def test_tail_status_unknown_fallback(tmp_path: Path):
     """Active file with unrecognised entry type → UNKNOWN (not hidden as RUNNING)."""
     f = tmp_path / "session.jsonl"
-    _write_jsonl(f, [
-        {"type": "future-type-that-does-not-exist", "message": "?"},
-    ])
+    _write_jsonl(
+        f,
+        [
+            {"type": "future-type-that-does-not-exist", "message": "?"},
+        ],
+    )
     os.utime(f, None)
     assert _tail_status(f) == WorkerStatus.UNKNOWN
 
@@ -595,28 +705,42 @@ def test_ignored_types_match_meta_types():
 # Envelope epilogues that previously masked the real signal as UNKNOWN. Each is
 # a real assistant stop_reason followed by the content-free envelope block Claude
 # Code appends — the worker is still in the stop_reason's state, not UNKNOWN.
-@pytest.mark.parametrize("stop_reason,expected,envelope", [
-    ("end_turn", WorkerStatus.COMPLETE, [
-        {"type": "ai-title", "aiTitle": "some title"},
-        {"type": "agent-name", "name": "some-agent"},
-        {"type": "mode", "mode": "default"},
-        {"type": "bridge-session", "sessionId": "abc"},
-        {"type": "permission-mode", "permissionMode": "bypassPermissions"},
-    ]),
-    ("tool_use", WorkerStatus.TOOL_CALL, [
-        {"type": "bridge-session", "sessionId": "abc"},
-        {"type": "agent-name", "name": "some-agent"},
-    ]),
-])
+@pytest.mark.parametrize(
+    "stop_reason,expected,envelope",
+    [
+        (
+            "end_turn",
+            WorkerStatus.COMPLETE,
+            [
+                {"type": "ai-title", "aiTitle": "some title"},
+                {"type": "agent-name", "name": "some-agent"},
+                {"type": "mode", "mode": "default"},
+                {"type": "bridge-session", "sessionId": "abc"},
+                {"type": "permission-mode", "permissionMode": "bypassPermissions"},
+            ],
+        ),
+        (
+            "tool_use",
+            WorkerStatus.TOOL_CALL,
+            [
+                {"type": "bridge-session", "sessionId": "abc"},
+                {"type": "agent-name", "name": "some-agent"},
+            ],
+        ),
+    ],
+)
 def test_tail_status_signal_survives_envelope_epilogue(tmp_path, stop_reason, expected, envelope):
     """A real stop_reason followed by an envelope block keeps its status (the
     'agent flickers off the active-agents chip' scenario), not UNKNOWN."""
     f = tmp_path / "session.jsonl"
-    _write_jsonl(f, [
-        {"type": "user", "message": {"role": "user"}},
-        {"type": "assistant", "message": {"role": "assistant", "stop_reason": stop_reason, "content": []}},
-        *envelope,
-    ])
+    _write_jsonl(
+        f,
+        [
+            {"type": "user", "message": {"role": "user"}},
+            {"type": "assistant", "message": {"role": "assistant", "stop_reason": stop_reason, "content": []}},
+            *envelope,
+        ],
+    )
     os.utime(f, None)
     assert _tail_status(f) == expected
 
@@ -643,7 +767,7 @@ def test_tail_status_expands_past_envelope_run_beyond_4kb(tmp_path: Path):
 # Contract (realigned): is_ready_for_input(p) ⇔ ¬is_turn_busy(p) AND (
 #   p.status == RUNNING  OR  fresh-headless (pty_mode is False ∧ status == NEW)
 #   OR headless-idle (pty_mode is False ∧ status == STOPPED ∧ session_id)
-# ). busy ⇔ prompt-lock held ∨ _turn_in_flight
+# ). busy ⇔ prompt-lock held ∨ global print-worker registered ∨ _turn_in_flight
 # ∨ worker ∈ {initializing, working, thinking, tool_call, tool_running}.
 # Everything else while RUNNING (idle/complete/interrupted/pending_user AND the
 # fail-open error states error/api_error/api_timeout/inactive/unknown/None) is
@@ -658,7 +782,14 @@ class _FakeProcess:
 
     _counter = 0
 
-    def __init__(self, status: ProcessStatus, worker: WorkerStatus | None = None, session_id: str | None = None, turn_in_flight: bool = False, pty_mode: bool = True):
+    def __init__(
+        self,
+        status: ProcessStatus,
+        worker: WorkerStatus | None = None,
+        session_id: str | None = None,
+        turn_in_flight: bool = False,
+        pty_mode: bool = True,
+    ):
         # Unique id so ``is_turn_busy`` → ``_prompt_lock_locked`` reads a fresh
         # (unlocked) per-process lock and never a lock a prior case left held.
         _FakeProcess._counter += 1
@@ -742,8 +873,11 @@ def test_is_ready_for_input_headless_states(process_status, pty_mode, session_id
     gates first; PTY-transport and other lifecycle states do NOT qualify.
     Mirror of the TS isReadyForInput headless branches."""
     proc = _FakeProcess(
-        process_status, WorkerStatus.COMPLETE,
-        session_id=session_id, turn_in_flight=turn_in_flight, pty_mode=pty_mode,
+        process_status,
+        WorkerStatus.COMPLETE,
+        session_id=session_id,
+        turn_in_flight=turn_in_flight,
+        pty_mode=pty_mode,
     )
     assert is_ready_for_input(proc, WorkerStatus.COMPLETE) is expected, label
 
@@ -799,9 +933,10 @@ def test_busy_is_orthogonal_to_status(process_status, worker_status, expected_bu
 
 
 def test_is_turn_busy_signal_priority():
-    """``is_turn_busy`` ORs three signals: prompt lock, ``_turn_in_flight``, and a
-    mid-turn worker status. Any one → busy. This is the SAME predicate the
+    """``is_turn_busy`` ORs the lock, global worker registry, object-local
+    ``_turn_in_flight``, and a mid-turn worker status. Any one → busy. This is the SAME predicate the
     switch-mode 409 and the serialized ``busy`` field derive from."""
+    from flow_sdk.builtin.agentic_process import agentic_process as ap_mod
     from flow_sdk.builtin.agentic_process.status_predicates import is_turn_busy
 
     # (1) No lock, no turn, a ready worker → NOT busy (the held-lock case is
@@ -809,17 +944,26 @@ def test_is_turn_busy_signal_priority():
     p_ready = _FakeProcess(ProcessStatus.RUNNING, WorkerStatus.COMPLETE)
     assert is_turn_busy(p_ready, WorkerStatus.COMPLETE) is False
 
-    # (2) _turn_in_flight → busy regardless of worker status.
+    # (2) The process-global worker registry survives object rehydration: a
+    # transcript watcher holding a different object still projects busy=True.
+    try:
+        ap_mod._PROMPT_WORKERS[p_ready.id] = object()
+        assert is_turn_busy(p_ready, WorkerStatus.COMPLETE) is True
+    finally:
+        ap_mod._PROMPT_WORKERS.pop(p_ready.id, None)
+
+    # (3) _turn_in_flight → busy regardless of worker status.
     p_turn = _FakeProcess(ProcessStatus.RUNNING, WorkerStatus.COMPLETE, turn_in_flight=True)
     assert is_turn_busy(p_turn, WorkerStatus.COMPLETE) is True
 
-    # (3) A mid-turn worker status → busy with no lock / no turn flag —
+    # (4) A mid-turn worker status → busy with no lock / no turn flag —
     #     INTERACTIVE (PTY) transport only. A native-xterm turn holds no lock,
     #     so the transcript tail is its only busy signal.
     p_worker = _FakeProcess(ProcessStatus.RUNNING, WorkerStatus.THINKING)
     assert is_turn_busy(p_worker, WorkerStatus.THINKING) is True
 
-    # (3-gated) CLI mode (pty_mode=False): every real turn holds the lock or
+    # (4-gated) CLI mode (pty_mode=False): every real turn has a registered
+    #     worker, holds the lock, or
     #     _turn_in_flight, so a bare mid-turn tail means a dead turn (killed /
     #     crashed print-mode CLI that never wrote its terminal entry) → NOT
     #     busy. Counting it pinned ``busy`` True forever after cancel-prompt
@@ -962,9 +1106,7 @@ def test_process_failed_terminal_state():
         (None, None, False, True),
     ],
 )
-def test_api_json_serializer_emits_status_busy_axes(
-    monkeypatch, computed, exp_worker_status, exp_busy, exp_ready
-):
+def test_api_json_serializer_emits_status_busy_axes(monkeypatch, computed, exp_worker_status, exp_busy, exp_ready):
     """The live serializer emits the lifecycle ``status`` VERBATIM (``running``),
     surfaces the raw nullable ``worker_status``, and derives the orthogonal
     ``busy`` boolean + ``ready_for_input`` — all on the RUNNING process payload.

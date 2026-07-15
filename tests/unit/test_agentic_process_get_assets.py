@@ -7,6 +7,7 @@ asserts the descriptor list attribution matches the plan's source matrix.
 
 from __future__ import annotations
 
+import json
 import uuid
 from pathlib import Path
 from types import SimpleNamespace
@@ -165,12 +166,85 @@ def _file_read(path: str | Path, entry_id: str = "entry-read-1"):
 
 
 def _stub_transcript(monkeypatch, entries: list) -> None:
+    """Stub ``_load_transcript`` with a fixed entry list.
+
+    The fake exposes the same ``filter(kind=…)`` selector the real
+    ``AgentTranscriptFile`` does, since usage attribution consumes entries
+    through it.
+    """
+
+    def _filter(*, kind=None, tool_name=None):
+        for e in entries:
+            if kind is not None and getattr(e, "kind", None) is not kind:
+                continue
+            yield e
+
+    fake = SimpleNamespace(entries=entries, filter=_filter)
     monkeypatch.setattr(
         AgenticProcess,
         "_load_transcript",
-        lambda self, descriptor=None: SimpleNamespace(entries=entries),
+        lambda self, descriptor=None: fake,
         raising=False,
     )
+
+
+# ── Real-transcript harness ───────────────────────────────────────────────────
+# Author a genuine Claude session JSONL on disk and parse it through the REAL
+# analyzer (``AgentTranscriptFile`` via ``_load_transcript``). Nothing about the
+# parse or the usage attribution is mocked — only the transcript's *location* is
+# injected, which in production is the driver's session-id→path lookup. This is
+# what lets these tests catch bugs that fabricated ``FileReadEntry`` objects hide:
+# the entry *kinds* the parser actually emits are what's under test.
+
+
+def _claude_line(*, role: str, blocks: list, uid: str, parent: str | None = None) -> dict:
+    """One Claude JSONL envelope line (``assistant``/``user``)."""
+    return {
+        "type": role,
+        "uuid": uid,
+        "parentUuid": parent,
+        "sessionId": "session-usage",
+        "timestamp": "2026-07-14T00:00:00.000Z",
+        "cwd": "/tmp",
+        "version": "2.1.209",
+        "message": {"role": role, "content": blocks},
+    }
+
+
+def _skill_block(skill_slug: str) -> dict:
+    """A native ``Skill`` tool_use block — how Claude records ``/<skill>``.
+
+    Parses to a ``SkillCallEntry`` (skill_name=slug) and, crucially, produces
+    NO file read of the skill folder.
+    """
+    return {"type": "tool_use", "id": "toolu_skill_1", "name": "Skill", "input": {"skill": skill_slug, "args": ""}}
+
+
+def _read_block(path: str | Path) -> dict:
+    """A ``Read`` tool_use block — parses to a ``FileReadEntry(path=…)``."""
+    return {"type": "tool_use", "id": "toolu_read_1", "name": "Read", "input": {"file_path": str(path)}}
+
+
+def _write_claude_transcript(path: Path, lines: list[dict]) -> Path:
+    path.write_text("\n".join(json.dumps(line) for line in lines) + "\n")
+    return path
+
+
+def _real_transcript(monkeypatch, jsonl_path: Path) -> None:
+    """Point the process at a real on-disk Claude JSONL, parsed for real."""
+    from flow_sdk.transcript_analyzer import (
+        TranscriptDescriptor,
+        TranscriptFormat,
+        TranscriptSource,
+    )
+
+    desc = TranscriptDescriptor(
+        path=jsonl_path,
+        format=TranscriptFormat.CLAUDE_JSONL,
+        source=TranscriptSource.WORKER_SESSION,
+        session_id="session-usage",
+    )
+    monkeypatch.setattr(AgenticProcess, "transcript", property(lambda self: desc))
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -560,8 +634,24 @@ async def test_file_read_marks_matching_asset_used(tree, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_folder_backed_skill_file_read_marks_skill_used(tree, monkeypatch):
-    _stub_transcript(monkeypatch, [_file_read(tree["paths"]["u_skill_user"] / "SKILL.md")])
+async def test_folder_backed_skill_file_read_marks_skill_used(tree, tmp_path, monkeypatch):
+    """Read-discovered skills (Codex-style, or any run that reads ``SKILL.md``)
+    are marked used.
+
+    Refined from a fabricated ``FileReadEntry`` to a REAL Claude JSONL parsed
+    through the analyzer, so the parse→attribute seam is actually exercised —
+    a hand-built entry proved the model of the read, not the read itself.
+    """
+    skill_md = tree["paths"]["u_skill_user"] / "SKILL.md"
+    skill_md.write_text("# u_skill\n")
+    jsonl = _write_claude_transcript(
+        tmp_path / "skill_read.jsonl",
+        [
+            _claude_line(role="user", blocks=[{"type": "text", "text": "read it"}], uid="u1"),
+            _claude_line(role="assistant", blocks=[_read_block(skill_md)], uid="a1", parent="u1"),
+        ],
+    )
+    _real_transcript(monkeypatch, jsonl)
 
     proc = _make_proc()
     descs = await proc.get_asset_descriptors()
@@ -570,7 +660,44 @@ async def test_folder_backed_skill_file_read_marks_skill_used(tree, monkeypatch)
 
     assert AssetUsageKind.TRANSCRIPT_FILE_READ in _usage_kinds(match)
     usage = next(u for u in match.usage if u.kind == AssetUsageKind.TRANSCRIPT_FILE_READ)
-    assert usage.path == canonical_posix_path(tree["paths"]["u_skill_user"] / "SKILL.md")
+    assert usage.path == canonical_posix_path(skill_md)
+
+
+@pytest.mark.asyncio
+async def test_native_skill_invocation_marks_skill_used(tree, tmp_path, monkeypatch):
+    """A skill run via the native ``Skill`` tool (Claude ``/rca``) must be marked
+    used in the asset view — even though it produces NO ``SKILL.md`` file read.
+
+    Regression for the real ``054a161c`` transcript: the process invoked ``rca``
+    through the Skill tool, so the parsed transcript holds a ``SkillCallEntry``
+    and ZERO reads of the skill folder. Usage attribution keyed only off
+    ``FileReadEntry`` (``_transcript_file_reads`` → ``_annotate_asset_usage``)
+    therefore left ``rca`` unmarked, and the Asset Manager popover's ``used``
+    badge (``assetDescriptorHasUsage`` = ``usage.length > 0``) stayed off.
+
+    Drives a real Claude JSONL through the analyzer so the ``SkillCallEntry`` is
+    produced for real — no fabricated entry, no mocked parser.
+    """
+    jsonl = _write_claude_transcript(
+        tmp_path / "native_skill.jsonl",
+        [
+            _claude_line(role="user", blocks=[{"type": "text", "text": "/u_skill do it"}], uid="u1"),
+            _claude_line(role="assistant", blocks=[_skill_block("u_skill")], uid="a1", parent="u1"),
+        ],
+    )
+    _real_transcript(monkeypatch, jsonl)
+
+    proc = _make_proc()
+    descs = await proc.get_asset_descriptors()
+    user_descs = _by_source(descs, AssetSource.USER_DIR)
+    match = next(d for d in user_descs if d.typeid == f"skill-{tree['ents']['u_skill_user'].id}")
+
+    # The asset view marks a skill used iff descriptor.usage is non-empty
+    # (assetDescriptorHasUsage). A native Skill-tool invocation must satisfy it.
+    assert match.usage, (
+        "skill invoked via the native Skill tool is not marked used — "
+        "usage attribution ignores SkillCallEntry, only FileReadEntry counts"
+    )
 
 
 @pytest.mark.asyncio
@@ -815,6 +942,40 @@ async def test_foreign_project_skill_under_home_is_hidden(tree):
                 await e.delete()
             except Exception:
                 pass
+
+
+@pytest.mark.asyncio
+async def test_system_scope_assistant_skill_under_home_is_hidden(tree):
+    """A SYSTEM-scoped skill (the bundled flowpad_assistant assets) lives under
+    the real $HOME in prod — the pip package sits at
+    ``~/.local/share/uv/tools/flowpad/.../flowpad_assistant/.claude/skills/`` —
+    so the user_home prefix swallows it. Like the foreign-project case, it must
+    NOT be attributed to USER_DIR: it belongs to the mounted assistant/system,
+    not the user, and mislabeling it makes the assistant's built-in skills show
+    up in the Assets panel as ``USER · SHLOM`` personal assets.
+    """
+    sys_root = tree["user_home"] / ".local" / "flowpad_assistant"
+    sys_skill_path = sys_root / ".claude" / "skills" / "sys_skill"
+    sys_skill_path.mkdir(parents=True, exist_ok=True)
+
+    sys_skill_ent = await Skill(
+        id=str(uuid.uuid4()), name=f"sys_skill_{uuid.uuid4().hex[:6]}",
+        asset_ref=canonical_posix_path(sys_skill_path),
+        scope="system",
+    ).save()
+    try:
+        proc = _make_proc()
+        descs = await proc.get_asset_descriptors()
+        user_ids = {d.typeid.split("-", 1)[1] for d in _by_source(descs, AssetSource.USER_DIR)}
+        assert sys_skill_ent.id not in user_ids, (
+            "system-scoped assistant skill under $HOME was mislabeled as a "
+            "USER_DIR (personal) asset"
+        )
+    finally:
+        try:
+            await sys_skill_ent.delete()
+        except Exception:
+            pass
 
 
 @pytest.mark.asyncio

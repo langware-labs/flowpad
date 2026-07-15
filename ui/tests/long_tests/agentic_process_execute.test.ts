@@ -62,7 +62,10 @@ describe('AgenticProcess.executeInstruction — single turn', () => {
 
   it('executeInstruction("Say hola") → chat output contains "hola"', async (context: any) => {
     const workdir = fs.mkdtempSync(path.join(os.tmpdir(), 'ap-execute-test-'));
-    const proc = await new AgenticProcess({ workdir }).save([]);
+    // This suite covers the print-mode executeInstruction contract. The
+    // entity default is intentionally PTY for backward compatibility, so the
+    // headless transport must be explicit rather than inferred from hidden UI.
+    const proc = await new AgenticProcess({ workdir, visible: false, pty_mode: false }).save([]);
     await proc.watch();
 
     const collectPromise = collectOutput(proc, 150_000);
@@ -97,7 +100,7 @@ describe('AgenticProcess.executeInstruction — multi-turn', () => {
   // not the test. Don't paper over it by bumping the timeout.
   it('two sequential executeInstruction calls both produce "hola"', async (context: any) => {
     const workdir = fs.mkdtempSync(path.join(os.tmpdir(), 'ap-multiturn-test-'));
-    const proc = await new AgenticProcess({ workdir }).save([]);
+    const proc = await new AgenticProcess({ workdir, visible: false, pty_mode: false }).save([]);
     await proc.watch();
 
     // Turn 1 — collect output via output() generator
@@ -126,9 +129,7 @@ describe('AgenticProcess.executeInstruction — multi-turn', () => {
     await proc.executeInstruction('Say hola again', { sync: false });
     await Promise.race([
       turn2Done,
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('Turn 2 timed out after 12s')), 12_000),
-      ),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Turn 2 timed out after 12s')), 12_000)),
     ]);
     const turn2Items = proc.flowDataStream.items.slice(afterTurn1Count);
     const turn2Content = chatContent(turn2Items);

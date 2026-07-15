@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import time
 import uuid
 from datetime import datetime, timezone
@@ -64,13 +65,14 @@ async def test_share_with_recipients(hub_base_url, hub_login_payload, isolated_h
     login_as(hub_login_payload)
     alice_id = alice_user["id"]
 
-    # Bob's creds come from the sibling flowpad-app repo's .env.local — there's
-    # no second SDK identity in-process; we drive bob over raw HTTP.
+    # Bob's creds come from the cycle env, with the sibling flowpad-app repo as
+    # a local-development fallback. There is no second SDK identity in-process;
+    # we drive bob over raw HTTP.
     app_env = _read_env_local(REPO_APP)
-    bob_email = app_env.get("FLOWPAD_CLOUD_USER_EMAIL")
-    bob_pw = app_env.get("FLOWPAD_CLOUD_USER_PASSWORD")
+    bob_email = os.environ.get("BOB_EMAIL") or app_env.get("FLOWPAD_CLOUD_USER_EMAIL")
+    bob_pw = os.environ.get("BOB_PW") or app_env.get("FLOWPAD_CLOUD_USER_PASSWORD")
     if not bob_email or not bob_pw:
-        pytest.skip("missing FLOWPAD_CLOUD_USER_{EMAIL,PASSWORD} in flowpad-app/.env.local")
+        pytest.skip("missing BOB_EMAIL/BOB_PW and flowpad-app fallback credentials")
 
     async with httpx.AsyncClient(timeout=5.0) as h:
         r = await h.post(f"{hub_base_url}/api/v1/login", json={"email": bob_email, "password": bob_pw})

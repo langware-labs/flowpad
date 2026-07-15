@@ -7,22 +7,14 @@
  *  - ``ensureLocalLoggedIn`` — verifies the local backend already holds cloud
  *    credentials. We don't try to log in from the test (interactive flow);
  *    the test skips with a clear message if credentials are absent.
- *  - ``readEnvLocal`` / ``hubLogin`` — load credentials from the OSS + APP
- *    sibling repos' ``.env.local`` files and exchange them for hub bearer
- *    tokens. Used by ``conversation_messages.test.ts`` to simulate a second
- *    identity (bob) sending into alice's shared conversation.
+ *  - ``getAliceCreds`` / ``getBobCreds`` — read the cycle-owned identities
+ *    explicitly supplied by the runner and exchange them for hub bearer tokens.
  */
-import { promises as fs } from 'node:fs';
-import * as path from 'node:path';
-
 // No hardcoded hub URL — it must come from the environment (FLOWPAD_HUB_URL),
 // the same source the backend/config uses. When unset, HUB_URL is empty and
 // ``hubAvailable()`` skips the suite with a clear reason rather than silently
 // probing a guessed localhost port.
 export const HUB_URL = (process.env.FLOWPAD_HUB_URL ?? '').replace(/\/$/, '');
-
-const REPO_OSS = path.resolve(__dirname, '../../..');
-const REPO_APP = path.resolve(REPO_OSS, '..', 'flowpad-app');
 
 export async function hubAvailable(): Promise<{ ok: boolean; reason?: string }> {
   if (!HUB_URL) {
@@ -40,8 +32,8 @@ export async function hubAvailable(): Promise<{ ok: boolean; reason?: string }> 
 }
 
 /** Parse dotenv text into a key→value map (skips comments/blanks, strips a
- *  matching pair of surrounding quotes). Shared by `readEnvLocal` and the
- *  per-instance harness in `_instances.ts`. */
+ *  matching pair of surrounding quotes). Used only for generated named-instance
+ *  env files by `_instances.ts`; hub credentials come from the process env. */
 export function parseDotEnv(text: string): Record<string, string> {
   const out: Record<string, string> = {};
   for (const raw of text.split(/\r?\n/)) {
@@ -56,14 +48,6 @@ export function parseDotEnv(text: string): Record<string, string> {
     out[k] = v;
   }
   return out;
-}
-
-export async function readEnvLocal(repo: string): Promise<Record<string, string>> {
-  try {
-    return parseDotEnv(await fs.readFile(path.join(repo, '.env.local'), 'utf-8'));
-  } catch {
-    return {};
-  }
 }
 
 export interface HubLoginResult {
@@ -109,20 +93,16 @@ export async function hubConversationWatchers(token: string, convId: string): Pr
   return Array.isArray(body.data) ? body.data : null;
 }
 
-export async function getAliceCreds() {
-  const env = await readEnvLocal(REPO_OSS);
-  const email = env.FLOWPAD_CLOUD_USER_EMAIL;
-  const password = env.FLOWPAD_CLOUD_USER_PASSWORD;
-  if (!email || !password) return null;
-  return { email, password };
+export function getAliceCreds(): Promise<{ email: string; password: string } | null> {
+  const email = process.env.ALICE_EMAIL?.trim();
+  const password = process.env.ALICE_PW;
+  return Promise.resolve(email && password ? { email, password } : null);
 }
 
-export async function getBobCreds() {
-  const env = await readEnvLocal(REPO_APP);
-  const email = env.FLOWPAD_CLOUD_USER_EMAIL;
-  const password = env.FLOWPAD_CLOUD_USER_PASSWORD;
-  if (!email || !password) return null;
-  return { email, password };
+export function getBobCreds(): Promise<{ email: string; password: string } | null> {
+  const email = process.env.BOB_EMAIL?.trim();
+  const password = process.env.BOB_PW;
+  return Promise.resolve(email && password ? { email, password } : null);
 }
 
 /**

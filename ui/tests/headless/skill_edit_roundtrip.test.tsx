@@ -15,31 +15,30 @@
  * control that round-trips through the SDK — unlike typing into the Milkdown/
  * Monaco body, which needs real layout/canvas (that's Playwright territory).
  *
- * Prereq: a live backend — `scripts/instance_ctl.sh launch dev-1` or
- * `uv run -m flow_sdk.server.run`. Skips itself when none is reachable.
- * Run: `cd ui && npm run test:vitest:headless`
+ * Prereq: an explicitly selected disposable instance_ctl backend.
+ * Run: `cd ui && FLOW_INSTANCE=<disposable-name> npm run test:vitest:headless`
  */
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import { setupLiveBackend, bootApp } from './_harness';
 import { trackForCleanup, testEntityName } from '../_cleanup';
+import { createSdkRealm } from '../_sdk_realm';
 
 const backend = setupLiveBackend('[skill edit]');
 
 describe('skill edit round-trip via the UI (no mocks)', () => {
   it('SDK-create → open in app → toggle eval in UI → SDK-refetch sees the edit', async () => {
-    if (!backend.current) return; // soft-skip when no backend is up
+    const live = backend.current;
+    if (!live) throw new Error('headless backend preflight did not resolve FLOW_INSTANCE');
 
     const t0 = performance.now();
     const mark = (label: string) => `${label} @ +${((performance.now() - t0) / 1000).toFixed(2)}s`;
 
     // Point the realm at the live backend and (re-)evaluate the SDK graph so the
     // skill we create and the app we boot share ONE realm bound to this backend.
-    (globalThis as any).__FLOWPAD_API_URL__ = backend.current.apiUrl;
-    vi.resetModules();
-    const sdk = await import('@sdk');
+    const { sdk } = await createSdkRealm(live.apiUrl);
     await sdk.initSdk();
-    console.log(mark(`[skill edit] realm booted against ${backend.current.apiUrl}`));
+    console.log(mark(`[skill edit] realm booted against ${live.apiUrl}`));
 
     // 1. Create the skill purely via the SDK.
     const name = testEntityName('skill');
@@ -87,7 +86,10 @@ describe('skill edit round-trip via the UI (no mocks)', () => {
         .map((el) => el.getAttribute('data-testid'))
         .slice(0, 40);
       console.error('[skill edit][DEBUG] toggle not found. data-testids on screen:', testids);
-      console.error('[skill edit][DEBUG] headings:', screen.queryAllByRole('heading').map((h) => h.textContent));
+      console.error(
+        '[skill edit][DEBUG] headings:',
+        screen.queryAllByRole('heading').map((h) => h.textContent),
+      );
       console.error('[skill edit][DEBUG] body text (first 800):', (container.textContent ?? '').slice(0, 800));
       throw e;
     }
