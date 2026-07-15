@@ -295,6 +295,10 @@ async def create_group_task() -> ApiResponse:
 
     created: list[str] = []
     skipped: list[str] = []
+    # Member-task typeids only — deliberately NO emails in the response (PII
+    # stays out of action payloads); the dialog matches recipient → child via
+    # the locally-stored ``assignee`` field on each task row.
+    children: list[str] = []
     for email in members:
         child = by_assignee.get(email)
         try:
@@ -331,6 +335,7 @@ async def create_group_task() -> ApiResponse:
                 msg = str(invite_err)
                 if "accept" not in msg.lower():
                     raise
+            children.append(str(child.typeid))
         except Exception as e:  # noqa: BLE001
             logger.warning("[group-task] member %s failed: %s", email, e)
             if email in created:
@@ -348,7 +353,7 @@ async def create_group_task() -> ApiResponse:
         except Exception as e:  # noqa: BLE001
             logger.warning("[group-task] hub kind flip failed (non-fatal): %s", e)
 
-    return ApiSuccessResponse(data={"created": created, "skipped": skipped, "failed": failed})
+    return ApiSuccessResponse(data={"created": created, "skipped": skipped, "failed": failed, "children": children})
 
 
 @action.post(action_name="sync-group", types=["task"])
