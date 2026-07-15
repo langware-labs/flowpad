@@ -80,11 +80,16 @@ class FlowServer:
 
         # 4. Middleware (added in reverse execution order)
         from .middleware.catch_all_exception_middleware import CatchAllExceptionMiddleware
+        from .middleware.cookie_gate_middleware import CookieGateMiddleware
         from .middleware.request_transaction_middleware import RequestTransactionMiddleware
 
         app.add_middleware(CatchAllExceptionMiddleware)
         app.add_middleware(RequestTransactionMiddleware)
         app.add_middleware(CORSMiddleware, **self._cors_config)
+        # Last = outermost = runs first: an ungated request is rejected before
+        # RequestTransactionMiddleware opens a transaction or resolves a user.
+        # No-op on an unarmed instance, which is the default and every desktop.
+        app.add_middleware(CookieGateMiddleware)
 
         # 5. Core routers
         from .routes import bootstrap_router, health_router, wiki_router
