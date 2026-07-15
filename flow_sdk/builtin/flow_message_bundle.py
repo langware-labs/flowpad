@@ -684,6 +684,14 @@ async def _pack_file_backed_attachment(
     Build/environment cruft is filtered via ``_ASSET_PACK_IGNORE`` (deep
     ``.venv``/cache trees blow past Windows MAX_PATH on extractall).
     """
+    # A TASK chip is a record-carrier (its folder is task.md bookkeeping), not
+    # a git-shareable asset. In a git-mode message — the assignment message
+    # mixes a member-task chip with origin-only folder chips — the task must
+    # ship as BYTES: the receiver has no clone of the sender's repos, and the
+    # fail-closed origin guard below would otherwise kill the whole bundle for
+    # tasks living outside any repo (e.g. ~/tasks).
+    if transfer_mode == _TRANSFER_MODE_GIT and entry_type == BuiltinEntityType.TASK.value:
+        transfer_mode = _TRANSFER_MODE_COPY
     from flow_sdk.builtin.git_origin import GitOrigin  # noqa: PLC0415
 
     resolved = await _resolve_file_backed_source(entry_type, entry_id)
@@ -713,12 +721,7 @@ async def _pack_file_backed_attachment(
             f"Git repository with a usable origin — turn Git sharing off for this asset."
         )
 
-    if (
-        transfer_mode == _TRANSFER_MODE_GIT
-        and origin is not None
-        and src_root is not None
-        and transfers is not None
-    ):
+    if transfer_mode == _TRANSFER_MODE_GIT and origin is not None and src_root is not None and transfers is not None:
         key = _entry_key(entry_type, entry_id)
         metadata_path = _write_git_transfer_metadata(
             attachment_dir.parent,
@@ -963,9 +966,7 @@ class ReceivedAsset:
     git_origin: dict | None = None
 
 
-async def index_attachments(
-    attachments: "list[ReceivedAsset]", *, project_id: str | None, owner
-) -> None:
+async def index_attachments(attachments: "list[ReceivedAsset]", *, project_id: str | None, owner) -> None:
     """Index a batch of just-copied file-backed attachments — the single reception
     indexer.
 
@@ -2375,22 +2376,24 @@ async def unpack_bundle(
             else:
                 _unpacked = str(transfer.get("metadata_path") or "")
                 _user_scope = None
-            staged_mas.append(await _stage_attachment(
-                top_fm_id=top_fm_id,
-                conversation_id=staging_conv_id,
-                entry_key=key,
-                entry_type=entry_type,
-                entry_id=entry_id,
-                unpacked_path=_unpacked,
-                name=(gt_payload.get("name") or None),
-                description=(gt_payload.get("description") or None),
-                git_origin=raw_origin if isinstance(raw_origin, dict) else None,
-                git_transfer=transfer if isinstance(transfer, dict) else None,
-                transfer_mode=_tmode,
-                user_scope_allowed=_user_scope,
-                create_bookmark=create_bookmark,
-                owner_typeid=owner_typeid,
-            ))
+            staged_mas.append(
+                await _stage_attachment(
+                    top_fm_id=top_fm_id,
+                    conversation_id=staging_conv_id,
+                    entry_key=key,
+                    entry_type=entry_type,
+                    entry_id=entry_id,
+                    unpacked_path=_unpacked,
+                    name=(gt_payload.get("name") or None),
+                    description=(gt_payload.get("description") or None),
+                    git_origin=raw_origin if isinstance(raw_origin, dict) else None,
+                    git_transfer=transfer if isinstance(transfer, dict) else None,
+                    transfer_mode=_tmode,
+                    user_scope_allowed=_user_scope,
+                    create_bookmark=create_bookmark,
+                    owner_typeid=owner_typeid,
+                )
+            )
 
         if attachment_dir.exists():
             for entry_dir in sorted(attachment_dir.iterdir(), key=_entry_sort_key):
@@ -2513,6 +2516,7 @@ async def unpack_bundle(
                     if rws_data is not None:
                         from flow_sdk.builtin.remote_worker_session import RemoteWorkerSession  # noqa: PLC0415
                         from flow_sdk.cli.app_config import get_user as _get_cloud_user  # noqa: PLC0415
+
                         rws_id = rws_data.get("id") or entry_id
                         existing_rws = await RemoteWorkerSession.get_one({"id": rws_id})
                         cloud_uid = (_get_cloud_user() or {}).get("id")
@@ -2521,7 +2525,9 @@ async def unpack_bundle(
                             or (cloud_uid and rws_data.get("host_user_id") == cloud_uid)
                         )
                         rws = RemoteWorkerSession.apply_snapshot(
-                            existing_rws, {**rws_data, "id": rws_id}, local_is_host=local_is_host,
+                            existing_rws,
+                            {**rws_data, "id": rws_id},
+                            local_is_host=local_is_host,
                         )
                         await rws.save(owner_typeid)
 

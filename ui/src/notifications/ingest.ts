@@ -92,6 +92,13 @@ function handleHubClientError(msg: HubClientErrorMsg): void {
       actions: [detail],
     });
   } else if (statusCode >= 400) {
+    // Benign rejection: inviting someone who already accepted means the desired
+    // state (they're a member) already holds, and the invite dialog surfaces its
+    // own contextual error — the generic toast on top is pure noise.
+    if (/already accepted/i.test(rawMessage)) {
+      console.warn(`[cloud] hub rejected ${method} ${path} (${statusCode}) — benign: ${rawMessage}`);
+      return;
+    }
     notify.error({
       id: 'cloud-request-rejected',
       title: 'Cloud request rejected',
