@@ -148,7 +148,13 @@ export function useAllTabs(): Tab[] {
     attachTabsChangedPing();
     if (!loadedOnce) {
       loadedOnce = true;
-      void refreshAllTabs();
+      refreshAllTabs().catch((e) => {
+        // Backend unreachable (offline / startup race): leave the store empty
+        // and let the next mount retry instead of surfacing an unhandled
+        // rejection from this fire-and-forget load.
+        loadedOnce = false;
+        console.warn('[all-tabs-store] initial tab list load failed', e);
+      });
     }
   }, []);
   return tabs;

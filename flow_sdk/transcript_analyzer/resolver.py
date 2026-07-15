@@ -19,7 +19,13 @@ from pathlib import Path
 
 
 def _claude_projects_dir() -> Path:
-    return Path.home() / ".claude" / "projects"
+    # FLOWPAD_CLAUDE_HOME/CLAUDE_CONFIG_DIR are instance configuration, not
+    # necessarily ``~/.claude`` (isolated app/test instances deliberately point
+    # them elsewhere). Keep this resolver on the same source of truth as the
+    # transcript watcher and history indexer — see ``_codex_sessions_dir``.
+    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
+    return get_instance_settings().claude_projects_dir
 
 
 def _codex_sessions_dir() -> Path:

@@ -1,5 +1,5 @@
-name: 'Frontend tests (tsc + vitest unit/react + i18n guards)'
-description: 'npm ci, tsc --noEmit, vitest unit+react, lingui catalog drift check'
+name: 'Frontend tests (tsc + vitest unit + i18n guards)'
+description: 'npm ci, tsc --noEmit, vitest unit, lingui catalog drift check'
 runs:
   using: 'composite'
   steps:
@@ -28,10 +28,10 @@ runs:
       shell: bash
       working-directory: ui
 
-    - name: vitest react
-      run: npm run test:vitest:react
-      shell: bash
-      working-directory: ui
+    # NOTE: vitest react is NOT here — despite the jsdom environment it is a
+    # live-SDK tier (entity writes, host-file actions) that requires a
+    # launcher-owned backend instance (tests/react/_instance.ts), so it runs
+    # in the e2e job where that instance exists.
 
     # Guards the Lingui failure mode where catalogs drift from source and
     # buttons render raw hash ids like "Gp4Yi6" (see git history of ui-i18n.yml).
