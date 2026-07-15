@@ -1,0 +1,32 @@
+name: 'Backend tests (pytest unit + api)'
+description: 'uv sync, pip-audit (advisory), pytest tests/unit and tests/api'
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up uv + Python 3.10
+      uses: astral-sh/setup-uv@v5
+      with:
+        python-version: '3.10'
+        enable-cache: true
+
+    - name: Install dependencies
+      run: uv sync --dev --frozen
+      shell: bash
+
+    # Advisory-only: a new CVE in a pinned transitive dep must not block PRs
+    # (or, through the deploy gate, PyPI releases). Failures show as a red
+    # step icon in the log without failing the job.
+    - name: pip-audit (advisory, non-blocking)
+      continue-on-error: true
+      run: uv tool run pip-audit --desc
+      shell: bash
+
+    # Separate steps per tier so a failure is attributable at a glance.
+    # pytest.ini enforces --timeout=30 per test; never raise it.
+    - name: pytest tests/unit
+      run: uv run pytest tests/unit -q
+      shell: bash
+
+    - name: pytest tests/api
+      run: uv run pytest tests/api -q
+      shell: bash

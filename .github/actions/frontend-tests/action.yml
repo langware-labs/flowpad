@@ -1,0 +1,48 @@
+name: 'Frontend tests (tsc + vitest unit/react + i18n guards)'
+description: 'npm ci, tsc --noEmit, vitest unit+react, lingui catalog drift check'
+runs:
+  using: 'composite'
+  steps:
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+        cache: 'npm'
+        cache-dependency-path: ui/package-lock.json
+
+    - name: Install dependencies
+      run: npm ci
+      shell: bash
+      working-directory: ui
+
+    # Nothing else in CI type-checks the frontend: vite build and vitest both
+    # transform TS with esbuild, which strips types without checking them.
+    - name: Type-check (tsc --noEmit)
+      run: npm run type-check
+      shell: bash
+      working-directory: ui
+
+    # The unit project includes the i18n regression guards
+    # (tests/unit/i18n-en-catalog-load.test.ts, i18n-message-id-alphabet.test.ts).
+    - name: vitest unit
+      run: npm run test:vitest:unit
+      shell: bash
+      working-directory: ui
+
+    - name: vitest react
+      run: npm run test:vitest:react
+      shell: bash
+      working-directory: ui
+
+    # Guards the Lingui failure mode where catalogs drift from source and
+    # buttons render raw hash ids like "Gp4Yi6" (see git history of ui-i18n.yml).
+    - name: i18n catalog is in sync with source (lingui extract)
+      run: |
+        npx lingui extract
+        if ! git diff --quiet -- src/locales; then
+          echo "::error::Message catalogs are out of date with the source."
+          echo "Run 'npm run i18n:extract' in ui/ and commit the updated src/locales/*.po."
+          git --no-pager diff --stat -- src/locales
+          exit 1
+        fi
+      shell: bash
+      working-directory: ui
