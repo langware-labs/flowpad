@@ -36,7 +36,7 @@ export async function loadSkillsByName(): Promise<Map<string, Skill>> {
  * process with the given options, names it (so it isn't a bare id fragment in the
  * agentic-process footer), attaches the skill, and seeds the prompt.
  */
-async function runSkillWorker(
+export async function runSkillWorker(
   attachSkillName: string,
   createOpts: Parameters<ComputeNode['createProcess']>[0],
   prompt: string,

@@ -32,6 +32,16 @@ export const HIGHLIGHT_PARAM = 'highlight';
 export const VIEW_MODE_PARAM = 'viewMode';
 
 /**
+ * URL query-param key selecting which translated body of an asset to show. It
+ * carries a language code (`es`, `he`, `fr-CA`, …); absent means the original
+ * doc. Like the other option params it rides in `options` and is deliberately
+ * EXCLUDED from `tabHash`, so switching languages swaps the body inline in the
+ * SAME tab (no new tab). Pairs with `DockPointer.lang` / `withLang()`; the
+ * asset editor reads it to point at the matching `translations[].ref`.
+ */
+export const LANG_PARAM = 'lang';
+
+/**
  * Canonicalize a compute-node-relative path: forward slashes, collapsed
  * separators, no leading/trailing slash. Single owner of the rel-path form the
  * `fs/<relPath>` assets pointer carries (fsFolderRoot re-exports this for the
@@ -236,6 +246,24 @@ export class DockPointer implements IDockPointer {
     const nextOptions = { ...(this.options ?? {}) };
     if (mode) nextOptions[VIEW_MODE_PARAM] = mode;
     else delete nextOptions[VIEW_MODE_PARAM];
+    return new DockPointer(this.viewType, this.pointer, nextOptions, this.layout);
+  }
+
+  /**
+   * The translated-body language this dock asks to show, or null for the
+   * original doc. URL-carried (shareable + back-safe) and excluded from
+   * `tabHash`, so language switches stay in the same tab. Pairs with
+   * `withLang()`; consumed by the markdown asset editor to swap the body ref.
+   */
+  get lang(): string | null {
+    return this.options?.[LANG_PARAM] ?? null;
+  }
+
+  /** Clone this dock pointed at a translated body, or back to the original with null. */
+  withLang(lang: string | null): DockPointer {
+    const nextOptions = { ...(this.options ?? {}) };
+    if (lang) nextOptions[LANG_PARAM] = lang;
+    else delete nextOptions[LANG_PARAM];
     return new DockPointer(this.viewType, this.pointer, nextOptions, this.layout);
   }
 
