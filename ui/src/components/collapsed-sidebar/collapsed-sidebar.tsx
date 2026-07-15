@@ -47,9 +47,9 @@ import {
   FolderOpen,
   // Globe,
   Home,
-  Inbox,
   // KeyRound,
-  MessageSquare,
+  Mail,
+  MessageCircle,
   // PlaySquare,
   Search,
   // Settings,
@@ -118,7 +118,7 @@ export function CollapsedSidebar() {
     { title: t`Home`, icon: Home, viewType: null, vis: ALL_VISIBLE },
     {
       title: t`Chats`,
-      icon: MessageSquare,
+      icon: MessageCircle,
       viewType: ViewType.SHELL,
       vis: {
         [ViewMode.Vibe]: 'hidden',
@@ -127,7 +127,7 @@ export function CollapsedSidebar() {
         [ViewMode.Dev]: 'visible',
       },
     },
-    { title: t`Inbox`, icon: Inbox, viewType: ViewType.INBOX, vis: ALL_VISIBLE },
+    { title: t`Inbox`, icon: Mail, viewType: ViewType.INBOX, vis: ALL_VISIBLE },
     // { title: 'Execute Flow', icon: PlaySquare, viewType: ViewType.EXECUTE_FLOW, vis: ALL_VISIBLE },
     {
       title: t`Assets`,
