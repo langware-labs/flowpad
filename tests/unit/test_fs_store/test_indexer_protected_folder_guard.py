@@ -21,6 +21,7 @@ No mocks: real Project rows in the test DB + the real ``get_all_scope_filter``
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import pytest
@@ -31,10 +32,6 @@ from flow_sdk.fs_store.indexer.functions.project_folder_walker import (
     project_folder_walker_fn,
 )
 from flow_sdk.fs_store.indexer.index_function import IndexerOptions
-from flow_sdk.fs_store.operations.all_projects import (
-    get_all_scope_filter,
-    invalidate_projects_cache,
-)
 from flow_sdk.fs_store.indexer.special_folders import (
     STATE_ALLOW,
     STATE_ASK,
@@ -43,6 +40,10 @@ from flow_sdk.fs_store.indexer.special_folders import (
     IndexDecision,
     drain_pending_consent,
     indexing_decision,
+)
+from flow_sdk.fs_store.operations.all_projects import (
+    get_all_scope_filter,
+    invalidate_projects_cache,
 )
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.preferences import write_instance_pref
@@ -57,8 +58,14 @@ _WALKER_ROOT_TYPES = (
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase timeout without approval
 
-# The macOS TCC-gated home subfolders. First read under any of these prompts.
-PROTECTED = ("Documents", "Desktop", "Downloads", "Pictures", "Movies", "Music")
+# The gated home subfolders, per platform (mirrors _special_folders_for_home):
+# macOS TCC prompts on first read; Windows/Linux gate the same set for perf,
+# with the video folder named "Videos" instead of "Movies".
+PROTECTED = (
+    ("Documents", "Desktop", "Downloads", "Pictures", "Movies", "Music")
+    if sys.platform == "darwin"
+    else ("Documents", "Desktop", "Downloads", "Pictures", "Videos", "Music")
+)
 
 
 class _Actions(FsRecordsActionsMixin):
@@ -77,7 +84,9 @@ def _under_protected(path: Path, home: Path) -> str | None:
 
 @pytest.mark.parametrize("folder", PROTECTED)
 async def test_project_in_protected_folder_is_not_walked(
-    folder: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    folder: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """One case per macOS-protected folder: a project mounted inside it must NOT
     become a walk root, and the walker must not read into it. Parametrized so the
@@ -117,34 +126,27 @@ async def test_project_in_protected_folder_is_not_walked(
     assert roots is not None
 
     # The guard must have dropped the Documents-nested project walk root...
-    offending_roots = [
-        str(r.path) for r in roots if _under_protected(Path(r.path), home)
-    ]
+    offending_roots = [str(r.path) for r in roots if _under_protected(Path(r.path), home)]
     # ...and the walker (over only the roots it runs on in production) must never
     # emit a FOLDER inside a protected folder.
     walker_roots = [r for r in roots if r.record_type in _WALKER_ROOT_TYPES]
     walked = project_folder_walker_fn(walker_roots, IndexerOptions(gitignore=True))
     offending_walk = [
-        f"{_under_protected(Path(f.path), home)}: {f.path}"
-        for f in walked
-        if _under_protected(Path(f.path), home)
+        f"{_under_protected(Path(f.path), home)}: {f.path}" for f in walked if _under_protected(Path(f.path), home)
     ]
 
     assert not offending_roots, (
-        "indexer resolved a walk root inside a macOS-protected folder "
-        f"(TCC prompt on launch): {offending_roots}"
+        f"indexer resolved a walk root inside a macOS-protected folder (TCC prompt on launch): {offending_roots}"
     )
     assert not offending_walk, (
-        "project_folder_walker_fn read inside a macOS-protected folder "
-        f"(TCC prompt on launch): {offending_walk[:5]}"
+        f"project_folder_walker_fn read inside a macOS-protected folder (TCC prompt on launch): {offending_walk[:5]}"
     )
 
 
 # ── preferences-state driven behavior ────────────────────────────────────────
 
-async def _project_under(
-    folder: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> tuple[Path, Path]:
+
+async def _project_under(folder: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Path]:
     """Sandbox HOME at tmp_path, create a real Project at ~/<folder>/dev/proj."""
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("USERPROFILE", str(tmp_path))
@@ -174,10 +176,10 @@ async def _resolve_for_all_projects():
 @pytest.mark.parametrize(
     ("state", "expect_walked"),
     [
-        (STATE_ALLOW, True),    # user approved → indexed
-        (STATE_SKIP, False),    # user declined → skipped
+        (STATE_ALLOW, True),  # user approved → indexed
+        (STATE_SKIP, False),  # user declined → skipped
         (STATE_DENIED, False),  # OS refused post-allow → skipped, not re-asked
-        (STATE_ASK, False),     # undecided (default) → skipped, consent queued
+        (STATE_ASK, False),  # undecided (default) → skipped, consent queued
     ],
 )
 async def test_preference_state_drives_documents_indexing(
@@ -190,17 +192,11 @@ async def test_preference_state_drives_documents_indexing(
     write_instance_pref("preferences.indexing.folders.documents", state)
 
     roots = await _resolve_for_all_projects()
-    present = any(
-        _under_protected(Path(r.path), home) for r in (roots or [])
-    )
-    assert present is expect_walked, (
-        f"state={state}: expected walked={expect_walked}, got {present}"
-    )
+    present = any(_under_protected(Path(r.path), home) for r in (roots or []))
+    assert present is expect_walked, f"state={state}: expected walked={expect_walked}, got {present}"
 
 
-async def test_ask_state_queues_consent_event(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def test_ask_state_queues_consent_event(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """The undecided (default 'ask') state → decision ASK → a well-formed
     index_folder_consent event is queued for the frontend (deduped by folder)."""
     from flow_sdk.fs_store.indexer.special_folders import (
@@ -222,13 +218,11 @@ async def test_ask_state_queues_consent_event(
     ev = events[0]
     assert ev["kind"] == CONSENT_EVENT_KIND
     assert ev["category"] == "documents"
-    assert ev["os_prompts"] is True  # macOS test host
+    assert ev["os_prompts"] is (sys.platform == "darwin")  # OS dialog only on macOS
     assert not drain_pending_consent()  # queue cleared
 
 
-async def test_allow_then_deny_is_not_reasked(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def test_allow_then_deny_is_not_reasked(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """denied is terminal: a denied folder neither walks nor re-queues a prompt."""
     home, _ = await _project_under("Documents", tmp_path, monkeypatch)
     drain_pending_consent()
@@ -238,9 +232,7 @@ async def test_allow_then_deny_is_not_reasked(
     assert not drain_pending_consent()
 
 
-async def test_foreground_open_walks_even_when_ask(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def test_foreground_open_walks_even_when_ask(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """An explicit user open (foreground) indexes the project regardless of the
     folder's tri-state — one expected OS prompt, no gate."""
     home, proj_root = await _project_under("Documents", tmp_path, monkeypatch)
@@ -252,9 +244,7 @@ async def test_foreground_open_walks_even_when_ask(
     assert any(_under_protected(Path(r.path), home) for r in (fg or []))
 
 
-async def test_media_folder_is_hardskip_regardless_of_pref(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def test_media_folder_is_hardskip_regardless_of_pref(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Media (Music/Movies/Pictures) is never indexed — even an explicit allow
     or a foreground open cannot turn it on (no kTCCServiceMediaLibrary prompt)."""
     home, music_proj = await _project_under("Music", tmp_path, monkeypatch)
