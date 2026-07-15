@@ -97,14 +97,17 @@ export interface Browseable {
   activate?: () => void | Promise<void>;
 
   /** Fired when the row is OPENED — from BOTH the `pointer` and `activate`
-   *  arms, so a usage stamp can't miss the (majority) pointer case. Fires only
-   *  when something actually opened: never for a container (whose click just
-   *  toggles the chevron), never for a non-actionable row.
+   *  arms, so a usage stamp can't miss the (majority) pointer case. Never
+   *  fires for a row that opened nothing (neither arm set). Whether a
+   *  CONTAINER can open is the renderer's call, not this contract's: a click
+   *  on one expands, and the grid and tree order that against the pointer arm
+   *  differently. Both go through `openBrowseable` (./open.ts), which owns the
+   *  arm resolution and fires this AFTER dispatch, so a throw here cannot
+   *  break the navigation.
    *
    *  Side effect ONLY — a usage stamp on the underlying entity (e.g. the
    *  favorites open-counter). Never navigate, never gate navigation, never
-   *  write view state. Renderers fire it AFTER dispatching, so a throw here
-   *  cannot break the navigation. */
+   *  write view state. */
   onOpen?: () => void;
 
   /** Optional hover tooltip content (e.g. a live entity summary). Rendered by

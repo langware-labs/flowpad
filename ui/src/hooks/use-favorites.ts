@@ -1,4 +1,4 @@
-import { Bookmark, BookmarkType, dataManager } from '@sdk';
+import { Bookmark, BookmarkType } from '@sdk';
 import { useProject } from '@sdk/react/hooks';
 import { useCallback, useMemo } from 'react';
 import { useProjectBookmarks } from './use-project-bookmarks';
@@ -220,19 +220,6 @@ export function useFavorites() {
     [refetch],
   );
 
-  // Record one open. Deliberately does NOT refetch, unlike its neighbours here
-  // — this fires on every favorite click, not as a rare explicit action.
-  // `notifyEntityChanged` is what re-renders the badges instead: zero network,
-  // so the count ticks before the save lands. The save's own WS echo can't be
-  // relied on — an `update` DataOp arriving while `saveInFlight` is set gets
-  // buffered, and the flush never notifies query watchers. Returns the save
-  // promise so callers can `void` it and tests can await it.
-  const markOpened = useCallback((bookmark: Bookmark): Promise<void> => {
-    bookmark.counter = (bookmark.counter ?? 0) + 1;
-    dataManager.notifyEntityChanged(bookmark);
-    return bookmark.save([]);
-  }, []);
-
   const toggleFavorite = useCallback(
     async (ref: FavoriteRef): Promise<Bookmark | null> => {
       const existing = isFavorited(ref.entityType, ref.entityId);
@@ -256,7 +243,6 @@ export function useFavorites() {
     addFavorite,
     removeFavorite,
     renameFavorite,
-    markOpened,
     toggleFavorite,
     createFolder,
     moveToFolder,
