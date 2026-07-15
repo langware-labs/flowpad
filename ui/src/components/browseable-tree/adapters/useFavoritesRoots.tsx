@@ -23,7 +23,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { useMemo, useRef } from 'react';
-import type { Browseable, BrowseableDragData } from '../types';
+import type { Browseable, BrowseableDragData, BrowseableRoot } from '../types';
 
 /** Explicit `data.icon` name wins; otherwise the target type's registry icon
  *  (backend TypeInfo via the bootstrap-loaded SchemaRegistry — never a
@@ -64,6 +64,10 @@ export function useFavoritesRoots(opts?: {
    *  and folders that get rendered; children are filtered too. Lookups for drag
    *  targets still use the full favorite set. Default (unset) renders all. */
   filter?: (b: Bookmark) => boolean;
+  /** Icon sizing. Defaults to the 64px desktop tile's `h-6 w-6`; a tree menu
+   *  passes `h-4 w-4` — its rows are `text-xs` with `h-3` chevrons, so a 24px
+   *  icon would tower over every row. */
+  iconClassName?: string;
 }): {
   roots: Browseable[];
   /** Drop on the surface background = un-file back to root. */
@@ -75,6 +79,7 @@ export function useFavoritesRoots(opts?: {
   ) => Promise<void>;
 } {
   const filter = opts?.filter ?? PASS_ALL;
+  const iconClassName = opts?.iconClassName ?? 'h-6 w-6';
   const { navigation } = useDockNavigation();
   // navigation's identity changes on every dock change (it carries
   // currentDock); read it through a ref inside the activate closures so URL
@@ -108,7 +113,7 @@ export function useFavoritesRoots(opts?: {
         kind: 'favorite',
         id: b.id ?? '',
         label: title,
-        icon: <Icon className="h-6 w-6" />,
+        icon: <Icon className={iconClassName} />,
         // Unread dot — the leaf-level form of the folder count badge. The grid
         // renders `badge` for leaves and folders alike, so no renderer change.
         badge: isUnopened(b) ? (
@@ -192,7 +197,7 @@ export function useFavoritesRoots(opts?: {
         kind: 'favorite_folder',
         id: folder.id ?? '',
         label: title,
-        icon: <Folder className="h-6 w-6" />,
+        icon: <Folder className={iconClassName} />,
         badge:
           unopened > 0 ? (
             <span className="rounded-full bg-primary px-1 text-[9px] font-semibold leading-[13px] text-primary-foreground">
@@ -281,6 +286,42 @@ export function useFavoritesRoots(opts?: {
     deleteFolder,
     reorder,
     filter,
+    iconClassName,
     t,
   ]);
+}
+
+/**
+ * The same favorites, shaped for BrowseableTree (the menu renderer) rather than
+ * the grid.
+ *
+ * `BrowseableRoot` requires `ownsPointer`/`pathFor`, which exist solely to power
+ * deep-link auto-expand (`useBrowseableTree.expandParentsForPointer`). That is
+ * deliberately a no-op here, and the stubs are honest rather than lazy:
+ *  - the slider closes on the first navigation, so nothing ever deep-links into
+ *    an open menu;
+ *  - auto-expanding a folder just because the open doc happens to be favorited
+ *    inside it would fight hover-expand — the menu would open a subtree the
+ *    user never pointed at;
+ *  - a real `pathFor` would need a pointer→bookmark reverse index the adapter
+ *    doesn't have (`pointerForFavorite` is one-way).
+ * Row highlighting still works: it's a pure pointer-string match, independent of
+ * `pathFor`. Only top-level nodes must be roots — `listChildren` keeps handing
+ * back plain `Browseable`s, which is what the tree wants.
+ */
+export function useFavoritesTreeRoots(opts?: { filter?: (b: Bookmark) => boolean }): {
+  roots: BrowseableRoot[];
+} {
+  const { roots } = useFavoritesRoots({ filter: opts?.filter, iconClassName: 'h-4 w-4' });
+  return useMemo(
+    () => ({
+      roots: roots.map((n) => ({
+        ...n,
+        kind: 'root' as const,
+        ownsPointer: () => false,
+        pathFor: () => Promise.resolve([]),
+      })),
+    }),
+    [roots],
+  );
 }
