@@ -90,7 +90,6 @@ export function useFavoritesRoots(opts?: {
     childrenOf,
     removeFavorite,
     renameFavorite,
-    markOpened,
     moveToFolder,
     deleteFolder,
     reorder,
@@ -118,10 +117,10 @@ export function useFavoritesRoots(opts?: {
         rowClassName: navigable ? undefined : 'opacity-60 cursor-not-allowed',
         hasChildren: false,
         pointer,
-        // Fires for BOTH the pointer and activate arms (the grid resolves it),
-        // which is the whole reason `onOpen` exists — most favorites navigate
-        // via the pure pointer arm, which calls no adapter code.
-        onOpen: () => void markOpened(b),
+        // Fires for BOTH the pointer and activate arms — the whole reason
+        // `onOpen` exists, since most favorites navigate via the pure pointer
+        // arm, which calls no adapter code.
+        onOpen: () => void b.markOpened(),
         // Session-like types can't be expressed as a pure pointer — fall back
         // to the imperative dispatcher (protocol's documented activate arm).
         activate:
@@ -166,45 +165,29 @@ export function useFavoritesRoots(opts?: {
       };
     };
 
-    // Recursive count of visible LEAF favorites under a folder (descends through
-    // nested subfolders). So `Auto` shows the grand total while each `Auto/<type>`
-    // shows its own. Cycle-guarded (a malformed parent_id loop can't hang render).
-    //
-    // One traversal answers both questions: `unopened` drives the badge, `total`
-    // drives the tooltip's "N items".
-    const countLeaves = (
-      folderId: string,
-      seen: Set<string> = new Set(),
-    ): { total: number; unopened: number } => {
-      if (!folderId || seen.has(folderId)) return { total: 0, unopened: 0 };
+    // The visible LEAF favorites under a folder, descending through nested
+    // subfolders — so `Auto` sees everything filed beneath it while each
+    // `Auto/<type>` sees only its own. Cycle-guarded (a malformed parent_id
+    // loop can't hang render). Callers count what they need off the result.
+    const leavesUnder = (folderId: string, seen: Set<string> = new Set()): Bookmark[] => {
+      if (!folderId || seen.has(folderId)) return [];
       seen.add(folderId);
-      let total = 0;
-      let unopened = 0;
-      for (const k of childrenOf(folderId)) {
-        if (!filter(k)) continue;
-        if (k.bookmark_type === BookmarkType.FAVORITE_FOLDER) {
-          const sub = countLeaves(k.id ?? '', seen);
-          total += sub.total;
-          unopened += sub.unopened;
-        } else {
-          total += 1;
-          if (isUnopened(k)) unopened += 1;
-        }
-      }
-      return { total, unopened };
+      return childrenOf(folderId)
+        .filter(filter)
+        .flatMap((k) =>
+          k.bookmark_type === BookmarkType.FAVORITE_FOLDER ? leavesUnder(k.id ?? '', seen) : [k],
+        );
     };
 
     const asFolder = (folder: Bookmark): Browseable => {
       const title = folder.name || folder.title || folder.displayName;
       const allChildren = folder.id ? childrenOf(folder.id) : [];
       const children = allChildren.filter(filter);
-      // Counted over leaf descendants recursively, so a folder-of-folders (the
-      // Auto root) reflects everything filed beneath it. The badge shows only
-      // what's NEVER been opened (an all-opened folder carries no badge, like a
-      // fully-read inbox); the tooltip still reports the full membership.
-      const { total, unopened } = folder.id
-        ? countLeaves(folder.id)
-        : { total: 0, unopened: 0 };
+      // The badge counts only what's NEVER been opened, so an all-opened folder
+      // carries no badge (like a fully-read inbox); the tooltip still reports
+      // full membership.
+      const leaves = folder.id ? leavesUnder(folder.id) : [];
+      const unopened = leaves.filter(isUnopened).length;
       return {
         kind: 'favorite_folder',
         id: folder.id ?? '',
@@ -246,18 +229,11 @@ export function useFavoritesRoots(opts?: {
           },
         ],
         tooltip: (
-          <>
-            <div className="text-xs font-medium">
-              <Trans>
-                {title} — {total} items
-              </Trans>
-            </div>
-            {unopened > 0 && (
-              <div className="mt-0.5 text-[10px] opacity-60">
-                <Trans>{unopened} never opened</Trans>
-              </div>
-            )}
-          </>
+          <div className="text-xs font-medium">
+            <Trans>
+              {title} — {leaves.length} items
+            </Trans>
+          </div>
         ),
       };
     };
@@ -301,7 +277,6 @@ export function useFavoritesRoots(opts?: {
     summaries,
     removeFavorite,
     renameFavorite,
-    markOpened,
     moveToFolder,
     deleteFolder,
     reorder,

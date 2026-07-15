@@ -79,6 +79,23 @@ export class Bookmark extends APIEntity<Bookmark> implements IBookmark {
     this.project_id = entity.project_id ?? null;
   }
 
+  /** Record one open — bump `counter` and persist. Mirrors Prompt.enqueueTo's
+   *  `use_count` bump: stamp in place, then save.
+   *
+   *  The in-place bump + `notifyEntityChanged` is what re-renders the unread
+   *  badges, with zero network, so they tick before the save lands. The save's
+   *  own WS echo can't do it: an `update` DataOp arriving while this entity's
+   *  `saveInFlight` is set gets buffered, and the flush never notifies query
+   *  watchers. Deliberately no refetch — this fires on every favorite click.
+   *
+   *  Callers `void` it (a click path must never block navigation on a usage
+   *  stamp); the save promise is returned so tests can await the write. */
+  async markOpened(): Promise<void> {
+    this.counter = (this.counter ?? 0) + 1;
+    dataManager.notifyEntityChanged(this);
+    return this.save([]);
+  }
+
   /** Desktop drag-drop commit — splice a bookmark into the drop gap within
    *  its container (root '' or a folder id). Mirrors Tab.reorder; the server
    *  registers the handler type-qualified as `bookmark.order`. */

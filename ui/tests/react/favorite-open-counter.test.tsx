@@ -1,116 +1,62 @@
-import { cleanup, fireEvent, render, renderHook, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { Bookmark, BookmarkType } from '@sdk';
+import { Bookmark, BookmarkType, dataManager } from '@sdk';
 import type { Browseable } from '@src/components/browseable-tree/types';
 
-// ── Shared module mocks ──────────────────────────────────────────────────────
-// useFavorites pulls the live bookmark list + the active project; stub both so
-// we can drive a fixed tree. `refetch` is a spy because "markOpened must NOT
-// refetch" is itself a design decision under test.
-const h = vi.hoisted(() => ({
-  bookmarks: [] as Bookmark[],
-  refetch: vi.fn(),
-  notifyEntityChanged: vi.fn(),
-  save: vi.fn(() => Promise.resolve()),
-}));
-
-vi.mock('@src/hooks/use-project-bookmarks', () => ({
-  useProjectBookmarks: () => ({ data: h.bookmarks, refetch: h.refetch, excludeBookmarks: vi.fn() }),
-}));
-vi.mock('@sdk/react/hooks', () => ({
-  useProject: () => ({ project: { id: 'p1' } }),
-}));
-vi.mock('@sdk', async () => {
-  const actual = await vi.importActual<typeof import('@sdk')>('@sdk');
-  return { ...actual, dataManager: { notifyEntityChanged: h.notifyEntityChanged } };
-});
 // Stable dock so BrowseableGrid's default navigate doesn't need a Router.
 vi.mock('@src/navigation/useDockNavigation', () => ({
   useDockNavigation: () => ({ navigation: { openDock: vi.fn() }, currentDock: { toString: () => 'DOCK' } }),
 }));
 
-const { useFavorites } = await import('@src/hooks/use-favorites');
 const { BrowseableGrid } = await import('@src/components/browseable-tree/BrowseableGrid');
 
-const ID = {
-  folder: '00000000-0000-4000-8000-000000000001',
-  opened: '00000000-0000-4000-8000-000000000011',
-  fresh: '00000000-0000-4000-8000-000000000012',
-};
+const ID = { fresh: '00000000-0000-4000-8000-000000000012' };
 
-function bookmarkWithCounter(id: string, counter?: number): Bookmark {
-  const b = new Bookmark({
-    id,
-    bookmark_type: BookmarkType.FAVORITE,
-    title: id,
-    parent_id: ID.folder,
-    counter,
-  });
-  b.save = h.save;
+/** A favorite with a stubbed save — markOpened is a pure entity mutation, so
+ *  these need no hook, no provider and no module mocks. */
+function favorite(counter?: number): Bookmark {
+  const b = new Bookmark({ id: ID.fresh, bookmark_type: BookmarkType.FAVORITE, title: 'fav', counter });
+  b.save = vi.fn(() => Promise.resolve());
   return b;
 }
 
 afterEach(() => {
   cleanup();
-  vi.clearAllMocks();
+  vi.restoreAllMocks();
 });
 
-// ── markOpened: the reactivity contract ──────────────────────────────────────
-describe('markOpened', () => {
+// ── Bookmark.markOpened: the reactivity contract ─────────────────────────────
+describe('Bookmark.markOpened', () => {
   it('increments counter from absent (the pre-existing-row case)', async () => {
-    const b = bookmarkWithCounter(ID.fresh); // counter undefined, as on every legacy row
-    h.bookmarks = [b];
-    const { result } = renderHook(() => useFavorites());
-
-    await result.current.markOpened(b);
-
+    const b = favorite(); // counter undefined, as on every row predating the field
+    await b.markOpened();
     expect(b.counter).toBe(1);
   });
 
-  it('notifies subscribers synchronously — this, not the WS echo, ticks the badge', () => {
-    const b = bookmarkWithCounter(ID.fresh);
-    h.bookmarks = [b];
-    const { result } = renderHook(() => useFavorites());
-
-    void result.current.markOpened(b);
-
-    // Notified with the entity itself, before/independent of the save resolving.
-    expect(h.notifyEntityChanged).toHaveBeenCalledWith(b);
-  });
-
-  it('persists but does NOT refetch — it fires on every click, unlike its neighbours', async () => {
-    const b = bookmarkWithCounter(ID.fresh);
-    h.bookmarks = [b];
-    const { result } = renderHook(() => useFavorites());
-
-    await result.current.markOpened(b);
-
-    expect(h.save).toHaveBeenCalledOnce();
-    expect(h.refetch).not.toHaveBeenCalled();
-  });
-
-  it('two rapid opens both land — they mutate the one shared cached instance', async () => {
-    const b = bookmarkWithCounter(ID.fresh);
-    h.bookmarks = [b];
-    const { result } = renderHook(() => useFavorites());
-
-    await result.current.markOpened(b);
-    await result.current.markOpened(b);
-
+  it('increments rather than assigns — two opens reach 2', async () => {
+    const b = favorite();
+    await b.markOpened();
+    await b.markOpened();
     expect(b.counter).toBe(2);
   });
 
-  it('an opened bookmark is no longer unopened', async () => {
-    const opened = bookmarkWithCounter(ID.opened, 3);
-    const fresh = bookmarkWithCounter(ID.fresh, 0);
-    h.bookmarks = [opened, fresh];
-    const { result } = renderHook(() => useFavorites());
+  it('notifies subscribers — this, not the save WS echo, is what ticks the badge', async () => {
+    const notify = vi.spyOn(dataManager, 'notifyEntityChanged').mockImplementation(() => {});
+    const b = favorite();
 
-    await result.current.markOpened(fresh);
+    await b.markOpened();
 
-    // Both now count as opened — nothing left for a badge to report.
-    expect(h.bookmarks.every((b) => (b.counter ?? 0) > 0)).toBe(true);
+    expect(notify).toHaveBeenCalledWith(b);
+  });
+
+  it('persists the bump', async () => {
+    vi.spyOn(dataManager, 'notifyEntityChanged').mockImplementation(() => {});
+    const b = favorite();
+
+    await b.markOpened();
+
+    expect(b.save).toHaveBeenCalledOnce();
   });
 });
 
@@ -124,16 +70,16 @@ describe('BrowseableGrid onOpen', () => {
     pointer: null,
     ...over,
   });
+  const POINTER = { viewType: 'editor', pointer: 'x' } as never;
 
   it('fires on the POINTER arm — the case a bare `activate` hook would miss', () => {
     const onOpen = vi.fn();
     const navigate = vi.fn();
-    const pointer = { viewType: 'editor', pointer: 'x' } as never;
-    render(<BrowseableGrid roots={[node({ pointer, onOpen })]} onNavigate={navigate} />);
+    render(<BrowseableGrid roots={[node({ pointer: POINTER, onOpen })]} onNavigate={navigate} />);
 
     fireEvent.click(screen.getByText('Tile'));
 
-    expect(navigate).toHaveBeenCalledWith(pointer);
+    expect(navigate).toHaveBeenCalledWith(POINTER);
     expect(onOpen).toHaveBeenCalledOnce();
   });
 
@@ -146,6 +92,16 @@ describe('BrowseableGrid onOpen', () => {
 
     expect(activate).toHaveBeenCalledOnce();
     expect(onOpen).toHaveBeenCalledOnce();
+  });
+
+  it('fires only AFTER dispatch, so a throwing stamp cannot eat the navigation', () => {
+    const onOpen = vi.fn();
+    const navigate = vi.fn();
+    render(<BrowseableGrid roots={[node({ pointer: POINTER, onOpen })]} onNavigate={navigate} />);
+
+    fireEvent.click(screen.getByText('Tile'));
+
+    expect(navigate.mock.invocationCallOrder[0]).toBeLessThan(onOpen.mock.invocationCallOrder[0]);
   });
 
   it('does NOT fire for a non-actionable row — a broken favorite was never opened', () => {
@@ -168,23 +124,5 @@ describe('BrowseableGrid onOpen', () => {
     fireEvent.click(screen.getByText('Folder'));
 
     expect(onOpen).not.toHaveBeenCalled();
-  });
-
-  it('navigation still happens when the usage stamp throws — onOpen can never block it', () => {
-    const navigate = vi.fn();
-    const pointer = { viewType: 'editor', pointer: 'x' } as never;
-    const onOpen = () => {
-      throw new Error('stamp exploded');
-    };
-    render(<BrowseableGrid roots={[node({ pointer, onOpen })]} onNavigate={navigate} />);
-
-    try {
-      fireEvent.click(screen.getByText('Tile'));
-    } catch {
-      // The throw propagates out of the handler; what matters is that it
-      // happened AFTER dispatch, so navigation already went through.
-    }
-
-    expect(navigate).toHaveBeenCalledWith(pointer);
   });
 });

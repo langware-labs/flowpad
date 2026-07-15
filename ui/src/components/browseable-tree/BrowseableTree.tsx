@@ -3,6 +3,7 @@ import React, { useCallback, useContext, useEffect, useRef, useState } from 'rea
 import { Trans, useLingui } from '@lingui/react/macro';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { Button } from '@src/components/ui/button';
+import { openBrowseable } from './open';
 import type { Browseable, BrowseableDragData, BrowseableTreeProps, ToolbarAction } from './types';
 import { useBrowseableTree } from './useBrowseableTree';
 import {
@@ -305,21 +306,9 @@ function BrowseableRow({
       // Label click NAVIGATES only — expansion belongs to the chevron (or a
       // double-click). A pointer-less parent still expands on click so header
       // rows (pointer: null) stay usable.
-      // Click resolves as `pointer ?? activate` (see types.ts invariant) —
-      // activate is the imperative fallback for nodes whose navigation can't
-      // be a pure DockPointer.
-      if (node.pointer) {
-        onNavigate(node.pointer);
-      } else if (node.activate) {
-        void node.activate();
-      } else if (hasChildrenHint) {
+      if (!openBrowseable(node, onNavigate) && hasChildrenHint) {
         void tree.toggleExpand(node);
-        return; // Expanded, not opened.
-      } else {
-        return; // Non-actionable row — nothing opened.
       }
-      // After dispatch, so a throwing usage stamp can never break navigation.
-      node.onOpen?.();
     },
     [editing, canSelect, selection, rootId, hasChildrenHint, node, tree, onNavigate],
   );
