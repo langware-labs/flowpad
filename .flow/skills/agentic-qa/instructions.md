@@ -189,7 +189,7 @@ Typing into the asset-manager list filter threw `TypeError: (d.posix_path ?? "")
 
 **Phase 8 manual regression triage** — drove 41 failures down to ~13 in 4 rerun rounds. Recurring patterns and one-line fixes:
 
-- **WelcomeModal Radix overlay blocks home-page clicks after DB clear** — `dismissSetupModal` helpers must also pre-set `localStorage['flowpad-index-approved']='1'`. The WelcomeModal opens when bootstrap returns `scanInfo.never_indexed=true`; its overlay intercepts pointer events on home buttons. Updated `chat/helpers.ts`, `terminal/helpers.ts`, `triggers/helpers.ts`, plus the inline setup() functions in search tests.
+- ~~**WelcomeModal Radix overlay blocks home-page clicks after DB clear**~~ — **OBSOLETE, do not re-apply.** The WelcomeModal (and every auto-opening index prompt) has since been removed: indexing is now offered inline and only builds on an explicit click, so nothing blocks home-page clicks on a never-indexed DB. The old workaround — seeding `localStorage['flowpad-index-approved']` / `sessionStorage['flowpad-scan-dismissed']` in `dismissSetupModal` helpers — was swept out of the suite; the pref it set no longer exists. Don't re-add these seeds.
 - **Hardcoded `localhost:9007` in many test API calls** — actual port is 9008 in this env. `sed -i '' 's|localhost:9007|localhost:9008|g'` across all `.md.ts` files.
 - **Terminal ribbon shrunk from 5 → 4 buttons** — Shell + Queue removed, Dir added. Tests `git_status_panel.md.ts` and `prompt_index_panel.md.ts` rebased their nth() indices and `toHaveCount`.
 - **Schedule triggers without project_id are still filtered out of TriggersView** (re-confirmed from prior cycle's note) — tests creating triggers via API must POST with `project_id: <bootstrap default_project.id>`.

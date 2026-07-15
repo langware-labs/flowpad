@@ -41,7 +41,6 @@ import {
   type ResolvedInstance,
 } from './_instances';
 import {
-  dismissWelcomeModal,
   launchBrowser,
   openConversation,
   openInstancePage,
@@ -200,7 +199,6 @@ async function acceptConversationInvitationInUI(inst: InstancePage, conversation
       body: '{}',
     }).catch(() => undefined);
     await page.goto(`${inst.feUrl}/dock/inbox?viewMode=advanced`, { waitUntil: 'domcontentloaded' });
-    await dismissWelcomeModal(page);
     const row = page.locator(rowSelector).first();
     if (await row.isVisible({ timeout: 2_000 }).catch(() => false)) {
       const kind = await row.getAttribute('data-kind').catch(() => null);
@@ -332,7 +330,6 @@ describe('spora copy-share → Vibe setup', () => {
       await bobPage.page.goto(`${bobPage.feUrl}/dock/shell/agentic_process-${vibeProcId}?viewMode=vibe`, {
         waitUntil: 'domcontentloaded',
       });
-      await dismissWelcomeModal(bobPage.page);
 
       const frame = bobPage.page.locator('iframe[data-testid="vibe-webapp-frame"]').first();
       await frame.waitFor({ state: 'attached', timeout: 30_000 });

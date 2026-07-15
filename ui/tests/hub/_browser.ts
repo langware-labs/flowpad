@@ -45,26 +45,7 @@ export async function openInstancePage(browser: Browser, name: string): Promise<
   });
   page.on('pageerror', (err) => consoleErrors.push(`pageerror: ${err.message}`));
   await page.goto(feUrl, { waitUntil: 'domcontentloaded' });
-  await dismissWelcomeModal(page);
   return { name, feUrl, apiUrl, page, consoleErrors };
-}
-
-/** Fresh instances open a first-run "Welcome to Flowpad!" onboarding modal
- *  whose overlay swallows every click. It's gated on an async never-indexed
- *  probe, so it can pop a beat AFTER navigation — poll briefly. Skip it (no
- *  indexing — irrelevant to share). Idempotent on already-onboarded instances. */
-export async function dismissWelcomeModal(page: Page, waitMs = 4_000): Promise<void> {
-  const skip = page.getByTestId('welcome-skip-button');
-  const deadline = Date.now() + waitMs;
-  for (;;) {
-    if (await skip.isVisible().catch(() => false)) {
-      await skip.click().catch(() => undefined);
-      await page.waitForTimeout(300);
-      return;
-    }
-    if (Date.now() > deadline) return;
-    await page.waitForTimeout(300);
-  }
 }
 
 /** The manual_regression noise filter: infra chatter that isn't an app bug. */
@@ -174,16 +155,11 @@ export async function acceptInvitationInUI(inst: InstancePage): Promise<void> {
     body: '{}',
   }).catch(() => undefined);
   await page.goto(inst.feUrl, { waitUntil: 'domcontentloaded' });
-  await dismissWelcomeModal(page);
 
   const accept = page.getByTestId('accept-invitation-button').first();
   const refresh = page.getByTestId('refresh-conversations-button');
   const deadline = Date.now() + 18_000;
   for (;;) {
-    // The welcome modal is gated on an async probe and can pop late, after
-    // the strip rendered — re-dismiss it each iteration or its overlay eats
-    // the Accept click.
-    await dismissWelcomeModal(page, 0);
     if (await accept.isVisible().catch(() => false)) break;
     // Cheap in-page refresh (no reload) if the strip rendered it.
     await refresh.click({ timeout: 2_000 }).catch(() => undefined);
@@ -210,7 +186,6 @@ export async function openConversation(inst: InstancePage, conversationId: strin
   await inst.page.goto(`${inst.feUrl}/dock/conversation/${conversationId}?viewMode=advanced`, {
     waitUntil: 'domcontentloaded',
   });
-  await dismissWelcomeModal(inst.page);
 }
 
 /**
