@@ -309,8 +309,8 @@ msgid "{failed} of {0} failed to delete."
 msgstr "{failed} מתוך {0} נכשלו במחיקה."
 
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
-msgid "{folderName} has {changeCount} pending change(s). They need to be committed and pushed before the receiver can pull them."
-msgstr ""
+#~ msgid "{folderName} has {changeCount} pending change(s). They need to be committed and pushed before the receiver can pull them."
+#~ msgstr ""
 
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
 msgid "{folderName} has changes that haven't been pushed yet. The receiver can only pull what's on the remote."
@@ -9748,6 +9748,10 @@ msgstr "מוכן"
 #: src/components/connections-manager.tsx
 msgid "Ready to Connect"
 msgstr "מוכן להתחברות"
+
+#: src/components/share-to-conversation/GitShareGateDialog.tsx
+msgid "Ready to share"
+msgstr ""
 
 #: src/components/favorites/FavoritesEditDialog.tsx
 msgid "Rearrange favorites, create folders, and organize your bookmarks."
