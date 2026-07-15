@@ -28,7 +28,7 @@ const PROJECT_ACTION_BUTTON_CLASS =
  */
 export function VibeNewChat() {
   const { t } = useLingui();
-  const { user } = useAuth();
+  const { currentUser } = useAuth();
   const startVibe = useStartVibeSession();
   const [draft, setDraft] = useState('');
   const [model, setModel] = useState<VibeModelTier>(VIBE_MODEL_DEFAULT);
@@ -36,7 +36,7 @@ export function VibeNewChat() {
   const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
   const [isNewProjectOpen, setIsNewProjectOpen] = useState(false);
   const [isOpeningFolder, setIsOpeningFolder] = useState(false);
-  const firstName = user?.name?.split(' ')[0] || 'there';
+  const firstName = currentUser?.name?.split(' ')[0] || 'there';
   const defaultWorkspacePath = useMemo(
     () => dataContext.bootstrapInfo?.desktop_info?.paths?.workspace || '',
     [],

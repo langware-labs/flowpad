@@ -101,8 +101,8 @@ msgid "(no fields)"
 msgstr "(אין שדות)"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
-msgid "(no file — inline persona)"
-msgstr "(אין קובץ — אישיות מובטחת)"
+#~ msgid "(no file — inline persona)"
+#~ msgstr "(אין קובץ — אישיות מובטחת)"
 
 #: src/components/footer.tsx
 #~ msgid "(no git repo)"
@@ -308,6 +308,14 @@ msgstr "לפני {days}י׳"
 msgid "{failed} of {0} failed to delete."
 msgstr "{failed} מתוך {0} נכשלו במחיקה."
 
+#: src/components/share-to-conversation/GitShareGateDialog.tsx
+msgid "{folderName} has {changeCount} pending change(s). They need to be committed and pushed before the receiver can pull them."
+msgstr ""
+
+#: src/components/share-to-conversation/GitShareGateDialog.tsx
+msgid "{folderName} has changes that haven't been pushed yet. The receiver can only pull what's on the remote."
+msgstr ""
+
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "{guestName} wants to run prompts on your machine."
 msgstr ""
@@ -367,13 +375,14 @@ msgstr "{selectedCount} נבחרו"
 msgid "{sessionCount} sessions"
 msgstr "{sessionCount} הפעלות"
 
+#. placeholder {0}: leaves.length
 #: src/components/browseable-tree/adapters/useFavoritesRoots.tsx
-#~ msgid "{title} — {0} items"
-#~ msgstr ""
+msgid "{title} — {0} items"
+msgstr ""
 
 #: src/components/browseable-tree/adapters/useFavoritesRoots.tsx
-msgid "{title} — {count} items"
-msgstr ""
+#~ msgid "{title} — {count} items"
+#~ msgstr ""
 
 #: src/components/triggers-view/TriggerInvocationsPanel.tsx
 msgid "{total} file events"
@@ -1074,6 +1083,7 @@ msgstr "ניתוח"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Analyze and improve"
 msgstr ""
 
@@ -1646,8 +1656,12 @@ msgid "By name"
 msgstr "לפי שם"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
-msgid "By source"
-msgstr "לפי מקור"
+msgid "By scope"
+msgstr ""
+
+#: src/components/asset-manager/AssetManagerPopover.tsx
+#~ msgid "By source"
+#~ msgstr "לפי מקור"
 
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 msgid "cache hit rate"
@@ -1742,6 +1756,7 @@ msgstr ""
 #: src/components/project-sidebar/ProjectSidebar.tsx
 #: src/components/prompt-library/PromptEditDialog.tsx
 #: src/components/quick-create/QuickCreateDialog.tsx
+#: src/components/share-to-conversation/GitShareGateDialog.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
@@ -1839,8 +1854,8 @@ msgid "Changes ({0})"
 msgstr "שינויים ({0})"
 
 #: src/components/assets/AssetsPage.tsx
-msgid "Changes pending next index"
-msgstr "שינויים בהמתנה להנדקסה הבאה"
+#~ msgid "Changes pending next index"
+#~ msgstr "שינויים בהמתנה להנדקסה הבאה"
 
 #: src/components/execute-flow-view/instruction-panel/instruction-panel.tsx
 msgid "Changes saved successfully"
@@ -1888,6 +1903,10 @@ msgstr "בדיקה"
 msgid "Checking Git eligibility…"
 msgstr ""
 
+#: src/components/share-to-conversation/GitShareGateDialog.tsx
+msgid "Checking Git…"
+msgstr ""
+
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Checking if you have a local clone of the repository."
 msgstr "בדיקה אם יש לך קלון מקומי של המאגר."
@@ -1895,6 +1914,10 @@ msgstr "בדיקה אם יש לך קלון מקומי של המאגר."
 #: src/components/machine-overview/service-status-led.tsx
 msgid "Checking service status..."
 msgstr "בדיקת סטטוס השירות..."
+
+#: src/components/share-to-conversation/GitShareGateDialog.tsx
+msgid "Checking whether {folderName} is ready to share."
+msgstr ""
 
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
 msgid "checking…"
@@ -2409,6 +2432,10 @@ msgstr "הערות ({0})"
 msgid "Commit"
 msgstr "commit"
 
+#: src/components/share-to-conversation/GitShareGateDialog.tsx
+msgid "Commit & continue"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/WorktreeButtons.tsx
 #: src/components/terminal/interactive-terminal/WorktreeButtons.tsx
 msgid "Commit & Merge"
@@ -2421,6 +2448,10 @@ msgstr "אשר את כל השינויים ובצע מיזוג לענף הראש�
 #: src/components/assets/editor/skill/UsagePanel.tsx
 msgid "Commit failed"
 msgstr "commit נכשל"
+
+#: src/components/share-to-conversation/GitShareGateDialog.tsx
+msgid "Commit your changes to share them"
+msgstr ""
 
 #: src/components/assets/editor/skill/UsagePanel.tsx
 msgid "Commit/clean this asset first — Improve runs only on a clean-git asset."
@@ -2847,6 +2878,11 @@ msgstr "לא היה ניתן לפתור את צומת החישוב או את ס�
 msgid "Could not resolve home directory from bootstrap info"
 msgstr "לא ניתן לפתור את ספריית הבית מתוך מידע bootstrap"
 
+#: src/components/assets/ShareContextFolderButton.tsx
+#: src/components/assets/ShareContextFolderButton.tsx
+msgid "Could not resolve this folder"
+msgstr ""
+
 #: src/components/execute-flow-view/instruction-panel/instruction-panel.tsx
 msgid "Could not save changes"
 msgstr "לא היה ניתן לשמור את השינויים"
@@ -2888,6 +2924,10 @@ msgstr "לא ניתן לבדוק עדכונים: {error}"
 #: src/components/terminal/interactive-terminal/side-windows/SkillsAgentsPanel.tsx
 msgid "Couldn’t load transcript"
 msgstr "לא ניתן לטעון את התמליל"
+
+#: src/components/share-to-conversation/GitShareGateDialog.tsx
+msgid "Couldn't read this folder's Git status."
+msgstr ""
 
 #: src/components/account/db-stats.tsx
 msgid "Count"
@@ -5277,6 +5317,10 @@ msgstr "שינויים בגיט"
 msgid "Git Clone Failed"
 msgstr "העתקת Git נכשלה"
 
+#: src/components/share-to-conversation/GitShareGateDialog.tsx
+msgid "Git is required to share files"
+msgstr ""
+
 #: src/components/status-bar/GitPushButton.tsx
 #: src/components/status-bar/GitPushButton.tsx
 msgid "git push"
@@ -5632,6 +5676,10 @@ msgstr "תופס וו"
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "Hooks:"
 msgstr "קישורים:"
+
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "How does improving an asset work?"
+msgstr ""
 
 #: src/components/code-editor/EditorPane.tsx
 msgid "HTML Preview"
@@ -6427,6 +6475,10 @@ msgstr "טוען {typeLabel}…"
 
 #: src/components/code-editor/AssetCompareView.tsx
 msgid "Loading asset diff…"
+msgstr ""
+
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Loading assets…"
 msgstr ""
 
 #: src/components/milkdown-editor/side-windows/BacklinksTab.tsx
@@ -7236,6 +7288,7 @@ msgstr "שם חדש"
 #: src/components/project-selector/NewProjectDialog.tsx
 #: src/components/project-selector/ProjectSelectorModal.tsx
 #: src/components/quick-create/QuickCreateMenu.tsx
+#: src/pages/flow-page/vibe-new-chat.tsx
 msgid "New project"
 msgstr "פרויקט חדש"
 
@@ -7404,6 +7457,10 @@ msgstr "אין עדיין אוטומציות"
 #: src/components/milkdown-editor/side-windows/BacklinksTab.tsx
 msgid "No backlinks yet."
 msgstr "אין קישורים חוזרים עדיין."
+
+#: src/components/favorites/FavoritesTreeMenu.tsx
+msgid "No bookmarks"
+msgstr ""
 
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 msgid "No bookmarks yet"
@@ -8494,6 +8551,7 @@ msgid "Open Flowpad docs"
 msgstr "פתיחת מסמכי Flowpad"
 
 #: src/components/assets/AddContextFolderDialog.tsx
+#: src/pages/flow-page/vibe-new-chat.tsx
 msgid "Open folder"
 msgstr "פתח תיקייה"
 
@@ -8657,9 +8715,14 @@ msgstr "פתח תהליך"
 msgid "Open Project"
 msgstr "פתח פרויקט"
 
-#: src/pages/flow-page/vibe-new-chat.tsx
-msgid "Open project folder"
+#. placeholder {0}: proj.displayName
+#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
+msgid "Open project assets — {0}"
 msgstr ""
+
+#: src/pages/flow-page/vibe-new-chat.tsx
+#~ msgid "Open project folder"
+#~ msgstr ""
 
 #: src/components/status-bar.tsx
 #: src/components/status-bar.tsx
@@ -9633,8 +9696,8 @@ msgstr "צור אותו מחדש"
 
 #: src/components/assets/AssetsPage.tsx
 #: src/components/assets/AssetsPage.tsx
-msgid "Re-index project"
-msgstr "אנדקס מחדש של הפרויקט"
+#~ msgid "Re-index project"
+#~ msgstr "אנדקס מחדש של הפרויקט"
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Re-parses <0>every</0> entry, ignoring the <1>.hash</1> sentinel. Use after a parser or schema change, when stored content is wrong even though the source hasn't moved."
@@ -9654,12 +9717,12 @@ msgid "Read"
 msgstr "נקרא"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
-msgid "Read-only"
-msgstr "קריאה בלבד"
+#~ msgid "Read-only"
+#~ msgstr "קריאה בלבד"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
-msgid "Read-only from this process. Attach to get a private editable copy."
-msgstr "קריאה בלבד מתהליך זה. צרף לקבלת עותק הניתן לעריכה פרטית."
+#~ msgid "Read-only from this process. Attach to get a private editable copy."
+#~ msgstr "קריאה בלבד מתהליך זה. צרף לקבלת עותק הניתן לעריכה פרטית."
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/asset-manager/AssetPickerPopover.tsx
@@ -9667,8 +9730,8 @@ msgid "Read-only source"
 msgstr "מקור קריאה בלבד"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
-msgid "Read-only source. Attach to get a private editable copy."
-msgstr "מקור קריאה בלבד. צרף לקבלת עותק הניתן לעריכה פרטית."
+#~ msgid "Read-only source. Attach to get a private editable copy."
+#~ msgstr "מקור קריאה בלבד. צרף לקבלת עותק הניתן לעריכה פרטית."
 
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Reading…"
@@ -9879,8 +9942,6 @@ msgstr "רענן את אינדקס הפרויקט"
 msgid "refresh recommended"
 msgstr "עדכון מומלץ"
 
-#: src/components/assets/AssetsPage.tsx
-#: src/components/assets/AssetsPage.tsx
 #: src/pages/search-view/SearchView.tsx
 msgid "Refresh search data"
 msgstr "עדכן נתוני חיפוש"
@@ -10866,7 +10927,6 @@ msgstr "חפש טרנסקריפט…"
 msgid "Search workflows…"
 msgstr ""
 
-#: src/components/assets/AssetsPage.tsx
 #: src/components/project-resource-list/ProjectResourceList.tsx
 #: src/pages/home-landing/HomeLanding.tsx
 msgid "Search..."
@@ -11219,6 +11279,7 @@ msgstr "מזהה תאימה"
 msgid "Session is not running"
 msgstr "הסדרה לא פעילה"
 
+#: src/pages/flow-page/vibe-recent-sessions.tsx
 #: src/tabs/useTerminalStripController.tsx
 msgid "Session not found"
 msgstr "הפגישה לא נמצאה"
@@ -11293,6 +11354,10 @@ msgstr "הגדרות"
 msgid "Setup failed"
 msgstr ""
 
+#: src/components/share-to-conversation/GitShareGateDialog.tsx
+msgid "Setup git"
+msgstr ""
+
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Setup LM Proxy Access"
 msgstr "הגדר גישת LM Proxy"
@@ -11309,6 +11374,11 @@ msgstr "הגדר גישת API מוגבלת למכונה לצומת חישוב ז
 #: src/components/spec-editor/SpecEditor.tsx
 msgid "Share"
 msgstr "שתף"
+
+#. placeholder {0}: folder.name
+#: src/components/assets/ShareContextFolderButton.tsx
+msgid "Share {0} over Git"
+msgstr ""
 
 #. placeholder {0}: currentProject.session_code
 #: src/components/collaboration/StartRoomDialog.tsx
@@ -11368,6 +11438,10 @@ msgstr "הקשר משותף"
 
 #: src/components/collaboration/SharedSessionsList.tsx
 msgid "Shared sessions"
+msgstr ""
+
+#: src/components/share-to-conversation/GitShareGateDialog.tsx
+msgid "Sharing sends files over Git, so the receiver can pull them. {folderName} isn't set up with Git yet."
 msgstr ""
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
@@ -11459,6 +11533,10 @@ msgstr "הצג בתיקייה (בוחר קובץ לגרירה)"
 
 #: src/components/task-bar/TaskCard.tsx
 msgid "Show member tasks"
+msgstr ""
+
+#: src/pages/flow-page/vibe-recent-sessions.tsx
+msgid "Show more"
 msgstr ""
 
 #: src/components/workers/WorkerToolbar.tsx
@@ -11670,8 +11748,8 @@ msgid "Something went wrong while loading this page."
 msgstr "משהו לא הלך כשורה בעת טעינת דף זה."
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
-msgid "Sort"
-msgstr "מיין"
+#~ msgid "Sort"
+#~ msgstr "מיין"
 
 #: src/components/terminal/HistoryModal.tsx
 msgid "Sort by time"
@@ -11690,6 +11768,10 @@ msgstr "מיין לפי זמן: הקדומות ראשונות (לחץ לחדשו
 #: src/components/terminal/interactive-terminal/side-windows/PromptIndexPanel.tsx
 msgid "Sort prompts by time"
 msgstr "מיין הנמקות לפי זמן"
+
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Sort within each type"
+msgstr ""
 
 #: src/components/hooks/sniffer_view_mock.tsx
 msgid "Source"
@@ -12375,6 +12457,7 @@ msgid "This asset has no file path."
 msgstr ""
 
 #: src/components/chats-navigator/ChatsNavigator.tsx
+#: src/pages/flow-page/vibe-recent-sessions.tsx
 msgid "This chat has no resumable session."
 msgstr "לשיחה זו אין סשן שניתן להמשיך בו."
 
@@ -12405,6 +12488,10 @@ msgstr "לקובץ זה אין ישות תומכת עדיין."
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
 msgid "This file isn't text"
 msgstr "קובץ זה אינו טקסט"
+
+#: src/components/share-to-conversation/GitShareGateDialog.tsx
+msgid "This folder can't be shared yet"
+msgstr ""
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "This folder-backed asset has no main file metadata."
@@ -13334,6 +13421,10 @@ msgstr ""
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "What is Git sharing?"
+msgstr ""
+
+#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
+msgid "What is project?"
 msgstr ""
 
 #: src/components/account/secrets-section.tsx

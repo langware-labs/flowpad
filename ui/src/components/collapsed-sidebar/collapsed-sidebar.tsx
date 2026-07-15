@@ -236,18 +236,19 @@ export function CollapsedSidebar() {
       </span>
     ) : null;
 
-  /** Project home — the rail twin of the footer's project-name button: same
-   *  `openProject` target, same "Flowpad project" wiki page behind the tip. The
-   *  glyph is the project type's registry icon, never a hardcoded one. */
+  /** The active project's rail button: opens that project's assets (the same
+   *  scope-aware target the Assets item routes to), behind the "Flowpad project"
+   *  wiki page the footer's project name points at. The glyph is the project
+   *  type's registry icon, never a hardcoded one. */
   const renderProjectHomeItem = (proj: NonNullable<ReturnType<typeof useContext>['project']>) => {
     const ProjectIcon = iconForType(Project.type);
     return (
       <SidebarMenuItem>
-        <WikiTip wikiword="Flowpad project" label={proj.displayName} buttonLabel={t`What is project?`}>
+        <WikiTip wikiword="Flowpad project" label={t`What is project?`}>
           <SidebarMenuButton
-            isActive={currentView === ViewType.PROJECT}
-            onClick={() => navigation.openProject(proj.id)}
-            aria-label={t`Open project home — ${proj.displayName}`}
+            isActive={currentView === ViewType.ASSETS}
+            onClick={() => handleClick(ViewType.ASSETS)}
+            aria-label={t`Open project assets — ${proj.displayName}`}
             className="relative w-full justify-center px-2"
           >
             <ProjectIcon className="h-5 w-5" />
@@ -307,10 +308,9 @@ export function CollapsedSidebar() {
               {visibleItems.map((item) => (
                 <React.Fragment key={item.title}>
                   {renderNavItem(item, undefined, item.viewType === ViewType.INBOX ? unreadCount : undefined)}
-                  {/* Project home — sits directly under Home. Not part of the nav
-                    matrix: its target is the ACTIVE project's dock pointer (not a
-                    bare view type) and its glyph is the project type's registry
-                    icon, so it drops out entirely when no project is selected. */}
+                  {/* The active project — sits directly under Home. Not part of the
+                    nav matrix: it exists only while a project is selected, and its
+                    glyph is that project type's registry icon. */}
                   {item.viewType === null && project && renderProjectHomeItem(project)}
                 </React.Fragment>
               ))}

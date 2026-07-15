@@ -45,7 +45,7 @@ import { DEFAULT_WORKER_TYPE, type WorkerType } from '@src/components/workers/wo
  */
 export function HomeLanding() {
   const { t } = useLingui();
-  const { user } = useAuth();
+  const { currentUser } = useAuth();
   const { navigation } = useDockNavigation();
   useProjects();
 
@@ -114,7 +114,7 @@ export function HomeLanding() {
     prevLastScanResultRef.current = lastScanResult;
   }, [lastScanResult]);
 
-  const firstName = user?.name?.split(' ')[0] || 'there';
+  const firstName = currentUser?.name?.split(' ')[0] || 'there';
 
   const [draftPrompt, setDraftPrompt] = useState('');
 
