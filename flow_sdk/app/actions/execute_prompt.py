@@ -544,18 +544,18 @@ async def _capture_assistant_reply(
         return "\n\n".join(turn.values()).strip()
 
     # First pass usually suffices (single turn, or the worker already wrote the
-    # new reply). When the resumed worker hasn't flushed the new turn yet, the
+    # new reply). When a resumed worker hasn't flushed the new turn yet, the
     # pass returns empty (all baseline) — re-stream, bounded, waiting for THIS
     # turn's output rather than returning a stale prior turn. Not a timeout
     # widening: each pass ends at the worker's own terminal marker; the bound
-    # only covers the resume write-lag when a baseline exists.
-    reply = await _one_pass()
-    if reply or not baseline:
-        return reply
-    for _ in range(6):
-        await asyncio.sleep(2)
+    # only covers the resume write-lag when a baseline exists (no baseline → the
+    # first empty pass is authoritative and returns immediately).
+    reply = ""
+    for attempt in range(7):
+        if attempt:
+            await asyncio.sleep(2)
         reply = await _one_pass()
-        if reply:
+        if reply or not baseline:
             return reply
     return reply
 
@@ -728,8 +728,10 @@ async def execute_prompt_from_message(
 
         # Snapshot the transcript's assistant messages BEFORE the run so the
         # capture ignores prior turns' replies on a resumed session (fixes the
-        # multi-turn off-by-one where turn N returned turn N-1's text).
-        baseline_ids = _read_transcript_assistant_ids(ap)
+        # multi-turn off-by-one where turn N returned turn N-1's text). Off the
+        # event loop — the JSONL scan is blocking and the transcript can be long.
+        import asyncio  # noqa: PLC0415
+        baseline_ids = await asyncio.to_thread(_read_transcript_assistant_ids, ap)
         await ap.prompt(prompt_text)
         reply = await _capture_assistant_reply(ap, baseline_ids=baseline_ids)
 
