@@ -42,8 +42,6 @@ test.describe('Flow Shell tab location', () => {
     // Step 3: refresh the page.
     await page.reload();
 
-    // Re-dismiss any modal after reload.
-
     // Step 4: Flow shell should remain the first tab.
     await expect(page.locator(tabSelector).first()).toBeVisible({ timeout: 30_000 });
     await expect

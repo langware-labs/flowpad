@@ -255,7 +255,14 @@ def _purge_keychain(name: str) -> str:
 
 
 # ── relaunch + readiness ──────────────────────────────────────────────────────
-def _set_view_mode_standard(name: str) -> None:
+def _pin_view_mode_for_qa(name: str) -> None:
+    """Pin a reset QA instance to Standard.
+
+    Deliberately NOT the shipped default (Vibe, `preferences.ui.view_mode` in
+    prefRegistry.ts): the browser sweeps this reset serves assert Standard /
+    Advanced surfaces, so they pin the mode explicitly rather than inherit
+    whatever a fresh user gets.
+    """
     p = _instance_dir(name) / "preferences.json"
     try:
         d = _read_json(p)
@@ -341,7 +348,7 @@ def reset(
             _relaunch_backend_only(name)
         else:
             _relaunch_full(name)
-        _set_view_mode_standard(name)
+        _pin_view_mode_for_qa(name)
         env = _read_env_file(name)
         if env.get("LOCAL_SERVER_PORT"):
             port = int(env["LOCAL_SERVER_PORT"])

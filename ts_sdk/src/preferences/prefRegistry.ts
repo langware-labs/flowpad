@@ -42,7 +42,6 @@ export enum PrefKey {
   CHAT_SHOW_TOOLS = 'preferences.chat.show_tools',
   ONBOARDING_DISMISSED = 'preferences.ui.onboarding_dismissed',
   SHOW_SYSTEM_PROJECTS = 'preferences.ui.show_system_projects',
-  INDEXING_APPROVED = 'preferences.indexing.approved',
   // Per-folder indexing consent (macOS-TCC / cross-OS special folders):
   // 'ask' | 'skip' | 'allow' | 'denied'. Mirrors flow_sdk special_folders.py.
   INDEX_FOLDER_DOCUMENTS = 'preferences.indexing.folders.documents',
@@ -258,8 +257,8 @@ export const PREF_REGISTRY: Record<PrefKey, PrefInfo> = {
     label: 'View mode',
     description: 'Surface complexity: Vibe (simplest, creator), Standard (minimal), Advanced, or Dev.',
     dataType: PrefDataType.STRING,
-    // Standard is the default; Vibe is opt-in via the footer View toggle.
-    defaultValue: 'standard',
+    // Vibe is the default; opt up to Standard/Advanced/Dev via the footer View toggle.
+    defaultValue: 'vibe',
     options: [
       { value: 'vibe', label: 'Vibe' },
       { value: 'standard', label: 'Standard' },
@@ -301,14 +300,6 @@ export const PREF_REGISTRY: Record<PrefKey, PrefInfo> = {
     category: 'ui',
     label: 'Show system projects',
     description: 'Include built-in system projects in the project picker.',
-    dataType: PrefDataType.BOOL,
-    defaultValue: false,
-  },
-  [PrefKey.INDEXING_APPROVED]: {
-    key: PrefKey.INDEXING_APPROVED,
-    legacyLocalStorageKey: 'flowpad-index-approved',
-    category: 'indexing',
-    label: 'Indexing approved',
     dataType: PrefDataType.BOOL,
     defaultValue: false,
   },
