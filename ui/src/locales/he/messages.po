@@ -308,6 +308,18 @@ msgstr "לפני {days}י׳"
 msgid "{failed} of {0} failed to delete."
 msgstr "{failed} מתוך {0} נכשלו במחיקה."
 
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "{guestName} wants to run prompts on your machine."
+msgstr ""
+
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "{hostName} declined the live session."
+msgstr ""
+
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "{hostName} paused the live session."
+msgstr ""
+
 #: src/components/execute-flow-view/worker-sessions-panel.tsx
 msgid "{hours}h ago"
 msgstr "לפני {hours}ש׳"
@@ -332,6 +344,10 @@ msgstr "{label} רשומות"
 #: src/components/execute-flow-view/worker-sessions-panel.tsx
 msgid "{minutes}m ago"
 msgstr "לפני {minutes}ד׳"
+
+#: src/components/conversation/LiveSessionGroup.tsx
+msgid "{promptCount} prompts · {replyCount} replies"
+msgstr ""
 
 #. placeholder {0}: remaining !== 1 ? 's' : ''
 #: src/components/lens-viewer/CloudSearchResultsModal.tsx
@@ -561,6 +577,10 @@ msgstr "60"
 #: src/components/machine-overview/metrics-chart.tsx
 msgid "80% Alert Threshold"
 msgstr "סף התראה 80%"
+
+#: src/components/conversation/ConversationView.tsx
+msgid "A live session is already running in this conversation"
+msgstr ""
 
 #: src/components/conversation/asset-review/TestPromptDialog.tsx
 #~ msgid "A new build session opens and runs the skill. Optionally describe what to use it for."
@@ -997,6 +1017,10 @@ msgstr "תמיד הגב באופן אוטומטי ל{who} (כל הפרויקטי
 msgid "Always auto-reply to {who} for this project"
 msgstr "תמיד הגב באופן אוטומטי ל{who} עבור פרויקט זה"
 
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "Always auto-run {guestName}'s sessions here"
+msgstr ""
+
 #: src/components/search-index/SweepOrphansDialog.tsx
 msgid "An <0>orphan</0> is a row in the search index whose source file is gone from disk. The indexer detects them on every run and marks them with <1>orphan_since</1>. The file is already gone; sweeping just removes the stale row from search so results stay clean."
 msgstr "רשומה <0>יתומה</0> היא שורה במדד החיפוש שקובץ המקור שלה כבר לא קיים בדיסק. המדד מגלה אותן בכל הפעלה ומסמן אותן עם <1>orphan_since</1>. הקובץ כבר אבד; ייחוף פשוט מסיר את השורה הישנה מהחיפוש כדי שהתוצאות יישארו נקיות."
@@ -1172,6 +1196,10 @@ msgstr "הוספה לתור ההנמקות של העובד הנוכחי, מסו�
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "Apply"
 msgstr "החל"
+
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "Approve"
+msgstr ""
 
 #: src/components/account/system-log.tsx
 #: src/components/inbox-view/InboxView.tsx
@@ -1417,6 +1445,10 @@ msgstr "אוטומציות"
 #: src/components/capabilities-view/CapabilitiesView.tsx
 msgid "Available"
 msgstr "זמין"
+
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Available assets"
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/TerminalBottomRibbon.tsx
 msgid "Available when the agent is waiting for your input"
@@ -1851,6 +1883,10 @@ msgstr "בדוק הודעות חדשות"
 #: src/components/capabilities-view/CapabilitiesView.tsx
 msgid "Checking"
 msgstr "בדיקה"
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Checking Git eligibility…"
+msgstr ""
 
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Checking if you have a local clone of the repository."
@@ -2481,6 +2517,10 @@ msgstr "מחובר"
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Connected · {0}"
 msgstr "מחובר · {0}"
+
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "Connected to {hostName}'s machine."
+msgstr ""
 
 #: src/components/GitHubConnectionDialog.tsx
 msgid "Connected to GitHub"
@@ -3132,6 +3172,7 @@ msgstr "רמת ניפוי כוללת הפעלות hook."
 msgid "Debug logging"
 msgstr "רישום ניפוי באגים"
 
+#: src/components/collaboration/LiveSessionView.tsx
 #: src/components/inbox-view/InboxView.tsx
 msgid "Decline"
 msgstr "דחה"
@@ -3601,6 +3642,7 @@ msgstr "השלך טיוטה זו?"
 msgid "Discard unsaved changes and go back to inbox"
 msgstr "בטל שינויים שלא נשמרו וחזור לתיבה הנכנסת"
 
+#: src/components/collaboration/LiveSessionView.tsx
 #: src/components/collaboration/SharedSessionView.tsx
 #: src/components/connections-manager.tsx
 msgid "Disconnect"
@@ -3716,6 +3758,7 @@ msgstr "בוצע!"
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
 #: src/components/code-editor/EditorPane.tsx
 #: src/components/code-editor/EditorPane.tsx
+#: src/components/conversation/asset-review/AssetInstallActions.tsx
 #: src/components/conversation/AttachmentChip.tsx
 #: src/components/conversation/AttachmentChip.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
@@ -3745,6 +3788,11 @@ msgstr "הורד את כל הקבצים"
 msgid "Download bundle"
 msgstr "הורד חבילה"
 
+#: src/components/conversation/asset-review/AssetInstallActions.tsx
+#: src/components/conversation/asset-review/AssetInstallActions.tsx
+msgid "Download failed"
+msgstr ""
+
 #: src/components/assets/editor/AssetEditorHeader.tsx
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
 msgid "Download file"
@@ -3757,6 +3805,10 @@ msgstr "הורד הודעה"
 #: src/components/conversation/chips/ConversationChips.tsx
 msgid "Download sender's Claude Code transcript"
 msgstr "הורד תמליל Claude Code מהשולח"
+
+#: src/components/conversation/asset-review/AssetInstallActions.tsx
+msgid "Downloaded"
+msgstr ""
 
 #: src/components/conversation/AttachmentChip.tsx
 #: src/components/conversation/AttachmentChip.tsx
@@ -4601,6 +4653,7 @@ msgstr "פתיחת הקובץ נכשלה"
 #~ msgid "Failed to open folder"
 #~ msgstr "כישלון בפתיחת תיקייה"
 
+#: src/components/open-project-component/open-project-component.tsx
 #: src/components/open-project-component/use-open-project.ts
 #: src/components/project-setup-screen/project-setup-screen.tsx
 #: src/components/quick-create/QuickCreateDialog.tsx
@@ -4620,6 +4673,7 @@ msgstr "נכשל בפתיחת קובץ הרישום"
 msgid "Failed to open logs folder"
 msgstr "נכשל בפתיחת תיקיית הרישומים"
 
+#: src/components/open-project-component/open-project-component.tsx
 #: src/components/open-project-component/open-project-component.tsx
 #: src/components/open-project-component/use-open-project.ts
 #: src/tabs/useTerminalStripController.tsx
@@ -6288,6 +6342,23 @@ msgstr "חיה"
 msgid "live row"
 msgstr "שורה חיה"
 
+#: src/components/conversation/ConversationView.tsx
+#: src/components/conversation/LiveSessionGroup.tsx
+msgid "Live session"
+msgstr ""
+
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "Live session with {guestName} on your machine · {status}"
+msgstr ""
+
+#: src/components/conversation/ConversationView.tsx
+msgid "Live sessions are 1:1 — available in two-person conversations"
+msgstr ""
+
+#: src/components/conversation/ConversationView.tsx
+msgid "Live sessions need a shared conversation"
+msgstr ""
+
 #: src/components/hooks/sniffer_view_mock.tsx
 msgid "Live view of hook traffic. Uses a catch-all hook in the Claude user folder."
 msgstr "תצוגה חיה של תעבורת וו. משתמש בווו תופס הכל בתיקיית משתמש Claude."
@@ -6446,6 +6517,10 @@ msgstr "טוען ווקים..."
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Loading index status…"
 msgstr "טוען סטטוס אינדקס…"
+
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "Loading live session…"
+msgstr ""
 
 #: src/components/machine-overview/logs-viewer.tsx
 msgid "Loading logs..."
@@ -6839,6 +6914,10 @@ msgstr ""
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
 msgid "Message (optional)"
 msgstr "הודעה (אופציונלי)"
+
+#: src/components/entity-execution-panel/EntityExecutionPanel.tsx
+msgid "Message not queued"
+msgstr ""
 
 #: src/components/entity-execution-panel/EntityExecutionPanel.tsx
 #: src/components/terminal/interactive-terminal/ChatComposerBar.tsx
@@ -7372,6 +7451,7 @@ msgstr "אין כרטיסי קהילה"
 #: src/components/assets/ContextFolderBrowser.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
+#: src/components/open-project-component/open-project-component.tsx
 #: src/components/open-project-component/use-open-project.ts
 #: src/components/project-setup-screen/project-setup-screen.tsx
 #: src/components/quick-create/QuickCreateDialog.tsx
@@ -7585,6 +7665,10 @@ msgstr "לא נמצאו שפות."
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "No line changes vs the stamped baseline."
 msgstr "אין שינויים בשורות בהשוואה לקו הבסיס המיוועד."
+
+#: src/pages/flow-page/content-panel/content-panel.tsx
+msgid "No live session specified"
+msgstr ""
 
 #: src/components/assets/MarkdownIndexPanel.tsx
 msgid "No LLM index for this folder yet."
@@ -8036,6 +8120,10 @@ msgstr "לא הוגדרו טריגרים לוו-וצק זה"
 msgid "No triggers yet"
 msgstr "אין טריגרים עדיין"
 
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "No turns yet — send a prompt below to start working on {hostName}'s machine."
+msgstr ""
+
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "No types match filter"
 msgstr "אין סוגים תואמים את הסינון"
@@ -8131,6 +8219,10 @@ msgstr "לא מוערך"
 #: src/components/capabilities-view/CapabilitiesView.tsx
 msgid "Not runnable here"
 msgstr "לא ניתן להפעיל כאן"
+
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "Not started — your first prompt will request access to {hostName}'s machine."
+msgstr ""
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Note (optional)"
@@ -8507,6 +8599,10 @@ msgstr "פתח JSON"
 msgid "Open link"
 msgstr "פתח קישור"
 
+#: src/components/conversation/LiveSessionGroup.tsx
+msgid "Open live session"
+msgstr ""
+
 #: src/components/execute-flow-view/flows-panel/flows-panel.tsx
 msgid "Open live terminal session"
 msgstr "פתח ישיבת טרמינל חיה"
@@ -8619,6 +8715,10 @@ msgstr "פתח את המסמך האחרון"
 msgid "Open the latest plan"
 msgstr "פתח את התוכנית האחרונה"
 
+#: src/components/conversation/ConversationView.tsx
+msgid "Open the live session"
+msgstr ""
+
 #: src/components/conversation/ConversationContextPanel.tsx
 msgid "Open the live session in a terminal"
 msgstr "פתח את החילוק החי בטרמינל"
@@ -8685,6 +8785,7 @@ msgstr "OPENAI_API_KEY"
 msgid "Opened Asset compare."
 msgstr ""
 
+#: src/components/open-project-component/open-project-component.tsx
 #: src/components/open-project-component/use-open-project.ts
 msgid "Opened existing project"
 msgstr "פתח פרויקט קיים"
@@ -8872,6 +8973,7 @@ msgstr "הנתיב הועתק ללוח"
 msgid "pattern"
 msgstr "דפוס"
 
+#: src/components/collaboration/LiveSessionView.tsx
 #: src/components/hooks/sniffer_view_mock.tsx
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Pause"
@@ -9055,6 +9157,7 @@ msgstr "בואו להתחבר כדי להציג ולנהל משתנים סביב
 msgid "Please make sure the server is running."
 msgstr "אנא ודא שהשרת פועל."
 
+#: src/components/open-project-component/open-project-component.tsx
 #: src/components/open-project-component/use-open-project.ts
 msgid "Please provide a valid project path"
 msgstr "אנא ספק נתיב פרויקט חוקי"
@@ -9494,6 +9597,15 @@ msgstr "PyPI לא זמין"
 msgid "Python (flow SDK)"
 msgstr "Python (flow SDK)"
 
+#: src/components/entity-execution-panel/CompactExecutionInput.tsx
+#: src/components/entity-execution-panel/CompactExecutionInput.tsx
+msgid "Queue message"
+msgstr ""
+
+#: src/components/entity-execution-panel/QueueChip.tsx
+msgid "Queued messages"
+msgstr ""
+
 #: src/components/quick-access-view/QuickAccessView.tsx
 #: src/components/quick-access-view/QuickAccessView.tsx
 msgid "Quick Access"
@@ -9832,6 +9944,11 @@ msgstr "הסר קובץ"
 msgid "Remove from folder"
 msgstr ""
 
+#: src/components/entity-execution-panel/QueueChip.tsx
+#: src/components/entity-execution-panel/QueueChip.tsx
+msgid "Remove from queue"
+msgstr ""
+
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "Remove link"
 msgstr "הסר קישור"
@@ -10047,6 +10164,7 @@ msgid "Results"
 msgstr "תוצאות"
 
 #: src/components/chats-navigator/ChatsNavigator.tsx
+#: src/components/collaboration/LiveSessionView.tsx
 #: src/components/hooks/sniffer_view_mock.tsx
 #: src/components/machine-overview/machine-overview.tsx
 #: src/tabs/useTerminalStripController.tsx
@@ -10092,6 +10210,10 @@ msgstr "נסה שוב"
 #: src/components/persistent-iframe.tsx
 msgid "Retry Connection"
 msgstr "נסה שוב חיבור"
+
+#: src/components/conversation/asset-review/AssetInstallActions.tsx
+msgid "Retry download"
+msgstr ""
 
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Retry pull"
@@ -11167,6 +11289,10 @@ msgstr ""
 msgid "Settings"
 msgstr "הגדרות"
 
+#: src/components/conversation/asset-review/AssetInstallActions.tsx
+msgid "Setup failed"
+msgstr ""
+
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Setup LM Proxy Access"
 msgstr "הגדר גישת LM Proxy"
@@ -11218,6 +11344,11 @@ msgstr "שתף עם שיחה: {childPath}"
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "Share to conversation"
 msgstr "שתף לשיחה"
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Share using Git origin"
+msgstr ""
 
 #: src/components/assets/AddContextFolderDialog.tsx
 #: src/components/graph-context/ContextGraphCanvas.tsx
@@ -11679,6 +11810,10 @@ msgstr "התחל Copilot"
 #~ msgid "Start date"
 #~ msgstr "תאריך התחלה"
 
+#: src/components/conversation/ConversationView.tsx
+msgid "Start live session"
+msgstr ""
+
 #. placeholder {0}: workerLabel(pendingWorkerSwitch.workerType)
 #: src/pages/flow-page/vibe-workspace.tsx
 msgid "Start new {0} chat?"
@@ -11738,6 +11873,7 @@ msgstr ""
 msgid "Starting..."
 msgstr "מתחיל..."
 
+#: src/components/conversation/ConversationView.tsx
 #: src/components/join-room-dialog/JoinRoomDialog.tsx
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 msgid "Starting…"
@@ -11769,6 +11905,11 @@ msgstr "בקשת עדכון הסטטוס נשלחה"
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Status:"
 msgstr "סטטוס:"
+
+#. placeholder {0}: status ?? 'unknown'
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "status: {0}"
+msgstr ""
 
 #. placeholder {0}: step.line
 #: src/components/workflow-runner/detail/StepDetailPane.tsx
@@ -12138,6 +12279,10 @@ msgstr "הטרמינל בתוך האפליקציה הוא תמיד ה-shell הר
 msgid "The lens path could not be parsed."
 msgstr "לא ניתן לנתח את נתיב העדשה."
 
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "The live session has ended."
+msgstr ""
+
 #: src/components/project-home/BindSecretDialog.tsx
 msgid "The local secrets store is not enabled yet."
 msgstr ""
@@ -12212,14 +12357,17 @@ msgstr "חשיבה:"
 msgid "This action cannot be undone."
 msgstr "לא ניתן לבטל פעולה זו."
 
-#. placeholder {0}: gitGate.dirtyFiles
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
-msgid "This app has {0} uncommitted change(s). Commit and push before sharing — the recipient clones from git, so unsaved work won't travel."
-msgstr ""
+#~ msgid "This app has {0} uncommitted change(s). Commit and push before sharing — the recipient clones from git, so unsaved work won't travel."
+#~ msgstr ""
 
-#. placeholder {0}: gitGate.unpushed
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
-msgid "This app has {0} unpushed commit(s). Push before sharing — the recipient clones from the remote. Use the git push button in the status bar."
+#~ msgid "This app has {0} unpushed commit(s). Push before sharing — the recipient clones from the remote. Use the git push button in the status bar."
+#~ msgstr ""
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "This asset can't be shared with Git. Turn Git sharing off to send a copy."
 msgstr ""
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
@@ -12262,6 +12410,14 @@ msgstr "קובץ זה אינו טקסט"
 msgid "This folder-backed asset has no main file metadata."
 msgstr ""
 
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "This live session has ended."
+msgstr ""
+
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "This live session was declined."
+msgstr ""
+
 #: src/components/persistent-iframe.tsx
 msgid "This may take up to 20 seconds"
 msgstr "זה עשוי להימשך עד 20 שניות"
@@ -12295,6 +12451,7 @@ msgstr "התהליך רץ ברקע — אפשר להמשיך לעבוד. כשה�
 msgid "This sends a cloud action per conversation:"
 msgstr "זה שולח פעולת ענן לכל שיחה:"
 
+#: src/components/collaboration/LiveSessionView.tsx
 #: src/components/collaboration/SharedSessionView.tsx
 msgid "This session has no bound conversation."
 msgstr ""
@@ -12883,6 +13040,10 @@ msgstr "השתמש בכפתור הרענון בסרגל הכלים כדי לנס
 msgid "used"
 msgstr "בשימוש"
 
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Used assets"
+msgstr ""
+
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/lens-viewer/shared/transcript-features/TranscriptEntryItem.tsx
 #: src/components/lens-viewer/shared/transcript-features/TranscriptStats.tsx
@@ -13082,6 +13243,10 @@ msgstr "נראה"
 msgid "w"
 msgstr "ש"
 
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "Waiting for {hostName} to approve the live session…"
+msgstr ""
+
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
 msgid "Waiting for authorization… (expires in {mm}:{ss})"
 msgstr "מחכה להרשאה... (פג תוקף ב-{mm}:{ss})"
@@ -13167,6 +13332,10 @@ msgstr ""
 msgid "What is a Flowpad project?"
 msgstr ""
 
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "What is Git sharing?"
+msgstr ""
+
 #: src/components/account/secrets-section.tsx
 msgid "What is this secret used for?"
 msgstr "למה משמש הסוד הזה?"
@@ -13232,6 +13401,10 @@ msgstr "מוחק שורות DB + רשומות FTS עבור כל סוג ניתן 
 msgid "Wizard"
 msgstr ""
 
+#: src/components/conversation/ConversationView.tsx
+msgid "Work on the other participant's machine"
+msgstr ""
+
 #: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
 #: src/pages/flow-page/vibe-worker-select.tsx
 #: src/pages/flow-page/vibe-worker-select.tsx
@@ -13287,6 +13460,10 @@ msgstr "ספריית עבודה"
 msgid "Working directory"
 msgstr "תיקיית עבודה"
 
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "Working on {hostName}'s machine…"
+msgstr ""
+
 #: src/components/code-editor/DiffContent.tsx
 msgid "Working Tree"
 msgstr "עץ עבודה"
@@ -13337,6 +13514,7 @@ msgstr "אפשר לסגור את החלון הזה."
 msgid "You don’t belong to an organization yet. Organizations are set up in Flowpad Cloud; once you’re added, your organization and its members appear here."
 msgstr "עדיין אינכם משויכים לארגון. ארגונים מוגדרים ב‑Flowpad Cloud, ולאחר שתתווספו — הארגון שלכם וחבריו יופיעו כאן."
 
+#: src/components/open-project-component/open-project-component.tsx
 #: src/components/open-project-component/use-open-project.ts
 #: src/components/project-setup-screen/project-setup-screen.tsx
 msgid "You must be logged in"

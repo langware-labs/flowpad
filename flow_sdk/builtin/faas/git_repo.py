@@ -11,6 +11,7 @@ import logging
 import os
 import re
 import shlex
+import subprocess
 from datetime import datetime
 from typing import TYPE_CHECKING, Literal
 
@@ -183,15 +184,40 @@ class GitRepo:
     """Run git operations for a specific working directory via a ComputeNode."""
 
     def __init__(self, work_dir: str, compute_node: "ComputeNode") -> None:
+        # Compute-node paths arrive POSIX-style ('/C:/Users/...') from the UI;
+        # git on Windows rejects the leading slash, so strip it back to a
+        # drive-rooted path.
+        if re.match(r"^/[A-Za-z]:([/\\]|$)", work_dir):
+            work_dir = work_dir[1:]
         self.work_dir = work_dir
         self._compute_node = compute_node
+        # Commands are sent as ONE shell string; the shell that parses it lives
+        # on the compute node (cmd.exe on a Windows desktop node, /bin/sh on
+        # docker/e2b — those providers pin path_sep to '/'), so quoting must
+        # follow the node's shell, not this server's.
+        provider = getattr(compute_node, "compute_provider", None)
+        self._windows_shell = getattr(provider, "path_sep", os.sep) == "\\"
 
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
 
+    def _quote(self, arg: str) -> str:
+        """Quote one argument for the compute node's shell.
+
+        cmd.exe has no single-quote semantics — POSIX quoting reaches git as
+        literal quote characters and splits paths on spaces — so Windows nodes
+        get MSVCRT-style double quoting instead.
+        """
+        if self._windows_shell:
+            return subprocess.list2cmdline([arg])
+        return shlex.quote(arg)
+
     async def _run_git_io(self, *args: str) -> tuple[str, str, int]:
         """Run a git sub-command inside self.work_dir via the compute node.
+
+        Every argument is quoted here for the node's shell — call sites pass
+        raw values (paths, branch names, commit messages), never pre-quoted.
 
         Returns (stdout_stripped, stderr_stripped, returncode). Git writes most
         progress/error text (push rejections, rebase failures) to stderr, so the
@@ -201,7 +227,7 @@ class GitRepo:
         """
         try:
             cmd = await self._compute_node.run_command(
-                f"git -C '{self.work_dir}' " + " ".join(args),
+                " ".join(["git", "-C", self._quote(self.work_dir), *(self._quote(a) for a in args)]),
                 background=False,
             )
             return (cmd.all_stdout or "").rstrip("\n"), (cmd.all_stderr or "").rstrip("\n"), cmd.exit_code or 0
@@ -253,7 +279,7 @@ class GitRepo:
         if rc != 0:
             return GitRestoreResult(ok=False, message=(err or "git init failed").strip())
         for key, value in GIT_INIT_CONFIG:
-            await self._run_git("config", key, shlex.quote(value))
+            await self._run_git("config", key, value)
         await self._seed_gitignore()
         return GitRestoreResult(ok=True, message="Initialized git repository")
 
@@ -417,9 +443,9 @@ class GitRepo:
         the working tree (covers both staged and unstaged changes).
         """
         if status == "?":
-            diff, _ = await self._run_git("diff", "--no-index", "/dev/null", f"'{file_path}'")
+            diff, _ = await self._run_git("diff", "--no-index", "/dev/null", file_path)
         else:
-            diff, _ = await self._run_git("diff", "HEAD", "--", f"'{file_path}'")
+            diff, _ = await self._run_git("diff", "HEAD", "--", file_path)
         return GitFileDiff(diff=diff)
 
     async def get_working_file(self, file_path: str) -> GitFileContent:
@@ -455,10 +481,10 @@ class GitRepo:
             from flow_sdk.actions.fs.asset_scope import is_folder_asset_dir
 
             if is_folder_asset_dir(self.work_dir):
-                return "'.'", False
+                return ".", False
         except Exception:  # noqa: BLE001 — scope resolution must never break the route
             logger.debug("scope-pathspec resolve failed; file-scoped", exc_info=True)
-        return f"'{file_path}'", True
+        return file_path, True
 
     @staticmethod
     def _status_lookup_path(path: str) -> str:
@@ -520,7 +546,7 @@ class GitRepo:
         status = await self.get_status()
         prefix = await self._workdir_prefix()
         files = [rel for f in status.files if (rel := self._status_file_relative_to_workdir(f, prefix)) is not None]
-        if pathspec != "'.'":
+        if pathspec != ".":
             files = [f for f in files if self._status_lookup_path(f.path).strip("./") == file_path.strip("./")]
 
         if await self.has_commit():
@@ -535,7 +561,7 @@ class GitRepo:
             if f.status != "?":
                 continue
             rel = self._status_lookup_path(f.path)
-            d, _ = await self._run_git("diff", "--no-index", "/dev/null", f"'{rel}'")
+            d, _ = await self._run_git("diff", "--no-index", "/dev/null", rel)
             if d:
                 additions.append(d)
         if additions:
@@ -602,7 +628,7 @@ class GitRepo:
         a single file, or the whole folder for a folder-backed asset (skill), so
         internal-file changes are shown."""
         pathspec, _ = self._scope_pathspec(file_path)
-        diff, _ = await self._run_git("diff", shlex.quote(commit_hash), "HEAD", "--", pathspec)
+        diff, _ = await self._run_git("diff", commit_hash, "HEAD", "--", pathspec)
         return GitFileDiff(diff=diff)
 
     async def get_file_at(self, file_path: str, commit_hash: str) -> GitFileContent:
@@ -620,7 +646,7 @@ class GitRepo:
         shows it as all-new — acceptable; rename-aware history is out of scope).
         """
         rel = file_path[2:] if file_path.startswith("./") else file_path
-        content, _ = await self._run_git("show", shlex.quote(f"{commit_hash}:./{rel}"))
+        content, _ = await self._run_git("show", f"{commit_hash}:./{rel}")
         return GitFileContent(content=content)
 
     async def restore_file(self, file_path: str, commit_hash: str) -> GitRestoreResult:
@@ -632,7 +658,7 @@ class GitRepo:
         content change, so the next save re-versions it as a fresh revision.
         """
         pathspec, _ = self._scope_pathspec(file_path)
-        _, err, rc = await self._run_git_io("checkout", shlex.quote(commit_hash), "--", pathspec)
+        _, err, rc = await self._run_git_io("checkout", commit_hash, "--", pathspec)
         if rc != 0:
             return GitRestoreResult(ok=False, message=(err or "Restore failed").strip())
         return GitRestoreResult(ok=True, message=f"Restored to {commit_hash[:8]}")
@@ -656,10 +682,10 @@ class GitRepo:
         linger as a separate deletion until the next refresh.
         """
         if status == "?":
-            _, err, rc = await self._run_git_io("clean", "-f", "--", f"'{file_path}'")
+            _, err, rc = await self._run_git_io("clean", "-f", "--", file_path)
             verb = "Deleted"
         else:
-            _, err, rc = await self._run_git_io("restore", "--staged", "--worktree", "--", f"'{file_path}'")
+            _, err, rc = await self._run_git_io("restore", "--staged", "--worktree", "--", file_path)
             verb = "Discarded changes to"
         if rc != 0:
             return GitRestoreResult(ok=False, message=(err or "Discard failed").strip())
@@ -667,14 +693,14 @@ class GitRepo:
 
     async def stage_file(self, file_path: str) -> GitRestoreResult:
         """Stage just this file (``git add -- <file>``)."""
-        _, err, rc = await self._run_git_io("add", "--", f"'{file_path}'")
+        _, err, rc = await self._run_git_io("add", "--", file_path)
         if rc != 0:
             return GitRestoreResult(ok=False, message=(err or "Stage failed").strip())
         return GitRestoreResult(ok=True, message=f"Staged {file_path}")
 
     async def unstage_file(self, file_path: str) -> GitRestoreResult:
         """Unstage just this file (``git restore --staged -- <file>``)."""
-        _, err, rc = await self._run_git_io("restore", "--staged", "--", f"'{file_path}'")
+        _, err, rc = await self._run_git_io("restore", "--staged", "--", file_path)
         if rc != 0:
             return GitRestoreResult(ok=False, message=(err or "Unstage failed").strip())
         return GitRestoreResult(ok=True, message=f"Unstaged {file_path}")
@@ -821,13 +847,13 @@ class GitRepo:
             n = len([ln for ln in names_out.splitlines() if ln.strip()])
             stamp = datetime.now().strftime("%Y-%m-%d %H:%M")
             msg = f"Flowpad: save changes ({n} file{'s' if n != 1 else ''}) — {stamp}"
-            c_out, c_err, c_rc = await self._run_git_io("commit", "-m", shlex.quote(msg))
+            c_out, c_err, c_rc = await self._run_git_io("commit", "-m", msg)
             if c_rc != 0:
                 return self._push_result(branch, (c_err or c_out or "Commit failed").strip())
 
         # 5. Sync with remote first (rebase) so the push is fast-forward.
         if has_upstream:
-            p_out, p_err, p_rc = await self._run_git_io("pull", "--rebase", "origin", shlex.quote(branch))
+            p_out, p_err, p_rc = await self._run_git_io("pull", "--rebase", "origin", branch)
             if p_rc != 0:
                 combined = p_err or p_out or ""
                 if "couldn't find remote ref" not in combined:
@@ -846,9 +872,7 @@ class GitRepo:
                     )
 
         # 6. Push (set upstream when the branch is new on the remote).
-        push_args = (
-            ["push", "origin", shlex.quote(branch)] if has_upstream else ["push", "-u", "origin", shlex.quote(branch)]
-        )
+        push_args = ["push", "origin", branch] if has_upstream else ["push", "-u", "origin", branch]
         ps_out, ps_err, ps_rc = await self._run_git_io(*push_args)
         if ps_rc != 0:
             combined = (ps_err or ps_out or "").strip()
