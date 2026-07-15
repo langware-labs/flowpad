@@ -8,9 +8,9 @@ import { notify } from './notify';
  *
  * Hub-error toast storms are fixed here: every hub error of a given status
  * class uses ONE stable id, so N broadcasts collapse to one live toast that
- * updates in place (was one sonner toast per event). 401s never toast at all —
- * logged-out is a normal state (login CTA overlay) and an expired/revoked
- * credential is only console/backend-logged.
+ * updates in place (was one sonner toast per event). A 401 only toasts when a
+ * previously-valid session lapsed ("Cloud sign-in expired"); the plain
+ * logged-out state stays silent (login CTA overlay covers it).
  *
  * Owns: the `hub_client_error` listener, the one-shot bootstrap notice, and the
  * `on_flow_data` hook_op listener (skill / incoming-task badges) that used to
@@ -60,16 +60,18 @@ function handleHubClientError(msg: HubClientErrorMsg): void {
   } else if (statusCode === 401) {
     // A 401 while we were never authenticated (or after an explicit logout) is
     // the *normal* logged-out state — not an error. The inbox/conversation
-    // surfaces show a Login CTA overlay for that case, so stay silent.
+    // surfaces show a Login CTA overlay for that case, so swallow the toast.
+    // Only surface "sign-in expired" when a previously-valid cloud session
+    // actually lapsed (we still believe we're logged in) — without it the
+    // instance drifts into a silently signed-out state and every cloud action
+    // fails with an unexplained 401/403 later.
     if (cloudManager.loginStatus !== 'logged_in') return;
-    // A 401 while we still believe we're logged in means the hub expired or
-    // revoked the stored credential. No toast: the backend WARNs on every hub
-    // 401 and the cloud surfaces show the login CTA, so a toast just nags on
-    // every WS re-watch retry. Leave a console trail for diagnosis instead.
-    console.warn(
-      `[cloud] hub rejected ${method} ${path} with 401 while logged in — sign-in expired/revoked`,
-      rawMessage,
-    );
+    notify.error({
+      id: 'cloud-auth-expired',
+      title: 'Cloud sign-in expired',
+      message: 'Please sign in again to keep using cloud features.',
+      actions: [{ label: 'Sign in', command: 'cloud.signin' }, detail],
+    });
   } else if (statusCode === 403) {
     notify.error({
       id: 'cloud-access-denied',
