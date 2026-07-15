@@ -308,6 +308,18 @@ msgstr "{days}d ago"
 msgid "{failed} of {0} failed to delete."
 msgstr "{failed} of {0} failed to delete."
 
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "{guestName} wants to run prompts on your machine."
+msgstr "{guestName} wants to run prompts on your machine."
+
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "{hostName} declined the live session."
+msgstr "{hostName} declined the live session."
+
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "{hostName} paused the live session."
+msgstr "{hostName} paused the live session."
+
 #: src/components/execute-flow-view/worker-sessions-panel.tsx
 msgid "{hours}h ago"
 msgstr "{hours}h ago"
@@ -332,6 +344,10 @@ msgstr "{label} records"
 #: src/components/execute-flow-view/worker-sessions-panel.tsx
 msgid "{minutes}m ago"
 msgstr "{minutes}m ago"
+
+#: src/components/conversation/LiveSessionGroup.tsx
+msgid "{promptCount} prompts · {replyCount} replies"
+msgstr "{promptCount} prompts · {replyCount} replies"
 
 #. placeholder {0}: remaining !== 1 ? 's' : ''
 #: src/components/lens-viewer/CloudSearchResultsModal.tsx
@@ -561,6 +577,10 @@ msgstr "60"
 #: src/components/machine-overview/metrics-chart.tsx
 msgid "80% Alert Threshold"
 msgstr "80% Alert Threshold"
+
+#: src/components/conversation/ConversationView.tsx
+msgid "A live session is already running in this conversation"
+msgstr "A live session is already running in this conversation"
 
 #: src/components/conversation/asset-review/TestPromptDialog.tsx
 #~ msgid "A new build session opens and runs the skill. Optionally describe what to use it for."
@@ -997,6 +1017,10 @@ msgstr "Always auto-reply to {who} (all projects)"
 msgid "Always auto-reply to {who} for this project"
 msgstr "Always auto-reply to {who} for this project"
 
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "Always auto-run {guestName}'s sessions here"
+msgstr "Always auto-run {guestName}'s sessions here"
+
 #: src/components/search-index/SweepOrphansDialog.tsx
 msgid "An <0>orphan</0> is a row in the search index whose source file is gone from disk. The indexer detects them on every run and marks them with <1>orphan_since</1>. The file is already gone; sweeping just removes the stale row from search so results stay clean."
 msgstr "An <0>orphan</0> is a row in the search index whose source file is gone from disk. The indexer detects them on every run and marks them with <1>orphan_since</1>. The file is already gone; sweeping just removes the stale row from search so results stay clean."
@@ -1172,6 +1196,10 @@ msgstr "Appended to the current worker's prompt queue, tagged with this message.
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "Apply"
 msgstr "Apply"
+
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "Approve"
+msgstr "Approve"
 
 #: src/components/account/system-log.tsx
 #: src/components/inbox-view/InboxView.tsx
@@ -1417,6 +1445,10 @@ msgstr "Automations"
 #: src/components/capabilities-view/CapabilitiesView.tsx
 msgid "Available"
 msgstr "Available"
+
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Available assets"
+msgstr "Available assets"
 
 #: src/components/terminal/interactive-terminal/TerminalBottomRibbon.tsx
 msgid "Available when the agent is waiting for your input"
@@ -1851,6 +1883,10 @@ msgstr "Check for new messages"
 #: src/components/capabilities-view/CapabilitiesView.tsx
 msgid "Checking"
 msgstr "Checking"
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Checking Git eligibility…"
+msgstr "Checking Git eligibility…"
 
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Checking if you have a local clone of the repository."
@@ -2481,6 +2517,10 @@ msgstr "Connected"
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Connected · {0}"
 msgstr "Connected · {0}"
+
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "Connected to {hostName}'s machine."
+msgstr "Connected to {hostName}'s machine."
 
 #: src/components/GitHubConnectionDialog.tsx
 msgid "Connected to GitHub"
@@ -3132,6 +3172,7 @@ msgstr "Debug level includes hook invocations."
 msgid "Debug logging"
 msgstr "Debug logging"
 
+#: src/components/collaboration/LiveSessionView.tsx
 #: src/components/inbox-view/InboxView.tsx
 msgid "Decline"
 msgstr "Decline"
@@ -3601,6 +3642,7 @@ msgstr "Discard this draft?"
 msgid "Discard unsaved changes and go back to inbox"
 msgstr "Discard unsaved changes and go back to inbox"
 
+#: src/components/collaboration/LiveSessionView.tsx
 #: src/components/collaboration/SharedSessionView.tsx
 #: src/components/connections-manager.tsx
 msgid "Disconnect"
@@ -3716,6 +3758,7 @@ msgstr "Done!"
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
 #: src/components/code-editor/EditorPane.tsx
 #: src/components/code-editor/EditorPane.tsx
+#: src/components/conversation/asset-review/AssetInstallActions.tsx
 #: src/components/conversation/AttachmentChip.tsx
 #: src/components/conversation/AttachmentChip.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
@@ -3745,6 +3788,11 @@ msgstr "Download all files"
 msgid "Download bundle"
 msgstr "Download bundle"
 
+#: src/components/conversation/asset-review/AssetInstallActions.tsx
+#: src/components/conversation/asset-review/AssetInstallActions.tsx
+msgid "Download failed"
+msgstr "Download failed"
+
 #: src/components/assets/editor/AssetEditorHeader.tsx
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
 msgid "Download file"
@@ -3757,6 +3805,10 @@ msgstr "Download message"
 #: src/components/conversation/chips/ConversationChips.tsx
 msgid "Download sender's Claude Code transcript"
 msgstr "Download sender's Claude Code transcript"
+
+#: src/components/conversation/asset-review/AssetInstallActions.tsx
+msgid "Downloaded"
+msgstr "Downloaded"
 
 #: src/components/conversation/AttachmentChip.tsx
 #: src/components/conversation/AttachmentChip.tsx
@@ -4601,6 +4653,7 @@ msgstr "Failed to open file"
 #~ msgid "Failed to open folder"
 #~ msgstr "Failed to open folder"
 
+#: src/components/open-project-component/open-project-component.tsx
 #: src/components/open-project-component/use-open-project.ts
 #: src/components/project-setup-screen/project-setup-screen.tsx
 #: src/components/quick-create/QuickCreateDialog.tsx
@@ -4620,6 +4673,7 @@ msgstr "Failed to open log file"
 msgid "Failed to open logs folder"
 msgstr "Failed to open logs folder"
 
+#: src/components/open-project-component/open-project-component.tsx
 #: src/components/open-project-component/open-project-component.tsx
 #: src/components/open-project-component/use-open-project.ts
 #: src/tabs/useTerminalStripController.tsx
@@ -6288,6 +6342,23 @@ msgstr "Live"
 msgid "live row"
 msgstr "live row"
 
+#: src/components/conversation/ConversationView.tsx
+#: src/components/conversation/LiveSessionGroup.tsx
+msgid "Live session"
+msgstr "Live session"
+
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "Live session with {guestName} on your machine · {status}"
+msgstr "Live session with {guestName} on your machine · {status}"
+
+#: src/components/conversation/ConversationView.tsx
+msgid "Live sessions are 1:1 — available in two-person conversations"
+msgstr "Live sessions are 1:1 — available in two-person conversations"
+
+#: src/components/conversation/ConversationView.tsx
+msgid "Live sessions need a shared conversation"
+msgstr "Live sessions need a shared conversation"
+
 #: src/components/hooks/sniffer_view_mock.tsx
 msgid "Live view of hook traffic. Uses a catch-all hook in the Claude user folder."
 msgstr "Live view of hook traffic. Uses a catch-all hook in the Claude user folder."
@@ -6446,6 +6517,10 @@ msgstr "Loading hooks..."
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Loading index status…"
 msgstr "Loading index status…"
+
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "Loading live session…"
+msgstr "Loading live session…"
 
 #: src/components/machine-overview/logs-viewer.tsx
 msgid "Loading logs..."
@@ -6839,6 +6914,10 @@ msgstr "Message"
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
 msgid "Message (optional)"
 msgstr "Message (optional)"
+
+#: src/components/entity-execution-panel/EntityExecutionPanel.tsx
+msgid "Message not queued"
+msgstr "Message not queued"
 
 #: src/components/entity-execution-panel/EntityExecutionPanel.tsx
 #: src/components/terminal/interactive-terminal/ChatComposerBar.tsx
@@ -7372,6 +7451,7 @@ msgstr "No community tickets"
 #: src/components/assets/ContextFolderBrowser.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
+#: src/components/open-project-component/open-project-component.tsx
 #: src/components/open-project-component/use-open-project.ts
 #: src/components/project-setup-screen/project-setup-screen.tsx
 #: src/components/quick-create/QuickCreateDialog.tsx
@@ -7585,6 +7665,10 @@ msgstr "No languages found."
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "No line changes vs the stamped baseline."
 msgstr "No line changes vs the stamped baseline."
+
+#: src/pages/flow-page/content-panel/content-panel.tsx
+msgid "No live session specified"
+msgstr "No live session specified"
 
 #: src/components/assets/MarkdownIndexPanel.tsx
 msgid "No LLM index for this folder yet."
@@ -8036,6 +8120,10 @@ msgstr "No triggers configured for this hook"
 msgid "No triggers yet"
 msgstr "No triggers yet"
 
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "No turns yet — send a prompt below to start working on {hostName}'s machine."
+msgstr "No turns yet — send a prompt below to start working on {hostName}'s machine."
+
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "No types match filter"
 msgstr "No types match filter"
@@ -8131,6 +8219,10 @@ msgstr "not respected"
 #: src/components/capabilities-view/CapabilitiesView.tsx
 msgid "Not runnable here"
 msgstr "Not runnable here"
+
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "Not started — your first prompt will request access to {hostName}'s machine."
+msgstr "Not started — your first prompt will request access to {hostName}'s machine."
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Note (optional)"
@@ -8507,6 +8599,10 @@ msgstr "Open JSON"
 msgid "Open link"
 msgstr "Open link"
 
+#: src/components/conversation/LiveSessionGroup.tsx
+msgid "Open live session"
+msgstr "Open live session"
+
 #: src/components/execute-flow-view/flows-panel/flows-panel.tsx
 msgid "Open live terminal session"
 msgstr "Open live terminal session"
@@ -8619,6 +8715,10 @@ msgstr "Open the latest doc"
 msgid "Open the latest plan"
 msgstr "Open the latest plan"
 
+#: src/components/conversation/ConversationView.tsx
+msgid "Open the live session"
+msgstr "Open the live session"
+
 #: src/components/conversation/ConversationContextPanel.tsx
 msgid "Open the live session in a terminal"
 msgstr "Open the live session in a terminal"
@@ -8685,6 +8785,7 @@ msgstr "OPENAI_API_KEY"
 msgid "Opened Asset compare."
 msgstr "Opened Asset compare."
 
+#: src/components/open-project-component/open-project-component.tsx
 #: src/components/open-project-component/use-open-project.ts
 msgid "Opened existing project"
 msgstr "Opened existing project"
@@ -8872,6 +8973,7 @@ msgstr "Path copied to clipboard"
 msgid "pattern"
 msgstr "pattern"
 
+#: src/components/collaboration/LiveSessionView.tsx
 #: src/components/hooks/sniffer_view_mock.tsx
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Pause"
@@ -9055,6 +9157,7 @@ msgstr "Please log in to view and manage environment variables."
 msgid "Please make sure the server is running."
 msgstr "Please make sure the server is running."
 
+#: src/components/open-project-component/open-project-component.tsx
 #: src/components/open-project-component/use-open-project.ts
 msgid "Please provide a valid project path"
 msgstr "Please provide a valid project path"
@@ -9494,6 +9597,15 @@ msgstr "PyPI unavailable"
 msgid "Python (flow SDK)"
 msgstr "Python (flow SDK)"
 
+#: src/components/entity-execution-panel/CompactExecutionInput.tsx
+#: src/components/entity-execution-panel/CompactExecutionInput.tsx
+msgid "Queue message"
+msgstr "Queue message"
+
+#: src/components/entity-execution-panel/QueueChip.tsx
+msgid "Queued messages"
+msgstr "Queued messages"
+
 #: src/components/quick-access-view/QuickAccessView.tsx
 #: src/components/quick-access-view/QuickAccessView.tsx
 msgid "Quick Access"
@@ -9832,6 +9944,11 @@ msgstr "Remove file"
 msgid "Remove from folder"
 msgstr "Remove from folder"
 
+#: src/components/entity-execution-panel/QueueChip.tsx
+#: src/components/entity-execution-panel/QueueChip.tsx
+msgid "Remove from queue"
+msgstr "Remove from queue"
+
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "Remove link"
 msgstr "Remove link"
@@ -10047,6 +10164,7 @@ msgid "Results"
 msgstr "Results"
 
 #: src/components/chats-navigator/ChatsNavigator.tsx
+#: src/components/collaboration/LiveSessionView.tsx
 #: src/components/hooks/sniffer_view_mock.tsx
 #: src/components/machine-overview/machine-overview.tsx
 #: src/tabs/useTerminalStripController.tsx
@@ -10092,6 +10210,10 @@ msgstr "Retry"
 #: src/components/persistent-iframe.tsx
 msgid "Retry Connection"
 msgstr "Retry Connection"
+
+#: src/components/conversation/asset-review/AssetInstallActions.tsx
+msgid "Retry download"
+msgstr "Retry download"
 
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Retry pull"
@@ -11167,6 +11289,10 @@ msgstr "Set up an existing git repository as the context folder"
 msgid "Settings"
 msgstr "Settings"
 
+#: src/components/conversation/asset-review/AssetInstallActions.tsx
+msgid "Setup failed"
+msgstr "Setup failed"
+
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Setup LM Proxy Access"
 msgstr "Setup LM Proxy Access"
@@ -11218,6 +11344,11 @@ msgstr "Share to a conversation: {childPath}"
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "Share to conversation"
 msgstr "Share to conversation"
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "Share using Git origin"
+msgstr "Share using Git origin"
 
 #: src/components/assets/AddContextFolderDialog.tsx
 #: src/components/graph-context/ContextGraphCanvas.tsx
@@ -11679,6 +11810,10 @@ msgstr "Start Copilot"
 #~ msgid "Start date"
 #~ msgstr "Start date"
 
+#: src/components/conversation/ConversationView.tsx
+msgid "Start live session"
+msgstr "Start live session"
+
 #. placeholder {0}: workerLabel(pendingWorkerSwitch.workerType)
 #: src/pages/flow-page/vibe-workspace.tsx
 msgid "Start new {0} chat?"
@@ -11738,6 +11873,7 @@ msgstr "Starting the session without the attached files."
 msgid "Starting..."
 msgstr "Starting..."
 
+#: src/components/conversation/ConversationView.tsx
 #: src/components/join-room-dialog/JoinRoomDialog.tsx
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 msgid "Starting…"
@@ -11769,6 +11905,11 @@ msgstr "Status request sent"
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Status:"
 msgstr "Status:"
+
+#. placeholder {0}: status ?? 'unknown'
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "status: {0}"
+msgstr "status: {0}"
 
 #. placeholder {0}: step.line
 #: src/components/workflow-runner/detail/StepDetailPane.tsx
@@ -12138,6 +12279,10 @@ msgstr "The in-app terminal is always the primary shell. This setting controls w
 msgid "The lens path could not be parsed."
 msgstr "The lens path could not be parsed."
 
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "The live session has ended."
+msgstr "The live session has ended."
+
 #: src/components/project-home/BindSecretDialog.tsx
 msgid "The local secrets store is not enabled yet."
 msgstr "The local secrets store is not enabled yet."
@@ -12212,15 +12357,18 @@ msgstr "Thinking:"
 msgid "This action cannot be undone."
 msgstr "This action cannot be undone."
 
-#. placeholder {0}: gitGate.dirtyFiles
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
-msgid "This app has {0} uncommitted change(s). Commit and push before sharing — the recipient clones from git, so unsaved work won't travel."
-msgstr "This app has {0} uncommitted change(s). Commit and push before sharing — the recipient clones from git, so unsaved work won't travel."
+#~ msgid "This app has {0} uncommitted change(s). Commit and push before sharing — the recipient clones from git, so unsaved work won't travel."
+#~ msgstr "This app has {0} uncommitted change(s). Commit and push before sharing — the recipient clones from git, so unsaved work won't travel."
 
-#. placeholder {0}: gitGate.unpushed
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
-msgid "This app has {0} unpushed commit(s). Push before sharing — the recipient clones from the remote. Use the git push button in the status bar."
-msgstr "This app has {0} unpushed commit(s). Push before sharing — the recipient clones from the remote. Use the git push button in the status bar."
+#~ msgid "This app has {0} unpushed commit(s). Push before sharing — the recipient clones from the remote. Use the git push button in the status bar."
+#~ msgstr "This app has {0} unpushed commit(s). Push before sharing — the recipient clones from the remote. Use the git push button in the status bar."
+
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "This asset can't be shared with Git. Turn Git sharing off to send a copy."
+msgstr "This asset can't be shared with Git. Turn Git sharing off to send a copy."
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "This asset has no file path."
@@ -12262,6 +12410,14 @@ msgstr "This file isn't text"
 msgid "This folder-backed asset has no main file metadata."
 msgstr "This folder-backed asset has no main file metadata."
 
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "This live session has ended."
+msgstr "This live session has ended."
+
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "This live session was declined."
+msgstr "This live session was declined."
+
 #: src/components/persistent-iframe.tsx
 msgid "This may take up to 20 seconds"
 msgstr "This may take up to 20 seconds"
@@ -12295,6 +12451,7 @@ msgstr "This runs in the background — feel free to keep working. When it's don
 msgid "This sends a cloud action per conversation:"
 msgstr "This sends a cloud action per conversation:"
 
+#: src/components/collaboration/LiveSessionView.tsx
 #: src/components/collaboration/SharedSessionView.tsx
 msgid "This session has no bound conversation."
 msgstr "This session has no bound conversation."
@@ -12883,6 +13040,10 @@ msgstr "Use the refresh button in the toolbar to retry"
 msgid "used"
 msgstr "used"
 
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Used assets"
+msgstr "Used assets"
+
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/lens-viewer/shared/transcript-features/TranscriptEntryItem.tsx
 #: src/components/lens-viewer/shared/transcript-features/TranscriptStats.tsx
@@ -13082,6 +13243,10 @@ msgstr "visible"
 msgid "w"
 msgstr "w"
 
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "Waiting for {hostName} to approve the live session…"
+msgstr "Waiting for {hostName} to approve the live session…"
+
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
 msgid "Waiting for authorization… (expires in {mm}:{ss})"
 msgstr "Waiting for authorization… (expires in {mm}:{ss})"
@@ -13167,6 +13332,10 @@ msgstr "What do you want to work on"
 msgid "What is a Flowpad project?"
 msgstr "What is a Flowpad project?"
 
+#: src/components/share-to-conversation/ShareToConversationDialog.tsx
+msgid "What is Git sharing?"
+msgstr "What is Git sharing?"
+
 #: src/components/account/secrets-section.tsx
 msgid "What is this secret used for?"
 msgstr "What is this secret used for?"
@@ -13232,6 +13401,10 @@ msgstr "Wipes the DB rows + FTS entries for every indexable type. The index beco
 msgid "Wizard"
 msgstr "Wizard"
 
+#: src/components/conversation/ConversationView.tsx
+msgid "Work on the other participant's machine"
+msgstr "Work on the other participant's machine"
+
 #: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
 #: src/pages/flow-page/vibe-worker-select.tsx
 #: src/pages/flow-page/vibe-worker-select.tsx
@@ -13287,6 +13460,10 @@ msgstr "Working Dir"
 msgid "Working directory"
 msgstr "Working directory"
 
+#: src/components/collaboration/LiveSessionView.tsx
+msgid "Working on {hostName}'s machine…"
+msgstr "Working on {hostName}'s machine…"
+
 #: src/components/code-editor/DiffContent.tsx
 msgid "Working Tree"
 msgstr "Working Tree"
@@ -13337,6 +13514,7 @@ msgstr "You can close this window."
 msgid "You don’t belong to an organization yet. Organizations are set up in Flowpad Cloud; once you’re added, your organization and its members appear here."
 msgstr "You don’t belong to an organization yet. Organizations are set up in Flowpad Cloud; once you’re added, your organization and its members appear here."
 
+#: src/components/open-project-component/open-project-component.tsx
 #: src/components/open-project-component/use-open-project.ts
 #: src/components/project-setup-screen/project-setup-screen.tsx
 msgid "You must be logged in"
