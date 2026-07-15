@@ -1,4 +1,4 @@
-import { dataContext, instancePreferences, onPreferenceChange, PrefKey, type Project } from '@sdk';
+import { dataContext, instancePreferences, onPreferenceChange, PREF_REGISTRY, PrefKey, type Project } from '@sdk';
 import { usePreference } from '@src/hooks/use-preference';
 import { defineGlobal } from '@sdk/utils';
 import { useEffect, useSyncExternalStore } from 'react';
@@ -24,14 +24,14 @@ export enum ViewMode {
 // View mode is a *user* preference, now owned by prefMan (`preferences.ui.view_mode`,
 // a boot key mirrored to localStorage for instant first paint). It is reflected as a
 // `data-view` attribute on the document root so CSS / other surfaces can react app-wide.
-// Default is Standard (the calm/minimal app); Vibe (super-simple, Lovable-style
-// creator UI) is opt-in via the footer View toggle; opt up to Advanced; Dev for
-// developers. The default lives in `preferences.ui.view_mode` (prefRegistry.ts,
-// defaultValue 'standard') — `toViewMode` below falls back to Standard for any
-// unset/unknown value. Toggle with window.setView() or the footer pill.
+// The default mode lives in ONE place: `preferences.ui.view_mode`'s defaultValue
+// in prefRegistry.ts. `instancePreferences.get` already resolves an unset key to
+// it, and `toViewMode` below derives the same value for unknown/garbage reads —
+// so neither restates the product decision. Toggle with window.setView() or the
+// footer pill.
 
 // Strict validator: unknown/garbage reads as *unset* (null). Used directly for
-// values adopted from a Project's stored `last_mode`, where a Standard fallback
+// values adopted from a Project's stored `last_mode`, where a default fallback
 // would silently launder bad data into a remembered preference.
 function toViewModeOrNull(v: unknown): ViewMode | null {
   return v === ViewMode.Standard || v === ViewMode.Advanced || v === ViewMode.Dev || v === ViewMode.Vibe
@@ -40,7 +40,7 @@ function toViewModeOrNull(v: unknown): ViewMode | null {
 }
 
 function toViewMode(v: unknown): ViewMode {
-  return toViewModeOrNull(v) ?? ViewMode.Standard;
+  return toViewModeOrNull(v) ?? toViewModeOrNull(PREF_REGISTRY[PrefKey.VIEW_MODE].defaultValue) ?? ViewMode.Standard;
 }
 
 const viewModeOverrideListeners = new Set<() => void>();
@@ -65,10 +65,12 @@ function getEffectiveViewMode(): ViewMode {
   return dockViewModeOverride ?? getViewMode();
 }
 
-// Vibe's display font (Plus Jakarta Sans) is loaded lazily — and only the first
-// time Vibe is actually active — so Standard/Advanced/Dev users (the majority,
-// who never see it) don't pay a render-blocking cross-origin font fetch on boot.
-// A global CSS @import would block first paint for everyone.
+// Vibe's display font (Plus Jakarta Sans) is injected only when Vibe is actually
+// active, so Standard/Advanced/Dev users never fetch it. NOTE: Vibe is now the
+// default mode, so the common path DOES take this on boot — `applyAttribute` runs
+// at module load below, and a <link rel="stylesheet"> in <head> is render-blocking
+// on a cross-origin round-trip. Self-hosting or preconnecting the font would get
+// that off first paint; lazy injection alone no longer buys what it used to.
 let vibeFontInjected = false;
 function ensureVibeFont(): void {
   if (vibeFontInjected || typeof document === 'undefined') return;

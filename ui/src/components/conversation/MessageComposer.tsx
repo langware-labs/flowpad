@@ -149,7 +149,10 @@ export function MessageComposer({
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
-  const canAddPrompt = !!effectiveConversationId;
+  // "Suggest prompt" is the legacy relay affordance (attach a prompt for the
+  // other user to approve). In a live session the composer text IS the prompt
+  // that runs on the host, so the button is redundant — hide it there.
+  const canAddPrompt = !!effectiveConversationId && !liveSessionId;
   const isBusy = sending || discarding;
   const isDisabled = disabled || isBusy;
 

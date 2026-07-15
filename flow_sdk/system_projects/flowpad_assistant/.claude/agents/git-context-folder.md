@@ -29,9 +29,10 @@ The wizard prompt includes JSON data with:
 
 - `projectId`: the Flowpad project to attach the context folder to
 - `scope`: `private` or `shared` — pass through to `add-context-dir`
-- `mode`: `"existing"` or `"new"`
+- `mode`: `"existing"`, `"new"`, or `"adopt"`
 - `url`: the repository URL (mode `existing` only)
-- `name`: the repository name (mode `new` only)
+- `name`: the repository name (modes `new` and `adopt`)
+- `path`: the existing folder to adopt in place (mode `adopt` only)
 
 IMPORTANT: the repo MUST end up with an `origin` remote. Flowpad classifies a
 context folder as git-backed by its `origin` remote — without one it degrades
@@ -78,7 +79,38 @@ git -C <dir> add -A && git -C <dir> commit -m "Initial commit"
      and help fix it.
    Do not finish without a working `origin` remote (see IMPORTANT above).
 
-## Both modes — register and attach
+## Mode `adopt` — set up the given EXISTING folder in place
+
+The folder already exists at `path` and is ALREADY attached to the project —
+the user wants to share it, and sharing travels over git, so it needs a git
+repo with an `origin` remote. Do NOT clone it, copy it, or create a repository
+anywhere else: the destination rule above does not apply to this mode, because
+relocating would leave the folder the user is looking at exactly as unshareable
+as it is now. Everything happens inside `path`.
+
+1. If `path` isn't already a git worktree:
+
+```bash
+git init -b main <path>
+git -C <path> config push.autoSetupRemote true
+```
+
+2. Commit the current contents if anything is uncommitted:
+   `git -C <path> add -A && git -C <path> commit -m "Initial commit"`.
+3. Set up the `origin` remote — do NOT ask which option; just do it (see
+   IMPORTANT above):
+   - If `gh` is available and authenticated (`gh auth status`), create the repo
+     **public**: `gh repo create <name> --public --source <path> --push`.
+     Mention in one line that the repo is public.
+   - Only if `gh` is unavailable/unauthenticated: ask for an empty remote URL,
+     then `git -C <path> remote add origin <url>` and
+     `git -C <path> push -u origin main`.
+4. Do NOT register a project and do NOT call `add-context-dir` — the folder is
+   already attached, and the caller re-registers it to refresh its origin. Skip
+   the "register and attach" section entirely and go straight to "All modes —
+   finishing".
+
+## Modes `existing` and `new` — register and attach
 
 1. Register the repo as its own Flowpad project (same shape git-created
    projects use). Discover the server port from
@@ -102,7 +134,9 @@ creating a duplicate.
 to `/api/v1/graph/project/<projectId>/add-context-dir`. A non-success
 response means the folder was NOT attached — show the message and stop.
 
-3. **NEVER close the wizard on your own — achieving the goal is not a
+## All modes — finishing
+
+1. **NEVER close the wizard on your own — achieving the goal is not a
    reason to close it.** Running the close command dismisses the wizard
    window immediately; closing is the user's action. The wizard window has
    a **Done** button, so the user needs nothing from you to close it. When

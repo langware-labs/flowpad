@@ -8,10 +8,6 @@ const LENS_PATH = '/dock/lens/fs-records/scan/';
 async function dismissSetupModal(page: import('@playwright/test').Page) {
   await page.addInitScript(() => {
     localStorage.setItem('llm-setup-modal-seen', 'true');
-    // Dismiss the discover/index Welcome modal so its Radix overlay does not
-    // intercept clicks on the lens page (it can be reachable from /dock/lens
-    // when bootstrap returns scanInfo.never_indexed=true).
-    localStorage.setItem('flowpad-index-approved', '1');
   });
 }
 

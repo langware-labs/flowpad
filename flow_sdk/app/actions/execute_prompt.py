@@ -465,17 +465,20 @@ async def _capture_assistant_reply(ap: "AgenticProcess") -> str:
 
     ``stream_transcript`` replays the whole JSONL from the top, and a resumed
     Claude session re-emits every prior turn — so a fixed line offset can't
-    isolate the new turn (it leaks every earlier reply). Instead we drop the
-    collected text every time a genuine user prompt appears, so only the
-    assistant text following the LAST user prompt (this turn's reply) survives.
+    isolate the new turn. We drop the collected text every time a genuine user
+    prompt appears, so only the assistant text following the LAST user prompt
+    (this turn's reply) survives. ``stream_transcript`` itself is resume-aware
+    (it won't end on the prior turn's terminal marker while this turn's worker
+    is live), so by the time it returns the transcript holds THIS turn and the
+    turn-slicing yields the correct reply — no baseline bookkeeping needed.
 
     Claude can also write an assistant message more than once (streaming +
     finalized snapshot share ``message.id``); we key on the id with last-write-
     wins so a repeated snapshot can't duplicate the text within a turn.
     """
-    from collections import OrderedDict
-
-    turn: "OrderedDict[str, str]" = OrderedDict()
+    # dict preserves insertion order (py3.7+); last-write-wins keying dedups a
+    # repeated streaming/finalized snapshot that shares message.id.
+    turn: "dict[str, str]" = {}
     noid = 0
     async for entry in ap.stream_transcript():
         msg = entry.get("message") if isinstance(entry, dict) else None
@@ -662,6 +665,9 @@ async def execute_prompt_from_message(
             except Exception as e:  # noqa: BLE001
                 logger.warning("[execute_prompt] approved event emit failed: %s", e)
 
+        # stream_transcript is resume-aware (waits out the live turn worker), so
+        # the capture yields THIS turn's reply even on a resumed multi-turn
+        # session — no pre-prompt snapshot needed here.
         await ap.prompt(prompt_text)
         reply = await _capture_assistant_reply(ap)
 

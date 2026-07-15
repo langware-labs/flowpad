@@ -1,24 +1,40 @@
 import { useLingui } from '@lingui/react/macro';
-import { FavoritesMenu } from '@src/components/favorites/FavoritesMenu';
+import { FavoritesTreeMenu } from '@src/components/favorites/FavoritesTreeMenu';
+import { useFavoritesScope } from '@src/components/favorites/use-favorites-scope';
 import { LeftSlider } from '@src/components/ui/left-slider';
 import { useCloseOnNavigate } from '@src/hooks/use-close-on-navigate';
-import { useEffect } from 'react';
+import { useEffect, type PointerEventHandler } from 'react';
 
 /**
- * BookmarksSlider — the rail flyout container for the shared FavoritesMenu (the
- * ONE favorites menu, also hosted by FavoritesEditDialog). LeftSlider provides
- * the rail-anchored chrome + idle auto-close; FavoritesMenu provides the scope
- * filter + favorites grid. Clicking a bookmark navigates and closes the slider
- * (useCloseOnNavigate covers both the pointer and imperative activate arms).
+ * BookmarksSlider — the rail flyout: a fast, hover-driven bookmarks MENU.
+ * LeftSlider provides the rail-anchored chrome, FavoritesTreeMenu the rows.
+ *
+ * Dismissal is fully owned by hover (`hoverProps`, shared with the rail button
+ * that opens it) plus Escape / outside pointer-down / close-on-navigate / window
+ * blur — so the idle auto-close is switched OFF (`idleMs={null}`). Those two are
+ * genuinely opposed: idle-close listens on the window, so a pointer parked
+ * inside the panel to read it emits no movement and would have the panel yanked
+ * away at 5s, by the very pointer holding it open.
+ *
+ * Clicking a bookmark navigates and closes (useCloseOnNavigate covers both the
+ * pointer and imperative activate arms).
  */
 export function BookmarksSlider({
   open,
   onOpenChange,
+  hoverProps,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** The SAME hover intent as the rail button's, so travelling from the button
+   *  into the panel cancels the pending close instead of dismissing. Required,
+   *  not optional: this component turns the idle auto-close OFF, so hover IS
+   *  the close. Omitting it wouldn't degrade gracefully — the panel would
+   *  simply never close on leave. */
+  hoverProps: { onPointerEnter: PointerEventHandler; onPointerLeave: PointerEventHandler };
 }) {
   const { t } = useLingui();
+  const { filter, scopeBar } = useFavoritesScope();
   useCloseOnNavigate(open, () => onOpenChange(false));
   useEffect(() => {
     if (!open) return;
@@ -35,8 +51,18 @@ export function BookmarksSlider({
   }, [open, onOpenChange]);
 
   return (
-    <LeftSlider open={open} onOpenChange={onOpenChange} title={t`Bookmarks`}>
-      <FavoritesMenu />
+    <LeftSlider
+      open={open}
+      onOpenChange={onOpenChange}
+      title={t`Bookmarks`}
+      // LeftSlider documents headerRight as the canonical scope-filter home;
+      // the menu body is rows only.
+      headerRight={scopeBar}
+      idleMs={null}
+      onPointerEnter={hoverProps.onPointerEnter}
+      onPointerLeave={hoverProps.onPointerLeave}
+    >
+      <FavoritesTreeMenu filter={filter} />
     </LeftSlider>
   );
 }

@@ -50,10 +50,6 @@ test.describe('Shell tabs remain open after closing', () => {
 
     // Step 4: refresh the page.
     await page.reload();
-    const skipForNow = page.getByRole('button', { name: 'Skip for now' });
-    if (await skipForNow.isVisible({ timeout: 2_000 }).catch(() => false)) {
-      await skipForNow.click();
-    }
     await expect(page.locator('[data-testid="terminal-panels"]')).toBeVisible({ timeout: 30_000 });
 
     // Step 5: only the 2 un-closed additional terminals remain (closed ones

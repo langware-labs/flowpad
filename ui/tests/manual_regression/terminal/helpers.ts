@@ -59,9 +59,6 @@ export async function dismissSetupModal(page: Page) {
   watchForPtyExhaustion(page);
   await page.addInitScript(() => {
     localStorage.setItem('llm-setup-modal-seen', 'true');
-    // Also prevent WelcomeModal (search index never-indexed prompt) from
-    // appearing on /dock/home — it blocks the bookmark column.
-    localStorage.setItem('flowpad-index-approved', 'true');
     // Terminal scenarios assert the xterm surface, the side ribbon, and the
     // full ProcessToolbar — all Advanced-view surfaces. The default Standard
     // view overlays the Claude pane with the simple chat instead.
@@ -108,13 +105,6 @@ export async function gotoShell(page: Page) {
   const skipButton = page.getByRole('button', { name: 'Skip' });
   if (await skipButton.isVisible({ timeout: 2_000 }).catch(() => false)) {
     await skipButton.click();
-  }
-
-  // Handle WelcomeModal ("Set up Flowpad" / "Welcome to Flowpad!") which appears
-  // after a DB reset when scanInfo.never_indexed=true.
-  const skipForNow = page.getByRole('button', { name: 'Skip for now' });
-  if (await skipForNow.isVisible({ timeout: 2_000 }).catch(() => false)) {
-    await skipForNow.click();
   }
 
   // Wait for URL to settle (new_terminal redirects to /dock/shell/<sessionId>).
@@ -334,12 +324,7 @@ export async function goHome(page: Page) {
   await homeSidebarBtn.click();
   await page.locator('h1, h2, h3').filter({ hasText: /hey /i }).first().waitFor({ state: 'visible', timeout: 15_000 });
 
-  // Dismiss WelcomeModal / setup modal if it appears and blocks clicks
-  const skipForNow = page.getByRole('button', { name: 'Skip for now' });
-  if (await skipForNow.isVisible({ timeout: 2_000 }).catch(() => false)) {
-    await skipForNow.click({ force: true });
-    await page.waitForTimeout(500);
-  }
+  // Dismiss the setup modal if it appears and blocks clicks
   const skipButton = page.getByRole('button', { name: 'Skip' });
   if (await skipButton.isVisible({ timeout: 1_000 }).catch(() => false)) {
     await skipButton.click({ force: true });

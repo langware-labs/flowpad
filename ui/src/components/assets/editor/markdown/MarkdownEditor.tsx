@@ -12,7 +12,7 @@ import { History } from 'lucide-react';
 import { DockPointer, HIGHLIGHT_PARAM } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useSideWindows } from '@src/navigation/useSideWindows';
-import { FSRef, TypeId, PrefKey, copyToClipboard, looksBinaryText } from '@sdk';
+import { FSRef, TypeId, PrefKey, copyToClipboard, dataManager, looksBinaryText } from '@sdk';
 import { usePreference } from '@src/hooks/use-preference';
 import { downloadFile } from '@sdk/utils/utils';
 import Editor, { type OnMount } from '@monaco-editor/react';
@@ -287,6 +287,21 @@ function MarkdownEditorContent({
   // wiki toolbar to insert wikilinks at the cursor.
   const milkdownRef = useRef<MilkdownEditorInstance | null>(null);
 
+  // For an `owns_main_ref` type (e.g. prompt) the ENTITY is authoritative over
+  // the file, so a save that only lands on disk gets reverted by the next
+  // `entity.save()` re-render. Those saves reindex back into the entity; the
+  // hand-edited types (markdown, skill) are already file-authoritative and skip
+  // the cost. Registry-driven off the entity's own type — never a type allowlist.
+  const reindexOnSave = useMemo(() => {
+    if (!chatTarget) return false;
+    try {
+      const typeName = new TypeId(chatTarget).type;
+      return !!dataManager.getAllTypeInfos?.().find((t) => t.type_name === typeName)?.owns_main_ref;
+    } catch {
+      return false; // not a parseable TypeId (raw file) → no entity to reindex into
+    }
+  }, [chatTarget]);
+
   // Keep the stored preference as the no-URL fallback for new docs / fresh links.
   useEffect(() => {
     setStoredMode(viewMode);
@@ -306,7 +321,7 @@ function MarkdownEditorContent({
     recreate,
     reload,
     lastSync,
-  } = useMarkdownContent(fsRef, { autoSave: true, autoSaveMs: 2000, reloadKey });
+  } = useMarkdownContent(fsRef, { autoSave: true, autoSaveMs: 2000, reloadKey, reindexOnSave });
 
   const [propsExpanded, setPropsExpanded] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
