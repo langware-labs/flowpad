@@ -30,7 +30,9 @@ runs:
     # backend pid. instance_ctl.sh would set these up but needs a hub, so CI
     # fabricates them and boots the server directly (it runs standalone).
     # SOD_ENC_KEY (Fernet) keeps every secrets path off the runner's absent
-    # OS keyring.
+    # OS keyring. FLOWPAD_CLAUDE_HOME points the server's worker-history and
+    # the react tier's session fixtures at one scratch transcript root
+    # (tests/react/chats-open-recency.test.ts requires it to be set).
     - name: Configure CI instance env
       run: |
         {
@@ -39,6 +41,8 @@ runs:
           echo "LOCAL_SERVER_PORT=6099"
           echo "VITE_PORT=5099"
           echo "SQLITE_DATABASE_PATH=$RUNNER_TEMP/flowpad_ci_e2e.db"
+          echo "FLOWPAD_CLAUDE_HOME=$RUNNER_TEMP/claude-home"
+          echo "CLAUDE_CONFIG_DIR=$RUNNER_TEMP/claude-home"
           echo "SOD_ENC_KEY=$(uv run python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')"
         } >> "$GITHUB_ENV"
       shell: bash
@@ -105,7 +109,54 @@ runs:
       shell: bash
       working-directory: ui
 
+    # jsdom but live-SDK (entity writes, host-file actions): requires the same
+    # launcher-owned instance contract as headless (tests/react/_instance.ts).
+    - name: vitest react (live backend)
+      run: npm run test:vitest:react
+      shell: bash
+      working-directory: ui
+
     # ---- Playwright scenario: context-folders (self-seeding, single spec) ----
+    # The vitest tiers above leave real entities behind (projects, tabs); that
+    # restored last-active state keeps ProjectHome from rendering for the URL
+    # the spec navigates to. Mirror the reference CI's between-suite DB
+    # cleanup: restart the backend on a fresh database.
+    - name: Reset backend state before Playwright
+      env:
+        MINIHUB_RELOAD: 'False'
+        FLOWPAD_SKIP_DOTENV: 'true'
+        FLOWPAD_SKIP_LOCK: 'true'
+      run: |
+        kill "$BACKEND_PID" 2>/dev/null || true
+        for i in $(seq 1 30); do kill -0 "$BACKEND_PID" 2>/dev/null || break; sleep 1; done
+        rm -f "$SQLITE_DATABASE_PATH"
+        rm -rf "$FLOW_HOME/instances/ci-e2e"
+        mkdir -p "$FLOW_HOME/instances/ci-e2e"
+        nohup .venv/bin/python -m flow_sdk.server.run >> backend.log 2>&1 &
+        NEW_PID=$!
+        echo "BACKEND_PID=$NEW_PID" >> "$GITHUB_ENV"
+        cat > "$FLOW_HOME/instances/ci-e2e/launcher.json" <<EOF
+        {
+          "name": "ci-e2e",
+          "backend_port": 6099,
+          "env_file": "$GITHUB_WORKSPACE/.env.ci-e2e.local",
+          "backend_pid": $NEW_PID
+        }
+        EOF
+        timeout=60
+        elapsed=0
+        until curl -fsS http://localhost:6099/api/v1/graph/bootstrap | grep -q '"types"'; do
+          if [ "$elapsed" -ge "$timeout" ]; then
+            echo "Backend did not come back within ${timeout}s."
+            tail -50 backend.log || true
+            exit 1
+          fi
+          sleep 1
+          elapsed=$((elapsed+1))
+        done
+        echo "Backend reset."
+      shell: bash
+
     - name: Start vite dev server
       run: |
         # --mode ci-e2e → vite loadEnv picks .env.ci-e2e.local (VITE_API_URL :6099)

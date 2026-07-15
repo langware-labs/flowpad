@@ -33,12 +33,12 @@ on:
         required: false
         default: true
       frontend-tests:
-        description: 'Run frontend tests (tsc, vitest unit/react, i18n guards)'
+        description: 'Run frontend tests (tsc, vitest unit, i18n guards)'
         type: boolean
         required: false
         default: true
       e2e-tests:
-        description: 'Run live-backend E2E (vitest headless/api + Playwright)'
+        description: 'Run live-backend E2E (vitest headless/api/react + Playwright)'
         type: boolean
         required: false
         default: true
@@ -61,7 +61,7 @@ jobs:
       - uses: ./.github/actions/backend-tests
 
   frontend-tests:
-    name: frontend (tsc + vitest unit/react + i18n)
+    name: frontend (tsc + vitest unit + i18n)
     if: ${{ github.event_name != 'workflow_dispatch' || inputs.frontend-tests }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -70,7 +70,7 @@ jobs:
       - uses: ./.github/actions/frontend-tests
 
   e2e-tests:
-    name: 'e2e (live backend: vitest headless/api + playwright)'
+    name: 'e2e (live backend: vitest headless/api/react + playwright)'
     needs: [backend-tests, frontend-tests]
     # !cancelled() + per-result checks so a dispatch-toggled-off upstream job
     # (result == 'skipped') doesn't auto-skip e2e; a FAILED upstream still does.
