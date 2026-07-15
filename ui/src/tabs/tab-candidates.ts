@@ -24,6 +24,13 @@ export function tabInProject(tab: Tab, projectId: string | null): boolean {
   return tab.project_id === projectId;
 }
 
+/** Whether a tab has ever been activated — i.e. its `last_active_at` recency
+ *  stamp exists. Scope-entry (project switching) treats only stamped tabs as a
+ *  "known last tab"; unstamped ones are not guessed at. */
+export function tabHasRecency(tab: Tab): boolean {
+  return tabLastActiveMs(tab) != null;
+}
+
 /** Epoch ms of a tab's last activation (recency seed), or null. Wire is epoch-ms;
  *  tolerate a legacy ISO string during the transition. */
 function tabLastActiveMs(tab: Tab): number | null {
@@ -45,7 +52,11 @@ function pickActiveTab(tabs: Tab[], excludeIds: Set<string>): Tab | null {
     return true;
   });
   const { activeKey, consumedPendingIntent } = resolveActive({
-    candidates: eligible.map((t) => ({ key: tabTargetKey(t), lastActiveAt: tabLastActiveMs(t), tabOrder: t.tab_order })),
+    candidates: eligible.map((t) => ({
+      key: tabTargetKey(t),
+      lastActiveAt: tabLastActiveMs(t),
+      tabOrder: t.tab_order,
+    })),
     urlActiveKey: null,
     pendingIntentKey: peekPendingIntent(),
   });
