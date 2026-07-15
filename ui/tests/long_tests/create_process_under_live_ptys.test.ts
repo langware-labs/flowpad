@@ -21,6 +21,7 @@
 import { describe, expect, it } from 'vitest';
 import { stressDescribe } from './_stress_gate';
 import { launchInstance, killInstance, prepareCleanRealm } from './_backend_lifecycle';
+import type { OwnedSdkMainRealm } from '../_sdk_realm';
 
 type SdkRealm = typeof import('@sdk');
 
@@ -37,8 +38,10 @@ stressDescribe('createProcess(claude) under 20 live PTYs', () => {
     }
 
     const spawned: string[] = [];
+    let activeRealm: OwnedSdkMainRealm | undefined;
     try {
-      const { sdk, main } = await prepareCleanRealm(port);
+      activeRealm = await prepareCleanRealm(port);
+      const { sdk, main } = activeRealm;
       await main.initSdk();
       expect((window as Record<string, unknown>).appReady, 'initSdk should complete').toBe(true);
 
@@ -75,8 +78,11 @@ stressDescribe('createProcess(claude) under 20 live PTYs', () => {
       ).toBeLessThan(BUDGET_MS);
     } finally {
       // Best-effort: close every worker we spawned, then drop the instance.
+      activeRealm?.dispose();
+      let cleanupRealm: OwnedSdkMainRealm | undefined;
       try {
-        const { sdk } = await prepareCleanRealm(port);
+        cleanupRealm = await prepareCleanRealm(port);
+        const { sdk } = cleanupRealm;
         for (const id of spawned) {
           try {
             await sdk.apiClient.post(`${sdk.GRAPH_API_PREFIX}/agentic_process/${id}/close`, {});
@@ -86,6 +92,8 @@ stressDescribe('createProcess(claude) under 20 live PTYs', () => {
         }
       } catch {
         /* realm already torn down */
+      } finally {
+        cleanupRealm?.dispose();
       }
       await killInstance(name);
     }

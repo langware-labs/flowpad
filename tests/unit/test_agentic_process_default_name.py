@@ -125,6 +125,67 @@ async def test_noop_when_no_session():
     resolve.assert_not_awaited()
 
 
+def _write_headless_transcript(tmp_path, sid: str) -> "Path":
+    """A real SDK-launched (headless print-mode) Claude transcript, mirroring the
+    on-disk shape byte-for-byte in the fields that matter: ``entrypoint``
+    ``sdk-cli`` envelope with a first user prompt, and — the defining trait of
+    every headless session — NO ``slug`` and NO ``aiTitle`` anywhere. Interactive
+    CLI sessions carry a ``slug``; ``-p``/stream-json sessions never do."""
+    import json
+    from pathlib import Path
+
+    lines = [
+        {"type": "queue-operation", "operation": "enqueue", "timestamp": "2026-07-14T09:20:27.516Z",
+         "sessionId": sid, "content": "why is the tab name not proper?"},
+        {"type": "queue-operation", "operation": "dequeue", "timestamp": "2026-07-14T09:20:27.516Z",
+         "sessionId": sid},
+        {"parentUuid": None, "isSidechain": False, "type": "user",
+         "message": {"role": "user", "content": "why is the tab name not proper?"},
+         "uuid": "fb6fd9d9-b711-4274-a248-358e8506ada8", "timestamp": "2026-07-14T09:20:27.523Z",
+         "permissionMode": "bypassPermissions", "promptSource": "sdk", "userType": "external",
+         "entrypoint": "sdk-cli", "cwd": "/repo", "sessionId": sid,
+         "version": "2.1.209", "gitBranch": "main"},
+        {"parentUuid": "fb6fd9d9-b711-4274-a248-358e8506ada8", "isSidechain": False, "type": "assistant",
+         "message": {"role": "assistant", "content": [{"type": "text", "text": "Looking into it."}]},
+         "uuid": "0c1d2e3f-0000-4000-8000-000000000001", "timestamp": "2026-07-14T09:20:31.000Z",
+         "cwd": "/repo", "sessionId": sid, "version": "2.1.209", "gitBranch": "main"},
+    ]
+    p = tmp_path / f"{sid}.jsonl"
+    p.write_text("\n".join(json.dumps(x) for x in lines) + "\n", encoding="utf-8")
+    return p
+
+
+async def test_headless_sdk_session_still_gets_a_default_name(tmp_path):
+    """Captures the RCA'd bug: an SDK-launched (headless) Claude session never
+    receives a ``slug``/``aiTitle`` in its transcript, so the stamp's only title
+    source is empty and the process stays nameless FOREVER — the tab chip falls
+    back to the generic "Claude Code tab" and the footer agents list to the raw
+    id fragment. The transcript DOES carry a perfectly good subject (the first
+    user prompt); the naming chain must produce a real name from it.
+
+    Real mechanism end-to-end: real jsonl on disk → real
+    ``get_worker_session_name`` → real ``extract_claude_session_from_path``.
+    Only the transcript-path lookup is pointed at the tmp file (same harness as
+    every other test in this file)."""
+    sid = str(uuid.uuid4())
+    jsonl = _write_headless_transcript(tmp_path, sid)
+    proc = _proc(session_id=sid)
+
+    with _patch_transcript_path(jsonl), patch.object(AgenticProcess, "save", new=AsyncMock()):
+        changed = await proc.stamp_default_name()
+
+    assert changed is True, (
+        "stamp_default_name() no-opped on a headless (sdk-cli) transcript — no "
+        "slug/aiTitle exists for these sessions, so the process stays nameless "
+        "and the UI shows 'Claude Code tab' / the raw id fragment"
+    )
+    name = (proc.name or "").strip()
+    assert name, "process must carry a real default name after the stamp"
+    assert name != sid and proc.id not in name, "name must be a title, not an id fallback"
+    # Non-pinning invariant holds for the fallback path too.
+    assert proc.auto_rename is True
+
+
 async def test_noop_when_no_subject_yet():
     """A fresh session with no first-prompt subject yet → resolver returns None →
     leave the name empty so the chip shows the provider label until later."""

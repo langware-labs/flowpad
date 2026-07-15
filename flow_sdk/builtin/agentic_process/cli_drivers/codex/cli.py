@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import logging
+from pathlib import Path
 from typing import Any
 
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import WorkerCLIOptions
@@ -103,9 +104,31 @@ class CodexCliOptions(WorkerCLIOptions):
 
         # The interactive directory-trust prompt consumes Flowpad's first
         # programmatic submission. Keep this override process-local and aligned
-        # with the caller's explicit full-access permission choice.
-        key = f"projects.{json.dumps(self.workdir)}.trust_level"
-        return ["-c", f"{key}={json.dumps('trusted')}"]
+        # with the caller's explicit full-access permission choice. Codex
+        # splits ``-c`` keys literally on dots, so a path cannot safely be a
+        # dotted key segment. Supply the exact project path as TOML data in an
+        # inline table instead. Match Codex's own lookup by canonicalizing an
+        # existing workdir, while retaining the original path if that fails.
+        try:
+            workdir = str(Path(self.workdir).resolve(strict=True))
+        except OSError:
+            workdir = self.workdir
+        # JSON and TOML basic strings share the escapes used here. JSON leaves
+        # DEL (U+007F) raw, though TOML forbids it, so escape that one extra
+        # codepoint while preserving non-BMP Unicode as real UTF-8.
+        project = json.dumps(workdir, ensure_ascii=False).replace("\x7f", "\\u007f")
+        trusted = json.dumps("trusted")
+        return ["-c", f"projects={{{project}={{trust_level={trusted}}}}}"]
+
+    def _interactive_update_flags(self) -> list[str]:
+        """Keep Codex's startup updater out of automation-owned PTYs.
+
+        A pending update otherwise replaces the composer with an interactive
+        install/skip screen. Flowpad must never submit a user turn into that
+        interstitial, and a process-local ``-c`` override avoids mutating the
+        user's global Codex configuration.
+        """
+        return ["-c", "check_for_update_on_startup=false"]
 
     def _emit_flags(self) -> list[str]:
         """argv after ``codex``. Two shapes keyed on ``json_stream``:
@@ -116,7 +139,13 @@ class CodexCliOptions(WorkerCLIOptions):
         bypass = ["--dangerously-bypass-approvals-and-sandbox"] if self.permission_mode == "bypassPermissions" else []
         dev_flags = self._developer_instruction_flags()
         if not self.json_stream:
-            return bypass + self._interactive_trust_flags() + dev_flags + self._common_tail()
+            return (
+                bypass
+                + self._interactive_update_flags()
+                + self._interactive_trust_flags()
+                + dev_flags
+                + self._common_tail()
+            )
 
         head = ["exec", "--skip-git-repo-check", *bypass]
         if self.ephemeral:

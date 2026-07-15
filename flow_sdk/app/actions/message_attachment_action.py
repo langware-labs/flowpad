@@ -114,6 +114,35 @@ async def _maybe_mint_bookmark(ma: MessageAttachment, someone_typeid) -> None:
         logger.warning("[message_attachment] bookmark mint failed for %s", ma.asset_id, exc_info=True)
 
 
+async def _setup_after_install(
+    ma: MessageAttachment, installed_root: str | None, *, auto_run: bool = True,
+) -> dict | None:
+    """The per-type reception dispatch: what to SHOW post-install.
+
+    A type with no ``setup_skill`` just opens the received entity — its target is
+    built from ``(asset_type, asset_id)`` with no entity load (the common markdown/
+    file case). Only a type that actually spawns a setup session loads the entity
+    and calls ``Entity.setup_on_receive``. ``auto_run=False`` forces that plain
+    open even for a setup-capable type — Git Download defers setup to the explicit
+    ``setup`` action. Best-effort — a setup failure never fails the install."""
+    from flow_sdk.core.display_target import entity_target  # noqa: PLC0415
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    info = SchemaRegistry.get(ma.asset_type)
+    if not auto_run or info is None or not getattr(info, "setup_skill", None):
+        return entity_target(ma.asset_type, ma.asset_id, name=ma.name)
+
+    cls = SchemaRegistry.get_entity_cls(ma.asset_type)
+    ent = await cls.get_one({"id": ma.asset_id}) if cls is not None else None
+    if ent is None:
+        return entity_target(ma.asset_type, ma.asset_id, name=ma.name)
+    try:
+        return await ent.setup_on_receive(project_id=ma.project_id, workdir=installed_root)
+    except Exception:
+        logger.warning("[message_attachment] setup_on_receive failed for %s", ma.asset_id, exc_info=True)
+        return entity_target(ma.asset_type, ma.asset_id, name=ma.name)
+
+
 async def _finalize_install(
     ma: MessageAttachment,
     scope: str,
@@ -121,15 +150,24 @@ async def _finalize_install(
     installed_root: str | None,
     someone_typeid,
 ) -> ApiResponse:
-    """Shared install tail (both the file-backed and artifact branches): stamp the
-    install state, persist+notify, then mint the favorite if opted in."""
+    """Shared install tail (every branch: file-backed, git-reference, copy-artifact):
+    stamp install state, persist+notify, mint the favorite if opted in, then run the
+    per-type reception setup and return ``{entity, show}`` — ``show`` is the
+    DisplayTarget the FE navigates to (the received entity, or a spawned Vibe
+    setup session)."""
     ma.scope = scope
     ma.project_id = project_id
     ma.installed_root = installed_root
     ma.installed_at = datetime.now(UTC)
     await ma.save(someone_typeid, notify=True)
     await _maybe_mint_bookmark(ma, someone_typeid)
-    return ApiSuccessResponse(data=ma)
+    # Git Download clones + indexes only — setup NEVER runs automatically (it's a
+    # separate, explicit action; see ``handle_attachment_setup``). Copy-mode
+    # install keeps its existing behavior: setup-capable types spawn setup here.
+    show = await _setup_after_install(
+        ma, installed_root, auto_run=ma.transfer_mode != TransferMode.GIT.value,
+    )
+    return ApiSuccessResponse(data={"entity": ma, "show": show})
 
 
 async def _install_artifact_reference(
@@ -185,6 +223,59 @@ async def _install_artifact_reference(
     )
 
 
+async def _install_webapp_artifact_copy(
+    ma: MessageAttachment,
+    scope: str,
+    project_id: str | None,
+    *,
+    overwrite: bool,
+    someone_typeid,
+) -> ApiResponse:
+    """Install a copy-mode folder webapp ARTIFACT: mirror its staged folder bytes
+    into the target project and materialize the row pointing ``path`` at the served
+    folder (no clone). A webapp always installs into a project (its served root
+    can't live under ``~/.claude``)."""
+    from flow_sdk.builtin.flow_message_bundle import (  # noqa: PLC0415
+        FlowMessageExistsError,
+        _notify_received_assets,
+        _restore_webapp_artifact_entry,
+    )
+
+    if scope != AttachmentScope.PROJECT.value or not project_id:
+        return ApiFailResponse(message="a webapp artifact installs into a project", status_code=400)
+    from flow_sdk.builtin.project import Project  # noqa: PLC0415
+    project = await Project.get_one({"id": project_id})
+    mount = (getattr(project, "fs_storage_mount_path", "") or "").strip() if project else ""
+    if not mount:
+        return ApiFailResponse(message=f"Project not found or unmounted: {project_id}", status_code=404)
+    root = Path(mount)
+
+    entry_dir = _entry_dir_for(ma)
+    if entry_dir is None or not entry_dir.exists():
+        return _staging_gone()
+    try:
+        served = await _restore_webapp_artifact_entry(
+            entry_dir,
+            root,
+            ma.git_transfer or {},
+            unpacked_dir(ma.flow_message_id),
+            asset_id=ma.asset_id,
+            project_id=project_id,
+            overwrite=overwrite,
+            owner_typeid=someone_typeid,
+        )
+    except FlowMessageExistsError as e:
+        return ApiFailResponse(
+            message="artifact already exists — overwrite?",
+            status_code=409,
+            data={"asset_conflict": True, "conflicts": getattr(e, "conflicts", None)},
+        )
+    if served is None:
+        return ApiFailResponse(message="webapp artifact restore failed", status_code=500)
+    await _notify_received_assets({(ma.asset_type, ma.asset_id)})
+    return await _finalize_install(ma, scope, project_id, str(root), someone_typeid)
+
+
 def _not_found(attachment_id: str) -> ApiFailResponse:
     return ApiFailResponse(message=f"MessageAttachment not found: {attachment_id}", status_code=404)
 
@@ -217,13 +308,10 @@ async def handle_attachment_install(
     """
     from flow_sdk.builtin.flow_message_bundle import (  # noqa: PLC0415
         FlowMessageExistsError,
-        _notify_received_assets,
-        _reindex_git_origin_scopes,
-        _reindex_received_assets,
-        _reindex_root,
+        ReceivedAsset,
         _restore_file_backed_entry,
         _restore_git_transfer_entry,
-        _stamp_git_origins,
+        index_attachments,
     )
     from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
     from flow_sdk.schema.types import EntityType  # noqa: PLC0415
@@ -242,11 +330,13 @@ async def handle_attachment_install(
         and ma.transfer_mode == TransferMode.GIT.value
     ):
         return await _install_artifact_reference(
-            ma,
-            scope,
-            project_id,
-            overwrite=overwrite,
-            someone_typeid=someone_typeid,
+            ma, scope, project_id, overwrite=overwrite, someone_typeid=someone_typeid,
+        )
+    # Copy mode: a webapp ARTIFACT can't be a git reference — mirror the shipped
+    # folder bytes and serve them.
+    if ma.asset_type == EntityType.ARTIFACT.value:
+        return await _install_webapp_artifact_copy(
+            ma, scope, project_id, overwrite=overwrite, someone_typeid=someone_typeid,
         )
 
     # Raw FILE attachments (the OS-file-picker lane) have no TypeInfo/RecordType
@@ -336,20 +426,22 @@ async def handle_attachment_install(
                 return _staging_gone()
             assert root is not None  # copy mode always resolves a root above
             _restore_file_backed_entry(entry_dir, root, overwrite)
-            # record_type is None for a non-markdown raw file: bytes are copied
-            # but there's no walker to materialize a row, so skip the reindex.
-            if record_type is not None:
-                if scope == AttachmentScope.PROJECT.value:
-                    await _reindex_received_assets(root, (record_type,), project_id=project_id)
-                else:
-                    await _reindex_root(root, RecordType.USER_HOME_FOLDER, types=(record_type,))
-            if ma.git_origin:
-                origins = {entry_key: ma.git_origin}
-                entries = {(ma.asset_type, ma.asset_id)}
-                if scope == AttachmentScope.PROJECT.value:
-                    await _reindex_git_origin_scopes(root, entries, origins, project_id=project_id)
-                await _stamp_git_origins(entries, origins, someone_typeid)
-            await _notify_received_assets({(ma.asset_type, ma.asset_id)})
+            # The single reception indexer: copy-scope walk (skipped when
+            # record_type is None — a raw non-markdown file), git-origin nested
+            # re-walk + provenance stamp, and the received-asset notify.
+            await index_attachments(
+                [ReceivedAsset(
+                    root=root,
+                    scope=scope,
+                    asset_type=ma.asset_type,
+                    asset_id=ma.asset_id,
+                    entry_key=entry_key,
+                    record_type=record_type,
+                    git_origin=ma.git_origin,
+                )],
+                project_id=project_id,
+                owner=someone_typeid,
+            )
     except FlowMessageExistsError as e:
         return ApiFailResponse(
             message="asset already exists — overwrite?",
@@ -364,6 +456,28 @@ async def handle_attachment_install(
         str(root) if root is not None else None,
         someone_typeid,
     )
+
+
+# ---------------------------------------------------------------------------
+# setup — explicit, optional, git only
+# ---------------------------------------------------------------------------
+
+
+async def handle_attachment_setup(attachment_id: str) -> ApiResponse:
+    """Run a received asset's optional setup — ONLY when the receiver clicks it.
+
+    Git Download clones + indexes but never auto-runs setup (see
+    ``_finalize_install``); this is the separate action the reception UI wires to
+    the ``TypeInfo.reception_verb`` button for setup-capable types. Returns the
+    ``show`` DisplayTarget (a spawned setup session, or the entity when the type
+    has no setup skill) so the FE routes it through ``openDisplayTarget``."""
+    ma = await _load_ma(attachment_id)
+    if ma is None:
+        return _not_found(attachment_id)
+    if not ma.scope:
+        return ApiFailResponse(message="download the asset before running setup", status_code=409)
+    show = await _setup_after_install(ma, ma.installed_root)
+    return ApiSuccessResponse(data={"entity": ma, "show": show})
 
 
 # ---------------------------------------------------------------------------
@@ -548,6 +662,18 @@ async def install_attachment_action() -> ApiResponse:
     except Exception as e:
         logger.error("[message_attachment] install error: %s", e, exc_info=True)
         return ApiFailResponse(message=f"install failed: {e}")
+
+
+@action.post(action_name="setup", types=["message_attachment"])
+async def setup_attachment_action() -> ApiResponse:
+    try:
+        request_info = get_current_request_info()
+        if not request_info or not request_info.target_entity_typeid:
+            return ApiFailResponse(message="No request info found", status_code=400)
+        return await handle_attachment_setup(str(request_info.target_entity_typeid.id))
+    except Exception as e:
+        logger.error("[message_attachment] setup error: %s", e, exc_info=True)
+        return ApiFailResponse(message=f"setup failed: {e}")
 
 
 @action.post(action_name="uninstall", types=["message_attachment"])

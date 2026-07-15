@@ -4,6 +4,26 @@ import { cleanup } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import React from 'react';
 import { installCleanup } from '../_cleanup';
+import { resolveReactTestInstance } from './_instance';
+
+// Config evaluation must remain safe for `--project unit`, but an actual React
+// run fails here before importing a test module or touching a backend. These
+// compile-time values prove the selected Vite mode and runtime launcher resolve
+// to the same instance.
+declare const __REACT_INSTANCE_NAME__: string;
+declare const __REACT_BACKEND_PORT__: string;
+const selectedInstance = process.env.FLOW_INSTANCE?.trim() || '';
+if (!selectedInstance) {
+  throw new Error('react vitest requires FLOW_INSTANCE=<disposable-name>; `.env.local` is never a live-test fallback');
+}
+const launchedInstance = resolveReactTestInstance(selectedInstance);
+const selectedPort = launchedInstance ? new URL(launchedInstance.apiUrl).port : '';
+if (!launchedInstance || __REACT_INSTANCE_NAME__ !== selectedInstance || __REACT_BACKEND_PORT__ !== selectedPort) {
+  throw new Error(
+    `react vitest FLOW_INSTANCE='${selectedInstance}' is not a matching live launcher-owned backend ` +
+      '(generated env, launcher identity/port/env-file, backend PID, and compiled Vite mode must agree)',
+  );
+}
 
 // The `@lingui/react` shim is registered in its own setup file (../_lingui-mock,
 // listed first in this tier's setupFiles) and shared with the unit/api tiers.

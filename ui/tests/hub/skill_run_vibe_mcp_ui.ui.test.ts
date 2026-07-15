@@ -34,7 +34,14 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { testEntityName, trackForCleanup } from '../_cleanup';
 import { hubAvailable } from './_hub';
 import { pollUntil } from './_matrix';
-import { findPendingInvitation, getInstance, instanceAvailable, type ResolvedInstance } from './_instances';
+import {
+  HUB_INST_1 as AUTHOR_INSTANCE,
+  HUB_INST_2 as RUNNER_INSTANCE,
+  findPendingInvitation,
+  getInstance,
+  instanceAvailable,
+  type ResolvedInstance,
+} from './_instances';
 import { launchBrowser, openInstancePage, type InstancePage } from './_browser';
 
 const post = (apiUrl: string, p: string, body?: unknown) =>
@@ -88,13 +95,13 @@ let alicePage: InstancePage;
 beforeAll(async () => {
   const hub = await hubAvailable();
   if (!hub.ok) return void (skipReason = hub.reason ?? 'hub unreachable');
-  if (!(await instanceAvailable('dev-1')) || !(await instanceAvailable('dev-2'))) {
-    return void (skipReason = 'launch dev-1 + dev-2 (with frontends) via scripts/instance_ctl.sh');
+  if (!instanceAvailable(AUTHOR_INSTANCE) || !instanceAvailable(RUNNER_INSTANCE)) {
+    return void (skipReason = `launch ${AUTHOR_INSTANCE} + ${RUNNER_INSTANCE} (with frontends)`);
   }
-  bob = await getInstance('dev-1');
-  alice = await getInstance('dev-2');
+  bob = await getInstance(AUTHOR_INSTANCE);
+  alice = await getInstance(RUNNER_INSTANCE);
   browser = await launchBrowser();
-  alicePage = await openInstancePage(browser, 'dev-2');
+  alicePage = await openInstancePage(browser, RUNNER_INSTANCE);
 }, 60_000);
 
 afterAll(async () => {

@@ -872,6 +872,30 @@ async def _decline_linked_invitation(conv_id: str) -> None:
         logger.warning("[conv-delete] local invitation delete failed conv=%s: %s", conv_id[:8], e)
 
 
+async def _self_heal_gone_invitation(inv_id: str, *, context: str) -> ApiFailResponse:
+    """Remove an orphaned local invitation whose hub node is gone and return the
+    shared 410 ``{gone}`` signal the FE renders as "Invitation no longer valid".
+
+    Reached from both accept and decline when the hub answers 404/target-missing:
+    the local id equals the hub id, so a hub 404 means the mirror is stale.
+    Best-effort local delete (clears the DB row + entity/tab caches); a failure
+    still returns the gone signal so the FE drops the row.
+    """
+    from flow_sdk.builtin.invitation import Invitation as LocalInvitation  # noqa: PLC0415
+
+    try:
+        orphan = await LocalInvitation.get_one({"id": inv_id})
+        if orphan is not None:
+            await orphan.delete()
+    except Exception as del_e:  # noqa: BLE001
+        logger.warning("[%s] orphan local delete failed inv=%s: %s", context, inv_id[:8], del_e)
+    return ApiFailResponse(
+        message="Invitation no longer valid",
+        status_code=410,
+        data={"gone": True, "id": inv_id},
+    )
+
+
 async def _hub_delete_conversation(conv_id: str) -> None:
     from flow_sdk.utils.hub import hub_delete  # noqa: PLC0415
 
@@ -1169,10 +1193,16 @@ async def handle_invitation_decline(
     try:
         await _hub_decline_invitation(invitation_id)
     except HubError as e:
-        return ApiFailResponse(
-            data={"id": invitation_id, "hub_status": e.status_code},
-            message=f"Hub {e.status_code}: {e.reason}",
-        )
+        # Hub has nothing there for us (404 / target_not_found): the local
+        # invitation is an orphan. Self-heal — remove it locally and report the
+        # same 410 {gone} signal accept uses, so the FE drops the row with
+        # "Invitation no longer valid". Other hub errors are transient.
+        if not _is_hub_target_missing(e):
+            return ApiFailResponse(
+                data={"id": invitation_id, "hub_status": e.status_code},
+                message=f"Hub {e.status_code}: {e.reason}",
+            )
+        return await _self_heal_gone_invitation(invitation_id, context="invitation-decline")
 
     # Locate the local invitation + its target conversation (the conv id
     # is stamped into the invitation message via ``Conversation.share``).
@@ -2077,6 +2107,34 @@ async def inbox_bulk_update() -> ApiResponse:
 # ---------------------------------------------------------------------------
 
 
+def _invitation_common_fields(hub_inv: dict) -> dict:
+    """Fields every local Invitation mirror copies verbatim from a hub
+    ``pending`` entry — common to the membership and conversation paths.
+
+    ``expiration_at`` is parsed to a real datetime (assignment on a loaded
+    entity is not validated, so a raw ISO string would poison ``is_expired``).
+    ``inviter`` is the hub's InvitedBy enrichment ({user_id, name} or None).
+    """
+    from flow_sdk.utils.serialization import iso_to_datetime  # noqa: PLC0415
+
+    expiration_at = hub_inv.get("expiration_at")
+    if expiration_at:
+        try:
+            expiration_at = iso_to_datetime(expiration_at)
+        except ValueError:
+            expiration_at = None
+    inviter = hub_inv.get("inviter") or {}
+    return {
+        "recipient_email": normalize_email(hub_inv.get("recipient_email")) or "",
+        "accepted": bool(hub_inv.get("accepted") or False),
+        "sent": bool(hub_inv.get("sent") or False),
+        "message": hub_inv.get("message"),
+        "expiration_at": expiration_at or None,
+        "sender_user_id": inviter.get("user_id"),
+        "sender_name": inviter.get("name"),
+    }
+
+
 # Membership-invitation targets that get a pre-accept local mirror. Exactly
 # the container types whose local entity displays by ``name`` and has no
 # on-disk asset folder — the only shape the {id, name, icon} mirror payload
@@ -2107,12 +2165,14 @@ def _membership_cls(target_type: str | None):
 async def _materialize_membership_invitation(
     hub_inv: dict, target: dict, someone_typeid: str
 ) -> Optional["Invitation"]:
-    """Upsert a hub organization/team Invitation locally (``remote=True``).
+    """Upsert a hub entity-share Invitation locally (``remote=True``).
 
-    Unlike conversation invitations, membership invitations have no backing
-    conversation: the inbox renders a generic row straight off the Invitation's
-    ``target_*`` fields. We also mirror the target org/team locally so the row
-    can show its name/icon and so accept resolves a real entity.
+    The target may be ANY shareable entity type (organization, team,
+    workspace, project, skill, …). Unlike conversation invitations, these
+    have no backing conversation: the inbox renders a generic row straight
+    off the Invitation's ``target_*`` fields. We also mirror the target
+    entity locally so the row can show its name/icon and so accept resolves
+    a real entity.
     """
     from flow_sdk.app.actions.membership_sync import (  # noqa: PLC0415
         materialize_remote_membership_entity,
@@ -2146,18 +2206,12 @@ async def _materialize_membership_invitation(
         except Exception as e:  # noqa: BLE001
             logger.warning("[inv-materialize] membership target mirror failed: %s", e)
 
-    inviter = hub_inv.get("inviter") if isinstance(hub_inv.get("inviter"), dict) else {}
     fields = {
-        "recipient_email": normalize_email(hub_inv.get("recipient_email")) or "",
-        "accepted": bool(hub_inv.get("accepted") or False),
-        "sent": bool(hub_inv.get("sent") or False),
-        "message": hub_inv.get("message"),
+        **_invitation_common_fields(hub_inv),
         "target_type": target_type,
         "target_id": target_id,
         "target_name": target_name,
         "target_role": target_role,
-        "sender_name": inviter.get("name"),
-        "sender_user_id": inviter.get("user_id"),
         "remote": True,
     }
     existing_inv = await LocalInvitation.get_one({"id": inv_id})
@@ -2190,13 +2244,19 @@ async def _materialize_invitation(hub_inv: dict, someone_typeid: str) -> tuple[O
         return None, None
     inv_id = hub_inv["id"]
 
-    # Membership invitations (organization / team) carry a ``target`` descriptor
-    # instead of a conversation. Materialize the Invitation with its target
-    # metadata (so the inbox renders a generic "Organization/Team invitation"
-    # row) and mirror the target org/team locally as remote=True — no
-    # conversation / preview FlowMessage is involved.
+    # Conversation-less invitations carry a ``target`` descriptor — ANY
+    # shareable entity type (organization, team, workspace, project, a
+    # message, a skill, …). Materialize the Invitation with its target
+    # metadata so the inbox renders a generic "<inviter> invited you to
+    # <Name>" row. Gated on the ABSENCE of an embedded conversation: a
+    # conversation-backed invitation always rides the thread path below, and
+    # its riding asset grants must not hijack it (the hub already keeps
+    # ``target`` and ``conversation`` mutually exclusive; this check makes
+    # the router self-sufficient).
     target = hub_inv.get("target")
-    if isinstance(target, dict) and target.get("type") and target.get("id"):
+    _conv = hub_inv.get("conversation")
+    has_conversation = isinstance(_conv, dict) and bool(_conv.get("id"))
+    if isinstance(target, dict) and target.get("type") and target.get("id") and not has_conversation:
         return await _materialize_membership_invitation(hub_inv, target, someone_typeid), None
 
     existing_inv = await LocalInvitation.get_one({"id": inv_id})
@@ -2211,20 +2271,16 @@ async def _materialize_invitation(hub_inv: dict, someone_typeid: str) -> tuple[O
     _target_path = hub_inv.get("target_url_path") or (
         conversation_target_path(_embedded["id"]) if isinstance(_embedded, dict) and _embedded.get("id") else None
     )
+    common_fields = _invitation_common_fields(hub_inv)
     inv_fields = {
         "id": inv_id,
-        "recipient_email": normalize_email(hub_inv.get("recipient_email")) or "",
-        "accepted": bool(hub_inv.get("accepted") or False),
-        "sent": bool(hub_inv.get("sent") or False),
-        "message": hub_inv.get("message"),
+        **common_fields,
         "target_url_path": _target_path,
         "remote": True,
     }
     if existing_inv:
-        existing_inv.recipient_email = inv_fields["recipient_email"]
-        existing_inv.accepted = inv_fields["accepted"]
-        existing_inv.sent = inv_fields["sent"]
-        existing_inv.message = inv_fields["message"]
+        for k, v in common_fields.items():
+            setattr(existing_inv, k, v)
         if _target_path:
             existing_inv.target_url_path = _target_path
         existing_inv.remote = True
@@ -3003,6 +3059,8 @@ async def _upsert_hub_conversation_metadata(
             payload["created_by"] = hub_conv["initiated_by"]
         if hub_conv.get("message_status_visible") is not None:
             payload["message_status_visible"] = bool(hub_conv["message_status_visible"])
+        if hub_conv.get("git_sharing_enabled") is not None:
+            payload["git_sharing_enabled"] = bool(hub_conv["git_sharing_enabled"])
         # Carry the hub's updated_date so the local row records the hub
         # timestamp — the LWW decision point that lets conversation-list detect
         # "this conversation changed" by comparing parent updated_date alone,
@@ -3058,6 +3116,11 @@ async def _upsert_hub_conversation_metadata(
         hub_conv["message_status_visible"]
     ):
         existing.message_status_visible = bool(hub_conv["message_status_visible"])
+        changed = True
+    if hub_conv.get("git_sharing_enabled") is not None and existing.git_sharing_enabled != bool(
+        hub_conv["git_sharing_enabled"]
+    ):
+        existing.git_sharing_enabled = bool(hub_conv["git_sharing_enabled"])
         changed = True
     if not existing.remote:
         existing.remote = True
@@ -3259,6 +3322,7 @@ async def handle_conversation_list(someone_typeid) -> ApiResponse:
                 invitation_conv_ids.add(conv_id)
         except Exception as e:  # noqa: BLE001
             logger.warning("[conv-list] invitation materialize failed: %s", e)
+    await _prune_expired_invitations()
 
     # (e) Prune step (decision #1c): any local `remote=True` row that did
     # NOT appear in this fetch (neither in hub_convs nor as the target of
@@ -3380,7 +3444,35 @@ async def handle_invitation_sync(someone_typeid: str) -> ApiResponse:
                 inv_count += 1
         except Exception as e:
             logger.warning("[invitation-sync] upsert failed: %s", e)
+    await _prune_expired_invitations()
     return ApiSuccessResponse(data={"invitations": inv_count})
+
+
+async def _prune_expired_invitations() -> None:
+    """Delete local mirrors of hub invitations that have expired unaccepted.
+
+    The hub keeps expired Invitation rows as an audit trail but no longer
+    returns them from ``pending``, so nothing ever updates the local mirror
+    again — without this prune a dead invitation sits in the inbox forever
+    (the v0.2.9x "10 phantom Organization invitations" incident). Only
+    ``remote`` (hub-mirrored) rows are touched: the hub's audit copy stays;
+    accepted rows are memberships now and are never invitations to prune.
+    """
+    from flow_sdk.builtin.invitation import Invitation as LocalInvitation  # noqa: PLC0415
+
+    try:
+        local_invs = await LocalInvitation.get_all({})
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[invitation-sync] prune scan failed: %s", e)
+        return
+    for inv in local_invs or []:
+        try:
+            if not getattr(inv, "remote", False) or inv.accepted or not inv.is_expired():
+                continue
+            await inv.delete()
+            logger.info("[invitation-sync] pruned expired invitation %s", (inv.id or "")[:8])
+        except Exception as e:  # noqa: BLE001
+            logger.warning("[invitation-sync] prune failed for %s: %s", (inv.id or "")[:8], e)
 
 
 @action.post(action_name="conversation-sync", types=None)
@@ -3550,6 +3642,13 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
                         "[invitation-accept] accept redirected to a non-conversation entity landing (asset target): %s",
                         location[:160],
                     )
+            elif resp.status_code in (404, 410):
+                # Hub says the invitation is gone (404) or expired (410): the
+                # local mirror is an orphan (local id == hub id, so a 404 here
+                # means the hub node no longer exists). Self-heal the stale row
+                # and return the 410 {gone} signal. Any OTHER status (5xx, 401,
+                # transport) is transient — fall through, do NOT delete.
+                return await _self_heal_gone_invitation(inv_id, context="invitation-accept")
             else:
                 return ApiFailResponse(message=f"Accept failed ({resp.status_code}): {resp.text[:200]}")
         if resp.status_code == 409:

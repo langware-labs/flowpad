@@ -140,6 +140,15 @@ interface FlowMessageBubbleProps {
   runStatus?: WorkerStatus | null;
   /** Open this message's executed run in the conversation drawer's Runs tab. */
   onOpenRun?: (processId: string) => void;
+  /** Whether the conversation already has a worker session — flips the Execute
+   *  chip from "Run" to "<Host>'s session · new run", resolved once by the parent. */
+  workerSessionExists?: boolean;
+  workerSessionLabel?: string | null;
+  workerSessionInFlight?: boolean;
+  /** Additive: open the conversation's worker session in the collaboration room
+   *  view. Rendered as an icon on the run-status line; leaves the Runs drawer
+   *  path untouched. */
+  onOpenWorkerSession?: () => void;
   /** Per-message Implement Plan handler. The bubble itself decides whether to
    *  render the chip (spec present + recipient role) — pass the raw messageId
    *  callback and the bubble binds it. */
@@ -199,6 +208,10 @@ export function FlowMessageBubble({
   run,
   runStatus,
   onOpenRun,
+  workerSessionExists = false,
+  workerSessionLabel = null,
+  workerSessionInFlight = false,
+  onOpenWorkerSession,
   onImplementPlan,
   onOpenPlanSession,
   onViewPlan,
@@ -605,7 +618,14 @@ export function FlowMessageBubble({
   const footer = (
     <>
       {attachmentFooter}
-      <MessageRunStatus fm={fm} run={run ?? null} runStatus={runStatus} onOpenRun={onOpenRun} />
+      <MessageRunStatus
+        fm={fm}
+        run={run ?? null}
+        runStatus={runStatus}
+        onOpenRun={onOpenRun}
+        onOpenWorkerSession={onOpenWorkerSession}
+        workerSessionInFlight={workerSessionInFlight}
+      />
       <MessageContextButton fm={fm} projectId={attachmentProjectId} />
     </>
   );
@@ -636,6 +656,9 @@ export function FlowMessageBubble({
         onImplementPlan={onImplementPlan ? () => onImplementPlan(messageId) : undefined}
         onOpenPlanSession={onOpenPlanSession}
         onViewPlan={onViewPlan}
+        workerSessionExists={workerSessionExists}
+        workerSessionLabel={workerSessionLabel}
+        workerSessionInFlight={workerSessionInFlight}
         footer={footer}
         isSelected={isSelected}
         onSelect={onSelect}

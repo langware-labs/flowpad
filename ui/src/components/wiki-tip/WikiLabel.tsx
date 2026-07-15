@@ -2,6 +2,7 @@ import { useCallback } from 'react';
 import { ExternalLink, Eye } from 'lucide-react';
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@src/components/ui/hover-card';
 import { Button } from '@src/components/ui/button';
+import { Layout } from '@sdk';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { openWikiModal } from './wiki-modal';
@@ -11,6 +12,11 @@ interface WikiLabelProps {
   wikiword: string;
   /** Display text for the button. Defaults to the wiki word. */
   label?: string;
+  /**
+   * Optional heading slug (e.g. "auto-run") to deep-link into a section of the
+   * page. Both "Open" and "Preview" scroll to it once the markdown renders.
+   */
+  fragment?: string;
 }
 
 /**
@@ -19,11 +25,15 @@ interface WikiLabelProps {
  * same page in a modal via `openWikiModal`. Both directions resolve the page
  * by name. See docs/wikitip.md.
  */
-export function WikiLabel({ wikiword, label }: WikiLabelProps) {
+export function WikiLabel({ wikiword, label, fragment }: WikiLabelProps) {
   const { navigation } = useDockNavigation();
   const openWiki = useCallback(
-    () => navigation.openDock(DockPointer.forWiki(wikiword)),
-    [navigation, wikiword],
+    () => navigation.openDock(DockPointer.forWiki(wikiword, Layout.DOCK, undefined, fragment)),
+    [navigation, wikiword, fragment],
+  );
+  const previewWiki = useCallback(
+    () => openWikiModal(wikiword, undefined, fragment),
+    [wikiword, fragment],
   );
 
   return (
@@ -44,7 +54,7 @@ export function WikiLabel({ wikiword, label }: WikiLabelProps) {
             Wiki page. Open it inline, or peek at it without leaving this view.
           </div>
           <div className="flex gap-2 pt-1">
-            <Button size="sm" variant="secondary" onClick={() => openWikiModal(wikiword)}>
+            <Button size="sm" variant="secondary" onClick={previewWiki}>
               <Eye className="mr-1 h-3.5 w-3.5" /> Preview
             </Button>
             <Button size="sm" variant="ghost" onClick={openWiki}>

@@ -44,7 +44,14 @@ const planAttachment: Attachment = {
 function actionsFor(
   fm: FlowMessage | null,
   handlers: AttachmentActionHandlers,
-  opts: { isFromOther?: boolean; isComposerPreview?: boolean; hasPlanSession?: boolean } = {},
+  opts: {
+    isFromOther?: boolean;
+    isComposerPreview?: boolean;
+    hasPlanSession?: boolean;
+    workerSessionExists?: boolean;
+    workerSessionLabel?: string | null;
+    workerSessionInFlight?: boolean;
+  } = {},
 ) {
   const { result } = renderHook(() =>
     useAttachmentActions({
@@ -53,6 +60,9 @@ function actionsFor(
       isFromOther: opts.isFromOther ?? true,
       isComposerPreview: opts.isComposerPreview ?? false,
       hasPlanSession: opts.hasPlanSession ?? false,
+      workerSessionExists: opts.workerSessionExists ?? false,
+      workerSessionLabel: opts.workerSessionLabel ?? null,
+      workerSessionInFlight: opts.workerSessionInFlight ?? false,
       handlers,
     }),
   );
@@ -150,5 +160,23 @@ describe('attachment-action registry visibility', () => {
   it('promptEntityTypeId resolves from the entity attachment', () => {
     const { promptEntityTypeId } = actionsFor(fmWith([entityPrompt()]), fullHandlers);
     expect(promptEntityTypeId).toEqual(new TypeId('prompt', PROMPT_ID));
+  });
+
+  it('execute chip reads "Run" when no worker session exists', () => {
+    const { actions } = actionsFor(fmWith([entityPrompt()]), fullHandlers);
+    const exec = actions.find((a) => a.id === 'prompt.approve-execute')!;
+    expect(exec.label).toBe('Run');
+    expect(exec.pulse).toBe(false);
+  });
+
+  it('execute chip reads "<label> · new run" + pulses when a session exists in-flight', () => {
+    const { actions } = actionsFor(fmWith([entityPrompt()]), fullHandlers, {
+      workerSessionExists: true,
+      workerSessionLabel: "Alice's session",
+      workerSessionInFlight: true,
+    });
+    const exec = actions.find((a) => a.id === 'prompt.approve-execute')!;
+    expect(exec.label).toBe("Alice's session · new run");
+    expect(exec.pulse).toBe(true);
   });
 });

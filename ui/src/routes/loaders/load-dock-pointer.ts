@@ -1,4 +1,4 @@
-import { AgenticProcess, Plan, QueryRequest, Trigger, TypeId, VFSPath } from '@sdk';
+import { AgenticProcess, Plan, QueryRequest, RemoteWorkerSession, Trigger, TypeId, VFSPath } from '@sdk';
 import { redirect } from 'react-router';
 import { DockPointer } from '@src/navigation';
 import { ViewType } from '@src/types/ViewType';
@@ -84,6 +84,28 @@ async function loadAgenticProcessRoute(pointer: string | undefined): Promise<voi
   }
 }
 
+function loadLiveSessionRoute(pointer: string | undefined): void {
+  if (!pointer) return;
+  // Identity validation only — the view watches the session entity live (a
+  // guest-side DRAFT row may exist locally before anything is on the hub), so
+  // the loader stays fast (no WS/PTY-bound work; see CLAUDE.md loader rule).
+  try {
+    new TypeId(RemoteWorkerSession.type, pointer);
+  } catch (error) {
+    throw new DockLoadError(
+      'malformed_session_pointer',
+      'hard',
+      {
+        action: 'render_error',
+        title: 'Live session not found',
+        message: 'This live-session URL is malformed or unavailable.',
+      },
+      'live_session',
+      error,
+    );
+  }
+}
+
 export async function loadDockPointer(
   dock: DockPointer,
   context: DockLoaderContext,
@@ -108,6 +130,9 @@ export async function loadDockPointer(
         break;
       case ViewType.AGENTIC_PROCESS:
         await loadAgenticProcessRoute(dock.pointer);
+        break;
+      case ViewType.LIVE_SESSION:
+        loadLiveSessionRoute(dock.pointer);
         break;
       case ViewType.TRIGGERS:
         await Trigger.query(new QueryRequest({ type: Trigger.type, scope: [] }));

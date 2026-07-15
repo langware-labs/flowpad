@@ -28,8 +28,11 @@ import { History, MessageSquarePlus, Settings, Trash2, X } from 'lucide-react';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ExecutionSettingsPopover } from './ExecutionSettingsPopover';
+import { ProcessNameBar } from './ProcessNameBar';
 import { notify } from '@src/notifications/notify';
 import { CompactExecutionInput } from './CompactExecutionInput';
+import { QueueChip } from './QueueChip';
+import { useInputHistory } from '@src/hooks/use-input-history';
 import { splitLiveGroup, useTurnGroups, type TurnGroup } from '@src/components/floating-chat/groupTurnEvents';
 import { TurnGroupsList } from './TurnGroupsList';
 import { ChatActivityLine } from './ChatActivityLine';
@@ -52,6 +55,9 @@ import {
 } from '@src/components/workers/worker-types';
 
 const EMPTY_TURN_GROUPS: TurnGroup[] = [];
+
+const isUserMessage = (m: FlowData) =>
+  m.elementType === FlowElementTypes.USER_MESSAGE || (m.attributes && m.attributes.role === 'user');
 
 interface EntityExecutionPanelProps {
   /**
@@ -88,6 +94,24 @@ interface EntityExecutionPanelProps {
   newSessionLabel?: string;
   /** Tooltip for the history button. Defaults to "Execution history". */
   historyLabel?: string;
+  /**
+   * When set, the history trigger renders as a labeled pill (History icon +
+   * this text, e.g. "Recent") instead of the bare icon button. Vibe uses this
+   * to surface a first-class "Recent" affordance next to its "New" pill.
+   */
+  historyTriggerLabel?: string;
+  /**
+   * Place the history trigger on the LEFT of the header row (right after the
+   * leadingSlot) instead of its default right-side slot. Vibe groups "New" +
+   * "Recent" together on the left.
+   */
+  historyOnLeft?: boolean;
+  /** Optional content rendered immediately after the (left-placed) history
+   *  trigger — e.g. Vibe's "Collaborate" button next to the "Recent" pill. */
+  afterHistorySlot?: React.ReactNode;
+  /** Show an editable one-liner with the active process's name directly below
+   *  the header (Vibe). Off by default so other consumers are unchanged. */
+  showProcessNameBar?: boolean;
   /** Header label inside the history dropdown. Defaults to "Past executions". */
   pastSessionsLabel?: string;
   /** Empty-state text shown inside the history dropdown. Defaults to "No past executions". */
@@ -213,6 +237,10 @@ export function EntityExecutionPanel({
   settingsLabel = 'Settings',
   newSessionLabel = 'New execution',
   historyLabel = 'Execution history',
+  historyTriggerLabel,
+  historyOnLeft = false,
+  afterHistorySlot,
+  showProcessNameBar = false,
   pastSessionsLabel = 'Past executions',
   noPastSessionsLabel = 'No past executions',
   emptyStateText = 'Ask about this document. The conversation will persist.',
@@ -380,6 +408,31 @@ export function EntityExecutionPanel({
   // 5. In-flight tracking for the send button gate.
   const [sending, setSending] = useState(false);
 
+  // Prompt history (ArrowUp/Down browsing in the composer). Seeded from the
+  // loaded transcript's user messages so "1 up = last prompt" survives
+  // reloads, then extended live by every send/enqueue. Keyed on the USER-
+  // message count (not `messages` identity, which churns on every streamed
+  // chunk) so the strip/dedup work only runs when a prompt is actually added.
+  const inputHistory = useInputHistory();
+  const userMessageCount = useMemo(
+    () => messages.reduce((n, m) => n + (isUserMessage(m) ? 1 : 0), 0),
+    [messages],
+  );
+  useEffect(() => {
+    inputHistory.seed(
+      messages
+        .filter(isUserMessage)
+        .map((m) => String(m.content ?? '').trim())
+        // Strip vendor-synthetic interrupt records (claude's "[Request
+        // interrupted by user…]" tool_result rows render as user messages —
+        // sometimes merged onto the next typed prompt) so history holds only
+        // what the user actually typed.
+        .map((text) => text.replace(/^(\[Request interrupted[^\]]*\]\s*)+/, '').trim())
+        .filter(Boolean),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inputHistory, userMessageCount, activeProcess?.id]);
+
   // Pre-first-send settings — applied at lazy-create time.
   const [pendingAttachedRefs, setPendingAttachedRefs] = useState<string[]>([]);
   const [pendingProjectId, setPendingProjectId] = useState<string | null>(null);
@@ -472,7 +525,26 @@ export function EntityExecutionPanel({
   }, [activeProcess]);
 
   const handleSend = useCallback(async (text: string, opts?: { forceNewProcess?: boolean }) => {
-    if (!targetStr || sending) return;
+    if (!targetStr) return;
+    inputHistory.addToHistory(text);
+
+    // Mid-turn sends ENQUEUE instead of racing a second turn: the backend
+    // owns the queue and auto-drains it as the worker frees up (the composer
+    // stays usable while busy; the queue chip shows the pending count).
+    const turnBusy = !!activeProcess && isBusy(activeProcess);
+    if (!opts?.forceNewProcess && activeProcess && (turnBusy || sending)) {
+      const composed = promptContext ? `${promptContext.text}\n\n${text}` : text;
+      try {
+        await activeProcess.enqueue(composed);
+        if (promptContext) onPromptContextConsumed?.();
+      } catch (err) {
+        console.error('[EntityExecutionPanel] enqueue failed', err);
+        notify.error({ title: t`Message not queued`, message: err instanceof Error ? err.message : String(err) });
+      }
+      return;
+    }
+
+    if (sending) return;
     setSending(true);
     try {
       let proc = opts?.forceNewProcess ? null : activeProcess;
@@ -531,7 +603,7 @@ export function EntityExecutionPanel({
     } finally {
       setSending(false);
     }
-  }, [activeProcess, sending, targetStr, effectiveProjectId, effectiveWorkdir, effectiveModel, effectiveWorkerType, onProcessCreated, pendingProjectId, pendingAttachedRefs, processType, transport, promptContext, onPromptContextConsumed, selectedProcessId, t]);
+  }, [activeProcess, sending, targetStr, effectiveProjectId, effectiveWorkdir, effectiveModel, effectiveWorkerType, onProcessCreated, pendingProjectId, pendingAttachedRefs, processType, transport, promptContext, onPromptContextConsumed, selectedProcessId, inputHistory, t]);
 
   const handleStop = useCallback(async () => {
     if (!activeProcess) return;
@@ -616,13 +688,13 @@ export function EntityExecutionPanel({
   // needed. `activeProcess` is a `StatusBearingProcess` (status + workerStatus).
   const indicatorProcess: StatusBearingProcess | null = activeProcess;
 
-  // One boolean gates the composer: the backend's turn-in-flight `busy` boolean
-  // (serialized alongside `status`; read via `isBusy`). A dead/complete PTY, a PENDING_USER worker (asked a
-  // question), and a headless worker between turns all read as ¬busy, so the
-  // textarea stays sendable exactly when the backend prompt action would admit
-  // the turn — no transport special-casing and no PENDING_USER carve-out needed.
+  // The backend's turn-in-flight `busy` boolean (serialized alongside
+  // `status`; read via `isBusy`) drives the Stop button and routes mid-turn
+  // sends to the queue. The composer itself stays USABLE while busy — typing
+  // + Enter enqueues (handleSend's turn-busy branch) instead of being locked
+  // out, so the only hard gate is having a target at all.
   const busy = !!indicatorProcess && isBusy(indicatorProcess);
-  const sendDisabled = !targetStr || sending || busy;
+  const sendDisabled = !targetStr;
   const modelSettingsNode = modelSelectSlot?.({
     value: effectiveModel,
     disabled: !targetStr || sending || busy || modelSavePending,
@@ -681,6 +753,9 @@ export function EntityExecutionPanel({
         leadingSlot={typeof leadingSlot === 'function' ? leadingSlot({ startNewSession }) : leadingSlot}
         newSessionLabel={newSessionLabel}
         historyLabel={historyLabel}
+        historyTriggerLabel={historyTriggerLabel}
+        historyOnLeft={historyOnLeft}
+        afterHistorySlot={afterHistorySlot}
         pastSessionsLabel={pastSessionsLabel}
         noPastSessionsLabel={noPastSessionsLabel}
         settingsSlot={
@@ -711,6 +786,7 @@ export function EntityExecutionPanel({
           </>
         }
       />
+      {showProcessNameBar && activeProcess && <ProcessNameBar process={activeProcess} />}
       <AutoScrollContainer ref={scrollRef} className="flex-1 overflow-y-auto">
         {showEmptyState && (
           <div className="p-3 text-sm text-muted-foreground">
@@ -767,6 +843,9 @@ export function EntityExecutionPanel({
         statusSlot={statusSlot}
         placeholder={placeholder}
         onPasteImages={handlePasteImages}
+        leadingSlot={<QueueChip process={activeProcess} />}
+        history={inputHistory}
+        animateEnqueue
       />
       <ConfirmDialog
         open={!!pendingDelete}
@@ -807,6 +886,9 @@ function ExecutionHistoryHeader({
   leadingSlot,
   newSessionLabel,
   historyLabel,
+  historyTriggerLabel,
+  historyOnLeft,
+  afterHistorySlot,
   pastSessionsLabel,
   noPastSessionsLabel,
 }: {
@@ -824,12 +906,131 @@ function ExecutionHistoryHeader({
   leadingSlot?: React.ReactNode;
   newSessionLabel: string;
   historyLabel: string;
+  /** When set, the history trigger is a labeled pill ("Recent") instead of an icon. */
+  historyTriggerLabel?: string;
+  /** Render the history trigger on the left (next to leadingSlot). */
+  historyOnLeft?: boolean;
+  /** Optional node rendered right after the left-placed history pill. */
+  afterHistorySlot?: React.ReactNode;
   pastSessionsLabel: string;
   noPastSessionsLabel: string;
 }) {
   const { t } = useLingui();
   const iconBtn =
     'flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40';
+  const pillBtn =
+    'inline-flex h-6 items-center gap-1 rounded-full border border-border px-2 text-xs text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40';
+
+  const historyDropdown = (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          title={historyLabel}
+          disabled={processes.length === 0}
+          className={historyTriggerLabel ? pillBtn : iconBtn}
+          data-testid="entity-execution-history"
+        >
+          <History className="h-3.5 w-3.5" />
+          {historyTriggerLabel && <span>{historyTriggerLabel}</span>}
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align={historyOnLeft ? 'start' : 'end'} className="w-72" data-testid="entity-execution-history-menu">
+        <div className="flex items-center justify-between gap-2 px-2 py-1.5">
+          <span className="text-[11px] font-medium text-muted-foreground">
+            {pastSessionsLabel}
+          </span>
+          {processes.length > 0 && (
+            <button
+              type="button"
+              onClick={(e) => {
+                // Stop the click from bubbling into the dropdown (which would
+                // try to treat it as an item-select and close the menu before
+                // the confirm dialog can mount).
+                e.preventDefault();
+                e.stopPropagation();
+                onClearAll();
+              }}
+              className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+              title={t`Clear all past chats`}
+              data-testid="entity-execution-history-clear-all"
+            >
+              <Trash2 className="h-3 w-3" />
+              <Trans>Clear all</Trans>
+            </button>
+          )}
+        </div>
+        <DropdownMenuSeparator />
+        {processes.length === 0 ? (
+          <div className="px-2 py-1.5 text-[11px] text-muted-foreground">{noPastSessionsLabel}</div>
+        ) : (
+          processes.map((p) => {
+            const entry = p.id ? workerHistoryByProcessId.get(p.id) : undefined;
+            const title = pickHistoryTitle(p, entry);
+            const subline = buildHistorySubline(entry);
+            // `updated_date` / `created_date` can come through as either an
+            // ISO string or a Date depending on how the entity was hydrated;
+            // normalize to ISO so `timeAgo` can parse uniformly.
+            const lastActiveRaw = entry?.last_active_time ?? p.updated_date ?? p.created_date ?? null;
+            const lastActive: string | null =
+              lastActiveRaw == null
+                ? null
+                : typeof lastActiveRaw === 'string'
+                  ? lastActiveRaw
+                  : lastActiveRaw instanceof Date
+                    ? lastActiveRaw.toISOString()
+                    : String(lastActiveRaw);
+            const isActive = p.id === activeId;
+            return (
+              <DropdownMenuItem
+                key={p.id}
+                onSelect={() => p.id && onPickSession(p.id)}
+                data-active={isActive ? 'true' : 'false'}
+                className="group flex flex-col items-start gap-0.5 pr-1"
+              >
+                <div className="flex w-full items-center gap-1.5">
+                  <HistoryWorkerIcon
+                    workerType={entry?.worker_type ?? p.worker_type ?? null}
+                    className="h-3 w-3 shrink-0"
+                  />
+                  <span className="min-w-0 flex-1 truncate text-xs font-medium">
+                    {title}
+                  </span>
+                  <span className="flex-shrink-0 text-[10px] text-muted-foreground tabular-nums">
+                    {historyTimeAgo(lastActive)}
+                  </span>
+                  {p.id && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        // Block the row's onSelect — clicking the trash
+                        // should NOT also load the session into the panel.
+                        e.preventDefault();
+                        e.stopPropagation();
+                        onDeleteSession(p.id, title);
+                      }}
+                      className="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded text-muted-foreground/40 opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100 group-data-[active=true]:opacity-60"
+                      title={t`Delete this chat`}
+                      data-testid={`entity-execution-history-delete-${p.id}`}
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  )}
+                </div>
+                {(subline || isActive) && (
+                  <span className="text-[10px] text-muted-foreground">
+                    {subline}
+                    {isActive ? `${subline ? ' · ' : ''}current` : ''}
+                  </span>
+                )}
+              </DropdownMenuItem>
+            );
+          })
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+
   return (
     <div
       className={cn(
@@ -842,6 +1043,8 @@ function ExecutionHistoryHeader({
       data-testid="entity-execution-header"
     >
       {leadingSlot}
+      {historyOnLeft && historyDropdown}
+      {historyOnLeft && afterHistorySlot}
       {cursorLine != null && (
         <span
           className="text-[11px] tabular-nums text-muted-foreground"
@@ -862,112 +1065,7 @@ function ExecutionHistoryHeader({
           <MessageSquarePlus className="h-3.5 w-3.5" />
         </button>
       )}
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <button
-            type="button"
-            title={historyLabel}
-            disabled={processes.length === 0}
-            className={iconBtn}
-            data-testid="entity-execution-history"
-          >
-            <History className="h-3.5 w-3.5" />
-          </button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-72" data-testid="entity-execution-history-menu">
-          <div className="flex items-center justify-between gap-2 px-2 py-1.5">
-            <span className="text-[11px] font-medium text-muted-foreground">
-              {pastSessionsLabel}
-            </span>
-            {processes.length > 0 && (
-              <button
-                type="button"
-                onClick={(e) => {
-                  // Stop the click from bubbling into the dropdown (which would
-                  // try to treat it as an item-select and close the menu before
-                  // the confirm dialog can mount).
-                  e.preventDefault();
-                  e.stopPropagation();
-                  onClearAll();
-                }}
-                className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                title={t`Clear all past chats`}
-                data-testid="entity-execution-history-clear-all"
-              >
-                <Trash2 className="h-3 w-3" />
-                <Trans>Clear all</Trans>
-              </button>
-            )}
-          </div>
-          <DropdownMenuSeparator />
-          {processes.length === 0 ? (
-            <div className="px-2 py-1.5 text-[11px] text-muted-foreground">{noPastSessionsLabel}</div>
-          ) : (
-            processes.map((p) => {
-              const entry = p.id ? workerHistoryByProcessId.get(p.id) : undefined;
-              const title = pickHistoryTitle(p, entry);
-              const subline = buildHistorySubline(entry);
-              // `updated_date` / `created_date` can come through as either an
-              // ISO string or a Date depending on how the entity was hydrated;
-              // normalize to ISO so `timeAgo` can parse uniformly.
-              const lastActiveRaw = entry?.last_active_time ?? p.updated_date ?? p.created_date ?? null;
-              const lastActive: string | null =
-                lastActiveRaw == null
-                  ? null
-                  : typeof lastActiveRaw === 'string'
-                    ? lastActiveRaw
-                    : lastActiveRaw instanceof Date
-                      ? lastActiveRaw.toISOString()
-                      : String(lastActiveRaw);
-              const isActive = p.id === activeId;
-              return (
-                <DropdownMenuItem
-                  key={p.id}
-                  onSelect={() => p.id && onPickSession(p.id)}
-                  data-active={isActive ? 'true' : 'false'}
-                  className="group flex flex-col items-start gap-0.5 pr-1"
-                >
-                  <div className="flex w-full items-center gap-1.5">
-                    <HistoryWorkerIcon
-                      workerType={entry?.worker_type ?? p.worker_type ?? null}
-                      className="h-3 w-3 shrink-0"
-                    />
-                    <span className="min-w-0 flex-1 truncate text-xs font-medium">
-                      {title}
-                    </span>
-                    <span className="flex-shrink-0 text-[10px] text-muted-foreground tabular-nums">
-                      {historyTimeAgo(lastActive)}
-                    </span>
-                    {p.id && (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          // Block the row's onSelect — clicking the trash
-                          // should NOT also load the session into the panel.
-                          e.preventDefault();
-                          e.stopPropagation();
-                          onDeleteSession(p.id, title);
-                        }}
-                        className="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded text-muted-foreground/40 opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100 group-data-[active=true]:opacity-60"
-                        title={t`Delete this chat`}
-                        data-testid={`entity-execution-history-delete-${p.id}`}
-                      >
-                        <X className="h-3 w-3" />
-                      </button>
-                    )}
-                  </div>
-                  {(subline || isActive) && (
-                    <span className="text-[10px] text-muted-foreground">
-                      {subline}
-                      {isActive ? `${subline ? ' · ' : ''}current` : ''}
-                    </span>
-                  )}
-                </DropdownMenuItem>
-              );
-            })
-          )}
-        </DropdownMenuContent>
-      </DropdownMenu>
+      {!historyOnLeft && historyDropdown}
       {settingsSlot}
     </div>
   );

@@ -77,7 +77,9 @@ class Invitation(Entity):
         self.expiration_at = datetime.now(UTC) + timedelta(days=default_service_config.invitation_expires_in_days)
 
     def is_expired(self) -> bool:
-        return datetime.now(UTC) > self.expiration_at
+        # None-safe: rows hydrated via ``model_validate`` bypass ``__init__``
+        # and may carry no expiration; those never expire locally.
+        return self.expiration_at is not None and datetime.now(UTC) > self.expiration_at
 
     @classmethod
     def from_membership_request(cls, membership_request: "MembershipRequest") -> "Invitation":

@@ -144,6 +144,28 @@ def _asset_updated_epoch(record_type: str, src_path: str) -> float | None:
     return epoch
 
 
+# Fire-and-forget setup runs scheduled by ``Entity.setup_on_receive``. Held in a
+# module set so the event loop keeps a strong ref (a bare create_task can be GC'd
+# mid-run); discarded on completion.
+_RECEPTION_SETUP_TASKS: set = set()
+
+
+def _schedule_setup_prompt(ap, seed: str) -> None:
+    """Run ``ap.prompt(seed)`` in the background so the install request returns the
+    Vibe target immediately — the setup agent populates the display asynchronously."""
+    import asyncio  # noqa: PLC0415
+
+    async def _run() -> None:
+        try:
+            await ap.prompt(seed)
+        except Exception:
+            service_log.warn(f"[reception] setup prompt failed for {ap.id}", exc_info=True)
+
+    task = asyncio.create_task(_run(), name=f"setup-{ap.id[:8]}")
+    _RECEPTION_SETUP_TASKS.add(task)
+    task.add_done_callback(_RECEPTION_SETUP_TASKS.discard)
+
+
 class Entity(DBEntity):
     env_vars: SerializeAsAny[EntityEnvVars[EnvVar] | None] = Field(default=None)
     visitor_role: str | None = Field(default=None)
@@ -1049,17 +1071,26 @@ class Entity(DBEntity):
         """If the source asset changed since the last index, re-sync. Returns
         True if a refresh happened. Freshness is the record's own on-disk
         ``index_required`` (source hash vs the index sentinel) — no DB read."""
-        record = await self.get_record()
-        if record is None:
-            return False
-        if not record.index_required:
-            return False
-        try:
-            await record.sync_to_db()
-            record.write_hash()
-        except Exception:
-            pass
-        return True
+        from flow_sdk.fs_store.fs_record import record_sync_guard
+
+        async with record_sync_guard(self.get_type(), self.id):
+            record = await self.get_record()
+            if record is None:
+                return False
+            # Project records intentionally mirror their mount as
+            # ``fs_storage_mount_path`` rather than a generic ``asset_ref``.
+            # Bind that derived ref before checking the sentinel; otherwise an
+            # unbound fresh record hashes as "" and every GET becomes a false
+            # disk->DB writer.
+            record.ensure_asset_ref()
+            if not record.index_required:
+                return False
+            try:
+                await record.sync_to_db()
+                record.write_hash()
+            except Exception:
+                pass
+            return True
 
     # ==================== Wiki link capability ====================
     # Mirrors Record.get_links / Record.get_backlinks. Both call into the
@@ -1223,6 +1254,73 @@ class Entity(DBEntity):
         re-declared on concrete entity classes.
         """
         return SchemaRegistry.get(self.get_type())
+
+    async def setup_on_receive(self, *, project_id: str | None = None, workdir: str | None = None) -> dict:
+        """Reception hook: the DisplayTarget to navigate to after this entity is
+        installed from a share.
+
+        Generic on the base entity — behavior comes from the type's
+        ``TypeInfo.setup_skill`` (declared next to the type, never branched here).
+        No skill ⇒ just open the received entity. A skill ⇒ spawn a headless Vibe
+        ``AgenticProcess`` seeded to run that skill against this entity and return
+        ITS target, so the receiver lands in the live Vibe session while the agent
+        sets the app up. The seed runs in the background (see
+        ``_schedule_setup_prompt``) so the install request returns immediately.
+        Best-effort: any spawn failure falls back to opening the entity itself.
+        """
+        from flow_sdk.core.display_target import _entity_payload  # noqa: PLC0415
+
+        skill = getattr(self.type_info, "setup_skill", None)
+        if not skill:
+            return _entity_payload(self)
+        return await self._spawn_setup_session(skill, project_id=project_id, workdir=workdir)
+
+    async def _setup_workdir(self, project_id: str | None) -> str | None:
+        """Resolve a workdir for a setup session: the entity's own folder (an
+        artifact's served ``path``) when it is a real directory, else the mounted
+        project root, else None."""
+        from pathlib import Path as _Path  # noqa: PLC0415
+
+        raw = getattr(self, "path", None)
+        if raw and _Path(str(raw)).is_dir():
+            return str(raw)
+        if project_id:
+            from flow_sdk.builtin.project import Project  # noqa: PLC0415
+            proj = await Project.get_one({"id": project_id})
+            mount = (getattr(proj, "fs_storage_mount_path", "") or "").strip() if proj else ""
+            return mount or None
+        return None
+
+    async def _spawn_setup_session(self, skill: str, *, project_id: str | None = None, workdir: str | None = None) -> dict:
+        """Spawn the headless Vibe setup process and return its DisplayTarget. Split
+        out of ``setup_on_receive`` so open-existing and install share one spawn."""
+        from flow_sdk.core.display_target import _entity_payload  # noqa: PLC0415
+
+        typeid_str = f"{self.get_type()}-{self.id}"
+        # SELF sentinel (skill type == setup_skill): run the received entity as its
+        # own skill; else run the declared built-in (e.g. "artifact-setup").
+        skill_name = (getattr(self, "name", None) or self.id) if skill == self.get_type() else skill
+        try:
+            from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess  # noqa: PLC0415
+            from flow_sdk.flowpad_types.enums import ProcessKind  # noqa: PLC0415
+
+            # ``project_id``/``workdir`` are binding-frozen — set in the ctor only.
+            ap = AgenticProcess(
+                workdir=workdir,
+                project_id=project_id,
+                target_typeid_str=(f"project-{project_id}" if project_id else typeid_str),
+                visible=False,
+                pty_mode=False,
+                process_type=ProcessKind.CHAT,
+                load_flowpad_assistant=True,
+                context_data={"source_artifact_id": self.id, "launched_from": "artifact_setup"},
+            )
+            await ap.save()
+            _schedule_setup_prompt(ap, f"Use the {skill_name} skill to set up {typeid_str}.")
+            return _entity_payload(ap)
+        except Exception:
+            service_log.warn(f"[reception] setup_on_receive spawn failed for {typeid_str}; opening entity", exc_info=True)
+            return _entity_payload(self)
 
     @property
     def frontmatter(self):
@@ -1835,15 +1933,26 @@ class Entity(DBEntity):
         # Captured before the write flips ``exist_in_db``: a fresh entity can't yet
         # have a Tab pointing at it, so the project-reconcile below is update-only.
         was_create = not self.exist_in_db
-        await super().save(user_id, notify=notify)
-        # Sync metadata down to disk + upsert main_ref iff missing (Record
-        # contract: writes go through main_ref FSRef, no per-type store()).
-        # The disk→DB adopt path (from_record) suppresses this via the
-        # _SUPPRESS_STORE contextvar so the source-of-truth file is never
+        suppress_store = _SUPPRESS_STORE.get()
+        from flow_sdk.fs_store.fs_record import record_sync_guard
+
+        # Keep a normal DB write and its filesystem mirror indivisible with
+        # respect to the opposite disk→DB path.  ``record_sync_guard`` is
+        # explicitly same-task reentrant: ``FSRecord.sync_to_db`` owns it when
+        # it reaches this save through ``from_record``.
+        async with record_sync_guard(self.get_type(), self.id):
+            await super().save(user_id, notify=notify)
+            if not suppress_store:
+                # Sync metadata down to disk + upsert main_ref iff missing
+                # (Record contract: writes go through main_ref FSRef, no
+                # per-type store()).
+                await self.store()
+
+        # The disk→DB adopt path (from_record) suppresses disk write-back via
+        # the _SUPPRESS_STORE contextvar so the source-of-truth file is never
         # rewritten — structural loop suppression, override-agnostic (all
         # save() overrides funnel through this base).
-        if not _SUPPRESS_STORE.get():
-            await self.store()
+        if not suppress_store:
             # Reconcile dependent content Tabs when this entity's project changes.
             # ``tab.project_id`` is a denormalized snapshot of the target's project
             # taken at tab creation; without this a (re)assignment leaves the tab
@@ -2663,6 +2772,25 @@ async def _http_unfavorite(self: Entity):
     return ApiSuccessResponse(data={"deleted": deleted, "favorited": False})
 
 
+async def _http_setup(self: Entity):
+    """Open / set up an already-materialized entity — the reception hook reused for
+    the open-an-existing surfaces (artifact favorites/cards/chips, skill run).
+
+    Returns the DisplayTarget to navigate to: ``setup_on_receive`` opens the entity
+    directly (no setup skill) or spawns a headless Vibe setup session and returns
+    ITS target. Project/workdir default to the entity's own binding; the caller may
+    override ``project_id`` (e.g. the conversation-mapped project)."""
+    from flow_sdk.responses.response import ApiSuccessResponse  # noqa: PLC0415
+    from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
+
+    request_info = get_current_request_info()
+    body = await request_info.get_post_data() if request_info is not None else {}
+    project_id = (body.get("project_id") if isinstance(body, dict) else None) or getattr(self, "project_id", None)
+    workdir = await self._setup_workdir(project_id)
+    show = await self.setup_on_receive(project_id=project_id, workdir=workdir)
+    return ApiSuccessResponse(data={"show": show})
+
+
 _action_registry.register(
     action_name="favorite",
     function_name="favorite",
@@ -2674,6 +2802,13 @@ _action_registry.register(
     action_name="unfavorite",
     function_name="unfavorite",
     handler=_http_unfavorite,
+    methods="post",
+    types="all",
+)
+_action_registry.register(
+    action_name="setup",
+    function_name="setup",
+    handler=_http_setup,
     methods="post",
     types="all",
 )
@@ -2761,24 +2896,65 @@ async def _http_activate(self: Entity):
     resolver's recency seed (docs/tab-management.md Part 3 §4). Loaders call
     this fire-and-forget on tab activation. Never touches membership:
     membership promotion is explicit-only (``tabs/open``)."""
-    from flow_sdk.responses.response import ApiSuccessResponse  # noqa: PLC0415
+    from flow_sdk.api.api_types.messages import DataOpMessage, OperationType  # noqa: PLC0415
+    from flow_sdk.fs_store.fs_record import record_sync_guard  # noqa: PLC0415
+    from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
     from flow_sdk.utils.serialization import now_epoch_ms  # noqa: PLC0415
 
-    # A soft-closed (``visible=False``) Tab is not a resolver candidate, and
-    # activation is recency-only — it NEVER re-shows membership (reopen goes
-    # through ``tabs/open`` → ``ensure_tab``, which is the sole re-show path). So
-    # stamping a hidden tab has no legitimate consumer and one real hazard: a late,
-    # out-of-order recency stamp. The activate is fired fire-and-forget on select
-    # (``stampTabRecencyForTarget``); when a tab is clicked and then closed a moment
-    # later, that stamp can arrive AFTER the close (seconds late under backend load)
-    # and re-seed the just-closed tab as most-recent, pulling the close self-heal
-    # back onto a dead tab. No-op it — a closed tab's recency is meaningless.
-    if self.get_type() == "tab" and getattr(self, "visible", True) is False:
-        return ApiSuccessResponse(data={"last_active_at": self.last_active_at})
+    stamped_at = now_epoch_ms()
+    async with record_sync_guard(self.get_type(), self.id):
+        persisted, did_stamp = await self._db.stamp_last_active_at(self.id, stamped_at)
+        if persisted is None:
+            return ApiFailResponse(
+                message=f"Entity no longer exists: {self.typeid}", status_code=404
+            )
 
-    self.last_active_at = now_epoch_ms()
-    await self.save()
-    return ApiSuccessResponse(data={"last_active_at": self.last_active_at})
+        # A soft-closed (``visible=False``) Tab is not a resolver candidate, and
+        # activation is recency-only — it NEVER re-shows membership (reopen goes
+        # through ``tabs/open`` → ``ensure_tab``, which is the sole re-show path).
+        # Inspect the authoritative row inside the writer transaction above, not
+        # ``self``: this request snapshot can predate the close it races with.
+        if not did_stamp:
+            return ApiSuccessResponse(data={"last_active_at": persisted.last_active_at})
+
+        # Generic activate historically flowed through ``Entity.save``.  Some
+        # types (notably ShellMeta) deliberately persist recency to their record,
+        # so retain that contract with a one-field merge from the authoritative
+        # row.  Never full-save ``self``: it may be the stale request snapshot.
+        if "last_active_at" in persisted.metadata_payload():
+            record = await persisted.get_record()
+            if record is not None:
+                import asyncio  # noqa: PLC0415
+
+                try:
+                    await asyncio.to_thread(
+                        record.save_metadata_field, "last_active_at", stamped_at
+                    )
+                except Exception as exc:
+                    from flow_sdk.fs_store.operations.record_error import (  # noqa: PLC0415
+                        from_exception,
+                    )
+
+                    from_exception(record, exc, trigger="activate").save()
+
+        # Keep the action receiver coherent without clearing any unrelated
+        # pending mutation it may carry.  The DB write above is deliberately
+        # recency-only.
+        was_dirty = self._dirty
+        self.last_active_at = stamped_at
+        self._dirty = was_dirty
+
+        # Publish before releasing the record guard, so a newer normal save
+        # cannot emit first and then be followed by this older full-row update.
+        # The payload is the freshly persisted row, never stale ``self``.
+        change = DataOpMessage(
+            data=persisted,
+            op=OperationType.UPDATE,
+            to_entity=self.typeid,
+        )
+        await self.add_entity_op_notification(change)
+        self._notify_observers(change)
+        return ApiSuccessResponse(data={"last_active_at": stamped_at})
 
 
 _action_registry.register(

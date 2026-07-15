@@ -1,7 +1,7 @@
 import { AssetEditorRouter, hasEditor } from '@src/components/assets/editor/AssetEditorRouter';
 import { WikiResolveView } from '@src/components/assets/editor/WikiResolveView';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
-import { AssetEditor, AssetMode, AssetRoutingMethod, DEFAULT_WIKI_SPACE } from '@src/navigation/asset-doc-types';
+import { AssetEditor, AssetMode, AssetRoutingMethod, DEFAULT_WIKI_SPACE, WIKI_FRAGMENT_PARAM } from '@src/navigation/asset-doc-types';
 import { ProjectHome } from '@src/components/project-home/ProjectHome';
 import { InputDialog } from '@src/components/ui/input-dialog';
 import { Button } from '@src/components/ui/button';
@@ -701,7 +701,11 @@ export function AssetsPage() {
           {isFsMode && fsRelPath !== null ? (
             <ContextFolderBrowser relPath={fsRelPath} onNavigate={navigateAsset} projectId={scopeProjectId} />
           ) : isWikiMode && wikiName ? (
-            <WikiResolveView name={wikiName} space={wikiSpace ?? DEFAULT_WIKI_SPACE} />
+            <WikiResolveView
+              name={wikiName}
+              space={wikiSpace ?? DEFAULT_WIKI_SPACE}
+              fragment={currentDock?.options?.[WIKI_FRAGMENT_PARAM]}
+            />
           ) : isEditorMode && effectivePointer ? (
             <AssetEditorRouter pointer={effectivePointer} />
           ) : isFolderMode ? (

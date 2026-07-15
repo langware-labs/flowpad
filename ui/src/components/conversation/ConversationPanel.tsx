@@ -174,7 +174,10 @@ export function ConversationPanel({
   const taskKeys = useMemo(() => taskChipKeys(task ?? null), [task]);
 
   // Drawer + ribbon state. Drawer is collapsible — toggled via the ribbon.
-  const [sideOpen, setSideOpen] = useState<boolean>(true);
+  // Starts minimized: executing a prompt surfaces the run inline via the
+  // per-message run-status one-liner (near the Execute button), so the drawer
+  // opens only on demand (ribbon toggle or clicking a run-status one-liner).
+  const [sideOpen, setSideOpen] = useState<boolean>(false);
   const [activeSideTab, setActiveSideTab] = useState<ConversationSideTab>('context');
   // The run a message's one-liner asked to open — highlighted in the Runs tab.
   const [focusedRunId, setFocusedRunId] = useState<string | null>(null);

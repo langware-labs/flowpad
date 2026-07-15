@@ -141,6 +141,16 @@ except ImportError as e:
     print(f"[WARN] Failed to import DeckTemplate: {e}")
 
 try:
+    from flow_sdk.builtin.deck import Deck  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import Deck: {e}")
+
+try:
+    from flow_sdk.builtin.spreadsheet import Spreadsheet  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import Spreadsheet: {e}")
+
+try:
     from flow_sdk.builtin.group import Group  # noqa: F401
 except ImportError as e:
     print(f"[WARN] Failed to import Group: {e}")

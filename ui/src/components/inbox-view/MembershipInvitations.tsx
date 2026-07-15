@@ -1,21 +1,36 @@
 import { useCallback, useMemo, useState } from 'react';
-import { Invitation, QueryRequest, acceptInvitation, declineInvitation, normalizeEmail } from '@sdk';
+import {
+  Invitation,
+  QueryRequest,
+  acceptInvitation,
+  declineInvitation,
+  isInvitationGoneError,
+  normalizeEmail,
+} from '@sdk';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import { Button } from '@src/components/ui/button';
 import { Loader2 } from 'lucide-react';
 import { notify } from '@src/notifications';
-import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
+import { iconForType, labelForType } from '@src/components/graph-view/icons/iconRegistry';
 
 /**
- * Inbox rows for organization / team invitations.
+ * Inbox rows for entity-share invitations (organization, team, workspace,
+ * project, skill, … — any shareable entity type).
  *
  * Unlike conversation invitations (which ride a ``remote=True`` Conversation
- * and render as a normal thread row), membership invitations have no backing
- * conversation — the SDK materializes them as ``Invitation`` entities carrying
- * a ``target_*`` descriptor. This renders them as generic "Organization/Team
- * invitation" rows with the same Accept / Decline controls, decoupled from any
- * conversation. Shown above the conversation list.
+ * and render as a normal thread row), these have no backing conversation —
+ * the SDK materializes them as ``Invitation`` entities carrying a
+ * ``target_*`` descriptor. This renders them as
+ * "<inviter> invited you to <target>" rows with Accept / Decline controls,
+ * decoupled from any conversation. Shown above the conversation list.
  */
+function isExpired(inv: Invitation): boolean {
+  const raw = (inv as any).expiration_at;
+  if (!raw) return false;
+  const at = raw instanceof Date ? raw : new Date(raw);
+  return !Number.isNaN(at.getTime()) && at.getTime() < Date.now();
+}
+
 export function MembershipInvitations({ recipientEmail }: { recipientEmail: string | null }) {
   const request = useMemo(() => new QueryRequest({ type: Invitation.type, query: {} }), []);
   const { data: invitations = [], refetch } = useEntitiesQuery<Invitation>(request);
@@ -26,6 +41,9 @@ export function MembershipInvitations({ recipientEmail }: { recipientEmail: stri
       const i = inv as any;
       if (!i.target_type || !i.target_id) return false; // conversation invites handled elsewhere
       if (i.accepted) return false;
+      // An expired invitation is dead — accepting it would 410 on the hub.
+      // The sync prunes expired rows; this covers ones awaiting the prune.
+      if (isExpired(inv)) return false;
       // Only show invitations addressed to the current user (when we know them).
       if (email && normalizeEmail(i.recipient_email) !== email) return false;
       return true;
@@ -43,34 +61,17 @@ export function MembershipInvitations({ recipientEmail }: { recipientEmail: stri
   );
 }
 
-/** Row title per target type — the row must say WHAT is being shared, not
- *  default everything to "Organization". */
-const KIND_LABELS: Record<string, string> = {
-  organization: 'Organization invitation',
-  team: 'Team invitation',
-  workspace: 'Workspace invitation',
-  project: 'Project invitation',
-  task: 'Task invitation',
-};
-
-/** "the task", "the project", … — reads naturally in the body sentence. */
-const TARGET_NOUNS: Record<string, string> = {
-  organization: 'the organization',
-  team: 'the team',
-  workspace: 'the workspace',
-  project: 'the project',
-  task: 'the task',
-};
-
 function MembershipInvitationRow({ invitation, onResolved }: { invitation: Invitation; onResolved: () => void }) {
   const inv = invitation as any;
   const [busy, setBusy] = useState<'accept' | 'decline' | null>(null);
   const targetType: string = inv.target_type;
   const Icon = iconForType(targetType);
-  const kindLabel = KIND_LABELS[targetType] ?? 'Invitation';
-  const targetName: string = inv.target_name || TARGET_NOUNS[targetType] || 'a shared item';
-  const noun = TARGET_NOUNS[targetType];
-  const targetLabel = inv.target_name && noun ? `${noun} “${inv.target_name}”` : targetName;
+  // Label + noun come from the backend type registry (never a hardcoded per-type
+  // map), so coverage tracks the icon and can't drift as new target types ship.
+  const typeLabel = labelForType(targetType);
+  const kindLabel = `${typeLabel} invitation`;
+  const noun = `the ${typeLabel.toLowerCase()}`;
+  const targetLabel = inv.target_name ? `${noun} “${inv.target_name}”` : noun;
   const who = inv.sender_name ? `${inv.sender_name} invited you` : 'You’ve been invited';
 
   const accept = useCallback(async () => {
@@ -85,6 +86,13 @@ function MembershipInvitationRow({ invitation, onResolved }: { invitation: Invit
       });
       onResolved();
     } catch (err) {
+      if (isInvitationGoneError(err)) {
+        // Orphan: the backend already removed the stale local row — just tell
+        // the user and refetch so it drops (and stays gone across refresh).
+        notify.warning({ title: 'Invitation no longer valid', id: 'membership-invite' });
+        onResolved();
+        return;
+      }
       notify.error({
         title: 'Accept failed',
         message: err instanceof Error ? err.message : 'Unknown error.',
@@ -93,7 +101,7 @@ function MembershipInvitationRow({ invitation, onResolved }: { invitation: Invit
     } finally {
       setBusy(null);
     }
-  }, [invitation.id, targetName, onResolved]);
+  }, [invitation.id, targetLabel, onResolved]);
 
   const decline = useCallback(async () => {
     if (!invitation.id) return;
@@ -102,6 +110,11 @@ function MembershipInvitationRow({ invitation, onResolved }: { invitation: Invit
       await declineInvitation({ invitation_id: invitation.id });
       onResolved();
     } catch (err) {
+      if (isInvitationGoneError(err)) {
+        notify.warning({ title: 'Invitation no longer valid', id: 'membership-invite' });
+        onResolved();
+        return;
+      }
       notify.error({
         title: 'Decline failed',
         message: err instanceof Error ? err.message : 'Unknown error.',

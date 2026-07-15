@@ -1,3 +1,7 @@
+---
+id: 16974625-5bb5-4e42-b8cf-2f88f01f3f5a
+---
+
 # Vibe Workspace Bugs
 
 Browser QA date: 2026-07-10

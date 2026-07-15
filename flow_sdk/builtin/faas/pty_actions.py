@@ -315,6 +315,11 @@ class PtyActionsMixin:
                 # Feed Pty.output() iterators
                 for _q in ss.output_queues:
                     asyncio.run_coroutine_threadsafe(_q.put(data), main_loop)
+                # Composer readiness subscribes before taking a disk snapshot.
+                # Carry seq so it can discard chunks already present in that
+                # snapshot without duplicating a split marker (A + A + B).
+                for _q in ss.sequenced_output_queues:
+                    asyncio.run_coroutine_threadsafe(_q.put((seq, data)), main_loop)
 
             async def get_and_send():
                 current_session = await pty_registry.get_session(current_pty_key)
@@ -416,6 +421,7 @@ class PtyActionsMixin:
             persisted_max = pty_stream_file.max_seq()
             if persisted_max > session_state.seq:
                 session_state.seq = persisted_max
+            session_state.generation_start_seq = session_state.seq
 
             # Write-through: create/update the Shell DB entity from the record
             # via the generic base sync, then apply the shell-specific side

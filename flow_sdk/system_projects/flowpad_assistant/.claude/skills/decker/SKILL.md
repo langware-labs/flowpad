@@ -85,9 +85,12 @@ this file (six exemplar layouts, tokens, vendored Reveal 5.2.1, the
 3. **Write `template.json`** (title, description, `page_types`) and index:
 
    ```bash
-   flow record index "<project root>/assets/deck-templates/<template name>"
+   flow record index "<project root>"
    ```
 
+   Index the **project root** (whose `assets/deck-templates/` is a direct
+   child), NOT the template folder — the walker scans `<root>/assets/deck-templates/`,
+   so indexing the template folder itself finds nothing.
    The template appears as a `deck_template` entity (verify with
    `flow schema info deck_template` / record search). Keep the copied
    `CLAUDE.md`/`AGENTS.md` in the template folder — they route every future
@@ -102,17 +105,21 @@ Follow [references/generating-decks.md](references/generating-decks.md):
 narrative → page types → layouts → slot fills → `tools/build_deck.py` →
 `assets/decks/<deck name>/<deck name>.html`.
 
-**IMPORTANT — show the deck to the user.** When running inside FlowPad, as
-soon as the deck HTML exists:
+**IMPORTANT — index and show the deck to the user.** A deck is a first-class
+`deck` entity. Once the deck HTML exists, persist it and present it via the
+entity so it opens in the bespoke **deck viewer** (full-bleed, fullscreen,
+provenance link):
 
 ```bash
-flow show file "<absolute path to the deck .html>"
+flow record index "<project root>"                          # persist the deck entity
+flow show file "<project root>/assets/decks/<deck name>"    # the FOLDER, not the .html
 ```
 
-Run it exactly once (exit 0 = shown). See
-[references/presenting.md](references/presenting.md) for the render contract
-and Reveal controls. Outside FlowPad, print the file path and suggest opening
-it in a browser.
+Showing the deck **folder** resolves to the `deck` entity (via its `deck.json`
+marker) → the deck viewer. Run `show` once (exit 0 = shown). See
+[references/presenting.md](references/presenting.md) for the viewer + Reveal
+controls. Outside FlowPad, print the deck `.html` path (it's a portable,
+self-contained file) and suggest opening it in a browser.
 
 **Testing the deck — use the `web-tester` skill.** When the user asks to test /
 QA / validate / check the deck in a browser, route to the **web-tester** skill:

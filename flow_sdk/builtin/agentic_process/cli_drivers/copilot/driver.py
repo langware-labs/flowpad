@@ -4,17 +4,18 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
-    apply_worker_env,
-    apply_worker_secret_env,
     AgenticContext,
     AgenticProcessContextKey,
     WorkerCLIOptions,
     WorkerSpawnError,
+    apply_worker_env,
+    apply_worker_secret_env,
     latch_spawn_failure,
     restart_payload_from_cli_options,
 )
@@ -24,9 +25,13 @@ from flow_sdk.builtin.agentic_process.cli_drivers.copilot.session_history import
     copilot_transcript_path_for_process,
     find_copilot_session_jsonl,
     find_latest_copilot_session_jsonl,
-    load_session_history as _copilot_load_session_history,
-    load_transcript_history as _copilot_load_transcript_history,
     read_copilot_session_meta,
+)
+from flow_sdk.builtin.agentic_process.cli_drivers.copilot.session_history import (
+    load_session_history as _copilot_load_session_history,
+)
+from flow_sdk.builtin.agentic_process.cli_drivers.copilot.session_history import (
+    load_transcript_history as _copilot_load_transcript_history,
 )
 from flow_sdk.builtin.agentic_process.cli_drivers.copilot.status import copilot_tail_status
 from flow_sdk.builtin.agentic_process.cli_drivers.copilot.stream_worker import (
@@ -57,9 +62,11 @@ class CopilotDriver:
     # Copilot's TUI treats a pasted prompt ending in \r as literal text — needs
     # a discrete Enter after the paste settles (Shell.write_then_submit).
     pty_submits_on_paste = False
-    # No empirically-grounded composer marker for copilot yet — None keeps the
-    # legacy settle-then-type first delivery (see WorkerDriver Protocol).
-    pty_composer_ready_pattern = None
+    # Real Copilot CLI 1.0.70 PTY captures show the ``Session: <n> AIC used``
+    # status only on the main composer screen, never on folder trust. It is a
+    # stronger readiness signal than the generic prompt glyph (the trust
+    # choice list has its own glyph).
+    pty_composer_ready_pattern = re.compile(r"Session:[ \t\u00a0]*[0-9.,]+[ \t\u00a0]+AIC used")
     pins_resume_cwd = False  # no transcript-cwd pinning, no fork
 
     def cli_options(self, process: "AgenticProcess") -> CopilotCliOptions:
@@ -129,60 +136,76 @@ class CopilotDriver:
         )
 
         worker = CopilotCLIStreamWorker.for_process(process.id)
-        from flow_sdk.builtin.agentic_process.agentic_process import _PROMPT_WORKERS
-        _PROMPT_WORKERS[process.id] = worker  # type: ignore[assignment]
+        from flow_sdk.builtin.agentic_process.agentic_process import (
+            register_prompt_worker,
+            unregister_prompt_worker,
+        )
 
+        register_prompt_worker(process.id, worker)
+        # Setup between registration and task scheduling can raise. The caller's
+        # admission ``finally`` can no longer clean the slot — register_prompt_worker
+        # popped the admission and moved ownership to ``_PROMPT_WORKERS``. Until
+        # _run_turn is scheduled (its ``finally`` owns unregister), THIS frame owns
+        # the worker slot: a raise here would leak it → prompt_worker_active pinned
+        # True forever (permanent 409 + busy). Hand ownership off on success.
         try:
-            transcript_path = worker.transcript_path
-            if transcript_path is not None and not transcript_path.exists():
-                transcript_path.parent.mkdir(parents=True, exist_ok=True)
-                transcript_path.touch()
-        except OSError:
-            logger.debug("CopilotDriver.headless_prompt: transcript pre-touch failed", exc_info=True)
-
-        from flow_sdk.builtin.process_lifecycle import ProcessStatus
-        if process.status != ProcessStatus.RUNNING.value:
-            process.status = ProcessStatus.RUNNING.value
             try:
-                await process.save()
-            except Exception:
-                logger.debug("CopilotDriver.headless_prompt: lifecycle save failed", exc_info=True)
+                transcript_path = worker.transcript_path
+                if transcript_path is not None and not transcript_path.exists():
+                    transcript_path.parent.mkdir(parents=True, exist_ok=True)
+                    transcript_path.touch()
+            except OSError:
+                logger.debug("CopilotDriver.headless_prompt: transcript pre-touch failed", exc_info=True)
 
-        process_ref = process
-        process_id = process.id
-        object.__setattr__(process_ref, "_turn_in_flight", True)
-        try:
-            await process_ref.notify_updated()
-        except Exception:
-            logger.exception("CopilotDriver.headless_prompt: start notify failed")
+            from flow_sdk.builtin.process_lifecycle import ProcessStatus
 
-        # Session adoption (and its restart-snapshot bookkeeping) is owned by
-        # AgenticProcess.adopt_worker_session; the turn-scoped adopter trusts
-        # only the turn-initial report (spurious-rotation guard). Resumed
-        # sessions no-op inside adopt_worker_session when the id is unchanged.
-        adopt_session = process_ref.make_turn_session_adopter("CopilotDriver.headless_prompt")
+            if process.status != ProcessStatus.RUNNING.value:
+                process.status = ProcessStatus.RUNNING.value
+                try:
+                    await process.save()
+                except Exception:
+                    logger.debug("CopilotDriver.headless_prompt: lifecycle save failed", exc_info=True)
 
-        async def _run_turn() -> None:
+            process_ref = process
+            process_id = process.id
+            object.__setattr__(process_ref, "_turn_in_flight", True)
             try:
-                async for fd in worker.execute(prompt=full_prompt, context=context):
-                    await adopt_session(worker.get_session_id())
-                    try:
-                        await process_ref.emit_flow_data(fd.model_dump())
-                    except Exception:
-                        logger.debug("CopilotDriver.headless_prompt: emit_flow_data failed", exc_info=True)
-            except WorkerSpawnError as e:
-                # No subprocess ever started — end the process FAILED with the
-                # start_failure latch (the ERROR frame was already emitted).
-                await latch_spawn_failure(process_ref, e)
+                await process_ref.notify_updated()
             except Exception:
-                logger.exception("CopilotDriver.headless_prompt: worker error")
-            finally:
-                _PROMPT_WORKERS.pop(process_id, None)
-                # Terminal status broadcast + completion-driven queue advance
-                # (see AgenticProcess.end_headless_turn).
-                await process_ref.end_headless_turn("CopilotDriver.headless_prompt")
+                logger.exception("CopilotDriver.headless_prompt: start notify failed")
 
-        asyncio.create_task(_run_turn(), name=f"copilot-{process.id[:8]}")
+            # Session adoption (and its restart-snapshot bookkeeping) is owned by
+            # AgenticProcess.adopt_worker_session; the turn-scoped adopter trusts
+            # only the turn-initial report (spurious-rotation guard). Resumed
+            # sessions no-op inside adopt_worker_session when the id is unchanged.
+            adopt_session = process_ref.make_turn_session_adopter("CopilotDriver.headless_prompt")
+
+            async def _run_turn() -> None:
+                try:
+                    async for fd in worker.execute(prompt=full_prompt, context=context):
+                        await adopt_session(worker.get_session_id())
+                        try:
+                            await process_ref.emit_flow_data(fd.model_dump())
+                        except Exception:
+                            logger.debug("CopilotDriver.headless_prompt: emit_flow_data failed", exc_info=True)
+                except WorkerSpawnError as e:
+                    # No subprocess ever started — end the process FAILED with the
+                    # start_failure latch (the ERROR frame was already emitted).
+                    await latch_spawn_failure(process_ref, e)
+                except Exception:
+                    logger.exception("CopilotDriver.headless_prompt: worker error")
+                finally:
+                    unregister_prompt_worker(process_id, worker)
+                    # Terminal status broadcast + completion-driven queue advance
+                    # (see AgenticProcess.end_headless_turn).
+                    await process_ref.end_headless_turn("CopilotDriver.headless_prompt")
+
+            asyncio.create_task(_run_turn(), name=f"copilot-{process.id[:8]}")
+        except BaseException:
+            # _run_turn never took ownership of the slot — release it here so the
+            # next turn is not permanently rejected with a 409.
+            unregister_prompt_worker(process.id, worker)
+            raise
         return ApiSuccessResponse(data={"status": "started", "worker": self.name})
 
     def stream_worker(self, process: "AgenticProcess") -> CopilotCLIStreamWorker:

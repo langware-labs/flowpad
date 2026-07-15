@@ -24,6 +24,7 @@ import {
   isAssetEditor,
   isAssetRoutingMethod,
   LOCAL_COMPUTE_NODE,
+  WIKI_FRAGMENT_PARAM,
 } from './asset-doc-types';
 
 export class AssetDocPointer {
@@ -80,13 +81,20 @@ export class AssetDocPointer {
     return AssetDocPointer.forTypeId(editor, entity.typeId, options);
   }
 
-  /** Address a wiki link by name within a space (default @local). */
+  /**
+   * Address a wiki link by name within a space (default @local). An optional
+   * `fragment` (a heading slug, e.g. "auto-run") rides in `options` as
+   * `wikiFragment` — the same query-param side-channel as `withHighlight`, so
+   * the path grammar is untouched and the anchor survives back/reload/share.
+   */
   static forWiki(
     name: string,
     space: string = DEFAULT_WIKI_SPACE,
     options?: Record<string, string>,
+    fragment?: string,
   ): AssetDocPointer {
-    return new AssetDocPointer(AssetMode.WIKI, `${space}/${name}`, options);
+    const opts = fragment ? { ...(options ?? {}), [WIKI_FRAGMENT_PARAM]: fragment } : options;
+    return new AssetDocPointer(AssetMode.WIKI, `${space}/${name}`, opts);
   }
 
   // ── parse ─────────────────────────────────────────────────────────────────

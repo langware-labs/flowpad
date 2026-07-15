@@ -94,7 +94,12 @@
     --accent: 0 0% 14.9%;
     --accent-foreground: 0 0% 98%;
 
-    --destructive: 0 62.8% 30.6%;
+    /* Legible red on the near-black dark canvas. The stock shadcn dark
+       destructive (0 62.8% 30.6%) is meant as a button *background*; used as a
+       text color (``text-destructive`` — Delete/Archive-all buttons, row trash)
+       its 30.6% lightness reads muddy and low-contrast. Match the vibe dark
+       palette's vivid red so every destructive text/accent stays readable. */
+    --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 98%;
 
     --border: 0 0% 14.9%;

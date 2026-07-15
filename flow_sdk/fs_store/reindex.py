@@ -33,6 +33,8 @@ logger = logging.getLogger(__name__)
 # Editing an EXISTING file never hits this path (it resolves via its entity).
 _EXT_MINT_CANDIDATES: dict[str, tuple[str, ...]] = {
     ".md": ("markdown",),
+    ".csv": ("spreadsheet",),
+    ".xlsx": ("spreadsheet",),
 }
 
 

@@ -83,6 +83,8 @@ export enum RecordType {
   TODO_FILE = 'todo_file',
   WHITEBOARD = 'whiteboard',
   DECK_TEMPLATE = 'deck_template',
+  DECK = 'deck',
+  SPREADSHEET = 'spreadsheet',
   AGENT_TRACE = 'agent_trace',
   DYNAMIC_WORKFLOW = 'dynamic_workflow',
   USAGE_REPORT = 'usage_report',

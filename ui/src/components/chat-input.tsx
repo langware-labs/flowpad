@@ -2,7 +2,7 @@ import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import { FileUploadIndicator, FileUploadItem } from '@src/components/file-upload-indicator';
 import { annotateImageFiles } from '@src/components/image-annotator/annotate-files';
 
-import { useInputHistory } from '@src/hooks/use-input-history';
+import { caretOnFirstLine, caretOnLastLine, useInputHistory } from '@src/hooks/use-input-history';
 import { useLoginRequired, useResumeAfterLogin } from '@src/hooks/use-login-required';
 import { useChatOptions } from '@src/hooks/useChatOptions';
 import { useEditorStore } from '@src/store/use-editor-store';
@@ -541,24 +541,12 @@ const ChatInput: React.FC<ChatInputProps> = ({
     if (e.key === 'Enter' && !e.shiftKey) {
       void handleSubmit(e);
     } else if (e.key === 'ArrowUp') {
-      // Only navigate history if cursor is on the first line
-      const textarea = e.currentTarget;
-      const cursorPosition = textarea.selectionStart;
-      const textBeforeCursor = textarea.value.substring(0, cursorPosition);
-      const isOnFirstLine = !textBeforeCursor.includes('\n');
-
-      if (isOnFirstLine) {
+      if (caretOnFirstLine(e.currentTarget)) {
         e.preventDefault();
         setMessage(inputHistory.navigateUp(message));
       }
     } else if (e.key === 'ArrowDown') {
-      // Only navigate history if cursor is on the last line
-      const textarea = e.currentTarget;
-      const cursorPosition = textarea.selectionStart;
-      const textAfterCursor = textarea.value.substring(cursorPosition);
-      const isOnLastLine = !textAfterCursor.includes('\n');
-
-      if (isOnLastLine) {
+      if (caretOnLastLine(e.currentTarget)) {
         e.preventDefault();
         setMessage(inputHistory.navigateDown(message));
       }

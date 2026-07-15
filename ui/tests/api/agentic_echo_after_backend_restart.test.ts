@@ -11,8 +11,10 @@
  * OFFICIAL CLIENT ONLY (rca skill rule 6): apiTestSetup + the tier's own
  * config. Run against a disposable instance:
  *
- *     scripts/instance_ctl.sh launch dev-1
- *     FLOW_INSTANCE=dev-1 npx vitest run --project api \
+ *     FLOWPAD_CLAUDE_HOME=/tmp/dev-1-claude CLAUDE_CONFIG_DIR=/tmp/dev-1-claude \
+ *         scripts/instance_ctl.sh launch dev-1
+ *     FLOW_INSTANCE=dev-1 FLOWPAD_CLAUDE_HOME=/tmp/dev-1-claude \
+ *         CLAUDE_CONFIG_DIR=/tmp/dev-1-claude npx vitest run --project api \
  *         tests/api/agentic_echo_after_backend_restart.test.ts
  *
  * The pane is the real SDK stack — Shell + PtyConnection.attach() — and the
@@ -20,7 +22,7 @@
  * connection), which is exactly the link the bug severed.
  */
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -34,6 +36,7 @@ const ENV_FILE = path.join(REPO_ROOT, `.env.${INSTANCE}.local`);
 const LAUNCHER = path.join(os.homedir(), `.flow/instances/${INSTANCE}/launcher.json`);
 const BACKEND_LOG = path.join(os.homedir(), `.flow/instances/${INSTANCE}/launcher-backend.log`);
 const PORT = existsSync(ENV_FILE) ? readFileSync(ENV_FILE, 'utf8').match(/^LOCAL_SERVER_PORT=(\d+)/m)?.[1] : null;
+const CLAUDE_HOME = path.resolve(process.env.FLOWPAD_CLAUDE_HOME || path.join(os.homedir(), '.claude'));
 
 const INSTANCE_READY = (() => {
   if (!INSTANCE || !PORT || !existsSync(LAUNCHER) || !existsSync(BACKEND_LOG)) return false;
@@ -80,6 +83,14 @@ function decodePtyData(b64: string): string {
   const bytes = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
   return new TextDecoder('utf-8', { fatal: false }).decode(bytes);
+}
+
+function transcriptExistsInConfiguredHome(sessionId: string): boolean {
+  const projectsDir = path.join(CLAUDE_HOME, 'projects');
+  if (!existsSync(projectsDir)) return false;
+  return readdirSync(projectsDir, { withFileTypes: true }).some(
+    (entry) => entry.isDirectory() && existsSync(path.join(projectsDir, entry.name, `${sessionId}.jsonl`)),
+  );
 }
 
 /** Transport-level echo: the pty_output_msg chunks reaching THIS connection. */
@@ -134,6 +145,9 @@ suite(`Agentic pane echo after backend restart (official client, instance=${INST
         const s: any = await apiClient.get(osStatusUrl);
         if (!s?.worker_alive || !s?.shell_id) throw new Error('worker not alive yet');
         shellId = s.shell_id;
+        if (!proc.session_id || !transcriptExistsInConfiguredHome(proc.session_id)) {
+          throw new Error(`Claude transcript not visible in configured root ${CLAUDE_HOME}`);
+        }
       },
       { timeout: 60_000, interval: 1_000 },
     );

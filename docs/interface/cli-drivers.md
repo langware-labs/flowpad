@@ -86,7 +86,8 @@ no-op defaults a concrete worker overrides.
 | `execute(prompt, context) -> AsyncIterator[FlowData]` | abstract | Streams FlowData chunks |
 | `pause()` / `resume()` | no-op | |
 | `inject(message)` (async) | no-op | Mid-turn message |
-| `close_session()` (async) | no-op | |
+| `close_session()` (async) | no-op | Cancel the in-flight turn — vendor channel first, kill as backstop |
+| `cancelled_gracefully -> bool` | `False` | True when `close_session()` stopped the turn via the vendor's own cancellation channel (the vendor recorded its own abort), so the cancel choke point skips the duplicate flowpad sidecar marker |
 | `get_session_id() -> str \| None` | `None` | Vendor session id once known |
 | `get_history() -> list[FlowData] \| None` | `None` | |
 | `set_history(history)` | no-op | |
@@ -199,9 +200,10 @@ and a `cli_worker.py`/`code_agentic_worker.py` PTY pair; codex adds `session_det
 | Capability | Claude | Codex | Copilot |
 | --- | --- | --- | --- |
 | Wire `name` | `claude` | `codex` | `copilot` |
-| Prompt channel | argv (`-- <text>`) | stdin (trailing `-`) | stdin |
+| Prompt channel | argv (`-- <text>`) for PTY/shell; the headless stream worker pipes a stream-json user message over stdin (`--input-format stream-json`) and keeps the pipe open as the interrupt channel | stdin (trailing `-`) | stdin |
+| Cancel (headless `close_session`) | `control_request/interrupt` on stdin — the CLI aborts the turn itself and records the interrupted tool calls in its JSONL; SIGTERM→SIGKILL escalation only if it ignores the grace | SIGINT to the root — codex reaps its tool child and records `turn_aborted` in the rollout; tree-kill escalation after the grace | SIGTERM→grace→SIGKILL tree kill (copilot ignores SIGINT); worker synthesizes `flowpad.interrupted` | 
 | System-instruction sink | generated `CLAUDE.md` passed with `--append-system-prompt-file` | `developer_instructions` config (`-c developer_instructions=...`) | `COPILOT_CUSTOM_INSTRUCTIONS_DIRS=<assets_dir>` with `.github/instructions/flowpad.instructions.md` |
-| Headless flags | `-p --output-format stream-json --verbose` | `exec --skip-git-repo-check --ephemeral --json -c model_reasoning_effort=low … -` | `--output-format=json --stream=on --no-ask-user --no-auto-update --no-custom-instructions` |
+| Headless flags | `-p --input-format stream-json --output-format stream-json --verbose` | `exec --skip-git-repo-check --ephemeral --json -c model_reasoning_effort=low … -` | `--output-format=json --stream=on --no-ask-user --no-auto-update --no-custom-instructions` |
 | Bypass-permissions flag | `--dangerously-skip-permissions` | `--dangerously-bypass-approvals-and-sandbox` | `--allow-all` (gated on `bypassPermissions`) |
 | Session-id semantics | Honours preassigned `--session-id`; `--resume <id>` on multi-turn | Mints its **own** rollout id; ignores a preassigned id — captured from stream, persisted back | Accepts caller `--session-id` on fresh start; `--resume=<id>` when a session file exists |
 | Resume gate (`has_resumable_session`) | `get_claude_session(session_id) is not None` (`claude_sessions.py:430`) | `find_codex_session_jsonl(session_id) is not None` (`session_history.py:74`) | `_has_session` → `find_copilot_session_jsonl(session_id)` (`session_history.py:60`) or a non-empty process-local tee |

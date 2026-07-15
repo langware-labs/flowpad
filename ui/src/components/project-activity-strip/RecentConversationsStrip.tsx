@@ -9,6 +9,7 @@ import {
   acceptInvitation,
   dismissConversation,
   fetchConversations,
+  isInvitationGoneError,
   isTypeId,
 } from '@sdk';
 import { useAuth } from '@sdk/react/hooks';
@@ -20,7 +21,7 @@ import { NewConversationDialog } from '@src/components/new-conversation-dialog/N
 import { deriveConversationTitle } from '@src/components/conversation/conversation-title';
 import { ConversationParticipants } from '@src/components/conversation/ConversationParticipants';
 import { participantIsUser, participantName } from '@src/components/conversation/participant-display';
-import { conversationFacets } from '@src/components/conversation/conversation-category';
+import { conversationFacets, compareConversationsByRecency } from '@src/components/conversation/conversation-category';
 import { CategoryChips } from '@src/components/conversation/CategoryChips';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -91,11 +92,7 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
 
   const sorted = useMemo(() => {
     const list = [...conversations];
-    list.sort((a, b) => {
-      const ta = a.updated_date ? new Date(a.updated_date).getTime() : 0;
-      const tb = b.updated_date ? new Date(b.updated_date).getTime() : 0;
-      return tb - ta;
-    });
+    list.sort(compareConversationsByRecency);
     return list;
   }, [conversations]);
 
@@ -176,7 +173,12 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
       await acceptInvitation({ invitation_id: invId });
       await refetch();
     } catch (e) {
-      console.error('[RecentConversationsStrip] acceptInvitation failed', e);
+      if (isInvitationGoneError(e)) {
+        // Orphan — the backend removed the stale local mirror; refetch drops it.
+        await refetch();
+      } else {
+        console.error('[RecentConversationsStrip] acceptInvitation failed', e);
+      }
     } finally {
       setAcceptingId(null);
     }

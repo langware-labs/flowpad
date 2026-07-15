@@ -63,6 +63,32 @@ def turn_events_path(record_dir: Path) -> Path:
     return Path(record_dir) / TURN_EVENTS_FILENAME
 
 
+def abort_status_frame(
+    reason: str = "user_interrupt",
+    *,
+    created_time: str = "",
+    extra_attributes: dict[str, str] | None = None,
+) -> FlowData:
+    """The canonical turn-abort STATUS frame — SINGLE constructor of the shape.
+
+    Live worker cancels, converter-synthesized aborts, and the durable sidecar
+    replay all emit this exact frame (the replay adds its provenance via
+    ``extra_attributes``); the chat grouping keys on ``turn-terminated`` to
+    mark in-flight tool calls terminated, not errored.
+    """
+    return FlowData(
+        flow_value={"reason": reason},
+        created_time=created_time,
+        attributes={
+            "element-type": FlowElementType.STATUS,
+            "data-type": FlowDataType.OBJECT,
+            "subtype": ABORT_MARKER_SUBTYPE,
+            TURN_TERMINATED_ATTR: "true",
+            **(extra_attributes or {}),
+        },
+    )
+
+
 def record_turn_abort(
     record_dir: Path,
     *,
@@ -125,17 +151,10 @@ def load_abort_marker_frames(
         if marker_sid and session_id and marker_sid != session_id:
             continue
         frames.append(
-            FlowData(
-                flow_value={"reason": str(marker.get("reason") or "user_interrupt")},
+            abort_status_frame(
+                str(marker.get("reason") or "user_interrupt"),
                 created_time=str(marker.get("timestamp") or ""),
-                attributes={
-                    "element-type": FlowElementType.STATUS,
-                    "data-type": FlowDataType.OBJECT,
-                    "subtype": ABORT_MARKER_SUBTYPE,
-                    TURN_TERMINATED_ATTR: "true",
-                    "observation-kind": "replay",
-                    "origin": "flowpad",
-                },
+                extra_attributes={"observation-kind": "replay", "origin": "flowpad"},
             )
         )
     return frames
