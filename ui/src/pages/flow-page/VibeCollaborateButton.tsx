@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
-import { HeartHandshake, MessagesSquare } from 'lucide-react';
+import { MessagesSquare } from 'lucide-react';
 import { useLingui } from '@lingui/react/macro';
 import type { TypeId } from '@sdk';
+import { PersonRaisedHandIcon } from '@src/components/icons/PersonRaisedHandIcon';
 import { ShareToConversationDialog } from '@src/components/share-to-conversation/ShareToConversationDialog';
 import { collaborateShareSource } from '@src/hooks/share-sources';
 import { useCollaborationForProject } from '@src/hooks/useCollaborationForProject';
@@ -10,12 +11,13 @@ import { Dialog, DialogContent, DialogTitle } from '@src/components/ui/dialog';
 
 /**
  * The vibe workspace's "Collaborate" affordance, sitting next to the "Recent"
- * pill. Before anyone is invited it opens the standard share modal reframed for
- * collaboration (title + message + recipient + "attach session transcript",
- * the exact agentic-process transcript behavior). Once a collaboration
- * conversation exists for this project the icon flips to a conversation icon
- * that opens that conversation as an in-context modal overlay — no navigation,
- * so the user keeps their work.
+ * pill, marked by the raised-hand figure ("count me in"). Before anyone is
+ * invited it opens the standard share modal reframed for collaboration
+ * (title + message + recipient + "attach session transcript", the exact
+ * agentic-process transcript behavior). Once a collaboration conversation
+ * exists for this project the icon flips to a conversation icon that opens
+ * that conversation as an in-context modal overlay — no navigation, so the
+ * user keeps their work.
  */
 export function VibeCollaborateButton({
   projectId,
@@ -57,7 +59,7 @@ export function VibeCollaborateButton({
         {collaborating ? (
           <MessagesSquare className="h-3.5 w-3.5" />
         ) : (
-          <HeartHandshake className="h-3.5 w-3.5" />
+          <PersonRaisedHandIcon className="h-3.5 w-3.5" />
         )}
       </button>
 
