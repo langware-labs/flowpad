@@ -19,21 +19,28 @@ describe('bookmarkInScope', () => {
     }
   });
 
-  it('project scope shows only the active project', () => {
+  it('project scope shows the active project, and keeps personal favorites', () => {
     expect(bookmarkInScope(bmP1, projectScope('p1'), 'p1')).toBe(true);
     expect(bookmarkInScope(bmP2, projectScope('p1'), 'p1')).toBe(false);
-    expect(bookmarkInScope(bmPersonal, projectScope('p1'), 'p1')).toBe(false);
+    // An unscoped favorite is personal/global — it belongs in EVERY scope.
+    // This used to be false, which emptied the whole bookmarks desktop: every
+    // favorite predating project_id stamping is unscoped, and defaultScopeFilter
+    // picks project scope whenever a project is active.
+    expect(bookmarkInScope(bmPersonal, projectScope('p1'), 'p1')).toBe(true);
   });
 
-  it('user scope shows only personal (project-less) favorites', () => {
+  it('user scope hides project-stamped favorites', () => {
     expect(bookmarkInScope(bmPersonal, userScope(), 'p1')).toBe(true);
     expect(bookmarkInScope(bmP1, userScope(), 'p1')).toBe(false);
   });
 
-  it('filter scope shows selected projects (+ personal when user flag on)', () => {
+  it('filter scope shows selected projects, and always keeps personal favorites', () => {
     expect(bookmarkInScope(bmP2, filterScope(false, ['p2']), 'p1')).toBe(true);
     expect(bookmarkInScope(bmP1, filterScope(false, ['p2']), 'p1')).toBe(false);
-    expect(bookmarkInScope(bmPersonal, filterScope(false, ['p2']), 'p1')).toBe(false);
+    // Personal favorites ride along regardless of the `user` flag — the flag
+    // gates project-less RECORDS generally, but a favorite with no project_id
+    // is not "someone else's personal", it's this user's own desktop.
+    expect(bookmarkInScope(bmPersonal, filterScope(false, ['p2']), 'p1')).toBe(true);
     expect(bookmarkInScope(bmPersonal, filterScope(true, ['p2']), 'p1')).toBe(true);
   });
 });

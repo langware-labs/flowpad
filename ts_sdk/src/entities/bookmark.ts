@@ -33,6 +33,9 @@ export interface IBookmark extends IEntity {
    *  (sorts at the END of a stamped container, newest first); stamped values
    *  are contiguous from 1 via the `bookmark.order` action. */
   order?: number;
+  /** Times this favorite has been opened. 0/unset = never opened — what the
+   *  desktop's unread badges count (see `isUnopened` in use-favorites.ts). */
+  counter?: number;
   /** Owning project id, stamped at favorite-creation time from the current
    *  project context. Carried as a plain field (the record still saves under
    *  the unscoped @local desktop so webhook-created favorites stay visible);
@@ -54,6 +57,7 @@ export class Bookmark extends APIEntity<Bookmark> implements IBookmark {
   remind_at?: string;
   parent_id?: string;
   order?: number;
+  counter?: number;
   project_id?: string | null;
   static type: string = 'bookmark';
 
@@ -71,6 +75,7 @@ export class Bookmark extends APIEntity<Bookmark> implements IBookmark {
     this.remind_at = entity.remind_at;
     this.parent_id = entity.parent_id;
     this.order = entity.order;
+    this.counter = entity.counter;
     this.project_id = entity.project_id ?? null;
   }
 

@@ -193,7 +193,10 @@ function GridTile({
     }
     if (isContainer) return; // PopoverTrigger's composed handler toggles.
     if (node.pointer) navigate(node.pointer);
-    else void node.activate?.();
+    else if (node.activate) void node.activate();
+    else return; // Non-actionable row (e.g. a missing favorite) — nothing opened.
+    // After dispatch, so a throwing usage stamp can never break navigation.
+    node.onOpen?.();
   };
 
   const handleDragStart = (e: React.DragEvent) => {

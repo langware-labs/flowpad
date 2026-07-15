@@ -314,7 +314,12 @@ function BrowseableRow({
         void node.activate();
       } else if (hasChildrenHint) {
         void tree.toggleExpand(node);
+        return; // Expanded, not opened.
+      } else {
+        return; // Non-actionable row — nothing opened.
       }
+      // After dispatch, so a throwing usage stamp can never break navigation.
+      node.onOpen?.();
     },
     [editing, canSelect, selection, rootId, hasChildrenHint, node, tree, onNavigate],
   );
