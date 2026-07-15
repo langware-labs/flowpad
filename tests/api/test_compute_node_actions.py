@@ -130,7 +130,7 @@ async def test_pick_folder_route_guarded(bootstrapped_client, bootstrap_payload,
     The native OS dialog is stubbed (simulating a cancel) so the test never
     blocks on a GUI; the action's envelope wiring is still exercised for real.
     """
-    async def _fake_pick_folder(self, provider_node_id, initial_dir=None):
+    async def _fake_pick_folder(self, provider_node_id, initial_dir=None, mode="folder"):
         return None
 
     monkeypatch.setattr(LocalComputeProvider, "pick_folder", _fake_pick_folder)

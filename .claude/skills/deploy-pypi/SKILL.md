@@ -228,7 +228,7 @@ gh pr merge "$DEV_BRANCH" --merge --delete-branch=false
 git fetch origin "$RELEASE_BRANCH"
 
 # --- 2b. TEST GATE: the latest PR merged into the release branch must have GREEN
-#     PR Tests before we publish. Pending counts as "not passed". See the
+#     `Tests` checks before we publish. Pending counts as "not passed". See the
 #     "Test gate" section below for the block / Slack / publish-anyway rules.
 GATE_JSON=$(gh pr list --base "$RELEASE_BRANCH" --state merged --limit 1 \
   --json number,url --jq '.[0]')
@@ -283,9 +283,10 @@ the release bump.
 ### Test gate (publishing requires the release PR's tests to have passed)
 
 **A version is only published to PyPI if the latest PR merged into the release
-branch has GREEN PR Tests.** The `PR Tests` workflow (`.github/workflows/pr-tests.yml`)
-runs the fast backend-free tiers (pytest `unit`+`cli`, vitest `unit`+`react`) on
-every PR. It is intentionally **non-blocking for merge** — a PR can be merged
+branch has GREEN checks.** The `Tests` workflow (`.github/workflows/test.yml`)
+runs three jobs on every PR: `backend (pytest unit + api)`, `frontend (tsc +
+vitest unit/react + i18n)`, and `e2e (live backend: vitest headless/api +
+playwright)`. It is intentionally **non-blocking for merge** — a PR can be merged
 while its tests are red or still running — so this gate is the point where the
 test result actually matters. **Pending counts as "not passed"**: if the checks
 haven't finished, treat it as not passed and do not publish.
