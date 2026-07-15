@@ -114,11 +114,6 @@ export function useFavoritesRoots(opts?: {
         id: b.id ?? '',
         label: title,
         icon: <Icon className={iconClassName} />,
-        // Unread dot — the leaf-level form of the folder count badge. The grid
-        // renders `badge` for leaves and folders alike, so no renderer change.
-        badge: isUnopened(b) ? (
-          <span className="block h-2 w-2 rounded-full bg-primary" />
-        ) : undefined,
         rowClassName: navigable ? undefined : 'opacity-60 cursor-not-allowed',
         hasChildren: false,
         pointer,
@@ -198,9 +193,18 @@ export function useFavoritesRoots(opts?: {
         id: folder.id ?? '',
         label: title,
         icon: <Folder className={iconClassName} />,
+        // How many items beneath have never been opened.
+        //
+        // NOT `bg-primary`/`text-primary-foreground` (the shadcn default this
+        // used to carry): `useColorPalette` lightens `--primary` for dark mode
+        // without lightening `--primary-foreground`, so that pairing is white on
+        // pale lavender — 1.9:1 — in dark. The digit was invisible, which is why
+        // the badge read as a featureless dot; the 9px size was a red herring.
+        // `muted` is the only pairing that clears AA in both themes, and a count
+        // is information rather than an alarm.
         badge:
           unopened > 0 ? (
-            <span className="rounded-full bg-primary px-1 text-[9px] font-semibold leading-[13px] text-primary-foreground">
+            <span className="min-w-[1.25rem] rounded-full bg-muted px-1.5 py-0.5 text-center text-[11px] font-semibold leading-none text-muted-foreground">
               {unopened}
             </span>
           ) : undefined,
