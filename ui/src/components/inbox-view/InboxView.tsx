@@ -48,7 +48,6 @@ import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { LoginRequiredOverlay } from '@src/components/login-required-overlay';
-import { useInboxStore } from '@src/store/use-inbox-store';
 import { formatTimeAgo } from '@src/components/project-activity-strip/project-activity-utils';
 import {
   updateMessage,
@@ -288,13 +287,10 @@ export function ConversationListRow({ conv, isFocused, viewMode, searchActive, o
     }
     if (isInvitationRow) return; // primary action is Accept
     if (!conv.id) return;
-    // Auto-mark the latest message as read on open — Gmail behavior. Without
-    // this the row stays bold until the user clicks the explicit
-    // mark-read button, which makes the "is it read?" cue useless. Fire and
-    // forget; refetch in the handler will flip ``isUnread`` for the row.
-    if (latestMessage?.id && !latestMessage.is_read) {
-      void onToggleRead(latestMessage.id, true);
-    }
+    // URL-first: the click ONLY navigates. The Gmail-style auto-mark-read
+    // moved to the mounted ConversationView (open-to-read effect), so direct
+    // links, banner clicks, and Inbox clicks all behave identically and the
+    // backend reconciles InboxManager.unread after the mutation.
     navigation.openDock(DockPointer.forConversation(conv.id));
   };
 
@@ -416,9 +412,11 @@ export function InboxView() {
   // reflect exactly what the user sees (rows hide themselves when their latest
   // FlowMessage is archived or hasn't materialised yet).
   const [visibleIds, setVisibleIds] = useState<Set<string>>(new Set());
+  // Rendered pending membership-invite rows (reported by MembershipInvitations)
+  // — only gates the empty state; the unread NUMBER is backend-owned.
+  const [membershipPendingCount, setMembershipPendingCount] = useState(0);
   const rowRefs = useRef<Map<string, HTMLDivElement | null>>(new Map());
   const { navigation, currentDock } = useDockNavigation();
-  const { setUnreadCount } = useInboxStore();
   const { cloudUser } = useAuth();
   const cloudUserId = cloudUser?.id ?? null;
   const { connection } = useCloudStatus();
@@ -501,26 +499,8 @@ export function InboxView() {
 
   const visibleCount = visibleIds.size;
 
-  // Unread badge for the sidebar pip is driven server-side (`inbox-list`
-  // returns received non-archived FMs only). Decoupled from the visible-row
-  // count above because that one needs to follow self-sent rows the server
-  // filter excludes.
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const { listInboxMessages } = await import('./inbox-api');
-        const msgs = await listInboxMessages();
-        if (cancelled) return;
-        setUnreadCount(msgs.filter((m) => !m.is_read).length);
-      } catch {
-        // non-fatal — leave the badge as-is.
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [setUnreadCount, conversations.length]);
+  // Unread pip/badge: backend-owned (InboxManager.unread, reflected live via
+  // the entity channel) — no client-side recount here anymore.
 
   // On inbox mount: pull any pending bundles from the hub so conversations
   // whose pointer-list references not-yet-materialised FlowMessages don't
@@ -569,10 +549,11 @@ export function InboxView() {
   );
 
   const handleMarkAllRead = useCallback(async () => {
+    // No optimistic zero: the backend reconciles InboxManager.unread after the
+    // bulk update (pending invitations legitimately keep it > 0).
     await bulkUpdateMessages({ is_read: true });
-    setUnreadCount(0);
     void refetch();
-  }, [refetch, setUnreadCount]);
+  }, [refetch]);
 
   const handleArchiveAll = useCallback(async () => {
     // Conversation-level archive — O(threads), not O(messages). Includes
@@ -1178,7 +1159,7 @@ export function InboxView() {
           </div>
         )}
 
-        {!inCommunityView && !initialLoading && visibleCount === 0 && (
+        {!inCommunityView && !initialLoading && visibleCount === 0 && membershipPendingCount === 0 && (
           <div className="flex h-48 flex-col items-center justify-center gap-3 text-muted-foreground">
             <span className="text-sm">
               {searchActive
@@ -1216,7 +1197,12 @@ export function InboxView() {
           </div>
         )}
 
-        {!inCommunityView && !initialLoading && <MembershipInvitations recipientEmail={cloudUser?.email ?? null} />}
+        {!inCommunityView && !inArchivedView && !initialLoading && (
+          <MembershipInvitations
+            recipientEmail={cloudUser?.email ?? null}
+            onPendingCount={setMembershipPendingCount}
+          />
+        )}
 
         {!inCommunityView &&
           !initialLoading &&

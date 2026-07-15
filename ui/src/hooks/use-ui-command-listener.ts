@@ -2,6 +2,17 @@ import { editorForPath, ConnectionManager, DockPointerData, dataManager, TypeId,
 import { useEffect } from 'react';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
+import {
+  clickTargetToPointer,
+  renderDesktopNotification,
+  type NotificationClickTarget,
+  type NotificationPayload,
+} from '@src/notifications/renderDesktopNotification';
+
+/** The subset of the Electron preload bridge this hook uses. */
+interface NotifyBridge {
+  onNotificationClick?: (cb: (data: { clickTarget?: NotificationClickTarget }) => void) => void;
+}
 
 /**
  * Listen for server-side `ui_command` WS messages and execute them.
@@ -87,11 +98,25 @@ export function useUiCommandListener(): void {
         handleNavigateVfs(msg);
         return;
       }
+      if (msg.kind === 'desktop_notify') {
+        renderDesktopNotification((msg.info ?? {}) as NotificationPayload);
+        return;
+      }
       // Forward-compat: log unknown kinds but don't crash.
       console.debug('[ui_command] unhandled kind', msg.kind);
     };
 
     cm.on('on_ui_command', onUiCommand);
+
+    // Banner click (from main process) → navigate to the payload's generic
+    // click target (URL-first, works for any notify_type — the OS badge is
+    // handled separately by useSyncOsBadge, driven by InboxManager.unread).
+    const bridge = (window as unknown as { electronAPI?: NotifyBridge }).electronAPI;
+    bridge?.onNotificationClick?.(({ clickTarget }) => {
+      const pointer = clickTargetToPointer(clickTarget);
+      if (pointer) navigateTo(pointer);
+    });
+
     return () => {
       cm.off('on_ui_command', onUiCommand);
     };

@@ -186,6 +186,60 @@ async def broadcast(message: str):
         remove_registry_connection(connection_id)
 
 
+async def broadcast_ui_command(kind: str, **fields) -> None:
+    """Broadcast a ``ui_command`` frame to ALL connected clients.
+
+    The broadcast twin of navigate.py's targeted ``_send_ui_command``: same
+    frame shape (``message_type`` + ``message_id`` + ``kind`` + extra fields),
+    but fanned to every desktop window so a *backgrounded* window still receives
+    it (targeted sends only reach the single active tab).
+    """
+    await broadcast(
+        json.dumps(
+            {"message_type": "ui_command", "message_id": str(uuid4()), "kind": kind, **fields}
+        )
+    )
+
+
+async def notify_desktop(
+    notify_type: str,
+    *,
+    title: str,
+    body: str,
+    icon: Optional[str] = None,
+    click_target: Optional[dict] = None,
+    attention: bool = True,
+) -> None:
+    """Fire a desktop notification on every connected window — the GENERIC
+    notification-service entry point (Layer 1).
+
+    Knows nothing about messages, conversations, or the inbox. Consumers (a
+    message arrival, a completed process, a feed entry, …) flatten their domain
+    into this payload; the renderer draws it blind:
+
+    * ``notify_type`` — a tag ("message" | "process_complete" | …), never a
+      rendering dispatch.
+    * ``title`` / ``body`` — OS banner + in-app toast text.
+    * ``icon`` — optional toast icon name.
+    * ``click_target`` — where a click navigates: a dock pointer
+      ``{"view_type": ..., "pointer": ..., "options": ...}``. A structured
+      pointer, never a URL (the FE builds the URL — no backend URLs in the FE).
+    * ``attention`` — dock bounce (macOS) / taskbar flash (Linux/Win); the
+      shell suppresses it while the window is focused.
+
+    The OS *badge count* is intentionally NOT part of this event — it is state,
+    reflected from ``InboxManager.unread`` via the entity channel.
+    """
+    info: dict = {"title": title, "body": body}
+    if icon:
+        info["icon"] = icon
+    if click_target:
+        info["click_target"] = click_target
+    if not attention:
+        info["attention"] = False
+    await broadcast_ui_command("desktop_notify", notify_type=notify_type, info=info)
+
+
 async def send_entity_notification(entity_type: str, entity_id: str, op: str, entity_data: dict = None):
     """
     Send entity change notification.

@@ -7,6 +7,7 @@ import { useNavigationState } from '@src/hooks/use-navigation-state';
 import { UserDropdown } from '@src/pages/flow-page/content-panel/user-dropdown/user-dropdown';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { ViewType } from '@src/types/ViewType';
+import { useInboxManager } from '@src/hooks/useInboxManager';
 import {
   Sidebar,
   SidebarContent,
@@ -93,7 +94,7 @@ export function CollapsedSidebar() {
   const [secondaryExpanded, setSecondaryExpanded] = useState(false);
   const [bookmarksOpen, setBookmarksOpen] = useState(false);
   const devMode = useDevMode();
-  const { unreadCount } = useInboxStore();
+  const { unread: unreadCount } = useInboxManager();
   const viewMode = useViewMode();
   const { t } = useLingui();
 
