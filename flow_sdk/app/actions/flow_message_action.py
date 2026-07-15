@@ -6,6 +6,7 @@ GET  /api/v1/graph/flow_message/{id}/open   — deep-link: fetch from hub and op
 """
 
 import asyncio
+import contextlib
 import json as _json
 import logging
 import os
@@ -600,6 +601,9 @@ async def handle_conversation_archive(conversation_id: str, someone_typeid: str)
         return ApiFailResponse(message="Conversation not found")
     conv.archived_at = datetime.now(UTC)
     await conv.save(someone_typeid)
+    with contextlib.suppress(Exception):
+        from flow_sdk.inbox import reconcile
+        await reconcile("conversation-archive")
     return ApiSuccessResponse(
         data={
             "conversation_id": conversation_id,
@@ -624,6 +628,9 @@ async def handle_conversation_unarchive(conversation_id: str, someone_typeid: st
         return ApiFailResponse(message="Conversation not found")
     conv.archived_at = None
     await conv.save(someone_typeid)
+    with contextlib.suppress(Exception):
+        from flow_sdk.inbox import reconcile
+        await reconcile("conversation-unarchive")
     return ApiSuccessResponse(
         data={
             "conversation_id": conversation_id,
@@ -650,6 +657,9 @@ async def handle_conversation_archive_all(someone_typeid: str) -> ApiResponse:
         conv.archived_at = now
         await conv.save(someone_typeid)
         archived += 1
+    with contextlib.suppress(Exception):  # one reconcile after the batch
+        from flow_sdk.inbox import reconcile
+        await reconcile("conversation-archive-all")
     return ApiSuccessResponse(
         data={
             "archived": archived,
@@ -1911,6 +1921,9 @@ async def handle_inbox_update(fm_id: str, patch: dict, someone_typeid: str) -> A
     if "is_archived" in patch:
         fm.is_archived = bool(patch["is_archived"])
     await fm.save(someone_typeid)
+    with contextlib.suppress(Exception):  # projection repair must never fail the mutation
+        from flow_sdk.inbox import reconcile
+        await reconcile("inbox-update")
     return ApiSuccessResponse(data={"id": fm_id, "is_read": fm.is_read, "is_archived": fm.is_archived})
 
 
@@ -2082,6 +2095,9 @@ async def handle_inbox_bulk_update(patch: dict, someone_typeid: str) -> ApiRespo
         if changed:
             await fm.save(someone_typeid)
             count += 1
+    with contextlib.suppress(Exception):  # one reconcile per bulk op, after all saves
+        from flow_sdk.inbox import reconcile
+        await reconcile("inbox-bulk-update")
     return ApiSuccessResponse(data={"updated": count})
 
 
@@ -3344,7 +3360,13 @@ async def handle_conversation_list(someone_typeid) -> ApiResponse:
                 except Exception as e:  # noqa: BLE001
                     logger.warning("[conv-list] prune %s failed: %s", (c.id or "?")[:8], e)
 
-    # (f) return the freshly-merged list.
+    # (f) one unread reconcile for the whole batch — invitations materialized
+    # in (d) and conversations pruned in (e) both change the projection.
+    with contextlib.suppress(Exception):
+        from flow_sdk.inbox import reconcile
+        await reconcile("conversation-list")
+
+    # return the freshly-merged list.
     merged = await Conversation.get_all({})
     response = ApiSuccessResponse(
         data={
@@ -3437,14 +3459,58 @@ async def handle_invitation_sync(someone_typeid: str) -> ApiResponse:
     invitations = await hub_get(BuiltinEntityType.INVITATION, action="pending") or []
     if not isinstance(invitations, list):
         invitations = []
+
+    # Snapshot known invitation ids BEFORE materializing so we can tell a
+    # newly-arrived invitation (→ OS notification below) from a re-synced one.
+    known_inv_ids: set[str] = set()
+    with contextlib.suppress(Exception):
+        from flow_sdk.builtin.invitation import Invitation as _LocalInvitation
+        from flow_sdk.db.drivers.query import QueryFilter as _QF
+        known_inv_ids = {
+            row.id for row in await _LocalInvitation.get_all(_QF(type=BuiltinEntityType.INVITATION.value))
+        }
+
+    fresh_invitations = []
     for inv in invitations:
         try:
             local_inv, _conv_id = await _materialize_invitation(inv, someone_typeid)
             if local_inv:
                 inv_count += 1
+                if local_inv.id not in known_inv_ids:
+                    fresh_invitations.append(local_inv)
         except Exception as e:
             logger.warning("[invitation-sync] upsert failed: %s", e)
     await _prune_expired_invitations()
+    with contextlib.suppress(Exception):  # pending invitations count as unread pre-accept
+        from flow_sdk.inbox import reconcile
+        await reconcile("invitation-sync")
+
+    # OS notification for NEWLY arrived invitations addressed to this viewer.
+    # A pending invite rides the invitation op — it never reaches the inbound
+    # flow_message notify path — so this is its Layer-2 consumer of the generic
+    # notification service. One banner per new invite; clicking opens the Inbox
+    # (where Accept lives). Re-syncs of already-known invitations stay silent.
+    if fresh_invitations:
+        with contextlib.suppress(Exception):
+            from flow_sdk.inbox import invitation_is_pending, viewer_email
+            from flow_sdk.server.routes.websocket import notify_desktop
+
+            email = viewer_email()
+            now = datetime.now(UTC)
+            for local_inv in fresh_invitations:
+                if not invitation_is_pending(local_inv, email, now):
+                    continue
+                inviter = (getattr(local_inv, "inviter_name", None) or "").strip() or "Someone"
+                if local_inv.target_type and local_inv.target_id:
+                    body = f"Invitation to join {local_inv.target_name or local_inv.target_type}"
+                else:
+                    body = (local_inv.message or "").strip() or "New conversation request"
+                await notify_desktop(
+                    "invitation",
+                    title=f"{inviter} invited you",
+                    body=body,
+                    click_target={"view_type": "inbox"},
+                )
     return ApiSuccessResponse(data={"invitations": inv_count})
 
 
@@ -3767,15 +3833,22 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
         except Exception as e:
             logger.warning("[invitation-accept] hub join+materialize failed: %s", e, exc_info=True)
 
-    # Mark local invitation as accepted (best-effort).
+    # Local accept transition (best-effort): mark the VERIFIED invitation
+    # preview read + the Invitation accepted, then reconcile the unread
+    # projection — one idempotent path (repeat / 409 accepts included).
     membership_target: Optional["Invitation"] = None
     try:
         from flow_sdk.builtin.invitation import Invitation as LocalInvitation
+        from flow_sdk.inbox import accept_mark_preview_read
 
         existing = await LocalInvitation.get_one({"id": inv_id})
         if existing:
-            existing.accepted = True
-            await existing.save(someone_typeid)
+            await accept_mark_preview_read(
+                existing,
+                conversation_id=linked_conv_id,
+                linked_fm_id=linked_fm_id,
+                owner=someone_typeid,
+            )
             if existing.target_type and existing.target_id:
                 membership_target = existing
     except Exception as e:

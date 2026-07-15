@@ -25,8 +25,6 @@ import { navigateToResult } from '@src/navigation/record-type-nav';
 import { InlineSearchResults } from './InlineSearchResults';
 import { HomeFeedColumn } from './feed';
 import { X, CheckCircle2 } from 'lucide-react';
-import { useInboxStore } from '@src/store/use-inbox-store';
-import { listInboxMessages } from '@src/components/inbox-view/inbox-api';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { GitOrigin, LastScanResult } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
@@ -129,14 +127,8 @@ export function HomeLanding() {
 
   const [draftPrompt, setDraftPrompt] = useState('');
 
-  // Inbox unread count — populates the shared store consumed by the sidebar
-  // Inbox badge. The home Inbox row was removed; the Recent conversations strip
-  // (now labelled "Inbox") is the home inbox surface and has its own refresh.
-  const { setUnreadCount } = useInboxStore();
-  useEffect(() => {
-    void listInboxMessages().then((msgs) => setUnreadCount(msgs.filter((m) => !m.is_read).length));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // Inbox unread count: backend-owned (InboxManager.unread) — the sidebar pip
+  // reads it via useInboxManager(); no per-view recount here anymore.
 
   const [searchQuery, setSearchQuery] = useState('');
   const [searchFilters, setSearchFilters] = useState<SearchFilters>({});

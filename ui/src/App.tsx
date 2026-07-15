@@ -21,6 +21,7 @@ import { SnifferProvider } from '@src/contexts/SnifferContext';
 import { FloatingChatProvider } from '@src/components/floating-chat';
 import { usePresenceReporter } from '@src/hooks/use-presence-reporter';
 import { useUiCommandListener } from '@src/hooks/use-ui-command-listener';
+import { useSyncOsBadge } from '@src/hooks/useInboxManager';
 import { Spotlight, useSpotlightHotkey } from '@src/components/spotlight';
 import { useDockViewModeOverrideSync } from '@src/contexts/view-mode-context';
 
@@ -53,6 +54,9 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
     void useGlobalEvents();
     usePresenceReporter();
     useUiCommandListener();
+    // OS dock/launcher badge = the backend-owned InboxManager.unread (state,
+    // not a notification event) — mounted once, next to the WS listeners.
+    useSyncOsBadge();
     useDockViewModeOverrideSync();
     useSpotlightHotkey();
     // Re-report browser_context (incl. the current URL) on every navigation.

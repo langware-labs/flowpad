@@ -67,6 +67,15 @@ async def set_login_status(
     except Exception:
         pass
 
+    # Login transitions change viewer identity, which changes which
+    # invitations/messages count as unread — repair the projection here so a
+    # stale account can't keep driving the badge.
+    try:
+        from flow_sdk.inbox import reconcile
+        await reconcile(f"login-status:{status.value if hasattr(status, 'value') else status}")
+    except Exception:
+        pass
+
     if status == HubLoginStatus.LOGGED_OUT:
         await broadcast_auth_expired(reason or "logged_out")
 
