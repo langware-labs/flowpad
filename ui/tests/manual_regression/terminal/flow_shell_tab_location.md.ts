@@ -43,10 +43,6 @@ test.describe('Flow Shell tab location', () => {
     await page.reload();
 
     // Re-dismiss any modal after reload.
-    const skipForNow = page.getByRole('button', { name: 'Skip for now' });
-    if (await skipForNow.isVisible({ timeout: 2_000 }).catch(() => false)) {
-      await skipForNow.click();
-    }
 
     // Step 4: Flow shell should remain the first tab.
     await expect(page.locator(tabSelector).first()).toBeVisible({ timeout: 30_000 });

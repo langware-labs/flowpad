@@ -7,14 +7,6 @@ const UPLOAD_TEXT = 'Upload proof from Playwright for the MCP UI demo.';
 const LIVE_AGENT_UNAVAILABLE =
   /(hit your limit|weekly limit|usage limit|rate limit|quota|too many requests|overloaded|unauthenticated|login required|api key)/i;
 
-async function dismissWelcomeModal(page: Page) {
-  const skipForNow = page.getByRole('button', { name: 'Skip for now' });
-  if (await skipForNow.isVisible({ timeout: 12_000 }).catch(() => false)) {
-    await skipForNow.click({ force: true, timeout: 5_000 }).catch(() => {});
-    await page.waitForTimeout(500);
-  }
-}
-
 async function skipIfLiveAgentUnavailable(page: Page, reason: string) {
   const text = await page.locator('body').textContent({ timeout: 2_000 }).catch(() => '');
   if (LIVE_AGENT_UNAVAILABLE.test(text ?? '')) {
@@ -27,7 +19,6 @@ test.describe('MCP UI Vibe demo', () => {
     await page.goto('/dock/home');
     await page.waitForFunction(() => typeof window.setView === 'function', null, { timeout: 60_000 });
     await page.evaluate(() => window.setView('vibe'));
-    await dismissWelcomeModal(page);
 
     const promptInput = page.locator('textarea[aria-label^="What would you like to work on"], textarea[placeholder^="What would you like to work on"]').first();
     await promptInput.waitFor({ state: 'visible', timeout: 30_000 });

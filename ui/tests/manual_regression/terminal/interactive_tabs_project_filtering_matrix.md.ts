@@ -169,16 +169,12 @@ async function uniqueProject(rq: APIRequestContext, label: string): Promise<stri
 
 async function gotoDockShell(page: Page) {
   await page.goto('/dock/shell');
-  const skipForNow = page.getByRole('button', { name: 'Skip for now' });
-  if (await skipForNow.isVisible({ timeout: 2_000 }).catch(() => false)) await skipForNow.click();
   await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
   await dismissCleanedSessionsOrSkip(page);
 }
 
 async function gotoUrl(page: Page, path: string) {
   await page.goto(path);
-  const skipForNow = page.getByRole('button', { name: 'Skip for now' });
-  if (await skipForNow.isVisible({ timeout: 2_000 }).catch(() => false)) await skipForNow.click();
 }
 
 async function tabIds(page: Page): Promise<string[]> {
