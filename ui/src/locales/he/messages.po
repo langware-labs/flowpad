@@ -784,9 +784,7 @@ msgstr "הוסף תווית מותאמת אישית..."
 msgid "Add entity link"
 msgstr "הוסף קישור לישות"
 
-#: src/components/assets/AddContextFolderDialog.tsx
 #: src/components/assets/AddGitFolderDialog.tsx
-#: src/components/quick-create/QuickCreateModal.tsx
 msgid "Add Git folder"
 msgstr ""
 
@@ -1563,9 +1561,9 @@ msgstr "מודגש"
 msgid "Bookmark"
 msgstr "סימנייה"
 
-#: src/components/quick-create/QuickCreateModal.tsx
-msgid "Bookmark folder"
-msgstr ""
+#: src/components/quick-create/QuickCreatePanel.tsx
+#~ msgid "Bookmark folder"
+#~ msgstr ""
 
 #: src/components/spec-editor/SpecEditor.tsx
 msgid "Bookmark this plan"
@@ -1573,7 +1571,6 @@ msgstr "הוסף סימנייה לתכנית זו"
 
 #: src/components/bookmarks-slider/BookmarksSlider.tsx
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
-#: src/components/project-home/ProjectHome.tsx
 msgid "Bookmarks"
 msgstr ""
 
@@ -1974,7 +1971,7 @@ msgstr ""
 
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/project-home/ProjectHome.tsx
-#: src/components/quick-create/QuickCreateModal.tsx
+#: src/components/quick-create/QuickCreatePanel.tsx
 msgid "Claude Code"
 msgstr "Claude Code"
 
@@ -2325,7 +2322,7 @@ msgstr "הקוד פג תוקף. סגור והקלק על Connect שוב כדי �
 msgid "Codebase"
 msgstr "Codebase"
 
-#: src/components/quick-create/QuickCreateModal.tsx
+#: src/components/quick-create/QuickCreatePanel.tsx
 msgid "Codex"
 msgstr "Codex"
 
@@ -2686,7 +2683,7 @@ msgstr "הועתק"
 msgid "Copied to Clipboard"
 msgstr "הועתק ללוח"
 
-#: src/components/quick-create/QuickCreateModal.tsx
+#: src/components/quick-create/QuickCreatePanel.tsx
 msgid "Copilot"
 msgstr "Copilot"
 
@@ -3534,7 +3531,6 @@ msgstr "תיאור, למשל: הכנת התקציר היומי שלי"
 msgid "Description:"
 msgstr "תיאור:"
 
-#: src/components/quick-create/QuickCreateModal.tsx
 #: src/pages/desktop/DesktopPage.tsx
 msgid "Desktop"
 msgstr ""
@@ -3926,7 +3922,7 @@ msgstr "לדוגמה, \"Read\", \"Edit|Write\", \"*\" (השאר ריק עבור 
 msgid "e.g., /path/to/script.sh or if [[ \"$tool_input\" == *.md ]]; then echo '{\"permissionDecision\": \"allow\"}'; fi"
 msgstr "לדוגמה, /path/to/script.sh או if [[ \"$tool_input\" == *.md ]]; then echo '{\"permissionDecision\": \"allow\"}'; fi"
 
-#: src/components/assets/AddContextFolderDialog.tsx
+#: src/hooks/use-add-context-folder.tsx
 msgid "Each selected project's folder is added as a context folder."
 msgstr ""
 
@@ -4788,7 +4784,7 @@ msgid "Failed to start services"
 msgstr "נכשל הפעלת השירותים"
 
 #: src/components/quick-create/QuickCreateMenu.tsx
-#: src/components/quick-create/QuickCreateModal.tsx
+#: src/components/quick-create/QuickCreatePanel.tsx
 msgid "Failed to start session"
 msgstr "כישלון בהתחלת הפגישה"
 
@@ -5158,7 +5154,7 @@ msgid "Folder"
 msgstr "תיקייה"
 
 #: src/components/assets/AssetsNavigator.tsx
-#: src/components/quick-create/QuickCreateModal.tsx
+#: src/components/quick-create/DesktopSurface.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "Folder name"
 msgstr "שם התיקייה"
@@ -5316,6 +5312,10 @@ msgstr "שינויים בגיט"
 #: src/components/chat-input.tsx
 msgid "Git Clone Failed"
 msgstr "העתקת Git נכשלה"
+
+#: src/components/assets/context-folder-sources.tsx
+msgid "Git folder"
+msgstr ""
 
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
 msgid "Git is required to share files"
@@ -6960,6 +6960,7 @@ msgid "Merge conflicts"
 msgstr "קונפליקטים בהיתוך"
 
 #: src/components/assets/PushContextFolderDialog.tsx
+#: src/components/quick-create/QuickCreatePanel.tsx
 msgid "Message"
 msgstr ""
 
@@ -7219,11 +7220,11 @@ msgstr "שיחה חדשה של {label}"
 msgid "New analysis"
 msgstr "ניתוח חדש"
 
-#: src/components/quick-create/QuickCreateModal.tsx
+#: src/components/quick-create/QuickCreatePanel.tsx
 msgid "New asset"
 msgstr "נכס חדש"
 
-#: src/components/quick-create/QuickCreateModal.tsx
+#: src/components/quick-create/DesktopSurface.tsx
 msgid "New bookmark folder"
 msgstr ""
 
@@ -7267,7 +7268,8 @@ msgstr "קבצים חדשים ({0})"
 msgid "New Flow"
 msgstr "זרימה חדשה"
 
-#: src/components/quick-create/QuickCreateModal.tsx
+#: src/components/quick-create/DesktopSurface.tsx
+#: src/components/quick-create/QuickCreatePanel.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "New folder"
 msgstr "תיקייה חדשה"
@@ -7279,6 +7281,10 @@ msgstr "תיקייה חדשה"
 
 #: src/components/inbox-view/InboxView.tsx
 msgid "New group"
+msgstr ""
+
+#: src/components/quick-create/QuickCreatePanel.tsx
+msgid "New message"
 msgstr ""
 
 #: src/components/simple-file-manager/SimpleFileManager.tsx
@@ -7323,7 +7329,7 @@ msgstr "טריגר לוח זמנים חדש"
 
 #: src/components/quick-access-sidebar/QuickAccessSideBar.tsx
 #: src/components/quick-create/QuickCreateMenu.tsx
-#: src/components/quick-create/QuickCreateModal.tsx
+#: src/components/quick-create/QuickCreatePanel.tsx
 msgid "New session"
 msgstr "פגישה חדשה"
 
@@ -7797,6 +7803,10 @@ msgstr "אין פרויקטים תואמים"
 #: src/components/terminal/HistoryModal.tsx
 msgid "No matching sessions"
 msgstr "אין פגישות תואמות"
+
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "No members"
+msgstr ""
 
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "No members yet — invite someone below."
@@ -8408,7 +8418,7 @@ msgstr "איפוס הכנה ראשונית"
 msgid "Only harness entries here — enable “Show all” to view them."
 msgstr ""
 
-#: src/components/assets/AddContextFolderDialog.tsx
+#: src/components/assets/context-folder-sources.tsx
 msgid "Only on this machine — never shared"
 msgstr ""
 
@@ -8550,7 +8560,7 @@ msgstr "פתח חיצונית: {childPath}"
 msgid "Open Flowpad docs"
 msgstr "פתיחת מסמכי Flowpad"
 
-#: src/components/assets/AddContextFolderDialog.tsx
+#: src/components/assets/context-folder-sources.tsx
 #: src/pages/flow-page/vibe-new-chat.tsx
 msgid "Open folder"
 msgstr "פתח תיקייה"
@@ -9326,7 +9336,7 @@ msgstr "ראשי"
 msgid "Priority"
 msgstr "עדיפות"
 
-#: src/components/assets/AddContextFolderDialog.tsx
+#: src/components/assets/context-folder-sources.tsx
 #: src/components/graph-context/ContextGraphCanvas.tsx
 #: src/components/project-home/Secrets.tsx
 msgid "Private"
@@ -9417,7 +9427,7 @@ msgstr "קוד פרויקט"
 msgid "Project Commands (.claude/commands/)"
 msgstr "פקודות פרויקט (.claude/commands/)"
 
-#: src/components/assets/AddContextFolderDialog.tsx
+#: src/components/assets/context-folder-sources.tsx
 msgid "Project folder"
 msgstr ""
 
@@ -10952,7 +10962,7 @@ msgstr "מחפש…"
 
 #: src/components/flowdata-renderer/SecretMessageComponent.tsx
 #: src/components/project-home/BindSecretDialog.tsx
-#: src/components/quick-create/QuickCreateModal.tsx
+#: src/components/quick-create/QuickCreatePanel.tsx
 msgid "Secret"
 msgstr "סוד"
 
@@ -11424,7 +11434,7 @@ msgstr "שתף לשיחה"
 msgid "Share using Git origin"
 msgstr ""
 
-#: src/components/assets/AddContextFolderDialog.tsx
+#: src/components/assets/context-folder-sources.tsx
 #: src/components/graph-context/ContextGraphCanvas.tsx
 #: src/components/project-home/Secrets.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
@@ -12052,9 +12062,9 @@ msgstr "שורה שמורה"
 msgid "Structure"
 msgstr "מבנה"
 
-#: src/components/quick-create/QuickCreateModal.tsx
-msgid "Sub agent"
-msgstr ""
+#: src/components/quick-create/QuickCreatePanel.tsx
+#~ msgid "Sub agent"
+#~ msgstr ""
 
 #: src/pages/live-status/LiveStatus.tsx
 msgid "sub-agent"
@@ -12810,7 +12820,7 @@ msgstr "תמליל לא נמצא"
 msgid "Transcripts"
 msgstr "תמלילים"
 
-#: src/components/assets/AddContextFolderDialog.tsx
+#: src/components/assets/context-folder-sources.tsx
 msgid "Travels with the project when shared"
 msgstr ""
 
@@ -13417,6 +13427,11 @@ msgstr ""
 
 #: src/pages/flow-page/vibe-workspace.tsx
 msgid "What do you want to work on"
+msgstr ""
+
+#. placeholder {0}: tile.label
+#: src/components/quick-create/QuickCreatePanel.tsx
+msgid "What is {0}?"
 msgstr ""
 
 #: src/components/status-bar.tsx

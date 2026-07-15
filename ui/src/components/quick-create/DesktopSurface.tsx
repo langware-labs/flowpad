@@ -1,15 +1,15 @@
 import type { Bookmark } from '@sdk';
 import { BrowseableGrid } from '@src/components/browseable-tree/BrowseableGrid';
 import { useFavoritesRoots } from '@src/components/browseable-tree/adapters/useFavoritesRoots';
-import { useProject } from '@sdk/react/hooks';
 import { cn } from '@src/lib/utils';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { Plus } from 'lucide-react';
 import { useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { QuickCreateDialog } from './QuickCreateDialog';
+import { showInputPrompt } from '@src/components/ui/input-prompt-modal';
+import { useFavorites } from '@src/hooks/use-favorites';
 import { QuickCreateModal } from './QuickCreateModal';
-import { getDescriptor } from './registry';
+import { useQuickCreatePick } from './QuickCreatePanel';
 
 /**
  * DesktopSurface — the favorites desktop as one reusable unit: a
@@ -33,26 +33,28 @@ export function DesktopSurface({
 }) {
   const { t } = useLingui();
   const { currentDock } = useDockNavigation();
-  const { project } = useProject();
   const [modalOpen, setModalOpen] = useState(false);
-  const [activeType, setActiveType] = useState<string | null>(null);
-  const [dialogOpen, setDialogOpen] = useState(false);
   const { roots, onDropToBackground, onReorderRoot } = useFavoritesRoots({ filter });
-  // A type whose on-disk location is already fixed by TypeInfo brings its own
-  // dialog — the generic name+path form would only ask it questions it can't
-  // answer. Chosen here, not inside QuickCreateDialog, so the generic form's
-  // project fetch + snapshot never run for a type that discards them.
-  const CustomDialog = activeType ? getDescriptor(activeType)?.Dialog : undefined;
+  const { panelProps, dialogs } = useQuickCreatePick();
+  const { createFolder } = useFavorites();
 
-  const handlePick = (type: string) => {
-    setActiveType(type);
-    setDialogOpen(true);
-  };
-
-  const handleDialogChange = (next: boolean) => {
-    setDialogOpen(next);
-    if (!next) setActiveType(null);
-  };
+  // Creating a bookmark folder belongs to the desktop that holds the folders,
+  // not to the "create new" launcher — same place an OS puts it, and the only
+  // way to make one (the grid offers rename/move/delete but no create).
+  const backgroundActions = [
+    {
+      id: 'new-folder',
+      label: t`New folder`,
+      run: () =>
+        showInputPrompt({
+          title: t`New bookmark folder`,
+          placeholder: t`Folder name`,
+          onConfirm: async (name) => {
+            await createFolder(name);
+          },
+        }),
+    },
+  ];
 
   const tileSize = size === 'large' ? 'h-20 w-20' : 'h-16 w-16';
   const plusTile = (
@@ -80,16 +82,13 @@ export function DesktopSurface({
         size={size}
         leadingChrome={plusTile}
         onDropToBackground={onDropToBackground}
+        backgroundActions={backgroundActions}
         onReorder={onReorderRoot}
         className={className}
       />
 
-      <QuickCreateModal open={modalOpen} onOpenChange={setModalOpen} onPick={handlePick} />
-      {CustomDialog ? (
-        <CustomDialog open={dialogOpen} onOpenChange={handleDialogChange} projectId={project?.id ?? null} />
-      ) : (
-        <QuickCreateDialog open={dialogOpen} onOpenChange={handleDialogChange} type={activeType} />
-      )}
+      <QuickCreateModal open={modalOpen} onOpenChange={setModalOpen} panelProps={panelProps} />
+      {dialogs}
     </>
   );
 }

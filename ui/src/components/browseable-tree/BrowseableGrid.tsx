@@ -18,7 +18,7 @@ import React, { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { hasBrowseableDrag, readBrowseableDrag, writeBrowseableDrag } from './drag';
 import { ToolbarButton } from './BrowseableTree';
 import { openBrowseable } from './open';
-import type { Browseable, BrowseableDragData } from './types';
+import type { Browseable, BrowseableDragData, ToolbarAction } from './types';
 
 export interface BrowseableGridProps {
   /** Top-level nodes. Folder-like nodes (listChildren) expand into a popover
@@ -39,6 +39,10 @@ export interface BrowseableGridProps {
   leadingChrome?: ReactNode;
   /** Drop on the surface background (not on a tile) — e.g. un-file to root. */
   onDropToBackground?: (drag: BrowseableDragData) => void;
+  /** Right-click actions for the surface itself rather than a tile (e.g. "New
+   *  folder"). A node's `toolbar` actions minus the icon, since a context menu
+   *  renders none. Omit for no menu. */
+  backgroundActions?: Array<Pick<ToolbarAction, 'id' | 'label' | 'run'>>;
   /** Manual ordering of THIS grid's tiles: a drop on a tile's left/right edge
    *  splices the dragged item before/after it. Containers own their children's
    *  ordering via `node.reorderChildren` (used by the folder popover grids). */
@@ -72,6 +76,7 @@ export function BrowseableGrid({
   size = 'default',
   leadingChrome,
   onDropToBackground,
+  backgroundActions,
   onReorder,
   className,
 }: BrowseableGridProps) {
@@ -98,7 +103,7 @@ export function BrowseableGrid({
     onDropToBackground(payload);
   };
 
-  return (
+  const grid = (
     <div
       className={cn(
         'flex flex-wrap items-start gap-3',
@@ -129,6 +134,23 @@ export function BrowseableGrid({
         />
       ))}
     </div>
+  );
+
+  if (!backgroundActions?.length) return grid;
+
+  // A tile's own right-click wins — GridTile's ContextMenuTrigger stops the
+  // event before it reaches this one, so these stay surface-level actions.
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger asChild>{grid}</ContextMenuTrigger>
+      <ContextMenuContent>
+        {backgroundActions.map((action) => (
+          <ContextMenuItem key={action.id} onSelect={() => void action.run()}>
+            {action.label}
+          </ContextMenuItem>
+        ))}
+      </ContextMenuContent>
+    </ContextMenu>
   );
 }
 
@@ -282,6 +304,11 @@ function GridTile({
     <button
       type="button"
       onClick={handleClick}
+      // This tile's own right-click menu wins over the surface's. Radix's
+      // trigger doesn't stop propagation, so without this the grid's background
+      // menu opens too and the two dismiss each other — no menu at all. Slot
+      // runs the child's handler before its own, so the tile menu still opens.
+      onContextMenu={(e) => e.stopPropagation()}
       onDoubleClick={(e) => {
         if (!node.onRename) return;
         e.preventDefault();
