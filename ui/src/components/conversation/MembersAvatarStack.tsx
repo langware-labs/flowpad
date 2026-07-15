@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { Users, X } from 'lucide-react';
+import { X } from 'lucide-react';
 import { type ConversationParticipant, type TypeId } from '@sdk';
 import { Avatar, AvatarFallback } from '@src/components/ui/avatar';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
@@ -151,11 +151,11 @@ export function MembersAvatarStack({ typeId }: MembersAvatarStackProps) {
           data-testid="members-avatar-stack"
         >
           {members.length === 0 ? (
-            <Avatar className="h-6 w-6 ring-2 ring-background">
-              <AvatarFallback className="text-[10px]">
-                <Users className="h-3 w-3" />
-              </AvatarFallback>
-            </Avatar>
+            // An empty roster says so in words — a lone avatar glyph reads as
+            // "someone is here" when the point is that nobody is.
+            <span className="text-xs text-muted-foreground">
+              <Trans>No members</Trans>
+            </span>
           ) : (
             inline.map((p, i) => (
               <Avatar key={p.user_id || p.email || i} className="h-6 w-6 ring-2 ring-background">
