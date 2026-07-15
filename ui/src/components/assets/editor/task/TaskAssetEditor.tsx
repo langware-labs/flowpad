@@ -1,5 +1,6 @@
 import { SharedTaskView } from '@src/components/task-bar/SharedTaskView';
 import { missingDoneGateFields, PRIORITY_CONFIG, STATUS_LABELS } from '@src/components/task-bar/constants';
+import { openArtifact } from '@src/components/task-bar/task-utils';
 import { Input } from '@src/components/ui/input';
 import { useEntityByPath } from '@src/hooks/use-entity-by-path';
 import { useParentTask } from '@src/hooks/use-parent-task';
@@ -7,7 +8,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { ActionInfo, dataManager, FSRef, Task } from '@sdk';
 import { cn } from '@src/lib/utils';
 import { notify } from '@src/notifications';
-import { Archive, ArrowLeft, Users } from 'lucide-react';
+import { Archive, ArrowLeft, FileText, Users } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AnalyzeStatusButton } from './AnalyzeStatusButton';
 import { DoneGateDialog } from './DoneGateDialog';
@@ -280,6 +281,18 @@ export function TaskAssetEditor({ fsRef, task: providedTask }: TaskAssetEditorPr
 
           <OwnerButton task={task} save={save} />
           <AnalyzeStatusButton task={task} />
+          {task.analysis_path && (
+            <button
+              type="button"
+              onClick={() => openArtifact(task.analysis_path!, navigation)}
+              className="flex items-center gap-1.5 rounded-full border border-transparent px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted/60"
+              title={task.analysis_path}
+              data-testid="task-analysis-report"
+            >
+              <FileText className="h-3.5 w-3.5" />
+              Report
+            </button>
+          )}
         </div>
       </div>
 
