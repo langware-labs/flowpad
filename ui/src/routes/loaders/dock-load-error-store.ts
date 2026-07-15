@@ -1,6 +1,16 @@
 import { useSyncExternalStore } from 'react';
 import type { DockPointer } from '@src/navigation';
 
+/**
+ * Optional "where do I go from here" affordance on an error card. The loader
+ * hands over a ready-made pointer so the view stays a dumb renderer and the
+ * click path is still a plain `navigation.openDock(pointer)`.
+ */
+export interface DockLoadErrorLink {
+  label: string;
+  pointer: DockPointer;
+}
+
 export interface DockLoadErrorEntry {
   kind: string;
   severity: 'hard' | 'soft';
@@ -8,6 +18,7 @@ export interface DockLoadErrorEntry {
   title: string;
   message: string;
   retryable: boolean;
+  link?: DockLoadErrorLink;
   updatedAt: number;
 }
 
