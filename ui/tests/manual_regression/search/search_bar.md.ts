@@ -13,11 +13,6 @@ async function gotoHome(page: import('@playwright/test').Page) {
   await page.goto('/');
   // Wait for initial render — look for something stable
   await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
-  // Dismiss WelcomeModal if shown (appears after DB reset when scanInfo.never_indexed=true)
-  const skipBtn = page.getByRole('button', { name: 'Skip for now' });
-  if (await skipBtn.isVisible({ timeout: 2_000 }).catch(() => false)) {
-    await skipBtn.click();
-  }
 }
 
 test.describe('Record Search Bar', () => {
