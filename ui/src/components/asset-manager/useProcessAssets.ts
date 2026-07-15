@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { AgenticProcess, Project, dataContext, type AssetDescriptor } from '@sdk';
 
 /**
@@ -57,7 +57,10 @@ export function useProcessAssets(
   }, [process, enabled]);
 
   // Re-fetch when the process identity changes (or the hook becomes enabled).
-  useEffect(() => {
+  // Layout effect, not a passive one: `refresh` sets isLoading synchronously
+  // before its first await, and a passive effect can run after paint — which
+  // would flash the "no assets" empty state for a frame on first open.
+  useLayoutEffect(() => {
     void refresh();
   }, [refresh]);
 
