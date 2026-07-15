@@ -96,6 +96,17 @@ export interface Browseable {
    *  wherever possible — it keeps navigation URL-first and selectable. */
   activate?: () => void | Promise<void>;
 
+  /** Fired when the row is OPENED — from BOTH the `pointer` and `activate`
+   *  arms, so a usage stamp can't miss the (majority) pointer case. Fires only
+   *  when something actually opened: never for a container (whose click just
+   *  toggles the chevron), never for a non-actionable row.
+   *
+   *  Side effect ONLY — a usage stamp on the underlying entity (e.g. the
+   *  favorites open-counter). Never navigate, never gate navigation, never
+   *  write view state. Renderers fire it AFTER dispatching, so a throw here
+   *  cannot break the navigation. */
+  onOpen?: () => void;
+
   /** Optional hover tooltip content (e.g. a live entity summary). Rendered by
    *  renderers that support tooltips (the desktop grid); the tree currently
    *  ignores it. */

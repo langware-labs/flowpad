@@ -3,7 +3,7 @@ import {
   summaryForBookmark,
   useFavoriteSummaries,
 } from '@src/hooks/use-favorite-summaries';
-import { sortContainer, useFavorites } from '@src/hooks/use-favorites';
+import { isUnopened, sortContainer, useFavorites } from '@src/hooks/use-favorites';
 import {
   canNavigateFavorite,
   navigateToFavorite,
@@ -48,11 +48,11 @@ function favoriteDragData(b: Bookmark, label: string): BrowseableDragData {
  * grid, a navigator tree) can host it: one container contract, OS-style.
  *
  * Deliberately a HOOK over live `useFavorites()` state, never a static
- * closure: WS `update` ops don't notify query watchers, so every mutation
- * must run through this owning instance — its `refetch` re-renders whatever
- * surface consumes the returned roots. Children derive from live state (the
- * `listChildren` closures are rebuilt when the data changes), so no
- * refresh-store wiring is needed.
+ * closure: a mutation only re-renders the consuming surface if it runs through
+ * this owning instance — either its `refetch` or a `notifyEntityChanged`, since
+ * a save's own WS echo is not a reliable trigger (see `markOpened`). Children
+ * derive from live state (the `listChildren` closures are rebuilt when the data
+ * changes), so no refresh-store wiring is needed.
  */
 export const FOLDER_DRAG_KIND = 'favorite_folder';
 
@@ -90,6 +90,7 @@ export function useFavoritesRoots(opts?: {
     childrenOf,
     removeFavorite,
     renameFavorite,
+    markOpened,
     moveToFolder,
     deleteFolder,
     reorder,
@@ -109,9 +110,18 @@ export function useFavoritesRoots(opts?: {
         id: b.id ?? '',
         label: title,
         icon: <Icon className="h-6 w-6" />,
+        // Unread dot — the leaf-level form of the folder count badge. The grid
+        // renders `badge` for leaves and folders alike, so no renderer change.
+        badge: isUnopened(b) ? (
+          <span className="block h-2 w-2 rounded-full bg-primary" />
+        ) : undefined,
         rowClassName: navigable ? undefined : 'opacity-60 cursor-not-allowed',
         hasChildren: false,
         pointer,
+        // Fires for BOTH the pointer and activate arms (the grid resolves it),
+        // which is the whole reason `onOpen` exists — most favorites navigate
+        // via the pure pointer arm, which calls no adapter code.
+        onOpen: () => void markOpened(b),
         // Session-like types can't be expressed as a pure pointer — fall back
         // to the imperative dispatcher (protocol's documented activate arm).
         activate:
@@ -159,34 +169,51 @@ export function useFavoritesRoots(opts?: {
     // Recursive count of visible LEAF favorites under a folder (descends through
     // nested subfolders). So `Auto` shows the grand total while each `Auto/<type>`
     // shows its own. Cycle-guarded (a malformed parent_id loop can't hang render).
-    const countLeaves = (folderId: string, seen: Set<string> = new Set()): number => {
-      if (!folderId || seen.has(folderId)) return 0;
+    //
+    // One traversal answers both questions: `unopened` drives the badge, `total`
+    // drives the tooltip's "N items".
+    const countLeaves = (
+      folderId: string,
+      seen: Set<string> = new Set(),
+    ): { total: number; unopened: number } => {
+      if (!folderId || seen.has(folderId)) return { total: 0, unopened: 0 };
       seen.add(folderId);
-      return childrenOf(folderId)
-        .filter(filter)
-        .reduce(
-          (n, k) =>
-            n + (k.bookmark_type === BookmarkType.FAVORITE_FOLDER ? countLeaves(k.id ?? '', seen) : 1),
-          0,
-        );
+      let total = 0;
+      let unopened = 0;
+      for (const k of childrenOf(folderId)) {
+        if (!filter(k)) continue;
+        if (k.bookmark_type === BookmarkType.FAVORITE_FOLDER) {
+          const sub = countLeaves(k.id ?? '', seen);
+          total += sub.total;
+          unopened += sub.unopened;
+        } else {
+          total += 1;
+          if (isUnopened(k)) unopened += 1;
+        }
+      }
+      return { total, unopened };
     };
 
     const asFolder = (folder: Bookmark): Browseable => {
       const title = folder.name || folder.title || folder.displayName;
       const allChildren = folder.id ? childrenOf(folder.id) : [];
       const children = allChildren.filter(filter);
-      // Badge counts leaf descendants recursively, so a folder-of-folders (the
-      // Auto root) still reflects how many items are filed beneath it.
-      const count = folder.id ? countLeaves(folder.id) : 0;
+      // Counted over leaf descendants recursively, so a folder-of-folders (the
+      // Auto root) reflects everything filed beneath it. The badge shows only
+      // what's NEVER been opened (an all-opened folder carries no badge, like a
+      // fully-read inbox); the tooltip still reports the full membership.
+      const { total, unopened } = folder.id
+        ? countLeaves(folder.id)
+        : { total: 0, unopened: 0 };
       return {
         kind: 'favorite_folder',
         id: folder.id ?? '',
         label: title,
         icon: <Folder className="h-6 w-6" />,
         badge:
-          count > 0 ? (
+          unopened > 0 ? (
             <span className="rounded-full bg-primary px-1 text-[9px] font-semibold leading-[13px] text-primary-foreground">
-              {count}
+              {unopened}
             </span>
           ) : undefined,
         hasChildren: children.length > 0 ? true : 'unknown',
@@ -219,11 +246,18 @@ export function useFavoritesRoots(opts?: {
           },
         ],
         tooltip: (
-          <div className="text-xs font-medium">
-            <Trans>
-              {title} — {count} items
-            </Trans>
-          </div>
+          <>
+            <div className="text-xs font-medium">
+              <Trans>
+                {title} — {total} items
+              </Trans>
+            </div>
+            {unopened > 0 && (
+              <div className="mt-0.5 text-[10px] opacity-60">
+                <Trans>{unopened} never opened</Trans>
+              </div>
+            )}
+          </>
         ),
       };
     };
@@ -267,6 +301,7 @@ export function useFavoritesRoots(opts?: {
     summaries,
     removeFavorite,
     renameFavorite,
+    markOpened,
     moveToFolder,
     deleteFolder,
     reorder,

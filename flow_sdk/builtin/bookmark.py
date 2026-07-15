@@ -68,6 +68,10 @@ class Bookmark(Entity):
     # `bookmark.order` action. DB-only (bookmark has no meta_model), matching
     # every other custom bookmark field.
     order: int = APIField(0)
+    # Times this favorite has been opened. 0 — including absent, on every row
+    # written before this field existed — means "never opened", which is what
+    # the desktop's unread badges count. DB-only, like `order`.
+    counter: int = APIField(0)
 
     @property
     def display_name(self) -> str:
