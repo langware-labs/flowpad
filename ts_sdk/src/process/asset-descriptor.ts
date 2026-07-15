@@ -15,7 +15,8 @@ export type AssetSource =
   | 'workdir'         // process workdir if distinct from project/user
   | 'additional_dir'  // additional_dirs entries (excl. auto-appended assets dir)
   | 'context_dir'     // project.include_dirs (context folders)
-  | 'transcript';     // file-backed entity read in transcript only
+  | 'system'          // bundled flowpad_assistant assets
+  | 'external';       // not attributable to any of this process's source dirs
 
 export type AssetUsageKind =
   | 'embedded_asset'
@@ -59,31 +60,40 @@ export const ASSET_SOURCE_LABEL: Record<AssetSource, string> = {
   workdir: 'workdir',
   additional_dir: 'additional',
   context_dir: 'context folder',
-  transcript: 'transcript',
+  system: 'system',
+  external: 'external',
 };
 
 /**
- * Sources whose underlying file/state lives outside this AgenticProcess —
- * editing the entity from this process would propagate elsewhere (other
- * processes, the project, the user globally), so the row is "read-only"
- * from this process's perspective. To get an editable copy, attach the
- * asset (which materializes an EMBEDDED row).
+ * The only sources this process may write: ``embedded`` (a private materialized
+ * copy in the process's own assets dir) and ``inline`` (lives in this process's
+ * ``cli_config``). Everything else lives outside the process — editing it would
+ * propagate elsewhere (other processes, the project, the user globally, a
+ * pip-installed package), so it is "read-only" from this process's perspective.
+ * To get an editable copy, attach the asset (which materializes an EMBEDDED row).
  *
- * Writable sources are the complement: ``embedded`` (private materialized
- * copy in the process's own assets dir) and ``inline`` (lives in this
- * process's ``cli_config``).
+ * Expressed as an allowlist rather than a read-only denylist so that the
+ * predicate below fails CLOSED: this SDK ships separately from the Python wheel,
+ * so a stale bundle can meet a source string it has never heard of. Under a
+ * denylist that unknown source reads as writable, which would hand the user a
+ * live editor over (say) a file inside site-packages. The writable set is closed
+ * and process-local by definition; any future source is far likelier to be one
+ * more place we must not write to.
  */
-export const READONLY_ASSET_SOURCES: readonly AssetSource[] = [
-  'project_dir',
-  'user_dir',
-  'workdir',
-  'additional_dir',
-  'context_dir',
-  'transcript',
-];
+export const WRITABLE_ASSET_SOURCES: readonly AssetSource[] = ['embedded', 'inline'];
 
-export function isReadOnlySource(source: AssetSource): boolean {
-  return READONLY_ASSET_SOURCES.includes(source);
+export function isReadOnlySource(source: AssetSource | string): boolean {
+  return !WRITABLE_ASSET_SOURCES.includes(source as AssetSource);
+}
+
+/** The read-only complement of {@link WRITABLE_ASSET_SOURCES}, for known sources. */
+export const READONLY_ASSET_SOURCES: readonly AssetSource[] = (
+  Object.keys(ASSET_SOURCE_LABEL) as AssetSource[]
+).filter(isReadOnlySource);
+
+/** Label for a source, tolerating one this bundle predates (renders it raw). */
+export function assetSourceLabel(source: AssetSource | string): string {
+  return ASSET_SOURCE_LABEL[source as AssetSource] ?? String(source);
 }
 
 export function assetDescriptorHasUsage(descriptor: Pick<AssetDescriptor, 'usage'>): boolean {

@@ -3,7 +3,7 @@ import {
   summaryForBookmark,
   useFavoriteSummaries,
 } from '@src/hooks/use-favorite-summaries';
-import { sortContainer, useFavorites } from '@src/hooks/use-favorites';
+import { isUnopened, sortContainer, useFavorites } from '@src/hooks/use-favorites';
 import {
   canNavigateFavorite,
   navigateToFavorite,
@@ -23,7 +23,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { useMemo, useRef } from 'react';
-import type { Browseable, BrowseableDragData } from '../types';
+import type { Browseable, BrowseableDragData, BrowseableRoot } from '../types';
 
 /** Explicit `data.icon` name wins; otherwise the target type's registry icon
  *  (backend TypeInfo via the bootstrap-loaded SchemaRegistry — never a
@@ -48,11 +48,11 @@ function favoriteDragData(b: Bookmark, label: string): BrowseableDragData {
  * grid, a navigator tree) can host it: one container contract, OS-style.
  *
  * Deliberately a HOOK over live `useFavorites()` state, never a static
- * closure: WS `update` ops don't notify query watchers, so every mutation
- * must run through this owning instance — its `refetch` re-renders whatever
- * surface consumes the returned roots. Children derive from live state (the
- * `listChildren` closures are rebuilt when the data changes), so no
- * refresh-store wiring is needed.
+ * closure: a mutation only re-renders the consuming surface if it runs through
+ * this owning instance — either its `refetch` or a `notifyEntityChanged`, since
+ * a save's own WS echo is not a reliable trigger (see `markOpened`). Children
+ * derive from live state (the `listChildren` closures are rebuilt when the data
+ * changes), so no refresh-store wiring is needed.
  */
 export const FOLDER_DRAG_KIND = 'favorite_folder';
 
@@ -64,6 +64,10 @@ export function useFavoritesRoots(opts?: {
    *  and folders that get rendered; children are filtered too. Lookups for drag
    *  targets still use the full favorite set. Default (unset) renders all. */
   filter?: (b: Bookmark) => boolean;
+  /** Icon sizing. Defaults to the 64px desktop tile's `h-6 w-6`; a tree menu
+   *  passes `h-4 w-4` — its rows are `text-xs` with `h-3` chevrons, so a 24px
+   *  icon would tower over every row. */
+  iconClassName?: string;
 }): {
   roots: Browseable[];
   /** Drop on the surface background = un-file back to root. */
@@ -75,6 +79,7 @@ export function useFavoritesRoots(opts?: {
   ) => Promise<void>;
 } {
   const filter = opts?.filter ?? PASS_ALL;
+  const iconClassName = opts?.iconClassName ?? 'h-6 w-6';
   const { navigation } = useDockNavigation();
   // navigation's identity changes on every dock change (it carries
   // currentDock); read it through a ref inside the activate closures so URL
@@ -108,10 +113,19 @@ export function useFavoritesRoots(opts?: {
         kind: 'favorite',
         id: b.id ?? '',
         label: title,
-        icon: <Icon className="h-6 w-6" />,
+        icon: <Icon className={iconClassName} />,
+        // Unread dot — the leaf-level form of the folder count badge. The grid
+        // renders `badge` for leaves and folders alike, so no renderer change.
+        badge: isUnopened(b) ? (
+          <span className="block h-2 w-2 rounded-full bg-primary" />
+        ) : undefined,
         rowClassName: navigable ? undefined : 'opacity-60 cursor-not-allowed',
         hasChildren: false,
         pointer,
+        // Fires for BOTH the pointer and activate arms — the whole reason
+        // `onOpen` exists, since most favorites navigate via the pure pointer
+        // arm, which calls no adapter code.
+        onOpen: () => void b.markOpened(),
         // Session-like types can't be expressed as a pure pointer — fall back
         // to the imperative dispatcher (protocol's documented activate arm).
         activate:
@@ -156,18 +170,17 @@ export function useFavoritesRoots(opts?: {
       };
     };
 
-    // Recursive count of visible LEAF favorites under a folder (descends through
-    // nested subfolders). So `Auto` shows the grand total while each `Auto/<type>`
-    // shows its own. Cycle-guarded (a malformed parent_id loop can't hang render).
-    const countLeaves = (folderId: string, seen: Set<string> = new Set()): number => {
-      if (!folderId || seen.has(folderId)) return 0;
+    // The visible LEAF favorites under a folder, descending through nested
+    // subfolders — so `Auto` sees everything filed beneath it while each
+    // `Auto/<type>` sees only its own. Cycle-guarded (a malformed parent_id
+    // loop can't hang render). Callers count what they need off the result.
+    const leavesUnder = (folderId: string, seen: Set<string> = new Set()): Bookmark[] => {
+      if (!folderId || seen.has(folderId)) return [];
       seen.add(folderId);
       return childrenOf(folderId)
         .filter(filter)
-        .reduce(
-          (n, k) =>
-            n + (k.bookmark_type === BookmarkType.FAVORITE_FOLDER ? countLeaves(k.id ?? '', seen) : 1),
-          0,
+        .flatMap((k) =>
+          k.bookmark_type === BookmarkType.FAVORITE_FOLDER ? leavesUnder(k.id ?? '', seen) : [k],
         );
     };
 
@@ -175,18 +188,20 @@ export function useFavoritesRoots(opts?: {
       const title = folder.name || folder.title || folder.displayName;
       const allChildren = folder.id ? childrenOf(folder.id) : [];
       const children = allChildren.filter(filter);
-      // Badge counts leaf descendants recursively, so a folder-of-folders (the
-      // Auto root) still reflects how many items are filed beneath it.
-      const count = folder.id ? countLeaves(folder.id) : 0;
+      // The badge counts only what's NEVER been opened, so an all-opened folder
+      // carries no badge (like a fully-read inbox); the tooltip still reports
+      // full membership.
+      const leaves = folder.id ? leavesUnder(folder.id) : [];
+      const unopened = leaves.filter(isUnopened).length;
       return {
         kind: 'favorite_folder',
         id: folder.id ?? '',
         label: title,
-        icon: <Folder className="h-6 w-6" />,
+        icon: <Folder className={iconClassName} />,
         badge:
-          count > 0 ? (
+          unopened > 0 ? (
             <span className="rounded-full bg-primary px-1 text-[9px] font-semibold leading-[13px] text-primary-foreground">
-              {count}
+              {unopened}
             </span>
           ) : undefined,
         hasChildren: children.length > 0 ? true : 'unknown',
@@ -221,7 +236,7 @@ export function useFavoritesRoots(opts?: {
         tooltip: (
           <div className="text-xs font-medium">
             <Trans>
-              {title} — {count} items
+              {title} — {leaves.length} items
             </Trans>
           </div>
         ),
@@ -271,6 +286,31 @@ export function useFavoritesRoots(opts?: {
     deleteFolder,
     reorder,
     filter,
+    iconClassName,
     t,
   ]);
+}
+
+/**
+ * The same favorites, shaped for BrowseableTree (the menu renderer) rather than
+ * the grid.
+ *
+ * `BrowseableRoot` requires `ownsPointer`/`pathFor`, which exist only to power
+ * deep-link auto-expand. Both are no-ops here: the slider closes on the first
+ * navigation, so nothing ever deep-links into an open menu. Row highlighting is
+ * a pure pointer-string match and still works. Only top-level nodes must be
+ * roots — `listChildren` keeps handing back plain `Browseable`s.
+ */
+export function useFavoritesTreeRoots(opts?: { filter?: (b: Bookmark) => boolean }): BrowseableRoot[] {
+  const { roots } = useFavoritesRoots({ filter: opts?.filter, iconClassName: 'h-4 w-4' });
+  return useMemo(
+    () =>
+      roots.map((n) => ({
+        ...n,
+        kind: 'root' as const,
+        ownsPointer: () => false,
+        pathFor: () => Promise.resolve([]),
+      })),
+    [roots],
+  );
 }

@@ -5,12 +5,19 @@ import {
   clearDockLoadError,
   setDockLoadError,
   type DockLoadErrorEntry,
+  type DockLoadErrorLink,
 } from './dock-load-error-store';
 
 export type DockLoadSeverity = 'hard' | 'soft';
 
 export type LoadResolution =
-  | { action: 'render_error'; title: string; message: string; retryable?: boolean }
+  | {
+      action: 'render_error';
+      title: string;
+      message: string;
+      retryable?: boolean;
+      link?: DockLoadErrorLink;
+    }
   | { action: 'redirect'; to: string; replace?: boolean; notify?: LoadNotification }
   | { action: 'notify'; notification: LoadNotification }
   | { action: 'banner' }
@@ -71,6 +78,7 @@ export function handleDockLoadError(error: unknown, dock: DockPointer | null): v
         title: error.resolution.title,
         message: error.resolution.message,
         retryable: !!error.resolution.retryable,
+        link: error.resolution.link,
         updatedAt: Date.now(),
       };
       setDockLoadError(dock, entry);

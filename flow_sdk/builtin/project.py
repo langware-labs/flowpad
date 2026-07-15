@@ -1114,6 +1114,36 @@ class Project(Entity):
             await _index_additional_dir(canonical)
         return ApiSuccessResponse(data=self.model_dump(mode="json"))
 
+    @action.post(action_name="folder-for-path")
+    async def folder_for_path(self, path: str) -> "ApiResponse":
+        """Get-or-create the ``Folder`` entity for a directory, without linking it.
+
+        The share gate needs an entity to preflight, but only CONTEXT folders are
+        linked — a directory the user is merely browsing inside the project's own
+        tree has no ``Folder`` yet. Minting is idempotent (a Folder's id IS its
+        origin key), so this is a safe get-or-create: it never attaches a context
+        folder, never indexes, and returns the same id for the same directory
+        forever. Deliberately NOT ``add-context-dir``: clicking Share must not
+        silently restructure the project.
+        """
+        if not path:
+            return ApiFailResponse(message="path is required")
+        from pathlib import Path
+
+        from flow_sdk.builtin.folder import Folder
+
+        canonical = canonical_posix_path(path)
+        if not Path(canonical).is_dir():
+            return ApiFailResponse(message=f"not a directory: {canonical}", status_code=404)
+        folder = await Folder.mint_for_path(canonical)
+        return ApiSuccessResponse(
+            data={
+                "typeid": str(folder.typeid),
+                "path": canonical,
+                "origin_kind": folder.origin.kind if folder.origin else None,
+            }
+        )
+
     @action.post(action_name="resolve-context-folders")
     async def resolve_context_folders(self) -> "ApiResponse":
         """Resolve shared context folders whose receiver-local sidecar is empty."""

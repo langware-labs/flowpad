@@ -4,12 +4,9 @@ import { type Page } from '@playwright/test';
  * Dismiss the DesktopSetupModal if it appears.
  */
 export async function dismissSetupModal(page: Page) {
-  // Pre-set localStorage to suppress the LLM setup modal AND the
-  // discover/index Welcome modal — its Radix overlay otherwise intercepts
-  // pointer events on home/landing buttons after a fresh DB clear.
+  // Pre-set localStorage to suppress the LLM setup modal before the page loads.
   await page.addInitScript(() => {
     localStorage.setItem('llm-setup-modal-seen', 'true');
-    localStorage.setItem('flowpad-index-approved', '1');
   });
 }
 

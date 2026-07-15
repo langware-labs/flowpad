@@ -101,8 +101,8 @@ msgid "(no fields)"
 msgstr "(no fields)"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
-msgid "(no file — inline persona)"
-msgstr "(no file — inline persona)"
+#~ msgid "(no file — inline persona)"
+#~ msgstr "(no file — inline persona)"
 
 #: src/components/footer.tsx
 #~ msgid "(no git repo)"
@@ -308,6 +308,14 @@ msgstr "{days}d ago"
 msgid "{failed} of {0} failed to delete."
 msgstr "{failed} of {0} failed to delete."
 
+#: src/components/share-to-conversation/GitShareGateDialog.tsx
+msgid "{folderName} has {changeCount} pending change(s). They need to be committed and pushed before the receiver can pull them."
+msgstr "{folderName} has {changeCount} pending change(s). They need to be committed and pushed before the receiver can pull them."
+
+#: src/components/share-to-conversation/GitShareGateDialog.tsx
+msgid "{folderName} has changes that haven't been pushed yet. The receiver can only pull what's on the remote."
+msgstr "{folderName} has changes that haven't been pushed yet. The receiver can only pull what's on the remote."
+
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "{guestName} wants to run prompts on your machine."
 msgstr "{guestName} wants to run prompts on your machine."
@@ -367,13 +375,14 @@ msgstr "{selectedCount} selected"
 msgid "{sessionCount} sessions"
 msgstr "{sessionCount} sessions"
 
+#. placeholder {0}: leaves.length
 #: src/components/browseable-tree/adapters/useFavoritesRoots.tsx
-#~ msgid "{title} — {0} items"
-#~ msgstr "{title} — {0} items"
+msgid "{title} — {0} items"
+msgstr "{title} — {0} items"
 
 #: src/components/browseable-tree/adapters/useFavoritesRoots.tsx
-msgid "{title} — {count} items"
-msgstr "{title} — {count} items"
+#~ msgid "{title} — {count} items"
+#~ msgstr "{title} — {count} items"
 
 #: src/components/triggers-view/TriggerInvocationsPanel.tsx
 msgid "{total} file events"
@@ -1074,6 +1083,7 @@ msgstr "Analyze"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/asset-manager/AssetManagerPopover.tsx
+#: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Analyze and improve"
 msgstr "Analyze and improve"
 
@@ -1646,8 +1656,12 @@ msgid "By name"
 msgstr "By name"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
-msgid "By source"
-msgstr "By source"
+msgid "By scope"
+msgstr "By scope"
+
+#: src/components/asset-manager/AssetManagerPopover.tsx
+#~ msgid "By source"
+#~ msgstr "By source"
 
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 msgid "cache hit rate"
@@ -1742,6 +1756,7 @@ msgstr "Can't open terminal"
 #: src/components/project-sidebar/ProjectSidebar.tsx
 #: src/components/prompt-library/PromptEditDialog.tsx
 #: src/components/quick-create/QuickCreateDialog.tsx
+#: src/components/share-to-conversation/GitShareGateDialog.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
@@ -1839,8 +1854,8 @@ msgid "Changes ({0})"
 msgstr "Changes ({0})"
 
 #: src/components/assets/AssetsPage.tsx
-msgid "Changes pending next index"
-msgstr "Changes pending next index"
+#~ msgid "Changes pending next index"
+#~ msgstr "Changes pending next index"
 
 #: src/components/execute-flow-view/instruction-panel/instruction-panel.tsx
 msgid "Changes saved successfully"
@@ -1888,6 +1903,10 @@ msgstr "Checking"
 msgid "Checking Git eligibility…"
 msgstr "Checking Git eligibility…"
 
+#: src/components/share-to-conversation/GitShareGateDialog.tsx
+msgid "Checking Git…"
+msgstr "Checking Git…"
+
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Checking if you have a local clone of the repository."
 msgstr "Checking if you have a local clone of the repository."
@@ -1895,6 +1914,10 @@ msgstr "Checking if you have a local clone of the repository."
 #: src/components/machine-overview/service-status-led.tsx
 msgid "Checking service status..."
 msgstr "Checking service status..."
+
+#: src/components/share-to-conversation/GitShareGateDialog.tsx
+msgid "Checking whether {folderName} is ready to share."
+msgstr "Checking whether {folderName} is ready to share."
 
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
 msgid "checking…"
@@ -2409,6 +2432,10 @@ msgstr "Comments ({0})"
 msgid "Commit"
 msgstr "Commit"
 
+#: src/components/share-to-conversation/GitShareGateDialog.tsx
+msgid "Commit & continue"
+msgstr "Commit & continue"
+
 #: src/components/terminal/interactive-terminal/WorktreeButtons.tsx
 #: src/components/terminal/interactive-terminal/WorktreeButtons.tsx
 msgid "Commit & Merge"
@@ -2421,6 +2448,10 @@ msgstr "Commit all changes and merge back to the parent branch. Claude will exit
 #: src/components/assets/editor/skill/UsagePanel.tsx
 msgid "Commit failed"
 msgstr "Commit failed"
+
+#: src/components/share-to-conversation/GitShareGateDialog.tsx
+msgid "Commit your changes to share them"
+msgstr "Commit your changes to share them"
 
 #: src/components/assets/editor/skill/UsagePanel.tsx
 msgid "Commit/clean this asset first — Improve runs only on a clean-git asset."
@@ -2847,6 +2878,11 @@ msgstr "Could not resolve compute node or home directory"
 msgid "Could not resolve home directory from bootstrap info"
 msgstr "Could not resolve home directory from bootstrap info"
 
+#: src/components/assets/ShareContextFolderButton.tsx
+#: src/components/assets/ShareContextFolderButton.tsx
+msgid "Could not resolve this folder"
+msgstr "Could not resolve this folder"
+
 #: src/components/execute-flow-view/instruction-panel/instruction-panel.tsx
 msgid "Could not save changes"
 msgstr "Could not save changes"
@@ -2888,6 +2924,10 @@ msgstr "Couldn't check for updates: {error}"
 #: src/components/terminal/interactive-terminal/side-windows/SkillsAgentsPanel.tsx
 msgid "Couldn’t load transcript"
 msgstr "Couldn’t load transcript"
+
+#: src/components/share-to-conversation/GitShareGateDialog.tsx
+msgid "Couldn't read this folder's Git status."
+msgstr "Couldn't read this folder's Git status."
 
 #: src/components/account/db-stats.tsx
 msgid "Count"
@@ -5277,6 +5317,10 @@ msgstr "Git changes"
 msgid "Git Clone Failed"
 msgstr "Git Clone Failed"
 
+#: src/components/share-to-conversation/GitShareGateDialog.tsx
+msgid "Git is required to share files"
+msgstr "Git is required to share files"
+
 #: src/components/status-bar/GitPushButton.tsx
 #: src/components/status-bar/GitPushButton.tsx
 msgid "git push"
@@ -5632,6 +5676,10 @@ msgstr "Hooks Sniffer"
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "Hooks:"
 msgstr "Hooks:"
+
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "How does improving an asset work?"
+msgstr "How does improving an asset work?"
 
 #: src/components/code-editor/EditorPane.tsx
 msgid "HTML Preview"
@@ -6428,6 +6476,10 @@ msgstr "Loading {typeLabel}…"
 #: src/components/code-editor/AssetCompareView.tsx
 msgid "Loading asset diff…"
 msgstr "Loading asset diff…"
+
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Loading assets…"
+msgstr "Loading assets…"
 
 #: src/components/milkdown-editor/side-windows/BacklinksTab.tsx
 msgid "Loading backlinks…"
@@ -7236,6 +7288,7 @@ msgstr "New name"
 #: src/components/project-selector/NewProjectDialog.tsx
 #: src/components/project-selector/ProjectSelectorModal.tsx
 #: src/components/quick-create/QuickCreateMenu.tsx
+#: src/pages/flow-page/vibe-new-chat.tsx
 msgid "New project"
 msgstr "New project"
 
@@ -7404,6 +7457,10 @@ msgstr "No automations yet"
 #: src/components/milkdown-editor/side-windows/BacklinksTab.tsx
 msgid "No backlinks yet."
 msgstr "No backlinks yet."
+
+#: src/components/favorites/FavoritesTreeMenu.tsx
+msgid "No bookmarks"
+msgstr "No bookmarks"
 
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 msgid "No bookmarks yet"
@@ -8494,6 +8551,7 @@ msgid "Open Flowpad docs"
 msgstr "Open Flowpad docs"
 
 #: src/components/assets/AddContextFolderDialog.tsx
+#: src/pages/flow-page/vibe-new-chat.tsx
 msgid "Open folder"
 msgstr "Open folder"
 
@@ -8657,9 +8715,14 @@ msgstr "Open process"
 msgid "Open Project"
 msgstr "Open Project"
 
+#. placeholder {0}: proj.displayName
+#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
+msgid "Open project assets — {0}"
+msgstr "Open project assets — {0}"
+
 #: src/pages/flow-page/vibe-new-chat.tsx
-msgid "Open project folder"
-msgstr "Open project folder"
+#~ msgid "Open project folder"
+#~ msgstr "Open project folder"
 
 #: src/components/status-bar.tsx
 #: src/components/status-bar.tsx
@@ -9633,8 +9696,8 @@ msgstr "Re-create it"
 
 #: src/components/assets/AssetsPage.tsx
 #: src/components/assets/AssetsPage.tsx
-msgid "Re-index project"
-msgstr "Re-index project"
+#~ msgid "Re-index project"
+#~ msgstr "Re-index project"
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Re-parses <0>every</0> entry, ignoring the <1>.hash</1> sentinel. Use after a parser or schema change, when stored content is wrong even though the source hasn't moved."
@@ -9654,12 +9717,12 @@ msgid "Read"
 msgstr "Read"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
-msgid "Read-only"
-msgstr "Read-only"
+#~ msgid "Read-only"
+#~ msgstr "Read-only"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
-msgid "Read-only from this process. Attach to get a private editable copy."
-msgstr "Read-only from this process. Attach to get a private editable copy."
+#~ msgid "Read-only from this process. Attach to get a private editable copy."
+#~ msgstr "Read-only from this process. Attach to get a private editable copy."
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/asset-manager/AssetPickerPopover.tsx
@@ -9667,8 +9730,8 @@ msgid "Read-only source"
 msgstr "Read-only source"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
-msgid "Read-only source. Attach to get a private editable copy."
-msgstr "Read-only source. Attach to get a private editable copy."
+#~ msgid "Read-only source. Attach to get a private editable copy."
+#~ msgstr "Read-only source. Attach to get a private editable copy."
 
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Reading…"
@@ -9879,8 +9942,6 @@ msgstr "Refresh project index"
 msgid "refresh recommended"
 msgstr "refresh recommended"
 
-#: src/components/assets/AssetsPage.tsx
-#: src/components/assets/AssetsPage.tsx
 #: src/pages/search-view/SearchView.tsx
 msgid "Refresh search data"
 msgstr "Refresh search data"
@@ -10866,7 +10927,6 @@ msgstr "Search transcript…"
 msgid "Search workflows…"
 msgstr "Search workflows…"
 
-#: src/components/assets/AssetsPage.tsx
 #: src/components/project-resource-list/ProjectResourceList.tsx
 #: src/pages/home-landing/HomeLanding.tsx
 msgid "Search..."
@@ -11219,6 +11279,7 @@ msgstr "Session ID"
 msgid "Session is not running"
 msgstr "Session is not running"
 
+#: src/pages/flow-page/vibe-recent-sessions.tsx
 #: src/tabs/useTerminalStripController.tsx
 msgid "Session not found"
 msgstr "Session not found"
@@ -11293,6 +11354,10 @@ msgstr "Settings"
 msgid "Setup failed"
 msgstr "Setup failed"
 
+#: src/components/share-to-conversation/GitShareGateDialog.tsx
+msgid "Setup git"
+msgstr "Setup git"
+
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Setup LM Proxy Access"
 msgstr "Setup LM Proxy Access"
@@ -11309,6 +11374,11 @@ msgstr "Setup machine-restricted API access for this compute node"
 #: src/components/spec-editor/SpecEditor.tsx
 msgid "Share"
 msgstr "Share"
+
+#. placeholder {0}: folder.name
+#: src/components/assets/ShareContextFolderButton.tsx
+msgid "Share {0} over Git"
+msgstr "Share {0} over Git"
 
 #. placeholder {0}: currentProject.session_code
 #: src/components/collaboration/StartRoomDialog.tsx
@@ -11369,6 +11439,10 @@ msgstr "Shared Context"
 #: src/components/collaboration/SharedSessionsList.tsx
 msgid "Shared sessions"
 msgstr "Shared sessions"
+
+#: src/components/share-to-conversation/GitShareGateDialog.tsx
+msgid "Sharing sends files over Git, so the receiver can pull them. {folderName} isn't set up with Git yet."
+msgstr "Sharing sends files over Git, so the receiver can pull them. {folderName} isn't set up with Git yet."
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Sharing…"
@@ -11460,6 +11534,10 @@ msgstr "Show in folder (selects file for drag-and-drop)"
 #: src/components/task-bar/TaskCard.tsx
 msgid "Show member tasks"
 msgstr "Show member tasks"
+
+#: src/pages/flow-page/vibe-recent-sessions.tsx
+msgid "Show more"
+msgstr "Show more"
 
 #: src/components/workers/WorkerToolbar.tsx
 #: src/components/workers/WorkerToolbar.tsx
@@ -11670,8 +11748,8 @@ msgid "Something went wrong while loading this page."
 msgstr "Something went wrong while loading this page."
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
-msgid "Sort"
-msgstr "Sort"
+#~ msgid "Sort"
+#~ msgstr "Sort"
 
 #: src/components/terminal/HistoryModal.tsx
 msgid "Sort by time"
@@ -11690,6 +11768,10 @@ msgstr "Sort by time: oldest first (click for newest first)"
 #: src/components/terminal/interactive-terminal/side-windows/PromptIndexPanel.tsx
 msgid "Sort prompts by time"
 msgstr "Sort prompts by time"
+
+#: src/components/asset-manager/AssetManagerPopover.tsx
+msgid "Sort within each type"
+msgstr "Sort within each type"
 
 #: src/components/hooks/sniffer_view_mock.tsx
 msgid "Source"
@@ -12375,6 +12457,7 @@ msgid "This asset has no file path."
 msgstr "This asset has no file path."
 
 #: src/components/chats-navigator/ChatsNavigator.tsx
+#: src/pages/flow-page/vibe-recent-sessions.tsx
 msgid "This chat has no resumable session."
 msgstr "This chat has no resumable session."
 
@@ -12405,6 +12488,10 @@ msgstr "This file has no backing entity yet."
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
 msgid "This file isn't text"
 msgstr "This file isn't text"
+
+#: src/components/share-to-conversation/GitShareGateDialog.tsx
+msgid "This folder can't be shared yet"
+msgstr "This folder can't be shared yet"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "This folder-backed asset has no main file metadata."
@@ -13335,6 +13422,10 @@ msgstr "What is a Flowpad project?"
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "What is Git sharing?"
 msgstr "What is Git sharing?"
+
+#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
+msgid "What is project?"
+msgstr "What is project?"
 
 #: src/components/account/secrets-section.tsx
 msgid "What is this secret used for?"

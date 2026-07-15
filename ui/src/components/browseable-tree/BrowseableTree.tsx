@@ -3,6 +3,8 @@ import React, { useCallback, useContext, useEffect, useRef, useState } from 'rea
 import { Trans, useLingui } from '@lingui/react/macro';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { Button } from '@src/components/ui/button';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
+import { openBrowseable } from './open';
 import type { Browseable, BrowseableDragData, BrowseableTreeProps, ToolbarAction } from './types';
 import { useBrowseableTree } from './useBrowseableTree';
 import {
@@ -61,6 +63,7 @@ export function BrowseableTree(props: BrowseableTreeProps) {
     className = '',
     persistKey,
     defaultExpandedIds,
+    hoverExpandMs,
   } = props;
 
   const tree = useBrowseableTree(roots, { persistKey, defaultExpandedIds });
@@ -188,6 +191,7 @@ export function BrowseableTree(props: BrowseableTreeProps) {
             node={root}
             level={0}
             rootId={root.id}
+            hoverExpandMs={hoverExpandMs}
             tree={tree}
             selection={selection}
             activePointer={activePointer}
@@ -219,6 +223,9 @@ interface RowProps {
   dragData: BrowseableDragData | null;
   onDragStart: (data: BrowseableDragData) => void;
   onDragEnd: () => void;
+  /** Dwell (ms) before hover expands this row. Undefined ⇒ nothing is
+   *  scheduled ⇒ ordinary navigators never expand on hover. */
+  hoverExpandMs?: number;
 }
 
 function BrowseableRow({
@@ -234,6 +241,7 @@ function BrowseableRow({
   dragData,
   onDragStart,
   onDragEnd,
+  hoverExpandMs,
 }: RowProps) {
   const { t } = useLingui();
   const expanded = tree.isExpanded(node.id);
@@ -305,15 +313,8 @@ function BrowseableRow({
       // Label click NAVIGATES only — expansion belongs to the chevron (or a
       // double-click). A pointer-less parent still expands on click so header
       // rows (pointer: null) stay usable.
-      // Click resolves as `pointer ?? activate` (see types.ts invariant) —
-      // activate is the imperative fallback for nodes whose navigation can't
-      // be a pure DockPointer.
-      if (node.pointer) {
-        onNavigate(node.pointer);
-      } else if (node.activate) {
-        void node.activate();
-      } else if (hasChildrenHint) {
-        void tree.toggleExpand(node);
+      if (!openBrowseable(node, onNavigate) && hasChildrenHint) {
+        explicitToggle();
       }
     },
     [editing, canSelect, selection, rootId, hasChildrenHint, node, tree, onNavigate],
@@ -339,12 +340,48 @@ function BrowseableRow({
     if (next && next !== node.label) await node.onRename?.(next);
   }, [draft, node]);
 
+  // Hover-expand (menu mode). Only ever EXPANDS — never toggles: the pointer
+  // rests on a row it just expanded, so a toggle would collapse it again and
+  // flicker. Collapse stays chevron / click / double-click.
+  const hoverExpandTimer = useRef<ReturnType<typeof setTimeout>>();
+  // An explicit collapse latches hover off until the pointer leaves and comes
+  // back. Without it, collapsing via the chevron re-expands ~150ms later — the
+  // chevron lives inside the row, so collapsing it never ends the hover.
+  const suppressHoverExpand = useRef(false);
+
+  const handleRowPointerEnter = useCallback(
+    (e: React.PointerEvent) => {
+      if (!hoverExpandMs || e.pointerType !== 'mouse') return;
+      if (!hasChildrenHint || expanded || suppressHoverExpand.current) return;
+      clearTimeout(hoverExpandTimer.current);
+      hoverExpandTimer.current = setTimeout(() => void tree.expand(node), hoverExpandMs);
+    },
+    [hoverExpandMs, hasChildrenHint, expanded, node, tree],
+  );
+
+  const handleRowPointerLeave = useCallback(() => {
+    clearTimeout(hoverExpandTimer.current);
+    suppressHoverExpand.current = false;
+  }, []);
+
+  useEffect(() => () => clearTimeout(hoverExpandTimer.current), []);
+
+  /** The one way to toggle from a deliberate user action. Latches hover-expand
+   *  off as it goes: the pointer is still on the row you just collapsed, so
+   *  without this the dwell would re-expand it ~150ms later. Any future
+   *  explicit-collapse path (a keyboard ArrowLeft, a context menu) must come
+   *  through here, or it silently reintroduces that. */
+  const explicitToggle = useCallback(() => {
+    suppressHoverExpand.current = true;
+    void tree.toggleExpand(node);
+  }, [node, tree]);
+
   const handleChevronClick = useCallback(
     (e: React.MouseEvent) => {
       e.stopPropagation();
-      void tree.toggleExpand(node);
+      explicitToggle();
     },
-    [node, tree],
+    [explicitToggle],
   );
 
   // Intra-tree drags carry the full payload in lifted state → full canDrop
@@ -440,111 +477,134 @@ function BrowseableRow({
     [dragData, node, onDragEnd],
   );
 
+  // Built once, wrapped conditionally below: the tooltip is the ONLY
+  // difference between the two cases and the row is ~100 lines.
+  const rowEl = (
+    <div
+      className={`group relative flex items-center gap-1 rounded-md p-1.5 text-xs transition-[color,background-color,border-color,opacity] ${
+        isSelected ? 'bg-accent font-medium text-accent-foreground' : 'hover:bg-muted'
+      } ${dimmed ? RAIL_DIM_WHEN_CLOSED : ''} ${
+        // Multi-select ring — distinct from, and composable with, the active
+        // (bg-accent) fill: a row can be both the open editor and selected.
+        multiSelected ? 'ring-2 ring-inset ring-primary' : ''
+      } ${node.pointer || canSelect ? 'cursor-pointer' : 'cursor-default'} ${node.dragData ? 'active:cursor-grabbing' : ''} ${
+        isDropTarget ? 'bg-primary/10 ring-1 ring-primary/40' : ''
+      } ${isDropping ? 'opacity-60' : ''} ${node.rowClassName ?? ''}`}
+      style={{ marginLeft: `${level * 14}px` }}
+      role="treeitem"
+      aria-level={level + 1}
+      aria-selected={isSelected}
+      data-multi-selected={multiSelected || undefined}
+      aria-expanded={hasChildrenHint ? expanded : undefined}
+      draggable={!!node.dragData}
+      onPointerEnter={handleRowPointerEnter}
+      onPointerLeave={handleRowPointerLeave}
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={(e) => {
+        void handleDrop(e);
+      }}
+    >
+      <div
+        className={`flex min-w-0 flex-1 items-center gap-1 overflow-hidden ${
+          toolbarSpace
+            ? node.badge
+              ? // A badge sits right-aligned in this zone — reserve the
+                // hover-toolbar slot PERMANENTLY so the badge doesn't jump
+                // left when the toolbar fades in (git pills stay put while
+                // the remove button appears beside them).
+                'pr-[var(--toolbar-space)]'
+              : 'transition-[padding] group-focus-within:pr-[var(--toolbar-space)] group-hover:pr-[var(--toolbar-space)]'
+            : ''
+        }`}
+        style={toolbarSpace ? ({ '--toolbar-space': `${toolbarSpace}px` } as React.CSSProperties) : undefined}
+      >
+        {hasChildrenHint ? (
+          <button
+            type="button"
+            onClick={handleChevronClick}
+            className="flex h-4 w-4 flex-shrink-0 items-center justify-center"
+            title={expanded ? t`Collapse` : t`Expand`}
+            aria-label={expanded ? t`Collapse` : t`Expand`}
+            data-testid={`browseable-chevron-${node.id}`}
+          >
+            {loadState.status === 'loading' ? (
+              <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+            ) : expanded ? (
+              <ChevronDown className="h-3 w-3 text-muted-foreground" />
+            ) : (
+              <ChevronRight className="h-3 w-3 text-muted-foreground" />
+            )}
+          </button>
+        ) : (
+          <div className="w-4 flex-shrink-0" />
+        )}
+
+        <div
+          className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden"
+          onClick={handleRowClick}
+          onDoubleClick={handleDoubleClick}
+        >
+          {node.content ? (
+            node.content
+          ) : editing ? (
+            <input
+              autoFocus
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onClick={(e) => e.stopPropagation()}
+              onFocus={(e) => e.target.select()}
+              onKeyDown={(e) => {
+                e.stopPropagation();
+                if (e.key === 'Enter') void commitRename();
+                else if (e.key === 'Escape') setEditing(false);
+              }}
+              onBlur={() => void commitRename()}
+              className="min-w-0 flex-1 rounded border border-input bg-background px-1 py-0.5 text-xs outline-none focus:ring-1 focus:ring-ring"
+              data-testid={`browseable-rename-${node.id}`}
+            />
+          ) : (
+            <>
+              {node.icon}
+              <span className="min-w-0 flex-1 truncate" title={node.tooltip ? undefined : node.label}>
+                {node.label}
+              </span>
+              {node.badge && <div className="flex-shrink-0">{node.badge}</div>}
+            </>
+          )}
+        </div>
+      </div>
+
+      {node.toolbar && node.toolbar.length > 0 && (
+        <div className="pointer-events-none absolute right-1 top-1/2 z-10 flex -translate-y-1/2 items-center gap-0.5 rounded-md bg-background/80 px-0.5 opacity-0 shadow-sm backdrop-blur group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100">
+          {node.toolbar.map((a) => (
+            <ToolbarButton key={a.id} action={a} compact />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <div data-browseable-id={node.id} data-selection-key={node.selectionKey}>
-      <div
-        className={`group relative flex items-center gap-1 rounded-md p-1.5 text-xs transition-[color,background-color,border-color,opacity] ${
-          isSelected ? 'bg-accent font-medium text-accent-foreground' : 'hover:bg-muted'
-        } ${dimmed ? RAIL_DIM_WHEN_CLOSED : ''} ${
-          // Multi-select ring — distinct from, and composable with, the active
-          // (bg-accent) fill: a row can be both the open editor and selected.
-          multiSelected ? 'ring-2 ring-inset ring-primary' : ''
-        } ${node.pointer || canSelect ? 'cursor-pointer' : 'cursor-default'} ${node.dragData ? 'active:cursor-grabbing' : ''} ${
-          isDropTarget ? 'bg-primary/10 ring-1 ring-primary/40' : ''
-        } ${isDropping ? 'opacity-60' : ''} ${node.rowClassName ?? ''}`}
-        style={{ marginLeft: `${level * 14}px` }}
-        role="treeitem"
-        aria-level={level + 1}
-        aria-selected={isSelected}
-        data-multi-selected={multiSelected || undefined}
-        aria-expanded={hasChildrenHint ? expanded : undefined}
-        draggable={!!node.dragData}
-        onDragStart={handleDragStart}
-        onDragEnd={handleDragEnd}
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={(e) => {
-          void handleDrop(e);
-        }}
-      >
-        <div
-          className={`flex min-w-0 flex-1 items-center gap-1 overflow-hidden ${
-            toolbarSpace
-              ? node.badge
-                ? // A badge sits right-aligned in this zone — reserve the
-                  // hover-toolbar slot PERMANENTLY so the badge doesn't jump
-                  // left when the toolbar fades in (git pills stay put while
-                  // the remove button appears beside them).
-                  'pr-[var(--toolbar-space)]'
-                : 'transition-[padding] group-focus-within:pr-[var(--toolbar-space)] group-hover:pr-[var(--toolbar-space)]'
-              : ''
-          }`}
-          style={toolbarSpace ? ({ '--toolbar-space': `${toolbarSpace}px` } as React.CSSProperties) : undefined}
-        >
-          {hasChildrenHint ? (
-            <button
-              type="button"
-              onClick={handleChevronClick}
-              className="flex h-4 w-4 flex-shrink-0 items-center justify-center"
-              title={expanded ? t`Collapse` : t`Expand`}
-              aria-label={expanded ? t`Collapse` : t`Expand`}
-              data-testid={`browseable-chevron-${node.id}`}
-            >
-              {loadState.status === 'loading' ? (
-                <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
-              ) : expanded ? (
-                <ChevronDown className="h-3 w-3 text-muted-foreground" />
-              ) : (
-                <ChevronRight className="h-3 w-3 text-muted-foreground" />
-              )}
-            </button>
-          ) : (
-            <div className="w-4 flex-shrink-0" />
-          )}
-
-          <div
-            className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden"
-            onClick={handleRowClick}
-            onDoubleClick={handleDoubleClick}
-          >
-            {node.content ? (
-              node.content
-            ) : editing ? (
-              <input
-                autoFocus
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                onClick={(e) => e.stopPropagation()}
-                onFocus={(e) => e.target.select()}
-                onKeyDown={(e) => {
-                  e.stopPropagation();
-                  if (e.key === 'Enter') void commitRename();
-                  else if (e.key === 'Escape') setEditing(false);
-                }}
-                onBlur={() => void commitRename()}
-                className="min-w-0 flex-1 rounded border border-input bg-background px-1 py-0.5 text-xs outline-none focus:ring-1 focus:ring-ring"
-                data-testid={`browseable-rename-${node.id}`}
-              />
-            ) : (
-              <>
-                {node.icon}
-                <span className="min-w-0 flex-1 truncate" title={node.label}>
-                  {node.label}
-                </span>
-                {node.badge && <div className="flex-shrink-0">{node.badge}</div>}
-              </>
-            )}
-          </div>
-        </div>
-
-        {node.toolbar && node.toolbar.length > 0 && (
-          <div className="pointer-events-none absolute right-1 top-1/2 z-10 flex -translate-y-1/2 items-center gap-0.5 rounded-md bg-background/80 px-0.5 opacity-0 shadow-sm backdrop-blur group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100">
-            {node.toolbar.map((a) => (
-              <ToolbarButton key={a.id} action={a} compact />
-            ))}
-          </div>
-        )}
-      </div>
+      {node.tooltip ? (
+        <Tooltip>
+          <TooltipTrigger asChild>{rowEl}</TooltipTrigger>
+          {/* side="right": rows stack vertically, so a bottom tooltip would cover
+              the next row and sit in the pointer's downward travel path.
+              pointer-events-none: the tooltip portals to document.body, i.e.
+              OUTSIDE the panel — without this, moving onto it fires the panel's
+              pointerleave and closes a menu the user never left. The preview is
+              read-only, so there is nothing in it to click. */}
+          <TooltipContent side="right" className="pointer-events-none max-w-xs">
+            {node.tooltip}
+          </TooltipContent>
+        </Tooltip>
+      ) : (
+        rowEl
+      )}
 
       {expanded && (
         <div className="space-y-0.5">
@@ -569,6 +629,7 @@ function BrowseableRow({
               node={child}
               level={level + 1}
               rootId={rootId}
+              hoverExpandMs={hoverExpandMs}
               tree={tree}
               selection={selection}
               activePointer={activePointer}

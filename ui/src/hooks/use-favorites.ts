@@ -11,8 +11,15 @@ export interface FavoriteRef {
   nav?: Record<string, unknown>;
 }
 
-function isFavoriteBookmark(b: Bookmark): boolean {
+export function isFavoriteBookmark(b: Bookmark): boolean {
   return b.bookmark_type === BookmarkType.FAVORITE;
+}
+
+/** Never opened — the unread predicate behind every favorites badge. Absent
+ *  `counter` (every row written before the field existed) reads as 0, so a
+ *  pre-existing favorite correctly starts out "never opened". */
+export function isUnopened(b: Bookmark): boolean {
+  return (b.counter ?? 0) === 0;
 }
 
 function isFolderBookmark(b: Bookmark): boolean {

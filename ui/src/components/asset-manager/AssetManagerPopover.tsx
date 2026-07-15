@@ -2,8 +2,8 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useSyncExt
 import { Trans, useLingui } from '@lingui/react/macro';
 import {
   AgenticProcess,
-  ASSET_SOURCE_LABEL,
   assetDescriptorHasUsage,
+  assetSourceLabel,
   dataManager,
   FLOWPAD_ASSISTANT_PROJECT_NAME,
   isReadOnlySource,
@@ -14,7 +14,6 @@ import {
   ActionInfo,
   GitWorkdir,
   type AssetDescriptor,
-  type AssetSource,
 } from '@sdk';
 import {
   Popover,
@@ -40,6 +39,10 @@ import {
 import { useContext as useDataContext } from '@src/hooks/useContext';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import { useProcessAssets } from './useProcessAssets';
+import { additionalDirScope, assetScope, AssetScopeChip, type AssetScope } from './asset-scope';
+import { FusionSpinner } from '@src/components/icons/FusionSpinner';
+import { WikiTip } from '@src/components/wiki-tip';
+import { labelForType } from '@src/components/graph-view/icons/iconRegistry';
 import { useAssetTypes } from '@src/hooks/use-asset-types';
 import {
   basename as _basename,
@@ -64,12 +67,8 @@ import {
 } from '@src/components/assets/editor/skill/skill-eval-analysis';
 import { ArrowLeft, ArrowDownAZ, Boxes, Folder, FolderOpen, FolderPlus, GitCommitHorizontal, Loader2, Lock, Plus, Search, Sparkles, WandSparkles, X, type LucideIcon } from 'lucide-react';
 
-const READONLY_TOOLTIP_BY_SOURCE: Partial<Record<AssetSource, string>> = {
-  project_dir: 'Defined in the project — edits propagate to every process under this project. Attach to get a private editable copy.',
-  user_dir: 'Defined in your user folder — edits propagate to every process you run. Attach to get a private editable copy.',
-  workdir: 'Lives in the agent’s working directory. Attach to get a private editable copy.',
-  additional_dir: 'Lives outside the project — edits propagate everywhere this path is referenced. Attach to get a private editable copy.',
-};
+/** The wiki page behind the improve wand's tip. */
+const ASSET_IMPROVEMENT_WIKI = 'Asset improvement';
 
 interface AssetImproveTarget {
   descriptor: AssetDescriptor;
@@ -94,11 +93,49 @@ function descriptorKey(descriptor: AssetDescriptor): string {
   return `${descriptor.typeid}@${normalizePath(descriptor.posix_path)}`;
 }
 
-/** Sticky group header inside the asset list (Used / Available). */
-function AssetSectionHeader({ testid, children }: { testid: string; children: React.ReactNode }) {
+/**
+ * One column template, applied identically to every row (asset rows and dir
+ * rows alike) so cells line up down the list:
+ *
+ *   name chip │ scope icon │ scope name │ wand │ detach
+ *
+ * Deliberately not CSS subgrid: a row carries its own background (used rows are
+ * tinted) and bottom border, which `display: contents` would throw away. Fixed
+ * tracks on a fixed-width popover align by construction, and cost nothing.
+ *
+ * The corollary is that optional cells still have to occupy their track — see
+ * `GridCellSpacer`. Rows whose wand or detach button is absent were the whole
+ * reason nothing lined up before.
+ */
+const ASSET_GRID_ROW = 'grid grid-cols-[minmax(0,1fr)_1.25rem_5.5rem_1.5rem_1.5rem] items-center gap-2 px-3 py-1.5';
+
+/** Holds a grid track open where an optional cell isn't rendered. */
+function GridCellSpacer() {
+  return <span aria-hidden />;
+}
+
+/**
+ * Section divider — a centered, tinted label ruled out to both edges. Marks the
+ * usage axis (used vs available), the coarsest split in the list.
+ */
+function AssetSectionRule({ testid, children }: { testid: string; children: React.ReactNode }) {
   return (
     <div
-      className="sticky top-0 z-[1] border-b bg-muted/20 px-3 py-1 text-[10px] uppercase tracking-wider text-muted-foreground"
+      className="sticky top-0 z-[1] flex items-center gap-2 border-b bg-popover/95 px-3 py-1.5 backdrop-blur"
+      data-testid={testid}
+    >
+      <span className="h-px flex-1 bg-primary/30" aria-hidden />
+      <span className="text-[10px] font-semibold uppercase tracking-wider text-primary">{children}</span>
+      <span className="h-px flex-1 bg-primary/30" aria-hidden />
+    </div>
+  );
+}
+
+/** Sub-category header inside a section — the asset type ("Skills", "Agents"). */
+function AssetTypeHeader({ testid, children }: { testid: string; children: React.ReactNode }) {
+  return (
+    <div
+      className="px-3 pb-0.5 pt-2 text-[10px] font-medium uppercase tracking-wider text-primary/70"
       data-testid={testid}
     >
       {children}
@@ -148,7 +185,7 @@ export function AssetManagerPopover({
   const [mode, setMode] = useState<'list' | 'add' | 'pick-project'>('list');
   const [query, setQuery] = useState('');
   const [listFilter, setListFilter] = useState('');
-  const [sortBy, setSortBy] = useState<'source' | 'name'>('source');
+  const [sortBy, setSortBy] = useState<'scope' | 'name'>('scope');
   const [fixDescriptor, setFixDescriptor] = useState<AssetDescriptor | null>(null);
   const [fixText, setFixText] = useState('');
   // The improve input dialog — on submit it genie-flies into the footer's
@@ -227,7 +264,7 @@ export function AssetManagerPopover({
     return () => { cancelled = true; };
   }, [open, process, processSnapshot]);
 
-  const { descriptors, refresh } = useProcessAssets(activeProcess, { enabled: open });
+  const { descriptors, isLoading, refresh } = useProcessAssets(activeProcess, { enabled: open });
   const { types: assetTypes } = useAssetTypes();
   const transcriptSessionId = activeProcess?.session_id ?? hydratedTranscriptIdentity.sessionId;
   const transcriptWorkerType = normalizeTranscriptWorker(
@@ -333,53 +370,68 @@ export function AssetManagerPopover({
     return new Map(dataManager.getAllTypeInfos().map((t) => [t.type_name, t]));
   }, [assetTypes]);
 
-  // Group descriptors by typeid for the "list" mode — but show one row per
-  // (typeid, source) pair so duplicate sources are explicitly visible.
-  // ``entityVersion`` participates in the deps so newly-loaded entities
-  // trigger a fresh build (the display label is resolved from the cache
-  // inside the row component).
-  const rows = useMemo(() => {
+  // The list has two nested axes, and they are different questions:
+  //   section — did this run USE the asset (the usage[] axis)?
+  //   group   — WHAT is it (skill / agent / …)?
+  // The scope chip answers the third (where does it live), per row. One row per
+  // (typeid, source) pair, so an asset visible through two sources stays visible
+  // twice — that duplication is the point.
+  //
+  // ``entityVersion`` participates in the deps so newly-loaded entities trigger a
+  // fresh build (display labels resolve from the cache).
+  const sections = useMemo(() => {
     void entityVersion;
+
+    // Resolve each descriptor's scope + label ONCE. Both are cache lookups that
+    // allocate (a tooltip string, a display label), and a comparator would
+    // otherwise re-derive them O(n log n) times — ~20k times for a 1000-asset
+    // staging list, on every keystroke in the filter box.
+    const rows = descriptors.map((d) => ({
+      d,
+      type: _parseTypeid(d.typeid).type,
+      scope: assetScope(d),
+      label: _displayLabelForTypeid(d.typeid),
+      used: assetDescriptorHasUsage(d),
+    }));
+    type Row = (typeof rows)[number];
+
     const q = listFilter.trim().toLowerCase();
     const filtered = q
-      ? descriptors.filter((d) => {
-          const label = _displayLabelForTypeid(d.typeid).toLowerCase();
-          return (
-            label.includes(q) ||
-            d.typeid.toLowerCase().includes(q) ||
-            d.source.toLowerCase().includes(q) ||
-            (typeof d.posix_path === 'string' ? d.posix_path : '').toLowerCase().includes(q) ||
-            (typeof d.source_dir === 'string' ? d.source_dir : '').toLowerCase().includes(q)
-          );
-        })
-      : descriptors;
-    return [...filtered].sort((a, b) => {
-      // Used assets always float to the top — fast access to what the process
-      // actually touched — regardless of the By-source / By-name selector, which
-      // only orders within each group.
-      const ua = assetDescriptorHasUsage(a);
-      const ub = assetDescriptorHasUsage(b);
-      if (ua !== ub) return ua ? -1 : 1;
-      if (sortBy === 'name') {
-        const la = _displayLabelForTypeid(a.typeid).toLowerCase();
-        const lb = _displayLabelForTypeid(b.typeid).toLowerCase();
-        if (la !== lb) return la.localeCompare(lb);
-        return a.source.localeCompare(b.source);
-      }
-      // Default: EMBEDDED first, then by source label, then by name suffix.
-      const sa = a.source === 'embedded' ? 0 : 1;
-      const sb = b.source === 'embedded' ? 0 : 1;
-      if (sa !== sb) return sa - sb;
-      if (a.source !== b.source) return a.source.localeCompare(b.source);
-      return a.typeid.localeCompare(b.typeid);
-    });
-  }, [descriptors, entityVersion, listFilter, sortBy]);
+      ? rows.filter((r) =>
+          [r.label, r.d.typeid, r.d.source, r.scope.label, r.d.posix_path, r.d.source_dir]
+            .some((v) => typeof v === 'string' && v.toLowerCase().includes(q)),
+        )
+      : rows;
 
-  // Boundary between the used-first and available groups (-1 = all used).
-  const firstAvailIdx = useMemo(
-    () => rows.findIndex((r) => !assetDescriptorHasUsage(r)),
-    [rows],
-  );
+    const byRow = (a: Row, b: Row) => {
+      if (sortBy === 'scope' && a.scope.label !== b.scope.label) {
+        return a.scope.label.localeCompare(b.scope.label);
+      }
+      if (a.label !== b.label) return a.label.localeCompare(b.label);
+      return a.d.source.localeCompare(b.d.source);
+    };
+
+    const groupByType = (subset: Row[]) => {
+      const buckets = new Map<string, Row[]>();
+      for (const r of subset) {
+        const bucket = buckets.get(r.type);
+        if (bucket) bucket.push(r);
+        else buckets.set(r.type, [r]);
+      }
+      return [...buckets.entries()]
+        // labelForType, not the useAssetTypes array: that one is view-mode
+        // filtered and can miss a type Vibe mode still has descriptors for.
+        .map(([type, rows]) => ({ type, label: labelForType(type), rows: rows.sort(byRow) }))
+        .sort((a, b) => a.label.localeCompare(b.label));
+    };
+
+    // A group only exists if something was pushed into it, so a surviving
+    // section always has rows — `sections.length === 0` is the emptiness test.
+    return [
+      { key: 'used' as const, groups: groupByType(filtered.filter((r) => r.used)) },
+      { key: 'available' as const, groups: groupByType(filtered.filter((r) => !r.used)) },
+    ].filter((s) => s.groups.length > 0);
+  }, [descriptors, entityVersion, listFilter, sortBy]);
 
   const filteredDirs = useMemo(() => {
     const q = listFilter.trim().toLowerCase();
@@ -712,12 +764,12 @@ export function AssetManagerPopover({
               />
               <select
                 value={sortBy}
-                onChange={(e) => setSortBy(e.target.value as 'source' | 'name')}
+                onChange={(e) => setSortBy(e.target.value as 'scope' | 'name')}
                 className="rounded border bg-background px-1 py-0.5 text-[11px] outline-none focus:ring-1 focus:ring-ring"
-                title={t`Sort`}
+                title={t`Sort within each type`}
                 data-testid="asset-manager-list-sort"
               >
-                <option value="source"><Trans>By source</Trans></option>
+                <option value="scope"><Trans>By scope</Trans></option>
                 <option value="name"><Trans>By name</Trans></option>
               </select>
               <ArrowDownAZ className="h-3 w-3 flex-shrink-0 text-muted-foreground" aria-hidden />
@@ -749,41 +801,50 @@ export function AssetManagerPopover({
                   onRemove={handleRemoveDir}
                 />
               ))}
-              {rows.length === 0 && filteredDirs.length === 0 && (
-                <div className="px-3 py-4 text-center text-[11px] text-muted-foreground">
-                  {listFilter.trim() ? <Trans>No matches.</Trans> : <Trans>No assets visible to this process.</Trans>}
-                </div>
+              {sections.length === 0 && filteredDirs.length === 0 && (
+                isLoading ? (
+                  <div
+                    className="flex items-center justify-center gap-2 px-3 py-4 text-[11px] text-muted-foreground"
+                    data-testid="asset-manager-loading"
+                  >
+                    <FusionSpinner size="xs" />
+                    <span><Trans>Loading assets…</Trans></span>
+                  </div>
+                ) : (
+                  <div className="px-3 py-4 text-center text-[11px] text-muted-foreground">
+                    {listFilter.trim() ? <Trans>No matches.</Trans> : <Trans>No assets visible to this process.</Trans>}
+                  </div>
+                )
               )}
-              {rows.map((d, idx) => {
-                // rows are sorted used-first, so `firstAvailIdx` is the single
-                // boundary between the "Used" and "Available" groups. Emit a
-                // sticky header at the top of each non-empty group.
-                const used = assetDescriptorHasUsage(d);
-                return (
-                  <Fragment key={`${d.typeid}|${d.source}|${idx}`}>
-                    {idx === 0 && used && (
-                      <AssetSectionHeader testid="asset-manager-section-used">
-                        <Trans>Used assets</Trans>
-                      </AssetSectionHeader>
-                    )}
-                    {idx === firstAvailIdx && (
-                      <AssetSectionHeader testid="asset-manager-section-available">
-                        <Trans>Available assets</Trans>
-                      </AssetSectionHeader>
-                    )}
-                    <AssetRow
-                      descriptor={d}
-                      iconForType={iconForType}
-                      attached={attachedSet.has(d.typeid)}
-                      used={used}
-                      improvable={!!improvableMainFile(d, assetTypeByName)}
-                      busy={busyAssetKey === descriptorKey(d)}
-                      onDetach={onDetach}
-                      onImprove={openImproveDialog}
-                    />
-                  </Fragment>
-                );
-              })}
+              {sections.map((section) => (
+                <Fragment key={section.key}>
+                  <AssetSectionRule testid={`asset-manager-section-${section.key}`}>
+                    {section.key === 'used' ? <Trans>Used assets</Trans> : <Trans>Available assets</Trans>}
+                  </AssetSectionRule>
+                  {section.groups.map((group) => (
+                    <Fragment key={group.type}>
+                      <AssetTypeHeader testid={`asset-manager-group-${section.key}-${group.type}`}>
+                        {group.label}
+                      </AssetTypeHeader>
+                      {group.rows.map((row) => (
+                        <AssetRow
+                          key={`${row.d.typeid}|${row.d.source}`}
+                          descriptor={row.d}
+                          scope={row.scope}
+                          label={row.label}
+                          iconForType={iconForType}
+                          attached={attachedSet.has(row.d.typeid)}
+                          used={row.used}
+                          improvable={!!improvableMainFile(row.d, assetTypeByName)}
+                          busy={busyAssetKey === descriptorKey(row.d)}
+                          onDetach={onDetach}
+                          onImprove={openImproveDialog}
+                        />
+                      ))}
+                    </Fragment>
+                  ))}
+                </Fragment>
+              ))}
             </div>
 
             {footer}
@@ -916,25 +977,21 @@ function DirRow({
   const { t } = useLingui();
   return (
     <div
-      className="flex items-center gap-2 border-b px-3 py-1.5 last:border-b-0"
+      className={cn(ASSET_GRID_ROW, 'border-b last:border-b-0')}
       data-testid={`asset-manager-dir-row-${path}`}
     >
-      <Folder className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
-      <span
-        className="min-w-0 flex-1 truncate text-xs text-foreground"
-        title={path}
-      >
-        {_basename(path) || path}
+      <span className="flex min-w-0 items-center gap-1.5 text-xs text-foreground" title={path}>
+        <Folder className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
+        <span className="min-w-0 truncate">{_basename(path) || path}</span>
       </span>
-      <span
-        className="flex-shrink-0 rounded border border-border bg-muted/40 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground"
-        title={path}
-      >
-        {ASSET_SOURCE_LABEL.additional_dir}
-      </span>
+      {/* Through the scope model like every other row: hand-rolling the chip here
+          is how this dir ended up wearing the context-folder glyph while the
+          assets inside it wore the additional-dir one. */}
+      <AssetScopeChip scope={additionalDirScope(path)} testidSuffix={`dir-${path}`} />
+      <GridCellSpacer />
       <button
         type="button"
-        className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+        className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
         onClick={() => void onRemove(path)}
         title={t`Remove directory`}
         data-testid={`asset-manager-dir-remove-${path}`}
@@ -977,6 +1034,8 @@ interface RowSharedProps {
 
 function AssetRow({
   descriptor,
+  scope,
+  label,
   iconForType,
   attached,
   used,
@@ -985,6 +1044,9 @@ function AssetRow({
   onDetach,
   onImprove,
 }: RowSharedProps & {
+  /** Resolved by the list memo — both are cache lookups, so don't redo them here. */
+  scope: AssetScope;
+  label: string;
   attached: boolean;
   used: boolean;
   improvable: boolean;
@@ -997,7 +1059,6 @@ function AssetRow({
   const { type, id } = _parseTypeid(descriptor.typeid);
   const Icon = iconForType(type);
   const readOnly = isReadOnlySource(descriptor.source);
-  const label = _displayLabelForTypeid(descriptor.typeid);
   // Only offer the wand when improvement can actually run — a used asset whose
   // main file resolves (see improvableMainFile). Gating on `used && posix_path`
   // alone showed the wand on folder-backed types with no resolvable main file
@@ -1025,25 +1086,13 @@ function AssetRow({
     }
   }, [navigation, type, id, readOnly, openable, descriptor.typeid]);
 
-  const sourceLabel = ASSET_SOURCE_LABEL[descriptor.source];
-  const sourceDirBasename = descriptor.source_dir ? _basename(descriptor.source_dir) : null;
-  const sourcePillText = sourceDirBasename ? `${sourceLabel} · ${sourceDirBasename}` : sourceLabel;
-  const sourceTooltip = [
-    sourceLabel,
-    descriptor.source_dir ? `from: ${descriptor.source_dir}` : null,
-    descriptor.posix_path ?? t`(no file — inline persona)`,
-  ].filter(Boolean).join('\n');
-  const lockTooltip = READONLY_TOOLTIP_BY_SOURCE[descriptor.source] ?? t`Read-only from this process. Attach to get a private editable copy.`;
-
   return (
     <div
-      className={cn(
-        'flex items-center gap-2 border-b px-3 py-1.5 last:border-b-0',
-        used && 'bg-primary/5',
-      )}
+      className={cn(ASSET_GRID_ROW, 'border-b last:border-b-0', used && 'bg-primary/5')}
       data-testid={`asset-manager-row-${descriptor.typeid}-${descriptor.source}`}
       data-read-only={readOnly ? 'true' : 'false'}
       data-used={used ? 'true' : 'false'}
+      data-scope={scope.kind}
     >
       <button
         type="button"
@@ -1051,7 +1100,7 @@ function AssetRow({
         disabled={!openable}
         data-openable={openable ? 'true' : 'false'}
         className={cn(
-          'flex min-w-0 flex-1 items-center gap-1.5 rounded border border-border px-1.5 py-0.5 text-xs',
+          'flex min-w-0 items-center gap-1.5 rounded border border-border px-1.5 py-0.5 text-xs',
           openable
             ? 'bg-muted/30 text-foreground hover:bg-muted'
             : 'cursor-default border-dashed bg-muted/20 text-muted-foreground',
@@ -1067,44 +1116,39 @@ function AssetRow({
         <Icon className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
         <span className="min-w-0 truncate">{label}</span>
       </button>
-      {readOnly && (
-        <Lock
-          className="h-3 w-3 flex-shrink-0 text-muted-foreground"
-          aria-label={t`Read-only`}
-          data-testid={`asset-manager-readonly-${descriptor.typeid}-${descriptor.source}`}
+      <AssetScopeChip scope={scope} testidSuffix={`${descriptor.typeid}-${descriptor.source}`} />
+      {canImprove ? (
+        <WikiTip
+          wikiword={ASSET_IMPROVEMENT_WIKI}
+          label={t`Analyze and improve`}
+          buttonLabel={t`How does improving an asset work?`}
         >
-          <title>{lockTooltip}</title>
-        </Lock>
+          <button
+            type="button"
+            className="flex h-5 w-5 items-center justify-center rounded text-primary hover:bg-primary/10 disabled:opacity-60"
+            onClick={() => onImprove(descriptor)}
+            disabled={busy}
+            aria-label={t`Analyze and improve`}
+            data-testid={`asset-manager-improve-${descriptor.typeid}-${descriptor.source}`}
+          >
+            {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <WandSparkles className="h-3 w-3" />}
+          </button>
+        </WikiTip>
+      ) : (
+        <GridCellSpacer />
       )}
-      <span
-        className="max-w-[140px] flex-shrink-0 truncate rounded border border-border bg-muted/40 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground"
-        title={sourceTooltip}
-        data-testid={`asset-manager-source-${descriptor.typeid}-${descriptor.source}`}
-      >
-        {sourcePillText}
-      </span>
-      {canImprove && (
+      {attached && !readOnly ? (
         <button
           type="button"
-          className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded text-primary hover:bg-primary/10 disabled:opacity-60"
-          onClick={() => onImprove(descriptor)}
-          disabled={busy}
-          title={t`Analyze and improve`}
-          data-testid={`asset-manager-improve-${descriptor.typeid}-${descriptor.source}`}
-        >
-          {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <WandSparkles className="h-3 w-3" />}
-        </button>
-      )}
-      {attached && !readOnly && (
-        <button
-          type="button"
-          className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+          className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
           onClick={() => void onDetach(descriptor.typeid)}
           title={t`Detach`}
           data-testid={`asset-manager-detach-${descriptor.typeid}`}
         >
           <X className="h-3 w-3" />
         </button>
+      ) : (
+        <GridCellSpacer />
       )}
     </div>
   );
@@ -1123,7 +1167,10 @@ function AddModeRow({
   const { type } = _parseTypeid(descriptor.typeid);
   const Icon = iconForType(type);
   const readOnly = isReadOnlySource(descriptor.source);
-  const lockTooltip = READONLY_TOOLTIP_BY_SOURCE[descriptor.source] ?? t`Read-only source. Attach to get a private editable copy.`;
+  // Add mode keeps its lock + source pill; only the manage list moved to scope
+  // chips. Take the tooltip from the scope model anyway, so the read-only copy
+  // lives in exactly one place.
+  const lockTooltip = assetScope(descriptor).tooltip;
   const label = _displayLabelForTypeid(descriptor.typeid);
   return (
     <label
@@ -1150,9 +1197,9 @@ function AddModeRow({
       )}
       <span
         className="flex-shrink-0 rounded border border-border bg-muted/40 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground"
-        title={ASSET_SOURCE_LABEL[descriptor.source]}
+        title={assetSourceLabel(descriptor.source)}
       >
-        {ASSET_SOURCE_LABEL[descriptor.source]}
+        {assetSourceLabel(descriptor.source)}
       </span>
     </label>
   );

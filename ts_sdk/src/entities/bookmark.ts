@@ -33,6 +33,9 @@ export interface IBookmark extends IEntity {
    *  (sorts at the END of a stamped container, newest first); stamped values
    *  are contiguous from 1 via the `bookmark.order` action. */
   order?: number;
+  /** Times this favorite has been opened. 0/unset = never opened — what the
+   *  desktop's unread badges count (see `isUnopened` in use-favorites.ts). */
+  counter?: number;
   /** Owning project id, stamped at favorite-creation time from the current
    *  project context. Carried as a plain field (the record still saves under
    *  the unscoped @local desktop so webhook-created favorites stay visible);
@@ -54,6 +57,7 @@ export class Bookmark extends APIEntity<Bookmark> implements IBookmark {
   remind_at?: string;
   parent_id?: string;
   order?: number;
+  counter?: number;
   project_id?: string | null;
   static type: string = 'bookmark';
 
@@ -71,7 +75,25 @@ export class Bookmark extends APIEntity<Bookmark> implements IBookmark {
     this.remind_at = entity.remind_at;
     this.parent_id = entity.parent_id;
     this.order = entity.order;
+    this.counter = entity.counter;
     this.project_id = entity.project_id ?? null;
+  }
+
+  /** Record one open — bump `counter` and persist. Mirrors Prompt.enqueueTo's
+   *  `use_count` bump: stamp in place, then save.
+   *
+   *  The in-place bump + `notifyEntityChanged` is what re-renders the unread
+   *  badges, with zero network, so they tick before the save lands. The save's
+   *  own WS echo can't do it: an `update` DataOp arriving while this entity's
+   *  `saveInFlight` is set gets buffered, and the flush never notifies query
+   *  watchers. Deliberately no refetch — this fires on every favorite click.
+   *
+   *  Callers `void` it (a click path must never block navigation on a usage
+   *  stamp); the save promise is returned so tests can await the write. */
+  async markOpened(): Promise<void> {
+    this.counter = (this.counter ?? 0) + 1;
+    dataManager.notifyEntityChanged(this);
+    return this.save([]);
   }
 
   /** Desktop drag-drop commit — splice a bookmark into the drop gap within

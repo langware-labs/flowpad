@@ -7,12 +7,8 @@ import { type Page, expect } from '@playwright/test';
  */
 export async function dismissSetupModal(page: Page) {
   // Pre-set localStorage to suppress the modal before page loads.
-  // Also pre-mark the index/discover Welcome modal as approved so its Radix
-  // overlay does not intercept pointer events on home-landing buttons after
-  // a fresh DB clear (the modal opens when scanInfo.never_indexed=true).
   await page.addInitScript(() => {
     localStorage.setItem('llm-setup-modal-seen', 'true');
-    localStorage.setItem('flowpad-index-approved', '1');
   });
 }
 
@@ -25,22 +21,14 @@ export async function gotoLanding(page: Page) {
   if (await skipButton.isVisible({ timeout: 2_000 }).catch(() => false)) {
     await skipButton.click();
   }
-  // Handle WelcomeModal ("Set up Flowpad" / "Welcome to Flowpad!") which appears
-  // after a DB reset when scanInfo.never_indexed=true. Bootstrap can take 5–10s on a
-  // fresh DB, so use a 12s timeout to ensure the modal is caught before we wait for the heading.
-  const skipForNow = page.getByRole('button', { name: 'Skip for now' });
-  if (await skipForNow.isVisible({ timeout: 12_000 }).catch(() => false)) {
-    await skipForNow.click({ force: true, timeout: 5_000 }).catch(() => {});
-    await page.waitForTimeout(500);
-  }
   await waitForLanding(page);
 }
 
 /** Wait for the landing page to fully load. */
 export async function waitForLanding(page: Page) {
-  // Use a CSS/text selector instead of getByRole — when WelcomeModal (an AlertDialog) is open,
-  // Radix UI sets aria-hidden="true" on the rest of the page, causing getByRole('heading') to
-  // fail even though the heading is visible in the DOM behind the overlay.
+  // Use a CSS/text selector instead of getByRole — while a Radix AlertDialog (e.g. the
+  // desktop setup modal) is open it sets aria-hidden="true" on the rest of the page,
+  // causing getByRole('heading') to fail even though the heading is visible behind it.
   // Increased to 90s to handle slow AgentLayout initialization after multiple prior tests.
   await page.locator('h1, h2, h3').filter({ hasText: /hey /i }).first().waitFor({ state: 'visible', timeout: 90_000 });
 }
@@ -53,16 +41,6 @@ export async function waitForLanding(page: Page) {
  * submitFromLanding now navigates to the shell terminal.
  */
 export async function submitFromLanding(page: Page, message: string) {
-  // Dismiss WelcomeModal if it's still blocking (AlertDialog sets aria-hidden on the page).
-  // This can happen if the DB was just reset and bootstrap returned never_indexed=true,
-  // or if gotoLanding's 12s wait didn't catch it in time.
-  // Use force:true because the modal may be animating / re-rendering when we try to click.
-  const skipForNow = page.getByRole('button', { name: 'Skip for now' });
-  if (await skipForNow.isVisible({ timeout: 3_000 }).catch(() => false)) {
-    await skipForNow.click({ force: true, timeout: 5_000 }).catch(() => {});
-    // Give modal time to close
-    await page.waitForTimeout(800);
-  }
   // Home renders <SessionInput> inline as a textarea with
   // aria-label="What would you like to work on?". Use a CSS attribute selector
   // to avoid getByRole aria-hidden issues when modals are still resolving.

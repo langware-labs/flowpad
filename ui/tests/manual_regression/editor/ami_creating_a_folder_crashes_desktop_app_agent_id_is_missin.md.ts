@@ -5,9 +5,6 @@ test.describe('Creating content in skills view + nav home does not crash (FLOWPA
     test.setTimeout(60_000);
     await page.addInitScript(() => {
       localStorage.setItem('llm-setup-modal-seen', 'true');
-      // Post-clear bootstrap returns never_indexed=true → the WelcomeModal
-      // overlay intercepts pointer events and blocks the New Skill button.
-      localStorage.setItem('flowpad-index-approved', '1');
     });
 
     const errors: string[] = [];

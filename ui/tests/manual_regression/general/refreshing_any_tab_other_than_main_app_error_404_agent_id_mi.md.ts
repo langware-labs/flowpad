@@ -9,7 +9,6 @@ test.describe('Non-main tabs — no 404 agent-id-missing', () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => {
       localStorage.setItem('llm-setup-modal-seen', 'true');
-      localStorage.setItem('flowpad-index-approved', 'true');
     });
   });
 

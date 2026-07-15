@@ -17,6 +17,7 @@ import { Loader2 } from 'lucide-react';
 import React, { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { hasBrowseableDrag, readBrowseableDrag, writeBrowseableDrag } from './drag';
 import { ToolbarButton } from './BrowseableTree';
+import { openBrowseable } from './open';
 import type { Browseable, BrowseableDragData } from './types';
 
 export interface BrowseableGridProps {
@@ -192,8 +193,7 @@ function GridTile({
       return;
     }
     if (isContainer) return; // PopoverTrigger's composed handler toggles.
-    if (node.pointer) navigate(node.pointer);
-    else void node.activate?.();
+    openBrowseable(node, navigate);
   };
 
   const handleDragStart = (e: React.DragEvent) => {

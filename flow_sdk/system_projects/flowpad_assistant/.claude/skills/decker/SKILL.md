@@ -2,30 +2,9 @@
 id: 63709c7b-005d-475f-b395-2460b0759587
 name: decker
 description: Build slide-deck templates and generate full presentation decks from
-  them — Reveal.js headless runtime + design-token CSS, each slide layout an
-  isolated HTML component, assembled into a single self-contained deck HTML.
-  Use this whenever the user wants to create, design, or generate a slide deck,
-  presentation, slideshow, pitch deck, keynote, or slides — even if they don't
-  literally say "deck", and even (especially) when they phrase it as "build me a
-  presentation using flowpad assistant" — deck building belongs to THIS skill,
-  not to flowpad-assistance and not to web-app-builder (decks are not web apps).
-  Also use it to add layouts to an existing deck template, re-skin a template's
-  design tokens, or regenerate/present a deck built from one. Templates are
-  first-class `deck_template` entities under assets/deck-templates/; bootstrap
-  means copying the bundled template as-is — never hand-scaffold the folder.
-tags:
-- deck
-- slides
-- presentation
-- revealjs
-- templates
-allowed-tools:
-- Bash
-- Read
-- Write
-- Edit
-- Glob
-- Grep
+tags: ''
+allowed-tools: ''
+version: 2
 ---
 
 # Decker — deck templates and deck generation
@@ -45,18 +24,20 @@ another location, which overrides the default.
 
 ## Stack contract (non-negotiable)
 
-- **Reveal.js is headless.** It handles ONLY navigation, fullscreen,
+* **Reveal.js is headless.** It handles ONLY navigation, fullscreen,
   keyboard/touch, presenter view, overview, and transitions. Its theme CSS is
   never loaded — `common/tokens.css` + `common/theme.css` own every visual.
   If a deck looks wrong, fix the tokens/theme, never re-introduce a Reveal theme.
-- **A generated deck is ONE self-contained HTML file.** Flowpad renders shown
+
+* **A generated deck is ONE self-contained HTML file.** Flowpad renders shown
   HTML in a sandboxed `srcDoc` iframe (`allow-scripts`, no `allow-same-origin`,
   no base URL): relative `./common/…` or `./media/…` references resolve to
   nothing, and `localStorage`/URL-hash state throws. Therefore the assembler
   inlines all CSS/JS (tokens, theme, Reveal runtime) and embeds media as base64
   data URIs, and Reveal initializes with `hash: false, history: false`. Do not
   "optimize" the deck into a folder of linked assets — it will render blank.
-- **Layouts are isolated components** following the slot contract in
+
+* **Layouts are isolated components** following the slot contract in
   [references/layouts.md](references/layouts.md). The layout taxonomy names
   there are canonical; narrative labels (problem, roadmap, team, …) are never
   layout names — they map onto layouts.
@@ -82,7 +63,7 @@ this file (six exemplar layouts, tokens, vendored Reveal 5.2.1, the
    generate ONLY the selected layouts that the scaffold doesn't already ship,
    following the slot contract.
 
-3. **Write `template.json`** (title, description, `page_types`) and index:
+3. **Write** **`template.json`** (title, description, `page_types`) and index:
 
    ```bash
    flow record index "<project root>"
@@ -121,7 +102,7 @@ marker) → the deck viewer. Run `show` once (exit 0 = shown). See
 controls. Outside FlowPad, print the deck `.html` path (it's a portable,
 self-contained file) and suggest opening it in a browser.
 
-**Testing the deck — use the `web-tester` skill.** When the user asks to test /
+**Testing the deck — use the** **`web-tester`** **skill.** When the user asks to test /
 QA / validate / check the deck in a browser, route to the **web-tester** skill:
 the assembled deck is a self-contained `.html`, so it sweeps it headlessly
 (console/JS errors, failed requests, screenshot, basic a11y) and reports pass/fail,
@@ -132,11 +113,14 @@ Don't hand-roll Playwright checks here.
 
 Read the matching reference before making that kind of change:
 
-- **Bootstrapping a template, MCP UI layout selection, adding layouts** →
+* **Bootstrapping a template, MCP UI layout selection, adding layouts** →
   [references/building-templates.md](references/building-templates.md)
-- **Layout taxonomy, slot contract, per-layout slot inventories, design rules** →
+
+* **Layout taxonomy, slot contract, per-layout slot inventories, design rules** →
   [references/layouts.md](references/layouts.md)
-- **Generating decks: deck.json, slot filling, media, assembly** →
+
+* **Generating decks: deck.json, slot filling, media, assembly** →
   [references/generating-decks.md](references/generating-decks.md)
-- **Presenting: flow show, sandbox caveats, Reveal controls** →
+
+* **Presenting: flow show, sandbox caveats, Reveal controls** →
   [references/presenting.md](references/presenting.md)

@@ -6,12 +6,6 @@ const API_URL = apiBase();
 async function dismissSetupModal(page: import('@playwright/test').Page) {
   await page.addInitScript(() => {
     localStorage.setItem('llm-setup-modal-seen', 'true');
-    // On a fresh (never_indexed) DB the search view opens a blocking
-    // "Make your records searchable" modal (guarded by this session flag) that
-    // intercepts the rebuild-index click, so resetAndRescan never fires. Pre-set
-    // the scan-dismissed flag the modal itself honours so the rebuild button is
-    // clickable.
-    sessionStorage.setItem('flowpad-scan-dismissed', '1');
   });
 }
 
@@ -67,13 +61,6 @@ test.describe('Search Scan Info Stats', () => {
     await page.goto('/dock/home');
     await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
 
-    // Dismiss WelcomeModal if shown (appears after DB reset when scanInfo.never_indexed=true).
-    // When open, the AlertDialog sets aria-hidden on the rest of the page, blocking pointer events.
-    const skipForNow = page.getByRole('button', { name: 'Skip for now' });
-    if (await skipForNow.isVisible({ timeout: 12_000 }).catch(() => false)) {
-      await skipForNow.click();
-    }
-
     const input = page.locator('[data-testid="search-input"]').first();
     await expect(input).toBeVisible({ timeout: 10_000 });
     await input.click();
@@ -127,19 +114,6 @@ test.describe('Search Scan Info Stats', () => {
 
     const searchView = page.locator('[data-testid="search-view"]');
     await expect(searchView).toBeVisible({ timeout: 10_000 });
-
-    // WelcomeModal ("Make your records searchable") may appear when never_indexed=true.
-    // When open it sets aria-hidden on the rest of the page, which intercepts clicks.
-    const dismissWelcomeModal = async () => {
-      for (const name of ['Not Now', 'Skip for now']) {
-        const btn = page.getByRole('button', { name });
-        if (await btn.isVisible({ timeout: 1_500 }).catch(() => false)) {
-          await btn.click().catch(() => {});
-          break;
-        }
-      }
-    };
-    await dismissWelcomeModal();
 
     const readIndexedCount = async (): Promise<number> => {
       const badge = page.locator('text=/\\d+ indexed/').first();

@@ -12,6 +12,7 @@ import string
 import sys
 import tempfile
 from enum import Enum
+from functools import lru_cache
 from flow_sdk._compat import StrEnum
 from pathlib import Path
 from typing import Literal, Optional
@@ -64,6 +65,42 @@ def system_projects_root() -> Path:
 def flowpad_assistant_project_root() -> Path:
     """Mount path for the Flowpad Assistant system project."""
     return system_projects_root() / FLOWPAD_ASSISTANT_DIRNAME
+
+
+@lru_cache(maxsize=1)
+def flowpad_assistant_canonical_root() -> str | None:
+    """Canonical posix path of the running install's assistant project, or None.
+
+    The string form of ``flowpad_assistant_project_root()``, resolved the same
+    way ``indexer.roots.classify_path`` resolves it when stamping
+    ``entity.scope == "system"`` — so a scope tag and a path prefix can be
+    compared. Callers that need to answer "is this path the assistant's?" want
+    this, not ``is_system_project_path`` (which matches ANY install structurally).
+    """
+    from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
+
+    try:
+        return canonical_posix_path(flowpad_assistant_project_root().resolve())
+    except (OSError, ValueError):
+        return None
+
+
+def is_system_project_path(path: str | Path) -> bool:
+    """True when ``path`` is an SDK-shipped system project dir, for ANY install.
+
+    ``system_projects_root()`` resolves to the CURRENTLY-RUNNING SDK, so it
+    can't recognise the same shipped project under a different install (an
+    editable checkout vs. a wheel, or an older interpreter's site-packages).
+    Those copies get their own Project entities — minted per cwd off worker
+    session history — and only the running one carries ``system=True`` from
+    ``_ensure_system_projects``. Systemness is a property of the LOCATION, so
+    match it structurally: ``<any-install>/flow_sdk/system_projects/<name>``.
+    """
+    p = Path(path)
+    return (
+        p.parent.name == SYSTEM_PROJECTS_DIRNAME
+        and p.parent.parent.name == "flow_sdk"
+    )
 
 
 def _active_server_json_path() -> Path:

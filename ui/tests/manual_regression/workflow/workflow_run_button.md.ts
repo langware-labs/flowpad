@@ -18,7 +18,6 @@ const API = apiBase();
 async function prep(page: Page) {
   await page.addInitScript(() => {
     localStorage.setItem('llm-setup-modal-seen', 'true');
-    localStorage.setItem('flowpad-index-approved', '1');
   });
 }
 

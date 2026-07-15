@@ -11,16 +11,6 @@ import { type Page, test, expect } from '@playwright/test';
 export async function dismissSetupModal(page: Page) {
   await page.addInitScript(() => {
     localStorage.setItem('llm-setup-modal-seen', 'true');
-    localStorage.setItem('flowpad-index-approved', 'true');
-    // HomeLanding's first-run WelcomeModal (an AlertDialog) opens when the
-    // backend `indexing.approved` preference is false (a fresh DB after a clear)
-    // and the workspace has never been indexed. While it is open the AlertDialog
-    // marks the rest of the page inert/aria-hidden, so getByRole('button', …)
-    // for anything underneath (e.g. Quick create) matches nothing. The legacy
-    // `flowpad-index-approved` localStorage key above is no longer read by
-    // HomeLanding (indexApproved is now a prefMan pref), so pre-seed the
-    // session-scoped scan-dismissed flag the modal itself honours.
-    sessionStorage.setItem('flowpad-scan-dismissed', '1');
     // Every scenario in this category drives the full ProcessToolbar
     // (Restart, Open Terminal, Fork, Worktree, Session Info, Transcript).
     // Those controls only exist in the Advanced view header — the default
@@ -51,8 +41,6 @@ export async function gotoNewShell(page: Page) {
   await page.goto('/dock/shell/new_terminal');
   const skip = page.getByRole('button', { name: 'Skip' });
   if (await skip.isVisible({ timeout: 2_000 }).catch(() => false)) await skip.click();
-  const skipForNow = page.getByRole('button', { name: 'Skip for now' });
-  if (await skipForNow.isVisible({ timeout: 2_000 }).catch(() => false)) await skipForNow.click();
   await page.waitForURL(/\/dock\/shell\/(shell-|agentic_process-)/, { timeout: 60_000 });
   await forceAdvancedView(page);
   await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });

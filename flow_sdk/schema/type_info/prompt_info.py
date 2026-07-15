@@ -49,11 +49,12 @@ PROMPT = TypeMetadata(
     from_disk_fn=extract_prompt,
     gen_uuid_fn=prompt_gen_id,
     indexed_by_default=True,
-    browseable_by=ViewMode.ADVANCED,
-    # v1: creation lives in the Prompt Library menu (PromptEditDialog with the
-    # generic pickers); the AssetsPage quick-create path needs a descriptor in
-    # quick-create/registry.ts before this flips on.
-    creatable=False,
+    browseable_by=ViewMode.STANDARD,
+    # quick-create/registry.ts carries the `prompt` descriptor. Quick-create opens
+    # PromptEditDialog (a prompt needs its text at create time, and `main_subdir`
+    # already fixes the location, so the generic name+path form has nothing to
+    # ask); the AssetsPage "+" is name-only and creates an empty-text prompt.
+    creatable=True,
     icon="BookMarked",
     api_visible=True,
     index_fields=["name", "group_id"],
