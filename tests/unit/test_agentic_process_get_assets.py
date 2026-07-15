@@ -719,7 +719,7 @@ async def test_transcript_only_asset_is_returned(tree, tmp_path, monkeypatch):
         descs = await proc.get_asset_descriptors()
         match = next(d for d in descs if d.typeid == f"markdown-{doc.id}")
 
-        assert match.source == AssetSource.TRANSCRIPT
+        assert match.source == AssetSource.EXTERNAL
         assert match.posix_path == canonical_posix_path(note_path)
         assert AssetUsageKind.TRANSCRIPT_FILE_READ in _usage_kinds(match)
     finally:
@@ -727,9 +727,14 @@ async def test_transcript_only_asset_is_returned(tree, tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_cross_project_home_transcript_asset_uses_transcript_source(tree, monkeypatch):
+async def test_cross_project_home_transcript_asset_uses_external_source(tree, monkeypatch):
     """A project-scoped entity under $HOME but owned by another project should
-    not be mislabeled as USER_DIR when it only appears via transcript reads."""
+    not be mislabeled as USER_DIR when it only appears via transcript reads.
+
+    It lands in EXTERNAL, the not-attributable bucket. Note this row IS inside a
+    source dir ($HOME) — it's rejected by the cross-project rule, not by being
+    somewhere unknown. EXTERNAL means "no source dir claims it", nothing more.
+    """
     other_project_doc = tree["user_home"] / "other_project" / "notes" / "other.md"
     other_project_doc.parent.mkdir(parents=True)
     other_project_doc.write_text("# other project\n")
@@ -748,7 +753,7 @@ async def test_cross_project_home_transcript_asset_uses_transcript_source(tree, 
         descs = await proc.get_asset_descriptors()
         match = next(d for d in descs if d.typeid == f"markdown-{doc.id}")
 
-        assert match.source == AssetSource.TRANSCRIPT
+        assert match.source == AssetSource.EXTERNAL
         assert match.source_dir is None
         assert AssetUsageKind.TRANSCRIPT_FILE_READ in _usage_kinds(match)
     finally:
@@ -819,7 +824,8 @@ def test_is_readonly_source_partition():
         AssetSource.WORKDIR: True,
         AssetSource.ADDITIONAL_DIR: True,
         AssetSource.CONTEXT_DIR: True,
-        AssetSource.TRANSCRIPT: True,
+        AssetSource.SYSTEM: True,
+        AssetSource.EXTERNAL: True,
     }
     # Every enum member is covered (no missing keys → guards drift).
     assert set(expected) == set(AssetSource)
@@ -944,36 +950,149 @@ async def test_foreign_project_skill_under_home_is_hidden(tree):
                 pass
 
 
-@pytest.mark.asyncio
-async def test_system_scope_assistant_skill_under_home_is_hidden(tree):
-    """A SYSTEM-scoped skill (the bundled flowpad_assistant assets) lives under
-    the real $HOME in prod — the pip package sits at
-    ``~/.local/share/uv/tools/flowpad/.../flowpad_assistant/.claude/skills/`` —
-    so the user_home prefix swallows it. Like the foreign-project case, it must
-    NOT be attributed to USER_DIR: it belongs to the mounted assistant/system,
-    not the user, and mislabeling it makes the assistant's built-in skills show
-    up in the Assets panel as ``USER · SHLOM`` personal assets.
-    """
-    sys_root = tree["user_home"] / ".local" / "flowpad_assistant"
-    sys_skill_path = sys_root / ".claude" / "skills" / "sys_skill"
-    sys_skill_path.mkdir(parents=True, exist_ok=True)
+@pytest.fixture
+def system_root(tree, monkeypatch):
+    """Point the assistant-root lookup at a tmp dir under $HOME.
 
-    sys_skill_ent = await Skill(
+    Mirrors prod, where the pip package sits at
+    ``~/.local/share/uv/tools/flowpad/.../flowpad_assistant/`` and the user_home
+    prefix therefore swallows it. Returns the root; the caller seeds assets under
+    it. The real lookup is lru_cached, so patch the symbol itself.
+    """
+    import flow_sdk.config as config_mod
+
+    root = tree["user_home"] / ".local" / "flowpad_assistant"
+    root.mkdir(parents=True, exist_ok=True)
+    canonical = canonical_posix_path(root)
+    monkeypatch.setattr(config_mod, "flowpad_assistant_canonical_root", lambda: canonical)
+    return root
+
+
+async def _seed_system_skill(root: Path) -> tuple[Skill, Path]:
+    path = root / ".claude" / "skills" / "sys_skill"
+    path.mkdir(parents=True, exist_ok=True)
+    ent = await Skill(
         id=str(uuid.uuid4()), name=f"sys_skill_{uuid.uuid4().hex[:6]}",
-        asset_ref=canonical_posix_path(sys_skill_path),
+        asset_ref=canonical_posix_path(path),
         scope="system",
     ).save()
+    return ent, path
+
+
+@pytest.mark.asyncio
+async def test_system_scope_assistant_skill_under_home_is_not_a_user_asset(tree, system_root):
+    """A SYSTEM-scoped skill under $HOME must never be attributed to USER_DIR.
+
+    The bundled flowpad_assistant assets belong to the mounted assistant, not to
+    the person — mislabeling them makes Flowpad's own built-in skills show up in
+    the Assets panel as ``USER · SHLOM`` personal assets. They are also not listed
+    as *available*: the assistant's catalog is represented by a single "mounted"
+    marker in the UI, and one row per shipped skill would drown the list.
+    """
+    ent, _ = await _seed_system_skill(system_root)
     try:
-        proc = _make_proc()
-        descs = await proc.get_asset_descriptors()
+        descs = await _make_proc().get_asset_descriptors()
         user_ids = {d.typeid.split("-", 1)[1] for d in _by_source(descs, AssetSource.USER_DIR)}
-        assert sys_skill_ent.id not in user_ids, (
+        assert ent.id not in user_ids, (
             "system-scoped assistant skill under $HOME was mislabeled as a "
             "USER_DIR (personal) asset"
         )
+        assert not [d for d in descs if d.typeid.endswith(ent.id)], (
+            "an unused assistant skill must not be listed at all"
+        )
     finally:
         try:
-            await sys_skill_ent.delete()
+            await ent.delete()
+        except Exception:
+            pass
+
+
+@pytest.mark.asyncio
+async def test_system_scope_skill_read_in_transcript_uses_system_source(
+    tree, system_root, monkeypatch
+):
+    """Once a run actually uses a bundled skill, it appears — scoped SYSTEM.
+
+    This is the row the old code mislabeled: no source dir claimed it, so it fell
+    through to the not-attributable bucket and the UI showed it as "transcript"
+    (an answer on the usage axis, in the location column). It has a location; it
+    ships with Flowpad.
+    """
+    ent, path = await _seed_system_skill(system_root)
+    skill_md = path / "SKILL.md"
+    skill_md.write_text("# sys skill\n")
+    try:
+        _stub_transcript(monkeypatch, [_file_read(skill_md)])
+        descs = await _make_proc().get_asset_descriptors()
+        match = next(d for d in descs if d.typeid.endswith(ent.id))
+
+        assert match.source == AssetSource.SYSTEM
+        assert match.source_dir == canonical_posix_path(system_root)
+        assert AssetUsageKind.TRANSCRIPT_FILE_READ in _usage_kinds(match)
+    finally:
+        try:
+            await ent.delete()
+        except Exception:
+            pass
+
+
+@pytest.mark.asyncio
+async def test_system_scope_at_foreign_path_is_dropped_not_claimed(tree, monkeypatch):
+    """``scope`` alone must not win — the path has to agree.
+
+    ``scope`` is a persisted column and ``_stamp_scope`` never clobbers an
+    explicit value, so a row can claim to be system while living nowhere near the
+    assistant. Attributing it to SYSTEM would hand back a source_dir that is not a
+    prefix of posix_path, breaking an invariant every other descriptor upholds.
+    Such a row is dropped, exactly as before.
+    """
+    import flow_sdk.config as config_mod
+
+    monkeypatch.setattr(
+        config_mod, "flowpad_assistant_canonical_root", lambda: "/nowhere/flowpad_assistant"
+    )
+    liar_path = tree["user_home"] / ".claude" / "skills" / "liar_skill"
+    liar_path.mkdir(parents=True, exist_ok=True)
+    ent = await Skill(
+        id=str(uuid.uuid4()), name=f"liar_{uuid.uuid4().hex[:6]}",
+        asset_ref=canonical_posix_path(liar_path),
+        scope="system",
+    ).save()
+    try:
+        descs = await _make_proc().get_asset_descriptors()
+        assert not [d for d in descs if d.typeid.endswith(ent.id)]
+    finally:
+        try:
+            await ent.delete()
+        except Exception:
+            pass
+
+
+@pytest.mark.asyncio
+async def test_assistant_own_project_still_lists_its_system_skills(tree, system_root):
+    """The Flowpad Assistant is itself a Project whose mount IS the assistant root.
+
+    Looking *at* the assistant must still show its skills, so the system rule is
+    deliberately scoped to the USER_DIR home catchall: a deeper source dir wins the
+    longest-prefix match and keeps winning. Guards the regression where hoisting the
+    scope check above the match empties the assistant project's own asset list (and
+    every editable install with system_projects inside the repo tree).
+    """
+    from flow_sdk.builtin.agentic_process.agentic_process import scan_path_asset_descriptors
+
+    ent, _ = await _seed_system_skill(system_root)
+    try:
+        descs = await scan_path_asset_descriptors(
+            [(canonical_posix_path(system_root), AssetSource.PROJECT_DIR)],
+            own_project_id="",
+            types=["skill", "agent"],
+        )
+        match = next((d for d in descs if d.typeid.endswith(ent.id)), None)
+        assert match is not None, "the assistant project's own skills vanished from its asset list"
+        assert match.source == AssetSource.PROJECT_DIR
+    finally:
+        try:
+            await ent.delete()
         except Exception:
             pass
 
