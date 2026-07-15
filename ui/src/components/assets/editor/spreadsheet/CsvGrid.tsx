@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useTheme } from 'next-themes';
 import { RevoGrid } from '@revolist/react-datagrid';
 import type { DataType } from '@revolist/react-datagrid';
 import type { FSRef } from '@sdk';
@@ -32,6 +33,10 @@ interface CsvGridProps {
  * and steal focus. Mirrors the whiteboard's `lastWrittenRef` guard.
  */
 export function CsvGrid({ fsRef, reloadKey, onDirtyChange }: CsvGridProps) {
+  const { resolvedTheme } = useTheme();
+  // RevoGrid ships light/dark as separate named themes; it won't follow the app's `dark` class.
+  const gridTheme = resolvedTheme === 'dark' ? 'darkCompact' : 'compact';
+
   const { content, setContent, dirty, isLoading, loadError } = useFSRefContent(fsRef, {
     autoSave: true,
     autoSaveMs: 1500,
@@ -90,7 +95,7 @@ export function CsvGrid({ fsRef, reloadKey, onDirtyChange }: CsvGridProps) {
         resize
         rowHeaders
         range
-        theme="compact"
+        theme={gridTheme}
         onAfteredit={handleAfterEdit}
       />
     </div>
