@@ -1,8 +1,8 @@
-import { apiClient, FSRef, FrontMatterFsRef, dataContext, Markdown, Whiteboard } from '@sdk';
+import { apiClient, FSRef, FrontMatterFsRef, dataContext, Markdown, Whiteboard, type APIEntity } from '@sdk';
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { FileQuestion, RefreshCw } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Button } from '@src/components/ui/button';
 import { RadioGroup, RadioGroupItem } from '@src/components/ui/radio-group';
 import { Label } from '@src/components/ui/label';
@@ -10,6 +10,9 @@ import { notify } from '@src/notifications';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { MarkdownEditor } from './markdown/MarkdownEditor';
+import { useDocTranslations } from './translations/useDocTranslations';
+import { useEntityByPath } from '@src/hooks/use-entity-by-path';
+import { entityReloadKey } from '@src/utils/entity-reload-key';
 import { Trans, useLingui } from '@lingui/react/macro';
 
 interface WikiResolveViewProps {
@@ -177,12 +180,61 @@ export function WikiResolveView({ name, space = '@local', fragment }: WikiResolv
     );
   }
 
-  // Markdown hit — inline render so the wiki URL stays put.
-  const localTypeId = dataContext.computeNodeTypeId;
-  const editorRef = localTypeId
-    ? new FrontMatterFsRef(data.asset_ref, localTypeId)
-    : new FSRef(data.asset_ref.replace(/^\//, ''), computeNode.typeId);
+  // Markdown hit — inline render so the wiki URL stays put. The translation
+  // wiring needs hooks that can't run after the early returns above, so the
+  // render lives in a dedicated child (unconditional hooks).
   void typeIdStr;
-  const chatTarget = `markdown-${data.id}`;
-  return <MarkdownEditor fsRef={editorRef} chatTarget={chatTarget} fragment={fragment} />;
+  return (
+    <WikiMarkdownView
+      assetRef={data.asset_ref}
+      id={data.id}
+      computeNodeTypeId={computeNode.typeId}
+      fragment={fragment}
+    />
+  );
+}
+
+interface WikiMarkdownViewProps {
+  assetRef: string;
+  id: string;
+  computeNodeTypeId: import('@sdk').TypeId;
+  fragment?: string;
+}
+
+/**
+ * The inline markdown render for a resolved wiki hit — including the document
+ * Translations tab + `?lang=` inline swap (shared `useDocTranslations`), so a
+ * doc opened in the wikitip modal can be translated and read in another
+ * language in one click, exactly like the full asset editor.
+ */
+function WikiMarkdownView({ assetRef, id, computeNodeTypeId, fragment }: WikiMarkdownViewProps) {
+  const localTypeId = dataContext.computeNodeTypeId;
+  const baseEditorRef = useMemo(
+    () =>
+      localTypeId
+        ? new FrontMatterFsRef(assetRef, localTypeId)
+        : new FSRef(assetRef.replace(/^\//, ''), computeNodeTypeId),
+    [assetRef, localTypeId, computeNodeTypeId],
+  );
+  const chatTarget = `markdown-${id}`;
+  const { entity } = useEntityByPath<APIEntity<APIEntity<unknown>>>('markdown', baseEditorRef);
+  const baseReloadKey = entityReloadKey((entity as { updated_date?: unknown } | null)?.updated_date);
+
+  const { editorRef, reloadKey, translationsTab } = useDocTranslations({
+    entity,
+    chatTarget,
+    assetRef,
+    baseEditorRef,
+    baseReloadKey,
+  });
+
+  return (
+    <MarkdownEditor
+      fsRef={editorRef}
+      chatTarget={chatTarget}
+      fragment={fragment}
+      reloadKey={reloadKey}
+      extraSideTabs={[translationsTab]}
+    />
+  );
 }
