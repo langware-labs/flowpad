@@ -417,7 +417,7 @@ export function OpenProjectComponent({
   const { t } = useLingui();
   const { project: currentProject } = useProject();
   const { computeNode } = useAgentContext();
-  const { navigation } = useDockNavigation();
+  const { currentDock, navigation } = useDockNavigation();
 
   const [showCreate, setShowCreate] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -481,14 +481,15 @@ export function OpenProjectComponent({
         }
         // Plain switch (footer Switch Project included): navigate to the
         // project's tab — the same path as clicking that tab in the strip
-        // (dockForProjectEntry → fromTabHash → openDock). Resumes the
-        // last-active tab, or the project landing when it has no open tab. No
-        // context pre-write here: the destination dock's loader is the single
-        // writer of project context (URL-first).
-        navigation.openDock(await dockForProjectEntry(project.id));
+        // (dockForProjectEntry → fromTabHash → openDock). Resumes the KNOWN
+        // last-active tab; with no known tab, a scope-keyed current view
+        // (Assets/Explorer/Desktop) re-scopes to the destination, else the
+        // project landing. No context pre-write here: the destination dock's
+        // loader is the single writer of project context (URL-first).
+        navigation.openDock(await dockForProjectEntry(project.id, currentDock));
       }
     },
-    [isVibe, onProjectChanged, onPicked, navigation],
+    [isVibe, onProjectChanged, onPicked, navigation, currentDock],
   );
 
   const ensureProjectAndSetContext = useCallback(

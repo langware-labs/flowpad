@@ -159,10 +159,7 @@ async function materializeTab(dock: DockPointer): Promise<{ tab: Tab | null; tab
   // Mirror the backend's self-parent guard: a tab can never adopt itself, and
   // would otherwise re-resolve on every return navigation forever.
   const needsReparent =
-    !!parentTabId &&
-    !!existingTab &&
-    existingTab.id !== parentTabId &&
-    existingTab.parent_tab_id !== parentTabId;
+    !!parentTabId && !!existingTab && existingTab.id !== parentTabId && existingTab.parent_tab_id !== parentTabId;
   // A lens dock can't trust the row's denormalized project_id: the loader
   // activates the TARGET entity's project on every load, and the indexer may
   // re-stamp that target through the disk→DB path (`sync_to_db`), which skips
@@ -246,6 +243,12 @@ export async function setupTab(dock: DockPointer, options: SetupTabOptions = {})
         throw new Error('Tab could not be materialized for this URL.');
       }
       setEntry(key, TabLifecycleState.Opening, { tabId: tab.id });
+      // Stamp recency on EVERY tab landing, not just terminals: `last_active_at`
+      // is what scope-entry (project switching) reads as "the last tab open in
+      // this project", so browse/content tabs (project, assets, plan, …) must
+      // record selection too — the shell/process loaders' own stamp covers only
+      // their tabs. Fire-and-forget: loaders stay fast.
+      void Tab.activateById(tab.id).catch(() => {});
       options.onMaterialized?.(tabs);
       await adapter.setupTab(dock);
       setEntry(key, TabLifecycleState.Opened, { tabId: tab.id });
