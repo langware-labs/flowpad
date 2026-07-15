@@ -18,6 +18,12 @@ vi.mock('@src/components/open-project-component/open-project-component', () => (
   OpenProjectComponent: () => null,
 }));
 
+// Not cosmetic: the `@sdk/react/hooks` factory above exposes only useAuth, so the
+// real component's useChatHistory → useEntitiesQuery chain would throw on import.
+vi.mock('@src/pages/flow-page/vibe-recent-sessions', () => ({
+  VibeRecentSessions: () => null,
+}));
+
 import { VibeNewChat } from '@src/pages/flow-page/vibe-new-chat';
 
 describe('VibeNewChat', () => {

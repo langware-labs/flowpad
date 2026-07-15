@@ -11,6 +11,7 @@ import { Trans, useLingui } from '@lingui/react/macro';
 import { useStartVibeSession } from './use-start-vibe-session';
 import { VIBE_MODEL_DEFAULT, VibeModelSelect, type VibeModelTier } from './vibe-model-select';
 import { VibeWorkerSelect } from './vibe-worker-select';
+import { VibeRecentSessions } from './vibe-recent-sessions';
 import { DEFAULT_WORKER_TYPE, type WorkerType } from '@src/components/workers/worker-types';
 
 /** Shared ghost-button style for the two under-input project actions. */
@@ -122,6 +123,7 @@ export function VibeNewChat() {
             <Trans>New project</Trans>
           </button>
         </div>
+        <VibeRecentSessions />
       </div>
       <OpenProjectComponent open={isProjectModalOpen} onOpenChange={setIsProjectModalOpen} />
       <NewProjectDialog
