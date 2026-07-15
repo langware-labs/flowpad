@@ -1,6 +1,8 @@
-import { Agent, DynamicWorkflow, Layout, Markdown, Project, Skill, Task, Whiteboard, Workflow } from '@sdk';
+import { Agent, DynamicWorkflow, Layout, Markdown, Project, Prompt, Skill, Task, Whiteboard, Workflow } from '@sdk';
+import { PromptEditDialog } from '@src/components/prompt-library/PromptEditDialog';
 import { DockPointer } from '@src/navigation/DockPointer';
-import { Bot, Boxes, CheckSquare, FileText, Palette, Sparkles, Workflow as WorkflowIcon, type LucideIcon } from 'lucide-react';
+import { BookMarked, Bot, Boxes, CheckSquare, FileText, Palette, Sparkles, Workflow as WorkflowIcon, type LucideIcon } from 'lucide-react';
+import type { ComponentType } from 'react';
 import type { HarnessKind, ScopeKind } from './ScopeSelection';
 
 /**
@@ -47,6 +49,16 @@ export interface QuickCreateDescriptor {
   copilotUserSubFolder?: string;
   /** Creation function — shared between the quick-create dialog and AssetsPage. */
   create: (args: QuickCreateCreateArgs) => Promise<QuickCreateResult>;
+  /**
+   * Bespoke create dialog, replacing the generic name+path form for a type whose
+   * `main_subdir` already fixes its on-disk location. `create` stays required —
+   * the AssetsPage "+" is name-only and still uses it.
+   */
+  Dialog?: ComponentType<{
+    open: boolean;
+    onOpenChange: (open: boolean) => void;
+    projectId?: string | null;
+  }>;
 }
 
 function leafOf(subFolder: string): string {
@@ -185,6 +197,19 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
         pointer: saved.asset_ref ? DockPointer.forAssetEditor('whiteboard', saved.asset_ref) : undefined,
         toastTitle: 'Whiteboard created',
       };
+    },
+  },
+  {
+    type: 'prompt',
+    label: 'Prompt',
+    Icon: BookMarked,
+    // `prompts/` is Flowpad's own convention, not a harness one — no variants.
+    defaultSubFolder: 'prompts',
+    // A prompt is its text, so the library dialog creates it in one step.
+    Dialog: PromptEditDialog,
+    create: async ({ project, name }) => {
+      await Prompt.createInProject(project, name);
+      return { toastTitle: 'Prompt created' };
     },
   },
 ];
