@@ -1,10 +1,12 @@
 import { SessionInput } from '@src/components/session-input/session-input';
 import { OpenProjectComponent } from '@src/components/open-project-component/open-project-component';
-import { useProjectOpener } from '@src/components/open-project-component/use-open-project';
+import { normalizePath, useProjectOpener } from '@src/components/open-project-component/use-open-project';
+import { NewProjectDialog } from '@src/components/project-selector';
 import { notify } from '@src/notifications';
+import { dataContext } from '@sdk';
 import { useAuth } from '@sdk/react/hooks';
-import { FolderOpen, FolderSearch, Loader2 } from 'lucide-react';
-import { useState } from 'react';
+import { FolderOpen, FolderPlus, FolderSearch, Loader2 } from 'lucide-react';
+import { useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useStartVibeSession } from './use-start-vibe-session';
 import { VIBE_MODEL_DEFAULT, VibeModelSelect, type VibeModelTier } from './vibe-model-select';
@@ -31,13 +33,18 @@ export function VibeNewChat() {
   const [model, setModel] = useState<VibeModelTier>(VIBE_MODEL_DEFAULT);
   const [workerType, setWorkerType] = useState<WorkerType>(DEFAULT_WORKER_TYPE);
   const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
+  const [isNewProjectOpen, setIsNewProjectOpen] = useState(false);
   const [isOpeningFolder, setIsOpeningFolder] = useState(false);
   const firstName = user?.name?.split(' ')[0] || 'there';
+  const defaultWorkspacePath = useMemo(
+    () => dataContext.bootstrapInfo?.desktop_info?.paths?.workspace || '',
+    [],
+  );
 
   // On vibe home, opening/switching a project just changes the project and
   // lands on the fresh vibe home (never resumes an old build process) — that
   // decision lives inside useProjectOpener, derived from the current surface.
-  const { openProjectFolder } = useProjectOpener({
+  const { openProjectFolder, pickFolder, ensureProjectAndSetContext } = useProjectOpener({
     onError: (message) => notify.error({ title: message }),
   });
 
@@ -105,9 +112,27 @@ export function VibeNewChat() {
             <FolderSearch className="h-3.5 w-3.5 shrink-0" />
             <Trans>Open existing project</Trans>
           </button>
+          <button
+            type="button"
+            onClick={() => setIsNewProjectOpen(true)}
+            className={PROJECT_ACTION_BUTTON_CLASS}
+            data-testid="vibe-new-project"
+          >
+            <FolderPlus className="h-3.5 w-3.5 shrink-0" />
+            <Trans>New project</Trans>
+          </button>
         </div>
       </div>
       <OpenProjectComponent open={isProjectModalOpen} onOpenChange={setIsProjectModalOpen} />
+      <NewProjectDialog
+        open={isNewProjectOpen}
+        onOpenChange={setIsNewProjectOpen}
+        defaultParentFolder={defaultWorkspacePath}
+        onPickFolder={() => pickFolder(defaultWorkspacePath || undefined)}
+        onCreate={async (name, parentFolder) => {
+          await ensureProjectAndSetContext(`${normalizePath(parentFolder)}/${name}`);
+        }}
+      />
     </div>
   );
 }
