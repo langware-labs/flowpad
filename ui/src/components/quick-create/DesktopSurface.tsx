@@ -1,6 +1,7 @@
 import type { Bookmark } from '@sdk';
 import { BrowseableGrid } from '@src/components/browseable-tree/BrowseableGrid';
 import { useFavoritesRoots } from '@src/components/browseable-tree/adapters/useFavoritesRoots';
+import { useProject } from '@sdk/react/hooks';
 import { cn } from '@src/lib/utils';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { Plus } from 'lucide-react';
@@ -8,6 +9,7 @@ import { useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { QuickCreateDialog } from './QuickCreateDialog';
 import { QuickCreateModal } from './QuickCreateModal';
+import { getDescriptor } from './registry';
 
 /**
  * DesktopSurface — the favorites desktop as one reusable unit: a
@@ -31,14 +33,25 @@ export function DesktopSurface({
 }) {
   const { t } = useLingui();
   const { currentDock } = useDockNavigation();
+  const { project } = useProject();
   const [modalOpen, setModalOpen] = useState(false);
   const [activeType, setActiveType] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const { roots, onDropToBackground, onReorderRoot } = useFavoritesRoots({ filter });
+  // A type whose on-disk location is already fixed by TypeInfo brings its own
+  // dialog — the generic name+path form would only ask it questions it can't
+  // answer. Chosen here, not inside QuickCreateDialog, so the generic form's
+  // project fetch + snapshot never run for a type that discards them.
+  const CustomDialog = activeType ? getDescriptor(activeType)?.Dialog : undefined;
 
   const handlePick = (type: string) => {
     setActiveType(type);
     setDialogOpen(true);
+  };
+
+  const handleDialogChange = (next: boolean) => {
+    setDialogOpen(next);
+    if (!next) setActiveType(null);
   };
 
   const tileSize = size === 'large' ? 'h-20 w-20' : 'h-16 w-16';
@@ -72,14 +85,11 @@ export function DesktopSurface({
       />
 
       <QuickCreateModal open={modalOpen} onOpenChange={setModalOpen} onPick={handlePick} />
-      <QuickCreateDialog
-        open={dialogOpen}
-        onOpenChange={(next) => {
-          setDialogOpen(next);
-          if (!next) setActiveType(null);
-        }}
-        type={activeType}
-      />
+      {CustomDialog ? (
+        <CustomDialog open={dialogOpen} onOpenChange={handleDialogChange} projectId={project?.id ?? null} />
+      ) : (
+        <QuickCreateDialog open={dialogOpen} onOpenChange={handleDialogChange} type={activeType} />
+      )}
     </>
   );
 }
