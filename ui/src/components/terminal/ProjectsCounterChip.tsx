@@ -3,10 +3,7 @@ import { Project } from '@sdk';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { WorkerToolbar } from '@src/components/workers/WorkerToolbar';
 import type { WorkerType } from '@src/components/workers/worker-types';
-import {
-  workerIcon,
-  workerLabel,
-} from '@src/components/lens-viewer/shared/transcript-features/transcript-utils';
+import { workerIcon, workerLabel } from '@src/components/lens-viewer/shared/transcript-features/transcript-utils';
 import { canonicalPath, projectListToSelectorItems, ProjectSelector } from '@src/components/project-selector';
 import { Button } from '@src/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
@@ -84,9 +81,7 @@ export function SectionHairlineTitle({
   return (
     <div className="flex items-center gap-2 px-2 pb-0.5 pt-1.5" data-testid={testid}>
       <span aria-hidden className="h-px flex-1 bg-border" />
-      <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-        {children}
-      </span>
+      <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{children}</span>
       <span aria-hidden className="h-px flex-1 bg-border" />
     </div>
   );
@@ -97,9 +92,7 @@ export function SectionHairlineTitle({
 // switches projects or buckets change state; the current row is highlighted
 // instead of moved.
 function compareBuckets(a: TabProjectBucket, b: TabProjectBucket): number {
-  return (
-    bucketDisplayName(a).localeCompare(bucketDisplayName(b)) || a.projectId.localeCompare(b.projectId)
-  );
+  return bucketDisplayName(a).localeCompare(bucketDisplayName(b)) || a.projectId.localeCompare(b.projectId);
 }
 
 function bucketRowLabel(bucket: TabProjectBucket): string {
@@ -143,7 +136,9 @@ const ProjectPickerPanel: React.FC<{
           <ChevronLeft className="h-3.5 w-3.5" />
         </button>
         <WorkerIcon className="h-3.5 w-3.5 shrink-0" />
-        <span className="text-xs font-medium text-muted-foreground"><Trans>Open {workerLabel(worker)} on…</Trans></span>
+        <span className="text-xs font-medium text-muted-foreground">
+          <Trans>Open {workerLabel(worker)} on…</Trans>
+        </span>
       </div>
       <div className="min-h-0 flex-1">
         <ProjectSelector
@@ -175,7 +170,7 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
   // clicked icon on the action strip.
   const [pickerWorker, setPickerWorker] = useState<ProjectWorkerType | null>(null);
   const [recoveringId, setRecoveringId] = useState<string | null>(null);
-  const { navigation } = useDockNavigation();
+  const { currentDock, navigation } = useDockNavigation();
   const { buckets, globalTabCount } = useTabProjectBuckets();
 
   const sorted = useMemo(() => [...buckets].sort(compareBuckets), [buckets]);
@@ -250,7 +245,9 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
       ) : isGlobalScope ? (
         <>
           <Globe className="h-3 w-3 shrink-0 text-violet-500" />
-          <span className="max-w-[9rem] truncate"><Trans>Global</Trans></span>
+          <span className="max-w-[9rem] truncate">
+            <Trans>Global</Trans>
+          </span>
           <span aria-hidden className="mx-0.5 h-3 w-px shrink-0 bg-border" />
         </>
       ) : null}
@@ -281,7 +278,7 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
         return;
       }
       setOpen(false);
-      navigation.openDock(await dockForProjectEntry(recovered.id));
+      navigation.openDock(await dockForProjectEntry(recovered.id, currentDock));
     } finally {
       setRecoveringId(null);
     }
@@ -299,7 +296,7 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
     }
     if (bucket.state === 'live' && bucket.project) {
       setOpen(false);
-      navigation.openDock(await dockForProjectEntry(bucket.project.id));
+      navigation.openDock(await dockForProjectEntry(bucket.project.id, currentDock));
     }
     // 'loading' — ignore; spinner is rendered in the row.
   };
@@ -309,7 +306,7 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
   // global tab (or Home) and navigate; the loader re-scopes off the URL.
   const handleSelectGlobal = async () => {
     setOpen(false);
-    navigation.openDock(await dockForGlobalEntry());
+    navigation.openDock(await dockForGlobalEntry(currentDock));
   };
 
   const handleOpenChange = (next: boolean) => {
