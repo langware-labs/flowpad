@@ -143,17 +143,21 @@ vi.mock('@src/hooks/use-default-scope-filter', () => ({
 }));
 vi.mock('@src/components/browseable-tree/adapters/useFavoritesRoots', () => ({
   useFavoritesRoots: () => ({ roots: [], onDropToBackground: vi.fn(), onReorderRoot: vi.fn() }),
+  useFavoritesTreeRoots: () => ({ roots: [] }),
 }));
 vi.mock('@src/components/scope-filter/ScopeFilterIconBar', async () => {
   const { createElement } = await import('react');
   return { ScopeFilterIconBar: () => createElement('div', { 'data-testid': 'scope-bar' }) };
 });
-vi.mock('@src/components/browseable-tree/BrowseableGrid', async () => {
+// The slider is a MENU: it renders the tree, never the icon grid (that stays
+// the Edit dialog's surface). Stub the tree and assert on it.
+vi.mock('@src/components/browseable-tree/BrowseableTree', async () => {
   const { createElement } = await import('react');
   return {
-    BrowseableGrid: (props: { onNavigate?: (p: unknown) => void }) =>
+    BrowseableTree: (props: { onNavigate?: (p: unknown) => void; hoverExpandMs?: number }) =>
       createElement('button', {
-        'data-testid': 'grid-tile',
+        'data-testid': 'tree-row',
+        'data-hover-expand-ms': props.hoverExpandMs,
         onClick: () => props.onNavigate?.('PTR'),
       }),
   };
@@ -169,10 +173,13 @@ describe('BookmarksSlider', () => {
   });
   afterEach(cleanup);
 
-  it('pins the scope filter on top of the bookmark grid (shared FavoritesMenu)', () => {
+  it('renders the tree menu with hover-expand, scope filter in the slider header', () => {
     render(<BookmarksSlider open onOpenChange={() => {}} />);
     expect(screen.getByTestId('scope-bar')).toBeInTheDocument();
-    expect(screen.getByTestId('grid-tile')).toBeInTheDocument();
+    const tree = screen.getByTestId('tree-row');
+    expect(tree).toBeInTheDocument();
+    // Hover-expand is opt-in per surface; the menu is the one that opts in.
+    expect(tree).toHaveAttribute('data-hover-expand-ms', '150');
   });
 
   it('closes the slider when navigation changes the dock (any favorite click arm)', () => {

@@ -111,8 +111,8 @@ export interface Browseable {
   onOpen?: () => void;
 
   /** Optional hover tooltip content (e.g. a live entity summary). Rendered by
-   *  renderers that support tooltips (the desktop grid); the tree currently
-   *  ignores it. */
+   *  both the desktop grid and the tree. In the tree it doubles as the hover
+   *  PREVIEW: hovering a row shows it without opening anything. */
   tooltip?: ReactNode;
 
   /** Optional stable alternate identity for *selection* matching, used when the
@@ -231,6 +231,13 @@ export interface BrowseableTreeHeader {
 export interface BrowseableTreeProps {
   /** Top-level roots. */
   roots: BrowseableRoot[];
+
+  /** Dwell (ms) before hovering a row expands it — menu mode. Undefined (the
+   *  default) binds no hover handler at all, so ordinary navigators are
+   *  structurally unaffected. Hover only ever EXPANDS; collapse stays on the
+   *  chevron/click, and an explicit collapse suppresses hover until the pointer
+   *  leaves the row. */
+  hoverExpandMs?: number;
 
   /** The currently-active pointer (from URL). Drives both row selection and
    *  ancestor auto-expand. */

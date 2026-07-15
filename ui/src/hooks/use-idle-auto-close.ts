@@ -13,13 +13,26 @@ export const IDLE_AUTO_CLOSE_MS = 5000;
  * resets the timer ("no user input/movement"). Disarms when `active` flips
  * false and on unmount. `onIdle` is read through a ref so a caller needn't
  * memoize it to avoid re-arming.
+ *
+ * Pass `idleMs: null` to opt OUT entirely — for a surface that owns its own
+ * dismissal, e.g. a hover menu that closes on pointer-leave. Idle-close and
+ * hover-close are genuinely opposed: this hook listens on the WINDOW, so a
+ * pointer parked inside a panel to read it emits no `pointermove` and the panel
+ * would close out from under the very pointer holding it open. That opt-out is
+ * why the escape is structural rather than a big `idleMs` — and note a big one
+ * cannot work anyway: `Infinity` is coerced to a 0ms delay by `setTimeout` and
+ * would close instantly.
  */
-export function useIdleAutoClose(active: boolean, onIdle: () => void, idleMs: number = IDLE_AUTO_CLOSE_MS): void {
+export function useIdleAutoClose(
+  active: boolean,
+  onIdle: () => void,
+  idleMs: number | null = IDLE_AUTO_CLOSE_MS,
+): void {
   const onIdleRef = useRef(onIdle);
   onIdleRef.current = onIdle;
 
   useEffect(() => {
-    if (!active) return;
+    if (!active || idleMs === null) return;
 
     let timer: ReturnType<typeof setTimeout>;
     const arm = () => {

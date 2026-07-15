@@ -15,10 +15,15 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from '@src/components/ui/sidebar';
+import { Project } from '@sdk';
+import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
+import { WikiTip } from '@src/components/wiki-tip';
+import { useContext } from '@src/hooks/useContext';
 import { useInboxStore } from '@src/store/use-inbox-store';
 import { useSpotlightStore } from '@src/store/use-spotlight-store';
 import { BookmarksSlider } from '@src/components/bookmarks-slider/BookmarksSlider';
 import { useUnopenedFavoritesCount } from '@src/hooks/use-unopened-favorites-count';
+import { HOVER_CLOSE_GRACE_MS, HOVER_OPEN_MS, useHoverIntent } from '@src/hooks/use-hover-intent';
 import { useLingui } from '@lingui/react/macro';
 
 /**
@@ -54,7 +59,7 @@ import {
   Webhook,
   Zap,
 } from 'lucide-react';
-import { useCallback, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 
 // Per-item placement in the left rail, resolved by the current view mode.
@@ -83,13 +88,15 @@ type NavItem = {
 
 export function CollapsedSidebar() {
   const { navigation, currentDock } = useDockNavigation();
-  // const context = useContext();
+  const { project } = useContext();
   const navigate = useNavigate();
   const location = useLocation();
   const onDiscover = location.pathname === '/discover';
   const { goBack, canGoBack } = useNavigationState();
   const [secondaryExpanded, setSecondaryExpanded] = useState(false);
-  const [bookmarksOpen, setBookmarksOpen] = useState(false);
+  // Hover-driven: the rail button and the slider panel share ONE intent, so
+  // travelling from one to the other never closes (see useHoverIntent).
+  const bookmarks = useHoverIntent({ openMs: HOVER_OPEN_MS, closeMs: HOVER_CLOSE_GRACE_MS });
   const devMode = useDevMode();
   const { unreadCount } = useInboxStore();
   const unopenedFavorites = useUnopenedFavoritesCount();
@@ -229,6 +236,27 @@ export function CollapsedSidebar() {
       </span>
     ) : null;
 
+  /** Project home — the rail twin of the footer's project-name button: same
+   *  `openProject` target, same "Flowpad project" wiki page behind the tip. The
+   *  glyph is the project type's registry icon, never a hardcoded one. */
+  const renderProjectHomeItem = (proj: NonNullable<ReturnType<typeof useContext>['project']>) => {
+    const ProjectIcon = iconForType(Project.type);
+    return (
+      <SidebarMenuItem>
+        <WikiTip wikiword="Flowpad project" label={proj.displayName} buttonLabel={t`What is project?`}>
+          <SidebarMenuButton
+            isActive={currentView === ViewType.PROJECT}
+            onClick={() => navigation.openProject(proj.id)}
+            aria-label={t`Open project home — ${proj.displayName}`}
+            className="relative w-full justify-center px-2"
+          >
+            <ProjectIcon className="h-5 w-5" />
+          </SidebarMenuButton>
+        </WikiTip>
+      </SidebarMenuItem>
+    );
+  };
+
   const renderNavItem = (
     item: { title: string; icon: React.ComponentType<{ className?: string }>; viewType: ViewType | null },
     className?: string,
@@ -276,9 +304,16 @@ export function CollapsedSidebar() {
                 </SidebarMenuButton>
               </SidebarMenuItem>
 
-              {visibleItems.map((item) =>
-                renderNavItem(item, undefined, item.viewType === ViewType.INBOX ? unreadCount : undefined),
-              )}
+              {visibleItems.map((item) => (
+                <React.Fragment key={item.title}>
+                  {renderNavItem(item, undefined, item.viewType === ViewType.INBOX ? unreadCount : undefined)}
+                  {/* Project home — sits directly under Home. Not part of the nav
+                    matrix: its target is the ACTIVE project's dock pointer (not a
+                    bare view type) and its glyph is the project type's registry
+                    icon, so it drops out entirely when no project is selected. */}
+                  {item.viewType === null && project && renderProjectHomeItem(project)}
+                </React.Fragment>
+              ))}
 
               {/* Bookmarks — vibe-mode only. Opens the favorites desktop as a
                 left slide-in flyout (not a dock tab), so it toggles local state
@@ -289,8 +324,9 @@ export function CollapsedSidebar() {
                 <SidebarMenuItem>
                   <SidebarMenuButton
                     tooltip={t`Bookmarks`}
-                    isActive={bookmarksOpen}
-                    onClick={() => setBookmarksOpen((v) => !v)}
+                    isActive={bookmarks.open}
+                    {...bookmarks.hoverProps}
+                    onClick={() => bookmarks.set(!bookmarks.open)}
                     data-left-slider-ignore
                     className="relative w-full justify-center px-2"
                   >
@@ -395,7 +431,7 @@ export function CollapsedSidebar() {
           <UserDropdown />
         </div>
       </Sidebar>
-      {isVibe && <BookmarksSlider open={bookmarksOpen} onOpenChange={setBookmarksOpen} />}
+      {isVibe && <BookmarksSlider open={bookmarks.open} onOpenChange={bookmarks.set} hoverProps={bookmarks.hoverProps} />}
     </>
   );
 }

@@ -1,7 +1,7 @@
 import { cn } from '@src/lib/utils';
 import { useIdleAutoClose } from '@src/hooks/use-idle-auto-close';
 import { X } from 'lucide-react';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type PointerEventHandler, type ReactNode } from 'react';
 
 /** Rail-anchored offset (matches RAIL_WIDTH_CLASS = w-[50px]). The slider floats
  *  against the rail's right edge. */
@@ -10,9 +10,10 @@ const RAIL_OFFSET = 50;
 /**
  * LeftSlider — a generic left-edge slide-in overlay, anchored at the rail's
  * right edge. A transient, non-modal flyout: it floats over content (the rail
- * stays interactive) and dismisses on outside pointer-down, Escape, or 5s of
- * idle (see `useIdleAutoClose`). Reusable layout element — the `headerRight`
- * slot is the canonical home for a scope filter, so any "scoped menu" drops in.
+ * stays interactive) and dismisses on outside pointer-down, Escape, and — unless
+ * a hover-driven owner opts out with `idleMs={null}` — 5s of idle (see
+ * `useIdleAutoClose`). Reusable layout element — the `headerRight` slot is the
+ * canonical home for a scope filter, so any "scoped menu" drops in.
  *
  * The toggle control that opens this must carry `data-left-slider-ignore` so a
  * click on it doesn't register as an outside-dismiss (which would fight the
@@ -25,6 +26,8 @@ export function LeftSlider({
   headerRight,
   width = 320,
   idleMs,
+  onPointerEnter,
+  onPointerLeave,
   children,
 }: {
   open: boolean;
@@ -32,7 +35,15 @@ export function LeftSlider({
   title?: ReactNode;
   headerRight?: ReactNode;
   width?: number;
-  idleMs?: number;
+  /** `null` opts out of the idle auto-close — for a hover-driven slider that
+   *  owns its own dismissal via pointer-leave. See useIdleAutoClose. */
+  idleMs?: number | null;
+  /** Panel hover, so a hover-driven owner can keep the slider open while the
+   *  pointer is inside it and close on leave. Spread the SAME `hoverProps` here
+   *  as on the control that opens it — one shared intent, so crossing from one
+   *  to the other never closes. */
+  onPointerEnter?: PointerEventHandler;
+  onPointerLeave?: PointerEventHandler;
   children: ReactNode;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
@@ -82,6 +93,8 @@ export function LeftSlider({
       ref={panelRef}
       role="dialog"
       aria-label={typeof title === 'string' ? title : undefined}
+      onPointerEnter={onPointerEnter}
+      onPointerLeave={onPointerLeave}
       style={{ left: RAIL_OFFSET, width }}
       className={cn(
         'fixed inset-y-0 z-40 flex flex-col border-r border-border bg-background shadow-lg',
