@@ -14,7 +14,7 @@ import { useTaskGitAttachmentFolders } from '@src/hooks/use-task-git-attachments
  * attaching files to any message (no task-specific bundle packing).
  */
 export function useTaskAssignmentMessage(task: Task | null | undefined) {
-  const { send, busy } = useSendToConversation();
+  const { send, busy, resetDraft } = useSendToConversation();
   const { gitFolderTypeids, loosePaths } = useTaskGitAttachmentFolders(task);
 
   /** Read each loose attachment off the local VFS as a regular File. Only
@@ -48,9 +48,20 @@ export function useTaskAssignmentMessage(task: Task | null | undefined) {
   }, [loosePaths]);
 
   const sendAssignment = useCallback(
-    async (participants: ConversationParticipant[], message: string): Promise<string | null> => {
+    async (
+      participants: ConversationParticipant[],
+      message: string,
+      /** Chip to feature instead of the task itself — the GROUP flow passes
+       *  each recipient's own MEMBER task typeid here, so every member's
+       *  message carries THEIR task, not the group overview. */
+      taskChipTypeid?: string,
+    ): Promise<string | null> => {
       if (!task?.id || participants.length === 0) return null;
-      const chips = [task.typeId.toString(), ...gitFolderTypeids];
+      // Each call is a FRESH conversation — the group flow loops per member,
+      // and the retry-draft cache would otherwise reuse the previous member's
+      // conversation (wrong participants, wrong chip).
+      resetDraft();
+      const chips = [taskChipTypeid ?? task.typeId.toString(), ...gitFolderTypeids];
       const files = await collectLooseFiles();
       return send(
         {
@@ -70,7 +81,7 @@ export function useTaskAssignmentMessage(task: Task | null | undefined) {
         },
       );
     },
-    [task, gitFolderTypeids, collectLooseFiles, send],
+    [task, gitFolderTypeids, collectLooseFiles, send, resetDraft],
   );
 
   return { sendAssignment, sending: busy };
