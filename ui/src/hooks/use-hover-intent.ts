@@ -35,47 +35,32 @@ export function useHoverIntent({ openMs, closeMs }: { openMs: number; closeMs: n
   const [open, setOpen] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout>>();
 
-  const clear = useCallback(() => {
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = undefined;
+  // At most one pending transition: every entry point cancels before arming.
+  const schedule = useCallback((next: boolean, delay: number) => {
+    clearTimeout(timer.current);
+    timer.current = setTimeout(() => setOpen(next), delay);
   }, []);
 
-  const schedule = useCallback(
-    (next: boolean, delay: number) => {
-      clear();
-      timer.current = setTimeout(() => setOpen(next), delay);
-    },
-    [clear],
-  );
-
-  // Mouse only. Touch synthesizes pointerenter on tap, so without this a tap
-  // would hover-open AND click-toggle — opening then immediately closing.
-  // Gating in the binder means every consumer gets it for free.
-  const onPointerEnter = useCallback<PointerEventHandler>(
-    (e) => {
-      if (e.pointerType !== 'mouse') return;
-      schedule(true, openMs);
-    },
-    [schedule, openMs],
-  );
-
-  const onPointerLeave = useCallback<PointerEventHandler>(
-    (e) => {
-      if (e.pointerType !== 'mouse') return;
-      schedule(false, closeMs);
-    },
-    [schedule, closeMs],
-  );
-
+  // Memoized because callers pass it as an effect dep; hoverProps is a fresh
+  // object each render anyway, so memoizing the handlers would buy nothing.
   const set = useCallback(
     (next: boolean) => {
-      clear();
+      clearTimeout(timer.current);
       setOpen(next);
     },
-    [clear],
+    [],
   );
 
-  useEffect(() => clear, [clear]);
+  useEffect(() => () => clearTimeout(timer.current), []);
 
-  return { open, hoverProps: { onPointerEnter, onPointerLeave }, set };
+  return {
+    open,
+    hoverProps: {
+      // Mouse only. Touch synthesizes pointerenter on tap, so without this a
+      // tap would hover-open AND click-toggle — opening then closing again.
+      onPointerEnter: (e) => e.pointerType === 'mouse' && schedule(true, openMs),
+      onPointerLeave: (e) => e.pointerType === 'mouse' && schedule(false, closeMs),
+    },
+    set,
+  };
 }

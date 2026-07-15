@@ -4,7 +4,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Bookmark } from '@sdk';
 import { allScope, filterScope, projectScope, userScope } from '@src/lib/scope-filter';
 import { bookmarkInScope } from '@src/lib/bookmark-scope';
-import { useIdleAutoClose } from '@src/hooks/use-idle-auto-close';
 import { LeftSlider } from '@src/components/ui/left-slider';
 
 // ── Part 2: scope predicate over favorites ───────────────────────────────────
@@ -42,40 +41,6 @@ describe('bookmarkInScope', () => {
     // is not "someone else's personal", it's this user's own desktop.
     expect(bookmarkInScope(bmPersonal, filterScope(false, ['p2']), 'p1')).toBe(true);
     expect(bookmarkInScope(bmPersonal, filterScope(true, ['p2']), 'p1')).toBe(true);
-  });
-});
-
-// ── Part 1: idle auto-close hook ─────────────────────────────────────────────
-describe('useIdleAutoClose', () => {
-  beforeEach(() => vi.useFakeTimers());
-  afterEach(() => vi.useRealTimers());
-
-  it('fires onIdle after the idle window elapses', () => {
-    const onIdle = vi.fn();
-    renderHook(() => useIdleAutoClose(true, onIdle, 5000));
-    expect(onIdle).not.toHaveBeenCalled();
-    act(() => vi.advanceTimersByTime(4999));
-    expect(onIdle).not.toHaveBeenCalled();
-    act(() => vi.advanceTimersByTime(1));
-    expect(onIdle).toHaveBeenCalledTimes(1);
-  });
-
-  it('activity resets the timer', () => {
-    const onIdle = vi.fn();
-    renderHook(() => useIdleAutoClose(true, onIdle, 5000));
-    act(() => vi.advanceTimersByTime(4000));
-    act(() => window.dispatchEvent(new Event('pointermove')));
-    act(() => vi.advanceTimersByTime(4000)); // 8s total, but 4s since reset
-    expect(onIdle).not.toHaveBeenCalled();
-    act(() => vi.advanceTimersByTime(1000));
-    expect(onIdle).toHaveBeenCalledTimes(1);
-  });
-
-  it('does not arm when inactive', () => {
-    const onIdle = vi.fn();
-    renderHook(() => useIdleAutoClose(false, onIdle, 5000));
-    act(() => vi.advanceTimersByTime(10000));
-    expect(onIdle).not.toHaveBeenCalled();
   });
 });
 
@@ -143,7 +108,7 @@ vi.mock('@src/hooks/use-default-scope-filter', () => ({
 }));
 vi.mock('@src/components/browseable-tree/adapters/useFavoritesRoots', () => ({
   useFavoritesRoots: () => ({ roots: [], onDropToBackground: vi.fn(), onReorderRoot: vi.fn() }),
-  useFavoritesTreeRoots: () => ({ roots: [] }),
+  useFavoritesTreeRoots: () => [],
 }));
 vi.mock('@src/components/scope-filter/ScopeFilterIconBar', async () => {
   const { createElement } = await import('react');
@@ -166,6 +131,9 @@ vi.mock('@src/components/browseable-tree/BrowseableTree', async () => {
 // Imported after the mocks so the module graph resolves to the stubs.
 const { BookmarksSlider } = await import('@src/components/bookmarks-slider/BookmarksSlider');
 
+// The panel's hover arm; these cases exercise the OTHER close arms.
+const noHover = { onPointerEnter: () => {}, onPointerLeave: () => {} };
+
 describe('BookmarksSlider', () => {
   beforeEach(() => {
     h.openDock.mockClear();
@@ -174,7 +142,7 @@ describe('BookmarksSlider', () => {
   afterEach(cleanup);
 
   it('renders the tree menu with hover-expand, scope filter in the slider header', () => {
-    render(<BookmarksSlider open onOpenChange={() => {}} />);
+    render(<BookmarksSlider open onOpenChange={() => {}} hoverProps={noHover} />);
     expect(screen.getByTestId('scope-bar')).toBeInTheDocument();
     const tree = screen.getByTestId('tree-row');
     expect(tree).toBeInTheDocument();
@@ -184,16 +152,16 @@ describe('BookmarksSlider', () => {
 
   it('closes the slider when navigation changes the dock (any favorite click arm)', () => {
     const onOpenChange = vi.fn();
-    const { rerender } = render(<BookmarksSlider open onOpenChange={onOpenChange} />);
+    const { rerender } = render(<BookmarksSlider open onOpenChange={onOpenChange} hoverProps={noHover} />);
     // Simulate a navigation: the dock identity changes → useCloseOnNavigate fires.
     h.dock = 'DOCK2';
-    rerender(<BookmarksSlider open onOpenChange={onOpenChange} />);
+    rerender(<BookmarksSlider open onOpenChange={onOpenChange} hoverProps={noHover} />);
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
   it('closes the slider when the window loses focus', () => {
     const onOpenChange = vi.fn();
-    render(<BookmarksSlider open onOpenChange={onOpenChange} />);
+    render(<BookmarksSlider open onOpenChange={onOpenChange} hoverProps={noHover} />);
     fireEvent.blur(window);
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });

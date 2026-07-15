@@ -91,11 +91,32 @@ describe('useHoverIntent', () => {
 });
 
 describe('useIdleAutoClose', () => {
-  it('fires after the idle window by default', () => {
+  it('fires onIdle after the idle window elapses', () => {
     const onIdle = vi.fn();
-    renderHook(() => useIdleAutoClose(true, onIdle));
-    act(() => void vi.advanceTimersByTime(5000));
-    expect(onIdle).toHaveBeenCalledOnce();
+    renderHook(() => useIdleAutoClose(true, onIdle, 5000));
+    expect(onIdle).not.toHaveBeenCalled();
+    act(() => void vi.advanceTimersByTime(4999));
+    expect(onIdle).not.toHaveBeenCalled();
+    act(() => void vi.advanceTimersByTime(1));
+    expect(onIdle).toHaveBeenCalledTimes(1);
+  });
+
+  it('activity resets the timer', () => {
+    const onIdle = vi.fn();
+    renderHook(() => useIdleAutoClose(true, onIdle, 5000));
+    act(() => void vi.advanceTimersByTime(4000));
+    act(() => void window.dispatchEvent(new Event('pointermove')));
+    act(() => void vi.advanceTimersByTime(4000)); // 8s total, but 4s since reset
+    expect(onIdle).not.toHaveBeenCalled();
+    act(() => void vi.advanceTimersByTime(1000));
+    expect(onIdle).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not arm when inactive', () => {
+    const onIdle = vi.fn();
+    renderHook(() => useIdleAutoClose(false, onIdle, 5000));
+    act(() => void vi.advanceTimersByTime(10000));
+    expect(onIdle).not.toHaveBeenCalled();
   });
 
   it('never arms with idleMs=null — the hover-menu opt-out', () => {

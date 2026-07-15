@@ -78,10 +78,9 @@ describe('BrowseableTree hover-expand', () => {
     const listChildren = vi.fn(() => Promise.resolve([] as Browseable[]));
     render(<BrowseableTree roots={[root({ listChildren })]} activePointer={null} hoverExpandMs={150} />);
 
-    const row = rowOf('Folder');
-    fireEvent.pointerEnter(row, { pointerType: 'mouse' });
+    hover('Folder');
     act(() => void vi.advanceTimersByTime(100));
-    fireEvent.pointerLeave(row, { pointerType: 'mouse' });
+    unhover('Folder');
     act(() => void vi.advanceTimersByTime(2000));
 
     expect(listChildren).not.toHaveBeenCalled();

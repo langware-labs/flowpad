@@ -18,16 +18,13 @@ export const LEAF_TOOLTIP_MS = 250;
  * fast bookmark navigation. The slider's body.
  *
  * Hover drives the menu; it never opens anything. Clicking a leaf is the only
- * thing that navigates, and therefore the only thing that marks a bookmark read
- * (`onOpen` → `markOpened`) — so a pointer sweeping down the menu can't silently
- * clear every unread badge. Hovering a leaf shows its preview tooltip, nothing
- * more.
- *
- * The grid-shaped sibling (FavoritesMenu) stays where arranging happens.
+ * thing that navigates, and so the only thing that marks a bookmark read
+ * (`onOpen` → `markOpened`) — a pointer sweeping down the menu must not clear
+ * every unread badge.
  */
 export function FavoritesTreeMenu({ filter }: { filter?: (b: Bookmark) => boolean }) {
   const { navigation, currentDock } = useDockNavigation();
-  const { roots } = useFavoritesTreeRoots({ filter });
+  const roots = useFavoritesTreeRoots({ filter });
 
   return (
     // Nested provider: the app-global one sets no delayDuration, so previews
