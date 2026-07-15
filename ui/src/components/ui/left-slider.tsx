@@ -99,7 +99,14 @@ export function LeftSlider({
       className={cn(
         'fixed inset-y-0 z-40 flex flex-col border-r border-border bg-background shadow-lg',
         'transition-transform duration-200 ease-in-out',
-        shown ? 'translate-x-0' : '-translate-x-full',
+        // `-translate-x-full` parks the panel at left = RAIL_OFFSET - width, so
+        // while it is animating in or out it sits directly ON TOP of the rail
+        // that opens it. It must not hit-test there: a hover-driven owner would
+        // otherwise receive pointerenter from its own off-screen panel while the
+        // pointer is really on a rail icon, reopen, slide away, get pointerleave,
+        // close, slide back under the pointer — an oscillation that never
+        // settles. Only a shown panel takes the pointer.
+        shown ? 'translate-x-0' : '-translate-x-full pointer-events-none',
       )}
     >
       <div className="flex items-center gap-2 border-b border-border px-3 py-2">
