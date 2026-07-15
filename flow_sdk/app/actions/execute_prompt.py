@@ -476,9 +476,9 @@ async def _capture_assistant_reply(ap: "AgenticProcess") -> str:
     finalized snapshot share ``message.id``); we key on the id with last-write-
     wins so a repeated snapshot can't duplicate the text within a turn.
     """
-    from collections import OrderedDict
-
-    turn: "OrderedDict[str, str]" = OrderedDict()
+    # dict preserves insertion order (py3.7+); last-write-wins keying dedups a
+    # repeated streaming/finalized snapshot that shares message.id.
+    turn: "dict[str, str]" = {}
     noid = 0
     async for entry in ap.stream_transcript():
         msg = entry.get("message") if isinstance(entry, dict) else None
