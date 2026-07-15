@@ -101,7 +101,7 @@ export function VibeNewChat() {
             ) : (
               <FolderOpen className="h-3.5 w-3.5 shrink-0" />
             )}
-            <Trans>Open project folder</Trans>
+            <Trans>Open folder</Trans>
           </button>
           <button
             type="button"
