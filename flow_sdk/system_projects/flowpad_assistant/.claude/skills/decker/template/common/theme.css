@@ -61,6 +61,39 @@ body,
 }
 .layout--center { justify-content: center; align-items: flex-start; }
 
+/* decker:structural-fix v1 — do not remove; the skill greps for this marker.
+ *
+ * `.layout` sits on the Reveal <section> itself, but Reveal assigns `display`
+ * INLINE via JS (section.style.display = 'block'), and an inline style beats
+ * every selector no matter its specificity. So the `.layout` flex column above
+ * never activates on its own and `.layout--center` is inert: content collapses
+ * to a plain block box hugging the top edge (measured: cover title 162px above
+ * the optical centre, 542px of dead canvas below). !important is the only thing
+ * that wins against inline.
+ *
+ * Scoped to `.present` deliberately: Reveal parks adjacent slides at inline
+ * display:block and hides them with opacity alone, so forcing flex on every
+ * section would unhide them. Exactly one section carries `.present` at a time.
+ *
+ * justify-content:center — a slide is not a document. With flex restored the
+ * column still defaults to flex-start, so a short slide (a 3-row agenda) clings
+ * to the top. Long content still fills and grows from the same box. A layout
+ * that genuinely wants top alignment overrides this under its own
+ * `.layout-<name>` block at higher specificity. */
+.reveal .slides > section.layout.present {
+  display: flex !important;
+  flex-direction: column;
+  justify-content: center;
+}
+
+/* Trailing margins break optical centring: the last child's margin-bottom is
+ * inside the flex box but is not ink, so a centred column rides HIGH by half
+ * that margin (measured: closing-centered sat 8px high off a 16px <p> margin).
+ * Collapse it — the safe-area padding already supplies the bottom gutter. */
+.reveal .slides > section.layout.present > *:last-child {
+  margin-bottom: 0;
+}
+
 /* Helpers */
 .kicker {
   color: var(--accent);

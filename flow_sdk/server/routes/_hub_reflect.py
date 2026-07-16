@@ -57,7 +57,13 @@ def _entity_type_enum(entity: Entity) -> BuiltinEntityType | None:
         return None
 
 
-async def reflect_to_hub(a: Action, entity: Entity, body: dict[str, Any], method: str) -> Any:
+async def reflect_to_hub(
+    a: Action,
+    entity: Entity,
+    body: dict[str, Any],
+    method: str,
+    sub_path: str | None = None,
+) -> Any:
     """Forward the action call to the hub and mirror the response into the local row.
 
     ``method`` is the **actual incoming HTTP method** (e.g. from
@@ -68,6 +74,12 @@ async def reflect_to_hub(a: Action, entity: Entity, body: dict[str, Any], method
     DELETE-registered ``Action`` and reflect a destructive hub DELETE with an empty
     body → hub 400 → the "Cloud request rejected" toast. The request method never
     lies; ``a.methods`` does.
+
+    ``sub_path`` is the segment after the action (``members/link`` → ``"link"``),
+    forwarded verbatim so one action name can front several hub endpoints. It also
+    *disqualifies* the roster-shaped post-processing below: ``members`` returns a
+    participant list, but ``members/link`` returns ``{id, url, …}``, and mirroring
+    that onto ``participants`` would corrupt the roster.
 
     Returns the hub's response payload (the unwrapped ``data`` dict/list),
     after normalizing per-action shapes (e.g. ``members`` field rename).
@@ -80,8 +92,11 @@ async def reflect_to_hub(a: Action, entity: Entity, body: dict[str, Any], method
 
     hub_id = entity.id
     verb = (method or "").lower()
+    # Roster-shaped handling applies to the bare ``members`` action only — a
+    # sub-path (``members/link``) is a different hub endpoint with its own shape.
+    is_roster = a.action_name == "members" and not sub_path
     if verb == "get":
-        hub_resp = await hub_get(et, hub_id, action=a.action_name)
+        hub_resp = await hub_get(et, hub_id, action=a.action_name, sub_path=sub_path)
         # hub_get returns None on transport/HTTP failure (does not raise);
         # treat that as "fall through to local" via HubError.
         if hub_resp is None:
@@ -91,8 +106,8 @@ async def reflect_to_hub(a: Action, entity: Entity, body: dict[str, Any], method
         # MembershipMethod {member_through, value}); hub_delete sends it as
         # the JSON body and raises HubError on non-200 (e.g. 403 owner-only),
         # which propagates to the caller verbatim.
-        hub_resp = await hub_delete(et, hub_id, action=a.action_name, payload=body or {})
-    elif verb in ("put", "patch") and a.action_name == "members":
+        hub_resp = await hub_delete(et, hub_id, action=a.action_name, sub_path=sub_path, payload=body or {})
+    elif verb in ("put", "patch") and is_roster:
         # Role change — PUT ``/<type>/<id>/members`` with ``{user_id|user_email|
         # invitation_id, role}``. Without this branch the generic PUT below would
         # reflect the body as a bare entity update onto ``/<type>/<id>``, silently
@@ -120,12 +135,17 @@ async def reflect_to_hub(a: Action, entity: Entity, body: dict[str, Any], method
             await entity.save(notify=True)  # local row + data_op broadcast to watchers
         return entity.model_dump()
     else:
-        hub_resp = await hub_post(et, body or {}, hub_id, action=a.action_name)
+        hub_resp = await hub_post(et, body or {}, hub_id, action=a.action_name, sub_path=sub_path)
+
+    # A sub-path'd call (e.g. ``members/link`` → {id, url, …}) is not a roster:
+    # return the hub's payload verbatim, with no re-fetch, rename, or mirror.
+    if sub_path:
+        return hub_resp
 
     # After a successful members mutation (remove / role change) the hub returns
     # a message, not a roster — so re-fetch the canonical roster to mirror
     # locally (keeps participants in sync without a second client round-trip).
-    if verb in ("delete", "put", "patch") and a.action_name == "members":
+    if verb in ("delete", "put", "patch") and is_roster:
         refreshed = await hub_get(et, hub_id, action=a.action_name)
         if refreshed is not None:
             hub_resp = refreshed

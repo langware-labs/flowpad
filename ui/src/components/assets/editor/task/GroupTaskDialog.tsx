@@ -8,6 +8,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@src/components/ui/dialog';
+import { groupActionRef } from '@src/components/contact-picker/computed-groups';
 import { useContactsGroups } from '@src/components/contact-picker/use-contacts-groups';
 import { WikiLabel } from '@src/components/wiki-tip';
 import { useTaskAssignmentMessage } from '@src/hooks/use-task-assignment-message';
@@ -54,8 +55,8 @@ export function GroupTaskDialog({ task, open, onOpenChange }: GroupTaskDialogPro
       // callAction reads the POST body from the ActionInfo itself — a second
       // argument would be silently ignored.
       const actionInfo = new ActionInfo('create-group-task', Task.type, task.id, 'POST');
-      actionInfo.bodyParameters = { group_id: selected.id };
-      const result = await dataManager.callAction<{ group_id: string }, CreateGroupTaskResult>(actionInfo);
+      actionInfo.bodyParameters = groupActionRef(selected);
+      const result = await dataManager.callAction<Record<string, unknown>, CreateGroupTaskResult>(actionInfo);
       const created = result?.created?.length ?? 0;
       const failed = result?.failed ?? [];
       if (failed.length) {
@@ -139,6 +140,7 @@ export function GroupTaskDialog({ task, open, onOpenChange }: GroupTaskDialogPro
               <span className="flex items-center gap-2">
                 <Users className="h-4 w-4 text-muted-foreground" />
                 {g.displayName ?? g.name}
+                {g.computed && <span className="text-[10px] uppercase text-muted-foreground/70">auto</span>}
               </span>
               <span className="text-xs text-muted-foreground">
                 {(g.contacts ?? []).length} member{(g.contacts ?? []).length === 1 ? '' : 's'}

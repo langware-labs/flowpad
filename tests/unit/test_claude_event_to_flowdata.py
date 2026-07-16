@@ -140,9 +140,17 @@ def test_user_tool_result_becomes_tool_result_flowdata():
     assert fd.flow_value["tool_call_id"] == "toolu_abc"
 
 
-def test_user_without_tool_result_yields_nothing():
+def test_user_text_block_yields_meta_user_message():
+    # Framework-injected user lines (skill bodies, command expansions) arrive
+    # on the live stream as user text blocks — they must surface as is-meta
+    # USER_MESSAGE frames so the "Using skill" chip renders live, not only
+    # after a refresh replays the transcript.
     out = convert_event({"type": "user", "message": {"content": [{"type": "text", "text": "hi"}]}})
-    assert out == []
+    assert len(out) == 1
+    fd = out[0]
+    assert fd.attributes["element-type"] == FlowElementType.USER_MESSAGE
+    assert fd.attributes["is-meta"] == "true"
+    assert fd.flow_value == "hi"
 
 
 # ── rate_limit_event ──────────────────────────────────────────────────────────

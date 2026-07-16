@@ -1136,6 +1136,10 @@ msgstr ""
 msgid "Anyone with access can open this {entityType} directly via the link below."
 msgstr ""
 
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "Anyone with the link can join as a member. It's on your clipboard — it can't be shown again."
+msgstr ""
+
 #: src/components/machine-overview/machine-overview.tsx
 msgid "API access denied (401 Unauthorized) - check API key and Machine ID"
 msgstr ""
@@ -2851,6 +2855,10 @@ msgstr ""
 msgid "Could not freeze context"
 msgstr ""
 
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "Could not generate a link"
+msgstr ""
+
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 msgid "Could not load source: {error}"
 msgstr ""
@@ -3073,6 +3081,10 @@ msgstr ""
 #. placeholder {0}: formatDate(task.created_date)
 #: src/components/assistance-viewer/TaskDetail.tsx
 msgid "Created: {0}"
+msgstr ""
+
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "Creates a link anyone can use to join as a member."
 msgstr ""
 
 #. placeholder {0}: classificationInfo.category
@@ -4329,6 +4341,10 @@ msgstr ""
 msgid "Every project is selected"
 msgstr ""
 
+#: src/components/assets/context-folder-sources.tsx
+msgid "Everyone the project is shared with gets it"
+msgstr ""
+
 #: src/components/conversation/ExecutePromptDialog.tsx
 #~ msgid "Execute"
 #~ msgstr ""
@@ -5278,8 +5294,16 @@ msgstr ""
 msgid "Generate FlowPad API Key"
 msgstr ""
 
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "Generate link & copy"
+msgstr ""
+
 #: src/components/version-popover/version-popover.tsx
 msgid "Generated"
+msgstr ""
+
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "Generating…"
 msgstr ""
 
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
@@ -6358,6 +6382,10 @@ msgstr ""
 
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 msgid "line fallback"
+msgstr ""
+
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "Link copied"
 msgstr ""
 
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
@@ -9436,6 +9464,10 @@ msgstr ""
 
 #: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
 msgid "Project is fixed after the first message — start a new session to change it."
+msgstr ""
+
+#: src/components/contact-picker/use-computed-groups.ts
+msgid "Project Members"
 msgstr ""
 
 #: src/components/open-project-component/open-project-component.tsx
@@ -12812,8 +12844,8 @@ msgid "Transcripts"
 msgstr ""
 
 #: src/components/assets/context-folder-sources.tsx
-msgid "Travels with the project when shared"
-msgstr ""
+#~ msgid "Travels with the project when shared"
+#~ msgstr ""
 
 #: src/pages/discover-page/discover-page.tsx
 msgid "Trending"
@@ -13427,6 +13459,14 @@ msgstr ""
 
 #: src/components/status-bar.tsx
 msgid "What is a Flowpad project?"
+msgstr ""
+
+#: src/components/assets/context-folder-sources.tsx
+msgid "What is a private context folder?"
+msgstr ""
+
+#: src/components/assets/context-folder-sources.tsx
+msgid "What is a shared context folder?"
 msgstr ""
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
