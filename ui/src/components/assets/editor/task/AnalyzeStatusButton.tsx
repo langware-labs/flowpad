@@ -1,12 +1,11 @@
-import { ActionInfo, dataManager, launchWizard, QueryFilter, QueryRequest, Task, TaskKind } from '@sdk';
-import { useEntitiesQuery } from '@sdk/react/hooks';
+import { ActionInfo, dataManager, launchWizard, Task, TaskKind } from '@sdk';
 import { DONE_GATE_FIELDS } from '@src/components/task-bar/constants';
-import { openArtifact, TaskStatus } from '@src/components/task-bar/task-utils';
+import { openArtifact } from '@src/components/task-bar/task-utils';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { cn } from '@src/lib/utils';
 import { notify } from '@src/notifications';
 import { ScanSearch } from 'lucide-react';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useState } from 'react';
 
 interface AnalyzeStatusResult {
   summary?: string;
@@ -30,23 +29,6 @@ interface AnalyzeStatusButtonProps {
 export function AnalyzeStatusButton({ task, onAnalyzed, className }: AnalyzeStatusButtonProps) {
   const [busy, setBusy] = useState(false);
   const { navigation } = useDockNavigation();
-
-  // A group task's status analysis rolls up its members, so it's only
-  // meaningful once at least one member has finished — gate the button on that.
-  // Standard tasks have no members and always show it.
-  const isGroup = task.kind === TaskKind.GROUP;
-  const childQuery = useMemo(
-    () =>
-      new QueryRequest({
-        type: Task.type,
-        scope: [],
-        name: `analyzeStatusChildren:${task.id ?? 'none'}`,
-        query: new QueryFilter({ match: { parent_id: task.id } }),
-      }),
-    [task.id],
-  );
-  const { data: children = [] } = useEntitiesQuery<Task>(childQuery, { enabled: isGroup && !!task.id });
-  const groupHasDoneMember = children.some((c) => c.status === TaskStatus.DONE);
 
   const run = useCallback(async () => {
     if (busy || !task.id) return;
@@ -104,9 +86,6 @@ export function AnalyzeStatusButton({ task, onAnalyzed, className }: AnalyzeStat
       setBusy(false);
     }
   }, [busy, task, navigation, onAnalyzed]);
-
-  // Hide on a group parent until a member task is done — nothing to roll up yet.
-  if (isGroup && !groupHasDoneMember) return null;
 
   return (
     <button
