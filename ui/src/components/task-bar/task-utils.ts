@@ -121,12 +121,12 @@ export function getArtifactPaths(task: Task): ArtifactInfo[] {
     artifacts.push({ path: `${normalized}/${effectiveFolder}/SKILL.md`, label: 'SKILL.md', skillDockPath });
   }
 
-  // analysis report (analysis.html) — in references subfolder
+  // analysis.md — in references subfolder
   if (typeof analysisPath === 'string') {
-    artifacts.push({ path: analysisPath, label: analysisPath.split('/').pop() || 'analysis' });
+    artifacts.push({ path: analysisPath, label: 'analysis.md' });
   } else if (typeof outputDir === 'string') {
     const normalized = outputDir.replace(/\\/g, '/');
-    artifacts.push({ path: `${normalized}/analysis.html`, label: 'analysis.html' });
+    artifacts.push({ path: `${normalized}/analysis.md`, label: 'analysis.md' });
   }
 
   // analysis.json — in references subfolder
@@ -168,7 +168,7 @@ export function getArtifactPaths(task: Task): ArtifactInfo[] {
   return artifacts;
 }
 
-/** Open an analysis report in its type-appropriate viewer (reports are .html). */
+/** Open an analysis report in its type-appropriate viewer (reports are .md). */
 export function openAnalysisReport(analysisPath: string, navigation: NavigationActions): void {
   const computeNodeTypeId = dataContext.computeNode?.typeId;
   const path = computeNodeTypeId ? VFSPath.fromMachinePath(analysisPath, computeNodeTypeId).absVfsPath : analysisPath;
