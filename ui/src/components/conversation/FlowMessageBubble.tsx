@@ -3,6 +3,7 @@ import {
   Artifact,
   createConversationForShare,
   dataContext,
+  dataManager,
   FlowMessage,
   gitOriginCloneUrl,
   isImagePath,
@@ -277,6 +278,11 @@ export function FlowMessageBubble({
     download: handleDownloadBody,
   } = useAttachments(fm, messageId);
 
+  // Hoisted above the early returns (hook count — see the telemetry note below).
+  // A group parent whose member task is attached to this same message is
+  // context, not the ask: it ships, but its chip is suppressed.
+  const parentTaskIds = useAttachedParentTaskIds(entities);
+
   // Forward-to-another-conversation. Hoisted above the early returns (hook
   // count). The dialog's `commit` override POSTs the backend forward action —
   // the backend clones the message (cloned_from_id provenance, copied
@@ -418,7 +424,11 @@ export function FlowMessageBubble({
   // `prompt` entities render via the attachment-actions row's
   // PromptAttachmentPreview (inside MessageBubble), not as generic chips; the
   // rest ride in the body bundle and only render as live chips once `downloaded`.
-  const otherEntities = entities.filter((t) => t.type !== Prompt.type);
+  // Prompt entities render in the attachment-actions row; a group parent whose
+  // member task is attached here renders not at all (`parentTaskIds`, above).
+  const otherEntities = entities.filter(
+    (t) => t.type !== Prompt.type && !(t.type === Task.type && parentTaskIds.has(String(t.id))),
+  );
   const hasAttachments = attachmentItems.length > 0 || entities.length > 0;
   const bodyStatus = fm.body_status ?? BodyStatus.NA;
   const hasBody = bodyStatus !== BodyStatus.NA;
@@ -722,6 +732,57 @@ function MessageFileChip({ attachment, projectId }: { attachment: MessageAttachm
       )}
     </>
   );
+}
+
+/**
+ * Ids of attached tasks that are the PARENT of another task attached to the
+ * SAME message — their chips are suppressed.
+ *
+ * An assignment message carries the member's own task AND its group parent:
+ * both must ride as real attachments (only attachments are packed into the body
+ * bundle, so context-only sharing would strand the parent as an unresolvable
+ * reference — see `useTaskAssignmentMessage`). But the message is a request to
+ * do the CHILD's work; the parent is context, reachable via the child's
+ * `parent_id` and the conversation's context row. So it ships, but doesn't
+ * clutter the bubble.
+ *
+ * Only ever hides a parent whose child is attached here too — a task sent on
+ * its own always renders. Resolution is async and self-correcting: until the
+ * child's row is local (pre-download) nothing is hidden, and the parent chip
+ * drops out once it resolves.
+ */
+function useAttachedParentTaskIds(entities: TypeId[]): Set<string> {
+  const taskIds = useMemo(() => entities.filter((t) => t.type === Task.type).map((t) => String(t.id)), [entities]);
+  const key = taskIds.join(',');
+  const [parentIds, setParentIds] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    // A lone task has no sibling to be the parent OF — nothing to hide.
+    if (taskIds.length < 2) {
+      setParentIds(new Set());
+      return;
+    }
+    let cancelled = false;
+    void Promise.all(
+      taskIds.map((id) => dataManager.getByTypeId<Task>(new TypeId(Task.type, id)).catch(() => null)),
+    ).then((tasks) => {
+      if (cancelled) return;
+      const attached = new Set(taskIds);
+      const parents = new Set<string>();
+      for (const t of tasks) {
+        // Only suppress a parent that is itself attached to this message.
+        if (t?.parent_id && attached.has(t.parent_id)) parents.add(t.parent_id);
+      }
+      setParentIds(parents);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // `key` is the stable identity of `taskIds` (order-preserving join).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+
+  return parentIds;
 }
 
 function MessageEntityChip({

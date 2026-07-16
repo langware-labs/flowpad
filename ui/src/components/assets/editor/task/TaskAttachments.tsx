@@ -146,7 +146,7 @@ export function TaskAttachments({ task, save }: TaskAttachmentsProps) {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex items-center justify-between border-b px-6 py-1.5">
+      <div className="flex items-center gap-1.5 border-b px-6 py-1.5">
         <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Attachments</span>
         <Popover open={addOpen} onOpenChange={setAddOpen}>
           <PopoverTrigger asChild>
@@ -159,7 +159,7 @@ export function TaskAttachments({ task, save }: TaskAttachmentsProps) {
               <Plus className="h-3.5 w-3.5" />
             </button>
           </PopoverTrigger>
-          <PopoverContent className="w-44 p-1" align="end">
+          <PopoverContent className="w-44 p-1" align="start">
             <button
               type="button"
               onClick={() => void pickAndAdd('file')}
