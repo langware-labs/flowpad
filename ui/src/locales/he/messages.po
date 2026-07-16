@@ -8489,8 +8489,12 @@ msgid "Open analysis"
 msgstr "פתח ניתוח"
 
 #: src/components/task-bar/TaskDetailPanel.tsx
-msgid "Open analysis.md"
-msgstr "פתח analysis.md"
+msgid "Open analysis report"
+msgstr ""
+
+#: src/components/task-bar/TaskDetailPanel.tsx
+#~ msgid "Open analysis.md"
+#~ msgstr "פתח analysis.md"
 
 #: src/components/version-popover/diagnosis-report-modal.tsx
 msgid "Open as a tab"
@@ -12250,6 +12254,7 @@ msgstr "משימה לא נמצאה"
 msgid "Tasked"
 msgstr "בעל משימה"
 
+#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/lens-viewer/shared/transcript-features/TranscriptStats.tsx
 #: src/components/task-bar/TaskBar.tsx
 msgid "Tasks"

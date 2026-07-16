@@ -20,6 +20,8 @@ import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { WikiTip } from '@src/components/wiki-tip';
 import { useContext } from '@src/hooks/useContext';
 import { useInboxStore } from '@src/store/use-inbox-store';
+import { useProjectTasks } from '@src/hooks/use-project-tasks';
+import { isTaskActive } from '@src/components/task-bar/constants';
 import { useSpotlightStore } from '@src/store/use-spotlight-store';
 import { BookmarksSlider } from '@src/components/bookmarks-slider/BookmarksSlider';
 import { useUnopenedFavoritesCount } from '@src/hooks/use-unopened-favorites-count';
@@ -35,6 +37,7 @@ import {
   ArrowLeft,
   BadgeCheck,
   Bookmark,
+  CheckSquare,
   RefreshCw,
   BookOpen,
   Bug,
@@ -114,6 +117,13 @@ export function CollapsedSidebar() {
   const viewMode = useViewMode();
   const { t } = useLingui();
 
+  // Live count for the Tasks badge. useProjectTasks is an unscoped reactive
+  // query (auto-refetches over WS on backend task writes), so the chip tracks
+  // the graph without any polling here. We count *active* tasks — the ones
+  // needing attention now — rather than every task ever created.
+  const { data: tasks } = useProjectTasks();
+  const activeTaskCount = tasks.filter(isTaskActive).length;
+
   const navItems: readonly NavItem[] = [
     { title: t`Home`, icon: Home, viewType: null, vis: ALL_VISIBLE },
     {
@@ -128,6 +138,7 @@ export function CollapsedSidebar() {
       },
     },
     { title: t`Inbox`, icon: Mail, viewType: ViewType.INBOX, vis: ALL_VISIBLE },
+    { title: t`Tasks`, icon: CheckSquare, viewType: ViewType.TASKS, vis: ALL_VISIBLE },
     // { title: 'Execute Flow', icon: PlaySquare, viewType: ViewType.EXECUTE_FLOW, vis: ALL_VISIBLE },
     {
       title: t`Assets`,
@@ -202,6 +213,16 @@ export function CollapsedSidebar() {
   const collapsedItems = navItems.filter((item) => item.vis[viewMode] === 'collapsed');
 
   const currentView = currentDock?.viewType;
+  // Tasks ride the Assets viewType (`list/task`, or a task doc in the asset
+  // editor), so "is Tasks active" can't come from currentView alone — it reads
+  // the dock pointer. URL-first: derived from currentDock, never from an
+  // upstream click. Assets/project-home subtract it so one click doesn't light
+  // two rail buttons.
+  const currentPointer = currentDock?.pointer ?? '';
+  const onTasks =
+    currentView === ViewType.ASSETS &&
+    (currentPointer.startsWith('list/task') || currentPointer.includes('/task/typeid/'));
+  const onAssets = currentView === ViewType.ASSETS && !onTasks;
   // const { cloudLoginAvailable, cloudApiUrl, isDesktop } = context;
 
   const handleClick = useCallback(
@@ -219,6 +240,14 @@ export function CollapsedSidebar() {
         if (import.meta.env.DEV && viewType === ViewType.SHELL) {
           (window as Record<string, unknown>).__shellNavT0 = performance.now();
           console.log('[PERF] +0ms shell icon clicked');
+        }
+        // Tasks is not a dock tab of its own: ViewType.TASKS is retired, and a
+        // task opens through the generic asset surface. openTasks() resolves to
+        // the `list/task` asset list, so route through it rather than openTab
+        // (which would land on the TasksRedirect shim and navigate twice).
+        if (viewType === ViewType.TASKS) {
+          navigation.openTasks();
+          return;
         }
         // Assets is scope-aware: open the scope-keyed assets tab — the current
         // project's scope when a project is active (tab "<project>'s Assets"),
@@ -257,7 +286,7 @@ export function CollapsedSidebar() {
       <SidebarMenuItem>
         <WikiTip wikiword="Flowpad project" label={t`What is project?`}>
           <SidebarMenuButton
-            isActive={currentView === ViewType.ASSETS}
+            isActive={onAssets}
             onClick={() => handleClick(ViewType.ASSETS)}
             aria-label={t`Open project assets — ${proj.displayName}`}
             className="relative w-full justify-center px-2"
@@ -269,13 +298,29 @@ export function CollapsedSidebar() {
     );
   };
 
+  /** The count chip a rail item carries, if any. */
+  const navBadge = (viewType: ViewType | null): number | undefined => {
+    if (viewType === ViewType.INBOX) return unreadCount;
+    if (viewType === ViewType.TASKS) return activeTaskCount;
+    return undefined;
+  };
+
+  /** Active state for items whose surface isn't identified by viewType alone
+   *  (see `onTasks`). undefined → renderNavItem's default viewType match. */
+  const navActive = (viewType: ViewType | null): boolean | undefined => {
+    if (viewType === ViewType.TASKS) return onTasks;
+    if (viewType === ViewType.ASSETS) return onAssets;
+    return undefined;
+  };
+
   const renderNavItem = (
     item: { title: string; icon: React.ComponentType<{ className?: string }>; viewType: ViewType | null },
     className?: string,
     badge?: number,
+    activeOverride?: boolean,
   ) => {
     const Icon = item.icon;
-    const isActive = item.viewType === null ? !currentView : currentView === item.viewType;
+    const isActive = activeOverride ?? (item.viewType === null ? !currentView : currentView === item.viewType);
 
     return (
       <SidebarMenuItem key={item.title} className={className}>
@@ -321,7 +366,7 @@ export function CollapsedSidebar() {
 
               {visibleItems.map((item) => (
                 <React.Fragment key={item.title}>
-                  {renderNavItem(item, undefined, item.viewType === ViewType.INBOX ? unreadCount : undefined)}
+                  {renderNavItem(item, undefined, navBadge(item.viewType), navActive(item.viewType))}
                   {/* The active project — sits directly under Home. Not part of the
                     nav matrix: it exists only while a project is selected, and its
                     glyph is that project type's registry icon. */}
