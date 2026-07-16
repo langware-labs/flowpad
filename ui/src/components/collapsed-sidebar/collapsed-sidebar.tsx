@@ -1,7 +1,8 @@
 import { ThemeToggle } from '@src/components/theme-toggle/theme-toggle';
 import { FlowpadAssistantButton } from '@src/components/floating-chat';
 import { useDevMode } from '@src/contexts/dev-mode-context';
-import { DevOnly, ViewMode, useViewMode } from '@src/components/view-mode';
+import { useViewMode } from '@src/components/view-mode';
+import { resolveRail, type RailItemId } from './rail-visibility';
 import { Button } from '@src/components/ui/button';
 import { useNavigationState } from '@src/hooks/use-navigation-state';
 import { UserDropdown } from '@src/pages/flow-page/content-panel/user-dropdown/user-dropdown';
@@ -62,28 +63,16 @@ import {
 import React, { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 
-// Per-item placement in the left rail, resolved by the current view mode.
-//   visible   — shown at the top of the rail
-//   collapsed — behind the chevron expander (revealed on hover, or when active)
-//   hidden    — not rendered at all
-// Keyed by ViewMode string values so this config reads exactly like the spec
-// matrix. The hierarchy is dev > advanced > standard > vibe; keep each row
-// monotonic (a higher mode never shows less than a lower one).
-type NavVisibility = 'visible' | 'collapsed' | 'hidden';
-type NavVisMap = Record<ViewMode, NavVisibility>;
-
-const ALL_VISIBLE: NavVisMap = {
-  [ViewMode.Vibe]: 'visible',
-  [ViewMode.Standard]: 'visible',
-  [ViewMode.Advanced]: 'visible',
-  [ViewMode.Dev]: 'visible',
-};
-
+// Per-mode placement lives in rail-visibility.ts (RAIL_DELTAS): each mode ADDS
+// icons on top of the previous mode's rail and can drop inherited ones via
+// `noShow`. This file only declares the items (canonical display order) and
+// renders whatever resolveRail says is visible/collapsed for the current mode.
 type NavItem = {
+  /** Key into the RAIL_DELTAS spec (rail-visibility.ts). */
+  id: RailItemId;
   title: string;
   icon: React.ComponentType<{ className?: string }>;
   viewType: ViewType | null;
-  vis: NavVisMap;
 };
 
 export function CollapsedSidebar() {
@@ -114,92 +103,29 @@ export function CollapsedSidebar() {
   const viewMode = useViewMode();
   const { t } = useLingui();
 
+  // Canonical display order. Placement per mode is resolved from RAIL_DELTAS —
+  // to change what a mode shows, edit that table, not this list.
   const navItems: readonly NavItem[] = [
-    { title: t`Home`, icon: Home, viewType: null, vis: ALL_VISIBLE },
-    {
-      title: t`Chats`,
-      icon: MessageCircle,
-      viewType: ViewType.SHELL,
-      vis: {
-        [ViewMode.Vibe]: 'hidden',
-        [ViewMode.Standard]: 'visible',
-        [ViewMode.Advanced]: 'visible',
-        [ViewMode.Dev]: 'visible',
-      },
-    },
-    { title: t`Inbox`, icon: Mail, viewType: ViewType.INBOX, vis: ALL_VISIBLE },
-    // { title: 'Execute Flow', icon: PlaySquare, viewType: ViewType.EXECUTE_FLOW, vis: ALL_VISIBLE },
-    {
-      title: t`Assets`,
-      icon: BookOpen,
-      viewType: ViewType.ASSETS,
-      vis: {
-        [ViewMode.Vibe]: 'hidden',
-        [ViewMode.Standard]: 'hidden',
-        [ViewMode.Advanced]: 'visible',
-        [ViewMode.Dev]: 'visible',
-      },
-    },
-    // { title: 'Editor', icon: Code, viewType: ViewType.EDITOR, vis: ALL_VISIBLE },
-    {
-      title: t`Triggers`,
-      icon: Zap,
-      viewType: ViewType.TRIGGERS,
-      vis: {
-        [ViewMode.Vibe]: 'hidden',
-        [ViewMode.Standard]: 'hidden',
-        [ViewMode.Advanced]: 'collapsed',
-        [ViewMode.Dev]: 'collapsed',
-      },
-    },
-    {
-      title: t`Hooks`,
-      icon: Webhook,
-      viewType: ViewType.HOOKS,
-      vis: {
-        [ViewMode.Vibe]: 'hidden',
-        [ViewMode.Standard]: 'hidden',
-        [ViewMode.Advanced]: 'collapsed',
-        [ViewMode.Dev]: 'collapsed',
-      },
-    },
-    {
-      title: t`Files`,
-      icon: FolderOpen,
-      viewType: ViewType.EXPLORER,
-      vis: {
-        [ViewMode.Vibe]: 'collapsed',
-        [ViewMode.Standard]: 'collapsed',
-        [ViewMode.Advanced]: 'collapsed',
-        [ViewMode.Dev]: 'collapsed',
-      },
-    },
-    {
-      title: t`Capabilities`,
-      icon: BadgeCheck,
-      viewType: ViewType.CAPABILITIES,
-      vis: {
-        [ViewMode.Vibe]: 'hidden',
-        [ViewMode.Standard]: 'hidden',
-        [ViewMode.Advanced]: 'hidden',
-        [ViewMode.Dev]: 'collapsed',
-      },
-    },
-    // { title: 'Environment', icon: Variable, viewType: ViewType.ENVIRONMENT, vis: ALL_VISIBLE },
-    // { title: 'Web App', icon: Globe, viewType: ViewType.WEB_APP, vis: ALL_VISIBLE },
-    // { title: 'Connections', icon: LogIn, viewType: ViewType.CONNECTIONS, vis: ALL_VISIBLE },
-    // { title: 'API Keys', icon: KeyRound, viewType: ViewType.API_KEYS, vis: ALL_VISIBLE },
-    // { title: 'AI Configuration', icon: Settings, viewType: ViewType.AI_CONFIG, vis: ALL_VISIBLE },
-    // { title: 'Machine', icon: Cpu, viewType: ViewType.MACHINE, vis: ALL_VISIBLE },
+    { id: 'home', title: t`Home`, icon: Home, viewType: null },
+    { id: 'chats', title: t`Chats`, icon: MessageCircle, viewType: ViewType.SHELL },
+    { id: 'inbox', title: t`Inbox`, icon: Mail, viewType: ViewType.INBOX },
+    { id: 'assets', title: t`Assets`, icon: BookOpen, viewType: ViewType.ASSETS },
+    { id: 'triggers', title: t`Triggers`, icon: Zap, viewType: ViewType.TRIGGERS },
+    { id: 'hooks', title: t`Hooks`, icon: Webhook, viewType: ViewType.HOOKS },
+    { id: 'files', title: t`Files`, icon: FolderOpen, viewType: ViewType.EXPLORER },
+    { id: 'capabilities', title: t`Capabilities`, icon: BadgeCheck, viewType: ViewType.CAPABILITIES },
   ];
 
-  // Partition the nav config by the current view mode: 'visible' items ride the
-  // top rail, 'collapsed' items live behind the chevron expander, 'hidden' drop.
-  // The back/refresh row and the bottom cluster are outside the matrix — they
-  // render unconditionally below.
-  const isVibe = viewMode === ViewMode.Vibe;
-  const visibleItems = navItems.filter((item) => item.vis[viewMode] === 'visible');
-  const collapsedItems = navItems.filter((item) => item.vis[viewMode] === 'collapsed');
+  // Partition the nav items by the current mode's resolved rail: 'visible'
+  // items ride the top rail, 'collapsed' items live behind the chevron
+  // expander, absent ids drop. The back/refresh row and the bottom cluster are
+  // outside the spec — they render unconditionally below. Bookmarks and
+  // Discover take their visibility from the same spec but keep their bespoke
+  // renderers (flyout toggle / route navigation) in the JSX.
+  const rail = resolveRail(viewMode);
+  const visibleItems = navItems.filter((item) => rail.get(item.id) === 'visible');
+  const collapsedItems = navItems.filter((item) => rail.get(item.id) === 'collapsed');
+  const showBookmarks = rail.get('bookmarks') === 'visible';
 
   const currentView = currentDock?.viewType;
   // const { cloudLoginAvailable, cloudApiUrl, isDesktop } = context;
@@ -331,12 +257,13 @@ export function CollapsedSidebar() {
                 </React.Fragment>
               ))}
 
-              {/* Bookmarks — vibe-mode only. Opens the favorites desktop as a
-                left slide-in flyout (not a dock tab), so it toggles local state
-                rather than routing through handleClick/openTab. The
-                data-left-slider-ignore marker keeps this click from registering
-                as an outside-dismiss and fighting the toggle. */}
-              {isVibe && (
+              {/* Bookmarks — per RAIL_DELTAS (today: vibe-only). Opens the
+                favorites desktop as a left slide-in flyout (not a dock tab), so
+                it toggles local state rather than routing through
+                handleClick/openTab. The data-left-slider-ignore marker keeps
+                this click from registering as an outside-dismiss and fighting
+                the toggle. */}
+              {showBookmarks && (
                 <SidebarMenuItem>
                   <SidebarMenuButton
                     ref={bookmarksBtnRef}
@@ -357,8 +284,8 @@ export function CollapsedSidebar() {
 
               {/* Discover — full-page marketplace; a top-level route, not a dock tab,
                 so it navigates directly rather than via navigation.openTab.
-                Dev-only affordance (never shown in Vibe, which is not Dev). */}
-              <DevOnly reserve={false}>
+                Per RAIL_DELTAS (today: dev-only). */}
+              {rail.get('discover') === 'visible' && (
                 <SidebarMenuItem>
                   <SidebarMenuButton
                     tooltip={t`Discover`}
@@ -369,7 +296,7 @@ export function CollapsedSidebar() {
                     <Compass className="h-5 w-5" />
                   </SidebarMenuButton>
                 </SidebarMenuItem>
-              </DevOnly>
+              )}
 
               {collapsedItems.length > 0 && (
                 <div onMouseEnter={() => setSecondaryExpanded(true)} onMouseLeave={() => setSecondaryExpanded(false)}>
@@ -450,7 +377,7 @@ export function CollapsedSidebar() {
           <UserDropdown />
         </div>
       </Sidebar>
-      {isVibe && (
+      {showBookmarks && (
         <BookmarksSlider
           open={bookmarks.open}
           onOpenChange={bookmarks.set}
