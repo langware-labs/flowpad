@@ -12,6 +12,7 @@ import {
 } from '@src/components/ui/command';
 import type { TranslationTarget } from '@sdk/models';
 import type { TranslationView } from './useTranslations';
+import { LangLabel, availableTargets, targetLabel } from './translation-ui';
 
 interface TranslationsPanelProps {
   /** Existing translations with live status. */
@@ -26,11 +27,6 @@ interface TranslationsPanelProps {
   onOpen: (lang: string | null) => void;
   /** Create + launch a translation for the given language. */
   onAdd: (lang: string) => void;
-}
-
-function targetLabel(lang: string, targets: TranslationTarget[]): { native: string; english: string } {
-  const t = targets.find((x) => x.code === lang);
-  return { native: t?.nativeName ?? lang, english: t?.englishName ?? lang };
 }
 
 /**
@@ -50,11 +46,7 @@ export function TranslationsPanel({
 }: TranslationsPanelProps) {
   const [pickerOpen, setPickerOpen] = useState(false);
 
-  const addedLangs = useMemo(() => new Set(translations.map((t) => t.lang)), [translations]);
-  const available = useMemo(
-    () => targets.filter((t) => !addedLangs.has(t.code)),
-    [targets, addedLangs],
-  );
+  const available = useMemo(() => availableTargets(translations, targets), [translations, targets]);
 
   const handlePick = (code: string) => {
     setPickerOpen(false);
@@ -91,9 +83,8 @@ export function TranslationsPanel({
               active && 'bg-accent font-medium',
             )}
           >
-            <span className="flex flex-1 flex-col leading-tight">
-              <span>{native}</span>
-              {native !== english && <span className="text-xs text-muted-foreground">{english}</span>}
+            <span className="flex-1">
+              <LangLabel native={native} english={english} />
             </span>
             {tr.status === 'translating' ? (
               <span className="flex items-center gap-1 text-xs text-muted-foreground">
@@ -132,12 +123,7 @@ export function TranslationsPanel({
                     onSelect={() => handlePick(target.code)}
                     className="cursor-pointer gap-2"
                   >
-                    <span className="flex flex-col leading-tight">
-                      <span>{target.nativeName}</span>
-                      {target.nativeName !== target.englishName && (
-                        <span className="text-xs text-muted-foreground">{target.englishName}</span>
-                      )}
-                    </span>
+                    <LangLabel native={target.nativeName} english={target.englishName} />
                   </CommandItem>
                 ))}
               </CommandGroup>

@@ -26,3 +26,7 @@ class ContactsGroup(Entity):
         default_factory=list,
         description="Participant-shaped members: [{user_id?, email?, name?}]",
     )
+    computed: bool = APIField(
+        default=False,
+        description="Frontend-computed group (auto-derived membership); never persisted",
+    )

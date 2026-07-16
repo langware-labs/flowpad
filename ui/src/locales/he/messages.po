@@ -1136,6 +1136,10 @@ msgstr "הערות"
 msgid "Anyone with access can open this {entityType} directly via the link below."
 msgstr "כל אחד עם גישה יכול לפתוח את {entityType} ישירות דרך הקישור למטה."
 
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "Anyone with the link can join as a member. It's on your clipboard — it can't be shown again."
+msgstr ""
+
 #: src/components/machine-overview/machine-overview.tsx
 msgid "API access denied (401 Unauthorized) - check API key and Machine ID"
 msgstr "גישת API נדחתה (401 לא מורשה) - בדוק מפתח API ומזהה מכונה"
@@ -2851,6 +2855,10 @@ msgstr "לא היה ניתן להעביר את הדיאגנוזה"
 msgid "Could not freeze context"
 msgstr "שגיאה בהקפאת ההקשר"
 
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "Could not generate a link"
+msgstr ""
+
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 msgid "Could not load source: {error}"
 msgstr "לא ניתן לטעון מקור: {error}"
@@ -3074,6 +3082,10 @@ msgstr "נוצר"
 #: src/components/assistance-viewer/TaskDetail.tsx
 msgid "Created: {0}"
 msgstr "נוצר: {0}"
+
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "Creates a link anyone can use to join as a member."
+msgstr ""
 
 #. placeholder {0}: classificationInfo.category
 #: src/components/project-activity-strip/ProjectActivityStrip.tsx
@@ -5285,9 +5297,17 @@ msgstr "צור מפתח API לאימות בקשות API ל-FlowPad"
 msgid "Generate FlowPad API Key"
 msgstr "צור מפתח API של FlowPad"
 
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "Generate link & copy"
+msgstr ""
+
 #: src/components/version-popover/version-popover.tsx
 msgid "Generated"
 msgstr "נוצר"
+
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "Generating…"
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 msgid "Generic options"
@@ -6366,6 +6386,10 @@ msgstr "שורה {cursorLine}"
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 msgid "line fallback"
 msgstr "חזרה לשורה"
+
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "Link copied"
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
 msgid "Link copied to clipboard"
@@ -9450,6 +9474,10 @@ msgstr "תיקיית פרויקט…"
 #: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
 msgid "Project is fixed after the first message — start a new session to change it."
 msgstr "הפרויקט קבוע לאחר ההודעה הראשונה — התחל סשן חדש כדי לשנות אותו."
+
+#: src/components/contact-picker/use-computed-groups.ts
+msgid "Project Members"
+msgstr ""
 
 #: src/components/open-project-component/open-project-component.tsx
 #: src/components/project-selector/NewProjectDialog.tsx

@@ -284,7 +284,9 @@ export function CollapsedSidebar() {
     const ProjectIcon = iconForType(Project.type);
     return (
       <SidebarMenuItem>
-        <WikiTip wikiword="Flowpad project" label={t`What is project?`}>
+        {/* side="right": the rail's regular tooltips open to the right; the
+            WikiTip default (top) would pop the card above the button instead. */}
+        <WikiTip wikiword="Flowpad project" label={t`What is project?`} side="right">
           <SidebarMenuButton
             isActive={onAssets}
             onClick={() => handleClick(ViewType.ASSETS)}

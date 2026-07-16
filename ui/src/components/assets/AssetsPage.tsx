@@ -41,6 +41,7 @@ import { useEntity } from '@sdk/react/hooks';
 import { useIndexStatus } from '@src/hooks/use-index-status';
 import { ViewType } from '@src/types/ViewType';
 import { AssetListView } from './AssetListView';
+import { shouldShowIndexPrompt } from './asset-body-content';
 import { ContextFolderBrowser } from './ContextFolderBrowser';
 import { MarkdownIndexPanel } from './MarkdownIndexPanel';
 import { useAssetTypes, type AssetTypeVault } from '@src/hooks/use-asset-types';
@@ -614,7 +615,7 @@ export function AssetsPage() {
               onFilterChange={setAssetFilter}
               onProjectFilter={(label) => void handleProjectFilter(label)}
             />
-          ) : neverIndexed && isAdvanced ? (
+          ) : shouldShowIndexPrompt({ neverIndexed, isAdvanced, isProjectHomeMode }) ? (
             <div className="flex h-full items-center justify-center p-6">
               <div className="flex max-w-sm flex-col items-center gap-3 text-center">
                 <PackageSearch className="h-8 w-8 text-muted-foreground" />

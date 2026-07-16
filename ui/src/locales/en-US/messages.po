@@ -1136,6 +1136,10 @@ msgstr "Annotations"
 msgid "Anyone with access can open this {entityType} directly via the link below."
 msgstr "Anyone with access can open this {entityType} directly via the link below."
 
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "Anyone with the link can join as a member. It's on your clipboard — it can't be shown again."
+msgstr "Anyone with the link can join as a member. It's on your clipboard — it can't be shown again."
+
 #: src/components/machine-overview/machine-overview.tsx
 msgid "API access denied (401 Unauthorized) - check API key and Machine ID"
 msgstr "API access denied (401 Unauthorized) - check API key and Machine ID"
@@ -2851,6 +2855,10 @@ msgstr "Could not forward diagnosis"
 msgid "Could not freeze context"
 msgstr "Could not freeze context"
 
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "Could not generate a link"
+msgstr "Could not generate a link"
+
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 msgid "Could not load source: {error}"
 msgstr "Could not load source: {error}"
@@ -3074,6 +3082,10 @@ msgstr "Created"
 #: src/components/assistance-viewer/TaskDetail.tsx
 msgid "Created: {0}"
 msgstr "Created: {0}"
+
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "Creates a link anyone can use to join as a member."
+msgstr "Creates a link anyone can use to join as a member."
 
 #. placeholder {0}: classificationInfo.category
 #: src/components/project-activity-strip/ProjectActivityStrip.tsx
@@ -5285,9 +5297,17 @@ msgstr "Generate an API key to authenticate API requests to FlowPad"
 msgid "Generate FlowPad API Key"
 msgstr "Generate FlowPad API Key"
 
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "Generate link & copy"
+msgstr "Generate link & copy"
+
 #: src/components/version-popover/version-popover.tsx
 msgid "Generated"
 msgstr "Generated"
+
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "Generating…"
+msgstr "Generating…"
 
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 msgid "Generic options"
@@ -6366,6 +6386,10 @@ msgstr "line {cursorLine}"
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 msgid "line fallback"
 msgstr "line fallback"
+
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "Link copied"
+msgstr "Link copied"
 
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
 msgid "Link copied to clipboard"
@@ -9450,6 +9474,10 @@ msgstr "Project folder…"
 #: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
 msgid "Project is fixed after the first message — start a new session to change it."
 msgstr "Project is fixed after the first message — start a new session to change it."
+
+#: src/components/contact-picker/use-computed-groups.ts
+msgid "Project Members"
+msgstr "Project Members"
 
 #: src/components/open-project-component/open-project-component.tsx
 #: src/components/project-selector/NewProjectDialog.tsx

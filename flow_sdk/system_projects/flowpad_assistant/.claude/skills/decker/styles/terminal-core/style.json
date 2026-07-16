@@ -1,0 +1,7 @@
+{
+  "name": "Terminal Core",
+  "family": "Terminal-Core",
+  "description": "Phosphor green on black, monospace throughout, scanlines and a blinking cursor. Perfect for a developer audience and wrong for a board meeting.",
+  "order": 40,
+  "expect_face": "Menlo"
+}

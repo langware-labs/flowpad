@@ -336,12 +336,19 @@ def assemble(deck, template_dir):
         slides.append(build_slide(layouts_dir, layout,
                                   slide.get("slots", {}), template_dir))
 
-    css = "\n".join([
+    # tokens (vocabulary) -> theme (style-agnostic base) -> style (personality).
+    # style.css is optional: templates bootstrapped before styles existed have
+    # no such file and must keep assembling.
+    layers = [
         read(vendor, "reset.css"),
         read(vendor, "reveal.css"),
         read(common, "tokens.css"),
         read(common, "theme.css"),
-    ])
+    ]
+    style_css = os.path.join(common, "style.css")
+    if os.path.isfile(style_css):
+        layers.append(read(common, "style.css"))
+    css = "\n".join(layers)
     js = "\n".join([read(vendor, "reveal.js"), read(common, "deck.js")])
     title = html.escape(str(deck.get("title", "Deck")), quote=False)
 
