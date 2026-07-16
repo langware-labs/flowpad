@@ -5,6 +5,20 @@ import { useEffect, useState } from 'react';
 import { MarkdownView } from '@src/components/markdown-view';
 import { cn } from '@src/lib/utils';
 
+/** Strip a leading YAML frontmatter block.
+ *
+ *  Staged files are the RAW asset on disk (`task.md`, `SKILL.md`), so they still
+ *  carry their `---`-fenced frontmatter. Handing that to a markdown renderer is
+ *  actively wrong: markdown's SETEXT-heading rule reads "text followed by a line
+ *  of `---`" as a heading underline, so the closing fence turns the whole
+ *  `id:/title:/status:` block into one giant <h2>. The dialog header already
+ *  shows the asset's name and type — the frontmatter is noise in a preview. */
+function stripFrontmatter(md: string): string {
+  // \uFEFF: a leading BOM would otherwise stop the fence matching at ^.
+  const m = md.match(/^\uFEFF?---[ \t]*\r?\n[\s\S]*?\r?\n---[ \t]*(?:\r?\n|$)/);
+  return m ? md.slice(m[0].length) : md;
+}
+
 /**
  * Read-only viewer over the STAGED (not installed, not indexed) attachment
  * content, served by the message_attachment staged-file actions. Deliberately
@@ -100,9 +114,11 @@ export function StagedAssetViewer({ attachment }: { attachment: MessageAttachmen
   ) : (
     <div className="min-w-0">
       {selected?.endsWith('.md') ? (
-        <MarkdownView value={content} compact />
+        <MarkdownView value={stripFrontmatter(content)} compact />
       ) : (
-        <pre className="overflow-x-auto whitespace-pre-wrap break-words rounded bg-muted/40 p-2 text-[12px]">{content}</pre>
+        <pre className="overflow-x-auto whitespace-pre-wrap break-words rounded bg-muted/40 p-2 text-[12px]">
+          {content}
+        </pre>
       )}
       {truncated && (
         <div className="mt-2 text-[11px] italic text-muted-foreground">

@@ -503,81 +503,6 @@ async def _link_message_into_context_entities(
             )
 
 
-# Transport / session-machinery carriers that ride the attachment list but are
-# never real user attachments — excluded from the per-attachment private-context
-# cross-link (``conversation`` / ``flow_message`` are the base ``_NON_CONTEXT_TYPES``;
-# ``remote_worker_session`` / ``prompt_result`` are auto-appended session plumbing).
-_NON_ATTACHMENT_CONTEXT_TYPES = _NON_CONTEXT_TYPES | {"remote_worker_session", "prompt_result"}
-
-
-async def _cross_link_message_attachments(reply_fm: "FlowMessage") -> None:
-    """Give every entity-backed attachment the message's OTHER attachments in
-    its private context.
-
-    When a message carries a list of attachments, each attachment's backing
-    entity should be able to see its siblings — so for the whole set we add, to
-    every entity's ``private_context_entities``, all the others (the N-way
-    mutual ``cross_link_all`` primitive). Only ``TYPE_ID`` attachments that
-    reference a real, loadable entity participate: ``FILE`` / ``URL`` /
-    inline-``PROMPT`` attachments have no standalone entity to hold — or be
-    referenced as — private context, and the transport/session carriers are
-    auto-added plumbing, not user attachments. Best-effort — never blocks the
-    send.
-    """
-    from flow_sdk.builtin.flow_message import AttachmentType  # noqa: PLC0415
-    from flow_sdk.core.entity.cross_link import cross_link_all  # noqa: PLC0415
-    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
-
-    # Distinct entity TypeIds carried by the attachment list.
-    seen: set[str] = set()
-    tids: list[TypeId] = []
-    for a in reply_fm.attachment or []:
-        if a.attachment_type != AttachmentType.TYPE_ID or not a.data:
-            continue
-        try:
-            tid = TypeId(a.data)
-        except (ValueError, TypeError):
-            continue
-        if tid.type in _NON_ATTACHMENT_CONTEXT_TYPES or not tid.id:
-            continue
-        key = str(tid)
-        if key in seen:
-            continue
-        seen.add(key)
-        tids.append(tid)
-
-    if len(tids) < 2:
-        return  # need at least two sibling entities to have anything to link
-
-    entities: list = []
-    for tid in tids:
-        try:
-            cls = SchemaRegistry.get_entity_cls(tid.type)
-            if cls is None:
-                continue
-            ent = await cls.get_one({"id": tid.id})
-            if ent is not None:
-                entities.append(ent)
-        except Exception as e:  # noqa: BLE001
-            logger.warning(
-                "[append_conversation] attachment cross-link load %s failed (non-fatal): %s",
-                tid,
-                e,
-                exc_info=True,
-            )
-
-    if len(entities) < 2:
-        return
-    try:
-        await cross_link_all(entities)
-    except Exception as e:  # noqa: BLE001
-        logger.warning(
-            "[append_conversation] attachment cross-link failed (non-fatal): %s",
-            e,
-            exc_info=True,
-        )
-
-
 async def _send_conversation_message_header(conv: "Conversation", reply_fm: "FlowMessage") -> bool:
     """Create the hub-side FlowMessage header via the conversation's
     ``add_message`` action.
@@ -668,9 +593,6 @@ async def _finalize_message_dispatch(
     that must stay in lock-step. Returns the refreshed conversation."""
     # Mutual context: link each just-shared entity back to this message.
     await _link_message_into_context_entities(fm, context_typeids, someone_typeid)
-    # Per-attachment private context: each entity-backed attachment gains the
-    # message's OTHER attachments in its private_context_entities.
-    await _cross_link_message_attachments(fm)
     # Append pointer + project message_ids before the hub header so the
     # conversation.jsonl is consistent when the body bundle packs.
     conv = await _append_message_to_conversation(
