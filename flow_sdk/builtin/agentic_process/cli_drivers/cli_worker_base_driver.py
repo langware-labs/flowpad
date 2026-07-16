@@ -47,6 +47,10 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic.alias_generators import to_camel
 
 from flow_sdk._compat import StrEnum
+from flow_sdk.builtin.agentic_process.cli_drivers.auth_probe import (
+    WorkerAuthResult,
+    probe_worker_auth,
+)
 from flow_sdk.builtin.compute_node import ComputeNode
 from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowData
 from flow_sdk.transcript_analyzer import TranscriptDescriptor
@@ -939,6 +943,40 @@ def prepend_path_dir(folder: str, path: str | None) -> str:
     return f"{folder}{os.pathsep}{base}" if base else folder
 
 
+def resolve_worker_probe_context(worker_type: str) -> tuple[str, dict[str, str]] | None:
+    """(abs executable path, probe env) for a short vendor-CLI probe, or
+    ``None`` ⇔ not installed. The executable name IS the worker type
+    (claude/codex/copilot).
+
+    Resolution is disk-verified against the DISCOVERED bin folder (same shape
+    as ``CliCapabilityRunner.test``): a stale discovered folder — CLI
+    uninstalled after discovery — surfaces as not-installed here rather than
+    as a spawn error. The env pins the folder first on PATH so the CLI's
+    ``#!/usr/bin/env node`` shebang resolves regardless of how the backend
+    was launched.
+    """
+    folder = worker_bin_folder(worker_type)
+    if folder is None:
+        return None
+    path = shutil.which(worker_type, path=folder)
+    if path is None:
+        return None
+    return path, {**os.environ, **(worker_path_env(worker_type) or {})}
+
+
+async def run_worker_auth_probe(worker_type: str) -> WorkerAuthResult:
+    """Shared body for the drivers' ``auth_probe`` implementations.
+
+    Resolves the executable against the discovered bin folder (None ⇒
+    NOT_INSTALLED — the install gate also applies to copilot, whose probe is
+    a pure heuristic that must not claim logged-in for an uninstalled CLI),
+    then runs the vendor probe off-loop.
+    """
+    ctx = resolve_worker_probe_context(worker_type)
+    path, env = ctx if ctx is not None else (None, {})  # env unread on the NOT_INSTALLED path
+    return await asyncio.to_thread(probe_worker_auth, worker_type, path, env, Path.home())
+
+
 def build_worker_spawn_env(
     worker_type: str,
     env_from_opts: dict[str, str],
@@ -1196,6 +1234,19 @@ class WorkerDriver(Protocol):
 
         Drivers decide which events matter. Unknown or unsupported events
         should return a debug payload rather than raising.
+        """
+        ...
+
+    # ── Auth ─────────────────────────────────────────────────────────────────
+
+    async def auth_probe(self) -> WorkerAuthResult:
+        """Probe this vendor CLI's login state (≤5s, never raises).
+
+        NOT_INSTALLED when discovery has no bin folder (or it went stale);
+        UNKNOWN when the probe couldn't decide (timeout, exec error,
+        unparseable output) — implementations must never conflate that with
+        LOGGED_OUT. ``verified`` is True only when the vendor CLI itself
+        confirmed the state (copilot's heuristic never is).
         """
         ...
 

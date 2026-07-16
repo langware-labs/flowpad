@@ -24,12 +24,14 @@ from flow_sdk.builtin.agentic_process.cli_drivers.claude.stream_worker import (
 )
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
     AgenticContext,
+    WorkerAuthResult,
     WorkerCLIOptions,
     WorkerSpawnError,
     apply_worker_env,
     apply_worker_secret_env,
     latch_spawn_failure,
     restart_payload_from_cli_options,
+    run_worker_auth_probe,
 )
 from flow_sdk.builtin.worker_status import WorkerStatus, _tail_status
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
@@ -285,6 +287,12 @@ class ClaudeDriver:
             "session_id": process.session_id,
             "reason": "unsupported_event",
         }
+
+    # ── Auth ─────────────────────────────────────────────────────────────────
+
+    async def auth_probe(self) -> WorkerAuthResult:
+        """`claude auth status` against the discovered CLI (JSON `loggedIn`)."""
+        return await run_worker_auth_probe(self.name)
 
     # ── Transcript discovery ─────────────────────────────────────────────────
 
