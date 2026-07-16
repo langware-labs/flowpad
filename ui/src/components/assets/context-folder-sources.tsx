@@ -2,6 +2,7 @@ import React from 'react';
 import { FolderOpen, GitBranch, Lock, Users } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
+import { WikiTip } from '@src/components/wiki-tip';
 import type { ContextFolderScope } from '@src/hooks/use-project-context-folders';
 
 /** Where a context folder comes from. The three sources are the same wherever
@@ -14,6 +15,8 @@ export type ContextFolderSource = 'project' | 'browse' | 'git';
  *  into a "create this page" prompt rather than an error). */
 export const CONTEXT_FOLDERS_WIKI = 'Context folders';
 export const GIT_CONTEXT_FOLDERS_WIKI = 'Git context folders';
+export const PRIVATE_CONTEXT_FOLDERS_WIKI = 'Private context folders';
+export const SHARED_CONTEXT_FOLDERS_WIKI = 'Shared context folders';
 
 export interface ContextFolderSourceInfo {
   key: ContextFolderSource;
@@ -67,41 +70,59 @@ export function ContextFolderScopeChips({
   onChange: (next: ContextFolderScope) => void;
 }) {
   const { t } = useLingui();
-  const options: { value: ContextFolderScope; icon: React.ReactNode; label: React.ReactNode; title: string }[] = [
+  // No `title` on the chips: a native tooltip would race the WikiTip's hover
+  // card. The one-liner rides in the card instead, next to the W button.
+  const options: {
+    value: ContextFolderScope;
+    icon: React.ReactNode;
+    label: React.ReactNode;
+    tip: string;
+    wikiword: string;
+    buttonLabel: string;
+  }[] = [
     {
       value: 'private',
       icon: <Lock className="h-3 w-3" />,
       label: <Trans>Private</Trans>,
-      title: t`Only on this machine — never shared`,
+      tip: t`Only on this machine — never shared`,
+      wikiword: PRIVATE_CONTEXT_FOLDERS_WIKI,
+      buttonLabel: t`What is a private context folder?`,
     },
     {
       value: 'shared',
       icon: <Users className="h-3 w-3" />,
       label: <Trans>Shared</Trans>,
-      title: t`Travels with the project when shared`,
+      tip: t`Everyone the project is shared with gets it`,
+      wikiword: SHARED_CONTEXT_FOLDERS_WIKI,
+      buttonLabel: t`What is a shared context folder?`,
     },
   ];
 
   return (
     <div className="flex items-center gap-1" role="radiogroup">
       {options.map((opt) => (
-        <button
+        <WikiTip
           key={opt.value}
-          type="button"
-          role="radio"
-          aria-checked={scope === opt.value}
-          title={opt.title}
-          onClick={() => onChange(opt.value)}
-          data-testid={`add-context-folder-scope-${opt.value}`}
-          className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs transition-colors ${
-            scope === opt.value
-              ? 'border-primary bg-primary/10 text-foreground'
-              : 'border-border text-muted-foreground hover:border-primary/50 hover:text-foreground'
-          }`}
+          wikiword={opt.wikiword}
+          label={opt.tip}
+          buttonLabel={opt.buttonLabel}
         >
-          {opt.icon}
-          {opt.label}
-        </button>
+          <button
+            type="button"
+            role="radio"
+            aria-checked={scope === opt.value}
+            onClick={() => onChange(opt.value)}
+            data-testid={`add-context-folder-scope-${opt.value}`}
+            className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs transition-colors ${
+              scope === opt.value
+                ? 'border-primary bg-primary/10 text-foreground'
+                : 'border-border text-muted-foreground hover:border-primary/50 hover:text-foreground'
+            }`}
+          >
+            {opt.icon}
+            {opt.label}
+          </button>
+        </WikiTip>
       ))}
     </div>
   );

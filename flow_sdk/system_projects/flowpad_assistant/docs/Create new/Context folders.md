@@ -31,16 +31,20 @@ project.
 
 Pick the scope before you add the folder:
 
-* **Private** — only on this machine. A private folder is never shared, and its
-  path never leaves your computer.
+* **[[Private context folders|Private]]** — only on this machine. Never shared;
+  neither its contents nor its path leave your computer.
 
-* **Shared** — travels with the project when you share the project.
+* **[[Shared context folders|Shared]]** — belongs to the project, so everyone
+  it's shared with gets it too.
 
-**Shared folders must be Git-backed.** A shared folder travels as its Git
-origin, not as a copy of its bytes, so a plain local folder can't be one —
-Flowpad will tell you to add it as private instead, or to use a folder inside a
-repository. When someone receives a shared project, each shared folder is
-cloned onto their machine; until then it simply isn't part of their context.
+Scope changes who gets the folder, not what it can do — a private folder is just
+as live locally as a shared one.
+
+**Flowpad shares the location, not the folder.** A shared folder travels as its
+**origin** — a pointer to where the contents really live — and the recipient
+fetches from there. Today that location must be a Git repository, so a plain
+local folder can't be shared: Flowpad will tell you to add it as private
+instead, or to use a folder inside a repository.
 
 A folder counts as Git-backed when it's inside a repository that has an
 `origin` remote Flowpad can read. Without an origin it's treated as local. Git-
