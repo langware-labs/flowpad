@@ -13,6 +13,7 @@ import {
 } from '@src/components/ui/command';
 import type { TranslationTarget } from '@sdk/models';
 import type { TranslationView } from './useTranslations';
+import { LangLabel, availableTargets, targetLabel } from './translation-ui';
 
 interface DocLanguageSwitcherProps {
   /** Existing translations with live status. */
@@ -28,11 +29,6 @@ interface DocLanguageSwitcherProps {
   /** Create + launch a translation for the given language. */
   onAdd: (lang: string) => void;
   className?: string;
-}
-
-function labelFor(lang: string, targets: TranslationTarget[]): { native: string; english: string } {
-  const t = targets.find((x) => x.code === lang);
-  return { native: t?.nativeName ?? lang, english: t?.englishName ?? lang };
 }
 
 /**
@@ -53,9 +49,8 @@ export function DocLanguageSwitcher({
 }: DocLanguageSwitcherProps) {
   const [open, setOpen] = useState(false);
 
-  const addedLangs = useMemo(() => new Set(translations.map((t) => t.lang)), [translations]);
-  const available = useMemo(() => targets.filter((t) => !addedLangs.has(t.code)), [targets, addedLangs]);
-  const currentLabel = activeLang ? labelFor(activeLang, targets).native : 'Original';
+  const available = useMemo(() => availableTargets(translations, targets), [translations, targets]);
+  const currentLabel = activeLang ? targetLabel(activeLang, targets).native : 'Original';
 
   const switchTo = (lang: string | null) => {
     setOpen(false);
@@ -96,7 +91,7 @@ export function DocLanguageSwitcher({
                 {activeLang === null && <Check className="h-4 w-4" />}
               </CommandItem>
               {translations.map((tr) => {
-                const { native, english } = labelFor(tr.lang, targets);
+                const { native, english } = targetLabel(tr.lang, targets);
                 const active = tr.lang === activeLang;
                 return (
                   <CommandItem
@@ -105,9 +100,8 @@ export function DocLanguageSwitcher({
                     onSelect={() => switchTo(tr.lang)}
                     className="cursor-pointer gap-2"
                   >
-                    <span className="flex flex-1 flex-col leading-tight">
-                      <span>{native}</span>
-                      {native !== english && <span className="text-xs text-muted-foreground">{english}</span>}
+                    <span className="flex-1">
+                      <LangLabel native={native} english={english} />
                     </span>
                     {tr.status === 'translating' ? (
                       <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
@@ -129,12 +123,7 @@ export function DocLanguageSwitcher({
                       onSelect={() => add(target.code)}
                       className="cursor-pointer gap-2"
                     >
-                      <span className="flex flex-1 flex-col leading-tight">
-                        <span>{target.nativeName}</span>
-                        {target.nativeName !== target.englishName && (
-                          <span className="text-xs text-muted-foreground">{target.englishName}</span>
-                        )}
-                      </span>
+                      <LangLabel native={target.nativeName} english={target.englishName} />
                     </CommandItem>
                   ))}
                 </CommandGroup>

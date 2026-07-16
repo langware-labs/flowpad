@@ -241,34 +241,12 @@ function WikiMarkdownView({ assetRef, id, computeNodeTypeId, fragment, variant }
     baseReloadKey,
   });
 
-  if (variant === 'plain') {
-    // Open = promote the peek to the full asset editor (and close the modal).
-    const openFull = () => {
-      closeModal(false);
-      navigation.openDock(DockPointer.forAssetEditor('markdown', assetRef));
-    };
-    return (
-      <MarkdownEditor
-        fsRef={editorRef}
-        chatTarget={chatTarget}
-        fragment={fragment}
-        reloadKey={reloadKey}
-        variant="plain"
-        plainLeadingActions={
-          <button
-            type="button"
-            onClick={openFull}
-            title="Open full page"
-            className="flex items-center gap-1.5 rounded-md px-2 py-1 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-          >
-            <ExternalLink className="h-3.5 w-3.5" />
-            Open
-          </button>
-        }
-        plainTrailingActions={languageSwitcher}
-      />
-    );
-  }
+  const isPlain = variant === 'plain';
+  // Open = promote the peek to the full asset editor (and close the modal).
+  const openFull = () => {
+    closeModal(false);
+    navigation.openDock(DockPointer.forAssetEditor('markdown', assetRef));
+  };
 
   return (
     <MarkdownEditor
@@ -276,7 +254,22 @@ function WikiMarkdownView({ assetRef, id, computeNodeTypeId, fragment, variant }
       chatTarget={chatTarget}
       fragment={fragment}
       reloadKey={reloadKey}
-      extraSideTabs={[translationsTab]}
+      variant={variant}
+      extraSideTabs={isPlain ? undefined : [translationsTab]}
+      plainHeaderActions={
+        isPlain
+          ? (share) => (
+              <>
+                <Button variant="ghost" size="sm" onClick={openFull} title="Open full page" className="gap-1.5">
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  Open
+                </Button>
+                {share}
+                {languageSwitcher}
+              </>
+            )
+          : undefined
+      }
     />
   );
 }

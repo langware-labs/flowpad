@@ -65,14 +65,33 @@ export function useDocTranslations({
     ? `${baseReloadKey ?? ''}:${activeLang}:${activeStatus ?? ''}`
     : baseReloadKey;
 
-  const translationsTab: ExtraSideTab = {
-    id: 'translations',
-    label: translations.length > 0 ? `Translations ${translations.length}` : 'Translations',
-    icon: Languages,
-    description: 'Translated copies of this doc',
-    availableInNonAdvanced: true,
-    panel: (
-      <TranslationsPanel
+  // Each surface renders only ONE of these (the side tab OR the inline switcher),
+  // so memoize both on their shared inputs — the unused one costs nothing beyond
+  // a stable reference, and the used one doesn't re-identity on unrelated renders.
+  const translationsTab = useMemo<ExtraSideTab>(
+    () => ({
+      id: 'translations',
+      label: translations.length > 0 ? `Translations ${translations.length}` : 'Translations',
+      icon: Languages,
+      description: 'Translated copies of this doc',
+      availableInNonAdvanced: true,
+      panel: (
+        <TranslationsPanel
+          translations={translations}
+          activeLang={activeLang}
+          isAdding={isAdding}
+          targets={targets}
+          onOpen={openTranslation}
+          onAdd={addTranslation}
+        />
+      ),
+    }),
+    [translations, activeLang, isAdding, targets, openTranslation, addTranslation],
+  );
+
+  const languageSwitcher = useMemo(
+    () => (
+      <DocLanguageSwitcher
         translations={translations}
         activeLang={activeLang}
         isAdding={isAdding}
@@ -81,17 +100,7 @@ export function useDocTranslations({
         onAdd={addTranslation}
       />
     ),
-  };
-
-  const languageSwitcher = (
-    <DocLanguageSwitcher
-      translations={translations}
-      activeLang={activeLang}
-      isAdding={isAdding}
-      targets={targets}
-      onOpen={openTranslation}
-      onAdd={addTranslation}
-    />
+    [translations, activeLang, isAdding, targets, openTranslation, addTranslation],
   );
 
   return { editorRef, reloadKey, translationsTab, languageSwitcher };

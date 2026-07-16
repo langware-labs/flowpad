@@ -130,10 +130,12 @@ interface MarkdownEditorProps {
    * Copy, mode toggle, or side rail. Used by the wiki modal.
    */
   variant?: 'full' | 'plain';
-  /** Plain header: actions rendered BEFORE the Share button (e.g. an Open button). */
-  plainLeadingActions?: React.ReactNode;
-  /** Plain header: actions rendered AFTER the Share button (e.g. the language switcher). */
-  plainTrailingActions?: React.ReactNode;
+  /**
+   * Plain header (`variant='plain'`): composes the action row. Receives the
+   * editor's ready-made Share button so the caller decides where Share sits
+   * (e.g. `(share) => <>{open}{share}{switcher}</>`).
+   */
+  plainHeaderActions?: (share: React.ReactNode) => React.ReactNode;
 }
 
 /**
@@ -160,8 +162,7 @@ export function MarkdownEditor({
   fragment,
   missingFileCopy,
   variant,
-  plainLeadingActions,
-  plainTrailingActions,
+  plainHeaderActions,
 }: MarkdownEditorProps) {
   return (
     <MarkdownEditorContent
@@ -179,8 +180,7 @@ export function MarkdownEditor({
       fragment={fragment}
       missingFileCopy={missingFileCopy}
       variant={variant}
-      plainLeadingActions={plainLeadingActions}
-      plainTrailingActions={plainTrailingActions}
+      plainHeaderActions={plainHeaderActions}
     />
   );
 }
@@ -238,8 +238,7 @@ function MarkdownEditorContent({
   fragment,
   missingFileCopy,
   variant,
-  plainLeadingActions,
-  plainTrailingActions,
+  plainHeaderActions,
 }: {
   fsRef: FSRef;
   sourcePath: string;
@@ -255,8 +254,7 @@ function MarkdownEditorContent({
   fragment?: string;
   missingFileCopy?: MarkdownEditorProps['missingFileCopy'];
   variant?: MarkdownEditorProps['variant'];
-  plainLeadingActions?: React.ReactNode;
-  plainTrailingActions?: React.ReactNode;
+  plainHeaderActions?: MarkdownEditorProps['plainHeaderActions'];
 }) {
   const { t } = useLingui();
   const { navigation, currentDock } = useDockNavigation();
@@ -648,49 +646,8 @@ function MarkdownEditorContent({
     );
   }
 
-  // ── Plain doc ────────────────────────────────────────────────────────────
-  // Read-only body under a minimal header: leading actions (e.g. Open) + Share +
-  // trailing actions (e.g. the language switcher). No path, Properties, Copy,
-  // mode toggle, or side rail. Reuses all the body-load / milkdown / link / frag
-  // machinery above. Used by the wiki modal.
-  if (variant === 'plain') {
-    return (
-      <div className="flex h-full flex-col overflow-hidden">
-        <div className="flex flex-shrink-0 items-center justify-end gap-1 border-b px-3 py-2">
-          {plainLeadingActions}
-          {shareSource && (
-            <ShareButton
-              onClick={() => setShareOpen(true)}
-              tooltip={t`Share to a conversation`}
-              testId="markdown-editor-share"
-            />
-          )}
-          {plainTrailingActions}
-        </div>
-        {shareSource && shareOpen && (
-          <ShareToConversationDialog
-            open={shareOpen}
-            onClose={() => setShareOpen(false)}
-            source={shareSource}
-          />
-        )}
-        <div className="min-h-0 flex-1 overflow-hidden">
-          <MilkdownEditor
-            content={body}
-            onChange={handleBodyChange}
-            onLinkClick={handleLinkClick}
-            editorMode="view"
-            editorRef={milkdownRef}
-            onCursorLineChange={handleEditorLineChange}
-            initialLine={initialBodyLine}
-            direction={normalizeDirection(fields.direction)}
-          />
-        </div>
-      </div>
-    );
-  }
-
-  // ── Editor ─────────────────────────────────────────────────────────────────
+  // Share controls (button + dialog) — one definition, shared by the plain and
+  // full headers, so the button (and its testId) isn't duplicated.
   const shareButton = shareSource ? (
     <ShareButton
       onClick={() => setShareOpen(true)}
@@ -698,7 +655,52 @@ function MarkdownEditorContent({
       testId="markdown-editor-share"
     />
   ) : null;
+  const shareDialog =
+    shareSource && shareOpen ? (
+      <ShareToConversationDialog
+        open={shareOpen}
+        onClose={() => setShareOpen(false)}
+        source={shareSource}
+      />
+    ) : null;
 
+  // Body renderer — the single Milkdown invocation both paths share, so a
+  // body-mount change (a new prop, plugin, direction/fragment tweak) can't drift
+  // between the plain doc and the full editor.
+  const milkdownBody = (mode: ViewMode) => (
+    <MilkdownEditor
+      content={body}
+      onChange={handleBodyChange}
+      onLinkClick={handleLinkClick}
+      editorMode={mode === 'learning' ? 'view' : mode}
+      editorRef={milkdownRef}
+      onCursorLineChange={handleEditorLineChange}
+      initialLine={initialBodyLine}
+      direction={normalizeDirection(fields.direction)}
+      toolbarRight={
+        mode === 'editor' ? <WikiToolbar editorRef={milkdownRef} sourceTypeId={chatTarget} /> : undefined
+      }
+    />
+  );
+
+  // ── Plain doc ────────────────────────────────────────────────────────────
+  // Read-only body under a minimal header. The caller composes the whole action
+  // row via `plainHeaderActions(share)` — it receives the ready-made Share node
+  // and decides where Share sits. No path, Properties, Copy, mode toggle, or
+  // side rail. Used by the wiki modal.
+  if (variant === 'plain') {
+    return (
+      <div className="flex h-full flex-col overflow-hidden">
+        <div className="flex flex-shrink-0 items-center justify-end gap-1 border-b px-3 py-2">
+          {plainHeaderActions?.(shareButton)}
+        </div>
+        {shareDialog}
+        <div className="min-h-0 flex-1 overflow-hidden">{milkdownBody('view')}</div>
+      </div>
+    );
+  }
+
+  // ── Editor ─────────────────────────────────────────────────────────────────
   // Favorite toggle next to Share (both modes), mirroring the interactive tab.
   // Keyed on the asset entity's TypeId (the same id chat/share use).
   const favoriteTypeId = chatTarget ? new TypeId(chatTarget) : null;
@@ -744,13 +746,7 @@ function MarkdownEditorContent({
         actions={toolbar}
         showLearningMode={showLearningMode}
       />
-      {shareSource && shareOpen && (
-        <ShareToConversationDialog
-          open={shareOpen}
-          onClose={() => setShareOpen(false)}
-          source={shareSource}
-        />
-      )}
+      {shareDialog}
 
       {hasFields && (
         <div className="flex-shrink-0 border-b">
@@ -800,21 +796,7 @@ function MarkdownEditorContent({
             ) : viewMode === 'review' ? (
               <ReviewSurface body={body} docTypeId={chatTarget} />
             ) : (
-              <MilkdownEditor
-                content={body}
-                onChange={handleBodyChange}
-                onLinkClick={handleLinkClick}
-                editorMode={viewMode === 'learning' ? 'view' : viewMode}
-                editorRef={milkdownRef}
-                onCursorLineChange={handleEditorLineChange}
-                initialLine={initialBodyLine}
-                direction={normalizeDirection(fields.direction)}
-                toolbarRight={
-                  viewMode === 'editor' ? (
-                    <WikiToolbar editorRef={milkdownRef} sourceTypeId={chatTarget} />
-                  ) : undefined
-                }
-              />
+              milkdownBody(viewMode)
             )}
           </EditorWithSidePanel>
         )}
