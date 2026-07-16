@@ -18,12 +18,14 @@ from typing import TYPE_CHECKING
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
     AgenticContext,
     AgenticProcessContextKey,
+    WorkerAuthResult,
     WorkerCLIOptions,
     WorkerSpawnError,
     apply_worker_env,
     apply_worker_secret_env,
     latch_spawn_failure,
     restart_payload_from_cli_options,
+    run_worker_auth_probe,
 )
 from flow_sdk.builtin.agentic_process.cli_drivers.codex.cli import CodexCliOptions
 from flow_sdk.builtin.agentic_process.cli_drivers.codex.session_history import (
@@ -234,6 +236,12 @@ class CodexDriver:
 
     def stream_worker(self, process: "AgenticProcess") -> CodexCLIStreamWorker:
         return CodexCLIStreamWorker.for_process(process.id)
+
+    # ── Auth ─────────────────────────────────────────────────────────────────
+
+    async def auth_probe(self) -> WorkerAuthResult:
+        """`codex login status` against the discovered CLI (exit-code based)."""
+        return await run_worker_auth_probe(self.name)
 
     # ── Transcript discovery ─────────────────────────────────────────────────
 

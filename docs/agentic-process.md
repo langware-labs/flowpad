@@ -118,8 +118,14 @@ The backend entity stores the durable state:
 
 The entity resolves a vendor driver through
 `flow_sdk/builtin/agentic_process/cli_drivers/get_driver`. Vendor details such
-as CLI args, transcript lookup, history loading, and status tail parsing belong
-to the driver layer rather than being hard-coded throughout the entity.
+as CLI args, transcript lookup, history loading, status tail parsing, and
+login probing (`driver.auth_probe()`) belong to the driver layer rather than
+being hard-coded throughout the entity. Two classmethod facades expose the
+harness state: `AgenticProcess.is_installed(worker_type)` (reads the
+capability discovery value — the same source actual spawns use) and
+`AgenticProcess.is_logged_in(worker_type)`, which returns a `WorkerAuthResult`
+(`not_installed` / `logged_in` / `logged_out` / `unknown`; "couldn't check" is
+`unknown`, never `logged_out`).
 
 ## PTY Mode Runtime
 

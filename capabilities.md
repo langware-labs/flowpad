@@ -70,7 +70,11 @@ Each capability has a runner that implements:
   `process_id` immediately. The worker is selected by resolving the default
   `harness` capability to a concrete leaf such as `harness.claude.cli` or
   `harness.codex.cli`.
-- `test()`: validates that the installed capability actually works.
+- `test()`: validates that the installed capability actually works. For
+  harness CLI kinds the result's `details.auth` also carries the CLI's login
+  state (`logged_in` / `logged_out` / `unknown`, with `verified` true only
+  when the vendor CLI itself confirmed it), probed through the worker
+  driver's `auth_probe()`.
 
 The entity actions are exposed on `capability`:
 

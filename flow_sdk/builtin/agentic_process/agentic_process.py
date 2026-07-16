@@ -915,6 +915,38 @@ class AgenticProcess(Entity):
             raise ProcessError(status=result.status, session_id=result.session_id)
         return result
 
+    @staticmethod
+    async def _await_capability_discovery() -> None:
+        """Wait for the startup capability sweep when it's still in flight; a
+        failed sweep degrades to "not discovered" rather than raising."""
+        from flow_sdk.core.capabilities.discovery import ensure_discovered  # noqa: PLC0415
+
+        try:
+            await ensure_discovered()
+        except Exception:
+            logger.debug("capability discovery failed", exc_info=True)
+
+    @classmethod
+    async def is_installed(cls, worker_type: "WorkerType | str | None" = None) -> bool:
+        """Whether this worker's CLI was found by capability discovery.
+
+        Reads the discovery dict (the same SSOT actual spawns use) — never a
+        second ``which``.
+        """
+        from flow_sdk.builtin.agentic_process.cli_drivers import worker_bin_folder  # noqa: PLC0415
+
+        await cls._await_capability_discovery()
+        return worker_bin_folder(get_driver(worker_type).name) is not None
+
+    @classmethod
+    async def is_logged_in(cls, worker_type: "WorkerType | str | None" = None) -> "WorkerAuthResult":
+        """Login state of this worker's CLI (NOT_INSTALLED / LOGGED_IN /
+        LOGGED_OUT / UNKNOWN). The driver's ``auth_probe`` owns the install
+        gate; this facade only adds the discovery wait. Never raises;
+        "couldn't check" is UNKNOWN, not LOGGED_OUT."""
+        await cls._await_capability_discovery()
+        return await get_driver(worker_type).auth_probe()
+
     @classmethod
     def resume(
         cls,
