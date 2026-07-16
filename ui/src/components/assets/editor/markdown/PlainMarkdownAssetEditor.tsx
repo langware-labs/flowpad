@@ -16,6 +16,7 @@ import { useSideWindows } from '@src/navigation/useSideWindows';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { dataContext, FrontMatterFsRef, ProcessKind } from '@sdk';
 import type { APIEntity, FSRef } from '@sdk';
+import { useDocTranslations } from '@src/components/assets/editor/translations/useDocTranslations';
 import { History } from 'lucide-react';
 
 interface PlainMarkdownAssetEditorProps {
@@ -44,14 +45,25 @@ export function PlainMarkdownAssetEditor({ fsRef, assetType }: PlainMarkdownAsse
   // Body re-read token: the live entity's `updated_date` advances when a
   // reindex (agent turn-end / invalidate) re-parses the file, so a stable scalar
   // of it drives MarkdownEditor's out-of-band refresh. Guarded against unsaved edits.
-  const reloadKey = entityReloadKey((entity as { updated_date?: unknown } | null)?.updated_date);
+  const baseReloadKey = entityReloadKey((entity as { updated_date?: unknown } | null)?.updated_date);
   const localTypeId = dataContext.computeNodeTypeId;
+
   // Memoize: useFSRefContent's load effect is keyed on fsRef identity, so a
   // fresh FrontMatterFsRef every render re-downloads the file on every re-render.
-  const editorRef = useMemo(
+  const baseEditorRef = useMemo(
     () => (assetRef && localTypeId ? new FrontMatterFsRef(assetRef, localTypeId) : fsRef),
     [assetRef, localTypeId, fsRef],
   );
+
+  // Document translation: the `?lang=` inline body swap, completion auto-refresh,
+  // and the Translations side tab — shared with the wikitip modal surface.
+  const { editorRef, reloadKey, translationsTab } = useDocTranslations({
+    entity,
+    chatTarget,
+    assetRef,
+    baseEditorRef,
+    baseReloadKey,
+  });
 
   const { navigation } = useDockNavigation();
   // No backing FsRecord entity (raw CLAUDE.md etc.) → no delete button. The
@@ -134,7 +146,7 @@ export function PlainMarkdownAssetEditor({ fsRef, assetType }: PlainMarkdownAsse
         fsRef={editorRef}
         chatTarget={chatTarget}
         toolbar={toolbar}
-        extraSideTabs={[runsTab]}
+        extraSideTabs={[translationsTab, runsTab]}
         onDelete={deletable?.delete ? onDelete : undefined}
         deleteLabel={deletable?.name ?? undefined}
         reloadKey={reloadKey}

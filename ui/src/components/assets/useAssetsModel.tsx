@@ -4,7 +4,7 @@ import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { AssetEditor, AssetMode, AssetRoutingMethod } from '@src/navigation/asset-doc-types';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { dataContext, fsManager, fsStore, launchWizard, Project, RecordType, TypeId, VFSPath } from '@sdk';
+import { dataContext, fsManager, fsStore, Project, RecordType, TypeId, VFSPath } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { ViewType } from '@src/types/ViewType';
 import { notify } from '@src/notifications';
@@ -12,7 +12,8 @@ import { getDescriptor } from '@src/components/quick-create';
 import { useAssetStats } from '@src/hooks/use-asset-stats';
 import { useAssetTypes } from '@src/hooks/use-asset-types';
 import { useAssetTreeRefresh } from '@src/hooks/useAssetTreeRefresh';
-import { useProjectContextFolders, type ContextFolderScope } from '@src/hooks/use-project-context-folders';
+import { useAddContextFolder } from '@src/hooks/use-add-context-folder';
+import { useProjectContextFolders } from '@src/hooks/use-project-context-folders';
 import { useSystemTools } from '@src/hooks/use-system-tools';
 import { useIsDev } from '@src/contexts/view-mode-context';
 import {
@@ -25,7 +26,6 @@ import {
 import type { AssetScopeBucket, ScopeFilter } from '@src/lib/scope-filter';
 import { refreshNode } from '@src/components/browseable-tree/refresh-store';
 import { showDeleteAssetModal } from '@src/components/assets/delete-asset-modal';
-import type { GitFolderInput } from '@src/components/assets/AddGitFolderDialog';
 import { assetTypeRoot } from '@src/components/browseable-tree/adapters/assetTypeRoot';
 import {
   assetContextFolderNodeId,
@@ -141,12 +141,7 @@ export function useAssetsModel() {
     enabled: !!scopeProjectTypeId,
   });
   const hasScopeProject = !!scopeProject;
-  const {
-    contextDirInfos,
-    addPaths: handleAddContextPaths,
-    pickAndAdd: handleBrowseContextDir,
-    remove: removeContextDir,
-  } = useProjectContextFolders(scopeProject);
+  const { contextDirInfos, remove: removeContextDir } = useProjectContextFolders(scopeProject);
 
   // The compute node whose VFS backs the "Files" root and the fs-drop copy —
   // the same resolution the body's fs/ file manager (ContextFolderBrowser) uses,
@@ -267,10 +262,10 @@ export function useAssetsModel() {
 
   // ── Context folders (project include_dirs) ────────────────────────────────
   // Mutations live in the shared useProjectContextFolders hook (destructured
-  // above); the watched entity re-renders the root's rows. The root's "+"
-  // opens the source-chooser dialog (project folder / open folder), which
-  // funnels back through handleAddContextPaths / handleBrowseContextDir.
-  const [addContextFolderDialogOpen, setAddContextFolderDialogOpen] = useState(false);
+  // above); the watched entity re-renders the root's rows. Adding is the shared
+  // useAddContextFolder flow — the root's "+" opens its source dialog, and the
+  // create-new surface's folder tiles run the same sources.
+  const ctxFolder = useAddContextFolder({ project: scopeProject, onAdded: refetchScopeProject });
 
   const handleRemoveContextDir = useCallback(
     async (dir: string) => {
@@ -284,57 +279,6 @@ export function useAssetsModel() {
       }
     },
     [removeContextDir, effectivePointer, navigateAsset],
-  );
-
-  // "Add Git folder" source, two steps: the tile opens a small form (existing
-  // repo URL vs. new repo name — AddGitFolderDialog); only its submit launches
-  // the git-context-folder wizard agent, seeded with that input, which does
-  // the clone/init + remote work in the Flowpad workspace as its own project
-  // and calls add-context-dir itself — the watched project entity then
-  // re-renders the rows. `done`/`cancel` need no follow-up; a wizard-level
-  // error surfaces here.
-  const [addGitFolderScope, setAddGitFolderScope] = useState<ContextFolderScope | null>(null);
-
-  const handleAddGitContextFolder = useCallback(
-    (scope: ContextFolderScope) => {
-      if (!scopeProjectId) return;
-      setAddGitFolderScope(scope);
-    },
-    [scopeProjectId],
-  );
-
-  const handleAddGitFolderSubmit = useCallback(
-    async (input: GitFolderInput) => {
-      if (!scopeProjectId) return;
-      const scope = addGitFolderScope ?? 'private';
-      setAddGitFolderScope(null);
-      try {
-        const result = await launchWizard<{ path?: string; newProjectId?: string }>('git-context-folder', {
-          title: 'Add Git folder',
-          targetTypeId: scopeProjectTypeId?.toString(),
-          payload: { projectId: scopeProjectId, scope, ...input },
-          prompt:
-            input.mode === 'existing'
-              ? `Set up the existing git repository ${input.url} as a context folder on this project.`
-              : `Create a new git repository named "${input.name}" and set it up as a context folder on this project.`,
-        });
-        if (result.status === 'error') {
-          notify.error({ title: 'Failed to add Git folder', message: result.errorStr ?? undefined });
-        }
-        if (result.status === 'done') {
-          // The wizard mutated the project via its own HTTP calls — force a
-          // fresh entity fetch so the Context-folders rows appear without a
-          // page reload (the WS update can race/miss computed fields).
-          await refetchScopeProject();
-        }
-      } catch (err) {
-        notify.error({
-          title: 'Failed to add Git folder',
-          message: err instanceof Error ? err.message : undefined,
-        });
-      }
-    },
-    [addGitFolderScope, scopeProjectId, scopeProjectTypeId, refetchScopeProject],
   );
 
   // Tree node id of a drop destination: the context-folder row itself when
@@ -725,7 +669,7 @@ export function useAssetsModel() {
         assetContextFoldersRoot({
           dirs: contextDirInfos,
           fsTypeId,
-          onAdd: () => setAddContextFolderDialogOpen(true),
+          onAdd: ctxFolder.openSource,
           onRemove: handleRemoveContextDir,
           onDropItem: handleDropIntoContextDir,
           onExternalDrop: handleExternalDropIntoContextDir,
@@ -749,6 +693,7 @@ export function useAssetsModel() {
     fsTypeId,
     filesAnchor,
     contextDirInfos,
+    ctxFolder.openSource,
     handleRemoveContextDir,
     handleDropIntoContextDir,
     handleExternalDropIntoContextDir,
@@ -777,14 +722,7 @@ export function useAssetsModel() {
     newFolderDialogOpen,
     setNewFolderDialogOpen,
     handleNewFolderConfirm,
-    // context folders
-    addContextFolderDialogOpen,
-    setAddContextFolderDialogOpen,
-    handleAddContextPaths,
-    handleBrowseContextDir,
-    handleAddGitContextFolder,
-    addGitFolderDialogOpen: addGitFolderScope !== null,
-    closeAddGitFolderDialog: () => setAddGitFolderScope(null),
-    handleAddGitFolderSubmit,
+    // context folders — the add flow's dialogs, rendered by the view
+    contextFolderDialogs: ctxFolder.dialogs,
   } as const;
 }

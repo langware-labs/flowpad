@@ -784,9 +784,7 @@ msgstr "Add custom label..."
 msgid "Add entity link"
 msgstr "Add entity link"
 
-#: src/components/assets/AddContextFolderDialog.tsx
 #: src/components/assets/AddGitFolderDialog.tsx
-#: src/components/quick-create/QuickCreateModal.tsx
 msgid "Add Git folder"
 msgstr "Add Git folder"
 
@@ -1563,9 +1561,9 @@ msgstr "Bold"
 msgid "Bookmark"
 msgstr "Bookmark"
 
-#: src/components/quick-create/QuickCreateModal.tsx
-msgid "Bookmark folder"
-msgstr "Bookmark folder"
+#: src/components/quick-create/QuickCreatePanel.tsx
+#~ msgid "Bookmark folder"
+#~ msgstr "Bookmark folder"
 
 #: src/components/spec-editor/SpecEditor.tsx
 msgid "Bookmark this plan"
@@ -1573,7 +1571,6 @@ msgstr "Bookmark this plan"
 
 #: src/components/bookmarks-slider/BookmarksSlider.tsx
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
-#: src/components/project-home/ProjectHome.tsx
 msgid "Bookmarks"
 msgstr "Bookmarks"
 
@@ -1974,7 +1971,7 @@ msgstr "Claude (restored session)"
 
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/project-home/ProjectHome.tsx
-#: src/components/quick-create/QuickCreateModal.tsx
+#: src/components/quick-create/QuickCreatePanel.tsx
 msgid "Claude Code"
 msgstr "Claude Code"
 
@@ -2325,7 +2322,7 @@ msgstr "Code expired. Close and click Connect again to get a fresh code."
 msgid "Codebase"
 msgstr "Codebase"
 
-#: src/components/quick-create/QuickCreateModal.tsx
+#: src/components/quick-create/QuickCreatePanel.tsx
 msgid "Codex"
 msgstr "Codex"
 
@@ -2686,7 +2683,7 @@ msgstr "Copied"
 msgid "Copied to Clipboard"
 msgstr "Copied to Clipboard"
 
-#: src/components/quick-create/QuickCreateModal.tsx
+#: src/components/quick-create/QuickCreatePanel.tsx
 msgid "Copilot"
 msgstr "Copilot"
 
@@ -3534,7 +3531,6 @@ msgstr "Description like prepare my daily brief"
 msgid "Description:"
 msgstr "Description:"
 
-#: src/components/quick-create/QuickCreateModal.tsx
 #: src/pages/desktop/DesktopPage.tsx
 msgid "Desktop"
 msgstr "Desktop"
@@ -3926,7 +3922,7 @@ msgstr "e.g., \"Read\", \"Edit|Write\", \"*\" (leave empty for all tools)"
 msgid "e.g., /path/to/script.sh or if [[ \"$tool_input\" == *.md ]]; then echo '{\"permissionDecision\": \"allow\"}'; fi"
 msgstr "e.g., /path/to/script.sh or if [[ \"$tool_input\" == *.md ]]; then echo '{\"permissionDecision\": \"allow\"}'; fi"
 
-#: src/components/assets/AddContextFolderDialog.tsx
+#: src/hooks/use-add-context-folder.tsx
 msgid "Each selected project's folder is added as a context folder."
 msgstr "Each selected project's folder is added as a context folder."
 
@@ -4788,7 +4784,7 @@ msgid "Failed to start services"
 msgstr "Failed to start services"
 
 #: src/components/quick-create/QuickCreateMenu.tsx
-#: src/components/quick-create/QuickCreateModal.tsx
+#: src/components/quick-create/QuickCreatePanel.tsx
 msgid "Failed to start session"
 msgstr "Failed to start session"
 
@@ -5158,7 +5154,7 @@ msgid "Folder"
 msgstr "Folder"
 
 #: src/components/assets/AssetsNavigator.tsx
-#: src/components/quick-create/QuickCreateModal.tsx
+#: src/components/quick-create/DesktopSurface.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "Folder name"
 msgstr "Folder name"
@@ -5316,6 +5312,10 @@ msgstr "Git changes"
 #: src/components/chat-input.tsx
 msgid "Git Clone Failed"
 msgstr "Git Clone Failed"
+
+#: src/components/assets/context-folder-sources.tsx
+msgid "Git folder"
+msgstr "Git folder"
 
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
 msgid "Git is required to share files"
@@ -6960,6 +6960,7 @@ msgid "Merge conflicts"
 msgstr "Merge conflicts"
 
 #: src/components/assets/PushContextFolderDialog.tsx
+#: src/components/quick-create/QuickCreatePanel.tsx
 msgid "Message"
 msgstr "Message"
 
@@ -7219,11 +7220,11 @@ msgstr "New {label} chat"
 msgid "New analysis"
 msgstr "New analysis"
 
-#: src/components/quick-create/QuickCreateModal.tsx
+#: src/components/quick-create/QuickCreatePanel.tsx
 msgid "New asset"
 msgstr "New asset"
 
-#: src/components/quick-create/QuickCreateModal.tsx
+#: src/components/quick-create/DesktopSurface.tsx
 msgid "New bookmark folder"
 msgstr "New bookmark folder"
 
@@ -7267,7 +7268,8 @@ msgstr "New Files ({0})"
 msgid "New Flow"
 msgstr "New Flow"
 
-#: src/components/quick-create/QuickCreateModal.tsx
+#: src/components/quick-create/DesktopSurface.tsx
+#: src/components/quick-create/QuickCreatePanel.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "New folder"
 msgstr "New folder"
@@ -7280,6 +7282,10 @@ msgstr "New Folder"
 #: src/components/inbox-view/InboxView.tsx
 msgid "New group"
 msgstr "New group"
+
+#: src/components/quick-create/QuickCreatePanel.tsx
+msgid "New message"
+msgstr "New message"
 
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "New name"
@@ -7323,7 +7329,7 @@ msgstr "New Schedule Trigger"
 
 #: src/components/quick-access-sidebar/QuickAccessSideBar.tsx
 #: src/components/quick-create/QuickCreateMenu.tsx
-#: src/components/quick-create/QuickCreateModal.tsx
+#: src/components/quick-create/QuickCreatePanel.tsx
 msgid "New session"
 msgstr "New session"
 
@@ -7797,6 +7803,10 @@ msgstr "No matching projects"
 #: src/components/terminal/HistoryModal.tsx
 msgid "No matching sessions"
 msgstr "No matching sessions"
+
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "No members"
+msgstr "No members"
 
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "No members yet — invite someone below."
@@ -8408,7 +8418,7 @@ msgstr "Onboarding reset"
 msgid "Only harness entries here — enable “Show all” to view them."
 msgstr "Only harness entries here — enable “Show all” to view them."
 
-#: src/components/assets/AddContextFolderDialog.tsx
+#: src/components/assets/context-folder-sources.tsx
 msgid "Only on this machine — never shared"
 msgstr "Only on this machine — never shared"
 
@@ -8550,7 +8560,7 @@ msgstr "Open externally: {childPath}"
 msgid "Open Flowpad docs"
 msgstr "Open Flowpad docs"
 
-#: src/components/assets/AddContextFolderDialog.tsx
+#: src/components/assets/context-folder-sources.tsx
 #: src/pages/flow-page/vibe-new-chat.tsx
 msgid "Open folder"
 msgstr "Open folder"
@@ -9326,7 +9336,7 @@ msgstr "primary"
 msgid "Priority"
 msgstr "Priority"
 
-#: src/components/assets/AddContextFolderDialog.tsx
+#: src/components/assets/context-folder-sources.tsx
 #: src/components/graph-context/ContextGraphCanvas.tsx
 #: src/components/project-home/Secrets.tsx
 msgid "Private"
@@ -9417,7 +9427,7 @@ msgstr "Project code"
 msgid "Project Commands (.claude/commands/)"
 msgstr "Project Commands (.claude/commands/)"
 
-#: src/components/assets/AddContextFolderDialog.tsx
+#: src/components/assets/context-folder-sources.tsx
 msgid "Project folder"
 msgstr "Project folder"
 
@@ -10952,7 +10962,7 @@ msgstr "Searching…"
 
 #: src/components/flowdata-renderer/SecretMessageComponent.tsx
 #: src/components/project-home/BindSecretDialog.tsx
-#: src/components/quick-create/QuickCreateModal.tsx
+#: src/components/quick-create/QuickCreatePanel.tsx
 msgid "Secret"
 msgstr "Secret"
 
@@ -11424,7 +11434,7 @@ msgstr "Share to conversation"
 msgid "Share using Git origin"
 msgstr "Share using Git origin"
 
-#: src/components/assets/AddContextFolderDialog.tsx
+#: src/components/assets/context-folder-sources.tsx
 #: src/components/graph-context/ContextGraphCanvas.tsx
 #: src/components/project-home/Secrets.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
@@ -12052,9 +12062,9 @@ msgstr "stored line"
 msgid "Structure"
 msgstr "Structure"
 
-#: src/components/quick-create/QuickCreateModal.tsx
-msgid "Sub agent"
-msgstr "Sub agent"
+#: src/components/quick-create/QuickCreatePanel.tsx
+#~ msgid "Sub agent"
+#~ msgstr "Sub agent"
 
 #: src/pages/live-status/LiveStatus.tsx
 msgid "sub-agent"
@@ -12810,7 +12820,7 @@ msgstr "Transcript not found"
 msgid "Transcripts"
 msgstr "Transcripts"
 
-#: src/components/assets/AddContextFolderDialog.tsx
+#: src/components/assets/context-folder-sources.tsx
 msgid "Travels with the project when shared"
 msgstr "Travels with the project when shared"
 
@@ -13418,6 +13428,11 @@ msgstr "What do you want to collaborate on?"
 #: src/pages/flow-page/vibe-workspace.tsx
 msgid "What do you want to work on"
 msgstr "What do you want to work on"
+
+#. placeholder {0}: tile.label
+#: src/components/quick-create/QuickCreatePanel.tsx
+msgid "What is {0}?"
+msgstr "What is {0}?"
 
 #: src/components/status-bar.tsx
 msgid "What is a Flowpad project?"

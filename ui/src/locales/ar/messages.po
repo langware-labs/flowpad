@@ -784,9 +784,7 @@ msgstr ""
 msgid "Add entity link"
 msgstr ""
 
-#: src/components/assets/AddContextFolderDialog.tsx
 #: src/components/assets/AddGitFolderDialog.tsx
-#: src/components/quick-create/QuickCreateModal.tsx
 msgid "Add Git folder"
 msgstr ""
 
@@ -1563,9 +1561,9 @@ msgstr ""
 msgid "Bookmark"
 msgstr ""
 
-#: src/components/quick-create/QuickCreateModal.tsx
-msgid "Bookmark folder"
-msgstr ""
+#: src/components/quick-create/QuickCreatePanel.tsx
+#~ msgid "Bookmark folder"
+#~ msgstr ""
 
 #: src/components/spec-editor/SpecEditor.tsx
 msgid "Bookmark this plan"
@@ -1573,7 +1571,6 @@ msgstr ""
 
 #: src/components/bookmarks-slider/BookmarksSlider.tsx
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
-#: src/components/project-home/ProjectHome.tsx
 msgid "Bookmarks"
 msgstr ""
 
@@ -1974,7 +1971,7 @@ msgstr ""
 
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/project-home/ProjectHome.tsx
-#: src/components/quick-create/QuickCreateModal.tsx
+#: src/components/quick-create/QuickCreatePanel.tsx
 msgid "Claude Code"
 msgstr ""
 
@@ -2325,7 +2322,7 @@ msgstr ""
 msgid "Codebase"
 msgstr ""
 
-#: src/components/quick-create/QuickCreateModal.tsx
+#: src/components/quick-create/QuickCreatePanel.tsx
 msgid "Codex"
 msgstr ""
 
@@ -2686,7 +2683,7 @@ msgstr ""
 msgid "Copied to Clipboard"
 msgstr ""
 
-#: src/components/quick-create/QuickCreateModal.tsx
+#: src/components/quick-create/QuickCreatePanel.tsx
 msgid "Copilot"
 msgstr ""
 
@@ -3534,7 +3531,6 @@ msgstr ""
 msgid "Description:"
 msgstr ""
 
-#: src/components/quick-create/QuickCreateModal.tsx
 #: src/pages/desktop/DesktopPage.tsx
 msgid "Desktop"
 msgstr ""
@@ -3926,7 +3922,7 @@ msgstr ""
 msgid "e.g., /path/to/script.sh or if [[ \"$tool_input\" == *.md ]]; then echo '{\"permissionDecision\": \"allow\"}'; fi"
 msgstr ""
 
-#: src/components/assets/AddContextFolderDialog.tsx
+#: src/hooks/use-add-context-folder.tsx
 msgid "Each selected project's folder is added as a context folder."
 msgstr ""
 
@@ -4785,7 +4781,7 @@ msgid "Failed to start services"
 msgstr ""
 
 #: src/components/quick-create/QuickCreateMenu.tsx
-#: src/components/quick-create/QuickCreateModal.tsx
+#: src/components/quick-create/QuickCreatePanel.tsx
 msgid "Failed to start session"
 msgstr ""
 
@@ -5155,7 +5151,7 @@ msgid "Folder"
 msgstr ""
 
 #: src/components/assets/AssetsNavigator.tsx
-#: src/components/quick-create/QuickCreateModal.tsx
+#: src/components/quick-create/DesktopSurface.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "Folder name"
 msgstr ""
@@ -5312,6 +5308,10 @@ msgstr ""
 
 #: src/components/chat-input.tsx
 msgid "Git Clone Failed"
+msgstr ""
+
+#: src/components/assets/context-folder-sources.tsx
+msgid "Git folder"
 msgstr ""
 
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
@@ -6957,6 +6957,7 @@ msgid "Merge conflicts"
 msgstr ""
 
 #: src/components/assets/PushContextFolderDialog.tsx
+#: src/components/quick-create/QuickCreatePanel.tsx
 msgid "Message"
 msgstr ""
 
@@ -7216,11 +7217,11 @@ msgstr ""
 msgid "New analysis"
 msgstr ""
 
-#: src/components/quick-create/QuickCreateModal.tsx
+#: src/components/quick-create/QuickCreatePanel.tsx
 msgid "New asset"
 msgstr ""
 
-#: src/components/quick-create/QuickCreateModal.tsx
+#: src/components/quick-create/DesktopSurface.tsx
 msgid "New bookmark folder"
 msgstr ""
 
@@ -7264,7 +7265,8 @@ msgstr ""
 msgid "New Flow"
 msgstr ""
 
-#: src/components/quick-create/QuickCreateModal.tsx
+#: src/components/quick-create/DesktopSurface.tsx
+#: src/components/quick-create/QuickCreatePanel.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "New folder"
 msgstr ""
@@ -7276,6 +7278,10 @@ msgstr ""
 
 #: src/components/inbox-view/InboxView.tsx
 msgid "New group"
+msgstr ""
+
+#: src/components/quick-create/QuickCreatePanel.tsx
+msgid "New message"
 msgstr ""
 
 #: src/components/simple-file-manager/SimpleFileManager.tsx
@@ -7320,7 +7326,7 @@ msgstr ""
 
 #: src/components/quick-access-sidebar/QuickAccessSideBar.tsx
 #: src/components/quick-create/QuickCreateMenu.tsx
-#: src/components/quick-create/QuickCreateModal.tsx
+#: src/components/quick-create/QuickCreatePanel.tsx
 msgid "New session"
 msgstr ""
 
@@ -7793,6 +7799,10 @@ msgstr ""
 #: src/components/project-activity-strip/ProjectActivityStrip.tsx
 #: src/components/terminal/HistoryModal.tsx
 msgid "No matching sessions"
+msgstr ""
+
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "No members"
 msgstr ""
 
 #: src/components/conversation/MembersAvatarStack.tsx
@@ -8405,7 +8415,7 @@ msgstr ""
 msgid "Only harness entries here — enable “Show all” to view them."
 msgstr ""
 
-#: src/components/assets/AddContextFolderDialog.tsx
+#: src/components/assets/context-folder-sources.tsx
 msgid "Only on this machine — never shared"
 msgstr ""
 
@@ -8545,7 +8555,7 @@ msgstr ""
 msgid "Open Flowpad docs"
 msgstr ""
 
-#: src/components/assets/AddContextFolderDialog.tsx
+#: src/components/assets/context-folder-sources.tsx
 #: src/pages/flow-page/vibe-new-chat.tsx
 msgid "Open folder"
 msgstr ""
@@ -9321,7 +9331,7 @@ msgstr ""
 msgid "Priority"
 msgstr ""
 
-#: src/components/assets/AddContextFolderDialog.tsx
+#: src/components/assets/context-folder-sources.tsx
 #: src/components/graph-context/ContextGraphCanvas.tsx
 #: src/components/project-home/Secrets.tsx
 msgid "Private"
@@ -9412,7 +9422,7 @@ msgstr ""
 msgid "Project Commands (.claude/commands/)"
 msgstr ""
 
-#: src/components/assets/AddContextFolderDialog.tsx
+#: src/components/assets/context-folder-sources.tsx
 msgid "Project folder"
 msgstr ""
 
@@ -10945,7 +10955,7 @@ msgstr ""
 
 #: src/components/flowdata-renderer/SecretMessageComponent.tsx
 #: src/components/project-home/BindSecretDialog.tsx
-#: src/components/quick-create/QuickCreateModal.tsx
+#: src/components/quick-create/QuickCreatePanel.tsx
 msgid "Secret"
 msgstr ""
 
@@ -11415,7 +11425,7 @@ msgstr ""
 msgid "Share using Git origin"
 msgstr ""
 
-#: src/components/assets/AddContextFolderDialog.tsx
+#: src/components/assets/context-folder-sources.tsx
 #: src/components/graph-context/ContextGraphCanvas.tsx
 #: src/components/project-home/Secrets.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
@@ -12043,9 +12053,9 @@ msgstr ""
 msgid "Structure"
 msgstr ""
 
-#: src/components/quick-create/QuickCreateModal.tsx
-msgid "Sub agent"
-msgstr ""
+#: src/components/quick-create/QuickCreatePanel.tsx
+#~ msgid "Sub agent"
+#~ msgstr ""
 
 #: src/pages/live-status/LiveStatus.tsx
 msgid "sub-agent"
@@ -12801,7 +12811,7 @@ msgstr ""
 msgid "Transcripts"
 msgstr ""
 
-#: src/components/assets/AddContextFolderDialog.tsx
+#: src/components/assets/context-folder-sources.tsx
 msgid "Travels with the project when shared"
 msgstr ""
 
@@ -13408,6 +13418,11 @@ msgstr ""
 
 #: src/pages/flow-page/vibe-workspace.tsx
 msgid "What do you want to work on"
+msgstr ""
+
+#. placeholder {0}: tile.label
+#: src/components/quick-create/QuickCreatePanel.tsx
+msgid "What is {0}?"
 msgstr ""
 
 #: src/components/status-bar.tsx

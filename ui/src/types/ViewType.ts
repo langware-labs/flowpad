@@ -71,7 +71,7 @@ export interface ViewerMeta {
     | 'GitGraph'
     | 'BrainCircuit'
     | 'Users'
-    | 'Inbox'
+    | 'Mail'
     | 'Stethoscope';
   /** Where this viewer renders: 'overview' tab or dedicated tab */
   tabLocation: 'overview' | 'dedicated';
@@ -360,7 +360,7 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
   },
   [ViewType.INBOX]: {
     title: 'Inbox',
-    iconName: 'Inbox',
+    iconName: 'Mail',
     tabLocation: 'dedicated',
     canAddAsTab: false,
   },
