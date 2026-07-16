@@ -35,6 +35,11 @@ export interface QuickCreateDescriptor {
   type: string;
   /** Fallback label when no server label is available (also used for display consistency). */
   label: string;
+  /** Title of the wiki page explaining this type, for the tile's WikiTip.
+   *  Required: a wikiword resolves by page title at runtime, so a missing or
+   *  wrong one silently shows a "create this page" prompt instead of help —
+   *  making this optional is how a new type ships an untipped tile. */
+  wikiword: string;
   /** React icon component, rendered in the quick-create menu and dialog header. */
   Icon: LucideIcon;
   /** Sub-folder under the scope root for Claude / All (e.g. ".claude/skills"). */
@@ -85,6 +90,7 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
   {
     type: 'skill',
     label: 'Skill',
+    wikiword: 'Skill assets',
     Icon: Sparkles,
     defaultSubFolder: '.claude/skills',
     codexProjectSubFolder: '.agents/skills',
@@ -105,7 +111,8 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
   },
   {
     type: 'agent',
-    label: 'Agent',
+    label: 'Sub agent',
+    wikiword: 'Sub agents',
     Icon: Bot,
     defaultSubFolder: '.claude/agents',
     codexProjectSubFolder: '.codex/agents',
@@ -127,6 +134,7 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
   {
     type: 'workflow',
     label: 'Workflow',
+    wikiword: 'Workflows',
     Icon: WorkflowIcon,
     defaultSubFolder: '.claude/workflows',
     codexProjectSubFolder: '.codex/workflows',
@@ -142,6 +150,7 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
   {
     type: 'dynamic_workflow',
     label: 'Dynamic Workflow',
+    wikiword: 'Dynamic workflows',
     Icon: Boxes,
     defaultSubFolder: '.claude/workflows',
     create: async ({ project, name }) => {
@@ -157,6 +166,7 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
   {
     type: 'task',
     label: 'Task',
+    wikiword: 'Task assets',
     Icon: CheckSquare,
     defaultSubFolder: '.claude/tasks',
     codexProjectSubFolder: '.codex/tasks',
@@ -171,7 +181,8 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
   },
   {
     type: 'markdown',
-    label: 'Markdown document',
+    label: 'Markdown',
+    wikiword: 'Markdown documents',
     Icon: FileText,
     defaultSubFolder: '.claude/docs',
     codexProjectSubFolder: '.codex/docs',
@@ -187,6 +198,7 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
   {
     type: 'whiteboard',
     label: 'Whiteboard',
+    wikiword: 'Whiteboard assets',
     Icon: Palette,
     defaultSubFolder: '.claude/whiteboards',
     codexProjectSubFolder: '.codex/whiteboards',
@@ -202,6 +214,7 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
   {
     type: 'prompt',
     label: 'Prompt',
+    wikiword: 'Prompt library',
     Icon: BookMarked,
     // `prompts/` is Flowpad's own convention, not a harness one — no variants.
     defaultSubFolder: 'prompts',

@@ -37,6 +37,13 @@ export interface UseAssetTypesOptions {
    * filtering unless they opt in explicitly.
    */
   vibeAsStandard?: boolean;
+  /**
+   * Fetch markdown ``vaults``. They are the ONLY runtime piece here — everything
+   * else is synchronous from the registry — so a caller that never reads
+   * ``vaults`` should pass false and skip the request entirely rather than issue
+   * a `/assets/types` GET per mount for a payload it discards.
+   */
+  withVaults?: boolean;
 }
 
 /** Title-case a snake_case type name: "claude_memory" -> "Claude Memory". */
@@ -82,10 +89,12 @@ export function useAssetTypes(options: UseAssetTypesOptions = {}): { types: Asse
   const mode: ViewMode = options.vibeAsStandard && currentMode === 'vibe'
     ? 'standard'
     : currentMode;
+  const withVaults = options.withVaults ?? true;
   const [vaults, setVaults] = useState<AssetTypeVault[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(withVaults);
 
   useEffect(() => {
+    if (!withVaults) return;
     let cancelled = false;
     apiClient
       .get<{ types: AssetTypeInfo[] }>('/assets/types')
@@ -100,7 +109,7 @@ export function useAssetTypes(options: UseAssetTypesOptions = {}): { types: Asse
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [withVaults]);
 
   // Re-derive the catalog whenever the view mode changes (live filtering) or the
   // runtime markdown vaults arrive; merge the vaults onto the markdown entry.
