@@ -35,6 +35,8 @@ context.
 **New folder** — extra directories agents can see:
 
 - [[Context folders]] — attach a folder on disk to the project.
+- [[Private context folders]] — kept to this machine.
+- [[Shared context folders]] — travel with the project, by location not by copy.
 - [[Git context folders]] — set up a Git repository as a context folder.
 
 Most of these are scoped to the active [[Flowpad project]]. Sessions and
