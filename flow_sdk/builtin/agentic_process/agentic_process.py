@@ -3497,7 +3497,14 @@ class AgenticProcess(Entity):
                                         # submission to the nudge loop.
                                         if entry.kind is EntryKind.USER_MESSAGE:
                                             user_turn_landed.set()
-                                            continue
+                                            # Framework-injected (isMeta) user lines — skill
+                                            # bodies, command expansions — are not the client's
+                                            # optimistic echo; fall through so the live chat
+                                            # renders the same meta chips a reload does (the
+                                            # prompt envelope is itself isMeta, but the client
+                                            # filters it).
+                                            if not getattr(entry, "is_meta", False):
+                                                continue
                                         if self._pty_turn_complete(
                                             entry,
                                             worker_type=worker_type,
