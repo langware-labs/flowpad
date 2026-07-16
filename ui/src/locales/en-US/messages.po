@@ -8489,8 +8489,12 @@ msgid "Open analysis"
 msgstr "Open analysis"
 
 #: src/components/task-bar/TaskDetailPanel.tsx
-msgid "Open analysis.md"
-msgstr "Open analysis.md"
+msgid "Open analysis report"
+msgstr "Open analysis report"
+
+#: src/components/task-bar/TaskDetailPanel.tsx
+#~ msgid "Open analysis.md"
+#~ msgstr "Open analysis.md"
 
 #: src/components/version-popover/diagnosis-report-modal.tsx
 msgid "Open as a tab"
@@ -12250,6 +12254,7 @@ msgstr "Task not found"
 msgid "Tasked"
 msgstr "Tasked"
 
+#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/lens-viewer/shared/transcript-features/TranscriptStats.tsx
 #: src/components/task-bar/TaskBar.tsx
 msgid "Tasks"
