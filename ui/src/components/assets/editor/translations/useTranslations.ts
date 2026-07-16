@@ -83,7 +83,11 @@ export function useTranslations({
   const { project } = useProject();
   const [isAdding, setIsAdding] = useState(false);
 
-  const activeLang = currentDock?.lang ?? null;
+  // Raw `?lang=` from the URL. It's only *effective* if THIS doc actually has a
+  // translation for it — otherwise it's a leftover from another doc (the wiki
+  // modal keeps the query param across pages), so we ignore it and show the
+  // original rather than mislabelling the switcher / swapping to a missing body.
+  const rawLang = currentDock?.lang ?? null;
   const stored = (entity as { translations?: Translation[] } | null)?.translations ?? [];
 
   // Only poll live processes when there's a worker to derive status from — a
@@ -112,9 +116,11 @@ export function useTranslations({
   );
 
   const activeView = useMemo(
-    () => (activeLang ? translations.find((t) => t.lang === activeLang) ?? null : null),
-    [translations, activeLang],
+    () => (rawLang ? translations.find((t) => t.lang === rawLang) ?? null : null),
+    [translations, rawLang],
   );
+  // Effective active language: null unless the doc really has that translation.
+  const activeLang = activeView ? rawLang : null;
   const activeRef = activeView?.ref ?? null;
   const activeStatus = activeView?.status ?? null;
 
