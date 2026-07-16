@@ -320,6 +320,45 @@ twin for backend callers (e.g. the catch-up loop deciding whether to re-pull a
 bundle) that need the same signal without paying for a full `model_dump` — keep
 the two in sync.
 
+## 6. Reception phase model
+
+The receive pipeline for a message's **payload** is one five-phase flow; every
+attachment kind rides it, differing only in *who* pulls the trigger at each
+gate:
+
+```
+Phase 1  RECEIVED    header + conversation rows indexed (pre-body).
+                     → download: automatic for asset-entity TYPE_ID messages
+                       (_maybe_eager_pull_bundle on body_status READY, retried
+                       by notification_scanner); manual Download otherwise.
+Phase 2  DOWNLOADED  bundle in the FM's staging (download/ + unpacked/); every
+                     payload entry has a MessageAttachment row (scope=None).
+Phase 3  REVIEWED    dashed chip → AssetReviewDialog (content + source:
+                     embedded / git / cloud). receive_policy='auto' types
+                     WAIVE this gate — see below.
+Phase 4  INSTALLED   the ONE install action: copy/clone + reindex with the
+                     chosen scope/project stamped (or row materialization for
+                     row-only types). project_id=null ⇒ scope inherits live
+                     from the parent conversation (Entity.effective_project_id).
+Phase 5  SETUP/OPEN  TypeInfo.setup_skill spawns the Vibe setup session;
+                     solid chip opens the entity (or the review modal, for
+                     installable types where uninstall lives).
+```
+
+**Transport vs payload.** The conversation row, its inner flow_messages,
+`conversation.jsonl`, and `remote_worker_session` snapshots are TRANSPORT —
+the message plumbing itself — and always materialize at unpack; they are not
+reviewable attachments. Everything else is PAYLOAD and stages.
+
+**`TypeInfo.receive_policy`.** The per-type gate declaration:
+`None` (default) ⇒ staged → review → explicit install — the consent boundary
+for anything agent-executable or byte-copying. `"auto"` ⇒ row-only passive
+payload (claude_session transcripts, flowpad_diagnosis): unpack stages the MA
+and installs it immediately through the same action — no review dialog, chip
+navigates directly, `receive_row_overrides` stamp local state (e.g.
+`received=True`), and no project is ever stamped (scope follows the
+conversation via the parent-chain fallback).
+
 ## Invariants (summary)
 
 - **Header is useful before the body.** `prompt_preview` and `local_path=null`

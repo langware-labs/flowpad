@@ -2237,8 +2237,15 @@ async def unpack_bundle(
     filesystem state and no agent work area — resolving the checkout is already
     an explicit wizard step on open.
 
-    DB-record attachments (task, claude_session, conversation, flow_message,
-    flowpad_diagnosis) materialize as graph rows exactly as before.
+    Row-only PAYLOAD types with ``TypeInfo.receive_policy == "auto"``
+    (claude_session, flowpad_diagnosis) are staged like every payload entry
+    and then installed IMMEDIATELY through ``handle_attachment_install`` —
+    'auto' waives the review gate for passive, non-executable content, not the
+    pipeline. TRANSPORT entries (conversation, its flow_messages,
+    remote_worker_session snapshots) are not attachments at all — they are the
+    message plumbing itself and always materialize here. TASK additionally
+    materializes a slim row for the conversation branch, but its chip state
+    follows the MessageAttachment (staged until reviewed+installed).
 
     Raises ``FlowMessageExistsError`` on a FLOW_MESSAGE header conflict when
     overwrite=False.
@@ -2495,44 +2502,44 @@ async def unpack_bundle(
                                 await existing_task.save(owner_typeid)
                     continue
 
-                if entry_type == BuiltinEntityType.CLAUDE_SESSION.value:
-                    # Shared ClaudeTranscript: materialize the entity row from
-                    # the packed header (same create-or-fill-merge contract as
-                    # TASK — a partial row never blocks the real name/slug).
-                    sess_data = _read_entity_header(entry_dir)
-                    if sess_data is not None:
-                        from flow_sdk.builtin.claude_session import ClaudeSession  # noqa: PLC0415
+                if getattr(SchemaRegistry.get(entry_type), "receive_policy", None) == "auto":
+                    # Row-only auto payload (claude_session, flowpad_diagnosis):
+                    # staged like every payload entry, then installed IMMEDIATELY
+                    # through the one install action — 'auto' means "no review
+                    # gate", not "skip the pipeline". The row materializes inside
+                    # the install (create-or-fill-merge from the staged header,
+                    # plus the type's receive_row_overrides — e.g. claude_session
+                    # stamps received=True), so chips resolve exactly as before;
+                    # project_id stays null and scope inherits live via the
+                    # parent-chain fallback (Entity.effective_project_id).
+                    header = _read_entity_header(entry_dir) or {}
+                    ma = await _stage_attachment(
+                        top_fm_id=top_fm_id,
+                        conversation_id=staging_conv_id,
+                        entry_key=name,
+                        entry_type=entry_type,
+                        entry_id=entry_id,
+                        unpacked_path=fm_data_ops.staged_entry_rel_path(name),
+                        name=header.get("name") or header.get("title"),
+                        description=None,
+                        git_origin=None,
+                        create_bookmark=create_bookmark,
+                        owner_typeid=owner_typeid,
+                        user_scope_allowed=True,
+                    )
+                    staged_mas.append(ma)
+                    from flow_sdk.app.actions.message_attachment_action import (  # noqa: PLC0415
+                        handle_attachment_install,
+                    )
 
-                        sess_id = sess_data.get("id") or entry_id
-                        # ``received=True``: the transcript rode in with the share
-                        # and lives only under received_transcripts/ — it never ran
-                        # here and is not resumable. Drives the viewer's resume-hide
-                        # + analyze-transcript toolbar.
-                        sess_payload = {**sess_data, "id": sess_id, "remote": False, "received": True}
-                        existing_sess = await ClaudeSession.get_one({"id": sess_id})
-                        if existing_sess is None or overwrite:
-                            sess = ClaudeSession.model_validate(sess_payload)
-                            await sess.save(owner_typeid)
-                        elif _fill_merge_entity(existing_sess, sess_payload, ("id", "type")):
-                            await existing_sess.save(owner_typeid)
-
-                elif entry_type == EntityType.FLOWPAD_DIAGNOSIS.value:
-                    # Metadata-only diagnosis: materialize the entity row from the
-                    # packed header (same create-or-fill-merge contract as TASK /
-                    # CLAUDE_SESSION) so the receiver's chip resolves and
-                    # body_downloaded flips true, clearing the Download button.
-                    diag_data = _read_entity_header(entry_dir)
-                    if diag_data is not None:
-                        from flow_sdk.builtin.flowpad_diagnosis import FlowpadDiagnosis  # noqa: PLC0415
-
-                        diag_id = diag_data.get("id") or entry_id
-                        diag_payload = {**diag_data, "id": diag_id}
-                        existing_diag = await FlowpadDiagnosis.get_one({"id": diag_id})
-                        if existing_diag is None or overwrite:
-                            diag = FlowpadDiagnosis.model_validate(diag_payload)
-                            await diag.save(owner_typeid)
-                        elif _fill_merge_entity(existing_diag, diag_payload, ("id", "type")):
-                            await existing_diag.save(owner_typeid)
+                    res = await handle_attachment_install(
+                        ma.id, "user", None, overwrite=overwrite, someone_typeid=owner_typeid,
+                    )
+                    if getattr(res, "status", None) != "SUCCESS":
+                        logger.warning(
+                            "[unpack] auto-install failed for %s-%s: %s",
+                            entry_type, entry_id, getattr(res, "message", res),
+                        )
 
                 elif entry_type == EntityType.REMOTE_WORKER_SESSION.value:
                     # Live-session snapshot: materialize/refresh the local
