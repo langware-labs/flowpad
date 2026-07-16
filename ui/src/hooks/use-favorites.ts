@@ -121,13 +121,17 @@ export function useFavorites() {
   );
 
   const addFavorite = useCallback(
-    async (ref: FavoriteRef): Promise<Bookmark> => {
+    // `parentId` files the favorite directly into a folder ('' = root). The
+    // existing-favorite short-circuit ignores it — a duplicate stays where it
+    // already lives; callers that want to re-file follow with `moveToFolder`.
+    async (ref: FavoriteRef, parentId = ''): Promise<Bookmark> => {
       const existing = isFavorited(ref.entityType, ref.entityId);
       if (existing) return existing;
       const bookmark = new Bookmark({
         bookmark_type: BookmarkType.FAVORITE,
         title: ref.title,
-        order: appendOrder(''),
+        parent_id: parentId,
+        order: appendOrder(parentId),
         project_id: currentProjectId,
         data: {
           entity_type: ref.entityType,
@@ -164,12 +168,16 @@ export function useFavorites() {
   );
 
   const createFolder = useCallback(
-    async (name: string): Promise<Bookmark> => {
+    // `parentId` nests the folder ('' = root). This is the only path to a nested
+    // folder — `moveToFolder` refuses folders, so a create-then-move workaround
+    // can't build one.
+    async (name: string, parentId = ''): Promise<Bookmark> => {
       const folder = new Bookmark({
         bookmark_type: BookmarkType.FAVORITE_FOLDER,
         name: name.trim(),
         title: name.trim(),
-        order: appendOrder(''),
+        parent_id: parentId,
+        order: appendOrder(parentId),
         project_id: currentProjectId,
       });
       await folder.save([]);
@@ -221,13 +229,13 @@ export function useFavorites() {
   );
 
   const toggleFavorite = useCallback(
-    async (ref: FavoriteRef): Promise<Bookmark | null> => {
+    async (ref: FavoriteRef, parentId = ''): Promise<Bookmark | null> => {
       const existing = isFavorited(ref.entityType, ref.entityId);
       if (existing) {
         await removeFavorite(existing);
         return null;
       }
-      return addFavorite(ref);
+      return addFavorite(ref, parentId);
     },
     [isFavorited, addFavorite, removeFavorite],
   );
