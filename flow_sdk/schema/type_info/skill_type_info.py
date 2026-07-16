@@ -24,7 +24,7 @@ def _skill_default_body(entity) -> str:
 
 SKILL = TypeMetadata(
     type=EntityType.SKILL,
-    icon="Sparkles",
+    icon="FileBadge",
     displayName="Skills",
     browseable_by=ViewMode.STANDARD,
     creatable=True,
