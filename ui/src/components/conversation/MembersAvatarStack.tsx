@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { X } from 'lucide-react';
-import { type ConversationParticipant, type TypeId } from '@sdk';
+import { Check, Link as LinkIcon, X } from 'lucide-react';
+import { mintInviteLink, type APIEntity, type ConversationParticipant, type TypeId } from '@sdk';
 import { Avatar, AvatarFallback } from '@src/components/ui/avatar';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
+import { useEntity } from '@src/hooks/entity-hooks';
 import { useMembers } from '@src/hooks/use-members';
 import { ContactPicker } from '@src/components/contact-picker/ContactPicker';
 import { AddressBookButton } from '@src/components/contact-picker/AddressBookButton';
@@ -26,6 +27,10 @@ const MAX_INLINE_AVATARS = 4;
 
 interface MembersAvatarStackProps {
   typeId: TypeId;
+  /** Offer "Generate link & copy" alongside the email invite. Off by default:
+   *  a link is a standing self-invite, so each surface opts in deliberately
+   *  (today the project MEMBERS row). */
+  allowInviteLink?: boolean;
 }
 
 /**
@@ -38,14 +43,18 @@ interface MembersAvatarStackProps {
  * The hook (``useMembers``) handles the local-cache-first + on-mount refresh
  * pattern; this component is purely presentational.
  */
-export function MembersAvatarStack({ typeId }: MembersAvatarStackProps) {
+export function MembersAvatarStack({ typeId, allowInviteLink = false }: MembersAvatarStackProps) {
   const { t } = useLingui();
-  const { members, addMembers, removeMember, setRole } = useMembers(typeId);
+  const { members, addMembers, removeMember, setRole, refresh } = useMembers(typeId);
+  const { data: entity } = useEntity<APIEntity<any>>(typeId);
   const { localUser } = useLocalUser();
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState<ConversationParticipant[]>([]);
   const [inviting, setInviting] = useState(false);
   const [inviteError, setInviteError] = useState<string | null>(null);
+  const [linking, setLinking] = useState(false);
+  const [linkError, setLinkError] = useState<string | null>(null);
+  const [linkCopied, setLinkCopied] = useState(false);
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [changingId, setChangingId] = useState<string | null>(null);
   const [permissionsContact, setPermissionsContact] = useState<ContactIdentity | null>(null);
@@ -101,6 +110,37 @@ export function MembersAvatarStack({ typeId }: MembersAvatarStackProps) {
     if (inviteError) setInviteError(null);
   };
 
+  /**
+   * Mint a shareable invite link and put it on the clipboard.
+   *
+   * The URL is returned exactly once — the hub stores only a hash of the token
+   * — so it goes straight to the clipboard and is never rendered. There is
+   * deliberately no "show link": anyone who can open this popover could
+   * otherwise redeem it to raise their own role.
+   *
+   * An unshared project has no hub row to hang the link off (reflection needs
+   * ``remote``), so publish it first — the same first-share step the email
+   * invite above takes, which makes the sharer its owner.
+   */
+  const handleGenerateLink = async () => {
+    if (!entity) return;
+    setLinking(true);
+    setLinkError(null);
+    try {
+      if (!(entity as { remote?: boolean }).remote) await entity.share();
+      const link = await mintInviteLink(typeId);
+      await navigator.clipboard.writeText(link.url);
+      setLinkCopied(true);
+      await refresh(); // the first share seeds the roster with me as owner
+    } catch (err) {
+      // The hub's own message is the useful one here (e.g. the grant ceiling's
+      // "Cannot mint a link at role '<role>'").
+      setLinkError(err instanceof Error ? err.message : t`Could not generate a link`);
+    } finally {
+      setLinking(false);
+    }
+  };
+
   const handleInvite = async () => {
     const emails = selected
       .map((p) => (p.email ?? '').trim().toLowerCase())
@@ -137,6 +177,8 @@ export function MembersAvatarStack({ typeId }: MembersAvatarStackProps) {
       setSelected([]);
       setInviteError(null);
       setInviting(false);
+      setLinkError(null);
+      setLinkCopied(false);
     }
   };
 
@@ -309,6 +351,30 @@ export function MembersAvatarStack({ typeId }: MembersAvatarStackProps) {
           {inviteError && (
             <div className="mt-1 text-[10px] text-destructive" role="alert">
               {inviteError}
+            </div>
+          )}
+          {allowInviteLink && (
+            <div className="mt-2 border-t border-border pt-2">
+              <button
+                type="button"
+                onClick={() => void handleGenerateLink()}
+                disabled={linking}
+                className="flex w-full items-center justify-center gap-1.5 rounded border border-border bg-muted px-2 py-1 text-[10px] uppercase tracking-wide text-muted-foreground hover:bg-accent disabled:opacity-50"
+                data-testid="members-invite-link"
+              >
+                {linkCopied ? <Check className="h-3 w-3" /> : <LinkIcon className="h-3 w-3" />}
+                {linking ? t`Generating…` : linkCopied ? t`Link copied` : t`Generate link & copy`}
+              </button>
+              <p className="mt-1 text-[10px] text-muted-foreground">
+                {linkCopied
+                  ? t`Anyone with the link can join as a member. It's on your clipboard — it can't be shown again.`
+                  : t`Creates a link anyone can use to join as a member.`}
+              </p>
+              {linkError && (
+                <div className="mt-1 text-[10px] text-destructive" role="alert">
+                  {linkError}
+                </div>
+              )}
             </div>
           )}
         </div>

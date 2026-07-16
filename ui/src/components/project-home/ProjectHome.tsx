@@ -143,7 +143,7 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, showSe
           <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
             <Trans>Members</Trans>
           </span>
-          <MembersAvatarStack typeId={projectTypeId} />
+          <MembersAvatarStack typeId={projectTypeId} allowInviteLink />
         </div>
       )}
 
