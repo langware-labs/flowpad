@@ -1,10 +1,9 @@
 import { useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { Check, Link as LinkIcon, X } from 'lucide-react';
-import { mintInviteLink, type APIEntity, type ConversationParticipant, type TypeId } from '@sdk';
+import { mintInviteLink, type ConversationParticipant, type TypeId } from '@sdk';
 import { Avatar, AvatarFallback } from '@src/components/ui/avatar';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
-import { useEntity } from '@src/hooks/entity-hooks';
 import { useMembers } from '@src/hooks/use-members';
 import { ContactPicker } from '@src/components/contact-picker/ContactPicker';
 import { AddressBookButton } from '@src/components/contact-picker/AddressBookButton';
@@ -45,8 +44,7 @@ interface MembersAvatarStackProps {
  */
 export function MembersAvatarStack({ typeId, allowInviteLink = false }: MembersAvatarStackProps) {
   const { t } = useLingui();
-  const { members, addMembers, removeMember, setRole, refresh } = useMembers(typeId);
-  const { data: entity } = useEntity<APIEntity<any>>(typeId);
+  const { entity, members, addMembers, removeMember, setRole, refresh } = useMembers(typeId);
   const { localUser } = useLocalUser();
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState<ConversationParticipant[]>([]);
