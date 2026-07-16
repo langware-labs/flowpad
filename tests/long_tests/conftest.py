@@ -48,6 +48,7 @@ _REAL_HOME_TEST_MODULES = frozenset({
     "test_relaunch_kills_session_orphan",
     "test_agent",
     "test_debug_log_records",
+    "test_skill_chip_live_stream",
     "test_skill_transcript_analysis",
     "test_docs_browse_skill",
     "test_context_process",
