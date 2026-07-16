@@ -35,3 +35,40 @@ export async function getMembers(typeId: TypeId): Promise<Participant[]> {
   // non-array response as "no members" so consumers can rely on Participant[].
   return Array.isArray(res) ? res : [];
 }
+
+/** A freshly minted invite link. ``url`` is returned EXACTLY ONCE — the hub
+ *  stores only a hash of the token, so nothing can hand it back later. */
+export interface InviteLink {
+  id: string;
+  /** App route (``<hub>/invite/<token>``), not a raw token. */
+  url: string;
+  expiration_at: string | null;
+  allowed_email_domains: string[];
+}
+
+/**
+ * Mint a shareable invite link for any entity — POST ``<type>/<id>/members/link``.
+ *
+ * Anyone holding the URL can redeem it to invite themselves at ``role``, so it
+ * is shown once at mint and never again: only the token's hash is stored
+ * hub-side. Copy it immediately; to "recover" one, mint a new link and revoke
+ * the old.
+ *
+ * Hub-gated: admin+ (the ``members`` policy) and a per-target grant ceiling —
+ * minting above your own role is a 403, which throws here. The entity must
+ * already exist hub-side (``remote``); publish it with ``share()`` first, or
+ * reflection falls through to the local no-op and this silently returns
+ * nothing.
+ *
+ * Expiry and domain allowlist are left to the hub (it defaults, and clamps
+ * expiry to ``invitation_max_expiry_days``).
+ */
+export async function mintInviteLink(typeId: TypeId, role: string = 'member'): Promise<InviteLink> {
+  const info = new ActionInfo('members', typeId.type, typeId.id, 'POST');
+  info.subpath = 'link';
+  info.hubReflect = true; // links are hub-owned — reflect to the hub
+  info.bodyParameters = {
+    invitation_targets: [{ typeid: `${typeId.type}-${typeId.id}`, role }],
+  };
+  return await dataManager.callAction<unknown, InviteLink>(info);
+}

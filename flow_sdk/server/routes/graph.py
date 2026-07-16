@@ -273,7 +273,11 @@ async def handle_request(
             # Carry the REAL request method into reflection — never infer the hub
             # verb from the matched action's static methods (see reflect_to_hub).
             hub_data = await reflect_to_hub(
-                a, entity_for_reflect, {**request_params, **json_data}, request_info.method
+                a,
+                entity_for_reflect,
+                {**request_params, **json_data},
+                request_info.method,
+                request_info.sub_path,
             )
             _hr_bench("after hub reflect")
             return ApiResponse.success(data=hub_data)
