@@ -1,6 +1,7 @@
 import type { Bookmark } from '@sdk';
 import { BrowseableTree } from '@src/components/browseable-tree/BrowseableTree';
 import { useFavoritesTreeRoots } from '@src/components/browseable-tree/adapters/useFavoritesRoots';
+import { FavoritesAddRow } from '@src/components/favorites/FavoritesAddRow';
 import { TooltipProvider } from '@src/components/ui/tooltip';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { Trans } from '@lingui/react/macro';
@@ -36,6 +37,8 @@ export function FavoritesTreeMenu({ filter }: { filter?: (b: Bookmark) => boolea
         activePointer={currentDock ?? null}
         onNavigate={(p) => navigation.openDock(p)}
         hoverExpandMs={HOVER_EXPAND_MS}
+        // Build-as-you-browse: the last row of every level adds into THAT level.
+        levelFooter={(parentId) => <FavoritesAddRow parentId={parentId} />}
         // No persistKey on purpose: hover-expansion is exploratory and cheap to
         // trigger, so persisting it would restore a fully-expanded tree on every
         // open — exactly the state a hover menu exists to avoid.
