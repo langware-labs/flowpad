@@ -14,7 +14,6 @@ import {
 } from '@src/components/ui/command';
 import {
   useSupportedLocales,
-  useShowLocaleChip,
   getRecentLocales,
   setLocale,
   useLocale,
@@ -61,7 +60,6 @@ export function LanguageSelector() {
   const activeCode = useLocale();
   const activeInfo = useLocaleInfo();
   const supportedLocales = useSupportedLocales();
-  const showLocaleChip = useShowLocaleChip();
 
   // Active + recents, de-duped, in the dedicated top section. `activeCode`
   // updates on every selection (incl. ones made elsewhere, via the locale
@@ -79,10 +77,13 @@ export function LanguageSelector() {
     setOpen(false);
   };
 
-  // Only offer the picker when the OS reports 2+ languages we support (a genuine
-  // choice). With 0 or 1, the locale is auto-selected and the chip is hidden — so
-  // a machine with no Arabic never sees an Arabic option.
-  if (!showLocaleChip) return null;
+  // Only offer the picker when the backend ships 2+ locales (a genuine choice).
+  // Deliberately NOT gated on `navigator.languages`: that reports the OS
+  // preferred-languages list, which says nothing about what a user reads or
+  // types — a Hebrew typist on an English UI reports only `en`, and gating on it
+  // hid the picker from exactly the people who wanted it. The OS signal still
+  // picks the first-run default (locale-context's `resolveInitialLocale`).
+  if (supportedLocales.length < 2) return null;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
