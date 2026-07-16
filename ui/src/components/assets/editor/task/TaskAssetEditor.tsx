@@ -180,16 +180,23 @@ export function TaskAssetEditor({ fsRef, task: providedTask }: TaskAssetEditorPr
             </div>
           </div>
         ) : (
-          <Input
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            onBlur={commitTitle}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
-            }}
-            placeholder="Untitled task"
-            className="h-auto border-0 bg-transparent px-0 text-2xl font-semibold shadow-none focus-visible:ring-0"
-          />
+          <div className="flex items-center gap-3">
+            {/* `size` + `w-auto` shrink-wrap the input to its text (the base
+                Input is `w-full`) so the Owner pill sits right at the end of
+                the title instead of being pushed to the far edge. */}
+            <Input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              onBlur={commitTitle}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+              }}
+              placeholder="Untitled task"
+              size={Math.max((title || 'Untitled task').length, 1)}
+              className="h-auto w-auto min-w-0 max-w-full border-0 bg-transparent px-0 text-2xl font-semibold shadow-none focus-visible:ring-0"
+            />
+            <OwnerButton task={task} save={save} />
+          </div>
         )}
 
         {/* Meta pill row */}
@@ -279,7 +286,6 @@ export function TaskAssetEditor({ fsRef, task: providedTask }: TaskAssetEditorPr
             </>
           )}
 
-          <OwnerButton task={task} save={save} />
           <AnalyzeStatusButton task={task} />
           {task.analysis_path && (
             <button

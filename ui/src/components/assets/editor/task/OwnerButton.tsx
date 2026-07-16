@@ -35,7 +35,8 @@ export function OwnerButton({ task, save }: OwnerButtonProps) {
   if (task.parent_id) return null;
 
   const isGroup = task.kind === TaskKind.GROUP;
-  const label = isGroup ? 'Group' : task.assignee || 'Owner';
+  const assigned = isGroup ? task.group_name : task.assignee;
+  const label = assigned ? `Owner: ${assigned}` : 'Owner';
   const Icon = isGroup ? Users : UserIcon;
 
   const openIndividual = () => {
