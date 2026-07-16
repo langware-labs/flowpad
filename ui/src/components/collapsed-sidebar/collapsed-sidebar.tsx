@@ -20,8 +20,6 @@ import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { WikiTip } from '@src/components/wiki-tip';
 import { useContext } from '@src/hooks/useContext';
 import { useInboxStore } from '@src/store/use-inbox-store';
-import { useProjectTasks } from '@src/hooks/use-project-tasks';
-import { isTaskActive } from '@src/components/task-bar/constants';
 import { useSpotlightStore } from '@src/store/use-spotlight-store';
 import { BookmarksSlider } from '@src/components/bookmarks-slider/BookmarksSlider';
 import { useUnopenedFavoritesCount } from '@src/hooks/use-unopened-favorites-count';
@@ -37,7 +35,6 @@ import {
   ArrowLeft,
   BadgeCheck,
   Bookmark,
-  CheckSquare,
   RefreshCw,
   BookOpen,
   Bug,
@@ -116,12 +113,6 @@ export function CollapsedSidebar() {
   const unopenedFavorites = useUnopenedFavoritesCount();
   const viewMode = useViewMode();
   const { t } = useLingui();
-
-  // Live task count for the rail's Tasks badge. useProjectTasks is an unscoped
-  // reactive query (auto-refreshes over WS on backend task writes); we badge the
-  // number of active tasks — the ones needing attention right now.
-  const { data: tasks } = useProjectTasks();
-  const activeTaskCount = tasks.filter(isTaskActive).length;
 
   const navItems: readonly NavItem[] = [
     { title: t`Home`, icon: Home, viewType: null, vis: ALL_VISIBLE },
@@ -211,13 +202,6 @@ export function CollapsedSidebar() {
   const collapsedItems = navItems.filter((item) => item.vis[viewMode] === 'collapsed');
 
   const currentView = currentDock?.viewType;
-  // Tasks open as a scoped Assets surface (`list/task` or a task editor), so the
-  // rail's Tasks button derives its active state from the dock pointer, not a
-  // bespoke ViewType. Keep this URL-first: read currentDock, never optimistic state.
-  const currentPointer = currentDock?.pointer ?? '';
-  const onTasks =
-    currentView === ViewType.ASSETS &&
-    (currentPointer.startsWith('list/task') || currentPointer.includes('/task/typeid/'));
   // const { cloudLoginAvailable, cloudApiUrl, isDesktop } = context;
 
   const handleClick = useCallback(
@@ -344,26 +328,6 @@ export function CollapsedSidebar() {
                   {item.viewType === null && project && renderProjectHomeItem(project)}
                 </React.Fragment>
               ))}
-
-              {/* Tasks — shown in every mode (Vibe included). Opens the tasks
-                asset list via navigation.openTasks(); active state is derived
-                from the dock pointer (see onTasks above). The badge counts
-                active tasks and reuses the same pill markup as renderNavItem. */}
-              <SidebarMenuItem>
-                <SidebarMenuButton
-                  tooltip={t`Tasks`}
-                  isActive={onTasks}
-                  onClick={() => navigation.openTasks()}
-                  className="relative w-full justify-center px-2"
-                >
-                  <CheckSquare className="h-5 w-5" />
-                  {activeTaskCount > 0 && (
-                    <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-0.5 text-[9px] font-bold leading-none text-destructive-foreground">
-                      {activeTaskCount > 99 ? '99+' : activeTaskCount}
-                    </span>
-                  )}
-                </SidebarMenuButton>
-              </SidebarMenuItem>
 
               {/* Bookmarks — vibe-mode only. Opens the favorites desktop as a
                 left slide-in flyout (not a dock tab), so it toggles local state

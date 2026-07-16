@@ -4332,10 +4332,6 @@ msgstr "לכל שורה בעלת אינדקס יש קובץ מקור בדיסק.
 msgid "Every project is selected"
 msgstr "כל הפרויקטים נבחרים"
 
-#: src/components/assets/context-folder-sources.tsx
-msgid "Everyone the project is shared with gets it"
-msgstr ""
-
 #: src/components/conversation/ExecutePromptDialog.tsx
 #~ msgid "Execute"
 #~ msgstr "הפעלה"
@@ -8489,12 +8485,8 @@ msgid "Open analysis"
 msgstr "פתח ניתוח"
 
 #: src/components/task-bar/TaskDetailPanel.tsx
-msgid "Open analysis report"
-msgstr ""
-
-#: src/components/task-bar/TaskDetailPanel.tsx
-#~ msgid "Open analysis.md"
-#~ msgstr "פתח analysis.md"
+msgid "Open analysis.md"
+msgstr "פתח analysis.md"
 
 #: src/components/version-popover/diagnosis-report-modal.tsx
 msgid "Open as a tab"
@@ -12254,7 +12246,6 @@ msgstr "משימה לא נמצאה"
 msgid "Tasked"
 msgstr "בעל משימה"
 
-#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/lens-viewer/shared/transcript-features/TranscriptStats.tsx
 #: src/components/task-bar/TaskBar.tsx
 msgid "Tasks"
@@ -12830,8 +12821,8 @@ msgid "Transcripts"
 msgstr "תמלילים"
 
 #: src/components/assets/context-folder-sources.tsx
-#~ msgid "Travels with the project when shared"
-#~ msgstr ""
+msgid "Travels with the project when shared"
+msgstr ""
 
 #: src/pages/discover-page/discover-page.tsx
 msgid "Trending"
@@ -13445,14 +13436,6 @@ msgstr ""
 
 #: src/components/status-bar.tsx
 msgid "What is a Flowpad project?"
-msgstr ""
-
-#: src/components/assets/context-folder-sources.tsx
-msgid "What is a private context folder?"
-msgstr ""
-
-#: src/components/assets/context-folder-sources.tsx
-msgid "What is a shared context folder?"
 msgstr ""
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
