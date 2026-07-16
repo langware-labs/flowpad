@@ -292,10 +292,12 @@ checks for a materialized record folder
 - **Structural / row-only types always count as present**
   (`_NON_MATERIALIZING_TYPE_IDS`, `flow_sdk/builtin/flow_message.py:149`):
   `conversation`, `flow_message`, `task`, `claude_session`. These never create
-  a standard records folder (conversation plumbing, or an indexer/row-only
-  unpack), so gating on a folder would strand the message behind Download
-  forever. Git provenance is carried as `GitOrigin` bundle metadata, not as a
-  `TYPE_ID` attachment.
+  a standard records folder — `conversation`/`flow_message` are transport,
+  `claude_session` is a `receive_policy='auto'` row-only payload installed at
+  unpack, and `task` materializes a slim row (its *chip* state still follows
+  the MessageAttachment, see §6) — so gating on a folder would strand the
+  message behind Download forever. Git provenance is carried as `GitOrigin`
+  bundle metadata, not as a `TYPE_ID` attachment.
 - **Body-bearing types additionally require their source file**
   (`_BODY_BEARING_TYPE_IDS = {spec, markdown, plan}`,
   `flow_sdk/builtin/flow_message.py:161`): a record folder with only
@@ -358,6 +360,11 @@ and installs it immediately through the same action — no review dialog, chip
 navigates directly, `receive_row_overrides` stamp local state (e.g.
 `received=True`), and no project is ever stamped (scope follows the
 conversation via the parent-chain fallback).
+
+Coverage: `tests/unit/test_receive_policy_auto_install.py` (pipeline contract),
+`ui/tests/unit/staged-chip-state.test.ts` (chip truth table incl. task), and
+`ui/tests/hub/transcript_share_two_client.test.ts` (live two-instance e2e over
+the hub: share → accept → download → auto-installed MA + received row).
 
 ## Invariants (summary)
 
