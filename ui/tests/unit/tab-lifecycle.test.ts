@@ -312,6 +312,31 @@ describe('workspace child adoption guard', () => {
     expect(spy).not.toHaveBeenCalled();
   });
 
+  it('falls through to the mint for a NON-adoptable tab carrying a stale workspace edge', async () => {
+    // No workspace mounted. An assets-LIST row persisted with a parent (a stale
+    // edge from the retired display-tab model — target_type null, so the
+    // backend's target-type belt missed it) must NOT take the verbatim-reuse
+    // fast path: it falls through to `getFromDockPointer`, whose backend
+    // (`ensure_tab`'s adoptable-pointer guard) null-heals the edge — else the
+    // vibe workspace resurrects the old process around the top-level assets
+    // page (RCA 2026-07-16).
+    const d = new DockPointer(ViewType.ASSETS, 'project-home');
+    const stale = new Tab({
+      id: nextTabId(),
+      pointer: d.toJSON() ?? '',
+      project_id: 'p1',
+      visible: true,
+      parent_tab_id: PARENT,
+    });
+    vi.spyOn(Tab, 'listAll').mockResolvedValue([stale]);
+    const mint = vi
+      .spyOn(Tab, 'getFromDockPointer')
+      .mockResolvedValue([new Tab({ ...stale, parent_tab_id: null })]);
+    await setupTab(d);
+    expect(mint).toHaveBeenCalledTimes(1);
+    expect((mint.mock.calls[0][1] as { parentTabId?: string | null } | undefined)?.parentTabId).toBeNull();
+  });
+
   it('still re-parents an existing asset tab into the active workspace', async () => {
     setActiveTabParent(PARENT);
     const d = assetDock();
