@@ -138,7 +138,10 @@ export function TaskBar() {
 
   const handleCreate = async () => {
     try {
-      const task = await new Task({ title: 'Untitled task' }).save();
+      // Scope the new task to the current project (when in one) so it lands
+      // under project-scoped Assets→Tasks; user scope when project-less.
+      const scopeIds = projectTypeId ? [projectTypeId] : [];
+      const task = await new Task({ title: 'Untitled task' }).save(scopeIds);
       navigation.openDock(DockPointer.forAssetEditorByTypeId('task', task.typeId));
     } catch (e) {
       notify.error({

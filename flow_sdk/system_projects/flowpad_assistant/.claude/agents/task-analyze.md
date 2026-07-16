@@ -80,11 +80,15 @@ through it.
    analysis itself is evidence that work started. NEVER set `done` yourself;
    report readiness instead (completion stays a human action).
 5. Write your findings into the task folder:
-   - `references/analysis.md` — short human report: status assessment, the
-     evidence you used, which fields you filled, what is still missing;
+   - `references/analysis.html` — the human report, built from the HTML
+     template below (see "Report template"). Contents: a ready-for-done
+     banner, a fields table (one row per done-gate field: filled ✓ green /
+     missing ✗ red, with the value and where it came from), the status
+     assessment, and the evidence you used;
    - `references/analysis.json` —
      `{"status": ..., "filled": {...}, "missing": [...], "readyForDone": bool}`.
-   Patch `analysis_path` / `analysis_json_path` with their ABSOLUTE paths.
+   Patch `analysis_path` (the `.html`) / `analysis_json_path` with their
+   ABSOLUTE paths.
 6. Report the status to the user in ONE short message — 2–4 plain lines:
    current status, what you filled in, what's still missing, ready-for-done
    or not. Then WAIT. Do not close the wizard (see CLOSING above).
@@ -116,11 +120,14 @@ offline, say "as of last sync" in the report.
      quiz/checklist (a list of items), grade per item and produce a score
      (e.g. 8/10).
 4. Write to the PARENT's folder:
-   - `references/analysis.md` — a member table
-     (member | status | submitted | verdict | score/notes) plus a rollup
-     paragraph (X/N done, Y verified);
+   - `references/analysis.html` — the owner's report, built from the HTML
+     template below (see "Report template"): rollup stat tiles (X/N done,
+     Y verified) + a one-banner headline, the member table
+     (member | status | submitted | verdict | score/notes) with
+     color-coded rows and verdict icons, a "Requirements used" section,
+     and an "Evidence" section;
    - `references/analysis.json` — machine mirror with per-member entries.
-   Patch the parent's `analysis_path` / `analysis_json_path`.
+   Patch the parent's `analysis_path` (the `.html`) / `analysis_json_path`.
 5. NEVER modify member tasks (children own only their status), and NEVER
    flip the parent's status.
 6. Report the status to the user in ONE short message: the rollup line
@@ -138,3 +145,195 @@ could read from the task folder, the project, or git.
 
 If you cannot analyze at all (missing folder, unreadable task), say so in
 one line and wait — the user closes the wizard. Never close it yourself.
+
+## Report template (analysis.html)
+
+`references/analysis.html` is a SELF-CONTAINED page (inline CSS only, no
+external assets, no JS). Write it with a Bash quoted heredoc
+(`cat > … <<'HTML'`). Use EXACTLY the skeleton below — same CSS, same class
+names — and fill in the content. Escape `<`, `>`, `&` in any user data you
+interpolate (titles, emails, paths, notes).
+
+Semantics (use these consistently; keep the Legend card at the bottom):
+
+- Row tint = verdict severity:
+  - `row-green` + `<span class="ico ok">✓</span>` — accomplished: done and
+    the submission verified against the requirements / field filled.
+  - `row-lgreen` + `<span class="ico okx">✓<small>✗</small></span>` —
+    partial: done but only partially meets the requirements (or scored
+    below full marks).
+  - `row-orange` + `<span class="ico warn">!</span>` — in progress, or done
+    but the submission could not be inspected (cannot-verify).
+  - `row-red` + `<span class="ico bad">✗</span>` — not started, failed
+    verification, or a required field still missing.
+- Status pills: `done` → `pill green`, `in_progress` → `pill blue`,
+  `to_do` → `pill gray`. Header badge: `pill blue` with "group task" or
+  "task".
+- Rollup stat tiles: `stat green` when the number is good (all done),
+  `stat orange` when mixed, `stat red` when zero/bad, `stat gray` for
+  neutral counts. Scores like "8/10" go in the Score/notes cell as plain
+  text.
+- Headline banner: `banner green` (ready for done / all verified),
+  `banner orange` (mixed progress), `banner red` (nothing yet / blockers).
+- Standard mode: replace the Members card with a "Done-gate fields" card —
+  table columns `Field | Value | Source`, one row per `doneGateFields`
+  entry (`row-green` ✓ when filled, `row-red` ✗ when missing), and put the
+  ready-for-done verdict in the banner. Keep the Evidence card; add a
+  "What I filled in" list when you patched fields.
+
+```html
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Analysis — {{TASK TITLE}}</title>
+<style>
+  :root{
+    --bg:#f4f6f8; --card:#ffffff; --ink:#1f2430; --muted:#69707d; --line:#e4e7ec;
+    --green:#15803d;  --green-bg:#d9f2e0;
+    --lgreen:#4d7c0f; --lgreen-bg:#eef8e4;
+    --orange:#c2410c; --orange-bg:#ffe8d4;
+    --red:#b91c1c;    --red-bg:#fde2e2;
+    --blue:#1d4ed8;   --blue-bg:#dbeafe;
+    --gray:#4b5563;   --gray-bg:#eceff3;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#14171c; --card:#1d2129; --ink:#e7eaf0; --muted:#9aa3b2; --line:#2e3440;
+      --green:#4ade80;  --green-bg:#12351f;
+      --lgreen:#a3e635; --lgreen-bg:#232f14;
+      --orange:#fb923c; --orange-bg:#3a2410;
+      --red:#f87171;    --red-bg:#3a1717;
+      --blue:#93c5fd;   --blue-bg:#1a2a4a;
+      --gray:#c3c9d4;   --gray-bg:#272c36;
+    }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+       padding:32px 16px}
+  .page{max-width:880px;margin:0 auto}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;
+        padding:20px 24px;margin-bottom:16px}
+  h1{font-size:22px;margin:0 0 4px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  h2{font-size:15px;margin:0 0 12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+  .sub{color:var(--muted);font-size:13px;margin-bottom:20px}
+  .pill{display:inline-block;font-size:12px;font-weight:600;padding:2px 10px;border-radius:999px;white-space:nowrap}
+  .pill.green {background:var(--green-bg); color:var(--green)}
+  .pill.lgreen{background:var(--lgreen-bg);color:var(--lgreen)}
+  .pill.orange{background:var(--orange-bg);color:var(--orange)}
+  .pill.red   {background:var(--red-bg);   color:var(--red)}
+  .pill.blue  {background:var(--blue-bg);  color:var(--blue)}
+  .pill.gray  {background:var(--gray-bg);  color:var(--gray)}
+  .stats{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+  .stat{flex:1;min-width:130px;border:1px solid var(--line);border-radius:10px;padding:12px 16px}
+  .stat .num{font-size:26px;font-weight:700;line-height:1.1}
+  .stat .lbl{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+  .stat.green .num{color:var(--green)} .stat.red .num{color:var(--red)}
+  .stat.orange .num{color:var(--orange)} .stat.gray .num{color:var(--gray)}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th{text-align:left;font-size:12px;text-transform:uppercase;letter-spacing:.05em;
+     color:var(--muted);padding:8px 12px;border-bottom:2px solid var(--line)}
+  td{padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  tr:last-child td{border-bottom:none}
+  tr.row-green  td{background:var(--green-bg)}
+  tr.row-lgreen td{background:var(--lgreen-bg)}
+  tr.row-orange td{background:var(--orange-bg)}
+  tr.row-red    td{background:var(--red-bg)}
+  tr.row-green  td:first-child{border-left:4px solid var(--green)}
+  tr.row-lgreen td:first-child{border-left:4px solid var(--lgreen)}
+  tr.row-orange td:first-child{border-left:4px solid var(--orange)}
+  tr.row-red    td:first-child{border-left:4px solid var(--red)}
+  .ico{font-weight:700;font-size:15px;display:inline-block;width:1.6em}
+  .ico.ok  {color:var(--green)}
+  .ico.okx {color:var(--lgreen)}
+  .ico.okx small{color:var(--red);font-size:.72em;vertical-align:super;margin-left:-2px}
+  .ico.warn{color:var(--orange)}
+  .ico.bad {color:var(--red)}
+  .muted{color:var(--muted)}
+  ul{margin:0;padding-left:20px}
+  li{margin:4px 0}
+  code{background:var(--gray-bg);border-radius:4px;padding:1px 5px;font-size:13px;word-break:break-all}
+  .banner{border-radius:10px;padding:12px 16px;font-weight:600;display:flex;gap:10px;align-items:center}
+  .banner.red{background:var(--red-bg);color:var(--red)}
+  .banner.green{background:var(--green-bg);color:var(--green)}
+  .banner.orange{background:var(--orange-bg);color:var(--orange)}
+</style>
+</head>
+<body>
+<div class="page">
+
+  <h1>Analysis — {{TASK TITLE}} <span class="pill blue">{{group task | task}}</span></h1>
+  <div class="sub">Analyzed {{YYYY-MM-DD}}{{ · as of last sync (group mode)}}</div>
+
+  <div class="card">
+    <h2>Rollup</h2>
+    <div class="stats">
+      <div class="stat {{green|orange|red}}"><div class="num">{{X / N}}</div><div class="lbl">members done</div></div>
+      <div class="stat {{green|orange|red}}"><div class="num">{{Y}}</div><div class="lbl">verified</div></div>
+      <!-- more tiles as useful: not started, in progress, avg score … -->
+    </div>
+    <div class="banner {{green|orange|red}}"><span class="ico {{ok|warn|bad}}">{{✓|!|✗}}</span> {{one-line headline}}</div>
+    <p class="muted" style="margin-bottom:0">{{rollup paragraph}}</p>
+  </div>
+
+  <div class="card">
+    <h2>Members</h2>
+    <table>
+      <thead>
+        <tr><th>Member</th><th>Status</th><th>Submitted</th><th>Verdict</th><th>Score / notes</th></tr>
+      </thead>
+      <tbody>
+        <tr class="{{row-green|row-lgreen|row-orange|row-red}}">
+          <td>{{member}}</td>
+          <td><span class="pill {{green|blue|gray}}">{{status}}</span></td>
+          <td>{{link or —}}</td>
+          <td><span class="ico {{ok|okx|warn|bad}}">{{icon}}</span>{{verdict}}</td>
+          <td class="muted">{{score / notes}}</td>
+        </tr>
+        <!-- one row per member -->
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>Requirements used</h2>
+    <p style="margin-top:0">{{what you judged against and where it came from}}</p>
+  </div>
+
+  <div class="card">
+    <h2>Evidence</h2>
+    <ul>
+      <li>{{evidence item}}</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h2>Legend</h2>
+    <table>
+      <tbody>
+        <tr class="row-green">
+          <td style="width:2.2em"><span class="ico ok">✓</span></td>
+          <td><strong>Accomplished</strong> — done and the submission verified against the requirements</td>
+        </tr>
+        <tr class="row-lgreen">
+          <td><span class="ico okx">✓<small>✗</small></span></td>
+          <td><strong>Partial</strong> — done, but the submission only partially meets the requirements (or scored below full marks)</td>
+        </tr>
+        <tr class="row-orange">
+          <td><span class="ico warn">!</span></td>
+          <td><strong>In progress / cannot verify</strong> — work started, or done but the submission could not be inspected</td>
+        </tr>
+        <tr class="row-red">
+          <td><span class="ico bad">✗</span></td>
+          <td><strong>Not started / failed</strong> — no work yet, or the submission fails the requirements</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+</div>
+</body>
+</html>
+```
