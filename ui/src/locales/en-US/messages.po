@@ -4332,10 +4332,6 @@ msgstr "Every indexed row has a source file on disk."
 msgid "Every project is selected"
 msgstr "Every project is selected"
 
-#: src/components/assets/context-folder-sources.tsx
-msgid "Everyone the project is shared with gets it"
-msgstr "Everyone the project is shared with gets it"
-
 #: src/components/conversation/ExecutePromptDialog.tsx
 #~ msgid "Execute"
 #~ msgstr "Execute"
@@ -8489,12 +8485,8 @@ msgid "Open analysis"
 msgstr "Open analysis"
 
 #: src/components/task-bar/TaskDetailPanel.tsx
-msgid "Open analysis report"
-msgstr "Open analysis report"
-
-#: src/components/task-bar/TaskDetailPanel.tsx
-#~ msgid "Open analysis.md"
-#~ msgstr "Open analysis.md"
+msgid "Open analysis.md"
+msgstr "Open analysis.md"
 
 #: src/components/version-popover/diagnosis-report-modal.tsx
 msgid "Open as a tab"
@@ -12254,7 +12246,6 @@ msgstr "Task not found"
 msgid "Tasked"
 msgstr "Tasked"
 
-#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/lens-viewer/shared/transcript-features/TranscriptStats.tsx
 #: src/components/task-bar/TaskBar.tsx
 msgid "Tasks"
@@ -12830,8 +12821,8 @@ msgid "Transcripts"
 msgstr "Transcripts"
 
 #: src/components/assets/context-folder-sources.tsx
-#~ msgid "Travels with the project when shared"
-#~ msgstr "Travels with the project when shared"
+msgid "Travels with the project when shared"
+msgstr "Travels with the project when shared"
 
 #: src/pages/discover-page/discover-page.tsx
 msgid "Trending"
@@ -13446,14 +13437,6 @@ msgstr "What is {0}?"
 #: src/components/status-bar.tsx
 msgid "What is a Flowpad project?"
 msgstr "What is a Flowpad project?"
-
-#: src/components/assets/context-folder-sources.tsx
-msgid "What is a private context folder?"
-msgstr "What is a private context folder?"
-
-#: src/components/assets/context-folder-sources.tsx
-msgid "What is a shared context folder?"
-msgstr "What is a shared context folder?"
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "What is Git sharing?"
