@@ -4,7 +4,7 @@ import { displayLabelForTypeid, parseTypeid } from '@src/components/asset-manage
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { useContext } from '@src/hooks/useContext';
 import { useFavorites } from '@src/hooks/use-favorites';
-import { Trans, useLingui } from '@lingui/react/macro';
+import { useLingui } from '@lingui/react/macro';
 import { FolderPlus, PackagePlus, Plus, Star } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 
@@ -13,7 +13,7 @@ import { useState, type ReactNode } from 'react';
  * tree menu — so you build the tree while browsing it. Everything it creates
  * files into `parentId` ('' = root), the level it sits under.
  *
- * Leads with a plain "New" marker (not a button) so the row reads as a create
+ * Leads with a green "+" marker (not a button) so the row reads as a create
  * toolbar rather than a mystery cluster of icons. Three actions:
  *  - Folder — a nested favorite folder (the only path to one; moveToFolder
  *    refuses folders). Named INLINE, not in a modal — the menu is a fast
@@ -61,11 +61,10 @@ export function FavoritesAddRow({ parentId }: { parentId: string }) {
 
   return (
     <div className="flex items-center gap-0.5 rounded-md px-1.5 py-1 text-muted-foreground">
-      {/* Plain label, not a button — names what the row does. */}
-      <span className="mr-1 flex select-none items-center gap-1 text-[11px]">
-        <Plus className="h-3 w-3" />
-        <Trans>New</Trans>
-      </span>
+      {/* A green "+" marks the row as a create toolbar. Not a button — no
+          hover, default cursor. `text-green-500` is the app's cross-theme green
+          (reads on both light and dark). */}
+      <Plus className="mr-1 h-4 w-4 shrink-0 cursor-default select-none text-green-500" aria-hidden />
 
       {folderName !== null ? (
         <input
