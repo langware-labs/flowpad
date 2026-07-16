@@ -102,3 +102,27 @@ async def test_create_agent_trace_route_creates_new_records(client, session_on_d
     assert data["verdict"] == "ok"
     assert data["session_id"] == SID
     assert not data.get("trace")
+
+
+async def test_create_agent_trace_preserves_by_asset(client, session_on_disk):
+    """Targeted-asset findings must reach the persisted trace.json — the
+    asset-improve poller reads ONLY annotations.by_asset[<key>]."""
+    key = "agent-abc@/tmp/vibe.md"
+    annotations = {
+        "verdict": "mixed",
+        "issues": [{"ts": "2026-06-12T10:00:10Z", "label": "judged issue",
+                    "severity": "attention"}],
+        "by_asset": {key: {"asset_ref": "/tmp/vibe.md", "typeid": "agent-abc",
+                           "findings": [{"kind": "issue", "label": "csv never offered"}]}},
+    }
+    r = await client.post(f"/api/v1/workers/claude/{SID}/agent-trace",
+                          json={"annotations": annotations})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["ok"] is True
+
+    with open(body["asset_ref"], encoding="utf-8") as f:
+        doc = json.load(f)
+    bucket = doc["annotations"]["by_asset"][key]
+    assert bucket["typeid"] == "agent-abc"
+    assert [f["label"] for f in bucket["findings"]] == ["csv never offered"]

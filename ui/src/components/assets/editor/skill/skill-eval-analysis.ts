@@ -8,6 +8,7 @@ import {
   Skill,
 } from '@sdk';
 import { notify } from '@src/notifications';
+import { basename } from '@src/components/asset-manager/asset-row-helpers';
 import { launchWorkerWithAsset } from '@src/components/workers/launchWorkerWithAsset';
 import type { WorkerType } from '@src/components/workers/worker-types';
 import type { AgentTraceDoc, TraceFinding } from '../agent-trace/trace-types';
@@ -236,6 +237,28 @@ async function readTraceDoc(trace: AgentTrace): Promise<AgentTraceDoc | null> {
   }
 }
 
+/**
+ * Pure bucket selection for a targeted-asset analysis: `annotations.by_asset`
+ * keyed by the launch key (a mis-keyed but field-populated bucket is rescued
+ * by the asset_ref/typeid scan). When the trace has NO by_asset at all — a
+ * pre-by_asset analyzer — fall back to the legacy heuristic of the asset
+ * main-file stem as a `by_skill` key (`vibe.md` → by_skill["vibe"]; only
+ * meaningful for single-file agents — remove once pre-by_asset traces age
+ * out). A present-but-empty by_asset bucket is a real "analyzer found
+ * nothing" signal and does NOT fall through.
+ */
+export function selectAssetFindings(
+  doc: AgentTraceDoc | null,
+  sel: { assetKey: string; assetTypeid: string; assetPath: string },
+): TraceFinding[] {
+  const byAsset = doc?.annotations?.by_asset ?? {};
+  const bucket = byAsset[sel.assetKey]
+    ?? Object.values(byAsset).find((value) => value.asset_ref === sel.assetPath || value.typeid === sel.assetTypeid);
+  if (bucket || Object.keys(byAsset).length) return bucket?.findings ?? [];
+  const stem = basename(sel.assetPath).replace(/\.[^.]+$/, '');
+  return (stem && doc?.annotations?.by_skill?.[stem]?.findings) || [];
+}
+
 async function findAssetAnalysisResult(
   sessionId: string,
   assetKey: string,
@@ -256,12 +279,7 @@ async function findAssetAnalysisResult(
     const created = traceCreatedMs(trace);
     if (created && created < sinceMs - 5000) continue;
     const doc = await readTraceDoc(trace);
-    const byAsset = doc?.annotations?.by_asset ?? {};
-    const bucket = byAsset[assetKey]
-      ?? byAsset[assetTypeid]
-      ?? byAsset[assetPath]
-      ?? Object.values(byAsset).find((value) => value.asset_ref === assetPath || value.typeid === assetTypeid);
-    const findings = bucket?.findings ?? [];
+    const findings = selectAssetFindings(doc, { assetKey, assetTypeid, assetPath });
     if (findings.length) return { trace, findings };
   }
   return null;
