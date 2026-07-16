@@ -846,7 +846,11 @@ function MessageEntityChip({
   // (uninstall / test live there — requirement: "if already installed,
   // uninstall appears instead"). The asset itself opens via the modal-adjacent
   // context panel or any normal entity surface. Chips without an attachment
-  // (plain shares, artifacts) keep their navigation behavior.
+  // (plain shares, artifacts) keep their navigation behavior — as do
+  // receive_policy='auto' row-only types (shared transcripts, diagnoses):
+  // they auto-installed at unpack with nothing to review, so their chip
+  // navigates straight to the entity.
+  const autoInstalled = dataManager.getTypeInfo?.(typeId.type)?.receive_policy === 'auto';
   return (
     <>
       <span className="inline-flex items-center gap-1">
@@ -858,7 +862,7 @@ function MessageEntityChip({
               ? () => void openArtifact(artifact, { navigation, currentProjectId: projectId ?? null })
               : handleFolderPull
                 ? () => void handleFolderPull()
-                : attachment
+                : attachment && !autoInstalled
                   ? () => setReviewOpen(true)
                   : undefined
           }

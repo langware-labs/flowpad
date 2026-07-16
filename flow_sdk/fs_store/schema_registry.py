@@ -307,6 +307,14 @@ class TypeInfo:
     # ``Entity.setup_on_receive`` and surfaced to the FE via ``to_dict``.
     setup_skill: str | None = None
     reception_verb: str = "Open"
+    # ``receive_policy``: reception gate for a bundled entry of this type.
+    # ``None`` ⇒ staged → review → explicit install; ``"auto"`` ⇒ row-only
+    # payload installed immediately at unpack through the one install action
+    # (no review dialog; its chip navigates). ``receive_row_overrides`` are the
+    # local-state fields merged over the packed header when the row
+    # materializes (backend-only; never serialized).
+    receive_policy: str | None = None
+    receive_row_overrides: dict | None = None
 
     def asset_ref_for(self, folder: Path) -> Path:
         """Where a folder-layout type's asset_ref points, given its folder.
@@ -409,6 +417,8 @@ class TypeInfo:
             # via a skill in Vibe.
             "setup_skill": self.setup_skill,
             "reception_verb": self.reception_verb,
+            # ``auto`` types' chips navigate instead of opening the review modal.
+            "receive_policy": self.receive_policy,
             "schema_hash": self.schema_hash,
         }
 
@@ -554,6 +564,10 @@ class SchemaRegistry:
                 existing.setup_skill = info.setup_skill
             if info.reception_verb != "Open":
                 existing.reception_verb = info.reception_verb
+            if info.receive_policy is not None:
+                existing.receive_policy = info.receive_policy
+            if info.receive_row_overrides is not None:
+                existing.receive_row_overrides = info.receive_row_overrides
             if info.creatable and not existing.creatable:
                 existing.creatable = True
             if info.browseable_by is not None and (

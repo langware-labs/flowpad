@@ -103,6 +103,17 @@ class TypeMetadata:
     # is ``"<reception_verb> the <typeLabel>"`` (e.g. "Set up the app", "Run the
     # skill", "Open the note"). Declared next to the type like ``main_subdir``.
     reception_verb: str = "Open"
+    # Reception seam: how a received bundle entry of this type is gated.
+    # ``None`` (default) ⇒ staged → review → explicit install (the consent
+    # boundary). ``"auto"`` ⇒ row-only payload with no agent-executable
+    # content: unpack stages the MessageAttachment like every payload entry,
+    # then installs it immediately through the one install action — no review
+    # dialog, and its chip navigates instead of opening the review modal.
+    receive_policy: str | None = None
+    # Row-only auto types: local-state overrides merged over the packed header
+    # when the row materializes on install (e.g. claude_session stamps
+    # ``{"remote": False, "received": True}``). Backend-only; never serialized.
+    receive_row_overrides: dict | None = None
 
     def to_type_info(self) -> TypeInfo:
         return TypeInfo(
@@ -131,6 +142,8 @@ class TypeMetadata:
             meta_model=self.meta_model,
             setup_skill=self.setup_skill,
             reception_verb=self.reception_verb,
+            receive_policy=self.receive_policy,
+            receive_row_overrides=self.receive_row_overrides,
             locations=["index"],
             metadata=self,
         )
