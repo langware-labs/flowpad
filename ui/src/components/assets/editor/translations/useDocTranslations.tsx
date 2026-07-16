@@ -1,10 +1,11 @@
-import { useMemo } from 'react';
+import { useMemo, type ReactNode } from 'react';
 import { FSRef, type APIEntity } from '@sdk';
 import { Languages } from 'lucide-react';
 import type { ExtraSideTab } from '@src/components/milkdown-editor/EditorWithSidePanel';
 import { useTranslationTargets } from '@src/hooks/use-translation-targets';
 import { useTranslations } from './useTranslations';
 import { TranslationsPanel } from './TranslationsPanel';
+import { DocLanguageSwitcher } from './DocLanguageSwitcher';
 
 interface UseDocTranslationsArgs {
   /** The resolved backing entity (a Markdown-family asset), or null. */
@@ -26,6 +27,8 @@ interface UseDocTranslationsResult {
   reloadKey: string | number | undefined;
   /** The Translations side tab to feed `MarkdownEditor.extraSideTabs`. */
   translationsTab: ExtraSideTab;
+  /** Inline language switcher (generic `DocLanguageSwitcher`) for header/plain surfaces. */
+  languageSwitcher: ReactNode;
 }
 
 /**
@@ -80,5 +83,16 @@ export function useDocTranslations({
     ),
   };
 
-  return { editorRef, reloadKey, translationsTab };
+  const languageSwitcher = (
+    <DocLanguageSwitcher
+      translations={translations}
+      activeLang={activeLang}
+      isAdding={isAdding}
+      targets={targets}
+      onOpen={openTranslation}
+      onAdd={addTranslation}
+    />
+  );
+
+  return { editorRef, reloadKey, translationsTab, languageSwitcher };
 }

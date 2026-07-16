@@ -122,6 +122,18 @@ interface MarkdownEditorProps {
    * such surfaces, not an error worth a path dump).
    */
   missingFileCopy?: { note: React.ReactNode; actionLabel: React.ReactNode };
+  /**
+   * Chrome variant. `'full'` (default) is the complete editor: header with
+   * filename/path/mode-toggle/Properties/Copy + the side rail. `'plain'` is a
+   * stripped read-only "plain doc": just the body under a minimal header of
+   * `plainLeadingActions` + Share + `plainTrailingActions` — no path, Properties,
+   * Copy, mode toggle, or side rail. Used by the wiki modal.
+   */
+  variant?: 'full' | 'plain';
+  /** Plain header: actions rendered BEFORE the Share button (e.g. an Open button). */
+  plainLeadingActions?: React.ReactNode;
+  /** Plain header: actions rendered AFTER the Share button (e.g. the language switcher). */
+  plainTrailingActions?: React.ReactNode;
 }
 
 /**
@@ -132,6 +144,7 @@ interface MarkdownEditorProps {
  * - Fields are rendered dynamically from whatever keys exist in the frontmatter.
  * - Body is rendered by Milkdown (view/review/editor) or Monaco (markdown).
  * - The chosen mode is persisted across docs via the EDITOR_MODE preference.
+ * - `variant='plain'` collapses all of that to a read-only body + a 3-item header.
  */
 export function MarkdownEditor({
   fsRef,
@@ -146,6 +159,9 @@ export function MarkdownEditor({
   reloadKey,
   fragment,
   missingFileCopy,
+  variant,
+  plainLeadingActions,
+  plainTrailingActions,
 }: MarkdownEditorProps) {
   return (
     <MarkdownEditorContent
@@ -162,6 +178,9 @@ export function MarkdownEditor({
       reloadKey={reloadKey}
       fragment={fragment}
       missingFileCopy={missingFileCopy}
+      variant={variant}
+      plainLeadingActions={plainLeadingActions}
+      plainTrailingActions={plainTrailingActions}
     />
   );
 }
@@ -218,6 +237,9 @@ function MarkdownEditorContent({
   reloadKey,
   fragment,
   missingFileCopy,
+  variant,
+  plainLeadingActions,
+  plainTrailingActions,
 }: {
   fsRef: FSRef;
   sourcePath: string;
@@ -232,6 +254,9 @@ function MarkdownEditorContent({
   reloadKey?: string | number;
   fragment?: string;
   missingFileCopy?: MarkdownEditorProps['missingFileCopy'];
+  variant?: MarkdownEditorProps['variant'];
+  plainLeadingActions?: React.ReactNode;
+  plainTrailingActions?: React.ReactNode;
 }) {
   const { t } = useLingui();
   const { navigation, currentDock } = useDockNavigation();
@@ -618,6 +643,48 @@ function MarkdownEditorContent({
             <Download className="mr-1 h-4 w-4" />
             <Trans>Download</Trans>
           </Button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Plain doc ────────────────────────────────────────────────────────────
+  // Read-only body under a minimal header: leading actions (e.g. Open) + Share +
+  // trailing actions (e.g. the language switcher). No path, Properties, Copy,
+  // mode toggle, or side rail. Reuses all the body-load / milkdown / link / frag
+  // machinery above. Used by the wiki modal.
+  if (variant === 'plain') {
+    return (
+      <div className="flex h-full flex-col overflow-hidden">
+        <div className="flex flex-shrink-0 items-center justify-end gap-1 border-b px-3 py-2">
+          {plainLeadingActions}
+          {shareSource && (
+            <ShareButton
+              onClick={() => setShareOpen(true)}
+              tooltip={t`Share to a conversation`}
+              testId="markdown-editor-share"
+            />
+          )}
+          {plainTrailingActions}
+        </div>
+        {shareSource && shareOpen && (
+          <ShareToConversationDialog
+            open={shareOpen}
+            onClose={() => setShareOpen(false)}
+            source={shareSource}
+          />
+        )}
+        <div className="min-h-0 flex-1 overflow-hidden">
+          <MilkdownEditor
+            content={body}
+            onChange={handleBodyChange}
+            onLinkClick={handleLinkClick}
+            editorMode="view"
+            editorRef={milkdownRef}
+            onCursorLineChange={handleEditorLineChange}
+            initialLine={initialBodyLine}
+            direction={normalizeDirection(fields.direction)}
+          />
         </div>
       </div>
     );
