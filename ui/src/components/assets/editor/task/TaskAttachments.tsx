@@ -1,10 +1,9 @@
-import { dataContext, Project, Task, TypeId, VFSPath } from '@sdk';
-import { useEntity } from '@sdk/react/hooks';
+import { dataContext, Task, TypeId, VFSPath } from '@sdk';
 import { hasBrowseableDrag, hasExternalFilesDrag, readBrowseableDrag } from '@src/components/browseable-tree/drag';
 import { isFsDragItem } from '@src/components/browseable-tree/adapters/fsFolderRoot';
 import { openArtifact } from '@src/components/task-bar/task-utils';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
-import { useProjectContextFolders } from '@src/hooks/use-project-context-folders';
+import { useTaskGitAttachmentFolders } from '@src/hooks/use-task-git-attachments';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { cn } from '@src/lib/utils';
 import { notify } from '@src/notifications';
@@ -53,31 +52,19 @@ function machinePathFromDrag(typeIdStr: string, relPath: string): string | null 
  * a git sub-icon.
  */
 export function TaskAttachments({ task, save }: TaskAttachmentsProps) {
-  const { navigation, currentDock } = useDockNavigation();
-  const currentDockScope = currentDock?.scopeFilter ?? null;
+  const { navigation } = useDockNavigation();
   const [dragOver, setDragOver] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
 
   const attachments = useMemo(() => normalizeAttachments(task.artifacts), [task.artifacts]);
 
-  // Git detection: an attachment that IS (or lives inside) one of the
-  // project's git context folders gets the git sub-icon. User-scope tasks
-  // (~/tasks) carry no project_id — fall back to the URL scope's project,
-  // which is where the dragged context folders live.
-  const scopeProjectId = task.project_id || currentDockScope?.activeProjectId || null;
-  const { data: project } = useEntity<Project>(scopeProjectId ? new TypeId(Project.type, scopeProjectId) : null);
-  const { contextDirInfos } = useProjectContextFolders(project ?? null);
-  const gitDirs = useMemo(
-    () => contextDirInfos.filter((i) => i.origin_kind === 'git').map((i) => i.path.replace(/\/$/, '')),
-    [contextDirInfos],
-  );
-  const isGitPath = useCallback(
-    (path: string) => {
-      const p = path.replace(/\/$/, '');
-      return gitDirs.some((g) => p === g || p.startsWith(g + '/'));
-    },
-    [gitDirs],
-  );
+  // Git detection: an attachment that IS (or lives inside) one of the task's
+  // project git context folders gets the git sub-icon. Reuse the exact
+  // classification the send path uses (`useTaskGitAttachmentFolders`) so the
+  // badge shows on precisely the folders that ride as git chips — its project
+  // fallback (`dataContext.project`) resolves for project-less TaskBar tasks,
+  // where this panel's own URL scope alone would leave ZERO git dirs.
+  const { isGitPath } = useTaskGitAttachmentFolders(task);
 
   // Received tasks carry folder-relative attachment entries
   // (`attachments/<name>` — packed into the task folder by the sender's
@@ -214,7 +201,7 @@ export function TaskAttachments({ task, save }: TaskAttachmentsProps) {
           <div className="flex flex-col gap-0.5">
             {attachments.map((a) => {
               const isFolderish = !/\.[A-Za-z0-9]{1,8}$/.test(a.label);
-              const git = isGitPath(a.path);
+              const git = isGitPath(absolutePath(a.path));
               return (
                 <div
                   key={a.path}
