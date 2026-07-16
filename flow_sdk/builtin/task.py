@@ -50,9 +50,6 @@ class Task(Entity):
     # Group tasks: ``group`` = the overview task that owns one child ("member
     # task") per contacts-group member; children stay ``standard``.
     kind: str = APIField(TaskKind.STANDARD)
-    # Name of the contacts group a ``group`` task was assigned to — shown as
-    # "Owner: <group_name>" on the overview task. Stamped by create-group-task.
-    group_name: Optional[str] = APIField(None)
     # Group-task parent pointer; "" = top-level. Children own only their
     # status — every display field resolves from the parent at render time.
     parent_id: str = APIField("")

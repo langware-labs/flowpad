@@ -4,18 +4,16 @@ import { openArtifact } from '@src/components/task-bar/task-utils';
 import { Input } from '@src/components/ui/input';
 import { useEntityByPath } from '@src/hooks/use-entity-by-path';
 import { useParentTask } from '@src/hooks/use-parent-task';
-import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { ActionInfo, dataManager, FSRef, Task } from '@sdk';
 import { cn } from '@src/lib/utils';
 import { notify } from '@src/notifications';
-import { Archive, ArrowLeft, FileText, User as UserIcon } from 'lucide-react';
+import { Archive, ArrowLeft, FileText, Users } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AnalyzeStatusButton } from './AnalyzeStatusButton';
 import { DoneGateDialog } from './DoneGateDialog';
 import { MemberTasksSection } from './MemberTasksSection';
 import { OwnerButton } from './OwnerButton';
-import { ParentTaskBlock } from './ParentTaskBlock';
 import { TaskAttachments } from './TaskAttachments';
 
 interface TaskAssetEditorProps {
@@ -142,110 +140,13 @@ export function TaskAssetEditor({ fsRef, task: providedTask }: TaskAssetEditorPr
   }
 
   const status = normStatus(task.status);
-  // Member mode: parent mirror resolved. The parent is the single source of
-  // truth for title / priority / dates / description — rendered read-only in the
-  // ParentTaskBlock above the child's own section. The child owns only its
-  // status and its own attachments. Parent missing (deleted / not yet
-  // materialized) → plain editor on the child's own fields, never a blank screen.
+  // Member mode: parent mirror resolved → its fields are the display source of
+  // truth. Parent missing (deleted / not yet materialized) → plain editor on
+  // the child's own fields, never a blank screen.
   const memberMode = !!parentId && !!parent;
-
-  // Status segmented control — always the task's OWN status (a member task owns
-  // nothing but this), so it's identical in both modes.
-  const statusControl = (
-    <div className="inline-flex overflow-hidden rounded-full border">
-      {STATUS_OPTIONS.map((opt) => (
-        <button
-          key={opt.value}
-          onClick={() => handleStatusClick(opt.value)}
-          className={cn(
-            'px-3 py-1 text-xs font-medium transition-colors',
-            status === opt.value ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted',
-          )}
-        >
-          {opt.label}
-        </button>
-      ))}
-    </div>
-  );
-
-  const archiveButton = (
-    <button
-      onClick={() => void save({ status: 'archived', archived_at: new Date().toISOString() })}
-      className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
-      title="Archive task"
-    >
-      <Archive className="h-3.5 w-3.5" />
-      Archive
-    </button>
-  );
-
-  const doneGateDialog = (
-    <DoneGateDialog
-      task={task}
-      open={doneGateOpen}
-      onOpenChange={setDoneGateOpen}
-      onConfirmDone={() => applyStatus('done')}
-    />
-  );
-
-  // ── Member task: parent context on top, this task's own section below ──
-  if (memberMode) {
-    return (
-      <div className="flex h-full flex-col bg-background">
-        <div className="flex items-center justify-between border-b px-6 py-3">
-          <button
-            onClick={() => navigation.goBack()}
-            className="flex items-center gap-1 rounded p-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
-          >
-            <ArrowLeft className="h-3.5 w-3.5" />
-            <span className="uppercase tracking-wide">Member task</span>
-          </button>
-          {archiveButton}
-        </div>
-
-        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-6 py-4">
-          <ParentTaskBlock
-            parent={parent}
-            onOpenParent={() => navigation.openDock(DockPointer.forAssetEditorByTypeId('task', parent.typeId))}
-          />
-
-          {/* This task — only the child's OWN data, nothing repeated from above. */}
-          <div className="flex flex-col gap-3">
-            <div className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-              <UserIcon className="h-3.5 w-3.5" />
-              This task
-              {task.assignee ? (
-                <span className="normal-case tracking-normal">· assigned to {task.assignee}</span>
-              ) : null}
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              {statusControl}
-              <AnalyzeStatusButton task={task} />
-              {task.analysis_path && (
-                <button
-                  type="button"
-                  onClick={() => openArtifact(task.analysis_path!, navigation)}
-                  className="flex items-center gap-1.5 rounded-full border border-transparent px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted/60"
-                  title={task.analysis_path}
-                  data-testid="task-analysis-report"
-                >
-                  <FileText className="h-3.5 w-3.5" />
-                  Report
-                </button>
-              )}
-            </div>
-          </div>
-
-          <TaskAttachments task={task} save={save} />
-        </div>
-
-        {doneGateDialog}
-      </div>
-    );
-  }
-
-  // ── Standard / group task: full editor on the task's own fields ──
-  const priority = task.priority;
+  const displayTask = memberMode ? parent : task;
+  const priority = displayTask.priority;
+  const memberDescription = memberMode ? (parent.descriptionPlainText || '').trim() : '';
 
   return (
     <div className="flex h-full flex-col bg-background">
@@ -257,12 +158,28 @@ export function TaskAssetEditor({ fsRef, task: providedTask }: TaskAssetEditorPr
             className="flex items-center gap-1 rounded p-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
           >
             <ArrowLeft className="h-3.5 w-3.5" />
-            <span className="uppercase tracking-wide">Task</span>
+            <span className="uppercase tracking-wide">{memberMode ? 'Member task' : 'Task'}</span>
           </button>
-          {archiveButton}
+          <button
+            onClick={() => void save({ status: 'archived', archived_at: new Date().toISOString() })}
+            className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+            title="Archive task"
+          >
+            <Archive className="h-3.5 w-3.5" />
+            Archive
+          </button>
         </div>
 
-        <div className="flex items-center gap-3">
+        {memberMode ? (
+          <div className="flex flex-col gap-1">
+            <h1 className="text-2xl font-semibold">{parent.title || 'Untitled task'}</h1>
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Users className="h-3.5 w-3.5" />
+              Member task of “{parent.title || 'Untitled task'}”
+              {task.assignee ? <> · assigned to {task.assignee}</> : null}
+            </div>
+          </div>
+        ) : (
           <Input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
@@ -271,54 +188,98 @@ export function TaskAssetEditor({ fsRef, task: providedTask }: TaskAssetEditorPr
               if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
             }}
             placeholder="Untitled task"
-            size={Math.max((title || 'Untitled task').length, 1)}
-            className="h-auto w-auto min-w-0 max-w-full border-0 bg-transparent px-0 text-2xl font-semibold shadow-none focus-visible:ring-0"
+            className="h-auto border-0 bg-transparent px-0 text-2xl font-semibold shadow-none focus-visible:ring-0"
           />
-          <OwnerButton task={task} save={save} />
-        </div>
+        )}
 
         {/* Meta pill row */}
         <div className="flex flex-wrap items-center gap-2">
-          {statusControl}
-
-          <div className="inline-flex items-center gap-1">
-            {PRIORITY_OPTIONS.map((p) => (
+          {/* Status — segmented; always the task's OWN status (a member task
+              owns nothing but this) */}
+          <div className="inline-flex overflow-hidden rounded-full border">
+            {STATUS_OPTIONS.map((opt) => (
               <button
-                key={p}
-                onClick={() => void save({ priority: priority === p ? undefined : p })}
-                title={PRIORITY_CONFIG[p]?.label}
+                key={opt.value}
+                onClick={() => handleStatusClick(opt.value)}
                 className={cn(
-                  'flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs capitalize transition-colors',
-                  priority === p
-                    ? 'border-foreground/20 bg-muted text-foreground'
-                    : 'border-transparent text-muted-foreground hover:bg-muted/60',
+                  'px-3 py-1 text-xs font-medium transition-colors',
+                  status === opt.value ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted',
                 )}
               >
-                <span className={cn('h-2 w-2 rounded-full', PRIORITY_CONFIG[p]?.color)} />
-                {p}
+                {opt.label}
               </button>
             ))}
           </div>
 
-          <label className="flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs text-muted-foreground">
-            <span className="text-[10px] uppercase tracking-wide">Due</span>
-            <input
-              type="date"
-              value={toDateInput(task.due_at)}
-              onChange={(e) => void save({ due_at: e.target.value ? new Date(e.target.value) : undefined })}
-              className="bg-transparent text-xs text-foreground outline-none"
-            />
-          </label>
-          <label className="flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs text-muted-foreground">
-            <span className="text-[10px] uppercase tracking-wide">Start</span>
-            <input
-              type="date"
-              value={toDateInput(task.start_date)}
-              onChange={(e) => void save({ start_date: e.target.value || null })}
-              className="bg-transparent text-xs text-foreground outline-none"
-            />
-          </label>
+          {/* Priority — editable on own tasks, read-only from the parent on member tasks */}
+          {memberMode ? (
+            priority ? (
+              <span className="flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs capitalize text-muted-foreground">
+                <span className={cn('h-2 w-2 rounded-full', PRIORITY_CONFIG[priority]?.color)} />
+                {priority}
+              </span>
+            ) : null
+          ) : (
+            <div className="inline-flex items-center gap-1">
+              {PRIORITY_OPTIONS.map((p) => (
+                <button
+                  key={p}
+                  onClick={() => void save({ priority: priority === p ? undefined : p })}
+                  title={PRIORITY_CONFIG[p]?.label}
+                  className={cn(
+                    'flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs capitalize transition-colors',
+                    priority === p
+                      ? 'border-foreground/20 bg-muted text-foreground'
+                      : 'border-transparent text-muted-foreground hover:bg-muted/60',
+                  )}
+                >
+                  <span className={cn('h-2 w-2 rounded-full', PRIORITY_CONFIG[p]?.color)} />
+                  {p}
+                </button>
+              ))}
+            </div>
+          )}
 
+          {/* Dates — read-only from the parent on member tasks */}
+          {memberMode ? (
+            <>
+              {displayTask.due_at ? (
+                <span className="flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs text-muted-foreground">
+                  <span className="text-[10px] uppercase tracking-wide">Due</span>
+                  {toDateInput(displayTask.due_at)}
+                </span>
+              ) : null}
+              {displayTask.start_date ? (
+                <span className="flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs text-muted-foreground">
+                  <span className="text-[10px] uppercase tracking-wide">Start</span>
+                  {toDateInput(displayTask.start_date)}
+                </span>
+              ) : null}
+            </>
+          ) : (
+            <>
+              <label className="flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs text-muted-foreground">
+                <span className="text-[10px] uppercase tracking-wide">Due</span>
+                <input
+                  type="date"
+                  value={toDateInput(task.due_at)}
+                  onChange={(e) => void save({ due_at: e.target.value ? new Date(e.target.value) : undefined })}
+                  className="bg-transparent text-xs text-foreground outline-none"
+                />
+              </label>
+              <label className="flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs text-muted-foreground">
+                <span className="text-[10px] uppercase tracking-wide">Start</span>
+                <input
+                  type="date"
+                  value={toDateInput(task.start_date)}
+                  onChange={(e) => void save({ start_date: e.target.value || null })}
+                  className="bg-transparent text-xs text-foreground outline-none"
+                />
+              </label>
+            </>
+          )}
+
+          <OwnerButton task={task} save={save} />
           <AnalyzeStatusButton task={task} />
           {task.analysis_path && (
             <button
@@ -336,10 +297,29 @@ export function TaskAssetEditor({ fsRef, task: providedTask }: TaskAssetEditorPr
       </div>
 
       {/* ── Body ───────────────────────────────────────────────── */}
-      <MemberTasksSection task={task} />
-      <TaskAttachments task={task} save={save} />
+      {memberMode ? (
+        // The plan is not shared (task/spec decoupled) — show the parent's
+        // synced description instead of an empty Plan editor.
+        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 py-4">
+          {memberDescription ? (
+            <p className="whitespace-pre-wrap text-sm text-foreground">{memberDescription}</p>
+          ) : (
+            <p className="text-sm text-muted-foreground">No description yet — the group task owner can add one.</p>
+          )}
+        </div>
+      ) : (
+        <>
+          <MemberTasksSection task={task} />
+          <TaskAttachments task={task} save={save} />
+        </>
+      )}
 
-      {doneGateDialog}
+      <DoneGateDialog
+        task={task}
+        open={doneGateOpen}
+        onOpenChange={setDoneGateOpen}
+        onConfirmDone={() => applyStatus('done')}
+      />
     </div>
   );
 }

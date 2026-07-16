@@ -11,22 +11,12 @@ import { useProjectContextFolders } from '@src/hooks/use-project-context-folders
  * assignment message attaches those as chips so recipients get the
  * click-to-clone flow (the folder rides origin-only via transferMode 'git').
  */
-/** Git-vs-loose split of a set of attachment paths. */
-export interface ArtifactClassification {
-  /** Git context folders (as their Folder-entity typeids) that the paths live
-   *  in — these ride as chips (click-to-clone). */
+export function useTaskGitAttachmentFolders(task: Task | null | undefined): {
   gitFolderTypeids: string[];
   /** Attachment paths OUTSIDE every git context folder — these travel as
    *  ordinary message file attachments, not as chips. */
   loosePaths: string[];
-}
-
-export function useTaskGitAttachmentFolders(task: Task | null | undefined): ArtifactClassification & {
   isGitPath: (path: string) => boolean;
-  /** Classify an ARBITRARY artifacts array (not just this task's) against the
-   *  same git context folders — used to fold a task's parent attachments into
-   *  the same send payload. */
-  classifyArtifacts: (artifacts: unknown[] | null | undefined) => ArtifactClassification;
 } {
   // Tasks created from the TaskBar may carry no project_id — fall back to the
   // currently scoped project, whose context folders are what the task's
@@ -46,20 +36,18 @@ export function useTaskGitAttachmentFolders(task: Task | null | undefined): Arti
       return gitDirs.some((g) => p === g.path || p.startsWith(g.path + '/'));
     };
 
-    const classifyArtifacts = (artifacts: unknown[] | null | undefined): ArtifactClassification => {
-      const typeids = new Set<string>();
-      const loose = new Set<string>();
-      for (const a of artifacts ?? []) {
-        const raw = typeof a === 'string' ? a : ((a as { path?: string } | null)?.path ?? '');
-        if (!raw) continue;
-        const p = raw.replace(/\/$/, '');
-        const dir = gitDirs.find((g) => p === g.path || p.startsWith(g.path + '/'));
-        if (dir?.typeid) typeids.add(dir.typeid);
-        else if (!dir) loose.add(p);
-      }
-      return { gitFolderTypeids: Array.from(typeids), loosePaths: Array.from(loose) };
-    };
-
-    return { ...classifyArtifacts(task?.artifacts as unknown[] | undefined), isGitPath, classifyArtifacts };
+    const attachmentPaths: string[] = [];
+    for (const a of (task?.artifacts as unknown[] | undefined) ?? []) {
+      const path = typeof a === 'string' ? a : ((a as { path?: string } | null)?.path ?? '');
+      if (path) attachmentPaths.push(path.replace(/\/$/, ''));
+    }
+    const typeids = new Set<string>();
+    const loosePaths: string[] = [];
+    for (const p of attachmentPaths) {
+      const dir = gitDirs.find((g) => p === g.path || p.startsWith(g.path + '/'));
+      if (dir?.typeid) typeids.add(dir.typeid);
+      else if (!dir) loosePaths.push(p);
+    }
+    return { gitFolderTypeids: Array.from(typeids), loosePaths, isGitPath };
   }, [contextDirInfos, task?.artifacts]);
 }
