@@ -4702,7 +4702,6 @@ msgstr ""
 #~ msgid "Failed to open folder"
 #~ msgstr ""
 
-#: src/components/open-project-component/open-project-component.tsx
 #: src/components/open-project-component/use-open-project.ts
 #: src/components/project-setup-screen/project-setup-screen.tsx
 #: src/components/quick-create/QuickCreateDialog.tsx
@@ -7539,7 +7538,6 @@ msgstr ""
 #: src/components/assets/ContextFolderBrowser.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
-#: src/components/open-project-component/open-project-component.tsx
 #: src/components/open-project-component/use-open-project.ts
 #: src/components/project-setup-screen/project-setup-screen.tsx
 #: src/components/quick-create/QuickCreateDialog.tsx
@@ -9257,7 +9255,6 @@ msgstr ""
 msgid "Please make sure the server is running."
 msgstr ""
 
-#: src/components/open-project-component/open-project-component.tsx
 #: src/components/open-project-component/use-open-project.ts
 msgid "Please provide a valid project path"
 msgstr ""
@@ -13660,7 +13657,6 @@ msgstr ""
 msgid "You don’t belong to an organization yet. Organizations are set up in Flowpad Cloud; once you’re added, your organization and its members appear here."
 msgstr ""
 
-#: src/components/open-project-component/open-project-component.tsx
 #: src/components/open-project-component/use-open-project.ts
 #: src/components/project-setup-screen/project-setup-screen.tsx
 msgid "You must be logged in"
