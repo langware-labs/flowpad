@@ -18,6 +18,9 @@ interface WikiTipProps {
   /** Hover dwell before the tip opens. Raise it on dense surfaces (a grid of
    *  tipped tiles pops a card under every tile the pointer crosses). */
   openDelay?: number;
+  /** Which side of the trigger the card opens on. Defaults to "top"; rail
+   *  buttons pass "right" to match the rail's regular tooltips. */
+  side?: 'top' | 'right' | 'bottom' | 'left';
 }
 
 /**
@@ -29,13 +32,13 @@ interface WikiTipProps {
  * `children` must forward its ref and spread props onto a DOM node — the
  * trigger is `asChild`, so a component that swallows them leaves the tip inert.
  */
-export function WikiTip({ wikiword, children, label, buttonLabel, openDelay = 200 }: WikiTipProps) {
+export function WikiTip({ wikiword, children, label, buttonLabel, openDelay = 200, side = 'top' }: WikiTipProps) {
   return (
     <HoverCard openDelay={openDelay} closeDelay={100}>
       <HoverCardTrigger asChild>{children}</HoverCardTrigger>
       <HoverCardContent
-        side="top"
-        align="start"
+        side={side}
+        align={side === 'right' || side === 'left' ? 'center' : 'start'}
         // pointer-events-auto: the card portals to <body>, which a modal Radix
         // Dialog marks pointer-events:none — without this the W-button renders
         // but can't be clicked when the tip is used inside a dialog.
