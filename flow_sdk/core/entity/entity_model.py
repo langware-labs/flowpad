@@ -1756,7 +1756,19 @@ class Entity(DBEntity):
         """
         return (await self.nearest_remote_ancestor()) is not None
 
-    async def nearest_remote_ancestor(self: EntityType, _seen: Optional[set] = None) -> Optional["Entity"]:
+    async def nearest_ancestor(self: EntityType, predicate) -> Optional["Entity"]:
+        """First entity (self included) matching ``predicate``, walking the
+        ``parent_type_id`` chain. Cycle-safe; stops at a missing parent."""
+        seen: set = set()
+        cur: Optional["Entity"] = self
+        while cur is not None and cur.id not in seen:
+            if predicate(cur):
+                return cur
+            seen.add(cur.id)
+            cur = await cur.parent()
+        return None
+
+    async def nearest_remote_ancestor(self: EntityType) -> Optional["Entity"]:
         """Closest entity (self or an ancestor) that has its OWN hub row
         (``remote=True``), walking ``parent``. ``None`` if none is remote.
 
@@ -1765,16 +1777,7 @@ class Entity(DBEntity):
         ancestor, so the child is created under a hub-known container while the
         child keeps its true ``parent_type_id`` (the doc) in its own payload.
         """
-        if getattr(self, "remote", False):
-            return self
-        seen = _seen if _seen is not None else set()
-        if self.id in seen:
-            return None
-        seen.add(self.id)
-        p = await self.parent()
-        if p is None:
-            return None
-        return await p.nearest_remote_ancestor(seen)
+        return await self.nearest_ancestor(lambda e: getattr(e, "remote", False))
 
     @classmethod
     async def upsert_from_hub_child(
@@ -2369,13 +2372,23 @@ class Entity(DBEntity):
             return [TypeId(type=BuiltinEntityType.PROJECT.value, id=project_id)]
         return []
 
+    async def effective_project_id(self: EntityType) -> "str | None":
+        """Own ``project_id``, else the nearest ``parent_type_id`` ancestor's
+        (e.g. a received claude session scopes to the conversation it was
+        shared into). Read-only: the inherited project is never persisted onto
+        the child, so a later re-mapping of the ancestor is followed live.
+        """
+        found = await self.nearest_ancestor(lambda e: getattr(e, "project_id", None))
+        return getattr(found, "project_id", None) if found is not None else None
+
     @staticmethod
     async def project_id_of(entity_type: str, entity_id: str) -> "str | None":
         """The owning ``project_id`` of any entity, resolved SERVER-SIDE.
 
         Looks the type up in the registry and goes through its ``get_by_id``
         (which for some types includes on-disk recovery for unindexed rows),
-        returning the target's ``project_id``. Best-effort: ``None`` when the
+        returning the target's ``effective_project_id`` — its own, else the
+        nearest ``parent_type_id`` ancestor's. Best-effort: ``None`` when the
         type/target is unknown or the target is genuinely project-less. This is
         the single, entity-agnostic "what project owns this thing" primitive —
         used by tab project derivation and ``Conversation.resolve_project_id``.
@@ -2385,7 +2398,7 @@ class Entity(DBEntity):
             if model is None:
                 return None
             target = await model.get_by_id(str(entity_id))
-            return getattr(target, "project_id", None) if target is not None else None
+            return await target.effective_project_id() if target is not None else None
         except Exception:
             import logging  # noqa: PLC0415
             logging.getLogger(__name__).debug(

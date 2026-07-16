@@ -35,14 +35,14 @@ export async function loadLensRoute(pointer: string | undefined): Promise<void> 
   if (!session) return;
   // Project phase — identical to the shell/process loaders: prefer the stored
   // project_id, fall back to a workdir match on cwd.
+  // No project_id: adopt via cwd, else the parent_type_id chain (a RECEIVED
+  // session scopes to the conversation it was shared into), else Global.
+  // Save-less shape — the loader must never persist a recovered session.
   if (session.project_id) {
     await loadProject(new TypeId(Project.type, session.project_id)).catch(() =>
-      systemTools.resolveProjectContext(session.cwd ?? undefined),
+      systemTools.resolveProjectContext(session.cwd ?? undefined, { parent_type_id: session.parent_type_id }),
     );
   } else {
-    // No project_id: a cwd inside a project mount adopts the session; otherwise
-    // (no cwd, or cwd outside every project) this is a global transcript and
-    // resolveProjectContext clears the active project to null (the Global scope).
-    await systemTools.resolveProjectContext(session.cwd ?? undefined);
+    await systemTools.resolveProjectContext(session.cwd ?? undefined, { parent_type_id: session.parent_type_id });
   }
 }
