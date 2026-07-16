@@ -170,3 +170,27 @@ describe('loadDockPointer — a project-pinned browse dock adopts its scope proj
     expect(loadProjectMock).not.toHaveBeenCalled();
   });
 });
+
+describe('loadDockPointer — a project-pinned HOME dock adopts its scope project (C)', () => {
+  beforeEach(() => {
+    loadProjectMock.mockClear();
+  });
+
+  it('home dock with a project scope loads that project into context (stay-home switch)', async () => {
+    // The "open project on home stays home" landing: /dock/home?scope-mode=
+    // project&scope-activeProjectId=… — the HOME loader is the single writer
+    // of project context (URL-first), incl. on hard refresh.
+    const dock = DockPointer.forHome().withScopeFilter(projectScope(PROJECT_P));
+
+    await loadDockPointer(dock, { requestPath: '/dock/home' });
+
+    expect(loadProjectMock).toHaveBeenCalledTimes(1);
+    expect((loadProjectMock.mock.calls[0][0] as TypeId).id).toBe(PROJECT_P);
+  });
+
+  it('a scope-less home dock adopts nothing', async () => {
+    await loadDockPointer(DockPointer.forHome(), { requestPath: '/dock/home' });
+
+    expect(loadProjectMock).not.toHaveBeenCalled();
+  });
+});

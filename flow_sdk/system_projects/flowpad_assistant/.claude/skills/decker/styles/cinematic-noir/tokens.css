@@ -1,0 +1,35 @@
+/* cinematic-noir — film-grade dark, gold, geometric caps, wide tracking. */
+:root {
+  --bg: #0b0a0d;
+  --surface: rgba(255, 255, 255, 0.04);
+  --text: #f3efe7;
+  --text-secondary: #8c8578;
+  --accent: #cfa356;
+  --accent-contrast: #0b0a0d;
+  --border: rgba(207, 163, 86, 0.3);
+
+  --fs-hero: 76px;
+  --fs-title: 44px;
+  --fs-subtitle: 25px;
+  --fs-body: 21px;
+  --fs-caption: 13px;
+
+  /* Futura/Avenir (macOS) -> Century Gothic (Windows) -> URW Gothic (Linux)
+   * -> Trebuchet -> sans-serif. All geometric. */
+  --font-display: Futura, "Avenir Next", "Century Gothic", "URW Gothic", "Trebuchet MS", sans-serif;
+  --font-sans: "Avenir Next", Avenir, "Century Gothic", "Gill Sans", "Trebuchet MS", sans-serif;
+  --font-mono: "SF Mono", Menlo, Consolas, monospace;
+
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-bold: 600;
+  --lh-tight: 1.06;
+  --lh-body: 1.6;
+  --tracking-kicker: 0.34em;
+
+  --sp-1: 4px;  --sp-2: 8px;  --sp-3: 12px; --sp-4: 16px;
+  --sp-5: 24px; --sp-6: 32px; --sp-7: 48px; --sp-8: 64px;
+
+  --radius-sm: 0; --radius-md: 0; --radius-lg: 0;
+  --safe-area: 92px;
+}

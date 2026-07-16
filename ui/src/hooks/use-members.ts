@@ -24,6 +24,10 @@ function _sharedGetMembers(typeId: TypeId): Promise<Participant[]> {
 }
 
 export interface UseMembersResult {
+  /** The entity itself, already resolved here for the roster — exposed so
+   *  callers needing it (e.g. to publish before minting an invite link) don't
+   *  mount a second ``useEntity`` for the same typeId. */
+  entity: APIEntity<any> | null | undefined;
   /** Members + roles. Sourced from the local entity cache, then refreshed
    *  on mount via the generic ``members`` action (which the local server
    *  reflects to the hub when ``entity.remote=true``). */
@@ -174,5 +178,5 @@ export function useMembers(typeId: TypeId | null): UseMembersResult {
   // instead of stalling on loading forever.
   const ready = useMemo(() => refreshed !== null || error !== null, [refreshed, error]);
 
-  return { members, loading, ready, error, refresh, addMembers, removeMember, setRole };
+  return { entity, members, loading, ready, error, refresh, addMembers, removeMember, setRole };
 }

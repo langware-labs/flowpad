@@ -1,0 +1,56 @@
+{
+  "title": "Style preview",
+  "template": ".",
+  "_comment": "Fixture content for style previews. Identical across every style so the screenshots compare design systems, not copy. Slide 0 = cover, slide 3 = metrics; make_style_shots.py shoots those two by index, so do not reorder without updating it.",
+  "slides": [
+    {
+      "layout": "cover-centered",
+      "slots": {
+        "title": "Ship Faster, Meet Less",
+        "subtitle": "How the platform team cut cycle time in half without adding headcount",
+        "presenter": "Dana Ellis, Platform Engineering",
+        "date": "July 2026"
+      }
+    },
+    {
+      "layout": "agenda-list",
+      "slots": {
+        "title": "Agenda",
+        "items": [
+          { "label": "Where we are today", "detail": "5 min" },
+          { "label": "What we're proposing", "detail": "15 min" },
+          { "label": "Next steps & discussion", "detail": "10 min" }
+        ]
+      }
+    },
+    {
+      "layout": "content-single-column",
+      "slots": {
+        "kicker": "The problem",
+        "title": "The bottleneck was never the code",
+        "body": {
+          "html": "<p>We assumed we were slow because the work was hard. We measured, and the work was not hard.</p><p>The median pull request took <strong>four hours to write and thirty-one hours to get looked at.</strong></p>"
+        }
+      }
+    },
+    {
+      "layout": "metrics-grid",
+      "slots": {
+        "title": "Six months in",
+        "items": [
+          { "metric-value": "1.9d", "metric-label": "Cycle time", "metric-delta": "from 4.2d · −55%" },
+          { "metric-value": "3h", "metric-label": "PR review wait", "metric-delta": "from 31h · −90%" },
+          { "metric-value": "18", "metric-label": "Deploys per week", "metric-delta": "from 6 · 3×" }
+        ]
+      }
+    },
+    {
+      "layout": "closing-centered",
+      "slots": {
+        "title": "Fewer meetings. Shorter queues.",
+        "subtitle": "Questions & discussion",
+        "contact": "dana@example.com"
+      }
+    }
+  ]
+}
