@@ -78,10 +78,11 @@ export function ContactPicker({
     setListOpen(false);
   };
 
-  // Bulk-add a group's members (deduped); the group itself is never a chip.
+  // Bulk-add a group's members (deduped, self excluded); the group itself is
+  // never a chip.
   const addGroup = (group: ContactsGroup) => {
     if (isFull) return;
-    const next = mergeGroupMembers(value, group);
+    const next = mergeGroupMembers(value, group.contacts ?? [], excludeUserId);
     const capped = typeof max === 'number' ? next.slice(0, max) : next;
     if (capped.length === value.length) return;
     onChange(capped);
@@ -165,6 +166,7 @@ export function ContactPicker({
               <span className="flex min-w-0 items-center gap-1.5">
                 <UsersRound className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
                 <span className="truncate">{g.displayName}</span>
+                {g.computed && <span className="shrink-0 text-[10px] uppercase text-muted-foreground/70">auto</span>}
               </span>
               <span className="shrink-0 text-xs text-muted-foreground">{(g.contacts ?? []).length} members</span>
             </button>

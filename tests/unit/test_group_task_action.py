@@ -79,6 +79,41 @@ def test_group_members_reports_email_less_entries():
     assert len(failed) == 1 and "No Email" in failed[0]["error"]
 
 
+# ── group resolution (stored group_id vs computed explicit members) ────────
+
+
+@pytest.mark.asyncio
+async def test_resolve_group_builds_transient_group_from_members():
+    from flow_sdk.app.actions.group_task_action import _resolve_group
+
+    group = await _resolve_group(
+        {
+            "members": [
+                {"email": "Alice@X.com", "name": "Alice"},
+                "not-a-dict",  # ignored
+                {"email": "bob@x.com"},
+            ],
+        }
+    )
+    assert [c.get("email") for c in group.contacts] == ["Alice@X.com", "bob@x.com"]
+    # The transient group feeds _group_members exactly like a stored one.
+    members, failed = _group_members(group, owner_email="alice@x.com")
+    assert members == ["bob@x.com"]
+    assert failed == []
+
+
+@pytest.mark.asyncio
+async def test_resolve_group_requires_group_id_or_members():
+    from fastapi import HTTPException
+
+    from flow_sdk.app.actions.group_task_action import _resolve_group
+
+    with pytest.raises(HTTPException) as exc:
+        await _resolve_group({})
+    assert exc.value.status_code == 400
+    assert "'group_id' or 'members'" in exc.value.detail
+
+
 # ── frontmatter round-trip of the new fields ────────────────────────────────
 
 

@@ -1,7 +1,7 @@
 import { apiClient, FSRef, FrontMatterFsRef, dataContext, Markdown, Whiteboard, type APIEntity } from '@sdk';
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { FileQuestion, RefreshCw } from 'lucide-react';
+import { ExternalLink, FileQuestion, RefreshCw } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Button } from '@src/components/ui/button';
 import { RadioGroup, RadioGroupItem } from '@src/components/ui/radio-group';
@@ -11,6 +11,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { MarkdownEditor } from './markdown/MarkdownEditor';
 import { useDocTranslations } from './translations/useDocTranslations';
+import { useWikiModalStore } from '@src/components/wiki-tip/wiki-modal';
 import { useEntityByPath } from '@src/hooks/use-entity-by-path';
 import { entityReloadKey } from '@src/utils/entity-reload-key';
 import { Trans, useLingui } from '@lingui/react/macro';
@@ -22,6 +23,12 @@ interface WikiResolveViewProps {
   space?: string;
   /** Optional heading slug (e.g. "auto-run") to scroll to once rendered. */
   fragment?: string;
+  /**
+   * Chrome variant for a markdown hit. `'full'` (default, the dock wiki route)
+   * is the complete editor. `'plain'` (the wiki modal) is the read-only plain
+   * doc: body + a minimal Open · Share · Translations header.
+   */
+  variant?: 'full' | 'plain';
 }
 
 interface ResolveResult {
@@ -41,7 +48,7 @@ type CreateAsType = 'markdown' | 'whiteboard';
  *
  * On miss: type picker offering "Create as markdown" / "Create as whiteboard".
  */
-export function WikiResolveView({ name, space = '@local', fragment }: WikiResolveViewProps) {
+export function WikiResolveView({ name, space = '@local', fragment, variant = 'full' }: WikiResolveViewProps) {
   const { computeNode } = useAgentContext();
   const typeIdStr = computeNode?.typeId?.toString();
   const { navigation } = useDockNavigation();
@@ -190,6 +197,7 @@ export function WikiResolveView({ name, space = '@local', fragment }: WikiResolv
       id={data.id}
       computeNodeTypeId={computeNode.typeId}
       fragment={fragment}
+      variant={variant}
     />
   );
 }
@@ -199,16 +207,21 @@ interface WikiMarkdownViewProps {
   id: string;
   computeNodeTypeId: import('@sdk').TypeId;
   fragment?: string;
+  variant: 'full' | 'plain';
 }
 
 /**
  * The inline markdown render for a resolved wiki hit — including the document
- * Translations tab + `?lang=` inline swap (shared `useDocTranslations`), so a
- * doc opened in the wikitip modal can be translated and read in another
- * language in one click, exactly like the full asset editor.
+ * translations (`useDocTranslations`), so a doc opened in the wikitip modal can
+ * be translated and read in another language in one click. `variant='full'`
+ * (dock wiki route) is the complete editor with the Translations side tab;
+ * `variant='plain'` (wiki modal) is the read-only plain doc with an inline
+ * Open · Share · Translations header instead.
  */
-function WikiMarkdownView({ assetRef, id, computeNodeTypeId, fragment }: WikiMarkdownViewProps) {
+function WikiMarkdownView({ assetRef, id, computeNodeTypeId, fragment, variant }: WikiMarkdownViewProps) {
   const localTypeId = dataContext.computeNodeTypeId;
+  const { navigation } = useDockNavigation();
+  const closeModal = useWikiModalStore((s) => s.setOpen);
   const baseEditorRef = useMemo(
     () =>
       localTypeId
@@ -220,7 +233,7 @@ function WikiMarkdownView({ assetRef, id, computeNodeTypeId, fragment }: WikiMar
   const { entity } = useEntityByPath<APIEntity<APIEntity<unknown>>>('markdown', baseEditorRef);
   const baseReloadKey = entityReloadKey((entity as { updated_date?: unknown } | null)?.updated_date);
 
-  const { editorRef, reloadKey, translationsTab } = useDocTranslations({
+  const { editorRef, reloadKey, translationsTab, languageSwitcher } = useDocTranslations({
     entity,
     chatTarget,
     assetRef,
@@ -228,13 +241,35 @@ function WikiMarkdownView({ assetRef, id, computeNodeTypeId, fragment }: WikiMar
     baseReloadKey,
   });
 
+  const isPlain = variant === 'plain';
+  // Open = promote the peek to the full asset editor (and close the modal).
+  const openFull = () => {
+    closeModal(false);
+    navigation.openDock(DockPointer.forAssetEditor('markdown', assetRef));
+  };
+
   return (
     <MarkdownEditor
       fsRef={editorRef}
       chatTarget={chatTarget}
       fragment={fragment}
       reloadKey={reloadKey}
-      extraSideTabs={[translationsTab]}
+      variant={variant}
+      extraSideTabs={isPlain ? undefined : [translationsTab]}
+      plainHeaderActions={
+        isPlain
+          ? (share) => (
+              <>
+                <Button variant="ghost" size="sm" onClick={openFull} title="Open full page" className="gap-1.5">
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  Open
+                </Button>
+                {share}
+                {languageSwitcher}
+              </>
+            )
+          : undefined
+      }
     />
   );
 }

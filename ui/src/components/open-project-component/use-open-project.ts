@@ -1,6 +1,7 @@
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import { canonicalPath, selectProjectContext } from '@src/components/project-selector';
-import { useDockNavigation, useIsVibeHome } from '@src/navigation/useDockNavigation';
+import { projectScope } from '@src/lib/scope-filter';
+import { useDockNavigation, useIsHomeSurface } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { agenticProcessIdForProjectEntry, dockForProjectEntry } from '@src/tabs/project-entry';
 import { useIsVibe, ViewMode } from '@src/contexts/view-mode-context';
@@ -43,11 +44,12 @@ export function useProjectOpener({ onProjectChanged, onPicked, onError }: UsePro
   const { computeNode } = useAgentContext();
   const { currentDock, navigation } = useDockNavigation();
   const isVibe = useIsVibe();
-  // Surface-derived, not a prop: on a vibe *home* surface switching a project
-  // just changes the project and lands on the fresh vibe home; from within a
-  // vibe workspace (or any other dock) it resumes the target's build process.
+  // Surface-derived, not a prop: on ANY home surface (root `/` or /dock/home,
+  // in any view mode) switching a project just changes the project and lands
+  // on the fresh home; only from within a workspace/dock does it resume the
+  // target's build process (Vibe) or last-active tab (Standard/Advanced).
   // Keeps the hero buttons, the modal, AND the footer Switch Project consistent.
-  const isVibeHome = useIsVibeHome();
+  const isHome = useIsHomeSurface();
 
   const setCurrentProjectContext = useCallback(
     async (project: Project) => {
@@ -65,20 +67,34 @@ export function useProjectOpener({ onProjectChanged, onPicked, onError }: UsePro
           // continuation errors shouldn't break the picker
         }
       } else {
+        // On a home surface, switching a project stays home — on the new
+        // project — in every view mode.
         if (isVibe) {
           await selectProjectContext(project);
-          if (!isVibeHome) {
+          if (!isHome) {
             const processId = project.id ? await agenticProcessIdForProjectEntry(project.id) : null;
             if (processId) {
               void navigation.openShellProcess(processId, { viewMode: ViewMode.Vibe });
               return;
             }
           }
+          // The HOME loader has no vibe-specific clears, so the vibe home
+          // adopts context imperatively (above) and resets the stale process/
+          // active entity before landing on the fresh hero. The scope filter
+          // makes a hard reload of the landing re-adopt the project.
           await dataContext.setActiveEntityTypeId(null);
           await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProcessTypeId, null);
           navigation.openDock(
-            DockPointer.forHome(undefined, undefined, { vibeNoProcess: true }).withViewMode(ViewMode.Vibe),
+            DockPointer.forHome(undefined, undefined, { vibeNoProcess: true })
+              .withScopeFilter(projectScope(project.id))
+              .withViewMode(ViewMode.Vibe),
           );
+          return;
+        }
+        if (isHome) {
+          // URL-first: the scope-carrying HOME dock's loader
+          // (adoptScopeProject) is the single writer of project context.
+          navigation.openDock(DockPointer.forHome().withScopeFilter(projectScope(project.id)));
           return;
         }
         // Plain switch (footer Switch Project included): navigate to the
@@ -91,7 +107,7 @@ export function useProjectOpener({ onProjectChanged, onPicked, onError }: UsePro
         navigation.openDock(await dockForProjectEntry(project.id, currentDock));
       }
     },
-    [isVibe, isVibeHome, onProjectChanged, onPicked, navigation, currentDock],
+    [isVibe, isHome, onProjectChanged, onPicked, navigation, currentDock],
   );
 
   const ensureProjectAndSetContext = useCallback(

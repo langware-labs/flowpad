@@ -1,0 +1,35 @@
+/* editorial-ink — Warm Editorial. Cream ground, ink text, terracotta accent. */
+:root {
+  --bg: #faf7f2;
+  --surface: #f3ece0;
+  --text: #16120d;
+  --text-secondary: #6f6455;
+  --accent: #b4472a;
+  --accent-contrast: #ffffff;
+  --border: #ddd2c0;
+
+  --fs-hero: 82px;
+  --fs-title: 46px;
+  --fs-subtitle: 26px;
+  --fs-body: 23px;
+  --fs-caption: 14px;
+
+  /* Iowan (macOS) -> Palatino Linotype / Book Antiqua (Windows) -> Georgia
+   * (near-universal) -> serif. Every step is an old-style serif. */
+  --font-display: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+  --font-sans: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  --fw-regular: 400;
+  --fw-medium: 600;
+  --fw-bold: 700;
+  --lh-tight: 1.08;
+  --lh-body: 1.55;
+  --tracking-kicker: 0.18em;
+
+  --sp-1: 4px;  --sp-2: 8px;  --sp-3: 12px; --sp-4: 16px;
+  --sp-5: 24px; --sp-6: 32px; --sp-7: 48px; --sp-8: 64px;
+
+  --radius-sm: 0; --radius-md: 0; --radius-lg: 0;
+  --safe-area: 88px;
+}
