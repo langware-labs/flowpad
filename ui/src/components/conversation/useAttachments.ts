@@ -8,10 +8,21 @@ import { isDownloadableFileAttachment, localAttachmentUrl } from './attachment-u
 import { useFlowMessageProgress, type FlowMessageProgress } from './useFlowMessageProgress';
 import { useFlowMessageDownloadError } from './useFlowMessageDownloadError';
 
-/** TYPE_ID attachment types the send path injects as structural self-refs
- *  (parent conversation, the message, the bound task). Plumbing — never
- *  rendered as chips. Mirrors the backend ``_NON_MATERIALIZING_TYPE_IDS``. */
-const STRUCTURAL_ATTACHMENT_TYPES = new Set(['conversation', 'flow_message', 'task']);
+/** TYPE_ID attachment types the send path injects as structural self-refs —
+ *  every message auto-carries ``conversation-<id>`` + ``flow_message-<id>``
+ *  (the backend's own structural set in ``flow_message.summary``). Plumbing —
+ *  never rendered as chips.
+ *
+ *  ``task`` is deliberately NOT here: the backend never auto-injects it, so a
+ *  ``task`` attachment is present only when a sender explicitly attached one
+ *  (assign-task flow / composer) — that's a real chip, and ``MessageEntityChip``
+ *  has dedicated task-install handling for it. Do NOT re-add it: that strips
+ *  every task typeid before the renderer sees it, so assigned tasks render no
+ *  chip at all and ``useAttachedParentTaskIds`` becomes dead code.
+ *
+ *  Not to be confused with the backend's ``_NON_MATERIALIZING_TYPE_IDS``, which
+ *  does list ``task`` — that gates body-download bookkeeping, not rendering. */
+const STRUCTURAL_ATTACHMENT_TYPES = new Set(['conversation', 'flow_message']);
 
 /** One downloadable attachment, resolved into everything a chip needs to render
  *  — and nothing it could use to fetch a body that isn't there. */
@@ -130,11 +141,13 @@ function buildItems(fm: FlowMessage | null | undefined, messageId: string): Atta
 }
 
 function typeLabel(type: string): string {
-  return type
-    .split('_')
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ') || 'Asset';
+  return (
+    type
+      .split('_')
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(' ') || 'Asset'
+  );
 }
 
 function buildAssetTypeChips(entities: TypeId[], items: AttachmentView[]): AttachmentTypeChipView[] {

@@ -1,3 +1,7 @@
+---
+id: 7cc7701f-f1f7-4956-85b9-6ec51416ad18
+---
+
 # cookie-gate
 
 An optional pre-shared secret that locks an instance to callers who can prove they were sent to it.
