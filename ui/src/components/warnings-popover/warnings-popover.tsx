@@ -1,5 +1,6 @@
 import { UserWarning } from '@sdk';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
+import { openWikiModal } from '@src/components/wiki-tip';
 import { useDockNavigation } from '@src/navigation';
 import { useWarnings } from '@sdk/react/hooks';
 import {
@@ -131,6 +132,8 @@ export function WarningsPopover() {
     (warning: UserWarning) => {
       if (warning.onClick) {
         warning.onClick();
+      } else if (warning.wikiPage) {
+        openWikiModal(warning.wikiPage);
       } else {
         navigation.openTab(warning.targetView);
       }
