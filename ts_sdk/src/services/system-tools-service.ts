@@ -618,28 +618,60 @@ export class SystemToolsService extends EventEmitter {
   // ---- project context resolution ------------------------------------------
 
   /**
-   * Resolve workdir → project (longest-match on fs_storage_mount_path) and set it
-   * as the active project. When no project owns the workdir — or there is no
-   * workdir — the target is genuinely projectless, so the active project is
-   * CLEARED to null (the Global scope). Owning the clear here (rather than
-   * returning a flag for callers to act on) keeps the "projectless ⇒ Global"
-   * policy in one place; every loader's no-project branch is a single call.
-   * If entity is provided and lacks project_id, writes the resolved id back and saves.
+   * Resolve the target's project and set it as the active project: workdir
+   * (longest-match on fs_storage_mount_path), else the entity's
+   * `parent_type_id` chain, else CLEAR to null (the Global scope). Owning the
+   * clear here keeps the "projectless ⇒ Global" policy in one place; every
+   * loader's no-project branch is a single call.
+   *
+   * Persistence is opt-in via `entity.save`: a workdir-resolved id is written
+   * back onto a savable entity; a parent-inherited project is NEVER persisted,
+   * so a later re-mapping of the ancestor is followed live. Callers that must
+   * not persist (e.g. load-lens with a recovered unindexed session) pass a
+   * save-less `{ parent_type_id }`.
    */
   async resolveProjectContext(
     workdir: string | undefined,
-    entity?: { project_id?: string | null; save: () => Promise<void> },
+    entity?: { project_id?: string | null; parent_type_id?: string | null; save?: () => Promise<void> },
   ): Promise<void> {
     const match = workdir ? await Project.getProjectByPath(workdir) : null;
     if (!match) {
-      await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, null);
+      const inherited = await this.projectOfParentChain(entity?.parent_type_id ?? null);
+      await dataContext.setContextEntityTypeId(
+        ContextEntitiesEnum.CurrentProjectTypeId,
+        inherited ? new TypeId(Project.type, inherited) : null,
+      );
       return;
     }
     await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, match.typeId);
-    if (entity && !entity.project_id) {
+    if (entity?.save && !entity.project_id) {
       entity.project_id = match.id;
       await entity.save();
     }
+  }
+
+  /**
+   * Nearest ancestor project along a `parent_type_id` chain (cycle-safe,
+   * stops on a missing row). Read-only counterpart of the backend
+   * `Entity.effective_project_id` — the two must agree so the active scope a
+   * loader resolves never diverges from the project the Tab mint stamps.
+   */
+  private async projectOfParentChain(parentRef: string | null): Promise<string | null> {
+    const seen = new Set<string>();
+    let ref = parentRef;
+    while (ref && !seen.has(ref)) {
+      seen.add(ref);
+      let ent: { project_id?: string | null; parent_type_id?: string | null } | null = null;
+      try {
+        ent = await dataManager.getByTypeId(new TypeId(ref));
+      } catch {
+        return null;
+      }
+      if (!ent) return null;
+      if (ent.project_id) return ent.project_id;
+      ref = ent.parent_type_id ?? null;
+    }
+    return null;
   }
 
   // ---- System diagnoses (flowpad_diagnosis) --------------------------------
