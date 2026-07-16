@@ -4705,7 +4705,6 @@ msgstr "Failed to open file"
 #~ msgid "Failed to open folder"
 #~ msgstr "Failed to open folder"
 
-#: src/components/open-project-component/open-project-component.tsx
 #: src/components/open-project-component/use-open-project.ts
 #: src/components/project-setup-screen/project-setup-screen.tsx
 #: src/components/quick-create/QuickCreateDialog.tsx
@@ -7542,7 +7541,6 @@ msgstr "No community tickets"
 #: src/components/assets/ContextFolderBrowser.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
-#: src/components/open-project-component/open-project-component.tsx
 #: src/components/open-project-component/use-open-project.ts
 #: src/components/project-setup-screen/project-setup-screen.tsx
 #: src/components/quick-create/QuickCreateDialog.tsx
@@ -8513,8 +8511,12 @@ msgid "Open analysis"
 msgstr "Open analysis"
 
 #: src/components/task-bar/TaskDetailPanel.tsx
-msgid "Open analysis.md"
-msgstr "Open analysis.md"
+msgid "Open analysis report"
+msgstr "Open analysis report"
+
+#: src/components/task-bar/TaskDetailPanel.tsx
+#~ msgid "Open analysis.md"
+#~ msgstr "Open analysis.md"
 
 #: src/components/version-popover/diagnosis-report-modal.tsx
 msgid "Open as a tab"
@@ -9258,7 +9260,6 @@ msgstr "Please log in to view and manage environment variables."
 msgid "Please make sure the server is running."
 msgstr "Please make sure the server is running."
 
-#: src/components/open-project-component/open-project-component.tsx
 #: src/components/open-project-component/use-open-project.ts
 msgid "Please provide a valid project path"
 msgstr "Please provide a valid project path"
@@ -12278,6 +12279,7 @@ msgstr "Task not found"
 msgid "Tasked"
 msgstr "Tasked"
 
+#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/lens-viewer/shared/transcript-features/TranscriptStats.tsx
 #: src/components/task-bar/TaskBar.tsx
 msgid "Tasks"
@@ -13664,7 +13666,6 @@ msgstr "You can close this window."
 msgid "You don’t belong to an organization yet. Organizations are set up in Flowpad Cloud; once you’re added, your organization and its members appear here."
 msgstr "You don’t belong to an organization yet. Organizations are set up in Flowpad Cloud; once you’re added, your organization and its members appear here."
 
-#: src/components/open-project-component/open-project-component.tsx
 #: src/components/open-project-component/use-open-project.ts
 #: src/components/project-setup-screen/project-setup-screen.tsx
 msgid "You must be logged in"

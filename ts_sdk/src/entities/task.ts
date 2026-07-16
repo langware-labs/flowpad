@@ -19,6 +19,8 @@ export interface ITask extends IEntity {
   status?: string;
   /** TaskKind: 'group' = overview task owning one member task per group member. */
   kind?: string;
+  /** Contacts-group name a group task was assigned to — shown as "Owner: <group_name>". */
+  group_name?: string | null;
   /** Group-task parent pointer; '' = top-level. Children own only their status. */
   parent_id?: string;
   /** The member's deliverable (repo / PR / doc / app URL); rides hub reflection. */
@@ -83,6 +85,7 @@ export class Task extends APIEntity<Task> implements ITask {
   description?: string;
   status?: string;
   kind?: string;
+  group_name?: string | null;
   parent_id?: string;
   submission_url?: string | null;
   last_viewed_at?: Date;
@@ -141,6 +144,7 @@ export class Task extends APIEntity<Task> implements ITask {
     this.description = entity.description;
     this.status = entity.status;
     this.kind = entity.kind;
+    this.group_name = entity.group_name;
     this.parent_id = entity.parent_id;
     this.submission_url = entity.submission_url;
     this.last_viewed_at = entity.last_viewed_at;
