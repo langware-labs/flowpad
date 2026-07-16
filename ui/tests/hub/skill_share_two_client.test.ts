@@ -29,6 +29,8 @@ import {
   findPendingInvitation,
   getInstance,
   instanceAvailable,
+  postApi,
+  queryMessageAttachments,
   type ResolvedInstance,
 } from './_instances';
 
@@ -51,12 +53,7 @@ beforeEach((context: any) => {
   if (skipReason) context.skip();
 });
 
-const post = (apiUrl: string, p: string, body?: unknown) =>
-  fetch(`${apiUrl}/api/v1${p}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body ?? {}),
-  }).then((r) => r.json());
+const post = postApi;
 
 describe('two SDK clients in one process (realm per instance)', () => {
   it('isolated realms + backends — a skill on dev-1 does not exist on dev-2', async () => {
@@ -134,15 +131,7 @@ describe('two SDK clients in one process (realm per instance)', () => {
     }, 20_000, 'shared message READY on dev-2');
     await post(dev2.apiUrl, `/graph/flow_message/${receivedFm.id}/download_body`, {});
 
-    const queryAttachments = async (): Promise<any[]> =>
-      (await dev2.sdk.MessageAttachment.query(
-        new dev2.sdk.QueryRequest({
-          type: 'message_attachment',
-          query: { flow_message_id: fmId },
-          name: 'staged attachments (test)',
-        }),
-        /* invalidate — re-read from the backend, not the realm's query cache */ true,
-      ).catch(() => [])) as any[];
+    const queryAttachments = () => queryMessageAttachments(dev2, fmId);
 
     const stagedMa = await pollUntil(async () => {
       const rows = await queryAttachments();
