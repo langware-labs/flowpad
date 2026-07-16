@@ -12,20 +12,16 @@ import { useMemo } from 'react';
  * (large tiles, full viewport). URL-first sibling of the compact strip.
  *
  * Scope-keyed: `/dock/desktop?<scope>` pins the grid to that scope (e.g. a
- * project's favorites, opened from the project-home MiniDesktop's expand
- * affordance) and titles the page "<project> Desktop".
+ * project's favorites) and titles the page "<project> Desktop".
  */
 export function DesktopPage() {
   const { currentDock } = useDockNavigation();
   // `scopeFilter` is a getter that re-allocates each access; memoize on the dock
   // so the filter/roots memo chain downstream stays stable across re-renders.
   const scope = useMemo(() => currentDock?.scopeFilter ?? null, [currentDock]);
-  const projectId = scope?.mode === 'project' ? scope.activeProjectId ?? null : null;
+  const projectId = scope?.mode === 'project' ? (scope.activeProjectId ?? null) : null;
 
-  const projectTypeId = useMemo(
-    () => (projectId ? new TypeId(Project.type, projectId) : null),
-    [projectId],
-  );
+  const projectTypeId = useMemo(() => (projectId ? new TypeId(Project.type, projectId) : null), [projectId]);
   const { data: project } = useEntity<Project>(projectTypeId);
 
   const filter = useMemo(() => favoritesFilterForScope(scope), [scope]);

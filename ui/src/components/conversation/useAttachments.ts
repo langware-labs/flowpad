@@ -8,10 +8,14 @@ import { isDownloadableFileAttachment, localAttachmentUrl } from './attachment-u
 import { useFlowMessageProgress, type FlowMessageProgress } from './useFlowMessageProgress';
 import { useFlowMessageDownloadError } from './useFlowMessageDownloadError';
 
-/** TYPE_ID attachment types the send path injects as structural self-refs
- *  (parent conversation, the message, the bound task). Plumbing — never
- *  rendered as chips. Mirrors the backend ``_NON_MATERIALIZING_TYPE_IDS``. */
-const STRUCTURAL_ATTACHMENT_TYPES = new Set(['conversation', 'flow_message', 'task']);
+/** TYPE_ID attachment types the send path injects as structural self-refs —
+ *  every message auto-carries ``conversation-<id>`` + ``flow_message-<id>``
+ *  (see the backend's structural set in ``flow_message.summary``). Plumbing —
+ *  never rendered as chips. ``task`` is deliberately NOT here: a ``task``
+ *  attachment is only present when a sender explicitly attached one (the
+ *  assign-task flow / composer), so it renders as a real message chip —
+ *  ``MessageEntityChip`` has dedicated task-install handling for it. */
+const STRUCTURAL_ATTACHMENT_TYPES = new Set(['conversation', 'flow_message']);
 
 /** One downloadable attachment, resolved into everything a chip needs to render
  *  — and nothing it could use to fetch a body that isn't there. */
@@ -130,11 +134,13 @@ function buildItems(fm: FlowMessage | null | undefined, messageId: string): Atta
 }
 
 function typeLabel(type: string): string {
-  return type
-    .split('_')
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ') || 'Asset';
+  return (
+    type
+      .split('_')
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(' ') || 'Asset'
+  );
 }
 
 function buildAssetTypeChips(entities: TypeId[], items: AttachmentView[]): AttachmentTypeChipView[] {
