@@ -9,11 +9,13 @@ import { useEntity } from '@sdk/react/hooks';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { EntityActionsToolbar } from '@src/components/entity-actions/EntityActionsToolbar';
+import { useParentTask } from '@src/hooks/use-parent-task';
 import { useTaskSpecText } from '@src/hooks/use-task-spec-text';
 import { getPriorityColor, PRIORITY_CONFIG, statusLabel } from './constants';
 import { getAnalysisPath, getTaskTypeLabel, openAnalysisReport } from './task-utils';
 import { ConversationPanel } from '@src/components/conversation/ConversationPanel';
 import { AnalyzeStatusButton } from '@src/components/assets/editor/task/AnalyzeStatusButton';
+import { ParentTaskBlock } from '@src/components/assets/editor/task/ParentTaskBlock';
 import { Trans, useLingui } from '@lingui/react/macro';
 
 interface TaskDetailPanelProps {
@@ -30,6 +32,12 @@ export function TaskDetailPanel({ task, onClose }: TaskDetailPanelProps) {
   const { navigation } = useDockNavigation();
   const conversationTypeId = task.firstContextOfType?.('conversation') ?? null;
   const isSharedTask = !!task.shared_by_id;
+
+  // Member task: resolve the group parent. When present it owns the
+  // title / priority / dates / description (rendered read-only in the block
+  // above), so those fields are dropped from the child's own list below.
+  const parent = useParentTask(task.parent_id || null);
+  const hasParent = !!parent;
 
   const { data: sender } = useEntity<User>(task.shared_by_id ? new TypeId(User.type, task.shared_by_id) : null);
   // Spec is a plain `spec.md` file in the task folder (legacy Spec-entity
@@ -68,6 +76,15 @@ export function TaskDetailPanel({ task, onClose }: TaskDetailPanelProps) {
 
         {/* Fields */}
         <div className="flex-1 space-y-3 overflow-y-auto p-3">
+          {/* Parent context — member task's group parent, read-only. */}
+          {hasParent && (
+            <ParentTaskBlock
+              parent={parent}
+              compact
+              onOpenParent={() => navigation.openDock(DockPointer.forAssetEditorByTypeId('task', parent.typeId))}
+            />
+          )}
+
           {/* From (shared task) */}
           {isSharedTask && (
             <div>
@@ -100,8 +117,10 @@ export function TaskDetailPanel({ task, onClose }: TaskDetailPanelProps) {
             <div className="mt-0.5 text-sm">{statusLabel(task.status)}</div>
           </div>
 
-          {/* Priority */}
-          {task.priority && (
+          {/* Priority / Due / Description — owned by the parent on member
+              tasks (shown in the block above), so only render them here for
+              tasks that have no parent. */}
+          {!hasParent && task.priority && (
             <div>
               <span className="text-xs font-medium text-muted-foreground">
                 <Trans>Priority</Trans>
@@ -114,7 +133,7 @@ export function TaskDetailPanel({ task, onClose }: TaskDetailPanelProps) {
           )}
 
           {/* Due date */}
-          {task.due_at && (
+          {!hasParent && task.due_at && (
             <div>
               <span className="text-xs font-medium text-muted-foreground">
                 <Trans>Due date</Trans>
@@ -130,7 +149,7 @@ export function TaskDetailPanel({ task, onClose }: TaskDetailPanelProps) {
           )}
 
           {/* Description */}
-          {task.descriptionPlainText && (
+          {!hasParent && task.descriptionPlainText && (
             <div>
               <span className="text-xs font-medium text-muted-foreground">
                 <Trans>Description</Trans>
@@ -160,7 +179,7 @@ export function TaskDetailPanel({ task, onClose }: TaskDetailPanelProps) {
                 className="mt-0.5 flex items-center gap-1.5 text-sm text-primary hover:underline"
               >
                 <FileText className="h-3.5 w-3.5" />
-                <Trans>Open analysis.md</Trans>
+                <Trans>Open analysis report</Trans>
               </button>
             </div>
           )}

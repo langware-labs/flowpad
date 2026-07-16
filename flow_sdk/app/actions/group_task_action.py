@@ -342,14 +342,19 @@ async def create_group_task() -> ApiResponse:
                 created.remove(email)
             failed.append({"email": email, "error": str(e)[:200]})
 
-    if (created or by_assignee) and task.kind != TaskKind.GROUP.value:
+    if (created or by_assignee) and (task.kind != TaskKind.GROUP.value or task.group_name != group.name):
         task.kind = TaskKind.GROUP.value
+        task.group_name = group.name
         await task.save(request_info.someone_typeid)
         # A server-side save doesn't hub-reflect (that's the client
         # header path) — push the flip explicitly so the hub row reads
         # ``group`` for every member fetch.
         try:
-            await hub_put(BuiltinEntityType.TASK, str(task.id), {"kind": TaskKind.GROUP.value})
+            await hub_put(
+                BuiltinEntityType.TASK,
+                str(task.id),
+                {"kind": TaskKind.GROUP.value, "group_name": group.name},
+            )
         except Exception as e:  # noqa: BLE001
             logger.warning("[group-task] hub kind flip failed (non-fatal): %s", e)
 
