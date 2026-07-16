@@ -119,8 +119,9 @@ export function useTranslations({
     () => (rawLang ? translations.find((t) => t.lang === rawLang) ?? null : null),
     [translations, rawLang],
   );
-  // Effective active language: null unless the doc really has that translation.
-  const activeLang = activeView ? rawLang : null;
+  // Effective active language: the found translation's lang (=== rawLang), or
+  // null when this doc has no translation for the URL's ?lang=.
+  const activeLang = activeView?.lang ?? null;
   const activeRef = activeView?.ref ?? null;
   const activeStatus = activeView?.status ?? null;
 
