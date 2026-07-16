@@ -160,12 +160,19 @@ async def _cross_link_installed_siblings(ma: MessageAttachment) -> None:
     materialize one install at a time, so we (re)link the whole installed set on
     each install — idempotent and convergent: installing #2 links #1<->#2,
     installing #3 links all three. Still-staged siblings are skipped; they link
-    themselves in when installed. Best-effort — never fails the install.
-    """
-    from flow_sdk.core.entity.cross_link import cross_link_all  # noqa: PLC0415
-    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+    themselves in when installed.
 
+    Best-effort — never fails the install. That promise covers the imports too:
+    they sit inside the guard because ``_finalize_install`` calls this unguarded,
+    so an ImportError here would otherwise take down every install.
+    """
     if not ma.flow_message_id:
+        return
+    try:
+        from flow_sdk.core.entity.cross_link import cross_link_all  # noqa: PLC0415
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[message_attachment] cross-link unavailable (non-fatal): %s", e, exc_info=True)
         return
     try:
         siblings = await MessageAttachment.get_all({"flow_message_id": ma.flow_message_id})
