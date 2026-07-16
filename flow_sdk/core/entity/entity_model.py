@@ -2379,7 +2379,7 @@ class Entity(DBEntity):
         the child, so a later re-mapping of the ancestor is followed live.
         """
         found = await self.nearest_ancestor(lambda e: getattr(e, "project_id", None))
-        return getattr(found, "project_id", None) if found is not None else None
+        return found.project_id if found is not None else None
 
     @staticmethod
     async def project_id_of(entity_type: str, entity_id: str) -> "str | None":
