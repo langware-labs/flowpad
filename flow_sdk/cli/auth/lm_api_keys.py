@@ -83,11 +83,14 @@ _VALIDATE_ENDPOINTS: dict[str, tuple[str, Callable[[str], dict[str, str]]]] = {
 }
 
 
-async def validate_lm_api(provider: LMApiProvider | str) -> dict:
-    """Check the stored key for *provider* against the provider (a real network
-    call). Returns ``{"valid": bool, "message": str}`` — never raises."""
+async def validate_lm_api(provider: LMApiProvider | str, key: str | None = None) -> dict:
+    """Check a key for *provider* against the provider (a real network call).
+    Returns ``{"valid": bool, "message": str}`` — never raises. Pass *key* to
+    validate an in-hand value (e.g. right after ``set_lm_api`` on the save path),
+    skipping a redundant store read/decrypt; otherwise the stored key is loaded."""
     provider = LMApiProvider(provider)
-    key = get_lm_api(provider)
+    if key is None:
+        key = get_lm_api(provider)
     if not key:
         return {"valid": False, "message": "No key configured"}
 
