@@ -2,14 +2,14 @@
  * Atlas-language node renderers for the v2 flow canvas:
  * - TriggerNode — distinct output-only shape (angled pill, single source
  *   handle) referencing a Trigger entity; emits `fired`.
- * - StationCard — process_runner / pysdk atlas .card: mono kicker + pip,
- *   serif title, live status line, model-size selector (agents), heartbeat
- *   while running, active/queued badges.
+ * - StationCard — agent / function atlas .card: mono kicker + pip,
+ *   serif title, live status line, model-size selector (agents), inline vs
+ *   subprocess badge (functions), heartbeat while running, active/queued badges.
  */
 import { useEffect, useState } from 'react';
 import { Handle, Position, type NodeProps } from '@xyflow/react';
-import type { FlowDocNode } from '@sdk/services/agentic-flows';
-import { nodeStatusLine } from '../fmt';
+import { functionRuntime, type FlowDocNode } from '@sdk/services/agentic-flows';
+import { asStr, nodeStatusLine } from '../fmt';
 import { useStudio } from '../store';
 
 const MODEL_SIZES = ['sm', 'md', 'lg'] as const;
@@ -40,7 +40,7 @@ function useLive(nodeId: string) {
 
 export function TriggerNode({ data, selected }: NodeProps) {
   const def = (data as { def: FlowDocNode }).def;
-  const typeid = String(def.node_data.typeid ?? '');
+  const typeid = asStr(def.node_data.typeid);
   const { live, running } = useLive(def.id);
 
   return (
@@ -72,11 +72,12 @@ export function StationCard({ data, selected }: NodeProps) {
     execution_mode?: string;
     parallel_limit?: number;
     merge_identical?: boolean;
-    script?: string;
+    function?: string;
   };
-  const isPysdk = def.node_type === 'pysdk';
-  const kind = isPysdk ? 'pysdk' : nd.program_kind || 'instruction';
-  const isAgent = !isPysdk && kind !== 'callback';
+  const isFunction = def.node_type === 'function';
+  const runtime = isFunction ? functionRuntime(def) : '';
+  const kind = isFunction ? `function · ${runtime}` : nd.program_kind || 'instruction';
+  const isAgent = !isFunction;
 
   const { live, proc, running, now } = useLive(def.id);
   const openProcess = useStudio((s) => s.openProcess);
@@ -95,14 +96,18 @@ export function StationCard({ data, selected }: NodeProps) {
     });
   };
 
-  const sub = isPysdk ? nd.script || 'no script' : kind === 'skill' ? `/${nd.program_ref}` : nd.program_ref || nd.prompt || '';
+  const sub = isFunction
+    ? nd.function || 'no function'
+    : nd.program_kind === 'skill'
+      ? `/${nd.program_ref}`
+      : nd.program_ref || nd.prompt || '';
 
   return (
     <div className={['afl-node', selected ? 'selected' : '', running ? 'running' : '', failed ? 'failed' : ''].join(' ')}>
       <div className="card">
         <Handle type="target" position={Position.Left} />
         <div className="kic">
-          <span className={`pip ${kind}`} />
+          <span className={`pip ${isFunction ? 'function' : nd.program_kind || 'instruction'}`} />
           {kind} · {execBadge}
           {nd.merge_identical ? ' · ⧉' : ''}
           {isAgent && (

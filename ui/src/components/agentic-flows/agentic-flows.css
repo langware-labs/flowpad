@@ -132,7 +132,7 @@
   background: var(--rubric);
   flex: none;
 }
-.agentic-flows .afl-node .kic .pip.callback { background: #7c5cff; }
+.agentic-flows .afl-node .kic .pip.function { background: #7c5cff; }
 .agentic-flows .afl-node .kic .pip.skill { background: var(--rubric); }
 .agentic-flows .afl-node .kic .pip.instruction { background: var(--afl-warn); }
 .agentic-flows .afl-node .ttl {
@@ -823,3 +823,14 @@
   border-radius: 999px;
   padding: 0 6px;
 }
+
+/* runs panel actions + journal row links (v3 FlowFunction round) */
+.agentic-flows .afl-runactions { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
+.agentic-flows .afl-jrow .lnk {
+  color: var(--rubric);
+  cursor: pointer;
+  font-size: 9px;
+  white-space: nowrap;
+  text-decoration: none;
+}
+.agentic-flows .afl-jrow .lnk:hover { text-decoration: underline; }

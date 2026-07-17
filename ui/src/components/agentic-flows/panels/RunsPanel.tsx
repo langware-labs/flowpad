@@ -7,7 +7,7 @@
  */
 import { useEffect, useState } from 'react';
 import { agenticFlows, type RunJournalEntry } from '@sdk/services/agentic-flows';
-import { fmtRelative, parseIsoMs } from '../fmt';
+import { asStr, fmtRelative, parseIsoMs } from '../fmt';
 import { useStudio } from '../store';
 
 const STATUS_GLYPH: Record<string, string> = {
@@ -17,23 +17,46 @@ const STATUS_GLYPH: Record<string, string> = {
   failed: '✗',
 };
 
-function JournalTimeline({ entries }: { entries: RunJournalEntry[] }) {
+function JournalTimeline({
+  entries,
+  onReexecute,
+  onOpenProcess,
+}: {
+  entries: RunJournalEntry[];
+  onReexecute: (seq: number) => void;
+  onOpenProcess: (processId: string) => void;
+}) {
   return (
     <div className="afl-journal">
       {entries.map((e, i) => {
         const node = typeof e.node === 'string' ? e.node : '';
         const event = typeof e.event === 'string' ? e.event : '';
+        const seq = (e.execution as { seq?: number } | undefined)?.seq;
+        const processId = typeof e.process_id === 'string' ? e.process_id : '';
         const detail =
           e.kind === 'node_error'
-            ? String(e.stderr ?? e.error ?? '').slice(-200)
+            ? (asStr(e.stderr) || asStr(e.error)).slice(-200)
             : e.kind === 'event'
               ? JSON.stringify(e.data ?? {}).slice(0, 160)
               : '';
         return (
           <div key={i} className={`afl-jrow ${e.kind}`}>
             <span className="k">{e.kind}</span>
-            <span className="n">{[node, event].filter(Boolean).join(' · ')}</span>
+            <span className="n">
+              {[seq ? `#${seq}` : '', node, event].filter(Boolean).join(' · ')}
+            </span>
             {detail && <span className="d">{detail}</span>}
+            {processId && (e.kind === 'agent_spawn' || e.kind === 'node_done' || e.kind === 'node_error') && (
+              <a className="lnk" title={`open process ${processId}`} onClick={() => onOpenProcess(processId)}>
+                proc ⬈
+              </a>
+            )}
+            {seq !== undefined && (e.kind === 'node_done' || e.kind === 'node_error') && (
+              <a className="lnk" title="re-deliver this execution's recorded input in a fresh run"
+                 onClick={() => onReexecute(seq)}>
+                ↻ re-run
+              </a>
+            )}
           </div>
         );
       })}
@@ -47,9 +70,29 @@ export function RunsPanel() {
   const runs = useStudio((s) => s.runs);
   const selectedRunId = useStudio((s) => s.selectedRunId);
   const selectRun = useStudio((s) => s.selectRun);
+  const openProcess = useStudio((s) => s.openProcess);
   const [entries, setEntries] = useState<RunJournalEntry[]>([]);
+  const [actionStatus, setActionStatus] = useState<string | null>(null);
   const now = Date.now();
   const selectedStatus = runs.find((r) => r.id === selectedRunId)?.status;
+
+  const replay = () => {
+    if (!flowId || !selectedRunId) return;
+    setActionStatus(null);
+    void agenticFlows
+      .replayRun(flowId, selectedRunId)
+      .then((res) => setActionStatus(res?.run_id ? `▶ replayed as ${res.run_id.slice(0, 8)}` : 'replay failed'))
+      .catch((e) => setActionStatus(String(e)));
+  };
+
+  const reexecute = (seq: number) => {
+    if (!flowId || !selectedRunId) return;
+    setActionStatus(null);
+    void agenticFlows
+      .reexecute(flowId, selectedRunId, seq)
+      .then((res) => setActionStatus(res?.run_id ? `▶ #${seq} re-run as ${res.run_id.slice(0, 8)}` : 're-run failed'))
+      .catch((e) => setActionStatus(String(e)));
+  };
 
   useEffect(() => {
     if (!flowId || !selectedRunId) {
@@ -95,7 +138,22 @@ export function RunsPanel() {
           </button>
         ))}
       </div>
-      {selectedRunId && <JournalTimeline entries={entries} />}
+      {selectedRunId && (
+        <>
+          <div className="afl-runactions">
+            <button className="afl-cta" onClick={replay}
+                    title="re-inject this run's recorded entry events into a fresh run (side effects re-fire)">
+              Replay run ▶
+            </button>
+            {actionStatus && <div className="afl-status">{actionStatus}</div>}
+          </div>
+          <JournalTimeline
+            entries={entries}
+            onReexecute={reexecute}
+            onOpenProcess={(pid) => openProcess?.(pid)}
+          />
+        </>
+      )}
     </div>
   );
 }

@@ -30,14 +30,11 @@ def test_window_from_event_override_and_default():
 
 
 @async_context
-async def test_publish_callback_posts_feed_entry(tmp_path):
+async def test_publish_function_posts_feed_entry(tmp_path):
     from flow_sdk.builtin.feed_entry import FeedEntry
-    from flow_sdk.flow_manager.envelope import FlowEvent
     from flow_sdk.usage_report.callback import flow_publish_usage_report
 
-    event = FlowEvent(event="report_ready", data={"report_id": "abc-123"},
-                      flow_id="f", execution_id="x", source_node="analyze")
-    result = await flow_publish_usage_report(event)
+    result = await flow_publish_usage_report("report_ready", {"report_id": "abc-123"}, None)
     assert result == {"report_id": "abc-123"}
 
     feeds = await FeedEntry.get_all({})
@@ -45,9 +42,7 @@ async def test_publish_callback_posts_feed_entry(tmp_path):
 
     # Missing report_id is a hard error (the analyze stage always sends one).
     with pytest.raises(ValueError):
-        await flow_publish_usage_report(
-            FlowEvent(event="report_ready", data={}, flow_id="f",
-                      execution_id="x", source_node="analyze"))
+        await flow_publish_usage_report("report_ready", {}, None)
 
 
 @async_context
@@ -82,12 +77,10 @@ async def test_seed_migrates_retired_monolith_graph(tmp_path):
     await _seed_daily_analysis()
 
     doc = json.loads((folder / "graph.json").read_text(encoding="utf-8"))
-    refs = {n["node_data"].get("program_ref") for n in doc["nodes"]
-            if n["node_type"] == "process_runner"}
-    scripts = {n["node_data"].get("script") for n in doc["nodes"]
-               if n["node_type"] == "pysdk"}
-    assert refs == {"flow_publish_usage_report"}
-    assert scripts == {"scripts/analyze_usage.py"}
+    fns = {n["node_data"].get("function"): n["node_data"].get("runtime")
+           for n in doc["nodes"] if n["node_type"] == "function"}
+    assert fns == {"scripts/analyze_usage.py": "subprocess",
+                   "flow_publish_usage_report": "inline"}
     assert (folder / "scripts" / "analyze_usage.py").exists()
     assert doc["id"] == flow.id
 
@@ -109,10 +102,15 @@ async def test_seed_migrates_retired_monolith_graph(tmp_path):
     assert "My custom name" in json.dumps(healed)
 
 
-def test_retired_callbacks_are_gone():
+def test_registries_are_separated():
+    """FlowFunctions live in their own registry; trigger_callbacks holds only
+    trigger-signature handlers — the two-signature wart stays dead."""
     from flow_sdk.builtin import trigger_callbacks
+    from flow_sdk.flow_manager import flow_functions
     from flow_sdk.usage_report import callback as _register  # noqa: F401
 
-    assert trigger_callbacks.get("flow_publish_usage_report") is not None
+    assert flow_functions.get("flow_publish_usage_report") is not None
+    assert trigger_callbacks.get("flow_publish_usage_report") is None
     assert trigger_callbacks.get("builtin_daily_usage_report") is None
     assert trigger_callbacks.get("flow_daily_usage_report") is None
+    assert trigger_callbacks.get("flow_echo") is None  # demo fns moved too

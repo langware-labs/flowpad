@@ -734,6 +734,14 @@ class AgenticProcess(Entity):
             "that survives past the window."
         ),
     )
+    exit_code: int | None = APIField(
+        default=None,
+        description=(
+            "Terminal exit code of a driverless EXECUTION process (a flow "
+            "function subprocess) — stamped by the FlowManager when the "
+            "subprocess finishes. None for worker-driven processes."
+        ),
+    )
     last_started_hash: str | None = APIField(
         default=None,
         description=(

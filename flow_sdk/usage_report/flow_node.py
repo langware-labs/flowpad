@@ -1,4 +1,4 @@
-"""The daily-analysis flow's ``analyze`` pysdk node body.
+"""The daily-analysis flow's ``analyze`` FlowFunction (subprocess runtime).
 
 The seeded flow's ``scripts/analyze_usage.py`` is a thin shim importing
 ``on_flow_event`` from here, so the real logic is package-versioned and

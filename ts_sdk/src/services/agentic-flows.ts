@@ -17,7 +17,7 @@ export type { FlowNodeStatusMessage, FlowRunEventMessage } from '../websocket';
 /** Wire shape of one graph.json node (see flow_doc.py). */
 export interface FlowDocNode {
   id: string;
-  node_type: 'trigger' | 'process_runner' | 'pysdk';
+  node_type: 'trigger' | 'agent' | 'function';
   name?: string;
   node_data: Record<string, unknown>;
 }
@@ -28,14 +28,37 @@ export interface FlowDocEdge {
   to: { node: string };
 }
 
+/** Per-flow knobs (run retention + loop budgets) — flow_doc.FlowConfig. */
+export interface FlowConfig {
+  retention_runs?: number;
+  max_hops?: number;
+  max_processes?: number;
+  deadline_s?: number;
+}
+
 export interface FlowDoc {
   version: number;
   id?: string;
   name?: string;
   description?: string;
   enabled?: boolean;
+  config?: FlowConfig;
   nodes: FlowDocNode[];
   edges: FlowDocEdge[];
+}
+
+/** A registered FlowFunction (GET /agentic-flows/functions — the picker feed). */
+export interface FlowFunctionInfo {
+  name: string;
+  meaning?: string | null;
+  is_async?: boolean;
+}
+
+/** A function node's effective runtime (mirror of FlowNodeDef.function_runtime). */
+export function functionRuntime(node: FlowDocNode): 'inline' | 'subprocess' {
+  const explicit = String(node.node_data.runtime ?? '');
+  if (explicit === 'inline' || explicit === 'subprocess') return explicit;
+  return String(node.node_data.function ?? '').endsWith('.py') ? 'subprocess' : 'inline';
 }
 
 /** The catch-all edge event. */
@@ -98,6 +121,21 @@ class AgenticFlowsClient extends EventEmitter {
   }
 
   /** A run's full journal (from the flow folder's runs/<id>.jsonl). */
+  /** The FlowFunction registry — feeds the Function node picker. */
+  async listFunctions(): Promise<FlowFunctionInfo[] | undefined> {
+    return apiClient.get('/agentic-flows/functions');
+  }
+
+  /** Re-inject a run's recorded ENTRY events into a fresh run (real re-execution). */
+  async replayRun(flowId: string, runId: string): Promise<{ run_id: string } | undefined> {
+    return apiClient.post(`/agentic-flows/${flowId}/runs/${runId}/replay`, {});
+  }
+
+  /** Re-deliver one past execution's recorded input to its node, in a fresh run. */
+  async reexecute(flowId: string, runId: string, seq: number): Promise<{ run_id: string } | undefined> {
+    return apiClient.post(`/agentic-flows/${flowId}/reexecute`, { run_id: runId, seq });
+  }
+
   async fetchRunJournal(flowId: string, runId: string): Promise<RunJournalEntry[] | undefined> {
     return apiClient.get(`/agentic-flows/${flowId}/runs/${runId}`);
   }

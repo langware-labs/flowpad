@@ -181,7 +181,7 @@ export const useStudio = create<StudioState>((set, get) => ({
       if (typeof pid === 'string') next.processId = pid;
     }
     if (msg.phase === 'finished' || msg.phase === 'failed') {
-      if (msg.phase === 'failed') next.error = String(msg.detail?.error ?? 'failed');
+      if (msg.phase === 'failed') next.error = typeof msg.detail?.error === 'string' ? msg.detail.error : 'failed';
       else next.lastDurationMs = Number(msg.detail?.duration_ms ?? 0) || undefined;
       next.lastFinishedAt = Date.now();
       next.lastStdout = typeof msg.detail?.stdout === 'string' ? msg.detail.stdout : prev.lastStdout;
@@ -196,7 +196,8 @@ export const useStudio = create<StudioState>((set, get) => ({
   setProcStatus: (processId, st) =>
     set({ procStatus: { ...get().procStatus, [processId]: st } }),
   clearProcStatus: (processId) => {
-    const { [processId]: _gone, ...rest } = get().procStatus;
+    const rest = { ...get().procStatus };
+    delete rest[processId];
     set({ procStatus: rest });
   },
 

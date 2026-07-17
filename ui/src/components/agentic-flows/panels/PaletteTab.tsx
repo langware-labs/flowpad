@@ -14,8 +14,8 @@ type NodeType = FlowDocNode['node_type'];
 
 const ITEMS: { type: NodeType; label: string; glyph: string; blurb: string }[] = [
   { type: 'trigger', label: 'Trigger', glyph: '◈', blurb: 'Fires the flow — links a Trigger entity, emits `fired`.' },
-  { type: 'process_runner', label: 'Process Runner', glyph: '▣', blurb: 'Agent / skill / callback station. Auto-emits `done` with its output.' },
-  { type: 'pysdk', label: 'PySDK', glyph: '⌁', blurb: 'Runs a python file per event: on_flow_event(name, data, flow_ctx).' },
+  { type: 'agent', label: 'Agent', glyph: '▣', blurb: 'Spawned worker (skill / instruction). Auto-emits `done` with its output + artifacts.' },
+  { type: 'function', label: 'Function', glyph: '⌁', blurb: 'A FlowFunction — on_flow_event(name, data, flow_ctx); inline or subprocess.' },
 ];
 
 export function paletteLabel(type: NodeType): string {
@@ -24,7 +24,7 @@ export function paletteLabel(type: NodeType): string {
 
 export function defaultNodeData(type: NodeType): Record<string, unknown> {
   if (type === 'trigger') return { typeid: '' };
-  if (type === 'pysdk') return { script: '' };
+  if (type === 'function') return { function: '', runtime: 'inline' };
   return { program_kind: 'instruction', program_ref: '', prompt: '', model_size: 'sm' };
 }
 

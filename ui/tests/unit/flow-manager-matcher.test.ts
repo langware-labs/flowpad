@@ -17,7 +17,7 @@ describe('agentic-flows v2 SDK surface', () => {
     const run = new AgenticFlowRun({ flow_id: 'x' });
     expect(run.status).toBe('running');
     const node = new FlowNode({});
-    expect(node.node_type).toBe('process_runner');
+    expect(node.node_type).toBe('function');
   });
 
   it('exports the routing constants (mirror of flow_doc.py)', () => {

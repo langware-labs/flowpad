@@ -5,7 +5,7 @@ Folder layout::
     ~/.claude/agentic-flows/<name>/
         graph.json      # the flow document (nodes + edges) — semantic truth
         display.json    # canvas layout only (positions/colors/sizes)
-        scripts/        # pysdk node files
+        scripts/        # function node scripts
         runs/           # execution journals (one JSONL per run)
 
 Disk is the source of truth: routing reads ``graph.json`` (via FlowManager's
@@ -21,12 +21,6 @@ from typing import ClassVar, Optional
 from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.core import Entity
 from flow_sdk.schema.types import EntityType
-
-# Per-run loop-budget defaults (a flow may override in graph.json later).
-DEFAULT_MAX_HOPS = 16
-DEFAULT_MAX_PROCESSES = 10
-DEFAULT_DEADLINE_S = 600
-
 
 def flows_home_dir() -> Path:
     """Default location for user-scope flows (the indexer walker scans this)."""
