@@ -17,11 +17,14 @@ import {
   Copy,
   ExternalLink,
   History,
+  KeyRound,
   Loader2,
   RefreshCw,
   Stethoscope,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+
+import { openHarnessLoginModal } from '@src/components/harness-login/harness-login-store';
 
 interface PypiRelease {
   version: string;
@@ -693,11 +696,26 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
           </section>
 
           {/* Toolbar */}
-          <div className="-mx-3 -mb-3 mt-1 border-t px-3 pb-1 pt-2.5">
+          <div className="-mx-3 -mb-3 mt-1 flex gap-2 border-t px-3 pb-1 pt-2.5">
             <Button
               type="button"
               size="sm"
-              className="w-full"
+              variant="outline"
+              className="flex-1"
+              onClick={() => {
+                setOpen(false);
+                openHarnessLoginModal();
+              }}
+              title={t`Harness sign-in & status`}
+              data-testid="version-harness-status"
+            >
+              <KeyRound />
+              <span><Trans>Harness status</Trans></span>
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              className="flex-1"
               onClick={() => {
                 setOpen(false);
                 setDiagnoseOpen(true);

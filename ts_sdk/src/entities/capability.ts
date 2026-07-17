@@ -37,6 +37,11 @@ export interface WorkerAuthStatus {
   verified: boolean;
   message: string;
   details: Record<string, unknown>;
+  /** How the harness authenticates: device login vs a stored LLM-provider key. */
+  auth_mode?: 'device' | 'api';
+  /** Providers this harness can authenticate against (from its ApiAuthSpec);
+   *  also mirrored under details.supported_providers. */
+  supported_providers?: string[];
 }
 
 export interface ICapability extends IEntity {
@@ -64,6 +69,11 @@ export interface ICapability extends IEntity {
   login_code?: string | null;
   login_accepts_code?: boolean | null;
   login_message?: string | null;
+  /** How this harness authenticates its worker: "device" (default) or "api"
+   *  (a stored LLM-provider key). Persisted + user-switchable. */
+  auth_mode?: 'device' | 'api' | null;
+  /** Chosen LMApiProvider value when auth_mode === 'api' (null → driver default). */
+  api_provider?: string | null;
 }
 
 @registerEntity
@@ -88,6 +98,8 @@ export class Capability extends APIEntity<Capability> implements ICapability {
   login_code: string | null = null;
   login_accepts_code: boolean | null = null;
   login_message: string | null = null;
+  auth_mode: 'device' | 'api' | null = null;
+  api_provider: string | null = null;
 
   private _icon: string | null = null;
 
@@ -133,6 +145,8 @@ export class Capability extends APIEntity<Capability> implements ICapability {
     this.login_code = entity.login_code ?? this.login_code;
     this.login_accepts_code = entity.login_accepts_code ?? this.login_accepts_code;
     this.login_message = entity.login_message ?? this.login_message;
+    this.auth_mode = entity.auth_mode ?? this.auth_mode;
+    this.api_provider = entity.api_provider ?? this.api_provider;
   }
 
   static kindMatches(queryKind: string, capabilityKind: string): boolean {

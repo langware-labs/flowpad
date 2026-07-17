@@ -1353,6 +1353,14 @@ class AgenticProcess(Entity):
             # Runtime env injection: process identity + backend-pinned `flow`
             # CLI — the shared chokepoint all spawn paths use.
             apply_worker_env(cmd.env_vars, self)
+            # API-key auth: stamp the OpenRouter model slug (+ codex -c overrides)
+            # onto the options before argv is frozen (env/token ride
+            # apply_worker_secret_env at spawn time). No-op in device mode.
+            from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import (
+                apply_api_model_to_options,
+            )
+
+            await apply_api_model_to_options(cmd, self)
             # Inject the WebSocket connection ID so the worker can navigate its own tab explicitly
             if self.connection_id:
                 cmd.add_env("FLOWPAD_CONNECTION_ID", self.connection_id)
@@ -2968,6 +2976,16 @@ class AgenticProcess(Entity):
                 resume_session_id=self.session_id if resumable else None,
                 **self._instruction_context_kwargs(instruction_assets),
             )
+
+            # API-key auth (harness in "api" mode): override the model with the
+            # provider slug and carry codex's -c overrides onto the context. The
+            # env/token already landed via apply_worker_secret_env above. Same
+            # helper as the visible-PTY path; no-op in device mode.
+            from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import (
+                apply_api_model_to_options,
+            )
+
+            await apply_api_model_to_options(context, self)
 
             # Vendor hook retained for compatibility; embedded-agent/persona
             # instructions are materialized into process instruction assets.

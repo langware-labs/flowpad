@@ -124,6 +124,9 @@ class WorkerAuthResult:
     verified: bool = False
     message: str = ""
     details: dict[str, Any] = field(default_factory=dict)
+    # How the harness authenticates: "device" (vendor device login — the default
+    # for every native probe) or "api" (a stored LLM-provider key).
+    auth_mode: str = "device"
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -131,6 +134,7 @@ class WorkerAuthResult:
             "verified": self.verified,
             "message": self.message,
             "details": self.details,
+            "auth_mode": self.auth_mode,
         }
 
 

@@ -528,6 +528,16 @@ async def apply_worker_secret_env(env: dict[str, str], process: "AgenticProcess"
                 continue
             if resolved is not None:
                 env.setdefault(env_var, resolved.get_secret_value())
+
+    # API-key auth (harness in "api" mode): inject the provider env block + key.
+    # Lazy import avoids a cycle with the driver registry. This wins over device
+    # creds by design; the key lands only in this transient spawn env.
+    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import resolve_worker_api_auth
+
+    api_auth = await resolve_worker_api_auth(process)
+    if api_auth is not None:
+        for key, value in api_auth.env.items():
+            env[key] = value
     return env
 
 
@@ -603,6 +613,13 @@ class AgenticContext(BaseModel):
     system_prompt_file: str | None = None
     developer_instructions: str | None = None
     custom_instruction_dirs: list[str] = Field(default_factory=list)
+
+    # Extra `-c key=val` config overrides for API-key auth (currently codex's
+    # OpenRouter provider block). Derived per-spawn from the harness Capability,
+    # so — like fork/resume — excluded from the restart hash. Same name as
+    # CodexCliOptions.extra_config_overrides so apply_api_model_to_options can
+    # stamp either object.
+    extra_config_overrides: list[tuple[str, str]] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def set_defaults(self) -> "AgenticContext":
