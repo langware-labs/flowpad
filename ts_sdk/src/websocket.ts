@@ -30,7 +30,7 @@ type MessageType =
   | 'cloud_connection_status_msg'
   | 'privacy_mode_msg'
   | 'toplog_state_msg'
-  | 'topic_event_msg'
+  | 'flow_run_event_msg'
   | 'flow_node_status_msg'
   | 'ui_command'
   | 'recovered_msg'
@@ -131,44 +131,38 @@ export interface ToplogStateMessage extends BaseMessage {
   filter: Record<string, boolean>;
 }
 
-/** A serialized TopicEvent envelope (flow_sdk/flow_manager/envelope.py). */
-export interface TopicEventEnvelope {
-  topic: string;
-  payload: Record<string, unknown>;
-  source: string;
-  correlation_id: string;
-  causation: string[];
-  depth: number;
-  scope?: string | null;
-  ts: string;
-  /** Reason this event was refused (budget trip), if any. */
-  dropped?: string | null;
-}
-
 /**
- * Broadcast for every event FlowManager routes — the live flow journal
- * stream. Backend mirror: TopicEventMessage in flow_sdk/api/messages.py.
+ * Broadcast for every event/lifecycle beat of an AgenticFlow run — the live
+ * run stream. Backend mirror: FlowRunEventMessage in flow_sdk/api/messages.py.
  */
-export interface TopicEventMessage extends BaseMessage {
-  message_type: 'topic_event_msg';
-  event: TopicEventEnvelope;
+export interface FlowRunEventMessage extends BaseMessage {
+  message_type: 'flow_run_event_msg';
+  flow_id: string;
+  run_id: string;
+  /** run_start | event | run_end */
+  kind: string;
+  event: string;
+  data: Record<string, unknown>;
+  node: string;
+  status: string;
+  ts: string;
 }
 
 /**
- * Broadcast on every FlowManager scheduler transition for a flow node —
- * the push feed for live queue/active counters and node status lines.
+ * Broadcast on every FlowManager scheduler transition for a flow node — the
+ * push feed for live queue/active counters and node status lines.
  * Backend mirror: FlowNodeStatusMessage in flow_sdk/api/messages.py.
  */
 export interface FlowNodeStatusMessage extends BaseMessage {
   message_type: 'flow_node_status_msg';
+  flow_id: string;
+  run_id: string;
   node_id: string;
-  phase: 'queued' | 'merged' | 'started' | 'finished' | 'failed' | 'slot_freed';
+  phase: 'queued' | 'merged' | 'started' | 'finished' | 'failed';
   /** Node runtime counts AFTER this transition. */
   queued: number;
   active: number;
-  event_topic: string;
-  correlation_id: string;
-  /** started → {program_kind, process_id?}; finished → {duration_ms}; failed → {error}. */
+  /** started → {program_kind, process_id?}; finished → {duration_ms, stdout?...}; failed → {error}. */
   detail: Record<string, unknown>;
   ts: string;
 }
@@ -627,8 +621,8 @@ export class ConnectionManager extends EventEmitter {
     if (data.message_type === 'privacy_mode_msg') {
       return this.onPrivacyModeMessage(data as PrivacyModeMessage);
     }
-    if (data.message_type === 'topic_event_msg') {
-      return this.onTopicEventMessage(data as TopicEventMessage);
+    if (data.message_type === 'flow_run_event_msg') {
+      return this.onFlowRunEventMessage(data as FlowRunEventMessage);
     }
     if (data.message_type === 'flow_node_status_msg') {
       return this.onFlowNodeStatusMessage(data as FlowNodeStatusMessage);
@@ -684,8 +678,8 @@ export class ConnectionManager extends EventEmitter {
     this.emit('on_toplog_state_msg', data);
   }
 
-  onTopicEventMessage(data: TopicEventMessage) {
-    this.emit('on_topic_event_msg', data);
+  onFlowRunEventMessage(data: FlowRunEventMessage) {
+    this.emit('on_flow_run_event_msg', data);
   }
 
   onFlowNodeStatusMessage(data: FlowNodeStatusMessage) {

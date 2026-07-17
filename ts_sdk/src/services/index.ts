@@ -1,6 +1,8 @@
 export * from './git-providers';
 export * from './system-tools-service';
 export * from './secrets-service';
+export * from './lm-providers';
+export * from './lm-keys-service';
 export * from './secretApprovalGate';
 export * from './membershipService';
 export * from './navigationService';
@@ -9,7 +11,7 @@ export * from './cloud_login';
 export * from './cloud_status';
 export * from './privacy_mode';
 export * from './toplog';
-export * from './flow-manager';
+export * from './agentic-flows';
 export * from './authService';
 export * from './oauth/oauth-service';
 export * from './fsService';

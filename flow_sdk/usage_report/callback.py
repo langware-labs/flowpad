@@ -69,3 +69,15 @@ async def generate_usage_report(start: datetime, end: datetime) -> Optional[str]
 async def _daily_usage_report(_trigger: Any, _changes: Any) -> None:
     start, end = _yesterday_local_range()
     await generate_usage_report(start, end)
+
+@trigger_callbacks.register(
+    "flow_daily_usage_report",
+    meaning="flow node: analyze yesterday's usage and post the report",
+)
+async def flow_daily_usage_report(event) -> dict:
+    """Flow-node wrapper (FlowEvent signature): same report as the trigger
+    callback; the report id becomes the node's `done` payload."""
+    start, end = _yesterday_local_range()
+    report_id = await generate_usage_report(start, end)
+    return {"report_id": report_id}
+

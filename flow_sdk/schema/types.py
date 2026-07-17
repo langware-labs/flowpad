@@ -175,14 +175,15 @@ class EntityType(StrEnum):
     CRON_EVENT = "cron_event"
     FLOW_MESSAGE = "flow_message"
     # ── Flow-graph slice (FlowManager) — DB-only entities, no asset_ref ──────
-    # A dot-path named channel in the flow graph (id = mint_uuid(name), uuid5).
-    TOPIC = "topic"
     # A station in the flow graph: binds a program (skill/callback/instruction)
     # to execution defaults; executions are separate AgenticProcess entities.
     FLOW_NODE = "flow_node"
-    # A named boundary + policy (enable switch, loop budgets) over a subgraph.
-    # NOTE: "flow" is taken by the legacy conversational Flow entity.
+    # A folder-backed flow document (graph.json + display.json + scripts/ +
+    # runs/). NOTE: "flow" is taken by the legacy conversational Flow entity.
     AGENTIC_FLOW = "agentic_flow"
+    # One execution of an AgenticFlow — row is start/end bookkeeping; the full
+    # trace lives in the flow folder's runs/<id>.jsonl.
+    AGENTIC_FLOW_RUN = "agentic_flow_run"
     # A received, staged bundle attachment awaiting explicit install
     # (DB-only entity — no TypeInfo/RecordType; see builtin/message_attachment.py).
     MESSAGE_ATTACHMENT = "message_attachment"

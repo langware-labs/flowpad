@@ -94,10 +94,10 @@ def _service_trigger_specs() -> list[dict[str, Any]]:
             trigger_type=TriggerType.SCHEDULE,
             sched_trigger_type="cron",
             expr="0 7 * * *",
-            actions=[TriggerAction(
-                action_type=ActionType.CALLBACK,
-                callback_name="builtin_daily_usage_report",
-            )],
+            # No direct action: the daily-analysis AgenticFlow (service_flows)
+            # routes this trigger's `fired` to the report callback — a direct
+            # action here would double-fire the report.
+            actions=[],
         ),
         dict(
             uname="builtin_system_heartbeat",
