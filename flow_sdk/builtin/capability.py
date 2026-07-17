@@ -60,6 +60,15 @@ class Capability(Entity):
     login_code: str | None = APIField(default=None, persist=Persist.FALSE)
     login_accepts_code: bool | None = APIField(default=None, persist=Persist.FALSE)
     login_message: str | None = APIField(default=None, persist=Persist.FALSE)
+    # How this harness authenticates its worker: "device" (vendor device login,
+    # default) or "api" (a stored LLM-provider key — see flow_sdk.cli.auth.lm_api_keys
+    # and cli_drivers/api_auth.py). Persisted + user-switchable; like reference_kind
+    # it is deliberately NOT in the ensure_seeded reconcile list, so seeding never
+    # clobbers the user's choice.
+    auth_mode: str = APIField(default="device")
+    # Chosen LMApiProvider value when auth_mode == "api"; None → the driver's
+    # ApiAuthSpec.default_provider.
+    api_provider: str | None = APIField(default=None)
 
     @classmethod
     def from_spec(cls, spec: CapabilitySpec) -> "Capability":
@@ -265,8 +274,40 @@ class Capability(Entity):
         if worker_type is None:
             return ApiFailResponse(message=f"capability {self.kind!r} has no worker auth")
         from flow_sdk.builtin.agentic_process.cli_drivers import get_driver
+        from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import driver_api_auth_spec
+        from flow_sdk.builtin.agentic_process.cli_drivers.auth_probe import (
+            WorkerAuthResult,
+            WorkerAuthStatus,
+        )
 
-        result = await get_driver(worker_type).auth_probe()
+        spec = driver_api_auth_spec(worker_type)
+        if self.auth_mode == "api" and spec is not None:
+            # API-key auth: the harness runs on a stored LLM-provider key, not the
+            # vendor device login. "logged_in" ⇔ a key is stored (present but not
+            # vendor-validated, so never `verified`). Surface the harness's
+            # supported providers so the UI can offer only possible outcomes.
+            from flow_sdk.cli.auth.lm_api_keys import get_lm_api
+
+            provider = self.api_provider or spec.default_provider.value
+            has_key = bool(get_lm_api(provider))
+            result = WorkerAuthResult(
+                status=WorkerAuthStatus.LOGGED_IN if has_key else WorkerAuthStatus.LOGGED_OUT,
+                verified=False,
+                auth_mode="api",
+                message=(
+                    f"Using {provider} API key" if has_key else f"No {provider} API key configured"
+                ),
+                details={"provider": provider},
+            )
+        else:
+            result = await get_driver(worker_type).auth_probe()
+        # Surface the harness's supported API providers regardless of mode, so the
+        # modal can offer the key section / provider select for any harness.
+        if spec is not None:
+            result.details = {
+                **result.details,
+                "supported_providers": [p.value for p in spec.supported_providers],
+            }
         # Don't clobber a login in flight; only broadcast when the mirror
         # actually changes (a no-op probe shouldn't emit a WS frame).
         if self.login_state not in ("awaiting_user", "starting"):
