@@ -1,2 +1,0 @@
-// SkillAssetEditor removed
-export {};

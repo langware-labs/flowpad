@@ -31,7 +31,6 @@ export { useEntitiesQuery } from '@src/hooks/entity-hooks';
 
 export { useContext } from '@src/hooks/useContext';
 export { useFS } from '@src/hooks/useFS';
-export { useWarnings } from '@src/hooks/useWarnings';
 
 // Re-export UI components
 export { TooltipProvider } from '@src/components/ui/tooltip';
