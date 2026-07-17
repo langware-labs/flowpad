@@ -27,6 +27,7 @@ from pathlib import Path
 import pytest
 
 from flow_sdk.builtin.agentic_process import AgenticProcess
+from flow_sdk.builtin.agentic_process.model_tiers import ModelTier
 from flow_sdk.builtin.faas.compute_node import ComputeNode
 from flow_sdk.flowpad_types.enums import WorkerType
 
@@ -34,13 +35,12 @@ ITERATIONS = 10
 # conftest sandboxes HOME; the CLIs need their REAL home (auth + transcript dir).
 _REAL_HOME = os.environ.get("FLOWPAD_PRE_SANDBOX_HOME") or os.path.expanduser("~")
 
-# worker_type → (CLI binary, model). The sm/md/lg tier only maps for claude;
-# codex/copilot have no tier map, so leave model unset (CLI default) rather than
-# pass a bogus "sm".
+# worker_type → (CLI binary, model). Every worker maps the sm/md/lg tiers now, so
+# request the cheapest tier for all three (haiku / gpt-*-mini) via the enum.
 WORKERS = {
-    "claude_code": {"bin": "claude", "model": "sm"},
-    "codex": {"bin": "codex", "model": None},
-    "copilot": {"bin": "copilot", "model": None},
+    "claude_code": {"bin": "claude", "model": ModelTier.SM.value},
+    "codex": {"bin": "codex", "model": ModelTier.SM.value},
+    "copilot": {"bin": "copilot", "model": ModelTier.SM.value},
 }
 
 

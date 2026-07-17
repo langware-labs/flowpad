@@ -34,6 +34,7 @@ import time
 import httpx
 import pytest
 
+from flow_sdk.builtin.agentic_process.model_tiers import ModelTier
 from tests.test_settings import test_service_config
 
 pytestmark = [
@@ -90,6 +91,7 @@ async def _create_print_mode_process(hub_client, compute_node_id: str, workdir: 
             "workdir": workdir,
             "output_format": "stream-json",
             "permission_mode": "bypassPermissions",
+            "model": ModelTier.SM.value,
         },
         "visible": False,
         # Headless print-mode transport — the vibe chat's exact configuration
