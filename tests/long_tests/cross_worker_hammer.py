@@ -34,12 +34,15 @@ DETECT_BUDGET = 8.0   # user-msg lands early; >8s = broken
 TURN_BUDGET = 25.0    # serialize: wait out the turn (codex/copilot run ~15s) before next
 AP = "/graph/agentic_process"
 RUNNING = "running"
-# worker_type → (CLI binary, model). Every worker maps the sm/md/lg tiers, so ask
-# each for the cheapest tier (haiku / gpt-*-mini) via the enum.
+# worker_type → (CLI binary, model). Claude and Codex map the sm/md/lg tiers to a
+# real model, so ask them for the cheapest one via the enum. Copilot is left unset:
+# COPILOT_MODEL_TIERS still carries codex's names (gpt-5.4-mini/gpt-5.4) and the
+# Copilot CLI rejects them ("Model ... is not available"). Its auto mode already
+# picks claude-haiku-4.5 — its small tier — so unset is both correct and cheap.
 WORKERS = {
     "claude_code": ("claude", ModelTier.SM.value),
     "codex": ("codex", ModelTier.SM.value),
-    "copilot": ("copilot", ModelTier.SM.value),
+    "copilot": ("copilot", None),
 }
 
 

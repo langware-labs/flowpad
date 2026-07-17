@@ -18,10 +18,10 @@ from pathlib import Path
 import pytest
 
 from flow_sdk.builtin.agentic_process import AgenticProcess
-from flow_sdk.builtin.agentic_process.model_tiers import ModelTier
 from flow_sdk.flowpad_types.enums import WorkerType
 from flow_sdk.transcript_analyzer import AgentTranscriptFile, EntryKind
 from flow_sdk.transcript_analyzer.resolver import TranscriptNotFoundError, resolve_session_jsonl
+from tests.long_tests._model_tier import small_model_for
 from tests.test_settings import test_service_config
 
 pytestmark = [
@@ -52,12 +52,15 @@ async def _workers_discovered():
     await ensure_discovered()
 
 
-def _small_cli_config() -> dict:
-    # Every worker has a small tier (haiku for claude, gpt-*-mini for
-    # codex/copilot); pick it so the live turn burns the cheapest model. The
-    # test asserts only on the echoed name/time, never on the model, so this is
-    # safe for all drivers.
-    return {"permission_mode": "bypassPermissions", "model": ModelTier.SM.value}
+def _small_cli_config(worker_type: WorkerType) -> dict:
+    # Ask for the cheapest model the worker can actually resolve (see
+    # _model_tier.small_model_for — Copilot must stay unset). The test asserts
+    # only on the echoed name/time, never on the model, so this is safe.
+    config = {"permission_mode": "bypassPermissions"}
+    model = small_model_for(worker_type)
+    if model:
+        config["model"] = model
+    return config
 
 
 @pytest.mark.parametrize("worker_type, cli_name", _WORKERS)
@@ -79,7 +82,7 @@ async def test_system_prompt(worker_type, cli_name, tmp_path: Path, _workers_dis
         visible=False,
         pty_mode=False,
         load_flowpad_assistant=False,
-        cli_config=_small_cli_config(),
+        cli_config=_small_cli_config(worker_type),
     )
     process.instructions = system_prompt
 
