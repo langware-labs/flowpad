@@ -1,454 +1,330 @@
-"""FlowManager unit tests — matcher, topic minting, wiring resolution,
-budgets, observed-emit stamping, callback dispatch. All in-process (no PTY
-spawns: spawn-path budget tests use a zero budget so the charge refuses before
-any process is created)."""
+"""FlowManager v2 unit tests — flow documents, local-event routing, runs,
+scheduler, budgets, pysdk subprocess runner. No LLM spawns (agent nodes are
+exercised only up to the budget gate)."""
+import asyncio
+import json
+
 import pytest
 
 from flow_sdk.builtin import trigger_callbacks
 from flow_sdk.builtin.agentic_flow import AgenticFlow
-from flow_sdk.builtin.flow_node import DeliveryMode, FlowNode, ProgramKind
-from flow_sdk.builtin.topic import Topic, is_valid_topic_name, topic_entity_id
-from flow_sdk.db.drivers.query import QueryFilter
-from flow_sdk.flow_manager import FlowManager, TopicEvent, topic_ancestors, topic_matches
-from flow_sdk.flow_manager.manager import PROTECTION_TOPIC
-from flow_sdk.flowpad_types.enums.entity_enums import BuiltInRelationshipTypes
+from flow_sdk.builtin.agentic_flow_run import AgenticFlowRun, RunStatus
+from flow_sdk.flow_manager import FlowManager, parse_flow_doc
+from flow_sdk.flow_manager.envelope import EXTERNAL_SOURCE
+from flow_sdk.flow_manager.journal import read_run_journal
 from tests.conftest import async_context
 
 
-@pytest.fixture(autouse=True)
-def _journal_to_tmp(tmp_path, monkeypatch):
-    """Keep journal writes out of the real instance's records_root."""
-    import flow_sdk.flow_manager.journal as journal_mod
-
-    monkeypatch.setattr(journal_mod, "_journal_file", lambda: tmp_path / "events.jsonl")
-
-
-# ── matcher (pure) ────────────────────────────────────────────────────────────
-
-
-def test_topic_matches_prefix_any_depth():
-    assert topic_matches("a", "a")
-    assert topic_matches("a", "a.b.c")
-    assert topic_matches("a.b", "a.b.c")
-    assert not topic_matches("a.b", "a.bc")
-    assert not topic_matches("a.b.c", "a.b")
-
-
-def test_topic_ancestors():
-    assert topic_ancestors("a") == ["a"]
-    assert topic_ancestors("report.usage.ready") == ["report", "report.usage", "report.usage.ready"]
-
-
-def test_topic_name_grammar():
-    assert is_valid_topic_name("report.usage.ready")
-    assert is_valid_topic_name("flow-node_1.x")
-    for bad in ("", "a..b", ".a", "a.", "A.b", "a b", "a.#"):
-        assert not is_valid_topic_name(bad), bad
-
-
-# ── topic minting ─────────────────────────────────────────────────────────────
-
-
-@async_context
-async def test_topic_get_or_mint_idempotent():
-    t1 = await Topic.get_or_mint("flowtest.mint.one")
-    t2 = await Topic.get_or_mint("flowtest.mint.one")
-    assert t1.id == t2.id == topic_entity_id("flowtest.mint.one")
-
-
-@async_context
-async def test_emit_mints_ancestor_chain():
-    fm = FlowManager()
-    await fm.emit(TopicEvent(topic="flowtest.chain.deep.leaf"))
-    for name in topic_ancestors("flowtest.chain.deep.leaf"):
-        assert await Topic.get_by_id(topic_entity_id(name)) is not None, name
-
-
-# ── listener resolution + callback dispatch ──────────────────────────────────
-
-
-@async_context
-async def test_prefix_listener_hears_subtree():
-    received: list[TopicEvent] = []
-
-    @trigger_callbacks.register("flowtest_prefix_cb")
-    def _cb(event: TopicEvent):
-        received.append(event)
-
-    node = FlowNode(name="prefix-listener", program_kind=ProgramKind.CALLBACK.value,
-                    program_ref="flowtest_prefix_cb")
-    await node.save()
-    await node.listen(await Topic.get_or_mint("flowtest.sub"))
-
-    fm = FlowManager()
-    await fm.emit(TopicEvent(topic="flowtest.sub.leaf.deep"))
-    assert [e.topic for e in received] == ["flowtest.sub.leaf.deep"]
-    # Sibling subtree is NOT heard.
-    await fm.emit(TopicEvent(topic="flowtest.other"))
-    assert len(received) == 1
-
-
-@async_context
-async def test_disabled_node_not_dispatched():
-    received: list[TopicEvent] = []
-
-    @trigger_callbacks.register("flowtest_disabled_cb")
-    def _cb(event: TopicEvent):
-        received.append(event)
-
-    node = FlowNode(name="off", program_kind=ProgramKind.CALLBACK.value,
-                    program_ref="flowtest_disabled_cb", enabled=False)
-    await node.save()
-    await node.listen(await Topic.get_or_mint("flowtest.off"))
-    await FlowManager().emit(TopicEvent(topic="flowtest.off.x"))
-    assert received == []
-
-
-@async_context
-async def test_unlisten_removes_edge():
-    """unlisten deletes the Listens edge (typed relationship — a generic
-    Relationship(type=...) deletes as class-type 'relationship' and matches
-    nothing; regression for the FlowStudio unwire bug)."""
-    node = FlowNode(name="unwire-me", program_kind=ProgramKind.CALLBACK.value, program_ref="nop")
-    await node.save()
-    topic = await Topic.get_or_mint("flowtest.unwire")
-    await node.listen(topic)
-    assert [t.id for t in await node.listened_topics()] == [topic.id]
-    await node.unlisten(topic)
-    assert await node.listened_topics() == []
-
-
-# ── observed Emits edge ───────────────────────────────────────────────────────
-
-
-@async_context
-async def test_emit_edge_stamped_for_flow_node_source():
-    node = FlowNode(name="emitter", program_kind=ProgramKind.CALLBACK.value, program_ref="nop")
-    await node.save()
-    fm = FlowManager()
-    await fm.emit(TopicEvent(topic="flowtest.emits.seen", source=f"flow_node:{node.id}"))
-    rels = await node.get_outgoing_relationships(
-        relationships_filter=QueryFilter(type=BuiltInRelationshipTypes.Emits)
-    )
-    topic_id = topic_entity_id("flowtest.emits.seen")
-    assert any(r.to_typeid and r.to_typeid.id == topic_id for r in rels)
-    # Second emit is a no-op (stamp cache) — no duplicate edges.
-    await fm.emit(TopicEvent(topic="flowtest.emits.seen", source=f"flow_node:{node.id}"))
-    rels2 = await node.get_outgoing_relationships(
-        relationships_filter=QueryFilter(type=BuiltInRelationshipTypes.Emits)
-    )
-    assert len([r for r in rels2 if r.to_typeid and r.to_typeid.id == topic_id]) == len(
-        [r for r in rels if r.to_typeid and r.to_typeid.id == topic_id]
-    )
-
-
-# ── budgets ───────────────────────────────────────────────────────────────────
-
-
-@async_context
-async def test_depth_budget_drops_event():
-    received: list[TopicEvent] = []
-
-    @trigger_callbacks.register("flowtest_depth_cb")
-    def _cb(event: TopicEvent):
-        received.append(event)
-
-    node = FlowNode(name="deep-listener", program_kind=ProgramKind.CALLBACK.value,
-                    program_ref="flowtest_depth_cb")
-    await node.save()
-    await node.listen(await Topic.get_or_mint("flowtest.depth"))
-
-    fm = FlowManager()
-    routed = await fm.emit(TopicEvent(topic="flowtest.depth.x", depth=99))
-    assert routed.dropped and "depth" in routed.dropped
-    assert received == []
-    # Protection event journaled (budget-exempt).
-    topics_in_journal = [e["topic"] for e in fm.journal_tail(limit=50)]
-    assert PROTECTION_TOPIC in topics_in_journal
-
-
-@async_context
-async def test_cycle_refusal_stops_ping_pong():
-    """A callback that re-emits its own topic as a child event must not loop:
-    the (topic, node) pair is refused on the second delivery."""
-    fm = FlowManager()
-    count = {"n": 0}
-
-    @trigger_callbacks.register("flowtest_cycle_cb")
-    async def _cb(event: TopicEvent):
-        count["n"] += 1
-        await fm.emit(event.child("flowtest.cycle.x", source="flow_manager_test"))
-
-    node = FlowNode(name="cycler", program_kind=ProgramKind.CALLBACK.value,
-                    program_ref="flowtest_cycle_cb")
-    await node.save()
-    await node.listen(await Topic.get_or_mint("flowtest.cycle"))
-
-    await fm.emit(TopicEvent(topic="flowtest.cycle.x"))
-    assert count["n"] == 1  # second delivery refused, no infinite loop
-
-
-@async_context
-async def test_spawn_budget_refuses_before_spawning():
-    """max_processes=0 boundary: the spawn charge refuses before any
-    AgenticProcess is created; a protection event lands in the journal."""
-    node = FlowNode(name="spawny", program_kind=ProgramKind.INSTRUCTION.value,
-                    program_ref="echo hi", delivery_mode=DeliveryMode.SPAWN.value)
-    await node.save()
-    await node.listen(await Topic.get_or_mint("flowtest.spawncap"))
-    boundary = AgenticFlow(name="tight", member_node_ids=[node.id], max_processes=0)
-    await boundary.save()
-
-    fm = FlowManager()
-    # Root the chain at the node so the boundary budget applies.
-    await fm.emit(TopicEvent(topic="flowtest.spawncap.go", source=f"flow_node:{node.id}"))
-    entries = fm.journal_tail(limit=50)
-    assert any(e["topic"] == PROTECTION_TOPIC and "max_processes" in (e["payload"].get("reason") or "")
-               for e in entries)
-
-
-@async_context
-async def test_disabled_boundary_blocks_members():
-    received: list[TopicEvent] = []
-
-    @trigger_callbacks.register("flowtest_boundary_cb")
-    def _cb(event: TopicEvent):
-        received.append(event)
-
-    node = FlowNode(name="bounded", program_kind=ProgramKind.CALLBACK.value,
-                    program_ref="flowtest_boundary_cb")
-    await node.save()
-    await node.listen(await Topic.get_or_mint("flowtest.bounded"))
-    boundary = AgenticFlow(name="off-boundary", member_node_ids=[node.id], enabled=False)
-    await boundary.save()
-
-    await FlowManager().emit(TopicEvent(topic="flowtest.bounded.x"))
-    assert received == []
-
-
-# ── runtime status push (liveness feed) ──────────────────────────────────────
-
-
-@async_context
-async def test_node_status_phase_sequence_serial():
-    """The scheduler broadcasts queued→started→finished per delivery, with
-    post-transition counts; a gated serial pair interleaves as
-    q(1,0) s(0,1) q(1,1) f(0,0)+drain s(0,1) f(0,0)."""
-    import asyncio
-
-    fm = FlowManager()
-    phases: list[tuple[str, int, int]] = []
-
-    async def _capture(node, phase, event=None, detail=None):
-        phases.append((phase, len(fm._node_runtime(node.id).queue),
-                       fm._node_runtime(node.id).active))
-
-    fm._broadcast_node_status = _capture  # type: ignore[method-assign]
-    gate: asyncio.Event = asyncio.Event()
-
-    @trigger_callbacks.register("flowtest_status_cb")
-    async def _cb(event: TopicEvent):
-        await gate.wait()
-
-    node = FlowNode(name="status-node", program_kind=ProgramKind.CALLBACK.value,
-                    program_ref="flowtest_status_cb", execution_mode="serial")
-    await node.save()
-    await node.listen(await Topic.get_or_mint("flowtest.status"))
-
-    first = asyncio.ensure_future(fm.emit(TopicEvent(topic="flowtest.status.x", payload={"n": 1})))
-    await _until(lambda: ("started", 0, 1) in phases, "first started")
-    second = asyncio.ensure_future(fm.emit(TopicEvent(topic="flowtest.status.x", payload={"n": 2})))
-    await _until(lambda: ("queued", 1, 1) in phases, "second queued behind running first")
-    gate.set()
-    await asyncio.gather(first, second)
-    assert [p for p, *_ in phases] == [
-        "queued", "started", "queued", "finished", "started", "finished",
-    ]
-    # Final transition leaves the node fully idle.
-    assert phases[-1] == ("finished", 0, 0)
-
-
-@async_context
-async def test_node_status_merged_phase():
-    import asyncio
-
-    fm = FlowManager()
-    phases: list[str] = []
-
-    async def _capture(node, phase, event=None, detail=None):
-        phases.append(phase)
-
-    fm._broadcast_node_status = _capture  # type: ignore[method-assign]
-    gate: asyncio.Event = asyncio.Event()
-
-    @trigger_callbacks.register("flowtest_status_merge_cb")
-    async def _cb(event: TopicEvent):
-        await gate.wait()
-
-    node = FlowNode(name="status-merge", program_kind=ProgramKind.CALLBACK.value,
-                    program_ref="flowtest_status_merge_cb", execution_mode="serial",
-                    merge_identical=True)
-    await node.save()
-    await node.listen(await Topic.get_or_mint("flowtest.statusmerge"))
-
-    first = asyncio.ensure_future(fm.emit(TopicEvent(topic="flowtest.statusmerge.x", payload={"v": 1})))
-    await _until(lambda: "started" in phases, "first started")
-    await fm.emit(TopicEvent(topic="flowtest.statusmerge.x", payload={"v": 2}))
-    await fm.emit(TopicEvent(topic="flowtest.statusmerge.x", payload={"v": 2}))  # duplicate
-    assert phases.count("merged") == 1
-    gate.set()
-    await first
-
-
-# ── agent program: skill + prompt + model size ────────────────────────────────
-
-
-def test_instruction_includes_skill_prompt_and_emit_curl():
-    from flow_sdk.builtin.flow_node import MODEL_SIZE_TO_CLI
-
-    fm = FlowManager()
-    node = FlowNode(id="n1", name="summarizer", program_kind=ProgramKind.SKILL.value,
-                    program_ref="flow-summarize", prompt="keep it under 10 words")
-    event = TopicEvent(topic="demo.text.submitted", payload={"text": "hello"})
-    instruction = fm._instruction_for(node, event)
-    assert instruction.startswith("/flow-summarize keep it under 10 words")
-    assert "demo.text.submitted" in instruction
-    assert "curl -s -X POST" in instruction and "/api/v1/topics/emit" in instruction
-    assert f'"correlation_id": "{event.correlation_id}"' in instruction
-    # Model size mapping: sm default → haiku; md/lg map up.
-    assert MODEL_SIZE_TO_CLI[node.model_size] == "haiku"
-    assert MODEL_SIZE_TO_CLI["md"] == "sonnet" and MODEL_SIZE_TO_CLI["lg"] == "opus"
-
-
-# ── dead-letter on listener failure ──────────────────────────────────────────
-
-
-# ── scheduler: serial / parallel / queue / merge ──────────────────────────────
-
-
 async def _until(cond, what: str = "condition") -> None:
-    """Yield until ``cond()`` is true (bounded, sub-second in practice)."""
-    import asyncio
-
-    for _ in range(400):
+    for _ in range(600):
         if cond():
             return
         await asyncio.sleep(0.005)
     raise AssertionError(f"never reached: {what}")
 
 
+def _doc(nodes, edges, *, enabled=True, flow_id=""):
+    return json.dumps({"version": 1, "id": flow_id, "name": "t", "enabled": enabled,
+                       "nodes": nodes, "edges": edges})
+
+
+async def _make_flow(tmp_path, name, nodes, edges, *, enabled=True) -> AgenticFlow:
+    flow = AgenticFlow(name=name, asset_ref=str(tmp_path / name))
+    await flow.save()
+    (tmp_path / name / "graph.json").write_text(
+        _doc(nodes, edges, enabled=enabled, flow_id=flow.id), encoding="utf-8")
+    return flow
+
+
+def _cb(node_id, ref, **nd):
+    return {"id": node_id, "node_type": "process_runner",
+            "node_data": {"program_kind": "callback", "program_ref": ref, **nd}}
+
+
+def _edge(eid, src, event, dst):
+    return {"id": eid, "from": {"node": src, "event": event}, "to": {"node": dst}}
+
+
+# ── flow document ─────────────────────────────────────────────────────────────
+
+
+def test_flow_doc_parse_and_routing_lookups():
+    doc = parse_flow_doc(_doc(
+        [{"id": "t1", "node_type": "trigger", "node_data": {"typeid": "trigger-abc"}},
+         _cb("a", "x"), _cb("b", "y")],
+        [_edge("e1", "t1", "fired", "a"), _edge("e2", "a", "done", "b"),
+         _edge("e3", "a", "*", "b")],
+    ))
+    assert doc.trigger_ids() == ["abc"]
+    assert [n.id for n in doc.targets_for("t1", "fired")] == ["a"]
+    # exact + catch-all both match (b appears twice → both edges deliver)
+    assert [n.id for n in doc.targets_for("a", "done")] == ["b", "b"]
+    assert [n.id for n in doc.targets_for("a", "anything")] == ["b"]
+    assert doc.targets_for("b", "done") == []
+
+
+def test_flow_doc_validation():
+    doc = parse_flow_doc(_doc(
+        [{"id": "t1", "node_type": "trigger", "node_data": {}}, _cb("a", "x")],
+        [_edge("e1", "t1", "custom", "a"),   # trigger emits only 'fired'
+         _edge("e2", "a", "done", "t1"),     # triggers accept no inputs
+         _edge("e3", "ghost", "x", "a")],    # unknown source
+    ))
+    problems = "\n".join(doc.validate_graph())
+    assert "only emit 'fired'" in problems
+    assert "accept no inputs" in problems
+    assert "unknown source" in problems
+
+
+def test_flow_doc_rejects_bad_version():
+    with pytest.raises(ValueError):
+        parse_flow_doc('{"version": 99}')
+
+
+# ── routing + run lifecycle ───────────────────────────────────────────────────
+
+
 @async_context
-async def test_serial_node_executes_one_by_one():
-    """Two overlapping deliveries to a serial node run sequentially — the
-    second waits in the queue until the first callback completes."""
-    import asyncio
+async def test_inject_routes_chain_and_run_completes(tmp_path):
+    ran: list[str] = []
+
+    @trigger_callbacks.register("v2_first")
+    def _first(event):
+        ran.append(f"first:{event.event}")
+        return {"x": 1}
+
+    @trigger_callbacks.register("v2_second")
+    def _second(event):
+        ran.append(f"second:{event.data.get('x')}")
+        return {}
+
+    flow = await _make_flow(tmp_path, "chain",
+        [_cb("a", "v2_first"), _cb("b", "v2_second")],
+        [_edge("e1", EXTERNAL_SOURCE, "go", "a"), _edge("e2", "a", "done", "b")])
 
     fm = FlowManager()
+    fe = await fm.inject(flow.id, "go", {"hello": 1})
+    assert fe is not None
+    # first ran on 'go'; its dict return became `done {x:1}` routed to second.
+    await _until(lambda: ran == ["first:go", "second:1"], "chain delivered")
+    run_id = fe.execution_id
+    await _until(lambda: not fm.live_run_ids(), "run finalized")
+    row = await AgenticFlowRun.get_by_id(run_id)
+    assert row is not None and row.status == RunStatus.COMPLETE.value
+    entries = read_run_journal(tmp_path / "chain", run_id)
+    kinds = [e["kind"] for e in entries]
+    assert kinds[0] == "run_start" and kinds[-1] == "run_end"
+    assert "event" in kinds and "node_done" in kinds
+
+
+@async_context
+async def test_catch_all_edge_routes_any_event(tmp_path):
+    ran: list[str] = []
+
+    @trigger_callbacks.register("v2_catchall")
+    def _cb_fn(event):
+        ran.append(event.event)
+        return {}
+
+    flow = await _make_flow(tmp_path, "catchall",
+        [_cb("a", "v2_catchall")],
+        [_edge("e1", EXTERNAL_SOURCE, "*", "a")])
+
+    fm = FlowManager()
+    await fm.inject(flow.id, "anything.goes")
+    await fm.inject(flow.id, "something.else")
+    await _until(lambda: ran == ["anything.goes", "something.else"], "catch-all delivered")
+
+
+@async_context
+async def test_inactive_flow_refuses_injection(tmp_path):
+    flow = await _make_flow(tmp_path, "inactive", [_cb("a", "flow_echo")],
+                            [_edge("e1", EXTERNAL_SOURCE, "*", "a")], enabled=False)
+    fm = FlowManager()
+    with pytest.raises(ValueError, match="not active"):
+        await fm.inject(flow.id, "go")
+
+
+@async_context
+async def test_target_node_delivers_directly(tmp_path):
+    ran: list[str] = []
+
+    @trigger_callbacks.register("v2_direct")
+    def _cb_fn(event):
+        ran.append(event.event)
+        return {}
+
+    # no edges at all — only direct delivery reaches the node
+    flow = await _make_flow(tmp_path, "direct", [_cb("a", "v2_direct")], [])
+    fm = FlowManager()
+    await fm.inject(flow.id, "poke", target_node="a")
+    assert ran == ["poke"]
+
+
+@async_context
+async def test_hop_budget_trips_cycle(tmp_path):
+    """a.done → a is an infinite loop; the hop budget trips the run."""
+    count = {"n": 0}
+
+    @trigger_callbacks.register("v2_cycle")
+    def _cb_fn(event):
+        count["n"] += 1
+        return {}
+
+    flow = await _make_flow(tmp_path, "cycle",
+        [_cb("a", "v2_cycle")],
+        [_edge("e1", EXTERNAL_SOURCE, "go", "a"), _edge("e2", "a", "done", "a")])
+    fm = FlowManager()
+    fe = await fm.inject(flow.id, "go")
+    await _until(lambda: not fm.live_run_ids(), "run finalized")
+    row = await AgenticFlowRun.get_by_id(fe.execution_id)
+    assert row is not None and row.status == RunStatus.TRIPPED.value
+    from flow_sdk.builtin.agentic_flow import DEFAULT_MAX_HOPS
+
+    assert count["n"] <= DEFAULT_MAX_HOPS + 1
+
+
+# ── scheduler (serial / parallel / merge) ─────────────────────────────────────
+
+
+@async_context
+async def test_serial_node_queues_second_delivery(tmp_path):
     order: list[str] = []
     gate: asyncio.Event = asyncio.Event()
 
-    @trigger_callbacks.register("flowtest_serial_cb")
-    async def _cb(event: TopicEvent):
-        order.append(f"start:{event.payload['n']}")
-        if event.payload["n"] == 1:
+    @trigger_callbacks.register("v2_serial")
+    async def _cb_fn(event):
+        order.append(f"start:{event.data['n']}")
+        if event.data["n"] == 1:
             await gate.wait()
-        order.append(f"end:{event.payload['n']}")
+        order.append(f"end:{event.data['n']}")
+        return {}
 
-    node = FlowNode(name="serial", program_kind=ProgramKind.CALLBACK.value,
-                    program_ref="flowtest_serial_cb", execution_mode="serial")
-    await node.save()
-    await node.listen(await Topic.get_or_mint("flowtest.serial"))
-
-    first = asyncio.ensure_future(fm.emit(TopicEvent(topic="flowtest.serial.x", payload={"n": 1})))
-    await _until(lambda: order == ["start:1"], "first execution started")
-    second = asyncio.ensure_future(fm.emit(TopicEvent(topic="flowtest.serial.x", payload={"n": 2})))
-    await _until(lambda: fm.runtime_snapshot().get(node.id, {}).get("queued") == 1,
-                 "second event queued")
-    # Second event must be queued, not started.
+    flow = await _make_flow(tmp_path, "serial",
+        [_cb("a", "v2_serial", execution_mode="serial")],
+        [_edge("e1", EXTERNAL_SOURCE, "go", "a")])
+    fm = FlowManager()
+    first = asyncio.ensure_future(fm.inject(flow.id, "go", {"n": 1}))
+    await _until(lambda: order == ["start:1"], "first started")
+    second = asyncio.ensure_future(fm.inject(flow.id, "go", {"n": 2}))
+    await _until(lambda: fm._node_rt(flow.id, "a").queue, "second queued")
     assert order == ["start:1"]
     gate.set()
     await asyncio.gather(first, second)
-    assert order == ["start:1", "end:1", "start:2", "end:2"]
+    await _until(lambda: order == ["start:1", "end:1", "start:2", "end:2"], "sequential")
 
 
 @async_context
-async def test_parallel_node_respects_limit():
-    """parallel_limit=2: two executions run concurrently, the third queues."""
-    import asyncio
-
-    fm = FlowManager()
-    started: list[int] = []
-    gate: asyncio.Event = asyncio.Event()
-
-    @trigger_callbacks.register("flowtest_parallel_cb")
-    async def _cb(event: TopicEvent):
-        started.append(event.payload["n"])
-        await gate.wait()
-
-    node = FlowNode(name="par", program_kind=ProgramKind.CALLBACK.value,
-                    program_ref="flowtest_parallel_cb",
-                    execution_mode="parallel", parallel_limit=2)
-    await node.save()
-    await node.listen(await Topic.get_or_mint("flowtest.par"))
-
-    futs = [asyncio.ensure_future(fm.emit(TopicEvent(topic="flowtest.par.x", payload={"n": i})))
-            for i in range(3)]
-    await _until(lambda: fm.runtime_snapshot().get(node.id) == {"active": 2, "queued": 1},
-                 "two in flight + one queued")
-    # Concurrent-emit arrival order isn't guaranteed — assert the CONCURRENCY,
-    # not which two events won the slots.
-    assert len(started) == 2
-    gate.set()
-    await asyncio.gather(*futs)
-    await _until(lambda: sorted(started) == [0, 1, 2], "queued third event drained")
-
-
-@async_context
-async def test_merge_identical_drops_duplicate_pending():
-    """merge_identical: an identical event already waiting in the queue absorbs
-    the newcomer; a different payload still queues."""
-    import asyncio
-
-    fm = FlowManager()
+async def test_merge_identical_absorbs_duplicate(tmp_path):
     runs: list[dict] = []
     gate: asyncio.Event = asyncio.Event()
 
-    @trigger_callbacks.register("flowtest_merge_cb")
-    async def _cb(event: TopicEvent):
-        runs.append(event.payload)
+    @trigger_callbacks.register("v2_merge")
+    async def _cb_fn(event):
+        runs.append(event.data)
         await gate.wait()
+        return {}
 
-    node = FlowNode(name="merger", program_kind=ProgramKind.CALLBACK.value,
-                    program_ref="flowtest_merge_cb", execution_mode="serial",
-                    merge_identical=True)
-    await node.save()
-    await node.listen(await Topic.get_or_mint("flowtest.merge"))
-
-    # v=1 occupies the serial slot (blocked on the gate)...
-    first = asyncio.ensure_future(fm.emit(TopicEvent(topic="flowtest.merge.x", payload={"v": 1})))
-    await _until(lambda: runs == [{"v": 1}], "first execution started")
-    # ...then deliver the rest sequentially: these emits return once queued.
-    await fm.emit(TopicEvent(topic="flowtest.merge.x", payload={"v": 2}))
-    await fm.emit(TopicEvent(topic="flowtest.merge.x", payload={"v": 2}))  # merged away
-    await fm.emit(TopicEvent(topic="flowtest.merge.x", payload={"v": 3}))
-    assert fm.runtime_snapshot()[node.id] == {"active": 1, "queued": 2}
+    flow = await _make_flow(tmp_path, "merge",
+        [_cb("a", "v2_merge", execution_mode="serial", merge_identical=True)],
+        [_edge("e1", EXTERNAL_SOURCE, "go", "a")])
+    fm = FlowManager()
+    first = asyncio.ensure_future(fm.inject(flow.id, "go", {"v": 1}))
+    await _until(lambda: runs == [{"v": 1}], "first started")
+    await fm.inject(flow.id, "go", {"v": 2})
+    await fm.inject(flow.id, "go", {"v": 2})  # identical — absorbed
+    await fm.inject(flow.id, "go", {"v": 3})
+    assert len(fm._node_rt(flow.id, "a").queue) == 2
     gate.set()
     await first
-    await _until(lambda: [r["v"] for r in runs] == [1, 2, 3], "distinct payloads ran once each")
+    await _until(lambda: [r["v"] for r in runs] == [1, 2, 3], "distinct payloads ran once")
+
+
+# ── pysdk runner (real subprocess) ────────────────────────────────────────────
+
+
+PY_OK = """
+def on_flow_event(event_name, data, flow_ctx):
+    flow_ctx.log(f"got {event_name} n={data.get('n')}")
+"""
+
+PY_BOOM = """
+import sys
+
+def on_flow_event(event_name, data, flow_ctx):
+    print("about to fail", file=sys.stderr)
+    raise RuntimeError("boom from script")
+"""
 
 
 @async_context
-async def test_failing_listener_emits_dead_letter():
-    @trigger_callbacks.register("flowtest_boom_cb")
-    def _cb(event: TopicEvent):
-        raise RuntimeError("boom")
-
-    node = FlowNode(name="boomer", program_kind=ProgramKind.CALLBACK.value,
-                    program_ref="flowtest_boom_cb")
-    await node.save()
-    await node.listen(await Topic.get_or_mint("flowtest.boom"))
+async def test_pysdk_node_runs_script_and_captures_stdout(tmp_path):
+    flow = await _make_flow(tmp_path, "pyok",
+        [{"id": "p", "node_type": "pysdk", "node_data": {"script": "scripts/ok.py"}}],
+        [_edge("e1", EXTERNAL_SOURCE, "go", "p")])
+    (tmp_path / "pyok" / "scripts" / "ok.py").write_text(PY_OK, encoding="utf-8")
 
     fm = FlowManager()
-    await fm.emit(TopicEvent(topic="flowtest.boom.x"))
-    topics = [e["topic"] for e in fm.journal_tail(limit=50)]
-    assert "flow.error.flowtest.boom.x" in topics
+    fe = await fm.inject(flow.id, "go", {"n": 7})
+    await _until(lambda: not fm.live_run_ids(), "run finalized")
+    entries = read_run_journal(tmp_path / "pyok", fe.execution_id)
+    done = [e for e in entries if e["kind"] == "node_done"]
+    assert done and "got go n=7" in done[0]["stdout"]
+    assert done[0]["exit_code"] == 0
+
+
+@async_context
+async def test_pysdk_node_failure_captures_stderr_and_exit_code(tmp_path):
+    flow = await _make_flow(tmp_path, "pyboom",
+        [{"id": "p", "node_type": "pysdk", "node_data": {"script": "scripts/boom.py"}}],
+        [_edge("e1", EXTERNAL_SOURCE, "go", "p")])
+    (tmp_path / "pyboom" / "scripts" / "boom.py").write_text(PY_BOOM, encoding="utf-8")
+
+    fm = FlowManager()
+    fe = await fm.inject(flow.id, "go")
+    await _until(lambda: not fm.live_run_ids(), "run finalized")
+    entries = read_run_journal(tmp_path / "pyboom", fe.execution_id)
+    errors = [e for e in entries if e["kind"] == "node_error"]
+    assert errors and errors[0]["exit_code"] != 0
+    assert "boom from script" in errors[0]["stderr"]
+
+
+@async_context
+async def test_pysdk_missing_script_fails_cleanly(tmp_path):
+    flow = await _make_flow(tmp_path, "pymissing",
+        [{"id": "p", "node_type": "pysdk", "node_data": {"script": "scripts/nope.py"}}],
+        [_edge("e1", EXTERNAL_SOURCE, "go", "p")])
+    fm = FlowManager()
+    fe = await fm.inject(flow.id, "go")
+    await _until(lambda: not fm.live_run_ids(), "run finalized")
+    entries = read_run_journal(tmp_path / "pymissing", fe.execution_id)
+    errors = [e for e in entries if e["kind"] == "node_error"]
+    assert errors and errors[0]["exit_code"] == 127
+
+
+# ── agent budget gate (no real spawn) ─────────────────────────────────────────
+
+
+@async_context
+async def test_agent_process_budget_trips_before_spawn(tmp_path, monkeypatch):
+    """max_processes budget refuses further spawns; no AgenticProcess created."""
+    from flow_sdk.builtin.agentic_flow import DEFAULT_MAX_PROCESSES
+    from flow_sdk.flow_manager import manager as mgr_mod
+
+    flow = await _make_flow(tmp_path, "agentcap",
+        [{"id": "a", "node_type": "process_runner",
+          "node_data": {"program_kind": "instruction", "program_ref": "hi",
+                        "execution_mode": "parallel", "parallel_limit": 99}}],
+        [_edge("e1", EXTERNAL_SOURCE, "go", "a")])
+
+    fm = FlowManager()
+    run = await fm._start_run((await fm.load_flow(flow.id)))
+    run.processes = DEFAULT_MAX_PROCESSES  # budget exhausted
+    node = (await fm.load_flow(flow.id)).doc.node("a")
+    rt = fm._node_rt(flow.id, "a")
+    rt.active += 1
+    run.active += 1
+    await fm._spawn_agent(run, node, __import__("flow_sdk.flow_manager.envelope",
+                          fromlist=["FlowEvent"]).FlowEvent(
+        event="go", flow_id=flow.id, execution_id=run.id), rt)
+    assert run.error and "max_processes" in run.error

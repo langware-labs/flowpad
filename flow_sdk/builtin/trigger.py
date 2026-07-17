@@ -137,6 +137,14 @@ async def _fire_schedule_job(trigger_id: str) -> None:
         # Dispatch actions via the shared registry. ``changes`` is empty for
         # schedule fires — FSOp fires populate it via _fire(trigger, batch).
         # RUN_SCRIPT then reports CHANGES_COUNT=0 / FIRST_*="" to the script.
+        # Flow activation for schedule fires.
+        try:
+            from flow_sdk.flow_manager import get_flow_manager
+
+            await get_flow_manager().on_trigger_fired(trigger_id)
+        except Exception:
+            logger.exception("Schedule trigger %s: flow activation failed", trigger_id)
+
         for action in entity.actions:
             try:
                 handler = get_action_handler(action.action_type)
@@ -263,6 +271,11 @@ class Trigger(Entity):
             coerced = [_coerce(a) for a in actions_in]
             data["actions"] = coerced
             data["action"] = coerced[0]  # back-sync for legacy access
+        elif isinstance(actions_in, list):
+            # `actions` explicitly EMPTY (a cleared trigger, e.g. the daily-usage
+            # cutover to flow routing): it wins — reset the legacy `action` so a
+            # stale stored callback can't resurrect `actions` on the next load.
+            data["action"] = TriggerAction(action_type=ActionType.NOP)
         elif action_in is not None:
             coerced = _coerce(action_in)
             data["action"] = coerced
@@ -382,6 +395,14 @@ class Trigger(Entity):
         """Invoke this trigger if it matches the hook data."""
         if not self.match(hook_data):
             return None
+        # Flow activation for hook fires.
+        if self.id:
+            try:
+                from flow_sdk.flow_manager import get_flow_manager
+
+                await get_flow_manager().on_trigger_fired(self.id)
+            except Exception:
+                logger.exception("Hook trigger %s: flow activation failed", self.name)
         return await self.execute_action()
 
     async def execute_action(self) -> ExecutedAction:

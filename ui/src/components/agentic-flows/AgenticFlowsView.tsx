@@ -1,110 +1,232 @@
 /**
- * Agentic Flows — the flow-graph editor/observatory as a main-UI dock view
- * (dev mode), wearing the hub org-atlas design language. Canvas (React Flow,
- * atlas cards/pills), floating chrome, side panel (emit/journal/chain/wiring),
- * and the atlas reading-drawer as the node inspector.
- *
- * Liveness is push-driven: flowManager 'node_status' + 'topic_event' streams
- * feed the zustand store; the snapshot poll is a 30s reconciliation only.
+ * Agentic Flows v2 — the per-flow canvas editor/observatory (dock tab per
+ * flow, whiteboard pattern). The dock pointer carries the entity
+ * (`agentic_flow-<id>`); the view resolves it, builds the folder FSRef from
+ * `asset_ref`, and reads/writes graph.json (semantic) + display.json (layout)
+ * with debounced persistence. Liveness is push-driven via the agenticFlows
+ * service streams (flow_run_event_msg / flow_node_status_msg).
  */
-import { useEffect } from 'react';
-import { ViewType } from '@sdk';
-import { flowManager } from '@sdk/services/flow-manager';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { AgenticFlow, FSRef, TypeId, ViewType } from '@sdk';
+import {
+  agenticFlows,
+  type FlowDoc,
+  type FlowNodeStatusMessage,
+  type FlowRunEventMessage,
+} from '@sdk/services/agentic-flows';
+import { useEntity } from '@sdk/react/hooks';
+import { useAgentContext } from '@src/contexts/agent-context';
+import { reindexAfterWrite } from '@src/hooks/use-fs-ref-content';
 import { DockPointer, useDockNavigation } from '@src/navigation';
 import { FlowCanvas } from './canvas/FlowCanvas';
-import { ChainInspector } from './panels/ChainInspector';
-import { EmitConsole } from './panels/EmitConsole';
-import { JournalTail } from './panels/JournalTail';
+import { InjectPanel } from './panels/InjectPanel';
 import { NodeInspector } from './panels/NodeInspector';
-import { WiringEditor } from './panels/WiringEditor';
+import { PaletteTab } from './panels/PaletteTab';
+import { RunsPanel } from './panels/RunsPanel';
 import { handleNodeStatusForProcWatch } from './proc-watch';
-import { useStudio } from './store';
+import { useStudio, type DisplayDoc } from './store';
 import './agentic-flows.css';
 
-type Tab = 'emit' | 'journal' | 'chain' | 'wiring';
-const TABS: Tab[] = ['emit', 'journal', 'chain', 'wiring'];
+const PANEL_TABS = ['palette', 'inject', 'runs'] as const;
+const PERSIST_DEBOUNCE_MS = 750;
+
+/** Debounced last-write-wins persister for one folder file (whiteboard pattern). */
+function useFilePersister(ref: FSRef | null, onWritten?: (ref: FSRef) => void) {
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastWritten = useRef<string | null>(null);
+  const pending = useRef<string | null>(null);
+  useEffect(() => {
+    lastWritten.current = null;
+    return () => {
+      if (timer.current) clearTimeout(timer.current);
+    };
+  }, [ref]);
+  return useCallback(
+    (serialized: string) => {
+      if (!ref || serialized === lastWritten.current) return;
+      pending.current = serialized;
+      if (timer.current) clearTimeout(timer.current);
+      timer.current = setTimeout(() => {
+        const payload = pending.current;
+        if (payload == null || payload === lastWritten.current) return;
+        lastWritten.current = payload;
+        void ref
+          .write(payload)
+          .then(() => onWritten?.(ref))
+          .catch((e) => console.error('flow persist failed', e));
+      }, PERSIST_DEBOUNCE_MS);
+    },
+    [ref, onWritten],
+  );
+}
 
 export function AgenticFlowsView() {
+  const { navigation, currentDock } = useDockNavigation();
+  const pointer = currentDock?.pointer;
+  const typeId = useMemo(() => {
+    if (!pointer?.startsWith(AgenticFlow.type + TypeId.DELIMITER)) return null;
+    try {
+      return new TypeId(pointer);
+    } catch {
+      return null;
+    }
+  }, [pointer]);
+
+  const { data: flow, isLoading } = useEntity<AgenticFlow>(typeId);
+  const { computeNode } = useAgentContext();
+
+  const assetRef = flow?.asset_ref ?? null;
+  const computeNodeKey = computeNode?.typeId?.toString() ?? null;
+  const fsRef = useMemo(() => {
+    if (!assetRef || !computeNode?.typeId) return null;
+    return new FSRef(assetRef.replace(/^\//, ''), computeNode.typeId, 'folder');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [assetRef, computeNodeKey]);
+  const graphRef = useMemo(() => fsRef?.child('graph.json') ?? null, [fsRef]);
+  const displayRef = useMemo(() => fsRef?.child('display.json') ?? null, [fsRef]);
+
+  // Reindex after graph.json writes so the AgenticFlow row (name/enabled/node
+  // counts) tracks canvas edits; display.json is excluded from the asset hash,
+  // so its writes never reindex.
+  const reindexGraph = useCallback((r: FSRef) => reindexAfterWrite(`/${r.path}`), []);
+  const persistGraph = useFilePersister(graphRef, reindexGraph);
+  const persistDisplay = useFilePersister(displayRef);
+
+  const doc = useStudio((s) => s.doc);
+  const flowName = useStudio((s) => s.flowName);
+  const flowEnabled = useStudio((s) => s.flowEnabled);
   const connected = useStudio((s) => s.connected);
   const bootError = useStudio((s) => s.bootError);
-  const snapshot = useStudio((s) => s.snapshot);
-  const journal = useStudio((s) => s.journal);
-  const tab = useStudio((s) => s.panelTab);
-  const setTab = useStudio((s) => s.setPanelTab);
+  const panelTab = useStudio((s) => s.panelTab);
+  const setPanelTab = useStudio((s) => s.setPanelTab);
   const selectedNodeId = useStudio((s) => s.selectedNodeId);
   const selectNode = useStudio((s) => s.selectNode);
-  const setSnapshot = useStudio((s) => s.setSnapshot);
-  const { navigation } = useDockNavigation();
+  const selectedNode = doc?.nodes.find((n) => n.id === selectedNodeId) ?? null;
 
-  const selectedNode = snapshot?.nodes.find((n) => n.id === selectedNodeId);
-
-  // Boot: subscribe to the live streams, seed state, inject in-app process nav.
+  // Load the flow's documents whenever the pointer/entity resolves.
   useEffect(() => {
     const st = useStudio.getState();
-    st.setOpenProcess((processId) =>
-      navigation.openDock(new DockPointer(ViewType.SHELL, `agentic_process-${processId}`)),
-    );
-
-    let disposed = false;
-    const onTopicEvent = (e: Parameters<typeof st.pushEvent>[0]) => {
-      useStudio.getState().pushEvent(e);
-      useStudio.getState().pulseTopic(e.topic, e.source);
-    };
-    const onNodeStatus = (msg: Parameters<typeof st.applyNodeStatus>[0]) => {
-      useStudio.getState().applyNodeStatus(msg);
-      handleNodeStatusForProcWatch(msg);
-    };
-
+    st.reset(typeId?.id ?? null);
+    if (!typeId || !flow || !graphRef || !displayRef) return;
+    let cancelled = false;
     void (async () => {
       try {
-        await flowManager.bootstrap();
-        flowManager.on('topic_event', onTopicEvent);
-        flowManager.on('node_status', onNodeStatus);
-        const [snap, seed] = await Promise.all([
-          flowManager.fetchGraph(),
-          flowManager.fetchJournal({ limit: 200 }),
+        const [graphRaw, displayRaw] = await Promise.all([
+          graphRef.read(),
+          displayRef.read().catch(() => '{}'),
         ]);
-        if (disposed) return;
-        if (snap) useStudio.getState().setSnapshot(snap);
-        if (seed) useStudio.getState().seedJournal(seed);
-        useStudio.getState().setConnected(true);
+        if (cancelled) return;
+        const parsedDoc = JSON.parse(graphRaw || '{}') as FlowDoc;
+        parsedDoc.nodes ??= [];
+        parsedDoc.edges ??= [];
+        let display: DisplayDoc = { version: 1, nodes: {} };
+        try {
+          const d = JSON.parse(displayRaw || '{}') as Partial<DisplayDoc>;
+          display = { version: 1, nodes: d.nodes ?? {} };
+        } catch {
+          // layout is best-effort — a corrupt display.json falls back to auto-grid
+        }
+        useStudio.getState().setFlow({
+          flowId: typeId.id,
+          name: flow.name || parsedDoc.name || '(unnamed flow)',
+          enabled: (flow.enabled ?? true) && (parsedDoc.enabled ?? true),
+          doc: parsedDoc,
+          display,
+        });
+        const runs = await agenticFlows.listRuns(typeId.id).catch(() => undefined);
+        if (!cancelled && runs) useStudio.getState().setRuns(runs);
       } catch (e) {
-        console.error('AgenticFlows boot failed', e);
-        useStudio.getState().setBootError(String(e));
+        if (!cancelled) useStudio.getState().setBootError(String(e));
       }
     })();
     return () => {
-      disposed = true;
-      flowManager.off('topic_event', onTopicEvent);
-      flowManager.off('node_status', onNodeStatus);
+      cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [typeId?.toString(), flow?.id, graphRef, displayRef]);
+
+  // Wire the store's persistence + navigation callbacks.
+  useEffect(() => {
+    useStudio.getState().setWriters({
+      persistDoc: (d) => persistGraph(JSON.stringify(d, null, 2) + '\n'),
+      persistDisplay: (d) => persistDisplay(JSON.stringify(d, null, 2) + '\n'),
+      openProcess: (processId) =>
+        navigation.openDock(new DockPointer(ViewType.SHELL, `agentic_process-${processId}`)),
+    });
+  }, [persistGraph, persistDisplay, navigation]);
+
+  // Live streams: run events + node status (push-driven; runs list refreshes
+  // on run boundaries).
+  useEffect(() => {
+    const onRunEvent = (msg: FlowRunEventMessage) => {
+      useStudio.getState().applyRunEvent(msg);
+      const flowId = useStudio.getState().flowId;
+      if (flowId && msg.flow_id === flowId && (msg.kind === 'run_start' || msg.kind === 'run_end')) {
+        void agenticFlows.listRuns(flowId).then((runs) => {
+          if (runs && useStudio.getState().flowId === flowId) useStudio.getState().setRuns(runs);
+        });
+      }
+    };
+    const onNodeStatus = (msg: FlowNodeStatusMessage) => {
+      useStudio.getState().applyNodeStatus(msg);
+      handleNodeStatusForProcWatch(msg);
+    };
+    void agenticFlows
+      .bootstrap()
+      .then(() => useStudio.getState().setConnected(true))
+      .catch((e) => useStudio.getState().setBootError(String(e)));
+    agenticFlows.on('run_event', onRunEvent);
+    agenticFlows.on('node_status', onNodeStatus);
+    return () => {
+      agenticFlows.off('run_event', onRunEvent);
+      agenticFlows.off('node_status', onNodeStatus);
+    };
   }, []);
 
-  // Slow reconciliation sweep — liveness is push-driven.
-  useEffect(() => {
-    if (!connected) return;
-    const id = setInterval(async () => {
-      const snap = await flowManager.fetchGraph().catch(() => undefined);
-      if (snap) setSnapshot(snap);
-    }, 30000);
-    return () => clearInterval(id);
-  }, [connected, setSnapshot]);
+  const toggleEnabled = useCallback(() => {
+    const st = useStudio.getState();
+    const next = !st.flowEnabled;
+    useStudio.setState({ flowEnabled: next });
+    st.mutateDoc((d) => ({ ...d, enabled: next }));
+    if (flow) {
+      flow.enabled = next;
+      void flow.save().catch((e) => console.error('flow enable toggle failed', e));
+    }
+  }, [flow]);
+
+  if (!typeId) {
+    return (
+      <div className="agentic-flows">
+        <div className="afl-empty">
+          <div className="eye">agentic flows</div>
+          <h2>No flow selected</h2>
+          <p>Pick a flow from the left menu, or create one with “+ New flow”.</p>
+        </div>
+      </div>
+    );
+  }
 
   if (bootError) {
     return (
       <div className="agentic-flows">
         <div style={{ padding: 40, fontFamily: 'var(--mono)', fontSize: 12 }}>
-          <b>Agentic Flows failed to load</b>
+          <b>Flow failed to load</b>
           <pre>{bootError}</pre>
         </div>
       </div>
     );
   }
 
-  const counts = snapshot
-    ? `${snapshot.nodes.length} nodes · ${snapshot.topics.length} topics · ${journal.length} events`
-    : 'loading…';
+  if (isLoading || !doc) {
+    return (
+      <div className="agentic-flows">
+        <div className="afl-empty">
+          <div className="eye">agentic flows</div>
+          <h2>Loading…</h2>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="agentic-flows">
@@ -114,41 +236,47 @@ export function AgenticFlowsView() {
         <div className="brand">
           <div className="mark" />
           <div>
-            <b>Agentic Flows</b>
-            <span>flowmanager observatory</span>
+            <b>{flowName}</b>
+            <span>
+              {doc.nodes.length} nodes · {doc.edges.length} edges
+            </span>
           </div>
         </div>
         <div className="spacer" />
-        <div className="chip" style={{ cursor: 'default' }}>
+        <button
+          className={`chip ${flowEnabled ? 'on' : ''}`}
+          title={flowEnabled ? 'Flow is active — click to deactivate' : 'Flow is inactive — click to activate'}
+          onClick={toggleEnabled}
+        >
+          <span className={`dot ${flowEnabled ? 'ok' : ''}`} />
+          {flowEnabled ? 'active' : 'inactive'}
+        </button>
+        <div className="chip" style={{ cursor: 'default' }} title="live stream connection">
           <span className={`dot ${connected ? 'ok' : ''}`} />
-          {counts}
+          live
         </div>
-        {TABS.map((t) => (
-          <button key={t} className={`chip ${tab === t ? 'on' : ''}`} onClick={() => setTab(t)}>
+        {PANEL_TABS.map((t) => (
+          <button key={t} className={`chip ${panelTab === t ? 'on' : ''}`} onClick={() => setPanelTab(t)}>
             {t}
           </button>
         ))}
       </div>
 
       <div className="side">
-        {tab === 'emit' && <EmitConsole />}
-        {tab === 'journal' && <JournalTail />}
-        {tab === 'chain' && <ChainInspector />}
-        {tab === 'wiring' && <WiringEditor />}
+        {panelTab === 'palette' && <PaletteTab />}
+        {panelTab === 'inject' && <InjectPanel />}
+        {panelTab === 'runs' && <RunsPanel />}
       </div>
 
-      <div className="hint">drag to pan · scroll to zoom · click a station to open it</div>
+      <div className="hint">drag from the palette to add · connect handles to route events · ⌫ deletes</div>
 
-      <div
-        className={`drawer-scrim ${selectedNode ? 'open' : ''}`}
-        onClick={() => selectNode(null)}
-      />
+      <div className={`drawer-scrim ${selectedNode ? 'open' : ''}`} onClick={() => selectNode(null)} />
       <div className={`drawer ${selectedNode ? 'open' : ''}`}>
         {selectedNode && (
           <>
             <div className="drawer-head">
               <div>
-                <div className="eye">flow station</div>
+                <div className="eye">{selectedNode.node_type.replace('_', ' ')}</div>
                 <h2>{selectedNode.name || '(unnamed)'}</h2>
               </div>
               <button className="drawer-x" onClick={() => selectNode(null)}>
@@ -156,7 +284,7 @@ export function AgenticFlowsView() {
               </button>
             </div>
             <div className="drawer-body">
-              <NodeInspector />
+              <NodeInspector node={selectedNode} />
             </div>
           </>
         )}

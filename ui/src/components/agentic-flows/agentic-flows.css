@@ -496,3 +496,330 @@
   font-size: 11px;
 }
 .agentic-flows .drawer .stl { font-family: var(--mono); font-size: 12px; }
+
+/* ==== v2 additions ===================================================== */
+
+/* empty / loading state */
+.agentic-flows .afl-empty {
+  height: 100%;
+  display: grid;
+  place-content: center;
+  text-align: center;
+  gap: 6px;
+}
+.agentic-flows .afl-empty .eye {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--rubric);
+}
+.agentic-flows .afl-empty h2 { font-family: var(--serif); font-weight: 500; font-size: 26px; color: var(--ink-strong); margin: 0; }
+.agentic-flows .afl-empty p { color: var(--ink-soft); font-size: 14px; margin: 0; }
+
+/* trigger node — distinct output-only shape (angled leading edge) */
+.agentic-flows .afl-trigger { width: 200px; font-family: var(--serif); }
+.agentic-flows .afl-trigger .card {
+  position: relative;
+  background: var(--paper);
+  border: 1px solid var(--rubric);
+  border-left-width: 4px;
+  border-radius: 4px 16px 16px 4px;
+  padding: 10px 14px 10px 12px;
+  transition: box-shadow 0.2s, border-color 0.2s;
+}
+.agentic-flows .afl-trigger:hover .card,
+.agentic-flows .afl-trigger.selected .card {
+  box-shadow: 0 0 0 3px var(--rubric-dim);
+}
+.agentic-flows .afl-trigger.running .card { animation: afl-heartbeat 1.8s ease-in-out infinite; }
+.agentic-flows .afl-trigger .kic {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--rubric);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.agentic-flows .afl-trigger .kic .pip.trigger { width: 7px; height: 7px; border-radius: 50%; background: var(--rubric); }
+.agentic-flows .afl-trigger .ttl { font-size: 15px; font-weight: 500; color: var(--ink-strong); margin-top: 3px; }
+.agentic-flows .afl-trigger .sub {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--ink-faint);
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.agentic-flows .afl-trigger .evt {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  color: var(--ink-faint);
+  text-align: right;
+  margin-top: 4px;
+}
+.agentic-flows .afl-trigger .deg {
+  position: absolute;
+  top: -7px; right: -7px;
+  background: var(--rubric);
+  color: var(--paper);
+  font-family: var(--mono);
+  font-size: 9px;
+  border-radius: 999px;
+  padding: 1px 6px;
+}
+
+/* edge event chip (+ inline rename) */
+.agentic-flows .afl-evtchip {
+  background: var(--paper);
+  border: 1px solid var(--afl-edge);
+  color: var(--ink-soft);
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-size: 10px;
+  font-family: var(--mono);
+  transition: background 200ms, color 200ms;
+}
+.agentic-flows .afl-evtchip.catchall { border-style: dashed; color: var(--ink-faint); }
+.agentic-flows .afl-evtchip.hot { background: var(--flow-hot); border-color: var(--flow-hot); color: var(--paper); }
+.agentic-flows .afl-evtchip input {
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--ink-strong);
+  font-size: 10px;
+  font-family: var(--mono);
+  width: auto;
+}
+
+/* shared side-panel body */
+.agentic-flows .afl-panel { display: flex; flex-direction: column; gap: 8px; }
+.agentic-flows .afl-panel .eye {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--rubric);
+}
+.agentic-flows .afl-panel label {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin-top: 4px;
+}
+.agentic-flows .afl-panel input,
+.agentic-flows .afl-panel textarea,
+.agentic-flows .afl-panel select {
+  width: 100%;
+  background: var(--paper-2);
+  color: var(--ink-strong);
+  border: 1px solid var(--afl-edge);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 11.5px;
+  font-family: var(--mono);
+}
+.agentic-flows .afl-note { font-size: 12px; color: var(--ink-soft); font-style: italic; margin: 0; }
+.agentic-flows .afl-note.warn { color: var(--afl-warn); }
+.agentic-flows .afl-cta {
+  margin-top: 6px;
+  background: var(--rubric);
+  color: var(--paper);
+  border: none;
+  border-radius: 6px;
+  padding: 7px 0;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.agentic-flows .afl-cta:disabled { opacity: 0.4; cursor: default; }
+.agentic-flows .afl-status {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--ink-soft);
+  word-break: break-all;
+}
+.agentic-flows .afl-status.warn { color: var(--afl-err); }
+
+/* palette */
+.agentic-flows .afl-pal-item {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  border: 1px solid var(--afl-edge);
+  border-radius: 10px;
+  background: var(--paper);
+  padding: 10px 12px;
+  cursor: grab;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.agentic-flows .afl-pal-item:hover { border-color: var(--rubric); box-shadow: 0 0 0 3px var(--rubric-dim); }
+.agentic-flows .afl-pal-item:active { cursor: grabbing; }
+.agentic-flows .afl-pal-item .glyph { font-size: 18px; color: var(--rubric); line-height: 1.2; }
+.agentic-flows .afl-pal-item b { display: block; font-family: var(--serif); font-weight: 500; font-size: 14px; color: var(--ink-strong); }
+.agentic-flows .afl-pal-item span:not(.glyph) { font-size: 11px; color: var(--ink-soft); line-height: 1.35; }
+
+/* runs */
+.agentic-flows .afl-runlist { display: flex; flex-direction: column; gap: 4px; }
+.agentic-flows .afl-runrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--afl-edge);
+  background: var(--paper);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--ink-soft);
+  cursor: pointer;
+  text-align: left;
+}
+.agentic-flows .afl-runrow:hover { border-color: var(--ink-faint); }
+.agentic-flows .afl-runrow.on { border-color: var(--rubric); box-shadow: 0 0 0 2px var(--rubric-dim); }
+.agentic-flows .afl-runrow .g { flex: none; }
+.agentic-flows .afl-runrow.running .g { color: var(--rubric); }
+.agentic-flows .afl-runrow.tripped .g,
+.agentic-flows .afl-runrow.failed .g { color: var(--afl-err); }
+.agentic-flows .afl-runrow .id { color: var(--ink-strong); }
+.agentic-flows .afl-runrow .meta { color: var(--ink-faint); }
+.agentic-flows .afl-runrow .when { margin-left: auto; color: var(--ink-faint); }
+.agentic-flows .afl-journal {
+  margin-top: 8px;
+  border-top: 1px solid var(--afl-edge);
+  padding-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  overflow-y: auto;
+}
+.agentic-flows .afl-jrow {
+  display: flex;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 10px;
+  align-items: baseline;
+}
+.agentic-flows .afl-jrow .k { flex: none; width: 74px; color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.06em; font-size: 8.5px; }
+.agentic-flows .afl-jrow.node_error .k, .agentic-flows .afl-jrow.tripped .k { color: var(--afl-err); }
+.agentic-flows .afl-jrow .n { color: var(--ink-strong); flex: none; }
+.agentic-flows .afl-jrow .d { color: var(--ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* inspector */
+.agentic-flows .afl-inspector { display: flex; flex-direction: column; gap: 10px; }
+.agentic-flows .afl-field label {
+  display: block;
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin-bottom: 3px;
+}
+.agentic-flows .afl-field input:not([type='checkbox']),
+.agentic-flows .afl-field textarea,
+.agentic-flows .afl-field select {
+  width: 100%;
+  background: var(--paper-2);
+  color: var(--ink-strong);
+  border: 1px solid var(--afl-edge);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 12px;
+  font-family: var(--mono);
+}
+.agentic-flows .afl-stdio pre {
+  background: var(--paper-2);
+  border: 1px solid var(--afl-edge);
+  border-radius: 6px;
+  padding: 8px;
+  font-size: 10px;
+  max-height: 160px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.agentic-flows .afl-stdio .err { border-color: var(--afl-err); color: var(--afl-err); }
+.agentic-flows .afl-stdio .eye {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin-bottom: 4px;
+}
+.agentic-flows .afl-danger {
+  margin-top: 14px;
+  background: transparent;
+  border: 1px solid var(--afl-err);
+  color: var(--afl-err);
+  border-radius: 6px;
+  padding: 6px 0;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.agentic-flows .afl-danger:hover { background: var(--afl-err); color: var(--paper); }
+
+/* navigator (Zone B) — lives OUTSIDE .agentic-flows, so scope by class only */
+.afl-nav-filter { padding: 6px 10px; }
+.afl-nav-filter input {
+  width: 100%;
+  font-size: 12px;
+  padding: 4px 8px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 6px;
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+}
+.afl-nav-new {
+  width: 100%;
+  text-align: left;
+  font-size: 12px;
+  padding: 4px 8px;
+  border: 1px dashed hsl(var(--border));
+  border-radius: 6px;
+  background: transparent;
+  color: hsl(var(--muted-foreground));
+  cursor: pointer;
+}
+.afl-nav-new:hover { color: hsl(var(--foreground)); border-color: hsl(var(--foreground) / 0.4); }
+.afl-nav-list { display: flex; flex-direction: column; padding: 4px 6px; gap: 2px; }
+.afl-nav-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: hsl(var(--foreground) / 0.85);
+  font-size: 12.5px;
+  cursor: pointer;
+  text-align: left;
+}
+.afl-nav-row:hover { background: hsl(var(--muted)); }
+.afl-nav-row.on { background: hsl(var(--muted)); color: hsl(var(--foreground)); }
+.afl-nav-row .dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: hsl(var(--muted-foreground) / 0.4); }
+.afl-nav-row .dot.ok { background: rgb(16 185 129); }
+.afl-nav-row .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.afl-nav-row .sys {
+  margin-left: auto;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: hsl(var(--muted-foreground));
+  border: 1px solid hsl(var(--border));
+  border-radius: 999px;
+  padding: 0 6px;
+}

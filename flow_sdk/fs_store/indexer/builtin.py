@@ -112,6 +112,7 @@ def build_default_indexer() -> FSIndexer:
     from flow_sdk.fs_store.indexer.functions.usage_report import usage_report_fn
     from flow_sdk.fs_store.indexer.functions.asset_cleanup_report import asset_cleanup_report_fn
     from flow_sdk.fs_store.indexer.functions.whiteboard import whiteboard_fn
+    from flow_sdk.fs_store.indexer.functions.agentic_flow import agentic_flow_fn
     from flow_sdk.fs_store.indexer.functions.workflow import (
         workflow_fn,
         workflow_frontmatter_fn,
@@ -144,6 +145,7 @@ def build_default_indexer() -> FSIndexer:
     idx.add_function(RecordType.USER_HOME_FOLDER, claude_rules_fn, RecordType.CLAUDE_RULES)
     idx.add_function(RecordType.USER_HOME_FOLDER, skill_fn, RecordType.SKILL)
     idx.add_function(RecordType.USER_HOME_FOLDER, whiteboard_fn, RecordType.WHITEBOARD)
+    idx.add_function(RecordType.USER_HOME_FOLDER, agentic_flow_fn, RecordType.AGENTIC_FLOW)
     idx.add_function(RecordType.USER_HOME_FOLDER, agent_trace_fn, RecordType.AGENT_TRACE)
     # Workflow run journals live at ~/.claude/projects/<slug>/<sid>/workflows/wf_*.json.
     idx.add_function(RecordType.USER_HOME_FOLDER, workflow_run_fn, RecordType.WORKFLOW_RUN)
@@ -185,6 +187,7 @@ def build_default_indexer() -> FSIndexer:
     idx.add_function(RecordType.REAL_PROJECT_CWD, prompt_project_fn, RecordType.PROMPT)
     idx.add_function(RecordType.REAL_PROJECT_CWD, skill_fn, RecordType.SKILL)
     idx.add_function(RecordType.REAL_PROJECT_CWD, whiteboard_fn, RecordType.WHITEBOARD)
+    idx.add_function(RecordType.REAL_PROJECT_CWD, agentic_flow_fn, RecordType.AGENTIC_FLOW)
     idx.add_function(RecordType.REAL_PROJECT_CWD, agent_trace_fn, RecordType.AGENT_TRACE)
     idx.add_function(RecordType.REAL_PROJECT_CWD, usage_report_fn, RecordType.USAGE_REPORT)
     idx.add_function(RecordType.REAL_PROJECT_CWD, asset_cleanup_report_fn, RecordType.ASSET_CLEANUP_REPORT)
@@ -203,6 +206,7 @@ def build_default_indexer() -> FSIndexer:
     # SYSTEM_ROOT (flowpad_assistant) expanders
     idx.add_function(RecordType.SYSTEM_ROOT, skill_fn, RecordType.SKILL)
     idx.add_function(RecordType.SYSTEM_ROOT, whiteboard_fn, RecordType.WHITEBOARD)
+    idx.add_function(RecordType.SYSTEM_ROOT, agentic_flow_fn, RecordType.AGENTIC_FLOW)
     idx.add_function(RecordType.SYSTEM_ROOT, agent_fn, RecordType.AGENT)
     idx.add_function(RecordType.SYSTEM_ROOT, project_folder_walker_fn, RecordType.FOLDER)
 

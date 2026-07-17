@@ -7,7 +7,7 @@
  * `slot_freed` → tear down.
  */
 import { AgenticProcess } from '@sdk/process/agentic-process';
-import type { FlowNodeStatusMessage } from '@sdk/services/flow-manager';
+import type { FlowNodeStatusMessage } from '@sdk/services/agentic-flows';
 import { useStudio } from './store';
 
 interface WatchEntry {
@@ -60,7 +60,7 @@ function stopWatch(processId: string): void {
 export function handleNodeStatusForProcWatch(msg: FlowNodeStatusMessage): void {
   const pid = msg.detail?.process_id;
   if (msg.phase === 'started' && typeof pid === 'string') void startWatch(pid);
-  if ((msg.phase === 'slot_freed' || msg.phase === 'failed') && typeof pid === 'string') {
+  if ((msg.phase === 'finished' || msg.phase === 'failed') && typeof pid === 'string') {
     stopWatch(pid);
   }
 }

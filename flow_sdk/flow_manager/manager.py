@@ -1,17 +1,22 @@
-"""FlowManager — single choke point for flow-graph event routing.
+"""FlowManager v2 — runs AgenticFlow documents.
 
-emit() pipeline:
-  1. validate + get-or-mint the Topic entity (ancestors minted lazily)
-  2. stamp/extend the envelope
-  3. enforce per-chain budgets (depth, process count, deadline, cycle check)
-  4. resolve listeners: ancestor walk → incoming ``Listens`` edges
-  5. dispatch per listener node (callback / spawn / inject)
-  6. stamp observed ``Emits`` edge for flow_node sources
-  7. journal + WS broadcast
+Model: an AgenticFlow is a folder document (``graph.json``); events are LOCAL
+to their flow; edges ``{from: {node, event}, to: {node}}`` are the only
+routing (``"*"`` = catch-all). A run (execution_id) starts on trigger fire or
+injection and sinks when no deliveries are pending and no executions are
+active. Everything a run does is journaled to ``runs/<run-id>.jsonl`` and
+mirrored over WS.
 
-All loop protection lives HERE — listener nodes (especially spawned agents)
-are untrusted. Budget trips journal the event with ``dropped`` set and emit a
-budget-exempt ``flow.error.protection`` event so strangled flows stay visible.
+Node execution:
+* ``process_runner`` — callback (inline) or spawned agent; spawned agents
+  AUTO-EMIT ``done {output}`` when their turn completes.
+* ``pysdk`` — subprocess running the flow's script with
+  ``on_flow_event(event_name, data, flow_ctx)``; stdio captured, exit code
+  managed (see pysdk_runner.py).
+* ``trigger`` — never executes; emits ``fired`` when its Trigger entity fires.
+
+The per-node scheduler (serial/parallel, queue, merge_identical) is keyed by
+(flow, node). Loop budgets (hops, processes, deadline) are enforced per run.
 """
 from __future__ import annotations
 
@@ -19,446 +24,359 @@ import asyncio
 import json
 import logging
 import time
+import uuid
+from pathlib import Path
 from typing import Any, Optional
 
 from flow_sdk.builtin.agentic_flow import (
     DEFAULT_DEADLINE_S,
-    DEFAULT_MAX_DEPTH,
+    DEFAULT_MAX_HOPS,
     DEFAULT_MAX_PROCESSES,
     AgenticFlow,
 )
-from flow_sdk.builtin.flow_node import DeliveryMode, FlowNode, ProgramKind
-from flow_sdk.builtin.topic import Topic, is_valid_topic_name
-from flow_sdk.db.drivers.query import QueryFilter
-from flow_sdk.flow_manager.envelope import TopicEvent
-from flow_sdk.flow_manager.journal import FlowJournal
-from flow_sdk.flow_manager.matcher import topic_ancestors
-from flow_sdk.flowpad_types.enums.entity_enums import (
-    BuiltInRelationshipTypes,
-    RelationshipDirection,
+from flow_sdk.core.capabilities.models import now_iso
+from flow_sdk.flow_manager.envelope import EXTERNAL_SOURCE, FlowEvent
+from flow_sdk.flow_manager.flow_doc import (
+    AGENT_DONE_EVENT,
+    TRIGGER_FIRED_EVENT,
+    FlowDoc,
+    FlowNodeDef,
+    parse_flow_doc,
 )
+from flow_sdk.flow_manager.journal import RunJournal
 
 logger = logging.getLogger(__name__)
 
-# Error/protection topics are budget-exempt and never re-dispatched recursively.
-PROTECTION_TOPIC = "flow.error.protection"
-DEAD_LETTER_PREFIX = "flow.error"
-
-# Cap on how many chains we keep budget state for (stale chains evicted oldest-first).
-_MAX_TRACKED_CHAINS = 500
+_SPAWN_WATCH_INTERVAL_S = 2.0
 
 
-class _ChainState:
-    """Per-correlation-chain budget ledger."""
+class _LoadedFlow:
+    """A flow's document + folder, cached with mtime validation (disk is truth)."""
 
-    __slots__ = ("started_at", "processes", "visited", "max_depth", "max_processes", "deadline_s")
+    __slots__ = ("flow_id", "folder", "doc", "mtime", "enabled")
 
-    def __init__(self, max_depth: int, max_processes: int, deadline_s: int) -> None:
+    def __init__(self, flow_id: str, folder: Path, doc: FlowDoc, mtime: float) -> None:
+        self.flow_id = flow_id
+        self.folder = folder
+        self.doc = doc
+        self.mtime = mtime
+        self.enabled = doc.enabled
+
+
+class _Run:
+    """Live run state: counters + journal. Row upserts happen at start/end."""
+
+    __slots__ = ("id", "flow", "journal", "started_at", "pending", "active",
+                 "hops", "processes", "events", "executions", "error", "finalized")
+
+    def __init__(self, run_id: str, flow: _LoadedFlow) -> None:
+        self.id = run_id
+        self.flow = flow
+        self.journal = RunJournal(flow.folder, run_id)
         self.started_at = time.monotonic()
+        self.pending = 0      # deliveries enqueued, not yet started
+        self.active = 0       # executions in flight
+        self.hops = 0
         self.processes = 0
-        # (topic, node_id) delivery pairs seen in this chain — cycle refusal.
-        self.visited: set[tuple[str, str]] = set()
-        self.max_depth = max_depth
-        self.max_processes = max_processes
-        self.deadline_s = deadline_s
+        self.events = 0
+        self.executions = 0
+        self.error: Optional[str] = None
+        self.finalized = False
+
+    @property
+    def deadline_exceeded(self) -> bool:
+        return time.monotonic() - self.started_at > DEFAULT_DEADLINE_S
+
+    def maybe_sink(self) -> bool:
+        return not self.finalized and self.pending == 0 and self.active == 0
 
 
 class _NodeRuntime:
-    """Per-node scheduler state: pending events + in-flight execution count."""
+    """Per-(flow,node) scheduler state: pending deliveries + in-flight count."""
 
     __slots__ = ("queue", "active")
 
     def __init__(self) -> None:
         from collections import deque
 
-        self.queue: "deque[tuple[TopicEvent, _ChainState]]" = deque()
+        self.queue: "deque[tuple[FlowEvent, FlowNodeDef, _Run]]" = deque()
         self.active = 0
 
 
-def _event_identity(event: TopicEvent) -> str:
-    """Identity key for merge_identical: topic + canonical payload."""
-    return f"{event.topic}|{json.dumps(event.payload, sort_keys=True, default=str)}"
-
-
-# Spawn-execution completion is polled (no push hook on PTY exit today); the
-# watcher only runs while a spawned execution is outstanding.
-_SPAWN_WATCH_INTERVAL_S = 2.0
+def _delivery_identity(event: FlowEvent) -> str:
+    return f"{event.event}|{json.dumps(event.data, sort_keys=True, default=str)}"
 
 
 class FlowManager:
     def __init__(self) -> None:
-        self._chains: dict[str, _ChainState] = {}
-        self._journal = FlowJournal()
-        # (node_id, topic_name) Emits edges already stamped — avoids re-writing.
-        self._stamped_emits: set[tuple[str, str]] = set()
-        # Per-node scheduler state (queue + active executions).
-        self._runtime: dict[str, _NodeRuntime] = {}
-        # Topic names whose entity (and ancestors) are known minted — first
-        # emit of a name pays the DB round trips, later emits pay zero.
-        self._minted_topics: set[str] = set()
+        self._flows: dict[str, _LoadedFlow] = {}
+        self._runs: dict[str, _Run] = {}
+        self._runtime: dict[tuple[str, str], _NodeRuntime] = {}
 
-    def _node_runtime(self, node_id: str) -> _NodeRuntime:
-        rt = self._runtime.get(node_id)
+    # ── flow loading (disk is truth; mtime-validated cache) ───────────────────
+
+    async def load_flow(self, flow_id: str, entity: AgenticFlow | None = None) -> Optional[_LoadedFlow]:
+        if entity is None:
+            entity = await AgenticFlow.get_by_id(flow_id)
+        if entity is None or not entity.asset_ref:
+            return None
+        folder = Path(entity.asset_ref)
+        graph = folder / "graph.json"
+        try:
+            mtime = graph.stat().st_mtime
+        except OSError:
+            return None
+        cached = self._flows.get(flow_id)
+        if cached is not None and cached.mtime == mtime:
+            return cached
+        try:
+            doc = parse_flow_doc(graph.read_text(encoding="utf-8"))
+        except ValueError as e:
+            logger.warning("FlowManager: bad graph.json for %s: %s", flow_id, e)
+            return None
+        loaded = _LoadedFlow(flow_id, folder, doc, mtime)
+        # The entity's enabled switch wins when it and the doc disagree.
+        loaded.enabled = bool(entity.enabled) and doc.enabled
+        self._flows[flow_id] = loaded
+        return loaded
+
+    async def flows_referencing_trigger(self, trigger_id: str) -> list[_LoadedFlow]:
+        out: list[_LoadedFlow] = []
+        for entity in await AgenticFlow.get_all({}):
+            loaded = await self.load_flow(entity.id, entity)
+            if loaded and loaded.enabled and trigger_id in loaded.doc.trigger_ids():
+                out.append(loaded)
+        return out
+
+    # ── activation ────────────────────────────────────────────────────────────
+
+    async def on_trigger_fired(self, trigger_id: str) -> list[str]:
+        """Trigger fire → start a run in every active flow referencing it.
+        Returns started run ids. Called from the trigger fire paths."""
+        run_ids: list[str] = []
+        for flow in await self.flows_referencing_trigger(trigger_id):
+            for node in flow.doc.trigger_nodes_for(trigger_id):
+                run = await self._start_run(flow)
+                await self._route(run, FlowEvent(
+                    event=TRIGGER_FIRED_EVENT, data={"trigger_id": trigger_id},
+                    flow_id=flow.flow_id, execution_id=run.id, source_node=node.id,
+                ))
+                self._maybe_finalize(run)
+                run_ids.append(run.id)
+        return run_ids
+
+    async def inject(
+        self,
+        flow_id: str,
+        event: str,
+        data: dict[str, Any] | None = None,
+        *,
+        execution_id: str | None = None,
+        source_node: str = EXTERNAL_SOURCE,
+        target_node: str | None = None,
+    ) -> Optional[FlowEvent]:
+        """External/entry point: deliver an event into a flow.
+
+        Joins the run named by ``execution_id`` (how pysdk emissions come home)
+        or starts a fresh one. ``target_node`` bypasses edge routing and
+        delivers directly (the Inject panel's direct mode)."""
+        flow = await self.load_flow(flow_id)
+        if flow is None:
+            raise ValueError(f"Unknown or unreadable flow: {flow_id}")
+        if not flow.enabled:
+            raise ValueError(f"Flow {flow_id} is not active")
+        run = self._runs.get(execution_id) if execution_id else None
+        if run is None:
+            run = await self._start_run(flow)
+        fe = FlowEvent(event=event, data=data or {}, flow_id=flow_id,
+                       execution_id=run.id, source_node=source_node)
+        if target_node:
+            node = flow.doc.node(target_node)
+            if node is None:
+                raise ValueError(f"Unknown node: {target_node}")
+            self._journal_event(run, fe)
+            await self._deliver(run, node, fe)
+        else:
+            await self._route(run, fe)
+        self._maybe_finalize(run)
+        return fe
+
+    async def _start_run(self, flow: _LoadedFlow) -> _Run:
+        run = _Run(str(uuid.uuid4()), flow)
+        self._runs[run.id] = run
+        run.journal.append("run_start", {"flow_id": flow.flow_id, "run_id": run.id})
+        try:
+            from flow_sdk.builtin.agentic_flow_run import AgenticFlowRun, RunStatus
+
+            row = AgenticFlowRun(id=run.id, name=f"run {run.id[:8]}", flow_id=flow.flow_id,
+                                 status=RunStatus.RUNNING.value, started_at=now_iso())
+            await row.save()
+            parent = await AgenticFlow.get_by_id(flow.flow_id)
+            if parent is not None:
+                await parent.attach_child(row)
+        except Exception:
+            logger.debug("FlowManager: run row start-upsert failed", exc_info=True)
+        await self._broadcast_run_event(run, "run_start", {})
+        return run
+
+    # ── routing ───────────────────────────────────────────────────────────────
+
+    async def _route(self, run: _Run, fe: FlowEvent) -> None:
+        """Deliver ``fe`` along the flow's edges (exact event or catch-all)."""
+        run.hops = max(run.hops, fe.hop)
+        run.events += 1
+        self._journal_event(run, fe)
+        if fe.hop > DEFAULT_MAX_HOPS:
+            self._trip(run, f"hop {fe.hop} exceeds max {DEFAULT_MAX_HOPS}")
+            return
+        if run.deadline_exceeded:
+            self._trip(run, f"run deadline {DEFAULT_DEADLINE_S}s exceeded")
+            return
+        for node in run.flow.doc.targets_for(fe.source_node, fe.event):
+            await self._deliver(run, node, fe)
+
+    async def _deliver(self, run: _Run, node: FlowNodeDef, fe: FlowEvent) -> None:
+        if node.node_type == "trigger":
+            return  # triggers accept no inputs
+        rt = self._node_rt(run.flow.flow_id, node.id)
+        nd = node.node_data
+        if nd.get("merge_identical"):
+            identity = _delivery_identity(fe)
+            if any(_delivery_identity(p) == identity for p, _, _ in rt.queue):
+                run.journal.append("merged", {"node": node.id, "event": fe.event})
+                await self._broadcast_node_status(run, node, "merged")
+                return
+        rt.queue.append((fe, node, run))
+        run.pending += 1
+        await self._broadcast_node_status(run, node, "queued", {"event": fe.event})
+        await self._drain(run.flow.flow_id, node)
+
+    def _node_rt(self, flow_id: str, node_id: str) -> _NodeRuntime:
+        key = (flow_id, node_id)
+        rt = self._runtime.get(key)
         if rt is None:
-            rt = self._runtime[node_id] = _NodeRuntime()
+            rt = self._runtime[key] = _NodeRuntime()
         return rt
 
-    def runtime_snapshot(self) -> dict[str, dict[str, int]]:
-        """Per-node queue depth + in-flight executions (agentic-flows canvas badges)."""
-        return {
-            node_id: {"queued": len(rt.queue), "active": rt.active}
-            for node_id, rt in self._runtime.items()
-            if rt.queue or rt.active
-        }
-
-    async def _broadcast_node_status(
-        self,
-        node: FlowNode,
-        phase: str,
-        event: TopicEvent | None = None,
-        detail: dict[str, Any] | None = None,
-    ) -> None:
-        """Push one scheduler transition to every client (the liveness feed).
-
-        Counts are read AFTER the transition, so the frontend can render
-        queue/active without ever consulting the snapshot. No-op when no
-        server WS context exists (tests / CLI)."""
-        rt = self._node_runtime(node.id or "")
-        try:
-            from flow_sdk.api.messages import FlowNodeStatusMessage
-            from flow_sdk.core.capabilities.models import now_iso
-            from flow_sdk.server.routes.websocket import broadcast
-
-            msg = FlowNodeStatusMessage(
-                node_id=node.id or "",
-                phase=phase,
-                queued=len(rt.queue),
-                active=rt.active,
-                event_topic=event.topic if event else "",
-                correlation_id=event.correlation_id if event else "",
-                detail=detail or {},
-                ts=now_iso(),
-            )
-            await broadcast(msg.model_dump_json())
-        except Exception:
-            logger.debug("FlowManager: node-status broadcast unavailable", exc_info=True)
-
-    # ── public API ────────────────────────────────────────────────────────────
-
-    async def emit(self, event: TopicEvent) -> TopicEvent:
-        """Route one event through the graph. Returns the (journal-stamped) event."""
-        if not is_valid_topic_name(event.topic):
-            raise ValueError(f"Invalid topic name: {event.topic!r}")
-
-        # One boundary load per emit; membership becomes a dict lookup for
-        # every listener (was a full AgenticFlow scan per listener).
-        boundaries = await self._load_boundaries()
-        chain = await self._chain_for(event, boundaries)
-
-        # ── budgets (control events exempt) ───────────────────────────────────
-        if not event.control:
-            drop = self._budget_check(event, chain)
-            if drop:
-                event.dropped = drop
-                await self._journal_and_broadcast(event)
-                await self._emit_protection(event, drop)
-                return event
-
-        # Mint the topic (and its ancestors) so the prefix tree is real.
-        await self._mint_with_ancestors(event.topic)
-
-        # Observed Emits edge for flow_node sources.
-        await self._stamp_emit_edge(event)
-
-        await self._journal_and_broadcast(event)
-
-        # ── resolve listeners along the ancestor chain ────────────────────────
-        listeners = await self._resolve_listeners(event.topic)
-        for node in listeners:
-            if not node.enabled:
-                continue
-            key = (event.topic, node.id or "")
-            if key in chain.visited and not event.control:
-                logger.info("FlowManager: cycle refusal — %s already delivered to %s", *key)
-                continue
-            chain.visited.add(key)
-            boundary = boundaries.get(node.id or "")
-            if boundary is not None and not boundary.enabled:
-                continue
-            await self._deliver(node, event, chain)
-        return event
-
-    async def emit_named(
-        self,
-        topic: str,
-        payload: dict[str, Any] | None = None,
-        *,
-        source: str = "manual",
-        parent: TopicEvent | None = None,
-        scope: str | None = None,
-    ) -> TopicEvent:
-        """Convenience: build the envelope (extending ``parent`` if given) and emit."""
-        if parent is not None:
-            event = parent.child(topic, payload or {}, source=source)
-        else:
-            event = TopicEvent(topic=topic, payload=payload or {}, source=source, scope=scope)
-        return await self.emit(event)
-
-    def journal_tail(self, limit: int = 200, correlation_id: str | None = None) -> list[dict[str, Any]]:
-        return self._journal.tail(limit=limit, correlation_id=correlation_id)
-
-    # ── graph snapshot (agentic-flows bootstrap) ─────────────────────────────────────
-
-    async def graph_snapshot(self) -> dict[str, Any]:
-        """Everything the agentic-flows canvas needs in one payload."""
-        topics = await Topic.get_all({})
-        nodes = await FlowNode.get_all({})
-        graphs = await AgenticFlow.get_all({})
-        edges: list[dict[str, Any]] = []
-        topic_by_id = {t.id: t for t in topics}
-        for node in nodes:
-            for rel_type in (BuiltInRelationshipTypes.Listens, BuiltInRelationshipTypes.Emits):
-                rels = await node.get_outgoing_relationships(
-                    relationships_filter=QueryFilter(type=rel_type)
-                )
-                for rel in rels:
-                    if rel.to_typeid and rel.to_typeid.id in topic_by_id:
-                        edges.append(
-                            {
-                                "kind": rel_type.value,
-                                "node_id": node.id,
-                                "topic_id": rel.to_typeid.id,
-                                "topic": topic_by_id[rel.to_typeid.id].name,
-                            }
-                        )
-        return {
-            "topics": [t.model_dump(mode="json", include={"id", "name", "description", "color"}) for t in topics],
-            "nodes": [
-                n.model_dump(
-                    mode="json",
-                    include={
-                        "id", "name", "description", "program_kind", "program_ref",
-                        "prompt", "model_size",
-                        "delivery_mode", "workdir", "enabled", "current_process_id",
-                        "execution_mode", "parallel_limit", "merge_identical",
-                    },
-                )
-                for n in nodes
-            ],
-            "agentic_flows": [
-                g.model_dump(
-                    mode="json",
-                    include={
-                        "id", "name", "enabled", "member_node_ids",
-                        "max_depth", "max_processes", "deadline_s",
-                    },
-                )
-                for g in graphs
-            ],
-            "edges": edges,
-        }
-
-    # ── internals ─────────────────────────────────────────────────────────────
-
-    async def _load_boundaries(self) -> dict[str, AgenticFlow]:
-        """Load flow boundaries once and index by member node id."""
-        by_node: dict[str, AgenticFlow] = {}
-        for g in await AgenticFlow.get_all({}):
-            for node_id in g.member_node_ids or []:
-                by_node[node_id] = g
-        return by_node
-
-    async def _chain_for(self, event: TopicEvent, boundaries: dict[str, AgenticFlow]) -> _ChainState:
-        chain = self._chains.get(event.correlation_id)
-        if chain is None:
-            budget = await self._root_budget(event, boundaries)
-            chain = _ChainState(*budget)
-            if len(self._chains) >= _MAX_TRACKED_CHAINS:
-                oldest = min(self._chains, key=lambda k: self._chains[k].started_at)
-                self._chains.pop(oldest, None)
-            self._chains[event.correlation_id] = chain
-        return chain
-
-    async def _root_budget(
-        self, event: TopicEvent, boundaries: dict[str, AgenticFlow]
-    ) -> tuple[int, int, int]:
-        """Budget for a fresh chain: the source node's boundary if it has one,
-        router defaults otherwise."""
-        node = await self._source_node(event)
-        if node is not None:
-            boundary = boundaries.get(node.id or "")
-            if boundary is not None:
-                return boundary.max_depth, boundary.max_processes, boundary.deadline_s
-        return DEFAULT_MAX_DEPTH, DEFAULT_MAX_PROCESSES, DEFAULT_DEADLINE_S
-
-    def _budget_check(self, event: TopicEvent, chain: _ChainState) -> Optional[str]:
-        if event.depth > chain.max_depth:
-            return f"depth {event.depth} > max_depth {chain.max_depth}"
-        if time.monotonic() - chain.started_at > chain.deadline_s:
-            return f"chain deadline {chain.deadline_s}s exceeded"
-        return None
-
-    def _charge_process(self, chain: _ChainState) -> Optional[str]:
-        if chain.processes >= chain.max_processes:
-            return f"max_processes {chain.max_processes} exhausted for chain"
-        chain.processes += 1
-        return None
-
-    async def _mint_with_ancestors(self, topic_name: str) -> None:
-        if topic_name in self._minted_topics:
-            return
-        for ancestor in topic_ancestors(topic_name):
-            if ancestor not in self._minted_topics:
-                await Topic.get_or_mint(ancestor)
-                self._minted_topics.add(ancestor)
-
-    async def _source_node(self, event: TopicEvent) -> Optional[FlowNode]:
-        if ":" not in event.source:
-            return None
-        type_part, _, id_part = event.source.partition(":")
-        if type_part != "flow_node":
-            return None
-        return await FlowNode.get_by_id(id_part)
-
-    async def _stamp_emit_edge(self, event: TopicEvent) -> None:
-        node = await self._source_node(event)
-        if node is None or not node.id:
-            return
-        key = (node.id, event.topic)
-        if key in self._stamped_emits:
-            return
-        topic = await Topic.get_or_mint(event.topic)
-        existing = await node.get_outgoing_relationships(
-            relationships_filter=QueryFilter(type=BuiltInRelationshipTypes.Emits)
-        )
-        if not any(rel.to_typeid and rel.to_typeid.id == topic.id for rel in existing):
-            await node.save_relationship(
-                to_e=topic.typeid,
-                relationship_or_str=BuiltInRelationshipTypes.Emits,
-                direction=RelationshipDirection.Outgoing,
-            )
-        self._stamped_emits.add(key)
-
-    async def _resolve_listeners(self, topic_name: str) -> list[FlowNode]:
-        """Ancestor walk: listeners on any prefix of ``topic_name`` hear it."""
-        seen: dict[str, FlowNode] = {}
-        from flow_sdk.builtin.topic import topic_entity_id
-
-        for ancestor in topic_ancestors(topic_name):
-            topic = await Topic.get_by_id(topic_entity_id(ancestor))
-            if topic is None:
-                continue
-            rels = await topic.get_incoming_relationships(
-                relationships_filter=QueryFilter(type=BuiltInRelationshipTypes.Listens)
-            )
-            for rel in rels:
-                if rel.from_typeid and rel.from_typeid.id not in seen:
-                    node = await FlowNode.get_by_id(rel.from_typeid.id)
-                    if node:
-                        seen[node.id] = node
-        return list(seen.values())
-
-    # ── delivery scheduler (queue + serial/parallel drain) ───────────────────
-
-    async def _deliver(self, node: FlowNode, event: TopicEvent, chain: _ChainState) -> None:
-        """Enqueue an event for a node (merge-identical aware), then drain."""
-        rt = self._node_runtime(node.id or "")
-        if node.merge_identical:
-            identity = _event_identity(event)
-            if any(_event_identity(pending) == identity for pending, _ in rt.queue):
-                logger.info("FlowManager: merged identical event %s into pending queue of %s",
-                            event.topic, node.name)
-                await self._broadcast_node_status(node, "merged", event)
-                return
-        rt.queue.append((event, chain))
-        await self._broadcast_node_status(node, "queued", event)
-        await self._drain(node)
-
-    def _execution_limit(self, node: FlowNode) -> int:
-        from flow_sdk.builtin.flow_node import ExecutionMode
-
-        if node.execution_mode == ExecutionMode.PARALLEL.value:
-            return max(1, int(node.parallel_limit or 1))
+    def _limit_for(self, node: FlowNodeDef) -> int:
+        nd = node.node_data
+        if nd.get("execution_mode") == "parallel":
+            return max(1, int(nd.get("parallel_limit") or 1))
         return 1
 
-    async def _drain(self, node: FlowNode) -> None:
-        """Run pending events up to the node's concurrency limit.
-
-        Callback/inject executions complete inline (awaited), so serial
-        callback nodes process their whole queue before this returns — which
-        keeps in-process flows deterministic. Spawn executions stay "active"
-        until the spawned process reaches a terminal status (watcher task),
-        so a serial spawn node runs its agents strictly one at a time.
-        """
-        rt = self._node_runtime(node.id or "")
-        limit = self._execution_limit(node)
+    async def _drain(self, flow_id: str, node: FlowNodeDef) -> None:
+        rt = self._node_rt(flow_id, node.id)
+        limit = self._limit_for(node)
         while rt.queue and rt.active < limit:
-            event, chain = rt.queue.popleft()
+            fe, node_def, run = rt.queue.popleft()
+            run.pending -= 1
             rt.active += 1
+            run.active += 1
+            run.executions += 1
             try:
-                await self._execute(node, event, chain, rt)
+                await self._execute(run, node_def, fe, rt)
             except Exception as e:
-                rt.active -= 1
-                logger.exception("FlowManager: listener %s failed for %s", node.name, event.topic)
-                await self._broadcast_node_status(node, "failed", event, {"error": str(e)})
-                await self._emit_dead_letter(event, node)
+                self._finish_execution(run, rt)
+                logger.exception("FlowManager: node %s failed for %s", node_def.id, fe.event)
+                run.journal.append("node_error", {"node": node_def.id, "error": str(e)})
+                await self._broadcast_node_status(run, node_def, "failed", {"error": str(e)})
+        self._maybe_finalize_all()
 
-    async def _run_inline(
-        self,
-        node: FlowNode,
-        event: TopicEvent,
-        rt: _NodeRuntime,
-        kind: str,
-        dispatch: Any,
-    ) -> None:
-        """An execution that completes within this call (callback / inject):
-        started → dispatch → slot freed → finished(duration)."""
-        await self._broadcast_node_status(node, "started", event, {"program_kind": kind})
+    def _finish_execution(self, run: _Run, rt: _NodeRuntime) -> None:
+        rt.active -= 1
+        run.active -= 1
+
+    # ── execution per node type ───────────────────────────────────────────────
+
+    async def _execute(self, run: _Run, node: FlowNodeDef, fe: FlowEvent, rt: _NodeRuntime) -> None:
+        nd = node.node_data
+        if node.node_type == "pysdk":
+            await self._run_pysdk(run, node, fe, rt)
+        elif nd.get("program_kind") == "callback":
+            await self._run_callback(run, node, fe, rt)
+        else:
+            await self._spawn_agent(run, node, fe, rt)
+
+    async def _run_callback(self, run: _Run, node: FlowNodeDef, fe: FlowEvent, rt: _NodeRuntime) -> None:
+        from flow_sdk.builtin import trigger_callbacks
+
+        name = str(node.node_data.get("program_ref") or "")
+        fn = trigger_callbacks.get(name)
+        if fn is None:
+            raise RuntimeError(f"No registered callback {name!r}")
+        await self._broadcast_node_status(run, node, "started", {"program_kind": "callback"})
         started = time.monotonic()
         try:
-            await dispatch(node, event)
-        finally:
-            rt.active -= 1
-        await self._broadcast_node_status(
-            node, "finished", event,
-            {"duration_ms": int((time.monotonic() - started) * 1000)},
+            result = fn(fe)
+            if asyncio.iscoroutine(result):
+                result = await result
+        except BaseException:
+            self._finish_execution(run, rt)
+            raise
+        duration = int((time.monotonic() - started) * 1000)
+        run.journal.append("node_done", {"node": node.id, "duration_ms": duration})
+        # A callback's dict return becomes its `done` event payload. Reserve the
+        # successor hop (pending += 1, synchronous) BEFORE releasing this
+        # execution slot — the run's counters must never hit 0/0 mid-handoff or
+        # a concurrent finalize check could sink the run under us.
+        await self.emit_from_node(run, node.id, AGENT_DONE_EVENT,
+                                  result if isinstance(result, dict) else {})
+        self._finish_execution(run, rt)
+        await self._broadcast_node_status(run, node, "finished", {"duration_ms": duration})
+
+    async def _spawn_agent(self, run: _Run, node: FlowNodeDef, fe: FlowEvent, rt: _NodeRuntime) -> None:
+        from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
+        from flow_sdk.builtin.flow_node import MODEL_SIZE_TO_CLI
+
+        if run.processes >= DEFAULT_MAX_PROCESSES:
+            self._finish_execution(run, rt)
+            self._trip(run, f"max_processes {DEFAULT_MAX_PROCESSES} exhausted")
+            return
+        run.processes += 1
+        nd = node.node_data
+        instruction = self._agent_instruction(run, node, fe)
+        proc = AgenticProcess(
+            instruction_content=instruction,
+            workdir=nd.get("workdir"),
+            visible=bool(nd.get("visible", False)),
+            name=f"Flow {run.flow.doc.name or run.flow.flow_id[:8]}: {node.name or node.id[:8]}",
+            cli_config={"model": MODEL_SIZE_TO_CLI.get(str(nd.get("model_size") or "sm"), "haiku")},
         )
+        await proc.save()
+        await proc.start_pty(instruction=instruction, visible=bool(nd.get("visible", False)))
+        try:
+            from flow_sdk.builtin.agentic_flow_run import AgenticFlowRun
 
-    async def _execute(self, node: FlowNode, event: TopicEvent, chain: _ChainState, rt: _NodeRuntime) -> None:
-        if node.program_kind == ProgramKind.CALLBACK.value:
-            await self._run_inline(node, event, rt, "callback", self._dispatch_callback)
-        elif node.delivery_mode == DeliveryMode.INJECT.value:
-            await self._run_inline(node, event, rt, "inject", self._dispatch_inject)
-        else:
-            drop = self._charge_process(chain)
-            if drop:
-                rt.active -= 1
-                event_copy = event.model_copy(update={"dropped": drop})
-                await self._journal_and_broadcast(event_copy)
-                await self._broadcast_node_status(node, "failed", event, {"error": drop})
-                await self._emit_protection(event, drop)
-                return
-            try:
-                proc_id = await self._dispatch_spawn(node, event)
-            except Exception as e:
-                rt.active -= 1
-                await self._broadcast_node_status(node, "failed", event, {"error": str(e)})
-                raise
-            await self._broadcast_node_status(
-                node, "started", event,
-                {"program_kind": node.program_kind, "process_id": proc_id},
-            )
-            # Occupy the slot until the spawned process terminates.
-            asyncio.create_task(self._watch_spawn(node, proc_id, rt, event))
+            row = await AgenticFlowRun.get_by_id(run.id)
+            if row is not None:
+                await row.attach_child(proc)
+        except Exception:
+            logger.debug("FlowManager: run→process attach failed", exc_info=True)
+        run.journal.append("agent_spawn", {"node": node.id, "process_id": proc.id})
+        await self._broadcast_node_status(run, node, "started",
+                                          {"program_kind": nd.get("program_kind", "instruction"),
+                                           "process_id": proc.id})
+        asyncio.create_task(self._watch_agent(run, node, proc.id, rt))
 
-    async def _watch_spawn(
-        self, node: FlowNode, proc_id: str, rt: _NodeRuntime, event: TopicEvent | None = None
-    ) -> None:
-        """Poll a spawned execution until its ONE turn completes, then stop the
-        process (flow spawns are one-shot — a lingering idle PTY would hold the
-        node's slot forever) and free the slot. Interval is a scheduler
-        heartbeat, not a wait-for-symptom timeout; it only runs while a slot is
-        held. Completion = turn observed busy → idle (or terminal status)."""
+    def _agent_instruction(self, run: _Run, node: FlowNodeDef, fe: FlowEvent) -> str:
+        nd = node.node_data
+        prompt = f" {nd.get('prompt')}" if nd.get("prompt") else ""
+        base = (
+            f"/{nd.get('program_ref')}{prompt}"
+            if nd.get("program_kind") == "skill"
+            else f"{nd.get('program_ref') or ''}{prompt}"
+        )
+        context = (
+            f"\n\n---\nFlow event `{fe.event}` (flow {run.flow.doc.name or run.flow.flow_id}, "
+            f"execution {run.id}).\nData:\n```json\n{json.dumps(fe.data, indent=2)}\n```\n"
+            "When you finish, your final answer is emitted automatically as this node's "
+            "`done` event — no further action needed."
+        )
+        return base + context
+
+    async def _watch_agent(self, run: _Run, node: FlowNodeDef, proc_id: str, rt: _NodeRuntime) -> None:
+        """One-shot agent execution: wait for the turn to complete (busy→idle),
+        stop the process, auto-emit ``done {output}``, free the slot."""
         from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
         from flow_sdk.builtin.agentic_process.status_predicates import is_turn_busy
         from flow_sdk.builtin.process_lifecycle import ProcessStatus
@@ -466,145 +384,201 @@ class FlowManager:
         terminal = {ProcessStatus.STOPPED.value, ProcessStatus.FAILED.value}
         seen_busy = False
         started = time.monotonic()
-        outcome: tuple[str, dict[str, Any]] = ("finished", {"process_id": proc_id})
+        output = ""
+        failed: Optional[str] = None
         try:
             while True:
                 await asyncio.sleep(_SPAWN_WATCH_INTERVAL_S)
+                if run.deadline_exceeded:
+                    failed = "run deadline exceeded during agent execution"
+                    break
                 proc = await AgenticProcess.get_by_id(proc_id)
-                if proc is None or proc.status in terminal:
-                    if proc is not None and proc.status == ProcessStatus.FAILED.value:
-                        outcome = ("failed", {"process_id": proc_id,
-                                              "error": proc.start_failure or "process failed"})
-                    return
+                if proc is None:
+                    failed = "process disappeared"
+                    break
+                if proc.status == ProcessStatus.FAILED.value:
+                    failed = proc.start_failure or "process failed"
+                    break
+                if proc.status in terminal:
+                    output = await self._agent_output(proc)
+                    break
                 busy = is_turn_busy(proc)
                 if busy:
                     seen_busy = True
                 elif seen_busy:
-                    # Turn ran and finished — one-shot execution complete.
+                    output = await self._agent_output(proc)
                     try:
                         await proc.exit()
                     except Exception:
                         logger.exception("FlowManager: one-shot exit failed for %s", proc_id)
-                    return
+                    break
         except Exception:
-            logger.exception("FlowManager: spawn watcher failed for node %s", node.name)
-            outcome = ("failed", {"process_id": proc_id, "error": "spawn watcher failed"})
+            logger.exception("FlowManager: agent watcher failed for node %s", node.id)
+            failed = "agent watcher failed"
         finally:
-            rt.active -= 1
-            phase, detail = outcome
-            detail["duration_ms"] = int((time.monotonic() - started) * 1000)
-            await self._broadcast_node_status(node, phase, event, detail)
-            await self._broadcast_node_status(node, "slot_freed", event, {"process_id": proc_id})
-            try:
-                await self._drain(node)
-            except Exception:
-                logger.exception("FlowManager: post-spawn drain failed for node %s", node.name)
-
-    async def _dispatch_callback(self, node: FlowNode, event: TopicEvent) -> None:
-        from flow_sdk.builtin import trigger_callbacks
-
-        fn = trigger_callbacks.get(node.program_ref)
-        if fn is None:
-            raise RuntimeError(f"No registered callback {node.program_ref!r}")
-        result = fn(event)
-        if asyncio.iscoroutine(result):
-            await result
+            duration = int((time.monotonic() - started) * 1000)
+            if failed:
+                self._finish_execution(run, rt)
+                run.journal.append("node_error", {"node": node.id, "process_id": proc_id,
+                                                  "error": failed, "duration_ms": duration})
+                await self._broadcast_node_status(run, node, "failed",
+                                                  {"error": failed, "process_id": proc_id,
+                                                   "duration_ms": duration})
+            else:
+                run.journal.append("node_done", {"node": node.id, "process_id": proc_id,
+                                                 "duration_ms": duration})
+                # Reserve the successor hop (pending += 1, synchronous) BEFORE
+                # releasing this execution slot — counters must never hit 0/0
+                # mid-handoff or a concurrent finalize could sink the run.
+                await self.emit_from_node(run, node.id, AGENT_DONE_EVENT,
+                                          {"output": output, "process_id": proc_id})
+                self._finish_execution(run, rt)
+                await self._broadcast_node_status(run, node, "finished",
+                                                  {"duration_ms": duration, "process_id": proc_id})
+            await self._drain(run.flow.flow_id, node)
+            self._maybe_finalize(run)
 
     @staticmethod
-    def _emit_url() -> str:
-        """Full emit endpoint of THIS instance, for spawned agents (they have
-        no SDK — they curl). Port comes from the instance's server.json."""
-        try:
-            from flow_sdk.instance_settings import get_instance_settings
+    async def _agent_output(proc: Any) -> str:
+        """The agent's visible answer: last assistant text from its transcript.
 
-            data = json.loads(get_instance_settings().server_json_path.read_text())
-            return f"http://localhost:{data['port']}/api/v1/topics/emit"
+        ``get_claude_session`` is a cheap path resolver (``include_content=False``)
+        — it never carries ``last_assistant_text`` — so the text is recovered
+        from the JSONL directly (the ``asset_cleanup.transcript_reply`` pattern).
+        """
+        try:
+            from flow_sdk.asset_cleanup.run import transcript_reply
+            from flow_sdk.builtin.agentic_process.agentic_process import get_claude_session
+
+            if proc.session_id:
+                record = get_claude_session(proc.session_id)
+                jsonl_path = getattr(record, "jsonl_path", None)
+                if jsonl_path:
+                    text, _models = transcript_reply(Path(jsonl_path))
+                    return text
         except Exception:
-            return "/api/v1/topics/emit"
+            logger.debug("FlowManager: agent output read failed", exc_info=True)
+        return ""
 
-    def _instruction_for(self, node: FlowNode, event: TopicEvent) -> str:
-        context = (
-            f"\n\n---\nFlow event on topic `{event.topic}` "
-            f"(correlation_id: {event.correlation_id}, depth: {event.depth}).\n"
-            f"Payload:\n```json\n{json.dumps(event.payload, indent=2)}\n```\n"
-            f"To emit a follow-on topic event, run:\n"
-            f"curl -s -X POST {self._emit_url()} -H 'Content-Type: application/json' "
-            f"-d '{{\"topic\": \"<name>\", \"payload\": {{...}}, \"envelope\": "
-            f'{{"correlation_id": "{event.correlation_id}", "depth": {event.depth + 1}, '
-            f'"source": "flow_node:{node.id}"}}}}\''
-        )
-        prompt = f" {node.prompt}" if node.prompt else ""
-        if node.program_kind == ProgramKind.SKILL.value:
-            return f"/{node.program_ref}{prompt}{context}"
-        return f"{node.program_ref}{prompt}{context}"
+    async def _run_pysdk(self, run: _Run, node: FlowNodeDef, fe: FlowEvent, rt: _NodeRuntime) -> None:
+        from flow_sdk.flow_manager.pysdk_runner import run_pysdk_node
 
-    async def _dispatch_spawn(self, node: FlowNode, event: TopicEvent) -> str:
-        from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
-
-        from flow_sdk.builtin.flow_node import MODEL_SIZE_TO_CLI
-
-        instruction = self._instruction_for(node, event)
-        proc = AgenticProcess(
-            instruction_content=instruction,
-            workdir=node.workdir,
-            visible=node.visible,
-            name=f"FlowNode: {node.name or node.program_ref}",
-            cli_config={"model": MODEL_SIZE_TO_CLI.get(node.model_size or "sm", "haiku")},
-        )
-        await proc.save()
-        await proc.start_pty(instruction=instruction, visible=node.visible)
-        logger.info("FlowManager: spawned %s for node %s on %s", proc.id, node.name, event.topic)
-        return proc.id
-
-    async def _dispatch_inject(self, node: FlowNode, event: TopicEvent) -> None:
-        from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
-
-        if not node.current_process_id:
-            await self._emit_dead_letter(event, node, reason="inject node has no current_process_id")
-            return
-        proc = await AgenticProcess.get_by_id(node.current_process_id)
-        if proc is None:
-            await self._emit_dead_letter(event, node, reason="inject target process not found")
-            return
-        await proc.prompt(self._instruction_for(node, event))
-
-    # ── error/protection topics (budget-exempt, non-recursive) ────────────────
-
-    async def _emit_protection(self, event: TopicEvent, reason: str) -> None:
-        await self._safe_meta_emit(
-            event, PROTECTION_TOPIC, {"reason": reason, "refused_topic": event.topic}
-        )
-
-    async def _emit_dead_letter(self, event: TopicEvent, node: FlowNode, reason: str = "listener failed") -> None:
-        await self._safe_meta_emit(
-            event,
-            f"{DEAD_LETTER_PREFIX}.{event.topic}",
-            {"reason": reason, "node_id": node.id, "node_name": node.name},
-        )
-
-    async def _safe_meta_emit(self, parent: TopicEvent, topic: str, payload: dict[str, Any]) -> None:
-        if parent.control:
-            return  # control events never spawn further control events
+        await self._broadcast_node_status(run, node, "started", {"program_kind": "pysdk"})
+        started = time.monotonic()
         try:
-            event = parent.child(topic, payload, source="flow_manager")
-            event.control = True
-            await self.emit(event)
+            result = await run_pysdk_node(run.flow.folder, node, fe, run)
+        finally:
+            self._finish_execution(run, rt)
+        duration = int((time.monotonic() - started) * 1000)
+        detail = {"duration_ms": duration, "exit_code": result.exit_code,
+                  "stdout": result.stdout[-2000:], "stderr": result.stderr[-2000:]}
+        if result.exit_code == 0:
+            run.journal.append("node_done", {"node": node.id, **detail})
+            await self._broadcast_node_status(run, node, "finished", detail)
+        else:
+            run.journal.append("node_error", {"node": node.id, **detail})
+            await self._broadcast_node_status(
+                run, node, "failed",
+                {**detail, "error": f"exit {result.exit_code}: {result.stderr.strip()[-300:]}"},
+            )
+
+    # ── emissions from nodes ──────────────────────────────────────────────────
+
+    async def emit_from_node(self, run: _Run, node_id: str, event: str, data: dict[str, Any]) -> None:
+        fe = FlowEvent(event=event, data=data, flow_id=run.flow.flow_id,
+                       execution_id=run.id, source_node=node_id, hop=run.hops + 1)
+        # Chain hops run as loop tasks, not stack frames — long chains (and the
+        # hop-capped cycle case) must never grow the call stack. The pending
+        # counter keeps the run alive until the scheduled hop lands.
+        run.pending += 1
+
+        async def _hop() -> None:
+            try:
+                await self._route(run, fe)
+            finally:
+                run.pending -= 1
+                self._maybe_finalize(run)
+
+        asyncio.ensure_future(_hop())
+
+    # ── run lifecycle ─────────────────────────────────────────────────────────
+
+    def _trip(self, run: _Run, reason: str) -> None:
+        run.error = reason
+        run.journal.append("tripped", {"reason": reason})
+        logger.warning("FlowManager: run %s tripped: %s", run.id, reason)
+
+    def _maybe_finalize_all(self) -> None:
+        for run in list(self._runs.values()):
+            self._maybe_finalize(run)
+
+    def _maybe_finalize(self, run: _Run) -> None:
+        if not run.maybe_sink():
+            return
+        run.finalized = True
+        asyncio.ensure_future(self._finalize(run))
+
+    async def _finalize(self, run: _Run) -> None:
+        from flow_sdk.builtin.agentic_flow_run import AgenticFlowRun, RunStatus
+
+        status = RunStatus.TRIPPED.value if run.error else RunStatus.COMPLETE.value
+        run.journal.append("run_end", {"status": status, "events": run.events,
+                                       "executions": run.executions, "error": run.error})
+        try:
+            row = await AgenticFlowRun.get_by_id(run.id)
+            if row is not None:
+                row.status = status
+                row.ended_at = now_iso()
+                row.event_count = run.events
+                row.execution_count = run.executions
+                row.error = run.error
+                await row.update()
         except Exception:
-            logger.exception("FlowManager: meta-emit failed for %s", topic)
+            logger.debug("FlowManager: run row end-upsert failed", exc_info=True)
+        await self._broadcast_run_event(run, "run_end", {"status": status})
+        self._runs.pop(run.id, None)
 
-    # ── journal + broadcast ───────────────────────────────────────────────────
+    # ── observability ─────────────────────────────────────────────────────────
 
-    async def _journal_and_broadcast(self, event: TopicEvent) -> None:
-        entry = event.model_dump(mode="json")
-        self._journal.append(entry)
+    def _journal_event(self, run: _Run, fe: FlowEvent) -> None:
+        run.journal.append("event", {"event": fe.event, "data": fe.data,
+                                     "source_node": fe.source_node, "hop": fe.hop})
+        asyncio.ensure_future(self._broadcast_run_event(
+            run, "event", {"event": fe.event, "data": fe.data, "node": fe.source_node}))
+
+    async def _broadcast_run_event(self, run: _Run, kind: str, payload: dict[str, Any]) -> None:
         try:
-            from flow_sdk.api.messages import TopicEventMessage
+            from flow_sdk.api.messages import FlowRunEventMessage
             from flow_sdk.server.routes.websocket import broadcast
 
-            await broadcast(TopicEventMessage(event=entry).model_dump_json())
+            await broadcast(FlowRunEventMessage(
+                flow_id=run.flow.flow_id, run_id=run.id, kind=kind,
+                event=str(payload.get("event") or ""), data=payload.get("data") or {},
+                node=str(payload.get("node") or ""), status=str(payload.get("status") or ""),
+                ts=now_iso(),
+            ).model_dump_json())
         except Exception:
-            # No server context (tests / CLI) — journal-only is fine.
-            logger.debug("FlowManager: WS broadcast unavailable", exc_info=True)
+            logger.debug("FlowManager: run-event broadcast unavailable", exc_info=True)
+
+    async def _broadcast_node_status(
+        self, run: _Run, node: FlowNodeDef, phase: str, detail: dict[str, Any] | None = None
+    ) -> None:
+        rt = self._node_rt(run.flow.flow_id, node.id)
+        try:
+            from flow_sdk.api.messages import FlowNodeStatusMessage
+            from flow_sdk.server.routes.websocket import broadcast
+
+            await broadcast(FlowNodeStatusMessage(
+                flow_id=run.flow.flow_id, run_id=run.id, node_id=node.id, phase=phase,
+                queued=len(rt.queue), active=rt.active, detail=detail or {}, ts=now_iso(),
+            ).model_dump_json())
+        except Exception:
+            logger.debug("FlowManager: node-status broadcast unavailable", exc_info=True)
+
+    # ── run queries (routes) ──────────────────────────────────────────────────
+
+    def live_run_ids(self) -> list[str]:
+        return list(self._runs.keys())
 
 
 _manager: Optional[FlowManager] = None

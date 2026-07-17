@@ -13,7 +13,7 @@ export * from './compute_node';
 export * from './flow';
 export * from './flow-node';
 export * from './agentic-flow';
-export * from './topic';
+export * from './agentic-flow-run';
 export * from './fs_item';
 export * from './job';
 export * from './job_execution';

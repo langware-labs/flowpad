@@ -1,236 +1,153 @@
 /**
- * Node inspector — the atlas reading-drawer content for a selected flow node:
- * meta grid, editable program + prompt, live status, executions with agent
- * output, and the node's events. Rendered inside .drawer by AgenticFlowsView.
+ * Node inspector (atlas drawer body) — per-node_type editing straight into
+ * graph.json via the store's mutateDoc:
+ * - trigger:        pick the Trigger entity it references (emits `fired`).
+ * - process_runner: program kind/ref, prompt, model size, execution mode.
+ * - pysdk:          script path (relative to the flow folder) + last stdio.
+ * Plus shared: rename, delete node (with its edges), last execution status.
  */
-import { useEffect, useState } from 'react';
-import apiClient from '@sdk/client';
-import { flowManager, topicMatches } from '@sdk/services/flow-manager';
-import { fmtDuration, fmtRelative, nodeStatusLine, parseIsoMs } from '../fmt';
-import { useStudio, type ExecutionEntry } from '../store';
+import { useCallback } from 'react';
+import { useTriggers } from '@src/hooks/useTriggers';
+import type { FlowDocNode } from '@sdk/services/agentic-flows';
+import { fmtDuration } from '../fmt';
+import { useStudio } from '../store';
 
-// Stable empty reference — an inline `?? []` in a zustand selector returns a
-// fresh array every snapshot check and loops useSyncExternalStore forever.
-const NO_EXECUTIONS: ExecutionEntry[] = [];
-
-interface TranscriptEntry {
-  kind?: string;
-  text?: string;
-}
-
-/** Assistant output from a transcript/full payload: every non-empty
- * `assistant_message.text`, in order. */
-function extractOutput(entries: TranscriptEntry[]): string {
-  return entries
-    .filter((e) => e.kind === 'assistant_message' && typeof e.text === 'string' && e.text.trim())
-    .map((e) => (e.text as string).trim())
-    .join('\n---\n');
-}
-
-function Execution({ ex }: { ex: ExecutionEntry }) {
-  const openProcess = useStudio((s) => s.openProcess);
-  const [output, setOutput] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [now] = useState(() => Date.now());
-
-  const fetchOutput = async () => {
-    if (!ex.processId) return;
-    setLoading(true);
-    try {
-      const data = await apiClient.post<{ entries?: TranscriptEntry[] }>(
-        `/graph/agentic_process/${ex.processId}/transcript/full`,
-        {},
-      );
-      setOutput(extractOutput(data?.entries ?? []) || '(no assistant output found)');
-    } catch (e) {
-      setOutput(`failed to load output: ${e}`);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const icon = ex.phase === 'running' ? '▶' : ex.phase === 'failed' ? '✗' : '✓';
-  const color =
-    ex.phase === 'running' ? 'var(--rubric)' : ex.phase === 'failed' ? 'var(--afl-err)' : 'var(--ink-soft)';
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="hop" style={{ borderColor: color }}>
-      <div className="row" style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>
-        <span style={{ color }}>{icon}</span>
-        <b>{ex.topic}</b>
-        <span className="faint">
-          {ex.durationMs ? fmtDuration(ex.durationMs) : ex.phase} · {fmtRelative(ex.startedAt, now)}
-        </span>
-        {ex.processId && (
-          <a
-            style={{ marginLeft: 'auto', color: 'var(--rubric)', cursor: 'pointer' }}
-            onClick={() => openProcess?.(ex.processId!)}
-          >
-            open ⬈
-          </a>
-        )}
-      </div>
-      {ex.error && <div className="err">✗ {ex.error}</div>}
-      {ex.processId && ex.phase !== 'running' && output === null && (
-        <button className="mini" onClick={fetchOutput} disabled={loading} style={{ marginTop: 4 }}>
-          {loading ? 'loading…' : 'show output'}
-        </button>
-      )}
-      {output !== null && <pre>{output}</pre>}
+    <div className="afl-field">
+      <label>{label}</label>
+      {children}
     </div>
   );
 }
 
-export function NodeInspector() {
-  const nodeId = useStudio((s) => s.selectedNodeId);
-  const snapshot = useStudio((s) => s.snapshot);
-  const setSnapshot = useStudio((s) => s.setSnapshot);
-  const live = useStudio((s) => (nodeId ? s.nodeStatus[nodeId] : undefined));
-  const proc = useStudio((s) => (live?.processId ? s.procStatus[live.processId] : undefined));
-  const executions = useStudio((s) =>
-    nodeId ? (s.executions[nodeId] ?? NO_EXECUTIONS) : NO_EXECUTIONS,
-  );
-  const journal = useStudio((s) => s.journal);
+export function NodeInspector({ node }: { node: FlowDocNode }) {
+  const mutateDoc = useStudio((s) => s.mutateDoc);
+  const selectNode = useStudio((s) => s.selectNode);
+  const live = useStudio((s) => s.nodeStatus[node.id]);
+  const { triggers } = useTriggers();
 
-  const node = snapshot?.nodes.find((n) => n.id === nodeId);
-  const [programRef, setProgramRef] = useState('');
-  const [prompt, setPrompt] = useState('');
-  const [dirty, setDirty] = useState(false);
-  const [saveStatus, setSaveStatus] = useState<string | null>(null);
-  const [now, setNow] = useState(() => Date.now());
-
-  useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 3000);
-    return () => clearInterval(id);
-  }, []);
-
-  // Re-seed editors when switching nodes (not on background snapshot refreshes
-  // while the user is mid-edit).
-  useEffect(() => {
-    if (!node) return;
-    setProgramRef(node.program_ref ?? '');
-    setPrompt(node.prompt ?? '');
-    setDirty(false);
-    setSaveStatus(null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nodeId]);
-
-  if (!nodeId || !node) return null;
-
-  const save = async () => {
-    setSaveStatus(null);
-    try {
-      await apiClient.put(`/graph/flow_node/${nodeId}`, {
-        program_ref: programRef,
-        prompt: prompt || null,
+  const patch = useCallback(
+    (fn: (n: FlowDocNode) => void) => {
+      mutateDoc((d) => {
+        const target = d.nodes.find((x) => x.id === node.id);
+        if (target) fn(target);
+        return d;
       });
-      const snap = await flowManager.fetchGraph();
-      if (snap) setSnapshot(snap);
-      setDirty(false);
-      setSaveStatus('saved ✓');
-    } catch (e) {
-      setSaveStatus(String(e));
-    }
+    },
+    [mutateDoc, node.id],
+  );
+
+  const nd = node.node_data as Record<string, unknown>;
+  const setData = (key: string, value: unknown) => patch((n) => (n.node_data[key] = value));
+
+  const deleteNode = () => {
+    selectNode(null);
+    mutateDoc((d) => ({
+      ...d,
+      nodes: d.nodes.filter((n) => n.id !== node.id),
+      edges: d.edges.filter((e) => e.from.node !== node.id && e.to.node !== node.id),
+    }));
   };
 
-  const listens = (snapshot?.edges ?? [])
-    .filter((e) => e.kind === 'listens' && e.node_id === nodeId)
-    .map((e) => e.topic);
-  const events = [...journal]
-    .reverse()
-    .map((e) => {
-      const received = listens.some((t) => topicMatches(t, e.topic));
-      const emitted = e.source === `flow_node:${nodeId}`;
-      return received || emitted ? { e, dir: emitted ? 'out' : 'in' } : null;
-    })
-    .filter(Boolean)
-    .slice(0, 15) as Array<{ e: (typeof journal)[number]; dir: 'in' | 'out' }>;
-
-  const statusLine = nodeStatusLine(live, proc?.workerStatus, now);
-
   return (
-    <>
-      <div className="d-meta">
-        <div className="m">
-          <div className="k">program</div>
-          <div className="v">{node.program_kind}</div>
-        </div>
-        <div className="m">
-          <div className="k">delivery</div>
-          <div className="v">{node.delivery_mode}</div>
-        </div>
-        <div className="m">
-          <div className="k">execution</div>
-          <div className="v">
-            {node.execution_mode === 'parallel' ? `parallel ×${node.parallel_limit}` : 'serial'}
-          </div>
-        </div>
-        <div className="m">
-          <div className="k">model</div>
-          <div className="v">{node.model_size ?? 'sm'}</div>
-        </div>
-        <div className="m">
-          <div className="k">status</div>
-          <div className="v stl" style={{ color: statusLine.color }}>
-            {statusLine.text}
-          </div>
-        </div>
-      </div>
+    <div className="afl-inspector">
+      <Field label="name">
+        <input value={node.name ?? ''} onChange={(e) => patch((n) => (n.name = e.target.value))} />
+      </Field>
 
-      <label>
-        {node.program_kind === 'skill'
-          ? 'Skill'
-          : node.program_kind === 'callback'
-            ? 'Callback'
-            : 'Instructions'}
-      </label>
-      <textarea
-        rows={node.program_kind === 'instruction' ? 5 : 1}
-        value={programRef}
-        onChange={(e) => {
-          setProgramRef(e.target.value);
-          setDirty(true);
-        }}
-      />
-      <label>Prompt (appended on delivery)</label>
-      <textarea
-        rows={3}
-        value={prompt}
-        onChange={(e) => {
-          setPrompt(e.target.value);
-          setDirty(true);
-        }}
-        placeholder="e.g. keep it under 10 words"
-      />
-      <div className="row">
-        <button className="primary" onClick={save} disabled={!dirty}>
-          Save
-        </button>
-        {saveStatus && <span className="faint">{saveStatus}</span>}
-      </div>
+      {node.node_type === 'trigger' && (
+        <Field label="trigger entity">
+          <select value={String(nd.typeid ?? '')} onChange={(e) => setData('typeid', e.target.value)}>
+            <option value="">— pick a trigger —</option>
+            {triggers.map((t) => (
+              <option key={t.id} value={`trigger-${t.id}`}>
+                {t.name || t.id}
+              </option>
+            ))}
+          </select>
+        </Field>
+      )}
 
-      <h3>Executions</h3>
-      {executions.length === 0 && <div className="faint">none this session</div>}
-      {executions.map((ex, i) => (
-        <Execution key={`${ex.startedAt}-${i}`} ex={ex} />
-      ))}
+      {node.node_type === 'process_runner' && (
+        <>
+          <Field label="program kind">
+            <select value={String(nd.program_kind ?? 'instruction')} onChange={(e) => setData('program_kind', e.target.value)}>
+              <option value="instruction">instruction (agent prompt)</option>
+              <option value="skill">skill (agent /skill)</option>
+              <option value="callback">callback (in-process python)</option>
+            </select>
+          </Field>
+          <Field label={nd.program_kind === 'callback' ? 'callback name' : nd.program_kind === 'skill' ? 'skill name' : 'instruction ref'}>
+            <input value={String(nd.program_ref ?? '')} onChange={(e) => setData('program_ref', e.target.value)} />
+          </Field>
+          {nd.program_kind !== 'callback' && (
+            <>
+              <Field label="prompt (appended to the event payload)">
+                <textarea rows={4} value={String(nd.prompt ?? '')} onChange={(e) => setData('prompt', e.target.value)} />
+              </Field>
+              <Field label="model size">
+                <select value={String(nd.model_size ?? 'sm')} onChange={(e) => setData('model_size', e.target.value)}>
+                  <option value="sm">sm → haiku</option>
+                  <option value="md">md → sonnet</option>
+                  <option value="lg">lg → opus</option>
+                </select>
+              </Field>
+            </>
+          )}
+          <Field label="execution">
+            <select value={String(nd.execution_mode ?? 'serial')} onChange={(e) => setData('execution_mode', e.target.value)}>
+              <option value="serial">serial (queue)</option>
+              <option value="parallel">parallel</option>
+            </select>
+          </Field>
+          {nd.execution_mode === 'parallel' && (
+            <Field label="parallel limit">
+              <input
+                type="number"
+                min={1}
+                value={Number(nd.parallel_limit ?? 1)}
+                onChange={(e) => setData('parallel_limit', Math.max(1, Number(e.target.value) || 1))}
+              />
+            </Field>
+          )}
+          <Field label="merge identical queued events">
+            <input type="checkbox" checked={!!nd.merge_identical} onChange={(e) => setData('merge_identical', e.target.checked)} />
+          </Field>
+        </>
+      )}
 
-      <h3>Events</h3>
-      {events.length === 0 && <div className="faint">nothing heard or emitted yet</div>}
-      <table>
-        <tbody>
-          {events.map(({ e, dir }, i) => (
-            <tr key={`${e.ts}-${i}`}>
-              <td style={{ color: dir === 'out' ? 'var(--afl-warn)' : 'var(--flow-hot)', width: 20 }}>
-                {dir === 'out' ? '↗' : '↘'}
-              </td>
-              <td>{e.topic}</td>
-              <td className="faint" style={{ whiteSpace: 'nowrap' }}>
-                {fmtRelative(parseIsoMs(e.ts), now)}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </>
+      {node.node_type === 'pysdk' && (
+        <>
+          <Field label="script (relative to the flow folder)">
+            <input
+              value={String(nd.script ?? '')}
+              placeholder="scripts/my_node.py"
+              onChange={(e) => setData('script', e.target.value)}
+            />
+          </Field>
+          <p className="afl-note">
+            The file must define <code>on_flow_event(event_name, data, flow_ctx)</code>; emit with{' '}
+            <code>flow_ctx.emit_flow_event(key, value)</code>.
+          </p>
+          {(live?.lastStdout || live?.lastStderr || live?.lastExitCode !== undefined) && (
+            <div className="afl-stdio">
+              <div className="eye">
+                last run{live?.lastExitCode !== undefined ? ` · exit ${live.lastExitCode}` : ''}
+                {live?.lastDurationMs ? ` · ${fmtDuration(live.lastDurationMs)}` : ''}
+              </div>
+              {live?.lastStdout && <pre className="out">{live.lastStdout}</pre>}
+              {live?.lastStderr && <pre className="err">{live.lastStderr}</pre>}
+            </div>
+          )}
+        </>
+      )}
+
+      {live?.error && <div className="afl-status warn">✗ {live.error}</div>}
+
+      <button className="afl-danger" onClick={deleteNode}>
+        Delete node
+      </button>
+    </div>
   );
 }

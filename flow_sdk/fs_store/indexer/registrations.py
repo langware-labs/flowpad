@@ -22,6 +22,8 @@ import flow_sdk.builtin.project  # noqa: F401
 import flow_sdk.builtin.skill  # noqa: F401
 import flow_sdk.builtin.task  # noqa: F401
 import flow_sdk.builtin.whiteboard  # noqa: F401
+import flow_sdk.builtin.agentic_flow  # noqa: F401
+import flow_sdk.builtin.agentic_flow_run  # noqa: F401
 import flow_sdk.builtin.workflow  # noqa: F401
 import flow_sdk.fs_store.indexer.functions.agent  # noqa: F401
 import flow_sdk.fs_store.indexer.functions.claude_command  # noqa: F401
@@ -48,6 +50,7 @@ import flow_sdk.fs_store.indexer.functions.spec  # noqa: F401
 import flow_sdk.fs_store.indexer.functions.task  # noqa: F401
 import flow_sdk.fs_store.indexer.functions.todo  # noqa: F401
 import flow_sdk.fs_store.indexer.functions.whiteboard  # noqa: F401
+import flow_sdk.fs_store.indexer.functions.agentic_flow  # noqa: F401
 import flow_sdk.fs_store.indexer.functions.workflow  # noqa: F401
 
 # Operations modules — register types that have no walker but are CRUD-able.

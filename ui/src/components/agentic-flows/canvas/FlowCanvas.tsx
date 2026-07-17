@@ -1,106 +1,174 @@
 /**
- * The wiring canvas. Controlled React Flow: positioned nodes/edges derive from
- * the snapshot (dagre layout on structural change only); live events pulse
- * edges without touching graph data. Connecting a flow-node handle to a topic
- * handle creates a Listens edge via the SDK.
+ * The flow canvas. Structure derives from graph.json (doc); positions from
+ * display.json (auto-grid fallback for unplaced nodes). React Flow keeps a
+ * local mirror (so selection/drag stay native); the mirror is rebuilt on
+ * structural change. Every structural gesture is a doc mutation (persisted
+ * debounced by the store's writers): connect → new edge, ⌫ → drop
+ * nodes+edges, palette drop → new node. Drag-end writes display.json only.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Background,
   Controls,
   ReactFlow,
+  ReactFlowProvider,
+  applyEdgeChanges,
   applyNodeChanges,
+  useReactFlow,
   type Connection,
   type Edge,
+  type EdgeChange,
   type Node,
   type NodeChange,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import apiClient from '@sdk/client';
-import { flowManager } from '@sdk/services/flow-manager';
-import { edgeId, layoutSnapshot } from './layout';
-import { FlowNodeCard, TopicPill } from './nodes';
+import type { FlowDocNode } from '@sdk/services/agentic-flows';
+import { StationCard, TriggerNode } from './nodes';
 import { PulseEdge } from './PulseEdge';
-import { useStudio } from '../store';
+import { newNodeId, useStudio } from '../store';
+import { PALETTE_DRAG_MIME, defaultNodeData, paletteLabel } from '../panels/PaletteTab';
 
-const nodeTypes = { flowNode: FlowNodeCard, topicNode: TopicPill };
+const nodeTypes = { trigger: TriggerNode, station: StationCard };
 const edgeTypes = { pulse: PulseEdge };
 
-export function FlowCanvas() {
-  const snapshot = useStudio((s) => s.snapshot);
-  const setSnapshot = useStudio((s) => s.setSnapshot);
+/** Default event emitted by a source node type — seeds a new edge's label. */
+function defaultEventFor(node: FlowDocNode | undefined): string {
+  if (!node) return '*';
+  if (node.node_type === 'trigger') return 'fired';
+  if (node.node_type === 'process_runner') return 'done';
+  return '*';
+}
+
+function CanvasInner() {
+  const doc = useStudio((s) => s.doc);
+  const mutateDoc = useStudio((s) => s.mutateDoc);
+  const { screenToFlowPosition } = useReactFlow();
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
 
-  // Re-layout on structural change only.
+  // Rebuild the mirror on structural change only (ids/types/edge routing/name),
+  // not on every keystroke in the inspector or drag frame.
   const structureKey = useMemo(() => {
-    if (!snapshot) return '';
+    if (!doc) return '';
     return [
-      snapshot.nodes.map((n) => n.id).join(','),
-      snapshot.topics.map((t) => t.id).join(','),
-      snapshot.edges.map((e) => edgeId(e.kind, e.node_id, e.topic_id)).join(','),
+      doc.nodes.map((n) => `${n.id}:${n.node_type}:${n.name}:${JSON.stringify(n.node_data)}`).join(','),
+      doc.edges.map((e) => `${e.id}:${e.from.node}:${e.from.event}:${e.to.node}`).join(','),
     ].join('|');
-  }, [snapshot]);
+  }, [doc]);
 
   useEffect(() => {
-    if (!snapshot) return;
-    const laid = layoutSnapshot(snapshot);
-    setNodes(laid.nodes);
-    setEdges(laid.edges);
+    if (!doc) {
+      setNodes([]);
+      setEdges([]);
+      return;
+    }
+    const display = useStudio.getState().display;
+    setNodes((prev) => {
+      const prevById = new Map(prev.map((n) => [n.id, n]));
+      return doc.nodes.map((n, i) => ({
+        id: n.id,
+        type: n.node_type === 'trigger' ? 'trigger' : 'station',
+        position:
+          prevById.get(n.id)?.position ??
+          display.nodes[n.id] ?? { x: 80 + (i % 3) * 300, y: 80 + Math.floor(i / 3) * 170 },
+        selected: prevById.get(n.id)?.selected ?? false,
+        data: { def: n },
+      }));
+    });
+    setEdges((prev) => {
+      const prevById = new Map(prev.map((e) => [e.id, e]));
+      return doc.edges.map((e) => ({
+        id: e.id,
+        source: e.from.node,
+        target: e.to.node,
+        type: 'pulse',
+        selected: prevById.get(e.id)?.selected ?? false,
+        data: { event: e.from.event },
+      }));
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [structureKey]);
 
-  // Structural refresh only: a topic event may have minted new topics or
-  // stamped an emits edge — refetch the wiring (debounced). Liveness
-  // (counters/pulses/status) is fully push-driven via node_status; no polling.
-  useEffect(() => {
-    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
-    const onEvent = (e: { topic: string }) => {
-      const snap = useStudio.getState().snapshot;
-      const known = snap?.topics.some((t) => t.name === e.topic);
-      const emitsKnown = snap?.edges.some((ed) => ed.kind === 'emits' && ed.topic === e.topic);
-      if (known && emitsKnown) return;
-      if (refreshTimer) clearTimeout(refreshTimer);
-      refreshTimer = setTimeout(async () => {
-        const fresh = await flowManager.fetchGraph().catch(() => undefined);
-        if (fresh) setSnapshot(fresh);
-      }, 800);
-    };
-    flowManager.on('topic_event', onEvent);
-    return () => {
-      flowManager.off('topic_event', onEvent);
-      if (refreshTimer) clearTimeout(refreshTimer);
-    };
-  }, [setSnapshot]);
-
   const onNodesChange = useCallback((changes: NodeChange[]) => {
-    // Selection drives the inspector: selecting a flow node opens its panel
-    // (more reliable than onNodeClick, which a 1px drag suppresses).
     for (const ch of changes) {
-      if (ch.type === 'select' && ch.selected && ch.id.startsWith('n:')) {
-        useStudio.getState().selectNode(ch.id.slice(2));
+      // Selection opens the inspector (more reliable than onNodeClick, which a
+      // 1px drag suppresses). Position persists on drag-END only.
+      if (ch.type === 'select' && ch.selected) {
+        useStudio.getState().selectNode(ch.id);
+      }
+      if (ch.type === 'position' && !ch.dragging && ch.position) {
+        useStudio.getState().moveNode(ch.id, Math.round(ch.position.x), Math.round(ch.position.y));
       }
     }
     setNodes((ns) => applyNodeChanges(changes, ns));
   }, []);
 
-  // Drag node→topic (or topic→node) to declare a Listens edge.
+  const onEdgesChange = useCallback((changes: EdgeChange[]) => {
+    setEdges((es) => applyEdgeChanges(changes, es));
+  }, []);
+
   const onConnect = useCallback(
-    async (conn: Connection) => {
-      const src = conn.source ?? '';
-      const tgt = conn.target ?? '';
-      const nodeId = src.startsWith('n:') ? src.slice(2) : tgt.startsWith('n:') ? tgt.slice(2) : null;
-      const topicId = src.startsWith('t:') ? src.slice(2) : tgt.startsWith('t:') ? tgt.slice(2) : null;
-      if (!nodeId || !topicId) return;
-      try {
-        await apiClient.post(`/graph/flow_node/${nodeId}/wire`, { topic_id: topicId });
-      } catch (err) {
-        console.error('wire failed', err);
-      }
-      const snap = await flowManager.fetchGraph();
-      if (snap) setSnapshot(snap);
+    (conn: Connection) => {
+      if (!conn.source || !conn.target || conn.source === conn.target) return;
+      mutateDoc((d) => {
+        const src = d.nodes.find((n) => n.id === conn.source);
+        const tgt = d.nodes.find((n) => n.id === conn.target);
+        if (!src || !tgt || tgt.node_type === 'trigger') return d;
+        d.edges.push({
+          id: newNodeId(),
+          from: { node: conn.source!, event: defaultEventFor(src) },
+          to: { node: conn.target! },
+        });
+        return d;
+      });
     },
-    [setSnapshot],
+    [mutateDoc],
+  );
+
+  const onNodesDelete = useCallback(
+    (deleted: Node[]) => {
+      const gone = new Set(deleted.map((n) => n.id));
+      useStudio.getState().selectNode(null);
+      mutateDoc((d) => ({
+        ...d,
+        nodes: d.nodes.filter((n) => !gone.has(n.id)),
+        edges: d.edges.filter((e) => !gone.has(e.from.node) && !gone.has(e.to.node)),
+      }));
+    },
+    [mutateDoc],
+  );
+
+  const onEdgesDelete = useCallback(
+    (deleted: Edge[]) => {
+      const gone = new Set(deleted.map((e) => e.id));
+      mutateDoc((d) => ({ ...d, edges: d.edges.filter((e) => !gone.has(e.id)) }));
+    },
+    [mutateDoc],
+  );
+
+  // Palette drop → new node at the drop point (n8n pattern).
+  const onDragOver = useCallback((e: React.DragEvent) => {
+    if (e.dataTransfer.types.includes(PALETTE_DRAG_MIME)) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+    }
+  }, []);
+
+  const onDrop = useCallback(
+    (e: React.DragEvent) => {
+      const nodeType = e.dataTransfer.getData(PALETTE_DRAG_MIME) as FlowDocNode['node_type'];
+      if (!nodeType) return;
+      e.preventDefault();
+      const pos = screenToFlowPosition({ x: e.clientX, y: e.clientY });
+      const id = newNodeId();
+      useStudio.getState().moveNode(id, Math.round(pos.x - 110), Math.round(pos.y - 40));
+      mutateDoc((d) => {
+        d.nodes.push({ id, node_type: nodeType, name: paletteLabel(nodeType), node_data: defaultNodeData(nodeType) });
+        return d;
+      });
+      useStudio.getState().selectNode(id);
+    },
+    [mutateDoc, screenToFlowPosition],
   );
 
   return (
@@ -110,7 +178,13 @@ export function FlowCanvas() {
       nodeTypes={nodeTypes}
       edgeTypes={edgeTypes}
       onNodesChange={onNodesChange}
+      onEdgesChange={onEdgesChange}
       onConnect={onConnect}
+      onNodesDelete={onNodesDelete}
+      onEdgesDelete={onEdgesDelete}
+      onDragOver={onDragOver}
+      onDrop={onDrop}
+      deleteKeyCode={['Backspace', 'Delete']}
       fitView
       colorMode="dark"
       proOptions={{ hideAttribution: true }}
@@ -118,5 +192,13 @@ export function FlowCanvas() {
       <Background gap={24} color="#262a38" />
       <Controls />
     </ReactFlow>
+  );
+}
+
+export function FlowCanvas() {
+  return (
+    <ReactFlowProvider>
+      <CanvasInner />
+    </ReactFlowProvider>
   );
 }
