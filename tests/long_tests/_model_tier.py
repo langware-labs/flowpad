@@ -29,6 +29,6 @@ def small_model_for(worker: object) -> str | None:
     ``"copilot"`` / ``"claude_code"``) so every call site can use it as-is.
     """
     key = worker.value if isinstance(worker, WorkerType) else str(worker)
-    if key == WorkerType.COPILOT.value or key == "copilot":
+    if key == WorkerType.COPILOT.value:
         return None
     return ModelTier.SM.value

@@ -233,8 +233,8 @@ def make_process(worker_id) -> Callable[..., Awaitable]:
     ``codex``). The mapping lives in the fixture, not test bodies.
     """
     from flow_sdk.builtin.agentic_process import AgenticProcess
-    from flow_sdk.builtin.agentic_process.model_tiers import ModelTier
     from flow_sdk.flowpad_types.enums import WorkerType
+    from tests.long_tests._model_tier import small_model_for
 
     _DRIVER_TO_ENUM = {
         "claude": WorkerType.CLAUDE_CODE,
@@ -244,21 +244,14 @@ def make_process(worker_id) -> Callable[..., Awaitable]:
     enum_value = _DRIVER_TO_ENUM[worker_id]
 
     async def _make(**kwargs):
-        # Default every agentic-process test to the small model tier so the live
-        # CLI burns the cheapest/fastest model (haiku / gpt-5.4-mini). The tier is
-        # worker-blind — each driver maps ``sm`` to its own family at spawn. Tests
-        # that need a specific model still win: their ``cli_config['model']`` is
-        # preserved, and only the key is defaulted when absent.
-        #
-        # Copilot is deliberately excluded: COPILOT_MODEL_TIERS still carries
-        # codex's names (gpt-5.4-mini/gpt-5.4), which the Copilot CLI rejects —
-        # "Model 'gpt-5.4-mini' from CLI argument is not available" (a hard error
-        # for md). Copilot's own auto mode already resolves simple prompts to
-        # claude-haiku-4.5, i.e. its small tier, so leaving the model unset is
-        # both correct and already cheap.
+        # Default every agentic-process test to the cheapest model the worker can
+        # actually resolve (see ``_model_tier.small_model_for`` — Copilot must stay
+        # unset). Tests that need a specific model still win: their
+        # ``cli_config['model']`` is preserved, and only the key is defaulted.
         cli_config = {**(kwargs.pop("cli_config", None) or {})}
-        if enum_value is not WorkerType.COPILOT:
-            cli_config.setdefault("model", ModelTier.SM.value)
+        model = small_model_for(enum_value)
+        if model:
+            cli_config.setdefault("model", model)
         return await AgenticProcess(
             worker_type=enum_value, cli_config=cli_config, **kwargs
         ).save()

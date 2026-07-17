@@ -27,23 +27,20 @@ from pathlib import Path
 import pytest
 
 from flow_sdk.builtin.agentic_process import AgenticProcess
-from flow_sdk.builtin.agentic_process.model_tiers import ModelTier
 from flow_sdk.builtin.faas.compute_node import ComputeNode
 from flow_sdk.flowpad_types.enums import WorkerType
+from tests.long_tests._model_tier import small_model_for
 
 ITERATIONS = 10
 # conftest sandboxes HOME; the CLIs need their REAL home (auth + transcript dir).
 _REAL_HOME = os.environ.get("FLOWPAD_PRE_SANDBOX_HOME") or os.path.expanduser("~")
 
-# worker_type → (CLI binary, model). Claude and Codex map the sm/md/lg tiers to a
-# real model, so ask them for the cheapest one via the enum. Copilot is left unset:
-# COPILOT_MODEL_TIERS still carries codex's names (gpt-5.4-mini/gpt-5.4) and the
-# Copilot CLI rejects them ("Model ... is not available"). Its auto mode already
-# picks claude-haiku-4.5 — its small tier — so unset is both correct and cheap.
+# worker_type → CLI binary. The model is the cheapest tier each worker can resolve
+# (see ``_model_tier.small_model_for`` — Copilot must stay unset).
 WORKERS = {
-    "claude_code": {"bin": "claude", "model": ModelTier.SM.value},
-    "codex": {"bin": "codex", "model": ModelTier.SM.value},
-    "copilot": {"bin": "copilot", "model": None},
+    "claude_code": {"bin": "claude", "model": small_model_for("claude_code")},
+    "codex": {"bin": "codex", "model": small_model_for("codex")},
+    "copilot": {"bin": "copilot", "model": small_model_for("copilot")},
 }
 
 
