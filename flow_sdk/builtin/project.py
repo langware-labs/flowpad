@@ -264,6 +264,16 @@ class Project(Entity):
                     continue
                 seen.add(key)
                 entry = dict(self.get_context_entry_data(tid) or {})
+                # Receiver path: a project shared TO this instance carries the
+                # value-free reference in the mirrored ``shared_secret_origins``
+                # map (hub-authoritative), not in the local sidecar — the sidecar
+                # is only populated on the machine that authored the pointer. Fall
+                # back to the mirror so a received secret reads its metadata,
+                # mirroring how context folders read ``shared_context_origins``.
+                if not entry and bucket == "shared":
+                    mirror = self.shared_secret_origins.get(key)
+                    if isinstance(mirror, dict):
+                        entry = dict(mirror)
                 locator = entry.get("locator") if isinstance(entry.get("locator"), dict) else {}
                 out.append(
                     {
@@ -1037,8 +1047,10 @@ class Project(Entity):
         from flow_sdk.builtin.secret_origin_field import SECRET_ORIGIN_ADAPTER  # noqa: PLC0415
 
         rows: list[dict[str, Any]] = []
-        for tid in self.context_of_type("secret_origin", bucket="both"):
-            entry = self.get_context_entry_data(tid) or {}
+        # Drive off the value-free ``secret_origins`` summary — it reads the local
+        # sidecar on the authoring machine and the mirrored ``shared_secret_origins``
+        # on a receiver, so a shared pointer resolves on both sides.
+        for entry in self.secret_origins:
             try:
                 loc = SECRET_ORIGIN_ADAPTER.validate_python(entry.get("locator") or {})
                 driver = get_secret_origin_driver(loc.kind)
@@ -1051,7 +1063,7 @@ class Project(Entity):
             hint = driver.setup_hint(loc)
             rows.append(
                 {
-                    "typeid": str(tid),
+                    "typeid": entry.get("typeid"),
                     "name": entry.get("name"),
                     "env_var": entry.get("env_var"),
                     "kind": loc.kind,
@@ -1086,10 +1098,11 @@ class Project(Entity):
         want_typeid = (typeid or "").strip()
         want_env_var = (env_var or "").strip()
         entry = None
-        for tid in self.context_of_type("secret_origin", bucket="both"):
-            data = self.get_context_entry_data(tid) or {}
-            if (want_typeid and str(tid) == want_typeid) or (want_env_var and data.get("env_var") == want_env_var):
-                entry = data
+        for row in self.secret_origins:
+            if (want_typeid and row.get("typeid") == want_typeid) or (
+                want_env_var and row.get("env_var") == want_env_var
+            ):
+                entry = row
                 break
         if entry is None:
             return ApiFailResponse(message="secret pointer not found on this project")

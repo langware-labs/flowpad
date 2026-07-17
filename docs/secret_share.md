@@ -215,15 +215,16 @@ value-free).
 
 ## Gaps and follow-ups
 
-1. **Cross-instance transport over the hub.** The value-free reference is built
-   and materialized correctly (unit-tested), but the `shared_secret_origins`
-   project-metadata field is **dropped by the hub** — the hub `Project` model
-   doesn't declare it (`extra="ignore"`), so it doesn't survive the round-trip.
-   The intended durable transport is the **git-asset path** (`assets/sodot/*.json`
-   travels inside a git-shared context folder, the proven
-   `git_folder_share_two_client` mechanism); wiring the reference through a shared
-   git folder — or declaring + persisting the hub field — is the remaining work to
-   make project-secret sharing land on a receiver.
+1. **Git-asset transport (durable/offline).** Cross-instance transport over the
+   hub now works: the hub `Project` model declares `shared_secret_origins`, so the
+   value-free reference survives the round-trip and materializes on the receiver
+   with a **convergent id** (end-to-end covered by
+   `ui/tests/hub/secret_share_two_client.test.ts`). The still-open durable path is
+   the **git-asset representation** (`assets/sodot/*.json` travelling inside a
+   git-shared context folder, the `git_folder_share_two_client` mechanism) so a
+   secret reference travels with a git-shared project even without a live hub
+   share; the asset writer/indexer exist, but the `add-secret-pointer` → shared
+   git folder wiring is the remaining work.
 2. **Hub value resolution** — `flowpad-hub` resolve is a stub; a hub-hosted secret
    injects nothing until the hub adds an authenticated, `allowed_to_use`-gated,
    audited value-fetch endpoint plus the client resolver.

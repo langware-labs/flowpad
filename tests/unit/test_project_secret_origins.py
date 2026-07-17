@@ -128,6 +128,41 @@ async def test_receive_materializes_shared_secret_pointers(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_receiver_reads_shared_pointer_without_sidecar(tmp_path):
+    """Receiver-mirror path: a project shared TO this instance carries the
+    value-free reference in the mirrored ``shared_secret_origins`` map, but the
+    per-typeid ``shared_context_entity_data`` sidecar (populated only on the
+    authoring machine) is empty. ``secret_origins`` must still resolve full
+    metadata by falling back to the mirror — otherwise the received secret reads
+    blank (the hub-share regression: empty name/env_var/locator on the receiver).
+    """
+    project = await _make_project(tmp_path)
+    tid = TypeId.to_typeid("secret_origin-11111111-1111-4111-8111-111111111111")
+    # Link the typeid into the shared bucket WITHOUT sidecar data, exactly as the
+    # flat ``shared_context_entities`` mirror does on invitation-accept.
+    project.add_shared_context_entities(tid)
+    project.shared_secret_origins = {
+        str(tid): {
+            "name": "OpenAI",
+            "env_var": "OPENAI_API_KEY",
+            "kind": "env-local",
+            "locator": {"kind": "env-local", "env_key": "OPENAI_API_KEY"},
+            "sod_store": "env-local",
+        }
+    }
+    assert project.get_context_entry_data(tid) is None  # sidecar genuinely empty
+
+    summary = project.secret_origins[0]
+    assert summary["typeid"] == str(tid)
+    assert summary["name"] == "OpenAI"
+    assert summary["env_var"] == "OPENAI_API_KEY"
+    assert summary["kind"] == "env-local"
+    assert summary["locator"] == {"kind": "env-local", "env_key": "OPENAI_API_KEY"}
+    assert summary["sod_store"] == "env-local"
+    assert summary["scope"] == "shared"
+
+
+@pytest.mark.asyncio
 async def test_receive_rejects_malformed_shared_secret_pointers(tmp_path):
     project = await _make_project(tmp_path)
     payload = {
