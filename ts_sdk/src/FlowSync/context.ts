@@ -21,7 +21,6 @@ import { IChatOptionsValues } from '../entities/flow/flow-types';
 import { Project } from '../entities/project';
 import { User } from '../entities/user';
 import type { Shell } from '../entities/shell';
-import { Workflow } from '../entities/workflow';
 import { Workspace } from '../entities/workspace';
 import { TypeId } from '../models/TypeId';
 import { UserWarning } from '../models/UserWarning';
@@ -105,7 +104,6 @@ export enum ContextEntitiesEnum {
   CurrentDomainTypeId = 'CurrentDomainTypeId',
   CurrentVisitorTypeId = 'CurrentVisitorTypeId',
   CurrentAgentTypeId = 'CurrentAgentTypeId',
-  CurrentWorkflowTypeId = 'CurrentWorkflowTypeId',
   CurrentProcessTypeId = 'CurrentProcessTypeId',
 }
 
@@ -168,7 +166,6 @@ class DataContext extends EventEmitter {
     [ContextEntitiesEnum.CurrentDomainTypeId, null],
     [ContextEntitiesEnum.CurrentVisitorTypeId, null],
     [ContextEntitiesEnum.CurrentAgentTypeId, null],
-    [ContextEntitiesEnum.CurrentWorkflowTypeId, null],
     [ContextEntitiesEnum.CurrentProcessTypeId, null],
   ]);
 
@@ -492,8 +489,6 @@ class DataContext extends EventEmitter {
       domain: computed,
       visitor: computed,
       someone: computed,
-      workflowTypeId: computed,
-      workflow: computed,
       agenticProcessTypeId: computed,
       agenticProcess: computed,
       activeShell: computed,
@@ -710,8 +705,6 @@ class DataContext extends EventEmitter {
         return ContextEntitiesEnum.CurrentComputeNodeTypeId;
       case Agent.type:
         return ContextEntitiesEnum.CurrentAgentTypeId;
-      case Workflow.type:
-        return ContextEntitiesEnum.CurrentWorkflowTypeId;
       case AgenticProcess.type:
         return ContextEntitiesEnum.CurrentProcessTypeId;
       default:
@@ -966,14 +959,6 @@ class DataContext extends EventEmitter {
 
   get visitor(): APIEntity<Visitor> | null {
     return this.getContextEntity(ContextEntitiesEnum.CurrentVisitorTypeId);
-  }
-
-  get workflowTypeId(): TypeId | null {
-    return this.getContextEntityTypeId(ContextEntitiesEnum.CurrentWorkflowTypeId) ?? null;
-  }
-
-  get workflow(): Workflow | null {
-    return this.getContextEntity(ContextEntitiesEnum.CurrentWorkflowTypeId) as Workflow | null;
   }
 
   get agenticProcessTypeId(): TypeId | null {

@@ -50,7 +50,6 @@ export enum ViewType {
   EXPLORER = 'explorer', // File explorer view
   SKILLS = 'skills', // Claude Code skills editor
   AI_CONFIG = 'ai-config', // AI Configuration (LLM APIs, CLIs)
-  EXECUTE_FLOW = 'execute-flow', // Execute markdown instruction files
   SHOW = 'show', // MCP UI display dock pointer
   APPS = 'apps', // Skill UI apps - /dock/apps/<uname>/<router> mounts AppHost
   GRAPH = 'graph', // Built-in dep-graph viewer - /dock/graph/<type>/<id>
@@ -67,7 +66,6 @@ export enum ViewType {
   AGENTIC_FLOWS = 'agentic-flows', // Flow-graph editor/observatory (FlowManager) — dev mode
   PLAN = 'plan', // Plan viewer with Milkdown editor
   CRON = 'cron', // Scheduled cron jobs manager
-  WORKFLOWS = 'workflows', // Workflows manager with markdown editor
   ASSETS = 'assets', // Assets - unified docs/skills/workflows tree
   PROJECT = 'project', // Collaboration on a project — meet, share tabs/docs/plans
   INBOX = 'inbox', // Inbox — received FlowMessages from hub

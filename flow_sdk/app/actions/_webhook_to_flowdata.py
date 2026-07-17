@@ -9,7 +9,7 @@ a canonical ``FlowData`` (``element-type=status``, ``source=sniffer``, plus a
 ``webhook-type``/``subtype`` discriminator) — regardless of original shape.
 That removes the need for renderers to switch on ``hook_data.event_data`` vs
 ``hook_data.raw_hook_data`` or to cast through ``any`` to read trigger /
-workflow / hook_op details.
+hook_op details.
 
 Logger namespace: ``flow_sdk.app.actions._webhook_to_flowdata``.
 """
@@ -41,13 +41,10 @@ def convert_hook_op_event(payload: dict[str, Any]) -> list[FlowData]:
     Surfaces hook_op-specific fields as canonical attributes:
 
     * ``hook-op-event-name`` — from ``data.event_name`` (hook_op events use
-      this to discriminate, e.g. ``workflow_trace``, ``rules_executed``).
+      this to discriminate, e.g. ``rules_executed``).
     * ``hook-op-operation`` — the hook_op operation kind.
     * ``hook-op-record-type`` — the entity type the op targets.
     * ``hook-op-id`` — the entity id.
-    * ``workflow-label`` / ``workflow-phase`` — pulled from
-      ``data.event_data`` when present (used by ``WorkflowTraceGutter`` to
-      anchor events to ProseMirror blocks).
 
     Returns ``[]`` for structurally invalid payloads — never raises.
     """
@@ -61,8 +58,6 @@ def convert_hook_op_event(payload: dict[str, Any]) -> list[FlowData]:
     operation = str(payload.get("operation") or "")
     record_type = str(payload.get("type") or "")
     record_id = str(payload.get("id") or "")
-    label = str(event_data.get("label") or "")
-    phase = str(event_data.get("phase") or "")
 
     attributes: dict[str, str] = {
         "element-type": FlowElementType.STATUS,
@@ -80,10 +75,6 @@ def convert_hook_op_event(payload: dict[str, Any]) -> list[FlowData]:
         attributes["hook-op-record-type"] = record_type
     if record_id:
         attributes["hook-op-id"] = record_id
-    if label:
-        attributes["workflow-label"] = label
-    if phase:
-        attributes["workflow-phase"] = phase
 
     return [FlowData(flow_value=payload, attributes=attributes)]
 

@@ -291,7 +291,7 @@ function MarkdownEditorContent({
   // reflects the actual visible mode (silent + clean per design).
   //
   // Guard against the initial-mount race: `showLearningMode` is computed by
-  // WorkflowAssetEditor from an async process query, so it starts `false` for
+  // the host editor from an async process query, so it starts `false` for
   // ~one tick even when this doc DOES have learning runs. Stripping then would
   // wipe a legitimate `?editorMode=learning` share-link. We delay the strip
   // by a small idle period; if learning becomes available within that window,

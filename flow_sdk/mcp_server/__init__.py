@@ -9,7 +9,6 @@ from flow_sdk.mcp_server.mcp_api import (
     flow_ping,
     flow_tag,
     session_analysis,
-    # workflow_trace,  # disabled — not needed for current flow
 )
 
 # Singleton stores used by flow_context tool
@@ -23,7 +22,6 @@ mcp.tool()(flow_entity_crud)
 mcp.tool()(flow_tag)
 mcp.tool()(flow_context)
 mcp.tool()(session_analysis)
-# mcp.tool()(workflow_trace)  # disabled — not needed for current flow
 
 
 def run():

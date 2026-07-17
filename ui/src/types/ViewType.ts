@@ -240,12 +240,6 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     tabLocation: 'dedicated',
     canAddAsTab: true,
   },
-  [ViewType.EXECUTE_FLOW]: {
-    title: 'Execute Flow',
-    iconName: 'PlaySquare',
-    tabLocation: 'dedicated',
-    canAddAsTab: true,
-  },
   [ViewType.SHOW]: {
     title: 'Show',
     iconName: 'Eye',
@@ -344,12 +338,6 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     iconName: 'Zap',
     tabLocation: 'dedicated',
     canAddAsTab: false, // Only accessible via direct URL /dock/cron
-  },
-  [ViewType.WORKFLOWS]: {
-    title: 'Workflows',
-    iconName: 'Workflow',
-    tabLocation: 'dedicated',
-    canAddAsTab: true,
   },
   [ViewType.ASSETS]: {
     title: 'Assets',

@@ -107,7 +107,6 @@ Success — exit 0, one JSON line on stdout:
     "CurrentDomainTypeId": "...",
     "CurrentVisitorTypeId": null,
     "CurrentAgentTypeId": null,
-    "CurrentWorkflowTypeId": null,
     "CurrentFlowTypeId": null
   }
 }
@@ -125,7 +124,6 @@ Each value is a TypeId string (`<type>-<id>`) or `null` if not set. The exit cod
 | "current compute node" / "this machine" | `CurrentComputeNodeTypeId` |
 | "current user" / "me" | `CurrentUserTypeId` |
 | "current agent" | `CurrentAgentTypeId` |
-| "current workflow" | `CurrentWorkflowTypeId` |
 | "current flow" | `CurrentFlowTypeId` |
 | "active entity" / "what I'm focused on" | `CurrentActiveEntityTypeId` |
 

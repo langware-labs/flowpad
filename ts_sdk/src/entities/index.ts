@@ -56,7 +56,6 @@ export * from './trigger';
 export * from './user';
 export * from './visitor';
 export * from './web-domain';
-export * from './workflow';
 export * from './skill';
 export * from './whiteboard';
 export * from './deck-template';

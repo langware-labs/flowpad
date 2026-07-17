@@ -38,7 +38,6 @@ export type {
   IAgenticProcess,
   MarkdownDoc,
   ProcessState,
-  ExecuteOptions,
   SpawnResult,
 } from './agentic-process';
 export { ProcessCounters, parseStatusReport } from './process-status-report';

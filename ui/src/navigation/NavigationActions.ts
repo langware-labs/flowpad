@@ -4,7 +4,6 @@ import {
   ComputeNode,
   dataContext,
   DockPointerData,
-  FSItem,
   type IDockPointer,
   Layout,
   QueryRequest,
@@ -650,21 +649,6 @@ export class NavigationActions {
    */
   openSystemProfile(tab?: string, item?: string, options?: { scope?: string; project?: string }): void {
     const pointer = DockPointer.forSystemProfile(tab, item, options);
-    this.openDock(pointer);
-  }
-
-  /**
-   * Open execute flow viewer with optional options
-   * @param options - Optional options object with file and session
-   * @param options.file - Optional FSItem to execute (provides full VFS context)
-   * @param options.machineSessionId - Optional machine session identifier (used by worker-sessions-panel)
-   */
-  openExecuteFlow(options?: { file?: FSItem; machineSessionId?: string }): void {
-    // Use vfsPath.absVfsPath to get normalized path without vfs:// protocol
-    const pointer = DockPointer.forExecuteFlow({
-      vfsAbsPath: options?.file?.vfsPath.absVfsPath,
-      machineSessionId: options?.machineSessionId,
-    });
     this.openDock(pointer);
   }
 

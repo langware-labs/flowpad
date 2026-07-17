@@ -121,11 +121,6 @@ except ImportError as e:
     print(f"[WARN] Failed to import CronEvent: {e}")
 
 try:
-    from flow_sdk.builtin.workflow import Workflow  # noqa: F401
-except ImportError as e:
-    print(f"[WARN] Failed to import Workflow: {e}")
-
-try:
     from flow_sdk.builtin.skill import Skill  # noqa: F401
 except ImportError as e:
     print(f"[WARN] Failed to import Skill: {e}")

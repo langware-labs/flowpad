@@ -1,4 +1,4 @@
-import { Agent, AgentTrace, APIEntity, AssetCleanupReport, dataManager, Deck, DeckTemplate, DynamicWorkflow, FSRef, Skill, Spreadsheet, Task, TypeId, UsageReport, VFSPath, Whiteboard, Workflow } from '@sdk';
+import { Agent, AgentTrace, APIEntity, AssetCleanupReport, dataManager, Deck, DeckTemplate, DynamicWorkflow, FSRef, Skill, Spreadsheet, Task, TypeId, UsageReport, VFSPath, Whiteboard } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { useMemo } from 'react';
 import { RefreshCw } from 'lucide-react';
@@ -24,7 +24,6 @@ import { WhiteboardAssetEditor } from './whiteboard/WhiteboardAssetEditor';
 import { DeckTemplateViewer } from './deck-template/DeckTemplateViewer';
 import { DeckViewer } from './deck/DeckViewer';
 import { SpreadsheetAssetEditor } from './spreadsheet/SpreadsheetAssetEditor';
-import { WorkflowAssetEditor } from './workflow/WorkflowAssetEditor';
 
 interface AssetEditorRouterProps {
   /** The ViewType.ASSETS pointer, e.g. "editor/<editor>/<method>/<value>". */
@@ -284,15 +283,6 @@ export function AssetEditorRouter({ pointer }: AssetEditorRouterProps) {
           fsRef={fsRef}
           typeLabel="asset cleanup report"
           render={(report) => <AssetCleanupReportAssetEditor fsRef={fsRef!} report={report} />}
-        />
-      );
-    case AssetEditor.WORKFLOW:
-      return (
-        <EntityResolutionGate<Workflow>
-          type={Workflow.type}
-          fsRef={fsRef}
-          typeLabel="workflow"
-          render={(workflow) => <WorkflowAssetEditor fsRef={fsRef!} workflow={workflow} />}
         />
       );
     case AssetEditor.MARKDOWN:

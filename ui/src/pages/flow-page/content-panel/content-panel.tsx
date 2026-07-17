@@ -9,7 +9,6 @@ import { AssetCompareView } from '@src/components/code-editor/AssetCompareView';
 import DiffViewer from '@src/components/code-editor/DiffViewer';
 import { DocsViewer } from '@src/components/docs-viewer/DocsViewer';
 import EnvVarsManager from '@src/components/EnvVarsManager';
-import { ExecuteFlowView } from '@src/components/execute-flow-view';
 import { ExplorerView } from '@src/components/explorer-view';
 import { HooksManager } from '@src/components/hooks-manager';
 import { LensViewer } from '@src/components/lens-viewer';
@@ -40,7 +39,6 @@ import { TabbedTerminal } from '@src/components/terminal';
 import { TriggersView } from '@src/components/triggers-view';
 import { Button } from '@src/components/ui/button';
 import { WebappViewer } from '@src/components/webapp-viewer';
-import { WorkflowsPage } from '@src/components/workflows-view/WorkflowsPage';
 import { useActiveViewer } from '@src/hooks/flow-hooks';
 import { useViewerStore } from '@src/hooks/flow-hooks/useViewerStore';
 import { useEnvVarsStore } from '@src/hooks/use-env-vars-store';
@@ -340,8 +338,6 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
         return <TriggersView />;
       case ViewType.CAPABILITIES:
         return <CapabilitiesView />;
-      case ViewType.EXECUTE_FLOW:
-        return <ExecuteFlowView />;
       case ViewType.SHOW:
         return <ShowView />;
       case ViewType.APPS:
@@ -378,8 +374,6 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
         return <DesktopPage />;
       case ViewType.SEARCH:
         return <SearchView />;
-      case ViewType.WORKFLOWS:
-        return <WorkflowsPage />;
       case ViewType.AGENTIC_PROCESS:
         return currentDock?.pointer ? (
           <ProcessTerminal key={currentDock.pointer} processId={currentDock.pointer} />

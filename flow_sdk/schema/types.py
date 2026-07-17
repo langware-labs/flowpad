@@ -102,7 +102,6 @@ class EntityType(StrEnum):
     DOC_DB = "doc_db"
     RECORD_ERROR = "record_error"
     TEXT_FILE = "text_file"
-    WORKFLOW = "workflow"
     MARKDOWN = "markdown"
     MARKDOWN_INDEX = "markdown_index"
     SPEC = "spec"
