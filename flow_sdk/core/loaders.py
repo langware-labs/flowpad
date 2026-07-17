@@ -62,6 +62,12 @@ def load_actions():
     except ImportError:
         pass  # Secrets action not available
 
+    # Import lm-keys action to register it
+    try:
+        from flow_sdk.app.actions import lm_keys_action  # noqa: F401
+    except ImportError:
+        pass  # LM keys action not available
+
     # Import hooks-sniffer action to register it
     try:
         from flow_sdk.app.actions import hooks_sniffer  # noqa: F401
