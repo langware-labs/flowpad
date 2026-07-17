@@ -72,6 +72,3 @@ export type {
   WizardProcessResult,
   WizardStatus,
 } from './wizard';
-
-export { extractUIPayload, isUIFlowData, UIHandler } from './ui-handler';
-export type { UIComponent } from './ui-handler';
