@@ -11,13 +11,11 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
-  DialogHeader,
   DialogTitle,
 } from '@src/components/ui/dialog';
 import { Input } from '@src/components/ui/input';
 import { notify } from '@src/notifications';
-import { BookOpen, CheckCircle2, ExternalLink, KeyRound, Loader2 } from 'lucide-react';
+import { ArrowUpRight, BookOpen, Check, Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 
@@ -28,9 +26,27 @@ import { openHarnessLoginModal, useHarnessLoginStore } from './harness-login-sto
 
 const INSTALL_WIKI_PAGE = 'Install a harness';
 
-/** One harness row: status chip + the login flow driven entirely by the
+/** Per-vendor presentation metadata (provider line + the sign-in destination
+ *  label). Name/icon still come from the backend capability. */
+const VENDOR_META: Record<string, { provider: string; account: string; opensAt: string }> = {
+  'harness.claude.cli': { provider: 'Anthropic', account: 'claude.ai', opensAt: 'claude.com' },
+  'harness.codex.cli': { provider: 'OpenAI', account: 'ChatGPT', opensAt: 'openai.com' },
+  'harness.copilot.cli': { provider: 'GitHub', account: 'Copilot', opensAt: 'github.com' },
+};
+
+type RowStatus = 'unavailable' | 'authenticated' | 'awaiting' | 'busy' | 'loggedout';
+
+const STATUS_LED: Record<RowStatus, string> = {
+  authenticated: 'bg-emerald-400 shadow-[0_0_8px] shadow-emerald-400/60',
+  awaiting: 'bg-sky-400 shadow-[0_0_8px] shadow-sky-400/60 animate-pulse',
+  busy: 'bg-sky-400 shadow-[0_0_8px] shadow-sky-400/60 animate-pulse',
+  loggedout: 'bg-amber-400 shadow-[0_0_8px] shadow-amber-400/60',
+  unavailable: 'bg-muted-foreground/40',
+};
+
+/** One harness row — a terminal "device" card driven entirely by the
  *  Capability entity's broadcast login_* fields (no polling). */
-function HarnessRow({ kind }: { kind: string }) {
+function HarnessRow({ kind, index }: { kind: string; index: number }) {
   const { t } = useLingui();
   const snapshot = capabilityManager.getSnapshot(kind);
   const capabilityId = snapshot.capability?.id ?? null;
@@ -46,10 +62,11 @@ function HarnessRow({ kind }: { kind: string }) {
   const state = capability?.login_state ?? null;
   const name = capability?.name ?? snapshot.capability?.name ?? kind;
   const Icon = lucideByName(capability?.icon);
+  const meta = VENDOR_META[kind];
 
-  // One derived status the chip and body both switch on (installed + the
-  // login state machine), so the two never drift.
-  const rowStatus: 'unavailable' | 'authenticated' | 'awaiting' | 'busy' | 'loggedout' = !installed
+  // One derived status the LED, label, and body all switch on, so they can't
+  // drift.
+  const rowStatus: RowStatus = !installed
     ? 'unavailable'
     : state === 'authenticated'
       ? 'authenticated'
@@ -58,6 +75,14 @@ function HarnessRow({ kind }: { kind: string }) {
         : busy || state === 'starting'
           ? 'busy'
           : 'loggedout';
+
+  const statusLabel = {
+    unavailable: t`Not installed`,
+    authenticated: t`Connected`,
+    awaiting: t`Waiting…`,
+    busy: t`Starting…`,
+    loggedout: t`Sign-in needed`,
+  }[rowStatus];
 
   const startLogin = useCallback(async () => {
     if (!capability) return;
@@ -77,7 +102,7 @@ function HarnessRow({ kind }: { kind: string }) {
     if (capability.login_code) {
       try {
         await copyToClipboard(capability.login_code);
-        notify.success({ title: t`Code copied — paste it on the vendor page`, durationMs: 2500 });
+        notify.success({ title: t`Code copied — paste it on the sign-in page`, durationMs: 2500 });
       } catch {
         /* user can read the code from the dialog */
       }
@@ -92,85 +117,152 @@ function HarnessRow({ kind }: { kind: string }) {
   }, [capability, pasted]);
 
   return (
-    <div className="flex flex-col gap-2 rounded-md border border-border p-3">
-      <div className="flex items-center gap-2">
-        <Icon className="h-4 w-4 shrink-0" />
-        <span className="font-medium">{name}</span>
-        <span className="ml-auto text-xs">
-          {rowStatus === 'unavailable' ? (
-            <span className="text-muted-foreground"><Trans>Not available</Trans></span>
-          ) : rowStatus === 'authenticated' ? (
-            <span className="flex items-center gap-1 text-emerald-500">
-              <CheckCircle2 className="h-3.5 w-3.5" />
-              <Trans>Available</Trans>
+    <div
+      className="group relative overflow-hidden rounded-lg border border-border/80 bg-card/40 transition-colors hover:border-border"
+      style={{ animation: `harnessRowIn 380ms cubic-bezier(0.16,1,0.3,1) ${index * 70}ms both` }}
+    >
+      {/* left status spine */}
+      <div
+        className={`absolute inset-y-0 left-0 w-[3px] ${
+          rowStatus === 'authenticated'
+            ? 'bg-emerald-400/70'
+            : rowStatus === 'unavailable'
+              ? 'bg-muted-foreground/25'
+              : 'bg-amber-400/70'
+        }`}
+      />
+
+      <div className="flex items-center gap-3 px-4 py-3 pl-5">
+        {/* prompt-glyph identity tile */}
+        <div className="grid h-9 w-9 shrink-0 place-items-center rounded-md border border-border/70 bg-background/60 text-foreground/80">
+          <Icon className="h-[18px] w-[18px]" />
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <div className="flex items-baseline gap-2">
+            <span className="truncate font-mono text-[15px] font-semibold tracking-tight">{name}</span>
+            {meta && (
+              <span className="hidden text-[11px] text-muted-foreground/70 sm:inline">
+                {meta.provider} · {meta.account}
+              </span>
+            )}
+          </div>
+          <div className="mt-1 flex items-center gap-1.5">
+            <span className={`h-1.5 w-1.5 rounded-full ${STATUS_LED[rowStatus]}`} />
+            <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+              {statusLabel}
             </span>
+          </div>
+        </div>
+
+        {/* right-side action — compact, never full-width */}
+        <div className="shrink-0">
+          {rowStatus === 'unavailable' ? (
+            <button
+              type="button"
+              onClick={() => openWikiModal(INSTALL_WIKI_PAGE)}
+              className="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 font-mono text-[11px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            >
+              <BookOpen className="h-3.5 w-3.5" />
+              <Trans>Install</Trans>
+            </button>
+          ) : rowStatus === 'authenticated' ? (
+            <span className="inline-flex items-center gap-1.5 font-mono text-[11px] text-emerald-500">
+              <Check className="h-3.5 w-3.5" />
+              <Trans>Ready</Trans>
+            </span>
+          ) : rowStatus === 'awaiting' ? (
+            <button
+              type="button"
+              onClick={() => void capability?.cancelDeviceLogin()}
+              className="rounded-md px-2.5 py-1.5 font-mono text-[11px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            >
+              <Trans>Cancel</Trans>
+            </button>
           ) : (
-            <span className="text-amber-500"><Trans>Login required</Trans></span>
+            <button
+              type="button"
+              disabled={rowStatus === 'busy'}
+              onClick={() => void startLogin()}
+              className="inline-flex items-center gap-1.5 rounded-md bg-foreground px-3.5 py-1.5 font-mono text-[12px] font-semibold text-background shadow-sm transition-all hover:bg-foreground/90 hover:shadow active:scale-[0.97] disabled:opacity-60"
+            >
+              {rowStatus === 'busy' && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              <Trans>Sign in</Trans>
+            </button>
           )}
-        </span>
+        </div>
       </div>
 
-      {rowStatus === 'unavailable' ? (
-        <Button size="sm" variant="outline" onClick={() => openWikiModal(INSTALL_WIKI_PAGE)}>
-          <BookOpen className="mr-1.5 h-3.5 w-3.5" />
-          <Trans>How to install</Trans>
-        </Button>
-      ) : rowStatus === 'awaiting' ? (
-        <div className="flex flex-col gap-2">
-          {capability?.login_code && (
-            <div className="flex items-center justify-center rounded-md border border-border bg-muted/40 px-4 py-2">
-              <span className="select-all font-mono text-xl tracking-widest">{capability.login_code}</span>
-            </div>
-          )}
-          <Button size="sm" onClick={() => void copyAndOpen()}>
-            <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
-            {capability?.login_code ? <Trans>Copy code &amp; open sign-in page</Trans> : <Trans>Open sign-in page</Trans>}
-          </Button>
+      {/* awaiting-user expansion: code + open + paste */}
+      {rowStatus === 'awaiting' && (
+        <div className="border-t border-border/60 bg-background/40 px-5 py-3">
+          <div className="flex flex-wrap items-center gap-2">
+            {capability?.login_code && (
+              <div className="flex items-center gap-0.5 rounded-md border border-dashed border-border bg-muted/30 px-3 py-2">
+                {capability.login_code.split('').map((ch, i) => (
+                  <span
+                    key={i}
+                    className={
+                      ch === '-'
+                        ? 'px-0.5 font-mono text-lg text-muted-foreground/50'
+                        : 'select-all font-mono text-lg font-semibold tracking-wide tabular-nums'
+                    }
+                  >
+                    {ch}
+                  </span>
+                ))}
+              </div>
+            )}
+            <Button
+              size="sm"
+              onClick={() => void copyAndOpen()}
+              className="h-9 gap-1.5 bg-foreground font-mono text-[12px] font-semibold text-background hover:bg-foreground/90"
+            >
+              {capability?.login_code ? <Trans>Copy code &amp; open</Trans> : <Trans>Open sign-in</Trans>}
+              <ArrowUpRight className="h-3.5 w-3.5" />
+            </Button>
+            {meta && (
+              <span className="font-mono text-[10px] text-muted-foreground/60">→ {meta.opensAt}</span>
+            )}
+          </div>
+
           {capability?.login_accepts_code && (
-            <div className="flex items-center gap-2">
+            <div className="mt-2.5 flex items-center gap-2">
+              <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground/70">
+                <Trans>then paste code</Trans>
+              </span>
               <Input
                 value={pasted}
                 onChange={(e) => setPasted(e.target.value)}
-                placeholder={t`Paste the code shown in your browser`}
-                className="h-8 text-xs"
+                onKeyDown={(e) => e.key === 'Enter' && void submitCode()}
+                placeholder={t`code from browser`}
+                className="h-8 max-w-[180px] font-mono text-xs"
               />
-              <Button size="sm" variant="outline" disabled={!pasted.trim()} onClick={() => void submitCode()}>
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={!pasted.trim()}
+                onClick={() => void submitCode()}
+                className="h-8 font-mono text-[11px]"
+              >
                 <Trans>Submit</Trans>
               </Button>
             </div>
           )}
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            <Trans>Waiting for authorization…</Trans>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="ml-auto h-6 px-2 text-xs"
-              onClick={() => void capability?.cancelDeviceLogin()}
-            >
-              <Trans>Cancel</Trans>
-            </Button>
-          </div>
-        </div>
-      ) : rowStatus === 'authenticated' ? (
-        <div className="text-xs text-muted-foreground">
-          {capability?.login_message}
-        </div>
-      ) : (
-        <div className="flex flex-col gap-1.5">
-          <Button size="sm" disabled={rowStatus === 'busy'} onClick={() => void startLogin()}>
-            {rowStatus === 'busy' ? (
-              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <KeyRound className="mr-1.5 h-3.5 w-3.5" />
-            )}
-            <Trans>Login</Trans>
-          </Button>
-          {state === 'error' && capability?.login_message && (
-            <div className="rounded-md border border-destructive/40 bg-destructive/10 px-2 py-1.5 text-xs text-destructive">
-              {capability.login_message}
+
+          {rowStatus === 'awaiting' && (
+            <div className="mt-2.5 flex items-center gap-1.5 font-mono text-[10px] text-muted-foreground/70">
+              <span className="inline-block h-1 w-1 animate-pulse rounded-full bg-sky-400" />
+              <Trans>waiting for authorization in your browser…</Trans>
             </div>
           )}
+        </div>
+      )}
+
+      {/* error line */}
+      {rowStatus === 'loggedout' && state === 'error' && capability?.login_message && (
+        <div className="border-t border-destructive/30 bg-destructive/5 px-5 py-2 font-mono text-[11px] text-destructive">
+          {capability.login_message}
         </div>
       )}
     </div>
@@ -220,26 +312,46 @@ export function HarnessLoginModalRoot() {
   if (!open) return null;
   return (
     <Dialog open onOpenChange={setOpen}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle><Trans>Harness login required</Trans></DialogTitle>
-          <DialogDescription>
+      <DialogContent className="gap-0 overflow-hidden border-border/80 p-0 sm:max-w-[440px]">
+        <style>{`@keyframes harnessRowIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}`}</style>
+
+        {/* header — a terminal title bar */}
+        <div className="relative border-b border-border/70 bg-gradient-to-b from-muted/40 to-transparent px-5 pb-4 pt-5">
+          <div className="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground/70">
+            <span className="h-1.5 w-1.5 rounded-full bg-amber-400 shadow-[0_0_8px] shadow-amber-400/60" />
+            <Trans>authentication required</Trans>
+          </div>
+          <DialogTitle className="mt-2 font-mono text-lg font-semibold tracking-tight text-foreground">
+            <Trans>Connect a harness</Trans>
+          </DialogTitle>
+          <DialogDescription className="mt-1 pr-6 text-[13px] leading-snug text-muted-foreground">
             <Trans>
-              Agents run through a coding-agent CLI (a “harness”). Sign in to at least one below —
-              the sign-in happens in your browser; FlowPad never sees your credentials.
+              Agents run through a coding-agent CLI. Sign in to at least one — it happens in your
+              browser and FlowPad never sees your credentials.
             </Trans>
           </DialogDescription>
-        </DialogHeader>
-        <div className="flex flex-col gap-2">
-          {HARNESS_CAPABILITY_KINDS.map((kind) => (
-            <HarnessRow key={kind} kind={kind} />
+        </div>
+
+        {/* rows */}
+        <div className="flex flex-col gap-2.5 p-4">
+          {HARNESS_CAPABILITY_KINDS.map((kind, i) => (
+            <HarnessRow key={kind} kind={kind} index={i} />
           ))}
         </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => setOpen(false)}>
-            <Trans>Close</Trans>
-          </Button>
-        </DialogFooter>
+
+        {/* footer */}
+        <div className="flex items-center justify-between border-t border-border/70 px-5 py-3">
+          <span className="font-mono text-[10px] text-muted-foreground/60">
+            <Trans>one is enough to get started</Trans>
+          </span>
+          <button
+            type="button"
+            onClick={() => setOpen(false)}
+            className="rounded-md px-3 py-1.5 font-mono text-[12px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          >
+            <Trans>Dismiss</Trans>
+          </button>
+        </div>
       </DialogContent>
     </Dialog>
   );
