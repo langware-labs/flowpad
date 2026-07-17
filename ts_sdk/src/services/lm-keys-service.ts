@@ -9,6 +9,11 @@ export interface LmApiKeySummary {
   created_at?: string | null;
 }
 
+export interface LmApiKeyValidation {
+  valid: boolean;
+  message?: string;
+}
+
 /**
  * SDK service for LLM-provider API keys.
  *
@@ -27,8 +32,15 @@ export class LmKeysService {
     return apiClient.get(this.base);
   }
 
-  setLmApi(key: string, provider: LMApiProvider): Promise<{ ok: true }> {
+  /** Store a key. The backend auto-validates it and returns the result. */
+  setLmApi(key: string, provider: LMApiProvider): Promise<{ ok: true } & LmApiKeyValidation> {
     return apiClient.post(this.base, { provider, key });
+  }
+
+  /** Validate the stored key for a provider against the provider (a real network
+   *  check). */
+  testLmApi(provider: LMApiProvider): Promise<LmApiKeyValidation> {
+    return apiClient.post(`${this.base}/test`, { provider });
   }
 
   deleteLmApi(provider: LMApiProvider): Promise<{ ok: true }> {
