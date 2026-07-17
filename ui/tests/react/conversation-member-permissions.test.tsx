@@ -9,6 +9,11 @@ vi.mock('@sdk/react/hooks', () => ({
     cloudUser: { id: 'me-id', email: 'me@example.com' },
     currentUser: null,
   }),
+  // ContactPicker → useContactsGroups → useComputedGroups calls useProject for
+  // the "Project Members" computed group. This test drives the roster through
+  // the mocked `use-members` and has no project context, so the hook resolves
+  // to no project — which is exactly what an unscoped picker sees.
+  useProject: () => ({ project: null }),
 }));
 
 vi.mock('@src/hooks/use-members', () => ({

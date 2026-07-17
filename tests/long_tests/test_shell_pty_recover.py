@@ -141,21 +141,29 @@ async def _recv(ws, timeout: float = 10.0) -> dict:
 
 
 async def _open_shell_via_ws(ws, shell_id: str, conn_id: str) -> dict:
-    """Call Shell.open() over WS. Returns the SUCCESS response."""
+    """Call Shell.open() over WS. Returns the SUCCESS response.
+
+    The open triggers a burst of unrelated broadcasts (data_op_msg /
+    flow_data_msg / pty_output_msg) that are delivered ahead of the reply, so
+    the reply is identified by its echoed message_id rather than by draining a
+    guessed number of messages.
+    """
+    msg_id = str(uuid.uuid4())
     await ws.send(json.dumps(
-        _rest_api_msg("shell", shell_id, "open", body={"connection_id": conn_id, "rows": 24, "cols": 80})
+        _rest_api_msg("shell", shell_id, "open",
+                      body={"connection_id": conn_id, "rows": 24, "cols": 80}, msg_id=msg_id)
     ))
-    for _ in range(10):
+    while True:
         msg = await _recv(ws, timeout=15)
+        if msg.get("message_id") != msg_id:
+            continue
         status = msg.get("status")
         if status not in ("SUCCESS", "FAIL"):
             content = msg.get("content")
             if isinstance(content, dict):
                 status = content.get("status")
-        if status in ("SUCCESS", "FAIL"):
-            msg["status"] = status
-            return msg
-    raise AssertionError("Shell.open() response not received")
+        msg["status"] = status
+        return msg
 
 
 async def _collect_pty_output(ws, keyword: str, max_msgs: int = 30, per_msg_timeout: float = 5.0) -> str:

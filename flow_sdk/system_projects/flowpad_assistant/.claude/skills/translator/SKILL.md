@@ -1,4 +1,5 @@
 ---
+id: 7dc4bdf2-4590-4f3a-a7e1-e62d6ca8cfa4
 name: translator
 description: Translate a markdown document into another language. Use this
   whenever asked to "translate <doc> to language <lang> and save it to <path>",
