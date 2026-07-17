@@ -33,9 +33,9 @@ import pytest
 
 from flow_sdk.builtin.agentic_process.cli_drivers.codex import CodexCliOptions
 from flow_sdk.builtin.agentic_process.cli_drivers.copilot import CopilotCliOptions
-from flow_sdk.builtin.agentic_process.model_tiers import ModelTier
 from flow_sdk.transcript_analyzer import AgentTranscriptFile
 from flow_sdk.transcript_analyzer.entries import UnknownEntry
+from tests.long_tests._model_tier import small_model_for
 from tests.test_settings import test_service_config
 
 pytestmark = pytest.mark.skipif(
@@ -154,7 +154,7 @@ def test_version_smoke(worker, options_cls, success_types):
 def test_headless_turn_parses(worker, options_cls, success_types, tmp_path: Path):
     _run_turn_and_parse(
         worker,
-        options_cls(workdir=str(tmp_path / "work"), model=ModelTier.SM.value),
+        options_cls(workdir=str(tmp_path / "work"), model=small_model_for(worker)),
         tmp_path,
         success_types=success_types,
     )

@@ -35,12 +35,15 @@ ITERATIONS = 10
 # conftest sandboxes HOME; the CLIs need their REAL home (auth + transcript dir).
 _REAL_HOME = os.environ.get("FLOWPAD_PRE_SANDBOX_HOME") or os.path.expanduser("~")
 
-# worker_type → (CLI binary, model). Every worker maps the sm/md/lg tiers now, so
-# request the cheapest tier for all three (haiku / gpt-*-mini) via the enum.
+# worker_type → (CLI binary, model). Claude and Codex map the sm/md/lg tiers to a
+# real model, so ask them for the cheapest one via the enum. Copilot is left unset:
+# COPILOT_MODEL_TIERS still carries codex's names (gpt-5.4-mini/gpt-5.4) and the
+# Copilot CLI rejects them ("Model ... is not available"). Its auto mode already
+# picks claude-haiku-4.5 — its small tier — so unset is both correct and cheap.
 WORKERS = {
     "claude_code": {"bin": "claude", "model": ModelTier.SM.value},
     "codex": {"bin": "codex", "model": ModelTier.SM.value},
-    "copilot": {"bin": "copilot", "model": ModelTier.SM.value},
+    "copilot": {"bin": "copilot", "model": None},
 }
 
 

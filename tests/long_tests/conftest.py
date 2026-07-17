@@ -245,12 +245,20 @@ def make_process(worker_id) -> Callable[..., Awaitable]:
 
     async def _make(**kwargs):
         # Default every agentic-process test to the small model tier so the live
-        # CLI burns the cheapest/fastest model (haiku / gpt-*-mini). The tier is
+        # CLI burns the cheapest/fastest model (haiku / gpt-5.4-mini). The tier is
         # worker-blind — each driver maps ``sm`` to its own family at spawn. Tests
         # that need a specific model still win: their ``cli_config['model']`` is
         # preserved, and only the key is defaulted when absent.
+        #
+        # Copilot is deliberately excluded: COPILOT_MODEL_TIERS still carries
+        # codex's names (gpt-5.4-mini/gpt-5.4), which the Copilot CLI rejects —
+        # "Model 'gpt-5.4-mini' from CLI argument is not available" (a hard error
+        # for md). Copilot's own auto mode already resolves simple prompts to
+        # claude-haiku-4.5, i.e. its small tier, so leaving the model unset is
+        # both correct and already cheap.
         cli_config = {**(kwargs.pop("cli_config", None) or {})}
-        cli_config.setdefault("model", ModelTier.SM.value)
+        if enum_value is not WorkerType.COPILOT:
+            cli_config.setdefault("model", ModelTier.SM.value)
         return await AgenticProcess(
             worker_type=enum_value, cli_config=cli_config, **kwargs
         ).save()
