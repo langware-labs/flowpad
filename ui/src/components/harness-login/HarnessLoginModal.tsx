@@ -107,7 +107,6 @@ function useHarness(kind: string, keys: LmApiKeySummary[]) {
   const activeProvider = configuredProviders.includes(rawProvider as LMApiProvider)
     ? rawProvider
     : configuredProviders[0] ?? rawProvider;
-  const keyConfigured = apiAvailable && configuredProviders.includes(activeProvider as LMApiProvider);
 
   const setAuthMode = useCallback(
     async (mode: AuthMode, provider?: string) => {
@@ -172,7 +171,7 @@ function useHarness(kind: string, keys: LmApiKeySummary[]) {
 
   const authBadge =
     authMode === 'api'
-      ? keyConfigured
+      ? apiAvailable
         ? { label: 'LLM key', tone: 'emerald' as const }
         : { label: 'Key not set', tone: 'amber' as const }
       : { label: 'Device login', tone: 'sky' as const };
@@ -200,10 +199,11 @@ function useHarness(kind: string, keys: LmApiKeySummary[]) {
   };
 }
 
-const AUTH_BADGE_TONE: Record<'emerald' | 'amber' | 'sky', string> = {
+const AUTH_BADGE_TONE: Record<'emerald' | 'amber' | 'sky' | 'rose', string> = {
   emerald: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-500',
   amber: 'border-amber-500/30 bg-amber-500/10 text-amber-500',
   sky: 'border-sky-500/30 bg-sky-500/10 text-sky-500',
+  rose: 'border-destructive/30 bg-destructive/10 text-destructive',
 };
 
 /** The device-vs-LLM-key indicator shown on rows and detail. */
@@ -388,7 +388,7 @@ function LlmKeysSection({
                   {v && (
                     <Badge
                       variant="outline"
-                      className={`gap-1 ${v.valid ? AUTH_BADGE_TONE.emerald : 'border-destructive/30 bg-destructive/10 text-destructive'}`}
+                      className={`gap-1 ${v.valid ? AUTH_BADGE_TONE.emerald : AUTH_BADGE_TONE.rose}`}
                     >
                       {v.valid ? <Check className="h-3 w-3" /> : <AlertCircle className="h-3 w-3" />}
                       {v.valid ? <Trans>Valid</Trans> : <Trans>Invalid</Trans>}

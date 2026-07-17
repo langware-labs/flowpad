@@ -11,7 +11,6 @@ Reading a key value is intentionally not exposed: the UI must never see plaintex
 keys. In-process callers (workers) read via ``get_lm_api`` in the SDK.
 """
 
-import json
 import logging
 
 from flow_sdk.cli.auth.lm_api_keys import delete_lm_api, list_lm_api, set_lm_api, validate_lm_api
@@ -46,8 +45,7 @@ async def lm_keys_action() -> ApiResponse:
             return ApiFailResponse(message=f"Unknown GET subpath: {sub_path}")
 
         if method == "POST":
-            body = await request_info.request.body()
-            payload = json.loads(body) if body else {}
+            payload = await request_info.get_post_data() or {}
             raw = (payload.get("provider") or "").strip()
             if not raw:
                 return ApiFailResponse(message="provider is required")
@@ -62,8 +60,9 @@ async def lm_keys_action() -> ApiResponse:
                 if not key:
                     return ApiFailResponse(message="key is required")
                 set_lm_api(key, provider)
-                # Auto-validate on set so the UI can confirm the key immediately.
-                result = await validate_lm_api(provider)
+                # Auto-validate on set so the UI can confirm the key immediately;
+                # reuse the in-hand key rather than re-reading the store.
+                result = await validate_lm_api(provider, key=key)
                 return ApiSuccessResponse(data={"ok": True, **result})
             return ApiFailResponse(message=f"Unknown POST subpath: {sub_path}")
 
