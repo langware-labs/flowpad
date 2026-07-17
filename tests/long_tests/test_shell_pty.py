@@ -207,24 +207,25 @@ async def test_shell_pty_e2e(pty_live_server):
                 )
             ))
 
-            # The server may send interleaved data_op_msg broadcasts before the
-            # REST response. Collect messages until we find the ApiResponse.
-            # The response may arrive at the top level (status=SUCCESS) or
-            # wrapped in a response_msg envelope (content.status=SUCCESS).
+            # The server interleaves data_op_msg / flow_data_msg / pty_output_msg
+            # broadcasts ahead of the REST response, so the response is matched
+            # by its echoed message_id. It may arrive at the top level
+            # (status=SUCCESS) or wrapped in a response_msg envelope
+            # (content.status=SUCCESS).
             open_resp = None
-            for _ in range(10):
+            while open_resp is None:
                 msg = await _recv(ws, timeout=15)
+                if msg.get("message_id") != open_msg_id:
+                    continue
                 status = msg.get("status")
                 if status not in ("SUCCESS", "FAIL"):
                     content = msg.get("content")
                     if isinstance(content, dict):
                         status = content.get("status")
-                if status in ("SUCCESS", "FAIL"):
-                    open_resp = msg
-                    open_resp["_resolved_status"] = status
-                    break
-            assert open_resp is not None and open_resp.get("_resolved_status") == "SUCCESS", (
-                f"Shell.open() failed or not received: {open_resp}"
+                open_resp = msg
+                open_resp["_resolved_status"] = status
+            assert open_resp.get("_resolved_status") == "SUCCESS", (
+                f"Shell.open() failed: {open_resp}"
             )
 
             # ── C: Send echo input → receive pty_output_msg ──────────────────

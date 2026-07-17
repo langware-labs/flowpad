@@ -91,7 +91,7 @@ def test_registry_presentation_getters_read_through():
 
     # skill is api_visible + creatable + browseable (Standard) + has an icon
     assert SchemaRegistry.is_api_visible("skill") is True
-    assert SchemaRegistry.get_icon("skill") == "Sparkles"
+    assert SchemaRegistry.get_icon("skill") == "FileBadge"
     assert SchemaRegistry.browseable_by("skill") is ViewMode.STANDARD
     assert SchemaRegistry.is_browseable_in("skill", ViewMode.STANDARD) is True
     # reclassified types: claude_memory is Advanced+ only, flowpad_diagnosis Dev only

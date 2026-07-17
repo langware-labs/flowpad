@@ -174,6 +174,9 @@ EXPECTED = {
     # brand-new types, no existing value changed, so no migration. Their
     # introducing commits missed this freeze.
     "DECK": "deck", "SPREADSHEET": "spreadsheet",
+    # Flow-graph slice (d6f25601) — additive members; brand-new types, no
+    # existing value changed, so no migration.
+    "AGENTIC_FLOW": "agentic_flow", "FLOW_NODE": "flow_node", "TOPIC": "topic",
 }
 
 

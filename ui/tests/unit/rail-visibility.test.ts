@@ -28,7 +28,10 @@ const OLD_MATRIX: Record<ViewMode, Record<'visible' | 'collapsed', readonly Rail
     collapsed: ['triggers', 'hooks', 'files'],
   },
   [ViewMode.Dev]: {
-    visible: ['home', 'chats', 'inbox', 'assets', 'discover'],
+    // 'agentic-flows' (FlowStudio) is an additive Dev-only rail item from the
+    // flow-graph slice (d6f25601); its RAIL_DELTAS entry landed without this
+    // reference being updated. No existing item's placement changed.
+    visible: ['home', 'chats', 'inbox', 'assets', 'discover', 'agentic-flows'],
     collapsed: ['triggers', 'hooks', 'files', 'capabilities'],
   },
 };

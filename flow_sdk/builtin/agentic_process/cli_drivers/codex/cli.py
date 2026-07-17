@@ -69,10 +69,8 @@ class CodexCliOptions(WorkerCLIOptions):
         self.ephemeral = ephemeral
         self.developer_instructions: str | None = None
 
-    # Default reasoning effort overridden in ``_emit_flags`` so user's global
-    # ``model_reasoning_effort = "xhigh"`` from ~/.codex/config.toml doesn't make
-    # every flowpad turn 60+ seconds. Tests run within a 30s global timeout —
-    # keep this in sync if that limit is relaxed.
+    # Overridden per-process in ``_reasoning_effort_flags`` (see there for why).
+    # Chosen to stay under the 30s test timeout — keep in sync if that's relaxed.
     DEFAULT_REASONING_EFFORT = "low"
 
     EXECUTABLE = "codex"
@@ -130,6 +128,19 @@ class CodexCliOptions(WorkerCLIOptions):
         """
         return ["-c", "check_for_update_on_startup=false"]
 
+    def _reasoning_effort_flags(self) -> list[str]:
+        """Process-local reasoning-effort override — required on BOTH transports.
+
+        Without it the turn inherits ``model_reasoning_effort`` from the user's
+        global ~/.codex/config.toml. That is not merely slow: codex maps some
+        values to an effort the API rejects outright (``ultra`` → ``max`` →
+        HTTP 400 ``Invalid value: 'max'``), which fails the turn with no
+        assistant message. A ``-c`` override is process-local, so the user's
+        global config is never mutated (same technique as
+        :meth:`_interactive_update_flags`).
+        """
+        return ["-c", f"model_reasoning_effort={self.DEFAULT_REASONING_EFFORT}"]
+
     def _emit_flags(self) -> list[str]:
         """argv after ``codex``. Two shapes keyed on ``json_stream``:
           * True (default) → ``exec … --json … -`` headless, prompt over stdin;
@@ -143,6 +154,7 @@ class CodexCliOptions(WorkerCLIOptions):
                 bypass
                 + self._interactive_update_flags()
                 + self._interactive_trust_flags()
+                + self._reasoning_effort_flags()
                 + dev_flags
                 + self._common_tail()
             )
@@ -151,7 +163,7 @@ class CodexCliOptions(WorkerCLIOptions):
         if self.ephemeral:
             head.append("--ephemeral")
         head.append("--json")
-        head.extend(["-c", f"model_reasoning_effort={self.DEFAULT_REASONING_EFFORT}"])
+        head.extend(self._reasoning_effort_flags())
         return head + dev_flags + self._common_tail() + ["-"]  # trailing "-" → codex reads prompt from stdin
 
     def to_json(self) -> dict[str, Any]:
