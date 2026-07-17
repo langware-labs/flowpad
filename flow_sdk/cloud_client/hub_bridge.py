@@ -66,6 +66,30 @@ def _has_asset_typeid_attachment(attachments: Any) -> bool:
     return False
 
 
+def _has_session_carrier_attachment(attachments: Any) -> bool:
+    """True iff ``attachments`` includes a ``remote_worker_session-<id>``
+    TYPE_ID carrier. Session messages must eager-pull their bundle: the
+    per-turn session snapshot lives in the bundle's header, and without the
+    pull a guest whose replies render inline never applies it — the session
+    row stays PENDING ("waiting for approve") while replies stream."""
+    if not attachments:
+        return False
+    for att in attachments:
+        att_type = (
+            att.get("attachment_type") if isinstance(att, dict)
+            else getattr(att, "attachment_type", None)
+        )
+        if att_type != "type_id":
+            continue
+        data = (
+            att.get("data") if isinstance(att, dict)
+            else getattr(att, "data", None)
+        )
+        if isinstance(data, str) and data.startswith("remote_worker_session-"):
+            return True
+    return False
+
+
 def _has_prompt_attachment(attachments: Any) -> bool:
     """True iff ``attachments`` includes a runnable prompt — a legacy inline/file
     PROMPT attachment or a ``prompt-<id>`` TYPE_ID reference.
@@ -117,7 +141,7 @@ async def _maybe_eager_pull_bundle(
     """
     if not attachment_filename:
         return
-    if not _has_asset_typeid_attachment(attachments):
+    if not (_has_asset_typeid_attachment(attachments) or _has_session_carrier_attachment(attachments)):
         return
     if fm_id in _INFLIGHT_BUNDLE_PULLS:
         return
