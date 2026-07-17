@@ -30,6 +30,8 @@ type MessageType =
   | 'cloud_connection_status_msg'
   | 'privacy_mode_msg'
   | 'toplog_state_msg'
+  | 'topic_event_msg'
+  | 'flow_node_status_msg'
   | 'ui_command'
   | 'recovered_msg'
   | 'broadcast';
@@ -127,6 +129,48 @@ export interface ToplogStateMessage extends BaseMessage {
   message_type: 'toplog_state_msg';
   enabled: boolean;
   filter: Record<string, boolean>;
+}
+
+/** A serialized TopicEvent envelope (flow_sdk/flow_manager/envelope.py). */
+export interface TopicEventEnvelope {
+  topic: string;
+  payload: Record<string, unknown>;
+  source: string;
+  correlation_id: string;
+  causation: string[];
+  depth: number;
+  scope?: string | null;
+  ts: string;
+  /** Reason this event was refused (budget trip), if any. */
+  dropped?: string | null;
+}
+
+/**
+ * Broadcast for every event FlowManager routes — the live flow journal
+ * stream. Backend mirror: TopicEventMessage in flow_sdk/api/messages.py.
+ */
+export interface TopicEventMessage extends BaseMessage {
+  message_type: 'topic_event_msg';
+  event: TopicEventEnvelope;
+}
+
+/**
+ * Broadcast on every FlowManager scheduler transition for a flow node —
+ * the push feed for live queue/active counters and node status lines.
+ * Backend mirror: FlowNodeStatusMessage in flow_sdk/api/messages.py.
+ */
+export interface FlowNodeStatusMessage extends BaseMessage {
+  message_type: 'flow_node_status_msg';
+  node_id: string;
+  phase: 'queued' | 'merged' | 'started' | 'finished' | 'failed' | 'slot_freed';
+  /** Node runtime counts AFTER this transition. */
+  queued: number;
+  active: number;
+  event_topic: string;
+  correlation_id: string;
+  /** started → {program_kind, process_id?}; finished → {duration_ms}; failed → {error}. */
+  detail: Record<string, unknown>;
+  ts: string;
 }
 
 /**
@@ -583,6 +627,12 @@ export class ConnectionManager extends EventEmitter {
     if (data.message_type === 'privacy_mode_msg') {
       return this.onPrivacyModeMessage(data as PrivacyModeMessage);
     }
+    if (data.message_type === 'topic_event_msg') {
+      return this.onTopicEventMessage(data as TopicEventMessage);
+    }
+    if (data.message_type === 'flow_node_status_msg') {
+      return this.onFlowNodeStatusMessage(data as FlowNodeStatusMessage);
+    }
     if (data.message_type === 'toplog_state_msg') {
       return this.onToplogStateMessage(data as ToplogStateMessage);
     }
@@ -632,6 +682,14 @@ export class ConnectionManager extends EventEmitter {
 
   onToplogStateMessage(data: ToplogStateMessage) {
     this.emit('on_toplog_state_msg', data);
+  }
+
+  onTopicEventMessage(data: TopicEventMessage) {
+    this.emit('on_topic_event_msg', data);
+  }
+
+  onFlowNodeStatusMessage(data: FlowNodeStatusMessage) {
+    this.emit('on_flow_node_status_msg', data);
   }
 
   onUiCommandMessage(data: UiCommandMessage) {

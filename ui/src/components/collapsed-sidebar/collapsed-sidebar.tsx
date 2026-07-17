@@ -55,7 +55,7 @@ import {
   Search,
   // Settings,
   // Sparkles,
-  // Workflow,
+  Workflow,
   // Variable,
   Webhook,
   Zap,
@@ -114,6 +114,7 @@ export function CollapsedSidebar() {
     { id: 'hooks', title: t`Hooks`, icon: Webhook, viewType: ViewType.HOOKS },
     { id: 'files', title: t`Files`, icon: FolderOpen, viewType: ViewType.EXPLORER },
     { id: 'capabilities', title: t`Capabilities`, icon: BadgeCheck, viewType: ViewType.CAPABILITIES },
+    { id: 'agentic-flows', title: t`Agentic Flows`, icon: Workflow, viewType: ViewType.AGENTIC_FLOWS },
   ];
 
   // Partition the nav items by the current mode's resolved rail: 'visible'

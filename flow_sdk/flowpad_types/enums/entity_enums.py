@@ -15,6 +15,13 @@ class BuiltInRelationshipTypes(StrEnum):
     InvitedBy = "invitedby"
     Role = "role"
     DependsOn = "dependson"
+    # Flow-graph wiring (FlowManager). Strictly bipartite: both edge types
+    # connect a flow_node to a topic, never node↔node.
+    # Declared subscription: flow_node → topic (prefix semantics — listening on
+    # "a.b" covers the whole "a.b.*" subtree).
+    Listens = "listens"
+    # Observed emission: flow_node → topic, stamped by FlowManager on first sight.
+    Emits = "emits"
 
 
 class DependsOnKind(StrEnum):

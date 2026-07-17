@@ -1,5 +1,4 @@
 export * from './annotation';
-export * from './app_secret';
 export * from './agent';
 export * from './AgentConfig';
 export * from './api_key';
@@ -12,6 +11,9 @@ export * from './compute-node';
 export * from './compute_enum';
 export * from './compute_node';
 export * from './flow';
+export * from './flow-node';
+export * from './agentic-flow';
+export * from './topic';
 export * from './fs_item';
 export * from './job';
 export * from './job_execution';

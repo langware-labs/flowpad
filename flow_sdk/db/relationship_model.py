@@ -56,6 +56,18 @@ class ConnectedThroughRelationship(Relationship):
     type: str = BuiltInRelationshipTypes.ConnectedThrough.value
 
 
+class ListensRelationship(Relationship):
+    """Flow-graph declared subscription: flow_node → topic (prefix semantics)."""
+
+    type: str = BuiltInRelationshipTypes.Listens.value
+
+
+class EmitsRelationship(Relationship):
+    """Flow-graph observed emission: flow_node → topic (stamped by FlowManager)."""
+
+    type: str = BuiltInRelationshipTypes.Emits.value
+
+
 class HostedByRelationship(Relationship):
     type: str = BuiltInRelationshipTypes.HostedBy.value
 

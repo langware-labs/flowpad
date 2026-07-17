@@ -77,6 +77,7 @@ from .routes import (
     semantic_checker_router,
     testing_router,
     toplog_router,
+    topics_router,
     transcripts_router,
     ui_router,
     version_router,
@@ -508,6 +509,7 @@ server.add_router(docs_graph_router)
 server.add_router(semantic_checker_router)
 server.add_router(capabilities_router)
 server.add_router(toplog_router)
+server.add_router(topics_router)
 
 server.on_startup(_on_server_startup)
 server.on_shutdown(_shutdown_extras)

@@ -176,6 +176,21 @@ except ImportError as e:
     print(f"[WARN] Failed to import FeedEntry: {e}")
 
 try:
+    from flow_sdk.builtin.topic import Topic  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import Topic: {e}")
+
+try:
+    from flow_sdk.builtin.flow_node import FlowNode  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import FlowNode: {e}")
+
+try:
+    from flow_sdk.builtin.agentic_flow import AgenticFlow  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import AgenticFlow: {e}")
+
+try:
     from flow_sdk.builtin.message_attachment import MessageAttachment  # noqa: F401
 except ImportError as e:
     print(f"[WARN] Failed to import MessageAttachment: {e}")

@@ -68,6 +68,10 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react
 // CI, software-render fallbacks). Loading it only when the graph tab opens
 // keeps app bootstrap independent of WebGL availability.
 const GraphView = lazy(() => import('@src/components/graph-view/GraphView').then((m) => ({ default: m.GraphView })));
+// Lazy like GRAPH — keeps @xyflow/react out of app bootstrap.
+const AgenticFlowsView = lazy(() =>
+  import('@src/components/agentic-flows/AgenticFlowsView').then((m) => ({ default: m.AgenticFlowsView })),
+);
 const DocsGraphView = lazy(() =>
   import('@src/components/graph-view/DocsGraphView').then((m) => ({ default: m.DocsGraphView })),
 );
@@ -346,6 +350,12 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
         return (
           <Suspense fallback={null}>
             <GraphView />
+          </Suspense>
+        );
+      case ViewType.AGENTIC_FLOWS:
+        return (
+          <Suspense fallback={null}>
+            <AgenticFlowsView />
           </Suspense>
         );
       case ViewType.K_BROWSER:

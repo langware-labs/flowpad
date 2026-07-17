@@ -37,6 +37,8 @@ class WSMessageType(Enum):
     CLOUD_CONNECTION_STATUS_MSG = "cloud_connection_status_msg"
     PRIVACY_MODE_MSG = "privacy_mode_msg"
     TOPLOG_STATE_MSG = "toplog_state_msg"
+    TOPIC_EVENT_MSG = "topic_event_msg"
+    FLOW_NODE_STATUS_MSG = "flow_node_status_msg"
 
 
 class ExeMessageSubType(StrEnum):
@@ -147,6 +149,35 @@ class ToplogStateMessage(BaseMessage):
     message_type: str = WSMessageType.TOPLOG_STATE_MSG.value
     enabled: bool
     filter: Dict[str, bool]
+
+
+class TopicEventMessage(BaseMessage):
+    """Broadcast for every event FlowManager routes (the live journal stream).
+    ``event`` is a serialized TopicEvent envelope (flow_sdk/flow_manager/envelope.py).
+    The TS mirror is ``TopicEventMessage`` in ``ts_sdk/src/websocket.ts``."""
+
+    message_type: str = WSMessageType.TOPIC_EVENT_MSG.value
+    event: Dict[str, Any]
+
+
+class FlowNodeStatusMessage(BaseMessage):
+    """Broadcast on every FlowManager scheduler transition for a flow node —
+    the live counters/status feed the studio canvas runs on (push, not poll).
+    ``phase``: queued | merged | started | finished | failed | slot_freed.
+    ``queued``/``active`` are the node's runtime counts AFTER the transition.
+    The TS mirror is ``FlowNodeStatusMessage`` in ``ts_sdk/src/websocket.ts``."""
+
+    message_type: str = WSMessageType.FLOW_NODE_STATUS_MSG.value
+    node_id: str
+    phase: str
+    queued: int = 0
+    active: int = 0
+    event_topic: str = ""
+    correlation_id: str = ""
+    # Phase extras: started → {program_kind, process_id?}; finished →
+    # {duration_ms}; failed → {error}; merged → {}.
+    detail: Dict[str, Any] = {}
+    ts: str = ""
 
 
 class BroadcastMessage(BaseMessage):

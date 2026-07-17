@@ -327,6 +327,12 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     tabLocation: 'dedicated',
     canAddAsTab: true,
   },
+  [ViewType.AGENTIC_FLOWS]: {
+    title: 'Agentic Flows',
+    iconName: 'Workflow',
+    tabLocation: 'dedicated',
+    canAddAsTab: true,
+  },
   [ViewType.PLAN]: {
     title: 'Plan',
     iconName: 'FileText',
