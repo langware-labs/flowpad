@@ -161,7 +161,7 @@ class ClaudeDriver:
         parent_effort = cli_cfg.get("effort")
         # Mirror PTY path's FLOWPAD_EXECUTION_SCOPE injection
         # (agentic_process.py:786-788) so headless workers can route
-        # CLI calls (e.g. ``flow workflow report``) back to this process.
+        # CLI calls (e.g. ``flow record``) back to this process.
         env_vars = apply_worker_env(dict(cli_cfg.get("env_vars") or {}), process)
         await apply_worker_secret_env(env_vars, process)
 

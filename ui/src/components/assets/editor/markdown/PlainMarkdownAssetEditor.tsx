@@ -5,8 +5,8 @@ import { RunButton } from '@src/components/assets/editor/run/RunButton';
 import { useRunOnFile } from '@src/components/assets/editor/run/useRunOnFile';
 import { DiscussDocButtons } from '@src/components/assets/editor/discuss/DiscussDocButtons';
 import type { ExtraSideTab } from '@src/components/milkdown-editor/EditorWithSidePanel';
-import { WorkflowRunsPanel } from '@src/components/workflows-view/WorkflowRunsPanel';
-import type { ProcessEntry } from '@src/components/workflows-view/workflow-run-store';
+import { ProcessRunsPanel } from '@src/components/process-runs/ProcessRunsPanel';
+import type { ProcessEntry } from '@src/components/process-runs/process-run-store';
 import { useProcessesForTarget } from '@src/components/entity-execution-panel';
 import { useEntityByPath } from '@src/hooks/use-entity-by-path';
 import { entityReloadKey } from '@src/utils/entity-reload-key';
@@ -132,10 +132,9 @@ export function PlainMarkdownAssetEditor({ fsRef, assetType }: PlainMarkdownAsse
     icon: History,
     description: 'Runs on this file',
     panel: (
-      <WorkflowRunsPanel
+      <ProcessRunsPanel
         entries={runHistory}
         currentEntry={processEntry}
-        computeNodeId={fsRef.typeId.id}
       />
     ),
   };

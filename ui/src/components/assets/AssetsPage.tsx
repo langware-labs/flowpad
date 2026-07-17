@@ -57,7 +57,6 @@ import '@src/components/assets/columns/assetColumns';
 import '@src/components/assets/columns/bookmarkColumns';
 import '@src/components/assets/columns/skillColumns';
 import '@src/components/assets/columns/agentColumns';
-import '@src/components/assets/columns/workflowColumns';
 import '@src/components/assets/columns/taskColumns';
 import '@src/components/assets/columns/projectColumns';
 import '@src/components/assets/columns/planColumns';

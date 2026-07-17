@@ -151,8 +151,8 @@ async function handleFlowData(_typeId: unknown, flowData: Record<string, unknown
           id: `skill-activated:${meta.skill_name}`,
           level: 'info',
           title: meta.skill_name,
-          category: ViewType.EXECUTE_FLOW,
-          actions: [{ label: 'View', href: `/dock/${ViewType.EXECUTE_FLOW}` }],
+          category: ViewType.ASSETS,
+          actions: [{ label: 'View', href: '/dock/assets/list/skill' }],
         });
       }
     } else if (eventName === 'started_generating_skill' && context?.skill_name) {
@@ -178,10 +178,8 @@ async function handleFlowData(_typeId: unknown, flowData: Record<string, unknown
         id: `skill:${context.session_id ?? context.skill_name}`,
         level: 'success',
         title: `Ready: ${context.skill_name}`,
-        category: ViewType.EXECUTE_FLOW,
-        actions: context.cwd
-          ? [{ label: 'Execute Skill', href: `/dock/${ViewType.EXECUTE_FLOW}/${encodeURIComponent(context.cwd)}` }]
-          : undefined,
+        category: ViewType.ASSETS,
+        actions: [{ label: 'View Skill', href: '/dock/assets/list/skill' }],
       });
     }
   }

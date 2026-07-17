@@ -3,7 +3,6 @@ const HEX_COLORS: Record<string, string> = {
   task: '#eab308',
   user: '#6366f1',
   workspace: '#64748b',
-  workflow: '#6366f1',
   agentic_process: '#8b5cf6',
   markdown: '#3b82f6',
   agent: '#f59e0b',

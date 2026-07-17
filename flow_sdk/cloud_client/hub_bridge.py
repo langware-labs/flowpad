@@ -31,13 +31,13 @@ logger = logging.getLogger(__name__)
 # step 404s. We eager-pull the bundle for these and skip the pull for
 # media-only FMs (FILE attachments stay manual).
 _ASSET_TYPEID_TYPES: frozenset[str] = frozenset({
-    "skill", "agent", "markdown", "spec", "workflow", "whiteboard",
+    "skill", "agent", "markdown", "spec", "whiteboard",
 })
 
 
 def _has_asset_typeid_attachment(attachments: Any) -> bool:
     """True iff ``attachments`` includes a TYPE_ID attachment for a file-backed
-    asset entity (skill / agent / markdown / spec / workflow / whiteboard).
+    asset entity (skill / agent / markdown / spec / whiteboard).
 
     Tolerates both the hub wire shape (list of dicts) and the local model
     shape (list of ``Attachment`` instances) — the ``data`` field is a

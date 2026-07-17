@@ -69,8 +69,6 @@ export function useContext() {
     isDesktop: typeof dataContext.isDesktop;
     instanceName: typeof dataContext.instanceName;
     warnings: typeof dataContext.warnings;
-    workflow: typeof dataContext.workflow;
-    workflowTypeId: typeof dataContext.workflowTypeId;
     agenticProcess: typeof dataContext.agenticProcess;
     agenticProcessTypeId: typeof dataContext.agenticProcessTypeId;
     activeShellId: typeof dataContext.activeShellId;
@@ -104,8 +102,6 @@ export function useContext() {
     isDesktop: dataContext.isDesktop,
     instanceName: dataContext.instanceName,
     warnings: dataContext.warnings,
-    workflow: dataContext.workflow,
-    workflowTypeId: dataContext.workflowTypeId,
     agenticProcess: dataContext.agenticProcess,
     agenticProcessTypeId: dataContext.agenticProcessTypeId,
     activeShellId: dataContext.activeShellId,
@@ -149,8 +145,6 @@ export function useContext() {
       isDesktop: dataContext.isDesktop,
       instanceName: dataContext.instanceName,
       warnings: dataContext.warnings,
-      workflow: dataContext.workflow,
-      workflowTypeId: dataContext.workflowTypeId,
       agenticProcess: dataContext.agenticProcess,
       agenticProcessTypeId: dataContext.agenticProcessTypeId,
       activeShellId: dataContext.activeShellId,
@@ -194,8 +188,6 @@ export function useContext() {
       prev.isDesktop !== current.isDesktop ||
       prev.instanceName !== current.instanceName ||
       prev.warnings !== current.warnings ||
-      prev.workflow !== current.workflow ||
-      typeIdChanged(prev.workflowTypeId, current.workflowTypeId) ||
       prev.agenticProcess !== current.agenticProcess ||
       typeIdChanged(prev.agenticProcessTypeId, current.agenticProcessTypeId) ||
       prev.activeShellId !== current.activeShellId ||

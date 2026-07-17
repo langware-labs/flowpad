@@ -6,7 +6,7 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { FileText, FolderOpen } from 'lucide-react';
 import { AgenticProcess } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
-import type { ProcessEntry } from './workflow-run-store';
+import type { ProcessEntry } from './process-run-store';
 
 /**
  * Claude / Codex name workspace dirs by replacing every non-alphanumeric
@@ -51,39 +51,36 @@ function runLabel(entry: ProcessEntry, n: number): string {
   return `Run ${n}`;
 }
 
-interface WorkflowRunsPanelProps {
+interface ProcessRunsPanelProps {
   entries: ProcessEntry[];
   currentEntry: ProcessEntry | null;
-  computeNodeId: string | undefined;
   /** Called when a row is clicked. Receives the process id. */
   onSelectRun?: (processId: string) => void;
 }
 
 /**
- * Scrollable list of workflow runs. Renders as a plain content block — no
+ * Scrollable list of process runs. Renders as a plain content block — no
  * drawer chrome — so it can be dropped into any container (today: a tab panel
  * inside the markdown side drawer).
  */
-export function WorkflowRunsPanel({
+export function ProcessRunsPanel({
   entries,
   currentEntry,
-  computeNodeId,
   onSelectRun,
-}: WorkflowRunsPanelProps) {
+}: ProcessRunsPanelProps) {
   return (
-    <div className="h-full overflow-y-auto py-1" data-testid="workflow-runs-panel">
+    <div className="h-full overflow-y-auto py-1" data-testid="process-runs-panel">
       {entries.length === 0 && (
         <div className="px-3 py-6 text-center text-[11px] text-muted-foreground">
           <Trans>No runs yet.</Trans>
         </div>
       )}
       {entries.map((entry, idx) => (
-        <WorkflowRunItem
+        <ProcessRunItem
           key={entry.process.id}
           entry={entry}
           label={runLabel(entry, entries.length - idx)}
           isCurrent={currentEntry?.process.id === entry.process.id}
-          computeNodeId={computeNodeId}
           onSelectRun={onSelectRun}
         />
       ))}
@@ -91,17 +88,15 @@ export function WorkflowRunsPanel({
   );
 }
 
-function WorkflowRunItem({
+function ProcessRunItem({
   entry,
   label,
   isCurrent,
-  computeNodeId,
   onSelectRun,
 }: {
   entry: ProcessEntry;
   label: string;
   isCurrent: boolean;
-  computeNodeId: string | undefined;
   onSelectRun?: (processId: string) => void;
 }) {
   const { t } = useLingui();
@@ -118,7 +113,7 @@ function WorkflowRunItem({
     try {
       await process.output_folder.open();
     } catch (err) {
-      console.error('[WorkflowRunItem] Failed to open output folder:', err);
+      console.error('[ProcessRunItem] Failed to open output folder:', err);
     }
   };
 
@@ -148,7 +143,7 @@ function WorkflowRunItem({
             }
           : undefined
       }
-      data-testid="workflow-run-row"
+      data-testid="process-run-row"
     >
       <ProcessStatusLine
         process={process}

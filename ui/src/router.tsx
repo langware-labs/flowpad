@@ -7,8 +7,7 @@ import { WizardHost } from '@src/components/wizard/WizardHost';
 import { HooksView } from '@src/components/hooks-view/hooks-view';
 import { SessionsView } from '@src/components/sessions-view/sessions-view';
 // `WorkflowTracePreviewPage` was a dev-only standalone preview that bypassed
-// the entity layer. The workflow-runner refactor (May 2026) routes everything
-// through the main /dock/assets/editor/workflow URL. Removed.
+// the entity layer. Removed.
 import { BASE_PATH } from '@src/constants/basePath';
 import AgentRedirect from '@src/pages/agent-redirect';
 import DiscoverPage from '@src/pages/discover-page/discover-page';
@@ -151,8 +150,6 @@ export const router = createBrowserRouter(
         <Route path="main/api-keys" element={<ApiKeysView />} />
         {/* Connections route hidden until OAuth flow is fully implemented */}
         <Route path="hooks" element={<HooksView />} />
-        {/* /dev/trace/:runId removed by the workflow-runner refactor.
-            Use /dock/assets/editor/workflow/<asset_ref> instead. */}
         <Route path="*" element={<DevToDockRedirect />} />
       </Route>
 

@@ -16,7 +16,7 @@ function formatElapsed(ms: number): string {
  * Hook that provides elapsed time, live status message, activity label,
  * and token usage for a running session/process.
  */
-export function useWorkflowProgressInfo(
+export function useProcessProgressInfo(
   process: AgenticProcess | null,
   isRunning: boolean,
 ): {
@@ -74,18 +74,18 @@ export function useWorkflowProgressInfo(
     const data = flowData.data;
 
     if (elementType === 'reasoning') {
-      console.log('[WorkflowProgress] reasoning');
+      console.log('[ProcessProgress] reasoning');
       setActivityLabel('Reasoning');
     } else if (elementType === 'tool-call') {
       // Tool name available directly from attribute set by backend
       const toolName = flowData.attributes['tool-name'] || 'tool';
       const label = `Using ${toolName}...`;
-      console.log('[WorkflowProgress] tool-call:', { toolName, data });
+      console.log('[ProcessProgress] tool-call:', { toolName, data });
       setActivityLabel(label);
     } else if (elementType === 'tool-result') {
-      console.log('[WorkflowProgress] tool-result:', { data });
+      console.log('[ProcessProgress] tool-result:', { data });
     } else if (elementType === 'chat') {
-      console.log('[WorkflowProgress] chat:', {
+      console.log('[ProcessProgress] chat:', {
         data: typeof data === 'string' ? data.slice(0, 80) : data,
       });
       setActivityLabel('Responding...');
@@ -98,20 +98,20 @@ export function useWorkflowProgressInfo(
         }
       }
     } else if (elementType === 'status') {
-      console.log('[WorkflowProgress] status:', { data });
+      console.log('[ProcessProgress] status:', { data });
       // Extract token usage from ResultMessage usage data
       if (typeof data === 'object' && data) {
         const obj = data as Record<string, unknown>;
         const usage = obj.usage as Record<string, number> | undefined;
         if (usage && typeof usage.input_tokens === 'number' && typeof usage.output_tokens === 'number') {
-          console.log('[WorkflowProgress] tokens:', { input: usage.input_tokens, output: usage.output_tokens });
+          console.log('[ProcessProgress] tokens:', { input: usage.input_tokens, output: usage.output_tokens });
           setTokenUsage({ input: usage.input_tokens, output: usage.output_tokens });
         }
       }
     } else if (elementType === 'data') {
-      console.log('[WorkflowProgress] data:', { data });
+      console.log('[ProcessProgress] data:', { data });
     } else {
-      console.log('[WorkflowProgress] other:', { elementType, data });
+      console.log('[ProcessProgress] other:', { elementType, data });
     }
   }, []);
 

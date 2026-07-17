@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { AgenticProcess, ProcessStatus, isProcessActive, type Task } from '@sdk';
 import { useProcessState } from './use-process-state';
-import { useWorkflowProgressInfo } from './use-workflow-progress-info';
+import { useProcessProgressInfo } from './use-process-progress-info';
 import { hasStatusAnalysis, isActionTask, TaskType } from '@src/components/task-bar/task-utils';
 
 interface AnalysisTaskProgress {
@@ -77,7 +77,7 @@ export function useAnalysisTaskProgress(task: Task | null): AnalysisTaskProgress
   const isComplete = taskIsDone || processComplete;
   const isError = !taskIsDone && processError;
 
-  const { statusMessage, activityLabel, elapsedTime } = useWorkflowProgressInfo(process, isRunning);
+  const { statusMessage, activityLabel, elapsedTime } = useProcessProgressInfo(process, isRunning);
 
   return {
     isRunning,

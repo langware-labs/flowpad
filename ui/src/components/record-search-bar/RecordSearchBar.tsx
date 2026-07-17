@@ -9,7 +9,7 @@ import { Trans, useLingui } from '@lingui/react/macro';
 
 export const RECORD_TYPES = [
   'bookmark', 'claude_session', 'codex_session', 'copilot_session', RecordType.SKILL, RecordType.AGENT, 'claude_hook', RecordType.COMMAND,
-  RecordType.ANNOTATION, 'comment', RecordType.TASK, 'workflow', RecordType.MARKDOWN, RecordType.PLAN,
+  RecordType.ANNOTATION, 'comment', RecordType.TASK, RecordType.MARKDOWN, RecordType.PLAN,
   RecordType.CLAUDE_MD, 'claude_memory', 'claude_rules', RecordType.PROJECT, 'codex_project',
 ];
 const TIME_PRESETS = [
@@ -41,7 +41,6 @@ export const TYPE_COLORS: Record<string, string> = {
   annotation: 'bg-sky-500/20 text-sky-700 dark:text-sky-300',
   comment: 'bg-teal-500/20 text-teal-700 dark:text-teal-300',
   task: 'bg-yellow-500/20 text-yellow-700 dark:text-yellow-300',
-  workflow: 'bg-indigo-500/20 text-indigo-700 dark:text-indigo-300',
   docs: 'bg-cyan-500/20 text-cyan-700 dark:text-cyan-300',
   plan: 'bg-fuchsia-500/20 text-fuchsia-700 dark:text-fuchsia-300',
   claude_md: 'bg-lime-500/20 text-lime-700 dark:text-lime-300',

@@ -66,7 +66,6 @@ export const EVENT_ICONS: Record<string, LucideIcon> = {
 /** Icons for hook_op events, keyed by event_name or operation */
 export const HOOK_OP_ICONS: Record<string, LucideIcon> = {
   rules_executed: Microscope,
-  workflow_trace: ListChecks,
 };
 
 export function getEventIcon(eventType: string, event?: TraceEvent): LucideIcon {
@@ -97,7 +96,6 @@ export const WEBHOOK_TYPE_COLORS: Record<string, string> = {
 
 /** Colors for specific hook_op event_name values */
 export const HOOK_OP_COLORS: Record<string, string> = {
-  workflow_trace: 'text-teal-400',
   rules_executed: 'text-amber-400',
 };
 
