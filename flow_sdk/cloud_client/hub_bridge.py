@@ -731,6 +731,11 @@ class HubWsBridge:
         }
         clean = {k: v for k, v in data.items() if k in _LOCAL_FIELDS and k not in _PROJECTED}
         clean["id"] = conv_id
+        # Wire adapter: the hub sends the roster under the ``participants`` key
+        # (its Conversation field + fanout contract); the local cache field is
+        # ``members`` (generic, on the Entity base). Map it at ingest.
+        if "participants" in clean:
+            clean["members"] = clean.pop("participants")
 
         self.remember_hub_conversation(conv_id)
 
@@ -759,7 +764,7 @@ class HubWsBridge:
             await Conversation.delete_by_id(conv_id)
             return
 
-        for field in ("title", "message_status_visible", "git_sharing_enabled", "participants",
+        for field in ("title", "message_status_visible", "git_sharing_enabled", "members",
                       "remote_project_id", "remote_project_name", "shared_context_entities"):
             if field in clean:
                 setattr(existing, field, clean[field])

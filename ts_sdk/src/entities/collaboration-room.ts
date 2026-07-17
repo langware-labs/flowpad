@@ -13,7 +13,7 @@ export interface ICollaborationRoom extends IEntity {
   host_name?: string | null;
   host_member_id?: string | null;
   name?: string | null;
-  members?: ProjectMember[];
+  presence?: ProjectMember[];
   status?: string;
   started_at?: string | null;
   updated_at?: string | null;
@@ -36,7 +36,7 @@ export class CollaborationRoom
   host_name: string | null = null;
   host_member_id: string | null = null;
   name: string | null = null;
-  members: ProjectMember[] = [];
+  presence: ProjectMember[] = [];
   status: string = 'active';
   started_at: string | null = null;
   updated_at: string | null = null;
@@ -45,7 +45,7 @@ export class CollaborationRoom
   constructor(entity: Partial<ICollaborationRoom> = {}) {
     super(entity as IEntity);
     Object.assign(this, entity);
-    this.members = entity.members ?? [];
+    this.presence = entity.presence ?? [];
   }
 
   /** Convenience: list of agentic_process TypeIds in this room's context. */
@@ -88,10 +88,10 @@ export class CollaborationRoom
     const info = new ActionInfo('join', this.typeId.type, this.typeId.id, 'POST');
     info.bodyParameters = { member_id: memberId, name };
     const result = await dataManager.callAction<{ member_id: string; name: string }, any>(info);
-    if (result && typeof result === 'object' && 'members' in result) {
-      this.members = (result as any).members ?? this.members;
+    if (result && typeof result === 'object' && 'presence' in result) {
+      this.presence = (result as any).presence ?? this.presence;
     }
-    return this.members.find((m) => m.member_id === memberId) ?? null;
+    return this.presence.find((m) => m.member_id === memberId) ?? null;
   }
 
   public async heartbeat(memberId: string): Promise<ProjectMember[] | null> {
@@ -99,11 +99,11 @@ export class CollaborationRoom
     info.bodyParameters = { member_id: memberId };
     const result = await dataManager.callAction<
       { member_id: string },
-      { ok: boolean; members: ProjectMember[] }
+      { ok: boolean; presence: ProjectMember[] }
     >(info);
-    if (result && Array.isArray(result.members)) {
-      this.members = result.members;
-      return result.members;
+    if (result && Array.isArray(result.presence)) {
+      this.presence = result.presence;
+      return result.presence;
     }
     return null;
   }
@@ -175,7 +175,7 @@ export class CollaborationRoom
       host_name: hostName,
       host_member_id: memberId,
       name: effectiveName,
-      members: [
+      presence: [
         {
           member_id: memberId,
           name: hostName,

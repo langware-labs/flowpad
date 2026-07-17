@@ -511,7 +511,7 @@ function ConversationRow({
   const wireSender = firstMessage?.sender_name?.trim() || null;
   const rosterSender = (() => {
     const me = { id: cloudUser?.id ?? currentUser?.id ?? null, email: myEmail || null };
-    const other = (conv.participants ?? []).find((p) => p && !participantIsUser(p, me));
+    const other = (conv.members ?? []).find((p) => p && !participantIsUser(p, me));
     return other ? participantName(other) : null;
   })();
   const inviterName = titleSender || wireSender || rosterSender;
@@ -580,10 +580,10 @@ function ConversationRow({
           {!isInvitationRow && messageCount > 0 && (
             <span>· {messageCount} msg{messageCount === 1 ? '' : 's'}</span>
           )}
-          {!isInvitationRow && (conv.participants?.length ?? 0) > 0 && (
+          {!isInvitationRow && (conv.members?.length ?? 0) > 0 && (
             <>
               <span>·</span>
-              <ConversationParticipants participants={conv.participants!} kind={conv.kind} />
+              <ConversationParticipants participants={conv.members!} kind={conv.kind} />
             </>
           )}
         </div>

@@ -129,6 +129,14 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
   root_vfs_path?: string;
   fs_storage_mount_path?: string;
   visitor_role?: string;
+  /**
+   * Hub role roster cache: one row per member with their hub-set role. Membership
+   * is a generic capability of any remote entity; the hub is the source of truth
+   * (RoleRelationship edges) and this is a READ CACHE. ``deepAssign`` populates it
+   * from the wire ``members`` field. The conversation WIRE key is ``participants``
+   * (hub contract) and is adapted to ``members`` in Conversation.onEntityUpdate.
+   */
+  members?: EntityMember[];
   _expand?: EntityExpansion;
   _dirty: boolean = true;
   _typeId: TypeId | null = null;

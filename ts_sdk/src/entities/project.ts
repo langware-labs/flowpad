@@ -103,18 +103,21 @@ export class Project extends APIEntity<Project> {
   static type: string = 'project';
   computeNode?: ComputeNode | null = null;
   // ── Hub collaboration (Project as a shared unit — mirrors Conversation) ──
-  /** Hub role roster [{user_id, email, name, role}] — mirrors backend
-   *  Project.participants. This is what the Members UI (`useMembers`) reads;
-   *  distinct from the local presence `members` overlay below. The project's
-   *  own (uuid4) id is the shared hub identity — no separate cloud id. */
-  participants: ConversationParticipant[] = [];
+  /** Hub role roster [{user_id, email, name, role}] — the generic ``members``
+   *  cache from the Entity base (redeclared with a default so readers get an
+   *  array). This is what the Members UI (`useMembers`) reads; distinct from the
+   *  local presence `presence` overlay below. The project's own (uuid4) id is the
+   *  shared hub identity — no separate cloud id. */
+  members: ConversationParticipant[] = [];
   /** Last UI view mode used in this project (vibe|standard|advanced|dev);
    *  applied on project load so the mode is remembered per project. */
   last_mode: string | null = null;
   // ── Collaboration overlay (merged from the former CollaborationSpace) ──
   session_code: string | null = null;
   host_member_id: string | null = null;
-  members: ProjectMember[] = [];
+  /** Local collaboration presence (session-code join, no roles). Renamed from
+   *  `members` so that name is free for the hub role roster. */
+  presence: ProjectMember[] = [];
   /** Context folders: extra directories auto-added to every agentic worker's
    *  --add-dir set and browseable in the Explorer as their own root. Mirrors
    *  the backend Project.include_dirs. */
@@ -128,11 +131,11 @@ export class Project extends APIEntity<Project> {
 
   constructor(entity: Partial<Project> = {}) {
     super(entity);
-    this.participants = (entity.participants as ConversationParticipant[] | undefined) ?? [];
+    this.members = (entity.members as ConversationParticipant[] | undefined) ?? [];
     this.last_mode = (entity.last_mode as string | null | undefined) ?? null;
     this.session_code = (entity.session_code as string | null | undefined) ?? null;
     this.host_member_id = (entity.host_member_id as string | null | undefined) ?? null;
-    this.members = (entity.members as ProjectMember[] | undefined) ?? [];
+    this.presence = (entity.presence as ProjectMember[] | undefined) ?? [];
     this.include_dirs = (entity.include_dirs as string[] | undefined) ?? [];
     this.context_dir_infos = (entity.context_dir_infos as ProjectContextDirInfo[] | undefined) ?? [];
     this.secret_origins = (entity.secret_origins as ProjectSecretOriginSummary[] | undefined) ?? [];
@@ -423,7 +426,7 @@ export class Project extends APIEntity<Project> {
 
   /** True when the member's last_seen_at is within `windowMs` of now. */
   isMemberOnline(memberId: string, windowMs: number = 30_000): boolean {
-    const m = this.members.find((x) => x.member_id === memberId);
+    const m = this.presence.find((x) => x.member_id === memberId);
     if (!m || !m.last_seen_at) return false;
     const t = Date.parse(m.last_seen_at);
     if (Number.isNaN(t)) return false;
@@ -452,7 +455,7 @@ export class Project extends APIEntity<Project> {
     if (result) {
       if (result.session_code !== undefined) this.session_code = result.session_code ?? null;
       if (result.host_member_id !== undefined) this.host_member_id = result.host_member_id ?? null;
-      if (Array.isArray(result.members)) this.members = result.members as ProjectMember[];
+      if (Array.isArray(result.presence)) this.presence = result.presence as ProjectMember[];
     }
     return this;
   }
@@ -465,10 +468,10 @@ export class Project extends APIEntity<Project> {
       { member_id: string; name: string },
       Partial<Project>
     >(info);
-    if (result && Array.isArray(result.members)) {
-      this.members = result.members as ProjectMember[];
+    if (result && Array.isArray(result.presence)) {
+      this.presence = result.presence as ProjectMember[];
     }
-    return this.members.find((m) => m.member_id === memberId) ?? null;
+    return this.presence.find((m) => m.member_id === memberId) ?? null;
   }
 
   /** Presence ping — bumps last_seen_at on the backend. */
@@ -477,11 +480,11 @@ export class Project extends APIEntity<Project> {
     info.bodyParameters = { member_id: memberId };
     const result = await dataManager.callAction<
       { member_id: string },
-      { ok: boolean; members: ProjectMember[] }
+      { ok: boolean; presence: ProjectMember[] }
     >(info);
-    if (result && Array.isArray(result.members)) {
-      this.members = result.members;
-      return result.members;
+    if (result && Array.isArray(result.presence)) {
+      this.presence = result.presence;
+      return result.presence;
     }
     return null;
   }

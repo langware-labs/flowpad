@@ -94,7 +94,7 @@ def _conv_summary_row(conv: dict) -> dict:
             "user_id": p.get("user_id"),
             "role": p.get("role"),
         }
-        for p in (conv.get("participants") or [])
+        for p in (conv.get("members") or [])
     ]
     return {
         "id": conv.get("id"),

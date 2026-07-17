@@ -159,7 +159,7 @@ def _normalize_hub_response(action_name: str, hub_resp: Any) -> Any:
     """Translate hub field names into the canonical client shape.
 
     The hub's ``Membership`` response uses ``user_email`` / ``user_name`` /
-    ``user_picture``; the client and ``Conversation.participants`` cache
+    ``user_picture``; the client and the ``Entity.members`` roster cache
     expect ``email`` / ``name`` / ``picture``. Normalizing here means
     callers (TS SDK, local mirror, downstream UI) all see one shape.
 
@@ -258,10 +258,12 @@ async def mirror_hub_response_into_local(entity: Entity, action_name: str, hub_r
     if hub_resp is None:
         return
 
-    # Generic shape: action returns a list whose entries look like
-    # participants → mirror onto ``entity.participants`` if the field exists.
+    # Generic shape: the ``members`` action returns the roster list → mirror it
+    # onto ``entity.members`` (the roster cache, now on the Entity base so this
+    # fires for every remote type — org/team included, not just conversation/
+    # project which previously declared their own field).
     if action_name == "members" and isinstance(hub_resp, list):
-        if hasattr(entity, "participants"):
+        if hasattr(entity, "members"):
             try:
                 new_participants = list(hub_resp)
                 # EQUALITY GUARD — only assign+save when the roster actually
@@ -277,10 +279,10 @@ async def mirror_hub_response_into_local(entity: Entity, action_name: str, hub_r
                 # the already-normalized stored value against the new normalized
                 # value (both went through ``_normalize_hub_response``), so the
                 # check isn't defeated by raw-vs-normalized key differences.
-                current = list(getattr(entity, "participants", None) or [])
+                current = list(getattr(entity, "members", None) or [])
                 if current == new_participants:
                     return
-                entity.participants = new_participants
+                entity.members = new_participants
                 # Best-effort save; never blow up the action if persistence fails.
                 save = getattr(entity, "save", None)
                 if callable(save):
