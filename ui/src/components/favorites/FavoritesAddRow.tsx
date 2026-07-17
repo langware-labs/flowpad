@@ -4,6 +4,8 @@ import { displayLabelForTypeid, parseTypeid } from '@src/components/asset-manage
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { useContext } from '@src/hooks/useContext';
 import { useFavorites } from '@src/hooks/use-favorites';
+import { useCurrentDock } from '@src/navigation/useDockNavigation';
+import { getAllTabsSnapshot } from '@src/tabs/all-tabs-store';
 import { useLingui } from '@lingui/react/macro';
 import { FolderPlus, PackagePlus, Plus, Star } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
@@ -20,13 +22,15 @@ import { useState, type ReactNode } from 'react';
  *    surface; a full dialog is too heavy for a one-word name.
  *  - Asset — any registered asset, via the same picker used elsewhere. Files
  *    that are assets (markdown, whiteboards, decks…) are reachable here.
- *  - Current — whatever entity is open right now. Shown disabled (not hidden)
- *    when nothing is open, so it stays discoverable.
+ *  - Current — bookmarks whatever is open: an entity-backed view by its typeid,
+ *    anything else (web app, shell, lens) by its dock pointer (restored with
+ *    openDock). Only disabled on a full-bleed surface (Home) with no tab.
  */
 export function FavoritesAddRow({ parentId }: { parentId: string }) {
   const { t } = useLingui();
   const { createFolder, addFavorite } = useFavorites();
   const { activeEntity, activeEntityTypeId } = useContext();
+  const currentDock = useCurrentDock();
   const [pickerOpen, setPickerOpen] = useState(false);
   const [folderName, setFolderName] = useState<string | null>(null); // null = not naming
 
@@ -50,13 +54,35 @@ export function FavoritesAddRow({ parentId }: { parentId: string }) {
     );
   };
 
-  const hasCurrent = !!(activeEntityTypeId && activeEntity);
+  // "Bookmark what's open" works for ANY open view. An entity-backed dock
+  // (editor, task, project, session) bookmarks that entity, so it navigates back
+  // relocation-proof via its typeid. Anything else (a web app, a shell, a lens)
+  // bookmarks the DOCK itself — the whole pointer, restored by openDock. Only a
+  // full-bleed surface like Home has no tab identity, so nothing to bookmark.
+  const hasCurrent = !!(activeEntityTypeId && activeEntity) || (!activeEntity && !!currentDock);
   const addCurrent = () => {
-    if (!activeEntityTypeId || !activeEntity) return;
-    void addFavorite(
-      { entityType: activeEntityTypeId.type, entityId: activeEntityTypeId.id, title: activeEntity.displayName },
-      parentId,
-    );
+    if (activeEntityTypeId && activeEntity) {
+      void addFavorite(
+        { entityType: activeEntityTypeId.type, entityId: activeEntityTypeId.id, title: activeEntity.displayName },
+        parentId,
+      );
+      return;
+    }
+    if (!activeEntity && currentDock) {
+      const dockPointer = currentDock.toJSON();
+      // Snapshot, not the useAllTabs hook: the title is only needed at click
+      // time, and subscribing would re-render this row on every tab change.
+      const tab = getAllTabsSnapshot().find((t) => t.getKey() === currentDock.tabHash);
+      void addFavorite(
+        {
+          entityType: 'dock',
+          entityId: currentDock.tabHash ?? dockPointer,
+          title: tab?.name || t`Bookmarked view`,
+          nav: { pointer: dockPointer },
+        },
+        parentId,
+      );
+    }
   };
 
   return (
