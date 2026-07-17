@@ -31,7 +31,7 @@ _MIRRORED_FIELDS = (
     "account",
     "domain",
     "icon",
-    "participants",
+    "members",
     "shared_context_entities",
     "shared_context_origins",
     "shared_secret_origins",

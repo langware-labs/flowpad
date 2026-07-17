@@ -166,6 +166,28 @@ def _schedule_setup_prompt(ap, seed: str) -> None:
     task.add_done_callback(_RECEPTION_SETUP_TASKS.discard)
 
 
+def migrate_presence_shaped_members(data: Any) -> Any:
+    """Move a legacy presence-shaped ``members`` value to ``presence``.
+
+    Before the roster cache became the generic ``Entity.members``, ``Project``
+    and ``CollaborationRoom`` named this field ``members`` and stored session-code
+    presence rows (``{member_id, ...}``, no ``role``). Old DB rows still carry that
+    key; the hub roster rows have ``user_id``/``role``. A value that is all
+    presence-shaped is migrated to ``presence`` and cleared from ``members`` (the
+    roster self-heals from the hub on next read). Shared by both types'
+    ``mode="before"`` validators — see each ``_migrate_legacy_presence``.
+    """
+    if isinstance(data, dict):
+        legacy = data.get("members")
+        if (
+            isinstance(legacy, list)
+            and legacy
+            and all(isinstance(m, dict) and "member_id" in m and "role" not in m for m in legacy)
+        ):
+            data = {**data, "presence": data.get("presence") or legacy, "members": []}
+    return data
+
+
 class Entity(DBEntity):
     env_vars: SerializeAsAny[EntityEnvVars[EnvVar] | None] = Field(default=None)
     visitor_role: str | None = Field(default=None)
@@ -173,6 +195,18 @@ class Entity(DBEntity):
     tags: List[str] = APIField(default_factory=list)
     system: bool = APIField(default=False, description="True when this entity belongs to an SDK-shipped system project")
     remote: bool = APIField(default=False, description="True when this entity has a hub counterpart at the same id; refreshable from the hub")
+    # Hub-authoritative role roster cache: [{user_id, email, name, role, status}].
+    # Membership is a generic capability of any remote entity — a user always has
+    # a hub-set role on it. This field is a pure READ CACHE: the hub is the source
+    # of truth (resolved from RoleRelationship edges), written here by the reflected
+    # ``members`` action mirror (see _hub_reflect.mirror_hub_response_into_local)
+    # and by the conversation roster fanout, and refreshed on every roster open.
+    # Renamed from the per-type ``participants`` field; the conversation WIRE key
+    # stays ``participants`` (hub contract) and is adapted to ``members`` at ingest.
+    members: List[dict] = APIField(
+        default_factory=list,
+        description="Hub role roster cache: [{user_id, email, name, role, status}]. Hub-authoritative; local is a read cache.",
+    )
     # Git provenance + placement for an asset RECEIVED via a conversation. A raw
     # ``GitOrigin`` dict ({provider,owner,name,branch,head_commit,rel_path}) —
     # stored as json to avoid a core→builtin import cycle; construct/validate via
@@ -1658,7 +1692,8 @@ class Entity(DBEntity):
                 "remote", "system", "fetched_at",
                 "message_count",
                 "git_origin",  # local-only provenance; never a hub-synced field
-                "tags", "project_id", "participants",
+                "tags", "project_id",
+                "members",  # roster cache; the hub owns it and rebuilds from role edges
             },
         )
 

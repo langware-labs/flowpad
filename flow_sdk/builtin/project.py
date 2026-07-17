@@ -18,6 +18,7 @@ from flow_sdk.builtin.faas.compute_node import ComputeNode
 from flow_sdk.builtin.worker_sessions import get_worker_sessions
 from flow_sdk.config import AGENT_MOUNT_FOLDER, PLATFORM_WIN32, StorageProvider
 from flow_sdk.core import Entity, QueryFilter, action
+from flow_sdk.core.entity.entity_model import migrate_presence_shaped_members
 from flow_sdk.core.flow.flow_source_control import ComputeSourceControlInitializeOptions
 from flow_sdk.core.flow.mcp_server import MCPConnector, mcp_connector_pool
 from flow_sdk.core.flow.models.execution.env_context import get_env_vars_context
@@ -123,22 +124,18 @@ class Project(Entity):
         default=None,
         description="Stable local member_id of whoever first started collaboration on this project",
     )
-    members: list[dict] = APIField(
+    presence: list[dict] = APIField(
         default_factory=list,
-        description="Collaboration participants: [{member_id, name, joined_at, last_seen_at}]",
+        description="Local collaboration presence: [{member_id, name, joined_at, last_seen_at}] (session-code join, no roles). Renamed from ``members`` to free that name for the hub role roster now on the Entity base.",
     )
     # ── Hub collaboration (Project as a shared unit — mirrors Conversation) ──
     # The project's own (uuid4) id IS the shared hub identity: on share the hub
     # row and the recipient's local mirror both live under it (no separate cloud
     # id). This works because project ids are opaque uuid4, not path-derived.
-    # Hub-authoritative role roster: [{user_id, email, name, role}] with roles
-    # owner/admin/member/reader. Distinct from the local presence ``members``
-    # overlay (session-code join, no roles). Written by the reflected ``members``
-    # action / ``_upsert_hub_project_metadata``; read by the Members UI.
-    participants: list[dict] = APIField(
-        default_factory=list,
-        description="Hub role roster: [{user_id, email, name, role}]. Distinct from presence ``members``.",
-    )
+    # The hub role roster is cached generically on the Entity base as ``members``
+    # ([{user_id, email, name, role}] with roles owner/admin/member/reader),
+    # written by the reflected ``members`` action mirror and read by the Members
+    # UI. Distinct from the local ``presence`` overlay (session-code join, no roles).
     shared_secret_origins: dict[str, dict[str, Any]] = APIField(
         default_factory=dict,
         description="Hub-side value-free secret pointer metadata keyed by SecretOrigin typeid.",
@@ -164,6 +161,11 @@ class Project(Entity):
         description="ISO timestamp of the most recent session activity at this project's cwd, "
         "denormalized from the matching ProjectFsRecord. Null if no sessions yet.",
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _migrate_legacy_presence(cls, data):
+        return migrate_presence_shaped_members(data)
 
     @model_validator(mode="before")
     @classmethod
@@ -534,7 +536,7 @@ class Project(Entity):
             "last_mode",
             "session_code",
             "host_member_id",
-            "members",
+            "presence",
             "include_dirs",
             "context_dir_infos",
             "secret_origins",
@@ -1254,14 +1256,14 @@ class Project(Entity):
 
     async def _upsert_member(self, member_id: str, name: str) -> dict:
         now = _now_iso()
-        members = list(self.members or [])
-        for m in members:
+        presence = list(self.presence or [])
+        for m in presence:
             if m.get("member_id") == member_id:
                 m["name"] = name
                 m["last_seen_at"] = now
                 if not m.get("joined_at"):
                     m["joined_at"] = now
-                self.members = members
+                self.presence = presence
                 await self.save()
                 return m
         entry = {
@@ -1270,18 +1272,18 @@ class Project(Entity):
             "joined_at": now,
             "last_seen_at": now,
         }
-        members.append(entry)
-        self.members = members
+        presence.append(entry)
+        self.presence = presence
         await self.save()
         return entry
 
     async def _touch_member(self, member_id: str) -> bool:
-        members = list(self.members or [])
+        presence = list(self.presence or [])
         now = _now_iso()
-        for m in members:
+        for m in presence:
             if m.get("member_id") == member_id:
                 m["last_seen_at"] = now
-                self.members = members
+                self.presence = presence
                 await self.save()
                 return True
         return False
@@ -1317,7 +1319,7 @@ class Project(Entity):
         # Seed the host as the first member on first call.
         if host_name and host_member_id:
             existing = next(
-                (m for m in (self.members or []) if m.get("member_id") == host_member_id),
+                (m for m in (self.presence or []) if m.get("member_id") == host_member_id),
                 None,
             )
             if existing is None:
@@ -1326,7 +1328,7 @@ class Project(Entity):
 
     @action.post(action_name="join-collaboration")
     async def _http_join_collaboration(self) -> ApiResponse:
-        """POST body: {member_id, name} → add the caller to project.members."""
+        """POST body: {member_id, name} → add the caller to project.presence."""
         request_info = get_current_request_info()
         body = await request_info.get_post_data() if request_info else {}
         member_id = body.get("member_id")
@@ -1345,7 +1347,7 @@ class Project(Entity):
         if not member_id:
             return ApiFailResponse(message="member_id is required")
         updated = await self._touch_member(member_id)
-        return ApiSuccessResponse(data={"ok": updated, "members": self.members})
+        return ApiSuccessResponse(data={"ok": updated, "presence": self.presence})
 
     async def _delete_with_children(self) -> dict:
         """Permanently delete this project and everything that belongs to it.

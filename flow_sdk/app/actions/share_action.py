@@ -91,7 +91,7 @@ async def share_entity() -> ApiSuccessResponse:
     if recipients:
         try:
             from flow_sdk.app.actions.flow_message_action import _learn_address_book  # noqa: PLC0415
-            learn_entries: list[dict] = list(getattr(entity, "participants", None) or [])
+            learn_entries: list[dict] = list(getattr(entity, "members", None) or [])
             learn_entries += [
                 {"email": r} for r in recipients if isinstance(r, str) and r.strip()
             ]

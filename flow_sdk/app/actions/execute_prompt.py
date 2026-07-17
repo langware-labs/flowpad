@@ -844,7 +844,7 @@ async def process_inbound_message(fm_id: str, conversation_id: str) -> None:
 
         # Resolve the contact identity for the permission lookup.
         contact_email = None
-        for p in (conv.participants or []):
+        for p in (conv.members or []):
             if p.get("user_id") == fm.sender_id:
                 contact_email = p.get("email")
                 break

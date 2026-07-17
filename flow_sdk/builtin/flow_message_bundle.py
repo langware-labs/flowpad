@@ -306,7 +306,7 @@ async def _pack_conversation_attachment(
         # participants drive the reply-recipient resolver on the receiver side
         # (see _resolve_reply_recipient_email): when there's no Task, the reply
         # routes to the participant whose email isn't the local user's.
-        "participants": list(conv.participants or []),
+        "participants": list(conv.members or []),
         # User-set display title (NewConversationDialog autofill). Receiver
         # stores it on the local Conversation so both sides render the same row.
         "title": (conv.title or None),

@@ -24,10 +24,10 @@ export async function getMembers(typeId: TypeId): Promise<Participant[]> {
   const info = new ActionInfo('members', typeId.type, typeId.id, 'GET');
   // The roster is hub-owned for remote entities — opt this read into reflection
   // (mirrors ``APIEntity.fetchMembers``). Without it the dispatcher runs the
-  // local body and returns only cached ``participants`` (empty for an org/team,
-  // which keep no local roster), so the member list renders blank. The reflect
-  // gate still falls back to the local body when the entity is local-only or the
-  // hub is unreachable.
+  // local body and returns only the cached ``members`` roster (which is now a
+  // generic Entity-base field, so org/team cache it too). The reflect gate still
+  // falls back to the local body when the entity is local-only or the hub is
+  // unreachable — a stale roster read beats an error.
   info.hubReflect = true;
   const res = await dataManager.callAction<undefined, Participant[]>(info);
   // Defensive: the hub utils coerce empty lists to {} upstream
