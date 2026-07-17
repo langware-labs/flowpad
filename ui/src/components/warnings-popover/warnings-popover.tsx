@@ -1,4 +1,5 @@
-import { UserWarning } from '@sdk';
+import { UserWarning, WARNING_IDS } from '@sdk';
+import { openHarnessLoginModal } from '@src/components/harness-login/harness-login-store';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { openWikiModal } from '@src/components/wiki-tip';
 import { useDockNavigation } from '@src/navigation';
@@ -130,7 +131,11 @@ export function WarningsPopover() {
 
   const handleWarningClick = useCallback(
     (warning: UserWarning) => {
-      if (warning.onClick) {
+      if (warning.id === WARNING_IDS.NO_HARNESS || warning.id === WARNING_IDS.HARNESS_LOGIN) {
+        // Both harness warnings open the login modal — it shows install links
+        // for missing CLIs and the device-login flow for logged-out ones.
+        openHarnessLoginModal();
+      } else if (warning.onClick) {
         warning.onClick();
       } else if (warning.wikiPage) {
         openWikiModal(warning.wikiPage);

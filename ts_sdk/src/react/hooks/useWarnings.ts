@@ -3,6 +3,7 @@ import {
   createCloudConnectionAuthRejectedWarning,
   createCloudConnectionLostWarning,
   createCloudDisconnectedWarning,
+  createHarnessLoginWarning,
   createHubRequestFailedWarning,
   createNoComputeNodeWarning,
   createNoHarnessWarning,
@@ -28,6 +29,33 @@ export function isNoHarnessFound(
 
 function readNoHarnessFound(): boolean {
   return isNoHarnessFound(
+    HARNESS_CAPABILITY_KINDS.map((kind) => capabilityManager.getSnapshot(kind)),
+  );
+}
+
+/**
+ * True when at least one harness CLI is installed, every installed one has a
+ * probed login state (the startup gate populates it), and none is
+ * authenticated. The probed-state gate avoids a false flash before the
+ * auth-status probes land.
+ */
+export function isHarnessLoginRequired(
+  snapshots: ReadonlyArray<{
+    checked: boolean;
+    available: boolean;
+    capability: { login_state?: string | null } | null;
+  }>,
+): boolean {
+  const installed = snapshots.filter((snapshot) => snapshot.checked && snapshot.available);
+  return (
+    installed.length > 0 &&
+    installed.every((snapshot) => !!snapshot.capability?.login_state) &&
+    !installed.some((snapshot) => snapshot.capability?.login_state === 'authenticated')
+  );
+}
+
+function readHarnessLoginRequired(): boolean {
+  return isHarnessLoginRequired(
     HARNESS_CAPABILITY_KINDS.map((kind) => capabilityManager.getSnapshot(kind)),
   );
 }
@@ -67,8 +95,13 @@ export function useWarnings() {
   // out, so unrelated capability activity doesn't recompute the warning
   // list or rewrite the global warnings context.
   const [noHarnessFound, setNoHarnessFound] = useState(readNoHarnessFound);
+  const [harnessLoginRequired, setHarnessLoginRequired] = useState(readHarnessLoginRequired);
   useEffect(
-    () => capabilityManager.subscribe(() => setNoHarnessFound(readNoHarnessFound())),
+    () =>
+      capabilityManager.subscribe(() => {
+        setNoHarnessFound(readNoHarnessFound());
+        setHarnessLoginRequired(readHarnessLoginRequired());
+      }),
     [],
   );
 
@@ -117,13 +150,19 @@ export function useWarnings() {
       warnings.push(createNoHarnessWarning());
     }
 
+    // Harness(es) installed but none signed in — clicking opens the
+    // harness-login modal (routed by id in the warnings popover).
+    if (!noHarnessFound && harnessLoginRequired) {
+      warnings.push(createHarnessLoginWarning());
+    }
+
     // Sniffer enabled but hook entity not found (pre-bootstrap race or creation failure)
     if (snifferEnabled && !dataContext.snifferHook) {
       warnings.push(createSnifferNotFoundWarning());
     }
 
     return warnings;
-  }, [isDesktop, cloudLoginAvailable, cloudConnectionStatus, computeNode, snifferEnabled, lastHubError, noHarnessFound]);
+  }, [isDesktop, cloudLoginAvailable, cloudConnectionStatus, computeNode, snifferEnabled, lastHubError, noHarnessFound, harnessLoginRequired]);
 
   // Update context warnings when computed warnings change
   useEffect(() => {

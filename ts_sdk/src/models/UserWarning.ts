@@ -55,6 +55,7 @@ export const WARNING_IDS = {
   HUB_REQUEST_FAILED: 'hub-request-failed',
   NO_COMPUTE_NODE: 'no-compute-node',
   NO_HARNESS: 'no-harness',
+  HARNESS_LOGIN: 'harness-login-required',
   SNIFFER_NOT_FOUND: 'sniffer-not-found',
   SECRETS_NOT_ENABLED: 'secrets-not-enabled',
 } as const;
@@ -197,6 +198,22 @@ export function createNoHarnessWarning(): UserWarning {
     description: 'Install a coding agent CLI (Claude, Codex or Copilot) to run agents. Click for setup instructions.',
     targetView: ViewType.CAPABILITIES,
     wikiPage: 'Install a harness',
+  };
+}
+
+/**
+ * Create a warning shown when harness CLIs are installed but none is logged
+ * in. The warnings popover routes clicks on this id to the harness-login
+ * modal (device-login flow).
+ */
+export function createHarnessLoginWarning(): UserWarning {
+  return {
+    id: WARNING_IDS.HARNESS_LOGIN,
+    icon: 'KeyRound',
+    color: 'orange',
+    message: 'Harness login required',
+    description: 'A coding agent CLI is installed but not signed in. Click to sign in.',
+    targetView: ViewType.CAPABILITIES,
   };
 }
 

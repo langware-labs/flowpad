@@ -22,6 +22,7 @@ raise, and map "couldn't check" (timeout, exec error, unparseable output) to
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 from dataclasses import dataclass, field
 from enum import Enum
@@ -40,6 +41,79 @@ class WorkerAuthStatus(str, Enum):
     LOGGED_IN = "logged_in"
     LOGGED_OUT = "logged_out"
     UNKNOWN = "unknown"
+
+
+class DeviceLoginState(str, Enum):
+    IDLE = "idle"
+    STARTING = "starting"
+    AWAITING_USER = "awaiting_user"
+    AUTHENTICATED = "authenticated"
+    ERROR = "error"
+
+
+@dataclass(frozen=True)
+class DeviceLoginSpec:
+    """How one vendor's CLI runs its link(+code) login flow.
+
+    codex/copilot are RFC-8628 device flows: the CLI prints a verification
+    URL + one-time code and polls to completion. claude is auth-code+PKCE:
+    the browser shows a code the user pastes BACK into the CLI —
+    ``accepts_code_paste`` captures that difference.
+    """
+
+    login_argv: tuple[str, ...]
+    url_re: "re.Pattern[str]"
+    code_re: "re.Pattern[str] | None"  # None ⇒ vendor shows the code in the browser
+    accepts_code_paste: bool
+
+
+# Regexes for lifting login artifacts out of raw PTY output.
+ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[a-zA-Z]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|[\r\x08]")
+# OSC 8 terminal hyperlink: \x1b]8;;<target>\x07 — claude prints its OAuth URL
+# as the TARGET (the visible text is a wrapped rendering), so lift targets out
+# BEFORE generic OSC stripping deletes them.
+OSC8_RE = re.compile(r"\x1b\]8;;([^\x07\x1b]+)(?:\x07|\x1b\\)")
+# Continuation lines must be WHOLE lines of URL characters — the lookahead
+# stops a following prose line ("Paste code here …") from being glued on.
+_WRAPPED_URL_RE = re.compile(r"(https://\S+)((?:\n[A-Za-z0-9%&=+_.~/:?\-]+(?=\n|$))+)")
+
+# Interactive questions a login CLI may ask mid-flow (invisible to any UI) —
+# answered automatically. Containers/headless hosts have no OS keychain, so
+# plaintext storage is the only option and "yes" is what the user would say.
+AUTO_ANSWERS: list[tuple["re.Pattern[str]", str]] = [
+    (re.compile(r"Store token in plaintext config file\? \(y/N\)"), "y\r"),
+]
+
+
+def clean_pty_output(raw: str) -> str:
+    """Raw PTY stream → plain text with OSC-8 link targets preserved."""
+    return ANSI_RE.sub("", OSC8_RE.sub(r" \1 ", raw))
+
+
+def scrape_device_login(clean_text: str, spec: DeviceLoginSpec) -> tuple[str | None, str | None]:
+    """(url, code) scraped from ALREADY-CLEANED login output.
+
+    Pure — feed it the whole cleaned stream each time (escape sequences can
+    split across read chunks, so incremental cleaning corrupts). Callers pass
+    ``clean_pty_output(raw)``. CLIs hard-wrap long OAuth URLs; wrapped URL
+    lines are glued back together.
+    """
+    unwrapped = _WRAPPED_URL_RE.sub(lambda m: m.group(1) + m.group(2).replace("\n", ""), clean_text)
+    url_match = spec.url_re.search(unwrapped)
+    url = url_match.group(1).rstrip(".,)") if url_match else None
+    code = None
+    if spec.code_re is not None:
+        code_match = spec.code_re.search(clean_text)
+        code = code_match.group(1) if code_match else None
+    return url, code
+
+
+def find_auto_answer(clean_text: str, answered: set[int]) -> tuple[int, str] | None:
+    """First not-yet-answered AUTO_ANSWERS prompt in ALREADY-CLEANED output."""
+    for i, (pattern, answer) in enumerate(AUTO_ANSWERS):
+        if i not in answered and pattern.search(clean_text):
+            return i, answer
+    return None
 
 
 @dataclass

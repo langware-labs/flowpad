@@ -48,6 +48,7 @@ from pydantic.alias_generators import to_camel
 
 from flow_sdk._compat import StrEnum
 from flow_sdk.builtin.agentic_process.cli_drivers.auth_probe import (
+    DeviceLoginSpec,
     WorkerAuthResult,
     probe_worker_auth,
 )
@@ -1258,6 +1259,11 @@ class WorkerDriver(Protocol):
         confirmed the state (copilot's heuristic never is).
         """
         ...
+
+    # How this vendor's CLI runs its link(+code) login flow — consumed by the
+    # generic engine in ``device_login.py``; no orchestration code branches
+    # on vendor (same trait style as ``pty_submits_on_paste``).
+    device_login_spec: DeviceLoginSpec
 
     # ── Transcript discovery ─────────────────────────────────────────────────
 

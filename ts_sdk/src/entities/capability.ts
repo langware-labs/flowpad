@@ -20,6 +20,25 @@ export interface CapabilityCheck {
   dependencies?: Record<string, CapabilityResult>;
 }
 
+export type DeviceLoginState = 'idle' | 'starting' | 'awaiting_user' | 'authenticated' | 'error';
+
+/** Snapshot of a device-login flow (mirror of the backend session's to_json). */
+export interface DeviceLoginStatus {
+  state: DeviceLoginState;
+  url: string | null;
+  code: string | null;
+  message: string;
+  accepts_code_paste: boolean;
+}
+
+/** Result of the backend auth probe (WorkerAuthResult.to_json). */
+export interface WorkerAuthStatus {
+  status: 'not_installed' | 'logged_in' | 'logged_out' | 'unknown';
+  verified: boolean;
+  message: string;
+  details: Record<string, unknown>;
+}
+
 export interface ICapability extends IEntity {
   name: string;
   kind: string;
@@ -39,6 +58,12 @@ export interface ICapability extends IEntity {
   last_check?: CapabilityResult | null;
   last_install?: CapabilityResult | null;
   last_test?: CapabilityResult | null;
+  /** Device-login runtime state — broadcast-only, never persisted. */
+  login_state?: DeviceLoginState | null;
+  login_url?: string | null;
+  login_code?: string | null;
+  login_accepts_code?: boolean | null;
+  login_message?: string | null;
 }
 
 @registerEntity
@@ -58,6 +83,11 @@ export class Capability extends APIEntity<Capability> implements ICapability {
   last_check: CapabilityResult | null = null;
   last_install: CapabilityResult | null = null;
   last_test: CapabilityResult | null = null;
+  login_state: DeviceLoginState | null = null;
+  login_url: string | null = null;
+  login_code: string | null = null;
+  login_accepts_code: boolean | null = null;
+  login_message: string | null = null;
 
   private _icon: string | null = null;
 
@@ -98,6 +128,11 @@ export class Capability extends APIEntity<Capability> implements ICapability {
     this.last_check = entity.last_check ?? this.last_check;
     this.last_install = entity.last_install ?? this.last_install;
     this.last_test = entity.last_test ?? this.last_test;
+    this.login_state = entity.login_state ?? this.login_state;
+    this.login_url = entity.login_url ?? this.login_url;
+    this.login_code = entity.login_code ?? this.login_code;
+    this.login_accepts_code = entity.login_accepts_code ?? this.login_accepts_code;
+    this.login_message = entity.login_message ?? this.login_message;
   }
 
   static kindMatches(queryKind: string, capabilityKind: string): boolean {
@@ -128,5 +163,34 @@ export class Capability extends APIEntity<Capability> implements ICapability {
 
   async test(): Promise<CapabilityCheck> {
     return this.callCapabilityAction('test');
+  }
+
+  // ── Device login (harness CLIs) ──────────────────────────────────────────
+  // Progress arrives via the entity's login_* fields over WS (data_op), not
+  // via these responses — watch the entity, don't poll.
+
+  /** Start (or restart) this harness CLI's login flow. Idempotent: the
+   *  backend pre-probes and short-circuits when already authenticated. */
+  async deviceLogin(): Promise<DeviceLoginStatus> {
+    const action = new ActionInfo('device-login', Capability.type, this.id, 'POST' as HttpMethod);
+    return dataManager.callAction<undefined, DeviceLoginStatus>(action);
+  }
+
+  /** Inject the browser-shown code into the login flow (paste-back vendors). */
+  async submitLoginCode(code: string): Promise<{ submitted: boolean }> {
+    const action = new ActionInfo('device-login-code', Capability.type, this.id, 'POST' as HttpMethod);
+    action.bodyParameters = { code };
+    return dataManager.callAction<{ code: string }, { submitted: boolean }>(action);
+  }
+
+  async cancelDeviceLogin(): Promise<{ cancelled: boolean }> {
+    const action = new ActionInfo('device-login-cancel', Capability.type, this.id, 'POST' as HttpMethod);
+    return dataManager.callAction<undefined, { cancelled: boolean }>(action);
+  }
+
+  /** Cheap login-state probe (no version run) — used by the startup gate. */
+  async authStatus(): Promise<WorkerAuthStatus> {
+    const action = new ActionInfo('auth-status', Capability.type, this.id, 'GET' as HttpMethod);
+    return dataManager.callAction<undefined, WorkerAuthStatus>(action);
   }
 }
