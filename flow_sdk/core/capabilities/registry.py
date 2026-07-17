@@ -650,6 +650,12 @@ class CapabilityRegistry:
     def kinds(self) -> list[str]:
         return list(self._runners.keys())
 
+    def worker_type_for_kind(self, kind: str) -> str | None:
+        """The worker whose driver serves this kind (None ⇔ not a harness
+        CLI). Reads the runner's registration-time worker_type — never parses
+        the kind string."""
+        return getattr(self._runners.get(kind), "worker_type", None)
+
     def get(self, kind: str) -> CapabilityRunner:
         try:
             return self._runners[kind]
@@ -736,3 +742,8 @@ _DEFAULT_REGISTRY = _build_default_registry()
 
 def get_capability_registry() -> CapabilityRegistry:
     return _DEFAULT_REGISTRY
+
+
+def worker_type_for_kind(kind: str) -> str | None:
+    """Module-level convenience over the default registry."""
+    return _DEFAULT_REGISTRY.worker_type_for_kind(kind)

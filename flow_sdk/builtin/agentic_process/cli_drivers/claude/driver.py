@@ -24,6 +24,7 @@ from flow_sdk.builtin.agentic_process.cli_drivers.claude.stream_worker import (
 )
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
     AgenticContext,
+    DeviceLoginSpec,
     WorkerAuthResult,
     WorkerCLIOptions,
     WorkerSpawnError,
@@ -293,6 +294,15 @@ class ClaudeDriver:
     async def auth_probe(self) -> WorkerAuthResult:
         """`claude auth status` against the discovered CLI (JSON `loggedIn`)."""
         return await run_worker_auth_probe(self.name)
+
+    # Auth-code + PKCE: the browser shows a code the user pastes BACK into the
+    # CLI (no device-flow user_code in the terminal output).
+    device_login_spec = DeviceLoginSpec(
+        login_argv=("claude", "auth", "login"),
+        url_re=re.compile(r"(https://(?:\S*\.)?(?:claude\.(?:ai|com)|anthropic\.com)/\S*oauth\S+)"),
+        code_re=None,
+        accepts_code_paste=True,
+    )
 
     # ── Transcript discovery ─────────────────────────────────────────────────
 
