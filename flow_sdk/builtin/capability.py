@@ -69,6 +69,11 @@ class Capability(Entity):
     # Chosen LMApiProvider value when auth_mode == "api"; None → the driver's
     # ApiAuthSpec.default_provider.
     api_provider: str | None = APIField(default=None)
+    # User overrides for the tier→model mapping, layered over the driver's
+    # ApiAuthSpec.tier_models code defaults: {provider: {name: model_slug}} where
+    # name is a tier (sm/md/lg) or a custom option name. Persisted + user-editable;
+    # like auth_mode it is NOT in the ensure_seeded reconcile list.
+    model_map: dict[str, Any] = APIField(default_factory=dict)
 
     @classmethod
     def from_spec(cls, spec: CapabilitySpec) -> "Capability":

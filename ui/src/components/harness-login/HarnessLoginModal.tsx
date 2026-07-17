@@ -6,6 +6,7 @@ import {
   LMApiProvider,
   lmKeysService,
   TypeId,
+  WorkerModelTier,
   type LmApiKeySummary,
   type LmApiKeyValidation,
 } from '@sdk';
@@ -52,7 +53,9 @@ const workerOf = (kind: string) => kind.split('.')[1] as Worker;
  *  Python specs; the Select renders only these, so the modal offers only
  *  possible outcomes. */
 const HARNESS_SUPPORTED_PROVIDERS: Record<Worker, LMApiProvider[]> = {
-  claude: [LMApiProvider.OpenRouter, LMApiProvider.Anthropic],
+  // OpenRouter-only until the backend ApiAuthSpec routes non-OpenRouter providers
+  // (base_env is provider-agnostic today). Keep in sync with the Python specs.
+  claude: [LMApiProvider.OpenRouter],
   codex: [LMApiProvider.OpenRouter],
   copilot: [LMApiProvider.OpenRouter],
 };
@@ -702,6 +705,244 @@ function DefaultHarnessSelect({ onChanged }: { onChanged: () => void }) {
   );
 }
 
+const MAPPING_TIERS = [WorkerModelTier.SM, WorkerModelTier.MD, WorkerModelTier.LG] as const;
+const isTier = (name: string) => (MAPPING_TIERS as readonly string[]).includes(name);
+const TIER_LABEL: Record<string, string> = {
+  [WorkerModelTier.SM]: 'Fast (sm)',
+  [WorkerModelTier.MD]: 'Balanced (md)',
+  [WorkerModelTier.LG]: 'Accurate (lg)',
+};
+
+/** One model-slug input (autocomplete via a shared datalist + free-text).
+ *  Hoisted out of MappingView so it reconciles instead of remounting on every
+ *  re-render; keyed by its persisted value at the call site so it refreshes only
+ *  when that value actually changes. */
+function MappingModelInput({
+  name,
+  value,
+  listId,
+  onCommit,
+}: {
+  name: string;
+  value: string;
+  listId: string;
+  onCommit: (slug: string) => void;
+}) {
+  const { t } = useLingui();
+  return (
+    <Input
+      defaultValue={value}
+      list={listId}
+      placeholder={isTier(name) ? t`Default` : t`model slug`}
+      className="h-9"
+      data-testid={`mapping-model-${name}`}
+      onBlur={(e) => e.target.value.trim() !== value && onCommit(e.target.value)}
+      onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+    />
+  );
+}
+
+/** The Mapping window: edit the tier→model mapping per (harness, provider),
+ *  layered over the code defaults, and add custom named options. */
+function MappingView({ onBack }: { onBack: () => void }) {
+  const { t } = useLingui();
+  const [kind, setKind] = useState<string>(HARNESS_CAPABILITY_KINDS[0]);
+  const worker = workerOf(kind);
+  const providers = useMemo(
+    () => HARNESS_SUPPORTED_PROVIDERS[worker] ?? [LMApiProvider.OpenRouter],
+    [worker],
+  );
+  const [provider, setProvider] = useState<string>(providers[0]);
+  // Keep provider valid when the harness changes.
+  useEffect(() => {
+    if (!providers.includes(provider as LMApiProvider)) setProvider(providers[0]);
+  }, [providers, provider]);
+
+  // Live capability for the selected harness (for its model_map).
+  const snapshot = capabilityManager.getSnapshot(kind);
+  const capId = snapshot.capability?.id ?? null;
+  const typeId = useMemo(() => (capId ? new TypeId(Capability.type, capId) : null), [capId]);
+  const { data: capability } = useEntity<Capability>(typeId, { enabled: !!typeId, watch: true });
+  const modelMap = useMemo(() => capability?.model_map ?? {}, [capability?.model_map]);
+  const providerMap: Record<string, string> = modelMap[provider] ?? {};
+  const customNames = Object.keys(providerMap).filter((n) => !isTier(n));
+
+  // Model catalog for the picker (autocomplete + free-text).
+  const [catalog, setCatalog] = useState<{ id: string; name: string }[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    lmKeysService
+      .listModels(provider as LMApiProvider)
+      .then((m) => !cancelled && setCatalog(m))
+      .catch(() => !cancelled && setCatalog([]));
+    return () => {
+      cancelled = true;
+    };
+  }, [provider]);
+
+  const [newName, setNewName] = useState('');
+  const [newModel, setNewModel] = useState('');
+
+  const writeProviderMap = useCallback(
+    async (next: Record<string, string>) => {
+      const full = { ...modelMap };
+      if (Object.keys(next).length) full[provider] = next;
+      else delete full[provider];
+      await capabilityManager.setModelMap(kind, full);
+    },
+    [kind, provider, modelMap],
+  );
+
+  const setEntry = (name: string, slug: string) => {
+    const next = { ...providerMap };
+    if (slug.trim()) next[name] = slug.trim();
+    else delete next[name];
+    void writeProviderMap(next);
+  };
+
+  const listId = `mapping-catalog-${provider}`;
+
+  return (
+    <div style={{ animation: 'hlIn 260ms cubic-bezier(0.16,1,0.3,1) both' }} className="flex max-h-[80vh] flex-col overflow-y-auto">
+      <button
+        type="button"
+        onClick={onBack}
+        className="mb-4 inline-flex w-fit items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
+      >
+        <ChevronLeft className="h-4 w-4" />
+        <Trans>Back</Trans>
+      </button>
+
+      <DialogTitle className="text-lg font-semibold">
+        <Trans>Model mapping</Trans>
+      </DialogTitle>
+      <DialogDescription className="mt-1 text-sm text-muted-foreground">
+        <Trans>Choose which model each tier uses, or add your own — per assistant and provider.</Trans>
+      </DialogDescription>
+
+      <div className="mt-4 flex gap-2">
+        <Select value={kind} onValueChange={setKind}>
+          <SelectTrigger className="h-9 flex-1" data-testid="mapping-harness-select">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {HARNESS_CAPABILITY_KINDS.map((k) => (
+              <SelectItem key={k} value={k}>
+                {FRIENDLY[workerOf(k)]?.name ?? workerOf(k)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select value={provider} onValueChange={setProvider}>
+          <SelectTrigger className="h-9 w-[130px]" data-testid="mapping-provider-select">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {providers.map((p) => (
+              <SelectItem key={p} value={p}>
+                {providerLabel(p)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <datalist id={listId}>
+        {catalog.map((m) => (
+          <option key={m.id} value={m.id}>
+            {m.name}
+          </option>
+        ))}
+      </datalist>
+
+      <div className="mt-4 flex flex-col gap-2">
+        {MAPPING_TIERS.map((tier) => (
+          <div key={tier} data-testid={`mapping-row-${tier}`} className="flex items-center gap-2">
+            <span className="w-28 shrink-0 text-sm text-muted-foreground">{TIER_LABEL[tier]}</span>
+            <MappingModelInput
+              key={providerMap[tier] ?? ''}
+              name={tier}
+              value={providerMap[tier] ?? ''}
+              listId={listId}
+              onCommit={(s) => setEntry(tier, s)}
+            />
+            {providerMap[tier] && (
+              <button
+                type="button"
+                aria-label={t`Reset to default`}
+                data-testid={`mapping-reset-${tier}`}
+                className="shrink-0 text-xs text-muted-foreground hover:text-foreground"
+                onClick={() => setEntry(tier, '')}
+              >
+                <Trans>Reset</Trans>
+              </button>
+            )}
+          </div>
+        ))}
+
+        {customNames.map((name) => (
+          <div key={name} data-testid={`mapping-row-${name}`} className="flex items-center gap-2">
+            <span className="w-28 shrink-0 truncate text-sm font-medium">{name}</span>
+            <MappingModelInput
+              key={providerMap[name] ?? ''}
+              name={name}
+              value={providerMap[name] ?? ''}
+              listId={listId}
+              onCommit={(s) => setEntry(name, s)}
+            />
+            <button
+              type="button"
+              aria-label={t`Remove option`}
+              data-testid={`mapping-delete-${name}`}
+              className="shrink-0 text-muted-foreground hover:text-destructive"
+              onClick={() => setEntry(name, '')}
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
+          </div>
+        ))}
+      </div>
+
+      {/* Add a custom named option. */}
+      <div className="mt-4 flex items-end gap-2 border-t border-border/60 pt-3">
+        <div className="flex flex-1 flex-col gap-1">
+          <span className="text-xs text-muted-foreground">
+            <Trans>New option</Trans>
+          </span>
+          <div className="flex gap-2">
+            <Input
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              placeholder={t`name (e.g. coding)`}
+              className="h-9 w-32"
+              data-testid="mapping-new-name"
+            />
+            <Input
+              value={newModel}
+              onChange={(e) => setNewModel(e.target.value)}
+              list={listId}
+              placeholder={t`model slug`}
+              className="h-9"
+              data-testid="mapping-new-model"
+            />
+          </div>
+        </div>
+        <Button
+          disabled={!newName.trim() || !newModel.trim() || isTier(newName.trim())}
+          data-testid="mapping-add"
+          onClick={() => {
+            setEntry(newName.trim(), newModel.trim());
+            setNewName('');
+            setNewModel('');
+          }}
+        >
+          <Trans>Add</Trans>
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 /** Single global mount (App.tsx). */
 export function HarnessLoginModalRoot() {
   const { open, setOpen } = useHarnessLoginStore();
@@ -732,7 +973,9 @@ export function HarnessLoginModalRoot() {
     <Dialog open onOpenChange={setOpen}>
       <DialogContent className="sm:max-w-[440px]">
         <style>{`@keyframes hlIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}`}</style>
-        {selected ? (
+        {selected === 'mapping' ? (
+          <MappingView onBack={() => setSelected(null)} />
+        ) : selected ? (
           <HarnessDetail kind={selected} onBack={() => setSelected(null)} keys={keys} />
         ) : (
           <div className="flex max-h-[80vh] flex-col overflow-y-auto">
@@ -746,8 +989,19 @@ export function HarnessLoginModalRoot() {
             </div>
 
             {/* Consumers: each harness picks device login or a configured key. */}
-            <div className="mt-5 text-sm font-medium text-muted-foreground">
-              <Trans>Harness setup</Trans>
+            <div className="mt-5 flex items-center justify-between">
+              <span className="text-sm font-medium text-muted-foreground">
+                <Trans>Harness setup</Trans>
+              </span>
+              <button
+                type="button"
+                data-testid="open-mapping"
+                onClick={() => setSelected('mapping')}
+                className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+              >
+                <Trans>Mapping</Trans>
+                <ChevronRight className="h-3.5 w-3.5" />
+              </button>
             </div>
             <DefaultHarnessSelect
               onChanged={() => setDefaultKind(capabilityManager.getSnapshot('harness').resolvedKind ?? null)}

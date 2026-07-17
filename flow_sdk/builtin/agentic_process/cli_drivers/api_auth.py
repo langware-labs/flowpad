@@ -75,7 +75,10 @@ CLAUDE_API_AUTH_SPEC = ApiAuthSpec(
         "md": "anthropic/claude-sonnet-4.5",
         "lg": "anthropic/claude-opus-4.1",
     },
-    supported_providers=(LMApiProvider.OPENROUTER, LMApiProvider.ANTHROPIC),
+    # Only OpenRouter routes today: base_env/token are provider-agnostic (fixed to
+    # OpenRouter), so selecting a direct vendor would post its key to OpenRouter.
+    # Add providers here only once ApiAuthSpec carries per-provider base_env.
+    supported_providers=(LMApiProvider.OPENROUTER,),
     default_provider=LMApiProvider.OPENROUTER,
 )
 
@@ -131,12 +134,6 @@ def driver_api_auth_spec(worker_type: str) -> ApiAuthSpec | None:
     return _SPECS.get(worker_type)
 
 
-def _resolve_slug(spec: ApiAuthSpec, tier: str | None) -> str | None:
-    """Map an sm/md/lg tier to a provider slug via the canonical tier resolver
-    (a non-tier value passes through); fall back to the small slug when unset."""
-    return resolve_model_tier(spec.tier_models, tier) if tier else spec.tier_models.get("sm")
-
-
 async def resolve_worker_api_auth(process: "AgenticProcess") -> WorkerApiAuth | None:
     """Resolve the API-key binding for *process*, or None when not in api mode.
 
@@ -168,8 +165,13 @@ async def resolve_worker_api_auth(process: "AgenticProcess") -> WorkerApiAuth | 
             f"(set one via set_lm_api / the harness modal).",
         )
 
+    # Effective tier→slug map = code defaults ⊕ the harness's user overrides for
+    # this provider (Capability.model_map). Custom option names resolve here too;
+    # an unknown value still passes through as a literal slug.
+    overrides = (getattr(cap, "model_map", None) or {}).get(provider) or {}
+    merged = {**spec.tier_models, **overrides}
     tier = (process.cli_config or {}).get("model")
-    slug = _resolve_slug(spec, tier)
+    slug = resolve_model_tier(merged, tier or "sm")  # merged always has "sm"
     env = {**spec.base_env, spec.token_env_var: key}
     if slug:
         for var in spec.model_env_vars:

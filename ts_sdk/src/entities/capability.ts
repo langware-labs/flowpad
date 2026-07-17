@@ -74,6 +74,9 @@ export interface ICapability extends IEntity {
   auth_mode?: 'device' | 'api' | null;
   /** Chosen LMApiProvider value when auth_mode === 'api' (null → driver default). */
   api_provider?: string | null;
+  /** User overrides for the tier→model mapping, layered over the driver defaults:
+   *  {provider: {name: slug}} where name is a tier (sm/md/lg) or a custom option. */
+  model_map?: Record<string, Record<string, string>>;
 }
 
 @registerEntity
@@ -100,6 +103,7 @@ export class Capability extends APIEntity<Capability> implements ICapability {
   login_message: string | null = null;
   auth_mode: 'device' | 'api' | null = null;
   api_provider: string | null = null;
+  model_map: Record<string, Record<string, string>> = {};
 
   private _icon: string | null = null;
 
@@ -147,6 +151,7 @@ export class Capability extends APIEntity<Capability> implements ICapability {
     this.login_message = entity.login_message ?? this.login_message;
     this.auth_mode = entity.auth_mode ?? this.auth_mode;
     this.api_provider = entity.api_provider ?? this.api_provider;
+    this.model_map = entity.model_map ?? this.model_map;
   }
 
   static kindMatches(queryKind: string, capabilityKind: string): boolean {

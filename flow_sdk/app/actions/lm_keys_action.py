@@ -5,6 +5,7 @@ Endpoints:
   GET    /lm_keys            → [{provider, configured, created_at}]
   POST   /lm_keys            → body {provider, key} → {ok: True, valid, message} (auto-validated)
   POST   /lm_keys/test       → body {provider}      → {valid, message}
+  GET    /lm_keys/models/{provider} → [{id, name}]  (model catalog for the mapping picker)
   DELETE /lm_keys/{provider} → {ok: True}
 
 Reading a key value is intentionally not exposed: the UI must never see plaintext
@@ -13,7 +14,13 @@ keys. In-process callers (workers) read via ``get_lm_api`` in the SDK.
 
 import logging
 
-from flow_sdk.cli.auth.lm_api_keys import delete_lm_api, list_lm_api, set_lm_api, validate_lm_api
+from flow_sdk.cli.auth.lm_api_keys import (
+    delete_lm_api,
+    list_lm_api,
+    list_provider_models,
+    set_lm_api,
+    validate_lm_api,
+)
 from flow_sdk.core import action
 from flow_sdk.flowpad_types.enums.lm_provider_enums import LMApiProvider
 from flow_sdk.request_context.methods import get_current_request_info
@@ -42,6 +49,12 @@ async def lm_keys_action() -> ApiResponse:
         if method == "GET":
             if sub_path == "":
                 return ApiSuccessResponse(data=list_lm_api())
+            # GET /lm_keys/models/<provider> → the provider's model catalog.
+            if sub_path.startswith("models/"):
+                provider = _parse_provider(sub_path.removeprefix("models/"))
+                if provider is None:
+                    return ApiFailResponse(message="unknown provider")
+                return ApiSuccessResponse(data=await list_provider_models(provider))
             return ApiFailResponse(message=f"Unknown GET subpath: {sub_path}")
 
         if method == "POST":

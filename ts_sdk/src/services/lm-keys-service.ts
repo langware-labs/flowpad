@@ -14,6 +14,11 @@ export interface LmApiKeyValidation {
   message?: string;
 }
 
+export interface LmModel {
+  id: string;
+  name: string;
+}
+
 /**
  * SDK service for LLM-provider API keys.
  *
@@ -41,6 +46,11 @@ export class LmKeysService {
    *  check). */
   testLmApi(provider: LMApiProvider): Promise<LmApiKeyValidation> {
     return apiClient.post(`${this.base}/test`, { provider });
+  }
+
+  /** The provider's model catalog, for the mapping picker. */
+  listModels(provider: LMApiProvider): Promise<LmModel[]> {
+    return apiClient.get(`${this.base}/models/${encodeURIComponent(provider)}`);
   }
 
   deleteLmApi(provider: LMApiProvider): Promise<{ ok: true }> {
