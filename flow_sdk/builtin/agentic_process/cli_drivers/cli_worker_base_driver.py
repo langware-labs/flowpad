@@ -469,7 +469,7 @@ def apply_worker_env(env: dict[str, str], process: "AgenticProcess") -> dict[str
             or os.environ.get(ENV_CLAUDE_CONFIG_DIR)
             or worker_override is not None
         )
-        if root_is_explicit and _canonical_lexical_path(claude_home) != native_home:
+        if root_is_explicit and claude_home != native_home:
             env[ENV_CLAUDE_CONFIG_DIR] = str(claude_home)
         else:
             env.pop(ENV_CLAUDE_CONFIG_DIR, None)
