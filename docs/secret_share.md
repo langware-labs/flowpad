@@ -183,15 +183,52 @@ persisted CLI options**. Value-object/driver/union coverage mirrors
 
 Run: `uv run pytest tests/unit -q -k "secret_origin or local_secret or worker_secret"`.
 
+## Extensions (asset-backed refs · two stores · providers · setup wizard)
+
+The pointer / driver / convergent-`key()` core is unchanged; these extend its
+documented seams:
+
+- **Asset-backed reference.** A `SecretOrigin` is now a value-free file asset at
+  `<project>/assets/sodot/<name>.json`, indexed like any other asset
+  (`schema/type_info/secret_origin_type_info.py`, `fs_store/indexer/functions/secret_origin.py`).
+  The file id is the **convergent `key()`** (never path-derived), so a
+  file-indexed row and a DB-minted row collide on one id. `assert_value_free`
+  guards the writer **and** the indexer extractor (two trust boundaries: never
+  emit a value; never ingest a git-arrived file that carries one).
+- **Two SOD stores.** `local` (`sodot`, encrypted) and `env-local` (the project's
+  git-ignored `.env.local`, `builtin/env_local_store.py`). `sod_store` records
+  which store the wizard caches a provided value into; the sender picks it.
+- **Pluggable providers.** The driver registry gains `can_resolve()`,
+  `setup_hint()`, and `store()` (symmetric with `resolve()` — the driver owns its
+  store). `local`/`env-local` are full; `gcp`/`1password`/`flowpad-hub` are one
+  parametrized `ProviderStubDriver` that routes to the wizard.
+- **Setup wizard.** `Project.secret-resolve-status` reports available/missing per
+  driver (value-free); `Project.provide-secret` writes a user value into the
+  secret's store via `driver.store()`. The Secrets card
+  (`ui/src/components/project-home/SecretsCard.tsx`) surfaces the whole model.
+
+Coverage: `tests/unit/test_secret_asset_and_wizard.py` (asset mint + convergent
+id + value-free guard, env-local/sodot resolve-status + provide, and the
+value-free share round-trip). Browser-validated end-to-end (add → missing →
+wizard → available; value lands in the git-ignored `.env.local`, the asset stays
+value-free).
+
 ## Gaps and follow-ups
 
-1. **Hub value resolution** — `HubSecretDriver.resolve` is a stub. A `flowpad-hub`
-   secret is carried and materialized as a pointer but injects nothing at runtime
-   until the hub adds an **authenticated, `allowed_to_use`-gated, audited**
-   value-fetch endpoint plus the client resolver.
-2. **Sharing consent** — the hub `EnvVar.allowed_to_use` ACL exists but has no
-   grant/revoke route; a real "share this secret with user/team" flow needs those
-   endpoints before hub-origin sharing is safe end to end.
-3. **Other providers** — `gcp`/`azure`/`onepassword`/`github` are anticipated by
-   the registry shape but unimplemented; each is a real auth integration added
-   one at a time behind `get_secret_origin_driver`.
+1. **Cross-instance transport over the hub.** The value-free reference is built
+   and materialized correctly (unit-tested), but the `shared_secret_origins`
+   project-metadata field is **dropped by the hub** — the hub `Project` model
+   doesn't declare it (`extra="ignore"`), so it doesn't survive the round-trip.
+   The intended durable transport is the **git-asset path** (`assets/sodot/*.json`
+   travels inside a git-shared context folder, the proven
+   `git_folder_share_two_client` mechanism); wiring the reference through a shared
+   git folder — or declaring + persisting the hub field — is the remaining work to
+   make project-secret sharing land on a receiver.
+2. **Hub value resolution** — `flowpad-hub` resolve is a stub; a hub-hosted secret
+   injects nothing until the hub adds an authenticated, `allowed_to_use`-gated,
+   audited value-fetch endpoint plus the client resolver.
+3. **Sharing consent** — the hub `EnvVar.allowed_to_use` ACL exists but has no
+   grant/revoke route.
+4. **Other providers** — `gcp`/`1password` (and `azure`/`github`) are registered
+   `ProviderStubDriver` slots; each real integration is added behind
+   `get_secret_origin_driver` + a `store()`/`resolve()` body.
