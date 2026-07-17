@@ -89,13 +89,13 @@ def _service_trigger_specs() -> list[dict[str, Any]]:
             uname="builtin_daily_usage_analysis",
             name="Last day usage analysis",
             description="Every day at 7am (local): fires the daily-analysis "
-                        "flow — analyze (pysdk) → publish — which posts a usage "
+                        "flow — analyze (function) → publish — which posts a usage "
                         "report to the Home Feed. Manually runnable like any trigger.",
             trigger_type=TriggerType.SCHEDULE,
             sched_trigger_type="cron",
             expr="0 7 * * *",
             # No direct action: the daily-analysis AgenticFlow (service_flows)
-            # routes this trigger's `fired` through analyze (pysdk) → publish —
+            # routes this trigger's `fired` through analyze → publish —
             # a direct action here would double-fire the report.
             actions=[],
         ),

@@ -57,3 +57,15 @@ export function nodeStatusLine(
   }
   return { text: 'idle', color: '#4a5065' };
 }
+
+/** Coerce an unknown (node_data / journal) value to a display string —
+ * strings pass through, everything else renders as JSON, never "[object Object]". */
+export function asStr(v: unknown): string {
+  if (typeof v === 'string') return v;
+  if (v == null) return '';
+  try {
+    return JSON.stringify(v);
+  } catch {
+    return '';
+  }
+}

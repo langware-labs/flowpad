@@ -3,16 +3,20 @@
 Two flows, written under ``~/.claude/agentic-flows/`` if absent:
 
 * **mini-analyzer** — a small, fast validation flow: interval Trigger →
-  pysdk node counting today's agentic processes via the instance REST API
-  (<1s, no LLM). The go-to flow for testing the whole machine end-to-end.
+  subprocess function counting today's agentic processes via the instance
+  REST API (<1s, no LLM) → inline ``flow_echo``. The go-to flow for testing
+  the whole machine end-to-end.
 * **daily-analysis** — the real 7am usage report as a staged flow: the
-  ``builtin_daily_usage_analysis`` Trigger node → pysdk ``analyze`` node
-  (``flow_sdk.usage_report.flow_node`` — heavy transcript aggregation +
-  UsageReport persist via REST) → ``flow_publish_usage_report`` callback
-  (Home-Feed post). The trigger has no direct action (spec ships
-  ``actions=[]``) so one fire produces exactly one report. Seeding also
-  MIGRATES an existing flow that still carries the retired monolith node
-  (``flow_daily_usage_report``) to the staged shape.
+  ``builtin_daily_usage_analysis`` Trigger node → subprocess ``analyze``
+  function (``flow_sdk.usage_report.flow_node`` — heavy transcript
+  aggregation + UsageReport persist via REST) → inline
+  ``flow_publish_usage_report`` (Home-Feed post). The trigger has no direct
+  action (spec ships ``actions=[]``) so one fire produces exactly one report.
+
+Both seeds MIGRATE their own existing graphs in place when they still carry
+retired spellings (``pysdk`` / ``process_runner`` / ``program_kind:
+callback``) — seed-owned shapes only; user flows fail validation with a
+pointed message instead.
 """
 from __future__ import annotations
 
@@ -24,7 +28,7 @@ from flow_sdk.builtin.agentic_flow import AgenticFlow, flows_home_dir
 logger = logging.getLogger(__name__)
 
 MINI_ANALYZER_SCRIPT = '''\
-"""mini-analyzer — pysdk demo node: count today's agentic processes.
+"""mini-analyzer — demo FlowFunction (subprocess): count today's processes.
 
 Runs in its own process with full flow_sdk import access; queries the
 instance over REST (ctx.api_base pattern) and emits a `summary` event.
@@ -103,9 +107,30 @@ async def _get_or_create_flow(name: str) -> tuple[AgenticFlow | None, bool]:
 
 async def _seed_mini_analyzer() -> None:
     flow, created = await _get_or_create_flow("mini-analyzer")
+    folder = flow.folder if flow else None
+    if flow is None or folder is None:
+        return
+    graph = folder / "graph.json"
+
     if not created:
-        return  # already seeded — leave the user's edits alone
-    assert flow is not None
+        # Migrate a seed-owned graph still on retired spellings; else hands off.
+        try:
+            doc = json.loads(graph.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return
+        if not _graph_has_retired_shapes(doc):
+            return
+
+    trigger = await _mini_trigger()
+    (folder / "scripts").mkdir(exist_ok=True)
+    (folder / "scripts" / "mini_analyzer.py").write_text(MINI_ANALYZER_SCRIPT, encoding="utf-8")
+    graph.write_text(
+        _doc(flow.id, "mini-analyzer", _mini_nodes(trigger.id), _MINI_EDGES), encoding="utf-8")
+    logger.info("set_service_flows: %s mini-analyzer (%s)",
+                "seeded" if created else "migrated", flow.id)
+
+
+async def _mini_trigger():
     from flow_sdk.builtin.trigger import Trigger
 
     trigger = await Trigger.get_one({"name": "Mini analyzer (manual)"})
@@ -114,24 +139,24 @@ async def _seed_mini_analyzer() -> None:
                           sched_trigger_type="interval", expr="24h", scope="system")
         await trigger.save()
         await trigger._register_schedule_job()
+    return trigger
 
-    folder = flow.folder
-    assert folder is not None
-    (folder / "scripts" / "mini_analyzer.py").write_text(MINI_ANALYZER_SCRIPT, encoding="utf-8")
-    nodes = [
+
+def _mini_nodes(trigger_id: str) -> list[dict]:
+    return [
         {"id": "trigger-node", "node_type": "trigger", "name": "Manual / daily",
-         "node_data": {"typeid": f"trigger-{trigger.id}"}},
-        {"id": "analyzer", "node_type": "pysdk", "name": "Mini analyzer",
-         "node_data": {"script": "scripts/mini_analyzer.py"}},
-        {"id": "echo", "node_type": "process_runner", "name": "Log summary",
-         "node_data": {"program_kind": "callback", "program_ref": "flow_echo"}},
+         "node_data": {"typeid": f"trigger-{trigger_id}"}},
+        {"id": "analyzer", "node_type": "function", "name": "Mini analyzer",
+         "node_data": {"function": "scripts/mini_analyzer.py", "runtime": "subprocess"}},
+        {"id": "echo", "node_type": "function", "name": "Log summary",
+         "node_data": {"function": "flow_echo", "runtime": "inline"}},
     ]
-    edges = [
-        {"id": "e1", "from": {"node": "trigger-node", "event": "fired"}, "to": {"node": "analyzer"}},
-        {"id": "e2", "from": {"node": "analyzer", "event": "summary"}, "to": {"node": "echo"}},
-    ]
-    (folder / "graph.json").write_text(_doc(flow.id, "mini-analyzer", nodes, edges), encoding="utf-8")
-    logger.info("set_service_flows: seeded mini-analyzer (%s)", flow.id)
+
+
+_MINI_EDGES = [
+    {"id": "e1", "from": {"node": "trigger-node", "event": "fired"}, "to": {"node": "analyzer"}},
+    {"id": "e2", "from": {"node": "analyzer", "event": "summary"}, "to": {"node": "echo"}},
+]
 
 
 DAILY_ANALYZE_SCRIPT = '''\
@@ -144,19 +169,28 @@ a specific range; default is yesterday (local time).
 from flow_sdk.usage_report.flow_node import on_flow_event  # noqa: F401
 '''
 
-# The retired monolith node — its presence in an existing graph marks the
-# pre-staged shape this seed migrates away from.
-_RETIRED_DAILY_CALLBACK = "flow_daily_usage_report"
+def _graph_has_retired_shapes(doc: dict) -> bool:
+    """True when a seed-owned graph still uses pre-FlowFunction spellings —
+    the shapes this seed migrates in place (structural check, no substrings)."""
+    for n in doc.get("nodes") or []:
+        nd = n.get("node_data") or {}
+        if n.get("node_type") in ("pysdk", "process_runner"):
+            return True
+        if nd.get("program_kind") == "callback":
+            return True
+        if nd.get("program_ref") == "flow_daily_usage_report":
+            return True
+    return False
 
 
 def _daily_graph(flow_id: str, trigger_id: str) -> str:
     nodes = [
         {"id": "trigger-node", "node_type": "trigger", "name": "Daily 7am",
          "node_data": {"typeid": f"trigger-{trigger_id}"}},
-        {"id": "analyze", "node_type": "pysdk", "name": "Analyze usage",
-         "node_data": {"script": "scripts/analyze_usage.py"}},
-        {"id": "publish", "node_type": "process_runner", "name": "Post to feed",
-         "node_data": {"program_kind": "callback", "program_ref": "flow_publish_usage_report"}},
+        {"id": "analyze", "node_type": "function", "name": "Analyze usage",
+         "node_data": {"function": "scripts/analyze_usage.py", "runtime": "subprocess"}},
+        {"id": "publish", "node_type": "function", "name": "Post to feed",
+         "node_data": {"function": "flow_publish_usage_report", "runtime": "inline"}},
     ]
     edges = [
         {"id": "e1", "from": {"node": "trigger-node", "event": "fired"}, "to": {"node": "analyze"}},
@@ -212,11 +246,7 @@ async def _seed_daily_analysis() -> None:
             doc = json.loads(graph.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             return
-        retired = any(
-            (n.get("node_data") or {}).get("program_ref") == _RETIRED_DAILY_CALLBACK
-            for n in doc.get("nodes") or []
-        )
-        if not retired:
+        if not _graph_has_retired_shapes(doc):
             _repin_trigger_nodes(graph, trigger.id)
             return
         (folder / "scripts").mkdir(exist_ok=True)

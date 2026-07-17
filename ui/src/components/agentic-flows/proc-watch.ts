@@ -22,7 +22,7 @@ async function startWatch(processId: string): Promise<void> {
   const entry: WatchEntry = {};
   active.set(processId, entry);
   try {
-    const proc = (await AgenticProcess.getById(processId)) as AgenticProcess | null;
+    const proc = await AgenticProcess.getById(processId);
     if (!proc) return;
     const onReport = (report: {
       worker_status?: string;

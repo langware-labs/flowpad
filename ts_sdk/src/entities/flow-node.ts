@@ -9,7 +9,7 @@ import { IEntity } from '../IEntity';
 export interface IFlowNode extends IEntity {
   name?: string;
   flow_id?: string;
-  node_type?: 'trigger' | 'process_runner' | 'pysdk';
+  node_type?: 'trigger' | 'agent' | 'function';
   program_ref?: string;
   enabled?: boolean;
 }
@@ -18,7 +18,7 @@ export interface IFlowNode extends IEntity {
 export class FlowNode extends APIEntity<FlowNode> implements IFlowNode {
   name?: string;
   flow_id?: string;
-  node_type?: 'trigger' | 'process_runner' | 'pysdk';
+  node_type?: 'trigger' | 'agent' | 'function';
   program_ref?: string;
   enabled?: boolean;
   static type: string = 'flow_node';
@@ -27,7 +27,7 @@ export class FlowNode extends APIEntity<FlowNode> implements IFlowNode {
     super(entity);
     this.name = entity.name ?? '';
     this.flow_id = entity.flow_id ?? '';
-    this.node_type = entity.node_type ?? 'process_runner';
+    this.node_type = entity.node_type ?? 'function';
     this.program_ref = entity.program_ref;
     this.enabled = entity.enabled ?? true;
   }

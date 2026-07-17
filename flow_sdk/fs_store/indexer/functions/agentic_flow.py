@@ -2,7 +2,7 @@
 
 An agentic flow is a folder containing ``graph.json`` (the flow document —
 see ``flow_sdk/flow_manager/flow_doc.py``) plus ``display.json`` (layout),
-``scripts/`` (pysdk node files) and ``runs/`` (execution journals). Cloned
+``scripts/`` (function node scripts) and ``runs/`` (execution journals). Cloned
 from the whiteboard walker family.
 
 Freshness deliberately tracks ONLY ``graph.json`` + ``scripts/*``:

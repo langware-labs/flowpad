@@ -35,8 +35,7 @@ const edgeTypes = { pulse: PulseEdge };
 function defaultEventFor(node: FlowDocNode | undefined): string {
   if (!node) return '*';
   if (node.node_type === 'trigger') return 'fired';
-  if (node.node_type === 'process_runner') return 'done';
-  return '*';
+  return 'done';  // agents + functions auto-emit `done`
 }
 
 function CanvasInner() {
@@ -116,8 +115,8 @@ function CanvasInner() {
         if (!src || !tgt || tgt.node_type === 'trigger') return d;
         d.edges.push({
           id: newNodeId(),
-          from: { node: conn.source!, event: defaultEventFor(src) },
-          to: { node: conn.target! },
+          from: { node: conn.source, event: defaultEventFor(src) },
+          to: { node: conn.target },
         });
         return d;
       });

@@ -7,33 +7,39 @@ injection and sinks when no deliveries are pending and no executions are
 active. Everything a run does is journaled to ``runs/<run-id>.jsonl`` and
 mirrored over WS.
 
-Node execution:
-* ``process_runner`` — callback (inline) or spawned agent; spawned agents
-  AUTO-EMIT ``done {output}`` when their turn completes.
-* ``pysdk`` — subprocess running the flow's script with
-  ``on_flow_event(event_name, data, flow_ctx)``; stdio captured, exit code
-  managed (see pysdk_runner.py).
-* ``trigger`` — never executes; emits ``fired`` when its Trigger entity fires.
+Node execution — palette trio:
+* ``agent``    — spawned worker (skill/instruction); AUTO-EMITS ``done
+  {output, output_files}`` when its turn completes.
+* ``function`` — a FlowFunction (``on_flow_event(event_name, data, flow_ctx)``)
+  run ``inline`` (server loop, registry name) or in a ``subprocess`` (script
+  or registry name; see function_runner.py). A non-None dict return
+  auto-emits ``done`` in BOTH runtimes.
+* ``trigger``  — never executes; emits ``fired`` when its Trigger entity fires.
+
+Standardized I/O records — one convention at every altitude:
+* agent + subprocess executions: the AgenticProcess's OWN record folders
+  (``execution/{input,output}``); the journal carries ``process_id``.
+* inline executions: ``<run record dir>/executions/<seq>-<node>/{input,output}``.
+* the RUN itself: ``records_root/agentic_flow_run/<stem>/execution/{input,output}``
+  — entry events in, terminal (unrouted) emissions out.
+Every finished execution and run is stamped with ``example.json`` (Dataset
+IO_FOLDER-compatible; deterministic id) — runs are born as training data.
 
 The per-node scheduler (serial/parallel, queue, merge_identical) is keyed by
-(flow, node). Loop budgets (hops, processes, deadline) are enforced per run.
+(flow, node). Budgets + run retention come from the flow's ``config`` block.
 """
 from __future__ import annotations
 
 import asyncio
 import json
 import logging
+import shutil
 import time
 import uuid
 from pathlib import Path
 from typing import Any, Optional
 
-from flow_sdk.builtin.agentic_flow import (
-    DEFAULT_DEADLINE_S,
-    DEFAULT_MAX_HOPS,
-    DEFAULT_MAX_PROCESSES,
-    AgenticFlow,
-)
+from flow_sdk.builtin.agentic_flow import AgenticFlow
 from flow_sdk.core.capabilities.models import now_iso
 from flow_sdk.flow_manager.envelope import EXTERNAL_SOURCE, FlowEvent
 from flow_sdk.flow_manager.flow_doc import (
@@ -43,11 +49,32 @@ from flow_sdk.flow_manager.flow_doc import (
     FlowNodeDef,
     parse_flow_doc,
 )
+from flow_sdk.flow_manager.function_runner import record_emission
 from flow_sdk.flow_manager.journal import RunJournal
 
 logger = logging.getLogger(__name__)
 
 _SPAWN_WATCH_INTERVAL_S = 2.0
+RUN_RECORD_TYPE = "agentic_flow_run"
+
+
+def run_record_dir(run_id: str) -> Path:
+    """The run's standardized record home (same convention as process records)."""
+    from flow_sdk.fs_store.fs_record import record_stem
+    from flow_sdk.fs_store.record_paths import get_default_records_root
+
+    return get_default_records_root() / RUN_RECORD_TYPE / record_stem(RUN_RECORD_TYPE, run_id)
+
+
+def inline_exec_dir(run_id: str, seq: int, node_id: str) -> Path:
+    """An INLINE execution's record home under the run — the one owner of the
+    ``executions/<seq>-<node>`` layout (writers and rerun both resolve here)."""
+    return run_record_dir(run_id) / "executions" / f"{seq}-{node_id}"
+
+
+def _write_json(path: Path, payload: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2, default=str) + "\n", encoding="utf-8")
 
 
 class _LoadedFlow:
@@ -64,10 +91,11 @@ class _LoadedFlow:
 
 
 class _Run:
-    """Live run state: counters + journal. Row upserts happen at start/end."""
+    """Live run state: counters + journal + record dir. Row upserts at start/end."""
 
     __slots__ = ("id", "flow", "journal", "started_at", "pending", "active",
-                 "hops", "processes", "events", "executions", "error", "finalized")
+                 "hops", "processes", "events", "executions", "error", "finalized",
+                 "seq", "in_count", "out_count", "record_dir")
 
     def __init__(self, run_id: str, flow: _LoadedFlow) -> None:
         self.id = run_id
@@ -80,12 +108,20 @@ class _Run:
         self.processes = 0
         self.events = 0
         self.executions = 0
+        self.seq = 0          # execution sequence (journal-ordered)
+        self.in_count = 0     # entry events materialized (input/event-N.json)
+        self.out_count = 0    # terminal events materialized (output/event-N.json)
         self.error: Optional[str] = None
         self.finalized = False
+        self.record_dir: Path = run_record_dir(run_id)
 
     @property
     def deadline_exceeded(self) -> bool:
-        return time.monotonic() - self.started_at > DEFAULT_DEADLINE_S
+        return time.monotonic() - self.started_at > self.flow.doc.config.deadline_s
+
+    def next_seq(self) -> int:
+        self.seq += 1
+        return self.seq
 
     def maybe_sink(self) -> bool:
         return not self.finalized and self.pending == 0 and self.active == 0
@@ -101,6 +137,51 @@ class _NodeRuntime:
 
         self.queue: "deque[tuple[FlowEvent, FlowNodeDef, _Run]]" = deque()
         self.active = 0
+
+
+class InlineFlowCtx:
+    """``flow_ctx`` for the INLINE runtime — same surface as the subprocess one.
+
+    Runs on the server event loop with direct SDK access. ``emit_flow_event``
+    routes through the manager (run counters stay correct); ``log`` mirrors to
+    the logger and the execution's output record.
+    """
+
+    def __init__(self, manager: "FlowManager", run: _Run, node: FlowNodeDef,
+                 input_folder: Path, output_folder: Path) -> None:
+        self._manager = manager
+        self._run = run
+        self._node = node
+        self.flow_id = run.flow.flow_id
+        self.node_id = node.id
+        self.execution_id = run.id
+        self.input_folder = input_folder
+        self.output_folder = output_folder
+        self.flow_output_folder = run.record_dir / "execution" / "output"
+        self.logs: list[str] = []
+
+    def emit_flow_event(self, key: str, val: Any = None) -> None:
+        data = val if isinstance(val, dict) else {"value": val}
+        record_emission(self.output_folder, key, data)
+        # emit_from_node is sync: the pending reserve lands NOW, before this
+        # function returns to the loop — the hop itself runs as a loop task.
+        self._manager.emit_from_node(self._run, self.node_id, key, data)
+
+    async def post(self, path: str, body: dict, *, timeout: int = 60) -> dict:
+        """ASYNC in the inline runtime (unlike the subprocess ctx): the HTTP
+        round-trip targets THIS server, so a blocking call on the event loop
+        would deadlock against itself. Await it — or better, skip HTTP
+        entirely: inline functions have direct SDK access."""
+        from flow_sdk.flow_manager.function_runner import FlowCtx as _SubCtx
+        from flow_sdk.flow_manager.function_runner import _api_base
+
+        sub = _SubCtx(self.flow_id, self.node_id, self.execution_id, _api_base())
+        return await asyncio.get_running_loop().run_in_executor(
+            None, lambda: sub.post(path, body, timeout=timeout))
+
+    def log(self, msg: Any) -> None:
+        logger.info("[flow %s/%s] %s", self.flow_id[:8], self.node_id, msg)
+        self.logs.append(str(msg))
 
 
 def _delivery_identity(event: FlowEvent) -> str:
@@ -157,10 +238,12 @@ class FlowManager:
         for flow in await self.flows_referencing_trigger(trigger_id):
             for node in flow.doc.trigger_nodes_for(trigger_id):
                 run = await self._start_run(flow)
-                await self._route(run, FlowEvent(
+                fe = FlowEvent(
                     event=TRIGGER_FIRED_EVENT, data={"trigger_id": trigger_id},
                     flow_id=flow.flow_id, execution_id=run.id, source_node=node.id,
-                ))
+                )
+                self._record_run_event(run, fe, "input")
+                await self._route(run, fe)
                 self._maybe_finalize(run)
                 run_ids.append(run.id)
         return run_ids
@@ -177,8 +260,8 @@ class FlowManager:
     ) -> Optional[FlowEvent]:
         """External/entry point: deliver an event into a flow.
 
-        Joins the run named by ``execution_id`` (how pysdk emissions come home)
-        or starts a fresh one. ``target_node`` bypasses edge routing and
+        Joins the run named by ``execution_id`` (how subprocess emissions come
+        home) or starts a fresh one. ``target_node`` bypasses edge routing and
         delivers directly (the Inject panel's direct mode)."""
         flow = await self.load_flow(flow_id)
         if flow is None:
@@ -190,6 +273,8 @@ class FlowManager:
             run = await self._start_run(flow)
         fe = FlowEvent(event=event, data=data or {}, flow_id=flow_id,
                        execution_id=run.id, source_node=source_node)
+        if source_node == EXTERNAL_SOURCE:
+            self._record_run_event(run, fe, "input", target_node=target_node)
         if target_node:
             node = flow.doc.node(target_node)
             if node is None:
@@ -204,6 +289,12 @@ class FlowManager:
     async def _start_run(self, flow: _LoadedFlow) -> _Run:
         run = _Run(str(uuid.uuid4()), flow)
         self._runs[run.id] = run
+        # The run's standardized record home (process-folder convention).
+        try:
+            (run.record_dir / "execution" / "input").mkdir(parents=True, exist_ok=True)
+            (run.record_dir / "execution" / "output").mkdir(parents=True, exist_ok=True)
+        except OSError:
+            logger.exception("FlowManager: run record dir create failed for %s", run.id)
         run.journal.append("run_start", {"flow_id": flow.flow_id, "run_id": run.id})
         try:
             from flow_sdk.builtin.agentic_flow_run import AgenticFlowRun, RunStatus
@@ -219,20 +310,72 @@ class FlowManager:
         await self._broadcast_run_event(run, "run_start", {})
         return run
 
+    # ── standardized I/O records ──────────────────────────────────────────────
+
+    def _record_run_event(self, run: _Run, fe: FlowEvent, direction: str,
+                          target_node: str | None = None) -> None:
+        """The run-level I/O record: entry events → ``input/event-N.json``,
+        terminal (unrouted) emissions → ``output/event-N.json`` (numbered =
+        Dataset occurrence grammar). ``target_node`` (direct delivery) rides
+        along on inputs so replay reproduces the exact entry semantics."""
+        if direction == "input":
+            run.in_count += 1
+            n = run.in_count
+        else:
+            run.out_count += 1
+            n = run.out_count
+        payload = fe.model_dump()
+        if target_node:
+            payload["target_node"] = target_node
+        try:
+            _write_json(run.record_dir / "execution" / direction / f"event-{n}.json", payload)
+        except OSError:
+            logger.debug("FlowManager: run %s record failed", direction, exc_info=True)
+
+    def _stamp_example(self, exec_dir: Path, run: _Run, node_id: str, seq: int,
+                       fe: FlowEvent | None, process_id: str | None = None) -> None:
+        """Born-compatible Dataset example: id is deterministic → idempotent promotion."""
+        from flow_sdk.fs_store.identifier import mint_uuid
+
+        source: dict[str, Any] = {"flow_id": run.flow.flow_id, "run_id": run.id,
+                                  "node_id": node_id, "seq": seq}
+        if fe is not None:
+            source.update({"event": fe.event, "source_node": fe.source_node, "hop": fe.hop})
+        if process_id:
+            source["process_id"] = process_id
+        try:
+            _write_json(exec_dir / "example.json", {
+                "metadata": {
+                    "id": str(mint_uuid(f"{run.flow.flow_id}:{run.id}:{seq}")),
+                    "kind": "train",
+                    "source": source,
+                },
+            })
+        except OSError:
+            logger.debug("FlowManager: example.json stamp failed", exc_info=True)
+
     # ── routing ───────────────────────────────────────────────────────────────
 
     async def _route(self, run: _Run, fe: FlowEvent) -> None:
         """Deliver ``fe`` along the flow's edges (exact event or catch-all)."""
+        cfg = run.flow.doc.config
         run.hops = max(run.hops, fe.hop)
         run.events += 1
         self._journal_event(run, fe)
-        if fe.hop > DEFAULT_MAX_HOPS:
-            self._trip(run, f"hop {fe.hop} exceeds max {DEFAULT_MAX_HOPS}")
+        if fe.hop > cfg.max_hops:
+            self._trip(run, f"hop {fe.hop} exceeds max {cfg.max_hops}")
             return
         if run.deadline_exceeded:
-            self._trip(run, f"run deadline {DEFAULT_DEADLINE_S}s exceeded")
+            self._trip(run, f"run deadline {cfg.deadline_s}s exceeded")
             return
-        for node in run.flow.doc.targets_for(fe.source_node, fe.event):
+        targets = run.flow.doc.targets_for(fe.source_node, fe.event)
+        if not targets:
+            # A node emission that routes nowhere is a FLOW OUTPUT.
+            src = run.flow.doc.node(fe.source_node)
+            if src is not None and src.node_type != "trigger":
+                self._record_run_event(run, fe, "output")
+            return
+        for node in targets:
             await self._deliver(run, node, fe)
 
     async def _deliver(self, run: _Run, node: FlowNodeDef, fe: FlowEvent) -> None:
@@ -273,12 +416,14 @@ class FlowManager:
             rt.active += 1
             run.active += 1
             run.executions += 1
+            seq = run.next_seq()
             try:
-                await self._execute(run, node_def, fe, rt)
+                await self._execute(run, node_def, fe, rt, seq)
             except Exception as e:
                 self._finish_execution(run, rt)
                 logger.exception("FlowManager: node %s failed for %s", node_def.id, fe.event)
-                run.journal.append("node_error", {"node": node_def.id, "error": str(e)})
+                run.journal.append("node_error", {"node": node_def.id, "error": str(e),
+                                                  "execution": {"seq": seq}})
                 await self._broadcast_node_status(run, node_def, "failed", {"error": str(e)})
         self._maybe_finalize_all()
 
@@ -288,62 +433,144 @@ class FlowManager:
 
     # ── execution per node type ───────────────────────────────────────────────
 
-    async def _execute(self, run: _Run, node: FlowNodeDef, fe: FlowEvent, rt: _NodeRuntime) -> None:
-        nd = node.node_data
-        if node.node_type == "pysdk":
-            await self._run_pysdk(run, node, fe, rt)
-        elif nd.get("program_kind") == "callback":
-            await self._run_callback(run, node, fe, rt)
+    async def _execute(self, run: _Run, node: FlowNodeDef, fe: FlowEvent,
+                       rt: _NodeRuntime, seq: int) -> None:
+        if node.node_type == "function":
+            await self._run_function(run, node, fe, rt, seq)
         else:
-            await self._spawn_agent(run, node, fe, rt)
+            await self._spawn_agent(run, node, fe, rt, seq)
 
-    async def _run_callback(self, run: _Run, node: FlowNodeDef, fe: FlowEvent, rt: _NodeRuntime) -> None:
-        from flow_sdk.builtin import trigger_callbacks
+    # ── FlowFunction execution (inline + subprocess) ──────────────────────────
 
-        name = str(node.node_data.get("program_ref") or "")
-        fn = trigger_callbacks.get(name)
+    async def _run_function(self, run: _Run, node: FlowNodeDef, fe: FlowEvent,
+                            rt: _NodeRuntime, seq: int) -> None:
+        if node.function_runtime() == "inline":
+            await self._run_function_inline(run, node, fe, rt, seq)
+        else:
+            await self._run_function_subprocess(run, node, fe, rt, seq)
+
+
+    async def _run_function_inline(self, run: _Run, node: FlowNodeDef, fe: FlowEvent,
+                                   rt: _NodeRuntime, seq: int) -> None:
+        from flow_sdk.flow_manager import flow_functions
+
+        ref = str(node.node_data.get("function") or "")
+        fn = flow_functions.get(ref)
         if fn is None:
-            raise RuntimeError(f"No registered callback {name!r}")
-        await self._broadcast_node_status(run, node, "started", {"program_kind": "callback"})
+            self._finish_execution(run, rt)
+            raise RuntimeError(f"No registered FlowFunction {ref!r}")
+        exec_dir = inline_exec_dir(run.id, seq, node.id)
+        input_dir, output_dir = exec_dir / "input", exec_dir / "output"
+        try:
+            input_dir.mkdir(parents=True, exist_ok=True)
+            output_dir.mkdir(parents=True, exist_ok=True)
+            _write_json(input_dir / "event.json", fe.model_dump())
+        except OSError:
+            logger.debug("FlowManager: inline input record failed", exc_info=True)
+        ctx = InlineFlowCtx(self, run, node, input_dir, output_dir)
+        await self._broadcast_node_status(run, node, "started", {"runtime": "inline"})
         started = time.monotonic()
         try:
-            result = fn(fe)
+            result = fn(fe.event, fe.data, ctx)
             if asyncio.iscoroutine(result):
                 result = await result
+        except BaseException as e:
+            try:
+                (output_dir / "error.txt").write_text(str(e), encoding="utf-8")
+            except OSError:
+                pass
+            self._finish_execution(run, rt)
+            raise
+        duration = int((time.monotonic() - started) * 1000)
+        try:
+            _write_json(output_dir / "result.json", result if isinstance(result, dict) else {})
+            if ctx.logs:
+                (output_dir / "log.txt").write_text("\n".join(ctx.logs) + "\n", encoding="utf-8")
+        except OSError:
+            pass
+        self._stamp_example(exec_dir, run, node.id, seq, fe)
+        run.journal.append("node_done", {"node": node.id, "duration_ms": duration,
+                                         "execution": {"seq": seq}})
+        # Reserve the successor hop (pending += 1, synchronous) BEFORE releasing
+        # this execution slot — counters must never hit 0/0 mid-handoff.
+        if isinstance(result, dict):
+            self.emit_from_node(run, node.id, AGENT_DONE_EVENT, result)
+        self._finish_execution(run, rt)
+        await self._broadcast_node_status(run, node, "finished",
+                                          {"duration_ms": duration, "runtime": "inline"})
+
+    async def _run_function_subprocess(self, run: _Run, node: FlowNodeDef, fe: FlowEvent,
+                                       rt: _NodeRuntime, seq: int) -> None:
+        from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
+        from flow_sdk.builtin.process_lifecycle import ProcessStatus
+        from flow_sdk.flow_manager.function_runner import run_function_subprocess
+        from flow_sdk.flowpad_types.enums.process_enums import ProcessKind
+
+        # A real (hidden) process row: driverless — the manager runs the
+        # subprocess itself and stamps status/exit_code; the row exists so the
+        # execution has its OWN standard folders and joins the run's children.
+        proc = AgenticProcess(
+            visible=False,
+            process_type=ProcessKind.EXECUTION.value,
+            name=f"Flow {run.flow.doc.name or run.flow.flow_id[:8]}: {node.name or node.id[:8]}",
+        )
+        await proc.save()
+        exec_base = proc._record_dir() / "execution"
+        input_dir, output_dir = exec_base / "input", exec_base / "output"
+        try:
+            input_dir.mkdir(parents=True, exist_ok=True)
+            output_dir.mkdir(parents=True, exist_ok=True)
+            _write_json(input_dir / "event.json", fe.model_dump())
+        except OSError:
+            logger.debug("FlowManager: subprocess input record failed", exc_info=True)
+        await self._attach_to_run(run, proc)
+        await self._broadcast_node_status(run, node, "started",
+                                          {"runtime": "subprocess", "process_id": proc.id})
+        started = time.monotonic()
+        folders = {"input": str(input_dir), "output": str(output_dir),
+                   "flow_output": str(run.record_dir / "execution" / "output")}
+        try:
+            result = await run_function_subprocess(run.flow.folder, node, fe, run, folders)
         except BaseException:
             self._finish_execution(run, rt)
             raise
         duration = int((time.monotonic() - started) * 1000)
-        run.journal.append("node_done", {"node": node.id, "duration_ms": duration})
-        # A callback's dict return becomes its `done` event payload. Reserve the
-        # successor hop (pending += 1, synchronous) BEFORE releasing this
-        # execution slot — the run's counters must never hit 0/0 mid-handoff or
-        # a concurrent finalize check could sink the run under us.
-        await self.emit_from_node(run, node.id, AGENT_DONE_EVENT,
-                                  result if isinstance(result, dict) else {})
-        self._finish_execution(run, rt)
-        await self._broadcast_node_status(run, node, "finished", {"duration_ms": duration})
-
-    async def _spawn_agent(self, run: _Run, node: FlowNodeDef, fe: FlowEvent, rt: _NodeRuntime) -> None:
-        from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
-        from flow_sdk.builtin.flow_node import MODEL_SIZE_TO_CLI
-
-        if run.processes >= DEFAULT_MAX_PROCESSES:
+        # Full stdio lives in the execution record; the journal keeps tails.
+        try:
+            (output_dir / "stdout.log").write_text(result.stdout, encoding="utf-8")
+            (output_dir / "stderr.log").write_text(result.stderr, encoding="utf-8")
+        except OSError:
+            pass
+        self._stamp_example(exec_base, run, node.id, seq, fe, process_id=proc.id)
+        try:
+            proc.status = (ProcessStatus.STOPPED if result.exit_code == 0
+                           else ProcessStatus.FAILED).value
+            proc.exit_code = result.exit_code
+            await proc.update()
+        except Exception:
+            logger.debug("FlowManager: subprocess row stamp failed", exc_info=True)
+        detail = {"duration_ms": duration, "exit_code": result.exit_code,
+                  "stdout": result.stdout[-2000:], "stderr": result.stderr[-2000:],
+                  "process_id": proc.id}
+        if result.exit_code == 0:
+            run.journal.append("node_done", {"node": node.id, "execution": {"seq": seq}, **detail})
+            # Uniform auto-`done`: the handler's dict return, in both runtimes.
+            # Reserve the successor hop BEFORE releasing this slot (counters
+            # must never hit 0/0 mid-handoff).
+            if isinstance(result.result, dict):
+                self.emit_from_node(run, node.id, AGENT_DONE_EVENT, result.result)
             self._finish_execution(run, rt)
-            self._trip(run, f"max_processes {DEFAULT_MAX_PROCESSES} exhausted")
-            return
-        run.processes += 1
-        nd = node.node_data
-        instruction = self._agent_instruction(run, node, fe)
-        proc = AgenticProcess(
-            instruction_content=instruction,
-            workdir=nd.get("workdir"),
-            visible=bool(nd.get("visible", False)),
-            name=f"Flow {run.flow.doc.name or run.flow.flow_id[:8]}: {node.name or node.id[:8]}",
-            cli_config={"model": MODEL_SIZE_TO_CLI.get(str(nd.get("model_size") or "sm"), "haiku")},
-        )
-        await proc.save()
-        await proc.start_pty(instruction=instruction, visible=bool(nd.get("visible", False)))
+            await self._broadcast_node_status(run, node, "finished", detail)
+        else:
+            self._finish_execution(run, rt)
+            run.journal.append("node_error", {"node": node.id, "execution": {"seq": seq}, **detail})
+            await self._broadcast_node_status(
+                run, node, "failed",
+                {**detail, "error": f"exit {result.exit_code}: {result.stderr.strip()[-300:]}"},
+            )
+        self._maybe_finalize(run)
+
+    async def _attach_to_run(self, run: _Run, proc: Any) -> None:
         try:
             from flow_sdk.builtin.agentic_flow_run import AgenticFlowRun
 
@@ -352,13 +579,51 @@ class FlowManager:
                 await row.attach_child(proc)
         except Exception:
             logger.debug("FlowManager: run→process attach failed", exc_info=True)
-        run.journal.append("agent_spawn", {"node": node.id, "process_id": proc.id})
+
+    # ── agent execution ───────────────────────────────────────────────────────
+
+    async def _spawn_agent(self, run: _Run, node: FlowNodeDef, fe: FlowEvent,
+                           rt: _NodeRuntime, seq: int) -> None:
+        from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
+        from flow_sdk.builtin.flow_node import MODEL_SIZE_TO_CLI
+
+        cfg = run.flow.doc.config
+        if run.processes >= cfg.max_processes:
+            self._finish_execution(run, rt)
+            self._trip(run, f"max_processes {cfg.max_processes} exhausted")
+            return
+        run.processes += 1
+        nd = node.node_data
+        proc = AgenticProcess(
+            workdir=nd.get("workdir"),
+            visible=bool(nd.get("visible", False)),
+            name=f"Flow {run.flow.doc.name or run.flow.flow_id[:8]}: {node.name or node.id[:8]}",
+            cli_config={"model": MODEL_SIZE_TO_CLI.get(str(nd.get("model_size") or "sm"), "haiku")},
+        )
+        # Standardized input record in the process's OWN folders (id is minted
+        # at construction, so the record dir is known pre-save) — the preamble
+        # points the agent at it.
+        exec_base = proc._record_dir() / "execution"
+        try:
+            (exec_base / "input").mkdir(parents=True, exist_ok=True)
+            (exec_base / "output").mkdir(parents=True, exist_ok=True)
+            _write_json(exec_base / "input" / "event.json", fe.model_dump())
+        except OSError:
+            logger.debug("FlowManager: agent input record failed", exc_info=True)
+        instruction = self._agent_instruction(run, node, fe, exec_base)
+        proc.instruction_content = instruction
+        await proc.save()
+        await proc.start_pty(instruction=instruction, visible=bool(nd.get("visible", False)))
+        await self._attach_to_run(run, proc)
+        run.journal.append("agent_spawn", {"node": node.id, "process_id": proc.id,
+                                           "execution": {"seq": seq}})
         await self._broadcast_node_status(run, node, "started",
                                           {"program_kind": nd.get("program_kind", "instruction"),
                                            "process_id": proc.id})
-        asyncio.create_task(self._watch_agent(run, node, proc.id, rt))
+        asyncio.create_task(self._watch_agent(run, node, proc.id, rt, seq, fe))
 
-    def _agent_instruction(self, run: _Run, node: FlowNodeDef, fe: FlowEvent) -> str:
+    def _agent_instruction(self, run: _Run, node: FlowNodeDef, fe: FlowEvent,
+                           exec_base: Path) -> str:
         nd = node.node_data
         prompt = f" {nd.get('prompt')}" if nd.get("prompt") else ""
         base = (
@@ -366,17 +631,25 @@ class FlowManager:
             if nd.get("program_kind") == "skill"
             else f"{nd.get('program_ref') or ''}{prompt}"
         )
+        preview = json.dumps(fe.data, indent=2, default=str)
+        if len(preview) > 2000:
+            preview = preview[:2000] + "\n… (truncated — read the input file for the full event)"
+        flow_output = run.record_dir / "execution" / "output" / node.id
         context = (
             f"\n\n---\nFlow event `{fe.event}` (flow {run.flow.doc.name or run.flow.flow_id}, "
-            f"execution {run.id}).\nData:\n```json\n{json.dumps(fe.data, indent=2)}\n```\n"
+            f"execution {run.id}).\nData preview:\n```json\n{preview}\n```\n"
+            f"Your full input event: `{exec_base / 'input' / 'event.json'}`.\n"
+            f"Write any output artifacts to: `{exec_base / 'output'}/`.\n"
+            f"Flow-level outputs (results for the whole run) go to: `{flow_output}/`.\n"
             "When you finish, your final answer is emitted automatically as this node's "
             "`done` event — no further action needed."
         )
         return base + context
 
-    async def _watch_agent(self, run: _Run, node: FlowNodeDef, proc_id: str, rt: _NodeRuntime) -> None:
+    async def _watch_agent(self, run: _Run, node: FlowNodeDef, proc_id: str,
+                           rt: _NodeRuntime, seq: int, fe: FlowEvent) -> None:
         """One-shot agent execution: wait for the turn to complete (busy→idle),
-        stop the process, auto-emit ``done {output}``, free the slot."""
+        stop the process, auto-emit ``done {output, output_files}``, free the slot."""
         from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
         from flow_sdk.builtin.agentic_process.status_predicates import is_turn_busy
         from flow_sdk.builtin.process_lifecycle import ProcessStatus
@@ -386,6 +659,7 @@ class FlowManager:
         started = time.monotonic()
         output = ""
         failed: Optional[str] = None
+        exec_base: Optional[Path] = None
         try:
             while True:
                 await asyncio.sleep(_SPAWN_WATCH_INTERVAL_S)
@@ -396,6 +670,7 @@ class FlowManager:
                 if proc is None:
                     failed = "process disappeared"
                     break
+                exec_base = proc._record_dir() / "execution"
                 if proc.status == ProcessStatus.FAILED.value:
                     failed = proc.start_failure or "process failed"
                     break
@@ -417,26 +692,42 @@ class FlowManager:
             failed = "agent watcher failed"
         finally:
             duration = int((time.monotonic() - started) * 1000)
+            if exec_base is not None:
+                self._stamp_example(exec_base, run, node.id, seq, fe, process_id=proc_id)
             if failed:
                 self._finish_execution(run, rt)
                 run.journal.append("node_error", {"node": node.id, "process_id": proc_id,
-                                                  "error": failed, "duration_ms": duration})
+                                                  "error": failed, "duration_ms": duration,
+                                                  "execution": {"seq": seq}})
                 await self._broadcast_node_status(run, node, "failed",
                                                   {"error": failed, "process_id": proc_id,
                                                    "duration_ms": duration})
             else:
                 run.journal.append("node_done", {"node": node.id, "process_id": proc_id,
-                                                 "duration_ms": duration})
+                                                 "duration_ms": duration,
+                                                 "execution": {"seq": seq}})
                 # Reserve the successor hop (pending += 1, synchronous) BEFORE
                 # releasing this execution slot — counters must never hit 0/0
                 # mid-handoff or a concurrent finalize could sink the run.
-                await self.emit_from_node(run, node.id, AGENT_DONE_EVENT,
-                                          {"output": output, "process_id": proc_id})
+                self.emit_from_node(run, node.id, AGENT_DONE_EVENT,
+                                    {"output": output, "process_id": proc_id,
+                                     "output_files": self._output_listing(exec_base)})
                 self._finish_execution(run, rt)
                 await self._broadcast_node_status(run, node, "finished",
                                                   {"duration_ms": duration, "process_id": proc_id})
             await self._drain(run.flow.flow_id, node)
             self._maybe_finalize(run)
+
+    @staticmethod
+    def _output_listing(exec_base: Optional[Path]) -> list[str]:
+        """Relative listing of the execution's output folder (the artifacts)."""
+        if exec_base is None:
+            return []
+        out = exec_base / "output"
+        try:
+            return sorted(str(p.relative_to(out)) for p in out.rglob("*") if p.is_file())
+        except OSError:
+            return []
 
     @staticmethod
     async def _agent_output(proc: Any) -> str:
@@ -460,31 +751,12 @@ class FlowManager:
             logger.debug("FlowManager: agent output read failed", exc_info=True)
         return ""
 
-    async def _run_pysdk(self, run: _Run, node: FlowNodeDef, fe: FlowEvent, rt: _NodeRuntime) -> None:
-        from flow_sdk.flow_manager.pysdk_runner import run_pysdk_node
-
-        await self._broadcast_node_status(run, node, "started", {"program_kind": "pysdk"})
-        started = time.monotonic()
-        try:
-            result = await run_pysdk_node(run.flow.folder, node, fe, run)
-        finally:
-            self._finish_execution(run, rt)
-        duration = int((time.monotonic() - started) * 1000)
-        detail = {"duration_ms": duration, "exit_code": result.exit_code,
-                  "stdout": result.stdout[-2000:], "stderr": result.stderr[-2000:]}
-        if result.exit_code == 0:
-            run.journal.append("node_done", {"node": node.id, **detail})
-            await self._broadcast_node_status(run, node, "finished", detail)
-        else:
-            run.journal.append("node_error", {"node": node.id, **detail})
-            await self._broadcast_node_status(
-                run, node, "failed",
-                {**detail, "error": f"exit {result.exit_code}: {result.stderr.strip()[-300:]}"},
-            )
-
     # ── emissions from nodes ──────────────────────────────────────────────────
 
-    async def emit_from_node(self, run: _Run, node_id: str, event: str, data: dict[str, Any]) -> None:
+    def emit_from_node(self, run: _Run, node_id: str, event: str, data: dict[str, Any]) -> None:
+        """SYNC on purpose: the ``pending`` reserve must land before the caller
+        releases its execution slot (or returns to the event loop) — counters
+        must never hit 0/0 mid-handoff. The hop itself runs as a loop task."""
         fe = FlowEvent(event=event, data=data, flow_id=run.flow.flow_id,
                        execution_id=run.id, source_node=node_id, hop=run.hops + 1)
         # Chain hops run as loop tasks, not stack frames — long chains (and the
@@ -500,6 +772,66 @@ class FlowManager:
                 self._maybe_finalize(run)
 
         asyncio.ensure_future(_hop())
+
+    # ── rerun ─────────────────────────────────────────────────────────────────
+
+    async def replay_run(self, flow_id: str, run_id: str) -> Optional[str]:
+        """Re-inject a past run's ENTRY events into a FRESH run.
+
+        Replay is a real re-execution — side effects re-fire; idempotency is
+        the function author's contract. Returns the new run id."""
+        input_dir = run_record_dir(run_id) / "execution" / "input"
+        entries = sorted(input_dir.glob("event-*.json"),
+                         key=lambda p: int(p.stem.split("-")[1]))
+        if not entries:
+            raise ValueError(f"run {run_id} has no recorded input events")
+        new_run_id: Optional[str] = None
+        for path in entries:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            fe = await self.inject(
+                flow_id, str(payload.get("event") or ""), payload.get("data") or {},
+                execution_id=new_run_id,
+                source_node=str(payload.get("source_node") or EXTERNAL_SOURCE),
+                target_node=str(payload.get("target_node") or "") or None,
+            )
+            if fe is not None:
+                new_run_id = fe.execution_id
+        return new_run_id
+
+    async def reexecute(self, flow_id: str, run_id: str, seq: int) -> Optional[str]:
+        """Re-deliver one past execution's recorded input to its node, in a
+        FRESH run — the failed-step debug loop. Returns the new run id."""
+        from flow_sdk.flow_manager.journal import read_run_journal
+
+        flow = await self.load_flow(flow_id)
+        if flow is None:
+            raise ValueError(f"Unknown or unreadable flow: {flow_id}")
+        node_id: Optional[str] = None
+        process_id: Optional[str] = None
+        for entry in read_run_journal(flow.folder, run_id):
+            if (entry.get("execution") or {}).get("seq") == seq:
+                node_id = str(entry.get("node") or "") or node_id
+                process_id = str(entry.get("process_id") or "") or process_id
+        if not node_id:
+            raise ValueError(f"run {run_id} has no execution seq {seq}")
+        if process_id:
+            from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
+
+            proc = await AgenticProcess.get_by_id(process_id)
+            if proc is None:
+                raise ValueError(f"execution process {process_id} no longer exists")
+            input_path = proc._record_dir() / "execution" / "input" / "event.json"
+        else:
+            input_path = inline_exec_dir(run_id, seq, node_id) / "input" / "event.json"
+        try:
+            payload = json.loads(input_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as e:
+            raise ValueError(f"execution input record unavailable: {e}") from e
+        fe = await self.inject(
+            flow_id, str(payload.get("event") or ""), payload.get("data") or {},
+            target_node=node_id,
+        )
+        return fe.execution_id if fe else None
 
     # ── run lifecycle ─────────────────────────────────────────────────────────
 
@@ -524,6 +856,8 @@ class FlowManager:
         status = RunStatus.TRIPPED.value if run.error else RunStatus.COMPLETE.value
         run.journal.append("run_end", {"status": status, "events": run.events,
                                        "executions": run.executions, "error": run.error})
+        # The whole RUN is an example too (input = entry events, output = terminals).
+        self._stamp_example(run.record_dir / "execution", run, "$run", 0, None)
         try:
             row = await AgenticFlowRun.get_by_id(run.id)
             if row is not None:
@@ -537,6 +871,46 @@ class FlowManager:
             logger.debug("FlowManager: run row end-upsert failed", exc_info=True)
         await self._broadcast_run_event(run, "run_end", {"status": status})
         self._runs.pop(run.id, None)
+        try:
+            await self._prune_runs(run.flow)
+        except Exception:
+            logger.exception("FlowManager: run retention prune failed for %s", run.flow.flow_id)
+
+    async def _prune_runs(self, flow: _LoadedFlow) -> None:
+        """Enforce ``config.retention_runs``: keep the newest N runs' records.
+
+        Pruned runs lose their row (proper ``destroy``), their child process
+        rows (agent + subprocess executions), their record dir, and their
+        journal. Promoted dataset examples are copies — immune by construction.
+        """
+        from flow_sdk.builtin.agentic_flow_run import AgenticFlowRun
+
+        keep = max(0, int(flow.doc.config.retention_runs))
+        rows = await AgenticFlowRun.get_all({"flow_id": flow.flow_id})
+        rows.sort(key=lambda r: str(r.started_at or ""), reverse=True)
+        for row in rows[keep:]:
+            if row.id in self._runs:
+                continue  # never prune a live run
+            try:
+                for child in await row.get_children():
+                    try:
+                        await child.destroy()
+                    except Exception:
+                        logger.debug("FlowManager: prune child destroy failed", exc_info=True)
+            except Exception:
+                logger.debug("FlowManager: prune children listing failed", exc_info=True)
+            shutil.rmtree(run_record_dir(row.id), ignore_errors=True)
+            journal = flow.folder / "runs" / f"{row.id}.jsonl"
+            try:
+                journal.unlink(missing_ok=True)
+            except OSError:
+                pass
+            try:
+                await row.destroy()
+            except Exception:
+                logger.debug("FlowManager: prune run destroy failed", exc_info=True)
+            logger.info("FlowManager: pruned run %s of flow %s (retention %d)",
+                        row.id[:8], flow.flow_id[:8], keep)
 
     # ── observability ─────────────────────────────────────────────────────────
 
