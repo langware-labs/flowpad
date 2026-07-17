@@ -1,83 +1,38 @@
-"""Trigger callback that turns a usage analysis into a UsageReport + Feed entry.
+"""The daily-analysis flow's ``publish`` callback node.
 
-Registered as ``builtin_daily_usage_report`` and dispatched by the
-``builtin_daily_usage_analysis`` SCHEDULE trigger (cron ``0 7 * * *``, local
-time) — and by a manual ``POST /trigger/{id}/test`` fire, which runs the exact
-same path. ``generate_usage_report(start, end)`` is the reusable core: weekly/
-monthly variants call it with a wider range.
+The old monolith (``generate_usage_report`` behind the
+``builtin_daily_usage_report`` trigger action) is retired: the pipeline is now
+the seeded daily-analysis AgenticFlow — trigger → analyze (pysdk node, see
+``flow_sdk/usage_report/flow_node.py``) → THIS callback, which posts the
+already-persisted report to the Home Feed. The report id arrives in the
+``report_ready`` event payload and becomes the node's ``done`` payload.
 """
 from __future__ import annotations
 
-import asyncio
 import logging
-from datetime import datetime, timedelta
-from typing import Any, Optional
 
 from flow_sdk.builtin import trigger_callbacks
 
 _log = logging.getLogger(__name__)
 
 
-def _yesterday_local_range() -> tuple[datetime, datetime]:
-    """[yesterday 00:00, today 00:00) in the machine's local timezone."""
-    now_local = datetime.now().astimezone()
-    today_midnight = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
-    return today_midnight - timedelta(days=1), today_midnight
-
-
-async def generate_usage_report(start: datetime, end: datetime) -> Optional[str]:
-    """Analyze ``[start, end)``, persist a UsageReport, and post a Feed entry.
-
-    Returns the report entity id, or None on failure. The heavy analysis runs in
-    a worker thread so the trigger dispatch never blocks the event loop.
-    """
+@trigger_callbacks.register(
+    "flow_publish_usage_report",
+    meaning="flow node: post an already-persisted UsageReport to the Home Feed",
+)
+async def flow_publish_usage_report(event) -> dict:
     from flow_sdk.builtin.feed_entry import FeedEntry, FeedStatus
-    from flow_sdk.builtin.usage_report import UsageReport
     from flow_sdk.server.routes.bootstrap import get_or_create_local_user
-    from flow_sdk.usage_report import analyze_usage, render_markdown
 
-    data = await asyncio.to_thread(analyze_usage, start, end)
-    markdown = render_markdown(data)
+    report_id = str((event.data or {}).get("report_id") or "")
+    if not report_id:
+        raise ValueError("publish: event carries no report_id")
 
-    report = UsageReport.from_data(data, markdown=markdown)
-    report = await report.save()
-
-    try:
-        user = await get_or_create_local_user()
-        feed = FeedEntry(
-            feed_status=FeedStatus.NEW.value,
-            data={"type_id": str(report.typeid)},
-        )
-        await feed.save(user.typeid)
-    except Exception:
-        _log.exception("usage_report: failed to post Feed entry for %s", report.id)
-
-    _log.info(
-        "usage_report: generated %s (%s sessions, $%.2f) for %s..%s",
-        report.id, data.session_count, data.total_cost_usd,
-        data.period_start, data.period_end,
+    user = await get_or_create_local_user()
+    feed = FeedEntry(
+        feed_status=FeedStatus.NEW.value,
+        data={"type_id": f"usage_report-{report_id}"},
     )
-    return report.id
-
-
-@trigger_callbacks.register(
-    "builtin_daily_usage_report",
-    meaning="Fired daily at 7am (and on manual test). Analyzes the previous "
-            "local day's agentic usage, saves a UsageReport entity, and posts it "
-            "to the Home Feed.",
-)
-async def _daily_usage_report(_trigger: Any, _changes: Any) -> None:
-    start, end = _yesterday_local_range()
-    await generate_usage_report(start, end)
-
-@trigger_callbacks.register(
-    "flow_daily_usage_report",
-    meaning="flow node: analyze yesterday's usage and post the report",
-)
-async def flow_daily_usage_report(event) -> dict:
-    """Flow-node wrapper (FlowEvent signature): same report as the trigger
-    callback; the report id becomes the node's `done` payload."""
-    start, end = _yesterday_local_range()
-    report_id = await generate_usage_report(start, end)
+    await feed.save(user.typeid)
+    _log.info("usage_report: posted feed entry for report %s", report_id)
     return {"report_id": report_id}
-

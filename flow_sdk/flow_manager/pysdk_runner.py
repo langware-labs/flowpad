@@ -109,22 +109,35 @@ class FlowCtx:
         self.execution_id = execution_id
         self._api_base = api_base
 
-    def emit_flow_event(self, key: str, val: Any = None) -> None:
-        """Emit an event from THIS node into the current run."""
+    def post(self, path: str, body: dict, *, timeout: int = 60) -> dict:
+        """POST to this instance's REST API — the sanctioned subprocess→backend
+        channel (a pysdk node must never open the instance DB directly).
+        ``path`` is rooted at the API base (e.g. ``/api/v1/graph/usage_report``).
+        Returns the response envelope's ``data`` (or the raw JSON body)."""
         import urllib.request
 
-        body = json.dumps({
-            "event": key,
-            "data": val if isinstance(val, dict) else {"value": val},
-            "execution_id": self.execution_id,
-            "source_node": self.node_id,
-        }).encode()
         req = urllib.request.Request(
-            f"{self._api_base}/api/v1/agentic-flows/{self.flow_id}/inject",
-            data=body, headers={"Content-Type": "application/json"}, method="POST",
+            f"{self._api_base}{path}",
+            data=json.dumps(body).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
         )
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            resp.read()
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            payload = json.loads(resp.read() or "{}")
+        return payload.get("data") if isinstance(payload, dict) and "data" in payload else payload
+
+    def emit_flow_event(self, key: str, val: Any = None) -> None:
+        """Emit an event from THIS node into the current run."""
+        self.post(
+            f"/api/v1/agentic-flows/{self.flow_id}/inject",
+            {
+                "event": key,
+                "data": val if isinstance(val, dict) else {"value": val},
+                "execution_id": self.execution_id,
+                "source_node": self.node_id,
+            },
+            timeout=30,
+        )
 
     @staticmethod
     def log(msg: Any) -> None:
