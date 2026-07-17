@@ -76,10 +76,9 @@ msgstr "\"{0}\" יוסר. לא ניתן לבטל פעולה זו."
 msgid "(cleared)"
 msgstr "(נמחק)"
 
-#. placeholder {0}: stack.length
 #: src/components/agentic-progress/shared/stack-frame-list.tsx
-msgid "(depth: {0})"
-msgstr "(עומק: {0})"
+#~ msgid "(depth: {0})"
+#~ msgstr "(עומק: {0})"
 
 #: src/components/terminal/interactive-terminal/pty-events-viewer/PTYEventsViewer.tsx
 msgid "(empty line)"
@@ -138,8 +137,8 @@ msgid "(unnamed)"
 msgstr "(ללא שם)"
 
 #: src/components/assets/editor/skill/SkillActivationEditor.tsx
-msgid "(unsaved changes)"
-msgstr "(שינויים שלא נשמרו)"
+#~ msgid "(unsaved changes)"
+#~ msgstr "(שינויים שלא נשמרו)"
 
 #: src/components/assets/editor/WikiResolveView.tsx
 msgid "[[{name}]] not found"
@@ -443,12 +442,12 @@ msgid "+ Enter path..."
 msgstr "+ הזן נתיב..."
 
 #: src/components/cron-view/CronView.tsx
-msgid "+ New"
-msgstr "+ חדש"
+#~ msgid "+ New"
+#~ msgstr "+ חדש"
 
 #: src/components/cron-view/CronView.tsx
-msgid "+ New Job"
-msgstr "+ משימה חדשה"
+#~ msgid "+ New Job"
+#~ msgstr "+ משימה חדשה"
 
 #: src/components/workflow-runner/learning/PastAttemptsPane.tsx
 msgid "+ show raw"
@@ -497,19 +496,17 @@ msgstr "<0>{senderName}</0> שיתף אתך את <1>{taskTitle}</1>, אך לא �
 msgid "<0>{senderName}</0> shared <1>{taskTitle}</1> with you."
 msgstr "<0>{senderName}</0> שיתף אתך את <1>{taskTitle}</1>."
 
-#. placeholder {0}: JSON.stringify(flowData.data, null, 2)
 #: src/components/flowdata-renderer/UnknownMessageComponent.tsx
-msgid "<0>Data:</0> {0}"
-msgstr "<0>נתונים:</0> {0}"
+#~ msgid "<0>Data:</0> {0}"
+#~ msgstr "<0>נתונים:</0> {0}"
 
 #: src/components/search-index/SweepOrphansDialog.tsx
 msgid "<0>Delete</0> — remove the DB row <1>and</1> the shadow record dir. Reclaims disk space; no recovery path."
 msgstr "<0>מחק</0> — הסר מבסיס הנתונים <1>וגם</1> את ספריית הרשומות. משחרר מקום בדיסק; אין דרך שחזור."
 
-#. placeholder {0}: flowData.elementType
 #: src/components/flowdata-renderer/UnknownMessageComponent.tsx
-msgid "<0>Element Type:</0> {0}"
-msgstr "<0>סוג אלמנט:</0> {0}"
+#~ msgid "<0>Element Type:</0> {0}"
+#~ msgstr "<0>סוג אלמנט:</0> {0}"
 
 #: src/components/search-index/SweepOrphansDialog.tsx
 msgid "<0>Ignore</0> — remove the DB row, keep the shadow record dir at <1>~/.flow/records/<type>/<id>/</1> as a forensic breadcrumb. <2>(recommended)</2>"
@@ -552,8 +549,8 @@ msgid "🤖 Prompt - Query AI (Claude Haiku)"
 msgstr "🤖 Prompt - בקש מ-AI (Claude Haiku)"
 
 #: src/components/skills-viewer/amd-editor/components/blocks/EachBlock.tsx
-msgid "$items"
-msgstr "$פריטים"
+#~ msgid "$items"
+#~ msgstr "$פריטים"
 
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 msgid "1 hour"
@@ -576,8 +573,8 @@ msgid "4 hours"
 msgstr "4 שעות"
 
 #: src/components/agent-layout/not-found-screen/not-found-screen.tsx
-msgid "404 - Not Found"
-msgstr "404 - לא נמצא"
+#~ msgid "404 - Not Found"
+#~ msgstr "404 - לא נמצא"
 
 #: src/components/hooks-view/HookEditor.tsx
 msgid "60"
@@ -596,8 +593,8 @@ msgstr ""
 #~ msgstr ""
 
 #: src/components/conversation/asset-review/TestPromptDialog.tsx
-msgid "A new Vibe session opens and runs the skill. Optionally describe what to use it for."
-msgstr ""
+#~ msgid "A new Vibe session opens and runs the skill. Optionally describe what to use it for."
+#~ msgstr ""
 
 #: src/components/triggers-view/TriggersList.tsx
 msgid "About FSOp triggers"
@@ -651,8 +648,8 @@ msgid "Actions ({0})"
 msgstr "פעולות ({0})"
 
 #: src/components/assets/editor/skill/SkillActivationEditor.tsx
-msgid "Activation rule saved successfully."
-msgstr "כלל ההפעלה נשמר בהצלחה."
+#~ msgid "Activation rule saved successfully."
+#~ msgstr "כלל ההפעלה נשמר בהצלחה."
 
 #: src/components/triggers-view/TriggerListItem.tsx
 msgid "Activations only"
@@ -691,8 +688,8 @@ msgid "Active: {activeDbPath}"
 msgstr "פעיל: {activeDbPath}"
 
 #: src/components/skills-viewer/amd-editor/components/ElementBlock.tsx
-msgid "add"
-msgstr "הוספה"
+#~ msgid "add"
+#~ msgstr "הוספה"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/assets/AddGitFolderDialog.tsx
@@ -745,8 +742,8 @@ msgid "Add asset"
 msgstr "הוסף נכס"
 
 #: src/components/skills-viewer/amd-editor/components/BlockPicker.tsx
-msgid "Add Block"
-msgstr "הוסף בלוק"
+#~ msgid "Add Block"
+#~ msgstr "הוסף בלוק"
 
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 msgid "Add Bookmark"
@@ -776,8 +773,8 @@ msgid "Add context folder"
 msgstr ""
 
 #: src/components/label-select.tsx
-msgid "Add custom label..."
-msgstr "הוסף תווית מותאמת אישית..."
+#~ msgid "Add custom label..."
+#~ msgstr "הוסף תווית מותאמת אישית..."
 
 #: src/components/wiki-toolbar/WikiLinkInsertDialog.tsx
 #: src/components/wiki-toolbar/WikiToolbar.tsx
@@ -874,6 +871,10 @@ msgstr "סוכן"
 msgid "Agent not found"
 msgstr "סוכן לא נמצא"
 
+#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
+msgid "Agentic Flows"
+msgstr ""
+
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 msgid "agents"
 msgstr "סוכנים"
@@ -882,6 +883,14 @@ msgstr "סוכנים"
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Agents"
 msgstr "סוכנים"
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+#~ msgid "Agents run through a coding-agent CLI (a “harness”). Sign in to at least one below — the sign-in happens in your browser; FlowPad never sees your credentials."
+#~ msgstr ""
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Agents run through a coding-agent CLI. Sign in to at least one — it happens in your browser and FlowPad never sees your credentials."
+msgstr ""
 
 #: src/components/ai-config-view/ai-config-view.tsx
 msgid "AI Configuration"
@@ -931,8 +940,8 @@ msgid "All data cleared. Redirecting..."
 msgstr "כל הנתונים נוקו. מנתב..."
 
 #: src/components/account/danger-zone.tsx
-msgid "All data has been cleared. Redirecting to home..."
-msgstr "כל הנתונים נוקו. מתבצעת הפניה לעמוד הבית..."
+#~ msgid "All data has been cleared. Redirecting to home..."
+#~ msgstr "כל הנתונים נוקו. מתבצעת הפניה לעמוד הבית..."
 
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "All entries"
@@ -1013,8 +1022,8 @@ msgid "Already installed in a project — uninstall first"
 msgstr ""
 
 #: src/components/account/danger-zone.tsx
-msgid "Also open sidecar OS Terminal"
-msgstr "פתח גם חלון Terminal חיצוני של מערכת ההפעלה"
+#~ msgid "Also open sidecar OS Terminal"
+#~ msgstr "פתח גם חלון Terminal חיצוני של מערכת ההפעלה"
 
 #: src/components/conversation/ExecutePromptDialog.tsx
 msgid "Always auto-reply to {who} (all projects)"
@@ -1051,28 +1060,28 @@ msgid "Analysis"
 msgstr "ניתוח"
 
 #: src/components/task-bar/TaskCard.tsx
-msgid "Analysis complete"
-msgstr "הניתוח הושלם"
+#~ msgid "Analysis complete"
+#~ msgstr "הניתוח הושלם"
 
 #: src/components/task-bar/TaskCard.tsx
-msgid "Analysis failed"
-msgstr "הניתוח נכשל"
+#~ msgid "Analysis failed"
+#~ msgstr "הניתוח נכשל"
 
 #: src/components/lens-viewer/shared/transcript-features/AnalysisControls.tsx
 msgid "Analysis history"
 msgstr "היסטוריית הניתוח"
 
 #: src/components/task-bar/TaskCard.tsx
-msgid "Analysis in progress..."
-msgstr "הניתוח בהתקדמות..."
+#~ msgid "Analysis in progress..."
+#~ msgstr "הניתוח בהתקדמות..."
 
 #: src/components/lens-viewer/shared/transcript-features/AnalysisControls.tsx
 msgid "Analysis is running — click to watch it in the side panel"
 msgstr "הניתוח מתנהל — לחץ כדי לראות אותו בלוח הצד"
 
 #: src/components/task-bar/TaskDetailPanel.tsx
-msgid "Analysis Report"
-msgstr "דוח ניתוח"
+#~ msgid "Analysis Report"
+#~ msgstr "דוח ניתוח"
 
 #: src/components/assets/editor/skill/UsagePanel.tsx
 #: src/components/assets/editor/skill/UsagePanel.tsx
@@ -1216,7 +1225,6 @@ msgstr ""
 #: src/components/account/system-log.tsx
 #: src/components/inbox-view/InboxView.tsx
 #: src/components/project-activity-strip/LearningCard.tsx
-#: src/components/task-bar/TaskCard.tsx
 msgid "Archive"
 msgstr "ארכיון"
 
@@ -1241,12 +1249,11 @@ msgid "Are you sure you want to clear all data from the database? This will also
 msgstr "האם אתה בטוח שברצונך למחוק את כל הנתונים מבסיס הנתונים? זה גם ינקה את אינדקס הסריקה. גיבוי יוקם תחילה."
 
 #: src/components/account/danger-zone.tsx
-msgid "Are you sure you want to clear all data from the database? This will create a backup first and reload the page."
-msgstr "האם אתה בטוח שברצונך למחוק את כל הנתונים ממסד הנתונים? פעולה זו תיצור גיבוי תחילה ותטען מחדש את העמוד."
+#~ msgid "Are you sure you want to clear all data from the database? This will create a backup first and reload the page."
+#~ msgstr "האם אתה בטוח שברצונך למחוק את כל הנתונים ממסד הנתונים? פעולה זו תיצור גיבוי תחילה ותטען מחדש את העמוד."
 
 #. placeholder {0}: deleteTarget?.displayName
 #: src/components/workflows-view/WorkflowsNavigator.tsx
-#: src/components/workflows-view/WorkflowStrip.tsx
 msgid "Are you sure you want to delete \"{0}\"?"
 msgstr "האם אתה בטוח שברצונך למחוק את \"{0}\"?"
 
@@ -1284,8 +1291,8 @@ msgid "Artifacts created during flow execution will appear here"
 msgstr "קבצים שנוצרו במהלך הפעלת התהליך יופיעו כאן"
 
 #: src/components/task-bar/TaskCard.tsx
-msgid "Artifacts:"
-msgstr "מכלים:"
+#~ msgid "Artifacts:"
+#~ msgstr "מכלים:"
 
 #. placeholder {0}: siteConfig.branding.company_name
 #: src/components/chat-input.tsx
@@ -1364,12 +1371,12 @@ msgid "Assistant is responding"
 msgstr "העוזר משיב"
 
 #: src/components/flowdata-renderer/ReasoningMessageComponent.tsx
-msgid "Assistant Reasoning"
-msgstr "נימוק עוזר"
+#~ msgid "Assistant Reasoning"
+#~ msgstr "נימוק עוזר"
 
 #: src/components/skills-viewer/amd-editor/components/blocks/UiBlock.tsx
-msgid "async"
-msgstr "אסינכרוני"
+#~ msgid "async"
+#~ msgstr "אסינכרוני"
 
 #: src/components/image-annotator/AnnotatorToolbar.tsx
 msgid "Attach"
@@ -1413,6 +1420,10 @@ msgstr ""
 msgid "Attachments"
 msgstr "קבצים מצורפים"
 
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "authentication required"
+msgstr ""
+
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
 msgid "Authorization failed or was denied. Click Retry to try again."
 msgstr "ההרשאה נכשלה או נדחתה. לחץ על Retry כדי לנסות שנית."
@@ -1450,8 +1461,8 @@ msgid "Auto-updates check hourly."
 msgstr "בדיקת עדכונים אוטומטית כל שעה."
 
 #: src/components/task-bar/TaskBar.tsx
-msgid "Automations"
-msgstr "אוטומציות"
+#~ msgid "Automations"
+#~ msgstr "אוטומציות"
 
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/components/capabilities-view/CapabilitiesView.tsx
@@ -1468,7 +1479,6 @@ msgstr "זמין כאשר הסוכן ממתין לקלט שלך"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
-#: src/components/project-setup-screen/project-setup-screen.tsx
 #: src/components/wiki-toolbar/WikiLinkInsertDialog.tsx
 msgid "Back"
 msgstr "חזור"
@@ -1490,8 +1500,8 @@ msgid "Back to open projects"
 msgstr "חזור לפרויקטים פתוחים"
 
 #: src/components/quick-access-sidebar/QuickAccessSideBar.tsx
-msgid "Back to projects"
-msgstr "חזור לפרויקטים"
+#~ msgid "Back to projects"
+#~ msgstr "חזור לפרויקטים"
 
 #: src/components/task-bar/SharedTaskView.tsx
 msgid "Back to tasks"
@@ -1505,12 +1515,10 @@ msgstr "שרת הסיוג לא מגיב. אנא נסה שוב מאוחר יות�
 msgid "Backend URL not configured"
 msgstr "URL של Backend לא מוגדר"
 
-#: src/components/account/danger-zone.tsx
 #: src/components/account/database-section.tsx
 msgid "Backing up..."
 msgstr "מגבה..."
 
-#: src/components/account/danger-zone.tsx
 #: src/components/account/database-section.tsx
 msgid "Backup DB"
 msgstr "גיבוי בסיס נתונים"
@@ -1536,7 +1544,6 @@ msgid "Bind an existing app secret to a project environment variable."
 msgstr ""
 
 #: src/components/project-home/BindSecretDialog.tsx
-#: src/components/project-home/Secrets.tsx
 msgid "Bind secret"
 msgstr ""
 
@@ -1565,6 +1572,10 @@ msgstr "מודגש"
 msgid "Bookmark"
 msgstr "סימנייה"
 
+#: src/components/favorites/FavoritesAddRow.tsx
+msgid "Bookmark an asset"
+msgstr ""
+
 #: src/components/quick-create/QuickCreatePanel.tsx
 #~ msgid "Bookmark folder"
 #~ msgstr ""
@@ -1572,6 +1583,14 @@ msgstr "סימנייה"
 #: src/components/spec-editor/SpecEditor.tsx
 msgid "Bookmark this plan"
 msgstr "הוסף סימנייה לתכנית זו"
+
+#: src/components/favorites/FavoritesAddRow.tsx
+msgid "Bookmark what's open"
+msgstr ""
+
+#: src/components/favorites/FavoritesAddRow.tsx
+msgid "Bookmarked view"
+msgstr ""
 
 #: src/components/bookmarks-slider/BookmarksSlider.tsx
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
@@ -1587,8 +1606,8 @@ msgid "breadcrumb"
 msgstr "ירור נתיבים"
 
 #: src/components/assets/editor/skill/SkillMetadataHeader.tsx
-msgid "Brief description of what this skill does"
-msgstr "תיאור קצר של מה שהכישור הזה עושה"
+#~ msgid "Brief description of what this skill does"
+#~ msgstr "תיאור קצר של מה שהכישור הזה עושה"
 
 #: src/components/open-project-component/open-project-component.tsx
 msgid "Browse"
@@ -1728,7 +1747,6 @@ msgstr ""
 #: src/components/assets/ProjectPickerModal.tsx
 #: src/components/assets/PushContextFolderDialog.tsx
 #: src/components/contact-picker/CreateContactsGroupDialog.tsx
-#: src/components/conversation/asset-review/TestPromptDialog.tsx
 #: src/components/conversation/ExecutePromptDialog.tsx
 #: src/components/conversation/PromptComposerDialog.tsx
 #: src/components/cron-view/CronForm.tsx
@@ -1736,12 +1754,12 @@ msgstr ""
 #: src/components/execute-flow-view/instruction-panel/instruction-panel.tsx
 #: src/components/favorites/FavoriteStar.tsx
 #: src/components/GitHubConnectionDialog.tsx
+#: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/hooks-manager/TriggerForm.tsx
 #: src/components/hooks-view/HookEditor.tsx
 #: src/components/image-annotator/AnnotatorToolbar.tsx
 #: src/components/inbox-view/InboxView.tsx
-#: src/components/join-room-dialog/JoinRoomDialog.tsx
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
@@ -1754,7 +1772,6 @@ msgstr ""
 #: src/components/project-home/BindSecretDialog.tsx
 #: src/components/project-selector/NewProjectDialog.tsx
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
-#: src/components/project-sidebar/ProjectSidebar.tsx
 #: src/components/prompt-library/PromptEditDialog.tsx
 #: src/components/quick-create/QuickCreateDialog.tsx
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
@@ -1941,8 +1958,8 @@ msgid "Choose a document from the sidebar to view its contents"
 msgstr "בחר מסמך מהסרגל הצדדי כדי לצפות בתוכנו"
 
 #: src/components/project-setup-screen/project-setup-screen.tsx
-msgid "Choose a folder to open as a project."
-msgstr "בחר תיקייה לפתיחה כפרויקט."
+#~ msgid "Choose a folder to open as a project."
+#~ msgstr "בחר תיקייה לפתיחה כפרויקט."
 
 #: src/components/assistance-viewer/AssistanceViewer.tsx
 msgid "Choose a task from the sidebar to view details"
@@ -2030,7 +2047,6 @@ msgstr ""
 
 #: src/components/graph-context/GraphContextViewer.tsx
 #: src/components/hooks/EventListPanel.tsx
-#: src/components/hooks/sniffer_view_mock.tsx
 #: src/components/image-annotator/AnnotatorToolbar.tsx
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 #: src/components/terminal/HistoryModal.tsx
@@ -2056,12 +2072,9 @@ msgid "Clear All"
 msgstr "ניקוי הכל"
 
 #: src/components/task-bar/TaskBar.tsx
-msgid "Clear all counters"
-msgstr "ניקוי כל המונים"
+#~ msgid "Clear all counters"
+#~ msgstr "ניקוי כל המונים"
 
-#: src/components/account/danger-zone.tsx
-#: src/components/account/danger-zone.tsx
-#: src/components/account/danger-zone.tsx
 #: src/components/account/database-section.tsx
 #: src/components/account/database-section.tsx
 #: src/components/account/database-section.tsx
@@ -2121,7 +2134,6 @@ msgstr "נקה את אינדקס החיפוש?"
 msgid "Clear selection"
 msgstr "נקה בחירה"
 
-#: src/components/account/danger-zone.tsx
 #: src/components/account/database-section.tsx
 msgid "Clearing..."
 msgstr "ניקוי..."
@@ -2151,16 +2163,16 @@ msgid "Click a node to view its properties,<0/>edges, and neighbors."
 msgstr "לחץ על צומת לצפייה במאפייניו,<0/>הקשרים והשכנים שלו."
 
 #: src/components/skills-viewer/amd-editor/AMDEditorInner.tsx
-msgid "Click Add Block above to get started"
-msgstr "לחץ על הוסף בלוק למעלה כדי להתחיל"
+#~ msgid "Click Add Block above to get started"
+#~ msgstr "לחץ על הוסף בלוק למעלה כדי להתחיל"
 
 #: src/components/GitHubConnectionDialog.tsx
 msgid "Click the button below to connect your GitHub account and continue with the repository cloning."
 msgstr "לחצו על הכפתור למטה כדי לחבר את חשבון ה-GitHub שלכם ולהמשיך בשכפול המאגר."
 
 #: src/components/project-setup-screen/project-setup-screen.tsx
-msgid "Click the folder icon to browse, or enter the full path."
-msgstr "לחץ על סמל התיקייה לעיון, או הזן את הנתיב המלא."
+#~ msgid "Click the folder icon to browse, or enter the full path."
+#~ msgstr "לחץ על סמל התיקייה לעיון, או הזן את הנתיב המלא."
 
 #: src/components/favorites/FavoriteStar.tsx
 msgid "Click the pencil or right-click to rename"
@@ -2170,7 +2182,6 @@ msgstr "לחץ על העיפרון או לחץ ימני כדי לשנות שם"
 msgid "Click to add annotation"
 msgstr "הקליק כדי להוסיף הערה"
 
-#: src/components/account/danger-zone.tsx
 #: src/components/account/database-section.tsx
 msgid "Click to copy path"
 msgstr "לחץ כדי להעתיק נתיב"
@@ -2226,7 +2237,6 @@ msgid "Cloning…"
 msgstr "משבוט…"
 
 #: src/components/floating-chat/FloatingChatWindow.tsx
-#: src/components/hooks/sniffer_view_mock.tsx
 #: src/components/lens-viewer/ClaudeContextViewer.tsx
 #: src/components/lens-viewer/CloudSearchResultsModal.tsx
 #: src/components/login-required-dialog.tsx
@@ -2314,6 +2324,14 @@ msgstr "הקוד הועתק"
 msgid "Code copied — paste it on the GitHub page"
 msgstr "הקוד הועתק — הדבק אותו בעמוד GitHub"
 
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Code copied — paste it on the sign-in page"
+msgstr ""
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+#~ msgid "Code copied — paste it on the vendor page"
+#~ msgstr ""
+
 #: src/components/assets/editor/revisions/AssetDiffTabs.tsx
 msgid "Code diff"
 msgstr "דיפ קוד"
@@ -2321,6 +2339,10 @@ msgstr "דיפ קוד"
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
 msgid "Code expired. Close and click Connect again to get a fresh code."
 msgstr "הקוד פג תוקף. סגור והקלק על Connect שוב כדי לקבל קוד חדש."
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "code from browser"
+msgstr ""
 
 #: src/components/chat-input.tsx
 msgid "Codebase"
@@ -2369,8 +2391,8 @@ msgid "Collapse navigator"
 msgstr "כווץ ניווט"
 
 #: src/components/flowdata-renderer/ReasoningMessageComponent.tsx
-msgid "Collapse reasoning"
-msgstr "סגור נימוק"
+#~ msgid "Collapse reasoning"
+#~ msgstr "סגור נימוק"
 
 #: src/components/prompt-library/PromptEditDialog.tsx
 #: src/components/ui/color-picker.tsx
@@ -2521,19 +2543,21 @@ msgstr "אישור"
 
 #: src/components/chat-input.tsx
 #: src/components/connections-manager.tsx
-#: src/components/InputSection.tsx
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 msgid "Connect"
 msgstr "חבר"
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Connect a harness"
+msgstr ""
 
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
 msgid "Connect GitHub"
 msgstr "חבר את GitHub"
 
-#. placeholder {0}: input['provider-name']
 #: src/components/InputSection.tsx
-msgid "Connect to {0} to continue"
-msgstr "התחבר ל-{0} להמשך"
+#~ msgid "Connect to {0} to continue"
+#~ msgstr "התחבר ל-{0} להמשך"
 
 #: src/components/GitHubConnectionDialog.tsx
 #: src/components/GitHubConnectionDialog.tsx
@@ -2542,6 +2566,7 @@ msgstr "התחברות ל-GitHub"
 
 #: src/components/account/user-info.tsx
 #: src/components/connections-manager.tsx
+#: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Connected"
 msgstr "מחובר"
 
@@ -2570,7 +2595,6 @@ msgstr "מתחבר: {0}..."
 
 #: src/components/chat-input.tsx
 #: src/components/connections-manager.tsx
-#: src/components/InputSection.tsx
 msgid "Connecting..."
 msgstr "מתחבר..."
 
@@ -2618,8 +2642,8 @@ msgstr "פירוק Context"
 #~ msgstr ""
 
 #: src/components/project-home/ContextFolders.tsx
-msgid "Context folders"
-msgstr ""
+#~ msgid "Context folders"
+#~ msgstr ""
 
 #: src/components/graph-view/ui/TopBar.tsx
 msgid "Context Graph"
@@ -2673,7 +2697,6 @@ msgstr "הגדר פרויקט השיחה"
 msgid "Conversation title"
 msgstr "כותרת שיחה"
 
-#: src/components/account/danger-zone.tsx
 #: src/components/account/database-section.tsx
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
@@ -2703,7 +2726,6 @@ msgstr "הפעלת Copilot"
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
 #: src/components/code-editor/EditorPane.tsx
 #: src/components/diagnose/diagnosis-details.tsx
-#: src/components/hooks/sniffer_view_mock.tsx
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 #: src/components/markdown-view.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
@@ -2735,9 +2757,17 @@ msgstr "העתק כיומן"
 msgid "Copy code"
 msgstr "העתק קוד"
 
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Copy code & open"
+msgstr ""
+
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
 msgid "Copy code & open GitHub"
 msgstr "העתק קוד ופתח GitHub"
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+#~ msgid "Copy code & open sign-in page"
+#~ msgstr ""
 
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Copy Compute Node ID"
@@ -2771,8 +2801,8 @@ msgid "Copy link"
 msgstr "העתק קישור"
 
 #: src/components/hooks/sniffer_view_mock.tsx
-msgid "Copy Log"
-msgstr "העתק יומן"
+#~ msgid "Copy Log"
+#~ msgstr "העתק יומן"
 
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
 #: src/components/spec-editor/SpecEditor.tsx
@@ -2781,8 +2811,8 @@ msgstr "העתק נתיב"
 
 #: src/components/flowdata-renderer/ResultMessageComponent.tsx
 #: src/components/flowdata-renderer/WriteMessageComponent.tsx
-msgid "Copy Path"
-msgstr "העתק נתיב"
+#~ msgid "Copy Path"
+#~ msgstr "העתק נתיב"
 
 #: src/components/terminal/interactive-terminal/side-windows/PromptIndexPanel.tsx
 msgid "Copy prompt"
@@ -2793,10 +2823,9 @@ msgid "Copy Provider ID"
 msgstr "העתק מזהה ספק"
 
 #: src/components/hooks/sniffer_view_mock.tsx
-msgid "Copy the full JSON payload for this hook event."
-msgstr "העתק את מטען ה-JSON המלא לאירוע וו זה."
+#~ msgid "Copy the full JSON payload for this hook event."
+#~ msgstr "העתק את מטען ה-JSON המלא לאירוע וו זה."
 
-#: src/components/quick-access-view/QuickAccessView.tsx
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 #: src/components/version-popover/version-popover.tsx
 msgid "Copy to clipboard"
@@ -2913,6 +2942,10 @@ msgstr "לא היה ניתן להתחיל שיחה"
 msgid "Could not start room"
 msgstr "לא יכול להתחיל חדר"
 
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Could not start the login flow"
+msgstr ""
+
 #: src/components/entity-execution-panel/EntityExecutionPanel.tsx
 #: src/components/terminal/interactive-terminal/ChatComposerBar.tsx
 msgid "Could not stop"
@@ -2976,7 +3009,6 @@ msgstr "מעבד:"
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/workflows-view/WorkflowsNavigator.tsx
-#: src/components/workflows-view/WorkflowStrip.tsx
 msgid "Create"
 msgstr "צור"
 
@@ -3044,7 +3076,6 @@ msgid "Create New"
 msgstr "צור חדש"
 
 #: src/components/open-project-component/open-project-component.tsx
-#: src/components/project-setup-screen/project-setup-screen.tsx
 msgid "Create New Project"
 msgstr "צור פרויקט חדש"
 
@@ -3058,7 +3089,6 @@ msgid "Create one by dropping an <0>index.md</0> with <1>type: markdown_index</1
 msgstr "צור אחד על ידי שמיטת <0>index.md</0> עם frontmatter מסוג <1>type: markdown_index</1> לתוך תיקיית תיעוד והפעלת <2>flow record index <path></2>."
 
 #: src/components/open-project-component/open-project-component.tsx
-#: src/components/project-setup-screen/project-setup-screen.tsx
 msgid "Create Project"
 msgstr "צור פרויקט"
 
@@ -3097,7 +3127,6 @@ msgid "Creating skill..."
 msgstr "יוצר מיומנות..."
 
 #: src/components/open-project-component/open-project-component.tsx
-#: src/components/project-setup-screen/project-setup-screen.tsx
 msgid "Creating..."
 msgstr "יוצר..."
 
@@ -3132,8 +3161,8 @@ msgid "Current project is on root folder, this is not recommended"
 msgstr "הפרויקט הנוכחי נמצא בתיקיית השורש, זה לא מומלץ"
 
 #: src/components/workflows-view/WorkflowTraceGutter.tsx
-msgid "Current run"
-msgstr "ההרצה הנוכחית"
+#~ msgid "Current run"
+#~ msgstr "ההרצה הנוכחית"
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Current Time"
@@ -3153,23 +3182,21 @@ msgid "Cut"
 msgstr "גזור"
 
 #: src/components/task-bar/ReminderButton.tsx
-msgid "d"
-msgstr "י"
+#~ msgid "d"
+#~ msgstr "י"
 
 #: src/components/account/danger-zone.tsx
-msgid "Danger Zone"
-msgstr "אזור הסכנה"
+#~ msgid "Danger Zone"
+#~ msgstr "אזור הסכנה"
 
 #: src/components/privacy-mode/privacy-mode-popover.tsx
 msgid "Data privacy mode"
 msgstr "מצב פרטיות הנתונים"
 
-#: src/components/account/danger-zone.tsx
 #: src/components/account/database-section.tsx
 msgid "Database Backed Up"
 msgstr "בסיס הנתונים גובה"
 
-#: src/components/account/danger-zone.tsx
 #: src/components/account/database-section.tsx
 msgid "Database Cleared"
 msgstr "בסיס נתונים נוקה"
@@ -3203,7 +3230,6 @@ msgstr "scope/project_id של שורת DB כבר לא תואם"
 msgid "DB rows whose source file is gone. Click a non-zero count to sweep."
 msgstr "שורות DB שקובץ המקור שלהם אבד. לחץ על ספירה שאינה אפס כדי לנקות."
 
-#: src/components/account/danger-zone.tsx
 #: src/components/account/database-section.tsx
 msgid "DB Stats"
 msgstr "סטטיסטיקות DB"
@@ -3274,18 +3300,11 @@ msgstr "הגדר את התנאים שחייבים להתאים כדי שטריג
 #: src/components/inbox-view/InboxView.tsx
 #: src/components/inbox-view/InboxView.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
-#: src/components/project-sidebar/ProjectSidebar.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
-#: src/components/skills-viewer/amd-editor/components/BlockWrapper.tsx
-#: src/components/task-bar/TaskBar.tsx
-#: src/components/task-bar/TaskBar.tsx
-#: src/components/task-bar/TaskCard.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 #: src/components/workflows-view/WorkflowsNavigator.tsx
-#: src/components/workflows-view/WorkflowStrip.tsx
-#: src/components/workflows-view/WorkflowStrip.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Delete"
 msgstr "מחק"
@@ -3422,8 +3441,8 @@ msgstr "מחוק פרויקט"
 
 #: src/components/project-sidebar/ProjectSidebar.tsx
 #: src/components/project-sidebar/ProjectSidebar.tsx
-msgid "Delete Project"
-msgstr "מחק פרויקט"
+#~ msgid "Delete Project"
+#~ msgstr "מחק פרויקט"
 
 #: src/components/account/secrets-section.tsx
 msgid "Delete secret"
@@ -3458,7 +3477,6 @@ msgid "Delete workflow"
 msgstr "מחק זרימת עבודה"
 
 #: src/components/workflows-view/WorkflowsNavigator.tsx
-#: src/components/workflows-view/WorkflowStrip.tsx
 msgid "Delete Workflow"
 msgstr "מחק זרימת עבודה"
 
@@ -3483,8 +3501,8 @@ msgid "Deleting a project is permanent: it removes the project folder and every 
 msgstr ""
 
 #: src/components/project-sidebar/ProjectSidebar.tsx
-msgid "Deleting..."
-msgstr "מוחק..."
+#~ msgid "Deleting..."
+#~ msgstr "מוחק..."
 
 #: src/components/conversation/MessageBubble.tsx
 msgid "Delivered"
@@ -3527,7 +3545,6 @@ msgstr "תאר מה היית רוצה ש-Claude יעשה…"
 #: src/components/assistance-viewer/TaskDetail.tsx
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/hooks-manager/TriggerForm.tsx
-#: src/components/task-bar/TaskDetailPanel.tsx
 msgid "Description"
 msgstr "תיאור"
 
@@ -3644,8 +3661,8 @@ msgid "Directories"
 msgstr "תיקיות"
 
 #: src/components/hooks/sniffer_view_mock.tsx
-msgid "Disable"
-msgstr "בטל"
+#~ msgid "Disable"
+#~ msgstr "בטל"
 
 #: src/components/lens-viewer/shared/transcript-features/TranscriptStats.tsx
 msgid "Disable all"
@@ -3663,8 +3680,8 @@ msgid "disabled"
 msgstr "מכובה"
 
 #: src/components/hooks/sniffer_view_mock.tsx
-msgid "Disabled"
-msgstr "מבוטל"
+#~ msgid "Disabled"
+#~ msgstr "מבוטל"
 
 #: src/components/image-annotator/ImageAnnotator.tsx
 msgid "Discard"
@@ -3728,6 +3745,7 @@ msgstr "גילוי..."
 
 #: src/components/diagnose/diagnosis-action-buttons.tsx
 #: src/components/diagnose/diagnosis-action-buttons.tsx
+#: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 #: src/components/workflow-runner/header/AttentionBanner.tsx
@@ -3851,8 +3869,8 @@ msgid "Download message"
 msgstr "הורד הודעה"
 
 #: src/components/conversation/chips/ConversationChips.tsx
-msgid "Download sender's Claude Code transcript"
-msgstr "הורד תמליל Claude Code מהשולח"
+#~ msgid "Download sender's Claude Code transcript"
+#~ msgstr "הורד תמליל Claude Code מהשולח"
 
 #: src/components/conversation/asset-review/AssetInstallActions.tsx
 msgid "Downloaded"
@@ -3880,8 +3898,8 @@ msgid "Drill by"
 msgstr "התמקד לפי"
 
 #: src/components/project-home/ContextFolders.tsx
-msgid "Drop a folder here or click to add"
-msgstr ""
+#~ msgid "Drop a folder here or click to add"
+#~ msgstr ""
 
 #: src/components/favorites/FolderTile.tsx
 #~ msgid "Drop favorites here"
@@ -3898,8 +3916,8 @@ msgid "Drop items here"
 msgstr ""
 
 #: src/components/task-bar/TaskDetailPanel.tsx
-msgid "Due date"
-msgstr "תאריך יעד"
+#~ msgid "Due date"
+#~ msgstr "תאריך יעד"
 
 #: src/components/lens-viewer/shared/transcript-features/TranscriptStats.tsx
 #: src/components/workflow-runner/detail/StepDetailPane.tsx
@@ -3909,8 +3927,6 @@ msgstr "משך זמן"
 
 #: src/components/collaboration/StartRoomDialog.tsx
 #: src/components/collaboration/StartRoomDialog.tsx
-#: src/components/join-room-dialog/JoinConversationDialog.tsx
-#: src/components/join-room-dialog/JoinRoomDialog.tsx
 msgid "e.g. Alex"
 msgstr "לדוגמא Alex"
 
@@ -3919,8 +3935,8 @@ msgid "e.g. My class"
 msgstr ""
 
 #: src/components/join-room-dialog/JoinRoomDialog.tsx
-msgid "e.g. Retry logic review"
-msgstr "לדוגמה: בדיקת לוגיקה חוזרת"
+#~ msgid "e.g. Retry logic review"
+#~ msgstr "לדוגמה: בדיקת לוגיקה חוזרת"
 
 #: src/components/hooks-view/HookEditor.tsx
 msgid "e.g., \"my-pre-tool-guard\", \"lint-on-save\""
@@ -4008,8 +4024,8 @@ msgid "Edit prompt"
 msgstr "ערוך prompt"
 
 #: src/components/assets/editor/skill/SkillActivationEditor.tsx
-msgid "Edit rule.md"
-msgstr "ערוך rule.md"
+#~ msgid "Edit rule.md"
+#~ msgstr "ערוך rule.md"
 
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 msgid "Edit sender name"
@@ -4028,8 +4044,8 @@ msgid "Edit Trigger"
 msgstr "עריכת טריגר"
 
 #: src/components/assets/editor/skill/SkillActivationEditor.tsx
-msgid "Edit trigger.py"
-msgstr "ערוך trigger.py"
+#~ msgid "Edit trigger.py"
+#~ msgstr "ערוך trigger.py"
 
 #: src/components/conversation/MessageComposer.tsx
 msgid "Edit your draft…"
@@ -4066,8 +4082,8 @@ msgid "Empty trace"
 msgstr "עקבה ריקה"
 
 #: src/components/hooks/sniffer_view_mock.tsx
-msgid "Enable"
-msgstr "הפעל"
+#~ msgid "Enable"
+#~ msgstr "הפעל"
 
 #: src/components/lens-viewer/shared/transcript-features/TranscriptStats.tsx
 msgid "Enable all"
@@ -4099,8 +4115,8 @@ msgid "Enable sniffer"
 msgstr "הפעל סניפר"
 
 #: src/components/hooks/sniffer_view_mock.tsx
-msgid "Enable the sniffer to start capturing hook traffic"
-msgstr "הפעל את ה-sniffer כדי להתחיל לתפוס תעבורת וו"
+#~ msgid "Enable the sniffer to start capturing hook traffic"
+#~ msgstr "הפעל את ה-sniffer כדי להתחיל לתפוס תעבורת וו"
 
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Enable/Disable hook"
@@ -4108,7 +4124,6 @@ msgstr ""
 
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/hooks-manager/TriggerForm.tsx
-#: src/components/hooks/sniffer_view_mock.tsx
 msgid "Enabled"
 msgstr "מופעל"
 
@@ -4125,8 +4140,8 @@ msgid "Enter a name and choose a parent folder for the new project."
 msgstr "הזן שם ובחר תיקייה הורית לפרויקט החדש."
 
 #: src/components/project-setup-screen/project-setup-screen.tsx
-msgid "Enter a name and choose where to create your project."
-msgstr "הזן שם ובחר היכן ליצור את הפרויקט שלך."
+#~ msgid "Enter a name and choose where to create your project."
+#~ msgstr "הזן שם ובחר היכן ליצור את הפרויקט שלך."
 
 #. placeholder {0}: m.newTypeTarget ?? 'item'
 #: src/components/assets/AssetsNavigator.tsx
@@ -4154,8 +4169,8 @@ msgid "Enter folder name"
 msgstr "הזן שם תיקייה"
 
 #: src/components/project-setup-screen/project-setup-screen.tsx
-msgid "Enter folder path"
-msgstr "הזן נתיב תיקייה"
+#~ msgid "Enter folder path"
+#~ msgstr "הזן נתיב תיקייה"
 
 #: src/components/chat-input.tsx
 msgid "Enter Git URL"
@@ -4174,8 +4189,8 @@ msgid "Enter instructions or select a file from the left panel"
 msgstr "הזן הנחיות או בחר קובץ מהלוח השמאלי"
 
 #: src/components/skills-viewer/amd-editor/components/blocks/DoBlock.tsx
-msgid "Enter instructions..."
-msgstr "הזן הוראות..."
+#~ msgid "Enter instructions..."
+#~ msgstr "הזן הוראות..."
 
 #: src/components/hooks-manager/TriggerForm.tsx
 msgid "Enter trigger description"
@@ -4229,10 +4244,6 @@ msgstr ""
 msgid "error"
 msgstr "שגיאה"
 
-#: src/components/account/danger-zone.tsx
-#: src/components/account/danger-zone.tsx
-#: src/components/account/danger-zone.tsx
-#: src/components/account/danger-zone.tsx
 #: src/components/account/database-section.tsx
 #: src/components/account/database-section.tsx
 #: src/components/account/database-section.tsx
@@ -4302,12 +4313,12 @@ msgstr "הערך"
 
 #: src/components/assets/editor/skill/ActivationEvalsPanel.tsx
 #: src/components/assets/editor/skill/SkillActivationEditor.tsx
-msgid "Evals"
-msgstr "הערכות"
+#~ msgid "Evals"
+#~ msgstr "הערכות"
 
 #: src/components/assets/editor/skill/ActivationEvalsPanel.tsx
-msgid "Evals Coming Soon"
-msgstr "הערכות בקרוב"
+#~ msgid "Evals Coming Soon"
+#~ msgstr "הערכות בקרוב"
 
 #. placeholder {0}: frame.callable
 #: src/components/assets/editor/agent-trace/CallTreeView.tsx
@@ -4315,7 +4326,6 @@ msgid "Evaluate \"{0}\""
 msgstr "הערך \"{0}\""
 
 #: src/components/hooks-view/HooksTable.tsx
-#: src/components/hooks/sniffer_view_mock.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Event"
 msgstr "אירוע"
@@ -4396,16 +4406,16 @@ msgid "exit {0}"
 msgstr "יציאה {0}"
 
 #: src/components/task-bar/TaskBar.tsx
-msgid "Exit bulk select"
-msgstr "יציאה מבחירה קבוצתית"
+#~ msgid "Exit bulk select"
+#~ msgstr "יציאה מבחירה קבוצתית"
 
 #: src/components/graph-view/ui/TopBar.tsx
 msgid "Exit local"
 msgstr "יציאה מהמצב המקומי"
 
 #: src/components/task-bar/TaskBar.tsx
-msgid "Exit select mode"
-msgstr "יציאה ממצב הבחירה"
+#~ msgid "Exit select mode"
+#~ msgstr "יציאה ממצב הבחירה"
 
 #: src/components/browseable-tree/BrowseableTree.tsx
 #: src/components/browseable-tree/BrowseableTree.tsx
@@ -4424,8 +4434,8 @@ msgid "Expand navigator"
 msgstr "הרחב ניווט"
 
 #: src/components/flowdata-renderer/ReasoningMessageComponent.tsx
-msgid "Expand reasoning"
-msgstr "הרחב נימוק"
+#~ msgid "Expand reasoning"
+#~ msgstr "הרחב נימוק"
 
 #: src/components/hooks/EventSnifferChip.tsx
 msgid "Expand sniffer event list"
@@ -4473,8 +4483,8 @@ msgid "Exported"
 msgstr "יוצא"
 
 #: src/components/account/danger-zone.tsx
-msgid "External Terminal"
-msgstr "טרמינל חיצוני"
+#~ msgid "External Terminal"
+#~ msgstr "טרמינל חיצוני"
 
 #: src/components/search-calibration/SearchCalibrationPanel.tsx
 msgid "extra rows fetched (limit + overfetch)"
@@ -4488,7 +4498,6 @@ msgstr "נכשל"
 msgid "Failed to add comment"
 msgstr "הוספת תגובה נכשלה"
 
-#: src/components/account/danger-zone.tsx
 #: src/components/account/database-section.tsx
 msgid "Failed to backup database"
 msgstr "גיבוי בסיס הנתונים נכשל"
@@ -4501,7 +4510,6 @@ msgstr ""
 msgid "Failed to build call stack: {error}"
 msgstr "כשל בבניית stack של קריאות: {error}"
 
-#: src/components/account/danger-zone.tsx
 #: src/components/account/database-section.tsx
 msgid "Failed to clear database"
 msgstr "ניקוי בסיס הנתונים נכשל"
@@ -4514,7 +4522,6 @@ msgstr "כישלון בשיבוט המאגר"
 msgid "Failed to clone the git repository. Please check the URL and try again."
 msgstr "נכשל בהעתקת מאגר ה-git. בבקשה בדוק את כתובת ה-URL ונסה שוב."
 
-#: src/components/account/danger-zone.tsx
 #: src/components/account/database-section.tsx
 msgid "Failed to copy path to clipboard"
 msgstr "העתקת הנתיב ללוח נכשלה"
@@ -4553,7 +4560,6 @@ msgid "Failed to create spec"
 msgstr "נכשל ביצירת מפרט"
 
 #: src/components/workflows-view/WorkflowsNavigator.tsx
-#: src/components/workflows-view/WorkflowStrip.tsx
 msgid "Failed to create workflow"
 msgstr "יצירת זרימת עבודה נכשלה"
 
@@ -4580,7 +4586,6 @@ msgid "Failed to delete secret"
 msgstr "כשל במחיקת סוד"
 
 #: src/components/workflows-view/WorkflowsNavigator.tsx
-#: src/components/workflows-view/WorkflowStrip.tsx
 msgid "Failed to delete workflow"
 msgstr "מחיקת זרימת עבודה נכשלה"
 
@@ -4623,16 +4628,16 @@ msgid "Failed to load"
 msgstr "נכשל לטעון"
 
 #: src/components/assets/editor/skill/SkillActivationEditor.tsx
-msgid "Failed to Load"
-msgstr "נכשל בטעינה"
+#~ msgid "Failed to Load"
+#~ msgstr "נכשל בטעינה"
 
 #: src/components/assets/editor/EntityResolutionGate.tsx
 msgid "Failed to load {typeLabel}"
 msgstr "נכשל בטעינת {typeLabel}"
 
 #: src/components/assets/editor/skill/SkillActivationEditor.tsx
-msgid "Failed to load activation rule: {errorMessage}"
-msgstr "טעינת כלל ההפעלה נכשלה: {errorMessage}"
+#~ msgid "Failed to load activation rule: {errorMessage}"
+#~ msgstr "טעינת כלל ההפעלה נכשלה: {errorMessage}"
 
 #: src/components/milkdown-editor/side-windows/BacklinksTab.tsx
 msgid "Failed to load backlinks: {error}"
@@ -4705,9 +4710,7 @@ msgstr "פתיחת הקובץ נכשלה"
 #~ msgid "Failed to open folder"
 #~ msgstr "כישלון בפתיחת תיקייה"
 
-#: src/components/open-project-component/open-project-component.tsx
 #: src/components/open-project-component/use-open-project.ts
-#: src/components/project-setup-screen/project-setup-screen.tsx
 #: src/components/quick-create/QuickCreateDialog.tsx
 #: src/components/quick-create/QuickCreateMenu.tsx
 msgid "Failed to open folder picker"
@@ -4741,16 +4744,16 @@ msgid "Failed to restart services"
 msgstr "נכשל הפעלת מחדש של השירותים"
 
 #: src/components/workflows-view/WorkflowStrip.tsx
-msgid "Failed to run workflow"
-msgstr "הריצת זרימת העבודה נכשלה"
+#~ msgid "Failed to run workflow"
+#~ msgstr "הריצת זרימת העבודה נכשלה"
 
 #: src/components/hooks-view/hooks-view.tsx
 msgid "Failed to Save"
 msgstr "כישלון בשמירה"
 
 #: src/components/assets/editor/skill/SkillActivationEditor.tsx
-msgid "Failed to save activation rule. Please check the format."
-msgstr "נכשל בשמירת כלל הפעלה. אנא בדוק את הפורמט."
+#~ msgid "Failed to save activation rule. Please check the format."
+#~ msgstr "נכשל בשמירת כלל הפעלה. אנא בדוק את הפורמט."
 
 #: src/components/account/secrets-section.tsx
 msgid "Failed to save secret"
@@ -4908,8 +4911,8 @@ msgid "File path copied to clipboard"
 msgstr "נתיב הקובץ הועתק ללוח ההעתק"
 
 #: src/components/flowdata-renderer/ResultMessageComponent.tsx
-msgid "File Result"
-msgstr "תוצאת קובץ"
+#~ msgid "File Result"
+#~ msgstr "תוצאת קובץ"
 
 #: src/components/execute-flow-view/instruction-panel/instruction-panel.tsx
 msgid "File saved"
@@ -4920,8 +4923,8 @@ msgid "File Size"
 msgstr "גודל קובץ"
 
 #: src/components/flowdata-renderer/WriteMessageComponent.tsx
-msgid "File Write"
-msgstr "כתיבת קובץ"
+#~ msgid "File Write"
+#~ msgstr "כתיבת קובץ"
 
 #: src/components/assets/MarkdownIndexPanel.tsx
 #: src/components/chat-input.tsx
@@ -4971,8 +4974,8 @@ msgid "Filter processes..."
 msgstr "סנן תהליכים..."
 
 #: src/components/quick-access-sidebar/QuickAccessSideBar.tsx
-msgid "Filter projects..."
-msgstr "סנן פרויקטים..."
+#~ msgid "Filter projects..."
+#~ msgstr "סנן פרויקטים..."
 
 #: src/components/project-selector/ProjectSelector.tsx
 msgid "Filter projects…"
@@ -5058,8 +5061,8 @@ msgstr "זרימה"
 
 #: src/components/history-dropdown.tsx
 #: src/components/history-dropdown.tsx
-msgid "Flow History"
-msgstr "היסטוריית זרימה"
+#~ msgid "Flow History"
+#~ msgstr "היסטוריית זרימה"
 
 #: src/components/assets/editor/run/useRunOnFile.tsx
 #: src/components/assets/editor/workflow/WorkflowAssetEditor.tsx
@@ -5136,7 +5139,6 @@ msgstr "מצב שרת FlowPad"
 msgid "Flowpad version"
 msgstr "גרסת Flowpad"
 
-#: src/components/powered-by-footer.tsx
 #: src/components/powered-by.tsx
 msgid "Flowpad.ai Logo"
 msgstr "לוגו Flowpad.ai"
@@ -5170,6 +5172,7 @@ msgid "Folder"
 msgstr "תיקייה"
 
 #: src/components/assets/AssetsNavigator.tsx
+#: src/components/favorites/FavoritesAddRow.tsx
 #: src/components/quick-create/DesktopSurface.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "Folder name"
@@ -5180,8 +5183,8 @@ msgid "Folder…"
 msgstr "תיקייה…"
 
 #: src/components/skills-viewer/amd-editor/components/blocks/EachBlock.tsx
-msgid "for"
-msgstr "עבור"
+#~ msgid "for"
+#~ msgstr "עבור"
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Force chat UI"
@@ -5221,8 +5224,8 @@ msgid "Forwarded from another conversation"
 msgstr "הועבר משיחה אחרת"
 
 #: src/components/task-bar/TaskDetailPanel.tsx
-msgid "From"
-msgstr "מאת"
+#~ msgid "From"
+#~ msgstr "מאת"
 
 #: src/components/task-bar/SharedTaskView.tsx
 msgid "From {senderName}"
@@ -5265,8 +5268,8 @@ msgid "Full — complete rescan"
 msgstr "מלא — סריקה מחדש מלאה"
 
 #: src/components/project-setup-screen/project-setup-screen.tsx
-msgid "Full path where your project folder will be created."
-msgstr "הנתיב המלא שבו תיקיית הפרויקט שלך תיווצר."
+#~ msgid "Full path where your project folder will be created."
+#~ msgstr "הנתיב המלא שבו תיקיית הפרויקט שלך תיווצר."
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Full Trust"
@@ -5314,8 +5317,8 @@ msgid "Generic options"
 msgstr "אפשרויות כלליות"
 
 #: src/components/onboarding-card/OnboardingCard.tsx
-msgid "Get Started"
-msgstr "בואו נתחיל"
+#~ msgid "Get Started"
+#~ msgstr "בואו נתחיל"
 
 #: src/components/graph-view/ui/PropertyPanel.tsx
 msgid "ghost"
@@ -5407,7 +5410,6 @@ msgstr "עבור לקונסול"
 
 #: src/components/agent-layout/error-screen/error-screen.tsx
 #: src/components/agent-layout/error-screen/error-screen.tsx
-#: src/components/agent-layout/not-found-screen/not-found-screen.tsx
 msgid "Go to Homepage"
 msgstr "חזור לדף הבית"
 
@@ -5448,6 +5450,10 @@ msgstr ""
 #: src/components/terminal/openers/AskInstallOneOfDialog.tsx
 msgid "Harness is required"
 msgstr "Harness נדרש"
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+#~ msgid "Harness login required"
+#~ msgstr ""
 
 #: src/components/quick-create/ScopeSelection.tsx
 #: src/components/quick-create/ScopeSelection.tsx
@@ -5510,7 +5516,6 @@ msgstr "בדיקת בריאות עברה בהצלחה (200 OK)"
 msgid "Helpers used"
 msgstr "עוזרים ששימשו"
 
-#: src/components/greeting/Greeting.tsx
 #: src/pages/flow-page/vibe-new-chat.tsx
 #: src/pages/home-landing/HomeLanding.tsx
 msgid "Hey <0>{firstName}</0>"
@@ -5559,8 +5564,8 @@ msgid "Hide hidden files"
 msgstr "הסתר קבצים נסתרים"
 
 #: src/components/task-bar/TaskCard.tsx
-msgid "Hide member tasks"
-msgstr ""
+#~ msgid "Hide member tasks"
+#~ msgstr ""
 
 #: src/components/navigator-panel/NavigatorPanel.tsx
 #: src/components/webapp-viewer.tsx
@@ -5617,8 +5622,8 @@ msgid "Hook Deleted"
 msgstr "ווק נמחק"
 
 #: src/components/hooks/sniffer_view_mock.tsx
-msgid "Hook Entry"
-msgstr "ערך וו"
+#~ msgid "Hook Entry"
+#~ msgstr "ערך וו"
 
 #: src/components/hooks-view/HookEditor.tsx
 msgid "Hook Event *"
@@ -5633,8 +5638,8 @@ msgid "Hook Name *"
 msgstr "שם Hook *"
 
 #: src/components/hooks/sniffer_view_mock.tsx
-msgid "Hook Payload"
-msgstr "מטען הווו"
+#~ msgid "Hook Payload"
+#~ msgstr "מטען הווו"
 
 #: src/components/triggers-view/TriggersList.tsx
 msgid "Hook Triggers"
@@ -5694,8 +5699,8 @@ msgid "Hooks Manager"
 msgstr "מנהל וו-וצקים"
 
 #: src/components/hooks/sniffer_view_mock.tsx
-msgid "Hooks Sniffer"
-msgstr "תופס וו"
+#~ msgid "Hooks Sniffer"
+#~ msgstr "תופס וו"
 
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "Hooks:"
@@ -5704,6 +5709,10 @@ msgstr "קישורים:"
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "How does improving an asset work?"
 msgstr ""
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+#~ msgid "How to install"
+#~ msgstr ""
 
 #: src/components/code-editor/EditorPane.tsx
 msgid "HTML Preview"
@@ -5836,13 +5845,13 @@ msgid "Improving…"
 msgstr "משפר…"
 
 #: src/components/skills-viewer/amd-editor/components/blocks/EachBlock.tsx
-msgid "in"
-msgstr "ב"
+#~ msgid "in"
+#~ msgstr "ב"
 
 #: src/components/project-setup-screen/project-setup-screen.tsx
 #: src/components/project-setup-screen/project-setup-screen.tsx
-msgid "In browser mode, projects must be in the workspace folder. Enter the full path manually."
-msgstr "במצב דפדפן, פרויקטים חייבים להיות בתיקיית מרחב העבודה. הזן את הנתיב המלא ידנית."
+#~ msgid "In browser mode, projects must be in the workspace folder. Enter the full path manually."
+#~ msgstr "במצב דפדפן, פרויקטים חייבים להיות בתיקיית מרחב העבודה. הזן את הנתיב המלא ידנית."
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "In Index"
@@ -5862,8 +5871,8 @@ msgid "In progress..."
 msgstr "בתהליך..."
 
 #: src/components/account/danger-zone.tsx
-msgid "In-app only"
-msgstr "בתוך האפליקציה בלבד"
+#~ msgid "In-app only"
+#~ msgstr "בתוך האפליקציה בלבד"
 
 #: src/components/api-keys-view/api-keys-view.tsx
 msgid "Inactive"
@@ -5888,8 +5897,8 @@ msgid "Index (seq)"
 msgstr "אינדקס (seq)"
 
 #: src/components/agentic-progress/shared/stack-frame-list.tsx
-msgid "Index:"
-msgstr "אינדקס:"
+#~ msgid "Index:"
+#~ msgstr "אינדקס:"
 
 #: src/pages/search-view/SearchView.tsx
 msgid "indexed"
@@ -5904,7 +5913,6 @@ msgid "Indexing…"
 msgstr "סריקה…"
 
 #: src/components/account/settings-section.tsx
-#: src/components/hooks/sniffer_view_mock.tsx
 msgid "Info"
 msgstr "מידע"
 
@@ -5957,6 +5965,7 @@ msgstr "הוסף emoji"
 msgid "Insert table"
 msgstr "הוסף טבלה"
 
+#: src/components/harness-login/HarnessLoginModal.tsx
 #: src/pages/discover-page/discover-page.tsx
 #: src/pages/discover-page/discover-page.tsx
 msgid "Install"
@@ -6045,8 +6054,8 @@ msgid "Invalid Lens URL"
 msgstr "כתובת עדשה לא חוקית"
 
 #: src/components/assets/editor/skill/SkillActivationEditor.tsx
-msgid "Invalid rule.md Format"
-msgstr "פורמט rule.md לא תקין"
+#~ msgid "Invalid rule.md Format"
+#~ msgstr "פורמט rule.md לא תקין"
 
 #: src/components/show-view/ShowView.tsx
 msgid "Invalid Show Path"
@@ -6131,8 +6140,8 @@ msgid "Italic"
 msgstr "נטוי"
 
 #: src/components/skills-viewer/amd-editor/components/blocks/EachBlock.tsx
-msgid "item"
-msgstr "פריט"
+#~ msgid "item"
+#~ msgstr "פריט"
 
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
 msgid "Its contents look like binary data (for example an image), so it can't be shown in the editor."
@@ -6143,16 +6152,16 @@ msgid "Join"
 msgstr "הצטרף"
 
 #: src/components/join-room-dialog/JoinConversationDialog.tsx
-msgid "Join a conversation"
-msgstr "הצטרף לשיחה"
+#~ msgid "Join a conversation"
+#~ msgstr "הצטרף לשיחה"
 
 #: src/components/collaboration/StartRoomDialog.tsx
 msgid "Join code"
 msgstr "קוד הצטרפות"
 
 #: src/components/join-room-dialog/JoinConversationDialog.tsx
-msgid "Join conversation"
-msgstr "הצטרף לשיחה"
+#~ msgid "Join conversation"
+#~ msgstr "הצטרף לשיחה"
 
 #: src/components/collaboration/StartRoomDialog.tsx
 msgid "Join existing"
@@ -6167,7 +6176,6 @@ msgid "Joined"
 msgstr "הצטרף"
 
 #: src/components/collaboration/StartRoomDialog.tsx
-#: src/components/join-room-dialog/JoinConversationDialog.tsx
 msgid "Joining…"
 msgstr "הצטרפות…"
 
@@ -6436,8 +6444,8 @@ msgid "Live sessions need a shared conversation"
 msgstr ""
 
 #: src/components/hooks/sniffer_view_mock.tsx
-msgid "Live view of hook traffic. Uses a catch-all hook in the Claude user folder."
-msgstr "תצוגה חיה של תעבורת וו. משתמש בווו תופס הכל בתיקיית משתמש Claude."
+#~ msgid "Live view of hook traffic. Uses a catch-all hook in the Claude user folder."
+#~ msgstr "תצוגה חיה של תעבורת וו. משתמש בווו תופס הכל בתיקיית משתמש Claude."
 
 #: src/components/ai-config-view/ai-config-view.tsx
 msgid "LLM APIs"
@@ -6646,7 +6654,6 @@ msgid "Loading report…"
 msgstr "טוען דו״ח…"
 
 #: src/components/project-resource-list/ProjectResourceList.tsx
-#: src/components/quick-access-sidebar/QuickAccessSideBar.tsx
 msgid "Loading resources..."
 msgstr "טוען משאבים..."
 
@@ -6712,11 +6719,7 @@ msgstr "טוען את המאגרים שלך…"
 #: src/components/directory-tree/DirectoryTree.tsx
 #: src/components/directory-tree/DirectoryTree.tsx
 #: src/components/machine-overview/machine-overview.tsx
-#: src/components/project-sidebar/ProjectSidebar.tsx
-#: src/components/quick-access-sidebar/QuickAccessSideBar.tsx
-#: src/components/quick-access-view/QuickAccessView.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
-#: src/components/skills-sidebar/SkillsSidebar.tsx
 #: src/components/triggers-view/TriggerEditor.tsx
 msgid "Loading..."
 msgstr "טוען..."
@@ -6729,7 +6732,6 @@ msgstr "טוען..."
 #: src/components/browseable-tree/BrowseableTree.tsx
 #: src/components/collaboration/CollaborationPage.tsx
 #: src/components/collaboration/SharedSessionsList.tsx
-#: src/components/cron-view/CronView.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
 #: src/components/inbox-view/InboxView.tsx
 #: src/components/inbox-view/InboxView.tsx
@@ -6757,8 +6759,8 @@ msgid "Local only — permanent"
 msgstr "רק מקומי — קבוע"
 
 #: src/components/agentic-progress/shared/stack-frame-list.tsx
-msgid "Local Variables"
-msgstr "משתנים מקומיים"
+#~ msgid "Local Variables"
+#~ msgstr "משתנים מקומיים"
 
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Location"
@@ -6772,7 +6774,6 @@ msgstr "נעול לאחר ההודעה הראשונה"
 msgid "Log mode"
 msgstr "מצב רישום"
 
-#: src/components/InputSection.tsx
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 #: src/pages/flow-page/content-panel/content-panel.tsx
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
@@ -6870,8 +6871,8 @@ msgid "Markdown created"
 msgstr "Markdown נוצרה"
 
 #: src/components/skills-viewer/amd-editor/components/blocks/TextBlock.tsx
-msgid "Markdown text..."
-msgstr "טקסט Markdown..."
+#~ msgid "Markdown text..."
+#~ msgstr "טקסט Markdown..."
 
 #. placeholder {0}: index.name ?? index.id
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
@@ -6913,8 +6914,8 @@ msgid "Matcher Pattern (optional)"
 msgstr "דפוס Matcher (אופציונלי)"
 
 #: src/components/agentic-progress/shared/variables-inspector.tsx
-msgid "Max depth reached"
-msgstr "הגיע לעומק המקסימלי"
+#~ msgid "Max depth reached"
+#~ msgstr "הגיע לעומק המקסימלי"
 
 #: src/components/hooks-view/HookEditor.tsx
 msgid "Maximum execution time (default: 60s, max: 600s)"
@@ -6948,12 +6949,12 @@ msgid "Member"
 msgstr "חבר"
 
 #: src/components/task-bar/TaskCard.tsx
-msgid "member task"
-msgstr ""
+#~ msgid "member task"
+#~ msgstr ""
 
 #: src/components/task-bar/TaskCard.tsx
-msgid "member tasks"
-msgstr ""
+#~ msgid "member tasks"
+#~ msgstr ""
 
 #: src/components/collaboration/RoomHeader.tsx
 msgid "members"
@@ -7015,8 +7016,8 @@ msgid "Message the agent…"
 msgstr "שלחו הודעה לסוכן…"
 
 #: src/components/collaboration/chat/MessageInput.tsx
-msgid "Message this space…"
-msgstr "הודעה לחלל זה…"
+#~ msgid "Message this space…"
+#~ msgstr "הודעה לחלל זה…"
 
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Messages"
@@ -7119,12 +7120,12 @@ msgid "mounted"
 msgstr "מעודכן"
 
 #: src/components/skills-viewer/amd-editor/components/BlockWrapper.tsx
-msgid "Move down"
-msgstr "הזז למטה"
+#~ msgid "Move down"
+#~ msgstr "הזז למטה"
 
 #: src/components/skills-viewer/amd-editor/components/BlockWrapper.tsx
-msgid "Move up"
-msgstr "הזז למעלה"
+#~ msgid "Move up"
+#~ msgstr "הזז למעלה"
 
 #: src/pages/live-status/LiveStatus.tsx
 msgid "msgs"
@@ -7143,7 +7144,6 @@ msgid "My Schedule"
 msgstr "הלוח שלי"
 
 #: src/components/open-project-component/open-project-component.tsx
-#: src/components/project-setup-screen/project-setup-screen.tsx
 msgid "my-awesome-project"
 msgstr "my-awesome-project"
 
@@ -7293,9 +7293,10 @@ msgid "New Files ({0})"
 msgstr "קבצים חדשים ({0})"
 
 #: src/components/history-dropdown.tsx
-msgid "New Flow"
-msgstr "זרימה חדשה"
+#~ msgid "New Flow"
+#~ msgstr "זרימה חדשה"
 
+#: src/components/favorites/FavoritesAddRow.tsx
 #: src/components/quick-create/DesktopSurface.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
@@ -7306,6 +7307,10 @@ msgstr "תיקייה חדשה"
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "New Folder"
 msgstr "תיקייה חדשה"
+
+#: src/components/favorites/FavoritesAddRow.tsx
+msgid "New folder name"
+msgstr ""
 
 #: src/components/inbox-view/InboxView.tsx
 msgid "New group"
@@ -7329,8 +7334,8 @@ msgstr "פרויקט חדש"
 #: src/components/project-setup-screen/project-setup-screen.tsx
 #: src/components/project-sidebar/ProjectSidebar.tsx
 #: src/components/quick-access-sidebar/QuickAccessSideBar.tsx
-msgid "New Project"
-msgstr "פרויקט חדש"
+#~ msgid "New Project"
+#~ msgstr "פרויקט חדש"
 
 #: src/components/execute-flow-view/instruction-panel/instruction-panel.tsx
 #: src/components/prompt-library/PromptEditDialog.tsx
@@ -7355,7 +7360,6 @@ msgstr "עירוב לוח זמנים חדש"
 msgid "New Schedule Trigger"
 msgstr "טריגר לוח זמנים חדש"
 
-#: src/components/quick-access-sidebar/QuickAccessSideBar.tsx
 #: src/components/quick-create/QuickCreateMenu.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
 msgid "New session"
@@ -7366,8 +7370,8 @@ msgid "New tab"
 msgstr "כרטיסייה חדשה"
 
 #: src/components/task-bar/TaskBar.tsx
-msgid "New task"
-msgstr "משימה חדשה"
+#~ msgid "New task"
+#~ msgstr "משימה חדשה"
 
 #: src/components/tasks-viewer/TasksViewer.tsx
 #~ msgid "New Task"
@@ -7379,8 +7383,6 @@ msgstr "טרמינל חדש"
 
 #: src/components/workflows-view/WorkflowsNavigator.tsx
 #: src/components/workflows-view/WorkflowsNavigator.tsx
-#: src/components/workflows-view/WorkflowStrip.tsx
-#: src/components/workflows-view/WorkflowStrip.tsx
 msgid "New Workflow"
 msgstr "זרימת עבודה חדשה"
 
@@ -7397,13 +7399,13 @@ msgid "Next prompt — injected when the agent next goes idle. Press Enter to ad
 msgstr "הודעה הבאה — תוזרק כשהסוכן יהיה רגוע. לחץ Enter כדי להוסיף."
 
 #: src/components/ui/carousel.tsx
-msgid "Next slide"
-msgstr "שקופית הבאה"
+#~ msgid "Next slide"
+#~ msgstr "שקופית הבאה"
 
 #: src/components/task-bar/BulkReminderButton.tsx
 #: src/components/task-bar/ReminderButton.tsx
-msgid "Next week"
-msgstr "בשבוע הבא"
+#~ msgid "Next week"
+#~ msgstr "בשבוע הבא"
 
 #. placeholder {0}: new Date(trigger.next_run).toLocaleString()
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
@@ -7415,8 +7417,8 @@ msgid "No actions configured."
 msgstr "אין פעולות מוגדרות."
 
 #: src/components/assets/editor/skill/SkillActivationEditor.tsx
-msgid "No activation manager available"
-msgstr "לא קיים מנהל הפעלה זמין"
+#~ msgid "No activation manager available"
+#~ msgstr "לא קיים מנהל הפעלה זמין"
 
 #: src/components/terminal/HistoryModal.tsx
 msgid "No active project"
@@ -7485,8 +7487,8 @@ msgid "No assistance requests yet"
 msgstr "עדיין אין בקשות עזרה"
 
 #: src/components/task-bar/TaskBar.tsx
-msgid "No automations yet"
-msgstr "אין עדיין אוטומציות"
+#~ msgid "No automations yet"
+#~ msgstr "אין עדיין אוטומציות"
 
 #: src/components/milkdown-editor/side-windows/BacklinksTab.tsx
 msgid "No backlinks yet."
@@ -7542,9 +7544,7 @@ msgstr "אין כרטיסי קהילה"
 #: src/components/assets/ContextFolderBrowser.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
-#: src/components/open-project-component/open-project-component.tsx
 #: src/components/open-project-component/use-open-project.ts
-#: src/components/project-setup-screen/project-setup-screen.tsx
 #: src/components/quick-create/QuickCreateDialog.tsx
 #: src/components/quick-create/QuickCreateMenu.tsx
 msgid "No compute node available"
@@ -7560,8 +7560,8 @@ msgid "No content available"
 msgstr "אין תוכן זמין"
 
 #: src/components/viewers/DynamicViewer.tsx
-msgid "No content to display"
-msgstr "אין תוכן להצגה"
+#~ msgid "No content to display"
+#~ msgstr "אין תוכן להצגה"
 
 #: src/components/lens-viewer/ClaudeContextViewer.tsx
 msgid "No context data"
@@ -7653,8 +7653,8 @@ msgid "No events captured"
 msgstr "לא נתפסו אירועים"
 
 #: src/components/hooks/sniffer_view_mock.tsx
-msgid "No events captured yet"
-msgstr "לא נתפסו אירועים עדיין"
+#~ msgid "No events captured yet"
+#~ msgstr "לא נתפסו אירועים עדיין"
 
 #: src/components/hooks/EventListPanel.tsx
 msgid "No events yet"
@@ -7730,8 +7730,8 @@ msgid "No index.md to view"
 msgstr "אין index.md להצגה"
 
 #: src/components/skills-viewer/amd-editor/AMDEditorInner.tsx
-msgid "No instructions yet"
-msgstr "עדיין אין הוראות"
+#~ msgid "No instructions yet"
+#~ msgstr "עדיין אין הוראות"
 
 #: src/components/triggers-view/TriggerInvocationsPanel.tsx
 msgid "No invocations yet"
@@ -7746,8 +7746,8 @@ msgid "No known fix yet — use \"Fix It\" to start a session."
 msgstr "אין תיקון ידוע עדיין — השתמש ב\"תקן\" כדי להתחיל שיחה."
 
 #: src/components/context-select.tsx
-msgid "No labels found."
-msgstr "לא נמצאו תוויות."
+#~ msgid "No labels found."
+#~ msgstr "לא נמצאו תוויות."
 
 #: src/components/footer/LanguageSelector.tsx
 msgid "No languages found."
@@ -7816,16 +7816,16 @@ msgid "No matches."
 msgstr "אין התאמות."
 
 #: src/components/task-bar/TaskBar.tsx
-msgid "No matching automations"
-msgstr "אין אוטומציות התואמות"
+#~ msgid "No matching automations"
+#~ msgstr "אין אוטומציות התואמות"
 
 #: src/components/inbox-view/InboxView.tsx
 msgid "No matching conversations"
 msgstr "אין שיחות תואמות"
 
 #: src/components/quick-access-sidebar/QuickAccessSideBar.tsx
-msgid "No matching projects"
-msgstr "אין פרויקטים תואמים"
+#~ msgid "No matching projects"
+#~ msgstr "אין פרויקטים תואמים"
 
 #: src/components/project-activity-strip/ProjectActivityStrip.tsx
 #: src/components/terminal/HistoryModal.tsx
@@ -7926,8 +7926,8 @@ msgid "No project matches \"{normalizedCode}\"."
 msgstr "אף פרויקט לא תואם \"{normalizedCode}\"."
 
 #: src/components/join-room-dialog/JoinConversationDialog.tsx
-msgid "No project matches code \"{normalizedCode}\"."
-msgstr "אין פרויקט התואם לקוד \"{normalizedCode}\"."
+#~ msgid "No project matches code \"{normalizedCode}\"."
+#~ msgstr "אין פרויקט התואם לקוד \"{normalizedCode}\"."
 
 #: src/components/collaboration/StartRoomDialog.tsx
 msgid "No project selected"
@@ -7949,8 +7949,8 @@ msgstr "לא נמצאו פרויקטים"
 
 #: src/components/project-sidebar/ProjectSidebar.tsx
 #: src/components/quick-access-sidebar/QuickAccessSideBar.tsx
-msgid "No projects yet"
-msgstr "אין פרויקטים עדיין"
+#~ msgid "No projects yet"
+#~ msgstr "אין פרויקטים עדיין"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "No projects."
@@ -8018,8 +8018,8 @@ msgid "No repos accessible with this token"
 msgstr "אין מאגרים נגישים עם הטוקן הזה"
 
 #: src/components/quick-access-sidebar/QuickAccessSideBar.tsx
-msgid "No resources found"
-msgstr "לא נמצאו משאבים"
+#~ msgid "No resources found"
+#~ msgstr "לא נמצאו משאבים"
 
 #: src/components/project-resource-list/ProjectResourceList.tsx
 msgid "No resources found in this project"
@@ -8063,8 +8063,8 @@ msgid "No runs yet."
 msgstr "אין ריצות עדיין."
 
 #: src/components/onboarding-card/OnboardingCard.tsx
-msgid "No sample flows found"
-msgstr "לא נמצאו זרימות לדוגמה"
+#~ msgid "No sample flows found"
+#~ msgstr "לא נמצאו זרימות לדוגמה"
 
 #: src/components/graph-context/GraphContextViewer.tsx
 msgid "No saved contexts yet."
@@ -8079,8 +8079,8 @@ msgid "No schedule triggers yet. <0>Create one</0>"
 msgstr "אין טריגרים מתוזמנים עדיין. <0>צור אחד</0>"
 
 #: src/components/cron-view/CronView.tsx
-msgid "No scheduled jobs yet."
-msgstr "אין עדיין משימות מתוזמנות."
+#~ msgid "No scheduled jobs yet."
+#~ msgstr "אין עדיין משימות מתוזמנות."
 
 #: src/components/account/secrets-section.tsx
 msgid "No secrets yet. Click \"Add secret\" to create one."
@@ -8127,16 +8127,16 @@ msgid "No skills installed"
 msgstr "אין כישרונות מותקנים"
 
 #: src/components/skills-sidebar/SkillsSidebar.tsx
-msgid "No skills match those filters"
-msgstr "אין מיומנויות תואמות לסינונים אלה"
+#~ msgid "No skills match those filters"
+#~ msgstr "אין מיומנויות תואמות לסינונים אלה"
 
 #: src/components/terminal/interactive-terminal/side-windows/SkillsAgentsPanel.tsx
 msgid "No skills or sub-agents used yet"
 msgstr "לא נעשה שימוש בכישרונות או בסוכנים משנה עדיין"
 
 #: src/components/skills-sidebar/SkillsSidebar.tsx
-msgid "No skills yet"
-msgstr "אין מיומנויות עדיין"
+#~ msgid "No skills yet"
+#~ msgstr "אין מיומנויות עדיין"
 
 #: src/components/hooks-view/HooksBrowser.tsx
 msgid "No source file available for this hook"
@@ -8248,8 +8248,8 @@ msgid "No webapp or service artifacts found"
 msgstr "לא נמצאו ערכי אפליקציה או שירות"
 
 #: src/components/workflows-view/WorkflowStrip.tsx
-msgid "No workflows"
-msgstr "אין זרימות עבודה"
+#~ msgid "No workflows"
+#~ msgstr "אין זרימות עבודה"
 
 #: src/components/graph-view/ui/TopBar.tsx
 msgid "node"
@@ -8303,6 +8303,10 @@ msgstr "לא בדוק"
 msgid "Not configured"
 msgstr "לא מוגדר"
 
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Not installed"
+msgstr ""
+
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
 msgid "not reachable"
 msgstr ""
@@ -8343,6 +8347,10 @@ msgstr "עדיין לא אינדקס. <0>Refresh Index</0> כדי לאכלס."
 msgid "Nothing new to push — message sent"
 msgstr ""
 
+#: src/components/favorites/FavoritesAddRow.tsx
+msgid "Nothing open to bookmark"
+msgstr ""
+
 #: src/components/conversation/ConversationContextPanel.tsx
 msgid "Nothing shared in this conversation."
 msgstr "אין שום דבר משותף בשיחה זו."
@@ -8377,8 +8385,8 @@ msgid "Nothing to save"
 msgstr ""
 
 #: src/components/history-dropdown.tsx
-msgid "Nothing yet!"
-msgstr "עדיין אין כאן!"
+#~ msgid "Nothing yet!"
+#~ msgstr "עדיין אין כאן!"
 
 #: src/components/hooks-manager/HookForm.tsx
 msgid "Notification"
@@ -8405,12 +8413,12 @@ msgid "Notify people about this push"
 msgstr ""
 
 #: src/components/InputSection.tsx
-msgid "OAuth connection established successfully"
-msgstr "חיבור OAuth הוקם בהצלחה"
+#~ msgid "OAuth connection established successfully"
+#~ msgstr "חיבור OAuth הוקם בהצלחה"
 
 #: src/components/InputSection.tsx
-msgid "OAuth Connection Required"
-msgstr "דרוש חיבור OAuth"
+#~ msgid "OAuth Connection Required"
+#~ msgstr "דרוש חיבור OAuth"
 
 #: src/components/connections-manager.tsx
 msgid "OAuth Connections"
@@ -8441,6 +8449,10 @@ msgstr "הכנה ראשונית"
 #: src/components/account/settings-section.tsx
 msgid "Onboarding reset"
 msgstr "איפוס הכנה ראשונית"
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "one is enough to get started"
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/side-windows/PromptIndexPanel.tsx
 msgid "Only harness entries here — enable “Show all” to view them."
@@ -8513,14 +8525,13 @@ msgid "Open analysis"
 msgstr "פתח ניתוח"
 
 #: src/components/task-bar/TaskDetailPanel.tsx
-msgid "Open analysis.md"
-msgstr "פתח analysis.md"
+#~ msgid "Open analysis.md"
+#~ msgstr "פתח analysis.md"
 
 #: src/components/version-popover/diagnosis-report-modal.tsx
 msgid "Open as a tab"
 msgstr "פתח כטאב"
 
-#: src/components/account/danger-zone.tsx
 #: src/components/account/database-section.tsx
 msgid "Open Backup Folder"
 msgstr "פתח תיקיית גיבוי"
@@ -8542,7 +8553,6 @@ msgstr "פתח הערה"
 msgid "Open Context"
 msgstr "פתח הקשר"
 
-#: src/components/account/danger-zone.tsx
 #: src/components/account/database-section.tsx
 msgid "Open DB Folder"
 msgstr "פתח תיקיית בסיס נתונים"
@@ -8562,8 +8572,8 @@ msgid "Open existing project"
 msgstr ""
 
 #: src/components/project-setup-screen/project-setup-screen.tsx
-msgid "Open Existing Project"
-msgstr "פתח פרויקט קיים"
+#~ msgid "Open Existing Project"
+#~ msgstr "פתח פרויקט קיים"
 
 #: src/components/assets/editor/AssetEditorHeader.tsx
 #: src/components/display-toolbar/GenericDisplayToolbar.tsx
@@ -8622,8 +8632,8 @@ msgid "Open full search"
 msgstr "פתח חיפוש מלא"
 
 #: src/components/task-bar/TaskDetailPanel.tsx
-msgid "Open full view"
-msgstr "פתח תצוגה מלאה"
+#~ msgid "Open full view"
+#~ msgstr "פתח תצוגה מלאה"
 
 #: src/components/display-toolbar/GenericDisplayToolbar.tsx
 #: src/components/display-toolbar/GenericDisplayToolbar.tsx
@@ -8642,15 +8652,14 @@ msgid "Open in Editor"
 msgstr "פתח בעורך"
 
 #: src/components/project-sidebar/ProjectSidebar.tsx
-msgid "Open in Explorer"
-msgstr "פתח בתיקייה"
+#~ msgid "Open in Explorer"
+#~ msgstr "פתח בתיקייה"
 
 #: src/components/tabs/TabStrip.tsx
 #: src/components/tabs/TabStrip.tsx
 msgid "Open in external browser"
 msgstr "פתח בדפדפן חיצוני"
 
-#: src/components/assets/toolbar/AssetToolbar.tsx
 #: src/components/workflows-view/WorkflowsNavigator.tsx
 msgid "Open in external editor"
 msgstr "פתח בעורך חיצוני"
@@ -8666,7 +8675,6 @@ msgstr "פתח בכרטיסייה חדשה"
 
 #: src/components/project-activity-strip/LearningCard.tsx
 #: src/components/project-activity-strip/LearningCard.tsx
-#: src/components/task-bar/TaskCard.tsx
 msgid "Open in Skills tab"
 msgstr "פתח בכרטיסית מיומנויות"
 
@@ -8688,8 +8696,8 @@ msgid "Open in Worktree"
 msgstr "פתח ב-Worktree"
 
 #: src/components/task-bar/TaskCard.tsx
-msgid "Open JSON"
-msgstr "פתח JSON"
+#~ msgid "Open JSON"
+#~ msgstr "פתח JSON"
 
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "Open link"
@@ -8711,7 +8719,6 @@ msgstr "פתח מנהלי אינדקס LLM"
 msgid "Open Log File"
 msgstr "פתח קובץ רישום"
 
-#: src/components/account/danger-zone.tsx
 #: src/components/account/database-section.tsx
 msgid "Open Logs Folder"
 msgstr "פתח תיקיית יומנים"
@@ -8745,10 +8752,6 @@ msgstr "פתח תוכנית"
 msgid "Open process"
 msgstr "פתח תהליך"
 
-#: src/components/project-setup-screen/project-setup-screen.tsx
-#: src/components/project-setup-screen/project-setup-screen.tsx
-#: src/components/project-sidebar/ProjectSidebar.tsx
-#: src/components/quick-access-sidebar/QuickAccessSideBar.tsx
 #: src/pages/flow-page/content-panel/unified-tab-strip.tsx
 msgid "Open Project"
 msgstr "פתח פרויקט"
@@ -8772,8 +8775,8 @@ msgid "Open project view — {projectPath}"
 msgstr ""
 
 #: src/components/task-bar/TaskCard.tsx
-msgid "Open report"
-msgstr "פתח דוח"
+#~ msgid "Open report"
+#~ msgstr "פתח דוח"
 
 #: src/tabs/useTerminalStripController.tsx
 msgid "Open sandbox terminal (E2B)"
@@ -8788,8 +8791,16 @@ msgid "Open Session"
 msgstr "פתח הפעלה"
 
 #: src/components/conversation/chips/ConversationChips.tsx
-msgid "Open Shared Terminal"
-msgstr "פתח טרמינל משותף"
+#~ msgid "Open Shared Terminal"
+#~ msgstr "פתח טרמינל משותף"
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Open sign-in"
+msgstr ""
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+#~ msgid "Open sign-in page"
+#~ msgstr ""
 
 #: src/components/diagnose/open-in-terminal-button.tsx
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
@@ -8837,8 +8848,8 @@ msgid "Open the session"
 msgstr "פתח את הסשן"
 
 #: src/components/conversation/chips/ConversationChips.tsx
-msgid "Open the shared terminal where approved prompts run"
-msgstr "פתח את הטרמינל המשותף בו פועלות הודעות אושרות"
+#~ msgid "Open the shared terminal where approved prompts run"
+#~ msgstr "פתח את הטרמינל המשותף בו פועלות הודעות אושרות"
 
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 #~ msgid "Open the sidecar shell first to enable git operations"
@@ -8853,8 +8864,8 @@ msgid "Open this agent's transcript"
 msgstr "פתח את תמלול הסוכן הזה"
 
 #: src/components/conversation/chips/TaskChips.tsx
-msgid "Open this conversation under the local project"
-msgstr "פתח שיחה זו תחת הפרויקט המקומי"
+#~ msgid "Open this conversation under the local project"
+#~ msgstr "פתח שיחה זו תחת הפרויקט המקומי"
 
 #: src/components/spec-editor/SpecEditor.tsx
 msgid "Open this plan from its session to run it"
@@ -8900,8 +8911,8 @@ msgid "Opening task…"
 msgstr "פתיחת משימה…"
 
 #: src/components/project-setup-screen/project-setup-screen.tsx
-msgid "Opening..."
-msgstr "בתהליך פתיחה..."
+#~ msgid "Opening..."
+#~ msgstr "בתהליך פתיחה..."
 
 #: src/components/hooks-view/HooksBrowser.tsx
 msgid "Operation failed"
@@ -9006,8 +9017,8 @@ msgid "Parent folder"
 msgstr "תיקייה הורית"
 
 #: src/components/project-setup-screen/project-setup-screen.tsx
-msgid "Parent Folder"
-msgstr "תיקייה אב"
+#~ msgid "Parent Folder"
+#~ msgstr "תיקייה אב"
 
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Parent folder to clone into…"
@@ -9049,6 +9060,10 @@ msgstr ""
 msgid "Paste or drag files here"
 msgstr "הדבק או גרור קובצים לכאן"
 
+#: src/components/harness-login/HarnessLoginModal.tsx
+#~ msgid "Paste the code shown in your browser"
+#~ msgstr ""
+
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 msgid "path"
 msgstr "נתיב"
@@ -9065,7 +9080,6 @@ msgstr "נתיב"
 msgid "Path copied"
 msgstr "הנתיב הועתק"
 
-#: src/components/account/danger-zone.tsx
 #: src/components/account/database-section.tsx
 msgid "Path copied to clipboard"
 msgstr "הנתיב הועתק ללוח"
@@ -9075,7 +9089,6 @@ msgid "pattern"
 msgstr "דפוס"
 
 #: src/components/collaboration/LiveSessionView.tsx
-#: src/components/hooks/sniffer_view_mock.tsx
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Pause"
 msgstr "השהה"
@@ -9149,8 +9162,8 @@ msgid "Pick project folder"
 msgstr "בחר תיקיית פרויקט"
 
 #: src/components/conversation/chips/TaskChips.tsx
-msgid "Pick project…"
-msgstr "בחר פרויקט…"
+#~ msgid "Pick project…"
+#~ msgstr "בחר פרויקט…"
 
 #: src/components/open-project-component/open-project-component.tsx
 msgid "Pick the local project folder this conversation should run in. We'll use it as the working directory for Claude Code sessions."
@@ -9185,8 +9198,8 @@ msgid "Pin {0}"
 msgstr "נעץ את {0}"
 
 #: src/components/skills-sidebar/SkillsSidebar.tsx
-msgid "Pin skill"
-msgstr "הצמד מיומנות"
+#~ msgid "Pin skill"
+#~ msgstr "הצמד מיומנות"
 
 #: src/components/terminal/interactive-terminal/side-windows/PromptIndexPanel.tsx
 msgid "Pin to prompt library"
@@ -9194,16 +9207,14 @@ msgstr "הצמד — הוסף לספריית ההנמקות"
 
 #: src/components/entity-context/EntityContextPanel.tsx
 #: src/components/task-bar/SharedTaskView.tsx
-#: src/components/task-bar/TaskDetailPanel.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 #: src/components/terminal/interactive-terminal/ChatComposerBar.tsx
 msgid "Plan"
 msgstr "תוכנית"
 
-#. placeholder {0}: task.spec_type
 #: src/components/task-bar/TaskDetailPanel.tsx
-msgid "Plan · {0}"
-msgstr ""
+#~ msgid "Plan · {0}"
+#~ msgstr ""
 
 #: src/components/spec-editor/SpecEditor.tsx
 msgid "Plan already executed"
@@ -9239,8 +9250,8 @@ msgid "Please contact support at<0>support@flowpad.ai</0>"
 msgstr "אנא פנה לתמיכה ב-<0>support@flowpad.ai</0>"
 
 #: src/components/project-setup-screen/project-setup-screen.tsx
-msgid "Please enter a project name"
-msgstr "אנא הזן שם פרויקט"
+#~ msgid "Please enter a project name"
+#~ msgstr "אנא הזן שם פרויקט"
 
 #: src/components/open-project-component/open-project-component.tsx
 msgid "Please fill in both fields"
@@ -9258,22 +9269,21 @@ msgstr "בואו להתחבר כדי להציג ולנהל משתנים סביב
 msgid "Please make sure the server is running."
 msgstr "אנא ודא שהשרת פועל."
 
-#: src/components/open-project-component/open-project-component.tsx
 #: src/components/open-project-component/use-open-project.ts
 msgid "Please provide a valid project path"
 msgstr "אנא ספק נתיב פרויקט חוקי"
 
 #: src/components/project-setup-screen/project-setup-screen.tsx
-msgid "Please select a parent folder"
-msgstr "אנא בחר תיקייה אב"
+#~ msgid "Please select a parent folder"
+#~ msgstr "אנא בחר תיקייה אב"
 
 #: src/pages/flow-page/use-start-vibe-session.ts
 msgid "Please select or create a project first."
 msgstr "אנא בחר או צור פרויקט תחילה."
 
 #: src/components/project-setup-screen/project-setup-screen.tsx
-msgid "Please select or enter a folder"
-msgstr "אנא בחר או הזן תיקייה"
+#~ msgid "Please select or enter a folder"
+#~ msgstr "אנא בחר או הזן תיקייה"
 
 #: src/components/chat-input.tsx
 msgid "Please wait..."
@@ -9303,7 +9313,6 @@ msgstr "אחרי שימוש בכלי"
 msgid "Post-tool"
 msgstr "אחרי כלי"
 
-#: src/components/powered-by-footer.tsx
 #: src/components/powered-by.tsx
 msgid "Powered by"
 msgstr "מופעל על ידי"
@@ -9353,20 +9362,19 @@ msgid "Previous match (Shift+Enter)"
 msgstr "התאמה קודמת (Shift+Enter)"
 
 #: src/components/ui/carousel.tsx
-msgid "Previous slide"
-msgstr "שקופית קודמת"
+#~ msgid "Previous slide"
+#~ msgstr "שקופית קודמת"
 
 #: src/pages/live-status/LiveStatus.tsx
 msgid "primary"
 msgstr "ראשי"
 
 #: src/components/task-bar/TaskDetailPanel.tsx
-msgid "Priority"
-msgstr "עדיפות"
+#~ msgid "Priority"
+#~ msgstr "עדיפות"
 
 #: src/components/assets/context-folder-sources.tsx
 #: src/components/graph-context/ContextGraphCanvas.tsx
-#: src/components/project-home/Secrets.tsx
 msgid "Private"
 msgstr "פרטי"
 
@@ -9448,8 +9456,8 @@ msgid "Project assets"
 msgstr "נכסי פרויקט"
 
 #: src/components/join-room-dialog/JoinConversationDialog.tsx
-msgid "Project code"
-msgstr "קוד פרויקט"
+#~ msgid "Project code"
+#~ msgstr "קוד פרויקט"
 
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Project Commands (.claude/commands/)"
@@ -9460,8 +9468,8 @@ msgid "Project folder"
 msgstr ""
 
 #: src/components/project-setup-screen/project-setup-screen.tsx
-msgid "Project Folder"
-msgstr "תיקיית הפרויקט"
+#~ msgid "Project Folder"
+#~ msgstr "תיקיית הפרויקט"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Project folder…"
@@ -9481,11 +9489,10 @@ msgid "Project name"
 msgstr "שם הפרויקט"
 
 #: src/components/project-setup-screen/project-setup-screen.tsx
-msgid "Project Name"
-msgstr "שם הפרויקט"
+#~ msgid "Project Name"
+#~ msgstr "שם הפרויקט"
 
 #: src/components/collaboration/StartRoomDialog.tsx
-#: src/components/join-room-dialog/JoinConversationDialog.tsx
 msgid "Project not found"
 msgstr "פרויקט לא נמצא"
 
@@ -9597,8 +9604,8 @@ msgid "protected"
 msgstr "מוגן"
 
 #: src/components/flowdata-renderer/SecretMessageComponent.tsx
-msgid "Provide Secret"
-msgstr "ספק סוד"
+#~ msgid "Provide Secret"
+#~ msgstr "ספק סוד"
 
 #: src/components/connections-manager.tsx
 #: src/components/hooks-manager/HookForm.tsx
@@ -9713,8 +9720,8 @@ msgstr ""
 
 #: src/components/quick-access-view/QuickAccessView.tsx
 #: src/components/quick-access-view/QuickAccessView.tsx
-msgid "Quick Access"
-msgstr "גישה מהירה"
+#~ msgid "Quick Access"
+#~ msgstr "גישה מהירה"
 
 #: src/components/quick-create/DesktopSurface.tsx
 msgid "Quick create"
@@ -9783,6 +9790,7 @@ msgstr "קריאה…"
 msgid "Readme"
 msgstr "קרא אותי"
 
+#: src/components/harness-login/HarnessLoginModal.tsx
 #: src/pages/home-landing/InlineSearchResults.tsx
 msgid "Ready"
 msgstr "מוכן"
@@ -9930,7 +9938,6 @@ msgstr "מרובט אך לא בטבלת הישויות"
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/markdown-viewer.tsx
 #: src/components/milkdown-editor/side-windows/BacklinksTab.tsx
-#: src/components/quick-access-sidebar/QuickAccessSideBar.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
@@ -10006,8 +10013,8 @@ msgid "Refresh status"
 msgstr "רענן סטטוס"
 
 #: src/components/task-bar/TaskDetailPanel.tsx
-msgid "Related entity"
-msgstr "ישות קשורה"
+#~ msgid "Related entity"
+#~ msgstr "ישות קשורה"
 
 #: src/components/account/db-stats.tsx
 msgid "Relations"
@@ -10017,10 +10024,9 @@ msgstr "קשרים"
 msgid "Reload the MarkdownIndex list."
 msgstr "טען מחדש את רשימת MarkdownIndex."
 
-#. placeholder {0}: unit === 'days' ? (count === 1 ? 'day' : 'days') : count === 1 ? 'week' : 'weeks'
 #: src/components/task-bar/ReminderButton.tsx
-msgid "Remind in {count} {0}"
-msgstr "הזכר בעוד {count} {0}"
+#~ msgid "Remind in {count} {0}"
+#~ msgstr "הזכר בעוד {count} {0}"
 
 #: src/components/conversation/MessageComposer.tsx
 msgid "Remove attachment"
@@ -10031,8 +10037,8 @@ msgid "Remove bookmark"
 msgstr "הסר סימנייה"
 
 #: src/components/project-home/ContextFolders.tsx
-msgid "Remove context folder"
-msgstr ""
+#~ msgid "Remove context folder"
+#~ msgstr ""
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Remove directory"
@@ -10065,8 +10071,8 @@ msgid "Remove queued prompt"
 msgstr "הסר prompt בתור"
 
 #: src/components/project-home/Secrets.tsx
-msgid "Remove secret binding"
-msgstr ""
+#~ msgid "Remove secret binding"
+#~ msgstr ""
 
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Removed"
@@ -10272,7 +10278,6 @@ msgstr "תוצאות"
 
 #: src/components/chats-navigator/ChatsNavigator.tsx
 #: src/components/collaboration/LiveSessionView.tsx
-#: src/components/hooks/sniffer_view_mock.tsx
 #: src/components/machine-overview/machine-overview.tsx
 #: src/tabs/useTerminalStripController.tsx
 msgid "Resume"
@@ -10306,7 +10311,6 @@ msgstr ""
 #: src/components/assets/editor/EntityResolutionGate.tsx
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
 #: src/components/assets/editor/MissingAssetCard.tsx
-#: src/components/assets/editor/skill/SkillActivationEditor.tsx
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/task-receive/IncomingTaskDialog.tsx
 #: src/pages/agent-redirect.tsx
@@ -10421,8 +10425,8 @@ msgid "Room hosted by the Flowpad team"
 msgstr "חדר מתארח על ידי צוות Flowpad"
 
 #: src/components/join-room-dialog/JoinRoomDialog.tsx
-msgid "Room name"
-msgstr "שם החדר"
+#~ msgid "Room name"
+#~ msgstr "שם החדר"
 
 #: src/components/collaboration/RoomHeader.tsx
 msgid "Room renamed"
@@ -10445,36 +10449,33 @@ msgid "Row time range"
 msgstr "טווח זמן שורה"
 
 #: src/components/assets/editor/skill/SkillActivationEditor.tsx
-msgid "Rule"
-msgstr "כלל"
+#~ msgid "Rule"
+#~ msgstr "כלל"
 
 #: src/components/assets/editor/skill/SkillActivationEditor.tsx
-msgid "Rule Not Found"
-msgstr "כלל לא נמצא"
+#~ msgid "Rule Not Found"
+#~ msgstr "כלל לא נמצא"
 
 #: src/components/assets/editor/skill/SkillActivationEditor.tsx
-msgid "rule.md files require YAML frontmatter with at least a name field."
-msgstr "קובצי rule.md דורשים frontmatter YAML עם לפחות שדה name."
+#~ msgid "rule.md files require YAML frontmatter with at least a name field."
+#~ msgstr "קובצי rule.md דורשים frontmatter YAML עם לפחות שדה name."
 
 #: src/components/ui/settings-pane.tsx
 msgid "Rules"
 msgstr "חוקים"
 
 #: src/components/assets/editor/skill/UsagePanel.tsx
-#: src/components/conversation/asset-review/TestPromptDialog.tsx
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 msgid "Run"
 msgstr "הרץ"
 
 #: src/components/conversation/asset-review/TestPromptDialog.tsx
-msgid "Run “{assetName}”"
-msgstr ""
+#~ msgid "Run “{assetName}”"
+#~ msgstr ""
 
-#. placeholder {0}: i + 1
-#. placeholder {1}: h.events.length
 #: src/components/workflows-view/WorkflowTraceGutter.tsx
-msgid "Run {0} ({1} events)"
-msgstr "הרצה {0} ({1} אירועים)"
+#~ msgid "Run {0} ({1} events)"
+#~ msgstr "הרצה {0} ({1} אירועים)"
 
 #: src/components/lens-viewer/shared/transcript-features/AnalysisControls.tsx
 msgid "Run a new analysis of this session — adds another entry, previous analyses are kept"
@@ -10503,8 +10504,8 @@ msgid "Run Claude Code in a project directory to see it here."
 msgstr "הפעל את Claude Code בתיקייה של פרויקט כדי לראות זאת כאן."
 
 #: src/components/assets/editor/skill/SkillActivationEditor.tsx
-msgid "Run evaluations"
-msgstr "הרץ הערכות"
+#~ msgid "Run evaluations"
+#~ msgstr "הרץ הערכות"
 
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
 msgid "Run failed"
@@ -10547,7 +10548,6 @@ msgstr "הפעל את המיומנות \"{name}\" על ההקשר הנוכחי."
 #~ msgstr "הפעל הצעה זו בהפגישה המשותפת עכשיו. בחר אם להפעיל הצעות עתידיות מ{who} באופן אוטומטי."
 
 #: src/components/assets/editor/workflow/WorkflowAssetEditor.tsx
-#: src/components/workflows-view/WorkflowStrip.tsx
 msgid "Run workflow"
 msgstr "הפעל זרימת עבודה"
 
@@ -10612,8 +10612,6 @@ msgstr "מדדי Sandbox"
 #: src/components/account/secrets-section.tsx
 #: src/components/anchored-markdown/CommentPin.tsx
 #: src/components/asset-manager/AssetManagerPopover.tsx
-#: src/components/assets/editor/skill/SkillActivationEditor.tsx
-#: src/components/assets/toolbar/AssetToolbar.tsx
 #: src/components/cron-view/CronForm.tsx
 #: src/components/execute-flow-view/instruction-panel/ephemeral-prompt-input.tsx
 #: src/components/execute-flow-view/instruction-panel/instruction-panel.tsx
@@ -10649,8 +10647,8 @@ msgid "Save failed"
 msgstr "השמירה נכשלה"
 
 #: src/components/assets/editor/skill/SkillActivationEditor.tsx
-msgid "Save Failed"
-msgstr "כשל בשמירה"
+#~ msgid "Save Failed"
+#~ msgstr "כשל בשמירה"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Save the current asset changes as a version before running improvement."
@@ -10664,7 +10662,6 @@ msgstr "שמור את מפתח ה-API הזה עכשיו. לא תוכל לראו�
 msgid "Save version"
 msgstr ""
 
-#: src/components/assets/editor/skill/SkillActivationEditor.tsx
 #: src/components/triggers-view/TriggerEditor.tsx
 msgid "Saved"
 msgstr "נשמר"
@@ -10673,8 +10670,6 @@ msgstr "נשמר"
 msgid "Saved Contexts"
 msgstr "הקשרים שנשמרו"
 
-#: src/components/assets/editor/skill/SkillActivationEditor.tsx
-#: src/components/assets/toolbar/AssetToolbar.tsx
 #: src/components/execute-flow-view/instruction-panel/ephemeral-prompt-input.tsx
 #: src/components/triggers-view/TriggerEditor.tsx
 msgid "Saving..."
@@ -10778,8 +10773,8 @@ msgid "Scheduled"
 msgstr "מתוזמן"
 
 #: src/components/cron-view/CronView.tsx
-msgid "Scheduled Jobs"
-msgstr "משימות מתוזמנות"
+#~ msgid "Scheduled Jobs"
+#~ msgstr "משימות מתוזמנות"
 
 #: src/components/hooks/EventListPanel.tsx
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
@@ -10853,12 +10848,13 @@ msgstr "חפש נכסים, צוותים…"
 
 #: src/components/assets/AssetsNavigator.tsx
 #: src/components/conversation/MessageComposer.tsx
+#: src/components/favorites/FavoritesAddRow.tsx
 msgid "Search assets…"
 msgstr "חפש assets…"
 
 #: src/components/task-bar/TaskBar.tsx
-msgid "Search automations..."
-msgstr "חיפוש אוטומציות..."
+#~ msgid "Search automations..."
+#~ msgstr "חיפוש אוטומציות..."
 
 #: src/components/hooks-view/HooksBrowser.tsx
 msgid "Search by event, command, matcher, path, scope, or plugin"
@@ -10914,8 +10910,8 @@ msgid "Search index is warming up. Run Refresh Index to populate it."
 msgstr "אינדקס החיפוש מתחמם. הריץ Refresh Index כדי לאכלס אותו."
 
 #: src/components/context-select.tsx
-msgid "Search labels..."
-msgstr "חיפוש תוויות..."
+#~ msgid "Search labels..."
+#~ msgstr "חיפוש תוויות..."
 
 #: src/components/footer/LanguageSelector.tsx
 msgid "Search languages…"
@@ -10950,12 +10946,12 @@ msgid "Search settings..."
 msgstr "חיפוש הגדרות..."
 
 #: src/components/skills-sidebar/SkillsSidebar.tsx
-msgid "Search skills..."
-msgstr "חפש מיומנויות..."
+#~ msgid "Search skills..."
+#~ msgstr "חפש מיומנויות..."
 
 #: src/components/task-bar/TaskBar.tsx
-msgid "Search tasks..."
-msgstr "חיפוש משימות..."
+#~ msgid "Search tasks..."
+#~ msgstr "חיפוש משימות..."
 
 #: src/components/terminal/interactive-terminal/TerminalSearchBar.tsx
 msgid "Search terminal…"
@@ -10992,7 +10988,6 @@ msgstr "חיפוש…"
 msgid "Searching…"
 msgstr "מחפש…"
 
-#: src/components/flowdata-renderer/SecretMessageComponent.tsx
 #: src/components/project-home/BindSecretDialog.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
 msgid "Secret"
@@ -11003,16 +10998,16 @@ msgid "Secret deleted"
 msgstr "סוד נמחק"
 
 #: src/components/flowdata-renderer/SecretMessageComponent.tsx
-msgid "Secret Required"
-msgstr "סוד נדרש"
+#~ msgid "Secret Required"
+#~ msgstr "סוד נדרש"
 
 #: src/components/account/secrets-section.tsx
 msgid "Secret saved"
 msgstr "סוד נשמר"
 
 #: src/components/project-home/Secrets.tsx
-msgid "Secrets"
-msgstr ""
+#~ msgid "Secrets"
+#~ msgstr ""
 
 #: src/components/account/secrets-section.tsx
 msgid "Secrets enabled"
@@ -11147,11 +11142,10 @@ msgid "Select mode"
 msgstr "בחר מצב"
 
 #: src/components/task-bar/TaskBar.tsx
-msgid "Select multiple"
-msgstr "בחר מרובים"
+#~ msgid "Select multiple"
+#~ msgstr "בחר מרובים"
 
 #: src/components/open-project-component/open-project-component.tsx
-#: src/components/project-setup-screen/project-setup-screen.tsx
 msgid "Select parent folder"
 msgstr "בחר תיקייה הורית"
 
@@ -11203,7 +11197,6 @@ msgid "Self-Summary"
 msgstr "סיכום עצמי"
 
 #: src/components/assistance-viewer/TaskDetail.tsx
-#: src/components/collaboration/chat/MessageInput.tsx
 #: src/components/conversation/MessageComposer.tsx
 #: src/components/conversation/PromptComposerDialog.tsx
 #: src/components/entity-execution-panel/CompactExecutionInput.tsx
@@ -11366,12 +11359,12 @@ msgstr "הגדר פרויקט"
 
 #: src/components/task-bar/ReminderButton.tsx
 #: src/components/task-bar/TaskBar.tsx
-msgid "Set reminder"
-msgstr "הגדר תזכורת"
+#~ msgid "Set reminder"
+#~ msgstr "הגדר תזכורת"
 
 #: src/components/task-bar/BulkReminderButton.tsx
-msgid "Set reminder for selected"
-msgstr "הגדר תזכורת לנבחרים"
+#~ msgid "Set reminder for selected"
+#~ msgstr "הגדר תזכורת לנבחרים"
 
 #: src/components/capabilities-view/CapabilitiesView.tsx
 msgid "Set up"
@@ -11468,7 +11461,6 @@ msgstr ""
 
 #: src/components/assets/context-folder-sources.tsx
 #: src/components/graph-context/ContextGraphCanvas.tsx
-#: src/components/project-home/Secrets.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Shared"
 msgstr "משותף"
@@ -11500,8 +11492,8 @@ msgid "Shell"
 msgstr "קליפה"
 
 #: src/components/flowdata-renderer/ShellMessageComponent.tsx
-msgid "Shell Command"
-msgstr "פקודת Shell"
+#~ msgid "Shell Command"
+#~ msgstr "פקודת Shell"
 
 #: src/components/hooks-view/HookEditor.tsx
 msgid "Shell command to execute. Use $CLAUDE_PROJECT_DIR, $tool_name, $tool_input variables."
@@ -11528,10 +11520,9 @@ msgstr "הצג"
 msgid "Show {0}"
 msgstr "הצג {0}"
 
-#. placeholder {0}: labels.length - maxChips
 #: src/components/label-chip-block.tsx
-msgid "Show {0} more labels"
-msgstr "הצג {0} תוויות נוספות"
+#~ msgid "Show {0} more labels"
+#~ msgstr "הצג {0} תוויות נוספות"
 
 #: src/components/graph-view/ui/FilterChips.tsx
 msgid "Show {type}"
@@ -11562,8 +11553,8 @@ msgstr "הצג לוח פרטים"
 #~ msgstr "הצג מסמכים מפרויקטי מערכת משלוחי SDK"
 
 #: src/components/label-chip-block.tsx
-msgid "Show fewer labels"
-msgstr "הצג פחות תוויות"
+#~ msgid "Show fewer labels"
+#~ msgstr "הצג פחות תוויות"
 
 #: src/components/terminal/interactive-terminal/side-windows/PromptIndexPanel.tsx
 msgid "Show harness-generated entries (SYS) hidden from the standard list"
@@ -11578,8 +11569,8 @@ msgid "Show in folder (selects file for drag-and-drop)"
 msgstr "הצג בתיקייה (בוחר קובץ לגרירה)"
 
 #: src/components/task-bar/TaskCard.tsx
-msgid "Show member tasks"
-msgstr ""
+#~ msgid "Show member tasks"
+#~ msgstr ""
 
 #: src/pages/flow-page/vibe-recent-sessions.tsx
 msgid "Show more"
@@ -11618,8 +11609,8 @@ msgstr "הצג הפעלות"
 #~ msgstr "הצג מערכת"
 
 #: src/components/account/danger-zone.tsx
-msgid "Show system skills"
-msgstr "הצג כישורי מערכת"
+#~ msgid "Show system skills"
+#~ msgstr "הצג כישורי מערכת"
 
 #: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
 #: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
@@ -11648,6 +11639,10 @@ msgstr "סרגל צדדי"
 msgid "sidechain"
 msgstr "שרשרת צדדית"
 
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Sign in"
+msgstr ""
+
 #: src/components/conversation/ConversationRoute.tsx
 msgid "Sign in to your Flowpad Cloud account to view and reply to this conversation."
 msgstr "הירשם לחשבון Flowpad Cloud שלך כדי לצפות ולהשיב לשיחה זו."
@@ -11655,6 +11650,10 @@ msgstr "הירשם לחשבון Flowpad Cloud שלך כדי לצפות ולהש�
 #: src/components/inbox-view/InboxView.tsx
 msgid "Sign in to your Flowpad Cloud account to view your inbox and conversations."
 msgstr "היכנס לחשבון Flowpad Cloud שלך כדי להציג את תיבת הדואר שלך ושיחות."
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Sign-in needed"
+msgstr ""
 
 #: src/components/account/user-info.tsx
 msgid "Signed in"
@@ -11714,8 +11713,8 @@ msgid "Skill not installed"
 msgstr "כישוריות לא מותקנת"
 
 #: src/components/assets/editor/skill/SkillMetadataHeader.tsx
-msgid "skill-name"
-msgstr "שם-כישור"
+#~ msgid "skill-name"
+#~ msgstr "שם-כישור"
 
 #: src/components/entity-execution-panel/MetaMessageChip.tsx
 #~ msgid "Skill: {skillName}"
@@ -11726,7 +11725,6 @@ msgid "skills"
 msgstr "כישורים"
 
 #: src/components/lens-viewer/ClaudeContextViewer.tsx
-#: src/components/skills-sidebar/SkillsSidebar.tsx
 #: src/components/terminal/interactive-terminal/side-windows/SkillsAgentsPanel.tsx
 #: src/pages/live-status/LiveStatus.tsx
 #: src/pages/live-status/LiveStatus.tsx
@@ -11820,14 +11818,14 @@ msgid "Sort within each type"
 msgstr ""
 
 #: src/components/hooks/sniffer_view_mock.tsx
-msgid "Source"
-msgstr "מקור"
+#~ msgid "Source"
+#~ msgstr "מקור"
 
 #: src/components/hooks-view/HooksBrowser.tsx
 msgid "Source File"
 msgstr "קובץ מקור"
 
-#: src/components/agentic-progress/shared/stack-frame-list.tsx
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
 msgid "Source:"
 msgstr "מקור:"
 
@@ -11853,8 +11851,8 @@ msgid "Spec created"
 msgstr "מפרט נוצר"
 
 #: src/components/agentic-progress/shared/stack-frame-list.tsx
-msgid "Stack Trace"
-msgstr "עקוב מחסנית"
+#~ msgid "Stack Trace"
+#~ msgstr "עקוב מחסנית"
 
 #: src/components/conversation/asset-review/StagedAssetViewer.tsx
 msgid "Staged content is unavailable — re-download the message attachments."
@@ -11889,8 +11887,8 @@ msgid "Star chat"
 msgstr "סימון כוכב"
 
 #: src/components/join-room-dialog/JoinRoomDialog.tsx
-msgid "Start"
-msgstr "התחל"
+#~ msgid "Start"
+#~ msgstr "התחל"
 
 #. placeholder {0}: workerLabel(worker)
 #: src/components/workers/WorkerToolbar.tsx
@@ -11927,8 +11925,8 @@ msgid "Start Codex"
 msgstr "התחל Codex"
 
 #: src/components/join-room-dialog/JoinRoomDialog.tsx
-msgid "Start collaboration room"
-msgstr "התחל חדר שיתוף פעולה"
+#~ msgid "Start collaboration room"
+#~ msgstr "התחל חדר שיתוף פעולה"
 
 #: src/tabs/useTerminalStripController.tsx
 msgid "Start Copilot"
@@ -12002,7 +12000,7 @@ msgid "Starting..."
 msgstr "מתחיל..."
 
 #: src/components/conversation/ConversationView.tsx
-#: src/components/join-room-dialog/JoinRoomDialog.tsx
+#: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 msgid "Starting…"
 msgstr "מתחיל…"
@@ -12018,7 +12016,6 @@ msgstr "סטטיסטיקות"
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/record-search-bar/RecordSearchBar.tsx
-#: src/components/task-bar/TaskDetailPanel.tsx
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 #: src/components/workflow-runner/detail/StepDetailPane.tsx
 msgid "Status"
@@ -12111,6 +12108,7 @@ msgstr "סוכנים משנה"
 msgid "Subfolders"
 msgstr "תיקיות משנה"
 
+#: src/components/harness-login/HarnessLoginModal.tsx
 #: src/pages/flow-page/vibe-workspace.tsx
 msgid "Submit"
 msgstr ""
@@ -12244,8 +12242,8 @@ msgid "Tab failed to open"
 msgstr "לא הצליח לפתוח את הכרטיסייה"
 
 #: src/components/assets/editor/skill/SkillMetadataHeader.tsx
-msgid "Tags:"
-msgstr "תגיות:"
+#~ msgid "Tags:"
+#~ msgstr "תגיות:"
 
 #: src/components/lens-viewer/ClaudeContextViewer.tsx
 msgid "Takes ~4 seconds"
@@ -12262,7 +12260,6 @@ msgstr "מטרה"
 
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
-#: src/components/task-bar/TaskDetailPanel.tsx
 msgid "Task"
 msgstr "משימה"
 
@@ -12279,7 +12276,6 @@ msgid "Tasked"
 msgstr "בעל משימה"
 
 #: src/components/lens-viewer/shared/transcript-features/TranscriptStats.tsx
-#: src/components/task-bar/TaskBar.tsx
 msgid "Tasks"
 msgstr "משימות"
 
@@ -12351,8 +12347,8 @@ msgid "Test trigger"
 msgstr "בדוק טריגר"
 
 #: src/components/assets/editor/skill/ActivationEvalsPanel.tsx
-msgid "Test your activation rules with sample conversations and hook data to verify they trigger correctly."
-msgstr "בדוק את כללי ההפעלה שלך עם דוגמאות שיחות ונתוני hook לאימות שהם מופעלים כראוי."
+#~ msgid "Test your activation rules with sample conversations and hook data to verify they trigger correctly."
+#~ msgstr "בדוק את כללי ההפעלה שלך עם דוגמאות שיחות ונתוני hook לאימות שהם מופעלים כראוי."
 
 #: src/components/assets/editor/run/useRunOnFile.tsx
 msgid "The <0>flow-sdk-mcp</0> server is required to run with progress tracing. Enable it to continue."
@@ -12363,8 +12359,8 @@ msgid "The <0>flow-sdk-mcp</0> server is required to run workflows with progress
 msgstr "שרת <0>flow-sdk-mcp</0> נדרש להרצת זרימות עבודה עם מעקב התקדמות. הפעל אותו להמשך."
 
 #: src/components/agent-layout/not-found-screen/not-found-screen.tsx
-msgid "The agent you're looking for doesn't exist or is not available."
-msgstr "הסוכן שאתה מחפש אינו קיים או אינו זמין."
+#~ msgid "The agent you're looking for doesn't exist or is not available."
+#~ msgstr "הסוכן שאתה מחפש אינו קיים או אינו זמין."
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "The analysis completed but did not produce asset-scoped findings."
@@ -12400,8 +12396,8 @@ msgid "The hub refused this client."
 msgstr "ה-Hub דחה את הלקוח הזה."
 
 #: src/components/account/danger-zone.tsx
-msgid "The in-app terminal is always the primary shell. This setting controls whether a sidecar OS Terminal window is also opened."
-msgstr "הטרמינל בתוך האפליקציה הוא תמיד ה-shell הראשי. הגדרה זו קובעת האם גם חלון Terminal חיצוני של מערכת ההפעלה יופעל."
+#~ msgid "The in-app terminal is always the primary shell. This setting controls whether a sidecar OS Terminal window is also opened."
+#~ msgstr "הטרמינל בתוך האפליקציה הוא תמיד ה-shell הראשי. הגדרה זו קובעת האם גם חלון Terminal חיצוני של מערכת ההפעלה יופעל."
 
 #: src/components/lens-viewer/LensViewer.tsx
 msgid "The lens path could not be parsed."
@@ -12462,6 +12458,10 @@ msgstr "שרת אפליקציית האינטרנט אינו פועל. התחל �
 
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
 msgid "The wizard reported an error."
+msgstr ""
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "then paste code"
 msgstr ""
 
 #: src/components/task-receive/IncomingTaskDialog.tsx
@@ -12645,8 +12645,8 @@ msgid "Timeout (seconds)"
 msgstr "Timeout (שניות)"
 
 #: src/components/hooks/sniffer_view_mock.tsx
-msgid "Timestamp"
-msgstr "חותם זמן"
+#~ msgid "Timestamp"
+#~ msgstr "חותם זמן"
 
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 msgid "Tip: connect GitHub to clone private repos."
@@ -12741,8 +12741,6 @@ msgid "Tokens"
 msgstr "טוקנים"
 
 #: src/components/project-activity-strip/BookmarkColumn.tsx
-#: src/components/task-bar/BulkReminderButton.tsx
-#: src/components/task-bar/ReminderButton.tsx
 msgid "Tomorrow"
 msgstr "מחר"
 
@@ -12787,8 +12785,8 @@ msgid "Tools Used"
 msgstr "כלים בשימוש"
 
 #: src/components/assets/editor/skill/SkillMetadataHeader.tsx
-msgid "Tools:"
-msgstr "כלים:"
+#~ msgid "Tools:"
+#~ msgstr "כלים:"
 
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 msgid "Top skills"
@@ -12806,10 +12804,9 @@ msgstr "סה״כ"
 msgid "Total"
 msgstr "סה״כ"
 
-#. placeholder {0}: summary.total
 #: src/components/hooks/sniffer_view_mock.tsx
-msgid "Total {0}"
-msgstr "סה״כ {0}"
+#~ msgid "Total {0}"
+#~ msgstr "סה״כ {0}"
 
 #: src/components/assets/editor/agent-trace/AgentTraceView.tsx
 msgid "Total cost"
@@ -12841,8 +12838,8 @@ msgid "Transcript"
 msgstr "תמלול"
 
 #: src/components/conversation/chips/ConversationChips.tsx
-msgid "Transcript File"
-msgstr "קובץ תמליל"
+#~ msgid "Transcript File"
+#~ msgstr "קובץ תמליל"
 
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "Transcript not found"
@@ -12861,8 +12858,8 @@ msgid "Trending"
 msgstr "פופולרי"
 
 #: src/components/assets/editor/skill/SkillActivationEditor.tsx
-msgid "Trigger"
-msgstr "הפעלה"
+#~ msgid "Trigger"
+#~ msgstr "הפעלה"
 
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/hooks-manager/index.tsx
@@ -12874,8 +12871,8 @@ msgid "Trust & provenance"
 msgstr "אמון ומקורות"
 
 #: src/components/onboarding-card/OnboardingCard.tsx
-msgid "Try a sample flow to see FlowPad in action"
-msgstr "נסו זרימה לדוגמה כדי לראות את FlowPad בפעולה"
+#~ msgid "Try a sample flow to see FlowPad in action"
+#~ msgstr "נסו זרימה לדוגמה כדי לראות את FlowPad בפעולה"
 
 #: src/components/cost-dashboard/CostDashboard.tsx
 #: src/pages/keychain-approval.tsx
@@ -12899,7 +12896,6 @@ msgstr "משך תור"
 #: src/components/navigator-panel/NavigatorSearch.tsx
 #: src/components/record-search-bar/RecordSearchBar.tsx
 #: src/components/search-index/SweepOrphansDialog.tsx
-#: src/components/task-bar/TaskDetailPanel.tsx
 msgid "Type"
 msgstr "סוג"
 
@@ -12983,24 +12979,22 @@ msgstr "מזהה ייחודי עבור Hook זה בתוך קובץ ההגדרו�
 msgid "Unknown"
 msgstr "לא ידוע"
 
-#. placeholder {0}: flowData.elementType
 #: src/components/flowdata-renderer/UnknownMessageComponent.tsx
-msgid "Unknown ({0})"
-msgstr "לא ידוע ({0})"
+#~ msgid "Unknown ({0})"
+#~ msgstr "לא ידוע ({0})"
 
 #: src/components/skills-viewer/amd-editor/components/ElementBlock.tsx
-msgid "Unknown block"
-msgstr "בלוק לא ידוע"
+#~ msgid "Unknown block"
+#~ msgstr "בלוק לא ידוע"
 
 #: src/components/assets/editor/EntityResolutionGate.tsx
-#: src/components/assets/editor/skill/SkillActivationEditor.tsx
 #: src/components/hooks-manager/index.tsx
 msgid "Unknown error"
 msgstr "שגיאה לא ידועה"
 
 #: src/components/assets/editor/skill/SkillActivationEditor.tsx
-msgid "Unknown error loading activation rule"
-msgstr "שגיאה לא ידועה בטעינת כלל הפעלה"
+#~ msgid "Unknown error loading activation rule"
+#~ msgstr "שגיאה לא ידועה בטעינת כלל הפעלה"
 
 #: src/components/account/organization-panel.tsx
 #: src/components/account/user-info.tsx
@@ -13025,8 +13019,8 @@ msgid "Unpin {0}"
 msgstr "בטל נעיצת {0}"
 
 #: src/components/skills-sidebar/SkillsSidebar.tsx
-msgid "Unpin skill"
-msgstr "הסר הצמדה"
+#~ msgid "Unpin skill"
+#~ msgstr "הסר הצמדה"
 
 #: src/components/assets/ContextFolderBrowser.tsx
 msgid "Unpushed changes"
@@ -13046,8 +13040,8 @@ msgid "Unstar chat"
 msgstr "הסרת כוכב"
 
 #: src/components/viewers/UnsupportedContentViewer.tsx
-msgid "Unsupported Content"
-msgstr "תוכן לא נתמך"
+#~ msgid "Unsupported Content"
+#~ msgstr "תוכן לא נתמך"
 
 #: src/components/collaboration/RoomTabs.tsx
 #~ msgid "Unsupported tab type."
@@ -13066,8 +13060,8 @@ msgid "Untitled session"
 msgstr "פגישה ללא כותרת"
 
 #: src/components/assets/editor/skill/SkillMetadataHeader.tsx
-msgid "Untitled Skill"
-msgstr "כישור ללא כותרת"
+#~ msgid "Untitled Skill"
+#~ msgstr "כישור ללא כותרת"
 
 #: src/components/lens-viewer/ClaudeTasksViewer.tsx
 msgid "Untitled task"
@@ -13218,8 +13212,8 @@ msgid "Validation error (422) - request format issue or entity not found"
 msgstr "שגיאת אימות (422) - בעיית פורמט בקשה או ישות לא נמצאה"
 
 #: src/components/skills-viewer/amd-editor/components/blocks/SetBlock.tsx
-msgid "value"
-msgstr "ערך"
+#~ msgid "value"
+#~ msgstr "ערך"
 
 #: src/components/account/secrets-section.tsx
 #: src/components/api-keys-view/api-keys-view.tsx
@@ -13231,12 +13225,12 @@ msgid "Value:"
 msgstr "ערך:"
 
 #: src/components/skills-viewer/amd-editor/components/blocks/SetBlock.tsx
-msgid "variable"
-msgstr "משתנה"
+#~ msgid "variable"
+#~ msgstr "משתנה"
 
 #: src/components/agentic-progress/shared/variables-inspector.tsx
-msgid "Variables"
-msgstr "משתנים"
+#~ msgid "Variables"
+#~ msgstr "משתנים"
 
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 msgid "Vault root"
@@ -13296,8 +13290,8 @@ msgid "View contact details"
 msgstr ""
 
 #: src/components/viewers/UnsupportedContentViewer.tsx
-msgid "View Context Details"
-msgstr "צפה בפרטי ההקשר"
+#~ msgid "View Context Details"
+#~ msgstr "צפה בפרטי ההקשר"
 
 #: src/components/account/system-diagnoses.tsx
 #: src/components/version-popover/diagnose-modal.tsx
@@ -13306,8 +13300,8 @@ msgstr "צפה בדיאגנוזה"
 
 #: src/components/flowdata-renderer/ResultMessageComponent.tsx
 #: src/components/flowdata-renderer/WriteMessageComponent.tsx
-msgid "View File"
-msgstr "צפה בקובץ"
+#~ msgid "View File"
+#~ msgstr "צפה בקובץ"
 
 #: src/components/hooks/EventListPanel.tsx
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
@@ -13328,12 +13322,12 @@ msgid "View on PyPI"
 msgstr "צפה ב-PyPI"
 
 #: src/components/hooks/sniffer_view_mock.tsx
-msgid "View raw hook payload"
-msgstr "הצג את מטען הווו הגולמי"
+#~ msgid "View raw hook payload"
+#~ msgstr "הצג את מטען הווו הגולמי"
 
 #: src/components/quick-access-sidebar/QuickAccessSideBar.tsx
-msgid "View resources"
-msgstr "הצג משאבים"
+#~ msgid "View resources"
+#~ msgstr "הצג משאבים"
 
 #: src/components/lens-viewer/shared/transcript-features/TranscriptStats.tsx
 #: src/components/project-activity-strip/ProjectActivityStrip.tsx
@@ -13373,12 +13367,20 @@ msgid "visible"
 msgstr "נראה"
 
 #: src/components/task-bar/ReminderButton.tsx
-msgid "w"
-msgstr "ש"
+#~ msgid "w"
+#~ msgstr "ש"
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "Waiting for {hostName} to approve the live session…"
 msgstr ""
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "waiting for authorization in your browser…"
+msgstr ""
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+#~ msgid "Waiting for authorization…"
+#~ msgstr ""
 
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
 msgid "Waiting for authorization… (expires in {mm}:{ss})"
@@ -13388,9 +13390,17 @@ msgstr "מחכה להרשאה... (פג תוקף ב-{mm}:{ss})"
 msgid "Waiting for keychain approval…"
 msgstr "ממתין לאישור מפתחות…"
 
+#: src/components/conversation/ConversationView.tsx
+msgid "Waiting for the other participant's identity to sync…"
+msgstr ""
+
 #: src/components/workflows-view/WorkflowTraceGutter.tsx
-msgid "Waiting for trace events…"
-msgstr "בהמתנה לאירועי עקיבה…"
+#~ msgid "Waiting for trace events…"
+#~ msgstr "בהמתנה לאירועי עקיבה…"
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Waiting…"
+msgstr ""
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Walked the filesystem without writing. Counts and sizes reflect what is on disk right now; compare against the per-type rows to see drift."
@@ -13495,8 +13505,8 @@ msgid "What it worked on"
 msgstr "על מה עבד"
 
 #: src/components/conversation/asset-review/TestPromptDialog.tsx
-msgid "What should the skill be used for? (optional)"
-msgstr ""
+#~ msgid "What should the skill be used for? (optional)"
+#~ msgstr ""
 
 #: src/components/conversation/chips/MessageChips.tsx
 msgid "What should the worker do with this message?"
@@ -13523,8 +13533,8 @@ msgid "What would you like to fix?"
 msgstr ""
 
 #: src/components/greeting/Greeting.tsx
-msgid "What would you like to work on today?"
-msgstr "על מה תרצו לעבוד היום?"
+#~ msgid "What would you like to work on today?"
+#~ msgstr "על מה תרצו לעבוד היום?"
 
 #: src/pages/home-landing/HomeLanding.tsx
 msgid "What would you like to work on, {firstName}?"
@@ -13571,17 +13581,14 @@ msgid "Worker Sessions"
 msgstr "סשנות עובדים"
 
 #: src/components/workflows-view/WorkflowsNavigator.tsx
-#: src/components/workflows-view/WorkflowStrip.tsx
 msgid "Workflow created"
 msgstr "זרימת עבודה נוצרה"
 
 #: src/components/workflows-view/WorkflowsNavigator.tsx
-#: src/components/workflows-view/WorkflowStrip.tsx
 msgid "Workflow deleted"
 msgstr "זרימת עבודה נמחקה"
 
 #: src/components/workflows-view/WorkflowsNavigator.tsx
-#: src/components/workflows-view/WorkflowStrip.tsx
 msgid "Workflow name"
 msgstr "שם זרימת העבודה"
 
@@ -13594,7 +13601,6 @@ msgid "Workflow runs"
 msgstr "הרצות זרימות עבודה"
 
 #: src/components/workflows-view/WorkflowsNavigator.tsx
-#: src/components/workflows-view/WorkflowStrip.tsx
 msgid "Workflows"
 msgstr "זרימות עבודה"
 
@@ -13630,7 +13636,6 @@ msgid "Worktree"
 msgstr "Worktree"
 
 #: src/components/collaboration/StartRoomDialog.tsx
-#: src/components/join-room-dialog/JoinConversationDialog.tsx
 msgid "XKCD-J3F2"
 msgstr "XKCD-J3F2"
 
@@ -13664,9 +13669,7 @@ msgstr "אפשר לסגור את החלון הזה."
 msgid "You don’t belong to an organization yet. Organizations are set up in Flowpad Cloud; once you’re added, your organization and its members appear here."
 msgstr "עדיין אינכם משויכים לארגון. ארגונים מוגדרים ב‑Flowpad Cloud, ולאחר שתתווספו — הארגון שלכם וחבריו יופיעו כאן."
 
-#: src/components/open-project-component/open-project-component.tsx
 #: src/components/open-project-component/use-open-project.ts
-#: src/components/project-setup-screen/project-setup-screen.tsx
 msgid "You must be logged in"
 msgstr "עליך להיות מחובר"
 
@@ -13689,8 +13692,8 @@ msgid "You'll be removed from the participant list. Other members keep the conve
 msgstr "תוסר מרשימת המשתתפים. חברים אחרים שומרים על השיחה."
 
 #: src/components/join-room-dialog/JoinRoomDialog.tsx
-msgid "You're about to open a room on this project. You can invite others with the share code that'll appear in the header once the room starts."
-msgstr "אתה עומד לפתוח חדר בפרויקט זה. אתה יכול להזמין אחרים באמצעות קוד השיתוף שיופיע בכותרת כשהחדר יתחיל."
+#~ msgid "You're about to open a room on this project. You can invite others with the share code that'll appear in the header once the room starts."
+#~ msgstr "אתה עומד לפתוח חדר בפרויקט זה. אתה יכול להזמין אחרים באמצעות קוד השיתוף שיופיע בכותרת כשהחדר יתחיל."
 
 #: src/components/conversation/ConversationView.tsx
 msgid "You're the only participant in this conversation — no one else will see this message."
@@ -13712,8 +13715,6 @@ msgstr "מפתחות ה-API שלך"
 
 #: src/components/collaboration/StartRoomDialog.tsx
 #: src/components/collaboration/StartRoomDialog.tsx
-#: src/components/join-room-dialog/JoinConversationDialog.tsx
-#: src/components/join-room-dialog/JoinRoomDialog.tsx
 msgid "Your display name"
 msgstr "שם התצוגה שלך"
 
