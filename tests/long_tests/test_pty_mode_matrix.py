@@ -28,6 +28,7 @@ import shutil
 import httpx
 import pytest
 
+from flow_sdk.builtin.agentic_process.model_tiers import ModelTier
 from tests.test_settings import test_service_config
 
 pytestmark = [
@@ -99,6 +100,7 @@ async def _create(hub_client, compute_node_id: str, workdir: str, worker_type: s
             "workdir": workdir,
             "worker_type": worker_type,
             "permission_mode": "bypassPermissions",
+            "model": ModelTier.SM.value,
         },
         # headless == !visible; pty_mode seeds visible at launch (see plan).
         "visible": pty_mode,

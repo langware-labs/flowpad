@@ -32,6 +32,7 @@ from pathlib import Path
 import pytest
 
 from flow_sdk.builtin.agentic_process import AgenticProcess
+from flow_sdk.builtin.agentic_process.model_tiers import ModelTier
 from flow_sdk.flowpad_types.enums import WorkerType
 from flow_sdk.transcript_analyzer import EntryKind
 from tests.long_tests._transcript_helpers import (
@@ -161,6 +162,9 @@ async def test_skill_usage_visible_in_transcript(
         worker_type=worker_type,
         workdir=str(tmp_path),
         additional_dirs=[str(skills_parent)],
+        # Small tier resolves worker-blind at spawn: haiku (claude),
+        # gpt-5.4-mini (codex/copilot) — cheapest/fastest for this probe.
+        cli_config={"model": ModelTier.SM.value},
         visible=False,
     ).save()
     instruction = (

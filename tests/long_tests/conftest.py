@@ -233,6 +233,7 @@ def make_process(worker_id) -> Callable[..., Awaitable]:
     ``codex``). The mapping lives in the fixture, not test bodies.
     """
     from flow_sdk.builtin.agentic_process import AgenticProcess
+    from flow_sdk.builtin.agentic_process.model_tiers import ModelTier
     from flow_sdk.flowpad_types.enums import WorkerType
 
     _DRIVER_TO_ENUM = {
@@ -243,7 +244,16 @@ def make_process(worker_id) -> Callable[..., Awaitable]:
     enum_value = _DRIVER_TO_ENUM[worker_id]
 
     async def _make(**kwargs):
-        return await AgenticProcess(worker_type=enum_value, **kwargs).save()
+        # Default every agentic-process test to the small model tier so the live
+        # CLI burns the cheapest/fastest model (haiku / gpt-*-mini). The tier is
+        # worker-blind — each driver maps ``sm`` to its own family at spawn. Tests
+        # that need a specific model still win: their ``cli_config['model']`` is
+        # preserved, and only the key is defaulted when absent.
+        cli_config = {**(kwargs.pop("cli_config", None) or {})}
+        cli_config.setdefault("model", ModelTier.SM.value)
+        return await AgenticProcess(
+            worker_type=enum_value, cli_config=cli_config, **kwargs
+        ).save()
 
     return _make
 

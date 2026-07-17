@@ -24,6 +24,7 @@ import re
 import httpx
 import pytest
 
+from flow_sdk.builtin.agentic_process.model_tiers import ModelTier
 from tests.test_settings import test_service_config
 
 pytestmark = [
@@ -76,6 +77,7 @@ async def _create_print_mode_process(hub_client, compute_node_id: str, workdir: 
             "workdir": workdir,
             "output_format": "stream-json",
             "permission_mode": "bypassPermissions",
+            "model": ModelTier.SM.value,
         },
         "visible": False,
         # pty_mode is the durable transport selector (defaults to True since the
@@ -133,7 +135,11 @@ async def test_prompt_admits_visible_process_via_pty_transport(hub_and_node, tmp
     """
     hub_client, local_compute_node_id = hub_and_node
     body = {
-        "context": {"workdir": str(tmp_path), "permission_mode": "bypassPermissions"},
+        "context": {
+            "workdir": str(tmp_path),
+            "permission_mode": "bypassPermissions",
+            "model": ModelTier.SM.value,
+        },
         "visible": True,
     }
     r = await hub_client.post(
