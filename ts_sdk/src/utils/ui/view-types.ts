@@ -64,6 +64,7 @@ export enum ViewType {
   SEARCH = 'search', // Record semantic search view
   TRIGGERS = 'triggers', // Activation rules browser + editor
   CAPABILITIES = 'capabilities', // System capability checks/install/test
+  AGENTIC_FLOWS = 'agentic-flows', // Flow-graph editor/observatory (FlowManager) — dev mode
   PLAN = 'plan', // Plan viewer with Milkdown editor
   CRON = 'cron', // Scheduled cron jobs manager
   WORKFLOWS = 'workflows', // Workflows manager with markdown editor

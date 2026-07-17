@@ -28,7 +28,8 @@ export type RailItemId =
   | 'triggers'
   | 'hooks'
   | 'files'
-  | 'capabilities';
+  | 'capabilities'
+  | 'agentic-flows';
 
 export type RailStatus =
   /** shown at the top of the rail */
@@ -61,7 +62,7 @@ export const RAIL_DELTAS: Record<ViewMode, RailDelta> = {
   [ViewMode.Vibe]: { visible: ['home', 'inbox', 'bookmarks'], collapsed: ['files'] },
   [ViewMode.Standard]: { visible: ['chats'], noShow: ['bookmarks'] },
   [ViewMode.Advanced]: { visible: ['assets'], collapsed: ['triggers', 'hooks'] },
-  [ViewMode.Dev]: { visible: ['discover'], collapsed: ['capabilities'] },
+  [ViewMode.Dev]: { visible: ['discover', 'agentic-flows'], collapsed: ['capabilities'] },
 };
 
 /**
