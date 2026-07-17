@@ -318,6 +318,17 @@ export class CapabilityManager extends EventEmitter {
     });
   }
 
+  /** Persist a harness's tier→model override map ({provider: {name: slug}}),
+   *  layered over the driver defaults at spawn. Written on the leaf capability. */
+  async setModelMap(
+    queryKind: string,
+    map: Record<string, Record<string, string>>,
+  ): Promise<CapabilitySnapshot> {
+    return this.mutateAndRecheck(queryKind, (capability) => {
+      capability.model_map = map;
+    });
+  }
+
   private async runAction(queryKind: string, actionName: CapabilityActionName): Promise<CapabilitySnapshot> {
     const query = this.normalizeKind(queryKind);
     await this.load();

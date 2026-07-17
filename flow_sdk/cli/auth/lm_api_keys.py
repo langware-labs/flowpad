@@ -109,3 +109,44 @@ async def validate_lm_api(provider: LMApiProvider | str, key: str | None = None)
     if resp.status_code in (401, 403):
         return {"valid": False, "message": f"{provider.value} rejected the key ({resp.status_code})"}
     return {"valid": False, "message": f"{provider.value} returned {resp.status_code}"}
+
+
+# Model-catalog endpoints (for the mapping picker). OpenRouter's is public; the
+# vendor-direct ones need the stored key. Each returns a provider's model list.
+_MODELS_ENDPOINTS: dict[str, tuple[str, bool]] = {
+    # (url, needs_key)
+    LMApiProvider.OPENROUTER.value: ("https://openrouter.ai/api/v1/models", False),
+    LMApiProvider.ANTHROPIC.value: ("https://api.anthropic.com/v1/models", True),
+    LMApiProvider.OPENAI.value: ("https://api.openai.com/v1/models", True),
+}
+
+
+async def list_provider_models(provider: LMApiProvider | str) -> list[dict]:
+    """List a provider's available models as ``[{"id": slug, "name": str}]`` for
+    the mapping picker. Never raises — returns ``[]`` on any failure (e.g. a
+    vendor-direct provider with no stored key)."""
+    provider = LMApiProvider(provider)
+    url, needs_key = _MODELS_ENDPOINTS[provider.value]
+    headers: dict[str, str] = {}
+    if needs_key:
+        key = get_lm_api(provider)
+        if not key:
+            return []
+        # Reuse the same auth-header shape the validation probe uses.
+        _, build_headers = _VALIDATE_ENDPOINTS[provider.value]
+        headers = build_headers(key)
+    try:
+        import httpx  # noqa: PLC0415
+
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(url, headers=headers)
+        resp.raise_for_status()
+        data = resp.json().get("data") or []
+    except Exception:  # noqa: BLE001 — catalog is best-effort; empty on failure
+        return []
+    out: list[dict] = []
+    for m in data:
+        mid = m.get("id")
+        if mid:
+            out.append({"id": mid, "name": m.get("name") or mid})
+    return out
