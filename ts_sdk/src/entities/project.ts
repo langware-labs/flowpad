@@ -34,12 +34,39 @@ export interface LocalSecretRef {
   sod_name: string;
 }
 
+export interface EnvLocalSecretRef {
+  kind: 'env-local';
+  env_key: string;
+}
+
 export interface HubSecretRef {
   kind: 'flowpad-hub';
   secret_id: string;
 }
 
-export type SecretOriginLocator = LocalSecretRef | HubSecretRef;
+export interface GcpSecretRef {
+  kind: 'gcp';
+  gcp_project: string;
+  secret: string;
+  version?: string;
+}
+
+export interface OnePasswordSecretRef {
+  kind: '1password';
+  vault: string;
+  item: string;
+  field?: string;
+}
+
+export type SecretOriginLocator =
+  | LocalSecretRef
+  | EnvLocalSecretRef
+  | HubSecretRef
+  | GcpSecretRef
+  | OnePasswordSecretRef;
+
+/** Which local SOD store the wizard caches a provided value into. */
+export type SodStore = 'sodot' | 'env-local';
 
 export interface ProjectSecretOriginSummary {
   typeid: string;
@@ -48,6 +75,24 @@ export interface ProjectSecretOriginSummary {
   kind: SecretOriginLocator['kind'] | string;
   locator: Partial<SecretOriginLocator>;
   scope: SecretPointerScope | string;
+}
+
+/** One row of the value-free resolve-status the Secrets card / wizard reads. */
+export interface SecretResolveStatus {
+  typeid: string;
+  name: string;
+  env_var: string;
+  kind: string;
+  scope: string;
+  sod_store: SodStore | string;
+  status: 'available' | 'missing';
+  setup_hint: {
+    kind: string;
+    sod_store: SodStore | string;
+    provider_label: string;
+    prompt: string;
+    coming_soon?: boolean;
+  };
 }
 
 export interface ProjectContextFolderResolveResult {
@@ -286,17 +331,18 @@ export class Project extends APIEntity<Project> {
   async addSecretPointer(
     name: string,
     envVar: string,
-    options: { locator: SecretOriginLocator; scope?: SecretPointerScope },
+    options: { locator: SecretOriginLocator; scope?: SecretPointerScope; sodStore?: SodStore },
   ): Promise<void> {
     const actionInfo = new ActionInfo('add-secret-pointer', Project.type, this.typeId.id, 'POST');
+    // The backend builds the value-free locator from the generic ``locator`` dict
+    // (any provider kind); ``sod_store`` is where the wizard caches a value.
     actionInfo.bodyParameters = {
       name,
       env_var: envVar,
       scope: options.scope ?? 'private',
       kind: options.locator.kind,
       locator: options.locator,
-      ...(options.locator.kind === 'local' ? { sod_name: options.locator.sod_name } : {}),
-      ...(options.locator.kind === 'flowpad-hub' ? { secret_id: options.locator.secret_id } : {}),
+      ...(options.sodStore ? { sod_store: options.sodStore } : {}),
     };
     this.adoptSecretOrigins(await dataManager.callAction(actionInfo));
   }
@@ -305,6 +351,27 @@ export class Project extends APIEntity<Project> {
     const actionInfo = new ActionInfo('remove-secret-pointer', Project.type, this.typeId.id, 'POST');
     actionInfo.bodyParameters = { typeid };
     this.adoptSecretOrigins(await dataManager.callAction(actionInfo));
+  }
+
+  /** Value-free per-secret resolve status (available/missing) for the Secrets
+   *  card + setup wizard. Never fetches a value. */
+  async secretResolveStatus(): Promise<SecretResolveStatus[]> {
+    const actionInfo = new ActionInfo('secret-resolve-status', Project.type, this.typeId.id, 'POST');
+    const res = await dataManager.callAction<undefined, { secrets?: SecretResolveStatus[] }>(actionInfo);
+    return Array.isArray(res?.secrets) ? res!.secrets : [];
+  }
+
+  /** Setup wizard: store a user-provided value in the secret's designated SOD
+   *  store (sodot or the project .env.local). The value never touches the
+   *  reference json or any hub payload. */
+  async provideSecret(params: { typeid?: string; envVar?: string; value: string }): Promise<void> {
+    const actionInfo = new ActionInfo('provide-secret', Project.type, this.typeId.id, 'POST');
+    actionInfo.bodyParameters = {
+      ...(params.typeid ? { typeid: params.typeid } : {}),
+      ...(params.envVar ? { env_var: params.envVar } : {}),
+      value: params.value,
+    };
+    await dataManager.callAction(actionInfo);
   }
 
   /** Resolve received shared context folders into receiver-local paths. */

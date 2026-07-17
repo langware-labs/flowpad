@@ -40,8 +40,11 @@ _MIRRORED_FIELDS = (
 
 def _shared_secret_origin_payload(
     item: dict[str, Any],
-) -> tuple[str, str, Any] | None:
-    from flow_sdk.builtin.hub_secret_ref import HubSecretRef  # noqa: PLC0415
+) -> tuple[str, str, Any, str] | None:
+    """Parse one value-free shared secret pointer → ``(name, env_var, locator,
+    sod_store)``. Accepts every non-``local`` provider kind (env-local / gcp /
+    1password / flowpad-hub); ``local`` (sodot-by-name) is machine-specific and
+    never travels."""
     from flow_sdk.builtin.secret_origin import is_valid_secret_origin_env_var  # noqa: PLC0415
     from flow_sdk.builtin.secret_origin_driver import normalize_secret_origin_kind  # noqa: PLC0415
     from flow_sdk.builtin.secret_origin_field import SECRET_ORIGIN_ADAPTER  # noqa: PLC0415
@@ -51,25 +54,25 @@ def _shared_secret_origin_payload(
         logger.debug("[membership-sync] secret origin missing locator")
         return None
     kind = normalize_secret_origin_kind(locator_data.get("kind") or item.get("kind"))
-    if kind != "flowpad-hub":
-        return None
+    if kind == "local":
+        return None  # machine-local; a sod_name is meaningless off-machine
     try:
         locator = SECRET_ORIGIN_ADAPTER.validate_python({**locator_data, "kind": kind})
     except Exception as exc:  # noqa: BLE001
         logger.debug("[membership-sync] invalid secret origin locator: %s", exc)
         return None
-    secret_id = (getattr(locator, "secret_id", "") or "").strip()
-    if not secret_id:
+    if kind == "flowpad-hub" and not (getattr(locator, "secret_id", "") or "").strip():
         logger.debug("[membership-sync] flowpad-hub secret origin missing secret_id")
         return None
     env_var = (item.get("env_var") or "").strip()
     if not env_var or not is_valid_secret_origin_env_var(env_var):
         logger.debug("[membership-sync] invalid secret origin env_var: %r", env_var)
         return None
-    name = (item.get("name") or secret_id).strip()
+    name = (item.get("name") or "").strip()
     if not name:
         return None
-    return name, env_var, HubSecretRef(secret_id=secret_id)
+    sod_store = (item.get("sod_store") or "").strip()
+    return name, env_var, locator, sod_store
 
 
 async def materialize_remote_membership_entity(
@@ -240,14 +243,17 @@ async def materialize_project_secret_origins(
         parsed = _shared_secret_origin_payload(item)
         if parsed is None:
             continue
-        name, env_var, locator = parsed
-        secret = await SecretOrigin.mint_for(locator=locator, name=name, env_var=env_var, remote=True)
+        name, env_var, locator, sod_store = parsed
+        secret = await SecretOrigin.mint_for(
+            locator=locator, name=name, env_var=env_var, sod_store=sod_store, remote=True
+        )
         expected_shared_typeids.add(str(secret.typeid))
         normalized_shared[str(secret.typeid)] = {
             "name": name,
             "env_var": env_var,
             "kind": locator.kind,
             "locator": locator.model_dump(mode="json"),
+            "sod_store": secret.effective_sod_store(),
         }
         changed = project.add_shared_context_entities(
             secret.typeid,

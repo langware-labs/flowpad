@@ -24,7 +24,6 @@ import flow_sdk.builtin.task  # noqa: F401
 import flow_sdk.builtin.whiteboard  # noqa: F401
 import flow_sdk.builtin.agentic_flow  # noqa: F401
 import flow_sdk.builtin.agentic_flow_run  # noqa: F401
-import flow_sdk.builtin.workflow  # noqa: F401
 import flow_sdk.fs_store.indexer.functions.agent  # noqa: F401
 import flow_sdk.fs_store.indexer.functions.claude_command  # noqa: F401
 import flow_sdk.fs_store.indexer.functions.claude_hook  # noqa: F401
@@ -39,6 +38,7 @@ import flow_sdk.fs_store.indexer.functions.copilot_sessions  # noqa: F401
 import flow_sdk.fs_store.indexer.functions.dataset  # noqa: F401
 import flow_sdk.fs_store.indexer.functions.deck  # noqa: F401
 import flow_sdk.fs_store.indexer.functions.deck_template  # noqa: F401
+import flow_sdk.fs_store.indexer.functions.secret_origin  # noqa: F401
 import flow_sdk.fs_store.indexer.functions.spreadsheet  # noqa: F401
 import flow_sdk.fs_store.indexer.functions.dynamic_workflows  # noqa: F401
 import flow_sdk.fs_store.indexer.functions.markdown  # noqa: F401
@@ -51,7 +51,6 @@ import flow_sdk.fs_store.indexer.functions.task  # noqa: F401
 import flow_sdk.fs_store.indexer.functions.todo  # noqa: F401
 import flow_sdk.fs_store.indexer.functions.whiteboard  # noqa: F401
 import flow_sdk.fs_store.indexer.functions.agentic_flow  # noqa: F401
-import flow_sdk.fs_store.indexer.functions.workflow  # noqa: F401
 
 # Operations modules — register types that have no walker but are CRUD-able.
 import flow_sdk.fs_store.operations.claude_debug_log  # noqa: F401

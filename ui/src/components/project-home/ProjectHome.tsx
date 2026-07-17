@@ -1,6 +1,7 @@
 import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
 import { MembersAvatarStack } from '@src/components/conversation/MembersAvatarStack';
 import { QuickCreatePanel, useQuickCreatePick } from '@src/components/quick-create/QuickCreatePanel';
+import { SecretsCard } from './SecretsCard';
 import { Button } from '@src/components/ui/button';
 import { useContext as useDataContext } from '@src/hooks/useContext';
 import { WorkerToolbar } from '@src/components/workers/WorkerToolbar';
@@ -167,6 +168,11 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, showSe
           {showSessionStarters && <SessionStarters spawnProjectId={spawnProjectId} />}
 
           <QuickCreatePanel {...panelProps} />
+
+          {/* Project secrets — value-free references + setup wizard. */}
+          {dataCtx.project?.id === projectId && dataCtx.project && (
+            <SecretsCard project={dataCtx.project as unknown as Project} />
+          )}
         </div>
       </div>
       {dialogs}

@@ -272,6 +272,7 @@ class Project(Entity):
                         "env_var": entry.get("env_var") or "",
                         "kind": entry.get("kind") or locator.get("kind") or "",
                         "locator": locator,
+                        "sod_store": entry.get("sod_store") or "",
                         "scope": entry.get("scope") or scope,
                     }
                 )
@@ -571,6 +572,7 @@ class Project(Entity):
             locator = entry.get("locator") if isinstance(entry.get("locator"), dict) else None
             name = entry.get("name") or ""
             env_var = entry.get("env_var") or ""
+            sod_store = entry.get("sod_store") or ""
             if not locator or not name or not env_var:
                 secret = await SecretOrigin.get_by_id(tid.id)
                 if secret is None:
@@ -578,6 +580,11 @@ class Project(Entity):
                 locator = secret.locator.model_dump(mode="json")
                 name = secret.name or ""
                 env_var = secret.env_var
+                sod_store = secret.effective_sod_store()
+            # ``local`` (sodot-by-name) is machine-specific — the sod_name is
+            # meaningless off-machine, so it never travels. Every other kind
+            # (env-local / gcp / 1password / flowpad-hub) is a value-free pointer
+            # the receiver resolves with their own store/provider.
             if (locator or {}).get("kind") == "local":
                 continue
             payload[str(tid)] = {
@@ -585,6 +592,7 @@ class Project(Entity):
                 "env_var": env_var,
                 "kind": (locator or {}).get("kind"),
                 "locator": locator,
+                "sod_store": sod_store,
             }
         return payload
 
@@ -886,6 +894,14 @@ class Project(Entity):
 
     # ── Secret pointers (SecretOrigin entities linked via context buckets) ──
 
+    def _assets_sodot_dir(self) -> "Path | None":
+        """``<project mount>/assets/sodot`` — where value-free secret reference
+        json files live so they're indexed + travel with a git-shared project."""
+        from pathlib import Path  # noqa: PLC0415
+
+        mount = self.fs_storage_mount_path
+        return (Path(mount) / "assets" / "sodot") if mount else None
+
     @action.post(action_name="add-secret-pointer")
     async def add_secret_pointer(
         self,
@@ -894,17 +910,21 @@ class Project(Entity):
         scope: str = "private",
         kind: str = "local",
         locator: dict[str, Any] | None = None,
+        sod_store: str = "",
         sod_name: str | None = None,
         secret_id: str | None = None,
     ) -> "ApiResponse":
-        """Attach a value-free secret pointer to this project."""
-        from flow_sdk.builtin.hub_secret_ref import HubSecretRef  # noqa: PLC0415
-        from flow_sdk.builtin.local_secret_ref import LocalSecretRef  # noqa: PLC0415
+        """Attach a value-free secret pointer to this project and write its
+        reference json under ``assets/sodot/<name>.json`` (indexed + travels)."""
         from flow_sdk.builtin.secret_origin import (  # noqa: PLC0415
             SecretOrigin,
             is_valid_secret_origin_env_var,
         )
-        from flow_sdk.builtin.secret_origin_driver import normalize_secret_origin_kind  # noqa: PLC0415
+        from flow_sdk.builtin.secret_origin_driver import (  # noqa: PLC0415
+            get_secret_origin_driver,
+            normalize_secret_origin_kind,
+        )
+        from flow_sdk.builtin.secret_origin_field import SECRET_ORIGIN_ADAPTER  # noqa: PLC0415
 
         name = (name or "").strip()
         env_var = (env_var or "").strip()
@@ -916,38 +936,52 @@ class Project(Entity):
         if scope not in ("private", "shared"):
             return ApiFailResponse(message="scope must be 'private' or 'shared'")
 
+        # Build the value-free locator from an explicit ``locator`` dict, or the
+        # convenience kind + sod_name/secret_id params (back-compat).
         raw_locator = dict(locator or {})
-        resolved_kind = normalize_secret_origin_kind(
-            raw_locator.get("kind") or kind or ("flowpad-hub" if secret_id else "local")
-        )
-        if resolved_kind == "local":
+        if not raw_locator:
+            resolved_kind = normalize_secret_origin_kind(kind or ("flowpad-hub" if secret_id else "local"))
+            raw_locator = {"kind": resolved_kind}
+            if resolved_kind == "local":
+                raw_locator["sod_name"] = (sod_name or name or "").strip()
+            elif resolved_kind == "flowpad-hub":
+                raw_locator["secret_id"] = (secret_id or "").strip()
+        try:
+            loc = SECRET_ORIGIN_ADAPTER.validate_python(raw_locator)
+            get_secret_origin_driver(loc.kind)  # ensure a driver is registered for this kind
+        except Exception as e:  # noqa: BLE001
+            return ApiFailResponse(message=f"Invalid secret locator: {e}")
+
+        # ``local`` (sodot by name) is machine-local — a sod_name is meaningless
+        # off-machine, so it can't be a shared pointer (docs/secret_share.md).
+        if loc.kind == "local":
             if scope == "shared":
-                return ApiFailResponse(message="Local secret pointers can only be private")
-            local_name = (sod_name or raw_locator.get("sod_name") or name or "").strip()
-            if not local_name:
+                return ApiFailResponse(message="Local (sodot-by-name) secret pointers can only be private")
+            if not getattr(loc, "sod_name", ""):
                 return ApiFailResponse(message="sod_name is required for local secret pointers")
-            loc = LocalSecretRef(sod_name=local_name)
-            name = name or local_name
-        elif resolved_kind == "flowpad-hub":
-            hub_id = (secret_id or raw_locator.get("secret_id") or "").strip()
-            if not hub_id:
-                return ApiFailResponse(message="secret_id is required for flowpad-hub secret pointers")
-            loc = HubSecretRef(secret_id=hub_id)
-            name = name or hub_id
-        else:
-            return ApiFailResponse(message=f"Unsupported secret pointer kind: {resolved_kind}")
+        name = name or getattr(loc, "sod_name", "") or getattr(loc, "secret_id", "") or loc.kind
 
         candidate_typeid = f"{BuiltinEntityType.SECRET_ORIGIN.value}-{SecretOrigin.id_for_locator(loc)}"
         for existing in self.secret_origins:
             if existing.get("env_var") == env_var and existing.get("typeid") != candidate_typeid:
                 return ApiFailResponse(message=f"env_var {env_var} is already bound to another secret pointer")
 
-        secret = await SecretOrigin.mint_for(locator=loc, name=name, env_var=env_var)
+        secret = await SecretOrigin.mint_for(locator=loc, name=name, env_var=env_var, sod_store=sod_store)
         data = secret.context_data(scope=scope)
         if scope == "shared":
             self.add_shared_context_entities(secret.typeid, data=data)
         else:
             self.add_private_context_entities(secret.typeid, data=data)
+
+        # Write the value-free reference json so it's indexed like any asset and
+        # travels with the project's git-backed folder (see docs/secret_share.md).
+        sodot_dir = self._assets_sodot_dir()
+        if sodot_dir is not None:
+            try:
+                secret.to_json_asset(sodot_dir / f"{name}.json")
+            except Exception as e:  # noqa: BLE001
+                log.warning("[secret] could not write reference asset for %s: %s", name, e)
+
         await self.save()
         return ApiSuccessResponse(data=self.model_dump(mode="json"))
 
@@ -978,10 +1012,101 @@ class Project(Entity):
                     continue
                 targets.append(tid)
         if targets:
+            # Delete the value-free reference asset(s) too so removal is complete.
+            sodot_dir = self._assets_sodot_dir()
+            if sodot_dir is not None:
+                for tid in targets:
+                    entry = self.get_context_entry_data(tid) or {}
+                    nm = (entry.get("name") or "").strip()
+                    if nm:
+                        try:
+                            (sodot_dir / f"{nm}.json").unlink(missing_ok=True)
+                        except OSError:
+                            pass
             self.remove_shared_context_entities(*targets)
             self.remove_private_context_entities(*targets)
             await self.save()
         return ApiSuccessResponse(data=self.model_dump(mode="json"))
+
+    @action.post(action_name="secret-resolve-status")
+    async def secret_resolve_status(self) -> "ApiResponse":
+        """Per-secret resolve status for the Secrets card / wizard: can each
+        secret's value be resolved on THIS machine right now? Value-free — calls
+        ``driver.can_resolve`` (never fetches a value)."""
+        from flow_sdk.builtin.secret_origin_driver import get_secret_origin_driver  # noqa: PLC0415
+        from flow_sdk.builtin.secret_origin_field import SECRET_ORIGIN_ADAPTER  # noqa: PLC0415
+
+        rows: list[dict[str, Any]] = []
+        for tid in self.context_of_type("secret_origin", bucket="both"):
+            entry = self.get_context_entry_data(tid) or {}
+            try:
+                loc = SECRET_ORIGIN_ADAPTER.validate_python(entry.get("locator") or {})
+                driver = get_secret_origin_driver(loc.kind)
+            except Exception:  # noqa: BLE001
+                continue
+            try:
+                available = await driver.can_resolve(loc, project=self)
+            except Exception:  # noqa: BLE001
+                available = False
+            hint = driver.setup_hint(loc)
+            rows.append(
+                {
+                    "typeid": str(tid),
+                    "name": entry.get("name"),
+                    "env_var": entry.get("env_var"),
+                    "kind": loc.kind,
+                    "scope": entry.get("scope"),
+                    "sod_store": entry.get("sod_store") or hint.get("sod_store"),
+                    "status": "available" if available else "missing",
+                    "setup_hint": hint,
+                }
+            )
+        return ApiSuccessResponse(data={"secrets": rows})
+
+    @action.post(action_name="provide-secret")
+    async def provide_secret(
+        self,
+        typeid: str | None = None,
+        env_var: str | None = None,
+        value: str = "",
+    ) -> "ApiResponse":
+        """Setup wizard: store a user-provided value in the secret's designated
+        SOD store — the encrypted ``sodot`` (for ``local`` pointers) or the
+        project's ``.env.local`` (for ``env-local`` pointers). The value is NEVER
+        written to the reference json or any hub payload. V1 supports the two
+        local stores; external providers (gcp/1password/hub) are 'coming soon'."""
+        from flow_sdk.builtin.secret_origin_driver import (  # noqa: PLC0415
+            SecretProvideUnsupported,
+            get_secret_origin_driver,
+        )
+        from flow_sdk.builtin.secret_origin_field import SECRET_ORIGIN_ADAPTER  # noqa: PLC0415
+
+        if not (value or "").strip():
+            return ApiFailResponse(message="value is required")
+        want_typeid = (typeid or "").strip()
+        want_env_var = (env_var or "").strip()
+        entry = None
+        for tid in self.context_of_type("secret_origin", bucket="both"):
+            data = self.get_context_entry_data(tid) or {}
+            if (want_typeid and str(tid) == want_typeid) or (want_env_var and data.get("env_var") == want_env_var):
+                entry = data
+                break
+        if entry is None:
+            return ApiFailResponse(message="secret pointer not found on this project")
+        try:
+            loc = SECRET_ORIGIN_ADAPTER.validate_python(entry.get("locator") or {})
+        except Exception as e:  # noqa: BLE001
+            return ApiFailResponse(message=f"invalid locator: {e}")
+
+        # Driver-dispatched, symmetric with resolve(): the driver owns which SOD
+        # store it writes to. External-provider slots raise SecretProvideUnsupported.
+        try:
+            await get_secret_origin_driver(loc.kind).store(loc, value, project=self)
+        except SecretProvideUnsupported as e:
+            return ApiFailResponse(message=str(e))
+        except Exception as e:  # noqa: BLE001
+            return ApiFailResponse(message=f"could not store value: {e}")
+        return ApiSuccessResponse(data={"ok": True, "env_var": entry.get("env_var")})
 
     # ── Context folders (Folder entities linked via context buckets) ────────
 

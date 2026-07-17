@@ -79,6 +79,7 @@ async def test_shared_hub_secret_pointer_share_payload_is_metadata_only(tmp_path
         "env_var": "STRIPE_API_KEY",
         "kind": "flowpad-hub",
         "locator": {"kind": "flowpad-hub", "secret_id": "sec_123"},
+        "sod_store": "sodot",
     }
     assert "shared_secret_origins" not in project._hub_body()
     assert "sec_123" in json.dumps(shared)
@@ -121,6 +122,7 @@ async def test_receive_materializes_shared_secret_pointers(tmp_path):
             "env_var": "STRIPE_API_KEY",
             "kind": "flowpad-hub",
             "locator": {"kind": "flowpad-hub", "secret_id": "sec_123"},
+            "sod_store": "sodot",
         }
     }
 
@@ -207,6 +209,7 @@ async def test_receive_prunes_removed_shared_secret_pointers(tmp_path):
             "env_var": "OPENAI_API_KEY",
             "kind": "flowpad-hub",
             "locator": {"kind": "flowpad-hub", "secret_id": "sec_456"},
+            "sod_store": "sodot",
         }
     }
 
