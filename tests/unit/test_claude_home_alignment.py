@@ -93,13 +93,17 @@ def test_native_claude_config_dir_is_preserved_for_worker(monkeypatch, tmp_path)
     assert env["CLAUDE_CONFIG_DIR"] == str(configured)
 
 
-def test_matching_per_worker_override_is_canonicalized():
+def test_native_default_per_worker_override_is_dropped():
+    # A per-worker CLAUDE_CONFIG_DIR that resolves to the native ~/.claude must be
+    # dropped, not honored: pinning it there makes Claude read ~/.claude/.claude.json
+    # instead of the real ~/.claude.json beside it, losing the OAuth account and
+    # falling back to the login picker (breaking every real-Claude worker turn).
     configured = Path.home() / ".claude"
     env = {"CLAUDE_CONFIG_DIR": str(configured / "unused" / "..")}
 
     apply_worker_env(env, _ClaudeProcess())
 
-    assert env["CLAUDE_CONFIG_DIR"] == str(configured)
+    assert "CLAUDE_CONFIG_DIR" not in env
 
 
 def test_conflicting_per_worker_override_is_rejected(tmp_path):

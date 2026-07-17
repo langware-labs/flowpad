@@ -454,12 +454,21 @@ def apply_worker_env(env: dict[str, str], process: "AgenticProcess") -> dict[str
                     f"Claude worker {ENV_CLAUDE_CONFIG_DIR} must match Flowpad's configured Claude home "
                     f"(got {worker_home} and {claude_home})"
                 )
+        # Only pin CLAUDE_CONFIG_DIR for a genuinely NON-default Claude root. When
+        # the root resolves to the native ~/.claude — even via an explicit
+        # FLOWPAD_CLAUDE_HOME/CLAUDE_CONFIG_DIR that points there — it must stay
+        # UNSET. Claude keeps its account/config in ``~/.claude.json`` *beside*
+        # the default ``~/.claude/`` dir; setting CLAUDE_CONFIG_DIR=~/.claude makes
+        # Claude read ``~/.claude/.claude.json`` (a different, usually stale file),
+        # lose the OAuth account, and fall back to the "Select login method"
+        # picker — which silently breaks every real-Claude worker turn.
+        native_home = _canonical_lexical_path(Path.home() / ".claude")
         root_is_explicit = bool(
             os.environ.get(ENV_FLOWPAD_CLAUDE_HOME)
             or os.environ.get(ENV_CLAUDE_CONFIG_DIR)
             or worker_override is not None
         )
-        if root_is_explicit:
+        if root_is_explicit and _canonical_lexical_path(claude_home) != native_home:
             env[ENV_CLAUDE_CONFIG_DIR] = str(claude_home)
         else:
             env.pop(ENV_CLAUDE_CONFIG_DIR, None)
