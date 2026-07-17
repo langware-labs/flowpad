@@ -7,6 +7,7 @@ import {
   lmKeysService,
   TypeId,
   type LmApiKeySummary,
+  type LmApiKeyValidation,
 } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { Badge } from '@src/components/ui/badge';
@@ -28,7 +29,7 @@ import {
 } from '@src/components/ui/select';
 import { notify } from '@src/notifications';
 import { PROVIDER_META } from '@src/tabs/provider-meta';
-import { ArrowUpRight, Check, ChevronLeft, ChevronRight, KeyRound, Loader2, Trash2 } from 'lucide-react';
+import { AlertCircle, ArrowUpRight, Check, ChevronLeft, ChevronRight, KeyRound, Loader2, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 
@@ -75,7 +76,7 @@ const FRIENDLY: Record<Worker, { name: string; account: string }> = {
 
 /** Shared per-harness state hook: resolves the live Capability entity, its
  *  simple status and presentation (name/icon/status text), plus the actions. */
-function useHarness(kind: string) {
+function useHarness(kind: string, keys: LmApiKeySummary[]) {
   const { t } = useLingui();
   const snapshot = capabilityManager.getSnapshot(kind);
   const capabilityId = snapshot.capability?.id ?? null;
@@ -86,26 +87,27 @@ function useHarness(kind: string) {
   const { data: capability } = useEntity<Capability>(typeId, { enabled: !!typeId, watch: true });
   const [busy, setBusy] = useState(false);
   const [pasted, setPasted] = useState('');
-  const [keys, setKeys] = useState<LmApiKeySummary[]>([]);
 
   const worker = workerOf(kind);
   const supportedProviders = HARNESS_SUPPORTED_PROVIDERS[worker] ?? [];
   const defaultProvider = supportedProviders[0] ?? LMApiProvider.OpenRouter;
-
-  const refreshKeys = useCallback(async () => {
-    try {
-      setKeys(await lmKeysService.list());
-    } catch {
-      /* keys list is best-effort; a failure just leaves the section empty */
-    }
-  }, []);
-  useEffect(() => {
-    void refreshKeys();
-  }, [refreshKeys]);
+  // Providers this harness supports AND that have a configured key (from the
+  // central keys section) — the only ones it can consume. api mode is unavailable
+  // until at least one exists.
+  const configuredProviders = supportedProviders.filter((p) =>
+    keys.some((k) => k.configured && k.provider === (p as string)),
+  );
+  const apiAvailable = configuredProviders.length > 0;
 
   const authMode: AuthMode = (capability?.auth_mode as AuthMode) ?? 'device';
-  const activeProvider = capability?.api_provider ?? defaultProvider;
-  const keyConfigured = keys.some((k) => k.provider === activeProvider && k.configured);
+  // The active provider must be one that actually has a key. Only read where
+  // apiAvailable (so configuredProviders is non-empty); the raw fallback just
+  // keeps the badge label sensible when it isn't.
+  const rawProvider = capability?.api_provider ?? defaultProvider;
+  const activeProvider = configuredProviders.includes(rawProvider as LMApiProvider)
+    ? rawProvider
+    : configuredProviders[0] ?? rawProvider;
+  const keyConfigured = apiAvailable && configuredProviders.includes(activeProvider as LMApiProvider);
 
   const setAuthMode = useCallback(
     async (mode: AuthMode, provider?: string) => {
@@ -116,23 +118,6 @@ function useHarness(kind: string) {
       }
     },
     [kind, activeProvider, t],
-  );
-
-  const saveKey = useCallback(
-    async (provider: string, key: string) => {
-      await lmKeysService.setLmApi(key, provider as LMApiProvider);
-      await capabilityManager.setAuthMode(kind, 'api', provider);
-      await refreshKeys();
-    },
-    [kind, refreshKeys],
-  );
-
-  const deleteKey = useCallback(
-    async (provider: string) => {
-      await lmKeysService.deleteLmApi(provider as LMApiProvider);
-      await refreshKeys();
-    },
-    [refreshKeys],
   );
 
   const installed = snapshot.checked && snapshot.available;
@@ -205,16 +190,13 @@ function useHarness(kind: string) {
     signIn,
     copyAndOpen,
     submitCode,
-    // API-key auth
+    // API-key auth (consumer view — keys are managed centrally)
     authMode,
     authBadge,
-    supportedProviders,
+    configuredProviders,
     activeProvider,
-    keys,
-    keyConfigured,
+    apiAvailable,
     setAuthMode,
-    saveKey,
-    deleteKey,
   };
 }
 
@@ -260,13 +242,15 @@ function HarnessListRow({
   onOpen,
   index,
   isDefault,
+  keys,
 }: {
   kind: string;
   onOpen: () => void;
   index: number;
   isDefault?: boolean;
+  keys: LmApiKeySummary[];
 }) {
-  const { statusText: st, name, Icon, iconClassName, authBadge } = useHarness(kind);
+  const { statusText: st, name, Icon, iconClassName, authBadge } = useHarness(kind, keys);
   const worker = workerOf(kind);
 
   return (
@@ -299,38 +283,37 @@ function HarnessListRow({
   );
 }
 
-/** LLM-key section: pick a provider (only the ones this harness supports), save a
- *  key, and see/delete configured keys. Mirrors secrets-section.tsx (no enable
- *  gate; keyed by provider enum, not a free-text name). */
-function LlmKeySection({
-  supportedProviders,
-  activeProvider,
+/** Central LLM-key management — the base layer. Add a key for any provider, see
+ *  all configured keys, test validity, and delete. Shared across the modal;
+ *  harnesses only consume these keys (they never enter them). */
+function LlmKeysSection({
   keys,
-  saveKey,
-  deleteKey,
+  refreshKeys,
 }: {
-  supportedProviders: LMApiProvider[];
-  activeProvider: string;
   keys: LmApiKeySummary[];
-  saveKey: (provider: string, key: string) => Promise<void>;
-  deleteKey: (provider: string) => Promise<void>;
+  refreshKeys: () => Promise<void>;
 }) {
   const { t } = useLingui();
-  const [provider, setProvider] = useState<string>(
-    supportedProviders.includes(activeProvider as LMApiProvider) ? activeProvider : supportedProviders[0],
-  );
+  const allProviders = Object.values(LMApiProvider);
+  const [provider, setProvider] = useState<string>(allProviders[0]);
   const [value, setValue] = useState('');
   const [busy, setBusy] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  // Per-provider validity: undefined = untested this session.
+  const [validity, setValidity] = useState<Record<string, LmApiKeyValidation | undefined>>({});
+  const [testing, setTesting] = useState<string | null>(null);
   const configured = keys.filter((k) => k.configured);
 
   const onSave = async () => {
     if (!value.trim()) return;
     setBusy(true);
     try {
-      await saveKey(provider, value.trim());
+      const res = await lmKeysService.setLmApi(value.trim(), provider as LMApiProvider);
       setValue('');
-      notify.success({ title: t`Key saved`, message: providerLabel(provider) });
+      setValidity((v) => ({ ...v, [provider]: { valid: res.valid, message: res.message } }));
+      await refreshKeys();
+      if (res.valid) notify.success({ title: t`Key saved & valid`, message: providerLabel(provider) });
+      else notify.error({ title: t`Key saved but invalid`, message: res.message ?? providerLabel(provider) });
     } catch (error) {
       notify.error({ title: t`Error`, message: error instanceof Error ? error.message : t`Failed to save key` });
     } finally {
@@ -338,20 +321,38 @@ function LlmKeySection({
     }
   };
 
+  const onTest = async (p: string) => {
+    setTesting(p);
+    try {
+      const res = await lmKeysService.testLmApi(p as LMApiProvider);
+      setValidity((v) => ({ ...v, [p]: res }));
+    } catch {
+      setValidity((v) => ({ ...v, [p]: { valid: false, message: t`Test failed` } }));
+    } finally {
+      setTesting(null);
+    }
+  };
+
+  const onDelete = async (p: string) => {
+    await lmKeysService.deleteLmApi(p as LMApiProvider);
+    setValidity((v) => ({ ...v, [p]: undefined }));
+    await refreshKeys();
+  };
+
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-border/60 bg-muted/20 p-3">
       <div className="flex items-center gap-1.5 text-sm font-medium">
         <KeyRound className="h-4 w-4" />
-        <Trans>LLM API key</Trans>
+        <Trans>LLM API keys</Trans>
       </div>
 
       <div className="flex gap-2">
         <Select value={provider} onValueChange={setProvider}>
-          <SelectTrigger className="h-10 w-[140px]" data-testid="llm-provider-select">
+          <SelectTrigger className="h-10 w-[130px]" data-testid="keys-provider-select">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {supportedProviders.map((p) => (
+            {allProviders.map((p) => (
               <SelectItem key={p} value={p}>
                 {providerLabel(p)}
               </SelectItem>
@@ -365,33 +366,59 @@ function LlmKeySection({
           onKeyDown={(e) => e.key === 'Enter' && void onSave()}
           placeholder={t`Paste API key`}
           className="h-10"
-          data-testid="llm-key-input"
+          data-testid="keys-input"
         />
-        <Button disabled={busy || !value.trim()} onClick={() => void onSave()} data-testid="llm-key-save">
+        <Button disabled={busy || !value.trim()} onClick={() => void onSave()} data-testid="keys-save">
           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trans>Save</Trans>}
         </Button>
       </div>
 
       {configured.length > 0 && (
         <ul className="flex flex-col gap-1">
-          {configured.map((k) => (
-            <li
-              key={k.provider}
-              data-testid={`llm-key-row-${k.provider}`}
-              className="flex items-center justify-between rounded-md border border-border/50 bg-background/60 px-2.5 py-1.5 text-sm"
-            >
-              <span>{providerLabel(k.provider)}</span>
-              <button
-                type="button"
-                aria-label={t`Delete key`}
-                data-testid={`llm-key-delete-${k.provider}`}
-                className="text-muted-foreground hover:text-destructive"
-                onClick={() => setConfirmDelete(k.provider)}
+          {configured.map((k) => {
+            const v = validity[k.provider];
+            return (
+              <li
+                key={k.provider}
+                data-testid={`keys-row-${k.provider}`}
+                className="flex items-center justify-between gap-2 rounded-md border border-border/50 bg-background/60 px-2.5 py-1.5 text-sm"
               >
-                <Trash2 className="h-4 w-4" />
-              </button>
-            </li>
-          ))}
+                <span className="flex items-center gap-2">
+                  {providerLabel(k.provider)}
+                  {v && (
+                    <Badge
+                      variant="outline"
+                      className={`gap-1 ${v.valid ? AUTH_BADGE_TONE.emerald : 'border-destructive/30 bg-destructive/10 text-destructive'}`}
+                    >
+                      {v.valid ? <Check className="h-3 w-3" /> : <AlertCircle className="h-3 w-3" />}
+                      {v.valid ? <Trans>Valid</Trans> : <Trans>Invalid</Trans>}
+                    </Badge>
+                  )}
+                </span>
+                <span className="flex items-center gap-1">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7"
+                    disabled={testing === k.provider}
+                    data-testid={`keys-test-${k.provider}`}
+                    onClick={() => void onTest(k.provider)}
+                  >
+                    {testing === k.provider ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trans>Test</Trans>}
+                  </Button>
+                  <button
+                    type="button"
+                    aria-label={t`Delete key`}
+                    data-testid={`keys-delete-${k.provider}`}
+                    className="text-muted-foreground hover:text-destructive"
+                    onClick={() => setConfirmDelete(k.provider)}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </span>
+              </li>
+            );
+          })}
         </ul>
       )}
 
@@ -400,7 +427,7 @@ function LlmKeySection({
         onOpenChange={(o) => !o && setConfirmDelete(null)}
         title={t`Delete this key?`}
         onConfirm={() => {
-          if (confirmDelete) void deleteKey(confirmDelete);
+          if (confirmDelete) void onDelete(confirmDelete);
           setConfirmDelete(null);
         }}
       />
@@ -409,13 +436,13 @@ function LlmKeySection({
 }
 
 /** Detail: one assistant, focused on the single next action. */
-function HarnessDetail({ kind, onBack }: { kind: string; onBack: () => void }) {
+function HarnessDetail({ kind, onBack, keys }: { kind: string; onBack: () => void; keys: LmApiKeySummary[] }) {
   const { t } = useLingui();
   const {
     capability, status, statusText: st, name, account, Icon, iconClassName, pasted, setPasted,
     signIn, copyAndOpen, submitCode,
-    authMode, authBadge, supportedProviders, activeProvider, keys, setAuthMode, saveKey, deleteKey,
-  } = useHarness(kind);
+    authMode, authBadge, configuredProviders, activeProvider, apiAvailable, setAuthMode,
+  } = useHarness(kind, keys);
 
   return (
     <div style={{ animation: 'hlIn 260ms cubic-bezier(0.16,1,0.3,1) both' }} className="flex flex-col">
@@ -441,33 +468,53 @@ function HarnessDetail({ kind, onBack }: { kind: string; onBack: () => void }) {
         </div>
       </div>
 
-      {/* Sign-in method: device login vs a stored LLM key. Only meaningful once
-          the CLI is installed. */}
+      {/* Sign-in method: device login vs a configured LLM key. The "LLM key"
+          option is disabled until a key exists for a provider this harness
+          supports (keys are managed in the LLM API keys section above). */}
       {status !== 'unavailable' && (
         <div className="mt-5 flex flex-col gap-3">
           <div className="flex rounded-lg border border-border/60 p-0.5" data-testid="harness-authmode-toggle">
-            {(['device', 'api'] as const).map((mode) => (
-              <button
-                key={mode}
-                type="button"
-                data-testid={`harness-authmode-${mode}`}
-                onClick={() => void setAuthMode(mode, activeProvider)}
-                className={`flex-1 rounded-md px-3 py-1.5 text-sm transition-colors ${
-                  authMode === mode ? 'bg-accent font-medium text-foreground' : 'text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                {mode === 'device' ? <Trans>Device login</Trans> : <Trans>LLM key</Trans>}
-              </button>
-            ))}
+            {(['device', 'api'] as const).map((mode) => {
+              const disabled = mode === 'api' && !apiAvailable;
+              return (
+                <button
+                  key={mode}
+                  type="button"
+                  disabled={disabled}
+                  data-testid={`harness-authmode-${mode}`}
+                  title={disabled ? t`Add a key in "LLM API keys" above to use it here` : undefined}
+                  onClick={() => void setAuthMode(mode, activeProvider)}
+                  className={`flex-1 rounded-md px-3 py-1.5 text-sm transition-colors ${
+                    authMode === mode ? 'bg-accent font-medium text-foreground' : 'text-muted-foreground hover:text-foreground'
+                  } ${disabled ? 'cursor-not-allowed opacity-40' : ''}`}
+                >
+                  {mode === 'device' ? <Trans>Device login</Trans> : <Trans>LLM key</Trans>}
+                </button>
+              );
+            })}
           </div>
-          {authMode === 'api' && supportedProviders.length > 0 && (
-            <LlmKeySection
-              supportedProviders={supportedProviders}
-              activeProvider={activeProvider}
-              keys={keys}
-              saveKey={saveKey}
-              deleteKey={deleteKey}
-            />
+          {authMode === 'api' && apiAvailable && (
+            <div className="flex flex-col gap-2 rounded-lg border border-border/60 bg-muted/20 p-3">
+              <span className="text-xs text-muted-foreground">
+                <Trans>Use which key</Trans>
+              </span>
+              <Select value={activeProvider} onValueChange={(p) => void setAuthMode('api', p)}>
+                <SelectTrigger className="h-9" data-testid="harness-provider-select">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {configuredProviders.map((p) => (
+                    <SelectItem key={p} value={p}>
+                      {providerLabel(p)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <span className="flex items-center gap-1.5 text-sm text-emerald-500">
+                <Check className="h-4 w-4" />
+                <Trans>Using {providerLabel(activeProvider)} key</Trans>
+              </span>
+            </div>
           )}
         </div>
       )}
@@ -662,32 +709,50 @@ export function HarnessLoginModalRoot() {
   const [defaultKind, setDefaultKind] = useState<string | null>(
     () => capabilityManager.getSnapshot('harness').resolvedKind ?? null,
   );
+  // The configured LLM keys — fetched once here and shared by the keys section
+  // (base layer) and every harness (consumer), so the whole modal agrees.
+  const [keys, setKeys] = useState<LmApiKeySummary[]>([]);
+  const refreshKeys = useCallback(async () => {
+    try {
+      setKeys(await lmKeysService.list());
+    } catch {
+      /* best-effort; leave the list empty on failure */
+    }
+  }, []);
   useHarnessLoginGate();
 
-  // Reset to the list whenever the modal is reopened.
+  // Reset to the list + refresh keys whenever the modal is reopened.
   useEffect(() => {
     if (!open) setSelected(null);
-  }, [open]);
+    else void refreshKeys();
+  }, [open, refreshKeys]);
 
   if (!open) return null;
   return (
     <Dialog open onOpenChange={setOpen}>
-      <DialogContent className="sm:max-w-[420px]">
+      <DialogContent className="sm:max-w-[440px]">
         <style>{`@keyframes hlIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}`}</style>
         {selected ? (
-          <HarnessDetail kind={selected} onBack={() => setSelected(null)} />
+          <HarnessDetail kind={selected} onBack={() => setSelected(null)} keys={keys} />
         ) : (
-          <div className="flex flex-col">
+          <div className="flex max-h-[80vh] flex-col overflow-y-auto">
             <DialogTitle className="text-lg font-semibold">
-              <Trans>Sign in to a coding assistant</Trans>
+              <Trans>Assistants &amp; keys</Trans>
             </DialogTitle>
-            <DialogDescription className="mt-1 text-sm text-muted-foreground">
-              <Trans>Pick one to get started — it only takes a few seconds.</Trans>
-            </DialogDescription>
+
+            {/* Base layer: LLM API keys, configured once and shared. */}
+            <div className="mt-3">
+              <LlmKeysSection keys={keys} refreshKeys={refreshKeys} />
+            </div>
+
+            {/* Consumers: each harness picks device login or a configured key. */}
+            <div className="mt-5 text-sm font-medium text-muted-foreground">
+              <Trans>Harness setup</Trans>
+            </div>
             <DefaultHarnessSelect
               onChanged={() => setDefaultKind(capabilityManager.getSnapshot('harness').resolvedKind ?? null)}
             />
-            <div className="mt-4 flex flex-col gap-2.5">
+            <div className="mt-3 flex flex-col gap-2.5">
               {HARNESS_CAPABILITY_KINDS.map((kind, i) => (
                 <HarnessListRow
                   key={kind}
@@ -695,6 +760,7 @@ export function HarnessLoginModalRoot() {
                   index={i}
                   isDefault={kind === defaultKind}
                   onOpen={() => setSelected(kind)}
+                  keys={keys}
                 />
               ))}
             </div>
