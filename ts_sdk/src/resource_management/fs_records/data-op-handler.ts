@@ -3,7 +3,7 @@
  * to per-record-type subscribers.
  *
  * After save/delete the backend broadcasts:
- *   DataOpMessage(to_entity=`{type}-@{uid}`, op="update"|"create"|"delete", data={...})
+ *   DataOpMessage(to_entity=`{type}-{uid}`, op="update"|"create"|"delete", data={...})
  *
  * This module matches the `type` portion against the RecordTypeRegistry
  * and dispatches to any registered callbacks.
@@ -39,7 +39,7 @@ let _attached = false;
 
 /**
  * Handle an incoming data_op_msg and dispatch to subscribers.
- * Expected `to_entity` format: `{recordType}-@{uid}` or `{recordType}-{uuid}`.
+ * Expected `to_entity` format: `{recordType}-{uuid}` (canonical TypeId).
  */
 function handleDataOp(toEntity: string, op: string, data?: Record<string, unknown>): void {
   // Parse record type from the entity identifier

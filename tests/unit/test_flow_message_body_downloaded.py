@@ -33,7 +33,8 @@ def records_root(tmp_path, monkeypatch):
 
 
 def _materialize(root, etype: str, eid: str) -> None:
-    folder = root / etype / record_paths.record_stem(etype, eid)
+    # Shadow store: bare id under a <type>/ parent (records/<type>/<id>/).
+    folder = root / etype / eid
     folder.mkdir(parents=True, exist_ok=True)
     (folder / "metadata.json").write_text("{}")
 
@@ -80,7 +81,7 @@ def test_entity_attachment_staged_counts_as_downloaded(records_root, tmp_path, m
     # Stage the entry (what unpack_bundle persists) — no record folder minted.
     fm_data_ops.unpacked_dir(fm_id).mkdir(parents=True)
     (fm_data_ops.unpacked_dir(fm_id) / "header.json").write_text("{}")
-    entry = fm_data_ops.staged_entry_dir(fm_id, f"skill-@{eid}")
+    entry = fm_data_ops.staged_entry_dir(fm_id, f"skill-{eid}")
     entry.mkdir(parents=True)
     (entry / "SKILL.md").write_text("# staged")
 

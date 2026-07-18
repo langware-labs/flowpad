@@ -48,7 +48,7 @@ class Ids:
         self.fm = str(uuid.uuid4())
         self.skill = str(uuid.uuid4())
         self.spec = str(uuid.uuid4())
-        self.skill_key = f"skill-@{self.skill}"
+        self.skill_key = f"skill-{self.skill}"
         # Unique leaf name too — skill ids are also derivable from the name.
         self.leaf = f"staged-skill-{self.skill[:8]}"
 
@@ -86,7 +86,7 @@ def _write_bundle(tmp_path: Path, ids: Ids, *, body: str = SENTINEL) -> Path:
             "print('helper')\n",
         )
         zf.writestr(
-            f"attachment/spec-@{ids.spec}/agentic-assets/spec/staged-spec/spec.md",
+            f"attachment/spec-{ids.spec}/agentic-assets/spec/staged-spec/spec.md",
             f"---\nid: {ids.spec}\ntitle: staged spec\nspec_type: plan\n---\n\n# spec\n",
         )
     return zip_path
@@ -176,7 +176,7 @@ async def test_install_user_scope_allowed_for_repo_type(tmp_path, ids, monkeypat
     monkeypatch.setattr(ma_action, "_user_scope_root", lambda: tmp_path / "home")
     await _stage(tmp_path, ids)
     spec_ma = await MessageAttachment.get_one(
-        {"id": MessageAttachment.allocate_deterministic_id(ids.fm, f"spec-@{ids.spec}")}
+        {"id": MessageAttachment.allocate_deterministic_id(ids.fm, f"spec-{ids.spec}")}
     )
     assert spec_ma is not None
     res = await handle_attachment_install(spec_ma.id, "user", None)
@@ -246,7 +246,7 @@ async def _stage_raw_file(tmp_path: Path, fm_id: str, fname: str, body: str) -> 
     await unpack_bundle(_write_raw_file_bundle(tmp_path, fm_id, fname, body), "local-user-id")
     asset_id = mint_uuid(f"flow_message_file:{fm_id}:{fname}")
     ma = await MessageAttachment.get_one(
-        {"id": MessageAttachment.allocate_deterministic_id(fm_id, f"file-@{asset_id}")}
+        {"id": MessageAttachment.allocate_deterministic_id(fm_id, f"file-{asset_id}")}
     )
     assert ma is not None, "unpack did not stage the raw file"
     return ma

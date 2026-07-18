@@ -40,11 +40,9 @@ def _normalize_path(value: object) -> str | None:
 
 def copilot_transcript_path_for_process(process_id: str) -> Path:
     """Return the process-local JSONL tee path for Copilot stdout events."""
-    from flow_sdk.fs_store.fs_record import record_stem
-    from flow_sdk.fs_store.record_paths import get_default_records_root
+    from flow_sdk.fs_store.record_paths import shadow_dir_for
 
-    root = get_default_records_root()
-    directory = root / "agentic_process" / record_stem("agentic_process", process_id)
+    directory = shadow_dir_for("agentic_process", process_id)
     directory.mkdir(parents=True, exist_ok=True)
     return directory / "copilot_transcript.jsonl"
 

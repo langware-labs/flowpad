@@ -257,8 +257,8 @@ def _type_id_attachment_present(fm_id: "str | None", data: str) -> bool:
         # Record-folder (installed / pre-staging) check FIRST: for an installed
         # asset it short-circuits without paying the staged-dir stat — this
         # runs per TYPE_ID attachment on every serialize (hot path).
-        from flow_sdk.fs_store.record_paths import get_default_records_root, record_stem
-        meta = get_default_records_root() / etype / record_stem(etype, eid) / "metadata.json"
+        from flow_sdk.fs_store.record_paths import record_stem, shadow_dir_for
+        meta = shadow_dir_for(etype, eid) / "metadata.json"
         if meta.exists():
             if etype not in _BODY_BEARING_TYPE_IDS:
                 return True

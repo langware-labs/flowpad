@@ -25,8 +25,15 @@ from flow_sdk.i18n.supported_locales import SUPPORTED_LOCALES
 
 @pytest.fixture
 def records_data_root(tmp_path, monkeypatch):
-    """Point the translation ops at an isolated temp records-data root."""
-    monkeypatch.setattr(T, "get_default_records_data_root", lambda: tmp_path)
+    """Point the translation ops at an isolated temp records-data root.
+
+    ``data_dir_for`` reads ``get_default_records_data_root`` from ``record_paths``
+    (the single source of truth), so patch it there.
+    """
+    monkeypatch.setattr(
+        "flow_sdk.fs_store.record_paths.get_default_records_data_root",
+        lambda: tmp_path,
+    )
     return tmp_path
 
 
@@ -66,7 +73,7 @@ def test_translations_field_lives_on_the_abstract_base():
 
 def test_translation_path_grammar(records_data_root):
     p = T.translation_path("markdown", "abc-123", "he")
-    assert p == records_data_root / "markdown" / "markdown-@abc-123" / "translations" / "he.md"
+    assert p == records_data_root / "markdown" / "abc-123" / "translations" / "he.md"
 
 
 def test_translation_path_rejects_traversal(records_data_root):

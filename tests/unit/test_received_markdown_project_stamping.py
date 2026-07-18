@@ -40,9 +40,9 @@ BODY = "SENTINEL-shared-from-conversation"
 
 def _markdown_bundle_entry_dir(tmp_path: Path) -> Path:
     """A single-file markdown bundle attachment entry, as the unified packer
-    lays it out: ``attachment/markdown-@<id>/docs/<leaf>.md`` with the id pinned
+    lays it out: ``attachment/markdown-<id>/docs/<leaf>.md`` with the id pinned
     into frontmatter."""
-    entry_dir = tmp_path / "attachment" / f"markdown-@{MD_ID}"
+    entry_dir = tmp_path / "attachment" / f"markdown-{MD_ID}"
     leaf = entry_dir / "docs" / "shared-note.md"
     leaf.parent.mkdir(parents=True, exist_ok=True)
     leaf.write_text(

@@ -1484,7 +1484,6 @@ class Project(Entity):
             FSRecord,
             get_default_records_data_root,
             get_default_records_root,
-            record_stem,
         )
 
         log = logging.getLogger(__name__)
@@ -1493,9 +1492,9 @@ class Project(Entity):
         data_root = get_default_records_data_root()
 
         def _purge_data(rtype: str, rid: str) -> None:
-            # records_data has two on-disk shapes across types: the canonical
-            # <type>/<type>-@<id>/ and the legacy <id>-only used by index types.
-            for sub in (record_stem(rtype, rid), rid):
+            # records_data has two on-disk shapes: the current bare <id>/ and the
+            # legacy uname-sigil <type>-@<id>/ (pre-rename installs).
+            for sub in (str(rid), f"{rtype}-@{rid}"):
                 p = data_root / rtype / sub
                 try:
                     shutil.rmtree(p)  # idempotent — FileNotFoundError when absent

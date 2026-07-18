@@ -164,7 +164,7 @@ def test_restore_copies_whole_nested_repo_tree(tmp_path):
 
     # A staged entry dir whose relpath already encodes the recursive layout — the
     # packer stores it this way, so restore is an anchor-free mirror.
-    entry = tmp_path / "staged" / "repo_node-@id"
+    entry = tmp_path / "staged" / "repo_node-id"
     aa = AGENTIC_ASSETS_DIR
     rel_parent = f"{aa}/repo_node/p/node.json"
     rel_child = f"{aa}/repo_node/p/{aa}/repo_node/c/node.json"
@@ -203,7 +203,7 @@ async def test_index_attachments_widens_types_for_repo(tmp_path, monkeypatch):
     # A repo asset (spec) → reindex covers ALL repo types, not just spec.
     await index_attachments(
         [ReceivedAsset(root=tmp_path, scope="project", asset_type="spec",
-                       asset_id="x", entry_key="spec-@x", record_type=EntityType.SPEC)],
+                       asset_id="x", entry_key="spec-x", record_type=EntityType.SPEC)],
         project_id=None, owner=None,
     )
     assert set(captured["types"]) == {"spec", "task"}
@@ -212,7 +212,7 @@ async def test_index_attachments_widens_types_for_repo(tmp_path, monkeypatch):
     captured.clear()
     await index_attachments(
         [ReceivedAsset(root=tmp_path, scope="project", asset_type="markdown",
-                       asset_id="y", entry_key="markdown-@y", record_type=EntityType.MARKDOWN)],
+                       asset_id="y", entry_key="markdown-y", record_type=EntityType.MARKDOWN)],
         project_id=None, owner=None,
     )
     assert captured["types"] == ("markdown",)

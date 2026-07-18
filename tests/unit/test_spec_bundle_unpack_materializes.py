@@ -53,9 +53,9 @@ def _embedded_storage():
 
 def _bundle_entry_dir(tmp_path):
     """Build a bundle attachment entry the unified packer would produce:
-    ``attachment/spec-@<id>/specs/<name>/spec.md`` with the sender id pinned
+    ``attachment/spec-<id>/specs/<name>/spec.md`` with the sender id pinned
     into the frontmatter (the packer always pins it now)."""
-    entry_dir = tmp_path / "attachment" / f"spec-@{SPEC_ID}"
+    entry_dir = tmp_path / "attachment" / f"spec-{SPEC_ID}"
     spec_md = entry_dir / "agentic-assets" / "spec" / "hello-world" / "spec.md"
     spec_md.parent.mkdir(parents=True, exist_ok=True)
     spec_md.write_text(
@@ -113,7 +113,7 @@ async def test_restore_heals_content_less_stub(tmp_path):
 def _spec_bundle_entry_dir(tmp_path, spec_id, body):
     """A spec bundle attachment entry with a custom id + body, laid out at the
     canonical ``specs/<name>/spec.md`` the unified packer produces."""
-    entry_dir = tmp_path / "attachment" / f"spec-@{spec_id}"
+    entry_dir = tmp_path / "attachment" / f"spec-{spec_id}"
     spec_md = entry_dir / "agentic-assets" / "spec" / "hello-world" / "spec.md"
     spec_md.parent.mkdir(parents=True, exist_ok=True)
     spec_md.write_text(
@@ -199,7 +199,7 @@ async def test_restored_single_file_markdown_materializes_same_pinned_id(tmp_pat
 
     md_id = "c3d4e5f6-2222-4ccc-8ddd-aabbccddeeff"
     body = "SENTINEL-markdown-single-file-body"
-    entry_dir = tmp_path / "attachment" / f"markdown-@{md_id}"
+    entry_dir = tmp_path / "attachment" / f"markdown-{md_id}"
     leaf = entry_dir / "docs" / "shared-note.md"
     leaf.parent.mkdir(parents=True, exist_ok=True)
     leaf.write_text(

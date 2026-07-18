@@ -43,8 +43,11 @@ from flow_sdk.fs_store.fs_ref import FSRef
 M = TypeVar("M")  # meta model — dict view by default; Pydantic models opt-in via TypeInfo.meta_model
 
 
-# Canonical naming. <type>-@<uid> as folder name under records_root/<type>/.
-_NAME_SEP = "-@"
+# Type-scoped shadow store: a record lives at ``records_root/<type>/<id>/`` — a
+# BARE id under a ``<type>/`` parent (the parent dir already scopes the type, so
+# the name carries no redundant prefix and no uname ``@``). The self-describing
+# ``<type>-<id>`` stem (``record_stem``, re-exported below) is only for flat /
+# portable namespaces (bundles, staging, VFS).
 _METADATA_JSON = "metadata.json"
 # The single per-record index sentinel. Two on-disk shapes:
 #   legacy  ``<int_epoch>_<contenthash>.hash``
@@ -98,15 +101,15 @@ async def record_sync_guard(record_type: str, record_id: str):
             _HELD_RECORD_SYNC_KEYS.reset(token)
 
 
-def record_stem(record_type: str, uid: str) -> str:
-    return f"{record_type}{_NAME_SEP}{uid}"
-
-
-def parse_record_stem(stem: str) -> tuple[str, str]:
-    if _NAME_SEP not in stem:
-        raise ValueError(f"Invalid record stem: {stem!r}")
-    rt, uid = stem.split(_NAME_SEP, 1)
-    return rt, uid
+# Single source of truth lives in record_paths; re-exported here for the callers
+# that import the stem / path helpers from this module.
+from flow_sdk.fs_store.record_paths import (  # noqa: E402
+    data_dir_for as data_dir_for,
+    is_record_dir as is_record_dir,
+    parse_record_stem as parse_record_stem,
+    record_stem as record_stem,
+    shadow_dir_for as shadow_dir_for,
+)
 
 
 def write_text_if_changed(path: Path, text: str) -> None:
@@ -249,10 +252,10 @@ class FSRecord(Generic[M]):
 
     @property
     def shadow_dir(self) -> Path:
-        """records_root/<type>/<type>-@<id>/"""
+        """records_root/<type>/<id>/"""
         if not self.type or self.id is None:
             raise ValueError(f"FSRecord(type={self.type!r}, id={self.id!r}) has no shadow_dir")
-        return _get_default_records_root() / self.type / record_stem(self.type, self.id)
+        return shadow_dir_for(self.type, self.id)
 
     @property
     def record_folder_ref(self) -> FSRef:
@@ -383,9 +386,8 @@ class FSRecord(Generic[M]):
 
     @classmethod
     def load(cls, type: str, id: str) -> "FSRecord":
-        """Load by identity. Reads <records_root>/<type>/<type>-@<id>/metadata.json"""
-        folder = _get_default_records_root() / type / record_stem(type, id)
-        return cls.load_record(folder)
+        """Load by identity. Reads <records_root>/<type>/<id>/metadata.json"""
+        return cls.load_record(shadow_dir_for(type, id))
 
     @classmethod
     def load_or_none(cls, type: str, id: str) -> "FSRecord | None":
@@ -400,7 +402,7 @@ class FSRecord(Generic[M]):
         """Find a record by ``id`` alone, scanning every type under records_root.
 
         Unlike ``load``/``load_or_none`` this needs no ``type``: it checks the
-        deterministic shadow path ``<records_root>/<type>/<type>-@<id>/`` for each
+        deterministic shadow path ``<records_root>/<type>/<id>/`` for each
         type folder. Returns the single match, ``None`` when no type owns ``id``,
         and raises ``ValueError`` when more than one type has a record with this
         ``id`` (ids are unique within a type but can collide across types).
@@ -412,8 +414,8 @@ class FSRecord(Generic[M]):
         for type_dir in root.iterdir():
             if not type_dir.is_dir():
                 continue
-            folder = type_dir / record_stem(type_dir.name, id)
-            if (folder / _METADATA_JSON).exists():
+            folder = type_dir / str(id)
+            if is_record_dir(folder):
                 matches.append(folder)
         if not matches:
             return None
@@ -447,7 +449,7 @@ class FSRecord(Generic[M]):
             return []
         out: list[FSRecord] = []
         for child in root.iterdir():
-            if not child.is_dir() or _NAME_SEP not in child.name:
+            if not is_record_dir(child):
                 continue
             try:
                 out.append(cls.load_record(child))
@@ -462,10 +464,7 @@ class FSRecord(Generic[M]):
         root = _get_default_records_root() / type
         if not root.is_dir():
             return 0
-        return sum(
-            1 for child in root.iterdir()
-            if child.is_dir() and _NAME_SEP in child.name
-        )
+        return sum(1 for child in root.iterdir() if is_record_dir(child))
 
     # ── Index state (self-contained, on-disk, zero DB) ───────────────────
     #

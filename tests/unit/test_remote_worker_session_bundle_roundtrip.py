@@ -68,7 +68,7 @@ async def test_pack_unpack_session_roundtrip(tmp_path):
     zip_path = await pack_bundle(_session_fm(rws.id), dest_dir=tmp_path)
 
     with zipfile.ZipFile(zip_path) as zf:
-        header_name = f"attachment/{EntityType.REMOTE_WORKER_SESSION.value}-@{rws.id}/header.json"
+        header_name = f"attachment/{EntityType.REMOTE_WORKER_SESSION.value}-{rws.id}/header.json"
         assert header_name in zf.namelist()
         header = json.loads(zf.read(header_name))
         assert header["id"] == rws.id
@@ -106,7 +106,7 @@ async def test_pack_header_is_exact_snapshot_whitelist(tmp_path):
 
     header_path = (
         attachment_dir
-        / f"{EntityType.REMOTE_WORKER_SESSION.value}-@{rws.id}"
+        / f"{EntityType.REMOTE_WORKER_SESSION.value}-{rws.id}"
         / "header.json"
     )
     assert header_path.exists()
