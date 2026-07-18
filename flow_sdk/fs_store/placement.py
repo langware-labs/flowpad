@@ -52,6 +52,8 @@ class AssetClass(StrEnum):
     HARNESS = "harness"    # tied to ONE harness (declared via ``TypeInfo.harness``)
     SHARED = "shared"      # every harness understands it → syncmd fan-out
     NONE = "none"          # raw files, no TypeInfo, no harness semantics
+    REPO = "repo"          # flowpad-native repo asset under ``agentic-assets/<type>``;
+    #                        folder-backed, children nest recursively (see AGENTIC_ASSETS_DIR)
 
 
 class Scope(StrEnum):
@@ -144,9 +146,15 @@ class LayoutClass:
     fan_out: bool
     user_scope: bool
     project_scope: bool = True
+    # Fixed subdir prefix (e.g. ``agentic-assets``) that replaces the harness
+    # dot-dir. When set, ``mount`` yields ``<root_prefix>/<family>`` regardless of
+    # harness (REPO). Mutually exclusive with ``harness_scoped``.
+    root_prefix: str | None = None
 
     def mount(self, family: str, *, harness: str | None) -> str:
         """Scope-root-relative subdir for the ONE canonical copy flowpad writes."""
+        if self.root_prefix is not None:
+            return f"{self.root_prefix}/{family}"
         if not self.harness_scoped:
             return family
         prefix = WORKER_PREFIX.get(harness or HarnessType.CLAUDE, ".claude")
@@ -160,11 +168,19 @@ class LayoutClass:
         return False  # SYSTEM (or anything else) is never a placement input
 
 
+# The recursive repo-asset container. A REPO asset lives at
+# ``<container>/agentic-assets/<type>/<name>``; its children nest under the
+# asset's own ``agentic-assets/`` subfolder — the same segment, recursively.
+AGENTIC_ASSETS_DIR = "agentic-assets"
+
 LAYOUT_REGISTRY: dict[AssetClass, LayoutClass] = {
     AssetClass.INTERNAL: LayoutClass(harness_scoped=False, fan_out=False, user_scope=False),
     AssetClass.HARNESS: LayoutClass(harness_scoped=True, fan_out=False, user_scope=True),
     AssetClass.SHARED: LayoutClass(harness_scoped=True, fan_out=True, user_scope=True),
     AssetClass.NONE: LayoutClass(harness_scoped=True, fan_out=False, user_scope=True),
+    AssetClass.REPO: LayoutClass(
+        harness_scoped=False, fan_out=False, user_scope=True, root_prefix=AGENTIC_ASSETS_DIR
+    ),
 }
 
 
@@ -206,8 +222,8 @@ def effective_harness(
     for INTERNAL (which is harness-less)."""
     if asset_class == AssetClass.HARNESS:
         return declared or HarnessType.CLAUDE
-    if asset_class == AssetClass.INTERNAL:
-        return None
+    if asset_class in (AssetClass.INTERNAL, AssetClass.REPO):
+        return None  # harness-less (INTERNAL: bare family; REPO: agentic-assets/ prefix)
     return default_worker  # SHARED, NONE → the machine's canonical harness
 
 

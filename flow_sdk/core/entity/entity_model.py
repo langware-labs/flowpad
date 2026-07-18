@@ -1104,6 +1104,29 @@ class Entity(DBEntity):
             return root_for_scope(Scope.PROJECT, project_mount=mount)
         return root_for_scope(Scope.USER)
 
+    async def _resolve_repo_parent_container(self, info) -> "Path | None":
+        """Container for a REPO child = its parent REPO asset's folder, so the
+        child nests at ``<parent-folder>/agentic-assets/<type>/<name>`` (the
+        recursive repo layout). Returns None when this isn't a repo child, the
+        parent is missing/not-yet-placed, or the parent is a (leaf) file asset.
+        """
+        from pathlib import Path  # noqa: PLC0415
+        from flow_sdk.fs_store.placement import AssetClass  # noqa: PLC0415
+
+        if getattr(info, "asset_class", None) != AssetClass.REPO:
+            return None
+        parent = await self.parent()
+        if parent is None:
+            return None
+        pinfo = SchemaRegistry.get(parent.get_type())
+        if pinfo is None or pinfo.asset_class != AssetClass.REPO:
+            return None
+        par_ref = getattr(parent, "asset_ref", None)
+        if not par_ref or pinfo.main_layout != "folder":
+            return None  # a repo child can only nest inside a folder-backed parent
+        # The parent's asset FOLDER owns where the child's agentic-assets/ goes.
+        return pinfo.folder_for(Path(par_ref))
+
     async def check_and_refresh_record(self) -> bool:
         """If the source asset changed since the last index, re-sync. Returns
         True if a refresh happened. Freshness is the record's own on-disk
@@ -2053,6 +2076,12 @@ class Entity(DBEntity):
         info = SchemaRegistry.get(type_name)
         if info is None or info._resolved_layout[0] is None:
             return
+        # REPO assets nest inside their parent: a repo child lands at
+        # ``<parent-folder>/agentic-assets/<type>/<name>``, recursively. When this
+        # entity is a repo child, its container IS the parent asset's folder, not
+        # the scope root — ``compute_asset_ref`` then appends ``agentic-assets/…``.
+        if scope_root is None:
+            scope_root = await self._resolve_repo_parent_container(info)
         scope_root = scope_root or await self._resolve_scope_root(scope_proj)
         if scope_root is None:
             return

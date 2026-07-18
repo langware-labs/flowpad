@@ -27,8 +27,8 @@ DECK = TypeMetadata(
     indexed_by_default=True,
     api_visible=True,
     index_fields=["description"],
-    asset_class="internal",
-    family="assets/decks",
+    asset_class="repo",
+    family="deck",
     main_layout="folder",
     # deck.json is the marker + shape claim: `flow show file <deck folder>`
     # resolves through discover_record_by_path → extract_deck → the deck entity

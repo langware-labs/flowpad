@@ -1010,14 +1010,24 @@ async def index_attachments(attachments: "list[ReceivedAsset]", *, project_id: s
     """
     from flow_sdk.builtin.message_attachment import AttachmentScope  # noqa: PLC0415
     from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    # A repo asset's nested children (of any repo type) ride inside its folder as
+    # bytes; widen the reindex to every repo type so the recursive
+    # ``agentic-assets`` walker materializes the WHOLE subtree, not just the top
+    # asset's type. Non-repo assets keep the tight scope. The widened tuple is
+    # constant across items, so build it (and the membership set) once.
+    repo_types = set(SchemaRegistry.get_repo_types())
+    repo_reindex_types = tuple(RecordType(t) for t in repo_types)
 
     for item in attachments:
         if item.record_type is not None:
+            types = repo_reindex_types if str(item.asset_type) in repo_types else (item.record_type,)
             if item.scope == AttachmentScope.PROJECT.value:
-                await _reindex_received_assets(item.root, (item.record_type,), project_id=project_id)
+                await _reindex_received_assets(item.root, types, project_id=project_id)
             else:
                 await _reindex_root(
-                    item.root, RecordType.USER_HOME_FOLDER, types=(item.record_type,), project_id=project_id
+                    item.root, RecordType.USER_HOME_FOLDER, types=types, project_id=project_id
                 )
         if item.git_origin:
             origins = {item.entry_key: item.git_origin}

@@ -345,6 +345,14 @@ class TypeInfo:
             return asset_path / self.main_file
         return asset_path
 
+    def folder_for(self, asset_ref: Path) -> Path:
+        """Map an asset_ref back to its owning folder (inverse of ``asset_ref_for``).
+
+        Bare-folder asset_ref (skill-style) IS the folder; spec-style inner-file
+        asset_ref → its containing dir. Callers gate on ``main_layout == "folder"``.
+        """
+        return asset_ref if self.folder_backed else asset_ref.parent
+
     @property
     def folder_backed(self) -> bool:
         """True when ``asset_ref`` points at a browsable folder — a folder-layout
@@ -684,6 +692,29 @@ class SchemaRegistry:
         """
         cls._ensure_loaded()
         return [k for k, v in cls._types.items() if v.entity_cls is not None and v.shared_child]
+
+    @classmethod
+    def repo_family_to_type(cls) -> dict[str, str]:
+        """Map a repo asset's ``<type>`` subdir (its ``family``) back to the type
+        name — the reverse of the ``agentic-assets/<family>`` mount, used by the
+        walker to identify a discovered folder's record type. The single owner of
+        the ``asset_class == REPO`` predicate; a type enrolls by declaring
+        ``asset_class="repo"`` (and a ``family``)."""
+        from flow_sdk.fs_store.placement import AssetClass  # noqa: PLC0415
+
+        cls._ensure_loaded()
+        return {
+            v.family: k
+            for k, v in cls._types.items()
+            if v.asset_class == AssetClass.REPO and v.family
+        }
+
+    @classmethod
+    def get_repo_types(cls) -> list[str]:
+        """Type names whose assets live in the recursive ``agentic-assets/<type>``
+        hierarchy — the values of ``repo_family_to_type`` (repo types must declare
+        a ``family`` to be placeable at all)."""
+        return list(cls.repo_family_to_type().values())
 
     @classmethod
     def get_public_entity_types(cls) -> list[str]:

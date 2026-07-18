@@ -56,7 +56,7 @@ def _bundle_entry_dir(tmp_path):
     ``attachment/spec-@<id>/specs/<name>/spec.md`` with the sender id pinned
     into the frontmatter (the packer always pins it now)."""
     entry_dir = tmp_path / "attachment" / f"spec-@{SPEC_ID}"
-    spec_md = entry_dir / "specs" / "hello-world" / "spec.md"
+    spec_md = entry_dir / "agentic-assets" / "spec" / "hello-world" / "spec.md"
     spec_md.parent.mkdir(parents=True, exist_ok=True)
     spec_md.write_text(
         f'---\nid: {SPEC_ID}\ntitle: "Plan: Hello World in Python"\nspec_type: "plan"\n---\n'
@@ -73,7 +73,7 @@ async def test_restored_spec_materializes_with_content(tmp_path):
     copied = _restore_file_backed_entry(_bundle_entry_dir(tmp_path), project_root, overwrite=False)
     assert copied
     # Copied at the canonical <project>/specs/<name>/spec.md location.
-    assert (project_root / "specs" / "hello-world" / "spec.md").exists()
+    assert (project_root / "agentic-assets" / "spec" / "hello-world" / "spec.md").exists()
 
     await _reindex_received_assets(project_root, (RecordType.SPEC,))
 
@@ -114,7 +114,7 @@ def _spec_bundle_entry_dir(tmp_path, spec_id, body):
     """A spec bundle attachment entry with a custom id + body, laid out at the
     canonical ``specs/<name>/spec.md`` the unified packer produces."""
     entry_dir = tmp_path / "attachment" / f"spec-@{spec_id}"
-    spec_md = entry_dir / "specs" / "hello-world" / "spec.md"
+    spec_md = entry_dir / "agentic-assets" / "spec" / "hello-world" / "spec.md"
     spec_md.parent.mkdir(parents=True, exist_ok=True)
     spec_md.write_text(
         f'---\nid: {spec_id}\ntitle: "Plan: Hello World in Python"\nspec_type: "plan"\n---\n'
@@ -129,7 +129,7 @@ async def test_restore_raises_on_genuine_byte_collision(tmp_path):
     # would write; overwrite=False must refuse and preserve the local bytes.
     entry_dir = _bundle_entry_dir(tmp_path)
     project_root = tmp_path / "project"
-    dest = project_root / "specs" / "hello-world" / "spec.md"
+    dest = project_root / "agentic-assets" / "spec" / "hello-world" / "spec.md"
     dest.parent.mkdir(parents=True, exist_ok=True)
     local_bytes = b"---\nid: local\n---\n# LOCAL EDIT do not clobber\n"
     dest.write_bytes(local_bytes)
@@ -150,8 +150,8 @@ async def test_restore_byte_identical_existing_is_idempotent_noop(tmp_path):
     project_root.mkdir(parents=True)
 
     assert _restore_file_backed_entry(entry_dir, project_root, overwrite=False) is True
-    dest = project_root / "specs" / "hello-world" / "spec.md"
-    src = entry_dir / "specs" / "hello-world" / "spec.md"
+    dest = project_root / "agentic-assets" / "spec" / "hello-world" / "spec.md"
+    src = entry_dir / "agentic-assets" / "spec" / "hello-world" / "spec.md"
     assert filecmp.cmp(src, dest, shallow=False), "precondition: dest == source bytes"
     before = dest.read_bytes()
 
@@ -169,7 +169,7 @@ async def test_overwrite_replaces_existing_on_disk_asset(tmp_path):
     entry_dir = _spec_bundle_entry_dir(tmp_path, ow_spec_id, new_body)
 
     project_root = tmp_path / "project"
-    dest = project_root / "specs" / "hello-world" / "spec.md"
+    dest = project_root / "agentic-assets" / "spec" / "hello-world" / "spec.md"
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_text(
         f'---\nid: {ow_spec_id}\ntitle: "stale"\nspec_type: "plan"\n---\n# Old\n\nSTALE-old-body\n',

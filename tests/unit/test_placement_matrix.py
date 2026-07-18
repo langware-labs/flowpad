@@ -20,6 +20,7 @@ from flow_sdk.fs_store.placement import (
     AssetClass,
     HarnessType,
     Scope,
+    family_subdir,
     resolve_destination,
     resolve_raw_file_destination,
     root_for_scope,
@@ -46,6 +47,9 @@ EXPECTED_SUPPORT = {
     (AssetClass.NONE, Scope.USER): True,
     (AssetClass.NONE, Scope.PROJECT): True,
     (AssetClass.NONE, Scope.SYSTEM): False,
+    (AssetClass.REPO, Scope.USER): True,
+    (AssetClass.REPO, Scope.PROJECT): True,
+    (AssetClass.REPO, Scope.SYSTEM): False,
 }
 
 
@@ -56,6 +60,8 @@ def test_mount_cross_product(asset_class, harness):
     got = layout.mount("skills", harness=harness)
     if asset_class == AssetClass.INTERNAL:
         assert got == "skills"  # INTERNAL is harness-less: bare family, no prefix
+    elif asset_class == AssetClass.REPO:
+        assert got == "agentic-assets/skills"  # fixed root_prefix, harness ignored
     else:
         assert got == f"{WORKER_PREFIX[harness]}/skills"
 
@@ -151,12 +157,12 @@ GOLDEN = {
     "asset_cleanup_report": (".claude/cleanup_reports", AssetClass.HARNESS),
     "markdown": ("docs", AssetClass.INTERNAL),
     "markdown_index": ("docs", AssetClass.INTERNAL),
-    "spec": ("specs", AssetClass.INTERNAL),
-    "task": ("tasks", AssetClass.INTERNAL),
+    "spec": ("agentic-assets/spec", AssetClass.REPO),
+    "task": ("agentic-assets/task", AssetClass.REPO),
     "prompt": ("prompts", AssetClass.INTERNAL),
-    "dataset": ("assets/datasets", AssetClass.INTERNAL),
-    "deck": ("assets/decks", AssetClass.INTERNAL),
-    "deck_template": ("assets/deck-templates", AssetClass.INTERNAL),
+    "dataset": ("agentic-assets/dataset", AssetClass.REPO),
+    "deck": ("agentic-assets/deck", AssetClass.REPO),
+    "deck_template": ("agentic-assets/deck_template", AssetClass.REPO),
     "spreadsheet": ("assets/spreadsheets", AssetClass.INTERNAL),
     "secret_origin": ("assets/sodot", AssetClass.INTERNAL),
 }
@@ -197,3 +203,39 @@ def test_claude_md_stays_unplaced():
     info = SchemaRegistry.get("claude_md")
     if info is not None:  # only if registered in this process
         assert info._resolved_layout[0] is None
+
+
+# ── REPO class: the agentic-assets/<type> hierarchy ──────────────────────────
+def test_repo_family_subdir_is_agentic_assets_prefixed():
+    # Instance-agnostic: every repo type maps to agentic-assets/<type>, harness-less.
+    assert family_subdir(AssetClass.REPO, None, "flow", default_worker="claude") == "agentic-assets/flow"
+    # default_worker is irrelevant for REPO (root_prefix wins, no harness).
+    assert family_subdir(AssetClass.REPO, None, "flow", default_worker="agents") == "agentic-assets/flow"
+
+
+def test_repo_supports_both_scopes():
+    layout = LAYOUT_REGISTRY[AssetClass.REPO]
+    assert layout.supports(Scope.USER) is True
+    assert layout.supports(Scope.PROJECT) is True
+    assert layout.supports(Scope.SYSTEM) is False
+    assert layout.fan_out is False
+
+
+@pytest.mark.parametrize("scope", [Scope.USER, Scope.PROJECT])
+def test_repo_resolve_destination_anchors_under_agentic_assets(scope, tmp_path):
+    # A repo type resolves to <root>/agentic-assets/<type> in both scopes. Uses a
+    # transiently-registered fixture type so PR-1 doesn't depend on a migrated type.
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry, TypeInfo
+
+    SchemaRegistry.register(
+        TypeInfo(type_name="repo_fixture", asset_class=AssetClass.REPO, family="repo_fixture",
+                 main_layout="folder")
+    )
+    try:
+        dest = resolve_destination(
+            "repo_fixture", scope, default_worker="claude", project_mount=tmp_path
+        )
+        expected_root = tmp_path if scope == Scope.PROJECT else root_for_scope(Scope.USER)
+        assert dest == expected_root / "agentic-assets" / "repo_fixture"
+    finally:
+        SchemaRegistry._types.pop("repo_fixture", None)
