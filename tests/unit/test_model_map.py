@@ -27,6 +27,26 @@ def env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     reset_instance_settings()
 
 
+@pytest.fixture(autouse=True)
+async def _reset_harness_auth_mode():
+    """Reset harness Capabilities to device auth after each test — ``_set_harness``
+    persists ``auth_mode="api"`` into the shared session DB, which otherwise makes
+    later worker-spawning tests fail with "set to API-key auth but no key"."""
+    yield
+    from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
+        worker_capability_kind,
+    )
+    from flow_sdk.builtin.capability import Capability
+
+    for worker in ("claude", "codex", "copilot"):
+        cap = await Capability.get_by_kind(worker_capability_kind(worker))
+        if cap is not None and getattr(cap, "auth_mode", "device") != "device":
+            cap.auth_mode = "device"
+            cap.api_provider = None
+            cap.model_map = {}
+            await cap.save(notify=False)
+
+
 def _proc(worker_type: str, model: str | None):
     return SimpleNamespace(driver=SimpleNamespace(name=worker_type), cli_config={"model": model})
 
