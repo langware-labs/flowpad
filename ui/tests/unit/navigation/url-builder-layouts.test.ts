@@ -14,7 +14,7 @@ import {
   stripDockPortion,
 } from '@src/navigation/url-builder';
 import { DockPointer } from '@src/navigation/DockPointer';
-import { Layout, ViewType } from '@sdk';
+import { Layout, PageId, ViewType } from '@sdk';
 
 const LAYOUTS: Array<{ layout: Layout; keyword: string }> = [
   { layout: Layout.DOCK, keyword: 'dock' },
@@ -77,6 +77,52 @@ describe('url-builder three-layout round-trips', () => {
     expect(parsed!.layout).toBe(Layout.DOCK);
     expect(parsed!.pointer).toBe('src/win/util.ts');
     expect(stripDockPortion('/dock/editor/src/win/util.ts')).toBe('');
+  });
+});
+
+describe('page dimension (/<layout>/<page>/<viewType>)', () => {
+  it('never emits the desk page segment — bare /dock/<viewType> stays byte-identical', () => {
+    // Explicit desk and the default (no page arg) both omit the segment.
+    expect(buildDockUrl('', ViewType.EDITOR, 'x.ts', undefined, Layout.DOCK, PageId.DESK)).toBe('/dock/editor/x.ts');
+    expect(buildDockUrl('', ViewType.EDITOR, 'x.ts')).toBe('/dock/editor/x.ts');
+  });
+
+  it('emits the page segment only for a non-desk page', () => {
+    expect(buildDockUrl('', ViewType.EDITOR, 'x.ts', undefined, Layout.DOCK, PageId.HUB)).toBe('/dock/hub/editor/x.ts');
+    expect(buildDockUrl('/agent/a', ViewType.SHELL, 'shell-1', undefined, Layout.WIN, PageId.HUB)).toBe(
+      '/agent/a/win/hub/shell/shell-1',
+    );
+  });
+
+  it('parses a known page segment into page + viewType', () => {
+    const parsed = parseDockUrl('/dock/hub/editor/x.ts');
+    expect(parsed!.page).toBe(PageId.HUB);
+    expect(parsed!.viewType).toBe('editor');
+    expect(parsed!.pointer).toBe('x.ts');
+  });
+
+  it('defaults to desk and does NOT consume the segment when it is not a known page (back-compat)', () => {
+    // A real existing URL: `assets` is a viewType, not a page.
+    const assets = parseDockUrl('/dock/assets/list/skill');
+    expect(assets!.page).toBe(PageId.DESK);
+    expect(assets!.viewType).toBe('assets');
+    expect(assets!.pointer).toBe('list/skill');
+
+    // An arbitrary unknown first segment is left as the viewType, unchanged.
+    const unknown = parseDockUrl('/dock/notapage/foo');
+    expect(unknown!.page).toBe(PageId.DESK);
+    expect(unknown!.viewType).toBe('notapage');
+    expect(unknown!.pointer).toBe('foo');
+  });
+
+  it('DockPointer round-trips the page through toUrl → fromUrl for both pages', () => {
+    const desk = new DockPointer(ViewType.EDITOR, 'x.ts', {}, Layout.DOCK, PageId.DESK);
+    expect(desk.toUrl()).toBe('/dock/editor/x.ts');
+    expect(DockPointer.fromUrl(desk.toUrl()).page).toBe(PageId.DESK);
+
+    const hub = new DockPointer(ViewType.EDITOR, 'x.ts', {}, Layout.DOCK, PageId.HUB);
+    expect(hub.toUrl()).toBe('/dock/hub/editor/x.ts');
+    expect(DockPointer.fromUrl(hub.toUrl()).page).toBe(PageId.HUB);
   });
 });
 
