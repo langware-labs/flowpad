@@ -64,11 +64,6 @@ except ImportError as e:
     print(f"[WARN] Failed to import Capability: {e}")
 
 # Flow entity
-try:
-    from flow_sdk.builtin.process import Flow  # noqa: F401
-except ImportError as e:
-    print(f"[WARN] Failed to import Flow: {e}")
-
 # Agentic process entity
 try:
     from flow_sdk.builtin.agentic_process import AgenticProcess  # noqa: F401

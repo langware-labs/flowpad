@@ -258,14 +258,14 @@ export const MachineOverview: React.FC = () => {
   }, [machineStatus?.network, networkFilter, networkSort]);
 
   const fetchMachineStatus = useCallback(async () => {
-    if (!flow?.id) return;
+    if (!computeNode?.id) return;
 
     setIsLoading(true);
     setError(null);
 
     try {
       // Call the status operation on the compute node via the flow
-      const actionInfo = new ActionInfo('get-machine-status', 'flow', flow.id, 'GET');
+      const actionInfo = new ActionInfo('get-machine-status', 'compute_node', computeNode.id, 'GET');
       const response = await fetch(actionInfo.fullActionUrl, {
         credentials: 'include',
       });
@@ -285,7 +285,7 @@ export const MachineOverview: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [flow?.id]);
+  }, [computeNode?.id]);
 
   useEffect(() => {
     void fetchMachineStatus();

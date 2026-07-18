@@ -25,10 +25,8 @@ export type {
 // System profile types are in entities/compute-node/system-profile.ts
 // Re-export for backwards compatibility
 export {
-  fetchSystemProfile,
   fetchSystemProfileFromComputeNode,
   ItemType,
-  refreshSystemProfileItem,
   Scope,
   SystemProfileUtils,
 } from '../entities/compute-node/system-profile';

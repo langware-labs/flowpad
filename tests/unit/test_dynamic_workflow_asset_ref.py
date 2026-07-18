@@ -15,4 +15,4 @@ def test_dynamic_workflow_asset_ref_is_js(tmp_path):
 def test_markdown_family_still_defaults_to_md():
     # The default extension is unchanged for the markdown-asset family.
     assert SchemaRegistry.get("dynamic_workflow").main_ext == ".js"
-    assert SchemaRegistry.get("workflow").main_ext == ".md"
+    assert SchemaRegistry.get("markdown").main_ext == ".md"
