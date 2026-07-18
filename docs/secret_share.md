@@ -11,13 +11,22 @@ a `kind`-keyed driver registry) but for secrets: the *pointer* is durable and
 shareable; the *value* is resolved only transiently, at worker-spawn time, from
 the machine's own store.
 
-Two kinds ship today:
+Five kinds are registered:
 
-- **`local`** — a name in this instance's app-secret store (SOD). Machine-local,
-  **never shareable**.
+- **`local`** — a name in this instance's app-secret store (SOD, `sodot`).
+  Machine-local, **never shareable**.
+- **`env-local`** — a key in the project's git-ignored `.env.local`. Shareable as
+  a value-free pointer; each machine supplies its own value (full driver).
+- **`gcp`** / **`1password`** — external-provider slots (`ProviderStubDriver`):
+  the pointer travels and materializes, but resolution routes to the setup wizard
+  until a real integration lands.
 - **`flowpad-hub`** — a hub-hosted secret referenced by id. The pointer travels
   with a shared project; runtime value resolution is a **no-op stub** until the
   hub exposes a scoped value-fetch endpoint (see [Gaps](#gaps-and-follow-ups)).
+
+The pointer / driver / convergent-`key()` core below is shared by every kind; the
+non-`local` kinds, the two SOD stores, and the setup wizard are detailed under
+[Extensions](#extensions-asset-backed-refs--two-stores--providers--setup-wizard).
 
 Backend:
 - Value objects: `flow_sdk/builtin/secret_origin_locator.py`,
@@ -48,6 +57,9 @@ Concrete kinds are `Literal`-tagged subclasses:
 | kind | class | pointer field |
 |---|---|---|
 | `local` | `LocalSecretRef` | `sod_name` (app-secret store name) |
+| `env-local` | `EnvLocalSecretRef` | `env_key` (key in the project `.env.local`) |
+| `gcp` | `GcpSecretRef` | `gcp_project` / `secret` / `version` |
+| `1password` | `OnePasswordSecretRef` | `vault` / `item` / `field` |
 | `flowpad-hub` | `HubSecretRef` | `secret_id` (hub secret id) |
 
 `SecretOriginField` is the pydantic discriminated union
@@ -67,8 +79,9 @@ compute the same key, a shared secret pointer converges to the **same**
 `SecretOrigin(Entity)` (`EntityType.SECRET_ORIGIN`) holds `name`, `env_var`, and
 `locator: SecretOriginField`. `env_var` is validated against
 `^[A-Za-z_][A-Za-z0-9_]*$`. Identity is `id_for_locator(locator) = locator.key()`;
-`mint_for(locator, name, env_var, remote=)` is the idempotent get-or-create keyed
-by that id (updates name/env_var/locator/remote in place on re-mint).
+`mint_for(locator, name, env_var, sod_store=, remote=)` is the idempotent
+get-or-create keyed by that id (updates name/env_var/locator/sod_store/remote in
+place on re-mint).
 
 `get_secret_origin_driver(kind)` resolves the behavior driver
 (`hub`/`flowpad_hub` alias-fold onto `flowpad-hub`; unknown kind → `KeyError`):
@@ -99,9 +112,14 @@ folders. The per-entry sidecar stores **value-free** metadata only —
   both buckets. **The `SecretOrigin` row and the stored secret value are left
   intact** (another project may point at the same secret).
 - **`Project.secret_origins`** (computed, sync) is the value-free read surface —
-  a list of `{typeid, name, env_var, kind, locator, scope}` derived from the
-  sidecars. `secret_origins` and `shared_secret_origins` are stripped from
-  `_hub_body`; the share payload is built explicitly (below).
+  a list of `{typeid, name, env_var, kind, locator, sod_store, scope}`. On the
+  **authoring** machine it derives from the per-entry sidecars; on a **receiver**
+  the sidecar is empty (it's only written where the pointer was authored), so a
+  shared entry falls back to the mirrored `shared_secret_origins` map — the same
+  way context folders read `shared_context_origins`. `secret-resolve-status` and
+  `provide-secret` both drive off this one summary, so a shared pointer resolves
+  identically on both sides. `secret_origins` and `shared_secret_origins` are
+  stripped from `_hub_body`; the share payload is built explicitly (below).
 
 TS SDK mirrors this on `Project`: `addSecretPointer(...)` / `removeSecretPointer`
 adopt the server-computed `secret_origins` from the response (never an optimistic
@@ -112,9 +130,14 @@ guess), and `secret_origins: ProjectSecretOriginSummary[]` is the value-free vie
 `Project.share()` merges a value-free `shared_secret_origins` map into the hub
 project body, built by `_shared_secret_origin_payload()`:
 
-- keyed by `SecretOrigin` typeid, each entry `{name, env_var, kind, locator}`;
+- keyed by `SecretOrigin` typeid, each entry `{name, env_var, kind, locator,
+  sod_store}`;
 - **`local`-kind entries are skipped** (a SOD name is meaningless off-machine);
-- **only the locator travels — never a value, never credentials.**
+  every other kind (`env-local` / `gcp` / `1password` / `flowpad-hub`) travels;
+- **only the locator + `sod_store` travel — never a value, never credentials.**
+
+The map rides in the hub project body (the hub `Project` model declares
+`shared_secret_origins`, so it survives the round-trip).
 
 (Context folders travel the same way via `_shared_context_origin_payload`, which
 additionally *refuses* to share a shared folder that lacks a transportable
@@ -126,18 +149,20 @@ On invitation-accept, `materialize_remote_membership_entity` calls
 `materialize_project_secret_origins(project, data)`:
 
 1. reads `shared_secret_origins` from the hub payload;
-2. validates each entry via `_shared_secret_origin_payload` — **only
-   `flowpad-hub` kind is accepted** (local is rejected), `env_var` re-validated,
-   `secret_id` required;
-3. `SecretOrigin.mint_for(locator, name, env_var, remote=True)` — because
-   `locator.key()` converges, the receiver mints the **same** id as the sender;
-4. links the ref into the receiver's **shared** bucket with a value-free sidecar;
-5. prunes stale shared links no longer in the payload (idempotent re-accept);
-6. reflects `shared_secret_origins` onto the local mirror.
+2. validates each entry via `_shared_secret_origin_payload` — **every non-`local`
+   kind is accepted** (`local` is rejected as machine-specific; `flowpad-hub`
+   additionally requires `secret_id`), `env_var` re-validated;
+3. `SecretOrigin.mint_for(locator, name, env_var, sod_store=, remote=True)` —
+   because `locator.key()` converges, the receiver mints the **same** id as the
+   sender;
+4. links the ref into the receiver's **shared** bucket and reflects
+   `shared_secret_origins` onto the local mirror — the mirror, not the sidecar, is
+   the receiver's authoritative read (see `Project.secret_origins` above);
+5. prunes stale shared links no longer in the payload (idempotent re-accept).
 
 The received pointer is inert at runtime until its kind's driver can resolve a
-value **with the receiver's own credentials** — for `flowpad-hub`, that awaits
-the hub endpoint.
+value **with the receiver's own credentials** — `env-local` resolves once the
+receiver runs the setup wizard; `flowpad-hub` awaits the hub endpoint.
 
 ## Runtime injection into workers
 
@@ -160,26 +185,36 @@ rendered command, or `FLOWPAD_EXECUTION_SCOPE`.
 
 ## Shareability, by kind
 
-| | `local` | `flowpad-hub` |
-|---|---|---|
-| Shareable | No (blocked at add + skipped in share + rejected on receive) | Yes (pointer travels) |
-| What travels | nothing | the locator (`secret_id`) only |
-| Who resolves the value | the owner's machine, from SOD | the receiver's machine, with the receiver's own hub creds |
-| Runtime resolve today | live (`read_secret`) | **stub → `None`** (awaits hub endpoint) |
+| | `local` | `env-local` | `flowpad-hub` |
+|---|---|---|---|
+| Shareable | No (blocked at add + skipped in share + rejected on receive) | Yes (pointer travels) | Yes (pointer travels) |
+| What travels | nothing | the locator (`env_key`) + `sod_store` | the locator (`secret_id`) + `sod_store` |
+| Who resolves the value | the owner's machine, from SOD | the receiver's machine, from its own `.env.local` (via the wizard) | the receiver's machine, with the receiver's own hub creds |
+| Runtime resolve today | live (`read_secret`) | live (`.env.local`) | **stub → `None`** (awaits hub endpoint) |
 
-This is the same `kind`-determines-shareability model as `FSOrigin` (local folder
-unshareable / git folder shareable): a shared pointer is a *reference*; the value
-stays in the provider and is fetched by the receiver, never shipped by the sender.
+`gcp` / `1password` share exactly like `env-local` (locator travels, receiver
+supplies its own value) but resolve via the setup wizard until a real integration
+lands. This is the same `kind`-determines-shareability model as `FSOrigin` (local
+folder unshareable / git folder shareable): a shared pointer is a *reference*; the
+value stays in the provider and is fetched by the receiver, never shipped by the
+sender.
 
 ## Tests
 
 `tests/unit/test_project_secret_origins.py` covers: a local pointer is private +
 value-free; a shared hub pointer's share payload is metadata-only; receive
-materializes shared pointers (converged id) and rejects malformed ones; stale
-shared pointers are pruned; share sends an empty map after removal; and
-`apply_worker_secret_env` resolves from SOD into the spawn env **without mutating
-persisted CLI options**. Value-object/driver/union coverage mirrors
-`tests/unit/test_fs_origin.py`.
+materializes shared pointers (converged id) and rejects malformed ones; the
+**receiver-mirror read** (a shared pointer with an empty sidecar resolves full
+metadata from `shared_secret_origins`); stale shared pointers are pruned; share
+sends an empty map after removal; and `apply_worker_secret_env` resolves from SOD
+into the spawn env **without mutating persisted CLI options**.
+Value-object/driver/union coverage mirrors `tests/unit/test_fs_origin.py`.
+
+`ui/tests/hub/secret_share_two_client.test.ts` is the cross-instance acceptance
+test over a live hub: a value-free reference travels, the id converges, no
+plaintext crosses, and the receiver goes `missing → provide → available` with the
+value landing only in a git-ignored `.env.local`. Run it via the launched pair
+(see `ui/tests/hub/CLAUDE.md`).
 
 Run: `uv run pytest tests/unit -q -k "secret_origin or local_secret or worker_secret"`.
 
