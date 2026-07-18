@@ -115,7 +115,10 @@ async def _maybe_mint_bookmark(ma: MessageAttachment, someone_typeid) -> None:
 
 
 async def _setup_after_install(
-    ma: MessageAttachment, installed_root: str | None, *, auto_run: bool = True,
+    ma: MessageAttachment,
+    installed_root: str | None,
+    *,
+    auto_run: bool = True,
 ) -> dict | None:
     """The per-type reception dispatch: what to SHOW post-install.
 
@@ -143,6 +146,79 @@ async def _setup_after_install(
         return entity_target(ma.asset_type, ma.asset_id, name=ma.name)
 
 
+async def _cross_link_installed_siblings(ma: MessageAttachment) -> None:
+    """Give this just-installed attachment the message's OTHER installed
+    attachments in its private context — and itself into theirs.
+
+    Receiver-side only, by design: ``private_context_entities_`` is local-only
+    (``share()`` strips it), so a sender-side link would never reach anyone —
+    the recipient must build its own.
+
+    It cannot run at message-arrival time either: a bundle's assets stay STAGED
+    (never indexed, never visible to agents) until installed, so the sibling
+    entities simply do not exist locally yet and would not resolve. They
+    materialize one install at a time, so we (re)link the whole installed set on
+    each install — idempotent and convergent: installing #2 links #1<->#2,
+    installing #3 links all three. Still-staged siblings are skipped; they link
+    themselves in when installed.
+
+    Best-effort — never fails the install. That promise covers the imports too:
+    they sit inside the guard because ``_finalize_install`` calls this unguarded,
+    so an ImportError here would otherwise take down every install.
+    """
+    if not ma.flow_message_id:
+        return
+    try:
+        from flow_sdk.core.entity.cross_link import cross_link_all  # noqa: PLC0415
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[message_attachment] cross-link unavailable (non-fatal): %s", e, exc_info=True)
+        return
+    try:
+        siblings = await MessageAttachment.get_all({"flow_message_id": ma.flow_message_id})
+    except Exception as e:  # noqa: BLE001
+        logger.warning(
+            "[message_attachment] sibling lookup for %s failed (non-fatal): %s",
+            ma.flow_message_id,
+            e,
+            exc_info=True,
+        )
+        return
+
+    entities: list = []
+    seen: set[str] = set()
+    for row in siblings:
+        if not row.installed:
+            continue  # still staged — no local entity to link yet
+        tid = row.target_typeid
+        if tid is None or str(tid) in seen:
+            continue
+        seen.add(str(tid))
+        try:
+            cls = SchemaRegistry.get_entity_cls(tid.type)
+            ent = await cls.get_one({"id": tid.id}) if cls is not None else None
+            if ent is not None:
+                entities.append(ent)
+        except Exception as e:  # noqa: BLE001
+            logger.warning(
+                "[message_attachment] cross-link load %s failed (non-fatal): %s",
+                tid,
+                e,
+                exc_info=True,
+            )
+
+    if len(entities) < 2:
+        return
+    try:
+        await cross_link_all(entities)
+    except Exception as e:  # noqa: BLE001
+        logger.warning(
+            "[message_attachment] attachment cross-link failed (non-fatal): %s",
+            e,
+            exc_info=True,
+        )
+
+
 async def _finalize_install(
     ma: MessageAttachment,
     scope: str,
@@ -161,11 +237,16 @@ async def _finalize_install(
     ma.installed_at = datetime.now(UTC)
     await ma.save(someone_typeid, notify=True)
     await _maybe_mint_bookmark(ma, someone_typeid)
+    # Now that this asset is a real local entity, link it with the message's
+    # other installed attachments (each one's private context gains the rest).
+    await _cross_link_installed_siblings(ma)
     # Git Download clones + indexes only — setup NEVER runs automatically (it's a
     # separate, explicit action; see ``handle_attachment_setup``). Copy-mode
     # install keeps its existing behavior: setup-capable types spawn setup here.
     show = await _setup_after_install(
-        ma, installed_root, auto_run=ma.transfer_mode != TransferMode.GIT.value,
+        ma,
+        installed_root,
+        auto_run=ma.transfer_mode != TransferMode.GIT.value,
     )
     return ApiSuccessResponse(data={"entity": ma, "show": show})
 
@@ -291,6 +372,7 @@ async def _install_webapp_artifact_copy(
     if scope != AttachmentScope.PROJECT.value or not project_id:
         return ApiFailResponse(message="a webapp artifact installs into a project", status_code=400)
     from flow_sdk.builtin.project import Project  # noqa: PLC0415
+
     project = await Project.get_one({"id": project_id})
     mount = (getattr(project, "fs_storage_mount_path", "") or "").strip() if project else ""
     if not mount:
@@ -386,13 +468,21 @@ async def handle_attachment_install(
         and ma.transfer_mode == TransferMode.GIT.value
     ):
         return await _install_artifact_reference(
-            ma, scope, project_id, overwrite=overwrite, someone_typeid=someone_typeid,
+            ma,
+            scope,
+            project_id,
+            overwrite=overwrite,
+            someone_typeid=someone_typeid,
         )
     # Copy mode: a webapp ARTIFACT can't be a git reference — mirror the shipped
     # folder bytes and serve them.
     if ma.asset_type == EntityType.ARTIFACT.value:
         return await _install_webapp_artifact_copy(
-            ma, scope, project_id, overwrite=overwrite, someone_typeid=someone_typeid,
+            ma,
+            scope,
+            project_id,
+            overwrite=overwrite,
+            someone_typeid=someone_typeid,
         )
 
     # Raw FILE attachments (the OS-file-picker lane) have no TypeInfo/RecordType
@@ -486,15 +576,17 @@ async def handle_attachment_install(
             # record_type is None — a raw non-markdown file), git-origin nested
             # re-walk + provenance stamp, and the received-asset notify.
             await index_attachments(
-                [ReceivedAsset(
-                    root=root,
-                    scope=scope,
-                    asset_type=ma.asset_type,
-                    asset_id=ma.asset_id,
-                    entry_key=entry_key,
-                    record_type=record_type,
-                    git_origin=ma.git_origin,
-                )],
+                [
+                    ReceivedAsset(
+                        root=root,
+                        scope=scope,
+                        asset_type=ma.asset_type,
+                        asset_id=ma.asset_id,
+                        entry_key=entry_key,
+                        record_type=record_type,
+                        git_origin=ma.git_origin,
+                    )
+                ],
                 project_id=project_id,
                 owner=someone_typeid,
             )
