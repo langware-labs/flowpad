@@ -49,7 +49,7 @@ def test_data_path_is_property_derived(monkeypatch, tmp_path):
         lambda: tmp_path,
     )
     conv = Conversation.model_validate({"id": "ddd12345-1234-1234-1234-123456789012"})
-    assert conv.data_path.endswith("conversation/conversation-@ddd12345-1234-1234-1234-123456789012/conversation.jsonl")
+    assert conv.data_path.endswith("conversation/ddd12345-1234-1234-1234-123456789012/conversation.jsonl")
 
 
 @pytest.mark.timeout(30)  # do not increase timeout without approval

@@ -19,7 +19,7 @@ import json
 from pathlib import Path
 
 from flow_sdk.fs_store import Pointer
-from flow_sdk.fs_store.fs_record import FSRecord, record_stem, write_text_if_changed
+from flow_sdk.fs_store.fs_record import FSRecord, write_text_if_changed
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.type_id import TypeId
@@ -28,12 +28,8 @@ from flow_sdk.fs_store.type_id import TypeId
 def default_data_dir(record_id: str) -> Path:
     if not record_id:
         raise ValueError("record_id is required")
-    from flow_sdk.fs_store.record_paths import get_default_records_data_root
-    return (
-        get_default_records_data_root()
-        / RecordType.CONVERSATION
-        / record_stem(RecordType.CONVERSATION, record_id)
-    )
+    from flow_sdk.fs_store.record_paths import data_dir_for
+    return data_dir_for(RecordType.CONVERSATION, record_id)
 
 
 def default_jsonl_path(record_id: str) -> Path:

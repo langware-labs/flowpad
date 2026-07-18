@@ -22,7 +22,6 @@ import re
 from pathlib import Path
 
 from flow_sdk.fs_store.fs_ref.base import FSRef
-from flow_sdk.fs_store.record_paths import get_default_records_data_root, record_stem
 
 TRANSLATIONS_SUBDIR = "translations"
 
@@ -55,12 +54,8 @@ def translations_dir(record_type: str, record_id: str) -> Path:
         raise ValueError("record_type is required")
     if not record_id:
         raise ValueError("record_id is required")
-    return (
-        get_default_records_data_root()
-        / record_type
-        / record_stem(record_type, record_id)
-        / TRANSLATIONS_SUBDIR
-    )
+    from flow_sdk.fs_store.record_paths import data_dir_for
+    return data_dir_for(record_type, record_id) / TRANSLATIONS_SUBDIR
 
 
 def translation_path(record_type: str, record_id: str, lang: str) -> Path:

@@ -17,8 +17,6 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
-from flow_sdk.fs_store.fs_record import record_stem
-
 FLOW_MESSAGE_TYPE = "flow_message"
 DOWNLOAD_SUBDIR = "download"
 UNPACKED_SUBDIR = "unpacked"
@@ -27,12 +25,8 @@ UNPACKED_SUBDIR = "unpacked"
 def default_data_dir(record_id: str) -> Path:
     if not record_id:
         raise ValueError("record_id is required")
-    from flow_sdk.fs_store.record_paths import get_default_records_data_root
-    return (
-        get_default_records_data_root()
-        / FLOW_MESSAGE_TYPE
-        / record_stem(FLOW_MESSAGE_TYPE, record_id)
-    )
+    from flow_sdk.fs_store.record_paths import data_dir_for
+    return data_dir_for(FLOW_MESSAGE_TYPE, record_id)
 
 
 def download_dir(record_id: str) -> Path:

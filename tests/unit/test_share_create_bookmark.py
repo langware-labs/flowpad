@@ -32,7 +32,7 @@ class Ids:
     def __init__(self):
         self.fm = str(uuid.uuid4())
         self.skill = str(uuid.uuid4())
-        self.skill_key = f"skill-@{self.skill}"
+        self.skill_key = f"skill-{self.skill}"
         self.leaf = f"bm-skill-{self.skill[:8]}"
 
 
