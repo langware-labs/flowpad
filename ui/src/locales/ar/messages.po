@@ -352,6 +352,10 @@ msgstr ""
 msgid "{minutes}m ago"
 msgstr ""
 
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "{name} isn't installed on this computer yet. Follow the quick setup guide, then come back here to sign in."
+msgstr ""
+
 #: src/components/conversation/LiveSessionGroup.tsx
 msgid "{promptCount} prompts · {replyCount} replies"
 msgstr ""
@@ -560,12 +564,24 @@ msgstr ""
 msgid "1 message"
 msgstr ""
 
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "1. Copy this code"
+msgstr ""
+
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 msgid "15 minutes"
 msgstr ""
 
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "2. Copy & open the sign-in page"
+msgstr ""
+
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "24h+ idle"
+msgstr ""
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "3. Your browser will show a code — paste it here"
 msgstr ""
 
 #: src/components/project-activity-strip/BookmarkColumn.tsx
@@ -708,6 +724,10 @@ msgstr ""
 
 #: src/components/assets/editor/markdown/ReviewSurface.tsx
 msgid "Add a comment…"
+msgstr ""
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Add a key in \"LLM API keys\" above to use it here"
 msgstr ""
 
 #: src/components/conversation/chips/MessageChips.tsx
@@ -889,8 +909,8 @@ msgstr ""
 #~ msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
-msgid "Agents run through a coding-agent CLI. Sign in to at least one — it happens in your browser and FlowPad never sees your credentials."
-msgstr ""
+#~ msgid "Agents run through a coding-agent CLI. Sign in to at least one — it happens in your browser and FlowPad never sees your credentials."
+#~ msgstr ""
 
 #: src/components/ai-config-view/ai-config-view.tsx
 msgid "AI Configuration"
@@ -925,6 +945,10 @@ msgstr ""
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "All"
+msgstr ""
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "All assistants"
 msgstr ""
 
 #: src/components/triggers-view/TriggerListItem.tsx
@@ -1374,6 +1398,10 @@ msgstr ""
 #~ msgid "Assistant Reasoning"
 #~ msgstr ""
 
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Assistants & keys"
+msgstr ""
+
 #: src/components/skills-viewer/amd-editor/components/blocks/UiBlock.tsx
 #~ msgid "async"
 #~ msgstr ""
@@ -1421,8 +1449,8 @@ msgid "Attachments"
 msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
-msgid "authentication required"
-msgstr ""
+#~ msgid "authentication required"
+#~ msgstr ""
 
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
 msgid "Authorization failed or was denied. Click Retry to try again."
@@ -1731,6 +1759,11 @@ msgstr ""
 
 #: src/components/diagnose/open-in-terminal-button.tsx
 msgid "Can't open terminal"
+msgstr ""
+
+#: src/components/account/organization-panel.tsx
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "Can't update — showing last synced"
 msgstr ""
 
 #: src/components/account/secrets-section.tsx
@@ -2320,13 +2353,17 @@ msgstr ""
 msgid "Code copied"
 msgstr ""
 
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Code copied — paste it in the page we opened"
+msgstr ""
+
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
 msgid "Code copied — paste it on the GitHub page"
 msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
-msgid "Code copied — paste it on the sign-in page"
-msgstr ""
+#~ msgid "Code copied — paste it on the sign-in page"
+#~ msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 #~ msgid "Code copied — paste it on the vendor page"
@@ -2341,8 +2378,8 @@ msgid "Code expired. Close and click Connect again to get a fresh code."
 msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
-msgid "code from browser"
-msgstr ""
+#~ msgid "code from browser"
+#~ msgstr ""
 
 #: src/components/chat-input.tsx
 msgid "Codebase"
@@ -2548,8 +2585,8 @@ msgid "Connect"
 msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
-msgid "Connect a harness"
-msgstr ""
+#~ msgid "Connect a harness"
+#~ msgstr ""
 
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
 msgid "Connect GitHub"
@@ -2566,7 +2603,6 @@ msgstr ""
 
 #: src/components/account/user-info.tsx
 #: src/components/connections-manager.tsx
-#: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Connected"
 msgstr ""
 
@@ -2758,8 +2794,8 @@ msgid "Copy code"
 msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
-msgid "Copy code & open"
-msgstr ""
+#~ msgid "Copy code & open"
+#~ msgstr ""
 
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
 msgid "Copy code & open GitHub"
@@ -2856,6 +2892,10 @@ msgstr ""
 msgid "Could not change privacy mode"
 msgstr ""
 
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Could not change sign-in method"
+msgstr ""
+
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
 msgid "Could not copy the code"
 msgstr ""
@@ -2943,8 +2983,12 @@ msgid "Could not start room"
 msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
-msgid "Could not start the login flow"
+msgid "Could not start sign-in"
 msgstr ""
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+#~ msgid "Could not start the login flow"
+#~ msgstr ""
 
 #: src/components/entity-execution-panel/EntityExecutionPanel.tsx
 #: src/components/terminal/interactive-terminal/ChatComposerBar.tsx
@@ -3260,12 +3304,17 @@ msgstr ""
 msgid "default"
 msgstr ""
 
+#: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/terminal/openers/AskInstallOneOfDialog.tsx
 msgid "Default"
 msgstr ""
 
 #: src/components/account/database-section.tsx
 msgid "Default ({defaultDbPath})"
+msgstr ""
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Default assistant"
 msgstr ""
 
 #: src/components/ai-config-view/ai-config-view.tsx
@@ -3430,6 +3479,10 @@ msgstr ""
 msgid "Delete Item"
 msgstr ""
 
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Delete key"
+msgstr ""
+
 #: src/components/conversation/MessageBubble.tsx
 #: src/components/conversation/MessageBubble.tsx
 msgid "Delete message"
@@ -3466,6 +3519,10 @@ msgstr ""
 
 #: src/components/account/system-diagnoses.tsx
 msgid "Delete this diagnosis? This cannot be undone."
+msgstr ""
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Delete this key?"
 msgstr ""
 
 #: src/components/conversation/MessageBubble.tsx
@@ -3592,6 +3649,10 @@ msgstr ""
 
 #: src/components/developer-layout/dev-menu.tsx
 msgid "Developer Tools"
+msgstr ""
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Device login"
 msgstr ""
 
 #: src/components/version-popover/diagnose-modal.tsx
@@ -3745,7 +3806,6 @@ msgstr ""
 
 #: src/components/diagnose/diagnosis-action-buttons.tsx
 #: src/components/diagnose/diagnosis-action-buttons.tsx
-#: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 #: src/components/workflow-runner/header/AttentionBanner.tsx
@@ -3812,6 +3872,8 @@ msgstr ""
 
 #: src/components/assets/filters/taskFilters.tsx
 #: src/components/contact-picker/AddressBookButton.tsx
+#: src/components/harness-login/HarnessLoginModal.tsx
+#: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/tools/ToolsPanel.tsx
 #: src/components/wizard/WizardHost.tsx
 msgid "Done"
@@ -4256,6 +4318,7 @@ msgstr ""
 #: src/components/agent-layout/error-screen/error-screen.tsx
 #: src/components/api-keys-view/api-keys-view.tsx
 #: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/project-home/BindSecretDialog.tsx
 #: src/components/project-home/BindSecretDialog.tsx
 msgid "Error"
@@ -4751,6 +4814,10 @@ msgstr ""
 #: src/components/assets/editor/skill/SkillActivationEditor.tsx
 #~ msgid "Failed to save activation rule. Please check the format."
 #~ msgstr ""
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Failed to save key"
+msgstr ""
 
 #: src/components/account/secrets-section.tsx
 msgid "Failed to save secret"
@@ -5461,6 +5528,18 @@ msgstr ""
 msgid "Harness Session Details"
 msgstr ""
 
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Harness setup"
+msgstr ""
+
+#: src/components/version-popover/version-popover.tsx
+msgid "Harness sign-in & status"
+msgstr ""
+
+#: src/components/version-popover/version-popover.tsx
+msgid "Harness status"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Harness worker Session ID"
 msgstr ""
@@ -5962,7 +6041,6 @@ msgstr ""
 msgid "Insert table"
 msgstr ""
 
-#: src/components/harness-login/HarnessLoginModal.tsx
 #: src/pages/discover-page/discover-page.tsx
 #: src/pages/discover-page/discover-page.tsx
 msgid "Install"
@@ -6031,6 +6109,10 @@ msgstr ""
 
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 msgid "Instructions"
+msgstr ""
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Invalid"
 msgstr ""
 
 #: src/components/app-host/AppHost.tsx
@@ -6213,6 +6295,14 @@ msgstr ""
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 #~ msgid "Keep Waiting"
 #~ msgstr ""
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Key saved & valid"
+msgstr ""
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Key saved but invalid"
+msgstr ""
 
 #: src/pages/keychain-approval.tsx
 msgid "Keychain access is required to finish signing in to Flowpad."
@@ -6444,6 +6534,10 @@ msgstr ""
 #~ msgid "Live view of hook traffic. Uses a catch-all hook in the Claude user folder."
 #~ msgstr ""
 
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "LLM API keys"
+msgstr ""
+
 #: src/components/ai-config-view/ai-config-view.tsx
 msgid "LLM APIs"
 msgstr ""
@@ -6456,6 +6550,10 @@ msgstr ""
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 msgid "LLM Indexers"
+msgstr ""
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "LLM key"
 msgstr ""
 
 #: src/components/machine-overview/machine-overview.tsx
@@ -6961,6 +7059,10 @@ msgstr ""
 #: src/components/contact-picker/CreateContactsGroupDialog.tsx
 #: src/components/project-home/ProjectHome.tsx
 msgid "Members"
+msgstr ""
+
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "Members are unavailable in Local mode."
 msgstr ""
 
 #: src/components/machine-overview/logs-viewer.tsx
@@ -8301,8 +8403,8 @@ msgid "Not configured"
 msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
-msgid "Not installed"
-msgstr ""
+#~ msgid "Not installed"
+#~ msgstr ""
 
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
 msgid "not reachable"
@@ -8448,8 +8550,8 @@ msgid "Onboarding reset"
 msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
-msgid "one is enough to get started"
-msgstr ""
+#~ msgid "one is enough to get started"
+#~ msgstr ""
 
 #: src/components/terminal/interactive-terminal/side-windows/PromptIndexPanel.tsx
 msgid "Only harness entries here — enable “Show all” to view them."
@@ -8790,8 +8892,8 @@ msgstr ""
 #~ msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
-msgid "Open sign-in"
-msgstr ""
+#~ msgid "Open sign-in"
+#~ msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 #~ msgid "Open sign-in page"
@@ -8849,6 +8951,10 @@ msgstr ""
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 #~ msgid "Open the sidecar shell first to enable git operations"
 #~ msgstr ""
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Open the sign-in page"
+msgstr ""
 
 #: src/components/lens-viewer/shared/transcript-features/TranscriptViewer.tsx
 msgid "Open the transcript analysis session"
@@ -9051,6 +9157,14 @@ msgstr ""
 msgid "Paste a session id (UUID) to restore it in a new tab."
 msgstr ""
 
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Paste API key"
+msgstr ""
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Paste code from browser"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/side-windows/InputFilesPanel.tsx
 msgid "Paste or drag files here"
 msgstr ""
@@ -9151,6 +9265,10 @@ msgstr ""
 #: src/components/open-project-component/open-project-component.tsx
 msgid "Pick a project"
 msgstr ""
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+#~ msgid "Pick one to get started — it only takes a few seconds."
+#~ msgstr ""
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Pick project folder"
@@ -9785,7 +9903,6 @@ msgstr ""
 msgid "Readme"
 msgstr ""
 
-#: src/components/harness-login/HarnessLoginModal.tsx
 #: src/pages/home-landing/InlineSearchResults.tsx
 msgid "Ready"
 msgstr ""
@@ -10609,6 +10726,7 @@ msgstr ""
 #: src/components/execute-flow-view/instruction-panel/ephemeral-prompt-input.tsx
 #: src/components/execute-flow-view/instruction-panel/instruction-panel.tsx
 #: src/components/favorites/FavoriteStar.tsx
+#: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/hooks-manager/TriggerForm.tsx
 #: src/components/hooks-view/HookEditor.tsx
@@ -11595,6 +11713,10 @@ msgstr ""
 msgid "Show Sessions"
 msgstr ""
 
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Show setup guide"
+msgstr ""
+
 #: src/components/open-project-component/open-project-component.tsx
 #~ msgid "Show system"
 #~ msgstr ""
@@ -11631,7 +11753,15 @@ msgid "sidechain"
 msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
-msgid "Sign in"
+#~ msgid "Sign in"
+#~ msgstr ""
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+#~ msgid "Sign in to a coding assistant"
+#~ msgstr ""
+
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "Sign in to see who's a member"
 msgstr ""
 
 #: src/components/conversation/ConversationRoute.tsx
@@ -11643,8 +11773,16 @@ msgid "Sign in to your Flowpad Cloud account to view your inbox and conversation
 msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
-msgid "Sign-in needed"
+msgid "Sign in with {account}"
 msgstr ""
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Sign in with your {account} to let {name} write and run code for you. A browser window opens for sign-in — FlowPad never sees your password."
+msgstr ""
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+#~ msgid "Sign-in needed"
+#~ msgstr ""
 
 #: src/components/account/user-info.tsx
 msgid "Signed in"
@@ -11991,7 +12129,6 @@ msgid "Starting..."
 msgstr ""
 
 #: src/components/conversation/ConversationView.tsx
-#: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 msgid "Starting…"
 msgstr ""
@@ -12099,7 +12236,6 @@ msgstr ""
 msgid "Subfolders"
 msgstr ""
 
-#: src/components/harness-login/HarnessLoginModal.tsx
 #: src/pages/flow-page/vibe-workspace.tsx
 msgid "Submit"
 msgstr ""
@@ -12308,6 +12444,10 @@ msgstr ""
 msgid "test"
 msgstr ""
 
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Test"
+msgstr ""
+
 #: src/components/conversation/asset-review/TestPromptDialog.tsx
 #~ msgid "Test “{assetName}”"
 #~ msgstr ""
@@ -12315,6 +12455,10 @@ msgstr ""
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Test API Access"
+msgstr ""
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Test failed"
 msgstr ""
 
 #: src/components/conversation/asset-review/AssetInstallActions.tsx
@@ -12452,8 +12596,8 @@ msgid "The wizard reported an error."
 msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
-msgid "then paste code"
-msgstr ""
+#~ msgid "then paste code"
+#~ msgstr ""
 
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "There are merge conflicts in <0>{localPath}</0>. Please resolve them and try again."
@@ -12878,6 +13022,10 @@ msgstr ""
 msgid "turn duration"
 msgstr ""
 
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Two quick steps in your browser:"
+msgstr ""
+
 #: src/components/account/db-stats.tsx
 #: src/components/artifacts/artifact-form.tsx
 #: src/components/hooks-view/HooksTable.tsx
@@ -13081,6 +13229,10 @@ msgstr ""
 msgid "Updated: {0}"
 msgstr ""
 
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "Updating…"
+msgstr ""
+
 #. placeholder {0}: pypi.latest
 #: src/components/version-popover/version-popover.tsx
 msgid "Upgrade to v{0}"
@@ -13154,6 +13306,10 @@ msgstr ""
 msgid "Use the refresh button in the toolbar to retry"
 msgstr ""
 
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Use which key"
+msgstr ""
+
 #: src/components/lens-viewer/ClaudeContextViewer.tsx
 msgid "used"
 msgstr ""
@@ -13190,8 +13346,17 @@ msgstr ""
 msgid "Using"
 msgstr ""
 
+#. placeholder {0}: providerLabel(activeProvider)
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Using {0} key"
+msgstr ""
+
 #: src/components/entity-execution-panel/MetaMessageChip.tsx
 msgid "Using skill: {skillName}"
+msgstr ""
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Valid"
 msgstr ""
 
 #: src/components/artifacts/artifact-form.tsx
@@ -13366,8 +13531,8 @@ msgid "Waiting for {hostName} to approve the live session…"
 msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
-msgid "waiting for authorization in your browser…"
-msgstr ""
+#~ msgid "waiting for authorization in your browser…"
+#~ msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 #~ msgid "Waiting for authorization…"
@@ -13390,8 +13555,12 @@ msgstr ""
 #~ msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
-msgid "Waiting…"
+msgid "Waiting for you to approve…"
 msgstr ""
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+#~ msgid "Waiting…"
+#~ msgstr ""
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Walked the filesystem without writing. Counts and sizes reflect what is on disk right now; compare against the per-type rows to see drift."
@@ -13685,6 +13854,10 @@ msgstr ""
 #: src/components/join-room-dialog/JoinRoomDialog.tsx
 #~ msgid "You're about to open a room on this project. You can invite others with the share code that'll appear in the header once the room starts."
 #~ msgstr ""
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "You're signed in and ready to go."
+msgstr ""
 
 #: src/components/conversation/ConversationView.tsx
 msgid "You're the only participant in this conversation — no one else will see this message."
