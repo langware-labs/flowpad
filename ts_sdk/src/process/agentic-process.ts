@@ -14,7 +14,7 @@ import { IEntity } from '../IEntity';
 import { FSRef, type FSRefJson } from '../fs/FSRef';
 import { ClaudeCliOptions, factory as cliOptionsFactory } from '../cli_workers';
 import { dataContext } from '../FlowSync/context';
-import { FlowDataFactory } from '../entities/flow/flow-data-factory';
+import { FlowDataFactory } from '../flow_processing/flow-data-factory';
 import { Shell, ShellStatus } from '../entities/shell';
 import { FlowData, FlowDataSource } from '../flow_processing';
 import { FlowElementTypes } from '../flow_processing/flow-element-types';

@@ -19,7 +19,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import { dataManager, FlowData, TypeId } from '../../..';
+import { dataManager, FlowData, TypeId } from '../..';
 
 export interface UseEntityDataResult {
   /** All FlowData items received so far */

@@ -1,12 +1,12 @@
 import { InteractiveTerminal } from '@src/components/terminal';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@src/components/ui/tabs';
-import { Artifact, Flow, MachineStatus, WebappSubview } from '@sdk';
+import { AgenticProcess, Artifact, MachineStatus, WebappSubview } from '@sdk';
 import { Boxes, Terminal } from 'lucide-react';
 import React from 'react';
 import { WebappArtifactsTab } from './webapp-artifacts-tab';
 
 interface WebappTerminalPanelProps {
-  flow: Flow | null;
+  flow: AgenticProcess | null;
   artifacts: Artifact[];
   machineStatus: MachineStatus | null;
   isActive: boolean;

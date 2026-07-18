@@ -150,10 +150,6 @@ class EntityType(StrEnum):
     ORGANIZATION = "organization"
     WORKSPACE = "workspace"
     PAGE = "page"
-    # RETIRED name, reserved: the legacy conversational Flow entity is gone
-    # backend-side; the TS twin (ts_sdk entities/flow) still registers "flow"
-    # until its own retirement phase. Do not reuse this name.
-    FLOW = "flow"
     INVITATION = "invitation"
     MENTION = "mention"
     CONNECTION = "connection"
