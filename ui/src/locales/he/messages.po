@@ -188,7 +188,7 @@ msgstr "{0} תיקון{1} זמין"
 #. placeholder {3}: report.root_count
 #: src/pages/home-landing/feed/FeedEntryCard.tsx
 msgid "{0} garbage · {1} unsure · {2} keep · {3} roots scanned"
-msgstr ""
+msgstr "{0} אשפה · {1} לא ודאי · {2} לשמור · {3} שורשים נסרקו"
 
 #. placeholder {0}: formState.name
 #: src/components/artifacts/artifact-form.tsx
@@ -216,7 +216,7 @@ msgstr "{0} בעיות · {1} סטיות · {2} נתיבים · {3}"
 #. placeholder {0}: entry.message_count
 #: src/components/chats-navigator/ChatHistoryRow.tsx
 msgid "{0} messages"
-msgstr ""
+msgstr "{0} הודעות"
 
 #. placeholder {0}: ticket.message_count
 #: src/components/inbox-view/InboxView.tsx
@@ -296,7 +296,7 @@ msgstr "{count} {0} מצורפים"
 
 #: src/components/assets/ContextFolderGitBadge.tsx
 msgid "{count} pending change(s) — click to view diff"
-msgstr ""
+msgstr "{count} שינויים ממתינים — לחצו להצגת ההבדלים"
 
 #: src/components/execute-flow-view/worker-sessions-panel.tsx
 msgid "{days}d ago"
@@ -313,19 +313,19 @@ msgstr "{failed} מתוך {0} נכשלו במחיקה."
 
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
 msgid "{folderName} has changes that haven't been pushed yet. The receiver can only pull what's on the remote."
-msgstr ""
+msgstr "ל-{folderName} יש שינויים שעדיין לא נדחפו לשרת המרוחק. המקבל יוכל למשוך רק את מה שכבר נמצא שם."
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "{guestName} wants to run prompts on your machine."
-msgstr ""
+msgstr "{guestName} רוצה להריץ הנחיות במחשבך."
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "{hostName} declined the live session."
-msgstr ""
+msgstr "{hostName} דחה את ההפעלה החיה."
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "{hostName} paused the live session."
-msgstr ""
+msgstr "{hostName} השהה את ההפעלה החיה."
 
 #: src/components/execute-flow-view/worker-sessions-panel.tsx
 msgid "{hours}h ago"
@@ -352,9 +352,13 @@ msgstr "{label} רשומות"
 msgid "{minutes}m ago"
 msgstr "לפני {minutes}ד׳"
 
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "{name} isn't installed on this computer yet. Follow the quick setup guide, then come back here to sign in."
+msgstr "{name} עדיין לא מותקן על המחשב הזה. יש לעקוב אחר מדריך ההתקנה המהיר ואז לחזור לכאן כדי להתחבר."
+
 #: src/components/conversation/LiveSessionGroup.tsx
 msgid "{promptCount} prompts · {replyCount} replies"
-msgstr ""
+msgstr "{promptCount} הודעות · {replyCount} תגובות"
 
 #. placeholder {0}: remaining !== 1 ? 's' : ''
 #: src/components/lens-viewer/CloudSearchResultsModal.tsx
@@ -363,7 +367,7 @@ msgstr "{remaining} בעיות דורשות בדיקה{0}"
 
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
 msgid "{removed} assets removed."
-msgstr ""
+msgstr "הוסרו {removed} נכסים."
 
 #: src/components/inbox-view/InboxView.tsx
 #: src/components/inbox-view/InboxView.tsx
@@ -560,13 +564,25 @@ msgstr "שעה אחת"
 msgid "1 message"
 msgstr ""
 
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "1. Copy this code"
+msgstr ""
+
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 msgid "15 minutes"
 msgstr "15 דקות"
 
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "2. Copy & open the sign-in page"
+msgstr ""
+
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "24h+ idle"
 msgstr "24+ שעות בטלה"
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "3. Your browser will show a code — paste it here"
+msgstr ""
 
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 msgid "4 hours"
@@ -709,6 +725,10 @@ msgstr "הוסף הערה..."
 #: src/components/assets/editor/markdown/ReviewSurface.tsx
 msgid "Add a comment…"
 msgstr "הוסף תגובה…"
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Add a key in \"LLM API keys\" above to use it here"
+msgstr ""
 
 #: src/components/conversation/chips/MessageChips.tsx
 #: src/components/conversation/chips/MessageChips.tsx
@@ -889,8 +909,8 @@ msgstr "סוכנים"
 #~ msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
-msgid "Agents run through a coding-agent CLI. Sign in to at least one — it happens in your browser and FlowPad never sees your credentials."
-msgstr ""
+#~ msgid "Agents run through a coding-agent CLI. Sign in to at least one — it happens in your browser and FlowPad never sees your credentials."
+#~ msgstr ""
 
 #: src/components/ai-config-view/ai-config-view.tsx
 msgid "AI Configuration"
@@ -926,6 +946,10 @@ msgstr "הכל"
 #: src/pages/live-status/LiveStatus.tsx
 msgid "All"
 msgstr "הכל"
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "All assistants"
+msgstr ""
 
 #: src/components/triggers-view/TriggerListItem.tsx
 msgid "All calls"
@@ -1374,6 +1398,10 @@ msgstr "העוזר משיב"
 #~ msgid "Assistant Reasoning"
 #~ msgstr "נימוק עוזר"
 
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Assistants & keys"
+msgstr ""
+
 #: src/components/skills-viewer/amd-editor/components/blocks/UiBlock.tsx
 #~ msgid "async"
 #~ msgstr "אסינכרוני"
@@ -1421,8 +1449,8 @@ msgid "Attachments"
 msgstr "קבצים מצורפים"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
-msgid "authentication required"
-msgstr ""
+#~ msgid "authentication required"
+#~ msgstr ""
 
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
 msgid "Authorization failed or was denied. Click Retry to try again."
@@ -1731,6 +1759,11 @@ msgstr "קריאות"
 
 #: src/components/diagnose/open-in-terminal-button.tsx
 msgid "Can't open terminal"
+msgstr ""
+
+#: src/components/account/organization-panel.tsx
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "Can't update — showing last synced"
 msgstr ""
 
 #: src/components/account/secrets-section.tsx
@@ -2320,13 +2353,17 @@ msgstr "בלוק קוד"
 msgid "Code copied"
 msgstr "הקוד הועתק"
 
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Code copied — paste it in the page we opened"
+msgstr ""
+
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
 msgid "Code copied — paste it on the GitHub page"
 msgstr "הקוד הועתק — הדבק אותו בעמוד GitHub"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
-msgid "Code copied — paste it on the sign-in page"
-msgstr ""
+#~ msgid "Code copied — paste it on the sign-in page"
+#~ msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 #~ msgid "Code copied — paste it on the vendor page"
@@ -2341,8 +2378,8 @@ msgid "Code expired. Close and click Connect again to get a fresh code."
 msgstr "הקוד פג תוקף. סגור והקלק על Connect שוב כדי לקבל קוד חדש."
 
 #: src/components/harness-login/HarnessLoginModal.tsx
-msgid "code from browser"
-msgstr ""
+#~ msgid "code from browser"
+#~ msgstr ""
 
 #: src/components/chat-input.tsx
 msgid "Codebase"
@@ -2548,8 +2585,8 @@ msgid "Connect"
 msgstr "חבר"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
-msgid "Connect a harness"
-msgstr ""
+#~ msgid "Connect a harness"
+#~ msgstr ""
 
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
 msgid "Connect GitHub"
@@ -2566,7 +2603,6 @@ msgstr "התחברות ל-GitHub"
 
 #: src/components/account/user-info.tsx
 #: src/components/connections-manager.tsx
-#: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Connected"
 msgstr "מחובר"
 
@@ -2758,8 +2794,8 @@ msgid "Copy code"
 msgstr "העתק קוד"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
-msgid "Copy code & open"
-msgstr ""
+#~ msgid "Copy code & open"
+#~ msgstr ""
 
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
 msgid "Copy code & open GitHub"
@@ -2856,6 +2892,10 @@ msgstr ""
 msgid "Could not change privacy mode"
 msgstr "לא היה ניתן לשנות את מצב הפרטיות"
 
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Could not change sign-in method"
+msgstr ""
+
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
 msgid "Could not copy the code"
 msgstr "לא היה ניתן להעתיק את הקוד"
@@ -2943,8 +2983,12 @@ msgid "Could not start room"
 msgstr "לא יכול להתחיל חדר"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
-msgid "Could not start the login flow"
+msgid "Could not start sign-in"
 msgstr ""
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+#~ msgid "Could not start the login flow"
+#~ msgstr ""
 
 #: src/components/entity-execution-panel/EntityExecutionPanel.tsx
 #: src/components/terminal/interactive-terminal/ChatComposerBar.tsx
@@ -3260,6 +3304,7 @@ msgstr "דחה (מודיע למזמין)"
 msgid "default"
 msgstr "ברירת מחדל"
 
+#: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/terminal/openers/AskInstallOneOfDialog.tsx
 msgid "Default"
 msgstr "ברירת מחדל"
@@ -3267,6 +3312,10 @@ msgstr "ברירת מחדל"
 #: src/components/account/database-section.tsx
 msgid "Default ({defaultDbPath})"
 msgstr "ברירת מחדל ({defaultDbPath})"
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Default assistant"
+msgstr ""
 
 #: src/components/ai-config-view/ai-config-view.tsx
 msgid "Default CLI"
@@ -3430,6 +3479,10 @@ msgstr ""
 msgid "Delete Item"
 msgstr "מחק פריט"
 
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Delete key"
+msgstr ""
+
 #: src/components/conversation/MessageBubble.tsx
 #: src/components/conversation/MessageBubble.tsx
 msgid "Delete message"
@@ -3467,6 +3520,10 @@ msgstr "מחק שיחה זו"
 #: src/components/account/system-diagnoses.tsx
 msgid "Delete this diagnosis? This cannot be undone."
 msgstr "מחק אבחנה זו? לא ניתן לבטל זאת."
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Delete this key?"
+msgstr ""
 
 #: src/components/conversation/MessageBubble.tsx
 msgid "Delete this message?"
@@ -3593,6 +3650,10 @@ msgstr "מצב פיתוח פעיל — לחץ כדי להשבית"
 #: src/components/developer-layout/dev-menu.tsx
 msgid "Developer Tools"
 msgstr "כלים למפתחים"
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Device login"
+msgstr ""
 
 #: src/components/version-popover/diagnose-modal.tsx
 #: src/components/version-popover/version-popover.tsx
@@ -3745,7 +3806,6 @@ msgstr "גילוי..."
 
 #: src/components/diagnose/diagnosis-action-buttons.tsx
 #: src/components/diagnose/diagnosis-action-buttons.tsx
-#: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
 #: src/components/workflow-runner/header/AttentionBanner.tsx
@@ -3812,6 +3872,8 @@ msgstr "הושלם"
 
 #: src/components/assets/filters/taskFilters.tsx
 #: src/components/contact-picker/AddressBookButton.tsx
+#: src/components/harness-login/HarnessLoginModal.tsx
+#: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/tools/ToolsPanel.tsx
 #: src/components/wizard/WizardHost.tsx
 msgid "Done"
@@ -4259,6 +4321,7 @@ msgstr "שגיאה"
 #: src/components/agent-layout/error-screen/error-screen.tsx
 #: src/components/api-keys-view/api-keys-view.tsx
 #: src/components/api-keys-view/api-keys-view.tsx
+#: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/project-home/BindSecretDialog.tsx
 #: src/components/project-home/BindSecretDialog.tsx
 msgid "Error"
@@ -4754,6 +4817,10 @@ msgstr "כישלון בשמירה"
 #: src/components/assets/editor/skill/SkillActivationEditor.tsx
 #~ msgid "Failed to save activation rule. Please check the format."
 #~ msgstr "נכשל בשמירת כלל הפעלה. אנא בדוק את הפורמט."
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Failed to save key"
+msgstr ""
 
 #: src/components/account/secrets-section.tsx
 msgid "Failed to save secret"
@@ -5464,6 +5531,18 @@ msgstr "נתיב מנוע"
 msgid "Harness Session Details"
 msgstr "פרטי סדרת Harness"
 
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Harness setup"
+msgstr ""
+
+#: src/components/version-popover/version-popover.tsx
+msgid "Harness sign-in & status"
+msgstr ""
+
+#: src/components/version-popover/version-popover.tsx
+msgid "Harness status"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Harness worker Session ID"
 msgstr "מזהה סדרת עובד Harness"
@@ -5965,7 +6044,6 @@ msgstr "הוסף emoji"
 msgid "Insert table"
 msgstr "הוסף טבלה"
 
-#: src/components/harness-login/HarnessLoginModal.tsx
 #: src/pages/discover-page/discover-page.tsx
 #: src/pages/discover-page/discover-page.tsx
 msgid "Install"
@@ -6035,6 +6113,10 @@ msgstr "הנחיה"
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 msgid "Instructions"
 msgstr "הוראות"
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Invalid"
+msgstr ""
 
 #: src/components/app-host/AppHost.tsx
 msgid "Invalid App Path"
@@ -6216,6 +6298,14 @@ msgstr "המשך עריכה"
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 #~ msgid "Keep Waiting"
 #~ msgstr "המשך ההמתנה"
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Key saved & valid"
+msgstr ""
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Key saved but invalid"
+msgstr ""
 
 #: src/pages/keychain-approval.tsx
 msgid "Keychain access is required to finish signing in to Flowpad."
@@ -6447,6 +6537,10 @@ msgstr ""
 #~ msgid "Live view of hook traffic. Uses a catch-all hook in the Claude user folder."
 #~ msgstr "תצוגה חיה של תעבורת וו. משתמש בווו תופס הכל בתיקיית משתמש Claude."
 
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "LLM API keys"
+msgstr ""
+
 #: src/components/ai-config-view/ai-config-view.tsx
 msgid "LLM APIs"
 msgstr "ממשקי LLM"
@@ -6460,6 +6554,10 @@ msgstr "אינדקס LLM"
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 msgid "LLM Indexers"
 msgstr "מנהלי אינדקס LLM"
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "LLM key"
+msgstr ""
 
 #: src/components/machine-overview/machine-overview.tsx
 msgid "LM proxy access configured"
@@ -6965,6 +7063,10 @@ msgstr "חברים"
 #: src/components/project-home/ProjectHome.tsx
 msgid "Members"
 msgstr "חברים"
+
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "Members are unavailable in Local mode."
+msgstr ""
 
 #: src/components/machine-overview/logs-viewer.tsx
 #: src/components/machine-overview/metrics-chart.tsx
@@ -8304,8 +8406,8 @@ msgid "Not configured"
 msgstr "לא מוגדר"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
-msgid "Not installed"
-msgstr ""
+#~ msgid "Not installed"
+#~ msgstr ""
 
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
 msgid "not reachable"
@@ -8451,8 +8553,8 @@ msgid "Onboarding reset"
 msgstr "איפוס הכנה ראשונית"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
-msgid "one is enough to get started"
-msgstr ""
+#~ msgid "one is enough to get started"
+#~ msgstr ""
 
 #: src/components/terminal/interactive-terminal/side-windows/PromptIndexPanel.tsx
 msgid "Only harness entries here — enable “Show all” to view them."
@@ -8795,8 +8897,8 @@ msgstr "פתח הפעלה"
 #~ msgstr "פתח טרמינל משותף"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
-msgid "Open sign-in"
-msgstr ""
+#~ msgid "Open sign-in"
+#~ msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 #~ msgid "Open sign-in page"
@@ -8854,6 +8956,10 @@ msgstr "פתח את הסשן"
 #: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
 #~ msgid "Open the sidecar shell first to enable git operations"
 #~ msgstr "פתח תחילה את ה-sidecar shell כדי להפעיל פעולות git"
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Open the sign-in page"
+msgstr ""
 
 #: src/components/lens-viewer/shared/transcript-features/TranscriptViewer.tsx
 msgid "Open the transcript analysis session"
@@ -9056,6 +9162,14 @@ msgstr "הדבק מזהה פגישת Claude CLI (UUID) כדי לשחזר בלש�
 msgid "Paste a session id (UUID) to restore it in a new tab."
 msgstr ""
 
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Paste API key"
+msgstr ""
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Paste code from browser"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/side-windows/InputFilesPanel.tsx
 msgid "Paste or drag files here"
 msgstr "הדבק או גרור קובצים לכאן"
@@ -9156,6 +9270,10 @@ msgstr ""
 #: src/components/open-project-component/open-project-component.tsx
 msgid "Pick a project"
 msgstr "בחר פרויקט"
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+#~ msgid "Pick one to get started — it only takes a few seconds."
+#~ msgstr ""
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Pick project folder"
@@ -9790,7 +9908,6 @@ msgstr "קריאה…"
 msgid "Readme"
 msgstr "קרא אותי"
 
-#: src/components/harness-login/HarnessLoginModal.tsx
 #: src/pages/home-landing/InlineSearchResults.tsx
 msgid "Ready"
 msgstr "מוכן"
@@ -10616,6 +10733,7 @@ msgstr "מדדי Sandbox"
 #: src/components/execute-flow-view/instruction-panel/ephemeral-prompt-input.tsx
 #: src/components/execute-flow-view/instruction-panel/instruction-panel.tsx
 #: src/components/favorites/FavoriteStar.tsx
+#: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/hooks-manager/TriggerForm.tsx
 #: src/components/hooks-view/HookEditor.tsx
@@ -11604,6 +11722,10 @@ msgstr "הצג עקיפות טווח"
 msgid "Show Sessions"
 msgstr "הצג הפעלות"
 
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Show setup guide"
+msgstr ""
+
 #: src/components/open-project-component/open-project-component.tsx
 #~ msgid "Show system"
 #~ msgstr "הצג מערכת"
@@ -11640,7 +11762,15 @@ msgid "sidechain"
 msgstr "שרשרת צדדית"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
-msgid "Sign in"
+#~ msgid "Sign in"
+#~ msgstr ""
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+#~ msgid "Sign in to a coding assistant"
+#~ msgstr ""
+
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "Sign in to see who's a member"
 msgstr ""
 
 #: src/components/conversation/ConversationRoute.tsx
@@ -11652,8 +11782,16 @@ msgid "Sign in to your Flowpad Cloud account to view your inbox and conversation
 msgstr "היכנס לחשבון Flowpad Cloud שלך כדי להציג את תיבת הדואר שלך ושיחות."
 
 #: src/components/harness-login/HarnessLoginModal.tsx
-msgid "Sign-in needed"
+msgid "Sign in with {account}"
 msgstr ""
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Sign in with your {account} to let {name} write and run code for you. A browser window opens for sign-in — FlowPad never sees your password."
+msgstr ""
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+#~ msgid "Sign-in needed"
+#~ msgstr ""
 
 #: src/components/account/user-info.tsx
 msgid "Signed in"
@@ -12000,7 +12138,6 @@ msgid "Starting..."
 msgstr "מתחיל..."
 
 #: src/components/conversation/ConversationView.tsx
-#: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 msgid "Starting…"
 msgstr "מתחיל…"
@@ -12108,7 +12245,6 @@ msgstr "סוכנים משנה"
 msgid "Subfolders"
 msgstr "תיקיות משנה"
 
-#: src/components/harness-login/HarnessLoginModal.tsx
 #: src/pages/flow-page/vibe-workspace.tsx
 msgid "Submit"
 msgstr ""
@@ -12317,6 +12453,10 @@ msgstr "מושבות הטרמינל"
 msgid "test"
 msgstr "בדיקה"
 
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Test"
+msgstr ""
+
 #: src/components/conversation/asset-review/TestPromptDialog.tsx
 #~ msgid "Test “{assetName}”"
 #~ msgstr ""
@@ -12325,6 +12465,10 @@ msgstr "בדיקה"
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Test API Access"
 msgstr "בדוק גישת API"
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Test failed"
+msgstr ""
 
 #: src/components/conversation/asset-review/AssetInstallActions.tsx
 #~ msgid "Test it"
@@ -12461,8 +12605,8 @@ msgid "The wizard reported an error."
 msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
-msgid "then paste code"
-msgstr ""
+#~ msgid "then paste code"
+#~ msgstr ""
 
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "There are merge conflicts in <0>{localPath}</0>. Please resolve them and try again."
@@ -12887,6 +13031,10 @@ msgstr "נסה שוב"
 msgid "turn duration"
 msgstr "משך תור"
 
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Two quick steps in your browser:"
+msgstr ""
+
 #: src/components/account/db-stats.tsx
 #: src/components/artifacts/artifact-form.tsx
 #: src/components/hooks-view/HooksTable.tsx
@@ -13090,6 +13238,10 @@ msgstr "עדכן תכנית בהתאם לסעיפי <plan-note>"
 msgid "Updated: {0}"
 msgstr "עודכן: {0}"
 
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "Updating…"
+msgstr ""
+
 #. placeholder {0}: pypi.latest
 #: src/components/version-popover/version-popover.tsx
 msgid "Upgrade to v{0}"
@@ -13163,6 +13315,10 @@ msgstr "השתמש בהצעה"
 msgid "Use the refresh button in the toolbar to retry"
 msgstr "השתמש בכפתור הרענון בסרגל הכלים כדי לנסות שוב"
 
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Use which key"
+msgstr ""
+
 #: src/components/lens-viewer/ClaudeContextViewer.tsx
 msgid "used"
 msgstr "בשימוש"
@@ -13199,8 +13355,17 @@ msgstr "שימושים"
 msgid "Using"
 msgstr "בשימוש"
 
+#. placeholder {0}: providerLabel(activeProvider)
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Using {0} key"
+msgstr ""
+
 #: src/components/entity-execution-panel/MetaMessageChip.tsx
 msgid "Using skill: {skillName}"
+msgstr ""
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Valid"
 msgstr ""
 
 #: src/components/artifacts/artifact-form.tsx
@@ -13375,8 +13540,8 @@ msgid "Waiting for {hostName} to approve the live session…"
 msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
-msgid "waiting for authorization in your browser…"
-msgstr ""
+#~ msgid "waiting for authorization in your browser…"
+#~ msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 #~ msgid "Waiting for authorization…"
@@ -13399,8 +13564,12 @@ msgstr ""
 #~ msgstr "בהמתנה לאירועי עקיבה…"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
-msgid "Waiting…"
+msgid "Waiting for you to approve…"
 msgstr ""
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+#~ msgid "Waiting…"
+#~ msgstr ""
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Walked the filesystem without writing. Counts and sizes reflect what is on disk right now; compare against the per-type rows to see drift."
@@ -13694,6 +13863,10 @@ msgstr "תוסר מרשימת המשתתפים. חברים אחרים שומרי
 #: src/components/join-room-dialog/JoinRoomDialog.tsx
 #~ msgid "You're about to open a room on this project. You can invite others with the share code that'll appear in the header once the room starts."
 #~ msgstr "אתה עומד לפתוח חדר בפרויקט זה. אתה יכול להזמין אחרים באמצעות קוד השיתוף שיופיע בכותרת כשהחדר יתחיל."
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "You're signed in and ready to go."
+msgstr ""
 
 #: src/components/conversation/ConversationView.tsx
 msgid "You're the only participant in this conversation — no one else will see this message."
