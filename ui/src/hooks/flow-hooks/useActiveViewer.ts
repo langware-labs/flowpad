@@ -1,79 +1,16 @@
-import { AgenticProcess, CodeRef, Flow, FlowData, FlowElementTypes, ViewType } from '@sdk';
-import { useCallback, useEffect, useRef } from 'react';
-import { DockPointer } from '../../navigation/DockPointer';
+import { CodeRef, ViewType } from '@sdk';
+import { useEffect } from 'react';
 import { useDockNavigation } from '../../navigation/useDockNavigation';
-import { useProcessExecution } from './useProcessExecution';
-import { useProcessStream } from './useProcessStream';
 import { useViewerStore } from './useViewerStore';
 
 /**
- * Hook that synchronizes flow focus requests with the viewer store
- *
- * This hook:
- * 1. Reacts to flow focus elements in stream
- * 2. Automatically updates overview tab when agent requests focus change
- * 3. Automatically updates active tab and current context when url dock changes
- * 4. Automatically focuses on the last artifact when streaming completes
- *
- * @param flow - The flow entity to track
+ * Hook that derives the viewer store's currentContext from the URL dock —
+ * the URL is the single source (CLAUDE.md URL-first). The legacy Flow
+ * stream-driven focus path retired with the conversational-Flow engine.
  */
-export function useActiveViewer(flow: Flow | AgenticProcess | null | undefined) {
+export function useActiveViewer() {
   const { setCurrentContext } = useViewerStore();
-  const { navigation, currentDock, isDockUrl } = useDockNavigation();
-
-  // Use ref to track current flow and prevent unnecessary re-subscriptions
-  const flowRef = useRef<Flow | AgenticProcess | null | undefined>(flow);
-  const processIdRef = useRef<string | undefined>(flow?.id);
-
-  // useProcessStream / useProcessExecution only work with the legacy Flow entity.
-  // Pass null for AgenticProcess — URL-driven navigation still works without streaming.
-  const legacyFlow = flow instanceof AgenticProcess ? null : (flow ?? null);
-  const { data: streamData } = useProcessStream(legacyFlow);
-  const { isRunning } = useProcessExecution(legacyFlow);
-
-  // Update refs when flow changes
-  useEffect(() => {
-    flowRef.current = flow;
-    processIdRef.current = flow?.id;
-  }, [flow]);
-
-  // Apply an agent focus request URL-first: navigate to the focused surface; the
-  // URL-sync effect below then derives currentContext from the new dock. No
-  // direct store write — the URL is the single source (CLAUDE.md URL-first).
-  const focusFromStream = useCallback(
-    (flowData: FlowData) => {
-      if (!flowData || flowData.focus === null) return;
-      const viewType = flowData.focus;
-      const path = flowData.data?.path || flowData.attributes.path;
-      const port = flowData.data?.metadata?.port;
-      navigation.openDock(
-        new DockPointer(viewType, path || undefined, port != null ? { port: String(port) } : undefined),
-      );
-    },
-    [navigation],
-  );
-
-  // Sync flow focus elements from stream to viewer store (agent-driven focus)
-  useEffect(() => {
-    if (!streamData || streamData.length === 0) return;
-
-    // Find the most recent element with focus attribute in the stream
-    const flowDataWithFocus = [...streamData].filter((flowData) => flowData.focus).reverse();
-    if (flowDataWithFocus.length === 0) return;
-
-    let flowDataToFocusOn = null;
-    if (isRunning) {
-      // The most recent element with focus attribute
-      flowDataToFocusOn = flowDataWithFocus[0];
-    } else {
-      // The most recent artifact in the stream
-      flowDataToFocusOn = flowDataWithFocus.find((flowData) => flowData.elementType === FlowElementTypes.RESULT);
-    }
-    if (!flowDataToFocusOn) return;
-
-    // Apply focus
-    focusFromStream(flowDataToFocusOn);
-  }, [streamData, focusFromStream, navigation, isRunning]);
+  const { currentDock, isDockUrl } = useDockNavigation();
 
   // Sync URL dock state to viewer store (URL-first architecture)
   useEffect(() => {

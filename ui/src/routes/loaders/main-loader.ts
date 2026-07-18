@@ -22,7 +22,6 @@ import { setupTabAndAdopt } from '@src/tabs/setup-tab-and-adopt';
 import { ViewType } from '@src/types/ViewType';
 import { TimeIt } from '@src/utils/timeit';
 import { redirect, type LoaderFunctionArgs as LoaderArgs } from 'react-router';
-import { getBrokenViewUrl, loadFlowFromParams } from './loaders';
 import { loadProject } from './load-project';
 import { describeProcessStartError } from './load-process';
 import { markPerfT0, perfLog, perfTime } from './_perf';
@@ -30,8 +29,6 @@ import { loadDockPointer } from './load-dock-pointer';
 
 // Re-export kept for existing consumers (unit tests import from here).
 export { describeProcessStartError };
-
-const ALLOWED_VIEWS = new Set(Object.values(ViewType));
 
 /**
  * Ensure compute node is loaded for the current project.
@@ -51,20 +48,6 @@ async function ensureComputeNodeLoaded(): Promise<void> {
       );
     }
   }
-}
-
-function isValidViewType(args: LoaderArgs): boolean {
-  const { viewType } = args.params;
-  if (!viewType) return false;
-  const v = String(viewType ?? '').toLowerCase();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return ALLOWED_VIEWS.has(v as any);
-}
-
-function getDockViewType(args: LoaderArgs): ViewType | undefined {
-  if (!isValidViewType(args)) return undefined;
-  const v = String(args.params.viewType ?? '').toLowerCase();
-  return v as ViewType;
 }
 
 export async function loadAgentApp(args: LoaderArgs) {
@@ -219,18 +202,7 @@ export async function loadAgentApp(args: LoaderArgs) {
     return;
   }
 
-  const dockViewType = getDockViewType(args);
-  if (!dockViewType) {
-    t.done(slowThresholdSeconds);
-    return loadFlowFromParams(args);
-  }
-  if (!isValidViewType(args)) {
-    const brokenViewUrl = getBrokenViewUrl(args);
-    console.error(`[LOADER] Invalid view type(${dockViewType}). Redirecting to default view URL:`, brokenViewUrl);
-    t.done(slowThresholdSeconds);
-    // eslint-disable-next-line @typescript-eslint/only-throw-error
-    throw redirect(brokenViewUrl);
-  }
+  // The legacy /agent/:agentId/flow/:processId family is gone — every live
+  // route returns inside the !processId branch above. Defensive no-op.
   t.done(slowThresholdSeconds);
-  return loadFlowFromParams(args);
 }

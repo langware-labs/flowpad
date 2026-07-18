@@ -108,7 +108,6 @@ EXPECTED = {
     "ORGANIZATION": "organization",
     "WORKSPACE": "workspace",
     "PAGE": "page",
-    "FLOW": "flow",
     "INVITATION": "invitation",
     "MENTION": "mention",
     "CONNECTION": "connection",

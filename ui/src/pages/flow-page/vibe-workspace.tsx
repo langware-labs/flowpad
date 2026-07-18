@@ -101,8 +101,7 @@ function vfsEditorEl(absPath: string, refreshKey?: number, process?: AgenticProc
 }
 
 /**
- * Read the most-recent agent `focus` off the AgenticProcess stream — the SAME
- * fields the URL-driven `useActiveViewer.focusFromStream` reads (`focus`,
+ * Read the most-recent agent `focus` off the AgenticProcess stream (`focus`,
  * `data.path`, `data.metadata.port`). This is how the display knows which viewer
  * to show; it is NOT derived from the URL (the URL stays the standard process
  * dock URL — the viewer never touches it).
