@@ -319,7 +319,7 @@ async def test_download_flow_message_returns_zip(bootstrapped_client):
 
 _SPEC_TITLE = "My Spec"
 # default_body_fn / _safe_entity_name turn "My Spec" into this leaf folder.
-_SPEC_LEAF_REL = Path("specs") / "My_Spec" / "spec.md"
+_SPEC_LEAF_REL = Path("agentic-assets") / "spec" / "My_Spec" / "spec.md"
 
 
 @pytest.fixture
@@ -410,7 +410,7 @@ async def _build_spec_bundle(
     # Confirm the packer actually placed the file-backed asset (else the rest
     # of the test would be vacuous).
     with zipfile.ZipFile(zip_path, "r") as zf:
-        arc = f"attachment/spec-@{spec_id}/specs/My_Spec/spec.md"
+        arc = f"attachment/spec-@{spec_id}/agentic-assets/spec/My_Spec/spec.md"
         assert arc in zf.namelist(), f"spec not packed: {zf.namelist()}"
     return zip_path.read_bytes()
 
