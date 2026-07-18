@@ -34,6 +34,10 @@ DATASET = TypeMetadata(
     asset_class="repo",
     family="dataset",
     main_layout="folder",
+    # The manifest that marks a folder as a dataset — also the repo walker's
+    # marker gate (a dataset folder must carry it). asset_ref stays the folder
+    # (main_file_is_asset_ref unset), so this only names the marker/body file.
+    main_file="dataset.json",
     from_disk_fn=extract_dataset,
     gen_uuid_fn=dataset_gen_id,
     asset_hash_fn=dataset_asset_hash,

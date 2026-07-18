@@ -694,27 +694,32 @@ class SchemaRegistry:
         return [k for k, v in cls._types.items() if v.entity_cls is not None and v.shared_child]
 
     @classmethod
-    def repo_family_to_type(cls) -> dict[str, str]:
-        """Map a repo asset's ``<type>`` subdir (its ``family``) back to the type
-        name — the reverse of the ``agentic-assets/<family>`` mount, used by the
-        walker to identify a discovered folder's record type. The single owner of
+    def repo_family_to_info(cls) -> "dict[str, TypeInfo]":
+        """Map a repo asset's ``<type>`` subdir (its ``family``) → its ``TypeInfo``
+        — the reverse of the ``agentic-assets/<family>`` mount. The SINGLE owner of
         the ``asset_class == REPO`` predicate; a type enrolls by declaring
-        ``asset_class="repo"`` (and a ``family``)."""
+        ``asset_class="repo"`` (and a ``family``). The indexer walker reads this
+        directly (it needs each type's layout + marker), and the name/type-only
+        views below derive from it so the predicate lives in one place."""
         from flow_sdk.fs_store.placement import AssetClass  # noqa: PLC0415
 
         cls._ensure_loaded()
         return {
-            v.family: k
-            for k, v in cls._types.items()
+            v.family: v
+            for v in cls._types.values()
             if v.asset_class == AssetClass.REPO and v.family
         }
 
     @classmethod
+    def repo_family_to_type(cls) -> dict[str, str]:
+        """Family → type-name view of ``repo_family_to_info``."""
+        return {fam: info.type_name for fam, info in cls.repo_family_to_info().items()}
+
+    @classmethod
     def get_repo_types(cls) -> list[str]:
         """Type names whose assets live in the recursive ``agentic-assets/<type>``
-        hierarchy — the values of ``repo_family_to_type`` (repo types must declare
-        a ``family`` to be placeable at all)."""
-        return list(cls.repo_family_to_type().values())
+        hierarchy (repo types must declare a ``family`` to be placeable at all)."""
+        return [info.type_name for info in cls.repo_family_to_info().values()]
 
     @classmethod
     def get_public_entity_types(cls) -> list[str]:

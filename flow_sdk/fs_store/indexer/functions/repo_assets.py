@@ -29,56 +29,50 @@ _MAX_DEPTH = 32
 def repo_assets_fn(nodes: list[FSRef], opts: IndexerOptions) -> list[FSRef]:
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
-    # family (the <type> subdir) → the registered TypeInfo, resolved once so the
-    # walk knows each type's layout (folder asset dir vs file asset) + record type.
-    type_infos = {
-        fam: SchemaRegistry.get(tn) for fam, tn in SchemaRegistry.repo_family_to_type().items()
-    }
-    type_infos = {fam: info for fam, info in type_infos.items() if info is not None}
+    # family (the <type> subdir) → its TypeInfo (layout + marker + record type).
+    type_infos = SchemaRegistry.repo_family_to_info()
     if not type_infos:
         return []
     out: list[FSRef] = []
+
+    def scan(container: Path, parent_ref: FSRef, depth: int) -> None:
+        # A physical folder/file can't alias without a symlink (rejected by the
+        # copy/restore guards), so a visited-set would never dedup; _MAX_DEPTH is
+        # the only backstop needed.
+        if depth >= _MAX_DEPTH:
+            return
+        aa = container / AGENTIC_ASSETS_DIR
+        if not aa.is_dir():
+            return
+        for type_dir in sorted(aa.iterdir()):
+            if not type_dir.is_dir():
+                continue
+            info = type_infos.get(type_dir.name)
+            if info is None:
+                continue
+            record_type = EntityType(info.type_name)
+            is_folder = info.main_layout == "folder"
+            for entry in sorted(type_dir.iterdir()):
+                if is_folder:
+                    # Folder asset (spec/task/deck…): the <name>/ dir is the asset
+                    # folder, but only when it carries the type's marker file
+                    # (main_file) — the same "is this really an asset?" gate the
+                    # per-type walkers had; skips scaffolding/half-written dirs.
+                    # The FSRef points where the type's convention puts it (bare
+                    # folder, or inner main_file for spec-style) via asset_ref_for.
+                    # Recursion descends into the FOLDER for nested children.
+                    if not entry.is_dir():
+                        continue
+                    if info.main_file and not (entry / info.main_file).is_file():
+                        continue
+                    ref = FSRef(info.asset_ref_for(entry), record_type=record_type, parent=parent_ref)
+                    out.append(ref)
+                    scan(entry, ref, depth + 1)
+                elif entry.is_file() and entry.suffix == info.main_ext:
+                    # File asset (markdown/prompt…): the <name>.<ext> file IS the
+                    # asset — a leaf, no nesting.
+                    out.append(FSRef(entry, record_type=record_type, parent=parent_ref))
+
     for node in nodes:
-        _scan(Path(node.path), node, type_infos, out, 0)
+        scan(Path(node.path), node, 0)
     return out
-
-
-def _scan(
-    container: Path,
-    parent_ref: "FSRef",
-    type_infos: dict,
-    out: list[FSRef],
-    depth: int,
-) -> None:
-    # Each asset folder/file has one physical location and can't alias without a
-    # symlink (rejected by the copy/restore guards), so a visited-set would never
-    # dedup; _MAX_DEPTH is the only backstop needed.
-    if depth >= _MAX_DEPTH:
-        return
-    aa = container / AGENTIC_ASSETS_DIR
-    if not aa.is_dir():
-        return
-    for type_dir in sorted(aa.iterdir()):
-        if not type_dir.is_dir():
-            continue
-        info = type_infos.get(type_dir.name)
-        if info is None:
-            continue
-        record_type = EntityType(info.type_name)
-        is_folder = info.main_layout == "folder"
-        for entry in sorted(type_dir.iterdir()):
-            if is_folder:
-                # Folder asset (spec/task/deck…): the <name>/ dir is the asset
-                # folder. The FSRef points where the type's convention puts it —
-                # the bare folder (skill/task style) or the inner main_file
-                # (spec style) — via ``asset_ref_for``. Recursion descends into
-                # the FOLDER for nested children.
-                if not entry.is_dir():
-                    continue
-                ref = FSRef(info.asset_ref_for(entry), record_type=record_type, parent=parent_ref)
-                out.append(ref)
-                _scan(entry, ref, type_infos, out, depth + 1)
-            elif entry.is_file() and entry.suffix == info.main_ext:
-                # File asset (markdown/prompt…): the <name>.<ext> file IS the
-                # asset — a leaf, no nesting.
-                out.append(FSRef(entry, record_type=record_type, parent=parent_ref))

@@ -78,27 +78,29 @@ def test_repo_tree_writes_and_reads_back(repo_type, tmp_path):
 
 
 # ── Indexer discovery: the recursive walk finds every nested level ───────────
-def test_repo_walker_discovers_whole_nested_tree(tmp_path, monkeypatch):
+def test_repo_walker_discovers_whole_nested_tree(tmp_path):
+    import flow_sdk.fs_store.indexer.registrations  # noqa: F401  (register types)
     from flow_sdk.fs_store.fs_ref import FSRef
     from flow_sdk.fs_store.indexer.functions.repo_assets import repo_assets_fn
     from flow_sdk.fs_store.indexer.index_function import IndexerOptions
     from flow_sdk.schema.types import EntityType
 
-    # Use 'task' (a folder-backed repo type whose asset_ref IS the folder) so the
-    # discovered refs are the dirs themselves. Isolate to just task via monkeypatch.
-    monkeypatch.setattr(SchemaRegistry, "repo_family_to_type", lambda: {"task": "task"})
-
+    # 'task' is a real folder-backed repo type (asset_ref IS the folder). Only
+    # agentic-assets/task/ is populated, so only task refs are emitted.
     aa = AGENTIC_ASSETS_DIR
     p = tmp_path / aa / "task" / "p"
     c = p / aa / "task" / "c"
     g = c / aa / "task" / "g"
     for d in (p, c, g):
         d.mkdir(parents=True, exist_ok=True)
+        (d / "task.md").write_text("# t\n")  # marker: a task folder carries task.md
+    # A dir WITHOUT the marker is not an asset — the gate must skip it.
+    (tmp_path / aa / "task" / "scaffolding").mkdir(parents=True)
 
     refs = repo_assets_fn([FSRef(tmp_path)], IndexerOptions())
     by_path = {str(r._path): r for r in refs}
 
-    assert set(by_path) == {str(p), str(c), str(g)}  # every level discovered
+    assert set(by_path) == {str(p), str(c), str(g)}  # every marked level; stray skipped
     assert all(r.record_type == EntityType.TASK for r in refs)
     # Parent FSRef chain mirrors the physical nesting (used for ambient scope).
     assert by_path[str(c)]._parent._path == p
@@ -108,13 +110,15 @@ def test_repo_walker_discovers_whole_nested_tree(tmp_path, monkeypatch):
 
 def test_repo_walker_discovers_file_backed_assets(tmp_path, monkeypatch):
     # File-layout repo types (markdown) live as <name>.<ext> files, not folders —
-    # the walker emits a leaf ref per matching file and does not recurse.
+    # the walker emits a leaf ref per matching file and does not recurse. Inject
+    # markdown's real TypeInfo (it's INTERNAL, not repo) to exercise the file path.
     from flow_sdk.fs_store.fs_ref import FSRef
     from flow_sdk.fs_store.indexer.functions.repo_assets import repo_assets_fn
     from flow_sdk.fs_store.indexer.index_function import IndexerOptions
     from flow_sdk.schema.types import EntityType
 
-    monkeypatch.setattr(SchemaRegistry, "repo_family_to_type", lambda: {"markdown": "markdown"})
+    md_info = SchemaRegistry.get("markdown")
+    monkeypatch.setattr(SchemaRegistry, "repo_family_to_info", lambda: {"markdown": md_info})
     md_dir = tmp_path / AGENTIC_ASSETS_DIR / "markdown"
     md_dir.mkdir(parents=True)
     (md_dir / "foo.md").write_text("# foo")
@@ -149,7 +153,7 @@ def test_repo_walker_noop_when_no_repo_types(tmp_path, monkeypatch):
     from flow_sdk.fs_store.indexer.functions.repo_assets import repo_assets_fn
     from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 
-    monkeypatch.setattr(SchemaRegistry, "repo_family_to_type", lambda: {})
+    monkeypatch.setattr(SchemaRegistry, "repo_family_to_info", lambda: {})
     (tmp_path / AGENTIC_ASSETS_DIR / "spec" / "x").mkdir(parents=True)
     assert repo_assets_fn([FSRef(tmp_path)], IndexerOptions()) == []
 
