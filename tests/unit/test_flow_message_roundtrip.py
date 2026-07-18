@@ -125,7 +125,7 @@ class TestPackBundle:
             # New unified layout: attachment/<type>-@<id>/<main_subdir>/<leaf>.
             # Spec is folder-layout (specs/<name>/spec.md); the DB-backed mock
             # (no on-disk asset_ref) renders via default_body_fn.
-            expected = f"attachment/spec-@{spec_id}/specs/My_Spec/spec.md"
+            expected = f"attachment/spec-@{spec_id}/agentic-assets/spec/My_Spec/spec.md"
             assert expected in names
             content = zf.read(expected).decode("utf-8")
             assert "My Spec" in content
@@ -154,7 +154,7 @@ class TestPackBundle:
 
         with zipfile.ZipFile(zip_path, "r") as zf:
             names = zf.namelist()
-            expected = f"attachment/task-@{task_id}/tasks/My_Task/task.md"
+            expected = f"attachment/task-@{task_id}/agentic-assets/task/My_Task/task.md"
             assert expected in names
             content = zf.read(expected).decode("utf-8")
             assert "My Task" in content
@@ -217,7 +217,7 @@ class TestPackBundle:
         from flow_sdk.builtin.spec import Spec
 
         spec_id = _SPEC_UUID
-        folder = tmp_path / "specs" / "hello"
+        folder = tmp_path / "agentic-assets" / "spec" / "hello"
         folder.mkdir(parents=True)
         # spec.md authored WITHOUT an id in frontmatter → pack must pin it.
         sentinel = "REAL-ON-DISK-SENTINEL-BODY"
@@ -239,8 +239,8 @@ class TestPackBundle:
 
         with zipfile.ZipFile(zip_path, "r") as zf:
             names = zf.namelist()
-            main_arc = f"attachment/spec-@{spec_id}/specs/hello/spec.md"
-            notes_arc = f"attachment/spec-@{spec_id}/specs/hello/notes.md"
+            main_arc = f"attachment/spec-@{spec_id}/agentic-assets/spec/hello/spec.md"
+            notes_arc = f"attachment/spec-@{spec_id}/agentic-assets/spec/hello/notes.md"
             # Parent folder shipped verbatim — sibling rode along too.
             assert main_arc in names
             assert notes_arc in names
@@ -934,7 +934,7 @@ async def test_pack_task_attachment_excludes_sender_local_fields(tmp_path):
         zip_path = await pack_bundle(fm, dest_dir=tmp_path)
 
     with zipfile.ZipFile(zip_path, "r") as zf:
-        content = zf.read(f"attachment/task-@{task_id}/tasks/Shared_Task/task.md").decode("utf-8")
+        content = zf.read(f"attachment/task-@{task_id}/agentic-assets/task/Shared_Task/task.md").decode("utf-8")
     # Sender-local fields stripped (never written to task.md).
     assert "project_root" not in content
     assert "/sender/local/path" not in content
@@ -970,7 +970,7 @@ async def test_pack_dbonly_spec_pins_id_and_sanitizes_hostile_name(tmp_path):
 
     with zipfile.ZipFile(zip_path, "r") as zf:
         names = zf.namelist()
-        prefix = f"attachment/spec-@{spec_id}/specs/"
+        prefix = f"attachment/spec-@{spec_id}/agentic-assets/spec/"
         spec_members = [n for n in names if n.startswith(prefix)]
         assert spec_members, f"expected a rendered spec doc, got {names}"
         main_arc = spec_members[0]

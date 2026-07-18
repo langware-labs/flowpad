@@ -86,7 +86,7 @@ def _write_bundle(tmp_path: Path, ids: Ids, *, body: str = SENTINEL) -> Path:
             "print('helper')\n",
         )
         zf.writestr(
-            f"attachment/spec-@{ids.spec}/specs/staged-spec/spec.md",
+            f"attachment/spec-@{ids.spec}/agentic-assets/spec/staged-spec/spec.md",
             f"---\nid: {ids.spec}\ntitle: staged spec\nspec_type: plan\n---\n\n# spec\n",
         )
     return zip_path
@@ -166,14 +166,21 @@ async def test_install_user_scope_lands_under_claude_home_root(tmp_path, ids, mo
     assert skill is not None, "user-scope install did not index the skill"
 
 
-async def test_install_user_scope_rejected_for_project_anchored_type(tmp_path, ids):
+async def test_install_user_scope_allowed_for_repo_type(tmp_path, ids, monkeypatch):
+    # spec is a REPO type (agentic-assets/spec) — user+project scope, so a
+    # user-scope install is NOT rejected (the old project-anchored 400 applied
+    # when spec was INTERNAL). The user-scope policy itself is unit-covered in
+    # test_placement_matrix's support cross-product.
+    import flow_sdk.app.actions.message_attachment_action as ma_action
+
+    monkeypatch.setattr(ma_action, "_user_scope_root", lambda: tmp_path / "home")
     await _stage(tmp_path, ids)
     spec_ma = await MessageAttachment.get_one(
         {"id": MessageAttachment.allocate_deterministic_id(ids.fm, f"spec-@{ids.spec}")}
     )
     assert spec_ma is not None
     res = await handle_attachment_install(spec_ma.id, "user", None)
-    assert isinstance(res, ApiFailResponse) and res.status_code == 400
+    assert not (isinstance(res, ApiFailResponse) and res.status_code == 400)
 
 
 async def test_install_conflict_409_then_overwrite_replaces(tmp_path, ids):
