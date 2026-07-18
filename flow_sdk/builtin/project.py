@@ -7,7 +7,6 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, List, Optional
 
-from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, computed_field, model_validator
 from pydantic.alias_generators import to_camel
 
@@ -17,7 +16,7 @@ from flow_sdk.api.type_id import TypeId
 from flow_sdk.builtin.faas.compute_node import ComputeNode
 from flow_sdk.builtin.worker_sessions import get_worker_sessions
 from flow_sdk.config import AGENT_MOUNT_FOLDER, PLATFORM_WIN32, StorageProvider
-from flow_sdk.core import Entity, QueryFilter, action
+from flow_sdk.core import Entity, action
 from flow_sdk.core.entity.entity_model import migrate_presence_shaped_members
 from flow_sdk.core.flow.flow_source_control import ComputeSourceControlInitializeOptions
 from flow_sdk.core.flow.mcp_server import MCPConnector, mcp_connector_pool
