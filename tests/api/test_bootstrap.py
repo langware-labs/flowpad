@@ -34,7 +34,10 @@ async def test_bootstrap_returns_local_user_and_schemas(client):
     assert len(types) > 0
     schemas = [t["schema"] for t in types if isinstance(t.get("schema"), dict)]
     assert len(schemas) > 0
-    assert any(s.get("properties", {}).get("type", {}).get("const") == "flow" for s in schemas)
+    # A representative core type carries a `type` discriminator const in its
+    # schema. ("flow" was removed with the AMD workflow cleanup; "conversation"
+    # is a stable always-present type.)
+    assert any(s.get("properties", {}).get("type", {}).get("const") == "conversation" for s in schemas)
 
     user = data["user"]
     assert isinstance(user, dict)

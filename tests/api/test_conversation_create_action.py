@@ -62,7 +62,9 @@ async def test_conversation_create_under_project_upserts_participants(bootstrapp
     conv = conv_resp.json()["data"]
     assert conv["project_id"] == project_id
     assert not conv.get("task_id")
-    assert len(conv["participants"]) == 2
+    # The Conversation entity stores the roster as ``members`` (renamed from
+    # ``participants``); the create response still echoes ``participants``.
+    assert len(conv["members"]) == 2
 
     # Standard records-data location. ``data_path`` is now a derived
     # @property on ``Conversation`` (not a stored field), so it isn't part
