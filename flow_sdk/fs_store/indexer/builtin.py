@@ -184,9 +184,6 @@ def build_default_indexer() -> FSIndexer:
     idx.add_function(RecordType.REAL_PROJECT_CWD, agent_fn, RecordType.AGENT)
     idx.add_function(RecordType.REAL_PROJECT_CWD, dynamic_workflows_fn, RecordType.DYNAMIC_WORKFLOW)
     idx.add_function(RecordType.REAL_PROJECT_CWD, project_folder_walker_fn, RecordType.FOLDER)
-    # task is a REPO type (agentic-assets/task) — discovered by repo_assets_fn.
-    # dataset/deck/deck_template are REPO types (agentic-assets/<type>) —
-    # discovered by repo_assets_fn, not per-type walkers.
     idx.add_function(RecordType.REAL_PROJECT_CWD, claude_hook_files_fn, RecordType.CLAUDE_HOOK_SOURCE)
     idx.add_function(RecordType.REAL_PROJECT_CWD, mcp_source_files_fn, RecordType.MCP_SERVER_SOURCE)
     idx.add_function(RecordType.REAL_PROJECT_CWD, command_fn, RecordType.COMMAND)
