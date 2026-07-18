@@ -1349,15 +1349,15 @@ msgstr "נכס"
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
 #: src/pages/home-landing/feed/FeedEntryCard.tsx
 msgid "Asset cleanup"
-msgstr ""
+msgstr "ניקוי משאבים"
 
 #: src/components/code-editor/AssetCompareView.tsx
 msgid "Asset compare"
-msgstr ""
+msgstr "השוואת נכסים"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Asset has changes"
-msgstr ""
+msgstr "שינויים לא שמורים בנכס"
 
 #: src/components/assets/AssetsPage.tsx
 msgid "Asset has no file on disk"
@@ -1398,7 +1398,7 @@ msgstr "העוזר משיב"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Assistants & keys"
-msgstr ""
+msgstr "עוזרים ומפתחות"
 
 #: src/components/skills-viewer/amd-editor/components/blocks/UiBlock.tsx
 #~ msgid "async"
@@ -1406,7 +1406,7 @@ msgstr ""
 
 #: src/components/image-annotator/AnnotatorToolbar.tsx
 msgid "Attach"
-msgstr ""
+msgstr "לצרף"
 
 #: src/components/entity-context/EntityContextPanel.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
@@ -1440,7 +1440,7 @@ msgstr "ההצורף אינו זמין — לא הועלה קובץ"
 
 #: src/pages/flow-page/use-start-vibe-session.ts
 msgid "Attachment upload failed"
-msgstr ""
+msgstr "העלאת הקובץ המצורף נכשלה"
 
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 msgid "Attachments"
@@ -1498,7 +1498,7 @@ msgstr "זמין"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Available assets"
-msgstr ""
+msgstr "נכסים זמינים"
 
 #: src/components/terminal/interactive-terminal/TerminalBottomRibbon.tsx
 msgid "Available when the agent is waiting for your input"
@@ -1553,7 +1553,7 @@ msgstr "גיבוי בסיס נתונים"
 
 #: src/pages/flow-page/vibe-model-select.tsx
 msgid "Balanced"
-msgstr ""
+msgstr "מאוזן"
 
 #: src/components/hooks-view/HookEditor.tsx
 msgid "Bash Command *"
@@ -1565,15 +1565,15 @@ msgstr "התקדמות bash"
 
 #: src/components/project-home/BindSecretDialog.tsx
 msgid "Bind"
-msgstr ""
+msgstr "לקשור"
 
 #: src/components/project-home/BindSecretDialog.tsx
 msgid "Bind an existing app secret to a project environment variable."
-msgstr ""
+msgstr "חיבור app secret קיים למשתנה סביבה בפרויקט"
 
 #: src/components/project-home/BindSecretDialog.tsx
 msgid "Bind secret"
-msgstr ""
+msgstr "קישור סוד"
 
 #: src/components/lens-viewer/shared/transcript-features/TranscriptEntryItem.tsx
 msgid "blocked"
@@ -1602,7 +1602,7 @@ msgstr "סימנייה"
 
 #: src/components/favorites/FavoritesAddRow.tsx
 msgid "Bookmark an asset"
-msgstr ""
+msgstr "הוסיפו סימנייה"
 
 #: src/components/quick-create/QuickCreatePanel.tsx
 #~ msgid "Bookmark folder"
@@ -1614,16 +1614,16 @@ msgstr "הוסף סימנייה לתכנית זו"
 
 #: src/components/favorites/FavoritesAddRow.tsx
 msgid "Bookmark what's open"
-msgstr ""
+msgstr "הוסיפו לסימניות את מה שפתוח"
 
 #: src/components/favorites/FavoritesAddRow.tsx
 msgid "Bookmarked view"
-msgstr ""
+msgstr "תצוגה מסומנת"
 
 #: src/components/bookmarks-slider/BookmarksSlider.tsx
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 msgid "Bookmarks"
-msgstr ""
+msgstr "סימניות"
 
 #: src/components/GitHubConnectionDialog.tsx
 msgid "Branch:"
@@ -1665,11 +1665,11 @@ msgstr "שורת מאגר"
 
 #: src/pages/flow-page/vibe-workspace.tsx
 msgid "Build history"
-msgstr ""
+msgstr "היסטוריית בנייה"
 
 #: src/pages/home-landing/HomeLanding.tsx
 msgid "Build something <0>amazing</0>"
-msgstr ""
+msgstr "בנו משהו <0>מדהים</0>"
 
 #: src/components/lens-viewer/shared/transcript-features/CallStackView.tsx
 msgid "Building call stack…"
@@ -1705,7 +1705,7 @@ msgstr "לפי שם"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "By scope"
-msgstr ""
+msgstr "לפי היקף"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #~ msgid "By source"
@@ -1721,7 +1721,7 @@ msgstr "קריאה מזיכרון"
 
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Cache Read"
-msgstr ""
+msgstr "קריאה מהקאש"
 
 #. placeholder {0}: formatNumber(entry.usage.cacheRead)
 #: src/components/lens-viewer/shared/transcript-features/TranscriptEntryItem.tsx
@@ -1730,7 +1730,7 @@ msgstr "קריאה מזיכרון: {0}"
 
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Cache Tokens"
-msgstr ""
+msgstr "טוקני מטמון"
 
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 msgid "cache write"
@@ -1738,7 +1738,7 @@ msgstr "כתיבה לזיכרון"
 
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Cache Write"
-msgstr ""
+msgstr "כתיבה למטמון"
 
 #. placeholder {0}: formatNumber(entry.usage.cacheCreation)
 #: src/components/lens-viewer/shared/transcript-features/TranscriptEntryItem.tsx
@@ -1759,12 +1759,12 @@ msgstr "קריאות"
 
 #: src/components/diagnose/open-in-terminal-button.tsx
 msgid "Can't open terminal"
-msgstr ""
+msgstr "לא ניתן לפתוח טרמינל"
 
 #: src/components/account/organization-panel.tsx
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "Can't update — showing last synced"
-msgstr ""
+msgstr "לא ניתן לעדכן — מוצגים הנתונים מהסנכרון האחרון"
 
 #: src/components/account/secrets-section.tsx
 #: src/components/anchored-markdown/CommentPin.tsx
@@ -1847,7 +1847,7 @@ msgstr "לא ניתן לערוך"
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Cannot improve asset"
-msgstr ""
+msgstr "לא ניתן לשפר את הנכס"
 
 #: src/components/chats-navigator/ChatsNavigator.tsx
 msgid "Cannot open"
@@ -1912,7 +1912,7 @@ msgstr "שינויים ({0})"
 
 #: src/pages/flow-page/vibe-workspace.tsx
 msgid "Changing worker requires a new chat. The current chat stays in history."
-msgstr ""
+msgstr "שינוי ה-worker דורש צ'אט חדש. הצ'אט הנוכחי יישמר בהיסטוריה."
 
 #: src/components/floating-chat/FloatingChatWindow.tsx
 msgid "Chat history"
@@ -1928,7 +1928,7 @@ msgstr "הגדרות צ'אט"
 
 #: src/components/terminal/interactive-terminal/ChatToolsMenu.tsx
 msgid "Chat tools"
-msgstr ""
+msgstr "כלי צ'אט"
 
 #: src/components/chats-navigator/ChatsNavigator.tsx
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
@@ -1950,11 +1950,11 @@ msgstr "בדיקה"
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Checking Git eligibility…"
-msgstr ""
+msgstr "בודקים זכאות ל-Git…"
 
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
 msgid "Checking Git…"
-msgstr ""
+msgstr "בדיקת Git…"
 
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Checking if you have a local clone of the repository."
@@ -1966,11 +1966,11 @@ msgstr "בדיקת סטטוס השירות..."
 
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
 msgid "Checking whether {folderName} is ready to share."
-msgstr ""
+msgstr "בודקים אם {folderName} מוכן לשיתוף"
 
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
 msgid "checking…"
-msgstr ""
+msgstr "בדיקה…"
 
 #: src/components/chat-input.tsx
 msgid "Checking..."
