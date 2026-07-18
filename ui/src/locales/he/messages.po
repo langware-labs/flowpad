@@ -13,10 +13,9 @@ msgstr ""
 "Language-Team: \n"
 "Plural-Forms: \n"
 
-#. placeholder {0}: progress.failed
 #: src/components/execute-flow-view/instruction-panel/instruction-panel.tsx
-msgid " · {0} failed"
-msgstr " · {0} נכשלו"
+#~ msgid " · {0} failed"
+#~ msgstr " · {0} נכשלו"
 
 #: src/components/account/organization-panel.tsx
 msgid " (you)"
@@ -154,11 +153,9 @@ msgstr "[[{name}]] לא נמצאה"
 msgid "{0}"
 msgstr "{0}"
 
-#. placeholder {0}: progress.completed
-#. placeholder {1}: progress.total
 #: src/components/execute-flow-view/instruction-panel/instruction-panel.tsx
-msgid "{0} / {1} instructions completed"
-msgstr "{0} / {1} הוראות הושלמו"
+#~ msgid "{0} / {1} instructions completed"
+#~ msgstr "{0} / {1} הוראות הושלמו"
 
 #. placeholder {0}: group.length
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
@@ -299,8 +296,8 @@ msgid "{count} pending change(s) — click to view diff"
 msgstr "{count} שינויים ממתינים — לחצו להצגת ההבדלים"
 
 #: src/components/execute-flow-view/worker-sessions-panel.tsx
-msgid "{days}d ago"
-msgstr "לפני {days}י׳"
+#~ msgid "{days}d ago"
+#~ msgstr "לפני {days}י׳"
 
 #. placeholder {0}: ids.length
 #: src/components/graph-context/GraphContextViewer.tsx
@@ -328,8 +325,8 @@ msgid "{hostName} paused the live session."
 msgstr "{hostName} השהה את ההפעלה החיה."
 
 #: src/components/execute-flow-view/worker-sessions-panel.tsx
-msgid "{hours}h ago"
-msgstr "לפני {hours}ש׳"
+#~ msgid "{hours}h ago"
+#~ msgstr "לפני {hours}ש׳"
 
 #. placeholder {0}: ignored !== 1 ? 's' : ''
 #: src/components/lens-viewer/CloudSearchResultsModal.tsx
@@ -349,8 +346,8 @@ msgid "{label} records"
 msgstr "{label} רשומות"
 
 #: src/components/execute-flow-view/worker-sessions-panel.tsx
-msgid "{minutes}m ago"
-msgstr "לפני {minutes}ד׳"
+#~ msgid "{minutes}m ago"
+#~ msgstr "לפני {minutes}ד׳"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "{name} isn't installed on this computer yet. Follow the quick setup guide, then come back here to sign in."
@@ -454,8 +451,8 @@ msgstr "+ הזן נתיב..."
 #~ msgstr "+ משימה חדשה"
 
 #: src/components/workflow-runner/learning/PastAttemptsPane.tsx
-msgid "+ show raw"
-msgstr "+ הצג גלם"
+#~ msgid "+ show raw"
+#~ msgstr "+ הצג גלם"
 
 #. placeholder {0}: sessions.length - 5
 #: src/pages/live-status/LiveStatus.tsx
@@ -525,8 +522,8 @@ msgid "~2s. Use to check what's on disk without changing anything."
 msgstr "~2 שניות. בשביל לבדוק מה יש בדיסק ללא שינוי של שום דבר."
 
 #: src/components/workflow-runner/learning/PastAttemptsPane.tsx
-msgid "− hide raw"
-msgstr "− הסתר גלם"
+#~ msgid "− hide raw"
+#~ msgstr "− הסתר גלם"
 
 #: src/components/search-calibration/SearchCalibrationPanel.tsx
 msgid "⚡ {latencyMs} ms"
@@ -712,7 +709,9 @@ msgstr "פעיל: {activeDbPath}"
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
+#: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
+#: src/components/project-home/SecretsCard.tsx
 #: src/pages/home-landing/feed/HomeFeedColumn.tsx
 msgid "Add"
 msgstr "הוסף"
@@ -1276,10 +1275,9 @@ msgstr "האם אתה בטוח שברצונך למחוק את כל הנתוני�
 #~ msgid "Are you sure you want to clear all data from the database? This will create a backup first and reload the page."
 #~ msgstr "האם אתה בטוח שברצונך למחוק את כל הנתונים ממסד הנתונים? פעולה זו תיצור גיבוי תחילה ותטען מחדש את העמוד."
 
-#. placeholder {0}: deleteTarget?.displayName
 #: src/components/workflows-view/WorkflowsNavigator.tsx
-msgid "Are you sure you want to delete \"{0}\"?"
-msgstr "האם אתה בטוח שברצונך למחוק את \"{0}\"?"
+#~ msgid "Are you sure you want to delete \"{0}\"?"
+#~ msgstr "האם אתה בטוח שברצונך למחוק את \"{0}\"?"
 
 #. placeholder {0}: itemToDelete?.name || ''
 #: src/components/directory-tree/DirectoryTree.tsx
@@ -1494,6 +1492,7 @@ msgstr "בדיקת עדכונים אוטומטית כל שעה."
 
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/components/capabilities-view/CapabilitiesView.tsx
+#: src/components/project-home/SecretsCard.tsx
 msgid "Available"
 msgstr "זמין"
 
@@ -1507,6 +1506,7 @@ msgstr "זמין כאשר הסוכן ממתין לקלט שלך"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
+#: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/wiki-toolbar/WikiLinkInsertDialog.tsx
 msgid "Back"
 msgstr "חזור"
@@ -1776,7 +1776,6 @@ msgstr ""
 #: src/components/assets/editor/markdown/ReviewSurface.tsx
 #: src/components/assets/editor/run/useRunOnFile.tsx
 #: src/components/assets/editor/whiteboard/WhiteboardAssetEditor.tsx
-#: src/components/assets/editor/workflow/WorkflowAssetEditor.tsx
 #: src/components/assets/ProjectPickerModal.tsx
 #: src/components/assets/PushContextFolderDialog.tsx
 #: src/components/contact-picker/CreateContactsGroupDialog.tsx
@@ -1784,7 +1783,6 @@ msgstr ""
 #: src/components/conversation/PromptComposerDialog.tsx
 #: src/components/cron-view/CronForm.tsx
 #: src/components/entity-context/EntityContextPanel.tsx
-#: src/components/execute-flow-view/instruction-panel/instruction-panel.tsx
 #: src/components/favorites/FavoriteStar.tsx
 #: src/components/GitHubConnectionDialog.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
@@ -1909,8 +1907,8 @@ msgstr "שינויים ({0})"
 #~ msgstr "שינויים בהמתנה להנדקסה הבאה"
 
 #: src/components/execute-flow-view/instruction-panel/instruction-panel.tsx
-msgid "Changes saved successfully"
-msgstr "השינויים נשמרו בהצלחה"
+#~ msgid "Changes saved successfully"
+#~ msgstr "השינויים נשמרו בהצלחה"
 
 #: src/pages/flow-page/vibe-workspace.tsx
 msgid "Changing worker requires a new chat. The current chat stays in history."
@@ -2001,6 +1999,10 @@ msgstr "בחר משימה מסרגל הצד כדי להציג פרטים"
 #: src/components/quick-create/ScopeSelection.tsx
 msgid "Choose folder…"
 msgstr "בחר תיקייה…"
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Choose which model each tier uses, or add your own — per assistant and provider."
+msgstr ""
 
 #: src/components/assets/ProjectPickerModal.tsx
 msgid "Choose which projects to filter by. Sorted by latest activity."
@@ -2284,7 +2286,6 @@ msgstr "משבוט…"
 #: src/components/terminal/interactive-terminal/TraceGutter.tsx
 #: src/components/version-popover/diagnose-modal.tsx
 #: src/components/version-popover/diagnosis-report-modal.tsx
-#: src/components/workflow-runner/detail/StepDetailPane.tsx
 msgid "Close"
 msgstr "סגור"
 
@@ -2880,7 +2881,6 @@ msgid "cost"
 msgstr "עלות"
 
 #: src/components/assets/editor/agent-trace/simple/SimpleSessionReport.tsx
-#: src/components/workflow-runner/detail/StepDetailPane.tsx
 msgid "Cost"
 msgstr "עלות"
 
@@ -2958,8 +2958,8 @@ msgid "Could not resolve this folder"
 msgstr ""
 
 #: src/components/execute-flow-view/instruction-panel/instruction-panel.tsx
-msgid "Could not save changes"
-msgstr "לא היה ניתן לשמור את השינויים"
+#~ msgid "Could not save changes"
+#~ msgstr "לא היה ניתן לשמור את השינויים"
 
 #: src/components/conversation/asset-review/useRunReceivedSkill.tsx
 #: src/components/conversation/asset-review/useRunReceivedSkill.tsx
@@ -3052,7 +3052,6 @@ msgstr "מעבד:"
 #: src/components/quick-create/QuickCreateDialog.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
-#: src/components/workflows-view/WorkflowsNavigator.tsx
 msgid "Create"
 msgstr "צור"
 
@@ -3305,6 +3304,7 @@ msgid "default"
 msgstr "ברירת מחדל"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
+#: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/terminal/openers/AskInstallOneOfDialog.tsx
 msgid "Default"
 msgstr "ברירת מחדל"
@@ -3353,7 +3353,6 @@ msgstr "הגדר את התנאים שחייבים להתאים כדי שטריג
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
-#: src/components/workflows-view/WorkflowsNavigator.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Delete"
 msgstr "מחק"
@@ -3530,12 +3529,12 @@ msgid "Delete this message?"
 msgstr "מחק הודעה זו?"
 
 #: src/components/workflows-view/WorkflowsNavigator.tsx
-msgid "Delete workflow"
-msgstr "מחק זרימת עבודה"
+#~ msgid "Delete workflow"
+#~ msgstr "מחק זרימת עבודה"
 
 #: src/components/workflows-view/WorkflowsNavigator.tsx
-msgid "Delete Workflow"
-msgstr "מחק זרימת עבודה"
+#~ msgid "Delete Workflow"
+#~ msgstr "מחק זרימת עבודה"
 
 #: src/components/inbox-view/InboxView.tsx
 #: src/components/inbox-view/InboxView.tsx
@@ -3630,8 +3629,8 @@ msgid "Detach"
 msgstr "נתק"
 
 #: src/components/workflow-runner/header/ViewModeToggle.tsx
-msgid "Detailed view"
-msgstr "תצוגה מפורטת"
+#~ msgid "Detailed view"
+#~ msgstr "תצוגה מפורטת"
 
 #: src/components/agent-layout/error-screen/error-screen.tsx
 #: src/components/assets/editor/agent-trace/AgentTraceView.tsx
@@ -3808,7 +3807,6 @@ msgstr "גילוי..."
 #: src/components/diagnose/diagnosis-action-buttons.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/terminal/interactive-terminal/TerminalRuntimeErrorBanner.tsx
-#: src/components/workflow-runner/header/AttentionBanner.tsx
 msgid "Dismiss"
 msgstr "סגור"
 
@@ -3982,7 +3980,6 @@ msgstr ""
 #~ msgstr "תאריך יעד"
 
 #: src/components/lens-viewer/shared/transcript-features/TranscriptStats.tsx
-#: src/components/workflow-runner/detail/StepDetailPane.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Duration"
 msgstr "משך זמן"
@@ -4059,8 +4056,8 @@ msgid "Edit favorites"
 msgstr ""
 
 #: src/components/execute-flow-view/instruction-panel/instruction-panel.tsx
-msgid "Edit file"
-msgstr "עריכת הקובץ"
+#~ msgid "Edit file"
+#~ msgstr "עריכת הקובץ"
 
 #: src/components/hooks-view/HooksBrowser.tsx
 msgid "Edit hook"
@@ -4156,12 +4153,10 @@ msgid "Enable browser automation via Chrome (--chrome)"
 msgstr "הפוך אוטומציה של דפדפן דרך Chrome (--chrome) לזמינה"
 
 #: src/components/assets/editor/run/useRunOnFile.tsx
-#: src/components/assets/editor/workflow/WorkflowAssetEditor.tsx
 msgid "Enable for project"
 msgstr "הפעל עבור פרויקט"
 
 #: src/components/assets/editor/run/useRunOnFile.tsx
-#: src/components/assets/editor/workflow/WorkflowAssetEditor.tsx
 msgid "Enable for user"
 msgstr "הפעל עבור משתמש"
 
@@ -4211,8 +4206,8 @@ msgid "Enter a name for the new {0}."
 msgstr "הכנס שם ל-{0} החדש."
 
 #: src/components/workflows-view/WorkflowsNavigator.tsx
-msgid "Enter a name for the new workflow."
-msgstr "הזן שם לזרימת העבודה החדשה."
+#~ msgid "Enter a name for the new workflow."
+#~ msgstr "הזן שם לזרימת העבודה החדשה."
 
 #: src/components/conversation/MembersAvatarStack.tsx
 #~ msgid "Enter a valid email"
@@ -4247,8 +4242,8 @@ msgid "Enter hook name"
 msgstr "הזן שם hook"
 
 #: src/components/execute-flow-view/instruction-panel/ephemeral-prompt-input.tsx
-msgid "Enter instructions or select a file from the left panel"
-msgstr "הזן הנחיות או בחר קובץ מהלוח השמאלי"
+#~ msgid "Enter instructions or select a file from the left panel"
+#~ msgstr "הזן הנחיות או בחר קובץ מהלוח השמאלי"
 
 #: src/components/skills-viewer/amd-editor/components/blocks/DoBlock.tsx
 #~ msgid "Enter instructions..."
@@ -4262,15 +4257,19 @@ msgstr "הכנס תיאור טריגר"
 msgid "Enter trigger name"
 msgstr "הכנס שם טריגר"
 
-#: src/components/execute-flow-view/instruction-panel/ephemeral-prompt-input.tsx
-msgid ""
-"Enter your instructions here...\n"
-"\n"
-"One instruction per line."
+#: src/components/project-home/SecretsCard.tsx
+msgid "Enter value"
 msgstr ""
-"הזן את ההנחיות שלך כאן...\n"
-"\n"
-"הנחיה אחת בשורה"
+
+#: src/components/execute-flow-view/instruction-panel/ephemeral-prompt-input.tsx
+#~ msgid ""
+#~ "Enter your instructions here...\n"
+#~ "\n"
+#~ "One instruction per line."
+#~ msgstr ""
+#~ "הזן את ההנחיות שלך כאן...\n"
+#~ "\n"
+#~ "הנחיה אחת בשורה"
 
 #: src/components/account/db-stats.tsx
 msgid "Entities"
@@ -4302,6 +4301,10 @@ msgstr "פרטי כניסה"
 msgid "Env var"
 msgstr ""
 
+#: src/components/project-home/SecretsCard.tsx
+msgid "ENV_VAR"
+msgstr ""
+
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "error"
 msgstr "שגיאה"
@@ -4324,6 +4327,8 @@ msgstr "שגיאה"
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/project-home/BindSecretDialog.tsx
 #: src/components/project-home/BindSecretDialog.tsx
+#: src/components/project-home/SecretsCard.tsx
+#: src/components/project-home/SecretsCard.tsx
 msgid "Error"
 msgstr "שגיאה"
 
@@ -4349,10 +4354,9 @@ msgstr "שגיאה בטעינת נקודת ביקורת: {0}"
 msgid "Error Loading Component"
 msgstr "שגיאה בטעינת רכיב"
 
-#. placeholder {0}: error.message
 #: src/components/execute-flow-view/flows-panel/flows-panel.tsx
-msgid "Error loading flows: {0}"
-msgstr "שגיאה בטעינת זרימות: {0}"
+#~ msgid "Error loading flows: {0}"
+#~ msgstr "שגיאה בטעינת זרימות: {0}"
 
 #: src/components/lens-viewer/shared/transcript-features/TranscriptViewer.tsx
 msgid "Error Loading Transcript"
@@ -4450,8 +4454,8 @@ msgid "Executed"
 msgstr ""
 
 #: src/components/execute-flow-view/execute-flow-view.tsx
-msgid "Execution Log"
-msgstr "יומן ביצוע"
+#~ msgid "Execution Log"
+#~ msgstr "יומן ביצוע"
 
 #: src/components/tools/ToolsPanel.tsx
 msgid "Execution Mode"
@@ -4561,6 +4565,10 @@ msgstr "נכשל"
 msgid "Failed to add comment"
 msgstr "הוספת תגובה נכשלה"
 
+#: src/components/project-home/SecretsCard.tsx
+msgid "Failed to add secret"
+msgstr ""
+
 #: src/components/account/database-section.tsx
 msgid "Failed to backup database"
 msgstr "גיבוי בסיס הנתונים נכשל"
@@ -4623,8 +4631,8 @@ msgid "Failed to create spec"
 msgstr "נכשל ביצירת מפרט"
 
 #: src/components/workflows-view/WorkflowsNavigator.tsx
-msgid "Failed to create workflow"
-msgstr "יצירת זרימת עבודה נכשלה"
+#~ msgid "Failed to create workflow"
+#~ msgstr "יצירת זרימת עבודה נכשלה"
 
 #: src/components/artifacts/artifacts-list.tsx
 msgid "Failed to delete"
@@ -4649,15 +4657,14 @@ msgid "Failed to delete secret"
 msgstr "כשל במחיקת סוד"
 
 #: src/components/workflows-view/WorkflowsNavigator.tsx
-msgid "Failed to delete workflow"
-msgstr "מחיקת זרימת עבודה נכשלה"
+#~ msgid "Failed to delete workflow"
+#~ msgstr "מחיקת זרימת עבודה נכשלה"
 
 #: src/components/conversation/MessageComposer.tsx
 msgid "Failed to discard draft"
 msgstr "נכשל להשליך טיוטה"
 
 #: src/components/assets/editor/run/useRunOnFile.tsx
-#: src/components/assets/editor/workflow/WorkflowAssetEditor.tsx
 msgid "Failed to enable MCP"
 msgstr "נכשל בהפעלת MCP"
 
@@ -4766,8 +4773,8 @@ msgid "Failed to open {folderType} folder"
 msgstr "פתיחת תיקיית ${folderType} נכשלה"
 
 #: src/components/workflows-view/WorkflowsNavigator.tsx
-msgid "Failed to open file"
-msgstr "פתיחת הקובץ נכשלה"
+#~ msgid "Failed to open file"
+#~ msgstr "פתיחת הקובץ נכשלה"
 
 #: src/components/quick-create/QuickCreateModal.tsx
 #~ msgid "Failed to open folder"
@@ -4799,8 +4806,8 @@ msgid "Failed to open project"
 msgstr "נכשל בפתיחת הפרויקט"
 
 #: src/components/workflows-view/WorkflowsNavigator.tsx
-msgid "Failed to rename workflow"
-msgstr "שינוי שם זרימת עבודה נכשל"
+#~ msgid "Failed to rename workflow"
+#~ msgstr "שינוי שם זרימת עבודה נכשל"
 
 #: src/components/machine-overview/service-status-led.tsx
 msgid "Failed to restart services"
@@ -4890,12 +4897,16 @@ msgstr ""
 #~ msgstr ""
 
 #: src/components/assets/editor/workflow/WorkflowAssetEditor.tsx
-msgid "Failed to start workflow"
-msgstr "לא ניתן להתחיל זרימת עבודה"
+#~ msgid "Failed to start workflow"
+#~ msgstr "לא ניתן להתחיל זרימת עבודה"
 
 #: src/components/machine-overview/service-status-led.tsx
 msgid "Failed to stop services"
 msgstr "נכשל עצירת השירותים"
+
+#: src/components/project-home/SecretsCard.tsx
+msgid "Failed to store value"
+msgstr ""
 
 #: src/components/account/database-section.tsx
 #: src/components/account/database-section.tsx
@@ -4974,16 +4985,16 @@ msgid "File not uploaded yet"
 msgstr "הקובץ טרם הועלה"
 
 #: src/components/execute-flow-view/instruction-panel/instruction-panel.tsx
-msgid "File path copied to clipboard"
-msgstr "נתיב הקובץ הועתק ללוח ההעתק"
+#~ msgid "File path copied to clipboard"
+#~ msgstr "נתיב הקובץ הועתק ללוח ההעתק"
 
 #: src/components/flowdata-renderer/ResultMessageComponent.tsx
 #~ msgid "File Result"
 #~ msgstr "תוצאת קובץ"
 
 #: src/components/execute-flow-view/instruction-panel/instruction-panel.tsx
-msgid "File saved"
-msgstr "הקובץ נשמר"
+#~ msgid "File saved"
+#~ msgstr "הקובץ נשמר"
 
 #: src/components/account/db-stats.tsx
 msgid "File Size"
@@ -5106,8 +5117,8 @@ msgid "Fit (f)"
 msgstr "התאמה (f)"
 
 #: src/components/workflow-runner/learning/PastAttemptsPane.tsx
-msgid "Fix"
-msgstr "תיקון"
+#~ msgid "Fix"
+#~ msgstr "תיקון"
 
 #: src/components/lens-viewer/CloudSearchResultsModal.tsx
 msgid "Fix All"
@@ -5132,7 +5143,6 @@ msgstr "זרימה"
 #~ msgstr "היסטוריית זרימה"
 
 #: src/components/assets/editor/run/useRunOnFile.tsx
-#: src/components/assets/editor/workflow/WorkflowAssetEditor.tsx
 msgid "Flow MCP not enabled"
 msgstr "Flow MCP לא מופעל"
 
@@ -5141,8 +5151,8 @@ msgid "Flow or compute node not available"
 msgstr "זרימה או צומת חישוב לא זמינים"
 
 #: src/components/assets/editor/workflow/WorkflowAssetEditor.tsx
-msgid "flow-sdk-mcp enabled ({scope} scope). Starting workflow…"
-msgstr "flow-sdk-mcp מופעל (${scope} scope). הפעלת זרימת עבודה…"
+#~ msgid "flow-sdk-mcp enabled ({scope} scope). Starting workflow…"
+#~ msgstr "flow-sdk-mcp מופעל (${scope} scope). הפעלת זרימת עבודה…"
 
 #: src/components/version-popover/version-popover.tsx
 #: src/pages/discover-page/discover-page.tsx
@@ -5215,8 +5225,8 @@ msgid "flows"
 msgstr "זרימות"
 
 #: src/components/execute-flow-view/execute-flow-view.tsx
-msgid "Flows"
-msgstr "זרימות"
+#~ msgid "Flows"
+#~ msgstr "זרימות"
 
 #: src/components/project-list/ProjectList.tsx
 msgid "Flows:"
@@ -5676,8 +5686,8 @@ msgid "Highlight changes since the last stamp"
 msgstr "הדגש שינויים מאז הלהט האחרון"
 
 #: src/components/workflow-runner/detail/StepDetailPane.tsx
-msgid "History"
-msgstr "היסטוריה"
+#~ msgid "History"
+#~ msgstr "היסטוריה"
 
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
@@ -6210,8 +6220,8 @@ msgid "Invocations"
 msgstr "הפעלות"
 
 #: src/components/workflow-runner/learning/PastAttemptsPane.tsx
-msgid "Issue"
-msgstr "בעיה"
+#~ msgid "Issue"
+#~ msgstr "בעיה"
 
 #: src/components/account/system-diagnoses.tsx
 msgid "Issue diagnoses recorded by the assistant. Click a row to view the full diagnosis."
@@ -6265,17 +6275,15 @@ msgstr "הצטרפות…"
 msgid "JSON"
 msgstr "JSON"
 
-#. placeholder {0}: item.anchor.line
 #: src/components/workflow-runner/header/AttentionBanner.tsx
-msgid "jump to L{0}"
-msgstr "קפוץ לשורה {0}"
+#~ msgid "jump to L{0}"
+#~ msgstr "קפוץ לשורה {0}"
 
 #: src/notifications/feed/NotificationFeed.tsx
 msgid "just now"
 msgstr "הרגע"
 
 #: src/components/connections-manager.tsx
-#: src/components/execute-flow-view/worker-sessions-panel.tsx
 msgid "Just now"
 msgstr "זה עתה"
 
@@ -6507,8 +6515,8 @@ msgid "live"
 msgstr "חי"
 
 #: src/components/execute-flow-view/flows-panel/flows-panel.tsx
-msgid "Live"
-msgstr "חיה"
+#~ msgid "Live"
+#~ msgstr "חיה"
 
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
@@ -6680,8 +6688,8 @@ msgid "Loading feed item"
 msgstr "טעינת פריט הזנה"
 
 #: src/components/execute-flow-view/instruction-panel/instruction-panel.tsx
-msgid "Loading file..."
-msgstr "טעינת הקובץ..."
+#~ msgid "Loading file..."
+#~ msgstr "טעינת הקובץ..."
 
 #: src/components/floating-chat/FloatingChatWindow.tsx
 msgid "Loading Flowpad Assistant…"
@@ -6960,6 +6968,10 @@ msgstr "מנוהל על ידי FlowPad sniffer"
 msgid "Map remote project"
 msgstr "מיפוי פרויקט מרחוק"
 
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Mapping"
+msgstr ""
+
 #: src/components/inbox-view/InboxView.tsx
 msgid "Mark all read"
 msgstr "סמן הכל כנקרא"
@@ -7153,6 +7165,10 @@ msgstr "הקטן"
 msgid "Mis-Sc"
 msgstr "Mis-Sc"
 
+#: src/components/project-home/SecretsCard.tsx
+msgid "Missing"
+msgstr ""
+
 #: src/pages/keychain-approval.tsx
 msgid "Missing API key — please retry the deep link from the source page."
 msgstr "חסר מפתח API — אנא נסה שוב את הקישור העמוק מעמוד המקור."
@@ -7172,8 +7188,17 @@ msgstr "מודל"
 msgid "Model"
 msgstr "מודל"
 
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Model mapping"
+msgstr ""
+
 #: src/components/entity-execution-panel/EntityExecutionPanel.tsx
 msgid "Model not saved"
+msgstr ""
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "model slug"
 msgstr ""
 
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
@@ -7269,6 +7294,10 @@ msgstr "לא זמין"
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "Name"
 msgstr "שם"
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "name (e.g. coding)"
+msgstr ""
 
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/hooks-manager/TriggerForm.tsx
@@ -7426,6 +7455,10 @@ msgstr ""
 msgid "New name"
 msgstr "שם חדש"
 
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "New option"
+msgstr ""
+
 #: src/components/project-selector/NewProjectDialog.tsx
 #: src/components/project-selector/ProjectSelectorModal.tsx
 #: src/components/quick-create/QuickCreateMenu.tsx
@@ -7439,15 +7472,14 @@ msgstr "פרויקט חדש"
 #~ msgid "New Project"
 #~ msgstr "פרויקט חדש"
 
-#: src/components/execute-flow-view/instruction-panel/instruction-panel.tsx
 #: src/components/prompt-library/PromptEditDialog.tsx
 #: src/components/prompt-library/PromptLibraryMenu.tsx
 msgid "New prompt"
 msgstr "בקשה חדשה"
 
 #: src/components/execute-flow-view/instruction-panel/ephemeral-prompt-input.tsx
-msgid "New Prompt"
-msgstr "הנושא החדש"
+#~ msgid "New Prompt"
+#~ msgstr "הנושא החדש"
 
 #: src/components/assets/AddGitFolderDialog.tsx
 msgid "New repo"
@@ -7485,8 +7517,8 @@ msgstr "טרמינל חדש"
 
 #: src/components/workflows-view/WorkflowsNavigator.tsx
 #: src/components/workflows-view/WorkflowsNavigator.tsx
-msgid "New Workflow"
-msgstr "זרימת עבודה חדשה"
+#~ msgid "New Workflow"
+#~ msgstr "זרימת עבודה חדשה"
 
 #: src/components/ui/pagination.tsx
 msgid "Next"
@@ -7763,20 +7795,20 @@ msgid "No events yet"
 msgstr "אין אירועים עדיין"
 
 #: src/components/execute-flow-view/execute-flow-view.tsx
-msgid "No execution log available"
-msgstr "אין יומן ביצוע זמין"
+#~ msgid "No execution log available"
+#~ msgstr "אין יומן ביצוע זמין"
 
 #: src/pages/home-landing/feed/HomeFeedColumn.tsx
 msgid "No feed items"
 msgstr "אין פריטים בהזנה"
 
 #: src/components/assets/editor/workflow/WorkflowAssetEditor.tsx
-msgid "No file linked"
-msgstr "אין קובץ מקושר"
+#~ msgid "No file linked"
+#~ msgstr "אין קובץ מקושר"
 
 #: src/components/workflows-view/WorkflowsNavigator.tsx
-msgid "No file linked to this workflow"
-msgstr "אין קובץ המקושר לזרימת עבודה זו"
+#~ msgid "No file linked to this workflow"
+#~ msgstr "אין קובץ המקושר לזרימת עבודה זו"
 
 #: src/components/assets/MarkdownIndexPanel.tsx
 msgid "No files"
@@ -7795,8 +7827,8 @@ msgid "No findings found"
 msgstr ""
 
 #: src/components/execute-flow-view/flows-panel/flows-panel.tsx
-msgid "No flows connected to this file"
-msgstr "אין זרימות מחוברות לקובץ זה"
+#~ msgid "No flows connected to this file"
+#~ msgstr "אין זרימות מחוברות לקובץ זה"
 
 #: src/components/project-list/ProjectList.tsx
 msgid "No flows in this project"
@@ -8160,7 +8192,7 @@ msgstr "לא הוגדרו שורשים"
 msgid "No run"
 msgstr "לא הופעל"
 
-#: src/components/workflows-view/WorkflowRunsPanel.tsx
+#: src/components/process-runs/ProcessRunsPanel.tsx
 msgid "No runs yet."
 msgstr "אין ריצות עדיין."
 
@@ -8184,6 +8216,10 @@ msgstr "אין טריגרים מתוזמנים עדיין. <0>צור אחד</0>"
 #~ msgid "No scheduled jobs yet."
 #~ msgstr "אין עדיין משימות מתוזמנות."
 
+#: src/components/project-home/SecretsCard.tsx
+msgid "No secrets yet. Add one below — the value never leaves your machine."
+msgstr ""
+
 #: src/components/account/secrets-section.tsx
 msgid "No secrets yet. Click \"Add secret\" to create one."
 msgstr "אין סודות עדיין. לחץ על \"הוסף סוד\" כדי ליצור אחד."
@@ -8205,8 +8241,8 @@ msgid "No session yet"
 msgstr "אין עדיין הפעלה"
 
 #: src/components/execute-flow-view/worker-sessions-panel.tsx
-msgid "No sessions found for this directory"
-msgstr "לא נמצאו סשנות עבור תיקייה זו"
+#~ msgid "No sessions found for this directory"
+#~ msgstr "לא נמצאו סשנות עבור תיקייה זו"
 
 #: src/components/settings-view/ClaudeSettingsPanel.tsx
 msgid "No settings loaded."
@@ -8763,8 +8799,8 @@ msgid "Open in external browser"
 msgstr "פתח בדפדפן חיצוני"
 
 #: src/components/workflows-view/WorkflowsNavigator.tsx
-msgid "Open in external editor"
-msgstr "פתח בעורך חיצוני"
+#~ msgid "Open in external editor"
+#~ msgstr "פתח בעורך חיצוני"
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Open in external terminal"
@@ -8810,8 +8846,8 @@ msgid "Open live session"
 msgstr ""
 
 #: src/components/execute-flow-view/flows-panel/flows-panel.tsx
-msgid "Open live terminal session"
-msgstr "פתח ישיבת טרמינל חיה"
+#~ msgid "Open live terminal session"
+#~ msgstr "פתח ישיבת טרמינל חיה"
 
 #: src/components/assets/MarkdownIndexPanel.tsx
 msgid "Open LLM Indexers"
@@ -8838,7 +8874,7 @@ msgstr "פתח תפריט כרטיסייה חדש"
 msgid "Open or create project"
 msgstr "פתח או צור פרויקט"
 
-#: src/components/workflows-view/WorkflowRunsPanel.tsx
+#: src/components/process-runs/ProcessRunsPanel.tsx
 msgid "Open output folder"
 msgstr "פתח תיקיית הפלט"
 
@@ -8918,8 +8954,8 @@ msgid "Open terminal in {workdir}"
 msgstr "פתח טרמינל ב-${workdir}"
 
 #: src/components/execute-flow-view/flows-panel/flows-panel.tsx
-msgid "Open terminal session"
-msgstr "פתח ישיבת טרמינל"
+#~ msgid "Open terminal session"
+#~ msgstr "פתח ישיבת טרמינל"
 
 #: src/components/terminal/interactive-terminal/TerminalBottomRibbon.tsx
 msgid "Open the latest doc"
@@ -8985,8 +9021,8 @@ msgstr "פתח את התכנית מהמפגש שלה כדי לעדכן אותה"
 msgid "Open tools panel"
 msgstr "פתח חלונית כלים"
 
+#: src/components/process-runs/ProcessRunsPanel.tsx
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
-#: src/components/workflows-view/WorkflowRunsPanel.tsx
 msgid "Open transcript"
 msgstr "פתח תמליל"
 
@@ -9139,8 +9175,8 @@ msgid "Past analyses"
 msgstr "ניתוחים קודמים"
 
 #: src/components/workflow-runner/learning/PastAttemptsPane.tsx
-msgid "Past attempts"
-msgstr "ניסיונות קודמים"
+#~ msgid "Past attempts"
+#~ msgstr "ניסיונות קודמים"
 
 #: src/pages/flow-page/vibe-workspace.tsx
 msgid "Past builds"
@@ -9191,8 +9227,8 @@ msgid "Path"
 msgstr "נתיב"
 
 #: src/components/execute-flow-view/instruction-panel/instruction-panel.tsx
-msgid "Path copied"
-msgstr "הנתיב הועתק"
+#~ msgid "Path copied"
+#~ msgstr "הנתיב הועתק"
 
 #: src/components/account/database-section.tsx
 msgid "Path copied to clipboard"
@@ -9493,6 +9529,7 @@ msgstr "ראשי"
 
 #: src/components/assets/context-folder-sources.tsx
 #: src/components/graph-context/ContextGraphCanvas.tsx
+#: src/components/project-home/SecretsCard.tsx
 msgid "Private"
 msgstr "פרטי"
 
@@ -10097,8 +10134,8 @@ msgid "Refresh file from server"
 msgstr "רענן קובץ מהשרת"
 
 #: src/components/execute-flow-view/flows-panel/flows-panel.tsx
-msgid "Refresh flows"
-msgstr "רענן זרימות"
+#~ msgid "Refresh flows"
+#~ msgstr "רענן זרימות"
 
 #: src/components/assets/MarkdownIndexPanel.tsx
 msgid "Refresh index"
@@ -10116,7 +10153,6 @@ msgstr "עדכון מומלץ"
 msgid "Refresh search data"
 msgstr "עדכן נתוני חיפוש"
 
-#: src/components/execute-flow-view/worker-sessions-panel.tsx
 #: src/components/terminal/HistoryModal.tsx
 msgid "Refresh sessions"
 msgstr "רענן פגישות"
@@ -10182,6 +10218,10 @@ msgstr ""
 #: src/components/milkdown-editor/MilkdownEditor.tsx
 msgid "Remove link"
 msgstr "הסר קישור"
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Remove option"
+msgstr ""
 
 #: src/components/conversation/MessageComposer.tsx
 msgid "Remove queued prompt"
@@ -10334,6 +10374,7 @@ msgid "Rescanning…"
 msgstr "סורקים מחדש…"
 
 #: src/components/account/settings-section.tsx
+#: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/tools/ToolsPanel.tsx
 msgid "Reset"
 msgstr "איפוס"
@@ -10341,6 +10382,10 @@ msgstr "איפוס"
 #: src/components/account/settings-section.tsx
 msgid "Reset failed"
 msgstr "איפוס נכשל"
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Reset to default"
+msgstr ""
 
 #: src/components/account/settings-section.tsx
 msgid "Resetting…"
@@ -10665,8 +10710,8 @@ msgstr "הפעל את המיומנות \"{name}\" על ההקשר הנוכחי."
 #~ msgstr "הפעל הצעה זו בהפגישה המשותפת עכשיו. בחר אם להפעיל הצעות עתידיות מ{who} באופן אוטומטי."
 
 #: src/components/assets/editor/workflow/WorkflowAssetEditor.tsx
-msgid "Run workflow"
-msgstr "הפעל זרימת עבודה"
+#~ msgid "Run workflow"
+#~ msgstr "הפעל זרימת עבודה"
 
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
 #: src/components/machine-overview/service-status-led.tsx
@@ -10689,13 +10734,12 @@ msgid "Running…"
 msgstr "הפעלה..."
 
 #: src/components/assets/editor/workflow/WorkflowAssetEditor.tsx
-msgid "Runs"
-msgstr "הרצות"
+#~ msgid "Runs"
+#~ msgstr "הרצות"
 
-#. placeholder {0}: runHistory.length
 #: src/components/assets/editor/workflow/WorkflowAssetEditor.tsx
-msgid "Runs {0}"
-msgstr "הרצות {0}"
+#~ msgid "Runs {0}"
+#~ msgstr "הרצות {0}"
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Runs as an AgenticProcess — see per-row status + transcript."
@@ -10730,14 +10774,13 @@ msgstr "מדדי Sandbox"
 #: src/components/anchored-markdown/CommentPin.tsx
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/cron-view/CronForm.tsx
-#: src/components/execute-flow-view/instruction-panel/ephemeral-prompt-input.tsx
-#: src/components/execute-flow-view/instruction-panel/instruction-panel.tsx
 #: src/components/favorites/FavoriteStar.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/hooks-manager/TriggerForm.tsx
 #: src/components/hooks-view/HookEditor.tsx
 #: src/components/image-annotator/AnnotatorToolbar.tsx
+#: src/components/project-home/SecretsCard.tsx
 #: src/components/prompt-library/PromptEditDialog.tsx
 #: src/components/spec-editor/SpecEditor.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
@@ -10758,7 +10801,6 @@ msgid "Save Changes"
 msgstr "שמור שינויים"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
-#: src/components/execute-flow-view/instruction-panel/instruction-panel.tsx
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
 #: src/components/triggers-view/TriggerEditor.tsx
 msgid "Save failed"
@@ -10788,7 +10830,6 @@ msgstr "נשמר"
 msgid "Saved Contexts"
 msgstr "הקשרים שנשמרו"
 
-#: src/components/execute-flow-view/instruction-panel/ephemeral-prompt-input.tsx
 #: src/components/triggers-view/TriggerEditor.tsx
 msgid "Saving..."
 msgstr "שמירה..."
@@ -11084,8 +11125,8 @@ msgid "Search transcript…"
 msgstr "חפש טרנסקריפט…"
 
 #: src/components/workflows-view/WorkflowsNavigator.tsx
-msgid "Search workflows…"
-msgstr ""
+#~ msgid "Search workflows…"
+#~ msgstr ""
 
 #: src/components/project-resource-list/ProjectResourceList.tsx
 #: src/pages/home-landing/HomeLanding.tsx
@@ -11123,9 +11164,9 @@ msgstr "סוד נמחק"
 msgid "Secret saved"
 msgstr "סוד נשמר"
 
-#: src/components/project-home/Secrets.tsx
-#~ msgid "Secrets"
-#~ msgstr ""
+#: src/components/project-home/SecretsCard.tsx
+msgid "Secrets"
+msgstr ""
 
 #: src/components/account/secrets-section.tsx
 msgid "Secrets enabled"
@@ -11164,8 +11205,8 @@ msgid "Select a file to preview."
 msgstr ""
 
 #: src/components/execute-flow-view/flows-panel/flows-panel.tsx
-msgid "Select a file to see connected flows"
-msgstr "בחר קובץ כדי לראות זרימות מחוברות"
+#~ msgid "Select a file to see connected flows"
+#~ msgstr "בחר קובץ כדי לראות זרימות מחוברות"
 
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 #: src/components/project-resource-list/ProjectResourceList.tsx
@@ -11186,8 +11227,8 @@ msgid "Select a shared session, or execute a prompt to start one."
 msgstr ""
 
 #: src/components/workflow-runner/detail/StepDetailPane.tsx
-msgid "Select a step on the left to see why it passed or failed."
-msgstr "בחר שלב משמאל כדי לראות מדוע הוא עבר או נכשל."
+#~ msgid "Select a step on the left to see why it passed or failed."
+#~ msgstr "בחר שלב משמאל כדי לראות מדוע הוא עבר או נכשל."
 
 #: src/components/assistance-viewer/AssistanceViewer.tsx
 msgid "Select a task"
@@ -11485,12 +11526,17 @@ msgstr "הגדר פרויקט"
 #~ msgstr "הגדר תזכורת לנבחרים"
 
 #: src/components/capabilities-view/CapabilitiesView.tsx
+#: src/components/project-home/SecretsCard.tsx
 msgid "Set up"
 msgstr "הגדר"
 
 #: src/components/capabilities-view/CapabilitiesView.tsx
 msgid "Set up (runs an agentic process)"
 msgstr "הגדר (מפעיל תהליך אגנטי)"
+
+#: src/components/project-home/SecretsCard.tsx
+msgid "Set up →"
+msgstr ""
 
 #: src/components/assets/AddGitFolderDialog.tsx
 msgid "Set up a git-backed context folder for this project."
@@ -11579,6 +11625,7 @@ msgstr ""
 
 #: src/components/assets/context-folder-sources.tsx
 #: src/components/graph-context/ContextGraphCanvas.tsx
+#: src/components/project-home/SecretsCard.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Shared"
 msgstr "משותף"
@@ -12154,7 +12201,6 @@ msgstr "סטטיסטיקות"
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/record-search-bar/RecordSearchBar.tsx
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
-#: src/components/workflow-runner/detail/StepDetailPane.tsx
 msgid "Status"
 msgstr "סטטוס"
 
@@ -12173,10 +12219,9 @@ msgstr "סטטוס:"
 msgid "status: {0}"
 msgstr ""
 
-#. placeholder {0}: step.line
 #: src/components/workflow-runner/detail/StepDetailPane.tsx
-msgid "Step at line {0}"
-msgstr "שלב בשורה {0}"
+#~ msgid "Step at line {0}"
+#~ msgstr "שלב בשורה {0}"
 
 #. placeholder {0}: ext.step_ms ?? 50
 #. placeholder {1}: ext.debounce_ms ?? 1600
@@ -12411,6 +12456,7 @@ msgstr "משימה לא נמצאה"
 msgid "Tasked"
 msgstr "בעל משימה"
 
+#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/lens-viewer/shared/transcript-features/TranscriptStats.tsx
 msgid "Tasks"
 msgstr "משימות"
@@ -12436,7 +12482,6 @@ msgstr "צוותים בכל הארגון"
 msgid "Template:"
 msgstr "תבנית:"
 
-#: src/components/execute-flow-view/flows-panel/flows-panel.tsx
 #: src/components/project-home/ProjectHome.tsx
 msgid "Terminal"
 msgstr "טרמינל"
@@ -12499,8 +12544,8 @@ msgid "The <0>flow-sdk-mcp</0> server is required to run with progress tracing. 
 msgstr "שרת <0>flow-sdk-mcp</0> נדרש כדי להריץ עם עקיבות התקדמות. הפעל אותו כדי להמשיך."
 
 #: src/components/assets/editor/workflow/WorkflowAssetEditor.tsx
-msgid "The <0>flow-sdk-mcp</0> server is required to run workflows with progress tracing. Enable it to continue."
-msgstr "שרת <0>flow-sdk-mcp</0> נדרש להרצת זרימות עבודה עם מעקב התקדמות. הפעל אותו להמשך."
+#~ msgid "The <0>flow-sdk-mcp</0> server is required to run workflows with progress tracing. Enable it to continue."
+#~ msgstr "שרת <0>flow-sdk-mcp</0> נדרש להרצת זרימות עבודה עם מעקב התקדמות. הפעל אותו להמשך."
 
 #: src/components/agent-layout/not-found-screen/not-found-screen.tsx
 #~ msgid "The agent you're looking for doesn't exist or is not available."
@@ -12797,8 +12842,8 @@ msgid "Tip: connect GitHub to clone private repos."
 msgstr "עצה: חבר GitHub כדי לשבוט מאגרים פרטיים."
 
 #: src/components/execute-flow-view/instruction-panel/ephemeral-prompt-input.tsx
-msgid "Tip: Press Ctrl+Enter to save"
-msgstr "טיפ: לחץ על Ctrl+Enter כדי לשמור"
+#~ msgid "Tip: Press Ctrl+Enter to save"
+#~ msgstr "טיפ: לחץ על Ctrl+Enter כדי לשמור"
 
 #: src/components/account/system-diagnoses.tsx
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
@@ -12844,8 +12889,8 @@ msgid "Toggle Connected mode"
 msgstr "החלף למצב מחובר"
 
 #: src/components/workflow-runner/header/ViewModeToggle.tsx
-msgid "Toggle detailed view"
-msgstr "החלף תצוגה מפורטת"
+#~ msgid "Toggle detailed view"
+#~ msgstr "החלף תצוגה מפורטת"
 
 #: src/components/terminal/interactive-terminal/ChatComposerBar.tsx
 msgid "Toggle plan mode (Shift+Tab)"
@@ -13746,32 +13791,32 @@ msgid "Worker options{0}"
 msgstr "אפשרויות עובד{0}"
 
 #: src/components/execute-flow-view/worker-sessions-panel.tsx
-msgid "Worker Sessions"
-msgstr "סשנות עובדים"
+#~ msgid "Worker Sessions"
+#~ msgstr "סשנות עובדים"
 
 #: src/components/workflows-view/WorkflowsNavigator.tsx
-msgid "Workflow created"
-msgstr "זרימת עבודה נוצרה"
+#~ msgid "Workflow created"
+#~ msgstr "זרימת עבודה נוצרה"
 
 #: src/components/workflows-view/WorkflowsNavigator.tsx
-msgid "Workflow deleted"
-msgstr "זרימת עבודה נמחקה"
+#~ msgid "Workflow deleted"
+#~ msgstr "זרימת עבודה נמחקה"
 
 #: src/components/workflows-view/WorkflowsNavigator.tsx
-msgid "Workflow name"
-msgstr "שם זרימת העבודה"
+#~ msgid "Workflow name"
+#~ msgstr "שם זרימת העבודה"
 
 #: src/components/assets/editor/workflow/WorkflowAssetEditor.tsx
-msgid "Workflow running…"
-msgstr "זרימת עבודה רצה…"
+#~ msgid "Workflow running…"
+#~ msgstr "זרימת עבודה רצה…"
 
 #: src/components/assets/editor/workflow/WorkflowAssetEditor.tsx
-msgid "Workflow runs"
-msgstr "הרצות זרימות עבודה"
+#~ msgid "Workflow runs"
+#~ msgstr "הרצות זרימות עבודה"
 
 #: src/components/workflows-view/WorkflowsNavigator.tsx
-msgid "Workflows"
-msgstr "זרימות עבודה"
+#~ msgid "Workflows"
+#~ msgstr "זרימות עבודה"
 
 #: src/components/chats-navigator/ChatHistoryRow.tsx
 msgid "Working"

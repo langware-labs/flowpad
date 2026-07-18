@@ -22,6 +22,7 @@ export type RailItemId =
   | 'home'
   | 'chats'
   | 'inbox'
+  | 'tasks'
   | 'bookmarks'
   | 'assets'
   | 'discover'
@@ -59,7 +60,8 @@ export const MODE_CHAIN = [
  * future mode is this table plus its slot in {@link MODE_CHAIN}.
  */
 export const RAIL_DELTAS: Record<ViewMode, RailDelta> = {
-  [ViewMode.Vibe]: { visible: ['home', 'inbox', 'bookmarks'], collapsed: ['files'] },
+  // 'tasks' rides every mode (the release side shipped it ALL_VISIBLE).
+  [ViewMode.Vibe]: { visible: ['home', 'inbox', 'tasks', 'bookmarks'], collapsed: ['files'] },
   [ViewMode.Standard]: { visible: ['chats'], noShow: ['bookmarks'] },
   [ViewMode.Advanced]: { visible: ['assets'], collapsed: ['triggers', 'hooks'] },
   [ViewMode.Dev]: { visible: ['discover', 'agentic-flows'], collapsed: ['capabilities'] },
