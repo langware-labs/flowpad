@@ -8,7 +8,7 @@
     "dev": "vite",
     "i18n:extract": "lingui extract",
     "i18n:compile": "lingui compile",
-    "build": "lingui extract && lingui compile && vite build",
+    "build": "lingui extract && lingui compile && node --max-old-space-size=8192 ./node_modules/vite/bin/vite.js build",
     "build:sdk": "vite build --config vite.iife.config.ts",
     "preview": "vite preview",
     "type-check": "tsc --noEmit",
@@ -28,6 +28,7 @@
     "test:vitest:watch": "vitest"
   },
   "dependencies": {
+    "@dagrejs/dagre": "^3.0.0",
     "@excalidraw/excalidraw": "^0.18.1",
     "@excalidraw/mermaid-to-excalidraw": "^1.1.2",
     "@hookform/resolvers": "^5.1.1",
@@ -91,6 +92,7 @@
     "@xterm/addon-web-links": "^0.12.0",
     "@xterm/headless": "^6.0.0",
     "@xterm/xterm": "^5.5.0",
+    "@xyflow/react": "^12.11.2",
     "axios": "^1.7.4",
     "best-effort-json-parser": "^1.0.1",
     "class-variance-authority": "^0.7.1",

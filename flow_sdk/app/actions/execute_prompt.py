@@ -188,6 +188,32 @@ _SESSION_EVENT_TEXTS = {
 }
 
 
+def _session_context_block(conversation_id: str, session_id: str) -> str:
+    """Per-turn preamble telling the worker WHERE it runs and HOW to send
+    files back to the requester.
+
+    The delivery machinery (``flow conversation attach`` → add_message →
+    FILE attachment → body bundle → hub → receiver's staged file chips) is
+    fully wired; the one thing the worker lacks is its own coordinates —
+    ``build_merged_prompt`` never includes the conversation/session ids, so
+    without this block a "bring me file.ext" request has no way to comply.
+    ``--session`` groups the message into the live-session exchange and makes
+    the receiver eager-pull the bundle (files clickable on arrival)."""
+    return (
+        "\n\n---\n"
+        f"Live-session context: you are answering inside live session {session_id} "
+        f"of conversation {conversation_id}, running on the host's machine.\n"
+        "If the request asks you to send back / bring / attach files (logs, "
+        "reports, any artifact), return each one with:\n"
+        f"  flow conversation attach {conversation_id} <absolute-file-path> "
+        f"\"<one-line note>\" --session {session_id}\n"
+        "Run it once per file, then summarize in your reply what you attached. "
+        "Only attach files the request asks for; zip or trim very large files "
+        "first (uploads are capped at 100MB). If no files were requested, do "
+        "not attach anything."
+    )
+
+
 async def emit_session_event(
     session: "RemoteWorkerSession", event: str, someone_typeid: str,
     *, text: Optional[str] = None,
@@ -665,6 +691,11 @@ async def execute_prompt_from_message(
             except Exception as e:  # noqa: BLE001
                 logger.warning("[execute_prompt] approved event emit failed: %s", e)
 
+        # Live-session file-return contract: appended AFTER build_merged_prompt
+        # (the merged prompt is the user's request; this is runtime context) and
+        # after the session bind so rws.id is the adopted, shared identity.
+        prompt_text += _session_context_block(conversation.id, rws.id)
+
         # stream_transcript is resume-aware (waits out the live turn worker), so
         # the capture yields THIS turn's reply even on a resumed multi-turn
         # session — no pre-prompt snapshot needed here.
@@ -844,7 +875,7 @@ async def process_inbound_message(fm_id: str, conversation_id: str) -> None:
 
         # Resolve the contact identity for the permission lookup.
         contact_email = None
-        for p in (conv.participants or []):
+        for p in (conv.members or []):
             if p.get("user_id") == fm.sender_id:
                 contact_email = p.get("email")
                 break

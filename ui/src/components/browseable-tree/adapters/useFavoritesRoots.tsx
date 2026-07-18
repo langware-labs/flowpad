@@ -23,6 +23,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { useMemo, useRef } from 'react';
+import { refreshNode } from '../refresh-store';
 import type { Browseable, BrowseableDragData, BrowseableRoot } from '../types';
 
 /** Explicit `data.icon` name wins; otherwise the target type's registry icon
@@ -102,6 +103,13 @@ export function useFavoritesRoots(opts?: {
   const summaries = useFavoriteSummaries(favorites);
 
   return useMemo(() => {
+    // A membership change removes/adds a row inside a folder. The tree caches an
+    // expanded folder's children (unlike the grid, which reloads on node
+    // identity), so it must be told to reload that folder — root-level rows
+    // update via the live `roots` prop, so only real folder ids need this.
+    const refreshFolder = (folderId?: string | null) => {
+      if (folderId) refreshNode(folderId);
+    };
     const asLeaf = (b: Bookmark): Browseable => {
       const summary = summaryForBookmark(b, summaries);
       const title = b.name || summary?.name || b.displayName;
@@ -135,7 +143,10 @@ export function useFavoritesRoots(opts?: {
             id: 'remove-favorite',
             icon: navigable ? <Star className="h-3 w-3 fill-current text-amber-500" /> : <X className="h-3 w-3" />,
             label: t`Remove favorite`,
-            run: () => removeFavorite(b),
+            run: async () => {
+              await removeFavorite(b);
+              refreshFolder(b.parent_id);
+            },
           },
           // Filed leaves also offer menu-based un-filing (drag-out works too).
           ...(b.parent_id
@@ -144,7 +155,11 @@ export function useFavoritesRoots(opts?: {
                   id: 'remove-from-folder',
                   icon: <Folder className="h-3 w-3" />,
                   label: t`Remove from folder`,
-                  run: () => moveToFolder(b, null),
+                  run: async () => {
+                    const from = b.parent_id;
+                    await moveToFolder(b, null);
+                    refreshFolder(from);
+                  },
                 },
               ]
             : []),
@@ -222,19 +237,28 @@ export function useFavoritesRoots(opts?: {
         dragData: { kind: FOLDER_DRAG_KIND, id: folder.id ?? '', label: title },
         reorderChildren: async (dragId, anchor) => {
           const dragged = favorites.find((b) => b.id === dragId);
-          if (dragged) await reorder(dragged, anchor, folder.id ?? '');
+          if (!dragged) return;
+          await reorder(dragged, anchor, folder.id ?? '');
+          refreshFolder(folder.id);
         },
         canDrop: (drag) => drag.kind === FAVORITE_DRAG_KIND && drag.id !== folder.id,
         onDrop: async (drag) => {
           const dragged = favorites.find((b) => b.id === drag.id);
-          if (dragged) await moveToFolder(dragged, folder.id ?? null);
+          if (!dragged) return;
+          const from = dragged.parent_id;
+          await moveToFolder(dragged, folder.id ?? null);
+          refreshFolder(from);
+          refreshFolder(folder.id);
         },
         toolbar: [
           {
             id: 'delete-folder',
             icon: <Trash2 className="h-3 w-3" />,
             label: t`Delete folder`,
-            run: () => deleteFolder(folder),
+            run: async () => {
+              await deleteFolder(folder);
+              refreshFolder(folder.parent_id);
+            },
           },
         ],
         tooltip: (
@@ -250,7 +274,10 @@ export function useFavoritesRoots(opts?: {
     const onDropToBackground = (drag: BrowseableDragData) => {
       if (drag.kind !== FAVORITE_DRAG_KIND) return;
       const dragged = favorites.find((b) => b.id === drag.id);
-      if (dragged && dragged.parent_id) void moveToFolder(dragged, null);
+      if (dragged && dragged.parent_id) {
+        const from = dragged.parent_id;
+        void moveToFolder(dragged, null).then(() => refreshFolder(from));
+      }
     };
 
     const onReorderRoot = async (

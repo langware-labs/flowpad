@@ -38,6 +38,8 @@ export interface UserWarning {
   targetView: ViewType;
   /** Optional pointer for the target view (e.g., file path, section) */
   targetPointer?: string;
+  /** Optional wiki page title to open on click — used when no `onClick` is set */
+  wikiPage?: string;
   /** Optional callback to execute when the warning is clicked (in addition to navigation) */
   onClick?: () => void;
 }
@@ -52,6 +54,8 @@ export const WARNING_IDS = {
   CLOUD_CONNECTION_AUTH_REJECTED: 'cloud-connection-auth-rejected',
   HUB_REQUEST_FAILED: 'hub-request-failed',
   NO_COMPUTE_NODE: 'no-compute-node',
+  NO_HARNESS: 'no-harness',
+  HARNESS_LOGIN: 'harness-login-required',
   SNIFFER_NOT_FOUND: 'sniffer-not-found',
   SECRETS_NOT_ENABLED: 'secrets-not-enabled',
 } as const;
@@ -177,6 +181,39 @@ export function createNoComputeNodeWarning(): UserWarning {
     message: 'No Compute Node',
     description: 'No compute environment is available. Shell and code execution are disabled.',
     targetView: ViewType.MACHINE,
+  };
+}
+
+/**
+ * Create a warning for no installed harness (coding agent CLI). Clicking it
+ * opens the shipped "Install a harness" wiki page with per-harness install
+ * instructions.
+ */
+export function createNoHarnessWarning(): UserWarning {
+  return {
+    id: WARNING_IDS.NO_HARNESS,
+    icon: 'AlertCircle',
+    color: 'orange',
+    message: 'No harness found',
+    description: 'Install a coding agent CLI (Claude, Codex or Copilot) to run agents. Click for setup instructions.',
+    targetView: ViewType.CAPABILITIES,
+    wikiPage: 'Install a harness',
+  };
+}
+
+/**
+ * Create a warning shown when harness CLIs are installed but none is logged
+ * in. The warnings popover routes clicks on this id to the harness-login
+ * modal (device-login flow).
+ */
+export function createHarnessLoginWarning(): UserWarning {
+  return {
+    id: WARNING_IDS.HARNESS_LOGIN,
+    icon: 'KeyRound',
+    color: 'orange',
+    message: 'Harness login required',
+    description: 'A coding agent CLI is installed but not signed in. Click to sign in.',
+    targetView: ViewType.CAPABILITIES,
   };
 }
 

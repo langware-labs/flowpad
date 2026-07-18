@@ -270,22 +270,63 @@ export class CapabilityManager extends EventEmitter {
     return this.runAction(queryKind, 'test');
   }
 
-  async setReferenceKind(queryKind: string, referenceKind: string): Promise<CapabilitySnapshot> {
+  /** Mutate one capability entity's persisted fields, save, then invalidate the
+   *  cached action result and re-check. The shared write path behind
+   *  setReferenceKind / setAuthMode. */
+  private async mutateAndRecheck(
+    queryKind: string,
+    mutate: (capability: Capability) => void,
+  ): Promise<CapabilitySnapshot> {
     const query = this.normalizeKind(queryKind);
-    const reference = this.normalizeKind(referenceKind);
     await this.load();
     const capability = this.capabilities.find((candidate) => candidate.kind === query);
     if (!capability) {
       throw new Error(`Capability ${query} was not found`);
     }
-    if (!this.kindMatches(query, reference) || reference === query) {
-      throw new Error(`Capability ${query} cannot reference ${reference}`);
-    }
-    capability.reference_kind = reference;
+    mutate(capability);
     await capability.save();
     this.actionResults.delete(query);
     await this.load(true);
     return this.check(query);
+  }
+
+  async setReferenceKind(queryKind: string, referenceKind: string): Promise<CapabilitySnapshot> {
+    const query = this.normalizeKind(queryKind);
+    const reference = this.normalizeKind(referenceKind);
+    if (!this.kindMatches(query, reference) || reference === query) {
+      throw new Error(`Capability ${query} cannot reference ${reference}`);
+    }
+    return this.mutateAndRecheck(queryKind, (capability) => {
+      capability.reference_kind = reference;
+    });
+  }
+
+  /**
+   * Set a harness's auth mode (device vs a stored LLM-provider key) and the
+   * chosen provider. Unlike setReferenceKind (which writes the `harness`
+   * reference row), this writes the concrete LEAF capability, e.g.
+   * `harness.claude.cli`. Persists via entity save() then re-checks.
+   */
+  async setAuthMode(
+    queryKind: string,
+    mode: 'device' | 'api',
+    provider?: string | null,
+  ): Promise<CapabilitySnapshot> {
+    return this.mutateAndRecheck(queryKind, (capability) => {
+      capability.auth_mode = mode;
+      capability.api_provider = mode === 'api' ? (provider ?? null) : null;
+    });
+  }
+
+  /** Persist a harness's tier→model override map ({provider: {name: slug}}),
+   *  layered over the driver defaults at spawn. Written on the leaf capability. */
+  async setModelMap(
+    queryKind: string,
+    map: Record<string, Record<string, string>>,
+  ): Promise<CapabilitySnapshot> {
+    return this.mutateAndRecheck(queryKind, (capability) => {
+      capability.model_map = map;
+    });
   }
 
   private async runAction(queryKind: string, actionName: CapabilityActionName): Promise<CapabilitySnapshot> {

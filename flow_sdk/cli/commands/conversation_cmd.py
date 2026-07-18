@@ -94,7 +94,7 @@ def _conv_summary_row(conv: dict) -> dict:
             "user_id": p.get("user_id"),
             "role": p.get("role"),
         }
-        for p in (conv.get("participants") or [])
+        for p in (conv.get("members") or [])
     ]
     return {
         "id": conv.get("id"),
@@ -222,6 +222,18 @@ def attach_message(
         typer.Argument(help="A '<type>-<uuid>' entity TypeId OR a path to a file."),
     ],
     message: Annotated[str, typer.Argument(help="Message text to send with the attachment.")],
+    session: Annotated[
+        Optional[str],
+        typer.Option(
+            "--session",
+            help=(
+                "Live-session id (remote_worker_session). Stamps the message "
+                "into that session's exchange — it groups into the live-session "
+                "view and the receiver eager-pulls the body bundle, so attached "
+                "files are clickable on arrival."
+            ),
+        ),
+    ] = None,
 ) -> None:
     cid = (conversation_id or "").strip()
     if not cid:
@@ -248,9 +260,12 @@ def attach_message(
             _fail(EXIT_NOT_FOUND, "NOT_FOUND", f"Entity not found: {tgt}")
         if probe.status_code != 200:
             _fail(EXIT_ACTION_FAILED, "ACTION_FAILED", f"Could not resolve entity {tgt}: HTTP {probe.status_code}")
+        entity_body = {"text": message, "asset_references": [tgt]}
+        if session:
+            entity_body["remote_worker_session_id"] = session.strip()
         data = _post_json(
             url,
-            {"text": message, "asset_references": [tgt]},
+            entity_body,
             not_found_hint=f"Conversation not found: {cid}",
         )
         _emit_send_result(cid, data)
@@ -271,10 +286,13 @@ def attach_message(
     except OSError as e:
         _fail(EXIT_INVALID_ARG, "INVALID_ARG", f"Cannot read file {tgt}: {e}")
         return
+    form_fields = {"text": message}
+    if session:
+        form_fields["remote_worker_session_id"] = session.strip()
     try:
         resp = requests.post(
             url,
-            data={"text": message},
+            data=form_fields,
             files={"files": (filename, content)},
             timeout=60,
         )

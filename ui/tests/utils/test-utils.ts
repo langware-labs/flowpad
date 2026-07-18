@@ -6,7 +6,6 @@ import {
   ConnectionManager,
   ContextEntitiesEnum,
   FlowData,
-  InstructionFile,
   User,
   apiClient,
   clearStats,

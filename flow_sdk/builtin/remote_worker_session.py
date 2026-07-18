@@ -195,7 +195,12 @@ class RemoteWorkerSession(Entity):
             return cls.model_validate({**data, "type": cls.get_type()})
 
         if local_is_host:
-            for field in ("guest_user_id", "guest_name", "conversation_id"):
+            # host_user_id/host_name included: a first carrier packed before the
+            # guest's roster resolved the peer stamps host_user_id=None, and the
+            # host row materialized from it could otherwise never acquire its own
+            # identity (isHost stays false, the Approve bar never renders). Fill
+            # only when missing — the host row is never overwritten.
+            for field in ("guest_user_id", "guest_name", "conversation_id", "host_user_id", "host_name"):
                 if not getattr(local, field, None) and data.get(field):
                     setattr(local, field, data[field])
             return local

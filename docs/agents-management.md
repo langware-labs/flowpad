@@ -64,15 +64,16 @@ Topics covered:
 - Difference between durable records and live `Shell`/PTY runtime state
 - How CLI and PTY modes share session history
 
-### 3. [ClaudeSessionManager](agent-management/claude-session-manager.md)
+### 3. [Claude Process Lifecycle & Restart Contract](agent-management/claude-session-manager.md)
 
-Small TypeScript helper for creating and opening new Claude sessions.
+The `AgenticProcess` lifecycle reference (the `ClaudeSessionManager` service it
+was named for no longer exists).
 
 Topics covered:
-- Actual current API: `createAndStartSession(context, { instruction? })`
-- What lifecycle operations now live on `AgenticProcess`
-- How process creation flows through `ComputeNode.createProcess`
-- How CLI mode and PTY mode are started
+- Process creation flows (`ComputeNode.createProcess`, `AgenticProcess.spawn`)
+- Interactive PTY vs headless CLI lifecycles; stop/restart/fork/close
+- The persisted CLI-options model (`cli_config`) and how to change options
+- Restart-required detection and the end-to-end restart flow
 
 ### 4. [PTY & WebSocket Transport](agent-management/pty-websocket.md)
 

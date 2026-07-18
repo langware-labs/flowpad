@@ -149,9 +149,6 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
   plan: {
     dockPointer: (r) => assetEditorPointer('plan', r),
   },
-  workflow: {
-    dockPointer: (r) => assetEditorPointer('workflow', r),
-  },
   claude_md: {
     dockPointer: (r) => assetEditorPointer('claude_md', r),
   },

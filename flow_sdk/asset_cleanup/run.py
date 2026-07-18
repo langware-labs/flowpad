@@ -53,7 +53,7 @@ class AssetCleanupResult:
         return out
 
 
-def _transcript_reply(jsonl_path: Path) -> tuple[str, list[str]]:
+def transcript_reply(jsonl_path: Path) -> tuple[str, list[str]]:
     """(last assistant text, models seen) from a Claude JSONL transcript.
 
     ``RunResult.text`` / ``models_used`` are empty on the headless path —
@@ -194,7 +194,7 @@ async def run_asset_cleanup(
     if not text or not models_used:
         transcript = proc.driver.transcript_path(proc)
         if transcript:
-            t_text, t_models = _transcript_reply(transcript)
+            t_text, t_models = transcript_reply(transcript)
             text = text or t_text
             models_used = models_used or t_models
 

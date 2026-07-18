@@ -28,12 +28,12 @@ pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 ENTITY_ID = "7ce48c47-abab-4c9c-9780-a7198d12a260"
 
 
-def test_workflow_and_whiteboard_are_file_backed():
+def test_agent_and_whiteboard_are_file_backed():
     # The unified packer routes by the FAMILY predicate (TypeInfo.main_subdir is
     # not None), not a hardcoded type set — else their bytes never ride the
     # bundle and the receiver has nothing to materialize.
     from flow_sdk.fs_store.schema_registry import SchemaRegistry
-    for t in (EntityType.WORKFLOW.value, EntityType.WHITEBOARD.value):
+    for t in (EntityType.AGENT.value, EntityType.WHITEBOARD.value):
         info = SchemaRegistry.get(t)
         assert info is not None and info.main_subdir is not None, f"{t} must be file-backed"
 
@@ -275,11 +275,11 @@ async def test_pack_single_file_copies_md_pins_id_and_js_left_unmodified(tmp_pat
     _stub_file_backed_lookup(monkeypatch, str(md_src), name="deploy")
     att_md = tmp_path / "bundle_md"
     att_md.mkdir()
-    await _pack_file_backed_attachment(EntityType.WORKFLOW.value, ENTITY_ID, att_md)
+    await _pack_file_backed_attachment(EntityType.AGENT.value, ENTITY_ID, att_md)
     md_dest = (
         att_md
-        / f"{EntityType.WORKFLOW.value}-@{ENTITY_ID}"
-        / ".claude" / "workflows" / "deploy.md"
+        / f"{EntityType.AGENT.value}-@{ENTITY_ID}"
+        / ".claude" / "agents" / "deploy.md"
     )
     assert md_dest.exists()
     md_fields = _yaml_load(_extract_frontmatter(md_dest.read_text(encoding="utf-8")))

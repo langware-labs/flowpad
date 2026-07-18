@@ -38,7 +38,7 @@ LOCK_BREAK_FLAG = "lock_break"
 _VOLATILE_FIELDS = frozenset({
     "created_by", "updated_by", "created_date", "updated_date",
     "fetched_at", "remote", "system", "message_count", "tags",
-    "env_vars", "visitor_role", "participants",
+    "env_vars", "visitor_role", "members",
     # The lock marker itself and the share rail are not semantic content —
     # flipping semantic_lock or sharing the entity must not read as drift.
     "semantic_lock",

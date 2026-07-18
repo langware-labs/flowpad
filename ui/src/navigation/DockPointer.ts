@@ -630,14 +630,6 @@ export class DockPointer implements IDockPointer {
   }
 
   /**
-   * Create dock pointer for workflows viewer
-   * @param workflowId - Optional workflow entity ID to view/edit
-   */
-  static forWorkflows(workflowId?: string, layout: Layout = Layout.DOCK): DockPointer {
-    return new DockPointer(ViewType.WORKFLOWS, workflowId, undefined, layout);
-  }
-
-  /**
    * Create dock pointer for a project's collaboration view, optionally with
    * an active collaboration_room and/or an active tab inside that room, or
    * a focused conversation.
@@ -795,23 +787,6 @@ export class DockPointer implements IDockPointer {
     if (options?.conversationId) queryOptions.conversation = options.conversationId;
     if (options?.messageId) queryOptions.message = options.messageId;
     return new DockPointer(ViewType.INBOX, undefined, Object.keys(queryOptions).length ? queryOptions : undefined, layout);
-  }
-
-  /**
-   * Create dock pointer for execute flow viewer
-   * @param options - Optional options object with vfsAbsPath and session
-   * @param options.vfsAbsPath - Optional VFS absolute path to execute (e.g., "compute_node-@local/path/to/file.md")
-   * @param options.machineSessionId - Optional machine session identifier (used by worker-sessions-panel)
-   */
-  static forExecuteFlow(
-    options?: { vfsAbsPath?: string; machineSessionId?: string },
-    layout: Layout = Layout.DOCK,
-  ): DockPointer {
-    const queryOptions: Record<string, string> = {};
-    if (options?.vfsAbsPath) queryOptions.vfsAbsPath = options.vfsAbsPath;
-    if (options?.machineSessionId) queryOptions.machineSessionId = options.machineSessionId;
-
-    return new DockPointer(ViewType.EXECUTE_FLOW, undefined, queryOptions, layout);
   }
 
   /**

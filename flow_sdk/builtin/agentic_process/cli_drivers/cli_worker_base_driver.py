@@ -47,6 +47,11 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic.alias_generators import to_camel
 
 from flow_sdk._compat import StrEnum
+from flow_sdk.builtin.agentic_process.cli_drivers.auth_probe import (
+    DeviceLoginSpec,
+    WorkerAuthResult,
+    probe_worker_auth,
+)
 from flow_sdk.builtin.compute_node import ComputeNode
 from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowData
 from flow_sdk.transcript_analyzer import TranscriptDescriptor
@@ -450,12 +455,21 @@ def apply_worker_env(env: dict[str, str], process: "AgenticProcess") -> dict[str
                     f"Claude worker {ENV_CLAUDE_CONFIG_DIR} must match Flowpad's configured Claude home "
                     f"(got {worker_home} and {claude_home})"
                 )
+        # Only pin CLAUDE_CONFIG_DIR for a genuinely NON-default Claude root. When
+        # the root resolves to the native ~/.claude — even via an explicit
+        # FLOWPAD_CLAUDE_HOME/CLAUDE_CONFIG_DIR that points there — it must stay
+        # UNSET. Claude keeps its account/config in ``~/.claude.json`` *beside*
+        # the default ``~/.claude/`` dir; setting CLAUDE_CONFIG_DIR=~/.claude makes
+        # Claude read ``~/.claude/.claude.json`` (a different, usually stale file),
+        # lose the OAuth account, and fall back to the "Select login method"
+        # picker — which silently breaks every real-Claude worker turn.
+        native_home = _canonical_lexical_path(Path.home() / ".claude")
         root_is_explicit = bool(
             os.environ.get(ENV_FLOWPAD_CLAUDE_HOME)
             or os.environ.get(ENV_CLAUDE_CONFIG_DIR)
             or worker_override is not None
         )
-        if root_is_explicit:
+        if root_is_explicit and claude_home != native_home:
             env[ENV_CLAUDE_CONFIG_DIR] = str(claude_home)
         else:
             env.pop(ENV_CLAUDE_CONFIG_DIR, None)
@@ -514,6 +528,16 @@ async def apply_worker_secret_env(env: dict[str, str], process: "AgenticProcess"
                 continue
             if resolved is not None:
                 env.setdefault(env_var, resolved.get_secret_value())
+
+    # API-key auth (harness in "api" mode): inject the provider env block + key.
+    # Lazy import avoids a cycle with the driver registry. This wins over device
+    # creds by design; the key lands only in this transient spawn env.
+    from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import resolve_worker_api_auth
+
+    api_auth = await resolve_worker_api_auth(process)
+    if api_auth is not None:
+        for key, value in api_auth.env.items():
+            env[key] = value
     return env
 
 
@@ -589,6 +613,13 @@ class AgenticContext(BaseModel):
     system_prompt_file: str | None = None
     developer_instructions: str | None = None
     custom_instruction_dirs: list[str] = Field(default_factory=list)
+
+    # Extra `-c key=val` config overrides for API-key auth (currently codex's
+    # OpenRouter provider block). Derived per-spawn from the harness Capability,
+    # so — like fork/resume — excluded from the restart hash. Same name as
+    # CodexCliOptions.extra_config_overrides so apply_api_model_to_options can
+    # stamp either object.
+    extra_config_overrides: list[tuple[str, str]] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def set_defaults(self) -> "AgenticContext":
@@ -939,6 +970,40 @@ def prepend_path_dir(folder: str, path: str | None) -> str:
     return f"{folder}{os.pathsep}{base}" if base else folder
 
 
+def resolve_worker_probe_context(worker_type: str) -> tuple[str, dict[str, str]] | None:
+    """(abs executable path, probe env) for a short vendor-CLI probe, or
+    ``None`` ⇔ not installed. The executable name IS the worker type
+    (claude/codex/copilot).
+
+    Resolution is disk-verified against the DISCOVERED bin folder (same shape
+    as ``CliCapabilityRunner.test``): a stale discovered folder — CLI
+    uninstalled after discovery — surfaces as not-installed here rather than
+    as a spawn error. The env pins the folder first on PATH so the CLI's
+    ``#!/usr/bin/env node`` shebang resolves regardless of how the backend
+    was launched.
+    """
+    folder = worker_bin_folder(worker_type)
+    if folder is None:
+        return None
+    path = shutil.which(worker_type, path=folder)
+    if path is None:
+        return None
+    return path, {**os.environ, **(worker_path_env(worker_type) or {})}
+
+
+async def run_worker_auth_probe(worker_type: str) -> WorkerAuthResult:
+    """Shared body for the drivers' ``auth_probe`` implementations.
+
+    Resolves the executable against the discovered bin folder (None ⇒
+    NOT_INSTALLED — the install gate also applies to copilot, whose probe is
+    a pure heuristic that must not claim logged-in for an uninstalled CLI),
+    then runs the vendor probe off-loop.
+    """
+    ctx = resolve_worker_probe_context(worker_type)
+    path, env = ctx if ctx is not None else (None, {})  # env unread on the NOT_INSTALLED path
+    return await asyncio.to_thread(probe_worker_auth, worker_type, path, env, Path.home())
+
+
 def build_worker_spawn_env(
     worker_type: str,
     env_from_opts: dict[str, str],
@@ -1198,6 +1263,24 @@ class WorkerDriver(Protocol):
         should return a debug payload rather than raising.
         """
         ...
+
+    # ── Auth ─────────────────────────────────────────────────────────────────
+
+    async def auth_probe(self) -> WorkerAuthResult:
+        """Probe this vendor CLI's login state (≤5s, never raises).
+
+        NOT_INSTALLED when discovery has no bin folder (or it went stale);
+        UNKNOWN when the probe couldn't decide (timeout, exec error,
+        unparseable output) — implementations must never conflate that with
+        LOGGED_OUT. ``verified`` is True only when the vendor CLI itself
+        confirmed the state (copilot's heuristic never is).
+        """
+        ...
+
+    # How this vendor's CLI runs its link(+code) login flow — consumed by the
+    # generic engine in ``device_login.py``; no orchestration code branches
+    # on vendor (same trait style as ``pty_submits_on_paste``).
+    device_login_spec: DeviceLoginSpec
 
     # ── Transcript discovery ─────────────────────────────────────────────────
 

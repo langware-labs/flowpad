@@ -28,12 +28,12 @@ def _make_action(methods=("get",)):
     )
 
 
-def _make_entity(*, remote: bool, participants=None):
+def _make_entity(*, remote: bool, members=None):
     return Conversation(
         id=f"conv-test-{uuid.uuid4().hex[:8]}",
         title="t",
         remote=remote,
-        participants=participants or [],
+        members=members or [],
     )
 
 
@@ -99,8 +99,8 @@ def test_should_reflect_false_when_logged_out(logged_out):
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)
-async def test_reflect_to_hub_forwards_get_and_mirrors_participants(monkeypatch):
-    """GET action: hub_get is called with the right path; response replaces local participants."""
+async def test_reflect_to_hub_forwards_get_and_mirrors_members(monkeypatch):
+    """GET action: hub_get is called with the right path; response replaces local members."""
     import flow_sdk.server.routes._hub_reflect as mod
 
     captured = {}
@@ -130,7 +130,7 @@ async def test_reflect_to_hub_forwards_get_and_mirrors_participants(monkeypatch)
     monkeypatch.setattr(Conversation, "save", fake_save)
 
     a = _make_action(methods=("get",))
-    e = _make_entity(remote=True, participants=[{"user_id": "stale"}])
+    e = _make_entity(remote=True, members=[{"user_id": "stale"}])
 
     result = await mod.reflect_to_hub(a, e, {}, "get")
 
@@ -138,7 +138,7 @@ async def test_reflect_to_hub_forwards_get_and_mirrors_participants(monkeypatch)
     assert captured["id"] == e.id
     assert captured["action"] == "members"
     assert captured["et"].value == "conversation"
-    assert e.participants == expected_normalized  # local row mirrored to normalized shape
+    assert e.members == expected_normalized  # local row mirrored to normalized shape
     assert captured.get("saved") is True
 
 
@@ -197,7 +197,7 @@ async def test_reflect_uses_request_method_not_action_methods(monkeypatch):
 
     # Action resolved by name-only lookup is the DELETE handler (the bug's setup).
     a = _make_action(methods=("delete",))
-    e = _make_entity(remote=True, participants=[{"user_id": "stale"}])
+    e = _make_entity(remote=True, members=[{"user_id": "stale"}])
 
     # ...but the actual request is a roster GET.
     result = await mod.reflect_to_hub(a, e, {}, "get")
@@ -241,7 +241,7 @@ async def test_reflect_to_hub_put_merges_hub_response_and_returns_merged(monkeyp
     local row and returns the MERGED LOCAL entity:
       - scalar fields (title, server times) the hub changed are applied locally,
       - a saved+notify broadcast fans the update to local watchers,
-      - LIST fields (``participants``) are NOT clobbered — they keep their local
+      - LIST fields (``members``) are NOT clobbered — they keep their local
         normalized shape (their own sync path owns them),
       - the return value is the merged local entity (``model_dump``), not the raw
         hub response."""
@@ -254,12 +254,12 @@ async def test_reflect_to_hub_put_merges_hub_response_and_returns_merged(monkeyp
         captured["id"] = entity_id
         captured["payload"] = payload
         # Hub echoes the entity with the new title + a server-set timestamp, plus a
-        # hub-shaped participants list that must NOT overwrite the local one.
+        # hub-shaped members list that must NOT overwrite the local one.
         return {
             "id": entity_id,
             "title": payload.get("title"),
             "created_date": "2026-06-02T10:00:00Z",
-            "participants": [{"user_id": "u-hub", "name": "HubShape"}],
+            "members": [{"user_id": "u-hub", "name": "HubShape"}],
         }
 
     async def boom(*args, **kwargs):  # must NOT be called
@@ -277,7 +277,7 @@ async def test_reflect_to_hub_put_merges_hub_response_and_returns_merged(monkeyp
     a = _make_action(methods=("put", "patch"))
     a.action_name = "update"
     local_parts = [{"user_id": "u-alice", "email": "alice@example.com", "name": "Alice"}]
-    e = _make_entity(remote=True, participants=local_parts)
+    e = _make_entity(remote=True, members=local_parts)
 
     result = await mod.reflect_to_hub(a, e, {"title": "new-name"}, "put")
 
@@ -291,9 +291,9 @@ async def test_reflect_to_hub_put_merges_hub_response_and_returns_merged(monkeyp
     # Returned the MERGED LOCAL entity (a dict), carrying the new title.
     assert isinstance(result, dict)
     assert result["title"] == "new-name"
-    # The LIST field was NOT clobbered — local normalized participants preserved.
-    assert e.participants == local_parts
-    assert result["participants"] == local_parts
+    # The LIST field was NOT clobbered — local normalized members preserved.
+    assert e.members == local_parts
+    assert result["members"] == local_parts
 
 
 @pytest.mark.timeout(30)  # do not increase timeout without approval
@@ -302,14 +302,14 @@ def test_merge_hub_entity_skips_lists_and_unchanged_scalars(monkeypatch):
     unchanged scalars and list/dict fields are skipped."""
     from flow_sdk.server.routes._hub_reflect import _merge_hub_entity_into_local
 
-    e = _make_entity(remote=True, participants=[{"user_id": "u1"}])
+    e = _make_entity(remote=True, members=[{"user_id": "u1"}])
     e.title = "old"
     updates = _merge_hub_entity_into_local(
         e,
         {
             "title": "new",                              # scalar, changed → applied
             "message_status_visible": True,              # scalar, unchanged → skipped
-            "participants": [{"user_id": "hub"}],        # list → skipped
+            "members": [{"user_id": "hub"}],        # list → skipped
             "not_a_field_xyz": "z",                      # not an api field → skipped
         },
     )
@@ -347,7 +347,7 @@ async def test_reflect_to_hub_forwards_delete_body_and_refreshes_roster(monkeypa
     monkeypatch.setattr(Conversation, "save", fake_save)
 
     a = _make_action(methods=("delete",))
-    e = _make_entity(remote=True, participants=[{"user_id": "u-bob"}])
+    e = _make_entity(remote=True, members=[{"user_id": "u-bob"}])
 
     result = await mod.reflect_to_hub(a, e, {"user_id": "u-bob"}, "delete")
 
@@ -358,7 +358,7 @@ async def test_reflect_to_hub_forwards_delete_body_and_refreshes_roster(monkeypa
     assert captured["id"] == e.id
     # Roster re-fetched after the remove and mirrored onto the local row.
     assert result == [{"user_id": "u-alice", "role": "owner", "status": "approved"}]
-    assert e.participants == [{"user_id": "u-alice", "role": "owner", "status": "approved"}]
+    assert e.members == [{"user_id": "u-alice", "role": "owner", "status": "approved"}]
     assert captured.get("saved") is True
 
 
@@ -398,7 +398,7 @@ async def test_reflect_to_hub_put_members_targets_action_endpoint_and_refreshes_
     monkeypatch.setattr(Conversation, "save", fake_save)
 
     a = _make_action(methods=("put",))
-    e = _make_entity(remote=True, participants=[{"user_id": "u-bob", "role": "member"}])
+    e = _make_entity(remote=True, members=[{"user_id": "u-bob", "role": "member"}])
 
     result = await mod.reflect_to_hub(a, e, {"user_id": "u-bob", "role": "editor"}, "put")
 
@@ -409,7 +409,7 @@ async def test_reflect_to_hub_put_members_targets_action_endpoint_and_refreshes_
     assert captured["id"] == e.id
     # Roster re-fetched after the change and mirrored onto the local row.
     assert result[1]["role"] == "editor"
-    assert e.participants[1]["role"] == "editor"
+    assert e.members[1]["role"] == "editor"
     assert captured.get("saved") is True
 
 
@@ -428,7 +428,7 @@ async def test_reflect_to_hub_put_members_denial_propagates(monkeypatch):
     monkeypatch.setattr(mod, "hub_put", fake_hub_put)
 
     a = _make_action(methods=("put",))
-    e = _make_entity(remote=True, participants=[{"user_id": "u-bob", "role": "member"}])
+    e = _make_entity(remote=True, members=[{"user_id": "u-bob", "role": "member"}])
 
     with pytest.raises(HubError) as exc_info:
         await mod.reflect_to_hub(a, e, {"user_id": "u-bob", "role": "owner"}, "put")
@@ -524,12 +524,18 @@ def test_normalize_passes_through_non_list_and_non_members():
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)
-async def test_mirror_skips_when_entity_has_no_participants_field(monkeypatch):
-    """``mirror_hub_response_into_local`` is opportunistic — entities without
-    a participants field must not raise."""
+async def test_mirror_caches_roster_on_any_entity_type(monkeypatch):
+    """``members`` is now on the Entity base, so the roster mirror fires for
+    EVERY remote type — org/team/user included, not just conversation/project
+    which used to declare their own field. Previously this asserted a no-op skip
+    for a field-less entity; that entity no longer exists."""
     from flow_sdk.builtin.user import User
     from flow_sdk.server.routes._hub_reflect import mirror_hub_response_into_local
 
-    u = User(id="u-1")  # has no ``participants`` field
-    # Should be a no-op, no exception raised.
-    await mirror_hub_response_into_local(u, "members", [{"user_id": "x"}])
+    async def fake_save(self_=None, **kwargs):
+        return None
+
+    monkeypatch.setattr(User, "save", fake_save)
+    u = User(id="u-1")
+    await mirror_hub_response_into_local(u, "members", [{"user_id": "x", "role": "member"}])
+    assert u.members == [{"user_id": "x", "role": "member"}]

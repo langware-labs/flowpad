@@ -868,7 +868,7 @@ async def test_pack_with_conversation_attachment(tmp_path, monkeypatch):
     mock_conv = Conversation(
         shared_context_entities=[],
         project_id=proj_id,
-        participants=[{"user_id": "u1", "email": "a@x.com", "name": "A", "role": "owner"}],
+        members=[{"user_id": "u1", "email": "a@x.com", "name": "A", "role": "owner"}],
         title="My Conversation Title",
     )
     mock_conv.id = conv_id

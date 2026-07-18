@@ -17,7 +17,7 @@ export function deriveConversationTitle(conv: Conversation | null | undefined): 
   if (typeof title === 'string' && title.trim()) return title.trim();
   const name = (conv as { name?: string | null }).name;
   if (typeof name === 'string' && name.trim()) return name.trim();
-  const parts = (conv.participants ?? [])
+  const parts = (conv.members ?? [])
     .map((p) => participantLabel(p));
   if (parts.length > 0) return parts.join(', ');
   if (conv.id) return `Conversation ${conv.id.slice(0, 8)}`;

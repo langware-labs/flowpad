@@ -7,8 +7,8 @@ import { OpenProjectComponent } from '@src/components/open-project-component/ope
 import { TabbedSideDrawer } from '@src/components/ui/side-drawer';
 import { CollapsedSideRail, SideRailButton } from '@src/components/ui/collapsed-side-rail';
 import { useProcessesForTarget } from '@src/components/entity-execution-panel/hooks/useProcessesForTarget';
-import { WorkflowRunsPanel } from '@src/components/workflows-view/WorkflowRunsPanel';
-import type { ProcessEntry } from '@src/components/workflows-view/workflow-run-store';
+import { ProcessRunsPanel } from '@src/components/process-runs/ProcessRunsPanel';
+import type { ProcessEntry } from '@src/components/process-runs/process-run-store';
 import { ConversationView } from './ConversationView';
 import { useProjectMappingGate } from './useProjectMappingGate';
 import { ChipsExcludeProvider } from './chips/ChipsExcludeContext';
@@ -279,10 +279,9 @@ export function ConversationPanel({
   };
   if (showRuns) {
     drawerChildren.runs = (
-      <WorkflowRunsPanel
+      <ProcessRunsPanel
         entries={runEntries}
         currentEntry={runEntries.find((e) => e.process.id === focusedRunId) ?? null}
-        computeNodeId={targetStr || undefined}
       />
     );
   }

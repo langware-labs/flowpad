@@ -129,7 +129,10 @@ class Conversation(Entity):
     remote_project_name: Optional[str] = APIField(None)
     message_count: int = APIField(0)
     message_ids: Optional[str] = APIField(None)  # JSON-encoded [{"typeid": ..., "ts": ...}]
-    participants: list[dict] = APIField(default_factory=list)  # [{user_id, email, name, role}]
+    # Roster cache lives on the Entity base as ``members`` (generic hub capability).
+    # The hub sends/receives the conversation roster on the WIRE as ``participants``
+    # (its field + fanout key); that key is adapted to ``members`` at ingest
+    # (hub_bridge._handle_conversation_op, flow_message_action metadata upsert).
     # When False, hub suppresses delivery_status fan-out to the original
     # sender (delivered/received UPDATE frames are filtered by hub-side
     # Conversation._fanout_status_update). Co-recipients still see them.
@@ -455,7 +458,7 @@ class Conversation(Entity):
             role = p.get("role")
             return f"{label} ({role})" if role else str(label)
 
-        participants = ", ".join(_who(p) for p in (self.participants or [])) or "(none)"
+        participants = ", ".join(_who(p) for p in (self.members or [])) or "(none)"
         lines = [
             f"Conversation: {self.title or '(untitled)'}",
             f"Participants: {participants}",

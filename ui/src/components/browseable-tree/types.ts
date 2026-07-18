@@ -238,6 +238,12 @@ export interface BrowseableTreeProps {
    *  explicit collapse suppresses hover until the pointer leaves the row. */
   hoverExpandMs?: number;
 
+  /** Rendered as the last row of EVERY level: once at the root ('') and once at
+   *  the end of each expanded folder's children (its id). Its use is a build-
+   *  as-you-browse toolbar — "add into THIS level" — so the parent id is handed
+   *  in. Undefined ⇒ no footer, unchanged for ordinary navigators. */
+  levelFooter?: (parentId: string) => ReactNode;
+
   /** The currently-active pointer (from URL). Drives both row selection and
    *  ancestor auto-expand. */
   activePointer: DockPointer | null;

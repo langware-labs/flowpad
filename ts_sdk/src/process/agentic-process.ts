@@ -26,7 +26,6 @@ const msSince = (t0: number): string => (performance.now() - t0).toFixed(1);
 import type { AssetDescriptor } from './asset-descriptor';
 import { DockPointerData } from '../models/DockPointer';
 import { TypeId } from '../models/TypeId';
-import { InstructionFile } from '../models/workflow/InstructionFile';
 import { ViewType } from '../utils/ui/view-types';
 import { VFSPath } from '../utils/vfs-path';
 import { AgenticContext, IAgenticProcessOptions, ISpawnWorkerOptions, PermissionMode } from './agentic-context';
@@ -90,19 +89,6 @@ export interface SpawnResult {
   shell?: Shell;
   /** Set in both modes */
   workerSessionId?: string | null;
-}
-
-/**
- * Options for AgenticProcess.execute()
- * Note: compute node is managed by the backend process runtime, not passed from frontend.
- */
-export interface ExecuteOptions {
-  /** Working directory for file operations */
-  workdir?: string;
-  /** LLM model to use */
-  model?: string;
-  /** Permission mode for sensitive operations */
-  permissionMode?: PermissionMode;
 }
 
 /**
@@ -412,51 +398,6 @@ export interface IAgenticProcess extends IEntity {
 export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenticProcess {
   /** Entity type for AgenticProcess */
   static type: string = 'agentic_process';
-
-  // ============ Static Execute API ============
-
-  /**
-   * Execute a command and return the process for streaming.
-   *
-   * This is the simplest entry point for running instructions, similar to
-   * a Python interpreter's exec(). Creates all required components internally.
-   *
-   * @param command - Plain text command or AMD content to execute
-   * @param options - Optional execution options
-   * @returns AgenticProcess for streaming output via output() method
-   *
-   * @example
-   * ```typescript
-   * // Simple one-shot execution
-   * const process = await AgenticProcess.execute("List all Python files");
-   * for await (const data of process.output()) {
-   *   console.log(data.data);
-   * }
-   *
-   * // With options
-   * const process = await AgenticProcess.execute("Say hello", {
-   *   workdir: '/path/to/project',
-   *   model: 'claude-sonnet-4-20250514',
-   * });
-   * ```
-   */
-  static async execute(command: string, options?: ExecuteOptions): Promise<AgenticProcess> {
-    const { dataContext } = await import('../FlowSync/context');
-    const computeNode = dataContext.computeNode;
-    if (!computeNode) throw new Error('[AgenticProcess.execute] No local compute node');
-
-    const context: AgenticContext = {
-      workdir: options?.workdir,
-      model: options?.model,
-      permissionMode: options?.permissionMode ?? 'bypassPermissions',
-    };
-
-    const amdContent = AgenticProcess._wrapInAmd(command);
-    const process = await computeNode.createProcess(context);
-    await process.watch();
-    await process.executeInstruction(amdContent, { sync: false });
-    return process;
-  }
 
   /**
    * Spawn a visible AgenticProcess tab and (optionally) send an initial
@@ -780,26 +721,6 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     const info = new ActionInfo('rename', AgenticProcess.type, id, 'POST');
     info.bodyParameters = { name };
     await dataManager.callAction<{ name: string }, { id: string; name: string }>(info);
-  }
-
-  /**
-   * Check if content is already in AMD format.
-   * @internal
-   */
-  private static _isAmdContent(content: string): boolean {
-    return /<!--\s*<\/?flow-[a-z]+/i.test(content);
-  }
-
-  /**
-   * Wrap plain text in AMD flow-do syntax.
-   * @internal
-   */
-  private static _wrapInAmd(command: string): string {
-    if (AgenticProcess._isAmdContent(command)) {
-      return command;
-    }
-    const instrId = `instr_${Date.now().toString(36)}`;
-    return `<!-- <flow-do id="${instrId}"> -->\n${command}\n<!-- </flow-do> -->`;
   }
 
   /**
@@ -1389,7 +1310,6 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   // ─────────────────────────────────────────────────────────────────────────
 
   /** Internal references (not serialized) */
-  _instructionFile?: InstructionFile;
   _context?: AgenticContext;
 
   /** Last error observed when ``workerStatus`` transitioned to a failure
@@ -1565,13 +1485,6 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * mutates exclusively through the queue action methods below.
    */
   queue: QueueState | null = null;
-
-  /**
-   * Get the instruction file (if set locally)
-   */
-  get instructionFile(): InstructionFile | undefined {
-    return this._instructionFile;
-  }
 
   /**
    * Get the workdir as a VFSPath if available.
@@ -2839,14 +2752,6 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     const shell = await dataManager.getByTypeId<Shell>(typeId);
     if (!shell) throw new Error(`[AgenticProcess.sendInput] Shell ${this.shell_id} not found`);
     await shell.ptyConnection.sendInput(text + '\n');
-  }
-
-  /**
-   * @deprecated Use executeInstruction() instead. Will be removed in future version.
-   */
-  async continue(command: string): Promise<AgenticProcess> {
-    await this.executeInstruction(AgenticProcess._wrapInAmd(command), { sync: false });
-    return this;
   }
 
   /**

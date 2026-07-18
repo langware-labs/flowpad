@@ -314,3 +314,10 @@ flow_sdk/server/static/
 .flow/skills/agent-trace/_results/
 
 SOC2/
+# root scratch dumps — never track (removed in dead-code cleanup 2026-07)
+/qa_report.html
+/hub.html
+/flowpad-console-*.md
+/home-snapshot.md
+/feedback.md
+/prompts/

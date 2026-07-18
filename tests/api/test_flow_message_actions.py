@@ -215,7 +215,7 @@ async def test_upload_flow_message_preserves_bundle_participants(
 
     conv = await Conversation.get_one({"id": conv_id})
     assert conv is not None
-    assert conv.participants == participants
+    assert conv.members == participants
 
 
 @pytest.mark.asyncio

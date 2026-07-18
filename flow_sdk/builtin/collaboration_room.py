@@ -11,10 +11,11 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, ClassVar
 
-from pydantic import computed_field
+from pydantic import computed_field, model_validator
 
 from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.core import Entity, action
+from flow_sdk.core.entity.entity_model import migrate_presence_shaped_members
 from flow_sdk.db.drivers.db_base_record import TypeId
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
@@ -38,11 +39,16 @@ class CollaborationRoom(Entity):
     host_name: str | None = APIField(default=None, description="Display name of the host")
     host_member_id: str | None = APIField(default=None, description="Stable member_id of the host")
     name: str | None = APIField(default=None, description="Optional human title for this room")
-    members: list[dict] = APIField(
+    presence: list[dict] = APIField(
         default_factory=list,
-        description="Participants: [{member_id, name, joined_at, last_seen_at}]",
+        description="Local presence: [{member_id, name, joined_at, last_seen_at}]. Renamed from ``members`` to free that name for the hub role roster now on the Entity base.",
     )
     status: str = APIField(default=CollaborationRoomStatus.ACTIVE)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _migrate_legacy_presence(cls, data):
+        return migrate_presence_shaped_members(data)
     started_at: str | None = APIField(default=None)
     updated_at: str | None = APIField(default=None)
     ended_at: str | None = APIField(default=None)
@@ -64,9 +70,9 @@ class CollaborationRoom(Entity):
 
     async def upsert_member(self, member_id: str, name: str) -> dict:
         now = _now_iso()
-        members = list(self.members or [])
+        presence = list(self.presence or [])
         existing = None
-        for m in members:
+        for m in presence:
             if m.get("member_id") == member_id:
                 existing = m
                 break
@@ -83,23 +89,23 @@ class CollaborationRoom(Entity):
                 "joined_at": now,
                 "last_seen_at": now,
             }
-            members.append(entry)
-        self.members = members
+            presence.append(entry)
+        self.presence = presence
         self._touch()
         await self.save()
         return entry
 
     async def touch_member(self, member_id: str) -> bool:
-        members = list(self.members or [])
+        presence = list(self.presence or [])
         now = _now_iso()
         changed = False
-        for m in members:
+        for m in presence:
             if m.get("member_id") == member_id:
                 m["last_seen_at"] = now
                 changed = True
                 break
         if changed:
-            self.members = members
+            self.presence = presence
             self._touch()
             await self.save()
         return changed
@@ -147,7 +153,7 @@ class CollaborationRoom(Entity):
         if not member_id:
             return ApiFailResponse(message="member_id is required")
         updated = await self.touch_member(member_id)
-        return ApiSuccessResponse(data={"ok": updated, "members": self.members})
+        return ApiSuccessResponse(data={"ok": updated, "presence": self.presence})
 
     @action.post(action_name="add_process")
     async def _http_add_process(self) -> ApiResponse:

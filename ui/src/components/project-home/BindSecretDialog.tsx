@@ -40,7 +40,7 @@ function envNameFromSecret(name: string): string {
  */
 export const BindSecretDialog: React.FC<BindSecretDialogProps> = ({ project, open, onOpenChange }) => {
   const { t } = useLingui();
-  const { addLocalPointer } = useProjectSecretOrigins(project);
+  const { add } = useProjectSecretOrigins(project);
 
   const [enabled, setEnabled] = useState<boolean | null>(null);
   const [appSecrets, setAppSecrets] = useState<AppSecretSummary[]>([]);
@@ -86,7 +86,12 @@ export const BindSecretDialog: React.FC<BindSecretDialogProps> = ({ project, ope
     if (!selected || !envVar.trim()) return;
     setBusy(true);
     try {
-      await addLocalPointer(selected, envVar.trim(), selected);
+      await add({
+        name: selected,
+        envVar: envVar.trim(),
+        locator: { kind: 'local', sod_name: selected },
+        scope: 'private',
+      });
       onOpenChange(false);
     } catch (error) {
       notify.error({
