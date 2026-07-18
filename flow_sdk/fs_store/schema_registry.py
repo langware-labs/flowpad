@@ -278,11 +278,17 @@ class TypeInfo:
     # and ``FSRecord.meta_dict`` returns a typed instance when it is set.
     # Runtime-only; not part of the schema hash.
     meta_model: Any = field(default=None, compare=False, repr=False)
-    # Asset layout: scope-relative subdir for the primary asset
-    # (e.g. ".claude/skills") and whether the asset is a single file or
-    # a folder. Used by FSRecord to resolve where an entity's asset goes
-    # on save.
-    main_subdir: str | None = None
+    # --- Placement axis (the harness-aware replacement for ``main_subdir``) ---
+    # ``asset_class`` is the "definition" (INTERNAL / HARNESS / SHARED / NONE);
+    # ``harness`` names the owning harness for HARNESS types; ``family`` is the
+    # bare leaf subdir (``skills``, ``docs``, ``assets/datasets``). Placement is
+    # resolved through ``flow_sdk.fs_store.placement``. ``main_subdir`` survives as
+    # a DERIVED, read-only property (below) — the canonical claude-default family
+    # subdir (``.claude/skills``, ``docs``) — so the many legacy consumers keep
+    # working unchanged. Not hashed.
+    asset_class: Any = None            # placement.AssetClass | None
+    harness: Any = None                # placement.HarnessType | None
+    family: str | None = None
     main_layout: str = "file"
     # For ``main_layout == "folder"`` owned types: the fixed inner filename of
     # the primary asset (e.g. ``spec.md`` under ``specs/<name>/``). When set,
@@ -348,6 +354,23 @@ class TypeInfo:
         file tree. Derived from the existing folder-layout fields so no type
         carries a redundant flag."""
         return self.main_layout == "folder" and not self.main_file_is_asset_ref
+
+    @property
+    def _resolved_layout(self) -> "tuple[Any, Any, str | None]":
+        """The ``(asset_class, harness, family)`` placement triple. ``(None, …)``
+        for non-file-backed types (e.g. ``claude_md``, fixed filename)."""
+        return (self.asset_class, self.harness, self.family)
+
+    @property
+    def main_subdir(self) -> str | None:
+        """Derived, read-only: the canonical claude-default family subdir
+        (``.claude/skills``, ``docs``, ``assets/datasets``). The compatibility
+        view for the many consumers that still think in ``<scope>/<subdir>``; the
+        harness-aware source of truth is the placement axis. ``None`` for
+        non-file-backed types."""
+        from flow_sdk.fs_store.placement import family_subdir  # noqa: PLC0415
+
+        return family_subdir(self.asset_class, self.harness, self.family, default_worker="claude")
 
     @property
     def browseable_by_str(self) -> str | None:
@@ -514,8 +537,15 @@ class SchemaRegistry:
             for loc in info.locations:
                 if loc not in existing.locations:
                     existing.locations.append(loc)
-            if info.main_subdir is not None:
-                existing.main_subdir = info.main_subdir
+            # Placement axis — enrich from whichever registration declares it
+            # (schema/type_info is the authoring home; entity/indexer modules
+            # register the same type first without these fields).
+            if info.asset_class is not None:
+                existing.asset_class = info.asset_class
+            if info.harness is not None:
+                existing.harness = info.harness
+            if info.family is not None:
+                existing.family = info.family
             if info.main_layout != "file":
                 existing.main_layout = info.main_layout
             if info.main_file is not None:

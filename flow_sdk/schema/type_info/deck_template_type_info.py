@@ -26,7 +26,8 @@ DECK_TEMPLATE = TypeMetadata(
     indexed_by_default=True,
     api_visible=True,
     index_fields=["description"],
-    main_subdir="assets/deck-templates",
+    asset_class="internal",
+    family="assets/deck-templates",
     main_layout="folder",
     # template.json is the folder's main document (see builtin/deck_template.py).
     # Declaring it — like DECK does with deck.json — lets file-resolving callers

@@ -1677,7 +1677,10 @@ async def _stage_attachment(
     (raw ``file`` entries have no TypeInfo to derive it from, and are always
     user-installable under ``~/.claude``).
     """
-    from flow_sdk.builtin.message_attachment import MessageAttachment, user_scope_allowed_for  # noqa: PLC0415
+    from flow_sdk.builtin.message_attachment import MessageAttachment, TransferMode  # noqa: PLC0415
+    from flow_sdk.fs_store.placement import (  # noqa: PLC0415
+        user_scope_allowed as user_scope_allowed_policy,
+    )
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
     ma_id = MessageAttachment.allocate_deterministic_id(top_fm_id, entry_key)
@@ -1701,7 +1704,10 @@ async def _stage_attachment(
         ma.user_scope_allowed = user_scope_allowed
     else:
         info = SchemaRegistry.get(entry_type)
-        ma.user_scope_allowed = user_scope_allowed_for(getattr(info, "main_subdir", None), transfer_mode)
+        asset_class = info._resolved_layout[0] if info else None
+        ma.user_scope_allowed = user_scope_allowed_policy(
+            asset_class, is_git=transfer_mode == TransferMode.GIT.value
+        )
     await ma.save(owner_typeid, notify=False)
     return ma
 
@@ -1722,8 +1728,6 @@ async def _stage_attachment(
 # walkers, which key on ``<root>/.claude/docs/**/*.md``. Everything else lands
 # under ``.claude/files/`` (copied on install; no dedicated walker yet, so not
 # auto-indexed — tracked as out-of-scope).
-_FILE_ATTACHMENT_DOCS_SUBDIR = ".claude/docs"
-_FILE_ATTACHMENT_BLOB_SUBDIR = ".claude/files"
 _MARKDOWN_SUFFIXES = frozenset({".md", ".markdown"})
 # Videos the bubble renders inline as a card — no staged chip. Images use the
 # shared ``is_image_filename`` predicate (single source of truth for pictures).
@@ -1739,8 +1743,11 @@ def is_markdown_filename(filename: str) -> bool:
 
 def file_attachment_rel_subdir(filename: str) -> str:
     """Install-layout subdir for a raw file, mirrored in its staged entry dir.
-    Single owner of the layout so stage-time and install-time agree."""
-    return _FILE_ATTACHMENT_DOCS_SUBDIR if is_markdown_filename(filename) else _FILE_ATTACHMENT_BLOB_SUBDIR
+    Delegates to ``placement.raw_file_rel_subdir`` — the single owner of the
+    raw-file (NONE class) layout — so stage-time and install-time agree."""
+    from flow_sdk.fs_store.placement import raw_file_rel_subdir  # noqa: PLC0415
+
+    return raw_file_rel_subdir(filename)
 
 
 def _should_stage_file_attachment(filename: str) -> bool:

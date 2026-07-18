@@ -1,0 +1,199 @@
+"""Placement resolver — exhaustive, fast, real-filesystem matrix.
+
+Covers the full cross-product of (asset_class × harness × scope) for the pure
+resolver, a real byte-copy check that a file lands at the resolved path and
+NOWHERE else, and the byte-identical equivalence guarantee: every legacy
+``main_subdir`` literal resolves through the new engine to the exact same path it
+produced before (PR-1 wires nothing, so this must hold for all registered types).
+
+No mocks, no network, no subprocess — pure fs + dict lookups. Stays well under
+the 5s unit cap.
+"""
+from itertools import product
+from pathlib import Path
+
+import pytest
+
+from flow_sdk.fs_store.placement import (
+    LAYOUT_REGISTRY,
+    WORKER_PREFIX,
+    AssetClass,
+    HarnessType,
+    Scope,
+    resolve_destination,
+    resolve_raw_file_destination,
+    root_for_scope,
+)
+from flow_sdk.fs_store.schema_registry import SchemaRegistry
+
+ALL_CLASSES = list(AssetClass)
+ALL_HARNESSES = list(HarnessType)
+ALL_SCOPES = list(Scope)
+
+# The authoritative support table — the declared replacement for the old
+# ``main_subdir.startswith(".claude")`` hack. Only INTERNAL is home-blocked;
+# SYSTEM is never a placement input for anyone.
+EXPECTED_SUPPORT = {
+    (AssetClass.INTERNAL, Scope.USER): False,
+    (AssetClass.INTERNAL, Scope.PROJECT): True,
+    (AssetClass.INTERNAL, Scope.SYSTEM): False,
+    (AssetClass.HARNESS, Scope.USER): True,
+    (AssetClass.HARNESS, Scope.PROJECT): True,
+    (AssetClass.HARNESS, Scope.SYSTEM): False,
+    (AssetClass.SHARED, Scope.USER): True,
+    (AssetClass.SHARED, Scope.PROJECT): True,
+    (AssetClass.SHARED, Scope.SYSTEM): False,
+    (AssetClass.NONE, Scope.USER): True,
+    (AssetClass.NONE, Scope.PROJECT): True,
+    (AssetClass.NONE, Scope.SYSTEM): False,
+}
+
+
+# ── The mount cross-product: class × harness → scope-relative subdir ──────────
+@pytest.mark.parametrize("asset_class,harness", list(product(ALL_CLASSES, ALL_HARNESSES)))
+def test_mount_cross_product(asset_class, harness):
+    layout = LAYOUT_REGISTRY[asset_class]
+    got = layout.mount("skills", harness=harness)
+    if asset_class == AssetClass.INTERNAL:
+        assert got == "skills"  # INTERNAL is harness-less: bare family, no prefix
+    else:
+        assert got == f"{WORKER_PREFIX[harness]}/skills"
+
+
+@pytest.mark.parametrize("asset_class,scope", list(product(ALL_CLASSES, ALL_SCOPES)))
+def test_supports_cross_product(asset_class, scope):
+    assert LAYOUT_REGISTRY[asset_class].supports(scope) is EXPECTED_SUPPORT[(asset_class, scope)]
+
+
+def test_only_shared_fans_out():
+    for asset_class, layout in LAYOUT_REGISTRY.items():
+        assert layout.fan_out is (asset_class == AssetClass.SHARED)
+
+
+def test_system_scope_is_never_a_write_root():
+    assert root_for_scope(Scope.SYSTEM) is None
+    assert root_for_scope(Scope.SYSTEM, project_mount="/anything") is None
+
+
+def test_project_scope_needs_a_mount():
+    assert root_for_scope(Scope.PROJECT) is None
+    assert root_for_scope(Scope.PROJECT, project_mount="/p") == Path("/p")
+
+
+def test_root_for_scope_user_matches_legacy_helpers():
+    # The plan's load-bearing claim: the two legacy "user root" helpers
+    # (create's ``user_home`` and receive's ``claude_home.parent``) are equal,
+    # so collapsing them into ``root_for_scope(USER)`` is behavior-preserving.
+    from flow_sdk.instance_settings import get_instance_settings
+
+    settings = get_instance_settings()
+    user_root = root_for_scope(Scope.USER)
+    assert user_root == settings.user_home
+    assert user_root == settings.claude_home.parent
+
+
+# ── Real byte-copy: file lands at the resolved path and NOWHERE else ──────────
+@pytest.mark.parametrize("worker", ALL_HARNESSES)
+def test_shared_asset_copies_under_the_default_worker(tmp_path, worker):
+    # A SHARED family (skill) writes its single canonical copy under whichever
+    # harness is the default_worker — the byte-copy must land there and no other
+    # harness dir may appear.
+    dest_dir = resolve_destination(
+        "skill", Scope.PROJECT, default_worker=worker, project_mount=tmp_path
+    )
+    assert dest_dir == tmp_path / WORKER_PREFIX[worker] / "skills"
+
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    (dest_dir / "SKILL.md").write_text("# demo\n")
+
+    assert (dest_dir / "SKILL.md").read_text() == "# demo\n"
+    # No stray copy under any OTHER harness prefix.
+    other_prefixes = {p for h, p in WORKER_PREFIX.items() if h != worker} - {WORKER_PREFIX[worker]}
+    for prefix in other_prefixes:
+        assert not (tmp_path / prefix / "skills" / "SKILL.md").exists()
+
+
+def test_raw_file_docs_vs_blob_split(tmp_path):
+    md = resolve_raw_file_destination(
+        "notes.md", Scope.PROJECT, default_worker=HarnessType.CLAUDE, project_mount=tmp_path
+    )
+    blob = resolve_raw_file_destination(
+        "photo.png", Scope.PROJECT, default_worker=HarnessType.CLAUDE, project_mount=tmp_path
+    )
+    assert md == tmp_path / ".claude" / "docs"
+    assert blob == tmp_path / ".claude" / "files"
+
+
+def test_internal_type_is_project_only(tmp_path):
+    # INTERNAL (e.g. markdown → docs) installs to a project, never to home.
+    assert resolve_destination(
+        "markdown", Scope.PROJECT, default_worker="claude", project_mount=tmp_path
+    ) == tmp_path / "docs"
+    assert resolve_destination("markdown", Scope.USER, default_worker="claude") is None
+
+
+# ── Golden table: the permanent byte-identical guard ─────────────────────────
+# Type → (expected project-scope subdir, expected asset_class). This is the
+# authoritative placement contract: it must hold BEFORE the literals migrate
+# (via the derive shim), AFTER they migrate (explicit fields), and AFTER
+# ``main_subdir`` is deleted. Add a row when you add a file-backed type.
+GOLDEN = {
+    "skill": (".claude/skills", AssetClass.SHARED),
+    "agent": (".claude/agents", AssetClass.SHARED),
+    "command": (".claude/commands", AssetClass.HARNESS),
+    "claude_rules": (".claude/rules", AssetClass.HARNESS),
+    "plan": (".claude/plans", AssetClass.HARNESS),
+    "dynamic_workflow": (".claude/workflows", AssetClass.HARNESS),
+    "whiteboard": (".claude/whiteboards", AssetClass.HARNESS),
+    "agentic_flow": (".claude/agentic-flows", AssetClass.HARNESS),
+    "agent_trace": (".claude/agent_traces", AssetClass.HARNESS),
+    "usage_report": (".claude/usage_reports", AssetClass.HARNESS),
+    "asset_cleanup_report": (".claude/cleanup_reports", AssetClass.HARNESS),
+    "markdown": ("docs", AssetClass.INTERNAL),
+    "markdown_index": ("docs", AssetClass.INTERNAL),
+    "spec": ("specs", AssetClass.INTERNAL),
+    "task": ("tasks", AssetClass.INTERNAL),
+    "prompt": ("prompts", AssetClass.INTERNAL),
+    "dataset": ("assets/datasets", AssetClass.INTERNAL),
+    "deck": ("assets/decks", AssetClass.INTERNAL),
+    "deck_template": ("assets/deck-templates", AssetClass.INTERNAL),
+    "spreadsheet": ("assets/spreadsheets", AssetClass.INTERNAL),
+    "secret_origin": ("assets/sodot", AssetClass.INTERNAL),
+}
+
+
+@pytest.mark.parametrize("type_name,expected", list(GOLDEN.items()))
+def test_golden_placement_contract(type_name, expected, tmp_path):
+    subdir, asset_class = expected
+    info = SchemaRegistry.get(type_name)
+    assert info is not None, f"{type_name} not registered"
+
+    # PROJECT: exactly ``<mount>/<subdir>`` — byte-identical to the legacy layout.
+    assert resolve_destination(
+        type_name, Scope.PROJECT, default_worker="claude", project_mount=tmp_path
+    ) == tmp_path / subdir
+
+    # Classification is stable (shim-derived today, explicit after migration).
+    assert info._resolved_layout[0] == asset_class
+
+    # USER scope: INTERNAL is project-only; harness-scoped installs to home.
+    user_dest = resolve_destination(type_name, Scope.USER, default_worker="claude")
+    if asset_class == AssetClass.INTERNAL:
+        assert user_dest is None
+    else:
+        assert user_dest == root_for_scope(Scope.USER) / subdir
+
+
+def test_only_skills_and_agents_fan_out():
+    # Only skills/agents are SHARED (the families syncmd actually mirrors);
+    # every other .claude family is claude-only (HARNESS), no fan-out.
+    shared = {t for t, (_, ac) in GOLDEN.items() if ac == AssetClass.SHARED}
+    assert shared == {"skill", "agent"}
+
+
+def test_claude_md_stays_unplaced():
+    # The fixed-filename special case: no asset_class, no family → not file-backed
+    # placement (excluded exactly as before, when it had no main_subdir).
+    info = SchemaRegistry.get("claude_md")
+    if info is not None:  # only if registered in this process
+        assert info._resolved_layout[0] is None

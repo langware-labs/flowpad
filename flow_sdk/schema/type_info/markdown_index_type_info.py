@@ -21,5 +21,6 @@ MARKDOWN_INDEX = TypeMetadata(
         "vault_root",
         "parent_path",
     ],
-    main_subdir="docs",
+    asset_class="internal",
+    family="docs",
 )

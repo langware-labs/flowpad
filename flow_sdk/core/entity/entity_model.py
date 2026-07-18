@@ -1092,14 +1092,17 @@ class Entity(DBEntity):
         Single source of truth for scope, called once per save(); per-type
         ``store()`` overrides must not duplicate this logic. ``scope_project``
         carries a project the caller already resolved (avoids re-resolving).
+
+        The actual root computation is delegated to ``placement.root_for_scope``
+        (the single authority shared with the receive path), so create and
+        receive can no longer diverge on what "user root" means.
         """
-        from pathlib import Path
-        from flow_sdk.instance_settings import get_instance_settings
+        from flow_sdk.fs_store.placement import Scope, root_for_scope  # noqa: PLC0415
         proj = scope_project or await self._resolve_scope_project()
         mount = getattr(proj, "fs_storage_mount_path", None) if proj is not None else None
         if mount:
-            return Path(mount)
-        return get_instance_settings().user_home
+            return root_for_scope(Scope.PROJECT, project_mount=mount)
+        return root_for_scope(Scope.USER)
 
     async def check_and_refresh_record(self) -> bool:
         """If the source asset changed since the last index, re-sync. Returns
@@ -2048,15 +2051,20 @@ class Entity(DBEntity):
             return
         type_name = self.get_type()
         info = SchemaRegistry.get(type_name)
-        if info is None or info.main_subdir is None:
+        if info is None or info._resolved_layout[0] is None:
             return
         scope_root = scope_root or await self._resolve_scope_root(scope_proj)
         if scope_root is None:
             return
+        # The machine's canonical harness picks the family prefix (.claude/… vs
+        # .agents/…). Create-only path (asset_ref-set entities returned above),
+        # so the capability lookup isn't per-save. Falls back to claude.
+        from flow_sdk.fs_store.placement import resolve_default_harness
+        default_worker = await resolve_default_harness()
         # Transient FSRecord just to compute the asset_ref convention.
         from flow_sdk.fs_store.fs_record import FSRecord
         rec = FSRecord(type=type_name, id=self.id)
-        ar = rec.compute_asset_ref(scope_root, self)
+        ar = rec.compute_asset_ref(scope_root, self, default_worker=default_worker)
         if ar is None or getattr(ar, "_path", None) is None:
             return
         from flow_sdk.fs_store.path_utils import canonical_posix_path
