@@ -31,13 +31,13 @@ logger = logging.getLogger(__name__)
 # step 404s. We eager-pull the bundle for these and skip the pull for
 # media-only FMs (FILE attachments stay manual).
 _ASSET_TYPEID_TYPES: frozenset[str] = frozenset({
-    "skill", "agent", "markdown", "spec", "workflow", "whiteboard",
+    "skill", "agent", "markdown", "spec", "whiteboard",
 })
 
 
 def _has_asset_typeid_attachment(attachments: Any) -> bool:
     """True iff ``attachments`` includes a TYPE_ID attachment for a file-backed
-    asset entity (skill / agent / markdown / spec / workflow / whiteboard).
+    asset entity (skill / agent / markdown / spec / whiteboard).
 
     Tolerates both the hub wire shape (list of dicts) and the local model
     shape (list of ``Attachment`` instances) — the ``data`` field is a
@@ -62,6 +62,30 @@ def _has_asset_typeid_attachment(attachments: Any) -> bool:
         if dash <= 0:
             continue
         if data[:dash] in _ASSET_TYPEID_TYPES:
+            return True
+    return False
+
+
+def _has_session_carrier_attachment(attachments: Any) -> bool:
+    """True iff ``attachments`` includes a ``remote_worker_session-<id>``
+    TYPE_ID carrier. Session messages must eager-pull their bundle: the
+    per-turn session snapshot lives in the bundle's header, and without the
+    pull a guest whose replies render inline never applies it — the session
+    row stays PENDING ("waiting for approve") while replies stream."""
+    if not attachments:
+        return False
+    for att in attachments:
+        att_type = (
+            att.get("attachment_type") if isinstance(att, dict)
+            else getattr(att, "attachment_type", None)
+        )
+        if att_type != "type_id":
+            continue
+        data = (
+            att.get("data") if isinstance(att, dict)
+            else getattr(att, "data", None)
+        )
+        if isinstance(data, str) and data.startswith("remote_worker_session-"):
             return True
     return False
 
@@ -117,7 +141,7 @@ async def _maybe_eager_pull_bundle(
     """
     if not attachment_filename:
         return
-    if not _has_asset_typeid_attachment(attachments):
+    if not (_has_asset_typeid_attachment(attachments) or _has_session_carrier_attachment(attachments)):
         return
     if fm_id in _INFLIGHT_BUNDLE_PULLS:
         return
@@ -707,6 +731,11 @@ class HubWsBridge:
         }
         clean = {k: v for k, v in data.items() if k in _LOCAL_FIELDS and k not in _PROJECTED}
         clean["id"] = conv_id
+        # Wire adapter: the hub sends the roster under the ``participants`` key
+        # (its Conversation field + fanout contract); the local cache field is
+        # ``members`` (generic, on the Entity base). Map it at ingest.
+        if "participants" in clean:
+            clean["members"] = clean.pop("participants")
 
         self.remember_hub_conversation(conv_id)
 
@@ -735,7 +764,7 @@ class HubWsBridge:
             await Conversation.delete_by_id(conv_id)
             return
 
-        for field in ("title", "message_status_visible", "git_sharing_enabled", "participants",
+        for field in ("title", "message_status_visible", "git_sharing_enabled", "members",
                       "remote_project_id", "remote_project_name", "shared_context_entities"):
             if field in clean:
                 setattr(existing, field, clean[field])

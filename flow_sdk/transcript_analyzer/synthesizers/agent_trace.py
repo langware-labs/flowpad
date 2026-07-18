@@ -935,7 +935,7 @@ def synthesize_agent_trace(session_id: str, worker_type: str = "claude") -> dict
         "markers": sorted(markers, key=lambda m: m["ts"] or ""),
         "annotations": {
             "goals": [], "divergences": [], "issues": [], "verdict": None,
-            "notes": [], "by_skill": {}, "unattributed": [],
+            "notes": [], "by_skill": {}, "by_asset": {}, "unattributed": [],
         },
         "source_path": str(path),
     }
@@ -990,13 +990,9 @@ def _read_disk_skill_entry(skill: str) -> str | None:
         return None
 
 
-def _read_disk_skill_corpus(skill: str) -> str | None:
-    """The whole on-disk skill folder (SKILL.md + every routed `.md`) concatenated.
-    Anchor resolution checks this, since a `section_hint` may point at a routed file
-    (e.g. `modes/qa-cycle.md`), not just the entry SKILL.md."""
-    d = _skill_dir(skill)
-    if not d:
-        return None
+def _read_md_corpus(d: Path) -> str | None:
+    """Every `.md` under a folder concatenated, tolerating unreadable files —
+    the corpus anchor resolution runs against for any folder-backed target."""
     parts = []
     for f in sorted(d.rglob("*.md")):
         try:
@@ -1004,6 +1000,14 @@ def _read_disk_skill_corpus(skill: str) -> str | None:
         except OSError:
             continue
     return "\n".join(parts) if parts else None
+
+
+def _read_disk_skill_corpus(skill: str) -> str | None:
+    """The whole on-disk skill folder (SKILL.md + every routed `.md`) concatenated.
+    Anchor resolution checks this, since a `section_hint` may point at a routed file
+    (e.g. `modes/qa-cycle.md`), not just the entry SKILL.md."""
+    d = _skill_dir(skill)
+    return _read_md_corpus(d) if d else None
 
 
 def _norm_text(s: str | None) -> str:
@@ -1020,6 +1024,17 @@ def _hash(s: str) -> str:
     return hashlib.sha1(s.encode("utf-8")).hexdigest()
 
 
+def _stamp_findings(findings: list[dict], judged: str, corpus: str) -> None:
+    """Stamp ``judged_against`` + ``unresolved_anchors`` on findings — shared by
+    the by_skill and by_asset validation passes so anchors resolve identically
+    for every bucket kind."""
+    for f in findings:
+        f["judged_against"] = judged
+        toks = _quoted_tokens(f.get("section_hint", ""))
+        if corpus and toks:
+            f["unresolved_anchors"] = [tk for tk in toks if _norm_text(tk) not in corpus]
+
+
 def validate_findings(trace: dict) -> None:
     """Deterministic, always-on checks on attributed findings (mutates ``trace``).
 
@@ -1034,11 +1049,12 @@ def validate_findings(trace: dict) -> None:
     """
     ann = trace.get("annotations") or {}
     by_skill = ann.get("by_skill") or {}
-    if not by_skill:
+    by_asset = ann.get("by_asset") or {}
+    if not by_skill and not by_asset:
         return
     bodies: dict[str, str] = {}
     src = trace.get("source_path")
-    if src:
+    if src and by_skill:
         try:
             t = AgentTranscriptFile(trace.get("worker_type", "claude"), Path(src))
             bodies = loaded_skill_bodies(t)
@@ -1058,11 +1074,25 @@ def validate_findings(trace: dict) -> None:
         corpus = ""
         if any(_quoted_tokens(f.get("section_hint", "")) for f in findings):
             corpus = _norm_text("\n".join(p for p in (loaded, _read_disk_skill_corpus(skill)) if p))
-        for f in findings:
-            f["judged_against"] = judged
-            toks = _quoted_tokens(f.get("section_hint", ""))
-            if corpus and toks:
-                f["unresolved_anchors"] = [tk for tk in toks if _norm_text(tk) not in corpus]
+        _stamp_findings(findings, judged, corpus)
+    # Targeted-asset buckets judge against the asset file itself (or every .md
+    # under a folder-backed asset) — there is no "loaded body" notion for a
+    # non-skill asset, so judged_against is `disk` when the ref exists.
+    for bucket in by_asset.values():
+        findings = bucket.get("findings", [])
+        if not findings:
+            continue
+        ref = bucket.get("asset_ref") or ""
+        p = Path(ref) if ref else None
+        judged = "disk" if p and (p.is_file() or p.is_dir()) else "none"
+        corpus = ""
+        if judged == "disk" and any(_quoted_tokens(f.get("section_hint", "")) for f in findings):
+            try:
+                body = p.read_text(encoding="utf-8") if p.is_file() else _read_md_corpus(p)
+            except OSError:
+                body = None
+            corpus = _norm_text(body) if body else ""
+        _stamp_findings(findings, judged, corpus)
     if drift:
         trace.setdefault("summary", {})["skill_drift"] = drift
 
@@ -1101,6 +1131,27 @@ def project_findings_by_skill(
     return by_skill, unattributed
 
 
+def _normalize_by_asset(raw: object) -> dict[str, dict]:
+    """Sanitize the analyzer's targeted-asset buckets — the per-asset findings a
+    launch prompt keyed to a specific asset (``annotations.by_asset[<assetKey>]``,
+    the bucket the asset-improve flow's poller consumes). Malformed buckets are
+    dropped, never raised on: this runs inside record creation and a bad analyzer
+    payload must not lose the rest of the trace."""
+    if not isinstance(raw, dict):
+        return {}
+    out: dict[str, dict] = {}
+    for key, bucket in raw.items():
+        if not isinstance(key, str) or not isinstance(bucket, dict):
+            continue
+        findings = bucket.get("findings")
+        out[key] = {
+            "asset_ref": bucket.get("asset_ref") or "",
+            "typeid": bucket.get("typeid") or "",
+            "findings": [f for f in findings if isinstance(f, dict)] if isinstance(findings, list) else [],
+        }
+    return out
+
+
 def merge_annotations(skeleton: dict, annotations: dict) -> dict:
     """Fold the skill's judgment layer into a synthesized skeleton.
 
@@ -1125,6 +1176,7 @@ def merge_annotations(skeleton: dict, annotations: dict) -> dict:
         "verdict": annotations.get("verdict"),
         "notes": annotations.get("notes") or [],
         "by_skill": by_skill,
+        "by_asset": _normalize_by_asset(annotations.get("by_asset")),
         "unattributed": unattributed,
     }
     for kind, items in (("divergence", divergences), ("issue", issues)):

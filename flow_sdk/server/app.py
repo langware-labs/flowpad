@@ -77,6 +77,7 @@ from .routes import (
     semantic_checker_router,
     testing_router,
     toplog_router,
+    agentic_flows_router,
     transcripts_router,
     ui_router,
     version_router,
@@ -249,6 +250,13 @@ async def _seed_service_triggers() -> None:
         from flow_sdk.server.builtin_triggers import set_service_triggers
 
         await set_service_triggers()
+        # Seed the system-scope service flows (mini-analyzer, daily-analysis).
+        try:
+            from flow_sdk.flow_manager.service_flows import set_service_flows
+
+            await set_service_flows()
+        except Exception:
+            service_log.exception("set_service_flows failed")
         print("  System triggers: upserted")
     except Exception:
         logging.getLogger(__name__).exception("System triggers: failed to seed")
@@ -508,6 +516,7 @@ server.add_router(docs_graph_router)
 server.add_router(semantic_checker_router)
 server.add_router(capabilities_router)
 server.add_router(toplog_router)
+server.add_router(agentic_flows_router)
 
 server.on_startup(_on_server_startup)
 server.on_shutdown(_shutdown_extras)

@@ -33,7 +33,7 @@ import { QUICK_CREATE_REGISTRY, getDescriptor } from './registry';
 
 /** Registry types deliberately absent from this launcher (still creatable from
  *  the Assets page's per-type "+"). */
-const HIDDEN_ASSET_TYPES = new Set(['workflow', 'dynamic_workflow']);
+const HIDDEN_ASSET_TYPES = new Set(['dynamic_workflow']);
 
 /** Wiki pages behind the non-registry tiles — hoisted so each title is written
  *  once (a wikiword resolves by page title at runtime, so a typo degrades into

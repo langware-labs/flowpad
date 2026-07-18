@@ -734,6 +734,14 @@ class AgenticProcess(Entity):
             "that survives past the window."
         ),
     )
+    exit_code: int | None = APIField(
+        default=None,
+        description=(
+            "Terminal exit code of a driverless EXECUTION process (a flow "
+            "function subprocess) — stamped by the FlowManager when the "
+            "subprocess finishes. None for worker-driven processes."
+        ),
+    )
     last_started_hash: str | None = APIField(
         default=None,
         description=(
@@ -914,6 +922,38 @@ class AgenticProcess(Entity):
         if not result.ok:
             raise ProcessError(status=result.status, session_id=result.session_id)
         return result
+
+    @staticmethod
+    async def _await_capability_discovery() -> None:
+        """Wait for the startup capability sweep when it's still in flight; a
+        failed sweep degrades to "not discovered" rather than raising."""
+        from flow_sdk.core.capabilities.discovery import ensure_discovered  # noqa: PLC0415
+
+        try:
+            await ensure_discovered()
+        except Exception:
+            logger.debug("capability discovery failed", exc_info=True)
+
+    @classmethod
+    async def is_installed(cls, worker_type: "WorkerType | str | None" = None) -> bool:
+        """Whether this worker's CLI was found by capability discovery.
+
+        Reads the discovery dict (the same SSOT actual spawns use) — never a
+        second ``which``.
+        """
+        from flow_sdk.builtin.agentic_process.cli_drivers import worker_bin_folder  # noqa: PLC0415
+
+        await cls._await_capability_discovery()
+        return worker_bin_folder(get_driver(worker_type).name) is not None
+
+    @classmethod
+    async def is_logged_in(cls, worker_type: "WorkerType | str | None" = None) -> "WorkerAuthResult":
+        """Login state of this worker's CLI (NOT_INSTALLED / LOGGED_IN /
+        LOGGED_OUT / UNKNOWN). The driver's ``auth_probe`` owns the install
+        gate; this facade only adds the discovery wait. Never raises;
+        "couldn't check" is UNKNOWN, not LOGGED_OUT."""
+        await cls._await_capability_discovery()
+        return await get_driver(worker_type).auth_probe()
 
     @classmethod
     def resume(
@@ -1321,6 +1361,14 @@ class AgenticProcess(Entity):
             # Runtime env injection: process identity + backend-pinned `flow`
             # CLI — the shared chokepoint all spawn paths use.
             apply_worker_env(cmd.env_vars, self)
+            # API-key auth: stamp the OpenRouter model slug (+ codex -c overrides)
+            # onto the options before argv is frozen (env/token ride
+            # apply_worker_secret_env at spawn time). No-op in device mode.
+            from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import (
+                apply_api_model_to_options,
+            )
+
+            await apply_api_model_to_options(cmd, self)
             # Inject the WebSocket connection ID so the worker can navigate its own tab explicitly
             if self.connection_id:
                 cmd.add_env("FLOWPAD_CONNECTION_ID", self.connection_id)
@@ -2936,6 +2984,16 @@ class AgenticProcess(Entity):
                 resume_session_id=self.session_id if resumable else None,
                 **self._instruction_context_kwargs(instruction_assets),
             )
+
+            # API-key auth (harness in "api" mode): override the model with the
+            # provider slug and carry codex's -c overrides onto the context. The
+            # env/token already landed via apply_worker_secret_env above. Same
+            # helper as the visible-PTY path; no-op in device mode.
+            from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import (
+                apply_api_model_to_options,
+            )
+
+            await apply_api_model_to_options(context, self)
 
             # Vendor hook retained for compatibility; embedded-agent/persona
             # instructions are materialized into process instruction assets.

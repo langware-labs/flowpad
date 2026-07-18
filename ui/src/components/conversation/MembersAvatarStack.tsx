@@ -1,10 +1,12 @@
 import { useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { Check, Link as LinkIcon, X } from 'lucide-react';
+import { Check, Link as LinkIcon, Loader2, X } from 'lucide-react';
 import { mintInviteLink, type ConversationParticipant, type TypeId } from '@sdk';
 import { Avatar, AvatarFallback } from '@src/components/ui/avatar';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { useMembers } from '@src/hooks/use-members';
+import { useLoginRequired } from '@src/hooks/use-login-required';
+import LoginDialog, { ActionType } from '@src/components/login-required-dialog';
 import { ContactPicker } from '@src/components/contact-picker/ContactPicker';
 import { AddressBookButton } from '@src/components/contact-picker/AddressBookButton';
 import { useLocalUser } from './useLocalUser';
@@ -44,8 +46,10 @@ interface MembersAvatarStackProps {
  */
 export function MembersAvatarStack({ typeId, allowInviteLink = false }: MembersAvatarStackProps) {
   const { t } = useLingui();
-  const { entity, members, addMembers, removeMember, setRole, refresh } = useMembers(typeId);
+  const { entity, members, addMembers, removeMember, setRole, refresh, updating, stale, available, reason } =
+    useMembers(typeId);
   const { localUser } = useLocalUser();
+  const { checkLoginAndProceed, showLoginDialog, closeLoginDialog } = useLoginRequired();
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState<ConversationParticipant[]>([]);
   const [inviting, setInviting] = useState(false);
@@ -167,7 +171,18 @@ export function MembersAvatarStack({ typeId, allowInviteLink = false }: MembersA
   const inline = members.slice(0, MAX_INLINE_AVATARS);
   const overflow = members.length - inline.length;
 
+  // Membership is hub-driven: with no hub, clicking either opens the sign-in
+  // popup (not authenticated) or, in Local mode, opens the popover to a short
+  // "unavailable" notice. Offline-but-authenticated is NOT gated here — it shows
+  // the cached roster + a "can't update" note (the ``stale`` flag below).
   const handleOpenChange = (next: boolean) => {
+    if (next && reason === 'unauthenticated') {
+      // Route through the shared sign-in dialog; don't open the roster popover.
+      checkLoginAndProceed(ActionType.MEMBERS, t`Sign in to see who's a member`, undefined, {
+        forceLogin: true,
+      });
+      return;
+    }
     setOpen(next);
     if (!next) {
       // Reset transient state so reopening the popover doesn't show a stale
@@ -215,6 +230,29 @@ export function MembersAvatarStack({ typeId, allowInviteLink = false }: MembersA
         </button>
       </PopoverTrigger>
       <PopoverContent className="w-72 p-2" align="start">
+        {reason === 'local' ? (
+          <div className="px-1 py-2 text-[11px] text-muted-foreground" data-testid="members-local-notice">
+            <Trans>Members are unavailable in Local mode.</Trans>
+          </div>
+        ) : (
+          <>
+        {/* Stale-while-revalidate status: "updating…" during a refresh over the
+            shown cache; "can't update" when signed in but the hub is unreachable. */}
+        {(updating || stale) && (
+          <div
+            className="mb-1 flex items-center gap-1.5 px-1 text-[10px] text-muted-foreground"
+            data-testid="members-refresh-status"
+          >
+            {updating ? (
+              <>
+                <Loader2 className="h-3 w-3 animate-spin" />
+                <Trans>Updating…</Trans>
+              </>
+            ) : (
+              <Trans>Can't update — showing last synced</Trans>
+            )}
+          </div>
+        )}
         {members.length === 0 && (
           <div className="px-1 py-1 text-[11px] text-muted-foreground">
             <Trans>No members yet — invite someone below.</Trans>
@@ -313,8 +351,10 @@ export function MembersAvatarStack({ typeId, allowInviteLink = false }: MembersA
           })}
         </ul>
         {/* Invite — admin+/owner only (the hub policy method-scopes the
-            mutating ``members`` action; a plain member's POST would 403). */}
-        {mayInvite && (
+            mutating ``members`` action; a plain member's POST would 403).
+            Also requires an available hub; hidden when stale/offline so an
+            invite can't be attempted only to 409. */}
+        {mayInvite && available && !stale && (
         <div className="mt-2 border-t border-border pt-2">
           <div className="flex items-start gap-1.5">
             <div className="min-w-0 flex-1">
@@ -377,6 +417,8 @@ export function MembersAvatarStack({ typeId, allowInviteLink = false }: MembersA
           )}
         </div>
         )}
+          </>
+        )}
       </PopoverContent>
     </Popover>
     {permissionsContact && (
@@ -386,6 +428,9 @@ export function MembersAvatarStack({ typeId, allowInviteLink = false }: MembersA
         contact={permissionsContact}
       />
     )}
+    {/* Sign-in popup for the unauthenticated case (handleOpenChange routes here
+        instead of opening the roster). */}
+    <LoginDialog open={showLoginDialog} onOpenChange={closeLoginDialog} />
     </>
   );
 }

@@ -56,6 +56,7 @@ class ConnectedThroughRelationship(Relationship):
     type: str = BuiltInRelationshipTypes.ConnectedThrough.value
 
 
+
 class HostedByRelationship(Relationship):
     type: str = BuiltInRelationshipTypes.HostedBy.value
 

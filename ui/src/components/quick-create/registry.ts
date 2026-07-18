@@ -1,7 +1,7 @@
-import { Agent, DynamicWorkflow, Layout, Markdown, Project, Prompt, Skill, Task, Whiteboard, Workflow } from '@sdk';
+import { Agent, DynamicWorkflow, Layout, Markdown, Project, Prompt, Skill, Task, Whiteboard } from '@sdk';
 import { PromptEditDialog } from '@src/components/prompt-library/PromptEditDialog';
 import { DockPointer } from '@src/navigation/DockPointer';
-import { BookMarked, Bot, Boxes, CheckSquare, FileText, Palette, Sparkles, Workflow as WorkflowIcon, type LucideIcon } from 'lucide-react';
+import { BookMarked, Bot, Boxes, CheckSquare, FileText, Palette, Sparkles, type LucideIcon } from 'lucide-react';
 import type { ComponentType } from 'react';
 import type { HarnessKind, ScopeKind } from './ScopeSelection';
 
@@ -128,22 +128,6 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
           ? DockPointer.forAssetEditor('agent', saved.asset_ref, Layout.DOCK, { editorMode: 'editor', initialLine: '2' })
           : undefined,
         toastTitle: 'Agent created',
-      };
-    },
-  },
-  {
-    type: 'workflow',
-    label: 'Workflow',
-    wikiword: 'Workflows',
-    Icon: WorkflowIcon,
-    defaultSubFolder: '.claude/workflows',
-    codexProjectSubFolder: '.codex/workflows',
-    copilotProjectSubFolder: '.copilot/workflows',
-    create: async ({ project, name, folderVfsPath }) => {
-      const saved = await Workflow.createInProject(project, name, folderVfsPath);
-      return {
-        pointer: saved.asset_ref ? DockPointer.forAssetEditor('workflow', saved.asset_ref) : undefined,
-        toastTitle: 'Workflow created',
       };
     },
   },

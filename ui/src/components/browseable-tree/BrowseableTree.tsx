@@ -64,6 +64,7 @@ export function BrowseableTree(props: BrowseableTreeProps) {
     persistKey,
     defaultExpandedIds,
     hoverExpandMs,
+    levelFooter,
   } = props;
 
   const tree = useBrowseableTree(roots, { persistKey, defaultExpandedIds });
@@ -192,6 +193,7 @@ export function BrowseableTree(props: BrowseableTreeProps) {
             level={0}
             rootId={root.id}
             hoverExpandMs={hoverExpandMs}
+            levelFooter={levelFooter}
             tree={tree}
             selection={selection}
             activePointer={activePointer}
@@ -203,6 +205,7 @@ export function BrowseableTree(props: BrowseableTreeProps) {
             onDragEnd={() => setDragData(null)}
           />
         ))}
+        {levelFooter?.('')}
       </div>
     </div>
   );
@@ -226,6 +229,7 @@ interface RowProps {
   /** Dwell (ms) before hover expands this row. Undefined ⇒ nothing is
    *  scheduled ⇒ ordinary navigators never expand on hover. */
   hoverExpandMs?: number;
+  levelFooter?: (parentId: string) => React.ReactNode;
 }
 
 function BrowseableRow({
@@ -242,6 +246,7 @@ function BrowseableRow({
   onDragStart,
   onDragEnd,
   hoverExpandMs,
+  levelFooter,
 }: RowProps) {
   const { t } = useLingui();
   const expanded = tree.isExpanded(node.id);
@@ -618,7 +623,9 @@ function BrowseableRow({
               {loadState.message || t`Failed to load`}
             </div>
           )}
-          {loadState.status === 'ready' && children.length === 0 && (
+          {/* A levelFooter makes an empty folder actionable ("add here"), so
+              the bare "Empty" label would just be noise beside it. */}
+          {loadState.status === 'ready' && children.length === 0 && !levelFooter && (
             <div className="p-1 text-xs text-muted-foreground" style={{ marginLeft: `${(level + 1) * 14}px` }}>
               <Trans>Empty</Trans>
             </div>
@@ -630,6 +637,7 @@ function BrowseableRow({
               level={level + 1}
               rootId={rootId}
               hoverExpandMs={hoverExpandMs}
+              levelFooter={levelFooter}
               tree={tree}
               selection={selection}
               activePointer={activePointer}
@@ -641,6 +649,11 @@ function BrowseableRow({
               onDragEnd={onDragEnd}
             />
           ))}
+          {/* This folder's footer — new items file into node.id. Aligned with
+              the children (their marginLeft is (level+1)*14). */}
+          {loadState.status === 'ready' && levelFooter && (
+            <div style={{ marginLeft: `${(level + 1) * 14}px` }}>{levelFooter(node.id)}</div>
+          )}
         </div>
       )}
     </div>

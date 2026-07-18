@@ -19,6 +19,10 @@ function useProjectMembersGroup(enabled: boolean): ContactsGroup | null {
   // Key the TypeId on the id string — entity instances (and their cached
   // typeId) are replaced on every watch push, which would refire useMembers.
   const projectTypeId = useMemo(() => (projectId ? new TypeId(Project.type, projectId) : null), [projectId]);
+  // When membership is unavailable (not signed in / Local mode / hub unreachable
+  // for a cold cache), ``useMembers`` returns an empty roster, so
+  // ``makeComputedGroup`` returns null and the "Project Members" group simply
+  // drops out of the picker — the intended "no hub → no roster group" behavior.
   const { members } = useMembers(projectTypeId);
   return useMemo(
     () => makeComputedGroup({ key: 'project-members', name: t`Project Members`, scopeId: projectId, members }),

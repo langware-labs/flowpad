@@ -16,7 +16,7 @@ const INVALIDATE_PATH = '/graph/compute_node/@local/fs-records/invalidate';
  *
  * Fire-and-forget — a failed reindex must never fail the save that succeeded.
  */
-function reindexAfterWrite(path: string): void {
+export function reindexAfterWrite(path: string): void {
   // `machinePath` is the form stored as `asset_ref`, which is what the indexer
   // string-matches on (and it handles the Windows drive-letter case).
   const machinePath = VFSPath.parse(path).machinePath;

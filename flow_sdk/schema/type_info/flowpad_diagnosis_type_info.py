@@ -82,4 +82,7 @@ FLOWPAD_DIAGNOSIS = TypeMetadata(
     api_visible=True,
     index_fields=["title", "symptoms"],
     meta_model=FlowpadDiagnosisMetadata,
+    # Metadata-only diagnosis: row-only passive payload — staged like every
+    # bundle entry, then auto-installed (no review gate). The header IS the record.
+    receive_policy="auto",
 )

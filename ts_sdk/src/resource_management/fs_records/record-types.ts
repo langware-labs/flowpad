@@ -77,7 +77,6 @@ export enum RecordType {
   SESSION = 'session',
   PLAN = 'plan',
   PROMPT = 'prompt',
-  WORKFLOW = 'workflow',
   DIRECTORY = 'directory',
   GITHUB_REPO = 'github_repo',
   TODO_FILE = 'todo_file',

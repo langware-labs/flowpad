@@ -10,6 +10,8 @@ const RAIL_OFFSET = 50;
 const ANCHOR_FALLBACK_TOP = 8;
 /** Cap before the body scrolls. */
 const MAX_HEIGHT = '60vh';
+/** Floor so the header (title + action icons) never wraps. */
+const MIN_WIDTH = 224;
 /** Breathing room at the viewport's bottom edge. */
 const VIEWPORT_GUTTER = 8;
 
@@ -48,6 +50,7 @@ export function LeftSlider({
   onOpenChange: (open: boolean) => void;
   title?: ReactNode;
   headerRight?: ReactNode;
+  /** Maximum width. The menu sizes to its content and stops here. */
   width?: number;
   /** Viewport y the menu's top edge aligns to — pass the trigger's own top so
    *  the menu reads as belonging to it. */
@@ -115,7 +118,12 @@ export function LeftSlider({
       style={{
         left: RAIL_OFFSET,
         top: anchorTop,
-        width,
+        // Size to content, not a fixed slab: short bookmark names left most of a
+        // 320px panel empty. Clamped between a min that fits the header and
+        // `width` as the cap so a long name/path can't run away.
+        width: 'max-content',
+        minWidth: MIN_WIDTH,
+        maxWidth: width,
         // Clamp to what's left below the anchor, or a menu opened from a low
         // control would run off the bottom of the viewport.
         maxHeight: `min(${MAX_HEIGHT}, calc(100vh - ${anchorTop}px - ${VIEWPORT_GUTTER}px))`,

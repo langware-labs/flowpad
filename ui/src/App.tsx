@@ -15,6 +15,7 @@ import { InputPromptModal } from '@src/components/ui/input-prompt-modal';
 import { ImageAnnotatorRoot } from '@src/components/image-annotator/image-annotator-store';
 import { useEffect, useRef } from 'react';
 import { GitHubDeviceFlowModal } from '@src/components/oauth/GitHubDeviceFlowModal';
+import { HarnessLoginModalRoot } from '@src/components/harness-login/HarnessLoginModal';
 import MigrateLegacyKeychain from '@src/components/migrate-legacy-keychain';
 import { initNotificationListener } from '@src/store/use-notification-store';
 import { SnifferProvider } from '@src/contexts/SnifferContext';
@@ -108,6 +109,7 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
         <WikiModalRoot />
         <GlobalEvents />
         <GitHubDeviceFlowModal />
+        <HarnessLoginModalRoot />
         <MigrateLegacyKeychain />
         <HarnessCapabilitiesProvider>
           <SnifferProvider>

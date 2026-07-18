@@ -251,6 +251,53 @@ async def _finalize_install(
     return ApiSuccessResponse(data={"entity": ma, "show": show})
 
 
+async def _install_row_entity(
+    ma: MessageAttachment,
+    scope: str,
+    project_id: str | None,
+    *,
+    overwrite: bool,
+    someone_typeid,
+) -> ApiResponse:
+    """Install a row-only received entry (``TypeInfo.receive_policy == "auto"``:
+    claude_session, flowpad_diagnosis): materialize the entity row from the
+    staged ``header.json`` — the same create-or-fill-merge contract the legacy
+    per-type unpack branches used (a partial row never blocks the real
+    name/slug). No bytes are copied and no reindex runs (row-only types have no
+    record folder); ``project_id`` stays null so scope inherits live through
+    the parent-chain fallback (``Entity.effective_project_id``)."""
+    from flow_sdk.builtin.flow_message_bundle import (  # noqa: PLC0415
+        _fill_merge_entity,
+        _read_entity_header,
+    )
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    entry_dir = _entry_dir_for(ma)
+    if entry_dir is None or not entry_dir.exists():
+        return _staging_gone()
+    header = _read_entity_header(entry_dir)
+    if header is None:
+        return ApiFailResponse(message="staged entry has no header.json", status_code=410)
+    cls = SchemaRegistry.get_entity_cls(ma.asset_type)
+    if cls is None:
+        return ApiFailResponse(message=f"unknown entity type: {ma.asset_type!r}", status_code=400)
+    info = SchemaRegistry.get(ma.asset_type)
+    overrides = getattr(info, "receive_row_overrides", None) or {}
+    payload = {**header, "id": header.get("id") or ma.asset_id, **overrides}
+    existing = await cls.get_one({"id": payload["id"]})
+    if existing is None or overwrite:
+        await cls.model_validate(payload).save(someone_typeid)
+    elif _fill_merge_entity(existing, payload, ("id", "type")):
+        await existing.save(someone_typeid)
+    return await _finalize_install(
+        ma,
+        scope,
+        project_id if scope == AttachmentScope.PROJECT.value else None,
+        None,
+        someone_typeid,
+    )
+
+
 async def _install_artifact_reference(
     ma: MessageAttachment,
     scope: str,
@@ -403,6 +450,15 @@ async def handle_attachment_install(
         return _not_found(attachment_id)
     if scope not in (AttachmentScope.USER.value, AttachmentScope.PROJECT.value):
         return ApiFailResponse(message=f"invalid scope: {scope!r}", status_code=400)
+
+    # Row-only auto types (receive_policy='auto'): materialize the entity row
+    # from the staged header — no bytes, no reindex.
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    if getattr(SchemaRegistry.get(ma.asset_type), "receive_policy", None) == "auto":
+        return await _install_row_entity(
+            ma, scope, project_id, overwrite=overwrite, someone_typeid=someone_typeid,
+        )
 
     # Git-reference graph entities (ARTIFACT, and FOLDER for git context-folder
     # chips): materialized from the staged metadata here. No bytes copied, no
@@ -596,7 +652,11 @@ async def handle_attachment_uninstall(attachment_id: str, *, someone_typeid=None
     if not ma.scope:
         return ApiFailResponse(message="attachment is not installed", status_code=409)
 
-    if ma.transfer_mode != TransferMode.GIT.value:
+    # Row-only auto types installed no bytes — only the entity row goes
+    # (the shared destroy tail below); there is no installed_root to sweep.
+    row_only = getattr(SchemaRegistry.get(ma.asset_type), "receive_policy", None) == "auto"
+
+    if ma.transfer_mode != TransferMode.GIT.value and not row_only:
         if not ma.installed_root:
             return ApiFailResponse(message="installed_root missing — cannot uninstall", status_code=409)
         entry_dir = _entry_dir_for(ma)

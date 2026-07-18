@@ -26,6 +26,7 @@ from pathlib import Path
 import pytest
 
 from flow_sdk.builtin.agentic_process import AgenticProcess
+from flow_sdk.builtin.agentic_process.model_tiers import ModelTier
 from flow_sdk.builtin.claude_memory_entities import ClaudePlan
 from flow_sdk.flowpad_types.enums import WorkerType
 from flow_sdk.builtin.worker_status import ApiErrorTimeoutError
@@ -109,7 +110,7 @@ async def test_plan_create_e2e_via_transcript_streamer(
 
     ap = await AgenticProcess(
         worker_type=WorkerType.CLAUDE_CODE,
-        cli_config={"permission_mode": "plan"},
+        cli_config={"permission_mode": "plan", "model": ModelTier.SM.value},
         workdir=str(tmp_path),
         visible=False,
     ).save()

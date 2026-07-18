@@ -76,6 +76,17 @@ async def _fire(
             _log.exception("Trigger %s: failed to persist counter/last_triggered", trigger.name)
 
     # Per-action try so one bad handler doesn't skip the rest.
+
+    # Flow activation: any active AgenticFlow with a trigger node referencing
+    # this trigger starts a run (see flow_manager.on_trigger_fired).
+    if not is_test and trigger.id:
+        try:
+            from flow_sdk.flow_manager import get_flow_manager
+
+            await get_flow_manager().on_trigger_fired(trigger.id)
+        except Exception:
+            logger.exception("FSOp trigger %s: flow activation failed", trigger.name)
+
     for action in trigger.actions:
         try:
             handler = get_action_handler(action.action_type)

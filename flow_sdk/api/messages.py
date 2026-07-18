@@ -37,6 +37,8 @@ class WSMessageType(Enum):
     CLOUD_CONNECTION_STATUS_MSG = "cloud_connection_status_msg"
     PRIVACY_MODE_MSG = "privacy_mode_msg"
     TOPLOG_STATE_MSG = "toplog_state_msg"
+    FLOW_RUN_EVENT_MSG = "flow_run_event_msg"
+    FLOW_NODE_STATUS_MSG = "flow_node_status_msg"
 
 
 class ExeMessageSubType(StrEnum):
@@ -147,6 +149,39 @@ class ToplogStateMessage(BaseMessage):
     message_type: str = WSMessageType.TOPLOG_STATE_MSG.value
     enabled: bool
     filter: Dict[str, bool]
+
+
+class FlowRunEventMessage(BaseMessage):
+    """Broadcast for every event/lifecycle beat of an AgenticFlow run — the
+    live run stream. ``kind``: run_start | event | run_end. The TS mirror is
+    ``FlowRunEventMessage`` in ``ts_sdk/src/websocket.ts``."""
+
+    message_type: str = WSMessageType.FLOW_RUN_EVENT_MSG.value
+    flow_id: str
+    run_id: str
+    kind: str
+    event: str = ""
+    data: Dict[str, Any] = {}
+    node: str = ""
+    status: str = ""
+    ts: str = ""
+
+
+class FlowNodeStatusMessage(BaseMessage):
+    """Broadcast on every scheduler transition for a flow node — the push feed
+    for live queue/active counters and node status lines.
+    ``phase``: queued | merged | started | finished | failed.
+    The TS mirror is ``FlowNodeStatusMessage`` in ``ts_sdk/src/websocket.ts``."""
+
+    message_type: str = WSMessageType.FLOW_NODE_STATUS_MSG.value
+    flow_id: str
+    run_id: str
+    node_id: str
+    phase: str
+    queued: int = 0
+    active: int = 0
+    detail: Dict[str, Any] = {}
+    ts: str = ""
 
 
 class BroadcastMessage(BaseMessage):

@@ -59,11 +59,16 @@ class CliCapabilityRunner(CapabilityRunner):
         executable: str,
         test_args: list[str] | None = None,
         timeout_seconds: float = 5.0,
+        worker_type: str | None = None,
     ) -> None:
         self.spec = spec
         self.executable = executable
         self.test_args = test_args or ["--version"]
         self.timeout_seconds = timeout_seconds
+        # Set for harness CLIs: the worker whose driver provides auth_probe.
+        # Passed explicitly at registration (like MCPCapabilityRunner's
+        # worker_type) rather than parsed back out of the kind string.
+        self.worker_type = worker_type
 
     async def discover(self, probe: dict) -> CapabilityValue:
         """Value = the CLI's bin FOLDER (FSRef dict), resolved by the sweep's
@@ -134,12 +139,17 @@ class CliCapabilityRunner(CapabilityRunner):
         if not path:
             return self._not_found_result()
         try:
-            proc = await asyncio.to_thread(
-                subprocess.run,
-                [path, *self.test_args],
-                capture_output=True,
-                text=True,
-                timeout=self.timeout_seconds,
+            # The version run and the auth probe are independent subprocesses —
+            # run them concurrently (_auth_details never raises).
+            proc, auth = await asyncio.gather(
+                asyncio.to_thread(
+                    subprocess.run,
+                    [path, *self.test_args],
+                    capture_output=True,
+                    text=True,
+                    timeout=self.timeout_seconds,
+                ),
+                self._auth_details(),
             )
         except subprocess.TimeoutExpired:
             return CapabilityResult(
@@ -156,17 +166,34 @@ class CliCapabilityRunner(CapabilityRunner):
                 details={"executable": self.executable, "path": path},
             )
         output = (proc.stdout or proc.stderr or "").strip()
+        details = {
+            "executable": self.executable,
+            "path": path,
+            "returncode": proc.returncode,
+            "output": output[:1000],
+        }
+        if auth is not None:
+            details["auth"] = auth
         return CapabilityResult(
             ok=proc.returncode == 0,
             available=True,
             message=f"{self.executable} CLI test {'passed' if proc.returncode == 0 else 'failed'}.",
-            details={
-                "executable": self.executable,
-                "path": path,
-                "returncode": proc.returncode,
-                "output": output[:1000],
-            },
+            details=details,
         )
+
+    async def _auth_details(self) -> dict | None:
+        """Login state for harness CLIs, merged into the test result so the
+        capabilities window shows it. Best-effort: auth can never fail the
+        test action, and runners without a worker_type report nothing."""
+        if self.worker_type is None:
+            return None
+        try:
+            from flow_sdk.builtin.agentic_process.cli_drivers import get_driver
+
+            return (await get_driver(self.worker_type).auth_probe()).to_json()
+        except Exception as exc:
+            logger.debug("auth probe for %s failed: %s", self.spec.kind, exc)
+            return None
 
 
 class CapabilityReferenceRunner(CapabilityRunner):
@@ -623,6 +650,12 @@ class CapabilityRegistry:
     def kinds(self) -> list[str]:
         return list(self._runners.keys())
 
+    def worker_type_for_kind(self, kind: str) -> str | None:
+        """The worker whose driver serves this kind (None ⇔ not a harness
+        CLI). Reads the runner's registration-time worker_type — never parses
+        the kind string."""
+        return getattr(self._runners.get(kind), "worker_type", None)
+
     def get(self, kind: str) -> CapabilityRunner:
         try:
             return self._runners[kind]
@@ -683,18 +716,21 @@ def _build_default_registry() -> CapabilityRegistry:
         CliCapabilityRunner(
             spec=specs[CapabilityKind.CLAUDE_CLI.value],
             executable="claude",
+            worker_type="claude",
         )
     )
     registry.register(
         CliCapabilityRunner(
             spec=specs[CapabilityKind.CODEX_CLI.value],
             executable="codex",
+            worker_type="codex",
         )
     )
     registry.register(
         CliCapabilityRunner(
             spec=specs[CapabilityKind.COPILOT_CLI.value],
             executable="copilot",
+            worker_type="copilot",
         )
     )
     registry.register(ChromeAuthenticatedBrowsingRunner(specs[CapabilityKind.CHROME_AUTHENTICATED.value]))
@@ -706,3 +742,8 @@ _DEFAULT_REGISTRY = _build_default_registry()
 
 def get_capability_registry() -> CapabilityRegistry:
     return _DEFAULT_REGISTRY
+
+
+def worker_type_for_kind(kind: str) -> str | None:
+    """Module-level convenience over the default registry."""
+    return _DEFAULT_REGISTRY.worker_type_for_kind(kind)

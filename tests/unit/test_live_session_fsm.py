@@ -164,6 +164,33 @@ def test_host_row_is_authoritative():
     assert out.guest_name == "Bob"
 
 
+def test_host_row_heals_missing_own_identity():
+    # A first carrier packed before the guest's roster resolved the peer ships
+    # host_user_id=None; the host row materialized from it has no identity
+    # (isHost false → no Approve bar). A later, correct snapshot must fill it —
+    # the latch that made that state permanent is the bug this pins.
+    orphan = RemoteWorkerSession.apply_snapshot(
+        None, _snap(host_user_id=None, host_name=None), local_is_host=False,
+    )
+    assert orphan.host_user_id is None
+    healed = RemoteWorkerSession.apply_snapshot(orphan, _snap(), local_is_host=True)
+    assert healed.host_user_id == "host-hub-id"
+    assert healed.host_name == "Alice"
+
+
+def test_host_identity_never_overwritten_by_snapshot():
+    local = RemoteWorkerSession(
+        id=SESSION_ID, status=S.RUNNING.value,
+        host_user_id="real-host-id", host_name="Real Host",
+    )
+    out = RemoteWorkerSession.apply_snapshot(
+        local, _snap(host_user_id="impostor-id", host_name="Impostor"),
+        local_is_host=True,
+    )
+    assert out.host_user_id == "real-host-id"
+    assert out.host_name == "Real Host"
+
+
 def test_snapshot_never_touches_host_local_fields_on_guest():
     local = RemoteWorkerSession(id=SESSION_ID, status=S.IDLE.value)
     out = RemoteWorkerSession.apply_snapshot(local, _snap(), local_is_host=False)

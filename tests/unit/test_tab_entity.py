@@ -279,7 +279,7 @@ def _jptr(view_type: str, sub: str) -> str:
 async def test_parent_tab_id_set_on_create() -> None:
     parent = await ensure_tab(_jptr("shell", f"agentic_process-{uuid.uuid4()}"))
     child = await ensure_tab(
-        _jptr("editor", "markdown"),
+        _jptr("assets", "editor/markdown/typeid/markdown-x"),
         target_type="markdown",
         target_id="md-child",
         parent_tab_id=parent.id,
@@ -291,7 +291,7 @@ async def test_parent_tab_id_set_on_create() -> None:
 async def test_parent_tab_id_adopted_on_reopen_and_preserved_on_none() -> None:
     # A tab already open with no parent gets adopted when reopened from inside a
     # workspace; a later reopen with no hint (None) preserves the group.
-    p = _jptr("editor", "markdown")
+    p = _jptr("assets", "editor/markdown/typeid/markdown-x")
     first = await ensure_tab(p, target_type="markdown", target_id="md-a")
     assert first.parent_tab_id is None
 
@@ -311,6 +311,59 @@ async def test_parent_tab_id_adopted_on_reopen_and_preserved_on_none() -> None:
 
 
 @pytest.mark.asyncio
+async def test_parent_dropped_for_non_content_pointer() -> None:
+    # Only a content-asset dock (assets ``editor/...`` pointer) may be a child.
+    # A navigation surface — here an assets LIST / project-home pointer, whose
+    # target_type is null so the target-type belt can't catch it — never adopts,
+    # whatever hint the client sent (create path)…
+    parent = await ensure_tab(_jptr("shell", f"agentic_process-{uuid.uuid4()}"))
+    lst = await ensure_tab(_jptr("assets", "project-home"), parent_tab_id=parent.id)
+    assert lst.parent_tab_id is None
+
+    # …and a legacy row that already carries the stale edge (written under the
+    # retired display-tab model) is null-healed on touch (reopen path) — the
+    # edge otherwise resurrects the vibe workspace around a top-level surface
+    # (RCA 2026-07-16: rail project button reopened the last process).
+    p = _jptr("assets", "project-home")
+    row = await ensure_tab(p)
+    row.parent_tab_id = parent.id
+    await row.save()
+    healed = await ensure_tab(p)
+    assert healed.id == row.id
+    assert healed.parent_tab_id is None
+
+
+@pytest.mark.asyncio
+async def test_list_read_sweeps_stale_parent_off_non_adoptable_row() -> None:
+    # The reap pass is the authoritative bulk heal: a non-adoptable row carrying
+    # a stale parent edge (whose parent row still EXISTS, so the dangling-edge
+    # sweep never matches it) heals on any list read, without being opened.
+    from flow_sdk.builtin.tab import _build_tab_list
+
+    parent = await ensure_tab(_jptr("shell", f"agentic_process-{uuid.uuid4()}"))
+    row = await ensure_tab(_jptr("assets", "project-home"))
+    row.parent_tab_id = parent.id
+    await row.save()
+
+    await _build_tab_list(None)
+
+    reloaded = await Tab.get_one({"id": row.id})
+    assert reloaded is not None and reloaded.parent_tab_id is None, (
+        "list read must null-heal a stale parent edge on a non-adoptable row"
+    )
+    # An adoptable child under a live parent is untouched by the sweep.
+    child = await ensure_tab(
+        _jptr("assets", "editor/markdown/typeid/markdown-x"),
+        target_type="markdown",
+        target_id="md-sweep",
+        parent_tab_id=parent.id,
+    )
+    await _build_tab_list(None)
+    kept = await Tab.get_one({"id": child.id})
+    assert kept is not None and kept.parent_tab_id == parent.id
+
+
+@pytest.mark.asyncio
 async def test_parent_tab_id_never_self() -> None:
     # Guard: a tab is never made its own parent (backend defense; the client
     # registers the display tab as parent and could re-materialize the display).
@@ -327,7 +380,7 @@ async def test_parent_soft_close_leaves_children_intact() -> None:
     # global tabs; the deterministic id regroups them when the parent reopens.
     parent = await ensure_tab(_jptr("shell", f"agentic_process-{uuid.uuid4()}"))
     child = await ensure_tab(
-        _jptr("editor", "markdown"), target_type="markdown", target_id="md-keep", parent_tab_id=parent.id
+        _jptr("assets", "editor/markdown/typeid/markdown-x"), target_type="markdown", target_id="md-keep", parent_tab_id=parent.id
     )
 
     await parent.close()
@@ -346,7 +399,7 @@ async def test_parent_tab_id_in_wire_projection() -> None:
 
     parent = await ensure_tab(_jptr("shell", f"agentic_process-{uuid.uuid4()}"))
     child = await ensure_tab(
-        _jptr("editor", "markdown"), target_type="markdown", target_id="md-w", parent_tab_id=parent.id
+        _jptr("assets", "editor/markdown/typeid/markdown-x"), target_type="markdown", target_id="md-w", parent_tab_id=parent.id
     )
     row = _serialize_row(child)
     assert "parent_tab_id" in row
@@ -361,7 +414,7 @@ async def test_hard_reap_clears_child_parent_refs() -> None:
 
     parent = await ensure_tab(_jptr("shell", f"agentic_process-{uuid.uuid4()}"))
     child = await ensure_tab(
-        _jptr("editor", "markdown"), target_type="markdown", target_id="md-reap", parent_tab_id=parent.id
+        _jptr("assets", "editor/markdown/typeid/markdown-x"), target_type="markdown", target_id="md-reap", parent_tab_id=parent.id
     )
 
     await _reparent_children({parent.id: None})
@@ -824,7 +877,7 @@ async def test_ensure_tab_never_parents_process_or_project_tabs() -> None:
 
     # Content tabs still adopt (the invariant is scoped, not a blanket ban).
     child = await ensure_tab(
-        '{"viewType": "editor", "pointer": "markdown-inv"}',
+        '{"viewType": "assets", "pointer": "editor/markdown/typeid/markdown-inv"}',
         target_type="markdown",
         target_id="md-inv",
         parent_tab_id=anchor.id,
@@ -883,7 +936,7 @@ async def test_display_row_reaped_and_children_reanchored_to_shell_tab() -> None
         target_id=apid,
     )
     child = await _seed_tab(
-        '{"viewType": "editor", "pointer": "markdown-reanchor"}',
+        '{"viewType": "assets", "pointer": "editor/markdown/typeid/markdown-reanchor"}',
         target_type="markdown",
         target_id="md-reanchor",
         parent_tab_id=display_tab.id,
@@ -916,7 +969,7 @@ async def test_display_row_reap_nulls_children_without_shell_sibling() -> None:
         target_id=apid,
     )
     child = await _seed_tab(
-        '{"viewType": "editor", "pointer": "markdown-nullheal"}',
+        '{"viewType": "assets", "pointer": "editor/markdown/typeid/markdown-nullheal"}',
         target_type="markdown",
         target_id="md-nullheal",
         parent_tab_id=display_tab.id,
@@ -956,7 +1009,7 @@ async def test_dangling_parent_edge_is_healed_on_list() -> None:
 
     ghost_parent_id = str(uuid.uuid4())
     child = await _seed_tab(
-        '{"viewType": "editor", "pointer": "markdown-dangling"}',
+        '{"viewType": "assets", "pointer": "editor/markdown/typeid/markdown-dangling"}',
         target_type="markdown",
         target_id="md-dangling",
         parent_tab_id=ghost_parent_id,
@@ -974,12 +1027,12 @@ async def test_soft_closed_parent_edge_is_preserved_on_list() -> None:
     from flow_sdk.builtin.tab import _build_tab_list
 
     parent = await _seed_tab(
-        '{"viewType": "editor", "pointer": "markdown-softparent"}',
+        '{"viewType": "assets", "pointer": "editor/markdown/typeid/markdown-softparent"}',
         target_type="markdown",
         target_id="md-softparent",
     )
     child = await _seed_tab(
-        '{"viewType": "editor", "pointer": "markdown-softchild"}',
+        '{"viewType": "assets", "pointer": "editor/markdown/typeid/markdown-softchild"}',
         target_type="markdown",
         target_id="md-softchild",
         parent_tab_id=parent.id,
@@ -1013,7 +1066,7 @@ async def test_reap_cycle_emits_single_broadcast() -> None:
         target_id=apid,
     )
     await _seed_tab(
-        '{"viewType": "editor", "pointer": "markdown-bcast"}',
+        '{"viewType": "assets", "pointer": "editor/markdown/typeid/markdown-bcast"}',
         target_type="markdown",
         target_id="md-bcast",
         parent_tab_id=display_tab.id,

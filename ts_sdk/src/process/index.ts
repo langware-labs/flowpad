@@ -38,7 +38,6 @@ export type {
   IAgenticProcess,
   MarkdownDoc,
   ProcessState,
-  ExecuteOptions,
   SpawnResult,
 } from './agentic-process';
 export { ProcessCounters, parseStatusReport } from './process-status-report';
@@ -72,6 +71,3 @@ export type {
   WizardProcessResult,
   WizardStatus,
 } from './wizard';
-
-export { extractUIPayload, isUIFlowData, UIHandler } from './ui-handler';
-export type { UIComponent } from './ui-handler';

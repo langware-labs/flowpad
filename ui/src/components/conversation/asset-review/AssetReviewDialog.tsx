@@ -1,4 +1,5 @@
 import { MessageAttachment, TypeId } from '@sdk';
+import { gitOriginCloneUrl, type GitOrigin } from '@sdk/models/GitOrigin';
 import { useEntity } from '@sdk/react/hooks';
 import { useMemo } from 'react';
 import { Trans } from '@lingui/react/macro';
@@ -9,10 +10,23 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@src/components/ui/dialog';
-import { File } from 'lucide-react';
+import { Cloud, File, GitBranch, Package } from 'lucide-react';
 import { iconForEntity } from '../EntityChip';
 import { AssetInstallActions } from './AssetInstallActions';
 import { StagedAssetViewer } from './StagedAssetViewer';
+
+/** Where the asset's content actually comes from — the reviewer's trust signal.
+ *  Derived from the MA row: a git transfer carries only the remote (installing
+ *  clones/pulls it); staged bytes rode inside the .flowmsg; anything else is a
+ *  hub-served reference fetched on open. */
+function sourceOf(ma: MessageAttachment): { label: string; Icon: typeof Cloud; detail: string | null } {
+  const origin = (ma.git_origin ?? null) as GitOrigin | null;
+  if (ma.transfer_mode === 'git' || origin) {
+    return { label: 'Git', Icon: GitBranch, detail: origin ? gitOriginCloneUrl(origin) : null };
+  }
+  if (ma.unpacked_path) return { label: 'Embedded in message', Icon: Package, detail: null };
+  return { label: 'Cloud', Icon: Cloud, detail: null };
+}
 
 /**
  * Review modal for a received, staged bundle attachment (opened from the
@@ -69,6 +83,7 @@ export function AssetReviewDialog({
               <Trans>Received attachment — review before installing.</Trans>
             </DialogDescription>
           )}
+          <SourceRow ma={ma} />
         </DialogHeader>
         <AssetInstallActions
           attachment={ma}
@@ -79,5 +94,22 @@ export function AssetReviewDialog({
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** Provenance line under the title: where installing pulls the content from. */
+function SourceRow({ ma }: { ma: MessageAttachment }) {
+  const { label, Icon, detail } = sourceOf(ma);
+  return (
+    <div
+      className="flex items-center gap-1.5 text-[11px] text-muted-foreground"
+      data-testid="asset-review-source"
+    >
+      <Icon className="h-3 w-3 shrink-0" />
+      <span>
+        <Trans>Source:</Trans> {label}
+      </span>
+      {detail && <span className="truncate font-mono text-[10px]">{detail}</span>}
+    </div>
   );
 }

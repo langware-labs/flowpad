@@ -8,6 +8,10 @@ import { IResource } from './IResource';
  * Also maintains Date versions of timestamps for backwards compatibility.
  */
 export interface IEntity extends Partial<IResource> {
+  /** Hub role roster cache — one row per member with their hub-set role.
+   *  Generic to any remote entity; hub-authoritative, local is a read cache.
+   *  ``EntityMember``-shaped; kept as ``unknown[]`` here to avoid an import cycle. */
+  members?: unknown[];
   /** Unique name (URL-safe identifier) */
   uname?: string;
   /** Display name */

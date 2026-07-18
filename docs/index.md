@@ -22,7 +22,6 @@ subfolder_count: '2'
 
 * [Claude](CLAUDE.md) — Synthetic placeholder summary for CLAUDE.md (7653 bytes).
 
-* [Agent Management Spec](agent-management-spec.md) — Synthetic placeholder summary for agent-management-spec.md (8673 bytes).
 
 * [Agentic Process](agentic-process.md) — Synthetic placeholder summary for agentic-process.md (7138 bytes).
 
@@ -30,7 +29,7 @@ subfolder_count: '2'
 
 * [Api Routing](api-routing.md) — Synthetic placeholder summary for api-routing.md (19321 bytes).
 
-* [Claude Session Manager](claude-session-manager.md) — Synthetic placeholder summary for claude-session-manager.md (6026 bytes).
+* [Claude Process Lifecycle & Restart Contract](agent-management/claude-session-manager.md) — AgenticProcess lifecycle, CLI-options model, restart-required contract.
 
 * [Contributing](contributing.md) — Synthetic placeholder summary for contributing.md (3490 bytes).
 

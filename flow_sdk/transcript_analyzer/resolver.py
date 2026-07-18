@@ -19,7 +19,15 @@ from pathlib import Path
 
 
 def _claude_projects_dir() -> Path:
-    return Path.home() / ".claude" / "projects"
+    # FLOWPAD_CLAUDE_HOME / CLAUDE_CONFIG_DIR redirects Claude's home (test
+    # isolation, isolated app instances). Resolve through instance settings —
+    # the same source of truth the transcript watcher and history indexer use —
+    # instead of hardcoding ``~/.claude``, or a redirected home's transcripts
+    # are invisible to every resolver consumer (agent-trace, /transcript route).
+    # Mirrors ``_codex_sessions_dir`` below.
+    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
+    return get_instance_settings().claude_projects_dir
 
 
 def _codex_sessions_dir() -> Path:

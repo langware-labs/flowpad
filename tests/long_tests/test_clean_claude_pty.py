@@ -19,6 +19,7 @@ pytestmark = pytest.mark.skipif(
 )
 
 from flow_sdk.builtin.agentic_process import AgenticProcess
+from flow_sdk.builtin.agentic_process.model_tiers import ModelTier
 from flow_sdk.builtin.faas.compute_node import ComputeNode
 from tests.long_tests._pty_helpers import read_pty_stream
 
@@ -33,7 +34,7 @@ async def test_clean_claude_pty(bootstrapped_client, tmp_path):
 
     process = AgenticProcess(
         compute_node_id=f"compute_node-{cn.id}",
-        cli_config={"permission_mode": "bypassPermissions"},
+        cli_config={"permission_mode": "bypassPermissions", "model": ModelTier.SM.value},
         workdir=str(tmp_path),
         visible=True,
     )

@@ -11,4 +11,10 @@ CLAUDE_SESSION = TypeMetadata(
     indexed_by_default=True,
     from_disk_fn=extract_claude_session,
     gen_uuid_fn=claude_session_id,
+    # Shared ClaudeTranscript: row-only passive payload — staged like every
+    # bundle entry, then auto-installed (no review gate). ``received=True``
+    # marks it never ran here (not resumable); ``remote=False`` because it has
+    # no hub twin of its own.
+    receive_policy="auto",
+    receive_row_overrides={"remote": False, "received": True},
 )
