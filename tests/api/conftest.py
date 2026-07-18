@@ -122,6 +122,33 @@ def _restore_records_root():
     _reset()
 
 
+@pytest.fixture(autouse=True)
+def _embedded_storage_fallback(tmp_path_factory):
+    """Give every API test an isolated embedded-storage context.
+
+    Server actions that call ``get_embedded_storage`` (delete-group, secret/sodot)
+    raise ``No parent_storage`` unless a storage fallback is set AND development
+    mode is on. The fallback is a module GLOBAL, so a test that sets it leaks into
+    the next — the classic pass-alone/fail-in-batch symptom. Setting a fresh
+    fallback per test and restoring the prior state on teardown both PROVIDES it
+    (tests that never set it up) and ISOLATES it (no cross-test leakage)."""
+    from flow_sdk.config import default_service_config
+    from flow_sdk.request_context import methods as _ctx
+    from flow_sdk.storage.local_fs_driver import LocalStorageDriver
+
+    prev_dev = default_service_config.development
+    prev_fb = _ctx.test_storage_fallback
+    default_service_config.development = True
+    _ctx.set_default_test_storage_fallback(
+        LocalStorageDriver(str(tmp_path_factory.mktemp("embedded_storage")))
+    )
+    try:
+        yield
+    finally:
+        _ctx.set_default_test_storage_fallback(prev_fb)
+        default_service_config.development = prev_dev
+
+
 @pytest.fixture(scope="session", autouse=True)
 def clean_db():
     """Delete WAL/SHM files at session start; close driver at session end."""
