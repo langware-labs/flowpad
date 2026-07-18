@@ -17,6 +17,7 @@ import {
 } from '@sdk';
 import { DockPointer } from '@src/navigation';
 import { canonicalProcessDockPath } from '@src/navigation/process-dock-canonicalization';
+import { pageRedirectUrl } from '@src/navigation/supported-pages';
 import { setupTabAndAdopt } from '@src/tabs/setup-tab-and-adopt';
 import { ViewType } from '@src/types/ViewType';
 import { TimeIt } from '@src/utils/timeit';
@@ -130,6 +131,25 @@ export async function loadAgentApp(args: LoaderArgs) {
       dockForSetup = DockPointer.fromUrl(`${requestUrl.pathname}${requestUrl.search}`);
     } catch {
       /* not a valid dock view — no tab */
+    }
+  }
+
+  // The server declares which pages it serves (bootstrap `supported_pages`; the
+  // local desktop server sends `["desk"]`). A dock URL naming an unsupported
+  // page redirects to the first supported page's home. Placed before the branch
+  // split so it covers both the root-dock and process-scoped paths; reads the
+  // parsed pointer's `page` (NOT `params.viewType`, which binds a non-desk page
+  // segment as the viewType). `bootstrapInfo` is ready — initSdk is awaited above.
+  if (dockForSetup) {
+    const pageRedirect = pageRedirectUrl(
+      dockForSetup,
+      dataContext.bootstrapInfo?.supported_pages,
+      requestUrl.pathname,
+    );
+    if (pageRedirect) {
+      t.done(slowThresholdSeconds);
+      // eslint-disable-next-line @typescript-eslint/only-throw-error
+      throw redirect(pageRedirect);
     }
   }
 
