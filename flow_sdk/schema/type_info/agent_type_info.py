@@ -34,6 +34,7 @@ AGENT = TypeMetadata(
     api_visible=True,
     icon="Bot",
     index_fields=["description"],
-    main_subdir=".claude/agents",
+    asset_class="shared",
+    family="agents",
     default_body_fn=_agent_default_body,
 )

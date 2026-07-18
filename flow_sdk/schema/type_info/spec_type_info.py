@@ -42,7 +42,8 @@ SPEC = TypeMetadata(
     icon="FileText",
     api_visible=True,
     index_fields=["name", "spec_type"],
-    main_subdir="specs",
+    asset_class="internal",
+    family="specs",
     main_layout="folder",
     main_file="spec.md",
     # asset_ref IS specs/<name>/spec.md (the indexer emits the inner file), so

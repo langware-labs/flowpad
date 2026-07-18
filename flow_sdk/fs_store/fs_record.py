@@ -655,19 +655,30 @@ class FSRecord(Generic[M]):
 
     # ── Asset placement (read from TypeInfo) ──────────────────────────────
 
-    def compute_asset_ref(self, scope_root: str | Path, entity) -> FSRef | None:
+    def compute_asset_ref(
+        self, scope_root: str | Path, entity, *, default_worker: str = "claude"
+    ) -> FSRef | None:
         """Resolve the user-facing asset location under scope_root.
 
-        Reads ``main_subdir`` / ``main_layout`` from the registered TypeInfo.
-        Returns None for types without a configured asset layout.
+        The family subdir comes from ``placement`` (``asset_class`` / ``harness``
+        / ``family`` via ``_resolved_layout``), so the harness prefix
+        (``.claude`` / ``.agents`` / …) is chosen by ``default_worker`` instead of
+        being welded into the type. ``main_layout`` / ``main_file`` / ``main_ext``
+        still own the file-vs-folder tail. Returns None for types without a
+        configured asset layout. ``default_worker`` defaults to ``claude`` so
+        callers that pass a bare ``scope_root`` keep today's ``.claude/*`` layout.
         """
+        from flow_sdk.fs_store.placement import family_subdir  # noqa: PLC0415
         from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
         info = SchemaRegistry.get(self.type)
-        if info is None or info.main_subdir is None:
+        if info is None:
+            return None
+        subdir = family_subdir(*info._resolved_layout, default_worker=default_worker)
+        if subdir is None:
             return None
         safe = self._safe_name(entity)
-        base = Path(scope_root) / info.main_subdir
+        base = Path(scope_root) / subdir
         if info.main_layout == "folder":
             # asset_ref_for owns the folder-vs-inner-file rule (its inverse,
             # body_path_for, recovers the body on write) so the convention lives
