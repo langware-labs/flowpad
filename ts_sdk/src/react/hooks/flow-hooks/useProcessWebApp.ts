@@ -1,4 +1,4 @@
-import { ActionInfo, ArtifactType, Flow } from '@sdk';
+import { ActionInfo, AgenticProcess, ArtifactType } from '@sdk';
 import { useMemo } from 'react';
 import { useCurrentArtifacts } from './useCurrentArtifacts';
 
@@ -11,7 +11,7 @@ export interface WebAppConfig {
  * Hook to extract web app configuration from artifacts.
  * Gets the last artifact of type WEBAPP and builds the iframe URL.
  */
-export function useProcessWebApp(flow: Flow | null | undefined, port: string | null | undefined): WebAppConfig {
+export function useProcessWebApp(flow: AgenticProcess | null | undefined, port: string | null | undefined): WebAppConfig {
   const { data: artifacts = [] } = useCurrentArtifacts();
 
   const webAppConfig = useMemo(() => {
@@ -30,7 +30,7 @@ export function useProcessWebApp(flow: Flow | null | undefined, port: string | n
       return { host: '', cacheKey: 0 };
     }
 
-    const actionInfo = new ActionInfo('get-host', Flow.type, flow.id);
+    const actionInfo = new ActionInfo('get-host', AgenticProcess.type, flow.id);
     actionInfo.queryParameters = { port: _port };
 
     return {
