@@ -32,6 +32,10 @@ const STATUS_OPTIONS: { value: string; label: string }[] = ['to_do', 'in_progres
 
 const PRIORITY_OPTIONS = ['high', 'medium', 'low'] as const;
 
+/** Read-only TaskAttachments never persists — the parent panel in a member
+ *  view surfaces the parent's files but can't edit them. */
+const NOOP_SAVE = async () => {};
+
 /** Normalize legacy status values (`open`) onto the current enum. */
 function normStatus(s?: string): string {
   if (s === 'open') return 'to_do';
@@ -209,6 +213,12 @@ export function TaskAssetEditor({ fsRef, task: providedTask }: TaskAssetEditorPr
             parent={parent}
             onOpenParent={() => navigation.openDock(DockPointer.forAssetEditorByTypeId('task', parent.typeId))}
           />
+
+          {/* Parent's Files & Folders — read-only, shown only when the parent
+              has any, so the member sees the group's shared assets too. */}
+          {Array.isArray(parent.artifacts) && parent.artifacts.length > 0 && (
+            <TaskAttachments task={parent} save={NOOP_SAVE} readOnly heading="Parent files & folders" />
+          )}
 
           {/* This task — only the child's OWN data, nothing repeated from above. */}
           <div className="flex flex-col gap-3">
