@@ -25,7 +25,7 @@ import pytest
 # registration) so get_entity_cls('skill') resolves and the reindex materializes.
 import flow_sdk.models.entities  # noqa: F401
 from flow_sdk.app.actions.message_attachment_action import handle_attachment_install
-from flow_sdk.builtin.artifact import Artifact, ArtifactReferenceType, ArtifactType
+from flow_sdk.builtin.artifact import Artifact
 from flow_sdk.builtin.claude_memory_entities import Docs
 from flow_sdk.builtin.conversation import Conversation
 from flow_sdk.builtin.flow_message import Attachment, AttachmentType, FlowMessage
@@ -358,11 +358,8 @@ async def test_git_transfer_packs_graph_artifact_metadata_without_copying_app_fi
     artifact = Artifact(
         id=GIT_ARTIFACT_ID,
         name="shared webapp",
-        ref_type=ArtifactReferenceType.FOLDER,
-        path=str(app_dir),
-        artifact_type=ArtifactType.WEBAPP,
-        port="45678",
-        git_origin=git_origin,
+        kind="application.web",
+        origin=git_origin,
     )
     await artifact.save(notify=False)
 
@@ -388,8 +385,8 @@ async def test_git_transfer_packs_graph_artifact_metadata_without_copying_app_fi
         assert metadata_name in names
         metadata = json.loads(zf.read(metadata_name).decode("utf-8"))
         assert metadata["id"] == GIT_ARTIFACT_ID
-        assert metadata["path"] == str(app_dir)
-        assert metadata["git_origin"]["rel_path"] == "apps/shared-webapp"
+        assert "path" not in metadata
+        assert metadata["origin"]["rel_path"] == "apps/shared-webapp"
         assert not any(name.endswith("/index.html") for name in names), names
 
     await artifact.delete()
@@ -419,7 +416,7 @@ async def test_git_transfer_packs_graph_artifact_metadata_without_copying_app_fi
 
     assert await _artifact_favorite() is None
 
-    # INSTALL: materialize the graph row (path='' — checkout resolves at open).
+    # INSTALL: materialize the logical row; the origin remains checkout-independent.
     resp = await handle_attachment_install(str(staged.id), scope="user", project_id=None)
     assert isinstance(resp, ApiSuccessResponse), resp
 
@@ -432,13 +429,9 @@ async def test_git_transfer_packs_graph_artifact_metadata_without_copying_app_fi
 
     received = await Artifact.get_one({"id": GIT_ARTIFACT_ID})
     assert received is not None, "install never materialized the git-backed artifact declaration"
-    assert received.path == "", "receiver must not trust the sender's local filesystem path"
-    assert received.port == "45678"
-    received_origin = (
-        received.git_origin.model_dump(mode="python")
-        if hasattr(received.git_origin, "model_dump")
-        else received.git_origin
-    )
+    assert not hasattr(received, "path"), "Artifact no longer stores sender-local paths"
+    assert not hasattr(received, "port"), "runtime placement belongs to Deployment"
+    received_origin = received.origin.model_dump(mode="python") if received.origin else None
     assert received_origin and received_origin.get("provider") == "file"
     assert received_origin.get("rel_path") == "apps/shared-webapp"
 

@@ -3,17 +3,15 @@ import PersistentIframe, { PersistentIframeHandle } from '@src/components/persis
 import { WebappTerminalPanel } from '@src/components/webapp-viewer/webapp-terminal-panel';
 import { useAgentContext } from '@src/contexts/agent-context';
 import { Button } from '@src/components/ui/button';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@src/components/ui/select';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { DockPointer, useDockNavigation } from '@src/navigation';
-import { useCurrentArtifacts } from '@src/hooks/flow-hooks';
 import { useProcessWebApp } from '@src/hooks/flow-hooks';
 import { useViewerStore } from '@src/hooks/flow-hooks';
-import { ArtifactType, MachineStatus, ViewType, WebappSubview } from '@sdk';
+import { ViewType, WebappSubview } from '@sdk';
 import { useContext as useSdkContext } from '@sdk/react/hooks';
 import { hasElectronDisplayCapture } from '@src/components/display-toolbar/capture-region';
 import { ExternalLink, ImagePlus, RefreshCw, Terminal } from 'lucide-react';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Trans } from '@lingui/react/macro';
 import { useLingui } from '@lingui/react/macro';
 
@@ -29,8 +27,6 @@ export const WebappViewer: React.FC<WebappViewerProps> = ({ onWebappErrorRetry, 
   const { currentContext } = useViewerStore();
   const { navigation, currentDock } = useDockNavigation();
   const [webAppError, setWebAppError] = useState<string | undefined>();
-  const [selectedWebappId, setSelectedWebappId] = useState<string>('');
-  const [machineStatus, setMachineStatus] = useState<MachineStatus | null>(null);
   const iframeRef = useRef<PersistentIframeHandle>(null);
   const contentRef = useRef<HTMLDivElement>(null);
 
@@ -38,11 +34,6 @@ export const WebappViewer: React.FC<WebappViewerProps> = ({ onWebappErrorRetry, 
   const subview = currentDock?.pointer as WebappSubview | undefined;
   const showPanel = subview === WebappSubview.SHELL || subview === WebappSubview.ARTIFACTS;
   const activeTab = subview || WebappSubview.SHELL;
-
-  // Navigate to show shell panel (used by ServiceStatusLed on restart)
-  const handleShowShell = useCallback(() => {
-    navigation.openDock(new DockPointer(ViewType.WEB_APP, WebappSubview.SHELL));
-  }, [navigation]);
 
   // Toggle panel visibility via navigation
   const handleTogglePanel = useCallback(() => {
@@ -63,46 +54,9 @@ export const WebappViewer: React.FC<WebappViewerProps> = ({ onWebappErrorRetry, 
     [navigation],
   );
 
-  // Get all artifacts and filter to webapps only
-  const { data: artifacts = [] } = useCurrentArtifacts();
-  const webappArtifacts = useMemo(() => {
-    return artifacts.filter((a) => a.artifact_type === ArtifactType.WEBAPP);
-  }, [artifacts]);
-
-  // Determine which port to use: selected webapp, context port, or latest webapp
-  const webAppPort = useMemo(() => {
-    // First priority: port from viewer context (e.g., clicked from chat)
-    if (currentContext?.viewerOptions?.port) {
-      return currentContext.viewerOptions.port;
-    }
-
-    // Second priority: selected webapp from dropdown
-    if (selectedWebappId !== '') {
-      const selectedWebapp = webappArtifacts.find((a) => a.id === selectedWebappId);
-      const port = selectedWebapp?.metadata?.port as number | string | undefined;
-      if (port !== undefined && port !== null) {
-        return String(port);
-      }
-    }
-
-    // Third priority: latest webapp artifact
-    if (webappArtifacts.length > 0) {
-      const latestWebapp = webappArtifacts[0]; // Already sorted by newest first
-      const port = latestWebapp?.metadata?.port as number | string | undefined;
-      if (port !== undefined && port !== null) {
-        return String(port);
-      }
-    }
-
-    return null;
-  }, [currentContext, selectedWebappId, webappArtifacts]);
-
-  // Auto-select the latest webapp when artifacts change and nothing is selected
-  useEffect(() => {
-    if (selectedWebappId === '' && webappArtifacts.length > 0 && webappArtifacts[0].id) {
-      setSelectedWebappId(webappArtifacts[0].id);
-    }
-  }, [webappArtifacts, selectedWebappId]);
+  // A web preview is a concrete running-process concern. The port arrives in
+  // the URL-derived viewer context; logical Artifacts no longer carry it.
+  const webAppPort = currentContext?.viewerOptions?.port ?? null;
 
   const webAppConfig = useProcessWebApp(flow, webAppPort);
 
@@ -133,41 +87,18 @@ export const WebappViewer: React.FC<WebappViewerProps> = ({ onWebappErrorRetry, 
   const hasWebApp = Boolean(webAppConfig.host);
   const showAnnotate = !!onAnnotate && isDesktop && hasElectronDisplayCapture();
 
-  const handleWebappSelect = useCallback((value: string) => {
-    setSelectedWebappId(value);
-  }, []);
-
   return (
     <div className="relative h-full w-full">
       <div className="flex h-9 items-center justify-between gap-1 border-b bg-muted/30 px-2">
         {/* Left side: Webapp selector and status LED */}
         <div className="flex items-center gap-2">
-          {webappArtifacts.length > 0 ? (
+          {webAppPort ? (
             <>
-              <Select value={selectedWebappId} onValueChange={handleWebappSelect}>
-                <SelectTrigger className="h-7 w-48 text-xs">
-                  <SelectValue placeholder={t`Select webapp...`} />
-                </SelectTrigger>
-                <SelectContent>
-                  {webappArtifacts.map((webapp) => {
-                    const port = webapp.metadata?.port as number | string | undefined;
-                    const portStr = port !== undefined && port !== null ? String(port) : 'unknown';
-                    return (
-                      <SelectItem key={webapp.id} value={webapp.id || ''} className="text-xs">
-                        {webapp.name ? `${webapp.name} (${portStr})` : `Port ${portStr}`}
-                      </SelectItem>
-                    );
-                  })}
-                </SelectContent>
-              </Select>
-              <ServiceStatusLed
-                onShowShell={handleShowShell}
-                onRefreshWebapp={handleRefresh}
-                onStatusChange={setMachineStatus}
-              />
+              <span className="font-mono text-xs text-muted-foreground">localhost:{webAppPort}</span>
+              <ServiceStatusLed />
             </>
           ) : (
-            <span className="text-xs text-muted-foreground"><Trans>Webapp not found in artifacts</Trans></span>
+            <span className="text-xs text-muted-foreground"><Trans>No runtime port in this view</Trans></span>
           )}
         </div>
 
@@ -269,8 +200,6 @@ export const WebappViewer: React.FC<WebappViewerProps> = ({ onWebappErrorRetry, 
           <div className="h-[40%] w-full border-t bg-background">
             <WebappTerminalPanel
               flow={flow ?? null}
-              artifacts={artifacts}
-              machineStatus={machineStatus}
               isActive={showPanel}
               activeTab={activeTab}
               onTabChange={handleTabChange}

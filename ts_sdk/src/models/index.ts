@@ -15,3 +15,5 @@ export * from './activation';
 export * from './UserWarning';
 export * from './DockPointer';
 export * from './GitOrigin';
+export * from './FSOrigin';
+export * from './Kind';

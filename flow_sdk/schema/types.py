@@ -24,6 +24,7 @@ class EntityType(StrEnum):
     LOG = "log"
     AGENTIC_PROCESS = "agentic_process"
     ARTIFACT = "artifact"
+    DEPLOYMENT = "deployment"
     BOOKMARK = "bookmark"
     ANNOTATION = "annotation"
     COMMENT = "comment"
@@ -194,6 +195,8 @@ class EntityType(StrEnum):
     # hash (docs/tab-management.md). Minted on demand (Tab.ensure_for).
     TAB = "tab"
     # Entity types that previously had no enum member (string-literal `type`).
+    # Retired: Artifact composition now uses canonical parent_type_id. Keep the
+    # persisted value parseable, but do not register a public entity surface.
     ARTIFACT_RELATION = "artifact_relation"
     FS_ITEM = "fs_item"
     KNOWLEDGE_BASE = "knowledge_base"

@@ -7,7 +7,7 @@ Covers the two backend seams without a browser:
 """
 from __future__ import annotations
 
-import uuid
+from pathlib import Path
 
 import pytest
 
@@ -15,6 +15,7 @@ import flow_sdk.models.entities  # noqa: F401 — attaches entity_cls onto every
 from flow_sdk.schema.type_info import register_all
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.schema.types import EntityType
+from flow_sdk.api.api_types.identifier import mint_uuid
 
 register_all()
 
@@ -40,7 +41,7 @@ def test_reception_typeinfo_declared_per_type():
 @pytest.mark.asyncio
 async def test_setup_on_receive_no_skill_opens_entity():
     cls = SchemaRegistry.get_entity_cls(EntityType.MARKDOWN.value)
-    note = cls(id=str(uuid.uuid4()), title="note")
+    note = cls(id=mint_uuid(), title="note")
     dt = await note.setup_on_receive(project_id=None, workdir=None)
     assert dt["kind"] == "entity"
     assert dt["type"] == EntityType.MARKDOWN.value
@@ -49,7 +50,8 @@ async def test_setup_on_receive_no_skill_opens_entity():
 
 @pytest.mark.asyncio
 async def test_setup_on_receive_artifact_spawns_vibe(monkeypatch, tmp_path):
-    from flow_sdk.builtin.artifact import Artifact, ArtifactReferenceType, ArtifactType
+    from flow_sdk.builtin.artifact import Artifact
+    from flow_sdk.builtin.local_origin import LocalOrigin
     import flow_sdk.core.entity.entity_model as em
 
     # Don't actually launch a Claude worker in a unit test — assert the process is
@@ -63,14 +65,12 @@ async def test_setup_on_receive_artifact_spawns_vibe(monkeypatch, tmp_path):
     monkeypatch.setattr(em, "_schedule_setup_prompt", _fake_schedule)
 
     art = Artifact(
-        id=str(uuid.uuid4()),
+        id=mint_uuid(),
         name="spora",
-        artifact_type=ArtifactType.WEBAPP.value,
-        ref_type=ArtifactReferenceType.FOLDER.value,
-        path=str(tmp_path),
-        port="8000",
+        kind="application.web",
+        origin=LocalOrigin(base=str(tmp_path), rel_path="."),
     )
-    project_id = str(uuid.uuid4())
+    project_id = mint_uuid()
     dt = await art.setup_on_receive(project_id=project_id, workdir=str(tmp_path))
 
     # The target is the spawned Vibe process, not the artifact itself.
@@ -93,41 +93,38 @@ async def test_setup_on_receive_artifact_spawns_vibe(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_non_webapp_artifact_opens_by_path_no_spawn(monkeypatch, tmp_path):
-    from flow_sdk.builtin.artifact import Artifact, ArtifactReferenceType, ArtifactType
+async def test_non_webapp_artifact_opens_entity_without_setup_spawn(monkeypatch, tmp_path):
+    from flow_sdk.builtin.artifact import Artifact
+    from flow_sdk.builtin.local_origin import LocalOrigin
     import flow_sdk.core.entity.entity_model as em
 
     # A non-webapp artifact must NOT spawn a setup session — it's a produced file.
     monkeypatch.setattr(em, "_schedule_setup_prompt", lambda ap, seed: pytest.fail("must not spawn"))
 
     art = Artifact(
-        id=str(uuid.uuid4()),
+        id=mint_uuid(),
         name="analysis",
-        artifact_type=ArtifactType.FUNCTION.value,
-        ref_type=ArtifactReferenceType.FILE.value,
-        path=str(tmp_path / "out.json"),
+        kind="content.file.data",
+        origin=LocalOrigin(base=str(tmp_path), rel_path="out.json"),
     )
     dt = await art.setup_on_receive(project_id=None, workdir=None)
-    assert dt["kind"] == "vfs"
-    assert dt["path"] == str(tmp_path / "out.json")
+    assert dt["kind"] == "entity"
+    assert dt["type"] == EntityType.ARTIFACT.value
+    assert dt["id"] == art.id
 
 
 @pytest.mark.asyncio
-async def test_setup_workdir_prefers_folder_then_project(tmp_path):
-    from flow_sdk.builtin.artifact import Artifact, ArtifactReferenceType, ArtifactType
+async def test_artifact_origin_is_data_not_setup_workdir(tmp_path):
+    from flow_sdk.builtin.artifact import Artifact
+    from flow_sdk.builtin.local_origin import LocalOrigin
 
     served = tmp_path / "webapps" / "spora"
     served.mkdir(parents=True)
     art = Artifact(
-        id=str(uuid.uuid4()),
+        id=mint_uuid(),
         name="spora",
-        artifact_type=ArtifactType.WEBAPP.value,
-        ref_type=ArtifactReferenceType.FOLDER.value,
-        path=str(served),
+        kind="application.web",
+        origin=LocalOrigin(base=str(served.parent), rel_path=served.name),
     )
-    # A real folder path wins (the served app root).
-    assert await art._setup_workdir(project_id=None) == str(served)
-
-    # No usable folder → fall back to the project mount, else None.
-    art.path = ""
-    assert await art._setup_workdir(project_id=None) is None
+    assert Path(art.origin.base) / art.origin.rel_path == served
+    assert not hasattr(art, "path")

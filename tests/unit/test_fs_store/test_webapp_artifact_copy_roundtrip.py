@@ -1,16 +1,17 @@
-"""Copy-mode webapp-artifact carrier (Knot A): pack the folder bytes + declaration,
-then restore into a project pointing ``path`` at the served folder — no git, no clone.
+"""Copy-mode webapp Artifact carrier: pack source bytes + clean declaration,
+then restore with a receiver-local origin — no git and no runtime fields.
 """
 from __future__ import annotations
 
-import uuid
 from pathlib import Path
 
 import pytest
 
 import flow_sdk.models.entities  # noqa: F401
 from flow_sdk.schema.type_info import register_all
-from flow_sdk.builtin.artifact import Artifact, ArtifactReferenceType, ArtifactType
+from flow_sdk.api.api_types.identifier import mint_uuid
+from flow_sdk.builtin.artifact import Artifact
+from flow_sdk.builtin.local_origin import LocalOrigin
 from flow_sdk.builtin.flow_message_bundle import (
     _pack_webapp_artifact_attachment,
     _restore_webapp_artifact_entry,
@@ -30,14 +31,10 @@ async def test_copy_webapp_artifact_pack_then_restore(tmp_path: Path):
     (src / "app.jsx").write_text("// prototype", encoding="utf-8")
 
     art = Artifact(
-        id=str(uuid.uuid4()),
+        id=mint_uuid(),
         name="spora",
-        artifact_type=ArtifactType.WEBAPP.value,
-        ref_type=ArtifactReferenceType.FOLDER.value,
-        path=str(src),
-        port="8000",
-        start_cmd="python3 -m http.server 8000",
-        health="/",
+        kind="application.web",
+        origin=LocalOrigin(base=str(src.parent), rel_path=src.name),
     )
     await art.save()
     key = _entry_key(art.get_type(), art.id)
@@ -64,7 +61,7 @@ async def test_copy_webapp_artifact_pack_then_restore(tmp_path: Path):
 
     project_root = tmp_path / "project"
     project_root.mkdir()
-    project_id = str(uuid.uuid4())
+    project_id = mint_uuid()
     served = await _restore_webapp_artifact_entry(
         attachment_dir / key,
         project_root,
@@ -81,7 +78,9 @@ async def test_copy_webapp_artifact_pack_then_restore(tmp_path: Path):
 
     row = await Artifact.get_one({"id": art.id})
     assert row is not None
-    assert row.path == str(served)                       # points at the served folder
-    assert row.artifact_type == ArtifactType.WEBAPP.value
-    assert str(row.port) == "8000"
-    assert row.start_cmd == "python3 -m http.server 8000"
+    assert row.kind == "application.web"
+    assert row.origin.kind == "local"
+    assert Path(row.origin.base) / row.origin.rel_path == served
+    payload = row.model_dump(mode="json")
+    assert "artifact_type" not in payload
+    assert "port" not in payload
