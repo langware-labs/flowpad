@@ -10,6 +10,8 @@ re-derived asset_ref/scope, idempotent re-install, leak guard, and FTS
 reachability — plus one ``git`` transport case.
 """
 import json
+import subprocess
+import uuid
 import zipfile
 from pathlib import Path
 
@@ -348,6 +350,162 @@ async def test_git_transport_metadata_still_travels(env):
     assert ent_map[f"task-{child.id}"]["parent_type_id"] == f"task-{parent.id}", (
         "entities.json must travel regardless of transport mode"
     )
+
+
+# --------------------------------------------------------------------------- #
+# corner: multi-attachment bundle — per-attachment install, skip-not-yet-there
+# --------------------------------------------------------------------------- #
+async def test_multi_attachment_bundle(env):
+    from flow_sdk.app.actions.message_attachment_action import handle_attachment_install
+    from flow_sdk.builtin.flow_message import Attachment, AttachmentType, FlowMessage
+    from flow_sdk.builtin.flow_message_bundle import pack_bundle, unpack_bundle
+    from flow_sdk.builtin.message_attachment import MessageAttachment
+    from flow_sdk.builtin.project import Project
+    from flow_sdk.builtin.task import Task
+    from flow_sdk.responses.response import ApiSuccessResponse
+
+    home = env / "home"
+    a = Task(title="Multi A", status="in_progress", labels=["a"])
+    await a.save(notify=False)
+    b = Task(title="Multi B", status="todo", labels=["b"])
+    await b.save(notify=False)
+    await _reindex_home(home)
+
+    fm = FlowMessage(id=str(uuid.uuid4()), text="carrier")
+    fm.attachment = [
+        Attachment(attachment_type=AttachmentType.TYPE_ID, data=f"task-{a.id}"),
+        Attachment(attachment_type=AttachmentType.TYPE_ID, data=f"task-{b.id}"),
+    ]
+    zip_path = await pack_bundle(fm, dest_dir=env / "multiout")
+    with zipfile.ZipFile(zip_path) as zf:
+        ent_map = json.loads(zf.read("entities.json"))
+    assert {f"task-{a.id}", f"task-{b.id}"} <= set(ent_map), "both attachments must be in entities.json"
+
+    for e in (a, b):
+        await (await Task.get_one({"id": e.id})).destroy()
+
+    receiver = env / "multirecv"
+    receiver.mkdir()
+    project = Project(name="multidst", fs_storage_mount_path=str(receiver))
+    await project.save(notify=False)
+    await unpack_bundle(zip_path, "local-user-id")
+    # install each attachment separately (the first install overlays only its own
+    # row; b's row does not exist yet and is skipped — idempotent).
+    for e in (a, b):
+        ma = await MessageAttachment.get_one(
+            {"id": MessageAttachment.allocate_deterministic_id(fm.id, f"task-{e.id}")}
+        )
+        assert ma is not None, f"unpack did not stage task-{e.id}"
+        res = await handle_attachment_install(ma.id, "project", project.id)
+        assert isinstance(res, ApiSuccessResponse), getattr(res, "message", res)
+
+    a2 = await Task.get_one({"id": a.id})
+    b2 = await Task.get_one({"id": b.id})
+    assert a2 and b2, "both attachments must materialize"
+    assert set(a2.labels or []) == {"a"} and set(b2.labels or []) == {"b"}, "per-attachment metadata crossed or dropped"
+    assert a2.project_id == project.id and b2.project_id == project.id
+
+
+# --------------------------------------------------------------------------- #
+# corner: mixed bundle — a header-serialized type is excluded from entities.json
+# --------------------------------------------------------------------------- #
+async def test_mixed_header_and_file_backed_bundle(env):
+    from flow_sdk.builtin.flow_message import Attachment, AttachmentType, FlowMessage
+    from flow_sdk.builtin.flow_message_bundle import pack_bundle
+    from flow_sdk.builtin.flowpad_diagnosis import FlowpadDiagnosis
+    from flow_sdk.builtin.task import Task
+
+    home = env / "home"
+    task = Task(title="Mixed Task", status="in_progress")
+    await task.save(notify=False)
+    diag = FlowpadDiagnosis(name="diag", title="A diagnosis", summary="s")
+    await diag.save(notify=False)
+    await _reindex_home(home)
+
+    fm = FlowMessage(id=str(uuid.uuid4()), text="carrier")
+    fm.attachment = [
+        Attachment(attachment_type=AttachmentType.TYPE_ID, data=f"task-{task.id}"),
+        Attachment(attachment_type=AttachmentType.TYPE_ID, data=f"flowpad_diagnosis-{diag.id}"),
+    ]
+    zip_path = await pack_bundle(fm, dest_dir=env / "mixout")
+    with zipfile.ZipFile(zip_path) as zf:
+        ent_map = json.loads(zf.read("entities.json"))
+    # the file-backed task rides entities.json; the header-serialized diagnosis
+    # keeps its own header.json carrier and is NOT in entities.json.
+    assert f"task-{task.id}" in ent_map, "file-backed task missing from entities.json"
+    assert not any(k.startswith("flowpad_diagnosis-") for k in ent_map), (
+        "header-serialized type must not be double-carried in entities.json"
+    )
+
+
+# --------------------------------------------------------------------------- #
+# corner: git transport body (local worktree) + entities.json overlay
+# --------------------------------------------------------------------------- #
+def _git(cwd, *args):
+    subprocess.run(["git", *args], cwd=str(cwd), check=True, capture_output=True)
+
+
+async def test_git_transport_body_plus_overlay(env):
+    from flow_sdk.app.actions.message_attachment_action import handle_attachment_install
+    from flow_sdk.builtin.flow_message import Attachment, AttachmentType, FlowMessage
+    from flow_sdk.builtin.flow_message_bundle import pack_bundle, unpack_bundle
+    from flow_sdk.builtin.message_attachment import MessageAttachment
+    from flow_sdk.builtin.project import Project
+    from flow_sdk.builtin.skill import Skill
+    from flow_sdk.responses.response import ApiSuccessResponse
+
+    # local bare origin + sender/receiver worktrees — no network.
+    origin = env / "origin.git"
+    subprocess.run(["git", "init", "--bare", "-q", str(origin)], check=True, capture_output=True)
+    sender = env / "sender_repo"
+    _git(env, "clone", "-q", origin.resolve().as_uri(), str(sender))
+    _git(sender, "checkout", "-q", "-b", "feature/x")
+    _git(sender, "config", "user.email", "t@t.co")
+    _git(sender, "config", "user.name", "t")
+    rel = ".claude/skills/foo"
+    skill_id = "a1a1a1a1-0000-4000-8000-0000000000f1"
+    sdir = sender / rel
+    sdir.mkdir(parents=True)
+    (sdir / "SKILL.md").write_text(f"---\nid: {skill_id}\nname: foo\n---\n# foo\ngittok\n", encoding="utf-8")
+    _git(sender, "add", "-A")
+    _git(sender, "commit", "-qm", "skill")
+    _git(sender, "push", "-q", "-u", "origin", "feature/x")
+    recv = env / "recv_repo"
+    _git(env, "clone", "-q", "--branch", "feature/x", origin.resolve().as_uri(), str(recv))
+
+    # metadata-only fields (parent_type_id, labels) live ONLY in the entity JSON,
+    # never in SKILL.md — so surviving proves the git-mode overlay ran.
+    skill = Skill(id=skill_id, name="foo", asset_ref=str(sdir), parent_type_id="task-ghost", labels=["g"])
+    await skill.save(notify=False)
+
+    fm = FlowMessage(id=str(uuid.uuid4()), text="carrier")
+    fm.attachment = [Attachment(attachment_type=AttachmentType.TYPE_ID, data=f"skill-{skill_id}")]
+    zip_path = await pack_bundle(fm, dest_dir=env / "gitbody", transfer_mode="git")
+    with zipfile.ZipFile(zip_path) as zf:
+        names = zf.namelist()
+        ent_map = json.loads(zf.read("entities.json"))
+    assert "git_transfers.json" in names, "git-mode bundle must declare a git transfer"
+    assert not any(n.endswith("/SKILL.md") for n in names), "git mode must not ship the body bytes"
+    assert ent_map[f"skill-{skill_id}"]["parent_type_id"] == "task-ghost", "metadata axis must travel in git mode"
+
+    await (await Skill.get_one({"id": skill_id})).destroy()
+    project = Project(name="gitdst", fs_storage_mount_path=str(recv))
+    await project.save(notify=False)
+    await unpack_bundle(zip_path, "local-user-id")
+    ma = await MessageAttachment.get_one(
+        {"id": MessageAttachment.allocate_deterministic_id(fm.id, f"skill-{skill_id}")}
+    )
+    assert ma is not None, "unpack did not stage the git skill"
+    res = await handle_attachment_install(ma.id, "project", project.id)
+    assert isinstance(res, ApiSuccessResponse), getattr(res, "message", res)
+
+    got = await Skill.get_one({"id": skill_id})
+    assert got is not None, "receiver never materialized the git-backed skill"
+    # body came from the receiver's own worktree checkout (no bundle copy)…
+    assert str(recv) in str(got.asset_ref), "skill not indexed from the receiver worktree"
+    # …and the metadata-only fields were applied by the entities.json overlay.
+    assert got.parent_type_id == "task-ghost", "git-mode overlay dropped parent_type_id"
+    assert set(got.labels or []) == {"g"}, "git-mode overlay dropped labels"
 
 
 # --------------------------------------------------------------------------- #
