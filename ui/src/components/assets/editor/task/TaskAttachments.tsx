@@ -1,4 +1,15 @@
-import { dataContext, Project, Task, TypeId, VFSPath } from '@sdk';
+import {
+  dataContext,
+  Folder,
+  fsManager,
+  gitOriginCloneUrl,
+  launchWizard,
+  Project,
+  Task,
+  TypeId,
+  VFSPath,
+  type GitOrigin,
+} from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { hasBrowseableDrag, hasExternalFilesDrag, readBrowseableDrag } from '@src/components/browseable-tree/drag';
 import { isFsDragItem } from '@src/components/browseable-tree/adapters/fsFolderRoot';
@@ -9,19 +20,30 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { cn } from '@src/lib/utils';
 import { notify } from '@src/notifications';
 import { File as FileIcon, Folder as FolderIcon, GitBranch, Plus, X } from 'lucide-react';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState, type ReactNode } from 'react';
 
 interface Attachment {
   path: string;
   label: string;
+  /** For a git context folder: the repo origin captured at attach time, so it
+   *  rides in task.md to the recipient — who has neither the local checkout nor
+   *  the sender's Folder entity. A click on a not-present git folder launches
+   *  the git-context-folder clone wizard with this origin's URL. */
+  git_origin?: GitOrigin;
 }
 
 interface TaskAttachmentsProps {
   task: Task;
   save: (patch: Partial<Task>) => Promise<void>;
+  /** Read-only: hide the add (+) button, the drop zone's drag-to-add, and the
+   *  per-row remove (X). Used to show a member task's PARENT files & folders,
+   *  which the child view surfaces but cannot edit. Rows stay openable. */
+  readOnly?: boolean;
+  /** Override the section header (defaults to "Files & Folders"). */
+  heading?: ReactNode;
 }
 
-/** task.artifacts entries are `string | {path, label}` — normalize for display. */
+/** task.artifacts entries are `string | {path, label, git_origin?}` — normalize for display. */
 function normalizeAttachments(artifacts: unknown): Attachment[] {
   if (!Array.isArray(artifacts)) return [];
   const out: Attachment[] = [];
@@ -29,7 +51,11 @@ function normalizeAttachments(artifacts: unknown): Attachment[] {
     if (typeof a === 'string' && a) {
       out.push({ path: a, label: a.split('/').pop() || a });
     } else if (a && typeof a === 'object' && typeof a.path === 'string') {
-      out.push({ path: a.path, label: a.label || a.path.split('/').pop() });
+      out.push({
+        path: a.path,
+        label: a.label || a.path.split('/').pop(),
+        ...(a.git_origin ? { git_origin: a.git_origin as GitOrigin } : {}),
+      });
     }
   }
   return out;
@@ -48,11 +74,13 @@ function machinePathFromDrag(typeIdStr: string, relPath: string): string | null 
  * The task's Attachments section (replaces the old Plan/spec.md block): the
  * files and folders this task is about. Add via drag & drop — in-app tree rows
  * or OS files (desktop app) — or the + button (native file/folder picker).
- * Stored in the existing `artifacts` field (`{path, label}`), so the TaskCard
- * artifacts row renders the same list. Folders inside a git context folder get
- * a git sub-icon.
+ * Stored in the existing `artifacts` field (`{path, label, git_origin?}`), so
+ * the TaskCard artifacts row renders the same list. Folders inside a git
+ * context folder get a git sub-icon, and their repo origin is captured at
+ * attach time (`git_origin`) so it rides in task.md to the recipient — clicking
+ * a not-present git folder there launches the git-context-folder clone wizard.
  */
-export function TaskAttachments({ task, save }: TaskAttachmentsProps) {
+export function TaskAttachments({ task, save, readOnly = false, heading }: TaskAttachmentsProps) {
   const { navigation, currentDock } = useDockNavigation();
   const currentDockScope = currentDock?.scopeFilter ?? null;
   const [dragOver, setDragOver] = useState(false);
@@ -68,15 +96,37 @@ export function TaskAttachments({ task, save }: TaskAttachmentsProps) {
   const { data: project } = useEntity<Project>(scopeProjectId ? new TypeId(Project.type, scopeProjectId) : null);
   const { contextDirInfos } = useProjectContextFolders(project ?? null);
   const gitDirs = useMemo(
-    () => contextDirInfos.filter((i) => i.origin_kind === 'git').map((i) => i.path.replace(/\/$/, '')),
+    () =>
+      contextDirInfos
+        .filter((i) => i.origin_kind === 'git')
+        .map((i) => ({ path: i.path.replace(/\/$/, ''), typeid: i.typeid })),
     [contextDirInfos],
   );
-  const isGitPath = useCallback(
+  const gitDirFor = useCallback(
     (path: string) => {
       const p = path.replace(/\/$/, '');
-      return gitDirs.some((g) => p === g || p.startsWith(g + '/'));
+      return gitDirs.find((g) => p === g.path || p.startsWith(g.path + '/')) ?? null;
     },
     [gitDirs],
+  );
+  const isGitPath = useCallback((path: string) => !!gitDirFor(path), [gitDirFor]);
+
+  // Capture the repo origin for a path that lives in a git context folder, read
+  // off the folder's Folder entity (the recipient has neither, so it must ride
+  // on the attachment). Null for non-git paths or origins with no clone URL.
+  const resolveGitOrigin = useCallback(
+    async (path: string): Promise<GitOrigin | undefined> => {
+      const dir = gitDirFor(path);
+      if (!dir?.typeid) return undefined;
+      try {
+        const folder = await Folder.getById(new TypeId(dir.typeid).id);
+        const origin = folder?.origin as GitOrigin | null | undefined;
+        return origin && gitOriginCloneUrl(origin) ? origin : undefined;
+      } catch {
+        return undefined;
+      }
+    },
+    [gitDirFor],
   );
 
   // Received tasks carry folder-relative attachment entries
@@ -93,19 +143,64 @@ export function TaskAttachments({ task, save }: TaskAttachmentsProps) {
   );
 
   const addPaths = useCallback(
-    (paths: string[]) => {
+    async (paths: string[]) => {
       const existing = new Set(attachments.map((a) => a.path));
-      const added = paths
-        .filter((p) => p && !existing.has(p))
-        .map((p) => ({ path: p, label: p.split('/').pop() || p }));
-      if (added.length) persist([...attachments, ...added]);
+      const fresh = paths.filter((p) => p && !existing.has(p));
+      if (!fresh.length) return;
+      const added: Attachment[] = await Promise.all(
+        fresh.map(async (p) => {
+          const git_origin = await resolveGitOrigin(p);
+          return { path: p, label: p.split('/').pop() || p, ...(git_origin ? { git_origin } : {}) };
+        }),
+      );
+      persist([...attachments, ...added]);
     },
-    [attachments, persist],
+    [attachments, persist, resolveGitOrigin],
   );
 
   const removePath = useCallback(
     (path: string) => persist(attachments.filter((a) => a.path !== path)),
     [attachments, persist],
+  );
+
+  // Click behavior: a git context folder that isn't present locally (the
+  // recipient never had the checkout) launches the same git-context-folder
+  // clone wizard the message chip used, resolving the URL from the origin that
+  // rode on the attachment. Present folders — and every non-git entry — just
+  // open in place.
+  const openEntry = useCallback(
+    async (a: Attachment) => {
+      const abs = absolutePath(a.path);
+      if (a.git_origin) {
+        const cn = dataContext.computeNodeTypeId;
+        let present = false;
+        if (cn) {
+          try {
+            const rel = VFSPath.fromMachinePath(abs, cn).entitySubPath;
+            present = rel ? await fsManager.exists(cn, rel) : false;
+          } catch {
+            present = false;
+          }
+        }
+        if (!present) {
+          const url = gitOriginCloneUrl(a.git_origin);
+          if (url) {
+            await launchWizard('git-context-folder', {
+              title: `Pull ${a.label}`,
+              payload: {
+                projectId: scopeProjectId ?? dataContext.project?.id ?? null,
+                scope: 'private',
+                mode: 'existing',
+                url,
+              },
+            });
+            return;
+          }
+        }
+      }
+      openArtifact(abs, navigation);
+    },
+    [absolutePath, scopeProjectId, navigation],
   );
 
   const pickAndAdd = useCallback(
@@ -114,7 +209,7 @@ export function TaskAttachments({ task, save }: TaskAttachmentsProps) {
       const computeNode = dataContext.computeNode;
       if (!computeNode) return;
       const picked = await computeNode.openPathDialog(undefined, mode);
-      if (picked) addPaths([picked]);
+      if (picked) await addPaths([picked]);
     },
     [addPaths],
   );
@@ -135,7 +230,7 @@ export function TaskAttachments({ task, save }: TaskAttachmentsProps) {
         const paths = typeIdStr
           ? entries.map((rel) => machinePathFromDrag(typeIdStr, rel)).filter((p): p is string => !!p)
           : [];
-        if (paths.length) addPaths(paths);
+        if (paths.length) void addPaths(paths);
         return;
       }
 
@@ -144,7 +239,7 @@ export function TaskAttachments({ task, save }: TaskAttachmentsProps) {
       const files = Array.from(e.dataTransfer.files ?? []);
       const withPaths = files.map((f) => (f as any).path as string | undefined).filter((p): p is string => !!p);
       if (withPaths.length) {
-        addPaths(withPaths);
+        void addPaths(withPaths);
       } else if (files.length) {
         notify.warning({
           title: 'Could not read the dropped path',
@@ -158,65 +253,72 @@ export function TaskAttachments({ task, save }: TaskAttachmentsProps) {
   const droppable = (e: React.DragEvent) => hasBrowseableDrag(e) || hasExternalFilesDrag(e);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className={cn('flex min-h-0 flex-col', !readOnly && 'flex-1')}>
       <div className="flex items-center gap-1.5 border-b px-6 py-1.5">
         <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-          Files &amp; Folders
+          {heading ?? 'Files & Folders'}
         </span>
-        <Popover open={addOpen} onOpenChange={setAddOpen}>
-          <PopoverTrigger asChild>
-            <button
-              type="button"
-              className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-              title="Add file or folder"
-              data-testid="task-attachments-add"
-            >
-              <Plus className="h-3.5 w-3.5" />
-            </button>
-          </PopoverTrigger>
-          <PopoverContent className="w-44 p-1" align="start">
-            <button
-              type="button"
-              onClick={() => void pickAndAdd('file')}
-              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted"
-            >
-              <FileIcon className="h-4 w-4 text-muted-foreground" /> File…
-            </button>
-            <button
-              type="button"
-              onClick={() => void pickAndAdd('folder')}
-              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted"
-            >
-              <FolderIcon className="h-4 w-4 text-muted-foreground" /> Folder…
-            </button>
-          </PopoverContent>
-        </Popover>
+        {!readOnly && (
+          <Popover open={addOpen} onOpenChange={setAddOpen}>
+            <PopoverTrigger asChild>
+              <button
+                type="button"
+                className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                title="Add file or folder"
+                data-testid="task-attachments-add"
+              >
+                <Plus className="h-3.5 w-3.5" />
+              </button>
+            </PopoverTrigger>
+            <PopoverContent className="w-44 p-1" align="start">
+              <button
+                type="button"
+                onClick={() => void pickAndAdd('file')}
+                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted"
+              >
+                <FileIcon className="h-4 w-4 text-muted-foreground" /> File…
+              </button>
+              <button
+                type="button"
+                onClick={() => void pickAndAdd('folder')}
+                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted"
+              >
+                <FolderIcon className="h-4 w-4 text-muted-foreground" /> Folder…
+              </button>
+            </PopoverContent>
+          </Popover>
+        )}
       </div>
 
       <div
         className={cn(
-          'min-h-0 flex-1 overflow-y-auto p-3 transition-colors',
-          dragOver && 'bg-primary/5 outline-dashed outline-2 -outline-offset-4 outline-primary/40',
+          'overflow-y-auto p-3 transition-colors',
+          readOnly ? 'max-h-48' : 'min-h-0 flex-1',
+          !readOnly && dragOver && 'bg-primary/5 outline-dashed outline-2 -outline-offset-4 outline-primary/40',
         )}
-        onDragOver={(e) => {
-          if (!droppable(e)) return;
-          e.preventDefault();
-          setDragOver(true);
-        }}
-        onDragLeave={() => setDragOver(false)}
-        onDrop={onDrop}
+        onDragOver={
+          readOnly
+            ? undefined
+            : (e) => {
+                if (!droppable(e)) return;
+                e.preventDefault();
+                setDragOver(true);
+              }
+        }
+        onDragLeave={readOnly ? undefined : () => setDragOver(false)}
+        onDrop={readOnly ? undefined : onDrop}
         data-testid="task-attachments-drop"
       >
         {attachments.length === 0 ? (
           <div className="flex h-full min-h-24 flex-col items-center justify-center gap-1 text-sm text-muted-foreground">
             <span>No files or folders yet</span>
-            <span className="text-xs">Drag files or folders here, or use the + button</span>
+            {!readOnly && <span className="text-xs">Drag files or folders here, or use the + button</span>}
           </div>
         ) : (
           <div className="flex flex-col gap-0.5">
             {attachments.map((a) => {
               const isFolderish = !/\.[A-Za-z0-9]{1,8}$/.test(a.label);
-              const git = isGitPath(a.path);
+              const git = isGitPath(a.path) || !!a.git_origin;
               return (
                 <div
                   key={a.path}
@@ -234,20 +336,22 @@ export function TaskAttachments({ task, save }: TaskAttachmentsProps) {
                   </span>
                   <button
                     type="button"
-                    onClick={() => openArtifact(absolutePath(a.path), navigation)}
+                    onClick={() => void openEntry(a)}
                     className="min-w-0 flex-1 truncate text-left hover:underline"
                     title={a.path}
                   >
                     {a.label}
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => removePath(a.path)}
-                    className="hidden shrink-0 rounded p-0.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive group-hover:block"
-                    title="Remove"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
+                  {!readOnly && (
+                    <button
+                      type="button"
+                      onClick={() => removePath(a.path)}
+                      className="hidden shrink-0 rounded p-0.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive group-hover:block"
+                      title="Remove"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
                 </div>
               );
             })}
