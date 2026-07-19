@@ -7,6 +7,7 @@ import { Agent, ComputeNode, Project, User, Visitor, Workspace } from './entitie
 import { AgentHook } from './entities/agent-hook';
 import { authManager, dataContext, isTypeId, TypeId } from './FlowSync';
 import { snifferManager } from './services/snifferManager';
+import { markHubModeReady, setSupportedPagesForHubMode } from './utils/hub-runtime';
 import { ActionInfo } from './models';
 import { navigator } from './services/navigationService';
 // import { authService } from './services/authService';
@@ -43,6 +44,9 @@ export async function initSdk(params?: { agentId?: string; setupWorkspace?: bool
       const bootstrapInfo = await dataManager.bootstrap(domain, session);
       // Store bootstrap info in dataContext for UI access (e.g., desktop_info)
       dataContext.bootstrapInfo = bootstrapInfo;
+      // Seed the leaf hub-mode signal (so `isHubOnly()` works without importing
+      // dataContext into entities — see utils/hub-runtime.ts).
+      setSupportedPagesForHubMode((bootstrapInfo as { supported_pages?: string[] })?.supported_pages);
 
       // Seed cloudManager from bootstrap; it owns isLoggedIn / currentUser / cloudUrl
       // and listens to oauth WS events for the lifetime of the app.
@@ -179,6 +183,11 @@ export async function initSdk(params?: { agentId?: string; setupWorkspace?: bool
       // Reset initPromise to allow retry
       initPromise = null;
       return;
+    } finally {
+      // Unblock any early desktop-only probe awaiting the hub-mode signal, even
+      // if bootstrap failed / early-returned before seeding it (keeps the desk
+      // fallback so desk probes still run).
+      markHubModeReady();
     }
   })();
 

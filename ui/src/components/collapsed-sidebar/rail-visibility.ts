@@ -30,7 +30,14 @@ export type RailItemId =
   | 'hooks'
   | 'files'
   | 'capabilities'
-  | 'agentic-flows';
+  | 'agentic-flows'
+  // Hub-page rail items (page=hub). Not placed by RAIL_DELTAS — the hub rail is
+  // fixed (Home + browse entries) and bypasses the desk mode matrix.
+  | 'world'
+  | 'organization'
+  | 'conversations'
+  | 'docs'
+  | 'flows';
 
 export type RailStatus =
   /** shown at the top of the rail */

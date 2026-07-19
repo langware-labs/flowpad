@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import apiClient from '@sdk/client';
 import { applyScopeToParams, scopeFilterKey, type ScopeFilter } from '@src/lib/scope-filter';
+import { isHubOnly } from '@src/navigation/hub-runtime';
 
 const STATUS_PATH = '/graph/compute_node/@local/fs-records/index-status';
 
@@ -62,6 +63,12 @@ export function useIndexStatus(scope?: ScopeFilter): UseIndexStatusResult {
   const scopeKey = scope ? scopeFilterKey(scope) : '';
 
   const refresh = useCallback(() => {
+    // Hub mode: no local fs-records `/index-status` endpoint (404). Settle
+    // immediately on an empty (idle, nothing-indexed) status — never fetch.
+    if (isHubOnly()) {
+      setState({ phase: 'ready', status: EMPTY_STATUS });
+      return;
+    }
     let url = STATUS_PATH;
     if (scope) {
       const p = new URLSearchParams();

@@ -17,6 +17,7 @@
 
 import { EventEmitter } from 'events';
 import apiClient from '../client';
+import { hubModeReady, isHubOnly } from '../utils/hub-runtime';
 import type { ToplogStateMessage } from '../websocket';
 
 type Topics = string | string[];
@@ -55,6 +56,12 @@ class ToplogManager extends EventEmitter {
     ConnectionManager.getInstance().on('on_toplog_state_msg', (msg: ToplogStateMessage) => {
       this._apply(msg);
     });
+
+    // Wait for the hub-mode signal (this runs at init, possibly before bootstrap
+    // seeds it), then decide. Hub mode: the hub backend has no `/toplog/state`
+    // route (404) — skip the seed and stay off until a WS push arrives (if ever).
+    await hubModeReady();
+    if (isHubOnly()) return;
 
     try {
       const data = await apiClient.get<{ enabled: boolean; filter: Record<string, boolean> }>(
