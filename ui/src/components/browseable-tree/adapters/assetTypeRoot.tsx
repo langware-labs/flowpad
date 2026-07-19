@@ -11,7 +11,7 @@ import { ViewType } from '@src/types/ViewType';
 import type { AssetTypeInfo } from '@src/hooks/use-asset-types';
 import type { SearchResult } from '@src/hooks/use-asset-search';
 import { DEFAULT_ASSET_FILTER, applyFilterToParams } from '@src/components/assets/assetFilter';
-import { scopeFilterKey, type ScopeFilter } from '@src/lib/scope-filter';
+import { type ScopeFilter } from '@src/lib/scope-filter';
 import type { AssetFilter } from '@src/components/assets/assetFilter';
 import type { Browseable, BrowseableRoot, ToolbarAction } from '@src/components/browseable-tree/types';
 import { showDeleteAssetModal } from '@src/components/assets/delete-asset-modal';
@@ -252,11 +252,14 @@ export function assetTypeRoot(type: AssetTypeInfo, deps: AssetTypeRootDeps): Bro
   const filter = deps.filter ?? DEFAULT_ASSET_FILTER;
   const limit = deps.childrenPageSize ?? 200;
 
-  // Filter signature in the id forces the BrowseableTree to refetch
-  // children when the user toggles scope/picker (the children are cached
-  // by node id; without this they'd stay frozen at the previous filter).
-  const filterSig = scopeFilterKey(filter.scope);
-  const rootId = `asset-type:${type.type_name}:${filterSig}`;
+  // STABLE id — deliberately independent of the filter scope. The scope key
+  // oscillates several times while a file opens (URL-scope re-seed, the
+  // open-asset bucket collapsing, a stats refetch); baking it into the id used
+  // to remount this root on every wobble, which dropped its children and
+  // re-flashed "Loading…" — the sidebar "blink". Scope changes now refetch via
+  // an invalidate that keeps existing rows on screen (no flash) — see the
+  // scope-change effect in useAssetTreeRefresh.
+  const rootId = `asset-type:${type.type_name}`;
 
   // After delete: ask the tree to invalidate this root's children. The deleted
   // row drops out without resetting the user's expansion state. The optional
