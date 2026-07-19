@@ -2,6 +2,7 @@ import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { IEntity } from '../IEntity';
 import { ActionInfo } from '../models/ActionInfo';
 import { HttpMethod } from '../models/ApiUrl';
+import { kindMatches } from '../models/Kind';
 
 export type CapabilityActionName = 'check' | 'install' | 'test';
 
@@ -155,9 +156,7 @@ export class Capability extends APIEntity<Capability> implements ICapability {
   }
 
   static kindMatches(queryKind: string, capabilityKind: string): boolean {
-    const query = queryKind.trim().toLowerCase();
-    const candidate = capabilityKind.trim().toLowerCase();
-    return candidate === query || candidate.startsWith(`${query}.`);
+    return kindMatches(queryKind, capabilityKind);
   }
 
   private async callCapabilityAction(actionName: CapabilityActionName): Promise<CapabilityCheck> {

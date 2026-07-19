@@ -305,6 +305,30 @@ class Entity(DBEntity):
     # boundary. ClassVar so pydantic treats it as config, not a field.
     LOCAL_ONLY_FIELDS: ClassVar[frozenset[str]] = frozenset({"remote", "system", "fetched_at"})
 
+    # The base set of SENDER-LOCAL fields that never travel in the portable entity
+    # JSON (``to_common_json`` — the bundle ``entities.json`` envelope and, in
+    # time, the hub push). These describe THIS machine's copy — placement, mount,
+    # local provenance, local user ids, local-only projections — so the receiver
+    # re-derives them. Per-type additions are declared on ``TypeInfo.local_fields``
+    # (e.g. a claude_session's ``worker_session_id``) and unioned in by
+    # ``_local_fields``. NOTE: dates are deliberately NOT here — the bundle
+    # preserves send-time; the hub body strips them separately.
+    _BASE_LOCAL_FIELDS: ClassVar[frozenset[str]] = frozenset({
+        # placement / mount — the receiver re-derives from its own filesystem
+        "scope", "project_id", "asset_ref", "path",
+        "fs_storage_mount_path", "cwd", "installed_root",
+        # local provenance / flags
+        "git_origin", "remote", "system", "fetched_at",
+        # local user ids — do not resolve on the receiver
+        "created_by", "updated_by",
+        # local-only projections / caches
+        "private_context_entities_", "private_context_entities",
+        "private_context_entity_data", "shared_context_entity_data",
+        "message_count", "tags", "members",
+        # pydantic computed
+        "expand",
+    })
+
     # Mirror-image of LOCAL_ONLY_FIELDS for ``remote=True`` rows: fields the
     # HUB owns and local bookkeeping must never move. ``updated_date`` is the
     # LWW clock (``is_stale`` compares it) — a local re-stamp runs the clock
@@ -1697,6 +1721,36 @@ class Entity(DBEntity):
         if recursive:
             await self._share_children()
         return self
+
+    def _local_fields(self) -> frozenset[str]:
+        """The sender-local field set for this entity = the base set (§
+        ``_BASE_LOCAL_FIELDS``) plus the per-type ``TypeInfo.local_fields``
+        additions. These fields never travel in ``to_common_json``."""
+        try:
+            from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+            info = SchemaRegistry.get(self.get_type())
+            extra = getattr(info, "local_fields", None) if info is not None else None
+        except Exception:
+            extra = None
+        return self._BASE_LOCAL_FIELDS | (extra or frozenset())
+
+    def to_common_json(self) -> dict:
+        """The portable entity JSON: a full model dump minus the sender-local
+        fields. This is the SINGLE wire-serialization seam — used by the bundle
+        ``entities.json`` envelope (and, once hub-field parity is verified, the
+        hub push). Sender-local placement/mount/provenance/user-id fields (plus
+        each type's ``TypeInfo.local_fields``) are stripped; the receiver
+        re-derives them. Unlike ``meta_dict`` this is the FULL model (so wire-only
+        fields like ``text``/``status`` travel), not just the persisted subset.
+        ``skip_api_serializer`` suppresses the API serializer that re-injects
+        computed projections (e.g. ``expand``)."""
+        return self.model_dump(
+            mode="json",
+            exclude_none=True,
+            exclude=self._local_fields(),
+            context={"skip_api_serializer": True},
+        )
 
     def _hub_body(self) -> dict:
         """The serialized body to POST to the hub — shared by ``share`` and

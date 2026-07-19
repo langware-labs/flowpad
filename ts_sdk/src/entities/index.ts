@@ -3,6 +3,7 @@ export * from './agent';
 export * from './AgentConfig';
 export * from './api_key';
 export * from './artifact';
+export * from './deployment';
 export * from './agent-hook';
 export * from './agent-hook-enums';
 export * from './comment';

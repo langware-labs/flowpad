@@ -22,13 +22,11 @@ export type {
   MachineStatus,
   NetworkConnection,
   ProcessInfo,
-  ServiceStatusInfo,
-  ServicesStatus,
 } from './machine-status';
 
 // Export service control utilities for managing artifact processes
-export { canStartArtifact, isServiceArtifact, ServiceControlError } from './service-control';
-export type { ServiceArtifact } from './service-control';
+export { canStartService, isServiceRuntime, ServiceControlError } from './service-control';
+export type { ServiceRuntimeDescriptor } from './service-control';
 
 // Export system profile types for Claude Code environment information
 export {

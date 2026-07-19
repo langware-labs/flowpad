@@ -71,6 +71,27 @@ def inline_exec_dir(run_id: str, seq: int, node_id: str) -> Path:
     return run_record_dir(run_id) / "executions" / f"{seq}-{node_id}"
 
 
+def execution_base(proc: Any) -> Path:
+    """A PROCESS execution's record home — the one owner of the
+    ``<record_dir>/execution`` layout (executors and rerun both resolve here)."""
+    return proc._record_dir() / "execution"
+
+
+def prepare_execution_io(base: Path, fe: "FlowEvent") -> tuple[Path, Path]:
+    """Materialize the standardized I/O record for one execution: mkdir
+    ``input/`` + ``output/`` and write ``input/event.json``. THE one writer of
+    the input-record convention. Best-effort — a read-only disk never fails
+    the execution."""
+    input_dir, output_dir = base / "input", base / "output"
+    try:
+        input_dir.mkdir(parents=True, exist_ok=True)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        _write_json(input_dir / "event.json", fe.model_dump())
+    except OSError:
+        logger.debug("FlowManager: execution input record failed", exc_info=True)
+    return input_dir, output_dir
+
+
 def _write_json(path: Path, payload: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2, default=str) + "\n", encoding="utf-8")
@@ -127,15 +148,23 @@ class _Run:
 
 
 class _NodeRuntime:
-    """Per-(flow,node) scheduler state: pending deliveries + in-flight count."""
+    """Per-(flow,node) scheduler state: pending deliveries + in-flight count.
 
-    __slots__ = ("queue", "active")
+    ``pending_ids`` mirrors the queue's delivery identities so merge_identical
+    is an O(1) membership check instead of re-serializing the whole queue."""
+
+    __slots__ = ("queue", "active", "pending_ids")
 
     def __init__(self) -> None:
         from collections import deque
 
         self.queue: "deque[tuple[FlowEvent, FlowNodeDef, _Run]]" = deque()
         self.active = 0
+        self.pending_ids: set[str] = set()
+
+    @property
+    def idle(self) -> bool:
+        return not self.queue and self.active == 0
 
 
 class InlineFlowCtx:
@@ -343,7 +372,9 @@ class FlowManager:
         if process_id:
             source["process_id"] = process_id
         try:
-            _write_json(exec_dir / "example.json", {
+            from flow_sdk.builtin.dataset import EXAMPLE_META
+
+            _write_json(exec_dir / EXAMPLE_META, {
                 "metadata": {
                     "id": str(mint_uuid(f"{run.flow.flow_id}:{run.id}:{seq}")),
                     "kind": "train",
@@ -384,10 +415,11 @@ class FlowManager:
         nd = node.node_data
         if nd.get("merge_identical"):
             identity = _delivery_identity(fe)
-            if any(_delivery_identity(p) == identity for p, _, _ in rt.queue):
+            if identity in rt.pending_ids:
                 run.journal.append("merged", {"node": node.id, "event": fe.event})
                 await self._broadcast_node_status(run, node, "merged")
                 return
+            rt.pending_ids.add(identity)
         rt.queue.append((fe, node, run))
         run.pending += 1
         await self._broadcast_node_status(run, node, "queued", {"event": fe.event})
@@ -411,6 +443,7 @@ class FlowManager:
         limit = self._limit_for(node)
         while rt.queue and rt.active < limit:
             fe, node_def, run = rt.queue.popleft()
+            rt.pending_ids.discard(_delivery_identity(fe))
             run.pending -= 1
             rt.active += 1
             run.active += 1
@@ -424,6 +457,11 @@ class FlowManager:
                 run.journal.append("node_error", {"node": node_def.id, "error": str(e),
                                                   "execution": {"seq": seq}})
                 await self._broadcast_node_status(run, node_def, "failed", {"error": str(e)})
+        # Reap the per-node runtime when fully idle — the map otherwise grows
+        # one entry per (flow, node) forever (in-flight agents keep active > 0
+        # until their watcher drains again; deliveries recreate on demand).
+        if rt.idle:
+            self._runtime.pop((flow_id, node.id), None)
         self._maybe_finalize_all()
 
     def _finish_execution(self, run: _Run, rt: _NodeRuntime) -> None:
@@ -459,13 +497,7 @@ class FlowManager:
             self._finish_execution(run, rt)
             raise RuntimeError(f"No registered FlowFunction {ref!r}")
         exec_dir = inline_exec_dir(run.id, seq, node.id)
-        input_dir, output_dir = exec_dir / "input", exec_dir / "output"
-        try:
-            input_dir.mkdir(parents=True, exist_ok=True)
-            output_dir.mkdir(parents=True, exist_ok=True)
-            _write_json(input_dir / "event.json", fe.model_dump())
-        except OSError:
-            logger.debug("FlowManager: inline input record failed", exc_info=True)
+        input_dir, output_dir = prepare_execution_io(exec_dir, fe)
         ctx = InlineFlowCtx(self, run, node, input_dir, output_dir)
         await self._broadcast_node_status(run, node, "started", {"runtime": "inline"})
         started = time.monotonic()
@@ -514,14 +546,8 @@ class FlowManager:
             name=f"Flow {run.flow.doc.name or run.flow.flow_id[:8]}: {node.name or node.id[:8]}",
         )
         await proc.save()
-        exec_base = proc._record_dir() / "execution"
-        input_dir, output_dir = exec_base / "input", exec_base / "output"
-        try:
-            input_dir.mkdir(parents=True, exist_ok=True)
-            output_dir.mkdir(parents=True, exist_ok=True)
-            _write_json(input_dir / "event.json", fe.model_dump())
-        except OSError:
-            logger.debug("FlowManager: subprocess input record failed", exc_info=True)
+        exec_base = execution_base(proc)
+        input_dir, output_dir = prepare_execution_io(exec_base, fe)
         await self._attach_to_run(run, proc)
         await self._broadcast_node_status(run, node, "started",
                                           {"runtime": "subprocess", "process_id": proc.id})
@@ -602,13 +628,8 @@ class FlowManager:
         # Standardized input record in the process's OWN folders (id is minted
         # at construction, so the record dir is known pre-save) — the preamble
         # points the agent at it.
-        exec_base = proc._record_dir() / "execution"
-        try:
-            (exec_base / "input").mkdir(parents=True, exist_ok=True)
-            (exec_base / "output").mkdir(parents=True, exist_ok=True)
-            _write_json(exec_base / "input" / "event.json", fe.model_dump())
-        except OSError:
-            logger.debug("FlowManager: agent input record failed", exc_info=True)
+        exec_base = execution_base(proc)
+        prepare_execution_io(exec_base, fe)
         instruction = self._agent_instruction(run, node, fe, exec_base)
         proc.instruction_content = instruction
         await proc.save()
@@ -669,7 +690,7 @@ class FlowManager:
                 if proc is None:
                     failed = "process disappeared"
                     break
-                exec_base = proc._record_dir() / "execution"
+                exec_base = execution_base(proc)
                 if proc.status == ProcessStatus.FAILED.value:
                     failed = proc.start_failure or "process failed"
                     break
@@ -819,7 +840,7 @@ class FlowManager:
             proc = await AgenticProcess.get_by_id(process_id)
             if proc is None:
                 raise ValueError(f"execution process {process_id} no longer exists")
-            input_path = proc._record_dir() / "execution" / "input" / "event.json"
+            input_path = execution_base(proc) / "input" / "event.json"
         else:
             input_path = inline_exec_dir(run_id, seq, node_id) / "input" / "event.json"
         try:

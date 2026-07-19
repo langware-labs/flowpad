@@ -134,6 +134,40 @@ function loadLiveSessionRoute(pointer: string | undefined): void {
   }
 }
 
+/**
+ * Validate a graph root and adopt it as the URL-owned active entity. This is
+ * intentionally the loader's entire responsibility: graph reads happen in the
+ * mounted view and cloud inventory sync is only triggered by its Sync button.
+ */
+export async function loadGraphIdentityRoute(
+  dock: DockPointer,
+  surface: 'graph' | 'worldview',
+): Promise<void> {
+  if (!dock.pointer) return;
+  const parsed = surface === 'worldview'
+    ? DockPointer.parseWorldViewPointer(dock.pointer)
+    : DockPointer.parseGraphPointer(dock.pointer);
+  try {
+    if (!parsed) throw new Error('Expected <type>/<id>');
+    if (surface === 'worldview' && parsed.type !== 'artifact' && parsed.type !== 'deployment') {
+      throw new Error(`Unsupported WorldView root type: ${parsed.type}`);
+    }
+    await dataContext.setActiveEntityTypeId(new TypeId(parsed.type, parsed.id));
+  } catch (error) {
+    throw new DockLoadError(
+      'malformed_graph_pointer',
+      'hard',
+      {
+        action: 'render_error',
+        title: surface === 'worldview' ? 'WorldView not found' : 'Graph root not found',
+        message: `This ${surface === 'worldview' ? 'WorldView' : 'graph'} URL is malformed or unavailable.`,
+      },
+      surface,
+      error,
+    );
+  }
+}
+
 export async function loadDockPointer(dock: DockPointer, context: DockLoaderContext): Promise<string> {
   const label = `loadDockPointer:${dock.viewType ?? 'unknown'}`;
   try {
@@ -169,6 +203,12 @@ export async function loadDockPointer(dock: DockPointer, context: DockLoaderCont
         break;
       case ViewType.LENS:
         await loadLensRoute(dock.pointer);
+        break;
+      case ViewType.GRAPH:
+        await loadGraphIdentityRoute(dock, 'graph');
+        break;
+      case ViewType.WORLDVIEW:
+        await loadGraphIdentityRoute(dock, 'worldview');
         break;
       default:
         // Explorer, desktop, and other loader-less views: still honor a

@@ -14,10 +14,11 @@ import collections
 import json
 import logging
 import time
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from functools import cached_property, lru_cache
+from functools import cached_property
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, ClassVar, List
 from uuid import uuid4
@@ -61,9 +62,15 @@ from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
 
 if TYPE_CHECKING:
+    from flow_sdk.builtin.agentic_process._shared import RunResult
+    from flow_sdk.builtin.agentic_process.cli_drivers.auth_probe import WorkerAuthResult
     from flow_sdk.builtin.agentic_process.prompt_queue import PromptQueue
     from flow_sdk.builtin.shell import Shell
+    from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowData
+    from flow_sdk.fs_store.fs_record import FSRecord
+    from flow_sdk.responses.response import ApiResponse
     from flow_sdk.transcript_analyzer import AgentTranscriptFile
+    from flow_sdk.transcript_analyzer.counters import FocusedAsset
 
 logger = logging.getLogger(__name__)
 
@@ -2253,30 +2260,60 @@ class AgenticProcess(Entity):
         return project
 
     async def _get_project_webapp_artifacts(self) -> list:
-        from flow_sdk.builtin.artifact import Artifact, ArtifactType  # noqa: PLC0415
+        from flow_sdk.builtin.artifact import Artifact  # noqa: PLC0415
         from flow_sdk.core import QueryFilter  # noqa: PLC0415
+        from flow_sdk.worldview.ontology import kind_matches  # noqa: PLC0415
 
         project = await self._resolve_webapp_project()
         source = project.typeid if project is not None else None
         artifacts = await Artifact.get_all(QueryFilter.by_type(Artifact.get_type()), source_entity=source)
-        webapps = [artifact for artifact in artifacts if artifact.artifact_type == ArtifactType.WEBAPP]
+        webapps = [artifact for artifact in artifacts if kind_matches("application.web", artifact.kind)]
         return sorted(webapps, key=lambda artifact: str(getattr(artifact, "created_date", "") or ""), reverse=True)
+
+    async def _get_project_webapp_deployments(self) -> list:
+        from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
+        from flow_sdk.core import QueryFilter  # noqa: PLC0415
+        from flow_sdk.worldview.ontology import kind_matches  # noqa: PLC0415
+
+        project = await self._resolve_webapp_project()
+        source = project.typeid if project is not None else None
+        deployments = await Deployment.get_all(QueryFilter.by_type(Deployment.get_type()), source_entity=source)
+        return [
+            deployment
+            for deployment in deployments
+            if kind_matches("local.runtime.web", deployment.kind)
+        ]
 
     @action.post(action_name="webapp-artifacts")
     async def _http_webapp_artifacts(self) -> ApiSuccessResponse | ApiFailResponse:
-        """Return project-scoped WEBAPP artifacts for app-open reuse."""
+        """Return project-scoped web artifacts with their local placement."""
         try:
             artifacts = await self._get_project_webapp_artifacts()
-            return ApiSuccessResponse(data={"artifacts": [artifact.model_dump(mode="json") for artifact in artifacts]})
+            deployments = await self._get_project_webapp_deployments()
+            by_artifact = {deployment.artifact_id: deployment for deployment in deployments if deployment.artifact_id}
+            rows = []
+            for artifact in artifacts:
+                payload = artifact.model_dump(mode="json")
+                deployment = by_artifact.get(artifact.id)
+                if deployment is not None:
+                    payload["deployment"] = deployment.model_dump(mode="json")
+                rows.append(payload)
+            return ApiSuccessResponse(data={"artifacts": rows})
         except Exception as e:
             logger.exception("AgenticProcess %s webapp-artifacts error: %s", self.id, e)
             return ApiFailResponse(message=str(e))
 
     @action.post(action_name="register-webapp-artifact")
     async def _http_register_webapp_artifact(self) -> ApiSuccessResponse | ApiFailResponse:
-        """Create/update a WEBAPP artifact and optionally show its port."""
-        from flow_sdk.builtin.artifact import Artifact, ArtifactReferenceType, ArtifactType  # noqa: PLC0415
+        """Create/update a web Artifact and its local Deployment."""
+        from datetime import datetime  # noqa: PLC0415
+
+        from flow_sdk._compat import UTC  # noqa: PLC0415
+        from flow_sdk.api.api_types.identifier import adopt_entity_id, mint_uuid  # noqa: PLC0415
+        from flow_sdk.builtin.artifact import Artifact  # noqa: PLC0415
+        from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
         from flow_sdk.builtin.git_origin import GitOrigin  # noqa: PLC0415
+        from flow_sdk.builtin.local_origin import LocalOrigin  # noqa: PLC0415
         from flow_sdk.core.display_target import InvalidDisplayTarget, resolve_display_target  # noqa: PLC0415
         from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
 
@@ -2304,77 +2341,100 @@ class AgenticProcess(Entity):
         start_cmd = str(body.get("start_cmd") or "").strip()
         health = str(body.get("health") or "/").strip() or "/"
         description = str(body.get("description") or "").strip() or f"Web app at {artifact_path}"
-        metadata = body.get("metadata") if isinstance(body.get("metadata"), dict) else {}
         git_origin = None
         try:
             git_origin = await asyncio.to_thread(GitOrigin.for_asset_path, artifact_path)
         except Exception:
             logger.debug("register-webapp-artifact: could not derive git origin for %s", artifact_path, exc_info=True)
-        if git_origin is not None:
-            metadata = {**metadata, "git_origin": git_origin.model_dump(mode="json")}
+        path_obj = Path(artifact_path)
+        local_origin = LocalOrigin(base=str(path_obj.parent), rel_path=path_obj.name or ".")
 
         project = await self._resolve_webapp_project()
         artifacts = await self._get_project_webapp_artifacts()
-        artifact_id = str(body.get("artifact_id") or "").strip()
+        deployments = await self._get_project_webapp_deployments()
+        artifact_id = adopt_entity_id(body.get("artifact_id"))
         artifact = None
         if artifact_id:
             artifact = await Artifact.get_by_id(artifact_id)
         if artifact is None:
             for candidate in artifacts:
-                same_path = canonical_posix_path(str(candidate.path or "")) == artifact_path
-                same_port = str(candidate.port or (candidate.metadata or {}).get("port") or "") == str(port)
+                origin = candidate.origin
+                same_path = bool(
+                    getattr(origin, "kind", None) == "local"
+                    and canonical_posix_path(str(Path(origin.base) / origin.rel_path)) == artifact_path
+                )
+                candidate_deployment = next((d for d in deployments if d.artifact_id == candidate.id), None)
+                same_port = bool(
+                    candidate_deployment
+                    and str((candidate_deployment.provider_labels or {}).get("flowpad.runtime.port") or "") == str(port)
+                )
                 if same_path or same_port:
                     artifact = candidate
                     break
 
         if artifact is None:
-            metadata = {
-                **metadata,
-                "port": str(port),
-                "start_cmd": start_cmd,
-                "health": health,
-            }
             artifact = Artifact(
                 name=name,
-                artifact_type=ArtifactType.WEBAPP,
-                ref_type=ArtifactReferenceType.FOLDER,
-                path=artifact_path,
+                kind="application.web",
                 description=description,
-                metadata=metadata,
                 project_id=project.id if project is not None else self.project_id,
-                git_origin=git_origin,
-                port=str(port),
-                start_cmd=start_cmd,
-                health=health,
+                origin=git_origin or local_origin,
             )
         else:
-            metadata = {
-                **(artifact.metadata or {}),
-                **metadata,
-                "port": str(port),
-                "start_cmd": start_cmd,
-                "health": health,
-            }
             artifact.name = name
-            artifact.artifact_type = ArtifactType.WEBAPP
-            artifact.ref_type = ArtifactReferenceType.FOLDER
-            artifact.path = artifact_path
+            artifact.kind = "application.web"
             artifact.description = description
-            artifact.metadata = metadata
-            if git_origin is not None:
-                artifact.git_origin = git_origin
-            artifact.port = str(port)
-            artifact.start_cmd = start_cmd
-            artifact.health = health
+            artifact.origin = git_origin or local_origin
             if project is not None:
                 artifact.project_id = project.id
 
+        if project is not None:
+            artifact.parent_type_id = str(project.typeid)
         await artifact.save()
         if project is not None:
             await project.attach_child(artifact)
             if artifact.id not in (project.artifacts or []):
                 project.artifacts = list(project.artifacts or []) + [artifact.id]
                 await project.save()
+
+        deployment_id = mint_uuid(f"deployment:legacy-artifact:{artifact.id}")
+        deployment = await Deployment.get_by_id(deployment_id)
+        deployment_payload = {
+            "name": f"{name} (local)",
+            "kind": "local.runtime.web",
+            "artifact_id": artifact.id,
+            "artifact_link_source": "manual",
+            "target": {
+                "provider": "local",
+                "scope": project.id if project is not None else "machine",
+                "location": f"http://localhost:{port}",
+            },
+            "resource": {
+                "full_resource_name": f"local://localhost:{port}",
+                "asset_type": "flowpad.local/Process",
+                "provider_uid": str(port),
+            },
+            "status": {
+                "sync_state": "current",
+                "provider_state": "configured",
+                "observed_at": datetime.now(UTC).isoformat(),
+            },
+            "provider_labels": {
+                "flowpad.runtime.port": str(port),
+                "flowpad.runtime.start_cmd": start_cmd,
+                "flowpad.runtime.health": health,
+            },
+            "source_revision": getattr(git_origin, "head_commit", None),
+            "project_id": project.id if project is not None else self.project_id,
+            "parent_type_id": str(project.typeid) if project is not None else None,
+        }
+        if deployment is None:
+            deployment = Deployment(id=deployment_id, **deployment_payload)
+        else:
+            deployment.apply_field_updates(deployment_payload)
+        await deployment.save()
+        if project is not None:
+            await project.attach_child(deployment)
 
         shown = None
         if bool(body.get("show", True)):
@@ -2384,7 +2444,13 @@ class AgenticProcess(Entity):
                 return ApiFailResponse(message=str(e), status_code=400)
             await self.on_show(shown)
 
-        return ApiSuccessResponse(data={"artifact": artifact.model_dump(mode="json"), "shown": shown})
+        return ApiSuccessResponse(
+            data={
+                "artifact": artifact.model_dump(mode="json"),
+                "deployment": deployment.model_dump(mode="json"),
+                "shown": shown,
+            }
+        )
 
     async def on_show(self, payload: dict) -> None:
         """Present *payload* to this process's watchers — the ``flow show`` verb.
@@ -4340,8 +4406,6 @@ class AgenticProcess(Entity):
         Returns the entity's display name on success, ``None`` if the entity
         type is unsupported for embedding. Raises for resolution / IO failures.
         """
-        import shutil
-
         from flow_sdk.fs_store.operations.agent import get_agent  # noqa: PLC0415
         from flow_sdk.fs_store.operations.agent import load_agent as _load_agent
         from flow_sdk.fs_store.operations.skill import copy_skill_to, get_skill
@@ -4357,7 +4421,7 @@ class AgenticProcess(Entity):
             src = agent.asset_ref._path if agent.asset_ref else None
             if src is None or not src.exists():
                 raise FileNotFoundError(f"Agent source missing: {ref.id}")
-            target = AssetDir(assets_dir).load_asset(
+            AssetDir(assets_dir).load_asset(
                 Path(".claude") / "agents" / f"{agent.name or ref.id}.md",
                 source=src,
             )
@@ -5293,14 +5357,14 @@ class AgenticProcess(Entity):
         for section in ("generic", "worker"):
             l_section = norm_loaded.get(section) or {}
             c_section = norm_current.get(section) or {}
-            for field in sorted(set(l_section) | set(c_section)):
-                l_val = l_section.get(field)
-                c_val = c_section.get(field)
+            for field_name in sorted(set(l_section) | set(c_section)):
+                l_val = l_section.get(field_name)
+                c_val = c_section.get(field_name)
                 if l_val != c_val:
                     changes.append(
                         {
                             "section": section,
-                            "field": field,
+                            "field": field_name,
                             "loaded": l_val,
                             "current": c_val,
                         }
@@ -6282,7 +6346,7 @@ class AgenticProcess(Entity):
         """Check if there's a resumable Claude session for this agentic process."""
         return self._discover_claude_record_session(session_id) is not None
 
-    def _discover_claude_record_session(self, session_id: str | None) -> "Record | None":
+    def _discover_claude_record_session(self, session_id: str | None) -> "FSRecord | None":
         """Discover the Claude session Record associated with this agentic process's session_id."""
         if not session_id:
             return None
@@ -6814,7 +6878,6 @@ class AgenticProcess(Entity):
         main_loop = asyncio.get_running_loop()
         agentic_process_id = self.id
         session_id = self.session_id
-        shell_id = self.shell_id
         # Closure-bound spawn clock: the callback is created immediately before
         # the worker is launched, so ``now - spawned_at`` at exit time is the
         # worker's lifetime. Kept in the closure (not the entity) so the

@@ -13,6 +13,7 @@ import {
 // safe repo-relative path is and how provenance is read off a received entity.
 
 const ORIGIN: GitOrigin = {
+  kind: 'git',
   provider: 'github',
   owner: 'Acme',
   name: 'Widgets',

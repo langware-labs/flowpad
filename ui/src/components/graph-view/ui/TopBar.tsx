@@ -3,6 +3,7 @@ import type Graph from 'graphology';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { SearchInput, type SearchResultRow } from './SearchInput';
 import { FilterChips } from './FilterChips';
+import { WORLDVIEW_COLOR_MODES, type WorldViewColorMode } from '@src/types/WorldViewColorMode';
 
 type LocalModeState = {
   rootKey: string;
@@ -13,12 +14,18 @@ type LocalModeState = {
 };
 
 type Props = {
+  title: string;
+  actionLabel: string;
+  actionPendingLabel: string;
   graph: Graph | null;
   nodeCount: number;
   visibleNodeCount: number;
   edgeCount: number;
   hidden: Set<string>;
   building: boolean;
+  actionDisabled?: boolean;
+  depthOptions?: number[];
+  colorMode?: WorldViewColorMode;
   localMode: LocalModeState | null;
   onToggleType: (type: string) => void;
   onSelectAllTypes: () => void;
@@ -27,16 +34,23 @@ type Props = {
   onSelectResult: (key: string) => void;
   onRebuild: () => void;
   onChangeDepth: (depth: number) => void;
+  onChangeColorMode?: (mode: WorldViewColorMode) => void;
   onExitLocal: () => void;
 };
 
 export function TopBar({
+  title,
+  actionLabel,
+  actionPendingLabel,
   graph,
   nodeCount,
   visibleNodeCount,
   edgeCount,
   hidden,
   building,
+  actionDisabled = false,
+  depthOptions = [1, 2, 3],
+  colorMode,
   localMode,
   onToggleType,
   onSelectAllTypes,
@@ -45,26 +59,48 @@ export function TopBar({
   onSelectResult,
   onRebuild,
   onChangeDepth,
+  onChangeColorMode,
   onExitLocal,
 }: Props) {
   const { t } = useLingui();
+  const colorModeLabels: Record<WorldViewColorMode, string> = {
+    type: t`Type`,
+    footprint: t`Footprint`,
+    cost: t`Cost`,
+    activity: t`Activity`,
+  };
 
   return (
     <div className="top-bar">
       <div className="top-bar-row">
         <div className="title">
           <span className="title-dot" />
-          <span><Trans>Context Graph</Trans></span>
+          <span>{title}</span>
         </div>
         <SearchInput onQueryChange={onSearch} onSelect={onSelectResult} />
+        {colorMode && onChangeColorMode && (
+          <div className="color-mode-control" role="group" aria-label={t`Color by`}>
+            {WORLDVIEW_COLOR_MODES.map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                className={`color-mode-btn ${mode === colorMode ? 'active' : ''}`}
+                aria-pressed={mode === colorMode}
+                onClick={() => onChangeColorMode(mode)}
+              >
+                {colorModeLabels[mode]}
+              </button>
+            ))}
+          </div>
+        )}
         <div className="spacer" />
         <div className="counts">
           <span><strong>{visibleNodeCount}</strong> / {nodeCount} <Trans>nodes</Trans></span>
           <span><strong>{edgeCount}</strong> <Trans>edges</Trans></span>
         </div>
-        <button className="btn" onClick={onRebuild} disabled={building}>
+        <button className="btn" onClick={onRebuild} disabled={building || actionDisabled}>
           <RefreshCw size={12} className={building ? 'spin' : ''} />
-          {building ? t`Building…` : t`Rebuild`}
+          {building ? actionPendingLabel : actionLabel}
         </button>
       </div>
       <FilterChips
@@ -82,15 +118,15 @@ export function TopBar({
           <span className="local-meta">({localMode.rootType})</span>
           <span className="local-sep" />
           <span className="local-meta"><Trans>depth</Trans></span>
-          {[1, 2, 3].map((d) => (
+          {depthOptions.map((d) => (
             <button
               key={d}
               type="button"
               className={`depth-btn ${d === localMode.depth ? 'active' : ''}`}
               onClick={() => onChangeDepth(d)}
-              title={`Show ${d} hop${d > 1 ? 's' : ''} from ${localMode.rootLabel}`}
+              title={d === 0 ? `Show complete hierarchy from ${localMode.rootLabel}` : `Show ${d} hop${d > 1 ? 's' : ''} from ${localMode.rootLabel}`}
             >
-              {d}
+              {d === 0 ? t`All` : d}
             </button>
           ))}
           <span className="local-sep" />

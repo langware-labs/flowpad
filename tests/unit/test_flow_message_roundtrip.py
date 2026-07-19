@@ -82,8 +82,8 @@ class TestPackBundle:
         assert zip_path.suffix == ".flowmsg"
         with zipfile.ZipFile(zip_path, "r") as zf:
             names = zf.namelist()
-            assert "header.json" in names
-            data = json.loads(zf.read("header.json"))
+            assert "flow_message.json" in names
+            data = json.loads(zf.read("flow_message.json"))
             assert data["text"] == "Hello, world!"
             assert data["id"] == fm.id
 
@@ -185,7 +185,7 @@ class TestPackBundle:
         with zipfile.ZipFile(zip_path, "r") as zf:
             assert "attachment/files/report.pdf" in zf.namelist()
             assert zf.read("attachment/files/report.pdf") == b"PDFBYTES"
-            header = json.loads(zf.read("header.json"))
+            header = json.loads(zf.read("flow_message.json"))
             assert header["attachment"][0]["data"] == "attachment/files/report.pdf"
 
         # --- (b) inline-text PROMPT (no backing file) → not copied ---
@@ -196,7 +196,7 @@ class TestPackBundle:
         zip_path2 = await pack_bundle(fm2, dest_dir=tmp_path)
         with zipfile.ZipFile(zip_path2, "r") as zf:
             assert not any(n.startswith("attachment/files/") for n in zf.namelist())
-            header2 = json.loads(zf.read("header.json"))
+            header2 = json.loads(zf.read("flow_message.json"))
             # No VFS prefix → header data passes through unchanged.
             assert header2["attachment"][0]["data"] == "Just inline prompt text, no file."
 

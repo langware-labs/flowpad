@@ -1,4 +1,4 @@
-import { CodeRef, ViewType } from '@sdk';
+import { ViewType } from '@sdk';
 import { useEffect } from 'react';
 import { useDockNavigation } from '../../navigation/useDockNavigation';
 import { useViewerStore } from './useViewerStore';
@@ -48,7 +48,7 @@ export function useActiveViewer() {
       }
 
       setCurrentContext({
-        codeRef: currentDock.pointer ? new CodeRef({ path: currentDock.pointer }) : undefined,
+        codeRef: currentDock.pointer ? { path: currentDock.pointer } : undefined,
         viewerType: currentDock.viewType,
         viewerOptions,
       });

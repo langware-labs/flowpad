@@ -1,4 +1,10 @@
-"""Rename record folders off the retired ``<type>-@<id>`` uname-sigil stem.
+"""Apply the 0.2.103 local-store migrations.
+
+The record-stem cleanup below is followed by the idempotent Artifact ->
+Artifact + Deployment split.  Each operation owns its own backup and journal,
+so retrying after a partial launch is safe.
+
+Rename record folders off the retired ``<type>-@<id>`` uname-sigil stem.
 
 The record shadow/data store now names a record's folder by its BARE id under a
 ``<type>/`` parent — ``records/<type>/<id>/`` and ``records_data/<type>/<id>/`` —
@@ -163,6 +169,12 @@ def run(*, dry_run: bool = False) -> None:
         "PLAN" if dry_run else "DONE",
         counts["shadow_dirs"], counts["staging_arcs"], counts["ma_rows"],
     )
+
+    # Keep this call after the stem transaction is closed: the Artifact split
+    # creates its own sqlite backup before beginning its independent write.
+    from flow_sdk.migrations.artifact_deployment import run_artifact_deployment_migration
+
+    run_artifact_deployment_migration(db_path, dry_run=dry_run)
 
 
 if __name__ == "__main__":

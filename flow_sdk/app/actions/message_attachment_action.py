@@ -586,6 +586,17 @@ async def handle_attachment_install(
             data={"asset_conflict": True, "conflicts": getattr(e, "conflicts", None)},
         )
 
+    # Metadata axis: overlay the portable entity-JSON envelopes (entities.json)
+    # onto the freshly materialized rows — parent_type_id / labels / status /
+    # semantic_lock, etc. Independent of transfer mode; sender-local fields never
+    # travel, so the receiver's own scope/project_id/asset_ref stay intact.
+    try:
+        from flow_sdk.builtin.flow_message_bundle import apply_entities_overlay  # noqa: PLC0415
+
+        await apply_entities_overlay(unpacked_dir(ma.flow_message_id), someone_typeid)
+    except Exception:
+        logger.warning("[install] entities.json overlay failed for %s", ma.id, exc_info=True)
+
     return await _finalize_install(
         ma,
         scope,
