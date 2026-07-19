@@ -55,7 +55,7 @@ def test_builtin_types_have_dispatch_slots_wired():
 
     for t in (
         "skill", "markdown", "plan", "claude_md", "agent", "command", "task",
-        "whiteboard", "spec", "workflow", "claude_session", "codex_session",
+        "whiteboard", "spec", "claude_session", "codex_session",
         "markdown_index", "project", "claude_memory", "claude_rules",
     ):
         info = SchemaRegistry.get(t)

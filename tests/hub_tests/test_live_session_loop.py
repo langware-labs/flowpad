@@ -226,7 +226,7 @@ async def test_live_session_transport_loop(
 
     zip_path = tmp_path / "body.flowmsg"
     zip_path.write_bytes(bundle_bytes)
-    header_name = f"attachment/remote_worker_session-@{sid}/header.json"
+    header_name = f"attachment/remote_worker_session-{sid}/header.json"
     with zipfile.ZipFile(zip_path) as zf:
         assert header_name in zf.namelist(), zf.namelist()
         snap = json.loads(zf.read(header_name))

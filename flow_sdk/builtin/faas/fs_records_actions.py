@@ -1755,6 +1755,26 @@ class FsRecordsActionsMixin:
 
     # -- fs-records CRUD action --------------------------------------------------
 
+    async def _materialize_main_body(self, rec, record_type: str) -> None:
+        """Write a just-created folder-asset's main body to disk (default_body →
+        e.g. ``SKILL.md``) so the new asset is discoverable by a disk-walking
+        scan. No-op for types without a ``default_body_fn``/``entity_cls`` or an
+        unresolved ``asset_ref``, and idempotent (``upsert_main_ref`` skips an
+        existing file). Bridges the gap that ``sync_to_db`` (DB row + metadata
+        shadow only) leaves for the FSRecord create path."""
+        from flow_sdk.fs_store.fs_ref import FSRef  # noqa: PLC0415
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+        info = SchemaRegistry.get(record_type)
+        if info is None or info.default_body_fn is None or info.entity_cls is None:
+            return
+        entity = await info.entity_cls.get_one({"id": rec.id})
+        ar = getattr(entity, "asset_ref", None) if entity is not None else None
+        if not ar:
+            return
+        rec.asset_ref = FSRef(ar)
+        await asyncio.to_thread(rec.upsert_main_ref, entity)
+
     async def _fs_records_action(self) -> ApiResponse:
         """CRUD gateway for filesystem-backed typed records.
 
@@ -1904,6 +1924,15 @@ class FsRecordsActionsMixin:
                     await rec.sync_to_db()
                 except Exception as e:
                     logging.debug(f"[fs-records] sync_to_db skipped on create: {e}")
+                # Materialize the folder-asset's main body on disk (default_body
+                # → e.g. SKILL.md) so an API-created asset is discoverable by a
+                # disk-walking scan. sync_to_db writes the DB row + metadata
+                # shadow but not the main body — that's the Entity.save→_store→
+                # upsert_main_ref chokepoint this FSRecord create path bypasses.
+                try:
+                    await self._materialize_main_body(rec, record_type)
+                except Exception as e:  # best-effort — never fail the create
+                    logging.debug(f"[fs-records] main-body materialize skipped: {e}")
                 # scope is stamped from the resolved asset path inside
                 # Entity._prepare_for_storage (the single save chokepoint), so
                 # HTTP-created records are born with a scope just like

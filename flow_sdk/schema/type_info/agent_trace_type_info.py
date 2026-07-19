@@ -54,7 +54,9 @@ AGENT_TRACE = TypeMetadata(
     icon="Route",
     api_visible=True,
     index_fields=["name", "session_id", "verdict"],
-    main_subdir=".claude/agent_traces",
+    asset_class="harness",
+    harness="claude",
+    family="agent_traces",
     main_layout="folder",
     main_file="trace.json",
     # asset_ref IS .claude/agent_traces/<name>/trace.json (the walker emits the

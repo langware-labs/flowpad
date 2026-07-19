@@ -138,6 +138,11 @@ export interface BootstrapInfo {
    *  translator worker can render a doc into. Feeds the Translations side-panel
    *  picker. `flag` is absent (document targets are language-only). */
   translation_targets?: TranslationTarget[];
+  /** SPA-surfaces ("pages") this server serves, as `PageId` strings (dock URL
+   *  grammar / `DockPointer.page`). The local desktop server serves only
+   *  `"desk"`; a hub backend reports its own set. Navigation to a page not in
+   *  this list redirects to the first supported page's home. Absent ⇒ desk-only. */
+  supported_pages?: string[];
   /** One-time startup notice (e.g. secrets were reset). Absent normally. */
   notice?: BootstrapNotice;
 }

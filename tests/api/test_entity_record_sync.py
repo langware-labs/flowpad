@@ -69,7 +69,7 @@ async def test_write_through_entity_update_syncs_to_disk_record(bootstrapped_cli
     import uuid
 
     from flow_sdk.builtin.workspace import Workspace
-    from flow_sdk.fs_store.record_paths import get_default_records_root, record_stem
+    from flow_sdk.fs_store.record_paths import get_default_records_root
 
     original_root = get_default_records_root()
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -82,7 +82,7 @@ async def test_write_through_entity_update_syncs_to_disk_record(bootstrapped_cli
             rec = Record(id=record_id, type="workspace", name="Original Name", status="new")
             rec.save()
 
-            rec_path = get_default_records_root() / "workspace" / record_stem("workspace", record_id) / "metadata.json"
+            rec_path = get_default_records_root() / "workspace" / str(record_id) / "metadata.json"
             assert rec_path.exists(), "Record should be on disk after save()"
 
             # Index the record → creates Workspace entity

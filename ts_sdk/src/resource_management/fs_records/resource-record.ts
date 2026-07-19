@@ -59,12 +59,16 @@ export function recordStem(type: string, id: string): string {
 
 /**
  * Parse a stem string back into { type, id }.
- * Returns null if the stem does not contain a hyphen.
+ * Returns null if the stem does not contain a hyphen. Tolerates the legacy
+ * `{type}-@{id}` shape (retired uname-sigil separator) by stripping a leading
+ * `@` off the id — parity with Python `parse_record_stem`.
  */
 export function parseRecordStem(stem: string): { type: string; id: string } | null {
   const idx = stem.indexOf('-');
   if (idx < 0) return null;
-  return { type: stem.slice(0, idx), id: stem.slice(idx + 1) };
+  let id = stem.slice(idx + 1);
+  if (id.startsWith('@')) id = id.slice(1); // legacy {type}-@{id}
+  return { type: stem.slice(0, idx), id };
 }
 
 /** Convert a ResourceRecord (or partial) to a plain dict. */

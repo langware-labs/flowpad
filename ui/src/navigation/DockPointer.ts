@@ -1,4 +1,4 @@
-import { AgenticProcess, ClaudeSession, Layout, Project, RemoteWorkerSession, Shell, TypeId, VFSPath, type IDockPointer } from '@sdk';
+import { AgenticProcess, ClaudeSession, Layout, PageId, Project, RemoteWorkerSession, Shell, TypeId, VFSPath, type IDockPointer } from '@sdk';
 import { VIEW_SLOTS, ViewSlot, ViewType, VIEWER_REGISTRY } from '../types/ViewType';
 import { NavigationError, NavigationErrorType } from './NavigationError';
 import { buildDockUrl, parseDockUrl, parseQueryParams } from './url-builder';
@@ -138,23 +138,28 @@ export class DockPointer implements IDockPointer {
   public readonly pointer?: string | undefined;
   public readonly options?: Record<string, string> | undefined;
   public readonly layout: Layout;
+  /** Which SPA-surface this dock addresses. Defaults to `desk` (today's desktop
+   *  app); a sibling of `viewType`, never folded into `pointer`. */
+  public readonly page: PageId;
 
   constructor(data: IDockPointer, layout?: Layout);
-  constructor(viewType?: ViewType, pointer?: string, options?: Record<string, string>, layout?: Layout);
+  constructor(viewType?: ViewType, pointer?: string, options?: Record<string, string>, layout?: Layout, page?: PageId);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  constructor(viewTypeOrData?: any, pointerOrLayout?: any, options?: any, layout?: any) {
+  constructor(viewTypeOrData?: any, pointerOrLayout?: any, options?: any, layout?: any, page?: any) {
     if (viewTypeOrData && typeof viewTypeOrData === 'object') {
       // IDockPointer overload
       this.viewType = viewTypeOrData.viewType as ViewType | undefined;
       this.pointer = viewTypeOrData.pointer;
       this.options = viewTypeOrData.options;
       this.layout = (pointerOrLayout as Layout) ?? Layout.DOCK;
+      this.page = (viewTypeOrData.page as PageId | undefined) ?? PageId.DESK;
     } else {
       // Positional overload
       this.viewType = viewTypeOrData;
       this.pointer = pointerOrLayout as string | undefined;
       this.options = options;
       this.layout = layout ?? Layout.DOCK;
+      this.page = (page as PageId | undefined) ?? PageId.DESK;
     }
   }
 
@@ -179,6 +184,7 @@ export class DockPointer implements IDockPointer {
       this.pointer,
       withScopeFilterOptions(this.options, scope),
       this.layout,
+      this.page,
     );
   }
 
@@ -204,6 +210,7 @@ export class DockPointer implements IDockPointer {
       this.pointer,
       withSideWindowsOptions(this.options, state),
       this.layout,
+      this.page,
     );
   }
 
@@ -228,7 +235,13 @@ export class DockPointer implements IDockPointer {
       this.pointer,
       { ...this.options, [HIGHLIGHT_PARAM]: wikiword },
       this.layout,
+      this.page,
     );
+  }
+
+  /** Clone this dock addressing a different SPA-surface (page). */
+  withPage(page: PageId): DockPointer {
+    return new DockPointer(this.viewType, this.pointer, this.options, this.layout, page);
   }
 
   /**
@@ -246,7 +259,7 @@ export class DockPointer implements IDockPointer {
     const nextOptions = { ...(this.options ?? {}) };
     if (mode) nextOptions[VIEW_MODE_PARAM] = mode;
     else delete nextOptions[VIEW_MODE_PARAM];
-    return new DockPointer(this.viewType, this.pointer, nextOptions, this.layout);
+    return new DockPointer(this.viewType, this.pointer, nextOptions, this.layout, this.page);
   }
 
   /**
@@ -264,7 +277,7 @@ export class DockPointer implements IDockPointer {
     const nextOptions = { ...(this.options ?? {}) };
     if (lang) nextOptions[LANG_PARAM] = lang;
     else delete nextOptions[LANG_PARAM];
-    return new DockPointer(this.viewType, this.pointer, nextOptions, this.layout);
+    return new DockPointer(this.viewType, this.pointer, nextOptions, this.layout, this.page);
   }
 
   /**
@@ -277,19 +290,21 @@ export class DockPointer implements IDockPointer {
     pointer?: string,
     searchParams?: URLSearchParams,
     layout?: Layout,
+    page?: PageId,
   ): DockPointer;
   static fromUrl(
     viewTypeOrUrl: string,
     pointer?: string,
     searchParams?: URLSearchParams,
     layout: Layout = Layout.DOCK, // Default to DOCK for backward compatibility
+    page: PageId = PageId.DESK, // Default to DESK for backward compatibility
   ): DockPointer {
     if (pointer === undefined && searchParams === undefined) {
       try {
         const url = new URL(viewTypeOrUrl, 'http://flowpad.local');
         const parsedUrl = parseDockUrl(url.pathname);
         if (parsedUrl?.viewType) {
-          return DockPointer.fromUrl(parsedUrl.viewType, parsedUrl.pointer, url.searchParams, parsedUrl.layout);
+          return DockPointer.fromUrl(parsedUrl.viewType, parsedUrl.pointer, url.searchParams, parsedUrl.layout, parsedUrl.page);
         }
       } catch {
         // Not a URL-shaped value; continue with the historical viewType parser.
@@ -310,7 +325,7 @@ export class DockPointer implements IDockPointer {
     // Parse options from query params
     const options = searchParams ? parseQueryParams(searchParams) : {};
 
-    return new DockPointer(viewType as ViewType, decodedPointer, options, layout);
+    return new DockPointer(viewType as ViewType, decodedPointer, options, layout, page);
   }
 
   /**
@@ -767,7 +782,7 @@ export class DockPointer implements IDockPointer {
   ): DockPointer {
     if (!projectId || p.viewType !== ViewType.ASSETS) return p;
     const sub = p.pointer ? `${projectId}/${p.pointer}` : projectId;
-    return new DockPointer(ViewType.PROJECT, sub, p.options, p.layout);
+    return new DockPointer(ViewType.PROJECT, sub, p.options, p.layout, p.page);
   }
 
   /**
@@ -1175,6 +1190,7 @@ export class DockPointer implements IDockPointer {
     return (
       this.viewType === other.viewType &&
       this.pointer === other.pointer &&
+      this.page === other.page &&
       this.slot === other.slot &&
       this.layout === other.layout &&
       JSON.stringify(this.options) === JSON.stringify(other.options)
@@ -1207,22 +1223,27 @@ export class DockPointer implements IDockPointer {
     if (VIEWER_REGISTRY[this.viewType]?.chrome === 'fullbleed') return null;
     // A bare shell is the terminal host; only a session-pointer shell is a tab.
     if (this.viewType === ViewType.SHELL && !this.pointer) return null;
+    // Page namespaces tab identity: `desk` (the default) stays UNPREFIXED so every
+    // existing persisted `Tab.pointer` key is byte-identical (no migration); a
+    // non-desk page prefixes its id, giving each page its own tab namespace so a
+    // `desk` tab and a `hub` tab with the same viewType/pointer never collide.
+    const pagePrefix = this.page === PageId.DESK ? '' : `${this.page}|`;
     // A scope-keyed view (Assets, Explorer) is a SINGLE tab per scope: every
     // sub-pointer (asset type/folder/editor, explorer folder) of one scope folds
     // into ONE tab. Identity = the scope filter (global when unset), NOT the
     // sub-pointer. scopeFilterKey: 'all' | 'user' | 'project:<id>' |
     // 'filter:<0|1>:p1,p2'.
     if (VIEWER_REGISTRY[this.viewType]?.scopeKeyed) {
-      return `${this.viewType}|${scopeFilterKey(this.scopeFilter ?? ALL_SCOPE_FILTER)}`;
+      return `${pagePrefix}${this.viewType}|${scopeFilterKey(this.scopeFilter ?? ALL_SCOPE_FILTER)}`;
     }
     // Pointer-folding views (e.g. Preferences) collapse all their category/field
     // sub-pointers into ONE tab: identity is the viewType, pointer dropped. The
     // flag lives in VIEWER_REGISTRY so this stays declarative (cf. the fullbleed
     // check above) instead of hardcoding viewTypes here.
     if (VIEWER_REGISTRY[this.viewType]?.foldsPointer) {
-      return `${this.viewType}|`;
+      return `${pagePrefix}${this.viewType}|`;
     }
-    return `${this.viewType}|${this.pointer ?? ''}`;
+    return `${pagePrefix}${this.viewType}|${this.pointer ?? ''}`;
   }
 
   /** Serialize this dock's tab-identity fields (viewType + pointer) as JSON.
@@ -1266,7 +1287,7 @@ export class DockPointer implements IDockPointer {
       const dp = DockPointer.fromUrl(viewType, pointer || undefined);
       // Restore scope options (assets identity) so the reconstructed dock's
       // tabHash matches the live nav dock's.
-      return options ? new DockPointer(dp.viewType, dp.pointer, options, dp.layout) : dp;
+      return options ? new DockPointer(dp.viewType, dp.pointer, options, dp.layout, dp.page) : dp;
     } catch {
       return null;
     }
@@ -1389,11 +1410,12 @@ export class DockPointer implements IDockPointer {
   /**
    * Convert to URL segments (for building URLs)
    */
-  toUrlSegments(): { viewType: ViewType; pointer?: string; layout: Layout } {
+  toUrlSegments(): { viewType: ViewType; pointer?: string; layout: Layout; page: PageId } {
     return {
       viewType: this.viewType!,
       pointer: this.pointer,
       layout: this.layout,
+      page: this.page,
     };
   }
 
@@ -1404,7 +1426,7 @@ export class DockPointer implements IDockPointer {
     if (!this.viewType) {
       throw new NavigationError(NavigationErrorType.UNKNOWN_VIEW, 'Cannot serialize DockPointer without a view type');
     }
-    return buildDockUrl(currentPath, this.viewType, this.pointer, this.options, this.layout);
+    return buildDockUrl(currentPath, this.viewType, this.pointer, this.options, this.layout, this.page);
   }
 
   /**

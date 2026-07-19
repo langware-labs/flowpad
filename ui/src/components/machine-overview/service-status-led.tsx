@@ -36,12 +36,12 @@ export const ServiceStatusLed: React.FC<ServiceStatusLedProps> = ({ className = 
   const refreshDebounceRef = useRef<NodeJS.Timeout | null>(null);
 
   const fetchMachineStatus = useCallback(async () => {
-    if (!flow?.id) return;
+    if (!computeNode?.id) return;
 
     setIsLoading(true);
 
     try {
-      const actionInfo = new ActionInfo('get-machine-status', 'flow', flow.id, 'GET');
+      const actionInfo = new ActionInfo('get-machine-status', 'compute_node', computeNode.id, 'GET');
       const response = await fetch(actionInfo.fullActionUrl, {
         credentials: 'include',
       });
@@ -60,7 +60,7 @@ export const ServiceStatusLed: React.FC<ServiceStatusLedProps> = ({ className = 
     } finally {
       setIsLoading(false);
     }
-  }, [flow?.id, onStatusChange]);
+  }, [computeNode?.id, onStatusChange]);
 
   // Debounced refresh function - refreshes both machine status and webapp iframe
   const debouncedRefresh = useCallback(() => {

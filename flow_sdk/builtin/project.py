@@ -7,7 +7,6 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, List, Optional
 
-from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, computed_field, model_validator
 from pydantic.alias_generators import to_camel
 
@@ -17,7 +16,7 @@ from flow_sdk.api.type_id import TypeId
 from flow_sdk.builtin.faas.compute_node import ComputeNode
 from flow_sdk.builtin.worker_sessions import get_worker_sessions
 from flow_sdk.config import AGENT_MOUNT_FOLDER, PLATFORM_WIN32, StorageProvider
-from flow_sdk.core import Entity, QueryFilter, action
+from flow_sdk.core import Entity, action
 from flow_sdk.core.entity.entity_model import migrate_presence_shaped_members
 from flow_sdk.core.flow.flow_source_control import ComputeSourceControlInitializeOptions
 from flow_sdk.core.flow.mcp_server import MCPConnector, mcp_connector_pool
@@ -777,32 +776,6 @@ class Project(Entity):
         compute_node = await self.get_compute_node()
         return ApiSuccessResponse(data={"compute_node": compute_node.model_dump() if compute_node else None})
 
-    async def _get_process_by_source_impl(self, asset_ref: str):
-        """Find an existing process entity associated with the given asset_ref."""
-        from flow_sdk.builtin.process import Flow
-
-        if not asset_ref:
-            raise HTTPException(status_code=400, detail="asset_ref is required")
-
-        process_filter = QueryFilter.by_type(Flow.get_type())
-        child_processes = await self.get_children(child_filter=process_filter)
-
-        for child in child_processes:
-            process_entity = child.value
-            if isinstance(process_entity, Flow) and process_entity.asset_ref == asset_ref:
-                return ApiSuccessResponse(data=process_entity)
-
-        return ApiSuccessResponse(data=None)
-
-    @action.get(action_name="get-process-by-source")
-    async def get_process_by_source(self, asset_ref: str):
-        return await self._get_process_by_source_impl(asset_ref)
-
-    @action.get(action_name="get-flow-by-source")
-    async def get_flow_by_source(self, asset_ref: str):
-        """Backward-compatible alias for get_process_by_source."""
-        return await self._get_process_by_source_impl(asset_ref)
-
     @action.get(action_name="get-compute-node")
     async def get_compute_node_action(self):
         compute_node = await self.get_compute_node()
@@ -1511,7 +1484,6 @@ class Project(Entity):
             FSRecord,
             get_default_records_data_root,
             get_default_records_root,
-            record_stem,
         )
 
         log = logging.getLogger(__name__)
@@ -1520,9 +1492,9 @@ class Project(Entity):
         data_root = get_default_records_data_root()
 
         def _purge_data(rtype: str, rid: str) -> None:
-            # records_data has two on-disk shapes across types: the canonical
-            # <type>/<type>-@<id>/ and the legacy <id>-only used by index types.
-            for sub in (record_stem(rtype, rid), rid):
+            # records_data has two on-disk shapes: the current bare <id>/ and the
+            # legacy uname-sigil <type>-@<id>/ (pre-rename installs).
+            for sub in (str(rid), f"{rtype}-@{rid}"):
                 p = data_root / rtype / sub
                 try:
                     shutil.rmtree(p)  # idempotent — FileNotFoundError when absent

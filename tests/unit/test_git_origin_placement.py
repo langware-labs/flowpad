@@ -145,7 +145,7 @@ async def test_pack_in_repo_records_origin_and_keys_subtree_by_rel_path(tmp_path
     origins: dict = {}
     await _pack_file_backed_attachment(EntityType.SKILL.value, ENTITY_ID, attachment_dir, origins)
 
-    key = f"{EntityType.SKILL.value}-@{ENTITY_ID}"
+    key = f"{EntityType.SKILL.value}-{ENTITY_ID}"
     assert key in origins, "an in-repo asset must record a GitOrigin"
     assert origins[key]["rel_path"] == "packages/x/.claude/skills/foo"
     assert origins[key]["owner"] == "Acme"
@@ -168,7 +168,7 @@ async def test_pack_outside_repo_records_no_origin_and_keeps_canonical_layout(tm
 
     assert origins == {}, "a non-repo asset must NOT record a GitOrigin"
     # Canonical <main_subdir>/<leaf> layout preserved (today's behavior).
-    entry_root = attachment_dir / f"{EntityType.SKILL.value}-@{ENTITY_ID}"
+    entry_root = attachment_dir / f"{EntityType.SKILL.value}-{ENTITY_ID}"
     assert (entry_root / ".claude" / "skills" / "foo" / "SKILL.md").exists()
 
 
@@ -250,7 +250,7 @@ async def test_pack_bundle_writes_git_origins_json_and_rel_path_subtree(tmp_path
         names = zf.namelist()
         assert "git_origins.json" in names, "in-repo asset must produce git_origins.json"
         origins = json.loads(zf.read("git_origins.json"))
-        key = f"{EntityType.SKILL.value}-@{ENTITY_ID}"
+        key = f"{EntityType.SKILL.value}-{ENTITY_ID}"
         assert origins[key]["rel_path"] == "packages/x/.claude/skills/foo"
         assert origins[key]["owner"] == "Acme"
         # Subtree stored keyed by rel_path (the receiver mirrors it verbatim).
@@ -282,7 +282,7 @@ async def test_pack_bundle_git_transfer_writes_metadata_only(tmp_path, monkeypat
     zip_path = await pack_bundle(fm, dest_dir=tmp_path, transfer_mode="git")
     with zipfile.ZipFile(zip_path) as zf:
         names = zf.namelist()
-        key = f"{EntityType.SKILL.value}-@{ENTITY_ID}"
+        key = f"{EntityType.SKILL.value}-{ENTITY_ID}"
         assert "git_origins.json" in names
         assert "git_transfers.json" in names
         assert f"metadata/{key}/metadata.json" in names
@@ -326,7 +326,7 @@ async def test_stamp_git_origins_sets_validated_origin_on_entity(monkeypatch):
     origin = {"provider": "github", "owner": "Acme", "name": "Widgets",
               "branch": "main", "head_commit": "x" * 40, "rel_path": "docs/foo.md"}
     received = {("markdown", ENTITY_ID)}
-    await _stamp_git_origins(received, {f"markdown-@{ENTITY_ID}": origin}, owner_typeid=None)
+    await _stamp_git_origins(received, {f"markdown-{ENTITY_ID}": origin}, owner_typeid=None)
 
     assert saved["git_origin"]["rel_path"] == "docs/foo.md"
     assert saved["git_origin"]["owner"] == "Acme"
@@ -342,6 +342,6 @@ async def test_stamp_git_origins_sets_validated_origin_on_entity(monkeypatch):
     monkeypatch.setattr(SchemaRegistry, "get_entity_cls", classmethod(lambda c, t: _Cls2))
     saved.clear()
     await _stamp_git_origins({("markdown", ENTITY_ID)},
-                             {f"markdown-@{ENTITY_ID}": {"rel_path": ["not", "a", "string"]}},
+                             {f"markdown-{ENTITY_ID}": {"rel_path": ["not", "a", "string"]}},
                              owner_typeid=None)
     assert ent2.git_origin is None and "git_origin" not in saved

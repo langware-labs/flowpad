@@ -5,7 +5,7 @@ with a participants list. Each participant email is upserted as a User so the
 contact list grows.
 
 Conversations are standard records: their data file lives at the canonical
-records-data location `<records_data_root>/conversation/conversation-@<id>/conversation.jsonl`,
+records-data location `<records_data_root>/conversation/<id>/conversation.jsonl`,
 NOT inside the project's filesystem mount. These tests pin that contract.
 """
 
@@ -15,7 +15,7 @@ import pytest
 
 from flow_sdk.fs_store.operations.conversation import default_data_dir, default_jsonl_path, from_jsonl
 from flow_sdk.fs_store import RecordType
-from flow_sdk.fs_store.record_paths import get_default_records_data_root, record_stem
+from flow_sdk.fs_store.record_paths import get_default_records_data_root
 
 # ---------------------------------------------------------------------------
 # Existing happy paths — updated to the new on-disk contract.
@@ -62,7 +62,9 @@ async def test_conversation_create_under_project_upserts_participants(bootstrapp
     conv = conv_resp.json()["data"]
     assert conv["project_id"] == project_id
     assert not conv.get("task_id")
-    assert len(conv["participants"]) == 2
+    # The Conversation entity stores the roster as ``members`` (renamed from
+    # ``participants``); the create response still echoes ``participants``.
+    assert len(conv["members"]) == 2
 
     # Standard records-data location. ``data_path`` is now a derived
     # @property on ``Conversation`` (not a stored field), so it isn't part
@@ -126,13 +128,13 @@ async def test_jsonl_lands_in_records_data_root(bootstrapped_client):
     expected_dir = (
         get_default_records_data_root()
         / RecordType.CONVERSATION
-        / record_stem(RecordType.CONVERSATION, conv_id)
+        / conv_id
     )
     expected_jsonl = expected_dir / "conversation.jsonl"
     assert expected_jsonl.exists()
-    # Spot the parent layout — `<root>/conversation/conversation-@<id>/`.
+    # Spot the parent layout — `<root>/conversation/<id>/` (bare id).
     assert expected_dir.parent.name == RecordType.CONVERSATION
-    assert expected_dir.name == f"{RecordType.CONVERSATION}-@{conv_id}"
+    assert expected_dir.name == str(conv_id)
 
 
 @pytest.mark.asyncio
@@ -168,7 +170,7 @@ async def test_append_conversation_writes_into_records_data_jsonl(bootstrapped_c
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 async def test_two_creates_yield_two_distinct_records_data_dirs(bootstrapped_client):
-    """Each Conversation gets its own `conversation-@<id>/` directory."""
+    """Each Conversation gets its own `<id>/` directory."""
     projects = (await bootstrapped_client.get("/api/v1/graph/project")).json()["data"]
     project_id = next(p for p in projects if p.get("uname") == "local")["id"]
 
@@ -274,7 +276,7 @@ async def test_create_under_system_project_does_not_touch_sdk_tree(bootstrapped_
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 async def test_directory_uses_canonical_record_stem_not_slug(bootstrapped_client):
-    """The created folder uses the standard `conversation-@<id>` stem.
+    """The created folder uses the bare `<id>`.
 
     Earlier the handler built a slug from participant emails, leaking
     addresses into filesystem paths. Verify the stem is canonical.
@@ -292,6 +294,6 @@ async def test_directory_uses_canonical_record_stem_not_slug(bootstrapped_client
     conv_id = resp.json()["data"]["conversation_id"]
 
     parent_dir = default_jsonl_path(conv_id).parent
-    assert parent_dir.name == f"{RecordType.CONVERSATION}-@{conv_id}"
+    assert parent_dir.name == str(conv_id)
     assert "leak-check" not in parent_dir.name
-    assert "@" not in parent_dir.name.replace("-@", "")  # only the canonical separator
+    assert "@" not in parent_dir.name  # no email / uname sigil leaks into the path
