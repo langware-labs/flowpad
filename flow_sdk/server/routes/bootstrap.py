@@ -1812,6 +1812,9 @@ async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
             records_root=str(get_instance_settings().records_root),
             supported_locales=get_supported_locales(),
             translation_targets=get_translation_targets(),
+            # This is the local desktop server — it serves only the `desk` page.
+            # A hub backend reports its own set here.
+            supported_pages=["desk"],
             privacy_mode=get_privacy_mode(),
             notice=notice,
         )

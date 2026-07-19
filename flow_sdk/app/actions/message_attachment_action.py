@@ -24,12 +24,10 @@ from flow_sdk.builtin.message_attachment import (
     AttachmentScope,
     MessageAttachment,
     TransferMode,
-    user_scope_allowed_for,
 )
 from flow_sdk.builtin.user import User
 from flow_sdk.fs_store.operations.flow_message import default_data_dir, unpacked_dir
 from flow_sdk.fs_store.record_paths import record_stem
-from flow_sdk.instance_settings import get_instance_settings
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
 
@@ -60,28 +58,13 @@ def _entry_dir_for(ma: MessageAttachment) -> Path | None:
 
 
 def _user_scope_root() -> Path:
-    """Root that user-scope installs copy under.
+    """Root that user-scope installs copy under — delegates to the single
+    ``placement.root_for_scope`` authority (shared with the create path), so the
+    two can't diverge on what "user root" means. Kept as a named seam because
+    tests monkeypatch it to redirect installs to a temp home."""
+    from flow_sdk.fs_store.placement import Scope, root_for_scope  # noqa: PLC0415
 
-    Bundle relpaths for FS-rooted types are ``.claude/<family>/<leaf>``, so the
-    root is the directory whose ``.claude`` is the instance's claude_home
-    (= ``Path.home()`` in prod; redirected under FLOWPAD_CLAUDE_HOME in tests,
-    which point it at ``<tmp>/.claude`` so the parent stays coherent).
-    """
-    claude_home = get_instance_settings().claude_home
-    if claude_home.name != ".claude":
-        logger.warning(
-            "[message_attachment] claude_home %s is not named .claude — "
-            "user-scope install root may not match discovery",
-            claude_home,
-        )
-    return claude_home.parent
-
-
-def _main_subdir_for(asset_type: str) -> str | None:
-    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
-
-    info = SchemaRegistry.get(asset_type)
-    return getattr(info, "main_subdir", None) if info else None
+    return root_for_scope(Scope.USER)
 
 
 async def _load_ma(attachment_id: str) -> MessageAttachment | None:
@@ -493,11 +476,16 @@ async def handle_attachment_install(
     # indexer today — see file_attachment_rel_subdir).
     is_raw_file = ma.asset_type == "file"
 
+    # Resolve the asset class (placement axis) once. Raw ``file`` entries have no
+    # TypeInfo — their staged entry relpath already carries the canonical layout.
+    from flow_sdk.fs_store.placement import user_scope_allowed  # noqa: PLC0415
+
     if is_raw_file:
-        main_subdir = None
+        asset_class = None
     else:
-        main_subdir = _main_subdir_for(ma.asset_type)
-        if main_subdir is None:
+        info = SchemaRegistry.get(ma.asset_type)
+        asset_class = info._resolved_layout[0] if info else None
+        if asset_class is None:
             return ApiFailResponse(
                 message=f"type {ma.asset_type!r} is not an installable file-backed asset", status_code=400
             )
@@ -523,8 +511,9 @@ async def handle_attachment_install(
             # ~/.claude); the staged entry relpath is already .claude-anchored.
             root = _user_scope_root()
         elif ma.transfer_mode != TransferMode.GIT.value:
-            # Same predicate that stamped `user_scope_allowed` at stage time.
-            if not user_scope_allowed_for(main_subdir, ma.transfer_mode):
+            # Same policy that stamped `user_scope_allowed` at stage time —
+            # the single owner is placement.user_scope_allowed.
+            if not user_scope_allowed(asset_class):
                 return ApiFailResponse(
                     message=f"type {ma.asset_type!r} is project-scoped; install into a project instead",
                     status_code=400,

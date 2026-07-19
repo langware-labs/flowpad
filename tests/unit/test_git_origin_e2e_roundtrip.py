@@ -144,7 +144,7 @@ async def test_skill_reflects_same_repo_path_through_real_pack_unpack(tmp_path):
 
     # --- Unpack stages; explicit install places + reindexes + stamps ----------
     await unpack_bundle(zip_path, local_user_id="gx8")
-    await _install_staged(FM_ID, f"{EntityType.SKILL.value}-@{SKILL_ID}", scope="project", project_id=project.id)
+    await _install_staged(FM_ID, f"{EntityType.SKILL.value}-{SKILL_ID}", scope="project", project_id=project.id)
 
     # 1) The skill reconstructed at the SAME repo-relative path (not flattened).
     expected = recv_proj / REL_PATH / "SKILL.md"
@@ -198,7 +198,7 @@ async def test_git_transfer_indexes_existing_receiver_worktree_without_copying_b
     zip_path = await pack_bundle(fm, dest_dir=tmp_path, transfer_mode="git")
     with zipfile.ZipFile(zip_path) as zf:
         names = zf.namelist()
-        key = f"{EntityType.SKILL.value}-@{GIT_ONLY_SKILL_ID}"
+        key = f"{EntityType.SKILL.value}-{GIT_ONLY_SKILL_ID}"
         assert "git_transfers.json" in names
         assert f"metadata/{key}/metadata.json" in names
         assert not any(name.endswith("/SKILL.md") for name in names)
@@ -211,7 +211,7 @@ async def test_git_transfer_indexes_existing_receiver_worktree_without_copying_b
     await sender_skill.delete()
     await unpack_bundle(zip_path, local_user_id="gx8")
     await _install_staged(
-        GIT_ONLY_FM_ID, f"{EntityType.SKILL.value}-@{GIT_ONLY_SKILL_ID}", scope="project", project_id=project.id
+        GIT_ONLY_FM_ID, f"{EntityType.SKILL.value}-{GIT_ONLY_SKILL_ID}", scope="project", project_id=project.id
     )
 
     recv_skill = await Skill.get_one({"id": GIT_ONLY_SKILL_ID})
@@ -276,7 +276,7 @@ async def test_git_transfer_clones_remote_when_receiver_has_no_checkout(tmp_path
 
     # No project mapped → the user installs into the user scope; the git-mode
     # restore resolves its own checkout (clones into the agent workspace).
-    await _install_staged(GIT_CLONE_FM_ID, f"{EntityType.SKILL.value}-@{GIT_CLONE_SKILL_ID}", scope="user")
+    await _install_staged(GIT_CLONE_FM_ID, f"{EntityType.SKILL.value}-{GIT_CLONE_SKILL_ID}", scope="user")
     assert expected.exists(), f"receiver did not clone/index git transfer into {expected}"
     recv_skill = await Skill.get_one({"id": GIT_CLONE_SKILL_ID})
     assert recv_skill is not None
@@ -379,7 +379,7 @@ async def test_git_transfer_packs_graph_artifact_metadata_without_copying_app_fi
     # artifact when it installs (not at download).
     zip_path = await pack_bundle(fm, dest_dir=tmp_path, transfer_mode="git", create_bookmark=True)
 
-    key = f"{EntityType.ARTIFACT.value}-@{GIT_ARTIFACT_ID}"
+    key = f"{EntityType.ARTIFACT.value}-{GIT_ARTIFACT_ID}"
     with zipfile.ZipFile(zip_path) as zf:
         names = zf.namelist()
         assert "git_origins.json" in names
@@ -494,7 +494,7 @@ async def test_git_transfer_markdown_doc_indexes_from_receiver_worktree_and_is_s
     fm.id = GIT_MARKDOWN_FM_ID
     zip_path = await pack_bundle(fm, dest_dir=tmp_path, transfer_mode="git")
 
-    key = f"{EntityType.MARKDOWN.value}-@{GIT_MARKDOWN_ID}"
+    key = f"{EntityType.MARKDOWN.value}-{GIT_MARKDOWN_ID}"
     with zipfile.ZipFile(zip_path) as zf:
         names = zf.namelist()
         assert "git_origins.json" in names
@@ -510,7 +510,7 @@ async def test_git_transfer_markdown_doc_indexes_from_receiver_worktree_and_is_s
     await sender_doc_entity.delete()
     await unpack_bundle(zip_path, local_user_id="gx8")
     await _install_staged(
-        GIT_MARKDOWN_FM_ID, f"{EntityType.MARKDOWN.value}-@{GIT_MARKDOWN_ID}", scope="project", project_id=project.id
+        GIT_MARKDOWN_FM_ID, f"{EntityType.MARKDOWN.value}-{GIT_MARKDOWN_ID}", scope="project", project_id=project.id
     )
 
     received_doc = await Docs.get_one({"id": GIT_MARKDOWN_ID})
@@ -591,7 +591,7 @@ async def test_git_transfer_markdown_doc_clones_remote_and_is_searchable(tmp_pat
     # Git-mode user-scope install: the checkout resolves itself (no .claude
     # layout gate — the root is only a clone preference in git mode).
     await _install_staged(
-        GIT_MARKDOWN_CLONE_FM_ID, f"{EntityType.MARKDOWN.value}-@{GIT_MARKDOWN_CLONE_ID}", scope="user"
+        GIT_MARKDOWN_CLONE_FM_ID, f"{EntityType.MARKDOWN.value}-{GIT_MARKDOWN_CLONE_ID}", scope="user"
     )
     assert expected.exists(), f"receiver did not clone/index git markdown transfer into {expected}"
     received_doc = await Docs.get_one({"id": GIT_MARKDOWN_CLONE_ID})
@@ -638,7 +638,7 @@ async def test_git_transfer_packs_folder_chip_metadata_only_and_install_never_cl
     fm.id = GIT_FOLDER_FM_ID
     zip_path = await pack_bundle(fm, dest_dir=tmp_path, transfer_mode="git")
 
-    key = f"{EntityType.FOLDER.value}-@{folder_id}"
+    key = f"{EntityType.FOLDER.value}-{folder_id}"
     with zipfile.ZipFile(zip_path) as zf:
         names = zf.namelist()
         assert "git_origins.json" in names and "git_transfers.json" in names

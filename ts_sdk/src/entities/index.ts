@@ -10,7 +10,6 @@ export * from './compute-node';
 // Legacy exports for backwards compatibility
 export * from './compute_enum';
 export * from './compute_node';
-export * from './flow';
 export * from './flow-node';
 export * from './agentic-flow';
 export * from './agentic-flow-run';

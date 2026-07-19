@@ -44,7 +44,13 @@ class TypeMetadata:
     indexed_by_default: bool = False
     api_visible: bool = False
     index_fields: list[str] = field(default_factory=list)
-    main_subdir: str | None = None
+    # Placement axis — the harness-aware replacement for the fused ``.claude/…``
+    # subdir. Declare ``asset_class`` + ``family`` (+ ``harness`` for HARNESS
+    # types); resolved by ``flow_sdk.fs_store.placement``. Typed ``Any`` to keep
+    # this authoring module free of a placement import.
+    asset_class: Any = None            # placement.AssetClass | None
+    harness: Any = None                # placement.HarnessType | None
+    family: str | None = None
     main_layout: str = "file"
     # Folder-layout types: inner filename of the primary asset (e.g. "spec.md"
     # under specs/<name>/, "SKILL.md" under .claude/skills/<name>/). See
@@ -125,7 +131,9 @@ class TypeMetadata:
             indexed_by_default=self.indexed_by_default,
             api_visible=self.api_visible,
             index_fields=list(self.index_fields),
-            main_subdir=self.main_subdir,
+            asset_class=self.asset_class,
+            harness=self.harness,
+            family=self.family,
             main_layout=self.main_layout,
             main_file=self.main_file,
             main_file_is_asset_ref=self.main_file_is_asset_ref,

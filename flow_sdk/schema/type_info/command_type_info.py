@@ -11,7 +11,9 @@ COMMAND = TypeMetadata(
     icon="Terminal",
     indexed_by_default=True,
     api_visible=True,
-    main_subdir=".claude/commands",
+    asset_class="harness",
+    harness="claude",
+    family="commands",
     from_disk_fn=extract_claude_command,
     gen_uuid_fn=command_gen_id,
 )

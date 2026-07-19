@@ -208,13 +208,10 @@ def _read_disk_record_scope(
     """
     import json  # noqa: PLC0415
 
-    from flow_sdk.fs_store.record_paths import (  # noqa: PLC0415
-        get_default_records_root,
-        record_stem,
-    )
+    from flow_sdk.fs_store.record_paths import shadow_dir_for  # noqa: PLC0415
     _META_JSON = "metadata.json"
 
-    path = get_default_records_root() / type_name / record_stem(type_name, eid) / _META_JSON
+    path = shadow_dir_for(type_name, eid) / _META_JSON
     try:
         raw = path.read_text(encoding="utf-8")
     except (FileNotFoundError, OSError):
@@ -1194,12 +1191,12 @@ class FSIndexer:
     def _discover_records_dir_ids(type_names: set[str]) -> dict[str, set[str]]:
         """Walk ``<records_root>/<type>/`` for each type and return ``{type → {id}}``.
 
-        IDs come from parsing the directory stem (``<type>-@<id>``). Folders
-        that don't match the stem pattern are skipped — they aren't records.
+        The id is the bare directory name under ``records_root/<type>/``; a folder
+        is a record iff it holds a ``metadata.json``. Other folders are skipped.
         """
         from flow_sdk.fs_store.record_paths import (  # noqa: PLC0415
             get_default_records_root,
-            parse_record_stem,
+            is_record_dir,
         )
 
         out: dict[str, set[str]] = {}
@@ -1211,15 +1208,8 @@ class FSIndexer:
             ids: set[str] = set()
             try:
                 for entry in type_dir.iterdir():
-                    if not entry.is_dir():
-                        continue
-                    try:
-                        parsed_type, parsed_id = parse_record_stem(entry.name)
-                    except ValueError:
-                        continue
-                    if parsed_type != type_name:
-                        continue
-                    ids.add(parsed_id)
+                    if is_record_dir(entry):
+                        ids.add(entry.name)
             except (FileNotFoundError, OSError):
                 continue
             if ids:
@@ -1265,10 +1255,7 @@ class FSIndexer:
 
         # Lazy imports keep this module a leaf in import topology.
         from flow_sdk.db import get_db_driver  # noqa: PLC0415
-        from flow_sdk.fs_store.record_paths import (  # noqa: PLC0415
-            get_default_records_root,
-            record_stem,
-        )
+        from flow_sdk.fs_store.record_paths import shadow_dir_for  # noqa: PLC0415
 
         driver = get_db_driver()
         type_name = str(rt)
@@ -1313,9 +1300,7 @@ class FSIndexer:
 
             if action == OrphanAction.DELETE and on_disk:
                 try:
-                    rec_dir = (
-                        get_default_records_root() / type_name / record_stem(type_name, eid)
-                    )
+                    rec_dir = shadow_dir_for(type_name, eid)
                     if rec_dir.exists():
                         import shutil  # noqa: PLC0415
                         # Recursive dir removal is file I/O — keep it off the loop.

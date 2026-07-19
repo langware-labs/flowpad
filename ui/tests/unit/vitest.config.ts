@@ -1,4 +1,3 @@
-import path from 'path';
 import { defineConfig, mergeConfig } from 'vitest/config';
 import viteConfig from '../../vite.config';
 
@@ -9,7 +8,6 @@ export default mergeConfig(
   defineConfig({
     resolve: {
       alias: {
-        '@shared-compat': path.resolve(__dirname, '../utils/shared-compat.ts'),
       },
     },
     test: {

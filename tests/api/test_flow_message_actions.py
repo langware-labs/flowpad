@@ -43,11 +43,11 @@ def _make_conversation_bundle_bytes(msg_data: dict, conv_id: str, participants: 
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.writestr("header.json", json.dumps(msg_data, ensure_ascii=False))
         zf.writestr(
-            f"attachment/conversation-@{conv_id}/header.json",
+            f"attachment/conversation-{conv_id}/header.json",
             json.dumps({"type": "conversation", "id": conv_id, "participants": participants}, ensure_ascii=False),
         )
         zf.writestr(
-            f"attachment/conversation-@{conv_id}/conversation.jsonl",
+            f"attachment/conversation-{conv_id}/conversation.jsonl",
             json.dumps(pointer, ensure_ascii=False) + "\n",
         )
     return buf.getvalue()
@@ -108,7 +108,7 @@ def _make_flowmsg_bytes_with_attachment(msg_data: dict, inner_fm_id: str) -> byt
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.writestr("header.json", json.dumps(msg_data, ensure_ascii=False))
         zf.writestr(
-            f"attachment/flow_message-@{inner_fm_id}/message.json",
+            f"attachment/flow_message-{inner_fm_id}/message.json",
             json.dumps(inner_fm_data, ensure_ascii=False),
         )
     return buf.getvalue()
@@ -319,7 +319,7 @@ async def test_download_flow_message_returns_zip(bootstrapped_client):
 
 _SPEC_TITLE = "My Spec"
 # default_body_fn / _safe_entity_name turn "My Spec" into this leaf folder.
-_SPEC_LEAF_REL = Path("specs") / "My_Spec" / "spec.md"
+_SPEC_LEAF_REL = Path("agentic-assets") / "spec" / "My_Spec" / "spec.md"
 
 
 @pytest.fixture
@@ -410,7 +410,7 @@ async def _build_spec_bundle(
     # Confirm the packer actually placed the file-backed asset (else the rest
     # of the test would be vacuous).
     with zipfile.ZipFile(zip_path, "r") as zf:
-        arc = f"attachment/spec-@{spec_id}/specs/My_Spec/spec.md"
+        arc = f"attachment/spec-{spec_id}/agentic-assets/spec/My_Spec/spec.md"
         assert arc in zf.namelist(), f"spec not packed: {zf.namelist()}"
     return zip_path.read_bytes()
 
@@ -438,7 +438,7 @@ async def test_upload_file_backed_asset_stages_without_materializing_in_mapped_p
     assert response.status_code == 200, f"upload failed: {response.text}"
     assert response.json().get("status") == "SUCCESS"
 
-    entry_key = f"spec-@{spec_id}"
+    entry_key = f"spec-{spec_id}"
     ma = await MessageAttachment.get_one({
         "id": MessageAttachment.allocate_deterministic_id(fm_id, entry_key),
     })
@@ -486,7 +486,7 @@ async def test_install_file_backed_asset_collision_different_bytes_returns_409(
     assert response.status_code == 200, f"staging failed: {response.text}"
     assert response.json().get("status") == "SUCCESS"
 
-    entry_key = f"spec-@{spec_id}"
+    entry_key = f"spec-{spec_id}"
     ma = await MessageAttachment.get_one({
         "id": MessageAttachment.allocate_deterministic_id(fm_id, entry_key),
     })
@@ -553,7 +553,7 @@ async def test_install_overwrite_replaces_on_disk_file_backed_asset(
     assert response.status_code == 200, f"staging failed: {response.text}"
     assert response.json().get("status") == "SUCCESS"
 
-    entry_key = f"spec-@{spec_id}"
+    entry_key = f"spec-{spec_id}"
     ma = await MessageAttachment.get_one({
         "id": MessageAttachment.allocate_deterministic_id(fm_id, entry_key),
     })
