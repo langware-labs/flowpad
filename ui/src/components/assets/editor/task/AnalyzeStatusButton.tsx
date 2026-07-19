@@ -10,6 +10,9 @@ interface AnalyzeStatusResult {
   summary?: string;
   analysisPath?: string;
   missing?: string[];
+  /** The wizard's verdict that every done-gate field is satisfied and the work
+   *  is complete — drives the "you can switch to Done" popup. */
+  readyForDone?: boolean;
 }
 
 interface AnalyzeStatusButtonProps {
@@ -74,7 +77,11 @@ export function AnalyzeStatusButton({ task, onAnalyzed, className }: AnalyzeStat
     <WizardButton<AnalyzeStatusResult>
       wizardName="task-analyze"
       buildRequest={buildRequest}
-      successMessage={isGroup ? 'Your group status report is ready' : 'Your status report is ready'}
+      successMessage={(data) => {
+        if (isGroup) return 'Your group status report is ready';
+        if (data?.readyForDone) return 'This task looks done — you can switch its status to Done';
+        return 'Your status report is ready';
+      }}
       errorTitle="Analyze Status failed"
       onResult={handleResult}
       runningLabel="Analyzing"
