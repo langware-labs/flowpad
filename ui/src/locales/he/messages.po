@@ -5514,6 +5514,11 @@ msgstr "אירועים בקבוצה"
 msgid "Group name"
 msgstr ""
 
+#: src/components/conversation/ConversationContextPanel.tsx
+#: src/components/conversation/ConversationContextPanel.tsx
+msgid "Group Task"
+msgstr ""
+
 #: src/components/terminal/openers/AskInstallOneOfDialog.tsx
 msgid "Harness is required"
 msgstr "Harness נדרש"
@@ -7051,6 +7056,11 @@ msgstr "חבר"
 #: src/components/task-bar/TaskCard.tsx
 #~ msgid "member task"
 #~ msgstr ""
+
+#: src/components/conversation/ConversationContextPanel.tsx
+#: src/components/conversation/ConversationContextPanel.tsx
+msgid "Member Task"
+msgstr ""
 
 #: src/components/task-bar/TaskCard.tsx
 #~ msgid "member tasks"
