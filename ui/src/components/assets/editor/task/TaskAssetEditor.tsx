@@ -209,16 +209,17 @@ export function TaskAssetEditor({ fsRef, task: providedTask }: TaskAssetEditorPr
         </div>
 
         <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-6 py-4">
+          {/* Parent's Files & Folders ride INSIDE the parent card's border
+              (read-only), shown only when the parent has any, so the member
+              sees the group's shared assets grouped under the parent. */}
           <ParentTaskBlock
             parent={parent}
             onOpenParent={() => navigation.openDock(DockPointer.forAssetEditorByTypeId('task', parent.typeId))}
-          />
-
-          {/* Parent's Files & Folders — read-only, shown only when the parent
-              has any, so the member sees the group's shared assets too. */}
-          {Array.isArray(parent.artifacts) && parent.artifacts.length > 0 && (
-            <TaskAttachments task={parent} save={NOOP_SAVE} readOnly heading="Parent files & folders" />
-          )}
+          >
+            {Array.isArray(parent.artifacts) && parent.artifacts.length > 0 && (
+              <TaskAttachments task={parent} save={NOOP_SAVE} readOnly />
+            )}
+          </ParentTaskBlock>
 
           {/* This task — only the child's OWN data, nothing repeated from above. */}
           <div className="flex flex-col gap-3">
