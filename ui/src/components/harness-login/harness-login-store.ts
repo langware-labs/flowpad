@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { isHubOnly } from '@src/navigation/hub-runtime';
 
 /**
  * Global store backing `openHarnessLoginModal()` — pops the "Harness login
@@ -17,5 +18,7 @@ export const useHarnessLoginStore = create<HarnessLoginStore>((set) => ({
 }));
 
 export function openHarnessLoginModal(): void {
+  // Desktop-only overlay — never surfaced in hub mode.
+  if (isHubOnly()) return;
   useHarnessLoginStore.getState().setOpen(true);
 }

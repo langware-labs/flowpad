@@ -23,10 +23,14 @@ import { AppHost } from '@src/components/app-host/AppHost';
 import { FilterName, getAllFilterDefinitions } from '@src/components/simple-file-manager';
 import { TasksRedirect } from '@src/components/tasks-viewer/TasksRedirect';
 import { HomeLanding } from '@src/pages/home-landing';
+import { HubHome } from '@src/pages/hub-home/HubHome';
+import { HubRecordsView } from '@src/pages/hub-browse/HubRecordsView';
+import { HubEntityView } from '@src/pages/hub-browse/HubEntityView';
+import OrgGraphReview from '@src/components/org-graph/OrgGraphReview';
 import { LiveStatus } from '@src/pages/live-status';
 import { SearchView } from '@src/pages/search-view/SearchView';
 
-import { ConnectionStatus, dataContext, navigator, type OAuthConnection } from '@sdk';
+import { ConnectionStatus, dataContext, navigator, PageId, type OAuthConnection } from '@sdk';
 import { useAuth, useContext } from '@sdk/react/hooks';
 import { AssetsPage } from '@src/components/assets/AssetsPage';
 import { CollaborationPage, LiveSessionView } from '@src/components/collaboration';
@@ -224,9 +228,48 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
   // and a per-viewType TabsContent ladder). Renders the surface for `vt`; only
   // the active body is mounted (matches the old radix Tabs, which did not
   // forceMount). `null`/unknown → the Home landing.
+  // Hub page (page=hub) renders its OWN small set of views, not the desk switch.
+  // Kept as a separate dispatch (not extra cases in the desk switch) so the two
+  // SPA-surfaces stay cleanly independent — see PAGES_DOCKPOINTER_SPEC.
+  const renderHubBody = (vt: ViewType | null) => {
+    switch (vt) {
+      case ViewType.ATLAS:
+        // pointer selects the Atlas root: `organization` re-roots at the org node
+        // and type-filters to org→teams→people (the legacy hub's Organization
+        // view); anything else is the viewer-rooted "your world" atlas.
+        return currentDock?.pointer === 'organization' ? (
+          <OrgGraphReview
+            rootPreference="organization"
+            filterTypes={['organization', 'team', 'user']}
+            title="Organization"
+            subtitle="teams & people"
+          />
+        ) : (
+          <OrgGraphReview rootPreference="viewer" />
+        );
+      case ViewType.HUB_RECORDS:
+        return <HubRecordsView type={currentDock?.pointer} />;
+      case ViewType.HUB_ENTITY:
+        return <HubEntityView pointer={currentDock?.pointer} />;
+      case ViewType.CONVERSATION:
+        // Reuse the OSS conversation viewer (pure-graph, hub-safe) under page=hub.
+        return <ConversationRoute />;
+      case ViewType.HOME:
+      default:
+        return <HubHome />;
+    }
+  };
+
   const renderBody = (vt: ViewType | null) => {
     if (dockLoadError) {
       return <DockLoadErrorView error={dockLoadError} />;
+    }
+
+    // page=hub → the hub surface. Placed after the load-error guard (which is
+    // page-agnostic) but before the desk tab/OpenFailed handling, which doesn't
+    // apply to the hub (its views don't materialize `tab` entities).
+    if (currentDock?.page === PageId.HUB) {
+      return renderHubBody(vt);
     }
 
     if (activeOpenFailed) {

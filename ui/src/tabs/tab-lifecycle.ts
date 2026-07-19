@@ -1,5 +1,6 @@
 import { Tab, toplog } from '@sdk';
 import { useSyncExternalStore } from 'react';
+import { isHubOnly } from '@src/navigation/hub-runtime';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { editorForType } from '@src/navigation/asset-doc-types';
 import { ViewType } from '@src/types/ViewType';
@@ -114,6 +115,9 @@ function findTabForDock(tabs: Tab[], dock: DockPointer): Tab | null {
 }
 
 function shouldMaterializeDock(dock: DockPointer): boolean {
+  // Hub mode runs ephemeral: the hub backend has no `tab` entity, so never
+  // materialize a persisted dock. Views render directly from the DockPointer.
+  if (isHubOnly()) return false;
   if (!dock.tabHash) return false;
   if (dock.viewType === ViewType.AGENTIC_PROCESS) return false;
   return !(dock.viewType === ViewType.SHELL && dock.pointer === 'new_terminal');

@@ -12,6 +12,7 @@
 
 import { EventEmitter } from 'events';
 import apiClient from '../client';
+import { isHubOnly } from '../utils/hub-runtime';
 import { User } from '../entities/user';
 import { createCloudLoginFailedWarning } from '../models/UserWarning';
 import type { CloudConnectionStatusMessage, CloudLoginStatusMessage, OAuthMessage } from '../websocket';
@@ -469,6 +470,9 @@ class CloudManager extends EventEmitter {
   }
 
   private async _refreshFromStatus(): Promise<CloudStatusData | null> {
+    // Hub mode: the hub backend has no `/cloud/status` route (404). No cloud
+    // login/connection layer to refresh — treat as a no-op.
+    if (isHubOnly()) return null;
     try {
       const data = await apiClient.get<CloudStatusData>('/cloud/status');
       if (data?.cloud_url) this._cloudUrl = data.cloud_url;
@@ -562,6 +566,8 @@ class CloudManager extends EventEmitter {
 export const cloudManager = new CloudManager();
 export const cloudLogin = () => cloudManager.login();
 export const cloudLogout = () => cloudManager.logout();
-export const getCloudStatus = () => apiClient.get<CloudStatusData>('/cloud/status');
+export const getCloudStatus = (): Promise<CloudStatusData | null> =>
+  // Hub mode: `/cloud/status` is not implemented on the hub backend (404).
+  isHubOnly() ? Promise.resolve(null) : apiClient.get<CloudStatusData>('/cloud/status');
 
 export default cloudManager;

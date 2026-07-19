@@ -96,6 +96,12 @@ export const router = createBrowserRouter(
       {/* Root and /main routes use DeveloperLayout */}
 
       <Route index element={<FlowPage />} loader={loadHomePage} />
+      {/* Legacy hub-console deep links → the hub page's dock URLs, so old
+          bookmarks/links keep working after the console is retired. (On a
+          desk-only server these targets get bounced back to /dock/home by the
+          main-loader supported_pages guard, so they're harmless there.) */}
+      <Route path="organization" element={<Navigate to="/dock/hub/atlas/organization" replace />} />
+      <Route path="org-graph" element={<Navigate to="/dock/hub/atlas/world" replace />} />
       {/* Discover — full-page asset marketplace. Sits inside RootLayout (so
           loadRoot/auth/theme gate it) but OUTSIDE AgentLayout/FlowPage, so it
           renders full-screen with its own chrome (no sidebar/tab strip). */}
