@@ -5,7 +5,7 @@ Verifies the three things the scanner-page "perfect ground truth" relies on:
 1. `get_index_status().per_type[*].orphan_count` and `total_orphans` reflect
    live DB state after the indexer marks a row's source as gone.
 2. Re-indexing with `orphan_action=IGNORE` removes the orphan DB row but
-   leaves the shadow record dir under `<records_root>/<type>/<type>-@<id>/`
+   leaves the shadow record dir under `<records_root>/<type>/<id>/`
    intact.
 3. Re-indexing with `orphan_action=DELETE` removes both DB row and shadow
    dir.
@@ -226,9 +226,8 @@ async def test_db_only_row_with_live_source_is_not_swept(tmp_path: Path) -> None
     object.__setattr__(twin, "asset_ref", _FSRef(md))
     await twin.sync_to_db()
     # Drop the twin's shadow dir so it is a DB-only row.
-    from flow_sdk.fs_store.record_paths import record_stem
     shutil.rmtree(
-        get_default_records_root() / "markdown" / record_stem("markdown", twin_id),
+        get_default_records_root() / "markdown" / str(twin_id),
         ignore_errors=True,
     )
 

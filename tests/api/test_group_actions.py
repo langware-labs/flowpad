@@ -144,7 +144,6 @@ async def test_delete_group_moves_children_up(bootstrapped_client, user):
 async def test_group_record_persists_membership_and_namespace(bootstrapped_client, user):
     """Disk is the source of truth: group_id + group_namespace land in metadata.json."""
     from flow_sdk.fs_store.record_paths import get_default_records_root
-    from flow_sdk.fs_store.fs_record import record_stem
 
     ns = _ns()
     parent = Group(name="P", group_namespace=ns)
@@ -154,7 +153,7 @@ async def test_group_record_persists_membership_and_namespace(bootstrapped_clien
     child.store()  # explicit entity→record sync (rule 17)
 
     meta_path = (
-        get_default_records_root() / "group" / record_stem("group", child.id) / "metadata.json"
+        get_default_records_root() / "group" / str(child.id) / "metadata.json"
     )
     assert meta_path.exists(), f"record metadata not written at {meta_path}"
     meta = json.loads(meta_path.read_text())

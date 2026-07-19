@@ -6,7 +6,7 @@
  */
 import { DockPointer } from '@src/navigation/DockPointer';
 import { ViewType } from '@src/types/ViewType';
-import { Layout, Tab } from '@sdk';
+import { Layout, PageId, Tab } from '@sdk';
 import { describe, expect, it } from 'vitest';
 
 describe('DockPointer.tabHash', () => {
@@ -44,6 +44,20 @@ describe('DockPointer.tabHash', () => {
     const dock = new DockPointer(ViewType.ASSETS, 'doc-1', {}, Layout.DOCK);
     const win = new DockPointer(ViewType.ASSETS, 'doc-1', {}, Layout.WIN);
     expect(dock.tabHash).toBe(win.tabHash);
+  });
+
+  it('excludes the desk page — desk tabHash is byte-identical to the un-paged form', () => {
+    const noPage = new DockPointer(ViewType.CONVERSATION, 'abc123');
+    const desk = new DockPointer(ViewType.CONVERSATION, 'abc123', {}, Layout.DOCK, PageId.DESK);
+    expect(desk.tabHash).toBe('conversation|abc123');
+    expect(desk.tabHash).toBe(noPage.tabHash);
+  });
+
+  it('namespaces a non-desk page — hub and desk tabs with the same viewType/pointer never collide', () => {
+    const desk = new DockPointer(ViewType.CONVERSATION, 'abc123');
+    const hub = new DockPointer(ViewType.CONVERSATION, 'abc123', {}, Layout.DOCK, PageId.HUB);
+    expect(hub.tabHash).toBe('hub|conversation|abc123');
+    expect(hub.tabHash).not.toBe(desk.tabHash);
   });
 
   it('excludes transient options (query params / slot)', () => {

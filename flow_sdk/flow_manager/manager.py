@@ -60,10 +60,9 @@ RUN_RECORD_TYPE = "agentic_flow_run"
 
 def run_record_dir(run_id: str) -> Path:
     """The run's standardized record home (same convention as process records)."""
-    from flow_sdk.fs_store.fs_record import record_stem
-    from flow_sdk.fs_store.record_paths import get_default_records_root
+    from flow_sdk.fs_store.record_paths import shadow_dir_for
 
-    return get_default_records_root() / RUN_RECORD_TYPE / record_stem(RUN_RECORD_TYPE, run_id)
+    return shadow_dir_for(RUN_RECORD_TYPE, run_id)
 
 
 def inline_exec_dir(run_id: str, seq: int, node_id: str) -> Path:

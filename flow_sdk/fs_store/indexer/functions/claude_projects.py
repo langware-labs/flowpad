@@ -148,20 +148,16 @@ def _find_project_record_by_cwd(cwd: str) -> FSRecord | None:
         return None
     canonical = canonical_posix_path(cwd)
     from flow_sdk.fs_store.record_paths import (  # noqa: PLC0415
-        _NAME_SEP,
         get_default_records_root,
+        is_record_dir,
     )
-    _META_JSON = "metadata.json"
     type_dir = get_default_records_root() / RecordType.PROJECT
     if not type_dir.is_dir():
         return None
     for entry in sorted(type_dir.iterdir()):
-        if not entry.is_dir() or _NAME_SEP not in entry.name:
+        if not is_record_dir(entry):
             continue
-        meta_file = entry / _META_JSON
         data_file = entry / "data" / "_data.json"
-        if not meta_file.exists():
-            continue
         # Read cwd from data/_data.json without instantiating the record.
         rec_cwd = ""
         if data_file.exists():

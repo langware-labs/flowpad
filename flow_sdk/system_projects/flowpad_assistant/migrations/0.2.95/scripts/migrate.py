@@ -82,7 +82,12 @@ def _apply_mapping(conn, mapping, records_root, records_data_root, *, dry_run):
     Returns a counts dict. Does NOT commit (the caller owns the transaction) —
     except that the shadow-dir renames are filesystem side effects done here.
     """
-    from flow_sdk.fs_store import record_stem
+    # This migration predates the ``<type>-@<id>`` → bare-``<id>`` stem cleanup and
+    # runs only on 0.2.95-era stores, whose project folders are ``project-@<id>``.
+    # Pin the legacy shape here (do NOT use ``record_stem`` — it now emits the new
+    # ``project-<id>`` form). A later migration renames these to the bare id.
+    def _legacy_stem(t: str, i: str) -> str:
+        return f"{t}-@{i}"
 
     counts = {"projects": len(mapping), "child_blobs": 0, "rel_from": 0,
               "rel_to": 0, "links": 0, "shadow_dirs": 0}
@@ -161,7 +166,7 @@ def _apply_mapping(conn, mapping, records_root, records_data_root, *, dry_run):
         for root in (records_root, records_data_root):
             base = Path(root) / "project"
             for sub_old, sub_new in (
-                (record_stem("project", old_id), record_stem("project", new_id)),
+                (_legacy_stem("project", old_id), _legacy_stem("project", new_id)),
                 (old_id, new_id),  # legacy id-only shape
             ):
                 src, dst = base / sub_old, base / sub_new

@@ -50,7 +50,6 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { SpecRoute } from '@src/pages/spec/SpecRoute';
 import { GraphContextViewer } from '@src/components/graph-context/GraphContextViewer';
 import { DiagnosisViewer } from '@src/components/diagnosis-viewer/DiagnosisViewer';
-import { useSendMessageStore } from '@src/store/use-send-message-store';
 import { useSurveyStore } from '@src/store/use-survey-store';
 import { TabLifecycleState, useTabLifecycle } from '@src/tabs/tab-lifecycle';
 import { DockLoadErrorView } from '@src/components/agent-layout/DockLoadErrorView';
@@ -107,11 +106,11 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
 
   const { user } = useAuth();
 
-  const { flow, agent } = useAgentContext();
+  const { agent } = useAgentContext();
   const { project: contextProject } = useContext();
 
   // Sync flow focus and URL dock state to viewer store
-  useActiveViewer(flow);
+  useActiveViewer();
 
   const terminalTabs = useTerminalTabs();
 
@@ -148,15 +147,10 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
 
   const { setOpenEnvironmentTab } = useEnvVarsStore();
 
-  const { sendMessage } = useSendMessageStore();
-
+  // Same live retry path as vibe-workspace: prompt the active process.
   const onWebappErrorRetry = useCallback(
-    (retryMessage: string) => {
-      if (sendMessage) {
-        void sendMessage(retryMessage, {});
-      }
-    },
-    [sendMessage],
+    (retryMessage: string) => void dataContext.agenticProcess?.prompt(retryMessage),
+    [],
   );
 
   const handleExplorerFileSelect = useCallback(

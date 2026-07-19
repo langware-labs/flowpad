@@ -1,4 +1,4 @@
-import { DOCK_KEYWORD, DEV_KEYWORD, WIN_KEYWORD, Layout, ViewType } from '@sdk';
+import { DOCK_KEYWORD, DEV_KEYWORD, WIN_KEYWORD, Layout, ViewType, PageId, isValidPage } from '@sdk';
 
 /**
  * The single keyword→Layout table the parse/strip/build helpers below share.
@@ -75,6 +75,7 @@ export interface ParsedBasePath {
  * Full parsed dock URL including base path entities and dock portion
  */
 export interface ParsedDockUrl extends ParsedBasePath {
+  page: PageId;
   viewType?: string;
   pointer?: string;
   layout: Layout;
@@ -107,7 +108,10 @@ export function parseBasePath(basePath: string): ParsedBasePath {
  * => { agentId: "abc", processId: "xyz", viewType: "editor", pointer: "file.ts", layout: "dock" }
  *
  * parseDockUrl("/dock/skills")
- * => { viewType: "skills", layout: "dock" }
+ * => { page: "desk", viewType: "skills", layout: "dock" }
+ *
+ * parseDockUrl("/dock/hub/organization")
+ * => { page: "hub", viewType: "organization", layout: "dock" }
  */
 export function parseDockUrl(fullPath: string): ParsedDockUrl | null {
   const token = findLayoutToken(fullPath);
@@ -119,10 +123,18 @@ export function parseDockUrl(fullPath: string): ParsedDockUrl | null {
 
   // Parse dock portion (after the layout keyword)
   const dockPortion = fullPath.substring(token.index + token.keyword.length + 2); // +2 for slashes
-  const [viewType, ...pointerParts] = dockPortion.split('/');
+  const segments = dockPortion.split('/');
+
+  // The segment right after the layout keyword is the page IFF it is a known page
+  // id; otherwise it is the viewType and page defaults to `desk` (back-compat —
+  // every existing `/dock/<viewType>/…` URL is unaffected).
+  const hasPage = isValidPage(segments[0]);
+  const page = hasPage ? (segments[0] as PageId) : PageId.DESK;
+
+  const [viewType, ...pointerParts] = hasPage ? segments.slice(1) : segments;
   const pointer = pointerParts.length > 0 ? pointerParts.join('/') : undefined;
 
-  return { agentId, processId, viewType: viewType || undefined, pointer, layout: token.layout };
+  return { agentId, processId, page, viewType: viewType || undefined, pointer, layout: token.layout };
 }
 
 /**
@@ -154,6 +166,8 @@ export function stripDockPortion(currentPath: string): string {
  * @param pointer - Optional pointer (file path, skill name, etc.)
  * @param queryParams - Optional query parameters
  * @param layout - Layout type (dock or dev), defaults to DOCK
+ * @param page - SPA-surface, defaults to DESK. Emitted as a `/<page>` segment
+ *   ONLY when non-desk, so existing `/dock/<viewType>` URLs stay byte-identical.
  */
 export function buildDockUrl(
   currentUrl: string,
@@ -161,6 +175,7 @@ export function buildDockUrl(
   pointer?: string,
   queryParams?: Record<string, string | undefined>,
   layout: Layout = Layout.DOCK,
+  page: PageId = PageId.DESK,
 ): string {
   // Get base URL (everything before the layout keyword)
   const base = stripDockPortion(currentUrl);
@@ -168,8 +183,12 @@ export function buildDockUrl(
   // Choose layout keyword based on layout parameter
   const layoutKeyword = keywordForLayout(layout);
 
+  // Page segment sits between the layout keyword and the viewType; `desk` is the
+  // default and is never emitted (bare `/dock/<viewType>` == desk).
+  const pageSegment = page === PageId.DESK ? '' : `/${page}`;
+
   // Build layout URL with or without pointer
-  let layoutBase = `${base}/${layoutKeyword}/${viewType}`;
+  let layoutBase = `${base}/${layoutKeyword}${pageSegment}/${viewType}`;
   if (pointer && pointer.length > 0) {
     const cleanPointer = pointer.startsWith('/') ? pointer.slice(1) : pointer;
     // Encode each path segment individually to preserve slashes

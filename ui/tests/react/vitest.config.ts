@@ -23,7 +23,6 @@ export default mergeConfig(
   defineConfig({
     resolve: {
       alias: {
-        '@shared-compat': path.resolve(__dirname, '../utils/shared-compat.ts'),
       },
       dedupe: ['react', 'react-dom', 'react-router', '@tanstack/react-query', 'cmdk'],
     },

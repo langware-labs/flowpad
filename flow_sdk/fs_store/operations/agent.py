@@ -154,14 +154,11 @@ def get_agent(uid: str) -> Record | None:
     2. User agents dir: ``<claude_agents_dir>/<uid>.md``.
     3. System / bundled agents via ``load_system_agent``.
     """
-    from flow_sdk.fs_store.record_paths import get_default_records_root, record_stem  # noqa: PLC0415
+    from flow_sdk.fs_store.record_paths import is_record_dir, shadow_dir_for  # noqa: PLC0415
     import json  # noqa: PLC0415
 
-    _META_JSON = "metadata.json"
-    records_root = get_default_records_root()
-    stem = record_stem(RecordType.AGENT, uid)
-    folder = records_root / str(RecordType.AGENT) / stem
-    if folder.is_dir() and (folder / _META_JSON).exists():
+    folder = shadow_dir_for(RecordType.AGENT, uid)
+    if is_record_dir(folder):
         try:
             return FSRecord.load_record(folder)
         except (json.JSONDecodeError, OSError):

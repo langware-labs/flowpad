@@ -40,12 +40,12 @@ async def _stage_skill(tmp_path: Path) -> tuple[str, MessageAttachment, str]:
             "attachment": [{"attachment_type": "type_id", "data": f"skill-{skill_id}"}],
         }))
         zf.writestr(
-            f"attachment/skill-@{skill_id}/.claude/skills/{leaf}/SKILL.md",
+            f"attachment/skill-{skill_id}/.claude/skills/{leaf}/SKILL.md",
             f"---\nid: {skill_id}\nname: {leaf}\n---\n\n# purge me\n",
         )
     await unpack_bundle(zip_path, "local-user-id")
     ma = await MessageAttachment.get_one(
-        {"id": MessageAttachment.allocate_deterministic_id(fm_id, f"skill-@{skill_id}")}
+        {"id": MessageAttachment.allocate_deterministic_id(fm_id, f"skill-{skill_id}")}
     )
     assert ma is not None
     return fm_id, ma, leaf

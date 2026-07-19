@@ -30,7 +30,8 @@ SPREADSHEET = TypeMetadata(
     indexed_by_default=True,
     api_visible=True,
     index_fields=["description"],
-    main_subdir="assets/spreadsheets",
+    asset_class="internal",
+    family="assets/spreadsheets",
     # Flat single-file layout (like markdown), globbed anywhere by the FOLDER
     # walker. main_ext is a single value; the walker itself claims both
     # .csv and .xlsx.

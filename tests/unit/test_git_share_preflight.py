@@ -24,10 +24,10 @@ from flow_sdk.schema.types import EntityType
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
 ENTITY_ID = "7ce48c47-abab-4c9c-9780-a7198d12a260"
-KEY = f"{EntityType.SKILL.value}-@{ENTITY_ID}"
+KEY = f"{EntityType.SKILL.value}-{ENTITY_ID}"
 
 FOLDER_ID = "1f0a2b3c-4d5e-4f60-8712-9a0b1c2d3e4f"
-FOLDER_KEY = f"{EntityType.FOLDER.value}-@{FOLDER_ID}"
+FOLDER_KEY = f"{EntityType.FOLDER.value}-{FOLDER_ID}"
 
 
 # --------------------------------------------------------------------------- #

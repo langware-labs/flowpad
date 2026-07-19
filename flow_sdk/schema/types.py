@@ -150,7 +150,6 @@ class EntityType(StrEnum):
     ORGANIZATION = "organization"
     WORKSPACE = "workspace"
     PAGE = "page"
-    FLOW = "flow"
     INVITATION = "invitation"
     MENTION = "mention"
     CONNECTION = "connection"
@@ -178,7 +177,7 @@ class EntityType(StrEnum):
     # to execution defaults; executions are separate AgenticProcess entities.
     FLOW_NODE = "flow_node"
     # A folder-backed flow document (graph.json + display.json + scripts/ +
-    # runs/). NOTE: "flow" is taken by the legacy conversational Flow entity.
+    # runs/). NOTE: "flow" stays reserved by the retired conversational Flow.
     AGENTIC_FLOW = "agentic_flow"
     # One execution of an AgenticFlow — row is start/end bookkeeping; the full
     # trace lives in the flow folder's runs/<id>.jsonl.

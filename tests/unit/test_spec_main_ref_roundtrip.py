@@ -40,7 +40,7 @@ def test_spec_main_ref_roundtrip_is_stable(tmp_path):
     rec.upsert_main_ref(entity)
     md = ar._path
     assert md.name == "spec.md", f"expected inner spec.md, got {md}"
-    assert md.parent.parent.name == "specs", f"expected specs/<name>/spec.md, got {md}"
+    assert md.parent.parent.name == "spec", f"expected agentic-assets/spec/<name>/spec.md, got {md}"
     assert md.exists()
     written = md.read_text(encoding="utf-8")
     assert written.startswith("---")

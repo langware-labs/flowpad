@@ -58,7 +58,7 @@ def _context_entity_lines(typeids) -> list[str]:
         if not t or not i or t == "flow_message":
             continue
         label = t[:1].upper() + t[1:].replace("_", " ")
-        out.append(f"- {label}: {t}/{i}, read: {root}/{t}/{record_stem(t, i)}")
+        out.append(f"- {label}: {t}/{i}, read: {root}/{t}/{i}")
     return out
 
 

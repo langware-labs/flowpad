@@ -135,10 +135,7 @@ console.error = (...args: any[]) => {
   const message = args[0];
   if (typeof message === 'string') {
     // Suppress act() warnings from internal hook state updates
-    if (
-      message.includes('Warning: An update to ReactChatTester inside a test was not wrapped in act') ||
-      (message.includes('Warning: An update to') && message.includes('inside a test was not wrapped in act'))
-    ) {
+    if (message.includes('Warning: An update to') && message.includes('inside a test was not wrapped in act')) {
       return;
     }
     // Suppress Monaco Editor React instance mismatch warnings (harmless async cleanup)

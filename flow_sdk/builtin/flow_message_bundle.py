@@ -5,15 +5,17 @@ Bundle format (.flowmsg — a zip file):
   ├── header.json                              (top-level FlowMessage fields)
   ├── git_origins.json                         (optional GitOrigin map)
   ├── git_transfers.json                       (optional git-mode transfer map)
-  ├── metadata/<type>-@<id>/metadata.json      (optional metadata-only entity copy)
+  ├── metadata/<type>-<id>/metadata.json       (optional metadata-only entity copy)
   └── attachment/
-      ├── spec-@<id>/spec.md                   (frontmatter + content)
-      ├── task-@<id>/header.json               (task fields)
-      ├── conversation-@<id>/conversation.jsonl (typed Pointer per line)
-      ├── flow_message-@<id>/header.json       (FlowMessage fields as dict)
-      ├── skill-@<id>/.claude/skills/<name>/…  (FS-rooted asset subtree)
-      └── agent-@<id>/.claude/agents/<name>.md (FS-rooted asset file)
+      ├── spec-<id>/spec.md                    (frontmatter + content)
+      ├── task-<id>/header.json                (task fields)
+      ├── conversation-<id>/conversation.jsonl (typed Pointer per line)
+      ├── flow_message-<id>/header.json        (FlowMessage fields as dict)
+      ├── skill-<id>/.claude/skills/<name>/…   (FS-rooted asset subtree)
+      └── agent-<id>/.claude/agents/<name>.md  (FS-rooted asset file)
 
+Entry-dir names are the canonical ``<type>-<id>`` stem (``record_stem``). Bundles
+produced before the uname-sigil cleanup used ``<type>-@<id>``; unpack reads both.
 """
 
 from __future__ import annotations
@@ -39,6 +41,7 @@ from flow_sdk.builtin.flow_message import (
     is_image_filename,
 )
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
+from flow_sdk.fs_store.record_paths import parse_record_stem, record_stem
 from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.schema.types import EntityType
 
@@ -194,7 +197,7 @@ async def _pack_claude_session_attachment(entry_id: str, attachment_dir: Path) -
     sess = await ClaudeSession.get_one({"id": entry_id})
     if not sess:
         return
-    sess_dir = attachment_dir / f"claude_session-@{entry_id}"
+    sess_dir = attachment_dir / _entry_key("claude_session", entry_id)
     sess_dir.mkdir(parents=True, exist_ok=True)
     sess_data = sess.model_dump(
         mode="python",
@@ -220,7 +223,7 @@ async def _pack_flowpad_diagnosis_attachment(entry_id: str, attachment_dir: Path
     diag = await FlowpadDiagnosis.get_one({"id": entry_id})
     if not diag:
         return
-    diag_dir = attachment_dir / f"{EntityType.FLOWPAD_DIAGNOSIS.value}-@{entry_id}"
+    diag_dir = attachment_dir / _entry_key(EntityType.FLOWPAD_DIAGNOSIS.value, entry_id)
     diag_dir.mkdir(parents=True, exist_ok=True)
     diag_data = diag.model_dump(
         mode="python",
@@ -249,7 +252,7 @@ async def _pack_remote_worker_session_attachment(entry_id: str, attachment_dir: 
     rws = await RemoteWorkerSession.get_one({"id": entry_id})
     if not rws:
         return
-    rws_dir = attachment_dir / f"{EntityType.REMOTE_WORKER_SESSION.value}-@{entry_id}"
+    rws_dir = attachment_dir / _entry_key(EntityType.REMOTE_WORKER_SESSION.value, entry_id)
     rws_dir.mkdir(parents=True, exist_ok=True)
     rws_data = rws.model_dump(
         mode="python",
@@ -283,7 +286,7 @@ async def _pack_conversation_attachment(
     if not jsonl_path.exists():
         return
 
-    conv_dir = attachment_dir / f"conversation-@{entry_id}"
+    conv_dir = attachment_dir / _entry_key("conversation", entry_id)
     conv_dir.mkdir(parents=True, exist_ok=True)
     shutil.copy2(jsonl_path, conv_dir / "conversation.jsonl")
 
@@ -437,7 +440,8 @@ async def _resolve_file_backed_source(entry_type: str, entry_id: str):
 
 
 def _entry_key(entry_type: str, entry_id: str) -> str:
-    return f"{entry_type}-@{entry_id}"
+    # Canonical self-describing bundle-arc token: <type>-<id> (no uname @).
+    return record_stem(entry_type, entry_id)
 
 
 def _read_file_backed_metadata(entry_type: str, entry_id: str, ent) -> dict:
@@ -727,7 +731,7 @@ async def _pack_file_backed_attachment(
     if resolved is None:
         return
     info, ent, src_root = resolved
-    entry_root = attachment_dir / f"{entry_type}-@{entry_id}"
+    entry_root = attachment_dir / _entry_key(entry_type, entry_id)
     subdir = entry_root / info.main_subdir
 
     # Git provenance + placement: when the on-disk asset lives inside a repo,
@@ -949,7 +953,7 @@ async def _reindex_git_origin_scopes(
 
     scopes: dict[Path, set] = {}
     for entry_type, entry_id in received_entries:
-        raw = origins_map.get(f"{entry_type}-@{entry_id}")
+        raw = origins_map.get(_entry_key(entry_type, entry_id))
         if not raw:
             continue
         rel = str(raw.get("rel_path") or "").replace("\\", "/")
@@ -1010,14 +1014,24 @@ async def index_attachments(attachments: "list[ReceivedAsset]", *, project_id: s
     """
     from flow_sdk.builtin.message_attachment import AttachmentScope  # noqa: PLC0415
     from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    # A repo asset's nested children (of any repo type) ride inside its folder as
+    # bytes; widen the reindex to every repo type so the recursive
+    # ``agentic-assets`` walker materializes the WHOLE subtree, not just the top
+    # asset's type. Non-repo assets keep the tight scope. The widened tuple is
+    # constant across items, so build it (and the membership set) once.
+    repo_types = set(SchemaRegistry.get_repo_types())
+    repo_reindex_types = tuple(RecordType(t) for t in repo_types)
 
     for item in attachments:
         if item.record_type is not None:
+            types = repo_reindex_types if str(item.asset_type) in repo_types else (item.record_type,)
             if item.scope == AttachmentScope.PROJECT.value:
-                await _reindex_received_assets(item.root, (item.record_type,), project_id=project_id)
+                await _reindex_received_assets(item.root, types, project_id=project_id)
             else:
                 await _reindex_root(
-                    item.root, RecordType.USER_HOME_FOLDER, types=(item.record_type,), project_id=project_id
+                    item.root, RecordType.USER_HOME_FOLDER, types=types, project_id=project_id
                 )
         if item.git_origin:
             origins = {item.entry_key: item.git_origin}
@@ -1029,8 +1043,12 @@ async def index_attachments(attachments: "list[ReceivedAsset]", *, project_id: s
 
 
 def _parse_entry_key(key: str) -> tuple[str, str] | None:
-    entry_type, sep, entry_id = (key or "").partition("-@")
-    if not sep or not entry_type or not entry_id:
+    # Reads both the canonical <type>-<id> and the legacy uname-sigil <type>-@<id>.
+    try:
+        entry_type, entry_id = parse_record_stem(key or "")
+    except ValueError:
+        return None
+    if not entry_type or not entry_id:
         return None
     return entry_type, entry_id
 
@@ -1536,7 +1554,7 @@ async def _stamp_git_origins(
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
     for entry_type, entry_id in received_entries:
-        raw = origins_map.get(f"{entry_type}-@{entry_id}")
+        raw = origins_map.get(_entry_key(entry_type, entry_id))
         if not raw:
             continue
         try:
@@ -1677,7 +1695,10 @@ async def _stage_attachment(
     (raw ``file`` entries have no TypeInfo to derive it from, and are always
     user-installable under ``~/.claude``).
     """
-    from flow_sdk.builtin.message_attachment import MessageAttachment, user_scope_allowed_for  # noqa: PLC0415
+    from flow_sdk.builtin.message_attachment import MessageAttachment, TransferMode  # noqa: PLC0415
+    from flow_sdk.fs_store.placement import (  # noqa: PLC0415
+        user_scope_allowed as user_scope_allowed_policy,
+    )
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
     ma_id = MessageAttachment.allocate_deterministic_id(top_fm_id, entry_key)
@@ -1701,7 +1722,10 @@ async def _stage_attachment(
         ma.user_scope_allowed = user_scope_allowed
     else:
         info = SchemaRegistry.get(entry_type)
-        ma.user_scope_allowed = user_scope_allowed_for(getattr(info, "main_subdir", None), transfer_mode)
+        asset_class = info._resolved_layout[0] if info else None
+        ma.user_scope_allowed = user_scope_allowed_policy(
+            asset_class, is_git=transfer_mode == TransferMode.GIT.value
+        )
     await ma.save(owner_typeid, notify=False)
     return ma
 
@@ -1722,8 +1746,6 @@ async def _stage_attachment(
 # walkers, which key on ``<root>/.claude/docs/**/*.md``. Everything else lands
 # under ``.claude/files/`` (copied on install; no dedicated walker yet, so not
 # auto-indexed — tracked as out-of-scope).
-_FILE_ATTACHMENT_DOCS_SUBDIR = ".claude/docs"
-_FILE_ATTACHMENT_BLOB_SUBDIR = ".claude/files"
 _MARKDOWN_SUFFIXES = frozenset({".md", ".markdown"})
 # Videos the bubble renders inline as a card — no staged chip. Images use the
 # shared ``is_image_filename`` predicate (single source of truth for pictures).
@@ -1739,8 +1761,11 @@ def is_markdown_filename(filename: str) -> bool:
 
 def file_attachment_rel_subdir(filename: str) -> str:
     """Install-layout subdir for a raw file, mirrored in its staged entry dir.
-    Single owner of the layout so stage-time and install-time agree."""
-    return _FILE_ATTACHMENT_DOCS_SUBDIR if is_markdown_filename(filename) else _FILE_ATTACHMENT_BLOB_SUBDIR
+    Delegates to ``placement.raw_file_rel_subdir`` — the single owner of the
+    raw-file (NONE class) layout — so stage-time and install-time agree."""
+    from flow_sdk.fs_store.placement import raw_file_rel_subdir  # noqa: PLC0415
+
+    return raw_file_rel_subdir(filename)
 
 
 def _should_stage_file_attachment(filename: str) -> bool:
@@ -1785,7 +1810,7 @@ async def _stage_file_attachments(
         if not _should_stage_file_attachment(filename):
             continue
         asset_id = mint_uuid(f"flow_message_file:{top_fm_id}:{filename}")
-        entry_key = f"file-@{asset_id}"
+        entry_key = _entry_key("file", asset_id)
         # Synthesize the entry dir under the persisted staging tree, laid out
         # at the canonical install relpath so install mirrors it verbatim.
         entry_dir = fm_data_ops.staged_entry_dir(top_fm_id, entry_key)
@@ -1984,7 +2009,7 @@ async def _pack_flow_message_entry(fm_id: str, attachment_dir: Path) -> None:
     """Write ``attachment/flow_message-@<id>/header.json`` (idempotent)."""
     from flow_sdk.builtin.flow_message import FlowMessage
 
-    fm_dir = attachment_dir / f"flow_message-@{fm_id}"
+    fm_dir = attachment_dir / _entry_key("flow_message", fm_id)
     if fm_dir.exists():
         return
     fm = await FlowMessage.get_one({"id": fm_id})
@@ -2296,6 +2321,28 @@ async def unpack_bundle(
         from flow_sdk.builtin.flow_message import BODY_FILENAME as _BODY_FILENAME  # noqa: PLC0415
         from flow_sdk.fs_store.operations import flow_message as fm_data_ops  # noqa: PLC0415
 
+        def _canonicalize_arcs() -> None:
+            """Back-compat: rename any legacy ``<type>-@<id>`` entry dir (from a
+            bundle produced before the uname-sigil cleanup) to the canonical
+            ``<type>-<id>``, so the persisted staging, ``unpacked_path``, and the
+            installer's recomputed ``record_stem`` all agree on the same key."""
+            for sub in ("attachment", "metadata"):
+                d = tmp_root / sub
+                if not d.is_dir():
+                    continue
+                for entry in list(d.iterdir()):
+                    if not entry.is_dir():
+                        continue
+                    parsed = _parse_entry_key(entry.name)
+                    if parsed is None:
+                        continue
+                    canonical = _entry_key(*parsed)
+                    target = entry.parent / canonical
+                    if canonical != entry.name and not target.exists():
+                        entry.rename(target)
+
+        _canonicalize_arcs()
+
         def _persist_staging() -> None:
             dl_dir = fm_data_ops.download_dir(top_fm_id)
             dl_dir.mkdir(parents=True, exist_ok=True)
@@ -2329,7 +2376,10 @@ async def unpack_bundle(
         }
 
         def _entry_sort_key(p: Path) -> int:
-            t, _, _ = p.name.partition("-@")
+            try:
+                t, _ = parse_record_stem(p.name)
+            except ValueError:
+                t = ""
             return _TYPE_ORDER.get(t, 99)
 
         conversation_id: str | None = None
@@ -2436,9 +2486,10 @@ async def unpack_bundle(
                 if not entry_dir.is_dir():
                     continue
                 name = entry_dir.name
-                entry_type, _, entry_id = name.partition("-@")
-                if not entry_type or not entry_id:
+                parsed = _parse_entry_key(name)
+                if parsed is None:
                     continue
+                entry_type, entry_id = parsed
 
                 # FILE-BACKED ASSET FAMILY (TypeInfo.main_subdir set): one branch
                 # for skill/agent/workflow/whiteboard/spec/prompt/markdown/plan/
