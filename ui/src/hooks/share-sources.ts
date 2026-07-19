@@ -160,7 +160,7 @@ export function artifactShareSource(
   const ref = artifact.typeId.toString();
   return {
     label: opts.label ?? artifact.displayName ?? ref,
-    typeLabel: opts.typeLabel ?? artifact.artifact_type ?? Artifact.type,
+    typeLabel: opts.typeLabel ?? artifact.kind ?? Artifact.type,
     defaultTitle: opts.label ?? artifact.displayName,
     bookmarkable: true,
     // Eligibility (clean + pushed worktree with a usable origin) is resolved by

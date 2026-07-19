@@ -1,33 +1,25 @@
 /**
  * Service control types for managing artifact processes on compute nodes.
- * Services are WEBAPP or APP_SERVICE artifacts with port and start_cmd.
+ * Low-level local process controls use an explicit runtime descriptor. These
+ * fields are intentionally not part of the logical Artifact entity.
  */
-
-import type { Artifact } from '../artifact';
 
 /**
- * Service artifact - an Artifact with required service fields.
- * Used to validate artifacts before service control operations.
+ * Ephemeral local process coordinates used by ComputeNode controls.
+ * Provider deployments use the Deployment entity instead.
  */
-export interface ServiceArtifact extends Artifact {
-  /** Port the service runs on (required for service control) */
-  port: string;
-  /** Command to start the service (required for start/restart) */
-  start_cmd: string;
+export interface ServiceRuntimeDescriptor {
+  id?: string;
+  port?: string;
+  start_cmd?: string;
 }
 
-/**
- * Check if an artifact is a valid service artifact with required fields.
- */
-export function isServiceArtifact(artifact: Artifact): artifact is ServiceArtifact {
-  return Boolean(artifact.port);
+export function isServiceRuntime(service: ServiceRuntimeDescriptor): service is Required<ServiceRuntimeDescriptor> {
+  return Boolean(service.id && service.port && service.start_cmd);
 }
 
-/**
- * Check if an artifact can be started (has start_cmd).
- */
-export function canStartArtifact(artifact: Artifact): boolean {
-  return Boolean(artifact.port && artifact.start_cmd);
+export function canStartService(service: ServiceRuntimeDescriptor): boolean {
+  return Boolean(service.port && service.start_cmd);
 }
 
 /**

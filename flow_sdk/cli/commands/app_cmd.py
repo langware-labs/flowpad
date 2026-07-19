@@ -16,12 +16,19 @@ from typing_extensions import Annotated
 from flow_sdk.cli.app_discovery import WebAppCandidate, discover_webapps
 from flow_sdk.cli.commands._common import (
     discover_port as _discover_port,
+)
+from flow_sdk.cli.commands._common import (
     fail as _fail,
+)
+from flow_sdk.cli.commands._common import (
     ok as _ok,
+)
+from flow_sdk.cli.commands._common import (
     post_graph_json as _post_graph_json,
+)
+from flow_sdk.cli.commands._common import (
     resolve_process_id as _resolve_process_id,
 )
-
 
 app_app = typer.Typer(
     name="app",
@@ -165,18 +172,18 @@ def _open_artifact(
         {
             "artifact_id": artifact.get("id"),
             "name": artifact.get("name") or f"Web App {port}",
-            "path": artifact.get("path") or str(cwd),
+            "path": _artifact_path(artifact, root) or str(cwd),
             "port": str(port),
             "start_cmd": command,
-            "health": artifact.get("health") or _metadata(artifact).get("health") or "/",
+            "health": _deployment_labels(artifact).get("flowpad.runtime.health") or "/",
             "description": artifact.get("description") or "Web application",
-            "metadata": {**_metadata(artifact), "opened_from": "artifact"},
             "show": True,
         },
     )
     return {
         "source": "artifact",
         "artifact": data.get("artifact"),
+        "deployment": data.get("deployment"),
         "shown": data.get("shown"),
         "port": port,
         "url": f"http://127.0.0.1:{port}",
@@ -244,6 +251,7 @@ def _open_candidate(
         "source": "discovery",
         "candidate": candidate.to_dict(),
         "artifact": data.get("artifact"),
+        "deployment": data.get("deployment"),
         "shown": data.get("shown"),
         "port": port,
         "url": f"http://127.0.0.1:{port}",
@@ -273,10 +281,10 @@ def _artifact_score(artifact: dict, query: str, root: Path) -> int:
     terms = _query_terms(query)
     fields = " ".join(
         str(artifact.get(k) or "")
-        for k in ("name", "path", "description")
+        for k in ("name", "description", "kind")
     ).lower()
     score = 25
-    path = str(artifact.get("path") or "")
+    path = _artifact_path(artifact, root)
     if path:
         try:
             if Path(path).expanduser().resolve().is_relative_to(root):
@@ -296,7 +304,7 @@ def _query_terms(query: str) -> set[str]:
 
 
 def _artifact_port(artifact: dict) -> int | None:
-    value = artifact.get("port") or _metadata(artifact).get("port")
+    value = _deployment_labels(artifact).get("flowpad.runtime.port")
     try:
         port = int(str(value))
     except (TypeError, ValueError):
@@ -305,12 +313,12 @@ def _artifact_port(artifact: dict) -> int | None:
 
 
 def _artifact_start_cmd(artifact: dict) -> str:
-    value = artifact.get("start_cmd") or _metadata(artifact).get("start_cmd") or _metadata(artifact).get("start-cmd")
+    value = _deployment_labels(artifact).get("flowpad.runtime.start_cmd")
     return str(value or "").strip()
 
 
 def _artifact_cwd(artifact: dict, root: Path) -> Path:
-    raw = str(artifact.get("path") or "").strip()
+    raw = _artifact_path(artifact, root)
     if not raw:
         return root
     path = Path(raw).expanduser()
@@ -319,9 +327,25 @@ def _artifact_cwd(artifact: dict, root: Path) -> Path:
     return path.resolve() if path.exists() else root
 
 
-def _metadata(artifact: dict) -> dict:
-    metadata = artifact.get("metadata")
-    return metadata if isinstance(metadata, dict) else {}
+def _artifact_path(artifact: dict, root: Path) -> str:
+    origin = artifact.get("origin")
+    if not isinstance(origin, dict):
+        return ""
+    rel_path = str(origin.get("rel_path") or ".").strip()
+    if origin.get("kind") == "local":
+        base = str(origin.get("base") or "").strip()
+        return str(Path(base) / rel_path) if base else ""
+    # A git origin is checkout-independent.  The app command already knows the
+    # active checkout root, so its repo-relative placement resolves from there.
+    if origin.get("kind") == "git":
+        return str(root / rel_path)
+    return ""
+
+
+def _deployment_labels(artifact: dict) -> dict:
+    deployment = artifact.get("deployment")
+    labels = deployment.get("provider_labels") if isinstance(deployment, dict) else None
+    return labels if isinstance(labels, dict) else {}
 
 
 def _choose_static_port() -> int:

@@ -20,6 +20,7 @@ EXPECTED = {
     "LOG": "log",
     "AGENTIC_PROCESS": "agentic_process",
     "ARTIFACT": "artifact",
+    "DEPLOYMENT": "deployment",
     "BOOKMARK": "bookmark",
     "ANNOTATION": "annotation",
     "COMMENT": "comment",

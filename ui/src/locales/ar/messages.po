@@ -50,8 +50,8 @@ msgid "— show trace event gutter"
 msgstr ""
 
 #: src/components/artifacts/artifact-form.tsx
-msgid "./src/app or https://... (optional)"
-msgstr ""
+#~ msgid "./src/app or https://... (optional)"
+#~ msgstr ""
 
 #: src/components/collaboration/sidebar/NewDocButton.tsx
 #~ msgid ".claude/docs/ under this project"
@@ -165,6 +165,14 @@ msgstr ""
 #. placeholder {0}: trigger.last_seen_size
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 msgid "{0} bytes"
+msgstr ""
+
+#. placeholder {0}: summary.current
+#. placeholder {1}: summary.stale
+#. placeholder {2}: summary.partial
+#. placeholder {3}: summary.error
+#: src/components/machine-overview/service-status-led.tsx
+msgid "{0} current · {1} stale · {2} partial · {3} error"
 msgstr ""
 
 #. placeholder {0}: tooBig.length
@@ -700,6 +708,10 @@ msgstr ""
 msgid "Active: {activeDbPath}"
 msgstr ""
 
+#: src/components/graph-view/ui/TopBar.tsx
+msgid "Activity"
+msgstr ""
+
 #: src/components/skills-viewer/amd-editor/components/ElementBlock.tsx
 #~ msgid "add"
 #~ msgstr ""
@@ -858,8 +870,8 @@ msgid "Adding…"
 msgstr ""
 
 #: src/components/tools/ToolsPanel.tsx
-msgid "Additional Tools"
-msgstr ""
+#~ msgid "Additional Tools"
+#~ msgstr ""
 
 #: src/components/contact-picker/AddressBookButton.tsx
 msgid "Address book"
@@ -940,6 +952,7 @@ msgid "all"
 msgstr ""
 
 #: src/components/graph-view/ui/FilterChips.tsx
+#: src/components/graph-view/ui/TopBar.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
 #: src/pages/live-status/LiveStatus.tsx
@@ -982,6 +995,10 @@ msgstr ""
 msgid "All languages"
 msgstr ""
 
+#: src/components/machine-overview/service-status-led.tsx
+msgid "All observed deployments are current"
+msgstr ""
+
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 #: src/components/terminal/HistoryModal.tsx
 msgid "All projects"
@@ -996,8 +1013,8 @@ msgid "All projects are already open"
 msgstr ""
 
 #: src/components/machine-overview/service-status-led.tsx
-msgid "All services running"
-msgstr ""
+#~ msgid "All services running"
+#~ msgstr ""
 
 #: src/components/assets/filters/taskFilters.tsx
 msgid "All statuses"
@@ -1017,8 +1034,8 @@ msgid "Allow {who} to run prompt on this computer"
 msgstr ""
 
 #: src/components/tools/ToolsPanel.tsx
-msgid "Allow AI to search the web"
-msgstr ""
+#~ msgid "Allow AI to search the web"
+#~ msgstr ""
 
 #: src/components/terminal/interactive-terminal/process-cli-presentation.ts
 msgid "Allow all tools without confirmation (--allow-all)"
@@ -1071,8 +1088,8 @@ msgstr ""
 
 #: src/components/chat-input.tsx
 #: src/components/chat-input.tsx
-msgid "An error occurred while checking the repository. Please try again."
-msgstr ""
+#~ msgid "An error occurred while checking the repository. Please try again."
+#~ msgstr ""
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "An orphan is a DB row (or shadow record dir) whose source file is gone from disk. The sweep dialog lets you remove just the DB row (IGNORE, keeps a forensic shadow dir) or both row + shadow (DELETE)."
@@ -1305,8 +1322,8 @@ msgid "artifacts"
 msgstr ""
 
 #: src/components/webapp-viewer/webapp-artifacts-tab.tsx
-msgid "Artifacts"
-msgstr ""
+#~ msgid "Artifacts"
+#~ msgstr ""
 
 #: src/components/artifacts/artifacts-list.tsx
 msgid "Artifacts created during flow execution will appear here"
@@ -1316,27 +1333,25 @@ msgstr ""
 #~ msgid "Artifacts:"
 #~ msgstr ""
 
-#. placeholder {0}: siteConfig.branding.company_name
 #: src/components/chat-input.tsx
-msgid "Ask {0} to solve..."
-msgstr ""
-
-#. placeholder {0}: siteConfig.branding.company_name
-#: src/components/chat-input.tsx
-msgid "Ask {0}..."
-msgstr ""
+#~ msgid "Ask {0} to solve..."
+#~ msgstr ""
 
 #: src/components/chat-input.tsx
-msgid "Ask a follow up..."
-msgstr ""
+#~ msgid "Ask {0}..."
+#~ msgstr ""
+
+#: src/components/chat-input.tsx
+#~ msgid "Ask a follow up..."
+#~ msgstr ""
 
 #: src/components/lens-viewer/shared/transcript-features/AnalysisControls.tsx
 msgid "Ask about this analysis…"
 msgstr ""
 
 #: src/components/chat-input.tsx
-msgid "Ask Flowpad to solve..."
-msgstr ""
+#~ msgid "Ask Flowpad to solve..."
+#~ msgstr ""
 
 #: src/components/floating-chat/FloatingChatWindow.tsx
 msgid "Ask the Flowpad Assistant anything."
@@ -1421,7 +1436,6 @@ msgstr ""
 msgid "Attach asset"
 msgstr ""
 
-#: src/components/chat-input.tsx
 #: src/components/conversation/MessageComposer.tsx
 msgid "Attach files"
 msgstr ""
@@ -1555,6 +1569,10 @@ msgstr ""
 msgid "Balanced"
 msgstr ""
 
+#: src/components/artifacts/artifact-form.tsx
+msgid "Base path"
+msgstr ""
+
 #: src/components/hooks-view/HookEditor.tsx
 msgid "Bash Command *"
 msgstr ""
@@ -1625,6 +1643,10 @@ msgstr ""
 msgid "Bookmarks"
 msgstr ""
 
+#: src/components/artifacts/artifact-form.tsx
+msgid "Branch"
+msgstr ""
+
 #: src/components/GitHubConnectionDialog.tsx
 msgid "Branch:"
 msgstr ""
@@ -1679,7 +1701,7 @@ msgstr ""
 msgid "Building graph…"
 msgstr ""
 
-#: src/components/graph-view/ui/TopBar.tsx
+#: src/components/graph-view/GraphView.tsx
 msgid "Building…"
 msgstr ""
 
@@ -1961,8 +1983,8 @@ msgid "Checking if you have a local clone of the repository."
 msgstr ""
 
 #: src/components/machine-overview/service-status-led.tsx
-msgid "Checking service status..."
-msgstr ""
+#~ msgid "Checking service status..."
+#~ msgstr ""
 
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
 msgid "Checking whether {folderName} is ready to share."
@@ -1973,8 +1995,8 @@ msgid "checking…"
 msgstr ""
 
 #: src/components/chat-input.tsx
-msgid "Checking..."
-msgstr ""
+#~ msgid "Checking..."
+#~ msgstr ""
 
 #: src/components/code-editor/DiffViewer.tsx
 msgid "Checkpoint:"
@@ -2234,8 +2256,8 @@ msgid "Click to rename room"
 msgstr ""
 
 #: src/components/machine-overview/service-status-led.tsx
-msgid "Click to retry"
-msgstr ""
+#~ msgid "Click to retry"
+#~ msgstr ""
 
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Click to view"
@@ -2342,6 +2364,10 @@ msgstr ""
 msgid "Cloud hub"
 msgstr ""
 
+#: src/components/graph-view/GraphView.tsx
+msgid "Cloud WorldView"
+msgstr ""
+
 #: src/components/markdown-view.tsx
 msgid "code"
 msgstr ""
@@ -2383,8 +2409,8 @@ msgstr ""
 #~ msgstr ""
 
 #: src/components/chat-input.tsx
-msgid "Codebase"
-msgstr ""
+#~ msgid "Codebase"
+#~ msgstr ""
 
 #: src/components/quick-create/QuickCreatePanel.tsx
 msgid "Codex"
@@ -2435,6 +2461,10 @@ msgstr ""
 #: src/components/prompt-library/PromptEditDialog.tsx
 #: src/components/ui/color-picker.tsx
 msgid "Color"
+msgstr ""
+
+#: src/components/graph-view/ui/TopBar.tsx
+msgid "Color by"
 msgstr ""
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
@@ -2566,8 +2596,8 @@ msgid "Configure Claude Code hooks to automate workflows with custom scripts and
 msgstr ""
 
 #: src/components/chat-input.tsx
-msgid "Configure execution mode, AI skill, and additional capabilities"
-msgstr ""
+#~ msgid "Configure execution mode, AI skill, and additional capabilities"
+#~ msgstr ""
 
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 msgid "Configure your account, app preferences, and notifications"
@@ -2579,7 +2609,6 @@ msgstr ""
 msgid "Confirm"
 msgstr ""
 
-#: src/components/chat-input.tsx
 #: src/components/connections-manager.tsx
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 msgid "Connect"
@@ -2620,17 +2649,14 @@ msgstr ""
 msgid "Connected to GitHub"
 msgstr ""
 
-#. placeholder {0}: codebaseConnection.name
 #: src/components/chat-input.tsx
-msgid "Connected: {0}"
-msgstr ""
-
-#. placeholder {0}: codebaseConnection.name
-#: src/components/chat-input.tsx
-msgid "Connecting: {0}..."
-msgstr ""
+#~ msgid "Connected: {0}"
+#~ msgstr ""
 
 #: src/components/chat-input.tsx
+#~ msgid "Connecting: {0}..."
+#~ msgstr ""
+
 #: src/components/connections-manager.tsx
 msgid "Connecting..."
 msgstr ""
@@ -2682,7 +2708,7 @@ msgstr ""
 #~ msgid "Context folders"
 #~ msgstr ""
 
-#: src/components/graph-view/ui/TopBar.tsx
+#: src/components/graph-view/GraphView.tsx
 msgid "Context Graph"
 msgstr ""
 
@@ -2881,6 +2907,7 @@ msgid "cost"
 msgstr ""
 
 #: src/components/assets/editor/agent-trace/simple/SimpleSessionReport.tsx
+#: src/components/graph-view/ui/TopBar.tsx
 msgid "Cost"
 msgstr ""
 
@@ -3074,8 +3101,8 @@ msgid "Create a new {0}."
 msgstr ""
 
 #: src/components/artifacts/artifact-form.tsx
-msgid "Create a new artifact in this project."
-msgstr ""
+#~ msgid "Create a new artifact in this project."
+#~ msgstr ""
 
 #: src/components/hooks-manager/HookForm.tsx
 msgid "Create Agent Hook"
@@ -3568,6 +3595,10 @@ msgstr ""
 msgid "Deployed"
 msgstr ""
 
+#: src/components/graph-view/ui/PropertyPanel.tsx
+msgid "Deployment details"
+msgstr ""
+
 #: src/components/graph-view/ui/TopBar.tsx
 msgid "depth"
 msgstr ""
@@ -3586,6 +3617,10 @@ msgstr ""
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Describe the issue to analyze and improve…"
+msgstr ""
+
+#: src/components/artifacts/artifact-form.tsx
+msgid "Describe the logical application, service, resource, or content and its optional source."
 msgstr ""
 
 #: src/components/tasks-viewer/TasksViewer.tsx
@@ -3642,7 +3677,6 @@ msgid "Dev mode"
 msgstr ""
 
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
-#: src/pages/landing-page/header/header.tsx
 msgid "Dev mode ON — click to disable"
 msgstr ""
 
@@ -3872,7 +3906,6 @@ msgstr ""
 #: src/components/contact-picker/AddressBookButton.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
-#: src/components/tools/ToolsPanel.tsx
 #: src/components/wizard/WizardHost.tsx
 msgid "Done"
 msgstr ""
@@ -4230,8 +4263,8 @@ msgstr ""
 #~ msgstr ""
 
 #: src/components/chat-input.tsx
-msgid "Enter Git URL"
-msgstr ""
+#~ msgid "Enter Git URL"
+#~ msgstr ""
 
 #: src/components/hooks-manager/HookForm.tsx
 msgid "Enter hook description"
@@ -4331,8 +4364,8 @@ msgstr ""
 
 #: src/components/chat-input.tsx
 #: src/components/chat-input.tsx
-msgid "Error Checking Repository"
-msgstr ""
+#~ msgid "Error Checking Repository"
+#~ msgstr ""
 
 #: src/components/app-host/AppHost.tsx
 msgid "Error Loading App"
@@ -4360,8 +4393,8 @@ msgid "Error Loading Transcript"
 msgstr ""
 
 #: src/components/machine-overview/service-status-led.tsx
-msgid "Error: {errorMessage}"
-msgstr ""
+#~ msgid "Error: {errorMessage}"
+#~ msgstr ""
 
 #: src/components/agent-layout/service-unavailable-screen/service-unavailable-screen.tsx
 msgid "Error: {statusCode}"
@@ -4455,8 +4488,8 @@ msgstr ""
 #~ msgstr ""
 
 #: src/components/tools/ToolsPanel.tsx
-msgid "Execution Mode"
-msgstr ""
+#~ msgid "Execution Mode"
+#~ msgstr ""
 
 #: src/components/assets/AddGitFolderDialog.tsx
 msgid "Existing repo"
@@ -4587,8 +4620,8 @@ msgid "Failed to clone repository"
 msgstr ""
 
 #: src/components/chat-input.tsx
-msgid "Failed to clone the git repository. Please check the URL and try again."
-msgstr ""
+#~ msgid "Failed to clone the git repository. Please check the URL and try again."
+#~ msgstr ""
 
 #: src/components/account/database-section.tsx
 msgid "Failed to copy path to clipboard"
@@ -4761,6 +4794,10 @@ msgstr ""
 msgid "Failed to load trigger.py"
 msgstr ""
 
+#: src/components/graph-view/GraphView.tsx
+msgid "Failed to load WorldView"
+msgstr ""
+
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Failed to look up project."
 msgstr ""
@@ -4807,8 +4844,8 @@ msgstr ""
 #~ msgstr ""
 
 #: src/components/machine-overview/service-status-led.tsx
-msgid "Failed to restart services"
-msgstr ""
+#~ msgid "Failed to restart services"
+#~ msgstr ""
 
 #: src/components/workflows-view/WorkflowStrip.tsx
 #~ msgid "Failed to run workflow"
@@ -4870,8 +4907,8 @@ msgid "Failed to start run"
 msgstr ""
 
 #: src/components/machine-overview/service-status-led.tsx
-msgid "Failed to start services"
-msgstr ""
+#~ msgid "Failed to start services"
+#~ msgstr ""
 
 #: src/components/quick-create/QuickCreateMenu.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
@@ -4898,8 +4935,8 @@ msgstr ""
 #~ msgstr ""
 
 #: src/components/machine-overview/service-status-led.tsx
-msgid "Failed to stop services"
-msgstr ""
+#~ msgid "Failed to stop services"
+#~ msgstr ""
 
 #: src/components/project-home/SecretsCard.tsx
 msgid "Failed to store value"
@@ -4919,8 +4956,8 @@ msgid "Failed to update trigger"
 msgstr ""
 
 #: src/components/chat-input.tsx
-msgid "Failed to upload the zip file. Please try again."
-msgstr ""
+#~ msgid "Failed to upload the zip file. Please try again."
+#~ msgstr ""
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 #: src/pages/flow-page/vibe-model-select.tsx
@@ -4960,7 +4997,6 @@ msgstr ""
 msgid "Field"
 msgstr ""
 
-#: src/components/artifacts/artifact-form.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 msgid "File"
 msgstr ""
@@ -5002,7 +5038,6 @@ msgstr ""
 #~ msgstr ""
 
 #: src/components/assets/MarkdownIndexPanel.tsx
-#: src/components/chat-input.tsx
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 msgid "Files"
@@ -5131,8 +5166,8 @@ msgid "Fixing these tightens the skill for every future run."
 msgstr ""
 
 #: src/components/project-list/ProjectList.tsx
-msgid "flow"
-msgstr ""
+#~ msgid "flow"
+#~ msgstr ""
 
 #: src/components/history-dropdown.tsx
 #: src/components/history-dropdown.tsx
@@ -5218,16 +5253,16 @@ msgid "Flowpad.ai Logo"
 msgstr ""
 
 #: src/components/project-list/ProjectList.tsx
-msgid "flows"
-msgstr ""
+#~ msgid "flows"
+#~ msgstr ""
 
 #: src/components/execute-flow-view/execute-flow-view.tsx
 #~ msgid "Flows"
 #~ msgstr ""
 
 #: src/components/project-list/ProjectList.tsx
-msgid "Flows:"
-msgstr ""
+#~ msgid "Flows:"
+#~ msgstr ""
 
 #: src/components/graph-view/ui/PropertyPanel.tsx
 msgid "Focus local graph"
@@ -5242,8 +5277,8 @@ msgid "Focused"
 msgstr ""
 
 #: src/components/artifacts/artifact-form.tsx
-msgid "Folder"
-msgstr ""
+#~ msgid "Folder"
+#~ msgstr ""
 
 #: src/components/assets/AssetsNavigator.tsx
 #: src/components/favorites/FavoritesAddRow.tsx
@@ -5254,6 +5289,10 @@ msgstr ""
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Folder…"
+msgstr ""
+
+#: src/components/graph-view/ui/TopBar.tsx
+msgid "Footprint"
 msgstr ""
 
 #: src/components/skills-viewer/amd-editor/components/blocks/EachBlock.tsx
@@ -5403,16 +5442,16 @@ msgid "git"
 msgstr ""
 
 #: src/components/chat-input.tsx
-msgid "Git"
-msgstr ""
+#~ msgid "Git"
+#~ msgstr ""
 
 #: src/components/status-bar/GitStatusModal.tsx
 msgid "Git changes"
 msgstr ""
 
 #: src/components/chat-input.tsx
-msgid "Git Clone Failed"
-msgstr ""
+#~ msgid "Git Clone Failed"
+#~ msgstr ""
 
 #: src/components/assets/context-folder-sources.tsx
 msgid "Git folder"
@@ -5425,6 +5464,10 @@ msgstr ""
 #: src/components/status-bar/GitPushButton.tsx
 #: src/components/status-bar/GitPushButton.tsx
 msgid "git push"
+msgstr ""
+
+#: src/components/artifacts/artifact-form.tsx
+msgid "Git repository"
 msgstr ""
 
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
@@ -5452,8 +5495,8 @@ msgid "glob"
 msgstr ""
 
 #: src/components/artifacts/artifact-form.tsx
-msgid "Glob Pattern"
-msgstr ""
+#~ msgid "Glob Pattern"
+#~ msgstr ""
 
 #: src/components/terminal/ProjectsCounterChip.tsx
 #: src/components/terminal/ProjectsCounterChip.tsx
@@ -6133,7 +6176,6 @@ msgstr ""
 msgid "Invalid asset comparison."
 msgstr ""
 
-#: src/components/artifacts/artifact-metadata-editor.tsx
 #: src/components/hooks-view/hooks-view.tsx
 msgid "Invalid JSON"
 msgstr ""
@@ -6322,6 +6364,10 @@ msgstr ""
 
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
 msgid "kind"
+msgstr ""
+
+#: src/components/artifacts/artifact-form.tsx
+msgid "Kind"
 msgstr ""
 
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
@@ -6657,7 +6703,19 @@ msgid "Loading conversation…"
 msgstr ""
 
 #: src/components/graph-view/GraphView.tsx
-msgid "Loading dep graph…"
+#~ msgid "Loading dep graph…"
+#~ msgstr ""
+
+#: src/components/graph-view/GraphView.tsx
+msgid "Loading dependency graph…"
+msgstr ""
+
+#: src/components/machine-overview/service-status-led.tsx
+msgid "Loading deployment status…"
+msgstr ""
+
+#: src/components/webapp-viewer/webapp-deployments-tab.tsx
+msgid "Loading deployments…"
 msgstr ""
 
 #: src/components/assets/editor/agent-trace/simple/SimpleSessionReport.tsx
@@ -6813,6 +6871,10 @@ msgstr ""
 msgid "Loading whiteboard…"
 msgstr ""
 
+#: src/components/graph-view/GraphView.tsx
+msgid "Loading WorldView…"
+msgstr ""
+
 #: src/components/git/RepoPicker.tsx
 msgid "Loading your repos…"
 msgstr ""
@@ -6861,6 +6923,10 @@ msgstr ""
 msgid "Local only — permanent"
 msgstr ""
 
+#: src/components/artifacts/artifact-form.tsx
+msgid "Local path"
+msgstr ""
+
 #: src/components/agentic-progress/shared/stack-frame-list.tsx
 #~ msgid "Local Variables"
 #~ msgstr ""
@@ -6901,12 +6967,12 @@ msgid "Login Required"
 msgstr ""
 
 #: src/components/chat-input.tsx
-msgid "Login to continue asking..."
-msgstr ""
+#~ msgid "Login to continue asking..."
+#~ msgstr ""
 
 #: src/components/chat-input.tsx
-msgid "Login to Proceed"
-msgstr ""
+#~ msgid "Login to Proceed"
+#~ msgstr ""
 
 #. placeholder {0}: login.reason
 #: src/components/account/user-info.tsx
@@ -7135,16 +7201,16 @@ msgid "Messages"
 msgstr ""
 
 #: src/components/artifacts/artifact-form.tsx
-msgid "Metadata"
-msgstr ""
+#~ msgid "Metadata"
+#~ msgstr ""
 
 #: src/components/artifacts/artifact-metadata-editor.tsx
-msgid "Metadata (JSON)"
-msgstr ""
+#~ msgid "Metadata (JSON)"
+#~ msgstr ""
 
 #: src/components/artifacts/artifact-metadata-editor.tsx
-msgid "Metadata must be a JSON object"
-msgstr ""
+#~ msgid "Metadata must be a JSON object"
+#~ msgstr ""
 
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Metrics"
@@ -7256,15 +7322,19 @@ msgid "msgs"
 msgstr ""
 
 #: src/components/chat-input.tsx
-msgid "Multiple ZIP Files Not Allowed"
-msgstr ""
+#~ msgid "Multiple ZIP Files Not Allowed"
+#~ msgstr ""
 
 #: src/components/artifacts/artifact-form.tsx
-msgid "My Artifact"
-msgstr ""
+#~ msgid "My Artifact"
+#~ msgstr ""
 
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
 msgid "My Schedule"
+msgstr ""
+
+#: src/components/artifacts/artifact-form.tsx
+msgid "My web application"
 msgstr ""
 
 #: src/components/open-project-component/open-project-component.tsx
@@ -7559,10 +7629,9 @@ msgstr ""
 msgid "No active survey"
 msgstr ""
 
-#. placeholder {0}: config.label
 #: src/components/artifacts/artifact-metadata-editor.tsx
-msgid "No additional metadata fields for {0} artifacts."
-msgstr ""
+#~ msgid "No additional metadata fields for {0} artifacts."
+#~ msgstr ""
 
 #: src/components/hooks-manager/index.tsx
 msgid "No agent hooks configured"
@@ -7736,7 +7805,11 @@ msgid "No data."
 msgstr ""
 
 #: src/pages/agent-redirect.tsx
-msgid "No default agent found, missing agent type ID in context."
+#~ msgid "No default agent found, missing agent type ID in context."
+#~ msgstr ""
+
+#: src/components/webapp-viewer/webapp-deployments-tab.tsx
+msgid "No deployments observed yet"
 msgstr ""
 
 #: src/components/assistance-viewer/TaskDetail.tsx
@@ -7828,8 +7901,8 @@ msgstr ""
 #~ msgstr ""
 
 #: src/components/project-list/ProjectList.tsx
-msgid "No flows in this project"
-msgstr ""
+#~ msgid "No flows in this project"
+#~ msgstr ""
 
 #: src/components/triggers-view/TriggersList.tsx
 msgid "No FSOp triggers visible. Toggle <0>Include system</0> above to see system-installed watchers."
@@ -8193,6 +8266,10 @@ msgstr ""
 msgid "No runs yet."
 msgstr ""
 
+#: src/components/webapp-viewer.tsx
+msgid "No runtime port in this view"
+msgstr ""
+
 #: src/components/onboarding-card/OnboardingCard.tsx
 #~ msgid "No sample flows found"
 #~ msgstr ""
@@ -8222,12 +8299,12 @@ msgid "No secrets yet. Click \"Add secret\" to create one."
 msgstr ""
 
 #: src/components/machine-overview/service-status-led.tsx
-msgid "No services to monitor"
-msgstr ""
+#~ msgid "No services to monitor"
+#~ msgstr ""
 
 #: src/components/machine-overview/service-status-led.tsx
-msgid "No services with ports found"
-msgstr ""
+#~ msgid "No services with ports found"
+#~ msgstr ""
 
 #: src/components/terminal/interactive-terminal/side-windows/AnalysisPanel.tsx
 msgid "No session to analyze yet."
@@ -8272,6 +8349,10 @@ msgstr ""
 #: src/components/skills-sidebar/SkillsSidebar.tsx
 #~ msgid "No skills yet"
 #~ msgstr ""
+
+#: src/components/artifacts/artifact-form.tsx
+msgid "No source"
+msgstr ""
 
 #: src/components/hooks-view/HooksBrowser.tsx
 msgid "No source file available for this hook"
@@ -8379,8 +8460,8 @@ msgid "No web app available"
 msgstr ""
 
 #: src/components/webapp-viewer/webapp-artifacts-tab.tsx
-msgid "No webapp or service artifacts found"
-msgstr ""
+#~ msgid "No webapp or service artifacts found"
+#~ msgstr ""
 
 #: src/components/workflows-view/WorkflowStrip.tsx
 #~ msgid "No workflows"
@@ -8598,8 +8679,8 @@ msgid "Only on this machine — never shared"
 msgstr ""
 
 #: src/components/chat-input.tsx
-msgid "Only one ZIP file can be uploaded at a time"
-msgstr ""
+#~ msgid "Only one ZIP file can be uploaded at a time"
+#~ msgstr ""
 
 #: src/components/task-bar/TaskDetailPanel.tsx
 #~ msgid "open"
@@ -8700,6 +8781,10 @@ msgstr ""
 #: src/components/terminal/openers/TerminalOpenerToolbar.tsx
 #: src/tabs/useTerminalStripController.tsx
 msgid "Open docker terminal"
+msgstr ""
+
+#: src/components/artifacts/artifact-form.tsx
+msgid "Open dot-path ontology; custom descendants are welcome."
 msgstr ""
 
 #: src/pages/flow-page/vibe-new-chat.tsx
@@ -9013,8 +9098,8 @@ msgid "Open this plan from its session to update it"
 msgstr ""
 
 #: src/components/chat-input.tsx
-msgid "Open tools panel"
-msgstr ""
+#~ msgid "Open tools panel"
+#~ msgstr ""
 
 #: src/components/process-runs/ProcessRunsPanel.tsx
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
@@ -9213,7 +9298,6 @@ msgstr ""
 msgid "path"
 msgstr ""
 
-#: src/components/artifacts/artifact-form.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
@@ -9395,8 +9479,8 @@ msgid "Plans"
 msgstr ""
 
 #: src/pages/agent-redirect.tsx
-msgid "Please contact support at<0>support@flowpad.ai</0>"
-msgstr ""
+#~ msgid "Please contact support at<0>support@flowpad.ai</0>"
+#~ msgstr ""
 
 #: src/components/project-setup-screen/project-setup-screen.tsx
 #~ msgid "Please enter a project name"
@@ -9435,8 +9519,8 @@ msgstr ""
 #~ msgstr ""
 
 #: src/components/chat-input.tsx
-msgid "Please wait..."
-msgstr ""
+#~ msgid "Please wait..."
+#~ msgstr ""
 
 #: src/components/hooks-view/HooksBrowser.tsx
 msgid "plugin"
@@ -9960,7 +10044,7 @@ msgstr ""
 msgid "reason"
 msgstr ""
 
-#: src/components/graph-view/ui/TopBar.tsx
+#: src/components/graph-view/GraphView.tsx
 msgid "Rebuild"
 msgstr ""
 
@@ -10059,12 +10143,12 @@ msgid "recursive"
 msgstr ""
 
 #: src/components/artifacts/artifact-form.tsx
-msgid "Reference"
-msgstr ""
+#~ msgid "Reference"
+#~ msgstr ""
 
 #: src/components/artifacts/artifact-form.tsx
-msgid "Reference Type"
-msgstr ""
+#~ msgid "Reference Type"
+#~ msgstr ""
 
 #: src/components/graph-view/ui/PropertyPanel.tsx
 msgid "referenced but not in entities table"
@@ -10166,6 +10250,10 @@ msgstr ""
 
 #: src/components/account/db-stats.tsx
 msgid "Relations"
+msgstr ""
+
+#: src/components/artifacts/artifact-form.tsx
+msgid "Relative path"
 msgstr ""
 
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
@@ -10336,6 +10424,7 @@ msgstr ""
 msgid "Repository name"
 msgstr ""
 
+#: src/components/artifacts/artifact-form.tsx
 #: src/components/assets/AddGitFolderDialog.tsx
 msgid "Repository URL"
 msgstr ""
@@ -10370,7 +10459,6 @@ msgstr ""
 
 #: src/components/account/settings-section.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
-#: src/components/tools/ToolsPanel.tsx
 msgid "Reset"
 msgstr ""
 
@@ -10470,7 +10558,6 @@ msgstr ""
 #: src/components/assets/editor/MissingAssetCard.tsx
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/task-receive/IncomingTaskDialog.tsx
-#: src/pages/agent-redirect.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Retry"
 msgstr ""
@@ -10707,7 +10794,6 @@ msgstr ""
 #~ msgstr ""
 
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
-#: src/components/machine-overview/service-status-led.tsx
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 msgid "running"
 msgstr ""
@@ -11175,8 +11261,6 @@ msgid "Seems like you are trying to clone a private git repo. You should connect
 msgstr ""
 
 #. placeholder {0}: c.displayName
-#. placeholder {0}: field.label.toLowerCase()
-#: src/components/artifacts/artifact-metadata-editor.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
 msgid "Select {0}"
 msgstr ""
@@ -11258,20 +11342,20 @@ msgid "Select all matches"
 msgstr ""
 
 #: src/components/webapp-viewer/webapp-artifacts-tab.tsx
-msgid "Select an artifact to view details"
-msgstr ""
+#~ msgid "Select an artifact to view details"
+#~ msgstr ""
 
 #: src/components/artifacts/artifact-metadata-editor.tsx
-msgid "Select an artifact type above to get type-specific metadata fields."
-msgstr ""
+#~ msgid "Select an artifact type above to get type-specific metadata fields."
+#~ msgstr ""
 
 #: src/components/terminal/openers/AskInstallOneOfDialog.tsx
 msgid "Select an available harness, or install one from its homepage and re-check it."
 msgstr ""
 
 #: src/components/artifacts/artifact-form.tsx
-msgid "Select artifact type"
-msgstr ""
+#~ msgid "Select artifact type"
+#~ msgstr ""
 
 #: src/components/asset-manager/AssetPickerPopover.tsx
 msgid "Select Asset"
@@ -11290,8 +11374,8 @@ msgid "Select every project"
 msgstr ""
 
 #: src/components/tools/ToolsPanel.tsx
-msgid "Select mode"
-msgstr ""
+#~ msgid "Select mode"
+#~ msgstr ""
 
 #: src/components/task-bar/TaskBar.tsx
 #~ msgid "Select multiple"
@@ -11328,8 +11412,8 @@ msgid "Select text to add a link"
 msgstr ""
 
 #: src/components/webapp-viewer.tsx
-msgid "Select webapp..."
-msgstr ""
+#~ msgid "Select webapp..."
+#~ msgstr ""
 
 #: src/components/hooks-view/HookEditor.tsx
 msgid "Select when this hook should run"
@@ -11405,12 +11489,12 @@ msgid "Server did not come back. Restart Flowpad manually."
 msgstr ""
 
 #: src/components/machine-overview/service-status-led.tsx
-msgid "Service error"
-msgstr ""
+#~ msgid "Service error"
+#~ msgstr ""
 
 #: src/components/machine-overview/service-status-led.tsx
-msgid "Service status unknown"
-msgstr ""
+#~ msgid "Service status unknown"
+#~ msgstr ""
 
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 msgid "Service unavailable"
@@ -11664,7 +11748,7 @@ msgid "Shell Name"
 msgstr ""
 
 #: src/components/hooks-view/HookEditor.tsx
-msgid "Should I allow this tool? Respond with JSON: {permissionDecision: allow or deny}"
+msgid "Should I allow this tool? Respond with JSON: '{permissionDecision: allow or deny}'"
 msgstr ""
 
 #: src/components/claude-terminal/claude-terminal.tsx
@@ -11955,11 +12039,18 @@ msgid "Some contexts could not be deleted"
 msgstr ""
 
 #: src/components/machine-overview/service-status-led.tsx
-msgid "Some services stopped"
+msgid "Some deployments are stale or partial"
 msgstr ""
 
+#: src/components/machine-overview/service-status-led.tsx
+msgid "Some deployments have errors"
+msgstr ""
+
+#: src/components/machine-overview/service-status-led.tsx
+#~ msgid "Some services stopped"
+#~ msgstr ""
+
 #: src/components/task-receive/IncomingTaskDialog.tsx
-#: src/pages/agent-redirect.tsx
 msgid "Something went wrong"
 msgstr ""
 
@@ -11993,12 +12084,16 @@ msgstr ""
 msgid "Sort within each type"
 msgstr ""
 
-#: src/components/hooks/sniffer_view_mock.tsx
-#~ msgid "Source"
-#~ msgstr ""
+#: src/components/artifacts/artifact-form.tsx
+msgid "Source"
+msgstr ""
 
 #: src/components/hooks-view/HooksBrowser.tsx
 msgid "Source File"
+msgstr ""
+
+#: src/components/artifacts/artifact-form.tsx
+msgid "Source kind"
 msgstr ""
 
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
@@ -12152,8 +12247,8 @@ msgid "Start room"
 msgstr ""
 
 #: src/components/machine-overview/service-status-led.tsx
-msgid "Start services"
-msgstr ""
+#~ msgid "Start services"
+#~ msgstr ""
 
 #: src/components/collaboration/RoomHeader.tsx
 msgid "started"
@@ -12172,8 +12267,8 @@ msgid "Starting the session without the attached files."
 msgstr ""
 
 #: src/components/machine-overview/service-status-led.tsx
-msgid "Starting..."
-msgstr ""
+#~ msgid "Starting..."
+#~ msgstr ""
 
 #: src/components/conversation/ConversationView.tsx
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
@@ -12239,17 +12334,16 @@ msgid "stop hooks"
 msgstr ""
 
 #: src/components/machine-overview/service-status-led.tsx
-msgid "Stop services"
-msgstr ""
+#~ msgid "Stop services"
+#~ msgstr ""
 
-#: src/components/machine-overview/service-status-led.tsx
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 msgid "stopped"
 msgstr ""
 
 #: src/components/machine-overview/service-status-led.tsx
-msgid "Stopping..."
-msgstr ""
+#~ msgid "Stopping..."
+#~ msgstr ""
 
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 msgid "stored →"
@@ -12371,9 +12465,17 @@ msgstr ""
 msgid "Switching…"
 msgstr ""
 
+#: src/components/graph-view/GraphView.tsx
+msgid "Sync"
+msgstr ""
+
 #. placeholder {0}: row.type
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Sync {0} changes"
+msgstr ""
+
+#: src/components/graph-view/GraphView.tsx
+msgid "Syncing…"
 msgstr ""
 
 #: src/components/triggers-view/TriggerListItem.tsx
@@ -12952,8 +13054,6 @@ msgstr ""
 msgid "tools"
 msgstr ""
 
-#: src/components/chat-input.tsx
-#: src/components/chat-input.tsx
 #: src/components/lens-viewer/shared/transcript-features/TranscriptStats.tsx
 #: src/components/record-search-bar/RecordSearchBar.tsx
 #: src/components/terminal/interactive-terminal/ChatToolsMenu.tsx
@@ -13072,7 +13172,7 @@ msgid "Two quick steps in your browser:"
 msgstr ""
 
 #: src/components/account/db-stats.tsx
-#: src/components/artifacts/artifact-form.tsx
+#: src/components/graph-view/ui/TopBar.tsx
 #: src/components/hooks-view/HooksTable.tsx
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
@@ -13300,18 +13400,17 @@ msgid "Upload Message"
 msgstr ""
 
 #: src/components/chat-input.tsx
-msgid "Upload ZIP"
-msgstr ""
+#~ msgid "Upload ZIP"
+#~ msgstr ""
 
 #: src/components/chat-input.tsx
-msgid "Uploaded files"
-msgstr ""
+#~ msgid "Uploaded files"
+#~ msgstr ""
 
 #: src/components/conversation/AttachmentChip.tsx
 msgid "Uploading…"
 msgstr ""
 
-#: src/components/artifacts/artifact-form.tsx
 #: src/components/version-popover/version-popover.tsx
 msgid "URL"
 msgstr ""
@@ -13405,8 +13504,8 @@ msgid "Valid"
 msgstr ""
 
 #: src/components/artifacts/artifact-form.tsx
-msgid "Validation error"
-msgstr ""
+#~ msgid "Validation error"
+#~ msgstr ""
 
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Validation error (422) - request format issue or entity not found"
@@ -13637,16 +13736,16 @@ msgid "Web app status"
 msgstr ""
 
 #: src/components/tools/ToolsPanel.tsx
-msgid "Web Search"
-msgstr ""
+#~ msgid "Web Search"
+#~ msgstr ""
 
 #: src/components/persistent-iframe.tsx
 msgid "Webapp Not Available"
 msgstr ""
 
 #: src/components/webapp-viewer.tsx
-msgid "Webapp not found in artifacts"
-msgstr ""
+#~ msgid "Webapp not found in artifacts"
+#~ msgstr ""
 
 #: src/components/account/settings-section.tsx
 msgid "Welcome bookmark + feed entry re-created."
@@ -13944,20 +14043,20 @@ msgid "Your Projects"
 msgstr ""
 
 #: src/components/chat-input.tsx
-msgid "ZIP file upload is only available as a codebase connection"
-msgstr ""
+#~ msgid "ZIP file upload is only available as a codebase connection"
+#~ msgstr ""
 
 #: src/components/chat-input.tsx
-msgid "ZIP File Upload Not Allowed"
-msgstr ""
+#~ msgid "ZIP File Upload Not Allowed"
+#~ msgstr ""
 
 #: src/components/drag-drop-overlay.tsx
 msgid "ZIP files will be added as codebase connections"
 msgstr ""
 
 #: src/components/chat-input.tsx
-msgid "Zip Upload Failed"
-msgstr ""
+#~ msgid "Zip Upload Failed"
+#~ msgstr ""
 
 #: src/components/graph-context/ContextGraphCanvas.tsx
 #: src/components/graph-context/ContextGraphCanvas.tsx

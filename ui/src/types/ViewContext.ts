@@ -1,4 +1,8 @@
-import { CodeRef, ViewType } from '@sdk';
+import { ViewType } from '@sdk';
+
+export interface ViewerCodeRef {
+  path: string;
+}
 
 /**
  * ViewContext describes what content to view and how to view it
@@ -14,7 +18,7 @@ export interface ViewContext {
   /**
    * Code reference to view (file, folder, glob, or external reference)
    */
-  codeRef?: CodeRef;
+  codeRef?: ViewerCodeRef;
 
   /**
    * Explicitly requested viewer type (overrides auto-detection)

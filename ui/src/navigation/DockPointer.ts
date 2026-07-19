@@ -19,6 +19,7 @@ import {
   type SideWindowsState,
 } from '@src/lib/side-windows';
 import type { ViewMode } from '@src/contexts/view-mode-context';
+import { DEFAULT_WORLDVIEW_COLOR_MODE, type WorldViewColorMode } from '@src/types/WorldViewColorMode';
 
 /**
  * URL query-param key carrying the "highlight this thing" intent across the
@@ -933,6 +934,29 @@ export class DockPointer implements IDockPointer {
   }
 
   /**
+   * Create a WorldView pointer at `/dock/worldview/<type>/<id>`. The pointer is
+   * the visible hierarchy root; selection and depth remain URL options so they
+   * are shareable and browser-history-safe without minting extra tabs.
+   */
+  static forWorldView(
+    typeId?: TypeId | null,
+    options?: { depth?: number; selected?: string; color?: WorldViewColorMode },
+    layout: Layout = Layout.DOCK,
+  ): DockPointer {
+    const pointer = typeId ? `${typeId.type}/${typeId.id}` : undefined;
+    const queryOptions: Record<string, string> = {};
+    if (options?.color && options.color !== DEFAULT_WORLDVIEW_COLOR_MODE) queryOptions.color = options.color;
+    if (options?.depth) queryOptions.depth = String(options.depth);
+    if (options?.selected) queryOptions.selected = options.selected;
+    return new DockPointer(
+      ViewType.WORLDVIEW,
+      pointer,
+      Object.keys(queryOptions).length ? queryOptions : undefined,
+      layout,
+    );
+  }
+
+  /**
    * Create a DockPointer for the frozen-context viewer at
    * `/dock/graph_context/<id>`. `id` is the GraphContext entity's UUID.
    */
@@ -951,9 +975,14 @@ export class DockPointer implements IDockPointer {
   /** Split a GRAPH pointer into its `{ type, id }` parts. */
   static parseGraphPointer(pointer: string | undefined): { type: string; id: string } | null {
     if (!pointer) return null;
-    const idx = pointer.indexOf('/');
-    if (idx < 0) return null;
-    return { type: pointer.slice(0, idx), id: pointer.slice(idx + 1) };
+    const parts = pointer.split('/');
+    if (parts.length !== 2 || !parts[0] || !parts[1]) return null;
+    return { type: parts[0], id: parts[1] };
+  }
+
+  /** Split a WORLDVIEW pointer into its canonical `{ type, id }` root. */
+  static parseWorldViewPointer(pointer: string | undefined): { type: string; id: string } | null {
+    return DockPointer.parseGraphPointer(pointer);
   }
 
   /**
@@ -1304,6 +1333,12 @@ export class DockPointer implements IDockPointer {
   get targetTypeId(): TypeId | null {
     const pointer = this.pointer;
     if (!pointer) return null;
+    if (this.viewType === ViewType.GRAPH || this.viewType === ViewType.WORLDVIEW) {
+      const parsed = this.viewType === ViewType.WORLDVIEW
+        ? DockPointer.parseWorldViewPointer(pointer)
+        : DockPointer.parseGraphPointer(pointer);
+      return parsed ? DockPointer.tryTypeId(parsed.type, parsed.id) : null;
+    }
     // A PLAN dock addresses its PLAN entity directly in the `typeid/<plan-id>`
     // form; the `vfs/<path>` form is path-resolved and carries no typeid target.
     if (this.viewType === ViewType.PLAN) {

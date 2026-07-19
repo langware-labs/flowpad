@@ -257,9 +257,10 @@ except ImportError as e:
     print(f"[WARN] Failed to import DynamicWorkflow: {e}")
 
 try:
-    from flow_sdk.builtin.artifact import Artifact, ArtifactRelation, CodeRef  # noqa: F401
+    from flow_sdk.builtin.artifact import Artifact  # noqa: F401
+    from flow_sdk.builtin.deployment import Deployment  # noqa: F401
 except ImportError as e:
-    print(f"[WARN] Failed to import Artifact entities: {e}")
+    print(f"[WARN] Failed to import Artifact/Deployment entities: {e}")
 
 try:
     from flow_sdk.builtin.markdown_index import MarkdownIndex  # noqa: F401

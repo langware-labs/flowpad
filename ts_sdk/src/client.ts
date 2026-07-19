@@ -3,6 +3,7 @@ import { ApiFailResponse } from './ApiResponse';
 import { alert } from './alert';
 import { APIStats } from './apiStats';
 import config from './config';
+import { API_PREFIX } from './config/SDKConfig';
 
 //@ts-ignore
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -57,9 +58,23 @@ interface ExtendedApiClient extends ApiAxiosInstance {
   testUserToken?: string;
 }
 
+/** Keep one API prefix when a canonical path meets a prefix-bearing baseURL. */
+export function normalizeApiPathForBase(baseUrl: string | undefined, path: string | undefined): string | undefined {
+  const base = baseUrl?.replace(/\/+$/, '') ?? '';
+  if (base.endsWith(API_PREFIX) && path?.startsWith(`${API_PREFIX}/`)) {
+    return path.slice(API_PREFIX.length);
+  }
+  return path;
+}
+
 function initApiClient(client: ApiAxiosInstance) {
   client.interceptors.request.use(
     function (request) {
+      // `SDKConfig.serverUrl` already ends in /api/v1. Public SDK managers use
+      // canonical API paths (`/api/v1/...`), while older callers still pass
+      // prefix-relative paths (`/graph/...`). Normalize only the former at the
+      // Axios boundary so both resolve to exactly one /api/v1 segment.
+      request.url = normalizeApiPathForBase(request.baseURL, request.url);
       apiStats.incrementTotal();
       const method = request.method?.toUpperCase() || 'UNKNOWN';
       apiStats.incrementInFlight(method);

@@ -1,4 +1,4 @@
-import { Artifact, CodeRef, QueryRequest } from '@sdk';
+import { Artifact, QueryRequest } from '@sdk';
 import { useMemo } from 'react';
 import { useEntitiesQuery } from '../entity-hooks';
 import { useContext } from '../useContext';
@@ -27,33 +27,20 @@ export function useCurrentArtifacts() {
     data: artifacts = [],
     isLoading,
     error,
-  } = useEntitiesQuery<CodeRef>(queryRequest, {
+  } = useEntitiesQuery<Artifact>(queryRequest, {
     enabled: !!projectTypeId,
   });
 
-  // Newest first, deduped by id/path/port (DB rows can transiently double up
-  // when a port-bearing artifact is re-emitted).
+  // Newest first, deduped only by entity id. Artifacts with the same source or
+  // kind may be distinct composition nodes and must remain visible.
   const sortedArtifacts = useMemo(() => {
-    const dbArtifacts = artifacts as Artifact[];
+    const dbArtifacts = artifacts;
     const uniqueArtifacts: Artifact[] = [];
-    const seenKeys = new Set<string>();
-
-    const getArtifactKeys = (artifact: Artifact): string[] => {
-      const keys: string[] = [];
-      if (artifact.id) keys.push(`id:${artifact.id}`);
-      if (artifact.path && artifact.path.trim() !== '') keys.push(`path:${artifact.path}`);
-      const port = artifact.port ?? artifact.metadata?.port;
-      if (port !== null && port !== undefined && port !== '') {
-        const portValue = typeof port === 'string' || typeof port === 'number' ? String(port) : null;
-        if (portValue) keys.push(`port:${portValue}`);
-      }
-      return keys;
-    };
+    const seenIds = new Set<string>();
 
     for (const artifact of dbArtifacts) {
-      const keys = getArtifactKeys(artifact);
-      if (keys.length > 0 && keys.some((key) => seenKeys.has(key))) continue;
-      keys.forEach((key) => seenKeys.add(key));
+      if (artifact.id && seenIds.has(artifact.id)) continue;
+      if (artifact.id) seenIds.add(artifact.id);
       uniqueArtifacts.push(artifact);
     }
 
