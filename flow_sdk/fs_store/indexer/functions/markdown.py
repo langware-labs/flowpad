@@ -46,7 +46,10 @@ def _is_appledouble(name: str) -> bool:
 
 
 def _emit_md_rglob(
-    root: Path, parent: FSRef, out: list[FSRef], seen: set[str],
+    root: Path,
+    parent: FSRef,
+    out: list[FSRef],
+    seen: set[str],
 ) -> None:
     if not root.is_dir():
         return
@@ -59,8 +62,10 @@ def _emit_md_rglob(
         seen.add(key)
         out.append(FSRef(md, record_type=RecordType.MARKDOWN, parent=parent))
 
+
 def markdown_flat_fn(
-    nodes: list[FSRef], opts: IndexerOptions,
+    nodes: list[FSRef],
+    opts: IndexerOptions,
 ) -> list[FSRef]:
     """<root>/.claude/docs/**/*.md — flat, no docs-subdir search."""
     out: list[FSRef] = []
@@ -69,12 +74,21 @@ def markdown_flat_fn(
         _emit_md_rglob(Path(node.path) / ".claude" / "docs", node, out, seen)
     return out
 
+
 # Folders whose .md children are claimed by typed indexers (skill_fn, agent_fn,
 # workflow_fn, command_fn). Skip emission to avoid double-indexing a SKILL.md
 # as both SKILL and MARKDOWN.
-_TYPED_RECORD_DIRS: frozenset[str] = frozenset({
-    "skills", "agents", "workflows", "commands", "whiteboards", "tasks",
-})
+_TYPED_RECORD_DIRS: frozenset[str] = frozenset(
+    {
+        "skills",
+        "agents",
+        "workflows",
+        "commands",
+        "whiteboards",
+        "task",
+    }
+)
+
 
 def _has_typed_ancestor(folder: Path) -> bool:
     """True if ``folder`` itself or any ancestor is a typed-record dir."""
@@ -86,8 +100,10 @@ def _has_typed_ancestor(folder: Path) -> bool:
             return False
         p = p.parent
 
+
 def markdown_in_folder_fn(
-    nodes: list[FSRef], opts: IndexerOptions,
+    nodes: list[FSRef],
+    opts: IndexerOptions,
 ) -> list[FSRef]:
     """For each walked FOLDER, emit its direct ``*.md`` children.
 
@@ -126,9 +142,11 @@ def markdown_in_folder_fn(
             out.append(FSRef(md, record_type=RecordType.MARKDOWN, parent=node))
     return out
 
+
 # ── parse_markdown_text + id helpers (moved from MarkdownRecord) ─────────────
 
 _WIKI_LINK_RE = re.compile(r"\[\[([^\]]+)\]\]")
+
 
 def _extract_wiki_links(body: str) -> list[str]:
     """Extract [[wiki link]] inner text from markdown body.
@@ -137,6 +155,7 @@ def _extract_wiki_links(body: str) -> list[str]:
     ``target|alias``. Downstream callers (resolver/wiki) split the alias.
     """
     return [m.group(1).strip() for m in _WIKI_LINK_RE.finditer(body) if m.group(1).strip()]
+
 
 _DIR_TO_ASSET_TYPE: dict[str, str] = {
     "workflows": "workflow",
@@ -147,6 +166,7 @@ _DIR_TO_ASSET_TYPE: dict[str, str] = {
     "templates": "template",
 }
 
+
 def _markdown_id_from_path(path: Path) -> str:
     """Transitional/read-only fallback key — the stable uuid5(path) value.
 
@@ -155,11 +175,14 @@ def _markdown_id_from_path(path: Path) -> str:
     derive for a not-yet-stamped file.
     """
     from flow_sdk.fs_store.identifier import mint_uuid  # noqa: PLC0415
+
     return mint_uuid(str(path.resolve()))
+
 
 def markdown_id(ref: FSRef) -> str:
     """Cheap id: adopted frontmatter capsule id; else stable derived key (no write)."""
     return adopt_or_mint_id(ref._path, write_back=False)
+
 
 def markdown_gen_id(ref: FSRef) -> str:
     """Adopt the frontmatter capsule id, else mint a fresh v4 and write it back.
@@ -168,6 +191,7 @@ def markdown_gen_id(ref: FSRef) -> str:
     shared/copied doc carries a portable id in its capsule.
     """
     return adopt_or_mint_id(ref._path, write_back=True)
+
 
 def parse_markdown_text(text: str, path: Path | None = None) -> dict[str, Any]:
     """Parse a markdown string with YAML frontmatter into a fields dict.
@@ -200,6 +224,7 @@ def parse_markdown_text(text: str, path: Path | None = None) -> dict[str, Any]:
 
     raw_id = fields.get("asset_id") or fields.get("id")
     from flow_sdk.fs_store.identifier import adopt_entity_id  # noqa: PLC0415
+
     # Validate-on-adopt (v4/v5 only) — a foreign/hand-authored id is never
     # adopted; derive the stable uuid5(path) instead. Keeps this read-side path
     # in agreement with ``markdown_gen_id`` (which adopts the same capsule id).
@@ -236,7 +261,9 @@ def parse_markdown_text(text: str, path: Path | None = None) -> dict[str, Any]:
             data["vault_root"] = vault
     return data
 
+
 _SYSTEM_PID_CACHE: dict[str, str | None] = {}
+
 
 def _resolve_system_project_id_for_path(path: Path) -> str | None:
     """Path-based fallback for stamping project_id on a markdown record
@@ -261,9 +288,11 @@ def _resolve_system_project_id_for_path(path: Path) -> str | None:
     if sub_dirname in _SYSTEM_PID_CACHE:
         return _SYSTEM_PID_CACHE[sub_dirname]
     from flow_sdk.fs_store.indexer.roots import lookup_project_id_by_uname  # noqa: PLC0415
+
     pid = lookup_project_id_by_uname(sub_dirname)
     _SYSTEM_PID_CACHE[sub_dirname] = pid
     return pid
+
 
 def _resolve_vault_root(path: Path) -> str | None:
     """Canonical abs path of the docs scan root that owns `path`, if any.
@@ -273,6 +302,7 @@ def _resolve_vault_root(path: Path) -> str | None:
     extractor module lean (avoids importing the legacy fs_records side).
     """
     from flow_sdk.fs_store.operations.markdown_dirs import doc_search_dirs  # noqa: PLC0415
+
     try:
         target = path.resolve()
     except OSError:
@@ -284,6 +314,7 @@ def _resolve_vault_root(path: Path) -> str | None:
             continue
         return str(root)
     return None
+
 
 def extract_markdown(ref: FSRef) -> list[FSRecord]:
     """Parse a .md file into a Record. Replaces ``MarkdownRecord._from_fsref_sync``."""
@@ -311,7 +342,7 @@ def extract_markdown(ref: FSRef) -> list[FSRecord]:
     body = data.get("body") or ""
     links = data.get("links") or []
     if links:
-        data["content"] = (body + "\n" + " ".join(str(l) for l in links)).strip()
+        data["content"] = (body + "\n" + " ".join(str(link) for link in links)).strip()
     else:
         data["content"] = body
     # (parent_path / vault_root are populated by parse_markdown_text already.)
