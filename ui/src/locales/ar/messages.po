@@ -5564,6 +5564,11 @@ msgstr ""
 msgid "Group name"
 msgstr ""
 
+#: src/components/conversation/ConversationContextPanel.tsx
+#: src/components/conversation/ConversationContextPanel.tsx
+msgid "Group Task"
+msgstr ""
+
 #: src/components/terminal/openers/AskInstallOneOfDialog.tsx
 msgid "Harness is required"
 msgstr ""
@@ -7124,6 +7129,11 @@ msgstr ""
 #: src/components/task-bar/TaskCard.tsx
 #~ msgid "member task"
 #~ msgstr ""
+
+#: src/components/conversation/ConversationContextPanel.tsx
+#: src/components/conversation/ConversationContextPanel.tsx
+msgid "Member Task"
+msgstr ""
 
 #: src/components/task-bar/TaskCard.tsx
 #~ msgid "member tasks"
@@ -8686,6 +8696,7 @@ msgstr ""
 #~ msgid "open"
 #~ msgstr ""
 
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
@@ -11747,8 +11758,9 @@ msgstr ""
 msgid "Shell Name"
 msgstr ""
 
+#. placeholder {0}: '{permissionDecision: allow or deny}'
 #: src/components/hooks-view/HookEditor.tsx
-msgid "Should I allow this tool? Respond with JSON: '{permissionDecision: allow or deny}'"
+msgid "Should I allow this tool? Respond with JSON: {0}"
 msgstr ""
 
 #: src/components/claude-terminal/claude-terminal.tsx
