@@ -90,4 +90,7 @@ TASK = TypeMetadata(
     asset_hash_fn=task_asset_hash,
     default_body_fn=_task_default_body,
     owns_main_ref=True,
+    # Sender-local: a received task maps its own local project/worker (project_id
+    # is in the base set). Mirrors the frontmatter share whitelist rationale above.
+    local_fields=frozenset({"my_process_id", "project_root", "project_name"}),
 )

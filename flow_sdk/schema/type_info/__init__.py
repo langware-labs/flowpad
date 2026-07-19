@@ -67,6 +67,12 @@ class TypeMetadata:
     # non-markdown asset (e.g. a ``.js`` dynamic workflow) overrides it so the
     # created file matches the type's indexer glob.
     main_ext: str = ".md"
+    # Per-type ADDITIONS to the base sender-local field set (see
+    # ``entity_model._BASE_LOCAL_FIELDS``). These fields are host-local and never
+    # travel in ``Entity.to_common_json()`` / the hub body — e.g. a
+    # claude_session's ``worker_session_id`` or a task's ``project_root``. The
+    # base set covers the fields common to every type; declare only the extras.
+    local_fields: frozenset = field(default_factory=frozenset)
     parent_type: str | None = None
     # True ⇒ sharing an entity of this type automatically includes its parent
     # (``parent_type_id``) in the outgoing ``shared_context_entities``, and the
@@ -138,6 +144,7 @@ class TypeMetadata:
             main_file=self.main_file,
             main_file_is_asset_ref=self.main_file_is_asset_ref,
             main_ext=self.main_ext,
+            local_fields=frozenset(self.local_fields),
             parent_type=self.parent_type,
             parent_share_on_default=self.parent_share_on_default,
             shared_child=self.shared_child,

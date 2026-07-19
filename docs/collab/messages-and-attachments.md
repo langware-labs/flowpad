@@ -184,14 +184,26 @@ retry. An optional `on_progress(done, total)` drives the sender's progress bar.
 
 ### Body transfer modes
 
+Transfer mode governs only the **body** axis (how the bytes travel). The **metadata
+axis** is separate and transport-independent: every bundle carries `entities.json`, a
+`{ "<type>-<id>": <portable entity JSON> }` map produced by `Entity.to_common_json()`
+(a model dump minus the sender-local set — scope, project_id, asset_ref, git_origin, …)
+for each file-backed/repo attachment and its nested descendants. On receive the
+unpacker overlays each envelope onto the materialized row by id, so metadata-only
+fields (`parent_type_id`, labels, status, semantic_lock) survive even a bytes-only
+`copy` share; the receiver re-derives the stripped placement fields locally. The five
+header-serialized DB-record types (conversation, flow_message, claude_session,
+flowpad_diagnosis, remote_worker_session) keep their own per-attachment `header.json`
+carrier and are excluded from `entities.json`.
+
 The body upload contract has two transfer modes:
 
 - **`copy`** (default) — file-backed TYPE_ID attachments copy their source file or
   folder into the bundle. If the source lives in git, the bundle also records a
   `GitOrigin` so the receiver can preserve repo-relative placement, but the bytes
   still ride inside the `.flowmsg`.
-- **`git`** — git-backed attachments are metadata-only. The bundle carries
-  `git_origins.json`, `git_transfers.json`, and
+- **`git`** — git-backed attachments are metadata-only on the body axis. The bundle
+  carries `git_origins.json`, `git_transfers.json`, and
   `metadata/<type>-@<id>/metadata.json`; it does not carry the git-backed file
   bytes. On receive, the unpacker resolves a matching local checkout, pulls the
   branch when possible, or clones the remote, then indexes the entity from the

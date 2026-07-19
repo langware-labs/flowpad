@@ -18,8 +18,6 @@ export type {
   MachineStatus,
   NetworkConnection,
   ProcessInfo,
-  ServiceStatusInfo,
-  ServicesStatus,
 } from '../entities/compute-node/machine-status';
 
 // System profile types are in entities/compute-node/system-profile.ts

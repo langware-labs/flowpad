@@ -1,6 +1,5 @@
 import {
   AgenticProcess,
-  CodeRef,
   ComputeNode,
   dataContext,
   DockPointerData,
@@ -722,7 +721,7 @@ export class NavigationActions {
     console.warn('[Navigation] openEntity not yet implemented', { entity });
   }
 
-  openCodeRef(codeRef: CodeRef): void {
+  openCodeRef(codeRef: { path: string }): void {
     if (codeRef.path) {
       // Use openFile to automatically choose the right viewer based on file type
       this.openFile(codeRef.path);

@@ -54,12 +54,14 @@ def _edge(eid, src, event, dst):
 
 def test_flow_doc_parse_and_routing_lookups():
     doc = parse_flow_doc(_doc(
-        [{"id": "t1", "node_type": "trigger", "node_data": {"typeid": "trigger-abc"}},
+        [{"id": "t1", "node_type": "trigger",
+          "node_data": {"typeid": "trigger-63e6a325-97be-46f4-a1a5-a9750d4c1d8d"}},
          _fn("a", "x"), _fn("b", "y")],
         [_edge("e1", "t1", "fired", "a"), _edge("e2", "a", "done", "b"),
          _edge("e3", "a", "*", "b")],
     ))
-    assert doc.trigger_ids() == ["abc"]
+    # Refs parse through the canonical TypeId grammar (garbage refs → ignored).
+    assert doc.trigger_ids() == ["63e6a325-97be-46f4-a1a5-a9750d4c1d8d"]
     assert [n.id for n in doc.targets_for("t1", "fired")] == ["a"]
     # exact + catch-all both match (b appears twice → both edges deliver)
     assert [n.id for n in doc.targets_for("a", "done")] == ["b", "b"]

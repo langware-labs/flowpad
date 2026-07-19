@@ -120,7 +120,6 @@ class AgenticFlowsClient extends EventEmitter {
     return apiClient.get(`/agentic-flows/${flowId}/runs`);
   }
 
-  /** A run's full journal (from the flow folder's runs/<id>.jsonl). */
   /** The FlowFunction registry — feeds the Function node picker. */
   async listFunctions(): Promise<FlowFunctionInfo[] | undefined> {
     return apiClient.get('/agentic-flows/functions');
@@ -136,6 +135,7 @@ class AgenticFlowsClient extends EventEmitter {
     return apiClient.post(`/agentic-flows/${flowId}/reexecute`, { run_id: runId, seq });
   }
 
+  /** A run's full journal (from the flow folder's runs/<id>.jsonl). */
   async fetchRunJournal(flowId: string, runId: string): Promise<RunJournalEntry[] | undefined> {
     return apiClient.get(`/agentic-flows/${flowId}/runs/${runId}`);
   }
