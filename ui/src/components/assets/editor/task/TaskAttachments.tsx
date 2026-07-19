@@ -1,7 +1,6 @@
 import {
   dataContext,
   Folder,
-  fsManager,
   gitOriginCloneUrl,
   launchWizard,
   Project,
@@ -20,7 +19,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { cn } from '@src/lib/utils';
 import { notify } from '@src/notifications';
 import { File as FileIcon, Folder as FolderIcon, GitBranch, Plus, X } from 'lucide-react';
-import { useCallback, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 
 interface Attachment {
   path: string;
@@ -61,6 +60,35 @@ function normalizeAttachments(artifacts: unknown): Attachment[] {
   return out;
 }
 
+/**
+ * Local, per-machine record of which git folders this user has installed for a
+ * task (keyed by task id → set of attachment paths). Lives in localStorage, NOT
+ * in the task's shared `artifacts` — install is a per-recipient action, so it
+ * must never ride to other people who receive the task.
+ */
+const gitInstalledKey = (taskId: string) => `flowpad.task.gitInstalled.${taskId}`;
+
+function readInstalledGitPaths(taskId: string): ReadonlySet<string> {
+  try {
+    const raw = localStorage.getItem(gitInstalledKey(taskId));
+    const arr = raw ? (JSON.parse(raw) as unknown) : null;
+    return new Set(Array.isArray(arr) ? arr.filter((x): x is string => typeof x === 'string') : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function writeInstalledGitPaths(taskId: string, paths: ReadonlySet<string>): void {
+  try {
+    localStorage.setItem(gitInstalledKey(taskId), JSON.stringify([...paths]));
+  } catch {
+    // Storage unavailable / quota — the in-memory set still holds for this load.
+  }
+}
+
+/** Heuristic: an attachment label with no file extension is a folder. */
+const looksLikeFolder = (label: string) => !/\.[A-Za-z0-9]{1,8}$/.test(label);
+
 /** Machine path of an in-app tree drag (`fs-file:<typeid>:<rel>` rows). */
 function machinePathFromDrag(typeIdStr: string, relPath: string): string | null {
   try {
@@ -85,6 +113,13 @@ export function TaskAttachments({ task, save, readOnly = false, heading }: TaskA
   const currentDockScope = currentDock?.scopeFilter ?? null;
   const [dragOver, setDragOver] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
+  // Git folders this user has installed via the wizard (keyed by attachment
+  // path), persisted per-machine in localStorage. Mirrors the message chip's
+  // per-recipient `installed` flag: the first click always installs (wizard),
+  // later clicks open the folder's content.
+  const [installedGitPaths, setInstalledGitPaths] = useState<ReadonlySet<string>>(() => readInstalledGitPaths(task.id));
+  // Re-hydrate when the shown task changes (the component may be reused).
+  useEffect(() => setInstalledGitPaths(readInstalledGitPaths(task.id)), [task.id]);
 
   const attachments = useMemo(() => normalizeAttachments(task.artifacts), [task.artifacts]);
 
@@ -137,6 +172,16 @@ export function TaskAttachments({ task, save, readOnly = false, heading }: TaskA
     [task.asset_ref],
   );
 
+  // Open an entry's content: a FOLDER browses via the generic
+  // `navigation.openFolder`; a FILE opens in its viewer.
+  const openPathContent = useCallback(
+    (machinePath: string, asFolder: boolean) => {
+      if (asFolder) navigation.openFolder(machinePath);
+      else openArtifact(machinePath, navigation);
+    },
+    [navigation],
+  );
+
   const persist = useCallback(
     (next: Attachment[]) => void save({ artifacts: next as unknown as Task['artifacts'] }),
     [save],
@@ -163,44 +208,41 @@ export function TaskAttachments({ task, save, readOnly = false, heading }: TaskA
     [attachments, persist],
   );
 
-  // Click behavior: a git context folder that isn't present locally (the
-  // recipient never had the checkout) launches the same git-context-folder
-  // clone wizard the message chip used, resolving the URL from the origin that
-  // rode on the attachment. Present folders — and every non-git entry — just
-  // open in place.
+  // Click behavior for a git context folder, matching the old message chip: the
+  // FIRST click always launches the git-context-folder clone/install wizard
+  // (URL from the origin that rode on the attachment) — regardless of whether
+  // the repo already exists on this machine. Once the wizard completes, the
+  // folder is installed and later clicks open its content. Every non-git entry
+  // opens in place.
   const openEntry = useCallback(
     async (a: Attachment) => {
-      const abs = absolutePath(a.path);
-      if (a.git_origin) {
-        const cn = dataContext.computeNodeTypeId;
-        let present = false;
-        if (cn) {
-          try {
-            const rel = VFSPath.fromMachinePath(abs, cn).entitySubPath;
-            present = rel ? await fsManager.exists(cn, rel) : false;
-          } catch {
-            present = false;
-          }
-        }
-        if (!present) {
-          const url = gitOriginCloneUrl(a.git_origin);
-          if (url) {
-            await launchWizard('git-context-folder', {
-              title: `Pull ${a.label}`,
-              payload: {
-                projectId: scopeProjectId ?? dataContext.project?.id ?? null,
-                scope: 'private',
-                mode: 'existing',
-                url,
-              },
+      if (a.git_origin && !installedGitPaths.has(a.path)) {
+        const url = gitOriginCloneUrl(a.git_origin);
+        if (url) {
+          const result = await launchWizard('git-context-folder', {
+            title: `Pull ${a.label}`,
+            payload: {
+              projectId: scopeProjectId ?? dataContext.project?.id ?? null,
+              scope: 'private',
+              mode: 'existing',
+              url,
+            },
+          });
+          if (result.status === 'done') {
+            setInstalledGitPaths((prev) => {
+              const next = new Set(prev).add(a.path);
+              writeInstalledGitPaths(task.id, next);
+              return next;
             });
-            return;
           }
+          return;
         }
       }
-      openArtifact(abs, navigation);
+      // Installed git folder, or any non-git entry: open its content. A git
+      // folder is always a directory; otherwise fall back to the label heuristic.
+      openPathContent(absolutePath(a.path), a.git_origin ? true : looksLikeFolder(a.label));
     },
-    [absolutePath, scopeProjectId, navigation],
+    [installedGitPaths, absolutePath, openPathContent, scopeProjectId, task.id],
   );
 
   const pickAndAdd = useCallback(
@@ -317,7 +359,7 @@ export function TaskAttachments({ task, save, readOnly = false, heading }: TaskA
         ) : (
           <div className="flex flex-col gap-0.5">
             {attachments.map((a) => {
-              const isFolderish = !/\.[A-Za-z0-9]{1,8}$/.test(a.label);
+              const isFolderish = looksLikeFolder(a.label);
               const git = isGitPath(a.path) || !!a.git_origin;
               return (
                 <div
