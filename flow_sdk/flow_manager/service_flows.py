@@ -23,7 +23,7 @@ from __future__ import annotations
 import json
 import logging
 
-from flow_sdk.builtin.agentic_flow import AgenticFlow, flows_home_dir
+from flow_sdk.builtin.agentic_flow import AgenticFlow
 
 logger = logging.getLogger(__name__)
 
@@ -170,15 +170,17 @@ from flow_sdk.usage_report.flow_node import on_flow_event  # noqa: F401
 '''
 
 def _graph_has_retired_shapes(doc: dict) -> bool:
-    """True when a seed-owned graph still uses pre-FlowFunction spellings —
-    the shapes this seed migrates in place (structural check, no substrings)."""
+    """True when a seed-owned graph still uses pre-FlowFunction spellings.
+
+    The retired set has ONE owner — ``flow_doc.retired_node_shape`` (the same
+    predicate the parse validator raises) — plus one seed-specific addendum:
+    the retired daily-analysis monolith callback."""
+    from flow_sdk.flow_manager.flow_doc import retired_node_shape
+
     for n in doc.get("nodes") or []:
-        nd = n.get("node_data") or {}
-        if n.get("node_type") in ("pysdk", "process_runner"):
+        if retired_node_shape(n):
             return True
-        if nd.get("program_kind") == "callback":
-            return True
-        if nd.get("program_ref") == "flow_daily_usage_report":
+        if (n.get("node_data") or {}).get("program_ref") == "flow_daily_usage_report":
             return True
     return False
 
@@ -211,12 +213,16 @@ def _repin_trigger_nodes(graph_path, trigger_id: str) -> None:
         doc = json.loads(graph_path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return
-    want = f"trigger-{trigger_id}"
+    from flow_sdk.api.type_id import TypeId
+
+    want = str(TypeId(type="trigger", id=trigger_id))
     changed = False
     for node in doc.get("nodes") or []:
         nd = node.get("node_data") or {}
-        if node.get("node_type") == "trigger" and str(nd.get("typeid") or "").startswith("trigger-") \
-                and nd.get("typeid") != want:
+        if node.get("node_type") != "trigger":
+            continue
+        current = str(nd.get("typeid") or "")
+        if current and current != want:
             nd["typeid"] = want
             changed = True
     if changed:
