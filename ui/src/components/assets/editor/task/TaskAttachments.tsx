@@ -160,13 +160,15 @@ export function TaskAttachments({ task, save }: TaskAttachmentsProps) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex items-center gap-1.5 border-b px-6 py-1.5">
-        <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Attachments</span>
+        <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+          Files &amp; Folders
+        </span>
         <Popover open={addOpen} onOpenChange={setAddOpen}>
           <PopoverTrigger asChild>
             <button
               type="button"
               className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-              title="Add attachment"
+              title="Add file or folder"
               data-testid="task-attachments-add"
             >
               <Plus className="h-3.5 w-3.5" />
@@ -207,7 +209,7 @@ export function TaskAttachments({ task, save }: TaskAttachmentsProps) {
       >
         {attachments.length === 0 ? (
           <div className="flex h-full min-h-24 flex-col items-center justify-center gap-1 text-sm text-muted-foreground">
-            <span>No attachments yet</span>
+            <span>No files or folders yet</span>
             <span className="text-xs">Drag files or folders here, or use the + button</span>
           </div>
         ) : (
@@ -242,7 +244,7 @@ export function TaskAttachments({ task, save }: TaskAttachmentsProps) {
                     type="button"
                     onClick={() => removePath(a.path)}
                     className="hidden shrink-0 rounded p-0.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive group-hover:block"
-                    title="Remove attachment"
+                    title="Remove"
                   >
                     <X className="h-3.5 w-3.5" />
                   </button>
