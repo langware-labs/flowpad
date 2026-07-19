@@ -9,6 +9,7 @@
 import { Task } from '@sdk';
 import { cn } from '@src/lib/utils';
 import { ExternalLink } from 'lucide-react';
+import { type ReactNode } from 'react';
 import { PRIORITY_CONFIG, statusLabel } from '@src/components/task-bar/constants';
 
 interface ParentTaskBlockProps {
@@ -18,6 +19,10 @@ interface ParentTaskBlockProps {
   /** Compact spacing/typography for the sliding detail panel. */
   compact?: boolean;
   className?: string;
+  /** Rendered INSIDE the card, flush to its bottom edge below the description
+   *  (e.g. the parent's read-only Files & Folders) so it sits within the
+   *  parent's border. Falsy children render nothing (no empty divider). */
+  children?: ReactNode;
 }
 
 function toDateLabel(v?: Date | string | null): string {
@@ -26,7 +31,7 @@ function toDateLabel(v?: Date | string | null): string {
   return isNaN(d.getTime()) ? '' : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
-export function ParentTaskBlock({ parent, onOpenParent, compact, className }: ParentTaskBlockProps) {
+export function ParentTaskBlock({ parent, onOpenParent, compact, className, children }: ParentTaskBlockProps) {
   const priority = parent.priority;
   const due = toDateLabel(parent.due_at);
   const start = toDateLabel(parent.start_date);
@@ -34,7 +39,11 @@ export function ParentTaskBlock({ parent, onOpenParent, compact, className }: Pa
 
   return (
     <div
-      className={cn('flex flex-col rounded-lg border bg-muted/30', compact ? 'gap-1.5 p-3' : 'gap-2 p-4', className)}
+      className={cn(
+        'flex flex-col overflow-hidden rounded-lg border bg-muted/30',
+        compact ? 'gap-1.5 p-3' : 'gap-2 p-4',
+        className,
+      )}
     >
       <button
         type="button"
@@ -82,6 +91,8 @@ export function ParentTaskBlock({ parent, onOpenParent, compact, className }: Pa
           {description}
         </p>
       )}
+
+      {children && <div className={cn('mt-1 border-t', compact ? '-mx-3 -mb-3' : '-mx-4 -mb-4')}>{children}</div>}
     </div>
   );
 }
