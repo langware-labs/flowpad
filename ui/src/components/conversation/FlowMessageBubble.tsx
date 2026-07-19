@@ -31,6 +31,7 @@ import { MessageRunStatus } from './MessageRunStatus';
 import { PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT } from './constants';
 import { AttachmentChip, AttachmentChipState } from './AttachmentChip';
 import { ContextEntityChip, EntityChip, iconForEntity } from './EntityChip';
+import { useIsAdvanced } from '@src/contexts/view-mode-context';
 import { chipStateFor } from './useMessageAttachments';
 import { AssetReviewDialog } from './asset-review/AssetReviewDialog';
 import { TESTABLE_TYPES } from './asset-review/test-prompt';
@@ -799,6 +800,7 @@ function MessageEntityChip({
   attachment?: MessageAttachment;
 }) {
   const { navigation } = useDockNavigation();
+  const isAdvanced = useIsAdvanced();
   const { start: startSkillRun, picker: runPicker } = useRunSkillWithProjectPrompt();
   const [reviewOpen, setReviewOpen] = useState(false);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -903,14 +905,15 @@ function MessageEntityChip({
         ? data
         : new Artifact(data as unknown as Partial<Artifact>)
       : null;
-  // Installed via a MessageAttachment: the chip KEEPS opening the review modal
-  // (uninstall / test live there — requirement: "if already installed,
-  // uninstall appears instead"). The asset itself opens via the modal-adjacent
-  // context panel or any normal entity surface. Chips without an attachment
-  // (plain shares, artifacts) keep their navigation behavior — as do
-  // receive_policy='auto' row-only types (shared transcripts, diagnoses):
-  // they auto-installed at unpack with nothing to review, so their chip
-  // navigates straight to the entity.
+  // Installed via a MessageAttachment: behavior splits by view mode.
+  //  • Advanced (or Dev): the chip KEEPS opening the review modal, where
+  //    uninstall / test live and an "Open" button jumps to the entity view.
+  //  • Standard / Vibe: no uninstall surface — the chip navigates straight to
+  //    the entity view like any normal chip (onClick left undefined).
+  // Chips without an attachment (plain shares, artifacts) keep their navigation
+  // behavior — as do receive_policy='auto' row-only types (shared transcripts,
+  // diagnoses): they auto-installed at unpack with nothing to review, so their
+  // chip navigates straight to the entity.
   const autoInstalled = dataManager.getTypeInfo?.(typeId.type)?.receive_policy === 'auto';
   return (
     <>
@@ -923,7 +926,7 @@ function MessageEntityChip({
               ? () => void openArtifact(artifact, { navigation, currentProjectId: projectId ?? null })
               : handleFolderPull
                 ? () => void handleFolderPull()
-                : attachment && !autoInstalled
+                : attachment && !autoInstalled && isAdvanced
                   ? () => setReviewOpen(true)
                   : undefined
           }

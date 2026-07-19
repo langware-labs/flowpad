@@ -858,8 +858,8 @@ msgid "Adding…"
 msgstr "מוסיף…"
 
 #: src/components/tools/ToolsPanel.tsx
-msgid "Additional Tools"
-msgstr "כלים נוספים"
+#~ msgid "Additional Tools"
+#~ msgstr "כלים נוספים"
 
 #: src/components/contact-picker/AddressBookButton.tsx
 msgid "Address book"
@@ -1017,8 +1017,8 @@ msgid "Allow {who} to run prompt on this computer"
 msgstr "יש להרשות ל-{who} להריץ prompt במחשב זה"
 
 #: src/components/tools/ToolsPanel.tsx
-msgid "Allow AI to search the web"
-msgstr "אפשר ל-AI לחפש ברשת"
+#~ msgid "Allow AI to search the web"
+#~ msgstr "אפשר ל-AI לחפש ברשת"
 
 #: src/components/terminal/interactive-terminal/process-cli-presentation.ts
 msgid "Allow all tools without confirmation (--allow-all)"
@@ -1071,8 +1071,8 @@ msgstr "אירעה שגיאה"
 
 #: src/components/chat-input.tsx
 #: src/components/chat-input.tsx
-msgid "An error occurred while checking the repository. Please try again."
-msgstr "חלה שגיאה בבדיקת המאגר. בבקשה נסה שוב."
+#~ msgid "An error occurred while checking the repository. Please try again."
+#~ msgstr "חלה שגיאה בבדיקת המאגר. בבקשה נסה שוב."
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "An orphan is a DB row (or shadow record dir) whose source file is gone from disk. The sweep dialog lets you remove just the DB row (IGNORE, keeps a forensic shadow dir) or both row + shadow (DELETE)."
@@ -1316,27 +1316,25 @@ msgstr "קבצים שנוצרו במהלך הפעלת התהליך יופיעו 
 #~ msgid "Artifacts:"
 #~ msgstr "מכלים:"
 
-#. placeholder {0}: siteConfig.branding.company_name
 #: src/components/chat-input.tsx
-msgid "Ask {0} to solve..."
-msgstr "בקש מ-{0} לפתור..."
-
-#. placeholder {0}: siteConfig.branding.company_name
-#: src/components/chat-input.tsx
-msgid "Ask {0}..."
-msgstr "שאל את {0}..."
+#~ msgid "Ask {0} to solve..."
+#~ msgstr "בקש מ-{0} לפתור..."
 
 #: src/components/chat-input.tsx
-msgid "Ask a follow up..."
-msgstr "שאל שאלה המשכית..."
+#~ msgid "Ask {0}..."
+#~ msgstr "שאל את {0}..."
+
+#: src/components/chat-input.tsx
+#~ msgid "Ask a follow up..."
+#~ msgstr "שאל שאלה המשכית..."
 
 #: src/components/lens-viewer/shared/transcript-features/AnalysisControls.tsx
 msgid "Ask about this analysis…"
 msgstr "שאל על ניתוח זה…"
 
 #: src/components/chat-input.tsx
-msgid "Ask Flowpad to solve..."
-msgstr "בקש מ-Flowpad לפתור..."
+#~ msgid "Ask Flowpad to solve..."
+#~ msgstr "בקש מ-Flowpad לפתור..."
 
 #: src/components/floating-chat/FloatingChatWindow.tsx
 msgid "Ask the Flowpad Assistant anything."
@@ -1421,7 +1419,6 @@ msgstr "צרף asset (skill, agent, doc, spec)"
 msgid "Attach asset"
 msgstr "צרף נכס"
 
-#: src/components/chat-input.tsx
 #: src/components/conversation/MessageComposer.tsx
 msgid "Attach files"
 msgstr "צרף קבצים"
@@ -1973,8 +1970,8 @@ msgid "checking…"
 msgstr "בדיקה…"
 
 #: src/components/chat-input.tsx
-msgid "Checking..."
-msgstr "בודק..."
+#~ msgid "Checking..."
+#~ msgstr "בודק..."
 
 #: src/components/code-editor/DiffViewer.tsx
 msgid "Checkpoint:"
@@ -2383,8 +2380,8 @@ msgstr "הקוד פג תוקף. סגור והקלק על Connect שוב כדי �
 #~ msgstr ""
 
 #: src/components/chat-input.tsx
-msgid "Codebase"
-msgstr "Codebase"
+#~ msgid "Codebase"
+#~ msgstr "Codebase"
 
 #: src/components/quick-create/QuickCreatePanel.tsx
 msgid "Codex"
@@ -2566,8 +2563,8 @@ msgid "Configure Claude Code hooks to automate workflows with custom scripts and
 msgstr "הגדר ווקים של Claude Code כדי לאתטמט זרימות עבודה עם סקריפטים מותאמים והחלטות מונעות AI"
 
 #: src/components/chat-input.tsx
-msgid "Configure execution mode, AI skill, and additional capabilities"
-msgstr "הגדר מצב ביצוע, כישורי AI ויכולות נוספות"
+#~ msgid "Configure execution mode, AI skill, and additional capabilities"
+#~ msgstr "הגדר מצב ביצוע, כישורי AI ויכולות נוספות"
 
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 msgid "Configure your account, app preferences, and notifications"
@@ -2579,7 +2576,6 @@ msgstr "הגדר את החשבון שלך, העדפות היישום והודע�
 msgid "Confirm"
 msgstr "אישור"
 
-#: src/components/chat-input.tsx
 #: src/components/connections-manager.tsx
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 msgid "Connect"
@@ -2620,17 +2616,14 @@ msgstr ""
 msgid "Connected to GitHub"
 msgstr "מחובר ל-GitHub"
 
-#. placeholder {0}: codebaseConnection.name
 #: src/components/chat-input.tsx
-msgid "Connected: {0}"
-msgstr "מחובר: {0}"
-
-#. placeholder {0}: codebaseConnection.name
-#: src/components/chat-input.tsx
-msgid "Connecting: {0}..."
-msgstr "מתחבר: {0}..."
+#~ msgid "Connected: {0}"
+#~ msgstr "מחובר: {0}"
 
 #: src/components/chat-input.tsx
+#~ msgid "Connecting: {0}..."
+#~ msgstr "מתחבר: {0}..."
+
 #: src/components/connections-manager.tsx
 msgid "Connecting..."
 msgstr "מתחבר..."
@@ -3642,7 +3635,6 @@ msgid "Dev mode"
 msgstr "מצב מפתח"
 
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
-#: src/pages/landing-page/header/header.tsx
 msgid "Dev mode ON — click to disable"
 msgstr "מצב פיתוח פעיל — לחץ כדי להשבית"
 
@@ -3872,7 +3864,6 @@ msgstr "הושלם"
 #: src/components/contact-picker/AddressBookButton.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
-#: src/components/tools/ToolsPanel.tsx
 #: src/components/wizard/WizardHost.tsx
 msgid "Done"
 msgstr "בוצע"
@@ -4230,8 +4221,8 @@ msgstr "הזן שם תיקייה"
 #~ msgstr "הזן נתיב תיקייה"
 
 #: src/components/chat-input.tsx
-msgid "Enter Git URL"
-msgstr "הזן כתובת Git"
+#~ msgid "Enter Git URL"
+#~ msgstr "הזן כתובת Git"
 
 #: src/components/hooks-manager/HookForm.tsx
 msgid "Enter hook description"
@@ -4334,8 +4325,8 @@ msgstr "שגיאה"
 
 #: src/components/chat-input.tsx
 #: src/components/chat-input.tsx
-msgid "Error Checking Repository"
-msgstr "שגיאה בבדיקת המאגר"
+#~ msgid "Error Checking Repository"
+#~ msgstr "שגיאה בבדיקת המאגר"
 
 #: src/components/app-host/AppHost.tsx
 msgid "Error Loading App"
@@ -4458,8 +4449,8 @@ msgstr ""
 #~ msgstr "יומן ביצוע"
 
 #: src/components/tools/ToolsPanel.tsx
-msgid "Execution Mode"
-msgstr "מצב ביצוע"
+#~ msgid "Execution Mode"
+#~ msgstr "מצב ביצוע"
 
 #: src/components/assets/AddGitFolderDialog.tsx
 msgid "Existing repo"
@@ -4590,8 +4581,8 @@ msgid "Failed to clone repository"
 msgstr "כישלון בשיבוט המאגר"
 
 #: src/components/chat-input.tsx
-msgid "Failed to clone the git repository. Please check the URL and try again."
-msgstr "נכשל בהעתקת מאגר ה-git. בבקשה בדוק את כתובת ה-URL ונסה שוב."
+#~ msgid "Failed to clone the git repository. Please check the URL and try again."
+#~ msgstr "נכשל בהעתקת מאגר ה-git. בבקשה בדוק את כתובת ה-URL ונסה שוב."
 
 #: src/components/account/database-section.tsx
 msgid "Failed to copy path to clipboard"
@@ -4922,8 +4913,8 @@ msgid "Failed to update trigger"
 msgstr "עדכון הטריגר נכשל"
 
 #: src/components/chat-input.tsx
-msgid "Failed to upload the zip file. Please try again."
-msgstr "נכשל בהעלאת קובץ ה-ZIP. בבקשה נסה שוב."
+#~ msgid "Failed to upload the zip file. Please try again."
+#~ msgstr "נכשל בהעלאת קובץ ה-ZIP. בבקשה נסה שוב."
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 #: src/pages/flow-page/vibe-model-select.tsx
@@ -5005,7 +4996,6 @@ msgstr "גודל קובץ"
 #~ msgstr "כתיבת קובץ"
 
 #: src/components/assets/MarkdownIndexPanel.tsx
-#: src/components/chat-input.tsx
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 msgid "Files"
@@ -5134,8 +5124,8 @@ msgid "Fixing these tightens the skill for every future run."
 msgstr "תיקון אלה משפר את הכישוריות לכל הרצה עתידית."
 
 #: src/components/project-list/ProjectList.tsx
-msgid "flow"
-msgstr "זרימה"
+#~ msgid "flow"
+#~ msgstr "זרימה"
 
 #: src/components/history-dropdown.tsx
 #: src/components/history-dropdown.tsx
@@ -5221,16 +5211,16 @@ msgid "Flowpad.ai Logo"
 msgstr "לוגו Flowpad.ai"
 
 #: src/components/project-list/ProjectList.tsx
-msgid "flows"
-msgstr "זרימות"
+#~ msgid "flows"
+#~ msgstr "זרימות"
 
 #: src/components/execute-flow-view/execute-flow-view.tsx
 #~ msgid "Flows"
 #~ msgstr "זרימות"
 
 #: src/components/project-list/ProjectList.tsx
-msgid "Flows:"
-msgstr "זרימות:"
+#~ msgid "Flows:"
+#~ msgstr "זרימות:"
 
 #: src/components/graph-view/ui/PropertyPanel.tsx
 msgid "Focus local graph"
@@ -5406,16 +5396,16 @@ msgid "git"
 msgstr ""
 
 #: src/components/chat-input.tsx
-msgid "Git"
-msgstr "Git"
+#~ msgid "Git"
+#~ msgstr "Git"
 
 #: src/components/status-bar/GitStatusModal.tsx
 msgid "Git changes"
 msgstr "שינויים בגיט"
 
 #: src/components/chat-input.tsx
-msgid "Git Clone Failed"
-msgstr "העתקת Git נכשלה"
+#~ msgid "Git Clone Failed"
+#~ msgstr "העתקת Git נכשלה"
 
 #: src/components/assets/context-folder-sources.tsx
 msgid "Git folder"
@@ -6904,12 +6894,12 @@ msgid "Login Required"
 msgstr "נדרש כניסה"
 
 #: src/components/chat-input.tsx
-msgid "Login to continue asking..."
-msgstr "התחבר כדי להמשיך לשאול..."
+#~ msgid "Login to continue asking..."
+#~ msgstr "התחבר כדי להמשיך לשאול..."
 
 #: src/components/chat-input.tsx
-msgid "Login to Proceed"
-msgstr "התחבר כדי להמשיך"
+#~ msgid "Login to Proceed"
+#~ msgstr "התחבר כדי להמשיך"
 
 #. placeholder {0}: login.reason
 #: src/components/account/user-info.tsx
@@ -7259,8 +7249,8 @@ msgid "msgs"
 msgstr "הודעות"
 
 #: src/components/chat-input.tsx
-msgid "Multiple ZIP Files Not Allowed"
-msgstr "קבצי ZIP מרובים אינם מותרים"
+#~ msgid "Multiple ZIP Files Not Allowed"
+#~ msgstr "קבצי ZIP מרובים אינם מותרים"
 
 #: src/components/artifacts/artifact-form.tsx
 msgid "My Artifact"
@@ -7739,8 +7729,8 @@ msgid "No data."
 msgstr "אין נתונים."
 
 #: src/pages/agent-redirect.tsx
-msgid "No default agent found, missing agent type ID in context."
-msgstr "לא נמצא סוכן ברירת מחדל, מזהה סוג הסוכן חסר בהקשר."
+#~ msgid "No default agent found, missing agent type ID in context."
+#~ msgstr "לא נמצא סוכן ברירת מחדל, מזהה סוג הסוכן חסר בהקשר."
 
 #: src/components/assistance-viewer/TaskDetail.tsx
 msgid "No description provided."
@@ -7831,8 +7821,8 @@ msgstr ""
 #~ msgstr "אין זרימות מחוברות לקובץ זה"
 
 #: src/components/project-list/ProjectList.tsx
-msgid "No flows in this project"
-msgstr "אין זרימות בפרויקט זה"
+#~ msgid "No flows in this project"
+#~ msgstr "אין זרימות בפרויקט זה"
 
 #: src/components/triggers-view/TriggersList.tsx
 msgid "No FSOp triggers visible. Toggle <0>Include system</0> above to see system-installed watchers."
@@ -8601,13 +8591,14 @@ msgid "Only on this machine — never shared"
 msgstr ""
 
 #: src/components/chat-input.tsx
-msgid "Only one ZIP file can be uploaded at a time"
-msgstr "ניתן להעלות רק קובץ ZIP אחד בכל פעם"
+#~ msgid "Only one ZIP file can be uploaded at a time"
+#~ msgstr "ניתן להעלות רק קובץ ZIP אחד בכל פעם"
 
 #: src/components/task-bar/TaskDetailPanel.tsx
 #~ msgid "open"
 #~ msgstr "פתוח"
 
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
@@ -9018,8 +9009,8 @@ msgid "Open this plan from its session to update it"
 msgstr "פתח את התכנית מהמפגש שלה כדי לעדכן אותה"
 
 #: src/components/chat-input.tsx
-msgid "Open tools panel"
-msgstr "פתח חלונית כלים"
+#~ msgid "Open tools panel"
+#~ msgstr "פתח חלונית כלים"
 
 #: src/components/process-runs/ProcessRunsPanel.tsx
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
@@ -9400,8 +9391,8 @@ msgid "Plans"
 msgstr "תכניות"
 
 #: src/pages/agent-redirect.tsx
-msgid "Please contact support at<0>support@flowpad.ai</0>"
-msgstr "אנא פנה לתמיכה ב-<0>support@flowpad.ai</0>"
+#~ msgid "Please contact support at<0>support@flowpad.ai</0>"
+#~ msgstr "אנא פנה לתמיכה ב-<0>support@flowpad.ai</0>"
 
 #: src/components/project-setup-screen/project-setup-screen.tsx
 #~ msgid "Please enter a project name"
@@ -9440,8 +9431,8 @@ msgstr "אנא בחר או צור פרויקט תחילה."
 #~ msgstr "אנא בחר או הזן תיקייה"
 
 #: src/components/chat-input.tsx
-msgid "Please wait..."
-msgstr "בבקשה המתן..."
+#~ msgid "Please wait..."
+#~ msgstr "בבקשה המתן..."
 
 #: src/components/hooks-view/HooksBrowser.tsx
 msgid "plugin"
@@ -10375,7 +10366,6 @@ msgstr "סורקים מחדש…"
 
 #: src/components/account/settings-section.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
-#: src/components/tools/ToolsPanel.tsx
 msgid "Reset"
 msgstr "איפוס"
 
@@ -10475,7 +10465,6 @@ msgstr ""
 #: src/components/assets/editor/MissingAssetCard.tsx
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/task-receive/IncomingTaskDialog.tsx
-#: src/pages/agent-redirect.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Retry"
 msgstr "נסה שוב"
@@ -11297,8 +11286,8 @@ msgid "Select every project"
 msgstr "בחר כל פרויקט"
 
 #: src/components/tools/ToolsPanel.tsx
-msgid "Select mode"
-msgstr "בחר מצב"
+#~ msgid "Select mode"
+#~ msgstr "בחר מצב"
 
 #: src/components/task-bar/TaskBar.tsx
 #~ msgid "Select multiple"
@@ -11969,7 +11958,6 @@ msgid "Some services stopped"
 msgstr "חלק מהשירותים עצורים"
 
 #: src/components/task-receive/IncomingTaskDialog.tsx
-#: src/pages/agent-redirect.tsx
 msgid "Something went wrong"
 msgstr "משהו השתבש"
 
@@ -12962,8 +12950,6 @@ msgstr "תוצאת כלי"
 msgid "tools"
 msgstr "כלים"
 
-#: src/components/chat-input.tsx
-#: src/components/chat-input.tsx
 #: src/components/lens-viewer/shared/transcript-features/TranscriptStats.tsx
 #: src/components/record-search-bar/RecordSearchBar.tsx
 #: src/components/terminal/interactive-terminal/ChatToolsMenu.tsx
@@ -13310,12 +13296,12 @@ msgid "Upload Message"
 msgstr "העלה הודעה"
 
 #: src/components/chat-input.tsx
-msgid "Upload ZIP"
-msgstr "העלה ZIP"
+#~ msgid "Upload ZIP"
+#~ msgstr "העלה ZIP"
 
 #: src/components/chat-input.tsx
-msgid "Uploaded files"
-msgstr "קבצים שהועלו"
+#~ msgid "Uploaded files"
+#~ msgstr "קבצים שהועלו"
 
 #: src/components/conversation/AttachmentChip.tsx
 msgid "Uploading…"
@@ -13647,8 +13633,8 @@ msgid "Web app status"
 msgstr ""
 
 #: src/components/tools/ToolsPanel.tsx
-msgid "Web Search"
-msgstr "חיפוש ברשת"
+#~ msgid "Web Search"
+#~ msgstr "חיפוש ברשת"
 
 #: src/components/persistent-iframe.tsx
 msgid "Webapp Not Available"
@@ -13954,20 +13940,20 @@ msgid "Your Projects"
 msgstr "הפרויקטים שלך"
 
 #: src/components/chat-input.tsx
-msgid "ZIP file upload is only available as a codebase connection"
-msgstr "העלאת קבצי ZIP זמינה רק כחיבור codebase"
+#~ msgid "ZIP file upload is only available as a codebase connection"
+#~ msgstr "העלאת קבצי ZIP זמינה רק כחיבור codebase"
 
 #: src/components/chat-input.tsx
-msgid "ZIP File Upload Not Allowed"
-msgstr "העלאת קבצי ZIP אינה מותרת"
+#~ msgid "ZIP File Upload Not Allowed"
+#~ msgstr "העלאת קבצי ZIP אינה מותרת"
 
 #: src/components/drag-drop-overlay.tsx
 msgid "ZIP files will be added as codebase connections"
 msgstr "קבצי ZIP יתווספו כחיבורי קוד בסיס"
 
 #: src/components/chat-input.tsx
-msgid "Zip Upload Failed"
-msgstr "העלאת ZIP נכשלה"
+#~ msgid "Zip Upload Failed"
+#~ msgstr "העלאת ZIP נכשלה"
 
 #: src/components/graph-context/ContextGraphCanvas.tsx
 #: src/components/graph-context/ContextGraphCanvas.tsx
