@@ -84,6 +84,7 @@ from .routes import (
     watch_router,
     webhook_api_router,
     websocket_router,
+    worldview_router,
 )
 
 
@@ -517,6 +518,7 @@ server.add_router(semantic_checker_router)
 server.add_router(capabilities_router)
 server.add_router(toplog_router)
 server.add_router(agentic_flows_router)
+server.add_router(worldview_router)
 
 server.on_startup(_on_server_startup)
 server.on_shutdown(_shutdown_extras)

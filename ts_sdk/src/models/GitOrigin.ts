@@ -12,6 +12,7 @@
  * unsafe path as legitimate.
  */
 export interface GitOrigin {
+  kind: 'git';
   provider: string;
   owner: string;
   name: string;
@@ -62,6 +63,7 @@ export function gitOriginFromUrl(url: string, branch = '', relPath = '.'): GitOr
   const [owner, name] = match[1].split('/');
   if (!owner || !name || owner.toLowerCase() === host) return null;
   return {
+    kind: 'git',
     provider: HOST_PROVIDERS[host] ?? host,
     owner,
     name: stripGitSuffix(name),

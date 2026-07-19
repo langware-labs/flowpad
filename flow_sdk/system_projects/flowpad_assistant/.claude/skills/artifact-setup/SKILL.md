@@ -1,20 +1,13 @@
 ---
-id: a32fd7a6-bdcc-5211-9f8f-d2995177a711
 name: artifact-setup
 description: Set up a RECEIVED artifact so it runs and shows live in the FlowPad Vibe
   display. Use this when a shared artifact has just been installed and needs to be
   made to work — clone/serve/build it as appropriate for its kind (a webapp folder,
   a static prototype, or a Claude Design handoff bundle) and surface the running app
   in the Vibe preview. This skill is invoked automatically by the reception flow with
-  a prompt like "Use the artifact-setup skill to set up artifact-<id>"; it is the
+  a prompt like "Use the artifact-setup skill to set up artifact-ID"; it is the
   setup counterpart of web-app-builder (which SCAFFOLDS new apps) — this one takes an
   existing received artifact and gets it running.
-tags:
-- artifact
-- setup
-- webapp
-- vibe
-- reception
 allowed-tools:
 - Bash
 - Read
@@ -33,29 +26,30 @@ produces a working site.** Do not rebuild an app that already runs.
 
 ## 1. Locate (or clone) the artifact's folder
 
-The artifact carries the app's files. Two cases:
+The Artifact carries a provider-neutral `origin` pointer. Two cases:
 
 - **Copy-shared** (the common case): the folder was copied into this project on install —
-  the artifact's `path` points at it. Find it:
+  `origin.kind` is `local`; the folder is `<origin.base>/<origin.rel_path>`. Find it:
 
   ```bash
   flow app discover          # lists webapp candidates under the project (name, path, kind, port)
   ```
 
-  Pick the candidate matching the artifact's name/path. If discovery finds nothing, look
+  Pick the candidate matching the Artifact's name/origin. If discovery finds nothing, look
   for the folder yourself (`index.html` or `package.json` under the project tree).
 
-- **Git-backed** (the artifact has a `git_origin` and an empty `path`): clone the repo into
-  the project first, then use the checkout as the app folder. Read the artifact's
-  `git_origin` (`provider`/`owner`/`name`/`branch`/`rel_path`), `git clone` the branch into
+- **Git-backed** (`origin.kind` is `git`): reuse a matching local checkout when one exists;
+  otherwise clone the repo into the project, then use the checkout as the app folder. Read
+  `origin` (`provider`/`owner`/`name`/`branch`/`rel_path`), `git clone` the branch into
   the project root, and set the app folder to `<checkout>/<rel_path>`. If cloning needs
   credentials you don't have, stop and report exactly what's needed — don't guess.
 
 ## 2. Dispatch on kind — then serve + show
 
 `flow app open` does the heavy lifting: it discovers the app, installs deps only when
-needed, starts the dev server detached, and **registers it with `show:True` so it
-lands in the Vibe display**. Prefer it:
+needed, starts the dev server detached, and **registers a local Deployment linked to the
+Artifact with `show:True` so it lands in the Vibe display**. Runtime port/start/health
+belong to that Deployment, never to the Artifact. Prefer it:
 
 ```bash
 flow app open "<artifact name>" --root "<artifact folder>"

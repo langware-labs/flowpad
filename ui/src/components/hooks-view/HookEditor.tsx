@@ -176,7 +176,7 @@ export function HookEditor({
               id="prompt"
               value={prompt}
               onChange={(e) => onPromptChange(e.target.value)}
-              placeholder={t`Should I allow this tool? Respond with JSON: {permissionDecision: allow or deny}`}
+              placeholder={t`Should I allow this tool? Respond with JSON: '{permissionDecision: allow or deny}'`}
               className="min-h-[120px] font-mono text-sm"
               rows={6}
             />

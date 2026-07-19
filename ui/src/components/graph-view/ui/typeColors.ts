@@ -1,4 +1,6 @@
 const HEX_COLORS: Record<string, string> = {
+  artifact: '#8b5cf6',
+  deployment: '#0ea5e9',
   project: '#a855f7',
   task: '#eab308',
   user: '#6366f1',

@@ -1,10 +1,5 @@
 ---
 id: e7d69e47-4ca0-5d06-aa52-ea46e2974787
----
-
----
-
-id: e7d69e47-4ca0-5d06-aa52-ea46e2974787
 name: slick
 description: 'The flowpad code-design lens. Use this whenever you are writing, reviewing,
 refactoring, or deciding WHERE logic belongs in the flowpad / flow-cli codebase
