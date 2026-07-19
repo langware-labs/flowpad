@@ -5514,6 +5514,11 @@ msgstr "Group Events"
 msgid "Group name"
 msgstr "Group name"
 
+#: src/components/conversation/ConversationContextPanel.tsx
+#: src/components/conversation/ConversationContextPanel.tsx
+msgid "Group Task"
+msgstr "Group Task"
+
 #: src/components/terminal/openers/AskInstallOneOfDialog.tsx
 msgid "Harness is required"
 msgstr "Harness is required"
@@ -7051,6 +7056,11 @@ msgstr "Member"
 #: src/components/task-bar/TaskCard.tsx
 #~ msgid "member task"
 #~ msgstr "member task"
+
+#: src/components/conversation/ConversationContextPanel.tsx
+#: src/components/conversation/ConversationContextPanel.tsx
+msgid "Member Task"
+msgstr "Member Task"
 
 #: src/components/task-bar/TaskCard.tsx
 #~ msgid "member tasks"
