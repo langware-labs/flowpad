@@ -55,9 +55,23 @@ def _result(code: str | None, git_origin: dict | None = None) -> dict:
 
 
 async def _entity_local_path(cls, entity_id: str) -> str | None:
-    """The entity's own ``path`` field, or None when unset/absent."""
+    """Resolve a graph entity's local path from its stored origin or path."""
     ent = await cls.get_one({"id": entity_id})
-    return ((getattr(ent, "path", "") or "").strip() or None) if ent else None
+    if ent is None:
+        return None
+    origin = getattr(ent, "origin", None)
+    if getattr(origin, "kind", None) == "local":
+        from pathlib import Path  # noqa: PLC0415
+
+        return str(Path(origin.base) / (origin.rel_path or "."))
+    if getattr(origin, "kind", None) == "git":
+        from pathlib import Path  # noqa: PLC0415
+
+        from flow_sdk.utils.git import find_local_repo_for_url  # noqa: PLC0415
+
+        repo = await asyncio.to_thread(find_local_repo_for_url, origin.clone_url())
+        return str(Path(repo) / (origin.rel_path or ".")) if repo else None
+    return ((getattr(ent, "path", "") or "").strip() or None)
 
 
 async def _resolve_asset_git_path(entity_type: str, entity_id: str) -> str | None:

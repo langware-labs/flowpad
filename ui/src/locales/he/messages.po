@@ -50,8 +50,8 @@ msgid "— show trace event gutter"
 msgstr "— הצג שוליים של אירועי עקיבה"
 
 #: src/components/artifacts/artifact-form.tsx
-msgid "./src/app or https://... (optional)"
-msgstr "./src/app או https://... (אופציונלי)"
+#~ msgid "./src/app or https://... (optional)"
+#~ msgstr "./src/app או https://... (אופציונלי)"
 
 #: src/components/collaboration/sidebar/NewDocButton.tsx
 #~ msgid ".claude/docs/ under this project"
@@ -166,6 +166,14 @@ msgstr "{0} הערות בשורה זו"
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 msgid "{0} bytes"
 msgstr "{0} בתים"
+
+#. placeholder {0}: summary.current
+#. placeholder {1}: summary.stale
+#. placeholder {2}: summary.partial
+#. placeholder {3}: summary.error
+#: src/components/machine-overview/service-status-led.tsx
+msgid "{0} current · {1} stale · {2} partial · {3} error"
+msgstr ""
 
 #. placeholder {0}: tooBig.length
 #. placeholder {1}: tooBig.join(', ')
@@ -700,6 +708,10 @@ msgstr "פרויקטים פעילים"
 msgid "Active: {activeDbPath}"
 msgstr "פעיל: {activeDbPath}"
 
+#: src/components/graph-view/ui/TopBar.tsx
+msgid "Activity"
+msgstr ""
+
 #: src/components/skills-viewer/amd-editor/components/ElementBlock.tsx
 #~ msgid "add"
 #~ msgstr "הוספה"
@@ -940,6 +952,7 @@ msgid "all"
 msgstr "הכל"
 
 #: src/components/graph-view/ui/FilterChips.tsx
+#: src/components/graph-view/ui/TopBar.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
 #: src/pages/live-status/LiveStatus.tsx
@@ -982,6 +995,10 @@ msgstr "הכל בסדר"
 msgid "All languages"
 msgstr "כל השפות"
 
+#: src/components/machine-overview/service-status-led.tsx
+msgid "All observed deployments are current"
+msgstr ""
+
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 #: src/components/terminal/HistoryModal.tsx
 msgid "All projects"
@@ -996,8 +1013,8 @@ msgid "All projects are already open"
 msgstr "כל הפרויקטים כבר פתוחים"
 
 #: src/components/machine-overview/service-status-led.tsx
-msgid "All services running"
-msgstr "כל השירותים פועלים"
+#~ msgid "All services running"
+#~ msgstr "כל השירותים פועלים"
 
 #: src/components/assets/filters/taskFilters.tsx
 msgid "All statuses"
@@ -1305,8 +1322,8 @@ msgid "artifacts"
 msgstr "ארטיפקטים"
 
 #: src/components/webapp-viewer/webapp-artifacts-tab.tsx
-msgid "Artifacts"
-msgstr "ערכים"
+#~ msgid "Artifacts"
+#~ msgstr "ערכים"
 
 #: src/components/artifacts/artifacts-list.tsx
 msgid "Artifacts created during flow execution will appear here"
@@ -1552,6 +1569,10 @@ msgstr "גיבוי בסיס נתונים"
 msgid "Balanced"
 msgstr "מאוזן"
 
+#: src/components/artifacts/artifact-form.tsx
+msgid "Base path"
+msgstr ""
+
 #: src/components/hooks-view/HookEditor.tsx
 msgid "Bash Command *"
 msgstr "פקודת Bash *"
@@ -1622,6 +1643,10 @@ msgstr "תצוגה מסומנת"
 msgid "Bookmarks"
 msgstr "סימניות"
 
+#: src/components/artifacts/artifact-form.tsx
+msgid "Branch"
+msgstr ""
+
 #: src/components/GitHubConnectionDialog.tsx
 msgid "Branch:"
 msgstr "ענף:"
@@ -1676,7 +1701,7 @@ msgstr "בונה את stack הקריאות…"
 msgid "Building graph…"
 msgstr "בנייה של גרף…"
 
-#: src/components/graph-view/ui/TopBar.tsx
+#: src/components/graph-view/GraphView.tsx
 msgid "Building…"
 msgstr "בנייה…"
 
@@ -1958,8 +1983,8 @@ msgid "Checking if you have a local clone of the repository."
 msgstr "בדיקה אם יש לך קלון מקומי של המאגר."
 
 #: src/components/machine-overview/service-status-led.tsx
-msgid "Checking service status..."
-msgstr "בדיקת סטטוס השירות..."
+#~ msgid "Checking service status..."
+#~ msgstr "בדיקת סטטוס השירות..."
 
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
 msgid "Checking whether {folderName} is ready to share."
@@ -2231,8 +2256,8 @@ msgid "Click to rename room"
 msgstr "לחץ כדי לשנות שם של החדר"
 
 #: src/components/machine-overview/service-status-led.tsx
-msgid "Click to retry"
-msgstr "לחץ כדי לנסות שוב"
+#~ msgid "Click to retry"
+#~ msgstr "לחץ כדי לנסות שוב"
 
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Click to view"
@@ -2339,6 +2364,10 @@ msgstr "הענן מנותק"
 msgid "Cloud hub"
 msgstr "Hub בענן"
 
+#: src/components/graph-view/GraphView.tsx
+msgid "Cloud WorldView"
+msgstr ""
+
 #: src/components/markdown-view.tsx
 msgid "code"
 msgstr "קוד"
@@ -2433,6 +2462,10 @@ msgstr "כווץ ניווט"
 #: src/components/ui/color-picker.tsx
 msgid "Color"
 msgstr "צבע"
+
+#: src/components/graph-view/ui/TopBar.tsx
+msgid "Color by"
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Column visibility & trace filters"
@@ -2675,7 +2708,7 @@ msgstr "פירוק Context"
 #~ msgid "Context folders"
 #~ msgstr ""
 
-#: src/components/graph-view/ui/TopBar.tsx
+#: src/components/graph-view/GraphView.tsx
 msgid "Context Graph"
 msgstr "גרף הקשר"
 
@@ -2874,6 +2907,7 @@ msgid "cost"
 msgstr "עלות"
 
 #: src/components/assets/editor/agent-trace/simple/SimpleSessionReport.tsx
+#: src/components/graph-view/ui/TopBar.tsx
 msgid "Cost"
 msgstr "עלות"
 
@@ -3067,8 +3101,8 @@ msgid "Create a new {0}."
 msgstr "צור {0} חדש."
 
 #: src/components/artifacts/artifact-form.tsx
-msgid "Create a new artifact in this project."
-msgstr "צור ארטיפקט חדש בפרויקט זה."
+#~ msgid "Create a new artifact in this project."
+#~ msgstr "צור ארטיפקט חדש בפרויקט זה."
 
 #: src/components/hooks-manager/HookForm.tsx
 msgid "Create Agent Hook"
@@ -3561,6 +3595,10 @@ msgstr "סופק"
 msgid "Deployed"
 msgstr "פורסם"
 
+#: src/components/graph-view/ui/PropertyPanel.tsx
+msgid "Deployment details"
+msgstr ""
+
 #: src/components/graph-view/ui/TopBar.tsx
 msgid "depth"
 msgstr "עומק"
@@ -3579,6 +3617,10 @@ msgstr "תאר את הבעיה או הדבק את השגיאה, ואז הפעל 
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Describe the issue to analyze and improve…"
+msgstr ""
+
+#: src/components/artifacts/artifact-form.tsx
+msgid "Describe the logical application, service, resource, or content and its optional source."
 msgstr ""
 
 #: src/components/tasks-viewer/TasksViewer.tsx
@@ -4354,8 +4396,8 @@ msgid "Error Loading Transcript"
 msgstr "שגיאה בטעינת הטרנסקריפט"
 
 #: src/components/machine-overview/service-status-led.tsx
-msgid "Error: {errorMessage}"
-msgstr "שגיאה: {errorMessage}"
+#~ msgid "Error: {errorMessage}"
+#~ msgstr "שגיאה: {errorMessage}"
 
 #: src/components/agent-layout/service-unavailable-screen/service-unavailable-screen.tsx
 msgid "Error: {statusCode}"
@@ -4755,6 +4797,10 @@ msgstr "טעינת המשימות נכשלה"
 msgid "Failed to load trigger.py"
 msgstr "נכשלה טעינת trigger.py"
 
+#: src/components/graph-view/GraphView.tsx
+msgid "Failed to load WorldView"
+msgstr ""
+
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Failed to look up project."
 msgstr "כשל בחיפוש הפרויקט."
@@ -4801,8 +4847,8 @@ msgstr "נכשל בפתיחת הפרויקט"
 #~ msgstr "שינוי שם זרימת עבודה נכשל"
 
 #: src/components/machine-overview/service-status-led.tsx
-msgid "Failed to restart services"
-msgstr "נכשל הפעלת מחדש של השירותים"
+#~ msgid "Failed to restart services"
+#~ msgstr "נכשל הפעלת מחדש של השירותים"
 
 #: src/components/workflows-view/WorkflowStrip.tsx
 #~ msgid "Failed to run workflow"
@@ -4864,8 +4910,8 @@ msgid "Failed to start run"
 msgstr "נכשל בהתחלת ההרצה"
 
 #: src/components/machine-overview/service-status-led.tsx
-msgid "Failed to start services"
-msgstr "נכשל הפעלת השירותים"
+#~ msgid "Failed to start services"
+#~ msgstr "נכשל הפעלת השירותים"
 
 #: src/components/quick-create/QuickCreateMenu.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
@@ -4892,8 +4938,8 @@ msgstr ""
 #~ msgstr "לא ניתן להתחיל זרימת עבודה"
 
 #: src/components/machine-overview/service-status-led.tsx
-msgid "Failed to stop services"
-msgstr "נכשל עצירת השירותים"
+#~ msgid "Failed to stop services"
+#~ msgstr "נכשל עצירת השירותים"
 
 #: src/components/project-home/SecretsCard.tsx
 msgid "Failed to store value"
@@ -4954,7 +5000,6 @@ msgstr "טעינה…"
 msgid "Field"
 msgstr "שדה"
 
-#: src/components/artifacts/artifact-form.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 msgid "File"
 msgstr "קובץ"
@@ -5235,8 +5280,8 @@ msgid "Focused"
 msgstr "במיקוד"
 
 #: src/components/artifacts/artifact-form.tsx
-msgid "Folder"
-msgstr "תיקייה"
+#~ msgid "Folder"
+#~ msgstr "תיקייה"
 
 #: src/components/assets/AssetsNavigator.tsx
 #: src/components/favorites/FavoritesAddRow.tsx
@@ -5248,6 +5293,10 @@ msgstr "שם התיקייה"
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Folder…"
 msgstr "תיקייה…"
+
+#: src/components/graph-view/ui/TopBar.tsx
+msgid "Footprint"
+msgstr ""
 
 #: src/components/skills-viewer/amd-editor/components/blocks/EachBlock.tsx
 #~ msgid "for"
@@ -5420,6 +5469,10 @@ msgstr ""
 msgid "git push"
 msgstr "דחף git"
 
+#: src/components/artifacts/artifact-form.tsx
+msgid "Git repository"
+msgstr ""
+
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
 msgid "GitHub connected"
 msgstr "GitHub מחובר"
@@ -5445,8 +5498,8 @@ msgid "glob"
 msgstr "glob"
 
 #: src/components/artifacts/artifact-form.tsx
-msgid "Glob Pattern"
-msgstr "דפוס Glob"
+#~ msgid "Glob Pattern"
+#~ msgstr "דפוס Glob"
 
 #: src/components/terminal/ProjectsCounterChip.tsx
 #: src/components/terminal/ProjectsCounterChip.tsx
@@ -6131,7 +6184,6 @@ msgstr "נתיב אפליקציה לא תקין"
 msgid "Invalid asset comparison."
 msgstr ""
 
-#: src/components/artifacts/artifact-metadata-editor.tsx
 #: src/components/hooks-view/hooks-view.tsx
 msgid "Invalid JSON"
 msgstr "JSON לא חוקי"
@@ -6320,6 +6372,10 @@ msgstr "אישור מחזיק המפתחות לא ניתן"
 
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
 msgid "kind"
+msgstr ""
+
+#: src/components/artifacts/artifact-form.tsx
+msgid "Kind"
 msgstr ""
 
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
@@ -6655,8 +6711,20 @@ msgid "Loading conversation…"
 msgstr "טוען שיחה…"
 
 #: src/components/graph-view/GraphView.tsx
-msgid "Loading dep graph…"
-msgstr "טוען גרף תלויויות…"
+#~ msgid "Loading dep graph…"
+#~ msgstr "טוען גרף תלויויות…"
+
+#: src/components/graph-view/GraphView.tsx
+msgid "Loading dependency graph…"
+msgstr ""
+
+#: src/components/machine-overview/service-status-led.tsx
+msgid "Loading deployment status…"
+msgstr ""
+
+#: src/components/webapp-viewer/webapp-deployments-tab.tsx
+msgid "Loading deployments…"
+msgstr ""
 
 #: src/components/assets/editor/agent-trace/simple/SimpleSessionReport.tsx
 msgid "Loading details…"
@@ -6811,6 +6879,10 @@ msgstr "טוען טריגרים..."
 msgid "Loading whiteboard…"
 msgstr "טוען לוח לבן…"
 
+#: src/components/graph-view/GraphView.tsx
+msgid "Loading WorldView…"
+msgstr ""
+
 #: src/components/git/RepoPicker.tsx
 msgid "Loading your repos…"
 msgstr "טוען את המאגרים שלך…"
@@ -6858,6 +6930,10 @@ msgstr "גרף מקומי:"
 #: src/components/inbox-view/InboxView.tsx
 msgid "Local only — permanent"
 msgstr "רק מקומי — קבוע"
+
+#: src/components/artifacts/artifact-form.tsx
+msgid "Local path"
+msgstr ""
 
 #: src/components/agentic-progress/shared/stack-frame-list.tsx
 #~ msgid "Local Variables"
@@ -7138,16 +7214,16 @@ msgid "Messages"
 msgstr "הודעות"
 
 #: src/components/artifacts/artifact-form.tsx
-msgid "Metadata"
-msgstr "מטא-נתונים"
+#~ msgid "Metadata"
+#~ msgstr "מטא-נתונים"
 
 #: src/components/artifacts/artifact-metadata-editor.tsx
-msgid "Metadata (JSON)"
-msgstr "מטא-דטה (JSON)"
+#~ msgid "Metadata (JSON)"
+#~ msgstr "מטא-דטה (JSON)"
 
 #: src/components/artifacts/artifact-metadata-editor.tsx
-msgid "Metadata must be a JSON object"
-msgstr "המטא-דטה חייבת להיות JSON object"
+#~ msgid "Metadata must be a JSON object"
+#~ msgstr "המטא-דטה חייבת להיות JSON object"
 
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Metrics"
@@ -7263,12 +7339,16 @@ msgstr "הודעות"
 #~ msgstr "קבצי ZIP מרובים אינם מותרים"
 
 #: src/components/artifacts/artifact-form.tsx
-msgid "My Artifact"
-msgstr "הארטיפקט שלי"
+#~ msgid "My Artifact"
+#~ msgstr "הארטיפקט שלי"
 
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
 msgid "My Schedule"
 msgstr "הלוח שלי"
+
+#: src/components/artifacts/artifact-form.tsx
+msgid "My web application"
+msgstr ""
 
 #: src/components/open-project-component/open-project-component.tsx
 msgid "my-awesome-project"
@@ -7562,10 +7642,9 @@ msgstr "אין פרויקט פעיל"
 msgid "No active survey"
 msgstr "אין סקר פעיל"
 
-#. placeholder {0}: config.label
 #: src/components/artifacts/artifact-metadata-editor.tsx
-msgid "No additional metadata fields for {0} artifacts."
-msgstr "אין שדות מטא-דטה נוספים עבור {0} אמנות."
+#~ msgid "No additional metadata fields for {0} artifacts."
+#~ msgstr "אין שדות מטא-דטה נוספים עבור {0} אמנות."
 
 #: src/components/hooks-manager/index.tsx
 msgid "No agent hooks configured"
@@ -7741,6 +7820,10 @@ msgstr "אין נתונים."
 #: src/pages/agent-redirect.tsx
 #~ msgid "No default agent found, missing agent type ID in context."
 #~ msgstr "לא נמצא סוכן ברירת מחדל, מזהה סוג הסוכן חסר בהקשר."
+
+#: src/components/webapp-viewer/webapp-deployments-tab.tsx
+msgid "No deployments observed yet"
+msgstr ""
 
 #: src/components/assistance-viewer/TaskDetail.tsx
 msgid "No description provided."
@@ -8196,6 +8279,10 @@ msgstr "לא הופעל"
 msgid "No runs yet."
 msgstr "אין ריצות עדיין."
 
+#: src/components/webapp-viewer.tsx
+msgid "No runtime port in this view"
+msgstr ""
+
 #: src/components/onboarding-card/OnboardingCard.tsx
 #~ msgid "No sample flows found"
 #~ msgstr "לא נמצאו זרימות לדוגמה"
@@ -8225,12 +8312,12 @@ msgid "No secrets yet. Click \"Add secret\" to create one."
 msgstr "אין סודות עדיין. לחץ על \"הוסף סוד\" כדי ליצור אחד."
 
 #: src/components/machine-overview/service-status-led.tsx
-msgid "No services to monitor"
-msgstr "אין שירותים לניטור"
+#~ msgid "No services to monitor"
+#~ msgstr "אין שירותים לניטור"
 
 #: src/components/machine-overview/service-status-led.tsx
-msgid "No services with ports found"
-msgstr "לא נמצאו שירותים עם פורטים"
+#~ msgid "No services with ports found"
+#~ msgstr "לא נמצאו שירותים עם פורטים"
 
 #: src/components/terminal/interactive-terminal/side-windows/AnalysisPanel.tsx
 msgid "No session to analyze yet."
@@ -8275,6 +8362,10 @@ msgstr "לא נעשה שימוש בכישרונות או בסוכנים משנה
 #: src/components/skills-sidebar/SkillsSidebar.tsx
 #~ msgid "No skills yet"
 #~ msgstr "אין מיומנויות עדיין"
+
+#: src/components/artifacts/artifact-form.tsx
+msgid "No source"
+msgstr ""
 
 #: src/components/hooks-view/HooksBrowser.tsx
 msgid "No source file available for this hook"
@@ -8382,8 +8473,8 @@ msgid "No web app available"
 msgstr "אין אפליקציה זמינה"
 
 #: src/components/webapp-viewer/webapp-artifacts-tab.tsx
-msgid "No webapp or service artifacts found"
-msgstr "לא נמצאו ערכי אפליקציה או שירות"
+#~ msgid "No webapp or service artifacts found"
+#~ msgstr "לא נמצאו ערכי אפליקציה או שירות"
 
 #: src/components/workflows-view/WorkflowStrip.tsx
 #~ msgid "No workflows"
@@ -8705,6 +8796,10 @@ msgstr "פתח אבחון כטאב"
 #: src/tabs/useTerminalStripController.tsx
 msgid "Open docker terminal"
 msgstr "פתח טרמינל Docker"
+
+#: src/components/artifacts/artifact-form.tsx
+msgid "Open dot-path ontology; custom descendants are welcome."
+msgstr ""
 
 #: src/pages/flow-page/vibe-new-chat.tsx
 msgid "Open existing project"
@@ -9219,7 +9314,6 @@ msgstr "הדבק או גרור קובצים לכאן"
 msgid "path"
 msgstr "נתיב"
 
-#: src/components/artifacts/artifact-form.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
@@ -9966,7 +10060,7 @@ msgstr ""
 msgid "reason"
 msgstr ""
 
-#: src/components/graph-view/ui/TopBar.tsx
+#: src/components/graph-view/GraphView.tsx
 msgid "Rebuild"
 msgstr "בנו מחדש"
 
@@ -10065,12 +10159,12 @@ msgid "recursive"
 msgstr "רקורסיבי"
 
 #: src/components/artifacts/artifact-form.tsx
-msgid "Reference"
-msgstr "התייחסות"
+#~ msgid "Reference"
+#~ msgstr "התייחסות"
 
 #: src/components/artifacts/artifact-form.tsx
-msgid "Reference Type"
-msgstr "סוג התייחסות"
+#~ msgid "Reference Type"
+#~ msgstr "סוג התייחסות"
 
 #: src/components/graph-view/ui/PropertyPanel.tsx
 msgid "referenced but not in entities table"
@@ -10173,6 +10267,10 @@ msgstr "רענן סטטוס"
 #: src/components/account/db-stats.tsx
 msgid "Relations"
 msgstr "קשרים"
+
+#: src/components/artifacts/artifact-form.tsx
+msgid "Relative path"
+msgstr ""
 
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 msgid "Reload the MarkdownIndex list."
@@ -10342,6 +10440,7 @@ msgstr "ריפוזיטוריים"
 msgid "Repository name"
 msgstr ""
 
+#: src/components/artifacts/artifact-form.tsx
 #: src/components/assets/AddGitFolderDialog.tsx
 msgid "Repository URL"
 msgstr ""
@@ -10713,7 +10812,6 @@ msgstr "הפעל את המיומנות \"{name}\" על ההקשר הנוכחי."
 #~ msgstr "הפעל זרימת עבודה"
 
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
-#: src/components/machine-overview/service-status-led.tsx
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 msgid "running"
 msgstr "פועל"
@@ -11181,8 +11279,6 @@ msgid "Seems like you are trying to clone a private git repo. You should connect
 msgstr "נראה שאתם מנסים לשכפל מאגר git פרטי. עליכם להתחבר ל-GitHub כדי להשלים את הפעולה."
 
 #. placeholder {0}: c.displayName
-#. placeholder {0}: field.label.toLowerCase()
-#: src/components/artifacts/artifact-metadata-editor.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
 msgid "Select {0}"
 msgstr "בחר {0}"
@@ -11264,20 +11360,20 @@ msgid "Select all matches"
 msgstr "בחר את כל ההתאמות"
 
 #: src/components/webapp-viewer/webapp-artifacts-tab.tsx
-msgid "Select an artifact to view details"
-msgstr "בחר ערך כדי להציג פרטים"
+#~ msgid "Select an artifact to view details"
+#~ msgstr "בחר ערך כדי להציג פרטים"
 
 #: src/components/artifacts/artifact-metadata-editor.tsx
-msgid "Select an artifact type above to get type-specific metadata fields."
-msgstr "בחר סוג אמנות למעלה כדי קבלת שדות מטא-דטה ספציפיים לסוג."
+#~ msgid "Select an artifact type above to get type-specific metadata fields."
+#~ msgstr "בחר סוג אמנות למעלה כדי קבלת שדות מטא-דטה ספציפיים לסוג."
 
 #: src/components/terminal/openers/AskInstallOneOfDialog.tsx
 msgid "Select an available harness, or install one from its homepage and re-check it."
 msgstr "בחר ב-Harness זמין, או התקן אחד מעמוד הבית שלו ובדוק שוב."
 
 #: src/components/artifacts/artifact-form.tsx
-msgid "Select artifact type"
-msgstr "בחר סוג ארטיפקט"
+#~ msgid "Select artifact type"
+#~ msgstr "בחר סוג ארטיפקט"
 
 #: src/components/asset-manager/AssetPickerPopover.tsx
 msgid "Select Asset"
@@ -11334,8 +11430,8 @@ msgid "Select text to add a link"
 msgstr "בחר טקסט כדי להוסיף קישור"
 
 #: src/components/webapp-viewer.tsx
-msgid "Select webapp..."
-msgstr "בחר אפליקציה..."
+#~ msgid "Select webapp..."
+#~ msgstr "בחר אפליקציה..."
 
 #: src/components/hooks-view/HookEditor.tsx
 msgid "Select when this hook should run"
@@ -11411,12 +11507,12 @@ msgid "Server did not come back. Restart Flowpad manually."
 msgstr "השרת לא חזר. הפעל את Flowpad מחדש באופן ידני."
 
 #: src/components/machine-overview/service-status-led.tsx
-msgid "Service error"
-msgstr "שגיאה בשירות"
+#~ msgid "Service error"
+#~ msgstr "שגיאה בשירות"
 
 #: src/components/machine-overview/service-status-led.tsx
-msgid "Service status unknown"
-msgstr "סטטוס השירות לא ידוע"
+#~ msgid "Service status unknown"
+#~ msgstr "סטטוס השירות לא ידוע"
 
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 msgid "Service unavailable"
@@ -11964,8 +12060,16 @@ msgid "Some contexts could not be deleted"
 msgstr "לא ניתן היה למחוק כמה הקשרים"
 
 #: src/components/machine-overview/service-status-led.tsx
-msgid "Some services stopped"
-msgstr "חלק מהשירותים עצורים"
+msgid "Some deployments are stale or partial"
+msgstr ""
+
+#: src/components/machine-overview/service-status-led.tsx
+msgid "Some deployments have errors"
+msgstr ""
+
+#: src/components/machine-overview/service-status-led.tsx
+#~ msgid "Some services stopped"
+#~ msgstr "חלק מהשירותים עצורים"
 
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Something went wrong"
@@ -12001,13 +12105,17 @@ msgstr "מיין הנמקות לפי זמן"
 msgid "Sort within each type"
 msgstr ""
 
-#: src/components/hooks/sniffer_view_mock.tsx
-#~ msgid "Source"
-#~ msgstr "מקור"
+#: src/components/artifacts/artifact-form.tsx
+msgid "Source"
+msgstr "מקור"
 
 #: src/components/hooks-view/HooksBrowser.tsx
 msgid "Source File"
 msgstr "קובץ מקור"
+
+#: src/components/artifacts/artifact-form.tsx
+msgid "Source kind"
+msgstr ""
 
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
 msgid "Source:"
@@ -12160,8 +12268,8 @@ msgid "Start room"
 msgstr "התחל חדר"
 
 #: src/components/machine-overview/service-status-led.tsx
-msgid "Start services"
-msgstr "הפעל שירותים"
+#~ msgid "Start services"
+#~ msgstr "הפעל שירותים"
 
 #: src/components/collaboration/RoomHeader.tsx
 msgid "started"
@@ -12180,8 +12288,8 @@ msgid "Starting the session without the attached files."
 msgstr ""
 
 #: src/components/machine-overview/service-status-led.tsx
-msgid "Starting..."
-msgstr "מתחיל..."
+#~ msgid "Starting..."
+#~ msgstr "מתחיל..."
 
 #: src/components/conversation/ConversationView.tsx
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
@@ -12247,17 +12355,16 @@ msgid "stop hooks"
 msgstr "עצירת חוקים"
 
 #: src/components/machine-overview/service-status-led.tsx
-msgid "Stop services"
-msgstr "עצור שירותים"
+#~ msgid "Stop services"
+#~ msgstr "עצור שירותים"
 
-#: src/components/machine-overview/service-status-led.tsx
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 msgid "stopped"
 msgstr "עצור"
 
 #: src/components/machine-overview/service-status-led.tsx
-msgid "Stopping..."
-msgstr "מעצור..."
+#~ msgid "Stopping..."
+#~ msgstr "מעצור..."
 
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
 msgid "stored →"
@@ -12379,10 +12486,18 @@ msgstr "עבור לתצוגת הטרמינל"
 msgid "Switching…"
 msgstr "מעברים…"
 
+#: src/components/graph-view/GraphView.tsx
+msgid "Sync"
+msgstr ""
+
 #. placeholder {0}: row.type
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Sync {0} changes"
 msgstr "סנכרן {0} שינויים"
+
+#: src/components/graph-view/GraphView.tsx
+msgid "Syncing…"
+msgstr ""
 
 #: src/components/triggers-view/TriggerListItem.tsx
 msgid "Synthesize event"
@@ -13078,7 +13193,7 @@ msgid "Two quick steps in your browser:"
 msgstr ""
 
 #: src/components/account/db-stats.tsx
-#: src/components/artifacts/artifact-form.tsx
+#: src/components/graph-view/ui/TopBar.tsx
 #: src/components/hooks-view/HooksTable.tsx
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
@@ -13317,7 +13432,6 @@ msgstr "העלה הודעה"
 msgid "Uploading…"
 msgstr "העלאה..."
 
-#: src/components/artifacts/artifact-form.tsx
 #: src/components/version-popover/version-popover.tsx
 msgid "URL"
 msgstr "URL"
@@ -13411,8 +13525,8 @@ msgid "Valid"
 msgstr ""
 
 #: src/components/artifacts/artifact-form.tsx
-msgid "Validation error"
-msgstr "שגיאת אימות"
+#~ msgid "Validation error"
+#~ msgstr "שגיאת אימות"
 
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Validation error (422) - request format issue or entity not found"
@@ -13651,8 +13765,8 @@ msgid "Webapp Not Available"
 msgstr "אפליקציית אינטרנט לא זמינה"
 
 #: src/components/webapp-viewer.tsx
-msgid "Webapp not found in artifacts"
-msgstr "לא נמצאה אפליקציה"
+#~ msgid "Webapp not found in artifacts"
+#~ msgstr "לא נמצאה אפליקציה"
 
 #: src/components/account/settings-section.tsx
 msgid "Welcome bookmark + feed entry re-created."

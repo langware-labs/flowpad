@@ -38,6 +38,7 @@ from pathlib import Path
 from typing import Any
 
 from flow_sdk.builtin.dataset import (
+    EXAMPLE_META,  # canonical per-example metadata filename (model-owned)
     ArtifactKind,
     DataLayoutEnum,
     Example,
@@ -61,7 +62,6 @@ EXAMPLES_DIR = "examples"
 
 # IO_FOLDER per-example layout.
 SLOT_BASES = ("input", "output", "ground_truth")
-EXAMPLE_META = "example.json"          # canonical per-example metadata
 EXAMPLE_META_ALIAS = "meta.json"       # back-compat alias (example.json wins)
 EXPECTED_LEGACY = "expected"           # legacy expected.txt → folded onto ground_truth
 TEXT_EXTS = {".txt", ".md"}            # only these data files are decoded into .text

@@ -3,7 +3,6 @@
  * These types mirror the Python Pydantic models in flowpad/hub/types/machine_status.py
  */
 
-import { Artifact, ArtifactType } from '../artifact/artifact';
 import { ExecutionEnvironmentStatus } from './compute-node-types';
 
 /**
@@ -113,35 +112,6 @@ export interface MachineStatus {
 }
 
 /**
- * Status information for a single service (webapp or app_service).
- * Links artifact to its runtime status via process and network info.
- */
-export interface ServiceStatusInfo {
-  /** The artifact representing this service */
-  artifact: Artifact;
-  /** Port the service should be running on */
-  port: number;
-  /** Current status of the service */
-  status: ServiceStatusEnum;
-  /** Process info if the service is running - linked via NetworkConnection.pid */
-  processInfo?: ProcessInfo;
-  /** Network connection info if the service is running */
-  networkInfo?: NetworkConnection;
-}
-
-/**
- * Overall service status for all artifacts on a compute node.
- */
-export interface ServicesStatus {
-  /** Whether all services are running */
-  allRunning: boolean;
-  /** List of individual service statuses */
-  services: ServiceStatusInfo[];
-  /** List of missing services (not running) */
-  missingServices: ServiceStatusInfo[];
-}
-
-/**
  * Utility functions for working with MachineStatus data.
  * Provides helpers for querying and analyzing compute node status.
  */
@@ -205,44 +175,5 @@ export const MachineStatusUtils = {
    */
   getListeningPorts(status: MachineStatus): NetworkConnection[] {
     return status.network.filter((conn) => conn.status === 'LISTEN');
-  },
-
-  /**
-   * Get the service status for artifacts that have ports (WEBAPP and APP_SERVICE).
-   * Links artifacts to their runtime status via machine monitoring data.
-   * @param status - The machine status data
-   * @param artifacts - Array of artifacts to check
-   * @returns ServicesStatus with overall status and individual service statuses
-   */
-  getServiceStatus(status: MachineStatus, artifacts: Artifact[]): ServicesStatus {
-    // Filter artifacts to only those with ports (WEBAPP and APP_SERVICE)
-    // Use artifact.port which is normalized by the SDK (checks both port and metadata.port)
-    const serviceArtifacts = artifacts.filter(
-      (a) =>
-        (a.artifact_type === ArtifactType.WEBAPP || a.artifact_type === ArtifactType.APP_SERVICE) && a.port != null,
-    );
-
-    const services: ServiceStatusInfo[] = serviceArtifacts.map((artifact) => {
-      const port = Number(artifact.port);
-      const networkInfo = status.network.find((conn) => conn.port === port && conn.status === 'LISTEN');
-      const processInfo = networkInfo ? status.processes.find((proc) => proc.pid === networkInfo.pid) : undefined;
-
-      return {
-        artifact,
-        port,
-        status: networkInfo ? ServiceStatusEnum.RUNNING : ServiceStatusEnum.NOT_RUNNING,
-        processInfo,
-        networkInfo,
-      };
-    });
-
-    const missingServices = services.filter((s) => s.status === ServiceStatusEnum.NOT_RUNNING);
-    const allRunning = missingServices.length === 0 && services.length > 0;
-
-    return {
-      allRunning,
-      services,
-      missingServices,
-    };
   },
 };

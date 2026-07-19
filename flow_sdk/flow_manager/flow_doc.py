@@ -49,6 +49,21 @@ _RETIRED_NODE_TYPES = {
 }
 
 
+def retired_node_shape(node: dict) -> str | None:
+    """THE owner of "what is a retired node spelling": the pointed message for a
+    raw node dict on a pre-FlowFunction shape, or None. The parse validator
+    raises it; the seed migration detects with it — one set, two consumers."""
+    if not isinstance(node, dict):
+        return None
+    msg = _RETIRED_NODE_TYPES.get(str(node.get("node_type") or ""))
+    if msg:
+        return msg
+    if str((node.get("node_data") or {}).get("program_kind") or "") == "callback":
+        return ('program_kind "callback" was retired — use node_type "function" with '
+                'node_data {"function": "<registry name>", "runtime": "inline"}')
+    return None
+
+
 class FlowConfig(BaseModel):
     """Per-flow knobs. Defaults mirror the historical module constants."""
 
@@ -68,14 +83,9 @@ class FlowNodeDef(BaseModel):
     @classmethod
     def _reject_retired_spellings(cls, data: Any) -> Any:
         if isinstance(data, dict):
-            retired = _RETIRED_NODE_TYPES.get(str(data.get("node_type") or ""))
+            retired = retired_node_shape(data)
             if retired:
                 raise ValueError(retired)
-            if str((data.get("node_data") or {}).get("program_kind") or "") == "callback":
-                raise ValueError(
-                    'program_kind "callback" was retired — use node_type "function" with '
-                    'node_data {"function": "<registry name>", "runtime": "inline"}'
-                )
         return data
 
     def function_runtime(self) -> str:
@@ -143,22 +153,19 @@ class FlowDoc(BaseModel):
         return [n for n in self.nodes if n.node_type == "trigger"]
 
     def trigger_ids(self) -> list[str]:
-        """Trigger ENTITY ids referenced by this flow's trigger nodes."""
+        """Trigger ENTITY ids referenced by this flow's trigger nodes — parsed
+        through the canonical TypeId grammar, never a hand prefix-strip."""
         ids: list[str] = []
         for n in self.trigger_nodes():
-            typeid = str(n.node_data.get("typeid") or "")
-            if typeid.startswith("trigger-"):
-                ids.append(typeid[len("trigger-"):])
+            parsed = _parse_trigger_ref(n)
+            if parsed:
+                ids.append(parsed)
         return ids
 
     def trigger_nodes_for(self, trigger_id: str) -> list[FlowNodeDef]:
         """Trigger nodes referencing the given Trigger ENTITY id — the ONE
         matcher for trigger→node resolution (exact id, never a suffix match)."""
-        prefix = "trigger-"
-        return [
-            n for n in self.trigger_nodes()
-            if str(n.node_data.get("typeid") or "") == f"{prefix}{trigger_id}"
-        ]
+        return [n for n in self.trigger_nodes() if _parse_trigger_ref(n) == trigger_id]
 
     def validate_graph(self) -> list[str]:
         """Structural problems (non-fatal — callers decide). Returns messages."""
@@ -197,6 +204,20 @@ class FlowDoc(BaseModel):
                     'script functions require runtime "subprocess"'
                 )
         return problems
+
+
+def _parse_trigger_ref(node: FlowNodeDef) -> str | None:
+    """A trigger node's referenced Trigger ENTITY id, via the TypeId grammar."""
+    raw = str(node.node_data.get("typeid") or "")
+    if not raw:
+        return None
+    try:
+        from flow_sdk.api.type_id import TypeId
+
+        tid = TypeId(raw)
+    except Exception:
+        return None
+    return tid.id if tid.type == "trigger" else None
 
 
 def parse_flow_doc(text: str) -> FlowDoc:

@@ -3,6 +3,7 @@ import { EventEmitter } from 'events';
 import { dataManager } from '../APIEntity';
 import apiClient from '../client';
 import { Capability, CapabilityActionName, CapabilityCheck, CapabilityResult } from '../entities/capability';
+import { normalizeKind } from '../models/Kind';
 import { defineGlobal } from '../utils/globals';
 
 export interface CapabilitySnapshot {
@@ -193,14 +194,14 @@ export class CapabilityManager extends EventEmitter {
   }
 
   getMatching(queryKind: string): Capability[] {
-    const query = this.normalizeKind(queryKind);
+    const query = normalizeKind(queryKind);
     return this.capabilities
       .filter((capability) => this.kindMatches(query, capability.kind))
       .sort((a, b) => this.compareCapabilitiesForQuery(query, a, b));
   }
 
   getSnapshot(queryKind: string): CapabilitySnapshot {
-    const query = this.normalizeKind(queryKind);
+    const query = normalizeKind(queryKind);
     const capabilities = this.getMatching(query);
     const capability = this.pickCapability(query, capabilities);
     const result = capability ? this.getResult(capability) : null;
@@ -228,7 +229,7 @@ export class CapabilityManager extends EventEmitter {
   }
 
   async ensureChecked(queryKind: string): Promise<CapabilitySnapshot> {
-    const query = this.normalizeKind(queryKind);
+    const query = normalizeKind(queryKind);
     const existing = this.ensureCheckPromises.get(query);
     if (existing) return existing;
 
@@ -277,7 +278,7 @@ export class CapabilityManager extends EventEmitter {
     queryKind: string,
     mutate: (capability: Capability) => void,
   ): Promise<CapabilitySnapshot> {
-    const query = this.normalizeKind(queryKind);
+    const query = normalizeKind(queryKind);
     await this.load();
     const capability = this.capabilities.find((candidate) => candidate.kind === query);
     if (!capability) {
@@ -291,8 +292,8 @@ export class CapabilityManager extends EventEmitter {
   }
 
   async setReferenceKind(queryKind: string, referenceKind: string): Promise<CapabilitySnapshot> {
-    const query = this.normalizeKind(queryKind);
-    const reference = this.normalizeKind(referenceKind);
+    const query = normalizeKind(queryKind);
+    const reference = normalizeKind(referenceKind);
     if (!this.kindMatches(query, reference) || reference === query) {
       throw new Error(`Capability ${query} cannot reference ${reference}`);
     }
@@ -330,7 +331,7 @@ export class CapabilityManager extends EventEmitter {
   }
 
   private async runAction(queryKind: string, actionName: CapabilityActionName): Promise<CapabilitySnapshot> {
-    const query = this.normalizeKind(queryKind);
+    const query = normalizeKind(queryKind);
     await this.load();
     const capabilities = this.getMatching(query);
 
@@ -396,10 +397,6 @@ export class CapabilityManager extends EventEmitter {
       capabilities[0] ??
       null
     );
-  }
-
-  private normalizeKind(kind: string): string {
-    return kind.trim().toLowerCase();
   }
 
   private compareCapabilitiesForQuery(query: string, a: Capability, b: Capability): number {

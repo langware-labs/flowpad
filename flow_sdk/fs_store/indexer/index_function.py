@@ -176,6 +176,29 @@ def _has_dispatch(info) -> bool:
     return info.from_disk_fn is not None
 
 
+def ref_typeid(ref) -> str | None:
+    """Resolve a repo-asset FSRef to its ``<type>-<id>`` via the type's
+    ``gen_uuid_fn``. None when the ref is absent, isn't a repo asset, or has no id
+    resolver. The single ref→typeid primitive shared by the enclosure-parent
+    derivation (below) and the bundle's descendant collector."""
+    if ref is None or ref.record_type is None:
+        return None
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    rtype = str(ref.record_type)
+    if rtype not in SchemaRegistry.get_repo_types():
+        return None
+    info = SchemaRegistry.get(rtype)
+    gen = getattr(info, "gen_uuid_fn", None) if info else None
+    if gen is None:
+        return None
+    try:
+        rid = gen(ref)
+    except Exception:
+        return None
+    return f"{rtype}-{rid}" if rid else None
+
+
 def _is_async_walker(fn: Any) -> bool:
     """True when ``fn`` is a coroutine function or a class instance whose
     ``__call__`` is. Used by scan() to choose between direct-await and
@@ -890,9 +913,19 @@ class FSIndexer:
                                 )
                             except OSError:
                                 pass
+                        # Enclosure-derived parenthood: a repo asset physically
+                        # nested inside another repo asset's folder inherits it as
+                        # its parent, so a child re-indexed purely from disk (e.g.
+                        # received without an ``entities.json`` envelope) is still
+                        # parented. Loop-invariant — derive once from the FSRef
+                        # parent chain. Only when the enclosing ref is itself a
+                        # repo asset (not the walk root).
+                        parent_typeid = ref_typeid(getattr(ref, "_parent", None))
                         for rec in records:
                             if ref_scope is not None:
                                 object.__setattr__(rec, "scope", ref_scope)
+                            if parent_typeid and not getattr(rec, "parent_type_id", None):
+                                object.__setattr__(rec, "parent_type_id", parent_typeid)
                             if ref_pid is not None:
                                 object.__setattr__(rec, "project_id", ref_pid)
                             elif not getattr(rec, "project_id", None) and (

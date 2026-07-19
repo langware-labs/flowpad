@@ -1,10 +1,16 @@
 import Sigma from 'sigma';
 import EdgeCurveProgram from '@sigma/edge-curve';
 import { NodePictogramProgram } from '@sigma/node-image';
+import dagre from '@dagrejs/dagre';
 import forceAtlas2 from 'graphology-layout-forceatlas2';
 import Graph from 'graphology';
 import { hexForType } from '../ui/typeColors';
 import { paletteForTheme, type GraphPalette, type Theme } from './themeColors';
+import type { GraphLayout } from './loadDepGraph';
+import { cameraRatioForVisibleSpan } from './graphCamera';
+import { drawGraphNodeHover, drawGraphNodeLabel } from './graphLabels';
+import { colorForWorldViewMode } from './heat';
+import { DEFAULT_WORLDVIEW_COLOR_MODE, type WorldViewColorMode } from '@src/types/WorldViewColorMode';
 
 const FLICKER_COLOR: Record<'create' | 'update' | 'delete', string> = {
   create: '#22d3ee',
@@ -22,6 +28,7 @@ export type NodeData = {
   community: number;
   color: string;
   degree: number;
+  properties: Record<string, unknown>;
   neighbors: Array<{
     key: string;
     type: string;
@@ -39,6 +46,7 @@ export type LocalState = {
 
 export class GraphEngine {
   readonly graph: Graph;
+  readonly layout: GraphLayout;
   private sigma: Sigma | null = null;
 
   private hoveredNode: string | null = null;
@@ -53,44 +61,41 @@ export class GraphEngine {
   private draggedNode: string | null = null;
   private isDragging = false;
   private palette: GraphPalette = paletteForTheme('dark');
+  private colorMode: WorldViewColorMode = DEFAULT_WORLDVIEW_COLOR_MODE;
 
   private listeners = {
     nodeSelect: new Set<(key: string | null) => void>(),
     nodeDoubleClick: new Set<(key: string) => void>(),
   };
 
-  constructor(graph: Graph) {
+  constructor(graph: Graph, layout: GraphLayout = 'force') {
     this.graph = graph;
+    this.layout = layout;
     graph.forEachNode((node, attrs) => {
       this.nodeTypeByKey.set(node, (attrs.entityType as string) ?? '');
     });
   }
 
   init(container: HTMLElement): void {
-    const order = this.graph.order;
-    const iterations = Math.min(220, Math.max(60, Math.round(2200 / Math.max(1, order))));
-    forceAtlas2.assign(this.graph, {
-      iterations,
-      settings: {
-        gravity: 1.4,
-        scalingRatio: 9,
-        strongGravityMode: false,
-        slowDown: 5,
-        barnesHutOptimize: order > 200,
-        barnesHutTheta: 0.7,
-      },
-    });
+    if (this.layout === 'dagre') this.applyDagreLayout();
+    else this.applyForceLayout();
 
     this.sigma = new Sigma(this.graph, container, {
       renderLabels: true,
       renderEdgeLabels: false,
+      hideLabelsOnMove: true,
+      hideEdgesOnMove: true,
       labelFont: 'Inter, system-ui, sans-serif',
       labelColor: { color: this.palette.labelColor },
-      labelSize: 11,
-      labelDensity: 0.6,
-      labelRenderedSizeThreshold: 8,
+      labelSize: 12,
+      labelWeight: '500',
+      labelDensity: 0.35,
+      labelGridCellSize: 120,
+      labelRenderedSizeThreshold: 6,
+      defaultDrawNodeLabel: (context, data, settings) => drawGraphNodeLabel(context, data, settings, this.palette),
+      defaultDrawNodeHover: (context, data, settings) => drawGraphNodeHover(context, data, settings, this.palette),
       zIndex: true,
-      minCameraRatio: 0.05,
+      minCameraRatio: null,
       maxCameraRatio: 15,
       defaultNodeColor: this.palette.defaultNodeColor,
       defaultEdgeColor: this.palette.defaultEdgeColor,
@@ -105,6 +110,9 @@ export class GraphEngine {
       stagePadding: 40,
       nodeReducer: (node, data) => {
         const res = { ...data };
+        res.label = (data.displayLabel as string) || data.label;
+        const modeColor = colorForWorldViewMode(data, this.colorMode);
+        if (modeColor) res.color = modeColor;
         if (this.hiddenTypes.has(data.entityType as string)) {
           res.hidden = true;
           return res;
@@ -116,15 +124,23 @@ export class GraphEngine {
         if (this.localRoot === node) {
           res.zIndex = 25;
           res.size = (data.size as number) * 1.5;
+          res.forceLabel = true;
         }
         if (this.selectedNode === node) {
           res.zIndex = 20;
           res.size = (data.size as number) * 1.4;
-          res.color = '#ffffff';
+          res.color = this.palette.hoverNodeBorder;
+          res.label = data.label;
+          res.forceLabel = true;
+          res.highlighted = true;
         } else if (this.hoveredNode && !this.isDragging) {
           if (node === this.hoveredNode) {
             res.zIndex = 10;
             res.size = (data.size as number) * 1.25;
+            if (this.colorMode !== DEFAULT_WORLDVIEW_COLOR_MODE) {
+              res.color = this.palette.hoverNodeBorder;
+            }
+            res.label = data.label;
           } else if (this.hoverNeighbors.has(node)) {
             res.zIndex = 5;
           } else {
@@ -179,6 +195,39 @@ export class GraphEngine {
     this.setupInteractions(container);
   }
 
+  private applyForceLayout(): void {
+    const order = this.graph.order;
+    const iterations = Math.min(220, Math.max(60, Math.round(2200 / Math.max(1, order))));
+    forceAtlas2.assign(this.graph, {
+      iterations,
+      settings: {
+        gravity: 1.4,
+        scalingRatio: 9,
+        strongGravityMode: false,
+        slowDown: 5,
+        barnesHutOptimize: order > 200,
+        barnesHutTheta: 0.7,
+      },
+    });
+  }
+
+  private applyDagreLayout(): void {
+    const layoutGraph = new dagre.graphlib.Graph();
+    layoutGraph.setGraph({ rankdir: 'TB', ranksep: 90, nodesep: 48, edgesep: 24, marginx: 24, marginy: 24 });
+    layoutGraph.setDefaultEdgeLabel(() => ({}));
+    this.graph.forEachNode((node) => layoutGraph.setNode(node, { width: 92, height: 56 }));
+    this.graph.forEachDirectedEdge((_edge, _attrs, source, target) => layoutGraph.setEdge(source, target));
+    dagre.layout(layoutGraph);
+    this.graph.forEachNode((node) => {
+      const position = layoutGraph.node(node) as { x?: number; y?: number } | undefined;
+      if (!position || typeof position.x !== 'number' || typeof position.y !== 'number') return;
+      this.graph.setNodeAttribute(node, 'x', position.x);
+      // Sigma's graph coordinates are y-up. Flip Dagre's screen-space y so
+      // parent resources appear above their children.
+      this.graph.setNodeAttribute(node, 'y', -position.y);
+    });
+  }
+
   /** Re-applies theme-aware colors to sigma without rebuilding the layout. */
   setTheme(theme: Theme): void {
     this.palette = paletteForTheme(theme);
@@ -189,14 +238,19 @@ export class GraphEngine {
     this.sigma.refresh();
   }
 
+  /** Recolor reducer output without rebuilding the graph or rerunning layout. */
+  setColorMode(mode: WorldViewColorMode): void {
+    if (mode === this.colorMode) return;
+    this.colorMode = mode;
+    this.sigma?.refresh();
+  }
+
   private setupInteractions(container: HTMLElement): void {
     if (!this.sigma) return;
 
     this.sigma.on('clickNode', ({ node }) => {
       if (this.isDragging) return;
-      this.selectedNode = node;
       this.listeners.nodeSelect.forEach((fn) => fn(node));
-      this.sigma?.refresh();
     });
 
     this.sigma.on('doubleClickNode', ({ node, event }) => {
@@ -206,15 +260,9 @@ export class GraphEngine {
       this.listeners.nodeDoubleClick.forEach((fn) => fn(node));
     });
 
-    this.sigma.on('doubleClickStage', ({ event }) => {
-      event.preventSigmaDefault();
-    });
-
     this.sigma.on('clickStage', () => {
       if (this.isDragging) return;
-      this.selectedNode = null;
       this.listeners.nodeSelect.forEach((fn) => fn(null));
-      this.sigma?.refresh();
     });
 
     this.sigma.on('enterNode', ({ node }) => {
@@ -317,10 +365,15 @@ export class GraphEngine {
 
   private fitVisibleToCamera(): void {
     if (!this.sigma || this.localVisible.size === 0) return;
-    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    let minX = Infinity,
+      maxX = -Infinity,
+      minY = Infinity,
+      maxY = -Infinity;
+    let positionedNodes = 0;
     for (const key of this.localVisible) {
       const d = this.sigma.getNodeDisplayData(key);
       if (!d) continue;
+      positionedNodes += 1;
       if (d.x < minX) minX = d.x;
       if (d.x > maxX) maxX = d.x;
       if (d.y < minY) minY = d.y;
@@ -329,9 +382,9 @@ export class GraphEngine {
     if (!isFinite(minX)) return;
     const cx = (minX + maxX) / 2;
     const cy = (minY + maxY) / 2;
-    const span = Math.max(maxX - minX, maxY - minY, 0.05);
-    const ratio = Math.max(0.12, span * 1.4);
-    this.sigma.getCamera().animate({ x: cx, y: cy, ratio }, { duration: 500 });
+    const span = Math.max(maxX - minX, maxY - minY);
+    const ratio = cameraRatioForVisibleSpan(span, positionedNodes);
+    void this.sigma.getCamera().animate({ x: cx, y: cy, ratio }, { duration: 500 });
   }
 
   focusNode(key: string): void {
@@ -347,7 +400,7 @@ export class GraphEngine {
     const animateTo = (sig: Sigma) => {
       const display = sig.getNodeDisplayData(key);
       if (!display) return false;
-      sig.getCamera().animate({ x: display.x, y: display.y, ratio: 0.3 }, { duration: 500 });
+      void sig.getCamera().animate({ x: display.x, y: display.y, ratio: 0.3 }, { duration: 500 });
       return true;
     };
     if (!animateTo(this.sigma)) {
@@ -358,15 +411,15 @@ export class GraphEngine {
     }
   }
 
+  /** Apply URL-derived selection without emitting a second navigation intent. */
   selectNode(key: string | null): void {
     if (key !== null && !this.graph.hasNode(key)) return;
     this.selectedNode = key;
-    this.listeners.nodeSelect.forEach((fn) => fn(key));
     this.sigma?.refresh();
   }
 
   resetCamera(): void {
-    this.sigma?.getCamera().animate({ x: 0.5, y: 0.5, ratio: 1 }, { duration: 500 });
+    void this.sigma?.getCamera().animate({ x: 0.5, y: 0.5, ratio: 1 }, { duration: 500 });
   }
 
   getNodeData(key: string): NodeData | null {
@@ -396,6 +449,8 @@ export class GraphEngine {
       community: (attrs.community as number) ?? 0,
       color: (attrs.color as string) ?? hexForType(attrs.entityType as string),
       degree: this.graph.degree(key),
+      properties:
+        attrs.properties && typeof attrs.properties === 'object' ? (attrs.properties as Record<string, unknown>) : {},
       neighbors,
       edgeCounts,
     };
@@ -425,7 +480,7 @@ export class GraphEngine {
       }
     });
     results.sort((a, b) => a.score - b.score || a.label.length - b.label.length);
-    return results.slice(0, limit).map(({ score: _s, ...rest }) => rest);
+    return results.slice(0, limit).map(({ key, label, type, id }) => ({ key, label, type, id }));
   }
 
   onNodeSelect(fn: (key: string | null) => void): () => void {
