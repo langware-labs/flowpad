@@ -1,7 +1,7 @@
 import { type WizardData, type WizardProcessResult } from '@sdk';
 import { useWizardRun } from '@src/hooks/use-wizard-run';
 import { cn } from '@src/lib/utils';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Wrench } from 'lucide-react';
 import { type ReactNode } from 'react';
 
 export interface WizardButtonProps<T = unknown> {
@@ -69,10 +69,13 @@ export function WizardButton<T = unknown>({
       {running ? (
         <>
           <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          <span>
-            {runningLabel}
-            {toolCount > 0 ? ` · ${toolCount}` : ''}
-          </span>
+          <span>{runningLabel}</span>
+          {toolCount > 0 && (
+            <span className="inline-flex items-center gap-0.5" title="tools used">
+              · {toolCount}
+              <Wrench className="h-3 w-3" />
+            </span>
+          )}
         </>
       ) : (
         children
