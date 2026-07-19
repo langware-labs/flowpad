@@ -89,21 +89,27 @@ export function HookEditor({
       <CardContent className="space-y-6">
         {/* Hook Name */}
         <div className="space-y-2">
-          <Label htmlFor="hook-name"><Trans>Hook Name *</Trans></Label>
+          <Label htmlFor="hook-name">
+            <Trans>Hook Name *</Trans>
+          </Label>
           <Input
             id="hook-name"
             value={hookName}
             onChange={(e) => onHookNameChange(e.target.value)}
             placeholder={t`e.g., "my-pre-tool-guard", "lint-on-save"`}
           />
-          <p className="text-xs text-muted-foreground"><Trans>Unique identifier for this hook within the settings file.</Trans></p>
+          <p className="text-xs text-muted-foreground">
+            <Trans>Unique identifier for this hook within the settings file.</Trans>
+          </p>
         </div>
 
         <Separator />
 
         {/* Event Name */}
         <div className="space-y-2">
-          <Label htmlFor="event-name"><Trans>Hook Event *</Trans></Label>
+          <Label htmlFor="event-name">
+            <Trans>Hook Event *</Trans>
+          </Label>
           <Select value={eventName} onValueChange={onEventNameChange}>
             <SelectTrigger id="event-name">
               <SelectValue />
@@ -116,7 +122,9 @@ export function HookEditor({
               ))}
             </SelectContent>
           </Select>
-          <p className="text-xs text-muted-foreground"><Trans>Select when this hook should run</Trans></p>
+          <p className="text-xs text-muted-foreground">
+            <Trans>Select when this hook should run</Trans>
+          </p>
         </div>
 
         <Separator />
@@ -124,7 +132,9 @@ export function HookEditor({
         {/* Matcher (conditional) */}
         {supportsMatchers && (
           <div className="space-y-2">
-            <Label htmlFor="matcher"><Trans>Matcher Pattern (optional)</Trans></Label>
+            <Label htmlFor="matcher">
+              <Trans>Matcher Pattern (optional)</Trans>
+            </Label>
             <Input
               id="matcher"
               value={matcher}
@@ -141,14 +151,20 @@ export function HookEditor({
 
         {/* Hook Type */}
         <div className="space-y-2">
-          <Label htmlFor="hook-type"><Trans>Hook Type *</Trans></Label>
+          <Label htmlFor="hook-type">
+            <Trans>Hook Type *</Trans>
+          </Label>
           <Select value={hookType} onValueChange={(v) => onHookTypeChange(v as 'command' | 'prompt')}>
             <SelectTrigger id="hook-type">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="command"><Trans>🔧 Command - Execute bash script</Trans></SelectItem>
-              <SelectItem value="prompt"><Trans>🤖 Prompt - Query AI (Claude Haiku)</Trans></SelectItem>
+              <SelectItem value="command">
+                <Trans>🔧 Command - Execute bash script</Trans>
+              </SelectItem>
+              <SelectItem value="prompt">
+                <Trans>🤖 Prompt - Query AI (Claude Haiku)</Trans>
+              </SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -156,7 +172,9 @@ export function HookEditor({
         {/* Command/Prompt Content */}
         {hookType === 'command' ? (
           <div className="space-y-2">
-            <Label htmlFor="command"><Trans>Bash Command *</Trans></Label>
+            <Label htmlFor="command">
+              <Trans>Bash Command *</Trans>
+            </Label>
             <Textarea
               id="command"
               value={command}
@@ -171,12 +189,14 @@ export function HookEditor({
           </div>
         ) : (
           <div className="space-y-2">
-            <Label htmlFor="prompt"><Trans>AI Prompt *</Trans></Label>
+            <Label htmlFor="prompt">
+              <Trans>AI Prompt *</Trans>
+            </Label>
             <Textarea
               id="prompt"
               value={prompt}
               onChange={(e) => onPromptChange(e.target.value)}
-              placeholder={t`Should I allow this tool? Respond with JSON: '{permissionDecision: allow or deny}'`}
+              placeholder={t`Should I allow this tool? Respond with JSON: ${'{permissionDecision: allow or deny}'}`}
               className="min-h-[120px] font-mono text-sm"
               rows={6}
             />
@@ -188,7 +208,9 @@ export function HookEditor({
 
         {/* Timeout */}
         <div className="space-y-2">
-          <Label htmlFor="timeout"><Trans>Timeout (seconds)</Trans></Label>
+          <Label htmlFor="timeout">
+            <Trans>Timeout (seconds)</Trans>
+          </Label>
           <Input
             id="timeout"
             type="number"
@@ -198,7 +220,9 @@ export function HookEditor({
             min="1"
             max="600"
           />
-          <p className="text-xs text-muted-foreground"><Trans>Maximum execution time (default: 60s, max: 600s)</Trans></p>
+          <p className="text-xs text-muted-foreground">
+            <Trans>Maximum execution time (default: 60s, max: 600s)</Trans>
+          </p>
         </div>
       </CardContent>
     </Card>

@@ -16,13 +16,7 @@ import { useAddContextFolder } from '@src/hooks/use-add-context-folder';
 import { useProjectContextFolders } from '@src/hooks/use-project-context-folders';
 import { useSystemTools } from '@src/hooks/use-system-tools';
 import { useIsDev } from '@src/contexts/view-mode-context';
-import {
-  assetScopeBucket,
-  defaultScopeFilter,
-  projectScope,
-  scopeFilterKey,
-  unionAssetBucket,
-} from '@src/lib/scope-filter';
+import { assetScopeBucket, defaultScopeFilter, projectScope, unionAssetBucket } from '@src/lib/scope-filter';
 import type { AssetScopeBucket, ScopeFilter } from '@src/lib/scope-filter';
 import { refreshNode } from '@src/components/browseable-tree/refresh-store';
 import { showDeleteAssetModal } from '@src/components/assets/delete-asset-modal';
@@ -519,7 +513,7 @@ export function useAssetsModel() {
         // immediately. The useAssetTreeRefresh subscription also covers it
         // (and remote/async creates), but the explicit poke avoids waiting on
         // the data_op echo — mirroring the delete path.
-        refreshNode(`asset-type:${newTypeTarget}:${scopeFilterKey(effectiveFilter.scope)}`);
+        refreshNode(`asset-type:${newTypeTarget}`);
         if (res.pointer) {
           navigateAsset(res.pointer);
           setNewTypeTarget(null);
