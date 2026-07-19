@@ -720,16 +720,6 @@ export const SystemProfileUtils = {
 // ═══════════════════════════════════════════════════════════════
 
 /**
- * Fetch full system profile from a flow's compute node.
- */
-export async function fetchSystemProfile(processId: string): Promise<SystemProfile> {
-  const actionInfo = new ActionInfo('get-system-profile', 'flow', processId, 'GET');
-  const response = await fetch(actionInfo.fullActionUrl, { credentials: 'include' });
-  const result = await response.json();
-  return result.data || SystemProfileUtils.createEmpty();
-}
-
-/**
  * Fetch full system profile directly from a compute node (no flow required).
  */
 export async function fetchSystemProfileFromComputeNode(computeNodeId: string): Promise<SystemProfile> {
@@ -739,41 +729,9 @@ export async function fetchSystemProfileFromComputeNode(computeNodeId: string): 
   return result.data || SystemProfileUtils.createEmpty();
 }
 
-/**
- * Refresh a single item by type and id (targeted scan).
- */
-export async function refreshSystemProfileItem(
-  processId: string,
-  itemType: ItemType | string,
-  resourceId: string,
-): Promise<SystemProfileItem | null> {
-  const actionInfo = new ActionInfo('refresh-system-profile-item', 'flow', processId, 'GET');
-  const url = `${actionInfo.fullActionUrl}?type=${itemType}&id=${encodeURIComponent(resourceId)}`;
-  const response = await fetch(url, { credentials: 'include' });
-  const result = await response.json();
-  return result.data || null;
-}
-
-/**
- * Open a file or directory in the system's default application.
- * This is useful for opening files like settings.json, CLAUDE.md, or commands
- * in the user's preferred editor directly from the FlowPad UI.
- */
-export async function openExternal(processId: string, path: string): Promise<{ opened: string } | null> {
-  const actionInfo = new ActionInfo('open-external', 'flow', processId, 'POST');
-  const response = await fetch(actionInfo.fullActionUrl, {
-    method: 'POST',
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ path }),
-  });
-  const result = await response.json();
-  return result.data || null;
-}
 
 /**
  * Open a file or directory in the system's default application via compute node.
- * Preferred over openExternal when you have a compute node ID.
  *
  * Pass `{select: true}` to reveal a file in the OS file manager (Finder/Explorer)
  * with the file selected, instead of opening it in its default app. Folders ignore
@@ -815,22 +773,6 @@ export async function openTerminalFromComputeNode(
   });
   const result = await response.json();
   return result.data || null;
-}
-
-/**
- * Open a system profile item in the system's default application.
- * Uses the item's path or source_file field.
- */
-export async function openResourceExternal(
-  processId: string,
-  item: SystemProfileItem,
-): Promise<{ opened: string } | null> {
-  const pathToOpen = item.path || item.source_file;
-  if (!pathToOpen) {
-    console.warn('[openResourceExternal] Item has no path or source_file:', item.id);
-    return null;
-  }
-  return openExternal(processId, pathToOpen);
 }
 
 // ═══════════════════════════════════════════════════════════════

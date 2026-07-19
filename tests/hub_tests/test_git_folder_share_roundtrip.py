@@ -124,7 +124,7 @@ async def test_git_folder_share_round_trips_through_live_hub(
     from flow_sdk.builtin.message_attachment import MessageAttachment
     from flow_sdk.responses.response import ApiSuccessResponse
 
-    entry_key = f"{EntityType.FOLDER.value}-@{folder.id}"
+    entry_key = f"{EntityType.FOLDER.value}-{folder.id}"
     ma_id = MessageAttachment.allocate_deterministic_id(fm.id, entry_key)
     ma = await MessageAttachment.get_one({"id": ma_id})
     assert ma is not None, "download did not stage the folder"

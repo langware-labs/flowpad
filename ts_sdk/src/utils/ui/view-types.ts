@@ -9,6 +9,28 @@ export enum Layout {
 }
 
 /**
+ * PageId — which SPA-surface ("page") a dock URL addresses. Sits between the
+ * layout keyword and the viewType: `/<layout>/<page>/<viewType>/<pointer>`.
+ * `desk` is today's desktop app and the default; it is NEVER emitted into a URL
+ * (bare `/dock/<viewType>` == page `desk`), so existing URLs are unchanged.
+ *
+ * INVARIANT: no `ViewType` value may ever equal a `PageId` value. Parsing detects
+ * the page positionally ("is the post-layout segment a known page id?"), so a
+ * collision would silently reinterpret a viewType segment as a page. (`desktop`
+ * is a ViewType but `desk` ≠ `desktop`; there is intentionally no `hub` viewType.)
+ */
+export enum PageId {
+  DESK = 'desk',
+  HUB = 'hub',
+}
+
+/** Type-guard: is `value` a known page id? Data-driven like `isValidView` /
+ *  `isValidViewSlot`, so it tracks the enum automatically as pages are added. */
+export function isValidPage(value: string | undefined | null): value is PageId {
+  return value != null && Object.values(PageId).includes(value as PageId);
+}
+
+/**
  * Dev layout keyword - appears in URL as /dev/...
  * Not flexible by design for security, validation, and clarity
  */

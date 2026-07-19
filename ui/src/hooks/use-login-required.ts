@@ -1,5 +1,4 @@
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
-import { ICompletionOptions } from '@sdk';
 import { useCloudAuthed } from '@src/hooks/use-cloud-authed';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router';
@@ -18,7 +17,7 @@ interface UseLoginRequiredReturn {
   checkLoginAndProceed: (
     action: ActionType,
     message?: string,
-    options?: ICompletionOptions,
+    options?: Record<string, unknown>,
     guardOptions?: LoginGuardOptions,
   ) => boolean;
   pendingAction: PendingLoginAction | null;
@@ -63,7 +62,7 @@ export const useLoginRequired = (): UseLoginRequiredReturn => {
     (
       action: ActionType,
       message?: string,
-      options?: ICompletionOptions,
+      options?: Record<string, unknown>,
       guardOptions?: LoginGuardOptions,
     ): boolean => {
       const shouldRequireLogin = guardOptions?.forceLogin || requiresLogin;
@@ -73,7 +72,7 @@ export const useLoginRequired = (): UseLoginRequiredReturn => {
       }
 
       // Store pending action for after login
-      storePendingAction(action, message, options as Record<string, unknown>);
+      storePendingAction(action, message, options);
       setShowLoginDialog(true);
       return false;
     },

@@ -1977,10 +1977,8 @@ class AgenticProcess(Entity):
 
     def _record_dir(self) -> "Path":
         """This process's record folder (deterministic from type+id)."""
-        from flow_sdk.fs_store.fs_record import record_stem
-        from flow_sdk.fs_store.record_paths import get_default_records_root
-
-        return get_default_records_root() / "agentic_process" / record_stem("agentic_process", self.id)
+        from flow_sdk.fs_store.record_paths import shadow_dir_for
+        return shadow_dir_for("agentic_process", self.id)
 
     @property
     def queue(self) -> "PromptQueue":

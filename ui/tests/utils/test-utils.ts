@@ -123,8 +123,6 @@ export function noop(...args: any[]) {
   return args;
 }
 
-// Re-export stub utilities for convenience
-export { getStubLabels, waitForLabels } from './stub_utils';
 
 /** GET one graph row (unwrapped) by entity ``type`` + id. */
 export async function fetchRow(type: string, id: string): Promise<any> {

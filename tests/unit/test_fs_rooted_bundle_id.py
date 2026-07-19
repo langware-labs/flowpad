@@ -144,7 +144,7 @@ def test_extended_length_path_prefixes_and_is_idempotent(tmp_path):
 @pytest.mark.skipif(os.name != "nt", reason="MAX_PATH (260) is a Windows-only extraction limit")
 def test_deep_bundle_member_extracts_only_with_extended_length_root(tmp_path):
     deep_arc = (
-        "attachment/skill-@359c3e7b-eac8-40fe-863b-74379f527fa2/.claude/skills/"
+        "attachment/skill-359c3e7b-eac8-40fe-863b-74379f527fa2/.claude/skills/"
         "soc2-evidence-renewal/.venv/lib/python3.14/site-packages/pip/_internal/"
         "operations/build/__pycache__/build_tracker.cpython-314.pyc"
     )
@@ -243,7 +243,7 @@ async def test_pack_folder_asset_copytree_and_pins_id_into_main_file(tmp_path, m
 
     base = (
         attachment_dir
-        / f"{EntityType.WHITEBOARD.value}-@{ENTITY_ID}"
+        / f"{EntityType.WHITEBOARD.value}-{ENTITY_ID}"
         / ".claude" / "whiteboards" / "my-board"
     )
     # Real source preserved.
@@ -278,7 +278,7 @@ async def test_pack_single_file_copies_md_pins_id_and_js_left_unmodified(tmp_pat
     await _pack_file_backed_attachment(EntityType.AGENT.value, ENTITY_ID, att_md)
     md_dest = (
         att_md
-        / f"{EntityType.AGENT.value}-@{ENTITY_ID}"
+        / f"{EntityType.AGENT.value}-{ENTITY_ID}"
         / ".claude" / "agents" / "deploy.md"
     )
     assert md_dest.exists()
@@ -298,7 +298,7 @@ async def test_pack_single_file_copies_md_pins_id_and_js_left_unmodified(tmp_pat
     await _pack_file_backed_attachment(EntityType.DYNAMIC_WORKFLOW.value, ENTITY_ID, att_js)
     js_dest = (
         att_js
-        / f"{EntityType.DYNAMIC_WORKFLOW.value}-@{ENTITY_ID}"
+        / f"{EntityType.DYNAMIC_WORKFLOW.value}-{ENTITY_ID}"
         / ".claude" / "workflows" / "flow.js"
     )
     assert js_dest.exists()

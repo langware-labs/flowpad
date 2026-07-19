@@ -45,6 +45,21 @@ export async function openInstancePage(browser: Browser, name: string): Promise<
   });
   page.on('pageerror', (err) => consoleErrors.push(`pageerror: ${err.message}`));
   await page.goto(feUrl, { waitUntil: 'domcontentloaded' });
+  // `domcontentloaded` fires BEFORE React mounts and `useDockNavigation` runs its
+  // `defineGlobal('navigation', …)`. Until then `window.navigation` is the native
+  // (method-less) Navigation object, so a test calling `window.navigation.*`
+  // right away races the app boot. Wait for the app's navigation to be installed
+  // (mounts in ~0.5s) before handing the page back — a readiness gate, not a
+  // timeout mask.
+  await page
+    .waitForFunction(
+      () => typeof (window as unknown as { navigation?: { openShellProcess?: unknown } }).navigation?.openShellProcess === 'function',
+      undefined,
+      { timeout: 30_000 },
+    )
+    .catch(() => {
+      /* leave the race visible to the caller's own assertions if the app never mounts */
+    });
   return { name, feUrl, apiUrl, page, consoleErrors };
 }
 

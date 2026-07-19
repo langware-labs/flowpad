@@ -10,8 +10,6 @@ import {
 } from '@sdk';
 import { useContext, useProject } from '@sdk/react/hooks';
 import { Button } from '@src/components/ui/button';
-import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { useProcessExecution } from '@src/hooks/flow-hooks';
 import { useFS } from '@src/hooks/useFS';
 import Editor, { Monaco } from '@monaco-editor/react';
 import { shikiToMonaco } from '@shikijs/monaco';
@@ -77,7 +75,7 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
   onDirtyChange,
 }) => {
   const { t } = useLingui();
-  const { flow } = useContext();
+  const { agenticProcess } = useContext();
   const { project } = useProject();
   // const { navigation } = useDockNavigation();
 
@@ -128,7 +126,6 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
   const cached = effectiveFilePath && effectiveTypeId ? fs?.content(effectiveFilePath) : null;
   const fileContent = (cached?.content as string) || '';
   const isDirty = cached?.isDirty || false;
-  const { isRunning: isFlowRunning } = useProcessExecution(flow);
 
   // Auto-download file content if not in cache
   useEffect(() => {
@@ -231,7 +228,7 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
 
   const executeScript = useCallback(
     (language: string, filePath: string) => {
-      if (!flow) return;
+      if (!agenticProcess) return;
 
       setIsExecuting(true);
 
@@ -249,7 +246,7 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
         setIsExecuting(false);
       }
     },
-    [flow, onExecuteScript, onShellCmd],
+    [agenticProcess, onExecuteScript, onShellCmd],
   );
 
   const handleEditorDidMount = (editor: editor.IStandaloneCodeEditor, monaco: Monaco) => {
@@ -324,7 +321,7 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
   };
 
   const handleRefreshFile = useCallback(async () => {
-    if (!flow || !file || !fs || !effectiveFilePath) return;
+    if (!agenticProcess || !file || !fs || !effectiveFilePath) return;
 
     setIsRefreshing(true);
     try {
@@ -338,7 +335,7 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
     } finally {
       setIsRefreshing(false);
     }
-  }, [file, flow, fs, effectiveFilePath]);
+  }, [file, agenticProcess, fs, effectiveFilePath]);
 
   // Navigate to execute-flow page with current file
   // const handleExecuteFlow = useCallback(() => {
@@ -521,7 +518,7 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
       </div>
 
       <div className="h-full" style={{ position: 'relative' }}>
-        {isCustomView && !isFlowRunning ? (
+        {isCustomView ? (
           CUSTOM_VIEW[file.language as keyof typeof CUSTOM_VIEW] === 'markdown' ? (
             <div className="h-full w-full overflow-auto">
               <MilkdownEditor

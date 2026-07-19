@@ -293,10 +293,9 @@ class Trigger(Entity):
         Matches the fs-record convention at `flow_sdk/fs_store/record.py:105`.
         """
         # Import lazily so the function works in tests that monkeypatch the root.
-        from flow_sdk.fs_store.record_paths import get_default_records_data_root, record_stem
+        from flow_sdk.fs_store.record_paths import data_dir_for
 
-        root = get_default_records_data_root()
-        path = root / "trigger" / record_stem("trigger", self.id or "unsaved")
+        path = data_dir_for("trigger", self.id or "unsaved")
         path.mkdir(parents=True, exist_ok=True)
         return path
 

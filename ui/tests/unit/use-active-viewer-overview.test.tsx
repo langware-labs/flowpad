@@ -13,12 +13,6 @@ import { ViewType } from '@sdk';
 vi.mock('@src/navigation/useDockNavigation', () => ({
   useDockNavigation: vi.fn(),
 }));
-vi.mock('@src/hooks/flow-hooks/useProcessStream', () => ({
-  useProcessStream: () => ({ data: [] }),
-}));
-vi.mock('@src/hooks/flow-hooks/useProcessExecution', () => ({
-  useProcessExecution: () => ({ isRunning: false }),
-}));
 
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useActiveViewer } from '@src/hooks/flow-hooks/useActiveViewer';
@@ -46,20 +40,20 @@ describe('useActiveViewer — dock-less URL handling', () => {
     // panel). The unified-tabs viewer retirement (Part 3 U1) keeps the last
     // overview tab; the overview panel resolves from what's already there.
     mockDock(null);
-    renderHook(() => useActiveViewer(null));
+    renderHook(() => useActiveViewer());
     expect(useViewerStore.getState().currentOverviewTab).toBe(ViewType.SHELL);
   });
 
   it('still clears the viewing context on a dock-less URL', () => {
     useViewerStore.setState({ currentContext: { viewerType: ViewType.EDITOR } as never });
     mockDock(null);
-    renderHook(() => useActiveViewer(null));
+    renderHook(() => useActiveViewer());
     expect(useViewerStore.getState().currentContext).toBeNull();
   });
 
   it('syncs the dock pointer into currentContext on a dock URL', () => {
     mockDock({ viewType: ViewType.EDITOR, pointer: '/repo/file.ts' });
-    renderHook(() => useActiveViewer(null));
+    renderHook(() => useActiveViewer());
     const ctx = useViewerStore.getState().currentContext;
     expect(ctx?.viewerType).toBe(ViewType.EDITOR);
     expect(ctx?.codeRef?.path).toBe('/repo/file.ts');

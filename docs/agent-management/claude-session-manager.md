@@ -1,3 +1,7 @@
+---
+id: 3c4a9ffd-1283-4b4a-9f95-a25f93cbb7be
+---
+
 # Claude Process Lifecycle, CLI Options & Restart Contract
 
 > **Naming note.** This file keeps its historical path (`claude-session-manager.md`)

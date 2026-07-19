@@ -19,7 +19,6 @@ from flow_sdk.fs_store.indexer.functions.agent import agent_gen_id
 from flow_sdk.fs_store.indexer.functions.dataset import _dataset_id_from_path, dataset_gen_id
 from flow_sdk.fs_store.indexer.functions.task import task_gen_id
 from flow_sdk.fs_store.indexer.functions.whiteboard import _whiteboard_id_from_name, whiteboard_gen_id
-from flow_sdk.fs_store.indexer.functions.workflow import workflow_gen_id
 
 V4 = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
 V7 = "018f0000-0000-7000-8000-000000000000"
@@ -42,13 +41,6 @@ def _agent(d: Path, fm_id: str | None):
     p = d / "a.md"
     idline = f"id: {fm_id}\n" if fm_id else ""
     p.write_text(f"---\n{idline}name: My Agent\n---\n\nprompt", encoding="utf-8")
-    return FSRef(p)
-
-
-def _workflow(d: Path, fm_id: str | None):
-    p = d / "wf.md"
-    idline = f"id: {fm_id}\n" if fm_id else ""
-    p.write_text(f"---\n{idline}type: workflow\n---\n\nx", encoding="utf-8")
     return FSRef(p)
 
 
@@ -85,8 +77,6 @@ def _dataset(d: Path, cap_id: str | None):
 SPECS = {
     "agent": (_agent, agent_gen_id, lambda r: _frontmatter_id(r._path),
               lambda r: str(uuid.uuid5(uuid.NAMESPACE_DNS, "agent:My Agent"))),
-    "workflow": (_workflow, workflow_gen_id, lambda r: _frontmatter_id(r._path),
-                 lambda r: str(uuid.uuid5(uuid.NAMESPACE_URL, str(r._path.resolve())))),
     "whiteboard": (_whiteboard, whiteboard_gen_id, lambda r: read_folder_capsule_id(r._path),
                    lambda r: _whiteboard_id_from_name("Board")),
     "task": (_task, task_gen_id, lambda r: read_folder_capsule_id(r._path),
