@@ -9,6 +9,7 @@ import {
   Shell,
   toplog,
   TypeId,
+  VFSPath,
   ViewType,
 } from '@sdk';
 import { NavigateFunction } from 'react-router';
@@ -407,6 +408,26 @@ export class NavigationActions {
    */
   openFile(path: string, options?: FileOptions): void {
     this.openDock(dockPointerForFile(path, options));
+  }
+
+  /**
+   * Open a FOLDER in the Assets fs browser — the folder counterpart of
+   * `openFile`. `openFile` would render a directory path as an empty file, so
+   * any surface that has a directory (file browsers, task artifacts) routes it
+   * here. Converts the absolute machine path to the compute-node-relative form
+   * the `fs/` pointer expects (handles POSIX `/…` and Windows `C:\…`).
+   */
+  openFolder(machinePath: string): void {
+    let rel = machinePath;
+    const cn = dataContext.computeNodeTypeId;
+    if (cn) {
+      try {
+        rel = VFSPath.fromMachinePath(machinePath, cn).entitySubPath;
+      } catch {
+        // Not an absolute machine path — forAssetFsFolder normalizes it as-is.
+      }
+    }
+    this.openDock(DockPointer.forAssetFsFolder(rel));
   }
 
   /** Navigate to the default shell view (no specific session) */
