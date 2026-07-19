@@ -3,15 +3,12 @@ import { gitOriginCloneUrl, type GitOrigin } from '@sdk/models/GitOrigin';
 import { useEntity } from '@sdk/react/hooks';
 import { useMemo } from 'react';
 import { Trans } from '@lingui/react/macro';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@src/components/ui/dialog';
-import { Cloud, File, GitBranch, Package } from 'lucide-react';
-import { iconForEntity } from '../EntityChip';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
+import { Cloud, ExternalLink, File, GitBranch, Package } from 'lucide-react';
+import { Button } from '@src/components/ui/button';
+import { DockPointer } from '@src/navigation/DockPointer';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { buildDockPointer, iconForEntity } from '../EntityChip';
 import { AssetInstallActions } from './AssetInstallActions';
 import { StagedAssetViewer } from './StagedAssetViewer';
 
@@ -59,14 +56,29 @@ export function AssetReviewDialog({
   );
   const { data: liveAttachment } = useEntity<MessageAttachment>(maTypeId);
   const ma = liveAttachment ?? attachment;
+  const { navigation } = useDockNavigation();
+  // Advanced-mode affordance: once the asset is installed its entity exists, so
+  // the review modal offers a jump to its real view (e.g. the task view) next
+  // to Uninstall. Staged/not-yet-installed → nothing to open, so it's hidden.
+  const installed = ma.effectiveScope != null;
+  const openEntity = () => {
+    if (!targetTypeId.id) return;
+    const pointer = buildDockPointer({ type: targetTypeId.type, id: targetTypeId.id }, undefined);
+    if (pointer) navigation.openDock(DockPointer.rebaseAssetsOntoProject(pointer, attachmentProjectId));
+    onClose();
+  };
   // Raw files have no backend TypeInfo icon — use the generic File glyph
   // (sanctioned call-site special-case, mirroring FlowMessageBubble's chip).
   const Icon = targetTypeId.type === 'file' ? File : iconForEntity(targetTypeId.type);
-  const typeWord =
-    targetTypeId.type.charAt(0).toUpperCase() + targetTypeId.type.slice(1).replace(/_/g, ' ');
+  const typeWord = targetTypeId.type.charAt(0).toUpperCase() + targetTypeId.type.slice(1).replace(/_/g, ' ');
 
   return (
-    <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
+    <Dialog
+      open={open}
+      onOpenChange={(o) => {
+        if (!o) onClose();
+      }}
+    >
       <DialogContent className="sm:max-w-2xl" data-testid="asset-review-dialog">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
@@ -85,10 +97,15 @@ export function AssetReviewDialog({
           )}
           <SourceRow ma={ma} />
         </DialogHeader>
-        <AssetInstallActions
-          attachment={ma}
-          conversationProjectId={attachmentProjectId}
-        />
+        <div className="flex flex-wrap items-center gap-2">
+          <AssetInstallActions attachment={ma} conversationProjectId={attachmentProjectId} />
+          {installed && (
+            <Button size="sm" variant="secondary" onClick={openEntity} data-testid="asset-open-entity">
+              <ExternalLink className="h-3.5 w-3.5" />
+              <Trans>Open</Trans>
+            </Button>
+          )}
+        </div>
         <div className="border-t border-border pt-3">
           <StagedAssetViewer attachment={ma} />
         </div>
@@ -101,10 +118,7 @@ export function AssetReviewDialog({
 function SourceRow({ ma }: { ma: MessageAttachment }) {
   const { label, Icon, detail } = sourceOf(ma);
   return (
-    <div
-      className="flex items-center gap-1.5 text-[11px] text-muted-foreground"
-      data-testid="asset-review-source"
-    >
+    <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground" data-testid="asset-review-source">
       <Icon className="h-3 w-3 shrink-0" />
       <span>
         <Trans>Source:</Trans> {label}

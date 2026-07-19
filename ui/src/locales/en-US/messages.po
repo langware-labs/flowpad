@@ -858,8 +858,8 @@ msgid "Adding…"
 msgstr "Adding…"
 
 #: src/components/tools/ToolsPanel.tsx
-msgid "Additional Tools"
-msgstr "Additional Tools"
+#~ msgid "Additional Tools"
+#~ msgstr "Additional Tools"
 
 #: src/components/contact-picker/AddressBookButton.tsx
 msgid "Address book"
@@ -1017,8 +1017,8 @@ msgid "Allow {who} to run prompt on this computer"
 msgstr "Allow {who} to run prompt on this computer"
 
 #: src/components/tools/ToolsPanel.tsx
-msgid "Allow AI to search the web"
-msgstr "Allow AI to search the web"
+#~ msgid "Allow AI to search the web"
+#~ msgstr "Allow AI to search the web"
 
 #: src/components/terminal/interactive-terminal/process-cli-presentation.ts
 msgid "Allow all tools without confirmation (--allow-all)"
@@ -1071,8 +1071,8 @@ msgstr "An error occurred"
 
 #: src/components/chat-input.tsx
 #: src/components/chat-input.tsx
-msgid "An error occurred while checking the repository. Please try again."
-msgstr "An error occurred while checking the repository. Please try again."
+#~ msgid "An error occurred while checking the repository. Please try again."
+#~ msgstr "An error occurred while checking the repository. Please try again."
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "An orphan is a DB row (or shadow record dir) whose source file is gone from disk. The sweep dialog lets you remove just the DB row (IGNORE, keeps a forensic shadow dir) or both row + shadow (DELETE)."
@@ -1316,27 +1316,25 @@ msgstr "Artifacts created during flow execution will appear here"
 #~ msgid "Artifacts:"
 #~ msgstr "Artifacts:"
 
-#. placeholder {0}: siteConfig.branding.company_name
 #: src/components/chat-input.tsx
-msgid "Ask {0} to solve..."
-msgstr "Ask {0} to solve..."
-
-#. placeholder {0}: siteConfig.branding.company_name
-#: src/components/chat-input.tsx
-msgid "Ask {0}..."
-msgstr "Ask {0}..."
+#~ msgid "Ask {0} to solve..."
+#~ msgstr "Ask {0} to solve..."
 
 #: src/components/chat-input.tsx
-msgid "Ask a follow up..."
-msgstr "Ask a follow up..."
+#~ msgid "Ask {0}..."
+#~ msgstr "Ask {0}..."
+
+#: src/components/chat-input.tsx
+#~ msgid "Ask a follow up..."
+#~ msgstr "Ask a follow up..."
 
 #: src/components/lens-viewer/shared/transcript-features/AnalysisControls.tsx
 msgid "Ask about this analysis…"
 msgstr "Ask about this analysis…"
 
 #: src/components/chat-input.tsx
-msgid "Ask Flowpad to solve..."
-msgstr "Ask Flowpad to solve..."
+#~ msgid "Ask Flowpad to solve..."
+#~ msgstr "Ask Flowpad to solve..."
 
 #: src/components/floating-chat/FloatingChatWindow.tsx
 msgid "Ask the Flowpad Assistant anything."
@@ -1421,7 +1419,6 @@ msgstr "Attach an asset (skill, agent, doc, spec)"
 msgid "Attach asset"
 msgstr "Attach asset"
 
-#: src/components/chat-input.tsx
 #: src/components/conversation/MessageComposer.tsx
 msgid "Attach files"
 msgstr "Attach files"
@@ -1973,8 +1970,8 @@ msgid "checking…"
 msgstr "checking…"
 
 #: src/components/chat-input.tsx
-msgid "Checking..."
-msgstr "Checking..."
+#~ msgid "Checking..."
+#~ msgstr "Checking..."
 
 #: src/components/code-editor/DiffViewer.tsx
 msgid "Checkpoint:"
@@ -2383,8 +2380,8 @@ msgstr "Code expired. Close and click Connect again to get a fresh code."
 #~ msgstr "code from browser"
 
 #: src/components/chat-input.tsx
-msgid "Codebase"
-msgstr "Codebase"
+#~ msgid "Codebase"
+#~ msgstr "Codebase"
 
 #: src/components/quick-create/QuickCreatePanel.tsx
 msgid "Codex"
@@ -2566,8 +2563,8 @@ msgid "Configure Claude Code hooks to automate workflows with custom scripts and
 msgstr "Configure Claude Code hooks to automate workflows with custom scripts and AI-powered decisions"
 
 #: src/components/chat-input.tsx
-msgid "Configure execution mode, AI skill, and additional capabilities"
-msgstr "Configure execution mode, AI skill, and additional capabilities"
+#~ msgid "Configure execution mode, AI skill, and additional capabilities"
+#~ msgstr "Configure execution mode, AI skill, and additional capabilities"
 
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 msgid "Configure your account, app preferences, and notifications"
@@ -2579,7 +2576,6 @@ msgstr "Configure your account, app preferences, and notifications"
 msgid "Confirm"
 msgstr "Confirm"
 
-#: src/components/chat-input.tsx
 #: src/components/connections-manager.tsx
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 msgid "Connect"
@@ -2620,17 +2616,14 @@ msgstr "Connected to {hostName}'s machine."
 msgid "Connected to GitHub"
 msgstr "Connected to GitHub"
 
-#. placeholder {0}: codebaseConnection.name
 #: src/components/chat-input.tsx
-msgid "Connected: {0}"
-msgstr "Connected: {0}"
-
-#. placeholder {0}: codebaseConnection.name
-#: src/components/chat-input.tsx
-msgid "Connecting: {0}..."
-msgstr "Connecting: {0}..."
+#~ msgid "Connected: {0}"
+#~ msgstr "Connected: {0}"
 
 #: src/components/chat-input.tsx
+#~ msgid "Connecting: {0}..."
+#~ msgstr "Connecting: {0}..."
+
 #: src/components/connections-manager.tsx
 msgid "Connecting..."
 msgstr "Connecting..."
@@ -3642,7 +3635,6 @@ msgid "Dev mode"
 msgstr "Dev mode"
 
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
-#: src/pages/landing-page/header/header.tsx
 msgid "Dev mode ON — click to disable"
 msgstr "Dev mode ON — click to disable"
 
@@ -3872,7 +3864,6 @@ msgstr "done"
 #: src/components/contact-picker/AddressBookButton.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
-#: src/components/tools/ToolsPanel.tsx
 #: src/components/wizard/WizardHost.tsx
 msgid "Done"
 msgstr "Done"
@@ -4230,8 +4221,8 @@ msgstr "Enter folder name"
 #~ msgstr "Enter folder path"
 
 #: src/components/chat-input.tsx
-msgid "Enter Git URL"
-msgstr "Enter Git URL"
+#~ msgid "Enter Git URL"
+#~ msgstr "Enter Git URL"
 
 #: src/components/hooks-manager/HookForm.tsx
 msgid "Enter hook description"
@@ -4334,8 +4325,8 @@ msgstr "Error"
 
 #: src/components/chat-input.tsx
 #: src/components/chat-input.tsx
-msgid "Error Checking Repository"
-msgstr "Error Checking Repository"
+#~ msgid "Error Checking Repository"
+#~ msgstr "Error Checking Repository"
 
 #: src/components/app-host/AppHost.tsx
 msgid "Error Loading App"
@@ -4458,8 +4449,8 @@ msgstr "Executed"
 #~ msgstr "Execution Log"
 
 #: src/components/tools/ToolsPanel.tsx
-msgid "Execution Mode"
-msgstr "Execution Mode"
+#~ msgid "Execution Mode"
+#~ msgstr "Execution Mode"
 
 #: src/components/assets/AddGitFolderDialog.tsx
 msgid "Existing repo"
@@ -4590,8 +4581,8 @@ msgid "Failed to clone repository"
 msgstr "Failed to clone repository"
 
 #: src/components/chat-input.tsx
-msgid "Failed to clone the git repository. Please check the URL and try again."
-msgstr "Failed to clone the git repository. Please check the URL and try again."
+#~ msgid "Failed to clone the git repository. Please check the URL and try again."
+#~ msgstr "Failed to clone the git repository. Please check the URL and try again."
 
 #: src/components/account/database-section.tsx
 msgid "Failed to copy path to clipboard"
@@ -4922,8 +4913,8 @@ msgid "Failed to update trigger"
 msgstr "Failed to update trigger"
 
 #: src/components/chat-input.tsx
-msgid "Failed to upload the zip file. Please try again."
-msgstr "Failed to upload the zip file. Please try again."
+#~ msgid "Failed to upload the zip file. Please try again."
+#~ msgstr "Failed to upload the zip file. Please try again."
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 #: src/pages/flow-page/vibe-model-select.tsx
@@ -5005,7 +4996,6 @@ msgstr "File Size"
 #~ msgstr "File Write"
 
 #: src/components/assets/MarkdownIndexPanel.tsx
-#: src/components/chat-input.tsx
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 msgid "Files"
@@ -5134,8 +5124,8 @@ msgid "Fixing these tightens the skill for every future run."
 msgstr "Fixing these tightens the skill for every future run."
 
 #: src/components/project-list/ProjectList.tsx
-msgid "flow"
-msgstr "flow"
+#~ msgid "flow"
+#~ msgstr "flow"
 
 #: src/components/history-dropdown.tsx
 #: src/components/history-dropdown.tsx
@@ -5221,16 +5211,16 @@ msgid "Flowpad.ai Logo"
 msgstr "Flowpad.ai Logo"
 
 #: src/components/project-list/ProjectList.tsx
-msgid "flows"
-msgstr "flows"
+#~ msgid "flows"
+#~ msgstr "flows"
 
 #: src/components/execute-flow-view/execute-flow-view.tsx
 #~ msgid "Flows"
 #~ msgstr "Flows"
 
 #: src/components/project-list/ProjectList.tsx
-msgid "Flows:"
-msgstr "Flows:"
+#~ msgid "Flows:"
+#~ msgstr "Flows:"
 
 #: src/components/graph-view/ui/PropertyPanel.tsx
 msgid "Focus local graph"
@@ -5406,16 +5396,16 @@ msgid "git"
 msgstr "git"
 
 #: src/components/chat-input.tsx
-msgid "Git"
-msgstr "Git"
+#~ msgid "Git"
+#~ msgstr "Git"
 
 #: src/components/status-bar/GitStatusModal.tsx
 msgid "Git changes"
 msgstr "Git changes"
 
 #: src/components/chat-input.tsx
-msgid "Git Clone Failed"
-msgstr "Git Clone Failed"
+#~ msgid "Git Clone Failed"
+#~ msgstr "Git Clone Failed"
 
 #: src/components/assets/context-folder-sources.tsx
 msgid "Git folder"
@@ -6904,12 +6894,12 @@ msgid "Login Required"
 msgstr "Login Required"
 
 #: src/components/chat-input.tsx
-msgid "Login to continue asking..."
-msgstr "Login to continue asking..."
+#~ msgid "Login to continue asking..."
+#~ msgstr "Login to continue asking..."
 
 #: src/components/chat-input.tsx
-msgid "Login to Proceed"
-msgstr "Login to Proceed"
+#~ msgid "Login to Proceed"
+#~ msgstr "Login to Proceed"
 
 #. placeholder {0}: login.reason
 #: src/components/account/user-info.tsx
@@ -7259,8 +7249,8 @@ msgid "msgs"
 msgstr "msgs"
 
 #: src/components/chat-input.tsx
-msgid "Multiple ZIP Files Not Allowed"
-msgstr "Multiple ZIP Files Not Allowed"
+#~ msgid "Multiple ZIP Files Not Allowed"
+#~ msgstr "Multiple ZIP Files Not Allowed"
 
 #: src/components/artifacts/artifact-form.tsx
 msgid "My Artifact"
@@ -7739,8 +7729,8 @@ msgid "No data."
 msgstr "No data."
 
 #: src/pages/agent-redirect.tsx
-msgid "No default agent found, missing agent type ID in context."
-msgstr "No default agent found, missing agent type ID in context."
+#~ msgid "No default agent found, missing agent type ID in context."
+#~ msgstr "No default agent found, missing agent type ID in context."
 
 #: src/components/assistance-viewer/TaskDetail.tsx
 msgid "No description provided."
@@ -7831,8 +7821,8 @@ msgstr "No findings found"
 #~ msgstr "No flows connected to this file"
 
 #: src/components/project-list/ProjectList.tsx
-msgid "No flows in this project"
-msgstr "No flows in this project"
+#~ msgid "No flows in this project"
+#~ msgstr "No flows in this project"
 
 #: src/components/triggers-view/TriggersList.tsx
 msgid "No FSOp triggers visible. Toggle <0>Include system</0> above to see system-installed watchers."
@@ -8601,13 +8591,14 @@ msgid "Only on this machine — never shared"
 msgstr "Only on this machine — never shared"
 
 #: src/components/chat-input.tsx
-msgid "Only one ZIP file can be uploaded at a time"
-msgstr "Only one ZIP file can be uploaded at a time"
+#~ msgid "Only one ZIP file can be uploaded at a time"
+#~ msgstr "Only one ZIP file can be uploaded at a time"
 
 #: src/components/task-bar/TaskDetailPanel.tsx
 #~ msgid "open"
 #~ msgstr "open"
 
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
@@ -9018,8 +9009,8 @@ msgid "Open this plan from its session to update it"
 msgstr "Open this plan from its session to update it"
 
 #: src/components/chat-input.tsx
-msgid "Open tools panel"
-msgstr "Open tools panel"
+#~ msgid "Open tools panel"
+#~ msgstr "Open tools panel"
 
 #: src/components/process-runs/ProcessRunsPanel.tsx
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
@@ -9400,8 +9391,8 @@ msgid "Plans"
 msgstr "Plans"
 
 #: src/pages/agent-redirect.tsx
-msgid "Please contact support at<0>support@flowpad.ai</0>"
-msgstr "Please contact support at<0>support@flowpad.ai</0>"
+#~ msgid "Please contact support at<0>support@flowpad.ai</0>"
+#~ msgstr "Please contact support at<0>support@flowpad.ai</0>"
 
 #: src/components/project-setup-screen/project-setup-screen.tsx
 #~ msgid "Please enter a project name"
@@ -9440,8 +9431,8 @@ msgstr "Please select or create a project first."
 #~ msgstr "Please select or enter a folder"
 
 #: src/components/chat-input.tsx
-msgid "Please wait..."
-msgstr "Please wait..."
+#~ msgid "Please wait..."
+#~ msgstr "Please wait..."
 
 #: src/components/hooks-view/HooksBrowser.tsx
 msgid "plugin"
@@ -10375,7 +10366,6 @@ msgstr "Rescanning…"
 
 #: src/components/account/settings-section.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
-#: src/components/tools/ToolsPanel.tsx
 msgid "Reset"
 msgstr "Reset"
 
@@ -10475,7 +10465,6 @@ msgstr "Resume the context process"
 #: src/components/assets/editor/MissingAssetCard.tsx
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/task-receive/IncomingTaskDialog.tsx
-#: src/pages/agent-redirect.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Retry"
 msgstr "Retry"
@@ -11297,8 +11286,8 @@ msgid "Select every project"
 msgstr "Select every project"
 
 #: src/components/tools/ToolsPanel.tsx
-msgid "Select mode"
-msgstr "Select mode"
+#~ msgid "Select mode"
+#~ msgstr "Select mode"
 
 #: src/components/task-bar/TaskBar.tsx
 #~ msgid "Select multiple"
@@ -11969,7 +11958,6 @@ msgid "Some services stopped"
 msgstr "Some services stopped"
 
 #: src/components/task-receive/IncomingTaskDialog.tsx
-#: src/pages/agent-redirect.tsx
 msgid "Something went wrong"
 msgstr "Something went wrong"
 
@@ -12962,8 +12950,6 @@ msgstr "tool result"
 msgid "tools"
 msgstr "tools"
 
-#: src/components/chat-input.tsx
-#: src/components/chat-input.tsx
 #: src/components/lens-viewer/shared/transcript-features/TranscriptStats.tsx
 #: src/components/record-search-bar/RecordSearchBar.tsx
 #: src/components/terminal/interactive-terminal/ChatToolsMenu.tsx
@@ -13310,12 +13296,12 @@ msgid "Upload Message"
 msgstr "Upload Message"
 
 #: src/components/chat-input.tsx
-msgid "Upload ZIP"
-msgstr "Upload ZIP"
+#~ msgid "Upload ZIP"
+#~ msgstr "Upload ZIP"
 
 #: src/components/chat-input.tsx
-msgid "Uploaded files"
-msgstr "Uploaded files"
+#~ msgid "Uploaded files"
+#~ msgstr "Uploaded files"
 
 #: src/components/conversation/AttachmentChip.tsx
 msgid "Uploading…"
@@ -13647,8 +13633,8 @@ msgid "Web app status"
 msgstr "Web app status"
 
 #: src/components/tools/ToolsPanel.tsx
-msgid "Web Search"
-msgstr "Web Search"
+#~ msgid "Web Search"
+#~ msgstr "Web Search"
 
 #: src/components/persistent-iframe.tsx
 msgid "Webapp Not Available"
@@ -13954,20 +13940,20 @@ msgid "Your Projects"
 msgstr "Your Projects"
 
 #: src/components/chat-input.tsx
-msgid "ZIP file upload is only available as a codebase connection"
-msgstr "ZIP file upload is only available as a codebase connection"
+#~ msgid "ZIP file upload is only available as a codebase connection"
+#~ msgstr "ZIP file upload is only available as a codebase connection"
 
 #: src/components/chat-input.tsx
-msgid "ZIP File Upload Not Allowed"
-msgstr "ZIP File Upload Not Allowed"
+#~ msgid "ZIP File Upload Not Allowed"
+#~ msgstr "ZIP File Upload Not Allowed"
 
 #: src/components/drag-drop-overlay.tsx
 msgid "ZIP files will be added as codebase connections"
 msgstr "ZIP files will be added as codebase connections"
 
 #: src/components/chat-input.tsx
-msgid "Zip Upload Failed"
-msgstr "Zip Upload Failed"
+#~ msgid "Zip Upload Failed"
+#~ msgstr "Zip Upload Failed"
 
 #: src/components/graph-context/ContextGraphCanvas.tsx
 #: src/components/graph-context/ContextGraphCanvas.tsx
