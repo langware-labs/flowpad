@@ -305,6 +305,11 @@ class TypeInfo:
     # (the markdown-asset family); a ``.js``/``.py``/… asset overrides it so its
     # backing file matches the indexer's glob. Runtime-only.
     main_ext: str = ".md"
+    # Per-type ADDITIONS to the base sender-local field set
+    # (``entity_model._BASE_LOCAL_FIELDS``). Host-local fields that never travel in
+    # ``Entity.to_common_json()`` / the hub body. Resolved with the base via
+    # ``local_fields_for(type)``. Runtime-only; not part of the schema hash.
+    local_fields: frozenset = field(default_factory=frozenset, compare=False, repr=False)
     # Reception seam (runtime-only; not in the schema hash). ``setup_skill`` is the
     # built-in skill that sets a received attachment of this type up in a Vibe
     # session (``None`` ⇒ just open it; a value equal to ``type_name`` ⇒ run the
@@ -562,6 +567,8 @@ class SchemaRegistry:
                 existing.main_file_is_asset_ref = True
             if info.main_ext != ".md":
                 existing.main_ext = info.main_ext
+            if info.local_fields:
+                existing.local_fields = frozenset(existing.local_fields) | frozenset(info.local_fields)
             if info.post_sync_fn is not None:
                 existing.post_sync_fn = info.post_sync_fn
             if info.from_disk_fn is not None:

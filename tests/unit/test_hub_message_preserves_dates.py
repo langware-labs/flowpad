@@ -85,7 +85,7 @@ async def test_bundle_header_carries_send_time(tmp_path):
     _, _, zip_path = await _pack(1, tmp_path)
 
     with zipfile.ZipFile(zip_path) as zf:
-        header = json.loads(zf.read("header.json"))
+        header = json.loads(zf.read("flow_message.json"))
 
     assert header.get("created_date") is not None, (
         "bundle header dropped created_date — the sender never ships the "

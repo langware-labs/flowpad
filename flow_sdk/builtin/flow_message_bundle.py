@@ -2,7 +2,8 @@
 
 Bundle format (.flowmsg — a zip file):
   <slug>.flowmsg
-  ├── header.json                              (top-level FlowMessage fields)
+  ├── flow_message.json                        (top-level FlowMessage fields; legacy: header.json)
+  ├── entities.json                            (portable JSON per involved entity — the metadata axis)
   ├── git_origins.json                         (optional GitOrigin map)
   ├── git_transfers.json                       (optional git-mode transfer map)
   ├── metadata/<type>-<id>/metadata.json       (optional metadata-only entity copy)
@@ -99,6 +100,27 @@ _LEGACY_ORIGINS_FILE = "git_origins.json"
 # maps). Currently just ``{"create_bookmark": bool}`` — the receiver stamps it
 # onto each staged MessageAttachment so install can mint a favorite.
 _SHARE_OPTIONS_FILE = "share_options.json"
+# The portable entity-JSON envelope map: { "<type>-<id>": <common_json> } for
+# every involved entity (attachments + best-effort descendants). ALWAYS embedded,
+# independent of transfer mode — the metadata axis. The receiver overlays each
+# entry onto its materialized row by id (``apply_entities_overlay``).
+_ENTITIES_FILE = "entities.json"
+# The top-level FlowMessage envelope, renamed from the legacy ``header.json`` for
+# clarity (the message is itself an entity). Readers accept both (legacy bundles).
+_FLOW_MESSAGE_FILE = "flow_message.json"
+_LEGACY_HEADER_FILE = "header.json"
+# DB-record types with their own bespoke per-attachment header serializer +
+# receive reconstruction (jsonl merge, snapshot merge, file-rewrite, auto-install
+# row overrides). They carry their entity JSON via that path, so they are
+# excluded from the ``entities.json`` metadata axis (no double-carry, no overlay
+# re-applying their sender-local host ids).
+_HEADER_SERIALIZED_TYPES = frozenset({
+    "conversation",
+    "flow_message",
+    "claude_session",
+    "flowpad_diagnosis",
+    "remote_worker_session",
+})
 
 
 def _is_git_origin_dict(raw) -> bool:
@@ -154,7 +176,7 @@ def _write_top_level_header(flow_message: "FlowMessage", tmp_root: Path) -> None
         raw = att.get("data", "")
         if raw.startswith(FILE_VFS_PREFIX) or raw.startswith(PROMPT_FILE_VFS_PREFIX):
             att["data"] = f"attachment/files/{Path(raw).name}"
-    (tmp_root / "header.json").write_text(
+    (tmp_root / _FLOW_MESSAGE_FILE).write_text(
         json.dumps(msg_data, default=_json_default, ensure_ascii=False), encoding="utf-8"
     )
 
@@ -607,9 +629,7 @@ async def _pack_git_reference_attachment(
         if ent is None:
             return False
 
-        raw_origin = getattr(ent, "git_origin", None)
-        if raw_origin is None and isinstance(getattr(ent, "metadata", None), dict):
-            raw_origin = ent.metadata.get("git_origin")
+        raw_origin = getattr(ent, "origin", None)
         stored = None
         if raw_origin is not None:
             try:
@@ -671,10 +691,10 @@ async def _pack_webapp_artifact_attachment(
     ent = await Artifact.get_one({"id": entry_id})
     if ent is None:
         return False
-    raw_path = getattr(ent, "path", None)
-    if not raw_path:
+    origin = getattr(ent, "origin", None)
+    if getattr(origin, "kind", None) != "local":
         return False
-    src = Path(str(raw_path))
+    src = Path(str(origin.base)) / str(origin.rel_path or ".")
     if not src.is_dir():
         return False  # only a folder artifact rides as bytes; nothing to serve otherwise
 
@@ -1218,6 +1238,30 @@ async def _save_entity_db_only(ent, owner_typeid: str | None) -> None:
         _SUPPRESS_STORE.reset(token)
 
 
+async def _overlay_fields_on_row(ent, patch: dict, owner_typeid: str | None, *, label: str = "") -> None:
+    """The shared apply loop: setattr each ``patch`` field (except ``id``/``type``)
+    onto a materialized row and persist DB-only. Used by both the git-transfer
+    metadata apply and the ``entities.json`` overlay. Skips the save when nothing
+    actually changed (the indexer usually already wrote the same values)."""
+    fields = getattr(ent.__class__, "model_fields", {}) or {}
+    changed = False
+    for k, v in patch.items():
+        if k in ("id", "type") or not (k in fields or hasattr(ent, k)):
+            continue
+        try:
+            if getattr(ent, k, None) != v:
+                setattr(ent, k, v)
+                changed = True
+        except Exception:
+            pass
+    if not changed:
+        return
+    try:
+        await _save_entity_db_only(ent, owner_typeid)
+    except Exception:
+        logger.warning("[bundle] overlay apply failed for %s", label or getattr(ent, "id", ent), exc_info=True)
+
+
 async def _apply_git_transfer_metadata(
     tmp_root: Path,
     transfer: dict,
@@ -1250,19 +1294,7 @@ async def _apply_git_transfer_metadata(
     ent = await cls.get_one({"id": entry_id})
     if ent is None:
         return
-    fields = getattr(ent.__class__, "model_fields", {}) or {}
-    for k, v in patch.items():
-        if k in ("id", "type"):
-            continue
-        if k in fields or hasattr(ent, k):
-            try:
-                setattr(ent, k, v)
-            except Exception:
-                pass
-    try:
-        await _save_entity_db_only(ent, owner_typeid)
-    except Exception:
-        logger.warning("[bundle] failed to apply git transfer metadata on %s-@%s", entry_type, entry_id, exc_info=True)
+    await _overlay_fields_on_row(ent, patch, owner_typeid, label=f"{entry_type}-@{entry_id} (git)")
 
 
 async def _restore_git_transfer_entry(
@@ -1414,28 +1446,21 @@ async def _restore_git_reference_entity_entry(
     if entry_type != EntityType.ARTIFACT.value:
         return False
 
-    from flow_sdk.builtin.artifact import Artifact, ArtifactReferenceType, ArtifactType  # noqa: PLC0415
+    from flow_sdk.builtin.artifact import Artifact  # noqa: PLC0415
 
     payload = _read_transfer_metadata(tmp_root, transfer)
     origin = _git_origin_from_payload(payload, origins_map, key, transfer)
     if origin is None:
         return False
 
-    metadata = dict(payload.get("metadata") or {})
-    metadata["git_origin"] = origin.model_dump(mode="python")
     payload = {
-        **payload,
         "type": entry_type,
         "id": entry_id,
-        "git_origin": origin.model_dump(mode="python"),
-        "metadata": metadata,
-        # Sender-local absolute paths must not become Bob's usable path. The
-        # resolver will fill this only after validating a local checkout.
-        "path": "",
+        "name": payload.get("name") or f"artifact-{entry_id[:8]}",
+        "kind": payload.get("kind") or "application.web",
+        "description": payload.get("description"),
+        "origin": origin.model_dump(mode="python"),
     }
-    payload.setdefault("name", f"artifact-{entry_id[:8]}")
-    payload.setdefault("ref_type", ArtifactReferenceType.FOLDER.value)
-    payload.setdefault("artifact_type", ArtifactType.WEBAPP.value)
 
     existing = await Artifact.get_one({"id": entry_id})
     if existing is not None and not overwrite:
@@ -1446,9 +1471,8 @@ async def _restore_git_reference_entity_entry(
             {},
         )
         if existing_origin is not None and existing_origin.key() == origin.key():
-            if getattr(existing, "git_origin", None) is None:
-                existing.git_origin = origin
-                existing.metadata = {**(existing.metadata or {}), "git_origin": origin.model_dump(mode="python")}
+            if getattr(existing, "origin", None) is None:
+                existing.origin = origin
                 await existing.save(owner_typeid)
             return True
         raise FlowMessageExistsError(
@@ -1456,7 +1480,7 @@ async def _restore_git_reference_entity_entry(
                 {
                     "type": entry_type,
                     "id": entry_id,
-                    "path": getattr(existing, "path", "") or None,
+                    "path": None,
                 }
             ]
         )
@@ -1487,7 +1511,8 @@ async def _restore_webapp_artifact_entry(
     ``metadata/<key>/metadata.json``), so ``_restore_file_backed_entry`` mirrors it
     verbatim under ``project_root``. Returns the served folder path, or None.
     """
-    from flow_sdk.builtin.artifact import Artifact, ArtifactReferenceType, ArtifactType  # noqa: PLC0415
+    from flow_sdk.builtin.artifact import Artifact  # noqa: PLC0415
+    from flow_sdk.builtin.local_origin import LocalOrigin  # noqa: PLC0415
 
     slug = str(transfer.get("slug") or "")
     bytes_rel = str(transfer.get("bytes_rel") or (f"webapps/{slug}" if slug else ""))
@@ -1504,28 +1529,21 @@ async def _restore_webapp_artifact_entry(
     # Materialize the row from the shipped declaration — pick only the artifact's
     # own fields (never the sender-local project_id / audit columns).
     payload = _read_transfer_metadata(unpacked_root, transfer)
-    picked = {
-        k: payload.get(k)
-        for k in ("name", "description", "port", "start_cmd", "health", "ref_type", "artifact_type")
-        if payload.get(k) is not None
-    }
     new_payload = {
         "type": EntityType.ARTIFACT.value,
         "id": asset_id,
-        "path": str(served),
+        "name": payload.get("name") or f"artifact-{asset_id[:8]}",
+        "kind": payload.get("kind") or "application.web",
+        "description": payload.get("description"),
+        "origin": LocalOrigin(base=str(served.parent), rel_path=served.name).model_dump(mode="python"),
         "project_id": project_id,
-        "metadata": dict(payload.get("metadata") or {}),
-        **picked,
     }
-    new_payload.setdefault("name", f"artifact-{asset_id[:8]}")
-    new_payload.setdefault("ref_type", ArtifactReferenceType.FOLDER.value)
-    new_payload.setdefault("artifact_type", ArtifactType.WEBAPP.value)
 
     existing = await Artifact.get_one({"id": asset_id})
     if existing is not None and not overwrite:
-        # Idempotent re-receive: heal a missing path, leave the rest untouched.
-        if not (getattr(existing, "path", "") or ""):
-            existing.path = str(served)
+        # Idempotent re-receive: heal a missing origin, leave the rest untouched.
+        if getattr(existing, "origin", None) is None:
+            existing.origin = LocalOrigin(base=str(served.parent), rel_path=served.name)
             await existing.save(owner_typeid)
         return served
 
@@ -1937,6 +1955,117 @@ def _normalize_transfer_mode(transfer_mode: str | None) -> str:
     return mode
 
 
+# ---------------------------------------------------------------------------
+# entities.json — the metadata axis. One portable-JSON envelope per involved
+# entity (attachments + best-effort descendants), always embedded, overlaid onto
+# the receiver's rows regardless of how the body traveled.
+# ---------------------------------------------------------------------------
+
+
+async def _collect_attachment_envelopes(entry, entities: dict) -> None:
+    """Add ``to_common_json()`` for a TYPE_ID attachment entity + its nested
+    repo descendants into ``entities`` (keyed ``<type>-<id>``). Best-effort:
+    anything missed is recovered by the receiver's natural indexing.
+
+    Scoped to FILE-BACKED / repo assets — the family whose entity JSON was being
+    dropped in copy mode. The header-serialized DB-record types (conversation,
+    flow_message, claude_session, flowpad_diagnosis, remote_worker_session) carry
+    their own envelope + bespoke receive reconstruction, so they are NOT
+    double-carried here (that would let the overlay re-apply their sender-local
+    host ids — cwd/worker_session_id/host_process_id — over the receive-local
+    overrides)."""
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    if entry.attachment_type != AttachmentType.TYPE_ID:
+        return
+    tid = TypeId(entry.data)
+    entry_type, entry_id = tid.type, tid.id
+    if not entry_type or not entry_id:
+        return
+    if entry_type in _HEADER_SERIALIZED_TYPES:
+        return
+    cls = SchemaRegistry.get_entity_cls(entry_type)
+    if cls is None:
+        return
+    ent = await cls.get_one({"id": entry_id})
+    if ent is None:
+        return
+    try:
+        entities[f"{entry_type}-{entry_id}"] = ent.to_common_json()
+    except Exception:
+        logger.debug("[bundle] to_common_json failed for %s-%s", entry_type, entry_id, exc_info=True)
+    await _collect_descendant_envelopes(entry_type, ent, entities)
+
+
+async def _collect_descendant_envelopes(entry_type: str, ent, entities: dict) -> None:
+    """Walk a folder-backed entity's on-disk subtree for nested repo assets and
+    add each one's ``to_common_json()``. Best-effort (wrapped)."""
+    try:
+        from flow_sdk.fs_store.fs_ref import FSRef  # noqa: PLC0415
+        from flow_sdk.fs_store.indexer.functions.repo_assets import repo_assets_fn  # noqa: PLC0415
+        from flow_sdk.fs_store.indexer.index_function import IndexerOptions, ref_typeid  # noqa: PLC0415
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+        info = SchemaRegistry.get(entry_type)
+        ar = getattr(ent, "asset_ref", None)
+        if info is None or not ar or info.main_layout != "folder":
+            return
+        folder = info.folder_for(Path(ar))
+        if not folder.is_dir():
+            return
+        for ref in repo_assets_fn([FSRef(folder)], IndexerOptions()):
+            key = ref_typeid(ref)  # <type>-<id>, shared resolver
+            if key is None:
+                continue
+            ccls = SchemaRegistry.get_entity_cls(str(ref.record_type))
+            if ccls is None:
+                continue
+            try:
+                cent = await ccls.get_one({"id": key.split("-", 1)[1]})
+                if cent is not None:
+                    entities[key] = cent.to_common_json()
+            except Exception:
+                continue
+    except Exception:
+        logger.debug("[bundle] descendant envelope collection skipped for %s", entry_type, exc_info=True)
+
+
+def _read_entities_map(unpacked_root: Path) -> dict:
+    """Read the bundle's ``entities.json`` map (empty if absent/unreadable)."""
+    data = _read_json(unpacked_root / _ENTITIES_FILE, {})
+    return data if isinstance(data, dict) else {}
+
+
+async def apply_entities_overlay(unpacked_root: Path, owner_typeid: str | None) -> None:
+    """Overlay every ``entities.json`` envelope onto its materialized row by id.
+
+    The metadata axis of receive: after bodies land + the tree is indexed, the
+    portable entity JSON (parent_type_id, labels, status, …) is applied on top of
+    what the indexer rebuilt from the body. Sender-local fields never travel
+    (stripped at pack via ``to_common_json``), so the receiver's own
+    scope/project_id/asset_ref — set by the indexer — are left intact. Entries
+    whose row does not exist yet (another attachment, not installed) are skipped;
+    the overlay is idempotent."""
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    for key, common in _read_entities_map(unpacked_root).items():
+        if not isinstance(common, dict):
+            continue
+        entry_type, _, entry_id = key.partition("-")
+        if not entry_type or not entry_id:
+            continue
+        cls = SchemaRegistry.get_entity_cls(entry_type)
+        if cls is None:
+            continue
+        try:
+            ent = await cls.get_one({"id": entry_id})
+        except Exception:
+            continue
+        if ent is None:
+            continue  # row not materialized yet — skip (idempotent)
+        await _overlay_fields_on_row(ent, common, owner_typeid, label=key)
+
+
 async def pack_bundle(
     flow_message: "FlowMessage",
     dest_dir: Path | None = None,
@@ -1963,6 +2092,10 @@ async def pack_bundle(
         _write_top_level_header(flow_message, tmp_root)
         attachment_dir = tmp_root / "attachment"
         attachment_dir.mkdir()
+        # The metadata axis: every involved entity's portable JSON, collected into
+        # one root ``entities.json`` map — ALWAYS embedded, regardless of how the
+        # body travels (embedded/git). The receiver overlays these onto its rows.
+        entities: dict = {}
         # type-@id -> GitOrigin dict; populated by file-backed packing when the
         # asset resolves to a git repo. Written once at the top level. ``repo_cache``
         # memoizes per-repo git reads so co-shared assets from one checkout probe once.
@@ -1978,6 +2111,11 @@ async def pack_bundle(
                 repo_cache,
                 transfers=transfers,
                 transfer_mode=transfer_mode,
+            )
+            await _collect_attachment_envelopes(entry, entities)
+        if entities:
+            (tmp_root / _ENTITIES_FILE).write_text(
+                json.dumps(entities, default=_json_default, ensure_ascii=False), encoding="utf-8"
             )
         if origins:
             (tmp_root / _FS_ORIGINS_FILE).write_text(
@@ -2026,15 +2164,29 @@ async def _pack_flow_message_entry(fm_id: str, attachment_dir: Path) -> None:
     )
 
 
-def _read_entity_header(entity_dir: Path) -> dict | None:
-    """Read the entity's ``header.json`` descriptor, or None if missing/invalid."""
-    path = entity_dir / "header.json"
-    if not path.exists():
-        return None
+def _read_json(path: Path, default):
+    """Read + parse a JSON file, returning ``default`` if it is missing or
+    unreadable. The one raw-JSON-read primitive for the bundle module."""
+    if not path.is_file():
+        return default
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except Exception:
-        return None
+        return default
+
+
+def _read_entity_header(entity_dir: Path) -> dict | None:
+    """Read the entity's ``header.json`` descriptor, or None if missing/invalid."""
+    return _read_json(entity_dir / "header.json", None)
+
+
+def _read_top_level_header(tmp_root: Path) -> dict | None:
+    """Read the top-level FlowMessage envelope: prefer ``flow_message.json`` (new),
+    fall back to legacy ``header.json`` so already-received / in-flight bundles
+    still open (first existing file wins)."""
+    if (tmp_root / _FLOW_MESSAGE_FILE).is_file():
+        return _read_json(tmp_root / _FLOW_MESSAGE_FILE, None)
+    return _read_json(tmp_root / _LEGACY_HEADER_FILE, None)
 
 
 def _read_task_md_header(entry_dir: Path) -> dict | None:
@@ -2300,10 +2452,11 @@ async def unpack_bundle(
         # stall the event loop (same rationale as the indexer's I/O-to-threads).
         await asyncio.to_thread(_extract)
 
-        # 2. Read top-level header.json
-        msg_data = _read_entity_header(tmp_root)
+        # 2. Read the top-level FlowMessage envelope (new: flow_message.json;
+        #    legacy bundles: header.json).
+        msg_data = _read_top_level_header(tmp_root)
         if msg_data is None:
-            raise ValueError("Invalid .flowmsg: missing header.json")
+            raise ValueError("Invalid .flowmsg: missing flow_message.json/header.json")
         msg_data.pop("expand", None)  # strip transient field before validation
 
         # Resolve owner
