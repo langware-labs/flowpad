@@ -1,16 +1,15 @@
 import {
   AgenticProcess,
-  CodeRef,
   ComputeNode,
   dataContext,
   DockPointerData,
-  FSItem,
   type IDockPointer,
   Layout,
   QueryRequest,
   Shell,
   toplog,
   TypeId,
+  VFSPath,
   ViewType,
 } from '@sdk';
 import { NavigateFunction } from 'react-router';
@@ -411,6 +410,26 @@ export class NavigationActions {
     this.openDock(dockPointerForFile(path, options));
   }
 
+  /**
+   * Open a FOLDER in the Assets fs browser — the folder counterpart of
+   * `openFile`. `openFile` would render a directory path as an empty file, so
+   * any surface that has a directory (file browsers, task artifacts) routes it
+   * here. Converts the absolute machine path to the compute-node-relative form
+   * the `fs/` pointer expects (handles POSIX `/…` and Windows `C:\…`).
+   */
+  openFolder(machinePath: string): void {
+    let rel = machinePath;
+    const cn = dataContext.computeNodeTypeId;
+    if (cn) {
+      try {
+        rel = VFSPath.fromMachinePath(machinePath, cn).entitySubPath;
+      } catch {
+        // Not an absolute machine path — forAssetFsFolder normalizes it as-is.
+      }
+    }
+    this.openDock(DockPointer.forAssetFsFolder(rel));
+  }
+
   /** Navigate to the default shell view (no specific session) */
   openShellView(): void {
     this.openDock(new DockPointerData(ViewType.SHELL));
@@ -653,21 +672,6 @@ export class NavigationActions {
     this.openDock(pointer);
   }
 
-  /**
-   * Open execute flow viewer with optional options
-   * @param options - Optional options object with file and session
-   * @param options.file - Optional FSItem to execute (provides full VFS context)
-   * @param options.machineSessionId - Optional machine session identifier (used by worker-sessions-panel)
-   */
-  openExecuteFlow(options?: { file?: FSItem; machineSessionId?: string }): void {
-    // Use vfsPath.absVfsPath to get normalized path without vfs:// protocol
-    const pointer = DockPointer.forExecuteFlow({
-      vfsAbsPath: options?.file?.vfsPath.absVfsPath,
-      machineSessionId: options?.machineSessionId,
-    });
-    this.openDock(pointer);
-  }
-
   // ========== Lens Navigation ==========
 
   /**
@@ -738,7 +742,7 @@ export class NavigationActions {
     console.warn('[Navigation] openEntity not yet implemented', { entity });
   }
 
-  openCodeRef(codeRef: CodeRef): void {
+  openCodeRef(codeRef: { path: string }): void {
     if (codeRef.path) {
       // Use openFile to automatically choose the right viewer based on file type
       this.openFile(codeRef.path);

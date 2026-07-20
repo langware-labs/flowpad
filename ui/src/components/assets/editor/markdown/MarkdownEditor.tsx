@@ -12,7 +12,7 @@ import { History } from 'lucide-react';
 import { DockPointer, HIGHLIGHT_PARAM } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useSideWindows } from '@src/navigation/useSideWindows';
-import { FSRef, TypeId, PrefKey, copyToClipboard, looksBinaryText } from '@sdk';
+import { FSRef, TypeId, PrefKey, copyToClipboard, dataManager, looksBinaryText } from '@sdk';
 import { usePreference } from '@src/hooks/use-preference';
 import { downloadFile } from '@sdk/utils/utils';
 import Editor, { type OnMount } from '@monaco-editor/react';
@@ -122,6 +122,20 @@ interface MarkdownEditorProps {
    * such surfaces, not an error worth a path dump).
    */
   missingFileCopy?: { note: React.ReactNode; actionLabel: React.ReactNode };
+  /**
+   * Chrome variant. `'full'` (default) is the complete editor: header with
+   * filename/path/mode-toggle/Properties/Copy + the side rail. `'plain'` is a
+   * stripped read-only "plain doc": just the body under a minimal header of
+   * `plainLeadingActions` + Share + `plainTrailingActions` — no path, Properties,
+   * Copy, mode toggle, or side rail. Used by the wiki modal.
+   */
+  variant?: 'full' | 'plain';
+  /**
+   * Plain header (`variant='plain'`): composes the action row. Receives the
+   * editor's ready-made Share button so the caller decides where Share sits
+   * (e.g. `(share) => <>{open}{share}{switcher}</>`).
+   */
+  plainHeaderActions?: (share: React.ReactNode) => React.ReactNode;
 }
 
 /**
@@ -132,6 +146,7 @@ interface MarkdownEditorProps {
  * - Fields are rendered dynamically from whatever keys exist in the frontmatter.
  * - Body is rendered by Milkdown (view/review/editor) or Monaco (markdown).
  * - The chosen mode is persisted across docs via the EDITOR_MODE preference.
+ * - `variant='plain'` collapses all of that to a read-only body + a 3-item header.
  */
 export function MarkdownEditor({
   fsRef,
@@ -146,6 +161,8 @@ export function MarkdownEditor({
   reloadKey,
   fragment,
   missingFileCopy,
+  variant,
+  plainHeaderActions,
 }: MarkdownEditorProps) {
   return (
     <MarkdownEditorContent
@@ -162,6 +179,8 @@ export function MarkdownEditor({
       reloadKey={reloadKey}
       fragment={fragment}
       missingFileCopy={missingFileCopy}
+      variant={variant}
+      plainHeaderActions={plainHeaderActions}
     />
   );
 }
@@ -218,6 +237,8 @@ function MarkdownEditorContent({
   reloadKey,
   fragment,
   missingFileCopy,
+  variant,
+  plainHeaderActions,
 }: {
   fsRef: FSRef;
   sourcePath: string;
@@ -232,6 +253,8 @@ function MarkdownEditorContent({
   reloadKey?: string | number;
   fragment?: string;
   missingFileCopy?: MarkdownEditorProps['missingFileCopy'];
+  variant?: MarkdownEditorProps['variant'];
+  plainHeaderActions?: MarkdownEditorProps['plainHeaderActions'];
 }) {
   const { t } = useLingui();
   const { navigation, currentDock } = useDockNavigation();
@@ -268,7 +291,7 @@ function MarkdownEditorContent({
   // reflects the actual visible mode (silent + clean per design).
   //
   // Guard against the initial-mount race: `showLearningMode` is computed by
-  // WorkflowAssetEditor from an async process query, so it starts `false` for
+  // the host editor from an async process query, so it starts `false` for
   // ~one tick even when this doc DOES have learning runs. Stripping then would
   // wipe a legitimate `?editorMode=learning` share-link. We delay the strip
   // by a small idle period; if learning becomes available within that window,
@@ -286,6 +309,21 @@ function MarkdownEditorContent({
   // Imperative handle to the underlying Milkdown editor — driven by the
   // wiki toolbar to insert wikilinks at the cursor.
   const milkdownRef = useRef<MilkdownEditorInstance | null>(null);
+
+  // For an `owns_main_ref` type (e.g. prompt) the ENTITY is authoritative over
+  // the file, so a save that only lands on disk gets reverted by the next
+  // `entity.save()` re-render. Those saves reindex back into the entity; the
+  // hand-edited types (markdown, skill) are already file-authoritative and skip
+  // the cost. Registry-driven off the entity's own type — never a type allowlist.
+  const reindexOnSave = useMemo(() => {
+    if (!chatTarget) return false;
+    try {
+      const typeName = new TypeId(chatTarget).type;
+      return !!dataManager.getAllTypeInfos?.().find((t) => t.type_name === typeName)?.owns_main_ref;
+    } catch {
+      return false; // not a parseable TypeId (raw file) → no entity to reindex into
+    }
+  }, [chatTarget]);
 
   // Keep the stored preference as the no-URL fallback for new docs / fresh links.
   useEffect(() => {
@@ -306,7 +344,7 @@ function MarkdownEditorContent({
     recreate,
     reload,
     lastSync,
-  } = useMarkdownContent(fsRef, { autoSave: true, autoSaveMs: 2000, reloadKey });
+  } = useMarkdownContent(fsRef, { autoSave: true, autoSaveMs: 2000, reloadKey, reindexOnSave });
 
   const [propsExpanded, setPropsExpanded] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
@@ -608,7 +646,8 @@ function MarkdownEditorContent({
     );
   }
 
-  // ── Editor ─────────────────────────────────────────────────────────────────
+  // Share controls (button + dialog) — one definition, shared by the plain and
+  // full headers, so the button (and its testId) isn't duplicated.
   const shareButton = shareSource ? (
     <ShareButton
       onClick={() => setShareOpen(true)}
@@ -616,7 +655,52 @@ function MarkdownEditorContent({
       testId="markdown-editor-share"
     />
   ) : null;
+  const shareDialog =
+    shareSource && shareOpen ? (
+      <ShareToConversationDialog
+        open={shareOpen}
+        onClose={() => setShareOpen(false)}
+        source={shareSource}
+      />
+    ) : null;
 
+  // Body renderer — the single Milkdown invocation both paths share, so a
+  // body-mount change (a new prop, plugin, direction/fragment tweak) can't drift
+  // between the plain doc and the full editor.
+  const milkdownBody = (mode: ViewMode) => (
+    <MilkdownEditor
+      content={body}
+      onChange={handleBodyChange}
+      onLinkClick={handleLinkClick}
+      editorMode={mode === 'learning' ? 'view' : mode}
+      editorRef={milkdownRef}
+      onCursorLineChange={handleEditorLineChange}
+      initialLine={initialBodyLine}
+      direction={normalizeDirection(fields.direction)}
+      toolbarRight={
+        mode === 'editor' ? <WikiToolbar editorRef={milkdownRef} sourceTypeId={chatTarget} /> : undefined
+      }
+    />
+  );
+
+  // ── Plain doc ────────────────────────────────────────────────────────────
+  // Read-only body under a minimal header. The caller composes the whole action
+  // row via `plainHeaderActions(share)` — it receives the ready-made Share node
+  // and decides where Share sits. No path, Properties, Copy, mode toggle, or
+  // side rail. Used by the wiki modal.
+  if (variant === 'plain') {
+    return (
+      <div className="flex h-full flex-col overflow-hidden">
+        <div className="flex flex-shrink-0 items-center justify-end gap-1 border-b px-3 py-2">
+          {plainHeaderActions?.(shareButton)}
+        </div>
+        {shareDialog}
+        <div className="min-h-0 flex-1 overflow-hidden">{milkdownBody('view')}</div>
+      </div>
+    );
+  }
+
+  // ── Editor ─────────────────────────────────────────────────────────────────
   // Favorite toggle next to Share (both modes), mirroring the interactive tab.
   // Keyed on the asset entity's TypeId (the same id chat/share use).
   const favoriteTypeId = chatTarget ? new TypeId(chatTarget) : null;
@@ -662,13 +746,7 @@ function MarkdownEditorContent({
         actions={toolbar}
         showLearningMode={showLearningMode}
       />
-      {shareSource && shareOpen && (
-        <ShareToConversationDialog
-          open={shareOpen}
-          onClose={() => setShareOpen(false)}
-          source={shareSource}
-        />
-      )}
+      {shareDialog}
 
       {hasFields && (
         <div className="flex-shrink-0 border-b">
@@ -718,21 +796,7 @@ function MarkdownEditorContent({
             ) : viewMode === 'review' ? (
               <ReviewSurface body={body} docTypeId={chatTarget} />
             ) : (
-              <MilkdownEditor
-                content={body}
-                onChange={handleBodyChange}
-                onLinkClick={handleLinkClick}
-                editorMode={viewMode === 'learning' ? 'view' : viewMode}
-                editorRef={milkdownRef}
-                onCursorLineChange={handleEditorLineChange}
-                initialLine={initialBodyLine}
-                direction={normalizeDirection(fields.direction)}
-                toolbarRight={
-                  viewMode === 'editor' ? (
-                    <WikiToolbar editorRef={milkdownRef} sourceTypeId={chatTarget} />
-                  ) : undefined
-                }
-              />
+              milkdownBody(viewMode)
             )}
           </EditorWithSidePanel>
         )}

@@ -176,6 +176,29 @@ def _has_dispatch(info) -> bool:
     return info.from_disk_fn is not None
 
 
+def ref_typeid(ref) -> str | None:
+    """Resolve a repo-asset FSRef to its ``<type>-<id>`` via the type's
+    ``gen_uuid_fn``. None when the ref is absent, isn't a repo asset, or has no id
+    resolver. The single ref→typeid primitive shared by the enclosure-parent
+    derivation (below) and the bundle's descendant collector."""
+    if ref is None or ref.record_type is None:
+        return None
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    rtype = str(ref.record_type)
+    if rtype not in SchemaRegistry.get_repo_types():
+        return None
+    info = SchemaRegistry.get(rtype)
+    gen = getattr(info, "gen_uuid_fn", None) if info else None
+    if gen is None:
+        return None
+    try:
+        rid = gen(ref)
+    except Exception:
+        return None
+    return f"{rtype}-{rid}" if rid else None
+
+
 def _is_async_walker(fn: Any) -> bool:
     """True when ``fn`` is a coroutine function or a class instance whose
     ``__call__`` is. Used by scan() to choose between direct-await and
@@ -208,13 +231,10 @@ def _read_disk_record_scope(
     """
     import json  # noqa: PLC0415
 
-    from flow_sdk.fs_store.record_paths import (  # noqa: PLC0415
-        get_default_records_root,
-        record_stem,
-    )
+    from flow_sdk.fs_store.record_paths import shadow_dir_for  # noqa: PLC0415
     _META_JSON = "metadata.json"
 
-    path = get_default_records_root() / type_name / record_stem(type_name, eid) / _META_JSON
+    path = shadow_dir_for(type_name, eid) / _META_JSON
     try:
         raw = path.read_text(encoding="utf-8")
     except (FileNotFoundError, OSError):
@@ -893,9 +913,19 @@ class FSIndexer:
                                 )
                             except OSError:
                                 pass
+                        # Enclosure-derived parenthood: a repo asset physically
+                        # nested inside another repo asset's folder inherits it as
+                        # its parent, so a child re-indexed purely from disk (e.g.
+                        # received without an ``entities.json`` envelope) is still
+                        # parented. Loop-invariant — derive once from the FSRef
+                        # parent chain. Only when the enclosing ref is itself a
+                        # repo asset (not the walk root).
+                        parent_typeid = ref_typeid(getattr(ref, "_parent", None))
                         for rec in records:
                             if ref_scope is not None:
                                 object.__setattr__(rec, "scope", ref_scope)
+                            if parent_typeid and not getattr(rec, "parent_type_id", None):
+                                object.__setattr__(rec, "parent_type_id", parent_typeid)
                             if ref_pid is not None:
                                 object.__setattr__(rec, "project_id", ref_pid)
                             elif not getattr(rec, "project_id", None) and (
@@ -1194,12 +1224,12 @@ class FSIndexer:
     def _discover_records_dir_ids(type_names: set[str]) -> dict[str, set[str]]:
         """Walk ``<records_root>/<type>/`` for each type and return ``{type → {id}}``.
 
-        IDs come from parsing the directory stem (``<type>-@<id>``). Folders
-        that don't match the stem pattern are skipped — they aren't records.
+        The id is the bare directory name under ``records_root/<type>/``; a folder
+        is a record iff it holds a ``metadata.json``. Other folders are skipped.
         """
         from flow_sdk.fs_store.record_paths import (  # noqa: PLC0415
             get_default_records_root,
-            parse_record_stem,
+            is_record_dir,
         )
 
         out: dict[str, set[str]] = {}
@@ -1211,15 +1241,8 @@ class FSIndexer:
             ids: set[str] = set()
             try:
                 for entry in type_dir.iterdir():
-                    if not entry.is_dir():
-                        continue
-                    try:
-                        parsed_type, parsed_id = parse_record_stem(entry.name)
-                    except ValueError:
-                        continue
-                    if parsed_type != type_name:
-                        continue
-                    ids.add(parsed_id)
+                    if is_record_dir(entry):
+                        ids.add(entry.name)
             except (FileNotFoundError, OSError):
                 continue
             if ids:
@@ -1265,10 +1288,7 @@ class FSIndexer:
 
         # Lazy imports keep this module a leaf in import topology.
         from flow_sdk.db import get_db_driver  # noqa: PLC0415
-        from flow_sdk.fs_store.record_paths import (  # noqa: PLC0415
-            get_default_records_root,
-            record_stem,
-        )
+        from flow_sdk.fs_store.record_paths import shadow_dir_for  # noqa: PLC0415
 
         driver = get_db_driver()
         type_name = str(rt)
@@ -1313,9 +1333,7 @@ class FSIndexer:
 
             if action == OrphanAction.DELETE and on_disk:
                 try:
-                    rec_dir = (
-                        get_default_records_root() / type_name / record_stem(type_name, eid)
-                    )
+                    rec_dir = shadow_dir_for(type_name, eid)
                     if rec_dir.exists():
                         import shutil  # noqa: PLC0415
                         # Recursive dir removal is file I/O — keep it off the loop.

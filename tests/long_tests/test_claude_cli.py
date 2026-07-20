@@ -28,7 +28,11 @@ def test_claude_cli():
 
     workdir = Path(os.getcwd())
 
-    claude_process = run_claude(workdir, prompt="reply with single word - hi")
+    # Raw CLI subprocess — the ModelTier enum can't pass through, and `haiku`
+    # IS claude's small model, so a raw `--model haiku` selects the cheap tier.
+    claude_process = run_claude(
+        workdir, prompt="reply with single word - hi", extra_args=["--model", "haiku"]
+    )
 
     try:
         stdout, stderr = claude_process.communicate(timeout=30)

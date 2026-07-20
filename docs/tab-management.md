@@ -26,7 +26,11 @@ uuid5("tab:" + viewType|sub)`. `Tab.pointer` stores the serialized
 hash is derived from the canonical `viewType|sub` identity extracted from that
 JSON, with legacy `viewType|sub` strings still accepted during migration. Layout
 and transient options are excluded — so `/win` and `/dock` of one surface are ONE
-tab. Canonicalization lives ONLY in `DockPointer.tabHash`,
+tab. The **page** dimension (`PageId`: `desk`|`hub`, default `desk`) folds in
+conditionally: `desk` — today's only shipped page — is never prefixed, so its
+identity stays the bare `viewType|sub` and every persisted `Tab` key is
+unchanged; a non-desk page prefixes its id (`page|viewType|sub`), giving each page
+its own tab namespace. Canonicalization lives ONLY in `DockPointer.tabHash`,
 `DockPointer.toJSON()`, and `DockPointer.fromJSON()`; the backend stores the
 serialized pointer verbatim and only normalizes it for id stability. Fields:
 `pointer`, `target_type`/`target_id` (denormalized off the pointer for reverse
@@ -781,6 +785,18 @@ content is the entire window. No app chrome, no strip, no tab close X.
 - `Layout.WIN` joins `Layout.DOCK` / `Layout.DEV` in the URL grammar
   (`url-builder.ts` parse/strip/build over a keyword→Layout table), in all
   route namespaces (root, `/agent/:agentId/…`, `/flow/:processId/…`).
+- An optional **page** segment sits between the layout keyword and the viewType
+  (`/<layout>/<page>/<viewType>/<pointer>`; `PageId` / `isValidPage` in
+  `ts_sdk/src/utils/ui/view-types.ts`). `desk` is the default and the only
+  shipped page — it is never emitted (bare `dock/<viewType>` is `desk`), so
+  existing URLs are unchanged. The server declares which pages it serves on bootstrap
+  (`BootstrapInfo.supported_pages`; the local desktop server sends `["desk"]`),
+  and the dock loader redirects any URL naming an unsupported page to the first
+  supported page's home (`ui/src/navigation/supported-pages.ts` →
+  `main-loader.ts`, reading the parsed pointer's `page`). *Rendering* a supported
+  non-desk page (page-aware `router.tsx` + per-page render switch) is still not
+  wired — the field, grammar, and support-gate exist ahead of the surfaces that
+  use them.
 - **`windowMode` is derived read-only from the URL** (same mechanism as
   `/dev/` detection in `useDockNavigation`). Nothing ever "sets" window
   mode — you navigate into it. Deep-linking and refresh work for free.

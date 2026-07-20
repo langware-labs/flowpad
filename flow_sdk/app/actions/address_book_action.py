@@ -60,7 +60,7 @@ async def scan_address_book(user_tokens: set[str] | None = None) -> dict:
     scanned = 0
     matched: list[dict] = []
     for conv in convs or []:
-        roster = list(getattr(conv, "participants", None) or [])
+        roster = list(getattr(conv, "members", None) or [])
         if not roster:
             continue
         norm = _normalize_participants(roster)  # normalize once; reused below

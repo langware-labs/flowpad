@@ -67,6 +67,25 @@ describe('loadLensRoute — routes a projectless session through resolveProjectC
     await loadLensRoute('sess1');
 
     expect(loadProjectMock).not.toHaveBeenCalled();
-    expect(sdk.resolveProjectContext).toHaveBeenCalledWith('/some/cwd');
+    expect(sdk.resolveProjectContext).toHaveBeenCalledWith('/some/cwd', { parent_type_id: undefined });
+  });
+
+  it('threads parent_type_id so a received session scopes to its conversation project', async () => {
+    // A RECEIVED transcript: no project_id, no cwd — only the parent pointer to
+    // the conversation it was shared into. The loader must hand that pointer to
+    // resolveProjectContext (whose parent-chain fallback resolves the project)
+    // in a SAVE-LESS shape — dropping the pointer is the bug that dumped these
+    // transcripts into Global; passing the session would let the loader persist
+    // a recovered unindexed row.
+    sdk.getById.mockResolvedValue({
+      project_id: null,
+      cwd: null,
+      parent_type_id: 'conversation-c1',
+    });
+
+    await loadLensRoute('sess1');
+
+    expect(loadProjectMock).not.toHaveBeenCalled();
+    expect(sdk.resolveProjectContext).toHaveBeenCalledWith(undefined, { parent_type_id: 'conversation-c1' });
   });
 });

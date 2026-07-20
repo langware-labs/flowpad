@@ -1,4 +1,3 @@
-import { decode, encode } from '@msgpack/msgpack';
 import { EventEmitter } from 'events';
 import { v4 as uuidv4 } from 'uuid';
 import { ApiError, isApiError } from '../ApiResponse';
@@ -26,7 +25,6 @@ import { EntityFactory } from '../schema/factory';
 import { SubscriptionMap, TypeIdMap, WatchMap, WatchQueryMap } from './map';
 import { ExpansionRequest, QueryRequest } from './query';
 import { ActionType, JSONSchemaParser, TypeInfo } from './schema';
-import { IStream, IStreamConfig, WSStream } from './stream';
 import { ptyOrphanBuffer } from '../services/shell/ptyOrphanBuffer';
 
 export enum EntityStatus {
@@ -100,7 +98,6 @@ export class DataManager<T extends Manageable> extends EventEmitter {
    * (icon/browseable_by/creatable/fields) and validation schemas.
    */
   typeInfos: { [type: string]: TypeInfo } = {};
-  streams: WSStream[] = [];
   saveIntervalMs: number = 5000;
   isPopupOpen = false;
   dataOpQueryInvalidation = false;
@@ -123,8 +120,6 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     manager.on('on_open', this.onConnectionOpen.bind(this));
     manager.on('on_close', this.onConnectionClose.bind(this));
     manager.on('on_data_op', this.onDataOp.bind(this));
-    manager.on('on_stream_msg', this.onStreamMessage.bind(this));
-    manager.on('on_bin_msg', this.onBinMessage.bind(this));
     manager.on('on_control_msg', this.onControlMessage.bind(this));
     manager.on('on_oauth_msg', this.onOAuthMessage.bind(this));
     manager.on('on_pty_output_msg', this.onPtyOutputMessage.bind(this));
@@ -135,8 +130,6 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     manager.off('on_open', this.onConnectionOpen.bind(this));
     manager.off('on_close', this.onConnectionClose.bind(this));
     manager.off('on_data_op', this.onDataOp.bind(this));
-    manager.off('on_stream_msg', this.onStreamMessage.bind(this));
-    manager.off('on_bin_msg', this.onBinMessage.bind(this));
     manager.off('on_control_msg', this.onControlMessage.bind(this));
     manager.off('on_oauth_msg', this.onOAuthMessage.bind(this));
     manager.off('on_pty_output_msg', this.onPtyOutputMessage.bind(this));
@@ -285,84 +278,6 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     // Do not call connect() here — a second caller races with ConnectionManager
     // and creates duplicate WebSocket instances (same connection_id, two sockets).
   }
-  public async createStream(config: IStreamConfig): Promise<WSStream | null> {
-    const connection_manager = ConnectionManager.getInstance();
-    if (!connection_manager.connected) {
-      console.warn('Connection not established, can not create stream');
-      return null;
-    }
-    const actionInfo = new ActionInfo('ws_stream');
-    actionInfo.method = 'POST';
-    actionInfo.bodyParameters = { stream_info: config };
-    const iStream = await this.callAction<any, IStream>(actionInfo);
-    iStream.config = config;
-    const stream = new WSStream(iStream);
-    if (this.streams[iStream.id]) {
-      console.warn('Stream already exists', iStream.id);
-    }
-    stream.on('ON_SEND', async (data: Blob) => {
-      const socket = connection_manager.getSocket();
-      if (!socket) {
-        console.warn('Socket not found, can not send stream data');
-        return;
-      }
-      const dataBuffer = new Uint8Array(await data.arrayBuffer());
-      const msg = encode([iStream.id, dataBuffer]);
-      socket.send(msg);
-    });
-    stream.on('ON_CLOSE', async () => {
-      await this.closeStream(iStream.id);
-    });
-    this.streams[iStream.id] = stream;
-    return stream;
-  }
-  public async closeStream(stream_id: number) {
-    const actionInfo = new ActionInfo('delete_ws_stream');
-    actionInfo.method = 'DELETE';
-    actionInfo.queryParameters = { stream_id };
-    await this.callAction<any, any>(actionInfo);
-    this.streams.splice(stream_id, 1);
-  }
-
-  private async onBinMessage(data: ArrayBuffer) {
-    if (!data) {
-      console.warn('Stream bin message is empty', data);
-      return;
-    }
-    // const arrayBuffer = new Uint8Array(await data.arrayBuffer());
-    const decoded = decode(data);
-    if (!decoded || !Array.isArray(decoded) || decoded.length < 2) {
-      console.warn('Stream bin message is invalid', decoded);
-      return;
-    }
-    const stream_id = decoded[0];
-    const stream = this.streams[stream_id];
-    if (!stream) {
-      console.warn('Stream not found on binary message', data);
-    }
-    // const byteArray = decoded[1]
-    // let byteString = '';
-    // for (let i = 0; i < byteArray.length; i++) {
-    //   byteString += byteArray[i].toString(16).padStart(2, '0') + ' ';
-    // }
-    await stream.handleBinMessage(decoded[1]);
-  }
-
-  private async onStreamMessage(data: TranscriptMessage) {
-    if (!data) {
-      console.warn('Stream message is empty', data);
-      return;
-    }
-    if (!data.stream_id) {
-      console.warn('Stream ID is empty', data);
-    }
-    const stream = this.streams[data.stream_id];
-    if (!stream) {
-      console.warn('Stream not found', data);
-    }
-    await stream.handleMessage(data);
-  }
-
   private onControlMessage(data: ControlMessage) {
     this.isPopupOpen = data.state;
   }

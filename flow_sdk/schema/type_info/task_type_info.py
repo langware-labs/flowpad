@@ -81,7 +81,8 @@ TASK = TypeMetadata(
     indexed_by_default=True,
     api_visible=True,
     index_fields=["description", "objective"],
-    main_subdir="tasks",
+    asset_class="repo",
+    family="task",
     main_layout="folder",
     main_file="task.md",
     from_disk_fn=extract_task,
@@ -89,4 +90,7 @@ TASK = TypeMetadata(
     asset_hash_fn=task_asset_hash,
     default_body_fn=_task_default_body,
     owns_main_ref=True,
+    # Sender-local: a received task maps its own local project/worker (project_id
+    # is in the base set). Mirrors the frontmatter share whitelist rationale above.
+    local_fields=frozenset({"my_process_id", "project_root", "project_name"}),
 )

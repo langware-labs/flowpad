@@ -9,7 +9,6 @@ test.skip('revalidate post #31: resume claude session — diagnostics', async ({
   test.setTimeout(60_000);
   await page.addInitScript(() => {
     localStorage.setItem('llm-setup-modal-seen', 'true');
-    localStorage.setItem('flowpad-index-approved', 'true');
   });
 
   await page.goto('/dock/shell/new_terminal');

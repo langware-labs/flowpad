@@ -1,0 +1,7 @@
+{
+  "name": "Default",
+  "family": "Neutral dark",
+  "description": "The stock neutral dark deck. Safe, plain, no point of view \u2014 reach for it when the content must carry everything.",
+  "order": 10,
+  "expect_face": "system-ui"
+}

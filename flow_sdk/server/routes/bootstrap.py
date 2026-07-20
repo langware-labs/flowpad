@@ -1796,7 +1796,7 @@ async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
         _t.time("build_all_type_payloads")
         from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
         from flow_sdk.instance_settings.privacy_mode import get_privacy_mode  # noqa: PLC0415
-        from flow_sdk.i18n import get_supported_locales  # noqa: PLC0415
+        from flow_sdk.i18n import get_supported_locales, get_translation_targets  # noqa: PLC0415
         bootstrap_info = BootstrapInfo(
             types=types,
             user=entity_to_dict(user),
@@ -1822,6 +1822,10 @@ async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
             sniffer_hook=entity_to_dict(sniffer_hook) if sniffer_hook else None,
             records_root=str(get_instance_settings().records_root),
             supported_locales=get_supported_locales(),
+            translation_targets=get_translation_targets(),
+            # This is the local desktop server — it serves only the `desk` page.
+            # A hub backend reports its own set here.
+            supported_pages=["desk"],
             privacy_mode=get_privacy_mode(),
             notice=notice,
         )

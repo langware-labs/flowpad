@@ -1,6 +1,23 @@
 import { APIEntity, registerEntity } from '../APIEntity';
 import { IEntity } from '../IEntity';
 import { DockPointerData } from '../models/DockPointer';
+import type { FSRefJson } from '../fs/FSRef';
+
+/**
+ * One translated copy of a markdown asset's primary doc. Mirrors the backend
+ * `Translation` model (flow_sdk/builtin/claude_memory_entities.py).
+ *
+ * A translation is NOT a separate entity — it is an alternate body file of the
+ * same asset (`translations/<lang>.md` under the record-data folder), selected
+ * inline by the `?lang=<code>` dock prop. `ref` is carried so the UI reads the
+ * file directly instead of computing a records_data path; `process_id` is the
+ * launching translator worker, from which "translating" vs "ready" is derived.
+ */
+export interface Translation {
+  lang: string;
+  ref: FSRefJson;
+  process_id?: string | null;
+}
 
 export interface IMarkdown extends IEntity {
   name?: string;
@@ -11,6 +28,7 @@ export interface IMarkdown extends IEntity {
   title?: string;
   tags?: string[];
   links?: string[];
+  translations?: Translation[];
   scope?: string;
   project_id?: string;
 }
@@ -36,6 +54,7 @@ export class Markdown extends APIEntity<Markdown> implements IMarkdown {
   title?: string;
   tags?: string[];
   links?: string[];
+  translations?: Translation[];
   scope?: string;
   project_id?: string;
 
@@ -49,6 +68,7 @@ export class Markdown extends APIEntity<Markdown> implements IMarkdown {
     this.title = entity.title;
     this.tags = entity.tags;
     this.links = entity.links;
+    this.translations = entity.translations ?? [];
     this.scope = entity.scope;
     this.project_id = entity.project_id;
   }

@@ -101,6 +101,38 @@ _PARENT_FORBIDDEN_TARGET_TYPES = frozenset({
 })
 
 
+def _pointer_is_adoptable_child(pointer: str | None) -> bool:
+    """Only a content-asset dock may be a workspace CHILD — the pointer-shape
+    mirror of the FE allow-list (``dockAddressesAsset``): an assets
+    ``editor/...`` pointer (typeid- or vfs-addressed), plain or project-rebased
+    (``<project-id>/editor/...``). Navigation surfaces (assets lists /
+    project-home, explorer, shell, project, inbox, …) are never children.
+
+    Complements ``_PARENT_FORBIDDEN_TARGET_TYPES``, which keys on the declared
+    ``target_type`` — NULL for list surfaces, so only a pointer-shape check can
+    catch a stale parent edge on e.g. a project-assets tab (RCA 2026-07-16).
+    Parses the RAW inner pointer itself: ``_pointer_to_hash`` deliberately
+    collapses it to the scope-keyed ``tabHash`` form (``project:<id>``)."""
+    if not pointer:
+        return False
+    if pointer.startswith('{'):
+        try:
+            data = _json.loads(pointer)
+        except (ValueError, TypeError):
+            return False
+        vt = str(data.get('viewType') or '')
+        sub = str(data.get('pointer') or '')
+    else:
+        vt, _, sub = pointer.partition('|')
+    if vt == 'assets':
+        return sub.startswith('editor/')
+    if vt == 'project':
+        # Project-rebased asset dock: ``<project-id>/<assetSubPointer>``.
+        _, _, asset_sub = sub.partition('/')
+        return asset_sub.startswith('editor/')
+    return False
+
+
 def tab_id_for(pointer: str) -> str:
     """Deterministic Tab id (uuid5) for a canonical pointer string.
 
@@ -540,6 +572,25 @@ async def _reap_orphans(
     reparent = {pid: nid for pid, nid in reparent.items() if pid in deleted_ids}
     healed_children = await _reparent_children(reparent)
 
+    # Non-adoptable children: a row whose POINTER is a navigation surface
+    # (assets list / project-home, explorer, …) can never be a workspace child,
+    # whatever wrote the edge (the display-tab model stamped these before the
+    # adoptable invariant existed). ``ensure_tab`` heals such a row on touch;
+    # this sweep is the authoritative bulk heal — in-memory over the already-
+    # loaded list, so rows heal on any list read without ever being opened.
+    healed_nonadoptable = False
+    for child in tabs:
+        if child.id in deleted_ids or not child.parent_tab_id:
+            continue
+        if _pointer_is_adoptable_child(child.pointer):
+            continue
+        child.parent_tab_id = None
+        try:
+            await child.save()
+            healed_nonadoptable = True
+        except Exception:
+            continue
+
     # Dangling parent edges: a visible child whose parent row no longer EXISTS —
     # e.g. an old client minted it under a row another reap cycle had already
     # deleted, so no reap ever saw the pair together. A soft-closed parent is
@@ -581,7 +632,7 @@ async def _reap_orphans(
             except Exception:
                 continue
 
-    if reaped_target or reaped_pointer or reaped_display or healed_children or healed_dangling:
+    if reaped_target or reaped_pointer or reaped_display or healed_children or healed_nonadoptable or healed_dangling:
         # Background reap (no user navigation) — ONE ping per cycle so clients
         # refetch once and the dangling chips drop live.
         await broadcast_tabs_changed()
@@ -792,16 +843,23 @@ async def ensure_tab(
         # a workspace must pull it into that workspace's subset. Last-writer-wins
         # (a tab belongs to at most one group). ``None`` = no hint → preserve
         # (matches the name/icon_key hint convention). Never self-parent, and
-        # never a process/project tab (``_PARENT_FORBIDDEN_TARGET_TYPES``) —
-        # those are workspace ANCHORS, not children; a legacy row that carries a
-        # parent from the pre-invariant era is null-healed on touch.
-        if existing.target_type in _PARENT_FORBIDDEN_TARGET_TYPES:
-            if existing.parent_tab_id is not None:
-                existing.parent_tab_id = None
+        # never a process/project tab (``_PARENT_FORBIDDEN_TARGET_TYPES``) or a
+        # non-content pointer (``_pointer_is_adoptable_child``) — those are
+        # workspace ANCHORS or top-level navigation surfaces, not children; a
+        # legacy row that carries a parent from the pre-invariant era is
+        # null-healed on touch. The outer guard skips the pointer parse on the
+        # dominant case (no edge on the row, no hint from the client).
+        if existing.parent_tab_id is not None or parent_tab_id:
+            if (
+                existing.target_type in _PARENT_FORBIDDEN_TARGET_TYPES
+                or not _pointer_is_adoptable_child(existing.pointer)
+            ):
+                if existing.parent_tab_id is not None:
+                    existing.parent_tab_id = None
+                    dirty = True
+            elif parent_tab_id and parent_tab_id != tid and existing.parent_tab_id != parent_tab_id:
+                existing.parent_tab_id = parent_tab_id
                 dirty = True
-        elif parent_tab_id and parent_tab_id != tid and existing.parent_tab_id != parent_tab_id:
-            existing.parent_tab_id = parent_tab_id
-            dirty = True
         if dirty:
             await existing.save()
         return existing
@@ -818,9 +876,12 @@ async def ensure_tab(
         activated = [t for t in visible if t.last_active_at]
         if activated:
             after_tab_id = max(activated, key=lambda t: t.last_active_at or 0).id
-    # Same parent invariant as the reopen path: a process/project tab is never
-    # minted as a workspace child, whatever hint the client sent.
-    if target_type in _PARENT_FORBIDDEN_TARGET_TYPES:
+    # Same parent invariant as the reopen path: a process/project tab or a
+    # non-content pointer is never minted as a workspace child, whatever hint
+    # the client sent. (Checked only when a hint arrived — no hint, no parse.)
+    if parent_tab_id and (
+        target_type in _PARENT_FORBIDDEN_TARGET_TYPES or not _pointer_is_adoptable_child(pointer)
+    ):
         parent_tab_id = None
     tab = Tab(
         id=tid,

@@ -20,9 +20,8 @@ test.describe('home prompt navigates to a session', () => {
     await dismissSetupModal(page);
     await gotoLanding(page);
 
-    // submitFromLanding dismisses any lingering WelcomeModal (which can intercept
-    // the Enter keypress on the home input) before filling + submitting, and
-    // waits for the /dock/shell/ navigation.
+    // submitFromLanding fills + submits the home input, then waits for the
+    // /dock/shell/ navigation.
     await submitFromLanding(page, 'hi');
     expect(page.url()).toContain('/dock/shell/');
 

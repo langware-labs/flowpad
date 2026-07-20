@@ -71,7 +71,7 @@ export interface ViewerMeta {
     | 'GitGraph'
     | 'BrainCircuit'
     | 'Users'
-    | 'Inbox'
+    | 'Mail'
     | 'Stethoscope';
   /** Where this viewer renders: 'overview' tab or dedicated tab */
   tabLocation: 'overview' | 'dedicated';
@@ -240,12 +240,6 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     tabLocation: 'dedicated',
     canAddAsTab: true,
   },
-  [ViewType.EXECUTE_FLOW]: {
-    title: 'Execute Flow',
-    iconName: 'PlaySquare',
-    tabLocation: 'dedicated',
-    canAddAsTab: true,
-  },
   [ViewType.SHOW]: {
     title: 'Show',
     iconName: 'Eye',
@@ -260,6 +254,12 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
   },
   [ViewType.GRAPH]: {
     title: 'Graph',
+    iconName: 'Workflow',
+    tabLocation: 'dedicated',
+    canAddAsTab: true,
+  },
+  [ViewType.WORLDVIEW]: {
+    title: 'WorldView',
     iconName: 'Workflow',
     tabLocation: 'dedicated',
     canAddAsTab: true,
@@ -327,6 +327,12 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     tabLocation: 'dedicated',
     canAddAsTab: true,
   },
+  [ViewType.AGENTIC_FLOWS]: {
+    title: 'Agentic Flows',
+    iconName: 'Workflow',
+    tabLocation: 'dedicated',
+    canAddAsTab: true,
+  },
   [ViewType.PLAN]: {
     title: 'Plan',
     iconName: 'FileText',
@@ -338,12 +344,6 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     iconName: 'Zap',
     tabLocation: 'dedicated',
     canAddAsTab: false, // Only accessible via direct URL /dock/cron
-  },
-  [ViewType.WORKFLOWS]: {
-    title: 'Workflows',
-    iconName: 'Workflow',
-    tabLocation: 'dedicated',
-    canAddAsTab: true,
   },
   [ViewType.ASSETS]: {
     title: 'Assets',
@@ -360,7 +360,7 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
   },
   [ViewType.INBOX]: {
     title: 'Inbox',
-    iconName: 'Inbox',
+    iconName: 'Mail',
     tabLocation: 'dedicated',
     canAddAsTab: false,
   },

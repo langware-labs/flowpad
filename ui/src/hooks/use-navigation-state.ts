@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router';
 import { toplog } from '@sdk';
 
@@ -101,17 +101,8 @@ const useNavigationStore = create<NavigationStore>()(
   ),
 );
 
-// Deep linking configuration
-interface DeepLinkConfig {
-  // Map of route patterns to state extractors
-  routes: Record<string, (params: Record<string, string | undefined>, search: URLSearchParams) => unknown>;
-
-  // Map of state to URL builders
-  builders: Record<string, (state: Record<string, unknown>) => { path: string; search?: string }>;
-}
-
 // Hook for managing navigation with deep linking
-export function useNavigationState(config?: DeepLinkConfig) {
+export function useNavigationState() {
   const navigate = useNavigate();
   const location = useLocation();
   const params = useParams();
@@ -139,42 +130,6 @@ export function useNavigationState(config?: DeepLinkConfig) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.pathname, location.search]);
 
-  // Extract state from current URL using config
-  const currentState = useMemo(() => {
-    if (!config) return null;
-
-    const searchParams = new URLSearchParams(location.search);
-
-    // Find matching route pattern
-    for (const [pattern, extractor] of Object.entries(config.routes)) {
-      // Simple pattern matching (you could use path-to-regexp for complex patterns)
-      if (location.pathname.includes(pattern)) {
-        return extractor(params, searchParams);
-      }
-    }
-
-    return null;
-  }, [location, params, config]);
-
-  // Navigate with state persistence
-  const navigateWithState = useCallback(
-    (stateName: string, state: Record<string, unknown>, options?: { replace?: boolean }) => {
-      if (!config?.builders[stateName]) {
-        console.warn(`No builder configured for state: ${stateName}`);
-        return;
-      }
-
-      const { path, search } = config.builders[stateName](state);
-      const url = search ? `${path}?${search}` : path;
-
-      void navigate(url, {
-        replace: options?.replace,
-        state: { ...state, _source: stateName },
-      });
-    },
-    [navigate, config],
-  );
-
   // Build shareable URL for current state
   const getShareableUrl = useCallback(() => {
     const baseUrl = window.location.origin;
@@ -196,12 +151,10 @@ export function useNavigationState(config?: DeepLinkConfig) {
 
   return {
     // Current state
-    currentState,
     location,
     params,
 
     // Navigation
-    navigateWithState,
     goBack: () => {
       const can = store.canGoBack();
       // NOTE: this drives TWO stacks at once — the zustand store (store.goBack)
@@ -239,43 +192,3 @@ export function useNavigationState(config?: DeepLinkConfig) {
     copyShareableUrl,
   };
 }
-
-// Example configuration for agent/flow routes
-export const agentFlowDeepLinkConfig: DeepLinkConfig = {
-  routes: {
-    '/agent': (params, search) => ({
-      agentId: params.agentId,
-      processId: params.processId,
-      messageId: search.get('message'),
-      viewMode: search.get('view') || 'chat',
-      filters: search.get('filters') ? JSON.parse(search.get('filters')!) : {},
-    }),
-  },
-  builders: {
-    flow: (state) => {
-      const agentId = typeof state.agentId === 'string' ? state.agentId : '';
-      const processId = typeof state.processId === 'string' ? state.processId : '';
-      const messageId = typeof state.messageId === 'string' ? state.messageId : undefined;
-      const viewMode = typeof state.viewMode === 'string' ? state.viewMode : undefined;
-      const filters = state.filters && typeof state.filters === 'object' ? state.filters : undefined;
-
-      return {
-        path: `/agent/${agentId}/flow/${processId}`,
-        search: new URLSearchParams({
-          ...(messageId && { message: messageId }),
-          ...(viewMode && { view: viewMode }),
-          ...(filters && { filters: JSON.stringify(filters) }),
-        }).toString(),
-      };
-    },
-    agent: (state) => {
-      const agentId = typeof state.agentId === 'string' ? state.agentId : '';
-      const viewMode = typeof state.viewMode === 'string' ? state.viewMode : undefined;
-
-      return {
-        path: `/agent/${agentId}`,
-        search: viewMode ? `view=${viewMode}` : undefined,
-      };
-    },
-  },
-};

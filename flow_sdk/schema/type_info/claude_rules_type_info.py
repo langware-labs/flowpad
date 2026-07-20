@@ -14,7 +14,9 @@ CLAUDE_RULES = TypeMetadata(
     indexed_by_default=True,
     api_visible=True,
     index_fields=["name"],
-    main_subdir=".claude/rules",
+    asset_class="harness",
+    harness="claude",
+    family="rules",
     from_disk_fn=extract_claude_rules,
     gen_uuid_fn=claude_rules_gen_id,
 )

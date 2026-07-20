@@ -35,6 +35,12 @@ from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.core import Entity
 
 
+# Canonical per-example metadata filename inside an IO_FOLDER example dir.
+# Owned here (the model module) so writers (FlowManager's born-compatible
+# example stamps) and the indexer's reader agree by construction.
+EXAMPLE_META = "example.json"
+
+
 class DataLayoutEnum(StrEnum):
     """How a dataset's examples are physically stored on disk."""
 

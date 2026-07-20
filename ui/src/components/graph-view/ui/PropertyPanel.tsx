@@ -10,11 +10,28 @@ const EDGE_KIND_COLOR = paletteForTheme('dark').edgeKindColor;
 type Props = {
   node: NodeData | null;
   localRootKey: string | null;
+  showWorldViewProperties?: boolean;
   onNeighborClick: (key: string) => void;
   onFocus: (key: string) => void;
 };
 
-export function PropertyPanel({ node, localRootKey, onNeighborClick, onFocus }: Props) {
+function formatProperty(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  return JSON.stringify(value, null, 2);
+}
+
+function propertyLabel(key: string): string {
+  return key.replaceAll('_', ' ');
+}
+
+export function PropertyPanel({
+  node,
+  localRootKey,
+  showWorldViewProperties = false,
+  onNeighborClick,
+  onFocus,
+}: Props) {
   const { t } = useLingui();
 
   if (!node) {
@@ -65,6 +82,18 @@ export function PropertyPanel({ node, localRootKey, onNeighborClick, onFocus }: 
           <div className="kv-row"><span className="k">community</span><span className="v">{node.community}</span></div>
           <div className="kv-row"><span className="k">degree</span><span className="v">{node.degree}</span></div>
         </div>
+
+        {showWorldViewProperties && Object.keys(node.properties).length > 0 && (
+          <div className="section" data-testid="worldview-properties">
+            <h3><Trans>Deployment details</Trans></h3>
+            {Object.entries(node.properties).map(([key, value]) => (
+              <div className="worldview-property" key={key} data-property={key}>
+                <span className="k">{propertyLabel(key)}</span>
+                <pre className="v">{formatProperty(value)}</pre>
+              </div>
+            ))}
+          </div>
+        )}
 
         <div className="section">
           <h3><Trans>Edges by kind</Trans></h3>

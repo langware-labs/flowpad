@@ -132,8 +132,33 @@ export interface BootstrapInfo {
   /** Locales the app ships translations for (backend is the source of truth).
    *  The UI derives its picker from this — it does not hardcode a list. */
   supported_locales?: SupportedLocale[];
+  /** Target languages for *document* translation (backend is the source of
+   *  truth: flow_sdk/i18n/translation_targets.py). DISTINCT from
+   *  `supported_locales` (the UI-catalog set) — this is the broad set the
+   *  translator worker can render a doc into. Feeds the Translations side-panel
+   *  picker. `flag` is absent (document targets are language-only). */
+  translation_targets?: TranslationTarget[];
+  /** SPA-surfaces ("pages") this server serves, as `PageId` strings (dock URL
+   *  grammar / `DockPointer.page`). The local desktop server serves only
+   *  `"desk"`; a hub backend reports its own set. Navigation to a page not in
+   *  this list redirects to the first supported page's home. Absent ⇒ desk-only. */
+  supported_pages?: string[];
   /** One-time startup notice (e.g. secrets were reset). Absent normally. */
   notice?: BootstrapNotice;
+}
+
+/** A document-translation target language. Mirrors the backend descriptor in
+ *  flow_sdk/i18n/translation_targets.py. Same shape as `SupportedLocale` minus
+ *  `flag`, so the `LanguageSelector` picker renders it unchanged. */
+export interface TranslationTarget {
+  /** BCP-47-ish code — the `?lang=` dock-prop value and `<lang>.md` filename. */
+  code: string;
+  /** English name (for secondary label / search). */
+  englishName: string;
+  /** Endonym — the language's own name. */
+  nativeName: string;
+  /** Text direction of the translated document; drives the editor `dir`. */
+  dir: 'ltr' | 'rtl';
 }
 
 /** A locale the app ships translations for. Mirrors the backend descriptor in

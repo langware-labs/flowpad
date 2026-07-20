@@ -17,13 +17,16 @@ from typing import TYPE_CHECKING
 
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
     AgenticContext,
+    DeviceLoginSpec,
     AgenticProcessContextKey,
+    WorkerAuthResult,
     WorkerCLIOptions,
     WorkerSpawnError,
     apply_worker_env,
     apply_worker_secret_env,
     latch_spawn_failure,
     restart_payload_from_cli_options,
+    run_worker_auth_probe,
 )
 from flow_sdk.builtin.agentic_process.cli_drivers.codex.cli import CodexCliOptions
 from flow_sdk.builtin.agentic_process.cli_drivers.codex.session_history import (
@@ -234,6 +237,21 @@ class CodexDriver:
 
     def stream_worker(self, process: "AgenticProcess") -> CodexCLIStreamWorker:
         return CodexCLIStreamWorker.for_process(process.id)
+
+    # ── Auth ─────────────────────────────────────────────────────────────────
+
+    async def auth_probe(self) -> WorkerAuthResult:
+        """`codex login status` against the discovered CLI (exit-code based)."""
+        return await run_worker_auth_probe(self.name)
+
+    # RFC-8628 device flow. Requires "Allow device code login" enabled on the
+    # user's ChatGPT account; the CLI errors clearly when it isn't.
+    device_login_spec = DeviceLoginSpec(
+        login_argv=("codex", "login", "--device-auth"),
+        url_re=re.compile(r"(https://auth\.openai\.com/\S+)"),
+        code_re=re.compile(r"^\s*([A-Z0-9]{2,10}-[A-Z0-9]{2,10})\s*$", re.MULTILINE),
+        accepts_code_paste=False,
+    )
 
     # ── Transcript discovery ─────────────────────────────────────────────────
 

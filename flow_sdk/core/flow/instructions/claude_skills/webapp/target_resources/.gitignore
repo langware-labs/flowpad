@@ -1,8 +1,0 @@
-.mcp_servers
-
-.cache
-.npm
-node_modules
-__pycache__
-dist
-.venv

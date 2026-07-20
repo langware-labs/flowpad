@@ -1,4 +1,4 @@
-import { APIEntity, dataManager, registerEntity } from '../APIEntity';
+import { APIEntity, dataManager, registerEntity, type EntityMember } from '../APIEntity';
 import { IEntity } from '../IEntity';
 import { ActionInfo } from '../models/ActionInfo';
 import { DockPointerData } from '../models/DockPointer';
@@ -64,7 +64,9 @@ export interface IConversation extends IEntity {
   remote_project_name?: string | null;
   message_count?: number;
   message_ids?: string | null;  // JSON-encoded RawConversationPointer[]
-  participants?: ConversationParticipant[];
+  /** Hub role roster — inherited from the Entity base as ``members``. The wire
+   *  key on the conversation fanout is ``participants`` (hub contract), adapted
+   *  in ``onEntityUpdate``. */
   /** User-set display title. Set at creation in NewConversationDialog and
    *  shipped through the bundle on cross-user send. */
   title?: string | null;
@@ -100,7 +102,7 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
   remote_project_name?: string | null;
   message_count?: number;
   message_ids?: string | null;
-  participants?: ConversationParticipant[];
+  // ``members`` (the hub role roster) is inherited from the Entity base.
   title?: string | null;
   message_status_visible?: boolean;
   git_sharing_enabled?: boolean;
@@ -116,7 +118,6 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
     this.remote_project_name = entity.remote_project_name;
     this.message_count = entity.message_count;
     this.message_ids = entity.message_ids;
-    this.participants = entity.participants;
     this.title = entity.title;
     this.message_status_visible = entity.message_status_visible ?? true;
     this.git_sharing_enabled = entity.git_sharing_enabled ?? false;
@@ -141,19 +142,26 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
    * Called by the store when the backend pushes an entity update
    * (castAndDeepAssign runs this hook, then deepAssign on what's left).
    *
-   * A wire ``participants`` roster is a full server-authoritative snapshot —
-   * it must REPLACE, not merge. ``deepAssign`` recurses into arrays and merges
-   * them by index, never shrinking the target, so a member leaving would leave
-   * a stale tail entry ([A,B] + wire [B] → [B,B]). Assign the wire value
-   * wholesale here and strip it from the payload so the following deepAssign
-   * skips it. (Same pattern AgenticProcess uses for ``queue``.)
+   * The roster (``members``) is a full server-authoritative snapshot — it must
+   * REPLACE, not merge. ``deepAssign`` recurses into arrays and merges them by
+   * index, never shrinking the target, so a member leaving would leave a stale
+   * tail entry ([A,B] + wire [B] → [B,B]). Assign the wire value wholesale here
+   * and strip it from the payload so the following deepAssign skips it. (Same
+   * pattern AgenticProcess uses for ``queue``.)
+   *
+   * Wire adapter: the local backend serializes the roster as ``members``; the
+   * hub conversation fanout uses ``participants`` (hub contract). Accept either
+   * key and land it on ``members``.
    * @internal
    */
-  protected onEntityUpdate(data: Partial<IConversation>): void {
-    if ('participants' in data) {
-      const roster = data.participants;
-      this.participants = Array.isArray(roster) ? roster.map((p) => ({ ...p })) : roster;
-      delete data.participants;
+  protected onEntityUpdate(data: Partial<IConversation> & { participants?: unknown }): void {
+    const key = 'members' in data ? 'members' : 'participants' in data ? 'participants' : null;
+    if (key) {
+      const roster = (data as Record<string, unknown>)[key];
+      this.members = Array.isArray(roster)
+        ? roster.map((p) => ({ ...(p as EntityMember) }))
+        : (roster as EntityMember[] | undefined);
+      delete (data as Record<string, unknown>)[key];
     }
   }
 

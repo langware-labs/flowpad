@@ -12,7 +12,14 @@
  * Timeout: 240s (two real Claude turns) — the established long-test cap; do not raise.
  */
 
-import { AgenticProcess, ConnectionManager, FlowData, FlowElementTypes, type UiCommandMessage } from '@sdk';
+import {
+  AgenticProcess,
+  ConnectionManager,
+  FlowData,
+  FlowElementTypes,
+  WorkerModelTier,
+  type UiCommandMessage,
+} from '@sdk';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiTestSetup, getTestSignupInfo } from '../utils/test-utils';
 import * as fs from 'fs';
@@ -94,7 +101,16 @@ describe('assistance agent flow navigate — ui_command(navigate_entity) reaches
     proc = await new AgenticProcess({
       workdir,
       load_flowpad_assistant: true,
-      cli_config: { permission_mode: 'bypassPermissions' },
+      cli_config: {
+        permission_mode: 'bypassPermissions',
+        // This test exercises the navigate PLUMBING (skill → `flow navigate` →
+        // ui_command on the WS), not model quality — same rationale as the
+        // sibling flow_show_display_focus test. Unpinned, the turn runs the
+        // backend default (opus-4-8): turn 1 alone measured 89s, so two real
+        // turns plus a skill invocation cannot fit the 240s cap. SM (→ haiku)
+        // keeps it inside the cap without touching the cap.
+        model: WorkerModelTier.SM,
+      },
     }).save([]);
     await proc.watch();
 

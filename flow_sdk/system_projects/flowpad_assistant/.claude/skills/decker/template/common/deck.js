@@ -18,6 +18,17 @@
       progress: true,
       overview: true,
     });
+
+    /* The srcDoc iframe never receives focus by default, so Reveal's
+     * keydown handler never fires and arrow keys look like they do nothing.
+     * Grab focus on load and again on first pointer interaction. */
+    var grabFocus = function () {
+      document.body.focus();
+      window.focus();
+    };
+    document.body.setAttribute("tabindex", "-1");
+    grabFocus();
+    document.addEventListener("pointerdown", grabFocus);
   }
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", boot);

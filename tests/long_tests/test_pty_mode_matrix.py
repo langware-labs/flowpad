@@ -28,6 +28,7 @@ import shutil
 import httpx
 import pytest
 
+from tests.long_tests._model_tier import small_model_for
 from tests.test_settings import test_service_config
 
 pytestmark = [
@@ -94,12 +95,16 @@ def _require_binary(worker_type: str) -> None:
 
 async def _create(hub_client, compute_node_id: str, workdir: str, worker_type: str, pty_mode: bool) -> dict:
     """Create a process in the requested transport. Returns the process row."""
+    context = {
+        "workdir": workdir,
+        "worker_type": worker_type,
+        "permission_mode": "bypassPermissions",
+    }
+    model = small_model_for(worker_type)
+    if model:
+        context["model"] = model
     body = {
-        "context": {
-            "workdir": workdir,
-            "worker_type": worker_type,
-            "permission_mode": "bypassPermissions",
-        },
+        "context": context,
         # headless == !visible; pty_mode seeds visible at launch (see plan).
         "visible": pty_mode,
         "pty_mode": pty_mode,

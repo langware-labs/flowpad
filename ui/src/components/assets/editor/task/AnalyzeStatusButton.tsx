@@ -1,16 +1,18 @@
-import { ActionInfo, dataManager, launchWizard, Task, TaskKind } from '@sdk';
+import { ActionInfo, dataManager, Task, TaskKind, type WizardData, type WizardProcessResult } from '@sdk';
 import { DONE_GATE_FIELDS } from '@src/components/task-bar/constants';
 import { openArtifact } from '@src/components/task-bar/task-utils';
+import { WizardButton } from '@src/components/wizard/WizardButton';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { cn } from '@src/lib/utils';
-import { notify } from '@src/notifications';
 import { ScanSearch } from 'lucide-react';
-import { useCallback, useState } from 'react';
+import { useCallback } from 'react';
 
 interface AnalyzeStatusResult {
   summary?: string;
   analysisPath?: string;
   missing?: string[];
+  /** The wizard's verdict that every done-gate field is satisfied and the work
+   *  is complete — drives the "you can switch to Done" popup. */
+  readyForDone?: boolean;
 }
 
 interface AnalyzeStatusButtonProps {
@@ -21,86 +23,75 @@ interface AnalyzeStatusButtonProps {
 }
 
 /**
- * Launches the `task-analyze` wizard on this task. For a group task the
- * backend `sync-group` runs first so the analysis reads fresh member rows
- * (offline → analyze what we have). The wizard agent stamps `process_id` /
- * `analysis_path` on the task itself, which lights the AnalysisProgressRow.
+ * Runs the `task-analyze` wizard on this task inline (single click; spinner +
+ * live tool count on the button — double click opens the full wizard). For a
+ * group task the backend `sync-group` runs first so the analysis reads fresh
+ * member rows (offline → analyze what we have). The wizard agent stamps
+ * `process_id` / `analysis_path` on the task itself, which lights the
+ * AnalysisProgressRow; those outcomes persist even if the user navigates away.
  */
 export function AnalyzeStatusButton({ task, onAnalyzed, className }: AnalyzeStatusButtonProps) {
-  const [busy, setBusy] = useState(false);
   const { navigation } = useDockNavigation();
+  const isGroup = task.kind === TaskKind.GROUP;
 
-  const run = useCallback(async () => {
-    if (busy || !task.id) return;
-    setBusy(true);
-    const isGroup = task.kind === TaskKind.GROUP;
-    try {
-      if (isGroup) {
-        try {
-          await dataManager.callAction(new ActionInfo('sync-group', Task.type, task.id, 'POST'));
-        } catch {
-          // Offline / hub unreachable — analyze the rows we have.
-        }
+  const buildRequest = useCallback(async (): Promise<WizardData> => {
+    if (isGroup) {
+      try {
+        await dataManager.callAction(new ActionInfo('sync-group', Task.type, task.id, 'POST'));
+      } catch {
+        // Offline / hub unreachable — analyze the rows we have.
       }
-      const result = await launchWizard<AnalyzeStatusResult>('task-analyze', {
-        title: isGroup ? 'Analyze group status' : 'Analyze task status',
-        targetTypeId: task.typeId.toString(),
-        payload: {
-          taskId: task.id,
-          mode: isGroup ? 'group' : 'standard',
-          projectId: task.project_id ?? null,
-          taskFolder: task.asset_ref ?? null,
-          doneGateFields: DONE_GATE_FIELDS.map((f) => f.field),
-        },
-        prompt: isGroup
-          ? 'Analyze the status of this group task across all its member tasks and produce the owner summary.'
-          : 'Analyze the current status of this task, fill in missing fields where you can, and report progress.',
-      });
-      if (result.status === 'error') {
-        notify.error({ title: 'Analyze Status failed', message: result.errorStr ?? undefined });
-        onAnalyzed?.(null);
-        return;
-      }
+    }
+    return {
+      title: isGroup ? 'Analyze group status' : 'Analyze task status',
+      targetTypeId: task.typeId.toString(),
+      payload: {
+        taskId: task.id,
+        mode: isGroup ? 'group' : 'standard',
+        projectId: task.project_id ?? null,
+        taskFolder: task.asset_ref ?? null,
+        doneGateFields: DONE_GATE_FIELDS.map((f) => f.field),
+      },
+      prompt: isGroup
+        ? 'Analyze the status of this group task across all its member tasks and produce the owner summary.'
+        : 'Analyze the current status of this task, fill in missing fields where you can, and report progress.',
+    };
+  }, [isGroup, task]);
+
+  const handleResult = useCallback(
+    (result: WizardProcessResult<AnalyzeStatusResult>) => {
       if (result.status === 'done') {
         const data = result.data ?? null;
-        notify.success({
-          title: isGroup ? 'Group status analyzed' : 'Task status analyzed',
-          message: data?.summary,
-        });
         // The persistent report link lives on the task card's analysis row
         // (the wizard stamped analysis_path); open the group report directly.
-        if (isGroup && data?.analysisPath) {
-          openArtifact(data.analysisPath, navigation);
-        }
+        if (isGroup && data?.analysisPath) openArtifact(data.analysisPath, navigation);
         onAnalyzed?.(data);
       } else {
         onAnalyzed?.(null);
       }
-    } catch (e) {
-      notify.error({
-        title: 'Analyze Status failed',
-        message: e instanceof Error ? e.message : undefined,
-      });
-      onAnalyzed?.(null);
-    } finally {
-      setBusy(false);
-    }
-  }, [busy, task, navigation, onAnalyzed]);
+    },
+    [isGroup, navigation, onAnalyzed],
+  );
 
   return (
-    <button
-      type="button"
-      onClick={() => void run()}
-      disabled={busy}
-      data-testid="task-analyze-status"
-      className={cn(
-        'flex items-center gap-1.5 rounded-full border border-transparent px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted/60 disabled:opacity-50',
-        className,
-      )}
+    <WizardButton<AnalyzeStatusResult>
+      wizardName="task-analyze"
+      buildRequest={buildRequest}
+      successMessage={(data) => {
+        if (isGroup) return 'Your group status report is ready';
+        if (data?.readyForDone) return 'This task looks done — you can switch its status to Done';
+        return 'Your status report is ready';
+      }}
+      errorTitle="Analyze Status failed"
+      onResult={handleResult}
+      runningLabel="Analyzing"
+      className={className}
+      disabled={!task.id}
+      testId="task-analyze-status"
       title="Let an agent assess progress and fill in missing fields"
     >
       <ScanSearch className="h-3.5 w-3.5" />
-      {busy ? 'Analyzing…' : 'Analyze Status'}
-    </button>
+      Analyze Status
+    </WizardButton>
   );
 }

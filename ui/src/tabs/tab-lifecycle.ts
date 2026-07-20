@@ -153,16 +153,22 @@ async function materializeTab(dock: DockPointer): Promise<{ tab: Tab | null; tab
   // it's mounted, else a COLD-open resolver (direct link / reload with nothing
   // mounted) — today that's the vibe invariant "an asset opened in vibe renders
   // inside a vibe workspace", resolved mode-agnostically in `resolveColdOpenParent`.
-  const parentTabId = dockAddressesAsset(dock)
+  const addressesAsset = dockAddressesAsset(dock);
+  const parentTabId = addressesAsset
     ? (getActiveTabParent() ?? (await resolveColdOpenParent(dock, existingTab?.project_id ?? null)))
     : null;
   // Mirror the backend's self-parent guard: a tab can never adopt itself, and
   // would otherwise re-resolve on every return navigation forever.
   const needsReparent =
-    !!parentTabId &&
-    !!existingTab &&
-    existingTab.id !== parentTabId &&
-    existingTab.parent_tab_id !== parentTabId;
+    !!parentTabId && !!existingTab && existingTab.id !== parentTabId && existingTab.parent_tab_id !== parentTabId;
+  // Inverse of the adopt guard: a NON-adoptable dock must never CARRY a parent
+  // either. A stale edge persisted onto e.g. an assets-list row (written under
+  // the retired display-tab model, before the adoptable allow-list) resurrects
+  // a vibe workspace around a top-level surface on every reuse — the rail's
+  // project button re-opened the last process (RCA 2026-07-16). Falls through
+  // to the mint below, where the backend (`ensure_tab`'s adoptable-pointer
+  // guard) null-heals the row — same self-heal seam as its stale siblings.
+  const staleParentEdge = !!existingTab?.parent_tab_id && !addressesAsset;
   // A lens dock can't trust the row's denormalized project_id: the loader
   // activates the TARGET entity's project on every load, and the indexer may
   // re-stamp that target through the disk→DB path (`sync_to_db`), which skips
@@ -178,11 +184,18 @@ async function materializeTab(dock: DockPointer): Promise<{ tab: Tab | null; tab
     !!existingTab &&
     (await Tab.resolveDockTarget(dock)).projectId !== (existingTab.project_id ?? null);
   // Reuse an existing tab verbatim EXCEPT a project-less content tab (see the
-  // project self-heal below), a stale lens tab (above), or one that needs
-  // re-parenting into the active workspace. All three fall through to
-  // `getFromDockPointer`, which re-derives project_id from the asset and adopts
-  // the parent, self-healing the row.
-  if (existingTab && !lensProjectStale && (existingTab.project_id || !dockAddressesAsset(dock)) && !needsReparent) {
+  // project self-heal below), a stale lens tab (above), one that needs
+  // re-parenting into the active workspace, or one carrying a stale parent
+  // edge. All four fall through to `getFromDockPointer`, which re-derives
+  // project_id from the asset and adopts (or sheds) the parent, self-healing
+  // the row.
+  if (
+    existingTab &&
+    !lensProjectStale &&
+    (existingTab.project_id || !addressesAsset) &&
+    !needsReparent &&
+    !staleParentEdge
+  ) {
     return { tab: existingTab, tabs: existing };
   }
 
@@ -246,6 +259,12 @@ export async function setupTab(dock: DockPointer, options: SetupTabOptions = {})
         throw new Error('Tab could not be materialized for this URL.');
       }
       setEntry(key, TabLifecycleState.Opening, { tabId: tab.id });
+      // Stamp recency on EVERY tab landing, not just terminals: `last_active_at`
+      // is what scope-entry (project switching) reads as "the last tab open in
+      // this project", so browse/content tabs (project, assets, plan, …) must
+      // record selection too — the shell/process loaders' own stamp covers only
+      // their tabs. Fire-and-forget: loaders stay fast.
+      void Tab.activateById(tab.id).catch(() => {});
       options.onMaterialized?.(tabs);
       await adapter.setupTab(dock);
       setEntry(key, TabLifecycleState.Opened, { tabId: tab.id });

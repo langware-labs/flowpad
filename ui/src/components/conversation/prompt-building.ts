@@ -24,7 +24,7 @@ export function buildContextEntityLines(typeIds: readonly TypeId[]): string[] {
     if (!tid?.type || !tid?.id || tid.type === FlowMessage.type) continue;
     const label = humanType(tid.type);
     if (recordsRoot) {
-      const recordPath = `${recordsRoot}/${tid.type}/${tid.type}-@${tid.id}`;
+      const recordPath = `${recordsRoot}/${tid.type}/${tid.id}`;
       out.push(`- ${label}: ${tid.toUrlString()}, read: ${recordPath}`);
     } else {
       out.push(`- ${label}: ${tid.toUrlString()}, fetch: GET http://localhost:9007/api/v1/graph/${tid.type}/${tid.id}`);

@@ -9,7 +9,6 @@ import { AssetCompareView } from '@src/components/code-editor/AssetCompareView';
 import DiffViewer from '@src/components/code-editor/DiffViewer';
 import { DocsViewer } from '@src/components/docs-viewer/DocsViewer';
 import EnvVarsManager from '@src/components/EnvVarsManager';
-import { ExecuteFlowView } from '@src/components/execute-flow-view';
 import { ExplorerView } from '@src/components/explorer-view';
 import { HooksManager } from '@src/components/hooks-manager';
 import { LensViewer } from '@src/components/lens-viewer';
@@ -40,7 +39,6 @@ import { TabbedTerminal } from '@src/components/terminal';
 import { TriggersView } from '@src/components/triggers-view';
 import { Button } from '@src/components/ui/button';
 import { WebappViewer } from '@src/components/webapp-viewer';
-import { WorkflowsPage } from '@src/components/workflows-view/WorkflowsPage';
 import { useActiveViewer } from '@src/hooks/flow-hooks';
 import { useViewerStore } from '@src/hooks/flow-hooks/useViewerStore';
 import { useEnvVarsStore } from '@src/hooks/use-env-vars-store';
@@ -52,7 +50,6 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { SpecRoute } from '@src/pages/spec/SpecRoute';
 import { GraphContextViewer } from '@src/components/graph-context/GraphContextViewer';
 import { DiagnosisViewer } from '@src/components/diagnosis-viewer/DiagnosisViewer';
-import { useSendMessageStore } from '@src/store/use-send-message-store';
 import { useSurveyStore } from '@src/store/use-survey-store';
 import { TabLifecycleState, useTabLifecycle } from '@src/tabs/tab-lifecycle';
 import { DockLoadErrorView } from '@src/components/agent-layout/DockLoadErrorView';
@@ -68,6 +65,11 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react
 // CI, software-render fallbacks). Loading it only when the graph tab opens
 // keeps app bootstrap independent of WebGL availability.
 const GraphView = lazy(() => import('@src/components/graph-view/GraphView').then((m) => ({ default: m.GraphView })));
+const WorldView = lazy(() => import('@src/components/graph-view/GraphView').then((m) => ({ default: m.WorldView })));
+// Lazy like GRAPH — keeps @xyflow/react out of app bootstrap.
+const AgenticFlowsView = lazy(() =>
+  import('@src/components/agentic-flows/AgenticFlowsView').then((m) => ({ default: m.AgenticFlowsView })),
+);
 const DocsGraphView = lazy(() =>
   import('@src/components/graph-view/DocsGraphView').then((m) => ({ default: m.DocsGraphView })),
 );
@@ -105,11 +107,11 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
 
   const { user } = useAuth();
 
-  const { flow, agent } = useAgentContext();
+  const { agent } = useAgentContext();
   const { project: contextProject } = useContext();
 
   // Sync flow focus and URL dock state to viewer store
-  useActiveViewer(flow);
+  useActiveViewer();
 
   const terminalTabs = useTerminalTabs();
 
@@ -146,15 +148,10 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
 
   const { setOpenEnvironmentTab } = useEnvVarsStore();
 
-  const { sendMessage } = useSendMessageStore();
-
+  // Same live retry path as vibe-workspace: prompt the active process.
   const onWebappErrorRetry = useCallback(
-    (retryMessage: string) => {
-      if (sendMessage) {
-        void sendMessage(retryMessage, {});
-      }
-    },
-    [sendMessage],
+    (retryMessage: string) => void dataContext.agenticProcess?.prompt(retryMessage),
+    [],
   );
 
   const handleExplorerFileSelect = useCallback(
@@ -336,8 +333,6 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
         return <TriggersView />;
       case ViewType.CAPABILITIES:
         return <CapabilitiesView />;
-      case ViewType.EXECUTE_FLOW:
-        return <ExecuteFlowView />;
       case ViewType.SHOW:
         return <ShowView />;
       case ViewType.APPS:
@@ -346,6 +341,18 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
         return (
           <Suspense fallback={null}>
             <GraphView />
+          </Suspense>
+        );
+      case ViewType.WORLDVIEW:
+        return (
+          <Suspense fallback={null}>
+            <WorldView />
+          </Suspense>
+        );
+      case ViewType.AGENTIC_FLOWS:
+        return (
+          <Suspense fallback={null}>
+            <AgenticFlowsView />
           </Suspense>
         );
       case ViewType.K_BROWSER:
@@ -368,8 +375,6 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
         return <DesktopPage />;
       case ViewType.SEARCH:
         return <SearchView />;
-      case ViewType.WORKFLOWS:
-        return <WorkflowsPage />;
       case ViewType.AGENTIC_PROCESS:
         return currentDock?.pointer ? (
           <ProcessTerminal key={currentDock.pointer} processId={currentDock.pointer} />

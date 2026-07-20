@@ -24,6 +24,7 @@ pytestmark = pytest.mark.skipif(
 )
 
 from flow_sdk.builtin.agentic_process import AgenticProcess
+from flow_sdk.builtin.agentic_process.model_tiers import ModelTier
 from flow_sdk.builtin.agentic_process.status_predicates import is_ready_for_input
 from flow_sdk.builtin.faas.compute_node import ComputeNode
 
@@ -38,7 +39,7 @@ async def test_prompt_queue_drains_into_worker(bootstrapped_client, tmp_path, vi
 
     process = AgenticProcess(
         compute_node_id=f"compute_node-{cn.id}",
-        cli_config={"permission_mode": "bypassPermissions"},
+        cli_config={"permission_mode": "bypassPermissions", "model": ModelTier.SM.value},
         workdir=str(tmp_path),
         visible=visible,
     )

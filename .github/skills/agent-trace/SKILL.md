@@ -79,6 +79,8 @@ For each attention segment / marker cluster, read the relevant transcript span t
 
 A finding with no `skill` is **session-level** (goal drift, a wrong conclusion, a flaky retry that no skill caused) — leave `skill` unset; it stays for the human, never goes to a fixer. Prefer one structured attributed finding over a prose `notes` line: `notes` is for context that isn't a per-skill defect; anything actionable on a skill belongs in a `divergence`/`issue` with `skill` + `section_hint` + `evidence` set.
 
+**Exhaustiveness — triage every deterministic issue.** Every `issue`/`stuck` marker in the skeleton must be accounted for: either covered by one of your findings or explicitly noted benign in `notes`. Failed tool calls (nonzero exit codes — quote the exit code and any `error_code`), CLI failures, and user pushback in the transcript ("explain yourself", "RCA rejected", repeated re-asks) are first-class evidence to dig, not noise. When the run exposes a **product bug** — a tool or CLI misreporting state, two commands contradicting each other, an error message whose claim is provably false in the same transcript — surface it as a session-level finding with evidence; do not scope it away because it isn't the analyzed asset's defect.
+
 ### 3. Annotate
 
 Write `$OUT/<SESSION_ID>.annotations.json`:
@@ -95,9 +97,15 @@ Write `$OUT/<SESSION_ID>.annotations.json`:
   "issues": [{"ts": "...", "lane_id": "...", "label": "...", "detail": "...", "severity": "attention",
               "skill": "<skill-name, if applicable>", "section_hint": "<verbatim skill quote>",
               "evidence": {"quote": "<verbatim transcript excerpt>", "ts": "..."}}],
-  "notes": ["context that is NOT a per-skill defect (env, one-off) — skill defects go in divergences/issues with skill+section_hint+evidence"]
+  "notes": ["context that is NOT a per-skill defect (env, one-off) — skill defects go in divergences/issues with skill+section_hint+evidence"],
+  "by_asset": {"<asset key exactly as given in the request>": {"asset_ref": "<path>", "typeid": "<typeid>",
+               "findings": [{"kind": "issue|divergence", "ts": "...", "label": "...", "detail": "...",
+                             "section_hint": "<verbatim asset-file quote>",
+                             "evidence": {"quote": "...", "ts": "..."}, "severity": "notable|attention"}]}}
 }
 ```
+
+**Targeted asset requests.** When the launch prompt names a specific asset (an asset `key`, `typeid`, and/or path), you MUST also fill the top-level `by_asset` bucket keyed **exactly** by the given key — the asset-improve flow's poller reads ONLY `annotations.by_asset[<key>]`; an analysis that leaves it empty reads as "no findings" to the caller even when `issues`/`by_skill` are populated. Put every verified finding relevant to that asset there (duplicating a skill-attributed finding is expected — `by_skill` routes to skillit, `by_asset` routes to the requester). Set `asset_ref` to the given path: the backend resolves each finding's `section_hint` anchors against that file (or every `.md` under it when it's a folder), flagging `unresolved_anchors` exactly like skill anchors. Omit `by_asset` entirely when the request names no asset.
 
 `skill` / `section_hint` / `evidence` are optional per finding — set them when a skill caused it (see Per-asset attribution above), omit for session-level findings. The backend folds attributed findings into `annotations.by_skill[<skill>]` (the per-asset bucket skillit consumes) and the rest into `annotations.unattributed`, and stamps each with `judged_against` (`loaded` = the SKILL body the run actually used, recovered from the transcript; else `disk`) and `unresolved_anchors`. **Judge against the loaded body, not on-disk** — if `summary.skill_drift[<skill>]` is true the run used a different skill version than what's on disk now, so a finding about on-disk text the run never saw is likely spurious.
 
@@ -107,7 +115,7 @@ Timestamps must be copied verbatim from skeleton entries (ISO-8601 Z) so markers
 
 Your findings are hypotheses until the transcript backs them. Before you create the record, **substantiate each attributed finding with an independent refuter** — a fresh look biased toward disproving it — so a misread trace never reaches skillit as a fix. (This run's own analysis can't be its own judge: it already believed the finding.)
 
-For each finding in `annotations.by_skill[*].findings`, launch ONE `model: haiku` agent from `agents/finding-verifier.md`, filled with the finding, its `evidence` quote, the session id, and the loaded skill body (`agent_trace --loaded-skills <SESSION_ID>` — the body the run actually used). It returns `{substantiated, quote, reason}`:
+For each finding in `annotations.by_skill[*].findings` and `annotations.by_asset[*].findings` (verify a duplicated finding once and reuse the verdict for both buckets), launch ONE `model: haiku` agent from `agents/finding-verifier.md`, filled with the finding, its `evidence` quote, the session id, and the loaded skill body (`agent_trace --loaded-skills <SESSION_ID>` — the body the run actually used). For a `by_asset`-only finding there may be no skill involved: fill the verifier with the asset file at the bucket's `asset_ref` instead of a skill body. It returns `{substantiated, quote, reason}`:
 
 * **substantiated** → keep the finding.
 

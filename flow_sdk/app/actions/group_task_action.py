@@ -220,6 +220,24 @@ def _group_members(group: ContactsGroup, owner_email: str | None) -> tuple[list[
     return members, failed
 
 
+async def _resolve_group(body: dict) -> ContactsGroup:
+    """Resolve the contacts group from the action body: an explicit
+    ``members`` list (frontend-computed group — membership is never stored,
+    so the client sends the participant dicts directly; wins over group_id)
+    or a stored group by ``group_id``. The computed branch builds a transient
+    group only ``_group_members`` will read — never saved."""
+    raw_members = body.get("members")
+    if isinstance(raw_members, list):
+        return ContactsGroup(contacts=[m for m in raw_members if isinstance(m, dict)])
+    group_id = str(body.get("group_id") or "").strip()
+    if not group_id:
+        raise HTTPException(status_code=400, detail="create-group-task: 'group_id' or 'members' required")
+    group = await ContactsGroup.get_one({"id": group_id})
+    if group is None:
+        raise HTTPException(status_code=404, detail="create-group-task: contacts group not found")
+    return group
+
+
 async def _invite_member(email: str, child: Task, parent: Task) -> None:
     """One invitation, two targets — the member task FIRST (the hub renders the
     first non-conversation target as the inbox row), then the parent as guest."""
@@ -236,7 +254,10 @@ async def _invite_member(email: str, child: Task, parent: Task) -> None:
 
 @action.post(action_name="create-group-task", types=["task"])
 async def create_group_task() -> ApiResponse:
-    """``POST /graph/task/<id>/create-group-task`` — body ``{"group_id": ...}``.
+    """``POST /graph/task/<id>/create-group-task`` — body carries EITHER
+    ``{"group_id": ...}`` (a stored contacts group) OR
+    ``{"members": [{user_id?, email?, name?}]}`` (a frontend-computed group
+    whose roster is never stored; ``members`` wins if both are present).
 
     Flips the target task into a group task and creates one member task per
     contacts-group member: local child row (title clone only) → hub child
@@ -262,18 +283,12 @@ async def create_group_task() -> ApiResponse:
         body = await request_info.get_post_data() or {}
     except JSONDecodeError:
         body = {}
-    group_id = str(body.get("group_id") or "").strip()
-    if not group_id:
-        raise HTTPException(status_code=400, detail="create-group-task: 'group_id' required")
-
     task = await Task.get_one({"id": target.id})
     if task is None:
         raise HTTPException(status_code=404, detail="create-group-task: task not found")
     if task.parent_id:
         raise HTTPException(status_code=400, detail="create-group-task: a member task cannot become a group task")
-    group = await ContactsGroup.get_one({"id": group_id})
-    if group is None:
-        raise HTTPException(status_code=404, detail="create-group-task: contacts group not found")
+    group = await _resolve_group(body)
 
     members, failed = _group_members(group, _owner_email())
     if not members and not failed:
@@ -342,14 +357,21 @@ async def create_group_task() -> ApiResponse:
                 created.remove(email)
             failed.append({"email": email, "error": str(e)[:200]})
 
-    if (created or by_assignee) and task.kind != TaskKind.GROUP.value:
+    if (created or by_assignee) and (task.kind != TaskKind.GROUP.value or task.group_name != group.name):
         task.kind = TaskKind.GROUP.value
+        # The group's name is what the owner surface renders ("Owner: <name>") —
+        # the task itself is the only place it's persisted.
+        task.group_name = group.name
         await task.save(request_info.someone_typeid)
         # A server-side save doesn't hub-reflect (that's the client
         # header path) — push the flip explicitly so the hub row reads
         # ``group`` for every member fetch.
         try:
-            await hub_put(BuiltinEntityType.TASK, str(task.id), {"kind": TaskKind.GROUP.value})
+            await hub_put(
+                BuiltinEntityType.TASK,
+                str(task.id),
+                {"kind": TaskKind.GROUP.value, "group_name": group.name},
+            )
         except Exception as e:  # noqa: BLE001
             logger.warning("[group-task] hub kind flip failed (non-fatal): %s", e)
 

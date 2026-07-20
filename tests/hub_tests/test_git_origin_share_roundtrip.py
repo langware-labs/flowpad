@@ -138,7 +138,7 @@ async def test_git_origin_asset_body_round_trips_through_live_hub(
     await sender_skill.delete()
 
     await fm.download_body()
-    await _install_staged(fm.id, f"{EntityType.SKILL.value}-@{skill_id}", project_id=project.id)
+    await _install_staged(fm.id, f"{EntityType.SKILL.value}-{skill_id}", project_id=project.id)
 
     expected = receiver_project_root / REL_PATH / "SKILL.md"
     assert expected.exists(), (
@@ -242,7 +242,7 @@ async def test_git_origin_markdown_body_round_trips_through_live_hub_and_search(
     await sender_doc_entity.delete()
 
     await fm.download_body()
-    await _install_staged(fm.id, f"{EntityType.MARKDOWN.value}-@{doc_id}", project_id=project.id)
+    await _install_staged(fm.id, f"{EntityType.MARKDOWN.value}-{doc_id}", project_id=project.id)
 
     expected = receiver_repo / rel_path
     assert expected.exists(), (

@@ -1,0 +1,247 @@
+"""Generic device-login engine — runs one vendor CLI's login flow under a PTY.
+
+One shared state machine for every harness; the vendor differences live
+entirely in each driver's declared ``DeviceLoginSpec`` (argv, URL/code
+regexes, paste-back flag). No orchestration code branches on vendor.
+
+Flow: pre-probe (already logged in ⇒ short-circuit) → spawn the login CLI in
+a PTY → scrape the OAuth URL (+ one-time code for device flows) from the
+stream → surface them to the consumer via ``on_change`` → auto-answer known
+interactive prompts (keychain) → optionally inject a user-pasted code
+(claude) → on process exit re-run the auth probe (exit alone is never
+trusted) → AUTHENTICATED / ERROR.
+
+PTY handling mirrors the desktop compute provider: ``PtyProcess.spawn`` plus
+a daemon read-thread; state-change callbacks are marshalled back onto the
+event loop with ``call_soon_threadsafe``.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import threading
+from functools import partial
+from typing import Any, Awaitable, Callable
+
+from flow_sdk.builtin.agentic_process.cli_drivers.auth_probe import (
+    DeviceLoginSpec,
+    DeviceLoginState,
+    WorkerAuthResult,
+    WorkerAuthStatus,
+    clean_pty_output,
+    find_auto_answer,
+    scrape_device_login,
+)
+from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
+    build_worker_spawn_env,
+    get_driver,
+    run_worker_auth_probe,
+    WorkerSpawnError,
+)
+
+logger = logging.getLogger(__name__)
+
+# Wide terminal so long OAuth URLs never soft-wrap mid-scrape (the scraper can
+# rejoin wraps, but a generous width keeps the raw stream simple).
+PTY_DIMENSIONS = (50, 1000)
+
+
+class DeviceLoginSession:
+    """One in-flight login flow for one worker type.
+
+    ``argv``/``probe_fn`` are validation seams (e.g. running the CLI inside a
+    docker container): they default to the driver spec's argv and the real
+    host probe.
+    """
+
+    def __init__(
+        self,
+        worker_type: str,
+        *,
+        on_change: Callable[["DeviceLoginSession"], Awaitable[None]] | None = None,
+        argv: list[str] | None = None,
+        probe_fn: Callable[[], Awaitable[WorkerAuthResult]] | None = None,
+    ) -> None:
+        self.worker_type = worker_type
+        self.spec: DeviceLoginSpec = get_driver(worker_type).device_login_spec
+        self._argv = argv or list(self.spec.login_argv)
+        self._use_spawn_env = argv is None  # overridden argv resolves its own env
+        self._probe = probe_fn or (lambda: run_worker_auth_probe(worker_type))
+        self._on_change = on_change
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._pty: Any = None
+        self._reader: threading.Thread | None = None
+        self._answered: set[int] = set()
+        self._cancelled = False
+
+        self.state = DeviceLoginState.IDLE
+        self.url: str | None = None
+        self.code: str | None = None
+        self.message = ""
+        self.raw = ""
+
+    # ── Lifecycle ────────────────────────────────────────────────────────────
+
+    async def start(self) -> None:
+        self._loop = asyncio.get_running_loop()
+        # start() runs synchronously under the action, which broadcasts the
+        # resulting snapshot once after we return — so pre-spawn transitions set
+        # state WITHOUT notifying (avoids a duplicate frame). Only reader-thread
+        # transitions (after this returns) broadcast via on_change.
+        self._set(DeviceLoginState.STARTING, notify=False)
+
+        # Device may already be approved / creds still on disk — never mint a
+        # fresh code when the CLI is already logged in.
+        pre = await self._probe()
+        if pre.status == WorkerAuthStatus.LOGGED_IN:
+            self._set(DeviceLoginState.AUTHENTICATED, message=f"already authenticated — {pre.message}", notify=False)
+            return
+        if pre.status == WorkerAuthStatus.NOT_INSTALLED:
+            self._set(DeviceLoginState.ERROR, message=pre.message, notify=False)
+            return
+
+        try:
+            env = build_worker_spawn_env(self.worker_type, {}) if self._use_spawn_env else None
+        except WorkerSpawnError as exc:
+            self._set(DeviceLoginState.ERROR, message=str(exc), notify=False)
+            return
+        try:
+            from ptyprocess import PtyProcess  # noqa: PLC0415 — unix; login flows are PTY-bound
+
+            self._pty = await asyncio.to_thread(
+                PtyProcess.spawn, self._argv, env=env, dimensions=PTY_DIMENSIONS
+            )
+        except Exception as exc:
+            self._set(DeviceLoginState.ERROR, message=f"failed to spawn login: {exc}", notify=False)
+            return
+        self._reader = threading.Thread(target=self._read_loop, daemon=True)
+        self._reader.start()
+
+    def submit_code(self, code: str) -> bool:
+        """Inject a browser-shown code back into the login PTY (claude)."""
+        if self._pty is None or not self._pty.isalive():
+            return False
+        self._pty.write((code.strip() + "\r").encode())
+        return True
+
+    def cancel(self) -> None:
+        self._cancelled = True
+        if self._pty is not None and self._pty.isalive():
+            try:
+                self._pty.terminate(force=True)
+            except Exception:
+                logger.debug("device login terminate failed", exc_info=True)
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "state": self.state.value,
+            "url": self.url,
+            "code": self.code,
+            "message": self.message,
+            "accepts_code_paste": self.spec.accepts_code_paste,
+        }
+
+    # ── Reader thread ────────────────────────────────────────────────────────
+
+    def _read_loop(self) -> None:
+        try:
+            while True:
+                try:
+                    chunk = self._pty.read(1024)
+                except EOFError:
+                    break
+                if not chunk:
+                    break
+                self.raw += chunk.decode("utf-8", "replace") if isinstance(chunk, bytes) else chunk
+                self._scrape()
+        except Exception:
+            logger.debug("device login read loop error", exc_info=True)
+        finally:
+            self._finish()
+
+    def _scrape(self) -> None:
+        clean = clean_pty_output(self.raw)  # clean once; scrape + auto-answer share it
+        url, code = scrape_device_login(clean, self.spec)
+        changed = (url and not self.url) or (code and not self.code)
+        self.url = self.url or url
+        self.code = self.code or code
+        answer = find_auto_answer(clean, self._answered)
+        if answer is not None:
+            self._answered.add(answer[0])
+            self._pty.write(answer[1].encode())
+        if self.url and self.state == DeviceLoginState.STARTING:
+            self._set_threadsafe(DeviceLoginState.AWAITING_USER)
+        elif changed:
+            # New url/code arrived in a later chunk without a state change —
+            # re-broadcast so the UI gets the code.
+            self._notify_threadsafe()
+
+    def _finish(self) -> None:
+        """Login process exited — re-probe before declaring success."""
+        if self._cancelled:
+            self._set_threadsafe(DeviceLoginState.IDLE, message="login cancelled")
+            return
+        assert self._loop is not None
+        result = asyncio.run_coroutine_threadsafe(self._probe(), self._loop).result(timeout=30)
+        if result.status == WorkerAuthStatus.LOGGED_IN:
+            self._set_threadsafe(DeviceLoginState.AUTHENTICATED, message=result.message)
+        else:
+            tail = clean_pty_output(self.raw).strip()[-300:]
+            self._set_threadsafe(
+                DeviceLoginState.ERROR,
+                message=f"login exited but probe says {result.status.value}: {tail}",
+            )
+
+    # ── State + notification ────────────────────────────────────────────────
+
+    def _set(self, state: DeviceLoginState, *, message: str = "", notify: bool = True) -> None:
+        self.state = state
+        if message:
+            self.message = message
+        if notify:
+            self._emit_change()
+
+    def _set_threadsafe(self, state: DeviceLoginState, *, message: str = "") -> None:
+        assert self._loop is not None
+        self._loop.call_soon_threadsafe(partial(self._set, state, message=message))
+
+    def _notify_threadsafe(self) -> None:
+        """Re-broadcast the current snapshot from the reader thread (no state
+        change) — used when a fresh url/code lands in a later chunk."""
+        assert self._loop is not None
+        self._loop.call_soon_threadsafe(self._emit_change)
+
+    def _emit_change(self) -> None:
+        if self._on_change is None:
+            return
+        try:
+            asyncio.ensure_future(self._on_change(self))
+        except Exception:
+            logger.warning("device login on_change failed", exc_info=True)
+
+
+# ── Session registry (one live session per worker type) ─────────────────────
+
+_SESSIONS: dict[str, DeviceLoginSession] = {}
+_SESSIONS_LOCK = asyncio.Lock()
+
+
+async def start_device_login(
+    worker_type: str,
+    *,
+    on_change: Callable[[DeviceLoginSession], Awaitable[None]] | None = None,
+) -> DeviceLoginSession:
+    """Start (or replace) the login session for a worker type."""
+    async with _SESSIONS_LOCK:
+        old = _SESSIONS.get(worker_type)
+        if old is not None:
+            old.cancel()
+        session = DeviceLoginSession(worker_type, on_change=on_change)
+        _SESSIONS[worker_type] = session
+    await session.start()
+    return session
+
+
+def get_device_login_session(worker_type: str) -> DeviceLoginSession | None:
+    return _SESSIONS.get(worker_type)

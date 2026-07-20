@@ -1,6 +1,5 @@
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
-import { ICompletionOptions } from '@sdk';
-import { useAuth, useContext as useSdkContext } from '@sdk/react/hooks';
+import { useCloudAuthed } from '@src/hooks/use-cloud-authed';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import {
@@ -18,7 +17,7 @@ interface UseLoginRequiredReturn {
   checkLoginAndProceed: (
     action: ActionType,
     message?: string,
-    options?: ICompletionOptions,
+    options?: Record<string, unknown>,
     guardOptions?: LoginGuardOptions,
   ) => boolean;
   pendingAction: PendingLoginAction | null;
@@ -32,15 +31,13 @@ interface LoginGuardOptions {
 
 export const useLoginRequired = (): UseLoginRequiredReturn => {
   const { agent } = useAgentContext();
-  const { user, cloudUser } = useAuth();
-  const { cloudLoginAvailable, isDesktop } = useSdkContext();
   const [searchParams, setSearchParams] = useSearchParams();
   const [showLoginDialog, setShowLoginDialog] = useState(false);
   const [pendingAction, setPendingAction] = useState<PendingLoginAction | null>(null);
 
   const requiresLogin = agent?.site_config?.feature_flags?.require_login ?? false;
   const returnedFromLogin = searchParams.has('login') || searchParams.has('signup');
-  const loginSatisfied = isDesktop ? Boolean(cloudLoginAvailable || cloudUser) : Boolean(user);
+  const loginSatisfied = useCloudAuthed();
   const isPostLogin = returnedFromLogin || Boolean(loginSatisfied && pendingAction);
 
   // On mount and when returning from login, check for pending action
@@ -65,7 +62,7 @@ export const useLoginRequired = (): UseLoginRequiredReturn => {
     (
       action: ActionType,
       message?: string,
-      options?: ICompletionOptions,
+      options?: Record<string, unknown>,
       guardOptions?: LoginGuardOptions,
     ): boolean => {
       const shouldRequireLogin = guardOptions?.forceLogin || requiresLogin;
@@ -75,7 +72,7 @@ export const useLoginRequired = (): UseLoginRequiredReturn => {
       }
 
       // Store pending action for after login
-      storePendingAction(action, message, options as Record<string, unknown>);
+      storePendingAction(action, message, options);
       setShowLoginDialog(true);
       return false;
     },

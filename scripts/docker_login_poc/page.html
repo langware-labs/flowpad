@@ -1,0 +1,156 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>FlowPad — docker harness login</title>
+<style>
+  :root { color-scheme: light dark; font-family: -apple-system, system-ui, sans-serif; }
+  body { max-width: 880px; margin: 2rem auto; padding: 0 1rem; }
+  h1 { font-size: 1.3rem; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1rem; }
+  .card { border: 1px solid color-mix(in srgb, currentColor 22%, transparent); border-radius: 12px; padding: 1rem; }
+  .card h2 { margin: 0 0 .6rem; font-size: 1.05rem; }
+  button { border-radius: 8px; border: 1px solid color-mix(in srgb, currentColor 30%, transparent);
+           padding: .45rem .9rem; cursor: pointer; background: transparent; font-size: .95rem; }
+  button.primary { background: #4c6ef5; border-color: #4c6ef5; color: white; }
+  button:disabled { opacity: .45; cursor: default; }
+  .status { margin: .6rem 0; font-size: .85rem; min-height: 1.2em; }
+  .status.auth { color: #2f9e44; font-weight: 600; }
+  .status.error { color: #e03131; }
+  .code { display: inline-block; font-family: ui-monospace, monospace; font-size: 1.25rem; letter-spacing: .12em;
+          border: 1px dashed color-mix(in srgb, currentColor 40%, transparent); border-radius: 8px;
+          padding: .25rem .7rem; margin: .4rem 0; user-select: all; }
+  a.authlink { word-break: break-all; font-size: .85rem; }
+  input[type=text] { width: 100%; box-sizing: border-box; padding: .4rem .6rem; border-radius: 8px;
+          border: 1px solid color-mix(in srgb, currentColor 30%, transparent); background: transparent; color: inherit; }
+  .row { display: flex; gap: .5rem; margin-top: .5rem; flex-wrap: wrap; }
+  pre.out { font-size: .78rem; white-space: pre-wrap; word-break: break-word; max-height: 180px; overflow-y: auto;
+            background: color-mix(in srgb, currentColor 8%, transparent); border-radius: 8px; padding: .6rem; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<h1>Login your harnesses (docker)</h1>
+<p style="font-size:.85rem;opacity:.75">Each button starts the CLI's own login flow inside the container, shows you
+the link (and one-time code where the vendor uses one), and waits. Claude shows its code in the <em>browser</em> —
+paste it back here.</p>
+<div class="cards" id="cards"></div>
+
+<script>
+const WORKERS = [
+  { id: "claude",  icon: "✳️", label: "Claude" },
+  { id: "codex",   icon: "◎",       label: "Codex" },
+  { id: "copilot", icon: "🐙", label: "Copilot" },
+];
+
+const cards = document.getElementById("cards");
+for (const w of WORKERS) {
+  cards.insertAdjacentHTML("beforeend", `
+    <div class="card" id="card-${w.id}">
+      <h2>${w.icon} ${w.label}</h2>
+      <button class="primary" onclick="startAuth('${w.id}')" id="auth-${w.id}">Auth ${w.icon}</button>
+      <div class="status" id="status-${w.id}"></div>
+      <div id="link-${w.id}"></div>
+      <div id="codebox-${w.id}"></div>
+      <div id="paste-${w.id}" class="hidden">
+        <input type="text" id="pastein-${w.id}" placeholder="paste code from browser">
+        <div class="row"><button onclick="sendCode('${w.id}')">Submit code</button></div>
+      </div>
+      <div class="row">
+        <button onclick="runTest('${w.id}','auth')" id="testauth-${w.id}" disabled>Test: auth check</button>
+        <button onclick="runTest('${w.id}','prompt')" id="testprompt-${w.id}" disabled>Test: prompt</button>
+      </div>
+      <pre class="out hidden" id="out-${w.id}"></pre>
+    </div>`);
+}
+
+async function startAuth(w) {
+  document.getElementById(`auth-${w}`).disabled = true;
+  setStatus(w, "starting login in container… (first run builds the image — can take minutes)", "");
+  const r = await fetch(`/api/auth/${w}`, { method: "POST" });
+  if (!r.ok) { setStatus(w, (await r.json()).error || "failed", "error"); document.getElementById(`auth-${w}`).disabled = false; return; }
+  poll(w);
+}
+
+async function poll(w) {
+  const r = await fetch(`/api/status/${w}`);
+  const s = await r.json();
+  if (s.url) {
+    document.getElementById(`link-${w}`).innerHTML =
+      `<a class="authlink" href="${s.url}" target="_blank" rel="noopener">🔗 ${s.url}</a>`;
+  }
+  if (s.code) {
+    const box = document.getElementById(`codebox-${w}`);
+    if (!box.dataset.code || box.dataset.code !== s.code) {
+      box.dataset.code = s.code;
+      box.innerHTML = `<span class="code">${s.code}</span>
+        <button onclick="copyCode('${w}','${s.code}')" id="copy-${w}">📋 Copy</button>`;
+    }
+  }
+  if (s.state === "awaiting_user") {
+    setStatus(w, s.code
+      ? "click the link, enter the code, approve — completes here automatically"
+      : "click the link and approve", "");
+    if (w === "claude") document.getElementById(`paste-${w}`).classList.remove("hidden");
+  }
+  if (s.state === "authenticated") {
+    setStatus(w, "✅ authenticated" + (s.message ? " — " + s.message : ""), "auth");
+    document.getElementById(`paste-${w}`).classList.add("hidden");
+    document.getElementById(`testauth-${w}`).disabled = false;
+    document.getElementById(`testprompt-${w}`).disabled = false;
+    document.getElementById(`auth-${w}`).disabled = false;
+    return;
+  }
+  if (s.state === "error") {
+    setStatus(w, "❌ " + (s.message || "login failed"), "error");
+    document.getElementById(`auth-${w}`).disabled = false;
+    return;
+  }
+  setTimeout(() => poll(w), 1500);
+}
+
+async function copyCode(w, code) {
+  try { await navigator.clipboard.writeText(code); } catch (e) {
+    // clipboard API can be denied — fall back to selecting the chip
+    const chip = document.querySelector(`#codebox-${w} .code`);
+    getSelection().selectAllChildren(chip);
+    document.execCommand("copy");
+  }
+  const btn = document.getElementById(`copy-${w}`);
+  btn.textContent = "✓ Copied";
+  setTimeout(() => (btn.textContent = "📋 Copy"), 1500);
+}
+
+async function sendCode(w) {
+  const code = document.getElementById(`pastein-${w}`).value.trim();
+  if (!code) return;
+  await fetch(`/api/code/${w}`, { method: "POST", body: JSON.stringify({ code }) });
+  setStatus(w, "code submitted, finishing…", "");
+}
+
+async function runTest(w, mode) {
+  const out = document.getElementById(`out-${w}`);
+  out.classList.remove("hidden");
+  out.textContent = mode === "prompt" ? "prompting worker…" : "checking auth…";
+  const body = { mode };
+  if (mode === "prompt") body.prompt = "Reply with exactly: FLOWPAD-OK";
+  const r = await fetch(`/api/test/${w}`, { method: "POST", body: JSON.stringify(body) });
+  const j = await r.json();
+  out.textContent = mode === "prompt"
+    ? (j.ok ? "" : "[rc!=0] ") + (j.output || "(no output)")
+    : JSON.stringify(j, null, 2);
+}
+
+function setStatus(w, text, cls) {
+  const el = document.getElementById(`status-${w}`);
+  el.textContent = text;
+  el.className = "status " + cls;
+}
+
+// resume state on page load (e.g. after a refresh mid-login)
+WORKERS.forEach(w => fetch(`/api/status/${w.id}`).then(r => r.json()).then(s => {
+  if (s.state && s.state !== "idle") { document.getElementById(`auth-${w.id}`).disabled = true; poll(w.id); }
+}));
+</script>
+</body>
+</html>

@@ -13,7 +13,7 @@ const group = new ContactsGroup({
 
 describe('mergeGroupMembers — the one-click bulk add', () => {
   it('appends every member to an empty selection', () => {
-    const next = mergeGroupMembers([], group);
+    const next = mergeGroupMembers([], group.contacts);
     expect(next.map((p) => p.email)).toEqual(['alice@example.com', 'bob@example.com', 'carol@example.com']);
   });
 
@@ -22,21 +22,23 @@ describe('mergeGroupMembers — the one-click bulk add', () => {
       { user_id: 'hub-1', email: 'alice@example.com', name: 'Alice' }, // user_id key
       { email: 'BOB@example.com', name: 'Bobby' }, // email key, case-insensitive
     ];
-    const next = mergeGroupMembers(current, group);
+    const next = mergeGroupMembers(current, group.contacts);
     expect(next).toHaveLength(3);
     expect(next.map((p) => p.email)).toEqual(['alice@example.com', 'BOB@example.com', 'carol@example.com']);
   });
 
   it('dedupes members WITHIN the group and skips keyless entries', () => {
-    const messy = new ContactsGroup({
-      name: 'messy',
-      contacts: [
-        { email: 'x@y.z', name: 'X' },
-        { email: 'X@Y.Z', name: 'X again' },
-        { email: null, name: null }, // keyless — never added
-      ],
-    });
+    const messy: ConversationParticipant[] = [
+      { email: 'x@y.z', name: 'X' },
+      { email: 'X@Y.Z', name: 'X again' },
+      { email: null, name: null }, // keyless — never added
+    ];
     expect(mergeGroupMembers([], messy)).toHaveLength(1);
+  });
+
+  it('drops the excluded user (self in a computed roster)', () => {
+    const next = mergeGroupMembers([], group.contacts, 'hub-1');
+    expect(next.map((p) => p.email)).toEqual(['bob@example.com', 'carol@example.com']);
   });
 });
 

@@ -28,7 +28,9 @@ import { defineGlobal } from '@sdk/utils';
  *        - exactly 1 → that language
  *        - 2+        → the best system match; the footer chip lets them switch.
  *
- * The footer picker is shown ONLY when the intersection is 2+ (a genuine choice).
+ * The footer picker is shown whenever the BACKEND ships 2+ locales. The OS
+ * intersection above only picks the first-run DEFAULT — it never decides whether
+ * the picker is offered (see `LanguageSelector`).
  *
  * Catalogs are loaded lazily per locale (dynamic `*.po` import → `i18n.load` →
  * `i18n.activate`) so only the active locale's messages are fetched.
@@ -273,12 +275,3 @@ export function useSupportedLocales(): LocaleInfo[] {
   );
 }
 
-/**
- * Whether to show the footer language picker: only when the OS reports 2+
- * languages we support (a genuine choice). With 0 or 1 we auto-select and hide
- * the chip — so a machine with no Arabic never sees an Arabic option.
- */
-export function useShowLocaleChip(): boolean {
-  useSupportedLocales(); // re-evaluate when the backend list arrives
-  return systemIntersection().length >= 2;
-}

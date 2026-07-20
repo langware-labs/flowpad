@@ -22,7 +22,9 @@ export function WikiModalRoot() {
           <DialogTitle>[[{wikiword}]]</DialogTitle>
         </DialogHeader>
         <div className="h-[70vh] overflow-auto">
-          {open && wikiword ? <WikiResolveView name={wikiword} space={space} fragment={fragment} /> : null}
+          {open && wikiword ? (
+            <WikiResolveView name={wikiword} space={space} fragment={fragment} variant="plain" />
+          ) : null}
         </div>
       </DialogContent>
     </Dialog>

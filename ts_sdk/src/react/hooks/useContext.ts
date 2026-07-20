@@ -45,7 +45,6 @@ export function useContext() {
   const snapshotRef = useRef<{
     user: typeof dataContext.user;
     workspace: typeof dataContext.workspace;
-    flow: typeof dataContext.flow;
     activeEntity: typeof dataContext.activeEntity;
     activeEntityTypeId: typeof dataContext.activeEntityTypeId;
     workspaceTypeId: typeof dataContext.workspaceTypeId;
@@ -53,7 +52,6 @@ export function useContext() {
     localUser: typeof dataContext.localUser;
     cloudUser: typeof dataContext.cloudUser;
     currentUser: typeof dataContext.currentUser;
-    flowTypeId: typeof dataContext.flowTypeId;
     visitorTypeId: typeof dataContext.visitorTypeId;
     someone: typeof dataContext.someone;
     activeOntology: typeof dataContext.activeOntology;
@@ -85,7 +83,6 @@ export function useContext() {
   }>({
     user: dataContext.user,
     workspace: dataContext.workspace,
-    flow: dataContext.flow,
     activeEntity: dataContext.activeEntity,
     activeEntityTypeId: dataContext.activeEntityTypeId,
     workspaceTypeId: dataContext.workspaceTypeId,
@@ -93,7 +90,6 @@ export function useContext() {
     localUser: dataContext.localUser,
     cloudUser: dataContext.cloudUser,
     currentUser: dataContext.currentUser,
-    flowTypeId: dataContext.flowTypeId,
     visitorTypeId: dataContext.visitorTypeId,
     someone: dataContext.someone,
     activeOntology: dataContext.activeOntology,
@@ -135,7 +131,6 @@ export function useContext() {
     const current = {
       user: dataContext.user,
       workspace: dataContext.workspace,
-      flow: dataContext.flow,
       activeEntity: dataContext.activeEntity,
       activeEntityTypeId: dataContext.activeEntityTypeId,
       workspaceTypeId: dataContext.workspaceTypeId,
@@ -143,7 +138,6 @@ export function useContext() {
       localUser: dataContext.localUser,
       cloudUser: dataContext.cloudUser,
       currentUser: dataContext.currentUser,
-      flowTypeId: dataContext.flowTypeId,
       visitorTypeId: dataContext.visitorTypeId,
       someone: dataContext.someone,
       activeOntology: dataContext.activeOntology,
@@ -188,12 +182,10 @@ export function useContext() {
       prev.cloudUser !== current.cloudUser ||
       prev.currentUser !== current.currentUser ||
       prev.workspace !== current.workspace ||
-      prev.flow !== current.flow ||
       prev.activeEntity !== current.activeEntity ||
       typeIdChanged(prev.activeEntityTypeId, current.activeEntityTypeId) ||
       typeIdChanged(prev.workspaceTypeId, current.workspaceTypeId) ||
       typeIdChanged(prev.userTypeId, current.userTypeId) ||
-      typeIdChanged(prev.flowTypeId, current.flowTypeId) ||
       typeIdChanged(prev.visitorTypeId, current.visitorTypeId) ||
       prev.someone !== current.someone ||
       prev.activeOntology !== current.activeOntology ||

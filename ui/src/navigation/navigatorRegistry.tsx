@@ -1,11 +1,11 @@
 import type { ComponentType } from 'react';
 import { ViewType } from '@src/types/ViewType';
-import { WorkflowsNavigator } from '@src/components/workflows-view/WorkflowsNavigator';
 import { DocsNavigator } from '@src/components/docs-viewer/DocsNavigator';
 import { AssetsNavigator } from '@src/components/assets/AssetsNavigator';
 import { TriggersNavigator } from '@src/components/triggers-view/TriggersNavigator';
 import { ChatsNavigator } from '@src/components/chats-navigator/ChatsNavigator';
 import { ExplorerNavigator } from '@src/components/explorer-view/ExplorerNavigator';
+import { AgenticFlowsNavigator } from '@src/components/agentic-flows/AgenticFlowsNavigator';
 
 /**
  * Navigator registry — maps a ViewType to the component that fills the shared
@@ -18,7 +18,6 @@ import { ExplorerNavigator } from '@src/components/explorer-view/ExplorerNavigat
  * A view absent from this map renders no left menu (body goes full-width).
  */
 export const NAVIGATOR_REGISTRY: Partial<Record<ViewType, ComponentType>> = {
-  [ViewType.WORKFLOWS]: WorkflowsNavigator,
   [ViewType.DOCS]: DocsNavigator,
   [ViewType.ASSETS]: AssetsNavigator,
   [ViewType.PROJECT]: AssetsNavigator,
@@ -26,4 +25,5 @@ export const NAVIGATOR_REGISTRY: Partial<Record<ViewType, ComponentType>> = {
   [ViewType.CRON]: TriggersNavigator,
   [ViewType.SHELL]: ChatsNavigator,
   [ViewType.EXPLORER]: ExplorerNavigator,
+  [ViewType.AGENTIC_FLOWS]: AgenticFlowsNavigator,
 };

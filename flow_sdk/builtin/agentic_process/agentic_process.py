@@ -14,6 +14,7 @@ import collections
 import json
 import logging
 import time
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
@@ -61,9 +62,15 @@ from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
 
 if TYPE_CHECKING:
+    from flow_sdk.builtin.agentic_process._shared import RunResult
+    from flow_sdk.builtin.agentic_process.cli_drivers.auth_probe import WorkerAuthResult
     from flow_sdk.builtin.agentic_process.prompt_queue import PromptQueue
     from flow_sdk.builtin.shell import Shell
+    from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowData
+    from flow_sdk.fs_store.fs_record import FSRecord
+    from flow_sdk.responses.response import ApiResponse
     from flow_sdk.transcript_analyzer import AgentTranscriptFile
+    from flow_sdk.transcript_analyzer.counters import FocusedAsset
 
 logger = logging.getLogger(__name__)
 
@@ -140,7 +147,14 @@ class AssetSource(str, Enum):
     WORKDIR = "workdir"  # process workdir if distinct from project/user
     ADDITIONAL_DIR = "additional_dir"  # additional_dirs entries (excl. auto-appended assets dir)
     CONTEXT_DIR = "context_dir"  # project.include_dirs (context folders)
-    TRANSCRIPT = "transcript"  # file-backed entity read in transcript only
+    SYSTEM = "system"  # bundled flowpad_assistant assets (entity scope="system")
+    # Not attributable to any of this process's source dirs. Deliberately NOT
+    # "outside every source dir" — a foreign project's asset under $HOME is
+    # rejected by the cross-project rule in ``_source_match_for_asset`` and
+    # lands here despite living inside one. The fact that it was seen in the
+    # transcript is carried by ``AssetUsageKind.TRANSCRIPT_FILE_READ``, on the
+    # usage axis; this enum only ever answers "where does it live".
+    EXTERNAL = "external"
 
 
 class AssetUsageKind(str, Enum):
@@ -164,7 +178,8 @@ READONLY_ASSET_SOURCES: frozenset[AssetSource] = frozenset(
         AssetSource.WORKDIR,
         AssetSource.ADDITIONAL_DIR,
         AssetSource.CONTEXT_DIR,
-        AssetSource.TRANSCRIPT,
+        AssetSource.SYSTEM,
+        AssetSource.EXTERNAL,
     }
 )
 
@@ -294,13 +309,16 @@ async def scan_path_asset_descriptors(
     limit: int = 10000,
     offset: int = 0,
 ) -> list[AssetDescriptor]:
-    """Path-scan step shared by process and project asset views.
+    """Build the *listable* path-discovered assets, for process and project views.
 
-    One ``Entity.assets_by_path()`` over ``sources`` (SQL prefix pushdown),
-    each hit attributed to the longest-prefix source dir via
+    One ``Entity.assets_by_path()`` over ``sources`` (SQL prefix pushdown), each
+    hit attributed to the longest-prefix source dir via
     ``AgenticProcess._source_match_for_asset`` — including its rule that a
     project-scoped entity from another project is not claimed by the USER_DIR
     home catchall.
+
+    Deliberately non-total: this is a listing, not the full attribution. It never
+    returns ``SYSTEM`` even though the enum admits it — see the skip below.
     """
     from flow_sdk.core.entity.entity_model import Entity, PathQueryOptions
     from flow_sdk.fs_store.path_utils import canonical_posix_path
@@ -326,6 +344,15 @@ async def scan_path_asset_descriptors(
         if match is None:
             continue
         src_dir, src = match
+        # The bundled assistant's catalog is represented by a single "mounted"
+        # marker in the asset UI, not one row per shipped skill — listing it here
+        # would flood the available list. Its assets still surface individually
+        # when a run actually used one (see _append_transcript_asset_descriptors).
+        # Note this does NOT hide the assistant project's own assets when you're
+        # looking at it: that view's mount IS the assistant root, so it wins the
+        # longest-prefix match as PROJECT_DIR and never reaches SYSTEM.
+        if src == AssetSource.SYSTEM:
+            continue
         ent_project_id = getattr(ent, "project_id", None)
         descriptors.append(
             AssetDescriptor(
@@ -714,6 +741,14 @@ class AgenticProcess(Entity):
             "that survives past the window."
         ),
     )
+    exit_code: int | None = APIField(
+        default=None,
+        description=(
+            "Terminal exit code of a driverless EXECUTION process (a flow "
+            "function subprocess) — stamped by the FlowManager when the "
+            "subprocess finishes. None for worker-driven processes."
+        ),
+    )
     last_started_hash: str | None = APIField(
         default=None,
         description=(
@@ -894,6 +929,38 @@ class AgenticProcess(Entity):
         if not result.ok:
             raise ProcessError(status=result.status, session_id=result.session_id)
         return result
+
+    @staticmethod
+    async def _await_capability_discovery() -> None:
+        """Wait for the startup capability sweep when it's still in flight; a
+        failed sweep degrades to "not discovered" rather than raising."""
+        from flow_sdk.core.capabilities.discovery import ensure_discovered  # noqa: PLC0415
+
+        try:
+            await ensure_discovered()
+        except Exception:
+            logger.debug("capability discovery failed", exc_info=True)
+
+    @classmethod
+    async def is_installed(cls, worker_type: "WorkerType | str | None" = None) -> bool:
+        """Whether this worker's CLI was found by capability discovery.
+
+        Reads the discovery dict (the same SSOT actual spawns use) — never a
+        second ``which``.
+        """
+        from flow_sdk.builtin.agentic_process.cli_drivers import worker_bin_folder  # noqa: PLC0415
+
+        await cls._await_capability_discovery()
+        return worker_bin_folder(get_driver(worker_type).name) is not None
+
+    @classmethod
+    async def is_logged_in(cls, worker_type: "WorkerType | str | None" = None) -> "WorkerAuthResult":
+        """Login state of this worker's CLI (NOT_INSTALLED / LOGGED_IN /
+        LOGGED_OUT / UNKNOWN). The driver's ``auth_probe`` owns the install
+        gate; this facade only adds the discovery wait. Never raises;
+        "couldn't check" is UNKNOWN, not LOGGED_OUT."""
+        await cls._await_capability_discovery()
+        return await get_driver(worker_type).auth_probe()
 
     @classmethod
     def resume(
@@ -1301,6 +1368,14 @@ class AgenticProcess(Entity):
             # Runtime env injection: process identity + backend-pinned `flow`
             # CLI — the shared chokepoint all spawn paths use.
             apply_worker_env(cmd.env_vars, self)
+            # API-key auth: stamp the OpenRouter model slug (+ codex -c overrides)
+            # onto the options before argv is frozen (env/token ride
+            # apply_worker_secret_env at spawn time). No-op in device mode.
+            from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import (
+                apply_api_model_to_options,
+            )
+
+            await apply_api_model_to_options(cmd, self)
             # Inject the WebSocket connection ID so the worker can navigate its own tab explicitly
             if self.connection_id:
                 cmd.add_env("FLOWPAD_CONNECTION_ID", self.connection_id)
@@ -1909,10 +1984,8 @@ class AgenticProcess(Entity):
 
     def _record_dir(self) -> "Path":
         """This process's record folder (deterministic from type+id)."""
-        from flow_sdk.fs_store.fs_record import record_stem
-        from flow_sdk.fs_store.record_paths import get_default_records_root
-
-        return get_default_records_root() / "agentic_process" / record_stem("agentic_process", self.id)
+        from flow_sdk.fs_store.record_paths import shadow_dir_for
+        return shadow_dir_for("agentic_process", self.id)
 
     @property
     def queue(self) -> "PromptQueue":
@@ -2187,30 +2260,60 @@ class AgenticProcess(Entity):
         return project
 
     async def _get_project_webapp_artifacts(self) -> list:
-        from flow_sdk.builtin.artifact import Artifact, ArtifactType  # noqa: PLC0415
+        from flow_sdk.builtin.artifact import Artifact  # noqa: PLC0415
         from flow_sdk.core import QueryFilter  # noqa: PLC0415
+        from flow_sdk.worldview.ontology import kind_matches  # noqa: PLC0415
 
         project = await self._resolve_webapp_project()
         source = project.typeid if project is not None else None
         artifacts = await Artifact.get_all(QueryFilter.by_type(Artifact.get_type()), source_entity=source)
-        webapps = [artifact for artifact in artifacts if artifact.artifact_type == ArtifactType.WEBAPP]
+        webapps = [artifact for artifact in artifacts if kind_matches("application.web", artifact.kind)]
         return sorted(webapps, key=lambda artifact: str(getattr(artifact, "created_date", "") or ""), reverse=True)
+
+    async def _get_project_webapp_deployments(self) -> list:
+        from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
+        from flow_sdk.core import QueryFilter  # noqa: PLC0415
+        from flow_sdk.worldview.ontology import kind_matches  # noqa: PLC0415
+
+        project = await self._resolve_webapp_project()
+        source = project.typeid if project is not None else None
+        deployments = await Deployment.get_all(QueryFilter.by_type(Deployment.get_type()), source_entity=source)
+        return [
+            deployment
+            for deployment in deployments
+            if kind_matches("local.runtime.web", deployment.kind)
+        ]
 
     @action.post(action_name="webapp-artifacts")
     async def _http_webapp_artifacts(self) -> ApiSuccessResponse | ApiFailResponse:
-        """Return project-scoped WEBAPP artifacts for app-open reuse."""
+        """Return project-scoped web artifacts with their local placement."""
         try:
             artifacts = await self._get_project_webapp_artifacts()
-            return ApiSuccessResponse(data={"artifacts": [artifact.model_dump(mode="json") for artifact in artifacts]})
+            deployments = await self._get_project_webapp_deployments()
+            by_artifact = {deployment.artifact_id: deployment for deployment in deployments if deployment.artifact_id}
+            rows = []
+            for artifact in artifacts:
+                payload = artifact.model_dump(mode="json")
+                deployment = by_artifact.get(artifact.id)
+                if deployment is not None:
+                    payload["deployment"] = deployment.model_dump(mode="json")
+                rows.append(payload)
+            return ApiSuccessResponse(data={"artifacts": rows})
         except Exception as e:
             logger.exception("AgenticProcess %s webapp-artifacts error: %s", self.id, e)
             return ApiFailResponse(message=str(e))
 
     @action.post(action_name="register-webapp-artifact")
     async def _http_register_webapp_artifact(self) -> ApiSuccessResponse | ApiFailResponse:
-        """Create/update a WEBAPP artifact and optionally show its port."""
-        from flow_sdk.builtin.artifact import Artifact, ArtifactReferenceType, ArtifactType  # noqa: PLC0415
+        """Create/update a web Artifact and its local Deployment."""
+        from datetime import datetime  # noqa: PLC0415
+
+        from flow_sdk._compat import UTC  # noqa: PLC0415
+        from flow_sdk.api.api_types.identifier import adopt_entity_id, mint_uuid  # noqa: PLC0415
+        from flow_sdk.builtin.artifact import Artifact  # noqa: PLC0415
+        from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
         from flow_sdk.builtin.git_origin import GitOrigin  # noqa: PLC0415
+        from flow_sdk.builtin.local_origin import LocalOrigin  # noqa: PLC0415
         from flow_sdk.core.display_target import InvalidDisplayTarget, resolve_display_target  # noqa: PLC0415
         from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
 
@@ -2238,77 +2341,100 @@ class AgenticProcess(Entity):
         start_cmd = str(body.get("start_cmd") or "").strip()
         health = str(body.get("health") or "/").strip() or "/"
         description = str(body.get("description") or "").strip() or f"Web app at {artifact_path}"
-        metadata = body.get("metadata") if isinstance(body.get("metadata"), dict) else {}
         git_origin = None
         try:
             git_origin = await asyncio.to_thread(GitOrigin.for_asset_path, artifact_path)
         except Exception:
             logger.debug("register-webapp-artifact: could not derive git origin for %s", artifact_path, exc_info=True)
-        if git_origin is not None:
-            metadata = {**metadata, "git_origin": git_origin.model_dump(mode="json")}
+        path_obj = Path(artifact_path)
+        local_origin = LocalOrigin(base=str(path_obj.parent), rel_path=path_obj.name or ".")
 
         project = await self._resolve_webapp_project()
         artifacts = await self._get_project_webapp_artifacts()
-        artifact_id = str(body.get("artifact_id") or "").strip()
+        deployments = await self._get_project_webapp_deployments()
+        artifact_id = adopt_entity_id(body.get("artifact_id"))
         artifact = None
         if artifact_id:
             artifact = await Artifact.get_by_id(artifact_id)
         if artifact is None:
             for candidate in artifacts:
-                same_path = canonical_posix_path(str(candidate.path or "")) == artifact_path
-                same_port = str(candidate.port or (candidate.metadata or {}).get("port") or "") == str(port)
+                origin = candidate.origin
+                same_path = bool(
+                    getattr(origin, "kind", None) == "local"
+                    and canonical_posix_path(str(Path(origin.base) / origin.rel_path)) == artifact_path
+                )
+                candidate_deployment = next((d for d in deployments if d.artifact_id == candidate.id), None)
+                same_port = bool(
+                    candidate_deployment
+                    and str((candidate_deployment.provider_labels or {}).get("flowpad.runtime.port") or "") == str(port)
+                )
                 if same_path or same_port:
                     artifact = candidate
                     break
 
         if artifact is None:
-            metadata = {
-                **metadata,
-                "port": str(port),
-                "start_cmd": start_cmd,
-                "health": health,
-            }
             artifact = Artifact(
                 name=name,
-                artifact_type=ArtifactType.WEBAPP,
-                ref_type=ArtifactReferenceType.FOLDER,
-                path=artifact_path,
+                kind="application.web",
                 description=description,
-                metadata=metadata,
                 project_id=project.id if project is not None else self.project_id,
-                git_origin=git_origin,
-                port=str(port),
-                start_cmd=start_cmd,
-                health=health,
+                origin=git_origin or local_origin,
             )
         else:
-            metadata = {
-                **(artifact.metadata or {}),
-                **metadata,
-                "port": str(port),
-                "start_cmd": start_cmd,
-                "health": health,
-            }
             artifact.name = name
-            artifact.artifact_type = ArtifactType.WEBAPP
-            artifact.ref_type = ArtifactReferenceType.FOLDER
-            artifact.path = artifact_path
+            artifact.kind = "application.web"
             artifact.description = description
-            artifact.metadata = metadata
-            if git_origin is not None:
-                artifact.git_origin = git_origin
-            artifact.port = str(port)
-            artifact.start_cmd = start_cmd
-            artifact.health = health
+            artifact.origin = git_origin or local_origin
             if project is not None:
                 artifact.project_id = project.id
 
+        if project is not None:
+            artifact.parent_type_id = str(project.typeid)
         await artifact.save()
         if project is not None:
             await project.attach_child(artifact)
             if artifact.id not in (project.artifacts or []):
                 project.artifacts = list(project.artifacts or []) + [artifact.id]
                 await project.save()
+
+        deployment_id = mint_uuid(f"deployment:legacy-artifact:{artifact.id}")
+        deployment = await Deployment.get_by_id(deployment_id)
+        deployment_payload = {
+            "name": f"{name} (local)",
+            "kind": "local.runtime.web",
+            "artifact_id": artifact.id,
+            "artifact_link_source": "manual",
+            "target": {
+                "provider": "local",
+                "scope": project.id if project is not None else "machine",
+                "location": f"http://localhost:{port}",
+            },
+            "resource": {
+                "full_resource_name": f"local://localhost:{port}",
+                "asset_type": "flowpad.local/Process",
+                "provider_uid": str(port),
+            },
+            "status": {
+                "sync_state": "current",
+                "provider_state": "configured",
+                "observed_at": datetime.now(UTC).isoformat(),
+            },
+            "provider_labels": {
+                "flowpad.runtime.port": str(port),
+                "flowpad.runtime.start_cmd": start_cmd,
+                "flowpad.runtime.health": health,
+            },
+            "source_revision": getattr(git_origin, "head_commit", None),
+            "project_id": project.id if project is not None else self.project_id,
+            "parent_type_id": str(project.typeid) if project is not None else None,
+        }
+        if deployment is None:
+            deployment = Deployment(id=deployment_id, **deployment_payload)
+        else:
+            deployment.apply_field_updates(deployment_payload)
+        await deployment.save()
+        if project is not None:
+            await project.attach_child(deployment)
 
         shown = None
         if bool(body.get("show", True)):
@@ -2318,7 +2444,13 @@ class AgenticProcess(Entity):
                 return ApiFailResponse(message=str(e), status_code=400)
             await self.on_show(shown)
 
-        return ApiSuccessResponse(data={"artifact": artifact.model_dump(mode="json"), "shown": shown})
+        return ApiSuccessResponse(
+            data={
+                "artifact": artifact.model_dump(mode="json"),
+                "deployment": deployment.model_dump(mode="json"),
+                "shown": shown,
+            }
+        )
 
     async def on_show(self, payload: dict) -> None:
         """Present *payload* to this process's watchers — the ``flow show`` verb.
@@ -2576,7 +2708,12 @@ class AgenticProcess(Entity):
 
         Yields parsed dicts, one per transcript line. Stops when the worker's
         ``tail_status`` (driver-supplied) reaches a terminal state, with a
-        small settling window to avoid racing late writes.
+        small settling window to avoid racing late writes — BUT never while this
+        process's turn worker is still live (``prompt_worker_active``). On a
+        resumed multi-turn session the JSONL already ends with the PRIOR turn's
+        terminal marker, so honoring it would exit before the new turn is
+        written and the caller would capture the prior turn's reply (the
+        multi-turn off-by-one). Gating on the live worker waits for THIS turn.
 
         Vendor specifics — where the transcript lives, how to interpret its
         tail — come from ``self.driver``; this method is otherwise vendor-
@@ -2662,7 +2799,21 @@ class AgenticProcess(Entity):
                 yield entry
 
             tail_status = self.driver.tail_status(transcript_path)
-            _terminal = tail_status in _terminal_states
+            # Resume-aware guard: while THIS process's turn worker is still live,
+            # any terminal/soft-terminal marker in the JSONL is the PRIOR turn's
+            # (a resumed session appends the new turn only after the worker has
+            # run) — don't exit on it, or the caller captures the prior turn's
+            # reply (the multi-turn off-by-one). The worker registry is
+            # process-global, so this holds even when the watcher hydrated a
+            # different AgenticProcess object than the one that launched the turn.
+            # CONTRACT: this relies on the driver flushing the new turn's terminal
+            # region to the JSONL BEFORE ``unregister_prompt_worker`` (which every
+            # driver does in ``_run_turn``'s ``finally``, after the execute loop
+            # drains). A driver that unregistered before the flush would let this
+            # release while the tail still shows the prior marker — re-opening the
+            # off-by-one.
+            _worker_active = prompt_worker_active(self.id)
+            _terminal = tail_status in _terminal_states and not _worker_active
             # Post-tool-idle peek: only meaningful for Claude (Codex never
             # writes WORKING followed by tool_result without further events).
             # Only treat as soft-terminal when the last assistant turn ended with
@@ -2671,8 +2822,10 @@ class AgenticProcess(Entity):
             # between tool calls on multi-step flows, which exceeds the 8-s
             # post-tool settle window. Exiting then would drop the rest of the
             # work — the bug surfaced in test_agentic_process_fix_it_with_agent.
+            # Skipped entirely while the worker is live (the guard suppresses it
+            # anyway) — avoids a per-poll 4KB tail read for the turn's duration.
             _post_tool_idle = False
-            if tail_status == _WS.WORKING:
+            if not _worker_active and tail_status == _WS.WORKING:
                 try:
                     with open(transcript_path, "rb") as _fh:
                         _sz = transcript_path.stat().st_size
@@ -2895,6 +3048,16 @@ class AgenticProcess(Entity):
                 resume_session_id=self.session_id if resumable else None,
                 **self._instruction_context_kwargs(instruction_assets),
             )
+
+            # API-key auth (harness in "api" mode): override the model with the
+            # provider slug and carry codex's -c overrides onto the context. The
+            # env/token already landed via apply_worker_secret_env above. Same
+            # helper as the visible-PTY path; no-op in device mode.
+            from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import (
+                apply_api_model_to_options,
+            )
+
+            await apply_api_model_to_options(context, self)
 
             # Vendor hook retained for compatibility; embedded-agent/persona
             # instructions are materialized into process instruction assets.
@@ -3456,7 +3619,14 @@ class AgenticProcess(Entity):
                                         # submission to the nudge loop.
                                         if entry.kind is EntryKind.USER_MESSAGE:
                                             user_turn_landed.set()
-                                            continue
+                                            # Framework-injected (isMeta) user lines — skill
+                                            # bodies, command expansions — are not the client's
+                                            # optimistic echo; fall through so the live chat
+                                            # renders the same meta chips a reload does (the
+                                            # prompt envelope is itself isMeta, but the client
+                                            # filters it).
+                                            if not getattr(entry, "is_meta", False):
+                                                continue
                                         if self._pty_turn_complete(
                                             entry,
                                             worker_type=worker_type,
@@ -4236,8 +4406,6 @@ class AgenticProcess(Entity):
         Returns the entity's display name on success, ``None`` if the entity
         type is unsupported for embedding. Raises for resolution / IO failures.
         """
-        import shutil
-
         from flow_sdk.fs_store.operations.agent import get_agent  # noqa: PLC0415
         from flow_sdk.fs_store.operations.agent import load_agent as _load_agent
         from flow_sdk.fs_store.operations.skill import copy_skill_to, get_skill
@@ -4253,7 +4421,7 @@ class AgenticProcess(Entity):
             src = agent.asset_ref._path if agent.asset_ref else None
             if src is None or not src.exists():
                 raise FileNotFoundError(f"Agent source missing: {ref.id}")
-            target = AssetDir(assets_dir).load_asset(
+            AssetDir(assets_dir).load_asset(
                 Path(".claude") / "agents" / f"{agent.name or ref.id}.md",
                 source=src,
             )
@@ -4421,9 +4589,27 @@ class AgenticProcess(Entity):
         # System-scoped assets (the bundled flowpad_assistant skills/agents) are
         # pip-installed under $HOME (~/.local/share/.../flowpad_assistant/.claude),
         # so the USER_DIR prefix would otherwise claim them as personal user
-        # assets. They belong to the mounted assistant, never the user — drop
-        # them from USER_DIR unconditionally (they carry no project_id to test).
+        # assets. They belong to the mounted assistant, never the user — attribute
+        # them to SYSTEM instead.
+        #
+        # Deliberately USER_DIR-only, and deliberately NOT hoisted above the
+        # prefix match: the assistant is itself a Project whose mount is the
+        # assistant root, so a deeper source dir (PROJECT_DIR for the assistant
+        # project, or an editable install nested in a project tree) legitimately
+        # wins the longest-prefix match and must keep winning. Claiming those for
+        # SYSTEM would empty the assistant project's own asset list.
+        #
+        # ``scope`` is a persisted column and ``_stamp_scope`` never clobbers an
+        # explicit value, so trust it only when the path agrees — otherwise the
+        # returned source_dir would not be a prefix of posix_path, breaking the
+        # invariant every other descriptor upholds. A disagreement falls back to
+        # the previous behaviour: no match at all.
         if src == AssetSource.USER_DIR and entity_scope == "system":
+            from flow_sdk.config import flowpad_assistant_canonical_root  # noqa: PLC0415
+
+            sys_root = flowpad_assistant_canonical_root()
+            if sys_root and (asset_path == sys_root or asset_path.startswith(sys_root + "/")):
+                return sys_root, AssetSource.SYSTEM
             return None
         if (
             src == AssetSource.USER_DIR
@@ -4572,7 +4758,7 @@ class AgenticProcess(Entity):
                 entity,
                 own_project_id,
             )
-            source_dir, source = match if match is not None else (None, AssetSource.TRANSCRIPT)
+            source_dir, source = match if match is not None else (None, AssetSource.EXTERNAL)
             typeid = f"{entity.type or entity.get_type()}-{entity.id}"
             key = (typeid, source)
             if key in descriptor_by_key:
@@ -5171,14 +5357,14 @@ class AgenticProcess(Entity):
         for section in ("generic", "worker"):
             l_section = norm_loaded.get(section) or {}
             c_section = norm_current.get(section) or {}
-            for field in sorted(set(l_section) | set(c_section)):
-                l_val = l_section.get(field)
-                c_val = c_section.get(field)
+            for field_name in sorted(set(l_section) | set(c_section)):
+                l_val = l_section.get(field_name)
+                c_val = c_section.get(field_name)
                 if l_val != c_val:
                     changes.append(
                         {
                             "section": section,
-                            "field": field,
+                            "field": field_name,
                             "loaded": l_val,
                             "current": c_val,
                         }
@@ -6160,7 +6346,7 @@ class AgenticProcess(Entity):
         """Check if there's a resumable Claude session for this agentic process."""
         return self._discover_claude_record_session(session_id) is not None
 
-    def _discover_claude_record_session(self, session_id: str | None) -> "Record | None":
+    def _discover_claude_record_session(self, session_id: str | None) -> "FSRecord | None":
         """Discover the Claude session Record associated with this agentic process's session_id."""
         if not session_id:
             return None
@@ -6692,7 +6878,6 @@ class AgenticProcess(Entity):
         main_loop = asyncio.get_running_loop()
         agentic_process_id = self.id
         session_id = self.session_id
-        shell_id = self.shell_id
         # Closure-bound spawn clock: the callback is created immediately before
         # the worker is launched, so ``now - spawned_at`` at exit time is the
         # worker's lifetime. Kept in the closure (not the entity) so the

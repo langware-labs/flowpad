@@ -22,7 +22,6 @@ import {
 } from './entries';
 import { EntryKind, TranscriptEntry } from './entry';
 
-export { extract_text, extract_thinking, first_block_of_type, flatten_tool_result } from './_helpers';
 export {
   AgentSpawnEntry,
   AssistantMessageEntry,

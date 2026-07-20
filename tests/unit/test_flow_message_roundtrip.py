@@ -82,14 +82,14 @@ class TestPackBundle:
         assert zip_path.suffix == ".flowmsg"
         with zipfile.ZipFile(zip_path, "r") as zf:
             names = zf.namelist()
-            assert "header.json" in names
-            data = json.loads(zf.read("header.json"))
+            assert "flow_message.json" in names
+            data = json.loads(zf.read("flow_message.json"))
             assert data["text"] == "Hello, world!"
             assert data["id"] == fm.id
 
     @pytest.mark.asyncio
     async def test_pack_with_flow_message_attachment(self, tmp_path):
-        """pack_bundle includes attachment/flow_message-@<id>/header.json for flow_message entries."""
+        """pack_bundle includes attachment/flow_message-<id>/header.json for flow_message entries."""
         fm = _make_flow_message()
         inner_id = "bbbb2222-0000-0000-0000-000000000002"
         fm.attachment = [Attachment(attachment_type=AttachmentType.TYPE_ID, data=f"flow_message-{inner_id}")]
@@ -102,7 +102,7 @@ class TestPackBundle:
 
         with zipfile.ZipFile(zip_path, "r") as zf:
             names = zf.namelist()
-            expected = f"attachment/flow_message-@{inner_id}/header.json"
+            expected = f"attachment/flow_message-{inner_id}/header.json"
             assert expected in names
 
     @pytest.mark.asyncio
@@ -122,10 +122,10 @@ class TestPackBundle:
 
         with zipfile.ZipFile(zip_path, "r") as zf:
             names = zf.namelist()
-            # New unified layout: attachment/<type>-@<id>/<main_subdir>/<leaf>.
+            # New unified layout: attachment/<type>-<id>/<main_subdir>/<leaf>.
             # Spec is folder-layout (specs/<name>/spec.md); the DB-backed mock
             # (no on-disk asset_ref) renders via default_body_fn.
-            expected = f"attachment/spec-@{spec_id}/specs/My_Spec/spec.md"
+            expected = f"attachment/spec-{spec_id}/agentic-assets/spec/My_Spec/spec.md"
             assert expected in names
             content = zf.read(expected).decode("utf-8")
             assert "My Spec" in content
@@ -154,7 +154,7 @@ class TestPackBundle:
 
         with zipfile.ZipFile(zip_path, "r") as zf:
             names = zf.namelist()
-            expected = f"attachment/task-@{task_id}/tasks/My_Task/task.md"
+            expected = f"attachment/task-{task_id}/agentic-assets/task/My_Task/task.md"
             assert expected in names
             content = zf.read(expected).decode("utf-8")
             assert "My Task" in content
@@ -185,7 +185,7 @@ class TestPackBundle:
         with zipfile.ZipFile(zip_path, "r") as zf:
             assert "attachment/files/report.pdf" in zf.namelist()
             assert zf.read("attachment/files/report.pdf") == b"PDFBYTES"
-            header = json.loads(zf.read("header.json"))
+            header = json.loads(zf.read("flow_message.json"))
             assert header["attachment"][0]["data"] == "attachment/files/report.pdf"
 
         # --- (b) inline-text PROMPT (no backing file) → not copied ---
@@ -196,7 +196,7 @@ class TestPackBundle:
         zip_path2 = await pack_bundle(fm2, dest_dir=tmp_path)
         with zipfile.ZipFile(zip_path2, "r") as zf:
             assert not any(n.startswith("attachment/files/") for n in zf.namelist())
-            header2 = json.loads(zf.read("header.json"))
+            header2 = json.loads(zf.read("flow_message.json"))
             # No VFS prefix → header data passes through unchanged.
             assert header2["attachment"][0]["data"] == "Just inline prompt text, no file."
 
@@ -217,7 +217,7 @@ class TestPackBundle:
         from flow_sdk.builtin.spec import Spec
 
         spec_id = _SPEC_UUID
-        folder = tmp_path / "specs" / "hello"
+        folder = tmp_path / "agentic-assets" / "spec" / "hello"
         folder.mkdir(parents=True)
         # spec.md authored WITHOUT an id in frontmatter → pack must pin it.
         sentinel = "REAL-ON-DISK-SENTINEL-BODY"
@@ -239,8 +239,8 @@ class TestPackBundle:
 
         with zipfile.ZipFile(zip_path, "r") as zf:
             names = zf.namelist()
-            main_arc = f"attachment/spec-@{spec_id}/specs/hello/spec.md"
-            notes_arc = f"attachment/spec-@{spec_id}/specs/hello/notes.md"
+            main_arc = f"attachment/spec-{spec_id}/agentic-assets/spec/hello/spec.md"
+            notes_arc = f"attachment/spec-{spec_id}/agentic-assets/spec/hello/notes.md"
             # Parent folder shipped verbatim — sibling rode along too.
             assert main_arc in names
             assert notes_arc in names
@@ -335,7 +335,7 @@ class TestUnpackBundle:
         # message.json, so the nested branch was dead and this test proved
         # nothing about it. Corrected to header.json so the branch actually runs.
         attachments = {
-            f"attachment/flow_message-@{inner_id}/header.json": json.dumps(inner_fm_data).encode(),
+            f"attachment/flow_message-{inner_id}/header.json": json.dumps(inner_fm_data).encode(),
         }
         zip_path = _write_flowmsg_zip(tmp_path, fm_data, attachments)
 
@@ -402,7 +402,7 @@ class TestUnpackBundle:
         inner_data = {"id": inner_id, "type": "flow_message", "text": "inner"}
         zip_path = _write_flowmsg_zip(
             tmp_path, fm_data,
-            {f"attachment/flow_message-@{entry_dir_id}/header.json": json.dumps(inner_data).encode()},
+            {f"attachment/flow_message-{entry_dir_id}/header.json": json.dumps(inner_data).encode()},
         )
         with _patched(AsyncMock(return_value=None)):
             await unpack_bundle(zip_path, "local-user-id")
@@ -418,7 +418,7 @@ class TestUnpackBundle:
                      "shared_context_entities": [], "attachment": []}
         zip_path_b = _write_flowmsg_zip(
             tmp_path, fm_data_b,
-            {f"attachment/flow_message-@{fallback_dir_id}/header.json": json.dumps(inner_noid).encode()},
+            {f"attachment/flow_message-{fallback_dir_id}/header.json": json.dumps(inner_noid).encode()},
         )
         with _patched(AsyncMock(return_value=None)):
             await unpack_bundle(zip_path_b, "local-user-id")
@@ -433,7 +433,7 @@ class TestUnpackBundle:
                      "shared_context_entities": [], "attachment": []}
         zip_path_c = _write_flowmsg_zip(
             tmp_path, fm_data_c,
-            {f"attachment/flow_message-@{inner_id_c}/header.json": json.dumps(inner_data_c).encode()},
+            {f"attachment/flow_message-{inner_id_c}/header.json": json.dumps(inner_data_c).encode()},
         )
         existing_inner = FlowMessage(text="already here")
         existing_inner.id = inner_id_c
@@ -530,7 +530,7 @@ class TestPromptAttachmentRoundtrip:
 
         with zipfile.ZipFile(zip_path, "r") as zf:
             # New unified layout: prompts/<name>.md (file-layout, prompts subdir).
-            expected = f"attachment/prompt-@{_PROMPT_UUID}/prompts/Fix_the_bug.md"
+            expected = f"attachment/prompt-{_PROMPT_UUID}/prompts/Fix_the_bug.md"
             assert expected in zf.namelist()
             content = zf.read(expected).decode("utf-8")
             assert "Fix the bug in auth." in content
@@ -566,7 +566,7 @@ class TestPromptAttachmentRoundtrip:
         }
         zip_path = _write_flowmsg_zip(
             tmp_path, fm_data,
-            {f"attachment/prompt-@{_PROMPT_UUID}/prompts/Fix_the_bug.md": prompt_md.encode("utf-8")},
+            {f"attachment/prompt-{_PROMPT_UUID}/prompts/Fix_the_bug.md": prompt_md.encode("utf-8")},
         )
 
         saved_fm = FlowMessage(text="carrier")
@@ -595,15 +595,15 @@ class TestPromptAttachmentRoundtrip:
         # Bundle persisted into the message's staging area.
         assert fm_data_ops.is_downloaded(fm_id), "raw bundle missing from download/"
         assert fm_data_ops.is_unpacked(fm_id), "extracted tree missing from unpacked/"
-        assert fm_data_ops.staged_entry_dir(fm_id, f"prompt-@{_PROMPT_UUID}").is_dir()
+        assert fm_data_ops.staged_entry_dir(fm_id, f"prompt-{_PROMPT_UUID}").is_dir()
         # Exactly one staged MessageAttachment, deterministic id, scope=None.
         assert len(staged_saves) == 1
         ma = staged_saves[0]
-        assert ma.id == MessageAttachment.allocate_deterministic_id(fm_id, f"prompt-@{_PROMPT_UUID}")
+        assert ma.id == MessageAttachment.allocate_deterministic_id(fm_id, f"prompt-{_PROMPT_UUID}")
         assert ma.asset_type == "prompt"
         assert ma.asset_id == _PROMPT_UUID
         assert ma.scope is None
-        assert ma.unpacked_path == f"unpacked/attachment/prompt-@{_PROMPT_UUID}"
+        assert ma.unpacked_path == f"unpacked/attachment/prompt-{_PROMPT_UUID}"
         assert ma.name == "Fix the bug"
 
     @pytest.mark.asyncio
@@ -625,7 +625,7 @@ class TestPromptAttachmentRoundtrip:
         }
         zip_path = _write_flowmsg_zip(
             tmp_path, fm_data,
-            {f"attachment/prompt-@{_PROMPT_UUID}/prompts/x.md": b"---\nname: x\n---\n\nx\n"},
+            {f"attachment/prompt-{_PROMPT_UUID}/prompts/x.md": b"---\nname: x\n---\n\nx\n"},
         )
 
         mock_conv = Conversation(shared_context_entities=[])
@@ -670,7 +670,7 @@ async def test_unpack_stages_before_fm_materializes_and_notifies_after(tmp_path)
     }
     zip_path = _write_flowmsg_zip(
         tmp_path, fm_data,
-        {f"attachment/prompt-@{_PROMPT_UUID}/prompts/x.md": b"---\nname: x\n---\n\nx\n"},
+        {f"attachment/prompt-{_PROMPT_UUID}/prompts/x.md": b"---\nname: x\n---\n\nx\n"},
     )
 
     mock_conv = Conversation(shared_context_entities=[])
@@ -712,7 +712,7 @@ async def test_unpack_stages_before_fm_materializes_and_notifies_after(tmp_path)
 class TestRawFileAttachmentStaging:
     """A raw FILE attachment (attachment/files/<name>, attachment_type=file)
     must join the staged reception flow like asset entries: unpack synthesizes
-    a per-file ``file-@<id>`` entry dir and upserts a MessageAttachment row so
+    a per-file ``file-<id>`` entry dir and upserts a MessageAttachment row so
     the UI can render a dashed chip → review → install. Regression for the
     SAPAK-DEMO-SPEC.md case: files sent via the OS-file-picker lane previously
     staged nothing and could never surface in a projectless conversation."""
@@ -769,7 +769,7 @@ class TestRawFileAttachmentStaging:
         )
         ma = staged_saves[0]
         asset_id = mint_uuid(f"flow_message_file:{fm_id}:{fname}")
-        entry_key = f"file-@{asset_id}"
+        entry_key = f"file-{asset_id}"
         assert ma.id == MessageAttachment.allocate_deterministic_id(fm_id, entry_key)
         assert ma.asset_type == "file"
         assert ma.asset_id == asset_id
@@ -858,7 +858,7 @@ async def test_pack_with_conversation_attachment(tmp_path, monkeypatch):
     fm.attachment = [Attachment(attachment_type=AttachmentType.TYPE_ID, data=f"conversation-{conv_id}")]
 
     # Pre-create the canonical jsonl with a PRIOR pointer line — pack copies it
-    # verbatim but must NOT re-ship prior messages as flow_message-@ entries.
+    # verbatim but must NOT re-ship prior messages as flow_message- entries.
     canonical = default_jsonl_path(conv_id)
     canonical.parent.mkdir(parents=True, exist_ok=True)
     jsonl_body = json.dumps({"typeid": f"flow_message-{prior_fm_id}", "ts": "2020-01-01T00:00:00Z"}) + "\n"
@@ -868,7 +868,7 @@ async def test_pack_with_conversation_attachment(tmp_path, monkeypatch):
     mock_conv = Conversation(
         shared_context_entities=[],
         project_id=proj_id,
-        participants=[{"user_id": "u1", "email": "a@x.com", "name": "A", "role": "owner"}],
+        members=[{"user_id": "u1", "email": "a@x.com", "name": "A", "role": "owner"}],
         title="My Conversation Title",
     )
     mock_conv.id = conv_id
@@ -884,8 +884,8 @@ async def test_pack_with_conversation_attachment(tmp_path, monkeypatch):
 
     with zipfile.ZipFile(zip_path, "r") as zf:
         names = zf.namelist()
-        jsonl_arc = f"attachment/conversation-@{conv_id}/conversation.jsonl"
-        header_arc = f"attachment/conversation-@{conv_id}/header.json"
+        jsonl_arc = f"attachment/conversation-{conv_id}/conversation.jsonl"
+        header_arc = f"attachment/conversation-{conv_id}/header.json"
         assert jsonl_arc in names
         assert zf.read(jsonl_arc).decode("utf-8") == jsonl_body  # copied verbatim
         header = json.loads(zf.read(header_arc))
@@ -895,9 +895,9 @@ async def test_pack_with_conversation_attachment(tmp_path, monkeypatch):
             {"user_id": "u1", "email": "a@x.com", "name": "A", "role": "owner"}
         ]
         # The current FM is co-packed.
-        assert f"attachment/flow_message-@{fm.id}/header.json" in names
+        assert f"attachment/flow_message-{fm.id}/header.json" in names
         # PRIOR messages are NOT re-shipped as their own entries.
-        assert f"attachment/flow_message-@{prior_fm_id}/header.json" not in names
+        assert f"attachment/flow_message-{prior_fm_id}/header.json" not in names
 
     # --- null project_name (conversation has no project) → no crash ---
     mock_conv_np = Conversation(shared_context_entities=[], title=None)
@@ -908,7 +908,7 @@ async def test_pack_with_conversation_attachment(tmp_path, monkeypatch):
     ):
         zip_path2 = await pack_bundle(fm, dest_dir=tmp_path)
     with zipfile.ZipFile(zip_path2, "r") as zf:
-        header2 = json.loads(zf.read(f"attachment/conversation-@{conv_id}/header.json"))
+        header2 = json.loads(zf.read(f"attachment/conversation-{conv_id}/header.json"))
         assert header2["project_name"] is None
         assert header2["project_id"] is None
 
@@ -934,7 +934,7 @@ async def test_pack_task_attachment_excludes_sender_local_fields(tmp_path):
         zip_path = await pack_bundle(fm, dest_dir=tmp_path)
 
     with zipfile.ZipFile(zip_path, "r") as zf:
-        content = zf.read(f"attachment/task-@{task_id}/tasks/Shared_Task/task.md").decode("utf-8")
+        content = zf.read(f"attachment/task-{task_id}/agentic-assets/task/Shared_Task/task.md").decode("utf-8")
     # Sender-local fields stripped (never written to task.md).
     assert "project_root" not in content
     assert "/sender/local/path" not in content
@@ -970,7 +970,7 @@ async def test_pack_dbonly_spec_pins_id_and_sanitizes_hostile_name(tmp_path):
 
     with zipfile.ZipFile(zip_path, "r") as zf:
         names = zf.namelist()
-        prefix = f"attachment/spec-@{spec_id}/specs/"
+        prefix = f"attachment/spec-{spec_id}/agentic-assets/spec/"
         spec_members = [n for n in names if n.startswith(prefix)]
         assert spec_members, f"expected a rendered spec doc, got {names}"
         main_arc = spec_members[0]
@@ -996,4 +996,4 @@ async def test_pack_dbonly_spec_pins_id_and_sanitizes_hostile_name(tmp_path):
     ):
         zip_path2 = await pack_bundle(fm2, dest_dir=tmp_path)
     with zipfile.ZipFile(zip_path2, "r") as zf:
-        assert not any(n.startswith(f"attachment/spec-@{spec_id}/") for n in zf.namelist())
+        assert not any(n.startswith(f"attachment/spec-{spec_id}/") for n in zf.namelist())

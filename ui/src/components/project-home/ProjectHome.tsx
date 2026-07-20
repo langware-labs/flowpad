@@ -1,17 +1,15 @@
 import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
 import { MembersAvatarStack } from '@src/components/conversation/MembersAvatarStack';
-import { MiniDesktop } from '@src/components/quick-create/MiniDesktop';
+import { QuickCreatePanel, useQuickCreatePick } from '@src/components/quick-create/QuickCreatePanel';
+import { SecretsCard } from './SecretsCard';
 import { Button } from '@src/components/ui/button';
 import { useContext as useDataContext } from '@src/hooks/useContext';
 import { WorkerToolbar } from '@src/components/workers/WorkerToolbar';
 import { useTerminalStripController } from '@src/tabs/useTerminalStripController';
-import { projectScope } from '@src/lib/scope-filter';
 import { Project, TypeId } from '@sdk';
 import { History, Loader2, SquareTerminal } from 'lucide-react';
 import React, { useMemo } from 'react';
 import { Trans } from '@lingui/react/macro';
-import { ContextFolders } from './ContextFolders';
-import { Secrets } from './Secrets';
 
 interface ProjectHomeProps {
   /** Pin spawned shells/processes to this project; otherwise the active project. */
@@ -116,26 +114,24 @@ const StartSessionWorkers: React.FC<{ spawnProjectId?: string | null }> = ({ spa
  * open content: the terminal body's empty state (no terminal sessions) and the
  * project-home content slot (no asset/item selected). The one surface that is
  * unambiguously "the project itself" rather than content inside it, so it hosts,
- * top-to-bottom: the project-level Members roster, the project-scoped favorites
- * mini-desktop (bookmarks stamped with this project), and the project's context
- * folders (see `ContextFolders`). The terminal empty state also shows the spawn
- * openers via `showSessionStarters`.
+ * top-to-bottom: the project-level Members roster, the session launchers, and —
+ * as the body — the create-new surface (`QuickCreatePanel`) spread out plainly
+ * rather than hidden behind the desktop "+" tile's modal. The terminal empty
+ * state also shows the spawn openers via `showSessionStarters`.
  */
 export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, showSessionStarters = false }) => {
   const dataCtx = useDataContext();
 
-  // Resolve the target project (explicit spawn pin, else the active project) —
-  // same resolution ContextFolders uses.
+  // Resolve the target project (explicit spawn pin, else the active project).
   const projectId = spawnProjectId ?? dataCtx.project?.id ?? null;
   const projectTypeId = useMemo(
     () => (projectId ? new TypeId(Project.type, projectId) : null),
     [projectId],
   );
 
-  // The mini-desktop is pinned to this project's scope: it shows only bookmarks
-  // stamped with this project, and its expand affordance opens the full desktop
-  // pinned to the same scope. Unscoped/personal favorites don't leak in.
-  const desktopScope = useMemo(() => (projectId ? projectScope(projectId) : null), [projectId]);
+  // The dialogs the create tiles defer to. Hosted here rather than in the panel
+  // so they outlive whatever the tile click dismisses.
+  const { panelProps, dialogs } = useQuickCreatePick();
 
   return (
     <div className="flex h-full flex-col">
@@ -148,7 +144,7 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, showSe
           <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
             <Trans>Members</Trans>
           </span>
-          <MembersAvatarStack typeId={projectTypeId} />
+          <MembersAvatarStack typeId={projectTypeId} allowInviteLink />
         </div>
       )}
 
@@ -168,22 +164,18 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, showSe
       )}
 
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto flex w-full max-w-md flex-col gap-6 px-4 py-6">
+        <div className="mx-auto flex w-full flex-col gap-6 px-4 py-6">
           {showSessionStarters && <SessionStarters spawnProjectId={spawnProjectId} />}
 
-          {desktopScope && (
-            <div className="flex flex-col gap-2" data-testid="project-home-bookmarks">
-              <span className="px-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                <Trans>Bookmarks</Trans>
-              </span>
-              <MiniDesktop scope={desktopScope} />
-            </div>
-          )}
+          <QuickCreatePanel {...panelProps} />
 
-          <ContextFolders spawnProjectId={spawnProjectId} />
-          <Secrets spawnProjectId={spawnProjectId} />
+          {/* Project secrets — value-free references + setup wizard. */}
+          {dataCtx.project?.id === projectId && dataCtx.project && (
+            <SecretsCard project={dataCtx.project as unknown as Project} />
+          )}
         </div>
       </div>
+      {dialogs}
     </div>
   );
 };

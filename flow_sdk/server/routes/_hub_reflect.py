@@ -57,7 +57,13 @@ def _entity_type_enum(entity: Entity) -> BuiltinEntityType | None:
         return None
 
 
-async def reflect_to_hub(a: Action, entity: Entity, body: dict[str, Any], method: str) -> Any:
+async def reflect_to_hub(
+    a: Action,
+    entity: Entity,
+    body: dict[str, Any],
+    method: str,
+    sub_path: str | None = None,
+) -> Any:
     """Forward the action call to the hub and mirror the response into the local row.
 
     ``method`` is the **actual incoming HTTP method** (e.g. from
@@ -68,6 +74,12 @@ async def reflect_to_hub(a: Action, entity: Entity, body: dict[str, Any], method
     DELETE-registered ``Action`` and reflect a destructive hub DELETE with an empty
     body → hub 400 → the "Cloud request rejected" toast. The request method never
     lies; ``a.methods`` does.
+
+    ``sub_path`` is the segment after the action (``members/link`` → ``"link"``),
+    forwarded verbatim so one action name can front several hub endpoints. It also
+    *disqualifies* the roster-shaped post-processing below: ``members`` returns a
+    participant list, but ``members/link`` returns ``{id, url, …}``, and mirroring
+    that onto ``participants`` would corrupt the roster.
 
     Returns the hub's response payload (the unwrapped ``data`` dict/list),
     after normalizing per-action shapes (e.g. ``members`` field rename).
@@ -80,8 +92,11 @@ async def reflect_to_hub(a: Action, entity: Entity, body: dict[str, Any], method
 
     hub_id = entity.id
     verb = (method or "").lower()
+    # Roster-shaped handling applies to the bare ``members`` action only — a
+    # sub-path (``members/link``) is a different hub endpoint with its own shape.
+    is_roster = a.action_name == "members" and not sub_path
     if verb == "get":
-        hub_resp = await hub_get(et, hub_id, action=a.action_name)
+        hub_resp = await hub_get(et, hub_id, action=a.action_name, sub_path=sub_path)
         # hub_get returns None on transport/HTTP failure (does not raise);
         # treat that as "fall through to local" via HubError.
         if hub_resp is None:
@@ -91,8 +106,8 @@ async def reflect_to_hub(a: Action, entity: Entity, body: dict[str, Any], method
         # MembershipMethod {member_through, value}); hub_delete sends it as
         # the JSON body and raises HubError on non-200 (e.g. 403 owner-only),
         # which propagates to the caller verbatim.
-        hub_resp = await hub_delete(et, hub_id, action=a.action_name, payload=body or {})
-    elif verb in ("put", "patch") and a.action_name == "members":
+        hub_resp = await hub_delete(et, hub_id, action=a.action_name, sub_path=sub_path, payload=body or {})
+    elif verb in ("put", "patch") and is_roster:
         # Role change — PUT ``/<type>/<id>/members`` with ``{user_id|user_email|
         # invitation_id, role}``. Without this branch the generic PUT below would
         # reflect the body as a bare entity update onto ``/<type>/<id>``, silently
@@ -120,12 +135,17 @@ async def reflect_to_hub(a: Action, entity: Entity, body: dict[str, Any], method
             await entity.save(notify=True)  # local row + data_op broadcast to watchers
         return entity.model_dump()
     else:
-        hub_resp = await hub_post(et, body or {}, hub_id, action=a.action_name)
+        hub_resp = await hub_post(et, body or {}, hub_id, action=a.action_name, sub_path=sub_path)
+
+    # A sub-path'd call (e.g. ``members/link`` → {id, url, …}) is not a roster:
+    # return the hub's payload verbatim, with no re-fetch, rename, or mirror.
+    if sub_path:
+        return hub_resp
 
     # After a successful members mutation (remove / role change) the hub returns
     # a message, not a roster — so re-fetch the canonical roster to mirror
     # locally (keeps participants in sync without a second client round-trip).
-    if verb in ("delete", "put", "patch") and a.action_name == "members":
+    if verb in ("delete", "put", "patch") and is_roster:
         refreshed = await hub_get(et, hub_id, action=a.action_name)
         if refreshed is not None:
             hub_resp = refreshed
@@ -139,7 +159,7 @@ def _normalize_hub_response(action_name: str, hub_resp: Any) -> Any:
     """Translate hub field names into the canonical client shape.
 
     The hub's ``Membership`` response uses ``user_email`` / ``user_name`` /
-    ``user_picture``; the client and ``Conversation.participants`` cache
+    ``user_picture``; the client and the ``Entity.members`` roster cache
     expect ``email`` / ``name`` / ``picture``. Normalizing here means
     callers (TS SDK, local mirror, downstream UI) all see one shape.
 
@@ -238,10 +258,12 @@ async def mirror_hub_response_into_local(entity: Entity, action_name: str, hub_r
     if hub_resp is None:
         return
 
-    # Generic shape: action returns a list whose entries look like
-    # participants → mirror onto ``entity.participants`` if the field exists.
+    # Generic shape: the ``members`` action returns the roster list → mirror it
+    # onto ``entity.members`` (the roster cache, now on the Entity base so this
+    # fires for every remote type — org/team included, not just conversation/
+    # project which previously declared their own field).
     if action_name == "members" and isinstance(hub_resp, list):
-        if hasattr(entity, "participants"):
+        if hasattr(entity, "members"):
             try:
                 new_participants = list(hub_resp)
                 # EQUALITY GUARD — only assign+save when the roster actually
@@ -257,10 +279,10 @@ async def mirror_hub_response_into_local(entity: Entity, action_name: str, hub_r
                 # the already-normalized stored value against the new normalized
                 # value (both went through ``_normalize_hub_response``), so the
                 # check isn't defeated by raw-vs-normalized key differences.
-                current = list(getattr(entity, "participants", None) or [])
+                current = list(getattr(entity, "members", None) or [])
                 if current == new_participants:
                     return
-                entity.participants = new_participants
+                entity.members = new_participants
                 # Best-effort save; never blow up the action if persistence fails.
                 save = getattr(entity, "save", None)
                 if callable(save):

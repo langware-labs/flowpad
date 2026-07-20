@@ -43,8 +43,11 @@ from flow_sdk.fs_store.fs_ref import FSRef
 M = TypeVar("M")  # meta model — dict view by default; Pydantic models opt-in via TypeInfo.meta_model
 
 
-# Canonical naming. <type>-@<uid> as folder name under records_root/<type>/.
-_NAME_SEP = "-@"
+# Type-scoped shadow store: a record lives at ``records_root/<type>/<id>/`` — a
+# BARE id under a ``<type>/`` parent (the parent dir already scopes the type, so
+# the name carries no redundant prefix and no uname ``@``). The self-describing
+# ``<type>-<id>`` stem (``record_stem``, re-exported below) is only for flat /
+# portable namespaces (bundles, staging, VFS).
 _METADATA_JSON = "metadata.json"
 # The single per-record index sentinel. Two on-disk shapes:
 #   legacy  ``<int_epoch>_<contenthash>.hash``
@@ -98,15 +101,15 @@ async def record_sync_guard(record_type: str, record_id: str):
             _HELD_RECORD_SYNC_KEYS.reset(token)
 
 
-def record_stem(record_type: str, uid: str) -> str:
-    return f"{record_type}{_NAME_SEP}{uid}"
-
-
-def parse_record_stem(stem: str) -> tuple[str, str]:
-    if _NAME_SEP not in stem:
-        raise ValueError(f"Invalid record stem: {stem!r}")
-    rt, uid = stem.split(_NAME_SEP, 1)
-    return rt, uid
+# Single source of truth lives in record_paths; re-exported here for the callers
+# that import the stem / path helpers from this module.
+from flow_sdk.fs_store.record_paths import (  # noqa: E402
+    data_dir_for as data_dir_for,
+    is_record_dir as is_record_dir,
+    parse_record_stem as parse_record_stem,
+    record_stem as record_stem,
+    shadow_dir_for as shadow_dir_for,
+)
 
 
 def write_text_if_changed(path: Path, text: str) -> None:
@@ -249,10 +252,10 @@ class FSRecord(Generic[M]):
 
     @property
     def shadow_dir(self) -> Path:
-        """records_root/<type>/<type>-@<id>/"""
+        """records_root/<type>/<id>/"""
         if not self.type or self.id is None:
             raise ValueError(f"FSRecord(type={self.type!r}, id={self.id!r}) has no shadow_dir")
-        return _get_default_records_root() / self.type / record_stem(self.type, self.id)
+        return shadow_dir_for(self.type, self.id)
 
     @property
     def record_folder_ref(self) -> FSRef:
@@ -383,9 +386,8 @@ class FSRecord(Generic[M]):
 
     @classmethod
     def load(cls, type: str, id: str) -> "FSRecord":
-        """Load by identity. Reads <records_root>/<type>/<type>-@<id>/metadata.json"""
-        folder = _get_default_records_root() / type / record_stem(type, id)
-        return cls.load_record(folder)
+        """Load by identity. Reads <records_root>/<type>/<id>/metadata.json"""
+        return cls.load_record(shadow_dir_for(type, id))
 
     @classmethod
     def load_or_none(cls, type: str, id: str) -> "FSRecord | None":
@@ -400,7 +402,7 @@ class FSRecord(Generic[M]):
         """Find a record by ``id`` alone, scanning every type under records_root.
 
         Unlike ``load``/``load_or_none`` this needs no ``type``: it checks the
-        deterministic shadow path ``<records_root>/<type>/<type>-@<id>/`` for each
+        deterministic shadow path ``<records_root>/<type>/<id>/`` for each
         type folder. Returns the single match, ``None`` when no type owns ``id``,
         and raises ``ValueError`` when more than one type has a record with this
         ``id`` (ids are unique within a type but can collide across types).
@@ -412,8 +414,8 @@ class FSRecord(Generic[M]):
         for type_dir in root.iterdir():
             if not type_dir.is_dir():
                 continue
-            folder = type_dir / record_stem(type_dir.name, id)
-            if (folder / _METADATA_JSON).exists():
+            folder = type_dir / str(id)
+            if is_record_dir(folder):
                 matches.append(folder)
         if not matches:
             return None
@@ -447,7 +449,7 @@ class FSRecord(Generic[M]):
             return []
         out: list[FSRecord] = []
         for child in root.iterdir():
-            if not child.is_dir() or _NAME_SEP not in child.name:
+            if not is_record_dir(child):
                 continue
             try:
                 out.append(cls.load_record(child))
@@ -462,10 +464,7 @@ class FSRecord(Generic[M]):
         root = _get_default_records_root() / type
         if not root.is_dir():
             return 0
-        return sum(
-            1 for child in root.iterdir()
-            if child.is_dir() and _NAME_SEP in child.name
-        )
+        return sum(1 for child in root.iterdir() if is_record_dir(child))
 
     # ── Index state (self-contained, on-disk, zero DB) ───────────────────
     #
@@ -655,19 +654,30 @@ class FSRecord(Generic[M]):
 
     # ── Asset placement (read from TypeInfo) ──────────────────────────────
 
-    def compute_asset_ref(self, scope_root: str | Path, entity) -> FSRef | None:
+    def compute_asset_ref(
+        self, scope_root: str | Path, entity, *, default_worker: str = "claude"
+    ) -> FSRef | None:
         """Resolve the user-facing asset location under scope_root.
 
-        Reads ``main_subdir`` / ``main_layout`` from the registered TypeInfo.
-        Returns None for types without a configured asset layout.
+        The family subdir comes from ``placement`` (``asset_class`` / ``harness``
+        / ``family`` via ``_resolved_layout``), so the harness prefix
+        (``.claude`` / ``.agents`` / …) is chosen by ``default_worker`` instead of
+        being welded into the type. ``main_layout`` / ``main_file`` / ``main_ext``
+        still own the file-vs-folder tail. Returns None for types without a
+        configured asset layout. ``default_worker`` defaults to ``claude`` so
+        callers that pass a bare ``scope_root`` keep today's ``.claude/*`` layout.
         """
+        from flow_sdk.fs_store.placement import family_subdir  # noqa: PLC0415
         from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
         info = SchemaRegistry.get(self.type)
-        if info is None or info.main_subdir is None:
+        if info is None:
+            return None
+        subdir = family_subdir(*info._resolved_layout, default_worker=default_worker)
+        if subdir is None:
             return None
         safe = self._safe_name(entity)
-        base = Path(scope_root) / info.main_subdir
+        base = Path(scope_root) / subdir
         if info.main_layout == "folder":
             # asset_ref_for owns the folder-vs-inner-file rule (its inverse,
             # body_path_for, recovers the body on write) so the convention lives

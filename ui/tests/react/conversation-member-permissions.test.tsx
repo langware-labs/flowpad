@@ -9,6 +9,13 @@ vi.mock('@sdk/react/hooks', () => ({
     cloudUser: { id: 'me-id', email: 'me@example.com' },
     currentUser: null,
   }),
+  // Consumed by useLoginRequired (via MembersAvatarStack's sign-in gate).
+  useContext: () => ({ cloudLoginAvailable: true, isDesktop: true }),
+  // ContactPicker → useContactsGroups → useComputedGroups calls useProject for
+  // the "Project Members" computed group. This test drives the roster through
+  // the mocked `use-members` and has no project context, so the hook resolves
+  // to no project — which is exactly what an unscoped picker sees.
+  useProject: () => ({ project: null }),
 }));
 
 vi.mock('@src/hooks/use-members', () => ({
@@ -20,7 +27,26 @@ vi.mock('@src/hooks/use-members', () => ({
     addMembers: vi.fn(),
     removeMember: vi.fn(),
     setRole: vi.fn(),
+    // Membership available (signed in) so the roster + controls render.
+    available: true,
+    reason: 'available',
+    updating: false,
+    stale: false,
   }),
+}));
+
+// The sign-in gate machinery is out of scope here — stub it so MembersAvatarStack
+// renders without the agent-layout / router providers it would need at runtime.
+vi.mock('@src/hooks/use-login-required', () => ({
+  useLoginRequired: () => ({
+    checkLoginAndProceed: () => true,
+    showLoginDialog: false,
+    closeLoginDialog: vi.fn(),
+  }),
+}));
+vi.mock('@src/components/login-required-dialog', () => ({
+  ActionType: { MEMBERS: 'members' },
+  default: () => null, // LoginDialog is the default export
 }));
 
 vi.mock('@src/components/conversation/useLocalUser', () => ({

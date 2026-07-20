@@ -1,5 +1,5 @@
 import { toast as sonnerToast } from 'sonner';
-import { copyToClipboard, AgenticProcess } from '@sdk';
+import { oauthService, OAUTH_PROVIDERS, copyToClipboard, AgenticProcess } from '@sdk';
 import { gitResolvePrompt } from '@src/components/status-bar/gitResolvePrompt';
 import { closeTerminalTab } from '@src/tabs/useTabs';
 import { useBadgeStore } from './store';
@@ -45,6 +45,11 @@ export function runAction(action: NotificationAction, id: string): void {
 }
 
 // --- Static commands (module-level deps; no React hooks) ---------------------
+
+// `Sign in` on the expired-cloud-sign-in toast: relaunch the cloud OAuth flow.
+registerCommand('cloud.signin', () => {
+  void oauthService.connect(OAUTH_PROVIDERS.FLOWPAD_CLOUD);
+});
 
 registerCommand('terminal.terminate', (args) => {
   if (args.typeId) void closeTerminalTab(String(args.typeId));

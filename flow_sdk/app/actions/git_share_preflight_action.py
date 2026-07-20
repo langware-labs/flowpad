@@ -35,6 +35,7 @@ logger = logging.getLogger(__name__)
 # (code, human reason) — one place so the action, packing, and tests agree.
 _REASONS: dict[str, str] = {
     "not-file-backed": "This asset isn't file-backed, so it has no Git origin to share.",
+    "unresolved-folder": "This folder isn't set up on this machine yet.",
     "not-in-repo": "The asset isn't inside a Git repository.",
     "missing-remote": "The repository has no 'origin' remote to clone from.",
     "unsupported-origin": "The repository's origin isn't a supported Git host.",
@@ -53,18 +54,48 @@ def _result(code: str | None, git_origin: dict | None = None) -> dict:
     return {"available": False, "reason": _REASONS.get(code, code), "code": code, "git_origin": None}
 
 
+async def _entity_local_path(cls, entity_id: str) -> str | None:
+    """Resolve a graph entity's local path from its stored origin or path."""
+    ent = await cls.get_one({"id": entity_id})
+    if ent is None:
+        return None
+    origin = getattr(ent, "origin", None)
+    if getattr(origin, "kind", None) == "local":
+        from pathlib import Path  # noqa: PLC0415
+
+        return str(Path(origin.base) / (origin.rel_path or "."))
+    if getattr(origin, "kind", None) == "git":
+        from pathlib import Path  # noqa: PLC0415
+
+        from flow_sdk.utils.git import find_local_repo_for_url  # noqa: PLC0415
+
+        repo = await asyncio.to_thread(find_local_repo_for_url, origin.clone_url())
+        return str(Path(repo) / (origin.rel_path or ".")) if repo else None
+    return ((getattr(ent, "path", "") or "").strip() or None)
+
+
 async def _resolve_asset_git_path(entity_type: str, entity_id: str) -> str | None:
-    """The on-disk root whose Git repo we probe: the Artifact's ``path`` or a
-    file-backed asset's resolved source subtree. None when the type isn't
-    file-backed / the asset has no on-disk source."""
+    """The on-disk root whose Git repo we probe.
+
+    Graph entities (artifact / folder) carry their own local ``path`` — they sit
+    outside the file-backed registry (a Folder has no ``asset_ref`` BY DESIGN:
+    generic destructive paths rmtree asset_ref targets, see folder_type_info).
+    Probing that live path is also what makes a directory git-init'd after the
+    entity was minted report its CURRENT state rather than its stale origin.
+    Everything else resolves through the registry. None when the type has no
+    on-disk source concept, or the instance has no path yet.
+    """
     from flow_sdk.schema.types import EntityType  # noqa: PLC0415
 
     if entity_type == EntityType.ARTIFACT.value:
         from flow_sdk.builtin.artifact import Artifact  # noqa: PLC0415
 
-        artifact = await Artifact.get_one({"id": entity_id})
-        path = (getattr(artifact, "path", "") or "").strip() if artifact else ""
-        return path or None
+        return await _entity_local_path(Artifact, entity_id)
+
+    if entity_type == EntityType.FOLDER.value:
+        from flow_sdk.builtin.folder import Folder  # noqa: PLC0415
+
+        return await _entity_local_path(Folder, entity_id)
 
     # File-backed asset (skill/spec/agent/…): reuse the pack-time resolver so
     # preflight and packing agree on WHICH subtree defines the origin.
@@ -116,16 +147,23 @@ async def git_share_preflight(entity_type: str, entity_id: str) -> dict:
     actionable fix at a time (fix the remote before we complain about a dirty
     tree, etc.)."""
     from flow_sdk.builtin.git_origin import GitOrigin  # noqa: PLC0415
+    from flow_sdk.schema.types import EntityType  # noqa: PLC0415
 
     src_root = await _resolve_asset_git_path(entity_type, entity_id)
     if not src_root:
-        return _result("not-file-backed")
+        # A Folder IS file-backed — it just has no local path yet (e.g. received
+        # but never resolved). Saying "isn't file-backed" there would be a lie.
+        return _result("unresolved-folder" if entity_type == EntityType.FOLDER.value else "not-file-backed")
 
+    # One cache for every git read below: `for_asset_path` re-walks for the repo
+    # root and re-reads the remote otherwise, duplicating both this walk and a
+    # `git remote get-url` subprocess on the missing-remote path.
+    repo_cache: dict = {}
     repo_root = await asyncio.to_thread(find_project_root, src_root)
     if not repo_root:
         return _result("not-in-repo")
 
-    origin = await asyncio.to_thread(GitOrigin.for_asset_path, src_root, None)
+    origin = await asyncio.to_thread(GitOrigin.for_asset_path, src_root, repo_cache)
     if origin is None:
         # In a repo but ``for_asset_path`` couldn't build an origin: no usable
         # remote (missing) vs a remote it can't parse/place (unsupported).

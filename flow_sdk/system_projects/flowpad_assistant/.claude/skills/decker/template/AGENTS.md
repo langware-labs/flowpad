@@ -25,9 +25,19 @@ tokens.
   container holding one `<template data-item>` child. Media is
   `<figure data-slot="media" data-media-kind="…">`. Do not rename slots —
   the layout taxonomy and slot names are canonical.
-- **Tokens-only styling.** Re-skinning edits ONLY `common/tokens.css`.
-  Layouts and `common/theme.css` reference `var(--…)` — never hardcode a
-  color, font, or raw pixel value that belongs in a token.
+- **Three CSS layers.** The assembler concatenates
+  `tokens.css` → `theme.css` → `style.css`:
+  `common/tokens.css` is the vocabulary (palette, type scale, font stacks,
+  spacing); `common/theme.css` is the style-agnostic base and owns the
+  `decker:structural-fix` block; `common/style.css` is the personality layer
+  (what a `.card` *is*). **`tokens.css` and `style.css` both come from the
+  decker skill's `styles/<slug>/`** — re-skinning overwrites those two files,
+  which is idempotent. Layouts and `theme.css` reference `var(--…)` — never
+  hardcode a color, font, or raw pixel value that belongs in a token.
+- **Do not delete `decker:structural-fix`** from `common/theme.css`. Reveal
+  assigns `display` inline via JS, which beats every selector; without that
+  `!important` block the `.layout` flex column never activates and content
+  jams against the top edge of every slide.
 - **Headless Reveal.** `common/deck.js` initializes Reveal with
   `hash: false, history: false` (required — decks render inside a sandboxed
   `srcDoc` iframe with no same-origin, no base URL, no URL hash). Do not

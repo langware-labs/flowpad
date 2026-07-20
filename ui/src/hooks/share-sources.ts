@@ -118,6 +118,35 @@ export function genericEntityShareSource(
 }
 
 /**
+ * Context-folder share. A folder ALWAYS travels as a Git origin the receiver
+ * clones — never as copied bytes — so Git here is the POLICY, not a per-share
+ * option: `shareConfig.transferMode` is pinned and `gitPreflightRef` is
+ * deliberately omitted, which is what keeps the dialog's Git toggle from
+ * rendering (`gitCapable` reads that ref) and keeps the conversation's
+ * `git_sharing_enabled` preference out of it — mandatory isn't a preference.
+ *
+ * Eligibility is NOT skipped: the gate in front of the dialog preflights this
+ * folder and remediates (set up git / commit + push) before the dialog ever
+ * opens, and packing revalidates and fails closed.
+ */
+export function folderShareSource(folderTypeId: TypeId, opts: { label: string }): ShareSource {
+  const ref = folderTypeId.toString();
+  return {
+    label: opts.label,
+    typeLabel: 'FOLDER',
+    defaultTitle: opts.label,
+    bookmarkable: true,
+    shareConfig: { transferMode: 'git' },
+    prepare: resolveOnce(() =>
+      Promise.resolve({
+        assetReferences: [ref],
+        sharedContextEntities: [ref],
+      }),
+    ),
+  };
+}
+
+/**
  * Artifact share. When the sender opts into Git mode (the dialog's Git toggle),
  * a Git-backed artifact rides as a metadata declaration plus GitOrigin and the
  * receiver resolves the checkout from git on Download; otherwise it copies.
@@ -131,7 +160,7 @@ export function artifactShareSource(
   const ref = artifact.typeId.toString();
   return {
     label: opts.label ?? artifact.displayName ?? ref,
-    typeLabel: opts.typeLabel ?? artifact.artifact_type ?? Artifact.type,
+    typeLabel: opts.typeLabel ?? artifact.kind ?? Artifact.type,
     defaultTitle: opts.label ?? artifact.displayName,
     bookmarkable: true,
     // Eligibility (clean + pushed worktree with a usable origin) is resolved by

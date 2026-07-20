@@ -165,6 +165,95 @@
 .btn:hover { background: var(--hover-strong); border-color: var(--border-strong); }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
+.color-mode-control {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--hover);
+  white-space: nowrap;
+}
+.color-mode-btn {
+  padding: 4px 7px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 10px;
+  cursor: pointer;
+}
+.color-mode-btn:hover { color: var(--text); }
+.color-mode-btn.active {
+  background: rgba(99,102,241,0.3);
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px rgba(99,102,241,0.45);
+}
+
+/* ============ WorldView heat legend ============ */
+.heat-legend {
+  position: absolute;
+  left: 14px;
+  bottom: 14px;
+  z-index: 20;
+  width: 220px;
+  padding: 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+  box-shadow: 0 10px 28px rgba(0,0,0,0.24);
+  color: var(--text);
+  pointer-events: none;
+  backdrop-filter: blur(14px);
+}
+.heat-legend-heading {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  margin-bottom: 7px;
+}
+.heat-legend-heading strong {
+  font-size: 10px;
+  font-weight: 600;
+}
+.heat-legend-heading span,
+.heat-type-scale,
+.heat-scale-labels,
+.heat-unknown {
+  color: var(--text-dim);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+}
+.heat-legend-heading span {
+  line-height: 1.35;
+}
+.heat-scale {
+  height: 6px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #2563eb 0%, #22d3ee 40%, #facc15 70%, #ef4444 100%);
+}
+.heat-scale-labels {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 3px;
+}
+.heat-type-scale {
+  padding: 3px 0 4px;
+}
+.heat-unknown {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 6px;
+}
+.heat-unknown-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
 /* ============ Search ============ */
 .search-wrap { position: relative; width: 280px; }
 
@@ -494,6 +583,31 @@
 }
 .kv-row .k { color: var(--text-muted); width: 80px; flex-shrink: 0; }
 .kv-row .v { color: var(--text); word-break: break-all; font-family: 'JetBrains Mono', monospace; font-size: 11px; }
+
+.worldview-property {
+  padding: 6px 0;
+}
+.worldview-property + .worldview-property {
+  border-top: 1px solid var(--border);
+}
+.worldview-property .k {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+.worldview-property .v {
+  margin: 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  color: var(--text);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  line-height: 1.45;
+}
 
 .edge-kind-row {
   display: flex;

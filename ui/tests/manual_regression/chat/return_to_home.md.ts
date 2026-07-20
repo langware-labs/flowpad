@@ -24,8 +24,8 @@ test.describe('Return to Home', () => {
     await goHome(page);
 
     // validate landing page is visible
-    // Use CSS selector instead of getByRole — Radix UI AlertDialog sets aria-hidden on
-    // the page behind it, causing getByRole('heading') to fail when WelcomeModal is open.
+    // Use CSS selector instead of getByRole — a Radix AlertDialog sets aria-hidden on
+    // the page behind it, causing getByRole('heading') to fail while one is open.
     await expect(page.locator('h1, h2, h3').filter({ hasText: /hey /i }).first()).toBeVisible();
     expect(page.url()).toMatch(/\/dock\/home/);
 

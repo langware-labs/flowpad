@@ -245,11 +245,11 @@ export function ConversationListRow({ conv, isFocused, viewMode, searchActive, o
       seen.add(key);
     };
     pushName(latestMessage?.sender_name);
-    for (const p of conv.participants ?? []) {
+    for (const p of conv.members ?? []) {
       pushName(p?.name || (p?.email ? p.email.split('@')[0] : ''));
     }
     return names.length > 0 ? names : [t`Unknown`];
-  }, [isInvitationRow, firstMessage?.sender_name, latestMessage?.sender_name, conv.participants, t]);
+  }, [isInvitationRow, firstMessage?.sender_name, latestMessage?.sender_name, conv.members, t]);
 
   if (isHidden) return null;
 

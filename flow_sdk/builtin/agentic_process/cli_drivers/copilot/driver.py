@@ -11,13 +11,16 @@ from uuid import uuid4
 
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
     AgenticContext,
+    DeviceLoginSpec,
     AgenticProcessContextKey,
+    WorkerAuthResult,
     WorkerCLIOptions,
     WorkerSpawnError,
     apply_worker_env,
     apply_worker_secret_env,
     latch_spawn_failure,
     restart_payload_from_cli_options,
+    run_worker_auth_probe,
 )
 from flow_sdk.builtin.agentic_process.cli_drivers.copilot.cli import CopilotCliOptions
 from flow_sdk.builtin.agentic_process.cli_drivers.copilot.session_history import (
@@ -210,6 +213,21 @@ class CopilotDriver:
 
     def stream_worker(self, process: "AgenticProcess") -> CopilotCLIStreamWorker:
         return CopilotCLIStreamWorker.for_process(process.id)
+
+    async def auth_probe(self) -> WorkerAuthResult:
+        """Copilot has no status subcommand — heuristic probe (env token /
+        ``~/.copilot/config.json`` marker), never ``verified``. The shared
+        runner's install gate still applies: an uninstalled CLI reports
+        NOT_INSTALLED even when a GH_TOKEN happens to be in the env."""
+        return await run_worker_auth_probe(self.name)
+
+    # RFC-8628 device flow — copilot's default and only login mode.
+    device_login_spec = DeviceLoginSpec(
+        login_argv=("copilot", "login"),
+        url_re=re.compile(r"(https://github\.com/login/device)"),
+        code_re=re.compile(r"enter (?:the )?code ([A-Z0-9]{4}-[A-Z0-9]{4})"),
+        accepts_code_paste=False,
+    )
 
     def transcript_descriptor(self, process: "AgenticProcess") -> TranscriptDescriptor | None:
         """Resolve the Copilot transcript for READING (history / prompts / status).

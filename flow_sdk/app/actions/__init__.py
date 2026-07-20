@@ -2,6 +2,7 @@
 
 # Import CRUD actions to register them — side-effect imports, not re-exports.
 from . import (  # noqa: F401
+    add_translation_action,
     address_book_action,
     context_resolve_action,
     context_share_action,

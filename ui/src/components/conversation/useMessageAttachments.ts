@@ -54,8 +54,13 @@ export function chipStateFor(
   // Raw FILE rows (the OS-file-picker lane) never resolve as an entity —
   // installing copies bytes into a folder, it does not mint a resolvable
   // entity. So installed-ness comes from the MA row's own scope, and entity
-  // resolution is irrelevant for them.
-  if (ma?.asset_type === 'file') return ma.installed ? 'installed' : 'staged';
+  // resolution is irrelevant for them. TASK follows the same rule for the
+  // opposite reason: unpack materializes a slim Task row immediately (the
+  // conversation branch needs it), so entity resolution would mark a staged
+  // task installed before the user ever reviewed it.
+  if (ma && (ma.asset_type === 'file' || ma.asset_type === 'task')) {
+    return ma.installed ? 'installed' : 'staged';
+  }
   if (entityResolved) return 'installed';
   // A staged (or installed-but-not-yet-synced) attachment renders as staged
   // until the asset entity actually resolves locally.

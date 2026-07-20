@@ -466,20 +466,25 @@ async def hub_delete(
     entity_type: BuiltinEntityType,
     entity_id: str,
     action: str | None = None,
+    sub_path: str | None = None,
     *,
     payload: dict[str, Any] | None = None,
+    params: dict[str, str] | None = None,
     scope: list[tuple[str, str]] | None = None,
 ) -> Optional[dict[str, Any]]:
     """DELETE a hub graph endpoint (entity-level or entity-action).
 
     ``payload`` is sent as the JSON request body — the hub parses DELETE
     bodies (e.g. ``members`` DELETE expects a ``MembershipMethod``
-    ``{member_through, value}``). Returns the response ``data`` dict on
-    success, None when FLOWPAD_HUB_URL is not configured. Raises ``HubError``
-    on transport failure or non-200 so callers can classify (e.g. 403
-    owner-only) vs network errors.
+    ``{member_through, value}``). ``sub_path`` selects a sibling endpoint under
+    the same action (``members/link``), and ``params`` carries its selector
+    (revoke takes ``?link-id=``) — both mirror ``hub_get``/``hub_post``, and
+    without the sub-path a ``members/link`` DELETE would reach the hub as a
+    member removal. Returns the response ``data`` dict on success, None when
+    FLOWPAD_HUB_URL is not configured. Raises ``HubError`` on transport failure
+    or non-200 so callers can classify (e.g. 403 owner-only) vs network errors.
     """
-    url = hub_graph_url(entity_type, entity_id, action, scope=scope)
+    url = hub_graph_url(entity_type, entity_id, action, sub_path, scope=scope)
     if not url:
         logger.debug("[hub] FLOWPAD_HUB_URL not set — skipping DELETE %s/%s", entity_type, entity_id)
         return None
@@ -490,6 +495,7 @@ async def hub_delete(
                 "DELETE",
                 url,
                 json=payload or {},
+                params=params or None,
                 timeout=httpx.Timeout(10),
             )
     except HubAuthExpiredError as e:

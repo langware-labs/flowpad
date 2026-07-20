@@ -17,8 +17,13 @@ const BACKLINKS_TAB: TabDescriptor = {
 
 // Vibe/Standard keep the markdown rail deliberately small. Context is supplied
 // only by surfaces that support it; Revisions is supplied by MarkdownEditor.
-// Everything else (Backlinks and asset-specific tools such as Runs/Eval) is a
-// power-user option and remains available in Advanced/Dev.
+// Translations is a first-class doc affordance (read a doc in another language),
+// so it stays available in every mode. Everything else (Backlinks and other
+// asset-specific tools such as Runs/Eval) is a power-user option and remains
+// available in Advanced/Dev only.
+// Built-in tabs that stay available in Vibe/Standard. Caller-injected extras
+// declare their own non-Advanced visibility via `ExtraSideTab.availableInNonAdvanced`
+// (mode-visibility is a property of the tab, not a registry the shell owns).
 const NON_ADVANCED_SIDE_TAB_IDS = new Set(['context', 'revisions']);
 
 /**
@@ -32,6 +37,12 @@ export interface ExtraSideTab {
   icon: TabDescriptor['icon'];
   description?: string;
   panel: ReactNode;
+  /**
+   * Keep this tab visible in Vibe/Standard (not just Advanced/Dev). Default
+   * false — an extra tab is a power-user affordance unless it opts in. Set for
+   * first-class doc affordances (e.g. Translations).
+   */
+  availableInNonAdvanced?: boolean;
 }
 
 interface EditorWithSidePanelProps {
@@ -93,7 +104,14 @@ export function EditorWithSidePanel({
       description,
     }));
     const all = [BACKLINKS_TAB, ...extras];
-    return advanced ? all : all.filter((tab) => NON_ADVANCED_SIDE_TAB_IDS.has(tab.id));
+    if (advanced) return all;
+    // Non-Advanced: built-in always-on ids, plus any extra tab that opted in.
+    const nonAdvancedExtraIds = new Set(
+      (extraTabs ?? []).filter((t) => t.availableInNonAdvanced).map((t) => t.id),
+    );
+    return all.filter(
+      (tab) => NON_ADVANCED_SIDE_TAB_IDS.has(tab.id) || nonAdvancedExtraIds.has(tab.id),
+    );
   }, [advanced, extraTabs]);
 
   const panels = useMemo<Record<string, ReactNode>>(() => {

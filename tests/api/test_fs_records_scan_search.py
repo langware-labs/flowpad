@@ -85,6 +85,25 @@ async def _create_skill(client, cn_url_base, name: str) -> str:
     return resp.json()["data"]["id"]
 
 
+@pytest.mark.asyncio
+async def test_create_materializes_folder_asset_main_body(bootstrapped_client):
+    """A folder-backed asset created via fs-records POST must have its main body
+    (default_body → SKILL.md) written to disk, so a disk-walking scan can find
+    it — regardless of what other tests left behind. Regression: the create wrote
+    only the DB row + metadata.json shadow, so scan?type=skill saw count 0 unless
+    a prior test happened to leave a skill on disk (order-dependent flake)."""
+    from pathlib import Path
+
+    boot = await _bootstrap(bootstrapped_client)
+    sid = await _create_skill(bootstrapped_client, _cn_url(boot, "skill"), "materialize-body-skill")
+
+    skill = (await bootstrapped_client.get(f"/api/v1/graph/skill/{sid}")).json()["data"]
+    folder = Path(skill["asset_ref"])
+    assert (folder / "SKILL.md").is_file(), (
+        f"create did not materialize SKILL.md at {folder}"
+    )
+
+
 # ===========================================================================
 # Scan
 # ===========================================================================

@@ -15,6 +15,12 @@ interface WikiTipProps {
   label?: ReactNode;
   /** Accessible label / hover title for the W-button. Defaults to the wiki word. */
   buttonLabel?: string;
+  /** Hover dwell before the tip opens. Raise it on dense surfaces (a grid of
+   *  tipped tiles pops a card under every tile the pointer crosses). */
+  openDelay?: number;
+  /** Which side of the trigger the card opens on. Defaults to "top"; rail
+   *  buttons pass "right" to match the rail's regular tooltips. */
+  side?: 'top' | 'right' | 'bottom' | 'left';
 }
 
 /**
@@ -22,15 +28,21 @@ interface WikiTipProps {
  * {@link WikiButton} that peeks the wiki page in a modal. The tip is a HoverCard
  * (not a plain tooltip) so the W-button stays reachable to click. Wraps the
  * label-plus-wiki-button pattern used e.g. by the footer project name.
+ *
+ * `children` must forward its ref and spread props onto a DOM node — the
+ * trigger is `asChild`, so a component that swallows them leaves the tip inert.
  */
-export function WikiTip({ wikiword, children, label, buttonLabel }: WikiTipProps) {
+export function WikiTip({ wikiword, children, label, buttonLabel, openDelay = 200, side = 'top' }: WikiTipProps) {
   return (
-    <HoverCard openDelay={200} closeDelay={100}>
+    <HoverCard openDelay={openDelay} closeDelay={100}>
       <HoverCardTrigger asChild>{children}</HoverCardTrigger>
       <HoverCardContent
-        side="top"
-        align="start"
-        className="flex w-auto max-w-md items-center gap-2 px-3 py-1.5"
+        side={side}
+        align={side === 'right' || side === 'left' ? 'center' : 'start'}
+        // pointer-events-auto: the card portals to <body>, which a modal Radix
+        // Dialog marks pointer-events:none — without this the W-button renders
+        // but can't be clicked when the tip is used inside a dialog.
+        className="pointer-events-auto flex w-auto max-w-md items-center gap-2 px-3 py-1.5"
       >
         {label != null && (
           <span className="truncate text-xs text-muted-foreground">{label}</span>

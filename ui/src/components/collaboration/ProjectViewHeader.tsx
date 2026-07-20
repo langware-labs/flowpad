@@ -29,7 +29,7 @@ function onlineWithin(member: ProjectMember, windowMs: number): boolean {
 export function ProjectViewHeader({ project, localMemberId }: Props) {
   const { t } = useLingui();
   const { busy } = useSystemTools();
-  const members = project.members ?? [];
+  const members = project.presence ?? [];
   const [editing, setEditing] = useState(false);
   const [draftName, setDraftName] = useState(project.displayName);
   const inputRef = useRef<HTMLInputElement | null>(null);

@@ -64,6 +64,13 @@ def _participant_value(participant: dict, *keys: str) -> Optional[str]:
     return None
 
 
+def _local_roster_key(k: str) -> str:
+    """Wire adapter: the hub sends the roster under ``participants``; the local
+    cache field is the generic ``Entity.members``. Map that one key; pass others
+    through. Used by both hub-conv metadata upsert loops."""
+    return "members" if k == "participants" else k
+
+
 def _normalize_participants(participants: list[dict]) -> list[dict]:
     normalized: list[dict] = []
     for participant in participants or []:
@@ -518,7 +525,7 @@ async def handle_create_project_conversation(
         {
             "task_id": None,
             "project_id": project.id,
-            "participants": resolved,
+            "members": resolved,  # roster cache (Entity base); populated at create
             # Stamp the shared context at create so the project chip + context
             # links resolve from the conversation itself (not only the first message).
             "shared_context_entities": list(shared_context_entities or []),
@@ -1119,7 +1126,7 @@ async def handle_remove_message(flow_message_id: str) -> ApiResponse:
                 (conv.created_by and cloud_user_id == conv.created_by)
                 or any(
                     (p or {}).get("user_id") == cloud_user_id and str((p or {}).get("role") or "").lower() == "owner"
-                    for p in (conv.participants or [])
+                    for p in (conv.members or [])
                 )
             )
         )
@@ -3051,7 +3058,7 @@ async def _upsert_hub_conversation_metadata(
     roster = hub_conv.get("participants")
     if isinstance(roster, list) and roster:
         norm_roster = _normalize_participants(roster)
-        if existing is None or (existing.participants or []) != norm_roster:
+        if existing is None or (existing.members or []) != norm_roster:
             try:
                 await _learn_normalized_participants(norm_roster)
             except Exception as learn_err:  # noqa: BLE001
@@ -3060,7 +3067,7 @@ async def _upsert_hub_conversation_metadata(
         payload: dict = {"id": conv_id, "remote": True}
         for k in ("title", "participants", "remote_project_id", "remote_project_name", "shared_context_entities"):
             if hub_conv.get(k) is not None:
-                payload[k] = (
+                payload[_local_roster_key(k)] = (
                     _normalize_participants(hub_conv[k])
                     if k == "participants" and isinstance(hub_conv[k], list)
                     else hub_conv[k]
@@ -3112,8 +3119,9 @@ async def _upsert_hub_conversation_metadata(
         v = hub_conv.get(k)
         if k == "participants" and isinstance(v, list):
             v = _normalize_participants(v)
-        if v is not None and getattr(existing, k, None) != v:
-            setattr(existing, k, v)
+        dest = _local_roster_key(k)
+        if v is not None and getattr(existing, dest, None) != v:
+            setattr(existing, dest, v)
             changed = True
     # ``shared_context_entities`` is wire-bound (hub-authoritative): adopt the
     # hub's list when it differs. Local is list[TypeId], hub returns list[str] —
@@ -3964,7 +3972,7 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
             conv_final = await Conversation.get_one({"id": linked_conv_id})
             if conv_final is not None:
                 try:
-                    await _learn_address_book(conv_final.participants or [])
+                    await _learn_address_book(conv_final.members or [])
                 except Exception as learn_err:  # noqa: BLE001
                     logger.debug(
                         "[invitation-accept] final contact learn failed for conv=%s: %s",

@@ -1,4 +1,4 @@
-import { AgenticProcess, ClaudeSession, Layout, Project, RemoteWorkerSession, Shell, TypeId, VFSPath, type IDockPointer } from '@sdk';
+import { AgenticProcess, ClaudeSession, Layout, PageId, Project, RemoteWorkerSession, Shell, TypeId, VFSPath, type IDockPointer } from '@sdk';
 import { VIEW_SLOTS, ViewSlot, ViewType, VIEWER_REGISTRY } from '../types/ViewType';
 import { NavigationError, NavigationErrorType } from './NavigationError';
 import { buildDockUrl, parseDockUrl, parseQueryParams } from './url-builder';
@@ -19,6 +19,7 @@ import {
   type SideWindowsState,
 } from '@src/lib/side-windows';
 import type { ViewMode } from '@src/contexts/view-mode-context';
+import { DEFAULT_WORLDVIEW_COLOR_MODE, type WorldViewColorMode } from '@src/types/WorldViewColorMode';
 
 /**
  * URL query-param key carrying the "highlight this thing" intent across the
@@ -30,6 +31,16 @@ import type { ViewMode } from '@src/contexts/view-mode-context';
  */
 export const HIGHLIGHT_PARAM = 'highlight';
 export const VIEW_MODE_PARAM = 'viewMode';
+
+/**
+ * URL query-param key selecting which translated body of an asset to show. It
+ * carries a language code (`es`, `he`, `fr-CA`, …); absent means the original
+ * doc. Like the other option params it rides in `options` and is deliberately
+ * EXCLUDED from `tabHash`, so switching languages swaps the body inline in the
+ * SAME tab (no new tab). Pairs with `DockPointer.lang` / `withLang()`; the
+ * asset editor reads it to point at the matching `translations[].ref`.
+ */
+export const LANG_PARAM = 'lang';
 
 /**
  * Canonicalize a compute-node-relative path: forward slashes, collapsed
@@ -128,23 +139,28 @@ export class DockPointer implements IDockPointer {
   public readonly pointer?: string | undefined;
   public readonly options?: Record<string, string> | undefined;
   public readonly layout: Layout;
+  /** Which SPA-surface this dock addresses. Defaults to `desk` (today's desktop
+   *  app); a sibling of `viewType`, never folded into `pointer`. */
+  public readonly page: PageId;
 
   constructor(data: IDockPointer, layout?: Layout);
-  constructor(viewType?: ViewType, pointer?: string, options?: Record<string, string>, layout?: Layout);
+  constructor(viewType?: ViewType, pointer?: string, options?: Record<string, string>, layout?: Layout, page?: PageId);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  constructor(viewTypeOrData?: any, pointerOrLayout?: any, options?: any, layout?: any) {
+  constructor(viewTypeOrData?: any, pointerOrLayout?: any, options?: any, layout?: any, page?: any) {
     if (viewTypeOrData && typeof viewTypeOrData === 'object') {
       // IDockPointer overload
       this.viewType = viewTypeOrData.viewType as ViewType | undefined;
       this.pointer = viewTypeOrData.pointer;
       this.options = viewTypeOrData.options;
       this.layout = (pointerOrLayout as Layout) ?? Layout.DOCK;
+      this.page = (viewTypeOrData.page as PageId | undefined) ?? PageId.DESK;
     } else {
       // Positional overload
       this.viewType = viewTypeOrData;
       this.pointer = pointerOrLayout as string | undefined;
       this.options = options;
       this.layout = layout ?? Layout.DOCK;
+      this.page = (page as PageId | undefined) ?? PageId.DESK;
     }
   }
 
@@ -169,6 +185,7 @@ export class DockPointer implements IDockPointer {
       this.pointer,
       withScopeFilterOptions(this.options, scope),
       this.layout,
+      this.page,
     );
   }
 
@@ -194,6 +211,7 @@ export class DockPointer implements IDockPointer {
       this.pointer,
       withSideWindowsOptions(this.options, state),
       this.layout,
+      this.page,
     );
   }
 
@@ -218,7 +236,13 @@ export class DockPointer implements IDockPointer {
       this.pointer,
       { ...this.options, [HIGHLIGHT_PARAM]: wikiword },
       this.layout,
+      this.page,
     );
+  }
+
+  /** Clone this dock addressing a different SPA-surface (page). */
+  withPage(page: PageId): DockPointer {
+    return new DockPointer(this.viewType, this.pointer, this.options, this.layout, page);
   }
 
   /**
@@ -236,7 +260,25 @@ export class DockPointer implements IDockPointer {
     const nextOptions = { ...(this.options ?? {}) };
     if (mode) nextOptions[VIEW_MODE_PARAM] = mode;
     else delete nextOptions[VIEW_MODE_PARAM];
-    return new DockPointer(this.viewType, this.pointer, nextOptions, this.layout);
+    return new DockPointer(this.viewType, this.pointer, nextOptions, this.layout, this.page);
+  }
+
+  /**
+   * The translated-body language this dock asks to show, or null for the
+   * original doc. URL-carried (shareable + back-safe) and excluded from
+   * `tabHash`, so language switches stay in the same tab. Pairs with
+   * `withLang()`; consumed by the markdown asset editor to swap the body ref.
+   */
+  get lang(): string | null {
+    return this.options?.[LANG_PARAM] ?? null;
+  }
+
+  /** Clone this dock pointed at a translated body, or back to the original with null. */
+  withLang(lang: string | null): DockPointer {
+    const nextOptions = { ...(this.options ?? {}) };
+    if (lang) nextOptions[LANG_PARAM] = lang;
+    else delete nextOptions[LANG_PARAM];
+    return new DockPointer(this.viewType, this.pointer, nextOptions, this.layout, this.page);
   }
 
   /**
@@ -249,19 +291,21 @@ export class DockPointer implements IDockPointer {
     pointer?: string,
     searchParams?: URLSearchParams,
     layout?: Layout,
+    page?: PageId,
   ): DockPointer;
   static fromUrl(
     viewTypeOrUrl: string,
     pointer?: string,
     searchParams?: URLSearchParams,
     layout: Layout = Layout.DOCK, // Default to DOCK for backward compatibility
+    page: PageId = PageId.DESK, // Default to DESK for backward compatibility
   ): DockPointer {
     if (pointer === undefined && searchParams === undefined) {
       try {
         const url = new URL(viewTypeOrUrl, 'http://flowpad.local');
         const parsedUrl = parseDockUrl(url.pathname);
         if (parsedUrl?.viewType) {
-          return DockPointer.fromUrl(parsedUrl.viewType, parsedUrl.pointer, url.searchParams, parsedUrl.layout);
+          return DockPointer.fromUrl(parsedUrl.viewType, parsedUrl.pointer, url.searchParams, parsedUrl.layout, parsedUrl.page);
         }
       } catch {
         // Not a URL-shaped value; continue with the historical viewType parser.
@@ -282,7 +326,7 @@ export class DockPointer implements IDockPointer {
     // Parse options from query params
     const options = searchParams ? parseQueryParams(searchParams) : {};
 
-    return new DockPointer(viewType as ViewType, decodedPointer, options, layout);
+    return new DockPointer(viewType as ViewType, decodedPointer, options, layout, page);
   }
 
   /**
@@ -602,14 +646,6 @@ export class DockPointer implements IDockPointer {
   }
 
   /**
-   * Create dock pointer for workflows viewer
-   * @param workflowId - Optional workflow entity ID to view/edit
-   */
-  static forWorkflows(workflowId?: string, layout: Layout = Layout.DOCK): DockPointer {
-    return new DockPointer(ViewType.WORKFLOWS, workflowId, undefined, layout);
-  }
-
-  /**
    * Create dock pointer for a project's collaboration view, optionally with
    * an active collaboration_room and/or an active tab inside that room, or
    * a focused conversation.
@@ -747,7 +783,7 @@ export class DockPointer implements IDockPointer {
   ): DockPointer {
     if (!projectId || p.viewType !== ViewType.ASSETS) return p;
     const sub = p.pointer ? `${projectId}/${p.pointer}` : projectId;
-    return new DockPointer(ViewType.PROJECT, sub, p.options, p.layout);
+    return new DockPointer(ViewType.PROJECT, sub, p.options, p.layout, p.page);
   }
 
   /**
@@ -767,23 +803,6 @@ export class DockPointer implements IDockPointer {
     if (options?.conversationId) queryOptions.conversation = options.conversationId;
     if (options?.messageId) queryOptions.message = options.messageId;
     return new DockPointer(ViewType.INBOX, undefined, Object.keys(queryOptions).length ? queryOptions : undefined, layout);
-  }
-
-  /**
-   * Create dock pointer for execute flow viewer
-   * @param options - Optional options object with vfsAbsPath and session
-   * @param options.vfsAbsPath - Optional VFS absolute path to execute (e.g., "compute_node-@local/path/to/file.md")
-   * @param options.machineSessionId - Optional machine session identifier (used by worker-sessions-panel)
-   */
-  static forExecuteFlow(
-    options?: { vfsAbsPath?: string; machineSessionId?: string },
-    layout: Layout = Layout.DOCK,
-  ): DockPointer {
-    const queryOptions: Record<string, string> = {};
-    if (options?.vfsAbsPath) queryOptions.vfsAbsPath = options.vfsAbsPath;
-    if (options?.machineSessionId) queryOptions.machineSessionId = options.machineSessionId;
-
-    return new DockPointer(ViewType.EXECUTE_FLOW, undefined, queryOptions, layout);
   }
 
   /**
@@ -915,6 +934,29 @@ export class DockPointer implements IDockPointer {
   }
 
   /**
+   * Create a WorldView pointer at `/dock/worldview/<type>/<id>`. The pointer is
+   * the visible hierarchy root; selection and depth remain URL options so they
+   * are shareable and browser-history-safe without minting extra tabs.
+   */
+  static forWorldView(
+    typeId?: TypeId | null,
+    options?: { depth?: number; selected?: string; color?: WorldViewColorMode },
+    layout: Layout = Layout.DOCK,
+  ): DockPointer {
+    const pointer = typeId ? `${typeId.type}/${typeId.id}` : undefined;
+    const queryOptions: Record<string, string> = {};
+    if (options?.color && options.color !== DEFAULT_WORLDVIEW_COLOR_MODE) queryOptions.color = options.color;
+    if (options?.depth) queryOptions.depth = String(options.depth);
+    if (options?.selected) queryOptions.selected = options.selected;
+    return new DockPointer(
+      ViewType.WORLDVIEW,
+      pointer,
+      Object.keys(queryOptions).length ? queryOptions : undefined,
+      layout,
+    );
+  }
+
+  /**
    * Create a DockPointer for the frozen-context viewer at
    * `/dock/graph_context/<id>`. `id` is the GraphContext entity's UUID.
    */
@@ -933,9 +975,14 @@ export class DockPointer implements IDockPointer {
   /** Split a GRAPH pointer into its `{ type, id }` parts. */
   static parseGraphPointer(pointer: string | undefined): { type: string; id: string } | null {
     if (!pointer) return null;
-    const idx = pointer.indexOf('/');
-    if (idx < 0) return null;
-    return { type: pointer.slice(0, idx), id: pointer.slice(idx + 1) };
+    const parts = pointer.split('/');
+    if (parts.length !== 2 || !parts[0] || !parts[1]) return null;
+    return { type: parts[0], id: parts[1] };
+  }
+
+  /** Split a WORLDVIEW pointer into its canonical `{ type, id }` root. */
+  static parseWorldViewPointer(pointer: string | undefined): { type: string; id: string } | null {
+    return DockPointer.parseGraphPointer(pointer);
   }
 
   /**
@@ -1172,6 +1219,7 @@ export class DockPointer implements IDockPointer {
     return (
       this.viewType === other.viewType &&
       this.pointer === other.pointer &&
+      this.page === other.page &&
       this.slot === other.slot &&
       this.layout === other.layout &&
       JSON.stringify(this.options) === JSON.stringify(other.options)
@@ -1204,22 +1252,27 @@ export class DockPointer implements IDockPointer {
     if (VIEWER_REGISTRY[this.viewType]?.chrome === 'fullbleed') return null;
     // A bare shell is the terminal host; only a session-pointer shell is a tab.
     if (this.viewType === ViewType.SHELL && !this.pointer) return null;
+    // Page namespaces tab identity: `desk` (the default) stays UNPREFIXED so every
+    // existing persisted `Tab.pointer` key is byte-identical (no migration); a
+    // non-desk page prefixes its id, giving each page its own tab namespace so a
+    // `desk` tab and a `hub` tab with the same viewType/pointer never collide.
+    const pagePrefix = this.page === PageId.DESK ? '' : `${this.page}|`;
     // A scope-keyed view (Assets, Explorer) is a SINGLE tab per scope: every
     // sub-pointer (asset type/folder/editor, explorer folder) of one scope folds
     // into ONE tab. Identity = the scope filter (global when unset), NOT the
     // sub-pointer. scopeFilterKey: 'all' | 'user' | 'project:<id>' |
     // 'filter:<0|1>:p1,p2'.
     if (VIEWER_REGISTRY[this.viewType]?.scopeKeyed) {
-      return `${this.viewType}|${scopeFilterKey(this.scopeFilter ?? ALL_SCOPE_FILTER)}`;
+      return `${pagePrefix}${this.viewType}|${scopeFilterKey(this.scopeFilter ?? ALL_SCOPE_FILTER)}`;
     }
     // Pointer-folding views (e.g. Preferences) collapse all their category/field
     // sub-pointers into ONE tab: identity is the viewType, pointer dropped. The
     // flag lives in VIEWER_REGISTRY so this stays declarative (cf. the fullbleed
     // check above) instead of hardcoding viewTypes here.
     if (VIEWER_REGISTRY[this.viewType]?.foldsPointer) {
-      return `${this.viewType}|`;
+      return `${pagePrefix}${this.viewType}|`;
     }
-    return `${this.viewType}|${this.pointer ?? ''}`;
+    return `${pagePrefix}${this.viewType}|${this.pointer ?? ''}`;
   }
 
   /** Serialize this dock's tab-identity fields (viewType + pointer) as JSON.
@@ -1263,7 +1316,7 @@ export class DockPointer implements IDockPointer {
       const dp = DockPointer.fromUrl(viewType, pointer || undefined);
       // Restore scope options (assets identity) so the reconstructed dock's
       // tabHash matches the live nav dock's.
-      return options ? new DockPointer(dp.viewType, dp.pointer, options, dp.layout) : dp;
+      return options ? new DockPointer(dp.viewType, dp.pointer, options, dp.layout, dp.page) : dp;
     } catch {
       return null;
     }
@@ -1280,6 +1333,12 @@ export class DockPointer implements IDockPointer {
   get targetTypeId(): TypeId | null {
     const pointer = this.pointer;
     if (!pointer) return null;
+    if (this.viewType === ViewType.GRAPH || this.viewType === ViewType.WORLDVIEW) {
+      const parsed = this.viewType === ViewType.WORLDVIEW
+        ? DockPointer.parseWorldViewPointer(pointer)
+        : DockPointer.parseGraphPointer(pointer);
+      return parsed ? DockPointer.tryTypeId(parsed.type, parsed.id) : null;
+    }
     // A PLAN dock addresses its PLAN entity directly in the `typeid/<plan-id>`
     // form; the `vfs/<path>` form is path-resolved and carries no typeid target.
     if (this.viewType === ViewType.PLAN) {
@@ -1386,11 +1445,12 @@ export class DockPointer implements IDockPointer {
   /**
    * Convert to URL segments (for building URLs)
    */
-  toUrlSegments(): { viewType: ViewType; pointer?: string; layout: Layout } {
+  toUrlSegments(): { viewType: ViewType; pointer?: string; layout: Layout; page: PageId } {
     return {
       viewType: this.viewType!,
       pointer: this.pointer,
       layout: this.layout,
+      page: this.page,
     };
   }
 
@@ -1401,7 +1461,7 @@ export class DockPointer implements IDockPointer {
     if (!this.viewType) {
       throw new NavigationError(NavigationErrorType.UNKNOWN_VIEW, 'Cannot serialize DockPointer without a view type');
     }
-    return buildDockUrl(currentPath, this.viewType, this.pointer, this.options, this.layout);
+    return buildDockUrl(currentPath, this.viewType, this.pointer, this.options, this.layout, this.page);
   }
 
   /**

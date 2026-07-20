@@ -10,13 +10,11 @@ import { SessionInput } from '@src/components/session-input/session-input';
 import { useGlobalSearchScope } from '@src/hooks/use-global-search-scope';
 import { AdvancedOnly, VibeSwap } from '@src/components/view-mode';
 import { useProjects } from '@src/hooks/use-projects';
-import { isCompleteGitOrigin, PrefKey } from '@sdk';
-import { usePreference } from '@src/hooks/use-preference';
+import { isCompleteGitOrigin } from '@sdk';
 import { useStartVibeSession } from '@src/pages/flow-page/use-start-vibe-session';
 import { useAuth } from '@sdk/react/hooks';
 import { useSystemTools } from '@src/hooks/use-system-tools';
 import { ActivityIndicator } from '@src/components/search-index/ActivityIndicator';
-import { WelcomeModal } from '@src/components/search-index/WelcomeModal';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import type React from 'react';
@@ -43,11 +41,9 @@ import { DEFAULT_WORKER_TYPE, type WorkerType } from '@src/components/workers/wo
  *   - Right column: Feed
  * URL: /dock/home
  */
-const _SCAN_DISMISSED_KEY = 'flowpad-scan-dismissed';
-
 export function HomeLanding() {
   const { t } = useLingui();
-  const { user } = useAuth();
+  const { currentUser } = useAuth();
   const { navigation } = useDockNavigation();
   useProjects();
 
@@ -104,9 +100,7 @@ export function HomeLanding() {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  const { resetAndRescan, scanInfo, lastScanResult } = useSystemTools();
-  const [showWelcome, setShowWelcome] = useState(false);
-  const [indexApproved, setIndexApproved] = usePreference<boolean>(PrefKey.INDEXING_APPROVED);
+  const { lastScanResult } = useSystemTools();
   const [postScanResult, setPostScanResult] = useState<LastScanResult | null>(null);
 
   // Detect scan completion: when lastScanResult changes to a new value, capture it for display
@@ -118,12 +112,7 @@ export function HomeLanding() {
     prevLastScanResultRef.current = lastScanResult;
   }, [lastScanResult]);
 
-  // Show welcome modal when never_indexed, unless user has already approved or dismissed this session.
-  useEffect(() => {
-    if (indexApproved || sessionStorage.getItem(_SCAN_DISMISSED_KEY) || !scanInfo) return;
-    if (scanInfo.never_indexed) setShowWelcome(true);
-  }, [scanInfo, indexApproved]);
-  const firstName = user?.name?.split(' ')[0] || 'there';
+  const firstName = currentUser?.name?.split(' ')[0] || 'there';
 
   const [draftPrompt, setDraftPrompt] = useState('');
 
@@ -336,20 +325,6 @@ export function HomeLanding() {
       </div>
           </>
         }
-      />
-
-      {/* Welcome modal for first-time / not-yet-indexed users */}
-      <WelcomeModal
-        open={showWelcome}
-        onStart={() => {
-          setIndexApproved(true);
-          setShowWelcome(false);
-          void resetAndRescan();
-        }}
-        onSkip={() => {
-          sessionStorage.setItem(_SCAN_DISMISSED_KEY, '1');
-          setShowWelcome(false);
-        }}
       />
 
       {/* Incoming task dialog — pull/clone flow for shared tasks */}

@@ -20,6 +20,7 @@ EXPECTED = {
     "LOG": "log",
     "AGENTIC_PROCESS": "agentic_process",
     "ARTIFACT": "artifact",
+    "DEPLOYMENT": "deployment",
     "BOOKMARK": "bookmark",
     "ANNOTATION": "annotation",
     "COMMENT": "comment",
@@ -86,7 +87,6 @@ EXPECTED = {
     "DOC_DB": "doc_db",
     "RECORD_ERROR": "record_error",
     "TEXT_FILE": "text_file",
-    "WORKFLOW": "workflow",
     "MARKDOWN": "markdown",
     "MARKDOWN_INDEX": "markdown_index",
     "SPEC": "spec",
@@ -109,7 +109,6 @@ EXPECTED = {
     "ORGANIZATION": "organization",
     "WORKSPACE": "workspace",
     "PAGE": "page",
-    "FLOW": "flow",
     "INVITATION": "invitation",
     "MENTION": "mention",
     "CONNECTION": "connection",
@@ -174,6 +173,10 @@ EXPECTED = {
     # brand-new types, no existing value changed, so no migration. Their
     # introducing commits missed this freeze.
     "DECK": "deck", "SPREADSHEET": "spreadsheet",
+    # Flow-graph slice (d6f25601 → v2 26d290ad): TOPIC retired with the topic
+    # bus (rows left inert); AGENTIC_FLOW_RUN added by the v2 run model.
+    "AGENTIC_FLOW": "agentic_flow", "FLOW_NODE": "flow_node",
+    "AGENTIC_FLOW_RUN": "agentic_flow_run",
 }
 
 
