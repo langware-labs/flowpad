@@ -21,6 +21,10 @@ export default defineConfig(({ mode }) => {
       // Don't bake it into the bundle; that turned every published wheel into
       // a dev-mode-on artifact regardless of the user's runtime.
       __CHECK_REFRESH_TOKEN__: JSON.stringify(env.VITE_CHECK_REFRESH_TOKEN === 'true'),
+      // Error reporting: the SDK's sentry.ts is a no-op when the DSN is empty,
+      // so these are safe defaults; hub/prod builds set SENTRY_DSN/PROJECT.
+      __SENTRY_DSN__: JSON.stringify(env.SENTRY_DSN || ''),
+      __SENTRY_PROJECT__: JSON.stringify(env.SENTRY_PROJECT || ''),
     },
     build: {
       sourcemap: true,
