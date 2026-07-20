@@ -142,15 +142,19 @@ export function CollapsedSidebar() {
   // Hub page has its own minimal rail — Home + the two Atlas roots. It bypasses
   // the desk RAIL_DELTAS/mode matrix entirely (those views don't exist on hub).
   const hubMode = currentDock?.page === PageId.HUB;
-  const hubItems: readonly NavItem[] = [
-    { id: 'home', title: t`Home`, icon: Home, viewType: ViewType.HOME },
-    { id: 'conversations', title: t`Conversations`, icon: MessageCircle, viewType: ViewType.HUB_RECORDS, pointer: 'conversation' },
-    { id: 'tasks', title: t`Tasks`, icon: CheckSquare, viewType: ViewType.HUB_RECORDS, pointer: 'task' },
-    { id: 'docs', title: t`Docs`, icon: FileText, viewType: ViewType.HUB_RECORDS, pointer: 'markdown' },
-    { id: 'flows', title: t`Flows`, icon: Workflow, viewType: ViewType.HUB_RECORDS, pointer: 'agentic_flow' },
-    { id: 'world', title: t`Your world`, icon: Globe, viewType: ViewType.ATLAS, pointer: 'world' },
-    { id: 'organization', title: t`Organization`, icon: Building2, viewType: ViewType.ATLAS, pointer: 'organization' },
-  ];
+  // Built only in hub mode (desk is the common case — don't allocate/translate 7
+  // unused entries every desk render).
+  const hubItems: readonly NavItem[] = hubMode
+    ? [
+        { id: 'home', title: t`Home`, icon: Home, viewType: ViewType.HOME },
+        { id: 'conversations', title: t`Conversations`, icon: MessageCircle, viewType: ViewType.HUB_RECORDS, pointer: 'conversation' },
+        { id: 'tasks', title: t`Tasks`, icon: CheckSquare, viewType: ViewType.HUB_RECORDS, pointer: 'task' },
+        { id: 'docs', title: t`Docs`, icon: FileText, viewType: ViewType.HUB_RECORDS, pointer: 'markdown' },
+        { id: 'flows', title: t`Flows`, icon: Workflow, viewType: ViewType.HUB_RECORDS, pointer: 'agentic_flow' },
+        { id: 'world', title: t`Your world`, icon: Globe, viewType: ViewType.ATLAS, pointer: 'world' },
+        { id: 'organization', title: t`Organization`, icon: Building2, viewType: ViewType.ATLAS, pointer: 'organization' },
+      ]
+    : [];
 
   const rail = resolveRail(viewMode);
   const visibleItems = hubMode ? hubItems : navItems.filter((item) => rail.get(item.id) === 'visible');
@@ -170,16 +174,10 @@ export function CollapsedSidebar() {
   const onAssets = currentView === ViewType.ASSETS && !onTasks;
   // const { cloudLoginAvailable, cloudApiUrl, isDesktop } = context;
 
-  // Hub-rail active state: World and Organization share ViewType.ATLAS, so the
-  // pointer (`world` | `organization`) disambiguates which button lights.
-  const hubActive = (item: NavItem): boolean => {
-    if (item.viewType === ViewType.ATLAS) {
-      return currentView === ViewType.ATLAS && (currentPointer || 'world') === (item.pointer ?? 'world');
-    }
-    // Pointer-carrying items (e.g. records/<type>) match on viewType + pointer.
-    if (item.pointer) return currentView === item.viewType && currentPointer === item.pointer;
-    return currentView === item.viewType;
-  };
+  // Hub-rail active state: pointer-carrying items (Atlas world/organization,
+  // records/<type>) match on viewType + pointer; the rest on viewType alone.
+  const hubActive = (item: NavItem): boolean =>
+    currentView === item.viewType && (!item.pointer || currentPointer === item.pointer);
 
   const handleClick = useCallback(
     (viewType: ViewType | null, pointer?: string) => {
@@ -277,6 +275,10 @@ export function CollapsedSidebar() {
     return undefined;
   };
 
+  // Per-item badge/active, forked once by page so the render loop stays flat.
+  const itemBadge = (item: NavItem) => (hubMode ? undefined : navBadge(item.viewType));
+  const itemActive = (item: NavItem) => (hubMode ? hubActive(item) : navActive(item.viewType));
+
   const renderNavItem = (
     item: NavItem,
     className?: string,
@@ -330,9 +332,7 @@ export function CollapsedSidebar() {
 
               {visibleItems.map((item) => (
                 <React.Fragment key={item.title}>
-                  {hubMode
-                    ? renderNavItem(item, undefined, undefined, hubActive(item))
-                    : renderNavItem(item, undefined, navBadge(item.viewType), navActive(item.viewType))}
+                  {renderNavItem(item, undefined, itemBadge(item), itemActive(item))}
                   {/* The active project — sits directly under Home. Not part of the
                     nav matrix: it exists only while a project is selected, and its
                     glyph is that project type's registry icon. Desk-only. */}

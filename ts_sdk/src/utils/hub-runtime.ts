@@ -17,9 +17,12 @@ import { PageId, isValidPage } from './ui/view-types';
  * `Project`, …) import THIS, so a `dataContext` import would create an
  * entity→context→entity init cycle (APIEntity TDZ).
  */
-let _supportedPages: string[] | null | undefined;
+// Cached once at bootstrap — `supported_pages` never changes after, so
+// `isHubOnly()` (called behind many render + query gates) is a field read, not
+// a re-filter/re-scan on every call.
+let _isHubOnly = false;
 
-// Readiness gate: `_supportedPages` is unknown until bootstrap resolves, so any
+// Readiness gate: the signal is unknown until bootstrap resolves, so any
 // desktop-only probe that can fire during early init (service constructors,
 // toplog seed) must `await hubModeReady()` BEFORE checking `isHubOnly()` — else
 // it races ahead while the signal still reads its `[desk]` default and hits a
@@ -41,7 +44,11 @@ function _markResolved(): void {
 /** Called once at bootstrap (`dataContext.bootstrapInfo` assignment) with the
  *  server's `supported_pages`. Also unblocks `hubModeReady()`. */
 export function setSupportedPagesForHubMode(list: string[] | null | undefined): void {
-  _supportedPages = list;
+  // Mirrors `normalizeSupportedPages`: a missing/empty/unknown list falls back
+  // to `[desk]`, so hub-only is true ONLY when the server explicitly serves no desk.
+  const known = (Array.isArray(list) ? list : []).filter(isValidPage);
+  const pages = known.length > 0 ? known : [PageId.DESK];
+  _isHubOnly = !pages.includes(PageId.DESK);
   _markResolved();
 }
 
@@ -58,14 +65,7 @@ export function hubModeReady(): Promise<void> {
   return _ready;
 }
 
-/**
- * True when the served backend serves no `desk` page. Mirrors
- * `normalizeSupportedPages` (ui/navigation/supported-pages.ts): a
- * missing/empty/unknown list falls back to `[desk]`, so hub-only is true ONLY
- * when the server explicitly serves no desk.
- */
+/** True when the served backend serves no `desk` page (cached at bootstrap). */
 export function isHubOnly(): boolean {
-  const known = (Array.isArray(_supportedPages) ? _supportedPages : []).filter(isValidPage);
-  const pages = known.length > 0 ? known : [PageId.DESK];
-  return !pages.includes(PageId.DESK);
+  return _isHubOnly;
 }

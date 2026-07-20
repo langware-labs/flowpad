@@ -7,7 +7,7 @@ import { Agent, ComputeNode, Project, User, Visitor, Workspace } from './entitie
 import { AgentHook } from './entities/agent-hook';
 import { authManager, dataContext, isTypeId, TypeId } from './FlowSync';
 import { snifferManager } from './services/snifferManager';
-import { markHubModeReady, setSupportedPagesForHubMode } from './utils/hub-runtime';
+import { isHubOnly, markHubModeReady, setSupportedPagesForHubMode } from './utils/hub-runtime';
 import { ActionInfo } from './models';
 import { navigator } from './services/navigationService';
 // import { authService } from './services/authService';
@@ -42,15 +42,28 @@ export async function initSdk(params?: { agentId?: string; setupWorkspace?: bool
       const domain = window.location.hostname;
       const session = !(window as any).allow_persistent_visitor; // session=true if no GDPR consent
       const bootstrapInfo = await dataManager.bootstrap(domain, session);
+      // Dev override: `VITE_FORCE_HUB=true` forces hub mode when testing the OSS
+      // UI against a hub backend that doesn't yet advertise `supported_pages`
+      // (e.g. an un-updated dev backend). Set it ON bootstrapInfo so BOTH consumers
+      // agree — the leaf `isHubOnly()` signal AND main-loader's page-redirect,
+      // which reads `dataContext.bootstrapInfo.supported_pages` directly. No effect
+      // in normal builds.
+      if (import.meta.env.VITE_FORCE_HUB === 'true') {
+        (bootstrapInfo as { supported_pages?: string[] }).supported_pages = ['hub'];
+      }
       // Store bootstrap info in dataContext for UI access (e.g., desktop_info)
       dataContext.bootstrapInfo = bootstrapInfo;
       // Seed the leaf hub-mode signal (so `isHubOnly()` works without importing
       // dataContext into entities — see utils/hub-runtime.ts).
       setSupportedPagesForHubMode((bootstrapInfo as { supported_pages?: string[] })?.supported_pages);
 
-      // Seed cloudManager from bootstrap; it owns isLoggedIn / currentUser / cloudUrl
-      // and listens to oauth WS events for the lifetime of the app.
-      void cloudManager.bootstrap(bootstrapInfo.desktop_info);
+      // Seed cloudManager from bootstrap; it owns isLoggedIn / currentUser / cloudUrl.
+      // Hub identity comes directly from this bootstrap response and must be ready
+      // before the initial route renders. Keep the desktop bootstrap fire-and-forget
+      // so its existing startup timing is unchanged.
+      const cloudBootstrap = cloudManager.bootstrap(bootstrapInfo);
+      if (isHubOnly()) await cloudBootstrap;
+      else void cloudBootstrap;
 
       // Seed the data-privacy mode (Local/Connected); it mirrors into dataContext
       // and listens for live mode changes over WS.

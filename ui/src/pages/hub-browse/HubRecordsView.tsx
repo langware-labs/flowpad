@@ -1,7 +1,7 @@
 import { PageId, QueryRequest, ViewType } from '@sdk';
 import { useEntitiesQuery } from '@sdk/react/hooks';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { MessageSquare } from 'lucide-react';
+import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { useMemo } from 'react';
 import { Trans } from '@lingui/react/macro';
 
@@ -18,16 +18,17 @@ import { Trans } from '@lingui/react/macro';
  * URL: /dock/hub/records/<type>
  */
 
-// Minimal shape we read off any listed entity for a row.
-type Row = { id?: string; title?: string | null; name?: string | null; updated_date?: string | null };
+// Minimal shape we read off any listed entity for a row (`displayName` is the
+// SDK's canonical label getter, present on every hydrated entity).
+type Row = { id?: string; displayName?: string };
 
+// Plural list headings for the rail-reachable types; anything else falls back to
+// the raw type string.
 const TYPE_LABEL: Record<string, string> = {
   conversation: 'Conversations',
   task: 'Tasks',
   markdown: 'Docs',
   agentic_flow: 'Flows',
-  knowledge_base: 'Knowledge bases',
-  whiteboard: 'Whiteboards',
 };
 
 export function HubRecordsView({ type }: { type?: string }) {
@@ -37,9 +38,13 @@ export function HubRecordsView({ type }: { type?: string }) {
     () => (type ? new QueryRequest({ type, query: null, scope: [], name: `hub-records-${type}` }) : null),
     [type],
   );
-  const { data: rows = [], isLoading } = useEntitiesQuery<Row>(request as QueryRequest, {
+  // Generic list — the concrete entity type is data-driven; we only read `id`
+  // and the SDK `displayName` label off each hydrated entity.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, isLoading } = useEntitiesQuery<any>(request as QueryRequest, {
     enabled: !!type && !!request,
   });
+  const rows = (data ?? []) as Row[];
 
   const open = (row: Row) => {
     if (!row.id || !type) return;
@@ -53,6 +58,7 @@ export function HubRecordsView({ type }: { type?: string }) {
   };
 
   const label = (type && TYPE_LABEL[type]) || type || 'Records';
+  const RowIcon = iconForType(type ?? '');
 
   return (
     <div className="flex h-full flex-col overflow-auto">
@@ -72,10 +78,8 @@ export function HubRecordsView({ type }: { type?: string }) {
                 onClick={() => open(row)}
                 className="flex items-center gap-3 rounded-lg border border-border bg-card px-4 py-3 text-left transition-colors hover:bg-accent"
               >
-                <MessageSquare className="h-4 w-4 shrink-0 text-muted-foreground" />
-                <span className="min-w-0 flex-1 truncate text-sm">
-                  {row.title || row.name || row.id}
-                </span>
+                <RowIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
+                <span className="min-w-0 flex-1 truncate text-sm">{row.displayName || row.id}</span>
               </button>
             ))}
           </div>
