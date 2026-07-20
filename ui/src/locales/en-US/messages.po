@@ -162,6 +162,11 @@ msgstr "{0}"
 msgid "{0} annotations on this row"
 msgstr "{0} annotations on this row"
 
+#. placeholder {0}: installable.length
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
+msgid "{0} attachments"
+msgstr "{0} attachments"
+
 #. placeholder {0}: trigger.last_seen_size
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 msgid "{0} bytes"
@@ -1054,10 +1059,12 @@ msgid "Already focused"
 msgstr "Already focused"
 
 #: src/components/conversation/asset-review/AssetInstallActions.tsx
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
 msgid "Already installed globally — uninstall first"
 msgstr "Already installed globally — uninstall first"
 
 #: src/components/conversation/asset-review/AssetInstallActions.tsx
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
 msgid "Already installed in a project — uninstall first"
 msgstr "Already installed in a project — uninstall first"
 
@@ -1358,6 +1365,7 @@ msgid "Ask the Flowpad Assistant anything."
 msgstr "Ask the Flowpad Assistant anything."
 
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
+#: src/pages/discover-page/discover-page.tsx
 msgid "asset"
 msgstr "asset"
 
@@ -1389,6 +1397,10 @@ msgstr "asset_ref is unset — has this MarkdownIndex ever been built?"
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Asset…"
 msgstr "Asset…"
+
+#: src/pages/discover-page/discover-page.tsx
+msgid "assets"
+msgstr "assets"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/assets/AssetsNavigator.tsx
@@ -2108,7 +2120,6 @@ msgstr "Cleanup failed"
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 #: src/components/terminal/HistoryModal.tsx
 #: src/components/terminal/interactive-terminal/side-windows/QueuePanel.tsx
-#: src/pages/discover-page/discover-page.tsx
 msgid "Clear"
 msgstr "Clear"
 
@@ -2693,8 +2704,8 @@ msgid "Content"
 msgstr "Content"
 
 #: src/pages/discover-page/discover-page.tsx
-msgid "Contents"
-msgstr "Contents"
+#~ msgid "Contents"
+#~ msgstr "Contents"
 
 #: src/components/lens-viewer/ClaudeContextViewer.tsx
 msgid "Context breakdown"
@@ -2765,7 +2776,6 @@ msgstr "Conversation title"
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 #: src/components/markdown-view.tsx
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
-#: src/pages/discover-page/discover-page.tsx
 msgid "Copied"
 msgstr "Copied"
 
@@ -3669,6 +3679,7 @@ msgstr "Detach"
 
 #: src/components/agent-layout/error-screen/error-screen.tsx
 #: src/components/assets/editor/agent-trace/AgentTraceView.tsx
+#: src/pages/discover-page/discover-page.tsx
 msgid "Details"
 msgstr "Details"
 
@@ -3813,17 +3824,21 @@ msgstr "Disconnect"
 msgid "Disconnected"
 msgstr "Disconnected"
 
+#: src/pages/discover-page/discover-page.tsx
+msgid "discover"
+msgstr "discover"
+
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 msgid "Discover"
 msgstr "Discover"
 
 #: src/pages/discover-page/discover-page.tsx
-msgid "discover · concept"
-msgstr "discover · concept"
+#~ msgid "discover · concept"
+#~ msgstr "discover · concept"
 
 #: src/pages/discover-page/discover-page.tsx
-msgid "Discover agentic assets."
-msgstr "Discover agentic assets."
+#~ msgid "Discover agentic assets."
+#~ msgstr "Discover agentic assets."
 
 #: src/components/triggers-view/TriggersList.tsx
 msgid "Discover rules"
@@ -4453,6 +4468,10 @@ msgstr "Every indexed row has a source file on disk."
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Every project is selected"
 msgstr "Every project is selected"
+
+#: src/pages/discover-page/discover-page.tsx
+msgid "Every skill, agent, spec, and document this project ships."
+msgstr "Every skill, agent, spec, and document this project ships."
 
 #: src/components/assets/context-folder-sources.tsx
 msgid "Everyone the project is shared with gets it"
@@ -6104,19 +6123,22 @@ msgstr "Insert table"
 
 #: src/pages/discover-page/discover-page.tsx
 #: src/pages/discover-page/discover-page.tsx
-msgid "Install"
-msgstr "Install"
+#~ msgid "Install"
+#~ msgstr "Install"
 
 #: src/components/version-popover/version-popover.tsx
 msgid "Install & restart"
 msgstr "Install & restart"
 
 #: src/pages/discover-page/discover-page.tsx
-msgid "install any asset"
-msgstr "install any asset"
+#~ msgid "install any asset"
+#~ msgstr "install any asset"
 
 #: src/components/conversation/asset-review/AssetInstallActions.tsx
 #: src/components/conversation/asset-review/AssetInstallActions.tsx
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
 msgid "Install failed"
 msgstr "Install failed"
 
@@ -6125,11 +6147,14 @@ msgid "Install failed."
 msgstr "Install failed."
 
 #: src/components/conversation/asset-review/AssetInstallActions.tsx
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
 msgid "Install global"
 msgstr "Install global"
 
 #: src/components/conversation/asset-review/AssetInstallActions.tsx
 #: src/components/conversation/asset-review/AssetInstallActions.tsx
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
 msgid "Install in project"
 msgstr "Install in project"
 
@@ -6139,12 +6164,16 @@ msgid "Install v{0} and restart Flowpad?"
 msgstr "Install v{0} and restart Flowpad?"
 
 #: src/components/conversation/asset-review/AssetInstallActions.tsx
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
 #: src/components/version-popover/version-popover.tsx
 #: src/components/version-popover/version-popover.tsx
 msgid "Installed"
 msgstr "Installed"
 
 #: src/components/conversation/asset-review/AssetInstallActions.tsx
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
 msgid "Installed in project"
 msgstr "Installed in project"
 
@@ -6915,6 +6944,7 @@ msgstr "Loading..."
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 #: src/components/triggers-view/TriggerInvocationsPanel.tsx
+#: src/pages/discover-page/discover-page.tsx
 msgid "Loading…"
 msgstr "Loading…"
 
@@ -7311,8 +7341,8 @@ msgid "More…"
 msgstr "More…"
 
 #: src/pages/discover-page/discover-page.tsx
-msgid "Most stars"
-msgstr "Most stars"
+#~ msgid "Most stars"
+#~ msgstr "Most stars"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Mount the Flowpad Assistant so its skills & agents become discoverable. Click to enable — a restart will be required."
@@ -7829,6 +7859,10 @@ msgstr "No deployments observed yet"
 msgid "No description provided."
 msgstr "No description provided."
 
+#: src/pages/discover-page/discover-page.tsx
+msgid "No description."
+msgstr "No description."
+
 #: src/components/account/system-diagnoses.tsx
 msgid "No diagnoses recorded."
 msgstr "No diagnoses recorded."
@@ -8145,6 +8179,10 @@ msgstr "No project matches \"{normalizedCode}\"."
 #: src/components/join-room-dialog/JoinConversationDialog.tsx
 #~ msgid "No project matches code \"{normalizedCode}\"."
 #~ msgstr "No project matches code \"{normalizedCode}\"."
+
+#: src/pages/discover-page/discover-page.tsx
+msgid "No project open"
+msgstr "No project open"
 
 #: src/components/collaboration/StartRoomDialog.tsx
 msgid "No project selected"
@@ -8742,6 +8780,10 @@ msgstr "Open a new isolated git worktree session on a separate branch"
 msgid "Open a project before starting a collaboration."
 msgstr "Open a project before starting a collaboration."
 
+#: src/pages/discover-page/discover-page.tsx
+msgid "Open a project to see its assets."
+msgstr "Open a project to see its assets."
+
 #: src/components/contact-picker/AddressBookButton.tsx
 msgid "Open address book"
 msgstr "Open address book"
@@ -9318,6 +9360,7 @@ msgstr "path"
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/quick-create/ScopeSelection.tsx
+#: src/pages/discover-page/discover-page.tsx
 msgid "Path"
 msgstr "Path"
 
@@ -9551,8 +9594,8 @@ msgid "Port"
 msgstr "Port"
 
 #: src/pages/discover-page/discover-page.tsx
-msgid "Portable core · Claude Code · Codex · Copilot"
-msgstr "Portable core · Claude Code · Codex · Copilot"
+#~ msgid "Portable core · Claude Code · Codex · Copilot"
+#~ msgstr "Portable core · Claude Code · Codex · Copilot"
 
 #: src/components/hooks-manager/HookForm.tsx
 msgid "Post Tool Use"
@@ -10037,8 +10080,8 @@ msgid "Reading…"
 msgstr "Reading…"
 
 #: src/pages/discover-page/discover-page.tsx
-msgid "Readme"
-msgstr "Readme"
+#~ msgid "Readme"
+#~ msgstr "Readme"
 
 #: src/pages/home-landing/InlineSearchResults.tsx
 msgid "Ready"
@@ -10099,7 +10142,6 @@ msgid "Recency Factor (k)"
 msgstr "Recency Factor (k)"
 
 #: src/components/open-project-component/open-project-component.tsx
-#: src/pages/discover-page/discover-page.tsx
 #: src/pages/flow-page/vibe-workspace.tsx
 msgid "Recent"
 msgstr "Recent"
@@ -11099,8 +11141,8 @@ msgid "Search any entity. Selecting one inserts a [[wikilink]] at the cursor."
 msgstr "Search any entity. Selecting one inserts a [[wikilink]] at the cursor."
 
 #: src/pages/discover-page/discover-page.tsx
-msgid "Search assets, teams…"
-msgstr "Search assets, teams…"
+#~ msgid "Search assets, teams…"
+#~ msgstr "Search assets, teams…"
 
 #: src/components/assets/AssetsNavigator.tsx
 #: src/components/conversation/MessageComposer.tsx
@@ -11216,6 +11258,10 @@ msgstr "Search terminal…"
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Search the docs…"
 msgstr "Search the docs…"
+
+#: src/pages/discover-page/discover-page.tsx
+msgid "Search this project…"
+msgstr "Search this project…"
 
 #: src/components/lens-viewer/shared/transcript-features/TranscriptViewer.tsx
 msgid "Search transcript…"
@@ -11403,6 +11449,7 @@ msgstr "Select every project"
 msgid "Select parent folder"
 msgstr "Select parent folder"
 
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
 #: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
 #: src/components/project-selector/ProjectSelectorModal.tsx
 #: src/components/quick-create/ScopeSelection.tsx
@@ -12017,12 +12064,12 @@ msgid "Skills (~/.claude/skills/)"
 msgstr "Skills (~/.claude/skills/)"
 
 #: src/pages/discover-page/discover-page.tsx
-msgid "Skills + AGENTS.md + MCP are the portable core; plugins & native agents are per-harness adapters."
-msgstr "Skills + AGENTS.md + MCP are the portable core; plugins & native agents are per-harness adapters."
+#~ msgid "Skills + AGENTS.md + MCP are the portable core; plugins & native agents are per-harness adapters."
+#~ msgstr "Skills + AGENTS.md + MCP are the portable core; plugins & native agents are per-harness adapters."
 
 #: src/pages/discover-page/discover-page.tsx
-msgid "Skills, MCP servers, and agents — published by teams across your organization. Install into Claude Code, Codex, or Copilot <0>in one line.</0>"
-msgstr "Skills, MCP servers, and agents — published by teams across your organization. Install into Claude Code, Codex, or Copilot <0>in one line.</0>"
+#~ msgid "Skills, MCP servers, and agents — published by teams across your organization. Install into Claude Code, Codex, or Copilot <0>in one line.</0>"
+#~ msgstr "Skills, MCP servers, and agents — published by teams across your organization. Install into Claude Code, Codex, or Copilot <0>in one line.</0>"
 
 #: src/components/terminal/interactive-terminal/process-cli-presentation.ts
 msgid "Skip all permission prompts (--dangerously-skip-permissions)"
@@ -12584,8 +12631,8 @@ msgid "Teams"
 msgstr "Teams"
 
 #: src/pages/discover-page/discover-page.tsx
-msgid "Teams across the org"
-msgstr "Teams across the org"
+#~ msgid "Teams across the org"
+#~ msgstr "Teams across the org"
 
 #: src/pages/flow-page/vibe-workspace.tsx
 #~ msgid "Tell the assistant what to build."
@@ -12681,6 +12728,10 @@ msgstr "The artifact has been removed successfully."
 #: src/components/assets/editor/skill/UsagePanel.tsx
 msgid "The asset matches HEAD."
 msgstr "The asset matches HEAD."
+
+#: src/pages/discover-page/discover-page.tsx
+msgid "The assets published with this project — its skills, agents, specs, and docs."
+msgstr "The assets published with this project — its skills, agents, specs, and docs."
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "The default — what you want 99% of the time."
@@ -12873,6 +12924,10 @@ msgstr "This permanently removes the saved context snapshot. This cannot be undo
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "This process has no transcript session yet."
 msgstr "This process has no transcript session yet."
+
+#: src/pages/discover-page/discover-page.tsx
+msgid "This project has no assets yet."
+msgstr "This project has no assets yet."
 
 #: src/components/version-popover/diagnose-modal.tsx
 #~ msgid "This runs in the background — feel free to close this and keep working. When it's done, the result (and any actions) will be waiting on your Home feed."
@@ -13155,8 +13210,8 @@ msgstr "Transcripts"
 #~ msgstr "Travels with the project when shared"
 
 #: src/pages/discover-page/discover-page.tsx
-msgid "Trending"
-msgstr "Trending"
+#~ msgid "Trending"
+#~ msgstr "Trending"
 
 #: src/components/assets/editor/skill/SkillActivationEditor.tsx
 #~ msgid "Trigger"
@@ -13168,8 +13223,8 @@ msgid "Triggers"
 msgstr "Triggers"
 
 #: src/pages/discover-page/discover-page.tsx
-msgid "Trust & provenance"
-msgstr "Trust & provenance"
+#~ msgid "Trust & provenance"
+#~ msgstr "Trust & provenance"
 
 #: src/components/onboarding-card/OnboardingCard.tsx
 #~ msgid "Try a sample flow to see FlowPad in action"
@@ -13260,18 +13315,22 @@ msgid "Undo"
 msgstr "Undo"
 
 #: src/components/conversation/asset-review/AssetInstallActions.tsx
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
 msgid "Uninstall"
 msgstr "Uninstall"
 
 #: src/components/conversation/asset-review/AssetInstallActions.tsx
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
 msgid "Uninstall failed"
 msgstr "Uninstall failed"
 
 #: src/components/conversation/asset-review/AssetInstallActions.tsx
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
 msgid "Uninstall from project"
 msgstr "Uninstall from project"
 
 #: src/components/conversation/asset-review/AssetInstallActions.tsx
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
 msgid "Uninstalled"
 msgstr "Uninstalled"
 
@@ -13869,6 +13928,10 @@ msgstr "What would you like to work on, {firstName}?"
 #: src/pages/home-landing/HomeLanding.tsx
 msgid "What would you like to work on?"
 msgstr "What would you like to work on?"
+
+#: src/pages/discover-page/discover-page.tsx
+msgid "What's in the box."
+msgstr "What's in the box."
 
 #: src/components/asset-manager/EntityTypeBar.tsx
 msgid "Whiteboard"

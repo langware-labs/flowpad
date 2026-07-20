@@ -30,26 +30,6 @@ export function statusLabel(s?: string): string {
   return STATUS_LABELS[s ?? ''] ?? (s || 'New');
 }
 
-/**
- * Fields the Done-gate checks before letting a task be marked Done.
- * MIRRORED in the wizard agent's instructions
- * (flow_sdk/system_projects/flowpad_assistant/.claude/agents/task-analyze.md)
- * — update both together.
- */
-export const DONE_GATE_FIELDS: { field: string; label: string }[] = [
-  { field: 'submission_url', label: 'Submission URL (link to your result — repo, PR, doc…)' },
-];
-
-/** The gate descriptors whose field is still empty on `task`. Group parents
- *  (`kind === 'group'`) are exempt — their "done" is a rollup judgement. */
-export function missingDoneGateFields(task: Record<string, unknown>): { field: string; label: string }[] {
-  if (task.kind === 'group') return [];
-  return DONE_GATE_FIELDS.filter(({ field }) => {
-    const v = task[field];
-    return v == null || (typeof v === 'string' && !v.trim());
-  });
-}
-
 export function getPriorityColor(priority?: string): string {
   return PRIORITY_CONFIG[priority || 'low']?.color || 'bg-muted-foreground';
 }

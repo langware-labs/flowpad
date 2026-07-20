@@ -571,6 +571,9 @@ export function FlowMessageBubble({
                 attachment={messageAttachments?.find(
                   (ma) => ma.asset_type === typeId.type && ma.asset_id === String(typeId.id),
                 )}
+                // The whole message's attachments — the review modal lists them
+                // all on the left, with the clicked chip pinned + selected.
+                siblingAttachments={messageAttachments}
               />
             ))}
           </div>
@@ -580,7 +583,12 @@ export function FlowMessageBubble({
         {fileAttachments.length > 0 && (
           <div className="flex flex-wrap gap-1">
             {fileAttachments.map((ma) => (
-              <MessageFileChip key={`file:${ma.id}`} attachment={ma} projectId={attachmentProjectId} />
+              <MessageFileChip
+                key={`file:${ma.id}`}
+                attachment={ma}
+                projectId={attachmentProjectId}
+                siblingAttachments={messageAttachments}
+              />
             ))}
           </div>
         )}
@@ -710,7 +718,15 @@ export function FlowMessageBubble({
  * File chip (installed); clicking opens the review modal (install / uninstall +
  * content preview live there), matching the entity-chip flow.
  */
-function MessageFileChip({ attachment, projectId }: { attachment: MessageAttachment; projectId?: string | null }) {
+function MessageFileChip({
+  attachment,
+  projectId,
+  siblingAttachments,
+}: {
+  attachment: MessageAttachment;
+  projectId?: string | null;
+  siblingAttachments?: MessageAttachment[];
+}) {
   const [reviewOpen, setReviewOpen] = useState(false);
   const typeId = new TypeId('file', String(attachment.asset_id ?? ''));
   return (
@@ -730,8 +746,8 @@ function MessageFileChip({ attachment, projectId }: { attachment: MessageAttachm
         <AssetReviewDialog
           open={reviewOpen}
           onClose={() => setReviewOpen(false)}
-          attachment={attachment}
-          targetTypeId={typeId}
+          attachments={siblingAttachments?.length ? siblingAttachments : [attachment]}
+          initialAttachmentId={attachment.id}
           attachmentProjectId={projectId ?? null}
         />
       )}
@@ -796,12 +812,14 @@ function MessageEntityChip({
   projectId,
   forceShow,
   attachment,
+  siblingAttachments,
 }: {
   typeId: TypeId;
   conversationId: string;
   projectId?: string | null;
   forceShow: boolean;
   attachment?: MessageAttachment;
+  siblingAttachments?: MessageAttachment[];
 }) {
   const { navigation } = useDockNavigation();
   const isAdvanced = useIsAdvanced();
@@ -922,8 +940,8 @@ function MessageEntityChip({
     <AssetReviewDialog
       open={reviewOpen}
       onClose={() => setReviewOpen(false)}
-      attachment={attachment}
-      targetTypeId={typeId}
+      attachments={siblingAttachments?.length ? siblingAttachments : [attachment]}
+      initialAttachmentId={attachment.id}
       attachmentProjectId={projectId ?? null}
     />
   );

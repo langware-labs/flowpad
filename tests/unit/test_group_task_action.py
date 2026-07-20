@@ -1,5 +1,5 @@
 """Group-task unit coverage: member-folder dedup, member-list normalization,
-and the kind/parent_id/assignee/submission_url frontmatter round-trip."""
+and the kind/parent_id/assignee frontmatter round-trip."""
 
 from __future__ import annotations
 
@@ -124,7 +124,6 @@ def test_group_fields_round_trip_task_md(tmp_path):
         title="Ship It",
         parent_id="11111111-2222-4333-8444-555566667777",
         assignee="bob@x.com",
-        submission_url="https://github.com/x/y/pull/1",
         kind=TaskKind.STANDARD,
     )
     folder = tmp_path / "tasks" / "ship_it--m-deadbeef"
@@ -134,7 +133,6 @@ def test_group_fields_round_trip_task_md(tmp_path):
     rec = extract_task(FSRef(folder))[0]
     assert rec.parent_id == "11111111-2222-4333-8444-555566667777"
     assert rec.assignee == "bob@x.com"
-    assert rec.submission_url == "https://github.com/x/y/pull/1"
     assert rec.kind == "standard"
 
 
@@ -150,6 +148,62 @@ def test_group_kind_round_trips(tmp_path):
     assert rec.kind == "group"
     # Empty parent_id is dropped from frontmatter (not a leak, just clean yaml).
     assert "parent_id" not in (folder / "task.md").read_text(encoding="utf-8")
+
+
+# ── member-side sync of the owner-authored attachment list ──────────────────
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_sync_group_member_pulls_parent_artifacts(monkeypatch):
+    """A member's ``sync-group`` merges the group parent's owner-authored
+    ``artifacts`` (files & folders, incl. git_origin refs) onto the local parent
+    mirror — so the member's read-only "Files & Folders" reflects the owner's
+    attachments even though it materialized from hub metadata with no bundle."""
+    import flow_sdk.app.actions.group_task_action as mod
+    from flow_sdk.builtin.task import Task
+
+    arts = [
+        {
+            "path": "/owner/machine/repo",
+            "label": "repo",
+            "git_origin": {
+                "kind": "git",
+                "provider": "github",
+                "owner": "o",
+                "name": "n",
+                "branch": "main",
+                "rel_path": "",
+            },
+        }
+    ]
+    hub_parent = {"id": "parent-1", "title": "Ship it", "artifacts": arts}
+
+    parent = Task(id="parent-1", title="Ship it", remote=True)
+    parent.artifacts = None
+    saved = {}
+
+    async def fake_hub_get(*args, **kwargs):
+        return hub_parent
+
+    async def fake_get_one(cls, query):
+        return parent
+
+    async def fake_save(self, *args, **kwargs):
+        saved["artifacts"] = self.artifacts
+        return self
+
+    monkeypatch.setattr(mod, "hub_get", fake_hub_get)
+    monkeypatch.setattr(Task, "get_one", classmethod(fake_get_one))
+    monkeypatch.setattr(Task, "is_stale", staticmethod(lambda existing, data: True))
+    monkeypatch.setattr(Task, "save", fake_save)
+
+    child = Task(id="child-1", title="Ship it", parent_id="parent-1", remote=True)
+    synced = await mod._sync_group_member(child, someone_typeid=None)
+
+    assert synced == 1
+    assert parent.artifacts == arts  # owner's attachment list reflected onto the mirror
+    assert saved["artifacts"] == arts  # ...and persisted
 
 
 # ── bundle packing of loose attachments ─────────────────────────────────────
