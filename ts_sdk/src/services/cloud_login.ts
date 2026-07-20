@@ -256,9 +256,17 @@ class CloudManager extends EventEmitter {
     return promise;
   }
 
-  async logout(): Promise<void> {
+  /**
+   * @param returnTo Hub mode only: where the provider sends the browser after
+   *   logout (e.g. a login-with-callback URL so an invitee can re-auth as the
+   *   correct account and land back on the accept flow). The hub validates it
+   *   server-side. Ignored on the desktop path.
+   */
+  async logout(returnTo?: string): Promise<void> {
     if (isHubOnly()) {
-      window.location.assign(`${API_PREFIX}/logout`);
+      window.location.assign(
+        returnTo ? `${API_PREFIX}/logout?returnTo=${encodeURIComponent(returnTo)}` : `${API_PREFIX}/logout`,
+      );
       return;
     }
 

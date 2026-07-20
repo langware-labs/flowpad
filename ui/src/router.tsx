@@ -13,6 +13,9 @@ import DiscoverPage from '@src/pages/discover-page/discover-page';
 import FlowPage from '@src/pages/flow-page/flow-page';
 import FocusLayout from '@src/pages/flow-page/FocusLayout';
 import KeychainApproval from '@src/pages/keychain-approval';
+import InvitePage from '@src/pages/entry/InvitePage';
+import WrongAccountPage from '@src/pages/entry/WrongAccountPage';
+import MessageLanding from '@src/pages/entry/MessageLanding';
 import NotFound from '@src/pages/NotFound';
 import App from '@src/App';
 import { createBrowserRouter, createRoutesFromElements, Navigate, Outlet, Route, useLocation, type ShouldRevalidateFunctionArgs } from 'react-router';
@@ -106,6 +109,13 @@ export const router = createBrowserRouter(
           loadRoot/auth/theme gate it) but OUTSIDE AgentLayout/FlowPage, so it
           renders full-screen with its own chrome (no sidebar/tab strip). */}
       <Route path="discover" element={<DiscoverPage />} />
+      {/* Entry journeys — full-screen pages the hub BACKEND sends users to
+          (invite emails, accept-flow redirects, post-accept landings). Inside
+          RootLayout so initSdk/bootstrap has run, outside the dock subtrees so
+          loadAgentApp's supported_pages redirect never touches them. */}
+      <Route path="invite/:token" element={<InvitePage />} />
+      <Route path="wrong_account" element={<WrongAccountPage />} />
+      <Route path="flow_message/:messageId" element={<MessageLanding />} />
       {/* Root dock routes - use default agent from bootstrap */}
       <Route path="dock" element={<AgentLayout />} loader={loadAgentApp} shouldRevalidate={shouldRevalidateDock} errorElement={<ErrorScreen />}>
         <Route index element={<Navigate to="/" replace />} />
