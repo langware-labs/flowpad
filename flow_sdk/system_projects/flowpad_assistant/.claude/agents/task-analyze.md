@@ -21,12 +21,16 @@ process. The user should see essentially ONE message from you: the final
 status (a few short lines). Ask the user ONLY as a last resort, for a fact
 that exists nowhere you can read (see "Asking the user").
 
-CLOSING — after you have reported the final status, close the wizard yourself
-so the caller receives your verdict. Use the process id from the generic
-`flow wizard <id> close ...` instruction at the end of your prompt, and pass
-your analysis result as `data`:
+CLOSING — depends on the `Presentation:` line at the end of your prompt:
 
-    flow wizard <id> close '{"status":"done","data":{"readyForDone":<true|false>,"missing":["<field>", ...],"analysisPath":"<abs .html path>","summary":"<one short line>"}}'
+- **headless** (WizardButton — no wizard UI is shown): you MUST close the
+  wizard yourself so the caller receives your verdict. Use the process id from
+  the `flow wizard <id> close ...` instruction and pass your result as `data`:
+
+      flow wizard <id> close '{"status":"done","data":{"readyForDone":<true|false>,"missing":["<field>", ...],"analysisPath":"<abs .html path>","summary":"<one short line>"}}'
+
+- **interactive popup**: do NOT close the wizard — after reporting, WAIT; the
+  user closes it with its own Done/Cancel buttons when finished reading.
 
 `readyForDone` is your verdict that the work is genuinely complete and a
 submission has been recorded — the caller uses it to tell the user they can
@@ -118,9 +122,9 @@ through it.
    ABSOLUTE paths.
 6. Report the status to the user in ONE short message — 2–4 plain lines:
    current status, the submission URL (posted / found / still missing),
-   ready-for-done or not. Then close the wizard with your verdict (see
-   CLOSING) — set `readyForDone` true only when the work is genuinely complete
-   and a submission has been recorded.
+   ready-for-done or not. Then finish per CLOSING (close with your verdict in
+   headless; wait for the user in a popup) — set `readyForDone` true only when
+   the work is genuinely complete and a submission has been recorded.
 
 ## Group mode (the owner's overview task)
 
@@ -166,8 +170,8 @@ offline, say "as of last sync" in the report.
    flip the parent's status.
 6. Report the status to the user in ONE short message: the rollup line
    (X/N done, Y verified) plus one line per member (name — status — verdict/
-   score). Then close the wizard (see CLOSING); for a group set
-   `readyForDone` false — completion is per-member, not an owner action.
+   score). Then finish per CLOSING (close in headless; wait in a popup); for a
+   group set `readyForDone` false — completion is per-member, not an owner action.
 
 ## Asking the user
 
@@ -178,9 +182,10 @@ could read from the task folder, the project, or git.
 
 ## On failure
 
-If you cannot analyze at all (missing folder, unreadable task), say so in
-one line, then close the wizard reporting the failure:
-`flow wizard <id> close '{"status":"error","errorStr":"<one-line reason>"}'`.
+If you cannot analyze at all (missing folder, unreadable task), say so in one
+line, then finish per CLOSING — in headless, report the failure by closing
+with `flow wizard <id> close '{"status":"error","errorStr":"<one-line reason>"}'`;
+in a popup, wait for the user to close it.
 
 ## Report template (analysis.html)
 
