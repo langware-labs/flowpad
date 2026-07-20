@@ -1,9 +1,8 @@
-import { MessageAttachment, type StagedFileInfo, type StagedFilesResponse } from '@sdk';
+import { MessageAttachment, type StagedFilesResponse } from '@sdk';
 import { Trans } from '@lingui/react/macro';
-import { FileText, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { MarkdownView } from '@src/components/markdown-view';
-import { cn } from '@src/lib/utils';
 
 /** Strip a leading YAML frontmatter block.
  *
@@ -102,7 +101,6 @@ export function StagedAssetViewer({ attachment }: { attachment: MessageAttachmen
     );
   }
 
-  const multiFile = listing.files.length > 1;
   const pane = loadingFile ? (
     <div className="flex items-center justify-center py-8 text-muted-foreground">
       <Loader2 className="h-4 w-4 animate-spin" />
@@ -128,29 +126,8 @@ export function StagedAssetViewer({ attachment }: { attachment: MessageAttachmen
     </div>
   );
 
-  if (!multiFile) return <div className="max-h-[50vh] overflow-y-auto pr-1">{pane}</div>;
-
-  return (
-    <div className="flex max-h-[50vh] min-h-0 gap-3">
-      <div className="w-44 shrink-0 overflow-y-auto border-r border-border pr-2">
-        {listing.files.map((f: StagedFileInfo) => (
-          <button
-            key={f.path}
-            type="button"
-            onClick={() => setSelected(f.path)}
-            title={f.path}
-            data-testid={`staged-file-row-${f.path}`}
-            className={cn(
-              'flex w-full items-center gap-1.5 rounded px-1.5 py-1 text-left text-[12px] transition-colors',
-              selected === f.path ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-muted/50',
-            )}
-          >
-            <FileText className="h-3 w-3 shrink-0" />
-            <span className="truncate">{f.path}</span>
-          </button>
-        ))}
-      </div>
-      <div className="min-w-0 flex-1 overflow-y-auto">{pane}</div>
-    </div>
-  );
+  // Single content pane only — the main file (task.md / SKILL.md / …). The old
+  // multi-file path rail was removed: the review dialog shows the entity's own
+  // viewer for installed assets, and a bare markdown preview for staged ones.
+  return <div className="max-h-[50vh] overflow-y-auto pr-1">{pane}</div>;
 }

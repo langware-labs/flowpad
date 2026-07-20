@@ -11450,7 +11450,6 @@ msgstr ""
 msgid "Select parent folder"
 msgstr ""
 
-#: src/components/conversation/asset-review/AssetReviewDialog.tsx
 #: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
 #: src/components/project-selector/ProjectSelectorModal.tsx
 #: src/components/quick-create/ScopeSelection.tsx
