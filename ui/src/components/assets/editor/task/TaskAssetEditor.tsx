@@ -198,6 +198,10 @@ export function TaskAssetEditor({ fsRef, task: providedTask }: TaskAssetEditorPr
             )}
           </ParentTaskBlock>
 
+          {/* Parent's comments, read-only. Collapsed by default and rendered
+              only when the parent actually has at least one comment. */}
+          <TaskComments task={parent} readOnly collapsible hideWhenEmpty title="Parent comments" />
+
           {/* This task — only the child's OWN data, nothing repeated from above. */}
           <div className="flex flex-col gap-3">
             <div className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
@@ -225,7 +229,9 @@ export function TaskAssetEditor({ fsRef, task: providedTask }: TaskAssetEditorPr
             </div>
           </div>
 
-          <TaskAttachments task={task} save={save} />
+          <div className="shrink-0">
+            <TaskAttachments task={task} save={save} />
+          </div>
 
           <TaskComments task={task} />
         </div>
@@ -328,10 +334,15 @@ export function TaskAssetEditor({ fsRef, task: providedTask }: TaskAssetEditorPr
       </div>
 
       {/* ── Body ───────────────────────────────────────────────── */}
+      {/* Each section takes its natural height and the column scrolls as a whole.
+          TaskAttachments' internal `flex-1` is neutralized by the plain block
+          wrapper so it can't grow and overlap the comments below it. */}
       <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
         <MemberTasksSection task={task} />
-        <TaskAttachments task={task} save={save} />
-        <div className="px-6 py-4">
+        <div className="shrink-0">
+          <TaskAttachments task={task} save={save} />
+        </div>
+        <div className="shrink-0 px-6 py-4">
           <TaskComments task={task} />
         </div>
       </div>

@@ -2525,10 +2525,13 @@ msgstr "Commands"
 msgid "Comment"
 msgstr "Comment"
 
-#. placeholder {0}: comments?.length || 0
 #: src/components/assets/editor/task/TaskComments.tsx
-msgid "Comments ({0})"
-msgstr "Comments ({0})"
+msgid "Comments"
+msgstr "Comments"
+
+#: src/components/assets/editor/task/TaskComments.tsx
+#~ msgid "Comments ({0})"
+#~ msgstr "Comments ({0})"
 
 #: src/components/assets/editor/skill/UsagePanel.tsx
 msgid "Commit"
