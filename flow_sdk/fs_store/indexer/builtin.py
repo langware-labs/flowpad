@@ -101,7 +101,7 @@ def build_default_indexer() -> FSIndexer:
     )
     from flow_sdk.fs_store.indexer.functions.prompt import prompt_project_fn
     from flow_sdk.fs_store.indexer.functions.repo_assets import repo_assets_fn
-    from flow_sdk.fs_store.indexer.functions.skill import skill_fn
+    from flow_sdk.fs_store.indexer.functions.skill import skill_fn, skill_in_folder_fn
     from flow_sdk.fs_store.indexer.functions.secret_origin import secret_origin_in_folder_fn
     from flow_sdk.fs_store.indexer.functions.spreadsheet import spreadsheet_in_folder_fn
     from flow_sdk.fs_store.indexer.functions.todo import todo_fn
@@ -220,6 +220,7 @@ def build_default_indexer() -> FSIndexer:
 
     # FOLDER (transient scaffold emitted by project_folder_walker_fn) expanders
     idx.add_function(RecordType.FOLDER, markdown_in_folder_fn, RecordType.MARKDOWN)
+    idx.add_function(RecordType.FOLDER, skill_in_folder_fn, RecordType.SKILL)
     idx.add_function(RecordType.FOLDER, spreadsheet_in_folder_fn, RecordType.SPREADSHEET)
     idx.add_function(RecordType.FOLDER, secret_origin_in_folder_fn, RecordType.SECRET_ORIGIN)
     idx.add_function(RecordType.CWD_ROOT, claude_hook_files_fn, RecordType.CLAUDE_HOOK_SOURCE)

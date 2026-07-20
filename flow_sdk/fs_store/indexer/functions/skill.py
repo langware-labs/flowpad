@@ -33,7 +33,42 @@ from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
 
 # The files whose presence makes a folder a skill; SKILL.md is the main doc.
-SKILL_INNER_FILES = ("SKILL.md", "skill.yaml", "skill.yml")
+# Both cases of the doc are accepted (SKILL.md is canonical; skill.md tolerated).
+SKILL_INNER_FILES = ("SKILL.md", "skill.md", "skill.yaml", "skill.yml")
+
+
+def folder_is_skill(folder: Path) -> bool:
+    """True if ``folder`` directly contains a skill marker file.
+
+    Shared predicate: ``skill_in_folder_fn`` uses it to claim a folder, and
+    ``markdown_in_folder_fn`` uses it to skip the skill doc so a ``SKILL.md``
+    isn't double-indexed as both SKILL and MARKDOWN.
+    """
+    return any((folder / name).exists() for name in SKILL_INNER_FILES)
+
+
+def _under_claude_skills(folder: Path) -> bool:
+    """``.claude/skills/<x>`` — already owned by ``skill_fn``; skip in the
+    folder-wide walker to avoid a double emit for the same skill folder."""
+    parent = folder.parent
+    return parent.name == "skills" and parent.parent.name == ".claude"
+
+
+def _emit_skill(
+    folder: Path, parent: FSRef, out: list[FSRef], seen: set[str]
+) -> None:
+    """Emit ``folder`` as a SKILL if it's a skill folder and not already seen.
+
+    Shared dedup/emit tail of ``skill_fn`` and ``skill_in_folder_fn`` (mirrors
+    ``markdown._emit_md_rglob``).
+    """
+    if not folder_is_skill(folder):
+        return
+    key = str(folder.resolve())
+    if key in seen:
+        return
+    seen.add(key)
+    out.append(FSRef(folder, record_type=RecordType.SKILL, parent=parent))
 
 
 def skill_fn(
@@ -47,15 +82,38 @@ def skill_fn(
         if not skills_dir.is_dir():
             continue
         for entry in sorted(skills_dir.iterdir()):
-            if not entry.is_dir():
-                continue
-            if not any((entry / name).exists() for name in SKILL_INNER_FILES):
-                continue
-            key = str(entry.resolve())
-            if key in seen:
-                continue
-            seen.add(key)
-            out.append(FSRef(entry, record_type=RecordType.SKILL, parent=node))
+            if entry.is_dir():
+                _emit_skill(entry, node, out, seen)
+    return out
+
+
+def skill_in_folder_fn(
+    nodes: list[FSRef],
+    opts: IndexerOptions,
+) -> list[FSRef]:
+    """Per-FOLDER emitter: any gitignore-surviving folder in a project that
+    directly contains a skill marker file is emitted as a SKILL.
+
+    Receives FOLDER refs from ``project_folder_walker_fn`` (already pruned via
+    gitignore + the walk denylist), so gitignored skill folders are never
+    seen. Complements ``skill_fn`` (which only scans ``.claude/skills/*``):
+    this discovers ``SKILL.md``-bearing folders anywhere in the project.
+    ``.claude/skills/*`` children are left to ``skill_fn`` to avoid a double
+    emit for the same folder.
+
+    Registered on FOLDER, which is emitted only for the project-scoped roots
+    (REAL_PROJECT_CWD / SYSTEM_ROOT / CWD_ROOT). Home-dir skill discovery is
+    deliberately left to ``skill_fn``'s narrow ``.claude/skills`` scan — same
+    rationale as ``markdown_flat_fn``: don't content-walk all of ``~``.
+    """
+    out: list[FSRef] = []
+    seen: set[str] = set()
+    for node in nodes:
+        if node.record_type != RecordType.FOLDER:
+            continue
+        folder = Path(node.path)
+        if not _under_claude_skills(folder):
+            _emit_skill(folder, node, out, seen)
     return out
 
 
