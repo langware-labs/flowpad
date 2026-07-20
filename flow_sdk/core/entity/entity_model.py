@@ -15,6 +15,7 @@ from typing import (
     List,
     Literal,
     Optional,
+    Sequence,
     Type,
     TypeGuard,
     TypeVar,
@@ -49,6 +50,7 @@ import flow_sdk.service_log as service_log
 from flow_sdk.db import DBEntity
 from flow_sdk.db.db_entity import EntityExpansion
 from flow_sdk.db.drivers.db_driver import RelationshipDirection
+from flow_sdk.fs_store.asset_occurrences import AssetOccurrence, asset_occurrence_dicts
 from .blob_index_entity_model import BLOB_INDEX_VFS_PATH, BlobIndexEntity
 from .entity_env.env_types import EntityEnvVars, EnvVar, EnvVarType
 
@@ -221,6 +223,14 @@ class Entity(DBEntity):
         persist=Persist.TRUE,
         description="Git provenance/placement of a received shared asset (local-only; see GitOrigin).",
     )
+    asset_occurrences: list[dict] = APIField(
+        default_factory=list,
+        persist=Persist.FALSE,
+        description=(
+            "Local filesystem occurrences for this entity, ordered primary first. "
+            "DB-only and never shared or mirrored into asset metadata."
+        ),
+    )
     semantic_lock: bool = APIField(
         default=False,
         description=(
@@ -303,7 +313,9 @@ class Entity(DBEntity):
     # with their own local-only state (e.g. download/body status, on-disk
     # paths). Used by ``is_stale`` / ``merge_hub_payload`` at the remote
     # boundary. ClassVar so pydantic treats it as config, not a field.
-    LOCAL_ONLY_FIELDS: ClassVar[frozenset[str]] = frozenset({"remote", "system", "fetched_at"})
+    LOCAL_ONLY_FIELDS: ClassVar[frozenset[str]] = frozenset({
+        "remote", "system", "fetched_at", "asset_occurrences",
+    })
 
     # The base set of SENDER-LOCAL fields that never travel in the portable entity
     # JSON (``to_common_json`` — the bundle ``entities.json`` envelope and, in
@@ -324,7 +336,7 @@ class Entity(DBEntity):
         # local-only projections / caches
         "private_context_entities_", "private_context_entities",
         "private_context_entity_data", "shared_context_entity_data",
-        "message_count", "tags", "members",
+        "message_count", "tags", "members", "asset_occurrences", "duplicate_count",
         # pydantic computed
         "expand",
     })
@@ -1736,6 +1748,36 @@ class Entity(DBEntity):
             extra = None
         return self._BASE_LOCAL_FIELDS | (extra or frozenset())
 
+    @computed_field
+    @property
+    def duplicate_count(self) -> int:
+        """Number of live filesystem occurrences excluding the primary path."""
+        return max(0, len(self.asset_occurrences) - 1)
+
+    async def reflect_asset_occurrences(
+        self,
+        occurrences: Sequence[AssetOccurrence],
+        *,
+        notify: bool = False,
+    ) -> bool:
+        """Persist collision projection to the DB without touching the filesystem.
+
+        Returns whether state changed. Notification is explicit and emitted only
+        after the store-suppressed DB write succeeds.
+        """
+        reflected = asset_occurrence_dicts(occurrences)
+        if self.asset_occurrences == reflected:
+            return False
+        self.asset_occurrences = reflected
+        token = _SUPPRESS_STORE.set(True)
+        try:
+            await self.save(notify=False)
+        finally:
+            _SUPPRESS_STORE.reset(token)
+        if notify:
+            await self.notify_updated()
+        return True
+
     def to_common_json(self) -> dict:
         """The portable entity JSON: a full model dump minus the sender-local
         fields. This is the SINGLE wire-serialization seam — used by the bundle
@@ -1773,6 +1815,7 @@ class Entity(DBEntity):
                 "remote", "system", "fetched_at",
                 "message_count",
                 "git_origin",  # local-only provenance; never a hub-synced field
+                "asset_occurrences", "duplicate_count",
                 "tags", "project_id",
                 "members",  # roster cache; the hub owns it and rebuilds from role edges
             },

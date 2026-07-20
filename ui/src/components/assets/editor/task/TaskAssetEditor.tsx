@@ -17,6 +17,7 @@ import { MemberTasksSection } from './MemberTasksSection';
 import { OwnerButton } from './OwnerButton';
 import { ParentTaskBlock } from './ParentTaskBlock';
 import { TaskAttachments } from './TaskAttachments';
+import { AssetCollisionBadge } from '../AssetCollisionUI';
 
 interface TaskAssetEditorProps {
   /** FSRef to the task folder. task.md / spec.md are resolved via child(). */
@@ -198,13 +199,16 @@ export function TaskAssetEditor({ fsRef, task: providedTask }: TaskAssetEditorPr
     return (
       <div className="flex h-full flex-col bg-background">
         <div className="flex items-center justify-between border-b px-6 py-3">
-          <button
-            onClick={() => navigation.goBack()}
-            className="flex items-center gap-1 rounded p-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
-          >
-            <ArrowLeft className="h-3.5 w-3.5" />
-            <span className="uppercase tracking-wide">Member task</span>
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => navigation.goBack()}
+              className="flex items-center gap-1 rounded p-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+            >
+              <ArrowLeft className="h-3.5 w-3.5" />
+              <span className="uppercase tracking-wide">Member task</span>
+            </button>
+            <AssetCollisionBadge />
+          </div>
           {archiveButton}
         </div>
 
@@ -290,6 +294,7 @@ export function TaskAssetEditor({ fsRef, task: providedTask }: TaskAssetEditorPr
             className="h-auto w-auto min-w-0 max-w-full border-0 bg-transparent px-0 text-2xl font-semibold shadow-none focus-visible:ring-0"
           />
           <OwnerButton task={task} save={save} />
+          <AssetCollisionBadge />
         </div>
 
         {/* Meta pill row */}

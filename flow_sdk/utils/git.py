@@ -3,6 +3,7 @@ import logging
 import re
 import subprocess
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -126,6 +127,7 @@ def find_local_repo_for_url(clone_url: str) -> Optional[str]:
         return None
 
     from pathlib import Path as _Path
+
     from flow_sdk.fs_store.indexer.functions._claude_projects import iter_claude_project_paths
 
     claude_paths = list(iter_claude_project_paths())
@@ -272,6 +274,43 @@ _LOG_SEP = "\x1f"
 
 def _run_git(args: list[str], cwd: str, timeout: int = 10) -> subprocess.CompletedProcess:
     return subprocess.run(args, cwd=cwd, capture_output=True, text=True, timeout=timeout)
+
+
+def git_asset_introduction(path: str) -> datetime | None:
+    """Return the earliest commit that introduced a local file/folder asset.
+
+    File history follows renames. Folder history is pathspec-scoped and chooses
+    the earliest tracked child addition. The probe is best-effort and bounded
+    by ``_run_git``'s process timeout; callers run it off the event loop and only
+    for actual collision groups.
+    """
+    try:
+        root = find_project_root(path)
+        if root is None:
+            return None
+        target = Path(path).resolve()
+        rel_path = target.relative_to(Path(root).resolve()).as_posix()
+        args = ["git", "log"]
+        if not target.is_dir():
+            args.append("--follow")
+        args.extend(["--format=%aI", "--diff-filter=A", "--", rel_path])
+        result = _run_git(args, root)
+        if result.returncode != 0:
+            return None
+        dates: list[datetime] = []
+        for line in result.stdout.splitlines():
+            try:
+                parsed = datetime.fromisoformat(line.strip().replace("Z", "+00:00"))
+            except ValueError:
+                continue
+            dates.append(
+                parsed.replace(tzinfo=timezone.utc)
+                if parsed.tzinfo is None
+                else parsed.astimezone(timezone.utc)
+            )
+        return min(dates) if dates else None
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
 
 
 async def git_commit_file(repo_path: str, rel_file: str, message: str) -> bool:

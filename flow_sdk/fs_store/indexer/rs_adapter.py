@@ -127,6 +127,8 @@ def _result_from_json(d: dict) -> IndexResult:
             orphans_db_removed=int(p.get("orphans_db_removed", 0)),
             orphans_disk_removed=int(p.get("orphans_disk_removed", 0)),
             orphan_ids=tuple(p.get("orphan_ids", []) or []),
+            duplicate_groups=int(p.get("duplicate_groups", 0)),
+            duplicate_occurrences=int(p.get("duplicate_occurrences", 0)),
         )
     return IndexResult(
         per_type=per_type,
@@ -136,6 +138,8 @@ def _result_from_json(d: dict) -> IndexResult:
         total_orphans_found=int(d.get("total_orphans_found", 0)),
         total_orphans_db_removed=int(d.get("total_orphans_db_removed", 0)),
         total_orphans_disk_removed=int(d.get("total_orphans_disk_removed", 0)),
+        total_duplicate_groups=int(d.get("total_duplicate_groups", 0)),
+        total_duplicate_occurrences=int(d.get("total_duplicate_occurrences", 0)),
     )
 
 

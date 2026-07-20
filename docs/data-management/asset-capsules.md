@@ -58,5 +58,9 @@ format owns its root JSON identity continue using that carrier intentionally.
 An invalid canonical id is preserved; a valid compatibility identity can still
 be adopted, otherwise resolution uses a stable v5. Corrupt, duplicate, or
 future-version capsule data fails closed. The indexer passes the resolved id to
-`from_disk_fn(ref, resolved_id)`, warns and skips duplicate live sources, and
-never rekeys either source.
+`from_disk_fn(ref, resolved_id)`. If the same valid capsule identity occurs at
+multiple live paths, the collision resolver selects one primary by earliest Git
+introduction, trusted filesystem birth time, persisted `first_seen_at`, then
+canonical path. The other paths are warned and skipped without rewriting their
+capsules, bytes, or ids. Collision selection is therefore an indexing concern;
+the capsule package remains a carrier and never repairs copies or rekeys assets.
