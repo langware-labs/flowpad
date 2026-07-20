@@ -24,6 +24,7 @@ import { usePresenceReporter } from '@src/hooks/use-presence-reporter';
 import { useUiCommandListener } from '@src/hooks/use-ui-command-listener';
 import { Spotlight, useSpotlightHotkey } from '@src/components/spotlight';
 import { useDockViewModeOverrideSync } from '@src/contexts/view-mode-context';
+import { isHubOnly } from '@src/navigation/hub-runtime';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -109,7 +110,9 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
         <WikiModalRoot />
         <GlobalEvents />
         <GitHubDeviceFlowModal />
-        <HarnessLoginModalRoot />
+        {/* Harness/LLM-keys setup is a desktop-only concern (local coding CLIs);
+            it has no place in hub mode. */}
+        {!isHubOnly() && <HarnessLoginModalRoot />}
         <MigrateLegacyKeychain />
         <HarnessCapabilitiesProvider>
           <SnifferProvider>

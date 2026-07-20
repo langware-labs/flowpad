@@ -1,7 +1,7 @@
 """Capsule-v4 per-type ``TypeInfo.mint_id`` coverage.
 
-For every shareable type: adopt a valid v4/v5 capsule id, else mint a fresh v4
-and write it (frontmatter for file types, ``.flow/id`` for folder types) — never
+For every shareable type: adopt a valid v4/v5 legacy id, else mint a fresh v4
+and write it through ``AssetCapsule`` — never
 persist uuid5(name/path). Plus the two type-specific regressions: agent must
 write the UUID (not the name) into ``id:``; folder types persist their capsule.
 """
@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 
+from flow_sdk.capsules import AssetCapsule
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer._frontmatter import _extract_frontmatter, _yaml_load
 from flow_sdk.fs_store.indexer.functions._folder_capsule import read_folder_capsule_id
@@ -28,6 +29,11 @@ def _ver(u: str) -> int:
 def _frontmatter_id(md: Path):
     fm = _extract_frontmatter(md.read_text(encoding="utf-8"))
     return (_yaml_load(fm) or {}).get("id") if fm else None
+
+
+def _capsule_id(ref: FSRef):
+    data = AssetCapsule.from_path(ref._path).read("identity")
+    return data.data.get("id") if data else None
 
 
 # ── per-type harness ─────────────────────────────────────────────────────────
@@ -78,10 +84,10 @@ def _mint(type_name: str, ref: FSRef) -> str:
 
 
 SPECS = {
-    "agent": (_agent, lambda r: _mint("agent", r), lambda r: _frontmatter_id(r._path), None),
-    "whiteboard": (_whiteboard, lambda r: _mint("whiteboard", r), lambda r: read_folder_capsule_id(r._path), None),
-    "task": (_task, lambda r: _mint("task", r), lambda r: read_folder_capsule_id(r._path), None),
-    "dataset": (_dataset, lambda r: _mint("dataset", r), lambda r: read_folder_capsule_id(r._path), None),
+    "agent": (_agent, lambda r: _mint("agent", r), _capsule_id, None),
+    "whiteboard": (_whiteboard, lambda r: _mint("whiteboard", r), _capsule_id, None),
+    "task": (_task, lambda r: _mint("task", r), _capsule_id, None),
+    "dataset": (_dataset, lambda r: _mint("dataset", r), _capsule_id, None),
 }
 TYPES = list(SPECS)
 
@@ -94,12 +100,13 @@ def test_valid_v4_capsule_adopted(tmp_path: Path, t: str) -> None:
 
 
 @pytest.mark.parametrize("t", TYPES)
-def test_foreign_id_rejected_mints_v4(tmp_path: Path, t: str) -> None:
+def test_foreign_id_rejected_uses_stable_v5_without_rewrite(tmp_path: Path, t: str) -> None:
     build, gen, capsule, _ = SPECS[t]
     ref = build(tmp_path, V7)
     got = gen(ref)
-    assert _ver(got) == 4 and got != V7
-    assert capsule(ref) == got, "the fresh v4 is written into the capsule"
+    expected = str(uuid.uuid5(uuid.NAMESPACE_URL, str(ref._path.resolve())))
+    assert got == expected
+    assert capsule(ref) is None
 
 
 @pytest.mark.parametrize("t", TYPES)
@@ -114,14 +121,13 @@ def test_no_id_mints_v4_persists_and_idempotent(tmp_path: Path, t: str) -> None:
 
 # ── type-specific regressions ────────────────────────────────────────────────
 
-def test_agent_writes_uuid_not_name_into_frontmatter(tmp_path: Path) -> None:
-    """The bug: agent_gen_id used to write the raw NAME into `id:`, so agents
-    re-derived every index and never self-healed."""
+def test_agent_writes_uuid_not_name_into_capsule(tmp_path: Path) -> None:
     ref = _agent(tmp_path, None)
     got = _mint("agent", ref)
-    fm_id = _frontmatter_id(ref._path)
-    assert fm_id == got and _ver(fm_id) == 4
-    assert fm_id not in ("My Agent", "a"), "frontmatter must hold the UUID, not the name/stem"
+    stored_id = _capsule_id(ref)
+    assert stored_id == got and _ver(stored_id) == 4
+    assert _frontmatter_id(ref._path) is None
+    assert stored_id not in ("My Agent", "a")
     # self-heals: second index adopts the written UUID, no rewrite
     mtime = ref._path.stat().st_mtime
     assert _mint("agent", ref) == got

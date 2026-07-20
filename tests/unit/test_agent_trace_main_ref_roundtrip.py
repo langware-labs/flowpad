@@ -14,6 +14,7 @@ from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.indexer.functions.agent_trace import extract_agent_trace
+from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
 pytestmark = pytest.mark.timeout(5)  # do not increase timeout without approval
 
@@ -61,7 +62,8 @@ def test_agent_trace_main_ref_roundtrip(tmp_path):
     assert written["summary"]["verdict"] == "mixed"
 
     # 2. Extraction reads summary fields only — payload stays out of FTS.
-    recs = extract_agent_trace(FSRef(doc))
+    ref = FSRef(doc)
+    recs = extract_agent_trace(ref, SchemaRegistry.get("agent_trace").mint_id(ref))
     assert len(recs) == 1
     out = recs[0]
     assert out.id == TRACE_ID

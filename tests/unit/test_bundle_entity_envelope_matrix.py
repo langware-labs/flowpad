@@ -10,6 +10,7 @@ re-derived asset_ref/scope, idempotent re-install, leak guard, and FTS
 reachability — plus one ``git`` transport case.
 """
 import json
+import shutil
 import subprocess
 import uuid
 import zipfile
@@ -141,9 +142,10 @@ async def test_full_pipeline_nested_mixed_types(env, scope):
     for e in ent_map.values():
         assert "project_id" not in e, "sender project_id leaked into entities.json"
 
-    # fresh receiver DB
+    # Fresh receiver: neither the DB nor the sender filesystem is shared.
     for e in (grand, child, parent):
         await (await type(e).get_one({"id": e.id})).destroy()
+    shutil.rmtree(home / AGENTIC_ASSETS_DIR)
 
     # unpack + install
     receiver, project, res, _ = await _install_fresh(env, fm, zip_path, parent.id, scope=scope)
@@ -383,6 +385,7 @@ async def test_multi_attachment_bundle(env):
 
     for e in (a, b):
         await (await Task.get_one({"id": e.id})).destroy()
+    shutil.rmtree(home / AGENTIC_ASSETS_DIR)
 
     receiver = env / "multirecv"
     receiver.mkdir()

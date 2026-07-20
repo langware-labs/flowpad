@@ -10,6 +10,7 @@ pack/unpack/install over a two-node tree in tmp.
 """
 from __future__ import annotations
 
+import shutil
 import zipfile
 from pathlib import Path
 
@@ -125,10 +126,11 @@ async def test_repo_nested_tree_full_lifecycle(env):
     assert ent_map[f"task-{child.id}"]["parent_type_id"] == f"task-{parent.id}"
     assert "project_id" not in ent_map[f"task-{child.id}"], "sender project_id leaked"
 
-    # Simulate a FRESH receiver DB: drop the sender rows so nothing masks the
-    # message — the parent link must come back purely from the .flowmsg.
+    # Simulate a genuinely fresh receiver: no sender DB rows or source tree.
+    # Keeping the source tree live would correctly trigger duplicate-id skip.
     await (await Task.get_one({"id": child.id})).destroy()
     await (await Task.get_one({"id": parent.id})).destroy()
+    shutil.rmtree(home / aa)
     assert await Task.get_one({"id": parent.id}) is None
 
     # ── 4. UNPACK + INSTALL into a fresh project root ──────────────────────

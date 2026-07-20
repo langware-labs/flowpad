@@ -73,7 +73,7 @@ export function UserInfo({ user }: UserInfoProps) {
   const [copiedEmail, setCopiedEmail] = useState(false);
   const [busy, setBusy] = useState(false);
   const { version } = useContext();
-  const { login, connection, cloudUrl } = useCloudStatus();
+  const { login, connection, cloudUrl, connectionControlsAvailable } = useCloudStatus();
 
   const loginVisual = LOGIN_VISUAL[login.status];
   const connectionVisual = CONNECTION_VISUAL[connection.status];
@@ -198,17 +198,19 @@ export function UserInfo({ user }: UserInfoProps) {
               <div className="mt-1 text-xs text-muted-foreground break-all"><Trans>Hub: {cloudUrl}</Trans></div>
             )}
           </div>
-          <Button
-            variant={button.action === 'disconnect' ? 'outline' : 'default'}
-            size="sm"
-            disabled={button.disabled || buttonBusy}
-            onClick={() => {
-              void runAction(button.action);
-            }}
-          >
-            {buttonBusy && <Loader2 className="h-4 w-4 animate-spin" />}
-            <Trans>{button.label}</Trans>
-          </Button>
+          {connectionControlsAvailable && (
+            <Button
+              variant={button.action === 'disconnect' ? 'outline' : 'default'}
+              size="sm"
+              disabled={button.disabled || buttonBusy}
+              onClick={() => {
+                void runAction(button.action);
+              }}
+            >
+              {buttonBusy && <Loader2 className="h-4 w-4 animate-spin" />}
+              <Trans>{button.label}</Trans>
+            </Button>
+          )}
         </div>
 
         {connection.status === 'auth_rejected' && (

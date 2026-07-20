@@ -351,7 +351,7 @@ def mcp_server_identity_key(ref: FSRef | Path) -> str:
     return f"{RecordType.MCP_SERVER}:{_record_id(str(path), json_path)}"
 
 
-def extract_mcp_server(ref: FSRef) -> list[FSRecord]:
+def extract_mcp_server(ref: FSRef, resolved_id: str) -> list[FSRecord]:
     """Parse one MCP_SERVER FSRef into the agent-neutral server record.
 
     Persists the full definition site (``source_file`` + ``json_path`` +
@@ -398,7 +398,7 @@ def extract_mcp_server(ref: FSRef) -> list[FSRecord]:
 
     rec = FSRecord(
         type=RecordType.MCP_SERVER,
-        id=_record_id(source_file, json_path),
+        id=resolved_id,
         name=name,
         scope=ref.scope or "user",
         source_file=source_file,

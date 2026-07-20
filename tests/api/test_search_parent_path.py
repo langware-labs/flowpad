@@ -42,13 +42,15 @@ async def _seed_md(tmp: Path, scan_roots: list[Path]) -> None:
     """
     from flow_sdk.fs_store.indexer.functions.markdown import extract_markdown
     from flow_sdk.fs_store.fs_ref import FSRef as _FSRef
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
     with patch(
         "flow_sdk.fs_store.operations.markdown_dirs.doc_search_dirs",
         return_value=scan_roots,
     ):
         for md in sorted(tmp.rglob("*.md")):
-            rec = extract_markdown(_FSRef(md))[0]
+            ref = _FSRef(md)
+            rec = extract_markdown(ref, SchemaRegistry.get("markdown").mint_id(ref))[0]
             await rec.sync_to_db()
 
 

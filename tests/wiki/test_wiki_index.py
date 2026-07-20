@@ -49,13 +49,14 @@ from flow_sdk.fs_store.fs_ref import FSRef as _FSRef
 class MarkdownRecord:
     @staticmethod
     def from_file(p):
-        return extract_markdown(_FSRef(p))[0]
+        ref = _FSRef(p)
+        return extract_markdown(ref, SchemaRegistry.get("markdown").mint_id(ref))[0]
 
     @staticmethod
     def from_fsref(ref):
         # async-compat: the real indexer awaits this; the test will too.
         async def _aw():
-            return extract_markdown(ref)
+            return extract_markdown(ref, SchemaRegistry.get("markdown").mint_id(ref))
         return _aw()
 
     @staticmethod

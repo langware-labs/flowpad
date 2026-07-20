@@ -60,7 +60,7 @@ def todo_identity_key(ref: FSRef | Path) -> str:
     return f"{RecordType.TODO_FILE}:todo:{Path(getattr(ref, 'path', ref)).stem}"
 
 
-def extract_todo(ref: FSRef) -> list[FSRecord]:
+def extract_todo(ref: FSRef, resolved_id: str) -> list[FSRecord]:
     """Parse one todo file into a record matching the legacy item shape."""
     path = Path(ref.path)
     filename = path.stem
@@ -93,7 +93,7 @@ def extract_todo(ref: FSRef) -> list[FSRecord]:
 
     rec = FSRecord(
         type=RecordType.TODO_FILE,
-        id=f"todo:{filename}",
+        id=resolved_id,
         name=filename,
         scope="user",
         source_file=str(path),

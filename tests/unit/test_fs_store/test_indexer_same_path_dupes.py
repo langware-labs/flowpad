@@ -1,10 +1,9 @@
 """Same-path duplicate sweep: one file, many rows → the indexer heals to one.
 
-The real-world producer of this state is a wheel reinstall restoring an INVALID
-frontmatter id (e.g. ``id: vibe``) into an installed system asset: every
-subsequent index rejects the id, mints a fresh one, and inserts a NEW row —
-one duplicate per install. The orphan sweep never fires (the source file still
-exists), so the rows accumulate and every asset surface shows N copies.
+A legacy wheel reinstall can replace the whole file, dropping its comment
+capsule and restoring an invalid frontmatter id. The new policy resolves that
+state to one stable path-v5 without rewriting the invalid bytes. This suite
+keeps the same-path DB reconciliation behavior pinned across that transition.
 
 The sweep is positive-evidence: a parsed file resolves to exactly one id, so
 any other pre-existing row anchored to the same path — that nothing else in
@@ -17,10 +16,11 @@ from pathlib import Path
 import pytest
 
 from flow_sdk.fs_store.indexer import IndexerOptions
+from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.record_types import RecordType
+from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from tests.unit.test_fs_store._md_harness import (
     MD_OPTS,
-    fm_id,
     md_sources,
     seed_one_md,
 )
@@ -35,14 +35,15 @@ def _reinstall(p: Path, body: str) -> None:
 async def test_reinstall_dupe_is_swept_on_next_parse(tmp_path: Path) -> None:
     idx, a, first_id = await seed_one_md(tmp_path)
 
-    # "Reinstall" resets the capsule to an invalid id → the next index mints a
-    # fresh id and inserts a second row. The sweep can't act yet: at preload
+    # "Reinstall" drops the canonical capsule and restores an invalid legacy id.
+    # The next index uses stable path-v5 and inserts a second row. The sweep
+    # can't act yet: at preload
     # time the path had only one row, so there is no duplicate group.
     _reinstall(a, "body v2")
     await idx.index(IndexerOptions(**MD_OPTS))
     src = await md_sources()
     assert len(src) == 2, "the reinstall minted a second row (the bug state)"
-    second_id = fm_id(a)
+    second_id = SchemaRegistry.get("markdown").mint_id(FSRef(a))
     assert second_id in src and first_id in src
 
     # Force reindex: the file is parsed, resolves to its stamped id, and the
@@ -62,12 +63,13 @@ async def test_upgrade_parse_heals_without_force(tmp_path: Path) -> None:
     assert len(await md_sources()) == 2
 
     # The NEXT reinstall changes the file (hash moves) → parsed without force.
-    # Both prior rows are unclaimed duplicates now; only the new id survives.
+    # The stable-v5 row is selected again; the prior v4 row is now unreachable.
     _reinstall(a, "body v3")
     result = await idx.index(IndexerOptions(**MD_OPTS))
     src = await md_sources()
-    assert set(src) == {fm_id(a)}, "an ordinary (non-force) parse heals the path"
-    assert result.total_dupes_removed == 2
+    stable_id = SchemaRegistry.get("markdown").mint_id(FSRef(a))
+    assert set(src) == {stable_id}, "an ordinary (non-force) parse heals the path"
+    assert result.total_dupes_removed == 1
 
 
 @pytest.mark.asyncio

@@ -1,5 +1,5 @@
 """Type metadata for AGENTIC_FLOW — folder-backed flow document (whiteboard model)."""
-from flow_sdk.fs_store.indexer.functions._asset_identity import write_folder_capsule
+from flow_sdk.fs_store.indexer.functions._asset_identity import IDENTITY_CAPSULE, capsule_identity, folder_capsule_id
 from flow_sdk.fs_store.indexer.functions.agentic_flow import (
     agentic_flow_asset_hash,
     agentic_flow_id_from_folder,
@@ -24,7 +24,7 @@ AGENTIC_FLOW = TypeMetadata(
     main_layout="folder",
     main_file="graph.json",
     from_disk_fn=extract_agentic_flow,
-    id_from_folder_fn=agentic_flow_id_from_folder,
-    id_write_fn=write_folder_capsule,
+    capsules=(IDENTITY_CAPSULE,),
+    identity_backend=capsule_identity(folder_capsule_id, agentic_flow_id_from_folder),
     asset_hash_fn=agentic_flow_asset_hash,
 )

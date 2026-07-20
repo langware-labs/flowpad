@@ -7,28 +7,34 @@ from pathlib import Path
 from typing import Any
 
 from flow_sdk.fs_store.fs_record import FSRecord
-from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer.functions.agent import (
     AGENTS_SPEC_FIELDS,
     JSON_TO_KEY,
     KEY_TO_JSON,
     extract_agent,
-    parse_agent_markdown,
 )
+from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.instance_settings import get_instance_settings
 
 
-def extract_agent_from_path(path: str | Path) -> Record | None:
+def extract_agent_from_path(path: str | Path) -> FSRecord | None:
     """Build a Record from a standalone .md path.
 
     Replaces ``AgentRecord.from_file``. Returns None if the file can't be read.
     """
-    records = extract_agent(FSRef(Path(path)))
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    ref = FSRef(Path(path), record_type=RecordType.AGENT)
+    info = SchemaRegistry.get(str(RecordType.AGENT))
+    if info is None:
+        return None
+    resolved_id = info.extract_id(ref) or info.mint_id(ref)
+    records = extract_agent(ref, resolved_id)
     return records[0] if records else None
 
 
-def load_system_agent(name: str) -> Record | None:
+def load_system_agent(name: str) -> FSRecord | None:
     """Replaces ``AgentRecord.load_system_agent``.
 
     Lookup order: SDK-bundled agents dir → legacy workspace install. Soft-fail
@@ -61,7 +67,7 @@ def load_system_agent(name: str) -> Record | None:
     return None
 
 
-def load_agent(name: str, project_dir: str | Path | None = None) -> Record | None:
+def load_agent(name: str, project_dir: str | Path | None = None) -> FSRecord | None:
     """Replaces ``AgentRecord.load_agent``. Priority: project > user > system."""
     if project_dir is not None:
         p = Path(project_dir) / ".claude" / "agents" / name
@@ -85,7 +91,7 @@ def load_agent(name: str, project_dir: str | Path | None = None) -> Record | Non
     return load_system_agent(name)
 
 
-def agent_to_cli_json(rec: Record) -> dict[str, dict[str, Any]]:
+def agent_to_cli_json(rec: FSRecord) -> dict[str, dict[str, Any]]:
     """Build ``{name: {prompt, description, ...}}`` dict for the ``--agents``
     CLI flag. Replaces ``AgentRecord.to_agents_cli_json``.
     """
@@ -106,7 +112,7 @@ def agent_to_cli_json(rec: Record) -> dict[str, dict[str, Any]]:
     return {rec.name or rec.id: entry}
 
 
-def agent_from_cli_json(name: str, data: dict[str, Any]) -> Record:
+def agent_from_cli_json(name: str, data: dict[str, Any]) -> FSRecord:
     """Replaces ``AgentRecord.from_agents_json``."""
     kwargs: dict[str, Any] = {
         "type": RecordType.AGENT,
@@ -117,10 +123,10 @@ def agent_from_cli_json(name: str, data: dict[str, Any]) -> Record:
     for json_key, val in data.items():
         data_key = JSON_TO_KEY.get(json_key, json_key)
         kwargs[data_key] = val
-    return Record(**kwargs)
+    return FSRecord(**kwargs)
 
 
-def render_agent_markdown(rec: Record) -> str:
+def render_agent_markdown(rec: FSRecord) -> str:
     """Render an Agent Record back into markdown (frontmatter + prompt body).
 
     Replaces ``AgentRecord.to_markdown`` / ``_render_markdown``.
@@ -146,7 +152,7 @@ def render_agent_markdown(rec: Record) -> str:
     return f"{fm}\n"
 
 
-def get_agent(uid: str) -> Record | None:
+def get_agent(uid: str) -> FSRecord | None:
     """Look up an agent Record by id.
 
     Replaces ``AgentRecord.get``. Resolution order:
@@ -154,8 +160,9 @@ def get_agent(uid: str) -> Record | None:
     2. User agents dir: ``<claude_agents_dir>/<uid>.md``.
     3. System / bundled agents via ``load_system_agent``.
     """
-    from flow_sdk.fs_store.record_paths import is_record_dir, shadow_dir_for  # noqa: PLC0415
     import json  # noqa: PLC0415
+
+    from flow_sdk.fs_store.record_paths import is_record_dir, shadow_dir_for  # noqa: PLC0415
 
     folder = shadow_dir_for(RecordType.AGENT, uid)
     if is_record_dir(folder):
@@ -172,7 +179,7 @@ def get_agent(uid: str) -> Record | None:
     return load_system_agent(uid)
 
 
-def install_agent_md(rec: Record, base_dir: str | Path) -> Path:
+def install_agent_md(rec: FSRecord, base_dir: str | Path) -> Path:
     """Write ``base_dir/.claude/agents/<name>.md`` from the record.
 
     Replaces ``AgentRecord.clone(base_dir)``. Returns the written path.

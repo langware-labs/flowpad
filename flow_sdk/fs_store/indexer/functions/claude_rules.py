@@ -13,9 +13,7 @@ from pathlib import Path
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer._frontmatter import (
-    _extract_body,
     _extract_frontmatter,
-    _render_frontmatter,
     _yaml_load,
 )
 from flow_sdk.fs_store.indexer.index_function import IndexerOptions
@@ -63,12 +61,11 @@ def claude_rules_id(ref: FSRef) -> str:
     existing = _read_rules_frontmatter_id(ref._path)
     return existing if existing else _rule_id(ref._path)
 
-def extract_claude_rules(ref: FSRef) -> list[FSRecord]:
+def extract_claude_rules(ref: FSRef, resolved_id: str) -> list[FSRecord]:
     path = ref._path
-    rule_id = claude_rules_id(ref)
     rec = FSRecord(
         RecordType.CLAUDE_RULES,
-        rule_id,
+        resolved_id,
         name=path.stem,
         asset_type="rule",
         scope=ref.scope or "user",

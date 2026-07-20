@@ -9,15 +9,14 @@ import json
 from pathlib import Path
 from typing import Any
 
-from flow_sdk.fs_store.indexer._frontmatter import (
-    _atomic_write_text,
-    read_frontmatter_id,
-    write_frontmatter_id,
+from flow_sdk.capsules import CapsuleSpec
+from flow_sdk.fs_store.identifier import is_valid_entity_id
+from flow_sdk.fs_store.identity_backend import (
+    CapsuleIdentityBackend,
+    DerivedIdentityBackend,
+    NativeJsonIdentityBackend,
 )
-from flow_sdk.fs_store.indexer.functions._folder_capsule import (
-    read_folder_capsule_id,
-    write_folder_capsule_id,
-)
+from flow_sdk.fs_store.indexer._frontmatter import _extract_frontmatter, _yaml_load
 
 
 def _path(ref: Any) -> Path:
@@ -30,20 +29,31 @@ def no_id(ref: Any) -> None:
 
 
 def frontmatter_id(ref: Any) -> object | None:
-    """Return canonical ``id``, then legacy ``asset_id``, without mutation."""
-    return read_frontmatter_id(_path(ref))
+    """Return a valid frontmatter ID, or the first invalid candidate.
 
-
-def write_frontmatter(ref: Any, entity_id: str) -> bool:
-    return write_frontmatter_id(_path(ref), entity_id)
+    Keeping the invalid candidate distinguishable from absence lets TypeInfo
+    apply the mandatory stable-v5 fallback instead of minting a random v4.
+    """
+    try:
+        text = _path(ref).read_text(encoding="utf-8")
+    except OSError:
+        return None
+    frontmatter = _extract_frontmatter(text)
+    if frontmatter is None:
+        return None
+    fields = _yaml_load(frontmatter) or {}
+    candidates = [fields.get("id"), fields.get("asset_id")]
+    for candidate in candidates:
+        if is_valid_entity_id(candidate):
+            return str(candidate)
+    return next((candidate for candidate in candidates if candidate is not None), None)
 
 
 def folder_capsule_id(ref: Any) -> object | None:
-    return read_folder_capsule_id(_path(ref))
-
-
-def write_folder_capsule(ref: Any, entity_id: str) -> bool:
-    return write_folder_capsule_id(_path(ref), entity_id)
+    try:
+        return (_path(ref) / ".flow" / "id").read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
 
 
 def json_id(ref: Any) -> object | None:
@@ -54,18 +64,17 @@ def json_id(ref: Any) -> object | None:
     return data.get("id") if isinstance(data, dict) else None
 
 
-def write_json_id(ref: Any, entity_id: str) -> bool:
-    path = _path(ref)
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-        if not isinstance(data, dict):
-            return False
-        data["id"] = entity_id
-        _atomic_write_text(path, json.dumps(data, indent=2) + "\n")
-        return True
-    except (OSError, ValueError):
-        return False
-
-
 def resolved_path_key(ref: Any) -> str:
     return str(_path(ref).resolve())
+
+
+IDENTITY_CAPSULE = CapsuleSpec("identity", 1)
+NATIVE_JSON_IDENTITY = NativeJsonIdentityBackend()
+
+
+def capsule_identity(*legacy_readers: Any) -> CapsuleIdentityBackend:
+    return CapsuleIdentityBackend(legacy_readers=tuple(legacy_readers))
+
+
+def derived_identity(reader: Any = None) -> DerivedIdentityBackend:
+    return DerivedIdentityBackend(reader=reader)

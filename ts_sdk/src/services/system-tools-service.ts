@@ -10,6 +10,7 @@ import { QueryRequest } from '../FlowSync/query';
 import { TypeId } from '../models/TypeId';
 import { connectionManager } from '../websocket';
 import { scopeIncludesUser, scopeProjectIds, type ScopeFilter } from '../utils/scope-filter';
+import { hubModeReady, isHubOnly } from '../utils/hub-runtime';
 
 const ACTION = 'desktop-db';
 const FS_RECORDS_BASE = '/graph/compute_node/@local/fs-records';
@@ -365,6 +366,15 @@ export class SystemToolsService extends EventEmitter {
    * ``started_at``, or null when idle.
    */
   async refreshActivityStatus(): Promise<SystemActivity | null> {
+    // Wait until the hub-mode signal is known before deciding — this can fire
+    // from the constructor at boot, before bootstrap seeds `supported_pages`.
+    await hubModeReady();
+    // Hub mode: the hub backend has no local fs-records `/activity-status`
+    // (404). There's no local indexer here, so activity is always idle.
+    if (isHubOnly()) {
+      if (this.currentActivity !== null) this._setActivity(null);
+      return null;
+    }
     try {
       const data = await apiClient.get<
         (IndexProgressTable & { started_at: string }) | null

@@ -14,9 +14,9 @@ from flow_sdk.db import get_db_driver
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
+from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from tests.unit.test_fs_store._md_harness import (
     MD_OPTS,
-    fm_id,
     md_indexer,
     md_sources,
     seed_one_md,
@@ -24,6 +24,10 @@ from tests.unit.test_fs_store._md_harness import (
 
 CANONICAL_ID = "1743cb5d-f670-4e26-b6f6-c62b65522f7c"
 LEGACY_ID = "a80e0616-ef1a-4dd7-a986-c7ce1ae18bdb"
+
+
+def _resolved_id(path: Path) -> str | None:
+    return SchemaRegistry.get("markdown").extract_id(FSRef(path))
 
 
 def _conflicting_markdown(tmp_path: Path) -> Path:
@@ -44,7 +48,7 @@ async def test_full_index_passes_resolved_id_to_parser(tmp_path: Path) -> None:
     await md_indexer(tmp_path / "proj").index(IndexerOptions(**MD_OPTS))
 
     assert set(await md_sources()) == {CANONICAL_ID}
-    assert fm_id(path) == CANONICAL_ID
+    assert _resolved_id(path) == CANONICAL_ID
 
 
 @pytest.mark.asyncio
@@ -56,7 +60,7 @@ async def test_targeted_discover_mints_then_passes_same_id(tmp_path: Path) -> No
     record = await discover_record_by_path("markdown", str(path))
 
     assert record is not None
-    assert record.id == fm_id(path)
+    assert record.id == _resolved_id(path)
     assert set(await md_sources()) == {record.id}
 
 
@@ -81,6 +85,6 @@ async def test_targeted_discover_warns_and_skips_live_duplicate(
         record = await discover_record_by_path("markdown", str(duplicate))
 
     assert record is None
-    assert fm_id(duplicate) == asset_id
+    assert _resolved_id(duplicate) == asset_id
     assert set(await md_sources()) == {asset_id}
     assert "duplicate asset id" in caplog.text
