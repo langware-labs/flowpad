@@ -13,18 +13,18 @@ back-compat.
 
 from __future__ import annotations
 
-from .base_settings import BaseRuntimeSettings
+from .base_settings import BaseInstanceSettings
 
 DEFAULT_DEV_PORT = 9008
 
 
-class DevRuntimeSettings(BaseRuntimeSettings):
+class DevInstanceSettings(BaseInstanceSettings):
     """Dev-mode settings. Inherits everything from BaseInstanceSettings;
     only the port default differs."""
 
     @classmethod
-    def from_env(cls) -> "DevRuntimeSettings":
-        return BaseRuntimeSettings._build_from_env(
+    def from_env(cls) -> "DevInstanceSettings":
+        return BaseInstanceSettings._build_from_env(
             cls=cls,
             instance_name="dev",
             is_dev=True,
