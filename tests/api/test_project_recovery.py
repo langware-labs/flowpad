@@ -66,6 +66,69 @@ async def test_recover_by_path_phase2_constructs_fresh_project(bootstrapped_clie
     assert again.fs_storage_mount_path == canonical
 
 
+@pytest.mark.asyncio
+async def test_recover_by_path_refuses_agent_mount_root(bootstrapped_client, tmp_path, monkeypatch):
+    """The agent mount ROOT (~/Flowpad workspace) is infrastructure, not a
+    project: recover_by_path returns None (→ @local fallback) and mints nothing,
+    so agentic-process init never creates a stray "Flowpad workspace" project."""
+    import flow_sdk.config as cfg
+    from flow_sdk.fs_store.path_utils import canonical_posix_path
+
+    mount_root = tmp_path / "Flowpad workspace"
+    mount_root.mkdir()
+    canonical = canonical_posix_path(mount_root)
+
+    # Point the mount-root predicate at our tmp workspace.
+    monkeypatch.setattr(cfg, "AGENT_MOUNT_FOLDER", canonical)
+    monkeypatch.setattr(cfg, "agent_workspace_root", lambda: mount_root)
+
+    assert await Project.recover_by_path(str(mount_root)) is None
+    # Nothing was persisted for the root.
+    assert await Project.find_by_cwd(canonical) is None
+
+    # A real work subfolder under the root is still a valid project.
+    sub = mount_root / "real-project"
+    sub.mkdir()
+    recovered = await Project.recover_by_path(str(sub))
+    assert recovered is not None
+    assert recovered.fs_storage_mount_path == canonical_posix_path(sub)
+
+
+@pytest.mark.asyncio
+async def test_reap_agent_mount_root_projects(bootstrapped_client, tmp_path, monkeypatch):
+    """The bootstrap self-heal deletes a stale Project entity minted for the
+    agent mount ROOT (before the guard existed), and leaves real subfolder
+    projects untouched."""
+    import flow_sdk.config as cfg
+    from flow_sdk.fs_store.path_utils import canonical_posix_path
+    from flow_sdk.server.routes.bootstrap import _reap_agent_mount_root_projects
+
+    mount_root = tmp_path / "Flowpad workspace"
+    mount_root.mkdir()
+    canonical = canonical_posix_path(mount_root)
+    monkeypatch.setattr(cfg, "AGENT_MOUNT_FOLDER", canonical)
+    monkeypatch.setattr(cfg, "agent_workspace_root", lambda: mount_root)
+
+    # Stale mount-root project (bypasses the mint guard by constructing directly).
+    stale = Project(name="Flowpad workspace", fs_storage_mount_path=canonical)
+    stale.id = Project.allocate_id(stale.model_dump())
+    await stale.save()
+    # A real subfolder project that must survive the reap.
+    sub_path = canonical_posix_path(mount_root / "real-project")
+    keep = Project(name="real-project", fs_storage_mount_path=sub_path)
+    keep.id = Project.allocate_id(keep.model_dump())
+    await keep.save()
+
+    await _reap_agent_mount_root_projects()
+
+    assert await Project.find_by_cwd(canonical) is None, "stale mount-root project not reaped"
+    assert await Project.find_by_cwd(sub_path) is not None, "subfolder project must survive"
+
+    # Idempotent: a second run is a clean no-op.
+    await _reap_agent_mount_root_projects()
+    assert await Project.find_by_cwd(sub_path) is not None
+
+
 # ---------------------------------------------------------------------------
 # AgenticProcess.recover_project_action
 # ---------------------------------------------------------------------------

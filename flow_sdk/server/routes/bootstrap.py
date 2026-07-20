@@ -1165,6 +1165,25 @@ async def _ensure_system_projects(desktop_user: Optional[Entity] = None) -> list
     return ensured
 
 
+async def _reap_agent_mount_root_projects() -> None:
+    """Delete any stale Project entity minted for the agent mount ROOT
+    (``~/Flowpad workspace``) before ``recover_by_path`` was gated.
+
+    The mount root is infrastructure (where agentic processes run), never a
+    user project — a legacy find-or-create left a "Flowpad workspace" Project
+    row behind. Scanning ``Project.get_all()`` with ``is_agent_mount_root``
+    catches both canonical roots the predicate covers. Idempotent: a no-op once
+    the row is gone.
+    """
+    from flow_sdk.config import is_agent_mount_root  # noqa: PLC0415
+
+    for proj in await Project.get_all():
+        mp = getattr(proj, "fs_storage_mount_path", None)
+        if mp and is_agent_mount_root(mp):
+            await proj.destroy()
+            logging.info(f"[bootstrap] Reaped stale agent-mount-root project {proj.id}")
+
+
 async def _index_system_project_markdowns(projects: list[Project]) -> None:
     """Seed Markdown entities for every .md file under each system project's
     ``docs/`` and ``.claude/docs/`` subtree.
@@ -1230,6 +1249,10 @@ async def index_system_content() -> None:
         system_projects = await _ensure_system_projects(desktop_user=user)
     except Exception as e:
         logging.warning(f"[startup-index] Failed to ensure system projects (non-fatal): {e}")
+    try:
+        await _reap_agent_mount_root_projects()
+    except Exception as e:
+        logging.warning(f"[startup-index] Failed to reap mount-root project (non-fatal): {e}")
     try:
         await _index_system_project_markdowns(system_projects)
     except Exception as e:
