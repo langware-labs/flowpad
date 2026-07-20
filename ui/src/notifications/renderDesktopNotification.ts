@@ -38,8 +38,9 @@ interface NotifyBridge {
   notifyAttention?: () => void;
 }
 
-/** Build the URL-first pointer for a click target (shared with banner-click nav). */
-export function clickTargetToPointer(target?: NotificationClickTarget): DockPointerData | null {
+/** Resolve where opening a notification navigates — the dock destination for
+ *  its click target (shared by the toast link and the banner-click handler). */
+export function dockPointerForClickTarget(target?: NotificationClickTarget): DockPointerData | null {
   if (!target?.view_type) return null;
   return new DockPointerData(target.view_type as ViewType, target.pointer, target.options);
 }
@@ -58,7 +59,7 @@ export function renderDesktopNotification(payload: NotificationPayload): void {
     }
   }
 
-  const pointer = clickTargetToPointer(payload.click_target);
+  const pointer = dockPointerForClickTarget(payload.click_target);
   const href = pointer ? new DockPointer(pointer).toUrl(window.location.pathname) : undefined;
   notify({
     level: 'info',

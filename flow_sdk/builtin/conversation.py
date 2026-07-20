@@ -5,13 +5,14 @@ from datetime import datetime
 from typing import ClassVar, List, NamedTuple, Optional, TYPE_CHECKING
 
 
-class MessagePointer(NamedTuple):
-    """One parsed ``Conversation.message_ids`` entry: the FlowMessage id
-    (local ``@`` marker stripped, matching hub-side ids) and the pointer's
-    append timestamp (None when missing/unparseable)."""
+class MessageRef(NamedTuple):
+    """A reference to one message in a conversation's ordered log: which message
+    (``id`` — the FlowMessage id, local ``@`` marker stripped so it matches
+    hub-side ids) and when it landed (``landed_at`` — None when the projected
+    timestamp is missing/unparseable). Parsed from ``Conversation.message_ids``."""
 
-    fm_id: str
-    ts: Optional[datetime]
+    id: str
+    landed_at: Optional[datetime]
 
 from flow_sdk._compat import StrEnum  # 3.10-safe StrEnum (project pins py3.10)
 from flow_sdk.api.api_types.api_field import APIField
@@ -417,13 +418,18 @@ class Conversation(Entity):
             if fm.body_status == BodyStatus.UPLOADING:
                 await _upload_body_and_finalize(fm, self.id)
 
-    def message_pointers(self) -> "list[MessagePointer]":
-        """Parse ``message_ids`` into ordered (oldest-first) FlowMessage pointers.
+    def message_refs(self) -> "list[MessageRef]":
+        """This conversation's messages in order (oldest-first), as lightweight
+        references parsed from the ``message_ids`` projection.
 
         The ONE reader of the projection's JSON shape — the landing path, the
-        inbox unread count, and any future consumer resolve pointers through
+        inbox unread count, and any future consumer resolve messages through
         here. Skips non-FlowMessage/corrupt entries; empty list when the
         projection is missing or unparseable.
+
+        (Distinct from ``fs_store.operations.conversation.message_pointers(rec)``,
+        which reads the on-disk jsonl source of truth into SDK ``Pointer``s; this
+        reads the entity's already-projected ``message_ids`` field.)
         """
         if not self.message_ids:
             return []
@@ -435,7 +441,7 @@ class Conversation(Entity):
             return []
         if not isinstance(entries, list):
             return []
-        pointers: list[MessagePointer] = []
+        refs: list[MessageRef] = []
         for entry in entries:
             typeid = str(entry.get("typeid") or "") if isinstance(entry, dict) else ""
             if "-" not in typeid:
@@ -446,11 +452,11 @@ class Conversation(Entity):
                 continue
             ts_raw = entry.get("ts")
             try:
-                ts = datetime.fromisoformat(str(ts_raw).replace("Z", "+00:00")) if ts_raw else None
+                landed_at = datetime.fromisoformat(str(ts_raw).replace("Z", "+00:00")) if ts_raw else None
             except ValueError:
-                ts = None
-            pointers.append(MessagePointer(pid, ts))
-        return pointers
+                landed_at = None
+            refs.append(MessageRef(pid, landed_at))
+        return refs
 
     def is_archived(self) -> bool:
         """Conversation-level archive with auto-revive (see ``archived_at``):
@@ -460,8 +466,8 @@ class Conversation(Entity):
         revive."""
         if self.archived_at is None:
             return False
-        pointers = self.message_pointers()
-        latest_ts = pointers[-1].ts if pointers else None
+        refs = self.message_refs()
+        latest_ts = refs[-1].landed_at if refs else None
         if latest_ts is None:
             return True
         archived_at = self.archived_at
@@ -472,8 +478,8 @@ class Conversation(Entity):
 
     def _first_message_landing_path(self) -> Optional[str]:
         """Return ``/flow_message/<id>`` for the earliest FM in this conv, or None."""
-        pointers = self.message_pointers()
-        return f"/flow_message/{pointers[0].fm_id}" if pointers else None
+        refs = self.message_refs()
+        return f"/flow_message/{refs[0].id}" if refs else None
 
     async def summary(self) -> str:
         """Plain-text summary of this conversation: a header (title,
