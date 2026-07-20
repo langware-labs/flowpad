@@ -733,12 +733,12 @@ msgstr ""
 msgid "Add"
 msgstr ""
 
-#: src/components/assistance-viewer/TaskDetail.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 msgid "Add a comment..."
 msgstr ""
 
 #: src/components/assets/editor/markdown/ReviewSurface.tsx
+#: src/components/assets/editor/task/TaskComments.tsx
 msgid "Add a comment…"
 msgstr ""
 
@@ -2526,7 +2526,7 @@ msgid "Comment"
 msgstr ""
 
 #. placeholder {0}: comments?.length || 0
-#: src/components/assistance-viewer/TaskDetail.tsx
+#: src/components/assets/editor/task/TaskComments.tsx
 msgid "Comments ({0})"
 msgstr ""
 
@@ -3466,6 +3466,10 @@ msgstr ""
 
 #: src/components/chats-navigator/ChatsNavigator.tsx
 msgid "Delete chat?"
+msgstr ""
+
+#: src/components/assets/editor/task/TaskComments.tsx
+msgid "Delete comment"
 msgstr ""
 
 #: src/components/graph-context/GraphContextViewer.tsx
@@ -6725,7 +6729,11 @@ msgid "Loading checkpoint diff..."
 msgstr ""
 
 #: src/components/assistance-viewer/TaskDetail.tsx
-msgid "Loading comments..."
+#~ msgid "Loading comments..."
+#~ msgstr ""
+
+#: src/components/assets/editor/task/TaskComments.tsx
+msgid "Loading comments…"
 msgstr ""
 
 #: src/components/assets/editor/revisions/AssetDiffTabs.tsx
@@ -7773,7 +7781,7 @@ msgstr ""
 msgid "No color"
 msgstr ""
 
-#: src/components/assistance-viewer/TaskDetail.tsx
+#: src/components/assets/editor/task/TaskComments.tsx
 msgid "No comments yet."
 msgstr ""
 
@@ -11497,7 +11505,7 @@ msgstr ""
 msgid "Self-Summary"
 msgstr ""
 
-#: src/components/assistance-viewer/TaskDetail.tsx
+#: src/components/assets/editor/task/TaskComments.tsx
 #: src/components/conversation/MessageComposer.tsx
 #: src/components/conversation/PromptComposerDialog.tsx
 #: src/components/entity-execution-panel/CompactExecutionInput.tsx

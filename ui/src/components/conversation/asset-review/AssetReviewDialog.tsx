@@ -83,15 +83,19 @@ function AssetParentSubscriber({
 }
 
 /**
- * The selected attachment's content pane. For an installed entity with a
- * registered editor (task → task view, skill → skill view, …) we render that
- * entity's real viewer via {@link AssetEditorRouter}. Staged (not-yet-installed)
- * attachments and files fall back to the raw staged-file markdown preview.
+ * The selected attachment's content pane. As soon as the asset's entity resolves
+ * with a readable `asset_ref` — which for a task happens at unpack, BEFORE any
+ * install — we render that entity's own viewer via {@link AssetEditorRouter}
+ * (task → task view, skill → skill view, …). We deliberately do NOT gate on
+ * install scope: a staged task shows the task viewer straightaway. Only when no
+ * entity/asset_ref is resolvable yet (e.g. a staged skill not materialized until
+ * install, or a raw file) do we fall back to the raw staged-file preview.
  */
 function SelectedEntityViewer({ attachment }: { attachment: MessageAttachment }) {
   const typeId = attachment.asset_type === 'file' ? null : attachment.targetTypeId;
   const editor = typeId ? editorForType(typeId.type) : undefined;
-  if (attachment.effectiveScope != null && typeId && editor) {
+  const { data } = useEntity<{ asset_ref?: string | null }>(typeId);
+  if (typeId && editor && data?.asset_ref) {
     const pointer = AssetDocPointer.forTypeId(editor, typeId).toPointer();
     return (
       <div className="h-[55vh] overflow-hidden rounded border border-border">
