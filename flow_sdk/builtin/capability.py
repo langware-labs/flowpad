@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import weakref
 from typing import Any, ClassVar
 
 from flow_sdk.api.api_types.api_field import APIField, Persist
@@ -92,14 +93,18 @@ class Capability(Entity):
             system=True,
         )
 
-    # Once-per-process guard: the spec→row reconcile is idempotent but costs a
+    # Once-per-driver guard: the spec→row reconcile is idempotent but costs a
     # DB read per spec, and ensure_seeded is called from every classmethod
-    # accessor. First successful run flips this; later calls are free.
-    _seeded_once: ClassVar[bool] = False
+    # accessor. Keyed on the live driver object (not a process-global bool)
+    # because every DB swap (reinit_db "Switch DB", clear_all_data factory
+    # reset, instance override) constructs a fresh driver — the new DB starts
+    # unseeded and must not inherit the old driver's "already seeded" state.
+    _seeded_dbs: ClassVar[weakref.WeakSet] = weakref.WeakSet()
 
     @classmethod
     async def ensure_seeded(cls) -> list["Capability"]:
-        if cls._seeded_once:
+        db = cls._db
+        if db in cls._seeded_dbs:
             return []
         seeded: list[Capability] = []
         for spec in get_default_capability_specs():
@@ -127,7 +132,7 @@ class Capability(Entity):
                     setattr(existing, field, expected_value)
                     changed = True
             seeded.append(await existing.save(notify=False) if changed else existing)
-        cls._seeded_once = True
+        cls._seeded_dbs.add(db)
         return seeded
 
     @classmethod

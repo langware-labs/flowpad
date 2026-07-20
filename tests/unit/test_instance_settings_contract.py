@@ -33,6 +33,23 @@ _FORBIDDEN_WRITE_KEYS = {
 }
 
 
+@pytest.fixture
+async def restore_db():
+    """Swap the process-wide DB back after a ``reinit_db`` test.
+
+    ``reinit_db`` repoints the driver singleton + ``DBEntity._db`` at a
+    ``tmp_path`` file that pytest garbage-collects. Without restoring, every
+    later DB-hitting test in the process runs against a foreign (eventually
+    deleted) DB — the CI-only test_model_map "capability is None" failures.
+    """
+    from flow_sdk.db.database import reinit_db
+    from flow_sdk.instance_settings import get_instance_settings
+
+    original = get_instance_settings().db_path
+    yield
+    await reinit_db(str(original))
+
+
 def _clean_instance_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """Strip every env var that influences instance resolution.
 
@@ -174,7 +191,7 @@ def test_override_db_path_updates_settings_without_env_writes(
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 @pytest.mark.asyncio
 async def test_reinit_db_no_env_writes(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, restore_db
 ) -> None:
     """``reinit_db`` is the UI "Switch DB" path. Pre-fix it wrote
     ``SQLITE_DATABASE_PATH`` to ``os.environ`` and never cleared it,
@@ -315,7 +332,7 @@ def test_open_sqlite_propagates_pragma_syntax_error_in_rw_mode(
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 @pytest.mark.asyncio
 async def test_reinit_db_rebinds_lazy_db_driver(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, restore_db
 ) -> None:
     """reinit_db must rebind DBEntity._db / DBRelationship._db.
 
