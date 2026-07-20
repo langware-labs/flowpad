@@ -55,4 +55,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // String argument → re-write the supplied value via flow-rs (used by the
   //   legacy python3.x → flow-rs migration flow to preserve existing secrets).
   provisionSodKey: (existingValue) => ipcRenderer.invoke('secrets:provision-sod-key', existingValue),
+
+  // Show/hide the application menu. The renderer calls this with the current
+  // "is advanced view mode" boolean; the menu is only shown in Advanced/Dev.
+  // On macOS a minimal baseline menu stays installed even when hidden.
+  setMenuVisible: (visible) => ipcRenderer.send('set-menu-visible', visible),
 });

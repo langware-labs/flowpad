@@ -13,7 +13,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { dockForGlobalEntry, dockForProjectEntry } from '@src/tabs/project-entry';
 import { useAllProjects } from '@src/hooks/use-all-projects';
 import { useTabProjectBuckets, type TabProjectBucket } from '@src/tabs/useTabs';
-import { ChevronLeft, Globe, History, Layers, Loader2, RotateCcw } from 'lucide-react';
+import { AppWindow, ChevronLeft, Globe, History, Loader2, RotateCcw } from 'lucide-react';
 import React, { useMemo, useState } from 'react';
 
 /** Agentic worker kinds offered by the picker's worker toolbar. Alias of the
@@ -197,9 +197,12 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
   // Global scope. A bare "0 / 0" chip represents nothing, so it stays hidden.
   const isEmpty = projectTotal === 0 && !isGlobalScope;
 
-  const countTooltip = `${projectTotal} active project${projectTotal === 1 ? '' : 's'} with ${tabTotal} open tab${
-    tabTotal === 1 ? '' : 's'
-  }`;
+  // Spelled-out, singular-aware labels for each count — used both in the
+  // hover tooltip (one line each so it's unmistakable which number is which)
+  // and, joined, in the flat aria-label.
+  const projectsLabel = `${projectTotal} open project${projectTotal === 1 ? '' : 's'}`;
+  const tabsLabel = `${tabTotal} open tab${tabTotal === 1 ? '' : 's'}`;
+  const countTooltip = `${projectsLabel}, ${tabsLabel}`;
   const tooltipText = scopeLabel ? `${scopeLabel} — ${countTooltip}` : countTooltip;
 
   // Canonical mount paths of projects already open in the strip — excluded
@@ -218,7 +221,7 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
   // GLOBAL scope gets a distinct violet accent so it never looks like a regular
   // project; a scope-less strip falls back to the plain neutral chip so it isn't
   // washed in accent color.
-  const chipClass = `mx-1 inline-flex h-6 shrink-0 items-center gap-1 rounded-md border px-2 text-xs font-medium tabular-nums focus:outline-none focus:ring-1 focus:ring-ring ${
+  const chipClass = `ml-1 inline-flex h-7 shrink-0 items-center gap-1.5 self-center rounded-md border px-2.5 text-xs font-medium tabular-nums focus:outline-none focus:ring-1 focus:ring-ring ${
     hasProject
       ? 'border-primary/30 bg-primary/5 text-foreground hover:bg-primary/10'
       : isGlobalScope
@@ -251,9 +254,20 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
           <span aria-hidden className="mx-0.5 h-3 w-px shrink-0 bg-border" />
         </>
       ) : null}
-      <Layers className={`h-3 w-3 shrink-0 ${scopeLabel != null ? 'text-muted-foreground' : ''}`} />
-      <span className={scopeLabel != null ? 'text-muted-foreground' : undefined}>{projectTotal}</span>
-      <sub className="ml-0.5 text-[9px] leading-none text-muted-foreground">{tabTotal}</sub>
+      {/* Counts — each number is paired with its own meaning-carrying icon so
+          it's never ambiguous which is which: the per-type PROJECT glyph for
+          open projects, an app-window glyph for open tabs. The tabs count
+          (the high-frequency one) carries a subtle primary tint; a small dot
+          separates the two. Hover the chip for the spelled-out tooltip. */}
+      <span className="inline-flex items-center gap-1">
+        <ProjectIcon className="h-3 w-3 shrink-0 text-muted-foreground" />
+        {projectTotal}
+      </span>
+      <span aria-hidden className="mx-0.5 h-1 w-1 shrink-0 rounded-full bg-muted-foreground/50" />
+      <span className="inline-flex items-center gap-1">
+        <AppWindow className="h-3 w-3 shrink-0 text-primary" />
+        {tabTotal}
+      </span>
     </>
   );
 
@@ -323,6 +337,7 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
   const hasActions = !!onLaunchProjectPath || !!onOpenHistory;
 
   return (
+    <>
     <TooltipProvider delayDuration={400}>
       <Popover open={open} onOpenChange={handleOpenChange}>
         <Tooltip>
@@ -333,7 +348,13 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
               </button>
             </PopoverTrigger>
           </TooltipTrigger>
-          <TooltipContent side="bottom">{tooltipText}</TooltipContent>
+          <TooltipContent side="bottom">
+            <div className="flex flex-col gap-0.5">
+              {scopeLabel ? <span className="font-medium">{scopeLabel}</span> : null}
+              <span className="text-muted-foreground">{projectsLabel}</span>
+              <span className="text-muted-foreground">{tabsLabel}</span>
+            </div>
+          </TooltipContent>
         </Tooltip>
         <PopoverContent
           align="start"
@@ -461,5 +482,11 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
         </PopoverContent>
       </Popover>
     </TooltipProvider>
+      {/* Anchor divider (Option B): a full-height hairline that visually makes
+          the project chip the container the tab strip hangs off of, rather than
+          just another item in the row. Sibling of the chip in the strip's
+          `items-end` band; `self-stretch` spans the band's full height. */}
+      <span aria-hidden data-testid="projects-counter-anchor" className="mx-1.5 w-px shrink-0 self-stretch bg-border" />
+    </>
   );
 };
