@@ -1,4 +1,3 @@
-import * as Sentry from '@sentry/browser';
 import { runInAction } from 'mobx';
 import { config } from '../config';
 import { dataContext, isTypeId, TypeId } from '../FlowSync';
@@ -101,7 +100,6 @@ class Navigator {
 
   navigateToLogout(_returnToUrl: string = window.location.origin) {
     void dataContext.setActiveEntityTypeId(null);
-    Sentry.setUser(null);
     void cloudManager.logout();
   }
 
