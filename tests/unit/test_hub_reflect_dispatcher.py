@@ -7,6 +7,7 @@ and how the hub response is mirrored back into the local entity row.
 These tests exercise the dispatcher helpers directly without spinning up the
 full graph router — the integration path is covered by the hub e2e suite.
 """
+
 from __future__ import annotations
 
 import uuid
@@ -108,8 +109,20 @@ async def test_reflect_to_hub_forwards_get_and_mirrors_members(monkeypatch):
     # dispatcher to ``email`` / ``name`` before returning to caller and
     # mirroring onto the local row.
     hub_payload = [
-        {"user_id": "u-alice", "user_email": "alice@example.com", "user_name": "Alice", "role": "owner", "status": "approved"},
-        {"user_id": "u-bob", "user_email": "bob@example.com", "user_name": "Bob", "role": "member", "status": "approved"},
+        {
+            "user_id": "u-alice",
+            "user_email": "alice@example.com",
+            "user_name": "Alice",
+            "role": "owner",
+            "status": "approved",
+        },
+        {
+            "user_id": "u-bob",
+            "user_email": "bob@example.com",
+            "user_name": "Bob",
+            "role": "member",
+            "status": "approved",
+        },
     ]
     expected_normalized = [
         {"user_id": "u-alice", "role": "owner", "status": "approved", "email": "alice@example.com", "name": "Alice"},
@@ -297,9 +310,9 @@ async def test_reflect_to_hub_put_merges_hub_response_and_returns_merged(monkeyp
 
 
 @pytest.mark.timeout(30)  # do not increase timeout without approval
-def test_merge_hub_entity_skips_lists_and_unchanged_scalars(monkeypatch):
-    """``_merge_hub_entity_into_local`` returns only the differing SCALAR api fields:
-    unchanged scalars and list/dict fields are skipped."""
+def test_merge_hub_entity_skips_roster_and_unchanged_scalars(monkeypatch):
+    """``_merge_hub_entity_into_local`` returns the differing api fields, skipping
+    unchanged scalars, non-fields, and the denylisted roster (``members``)."""
     from flow_sdk.server.routes._hub_reflect import _merge_hub_entity_into_local
 
     e = _make_entity(remote=True, members=[{"user_id": "u1"}])
@@ -307,13 +320,126 @@ def test_merge_hub_entity_skips_lists_and_unchanged_scalars(monkeypatch):
     updates = _merge_hub_entity_into_local(
         e,
         {
-            "title": "new",                              # scalar, changed → applied
-            "message_status_visible": True,              # scalar, unchanged → skipped
-            "members": [{"user_id": "hub"}],        # list → skipped
-            "not_a_field_xyz": "z",                      # not an api field → skipped
+            "title": "new",  # scalar, changed → applied
+            "message_status_visible": True,  # scalar, unchanged → skipped
+            "members": [{"user_id": "hub"}],  # denylisted roster → skipped
+            "not_a_field_xyz": "z",  # not an api field → skipped
         },
     )
     assert updates == {"title": "new"}
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+def test_merge_hub_entity_merges_hub_modeled_collection_but_skips_roster():
+    """The hub is the source of truth, so a hub-modeled COLLECTION field (a task's
+    ``artifacts``) merges onto the local row for immediate reflection — while the
+    denylisted roster/projection collections (``members`` / ``message_ids``) are
+    never overwritten by a bare entity PUT response."""
+    from flow_sdk.builtin.task import Task
+    from flow_sdk.server.routes._hub_reflect import _merge_hub_entity_into_local
+
+    t = Task(id="task-x", title="old", remote=True)
+    arts = [{"path": "/p/repo", "label": "repo", "git_origin": {"kind": "git"}}]
+    updates = _merge_hub_entity_into_local(
+        t,
+        {
+            "title": "new",  # scalar, changed → applied
+            "artifacts": arts,  # hub-modeled collection → applied
+            "members": [{"user_id": "h"}],  # denylisted roster → skipped
+            "message_ids": ["m1"],  # denylisted projection → skipped
+        },
+    )
+    assert updates == {"title": "new", "artifacts": arts}
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_reflect_to_hub_put_merges_hub_modeled_artifacts_onto_task(monkeypatch):
+    """IMMEDIATE-REFLECTION LOCK. A reflected task update whose hub response echoes
+    the now-hub-modeled ``artifacts`` collection applies it to the local row and to
+    the returned merged entity — so a shared task's attachments (files + git
+    context-folder refs) reflect at once, through the normal hub round-trip rather
+    than the removed local-only re-apply hack."""
+    import flow_sdk.server.routes._hub_reflect as mod
+    from flow_sdk.builtin.task import Task
+
+    arts = [
+        {
+            "path": "/p/repo",
+            "label": "repo",
+            "git_origin": {
+                "kind": "git",
+                "provider": "github",
+                "owner": "o",
+                "name": "n",
+                "branch": "main",
+                "rel_path": "",
+            },
+        }
+    ]
+
+    async def fake_hub_put(entity_type, entity_id, payload, **kwargs):
+        # The hub now models ``artifacts`` → it stores and echoes it back.
+        return {"id": entity_id, "title": payload.get("title"), "artifacts": payload.get("artifacts")}
+
+    async def boom(*args, **kwargs):
+        raise AssertionError("a PUT must reflect via hub_put, not hub_post/hub_delete")
+
+    async def fake_save(self_=None, **kwargs):
+        return None
+
+    monkeypatch.setattr(mod, "hub_put", fake_hub_put)
+    monkeypatch.setattr(mod, "hub_post", boom)
+    monkeypatch.setattr(mod, "hub_delete", boom)
+    monkeypatch.setattr(Task, "save", fake_save)
+
+    a = _make_action(methods=("put", "patch"))
+    a.action_name = "update"
+    t = Task(id=f"task-{uuid.uuid4().hex[:8]}", title="old", remote=True)
+    assert t.artifacts is None
+
+    result = await mod.reflect_to_hub(a, t, {"title": "new", "artifacts": arts}, "put")
+
+    # Hub-modeled collection reflected onto the local row AND the returned entity.
+    assert t.title == "new"
+    assert t.artifacts == arts
+    assert isinstance(result, dict)
+    assert result["artifacts"] == arts
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_reflect_put_ignores_hub_unmodeled_body_field(monkeypatch):
+    """REVERT LOCK for last week's ``_hub_unknown_updates_from_body`` patch.
+
+    With that helper removed, a reflected PUT no longer re-applies request-body
+    fields the hub doesn't model. A field the hub omits from its response is NOT
+    written onto the local row from the body — the sanctioned way to make a field
+    travel is to model it on the hub (as ``artifacts`` now is), not to smuggle it
+    back locally. The helper itself must be gone."""
+    import flow_sdk.server.routes._hub_reflect as mod
+    from flow_sdk.builtin.task import Task
+
+    async def fake_hub_put(entity_type, entity_id, payload, **kwargs):
+        # Hub echoes only what it models — never the local-only ``session_id``.
+        return {"id": entity_id, "title": payload.get("title")}
+
+    async def fake_save(self_=None, **kwargs):
+        return None
+
+    monkeypatch.setattr(mod, "hub_put", fake_hub_put)
+    monkeypatch.setattr(Task, "save", fake_save)
+
+    a = _make_action(methods=("put",))
+    a.action_name = "update"
+    t = Task(id=f"task-{uuid.uuid4().hex[:8]}", title="old", remote=True)
+    t.session_id = "local-abc"
+
+    await mod.reflect_to_hub(a, t, {"title": "new", "session_id": "changed"}, "put")
+
+    assert t.title == "new"  # hub-modeled → reflected
+    assert t.session_id == "local-abc"  # hub-unmodeled body field → NOT overwritten
+    assert not hasattr(mod, "_hub_unknown_updates_from_body")
 
 
 @pytest.mark.asyncio

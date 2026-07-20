@@ -47,7 +47,6 @@ TASK_FRONTMATTER_FIELDS = (
     "kind",
     "parent_id",
     "assignee",
-    "submission_url",
     "priority",
     "tags",
     "due_at",
