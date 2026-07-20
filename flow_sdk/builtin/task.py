@@ -56,9 +56,12 @@ class Task(Entity):
     # Group-task parent pointer; "" = top-level. Children own only their
     # status — every display field resolves from the parent at render time.
     parent_id: str = APIField("")
-    # The member's deliverable (repo / PR / doc / app URL). Unlike
-    # ``git_origin`` this rides hub reflection, so it reaches the owner.
-    submission_url: Optional[str] = APIField(None)
+    # The member's deliverable (repo / PR / doc / app URL) is NOT a field — a
+    # member records it as a standard ``Comment`` on their member task ("The
+    # task is done. Submission url is: <url>", with the url also in the
+    # comment's ``data``). A comment on a hub-remote member task auto-shares to
+    # the hub, and the owner (authorized on the child) pulls it during
+    # ``sync-group`` — see ``group_task_action._sync_group_owner``.
     priority: Optional[str] = APIField(None)
     tags: List[str] = APIField([])
     shared_by_id: Optional[str] = APIField(None)

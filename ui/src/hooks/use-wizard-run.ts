@@ -1,12 +1,13 @@
 import {
   AgenticProcess,
+  awaitWizardResult,
   FlowElementTypes,
   launchWizard,
   type WizardData,
   type WizardLaunchRequest,
   type WizardProcessResult,
 } from '@sdk';
-import { attachWizardModal } from '@src/components/wizard/wizard-modal';
+import { attachWizardModal, type WizardModalAttachment } from '@src/components/wizard/wizard-modal';
 import { startWizardProcess } from '@src/components/wizard/start-wizard-process';
 import { useAgenticProcessStream } from '@src/hooks/use-agentic-process-stream';
 import { notify } from '@src/notifications';
@@ -26,6 +27,12 @@ export interface UseWizardRunOptions<T = unknown> {
   /** Fired with the final result IF the component is still mounted. */
   onResult?: (result: WizardProcessResult<T>) => void;
   doubleClickMs?: number;
+  /**
+   * An already-running wizard process (for this target) to reconnect to on
+   * mount instead of starting fresh — the button reflects it (spinner + live
+   * tool count) rather than showing idle. Pass null when none is running.
+   */
+  adopt?: WizardModalAttachment | null;
 }
 
 export interface WizardRun {
@@ -48,7 +55,15 @@ export interface WizardRun {
  * and on remount the button is idle and clickable again.
  */
 export function useWizardRun<T = unknown>(options: UseWizardRunOptions<T>): WizardRun {
-  const { wizardName, buildRequest, successMessage, errorTitle, onResult, doubleClickMs = DOUBLE_CLICK_MS } = options;
+  const {
+    wizardName,
+    buildRequest,
+    successMessage,
+    errorTitle,
+    onResult,
+    adopt = null,
+    doubleClickMs = DOUBLE_CLICK_MS,
+  } = options;
 
   const [phase, setPhase] = useState<WizardPhase>('idle');
   const [process, setProcess] = useState<AgenticProcess | null>(null);
@@ -103,7 +118,7 @@ export function useWizardRun<T = unknown>(options: UseWizardRunOptions<T>): Wiza
     }
     setPhase('running');
     try {
-      const started = await startWizardProcess<T>(request);
+      const started = await startWizardProcess<T>(request, { headless: true });
       runningRef.current = { process: started.process, target: started.target, request };
       if (mountedRef.current) setProcess(started.process);
       void started.result.then((res) => {
@@ -141,6 +156,49 @@ export function useWizardRun<T = unknown>(options: UseWizardRunOptions<T>): Wiza
     }
     void launchWizard<T>(wizardName, data).then(finishWithResult);
   }, [wizardName, buildRequest, errorTitle, finishWithResult]);
+
+  // Reconnect to an already-running wizard process (e.g. an analyze run still
+  // going when we navigate back to the task). Reflect it — spinner + live tool
+  // count — instead of starting fresh; single-run is enforced via busyRef.
+  // Refs keep the effect keyed on the process id alone (no per-render churn).
+  const adoptRef = useRef(adopt);
+  adoptRef.current = adopt;
+  const finishRef = useRef(finishWithResult);
+  finishRef.current = finishWithResult;
+  const adoptId = adopt?.process.id ?? null;
+
+  useEffect(() => {
+    const a = adoptRef.current;
+    if (!a || !adoptId) return;
+    if (busyRef.current) return; // a run (self-started or adopted) is already in flight
+    busyRef.current = true;
+    runningRef.current = a;
+    setProcess(a.process);
+    setPhase('running');
+    let cancelled = false;
+    void awaitWizardResult<T>(a.process).then((res) => {
+      if (cancelled) return;
+      busyRef.current = false;
+      runningRef.current = null;
+      if (!mountedRef.current) return;
+      setPhase('idle');
+      setProcess(null);
+      finishRef.current(res);
+    });
+    return () => {
+      cancelled = true;
+      // Parent stopped offering this process (it finished / changed) before
+      // wizard.closed was caught → drop back to idle silently (no popup).
+      if (runningRef.current?.process.id === a.process.id) {
+        busyRef.current = false;
+        runningRef.current = null;
+        if (mountedRef.current) {
+          setPhase('idle');
+          setProcess(null);
+        }
+      }
+    };
+  }, [adoptId]);
 
   const onClick = useCallback(() => {
     if (clickTimer.current) {

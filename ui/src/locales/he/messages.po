@@ -162,6 +162,11 @@ msgstr "{0}"
 msgid "{0} annotations on this row"
 msgstr "{0} הערות בשורה זו"
 
+#. placeholder {0}: installable.length
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
+msgid "{0} attachments"
+msgstr ""
+
 #. placeholder {0}: trigger.last_seen_size
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 msgid "{0} bytes"
@@ -728,12 +733,12 @@ msgstr ""
 msgid "Add"
 msgstr "הוסף"
 
-#: src/components/assistance-viewer/TaskDetail.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 msgid "Add a comment..."
 msgstr "הוסף הערה..."
 
 #: src/components/assets/editor/markdown/ReviewSurface.tsx
+#: src/components/assets/editor/task/TaskComments.tsx
 msgid "Add a comment…"
 msgstr "הוסף תגובה…"
 
@@ -1054,10 +1059,12 @@ msgid "Already focused"
 msgstr "כבר במיקוד"
 
 #: src/components/conversation/asset-review/AssetInstallActions.tsx
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
 msgid "Already installed globally — uninstall first"
 msgstr "כבר מותקן גלובלית — יש להסיר קודם"
 
 #: src/components/conversation/asset-review/AssetInstallActions.tsx
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
 msgid "Already installed in a project — uninstall first"
 msgstr "כבר מותקן בפרויקט — יש להסיר קודם"
 
@@ -1358,6 +1365,7 @@ msgid "Ask the Flowpad Assistant anything."
 msgstr "שאל את עוזר Flowpad כל דבר."
 
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
+#: src/pages/discover-page/discover-page.tsx
 msgid "asset"
 msgstr "נכס"
 
@@ -1389,6 +1397,10 @@ msgstr "asset_ref לא הוגדר — האם MarkdownIndex זה בנוי אי פ
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Asset…"
 msgstr "נכס…"
+
+#: src/pages/discover-page/discover-page.tsx
+msgid "assets"
+msgstr ""
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 #: src/components/assets/AssetsNavigator.tsx
@@ -2108,7 +2120,6 @@ msgstr ""
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 #: src/components/terminal/HistoryModal.tsx
 #: src/components/terminal/interactive-terminal/side-windows/QueuePanel.tsx
-#: src/pages/discover-page/discover-page.tsx
 msgid "Clear"
 msgstr "נקה"
 
@@ -2514,10 +2525,13 @@ msgstr "פקודות"
 msgid "Comment"
 msgstr "תגובה"
 
-#. placeholder {0}: comments?.length || 0
-#: src/components/assistance-viewer/TaskDetail.tsx
-msgid "Comments ({0})"
-msgstr "הערות ({0})"
+#: src/components/assets/editor/task/TaskComments.tsx
+msgid "Comments"
+msgstr ""
+
+#: src/components/assets/editor/task/TaskComments.tsx
+#~ msgid "Comments ({0})"
+#~ msgstr "הערות ({0})"
 
 #: src/components/assets/editor/skill/UsagePanel.tsx
 msgid "Commit"
@@ -2693,8 +2707,8 @@ msgid "Content"
 msgstr "תוכן"
 
 #: src/pages/discover-page/discover-page.tsx
-msgid "Contents"
-msgstr "תוכן"
+#~ msgid "Contents"
+#~ msgstr "תוכן"
 
 #: src/components/lens-viewer/ClaudeContextViewer.tsx
 msgid "Context breakdown"
@@ -2769,7 +2783,6 @@ msgstr ""
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 #: src/components/markdown-view.tsx
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
-#: src/pages/discover-page/discover-page.tsx
 msgid "Copied"
 msgstr "הועתק"
 
@@ -2925,6 +2938,10 @@ msgstr "לא היה ניתן לשנות את מצב הפרטיות"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Could not change sign-in method"
+msgstr ""
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Could not check sign-in"
 msgstr ""
 
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
@@ -3462,6 +3479,10 @@ msgstr "מחק צ'אט"
 msgid "Delete chat?"
 msgstr "מחק שיחה?"
 
+#: src/components/assets/editor/task/TaskComments.tsx
+msgid "Delete comment"
+msgstr ""
+
 #: src/components/graph-context/GraphContextViewer.tsx
 msgid "Delete context"
 msgstr "מחק הקשר"
@@ -3673,6 +3694,7 @@ msgstr "נתק"
 
 #: src/components/agent-layout/error-screen/error-screen.tsx
 #: src/components/assets/editor/agent-trace/AgentTraceView.tsx
+#: src/pages/discover-page/discover-page.tsx
 msgid "Details"
 msgstr "פרטים"
 
@@ -3817,17 +3839,21 @@ msgstr "התנתק"
 msgid "Disconnected"
 msgstr "התנתק"
 
+#: src/pages/discover-page/discover-page.tsx
+msgid "discover"
+msgstr ""
+
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 msgid "Discover"
 msgstr "גלה"
 
 #: src/pages/discover-page/discover-page.tsx
-msgid "discover · concept"
-msgstr "discover · concept"
+#~ msgid "discover · concept"
+#~ msgstr "discover · concept"
 
 #: src/pages/discover-page/discover-page.tsx
-msgid "Discover agentic assets."
-msgstr "גלה נכסים סוכניים."
+#~ msgid "Discover agentic assets."
+#~ msgstr "גלה נכסים סוכניים."
 
 #: src/components/triggers-view/TriggersList.tsx
 msgid "Discover rules"
@@ -4458,6 +4484,10 @@ msgstr "לכל שורה בעלת אינדקס יש קובץ מקור בדיסק.
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Every project is selected"
 msgstr "כל הפרויקטים נבחרים"
+
+#: src/pages/discover-page/discover-page.tsx
+msgid "Every skill, agent, spec, and document this project ships."
+msgstr ""
 
 #: src/components/assets/context-folder-sources.tsx
 msgid "Everyone the project is shared with gets it"
@@ -6119,19 +6149,22 @@ msgstr "הוסף טבלה"
 
 #: src/pages/discover-page/discover-page.tsx
 #: src/pages/discover-page/discover-page.tsx
-msgid "Install"
-msgstr "התקן"
+#~ msgid "Install"
+#~ msgstr "התקן"
 
 #: src/components/version-popover/version-popover.tsx
 msgid "Install & restart"
 msgstr "התקן והפעל מחדש"
 
 #: src/pages/discover-page/discover-page.tsx
-msgid "install any asset"
-msgstr "התקן כל נכס"
+#~ msgid "install any asset"
+#~ msgstr "התקן כל נכס"
 
 #: src/components/conversation/asset-review/AssetInstallActions.tsx
 #: src/components/conversation/asset-review/AssetInstallActions.tsx
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
 msgid "Install failed"
 msgstr ""
 
@@ -6140,11 +6173,14 @@ msgid "Install failed."
 msgstr "ההתקנה נכשלה."
 
 #: src/components/conversation/asset-review/AssetInstallActions.tsx
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
 msgid "Install global"
 msgstr ""
 
 #: src/components/conversation/asset-review/AssetInstallActions.tsx
 #: src/components/conversation/asset-review/AssetInstallActions.tsx
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
 msgid "Install in project"
 msgstr ""
 
@@ -6154,12 +6190,16 @@ msgid "Install v{0} and restart Flowpad?"
 msgstr "התקן v{0} והפעל מחדש את Flowpad?"
 
 #: src/components/conversation/asset-review/AssetInstallActions.tsx
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
 #: src/components/version-popover/version-popover.tsx
 #: src/components/version-popover/version-popover.tsx
 msgid "Installed"
 msgstr "מותקן"
 
 #: src/components/conversation/asset-review/AssetInstallActions.tsx
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
 msgid "Installed in project"
 msgstr ""
 
@@ -6714,8 +6754,12 @@ msgid "Loading checkpoint diff..."
 msgstr "טוען הבדלים של נקודת בדיקה..."
 
 #: src/components/assistance-viewer/TaskDetail.tsx
-msgid "Loading comments..."
-msgstr "טוען הערות..."
+#~ msgid "Loading comments..."
+#~ msgstr "טוען הערות..."
+
+#: src/components/assets/editor/task/TaskComments.tsx
+msgid "Loading comments…"
+msgstr ""
 
 #: src/components/assets/editor/revisions/AssetDiffTabs.tsx
 msgid "Loading comparison…"
@@ -6930,6 +6974,7 @@ msgstr "טוען..."
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 #: src/components/triggers-view/TriggerInvocationsPanel.tsx
+#: src/pages/discover-page/discover-page.tsx
 #: src/pages/hub-browse/HubEntityView.tsx
 #: src/pages/hub-browse/HubRecordsView.tsx
 msgid "Loading…"
@@ -7328,8 +7373,8 @@ msgid "More…"
 msgstr "עוד…"
 
 #: src/pages/discover-page/discover-page.tsx
-msgid "Most stars"
-msgstr "הכי כוכביות"
+#~ msgid "Most stars"
+#~ msgstr "הכי כוכביות"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Mount the Flowpad Assistant so its skills & agents become discoverable. Click to enable — a restart will be required."
@@ -7763,7 +7808,7 @@ msgstr "אין שיתוף פעולה פתוח"
 msgid "No color"
 msgstr "ללא צבע"
 
-#: src/components/assistance-viewer/TaskDetail.tsx
+#: src/components/assets/editor/task/TaskComments.tsx
 msgid "No comments yet."
 msgstr "אין הערות עדיין."
 
@@ -7849,6 +7894,10 @@ msgstr ""
 #: src/components/assistance-viewer/TaskDetail.tsx
 msgid "No description provided."
 msgstr "אין תיאור."
+
+#: src/pages/discover-page/discover-page.tsx
+msgid "No description."
+msgstr ""
 
 #: src/components/account/system-diagnoses.tsx
 msgid "No diagnoses recorded."
@@ -8166,6 +8215,10 @@ msgstr "אף פרויקט לא תואם \"{normalizedCode}\"."
 #: src/components/join-room-dialog/JoinConversationDialog.tsx
 #~ msgid "No project matches code \"{normalizedCode}\"."
 #~ msgstr "אין פרויקט התואם לקוד \"{normalizedCode}\"."
+
+#: src/pages/discover-page/discover-page.tsx
+msgid "No project open"
+msgstr ""
 
 #: src/components/collaboration/StartRoomDialog.tsx
 msgid "No project selected"
@@ -8569,6 +8622,10 @@ msgstr "לא מוערך"
 msgid "Not runnable here"
 msgstr "לא ניתן להפעיל כאן"
 
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Not signed in — please re-authenticate"
+msgstr ""
+
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "Not started — your first prompt will request access to {hostName}'s machine."
 msgstr ""
@@ -8770,6 +8827,10 @@ msgstr "פתח ישיבת git worktree מבודדת חדשה בענף נפרד"
 #: src/components/collaboration/StartRoomDialog.tsx
 msgid "Open a project before starting a collaboration."
 msgstr "פתח פרויקט לפני תחילת שיתוף פעולה."
+
+#: src/pages/discover-page/discover-page.tsx
+msgid "Open a project to see its assets."
+msgstr ""
 
 #: src/components/contact-picker/AddressBookButton.tsx
 msgid "Open address book"
@@ -9349,6 +9410,7 @@ msgstr "נתיב"
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/machine-overview/machine-overview.tsx
 #: src/components/quick-create/ScopeSelection.tsx
+#: src/pages/discover-page/discover-page.tsx
 msgid "Path"
 msgstr "נתיב"
 
@@ -9582,8 +9644,8 @@ msgid "Port"
 msgstr "יציאה"
 
 #: src/pages/discover-page/discover-page.tsx
-msgid "Portable core · Claude Code · Codex · Copilot"
-msgstr "גרעין נייד · Claude Code · Codex · Copilot"
+#~ msgid "Portable core · Claude Code · Codex · Copilot"
+#~ msgstr "גרעין נייד · Claude Code · Codex · Copilot"
 
 #: src/components/hooks-manager/HookForm.tsx
 msgid "Post Tool Use"
@@ -10069,8 +10131,8 @@ msgid "Reading…"
 msgstr "קריאה…"
 
 #: src/pages/discover-page/discover-page.tsx
-msgid "Readme"
-msgstr "קרא אותי"
+#~ msgid "Readme"
+#~ msgstr "קרא אותי"
 
 #: src/pages/home-landing/InlineSearchResults.tsx
 msgid "Ready"
@@ -10116,6 +10178,10 @@ msgstr "בנייה מחדש…"
 msgid "Received attachment — review before installing."
 msgstr ""
 
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
+msgid "Received attachments — review before installing."
+msgstr ""
+
 #. placeholder {0}: currentDock?.pointer || 'none'
 #: src/components/app-host/AppHost.tsx
 #: src/components/show-view/ShowView.tsx
@@ -10131,7 +10197,6 @@ msgid "Recency Factor (k)"
 msgstr "גורם העדכניות (k)"
 
 #: src/components/open-project-component/open-project-component.tsx
-#: src/pages/discover-page/discover-page.tsx
 #: src/pages/flow-page/vibe-workspace.tsx
 msgid "Recent"
 msgstr "אחרוני"
@@ -10678,6 +10743,10 @@ msgstr "סקירה"
 msgid "Review changes"
 msgstr "בדוק שינויים"
 
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
+msgid "Review each attached asset and choose how to install it."
+msgstr ""
+
 #: src/components/chats-navigator/ChatHistoryRow.tsx
 #: src/components/chats-navigator/ChatHistoryRow.tsx
 msgid "Review prompts"
@@ -11131,8 +11200,8 @@ msgid "Search any entity. Selecting one inserts a [[wikilink]] at the cursor."
 msgstr "חפש כל ישות. בחירה של אחת מכניסה [[wikilink]] בחלון."
 
 #: src/pages/discover-page/discover-page.tsx
-msgid "Search assets, teams…"
-msgstr "חפש נכסים, צוותים…"
+#~ msgid "Search assets, teams…"
+#~ msgstr "חפש נכסים, צוותים…"
 
 #: src/components/assets/AssetsNavigator.tsx
 #: src/components/conversation/MessageComposer.tsx
@@ -11248,6 +11317,10 @@ msgstr "חיפוש בטרמינל…"
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Search the docs…"
 msgstr "חיפוש במסמכים…"
+
+#: src/pages/discover-page/discover-page.tsx
+msgid "Search this project…"
+msgstr ""
 
 #: src/components/lens-viewer/shared/transcript-features/TranscriptViewer.tsx
 msgid "Search transcript…"
@@ -11482,7 +11555,7 @@ msgstr "סרגל כלים בחירה"
 msgid "Self-Summary"
 msgstr "סיכום עצמי"
 
-#: src/components/assistance-viewer/TaskDetail.tsx
+#: src/components/assets/editor/task/TaskComments.tsx
 #: src/components/conversation/MessageComposer.tsx
 #: src/components/conversation/PromptComposerDialog.tsx
 #: src/components/entity-execution-panel/CompactExecutionInput.tsx
@@ -12049,12 +12122,12 @@ msgid "Skills (~/.claude/skills/)"
 msgstr "כישרונות (~/.claude/skills/)"
 
 #: src/pages/discover-page/discover-page.tsx
-msgid "Skills + AGENTS.md + MCP are the portable core; plugins & native agents are per-harness adapters."
-msgstr "כישורים + AGENTS.md + MCP הם הליבה הנייד; תוספים וסוכנים מקוריים הם מתאמי harness."
+#~ msgid "Skills + AGENTS.md + MCP are the portable core; plugins & native agents are per-harness adapters."
+#~ msgstr "כישורים + AGENTS.md + MCP הם הליבה הנייד; תוספים וסוכנים מקוריים הם מתאמי harness."
 
 #: src/pages/discover-page/discover-page.tsx
-msgid "Skills, MCP servers, and agents — published by teams across your organization. Install into Claude Code, Codex, or Copilot <0>in one line.</0>"
-msgstr "כישורים, שרתי MCP וסוכנים — פורסמו על ידי צוותים בארגון שלך. התקן ל-Claude Code, Codex, או Copilot <0>בשורה אחת.</0>"
+#~ msgid "Skills, MCP servers, and agents — published by teams across your organization. Install into Claude Code, Codex, or Copilot <0>in one line.</0>"
+#~ msgstr "כישורים, שרתי MCP וסוכנים — פורסמו על ידי צוותים בארגון שלך. התקן ל-Claude Code, Codex, או Copilot <0>בשורה אחת.</0>"
 
 #: src/components/terminal/interactive-terminal/process-cli-presentation.ts
 msgid "Skip all permission prompts (--dangerously-skip-permissions)"
@@ -12372,6 +12445,10 @@ msgstr "צעד: {0}ms · debounce: {1}ms"
 msgid "Steps taken"
 msgstr "שלבים בוצעו"
 
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Still signed in"
+msgstr ""
+
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/triggers-view/TriggerInvocationsPanel.tsx
 msgid "Stop"
@@ -12617,8 +12694,8 @@ msgid "Teams"
 msgstr "צוותים"
 
 #: src/pages/discover-page/discover-page.tsx
-msgid "Teams across the org"
-msgstr "צוותים בכל הארגון"
+#~ msgid "Teams across the org"
+#~ msgstr "צוותים בכל הארגון"
 
 #: src/pages/hub-home/HubHome.tsx
 msgid "Teams and people across your org."
@@ -12649,6 +12726,7 @@ msgstr "מושבות הטרמינל"
 msgid "test"
 msgstr "בדיקה"
 
+#: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Test"
 msgstr ""
@@ -12718,6 +12796,10 @@ msgstr "הקובץ הוסר בהצלחה."
 #: src/components/assets/editor/skill/UsagePanel.tsx
 msgid "The asset matches HEAD."
 msgstr "הנכס תואם את HEAD"
+
+#: src/pages/discover-page/discover-page.tsx
+msgid "The assets published with this project — its skills, agents, specs, and docs."
+msgstr ""
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "The default — what you want 99% of the time."
@@ -12909,6 +12991,10 @@ msgstr "זה יסיר באופן קבוע את תמונת הקשר השמורה.
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "This process has no transcript session yet."
+msgstr ""
+
+#: src/pages/discover-page/discover-page.tsx
+msgid "This project has no assets yet."
 msgstr ""
 
 #: src/components/version-popover/diagnose-modal.tsx
@@ -13192,8 +13278,8 @@ msgstr "תמלילים"
 #~ msgstr ""
 
 #: src/pages/discover-page/discover-page.tsx
-msgid "Trending"
-msgstr "פופולרי"
+#~ msgid "Trending"
+#~ msgstr "פופולרי"
 
 #: src/components/assets/editor/skill/SkillActivationEditor.tsx
 #~ msgid "Trigger"
@@ -13205,8 +13291,8 @@ msgid "Triggers"
 msgstr "טריגרים"
 
 #: src/pages/discover-page/discover-page.tsx
-msgid "Trust & provenance"
-msgstr "אמון ומקורות"
+#~ msgid "Trust & provenance"
+#~ msgstr "אמון ומקורות"
 
 #: src/components/onboarding-card/OnboardingCard.tsx
 #~ msgid "Try a sample flow to see FlowPad in action"
@@ -13297,18 +13383,22 @@ msgid "Undo"
 msgstr "בטל"
 
 #: src/components/conversation/asset-review/AssetInstallActions.tsx
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
 msgid "Uninstall"
 msgstr ""
 
 #: src/components/conversation/asset-review/AssetInstallActions.tsx
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
 msgid "Uninstall failed"
 msgstr ""
 
 #: src/components/conversation/asset-review/AssetInstallActions.tsx
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
 msgid "Uninstall from project"
 msgstr ""
 
 #: src/components/conversation/asset-review/AssetInstallActions.tsx
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
 msgid "Uninstalled"
 msgstr ""
 
@@ -13910,6 +14000,10 @@ msgstr ""
 #: src/pages/home-landing/HomeLanding.tsx
 msgid "What would you like to work on?"
 msgstr "על מה היית רוצה לעבוד?"
+
+#: src/pages/discover-page/discover-page.tsx
+msgid "What's in the box."
+msgstr ""
 
 #: src/components/asset-manager/EntityTypeBar.tsx
 msgid "Whiteboard"
