@@ -287,7 +287,16 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
   const [pickerWorker, setPickerWorker] = useState<ProjectWorkerType | null>(null);
   const [recoveringId, setRecoveringId] = useState<string | null>(null);
   const { currentDock, navigation } = useDockNavigation();
-  const { buckets, globalTabCount } = useTabProjectBuckets();
+  const { buckets: allBuckets, globalTabCount } = useTabProjectBuckets();
+
+  // System projects (e.g. the shipped "Flowpad Assistant") are kept out of the
+  // chip entirely — they stay reachable via Preferences → UI → "Show system
+  // projects". We read the backend-computed `system` flag off the entity rather
+  // than re-deriving it client-side. A bucket whose entity is still loading
+  // (project == null) is kept — it resolves from cache and re-filters once known.
+  // The agent mount ROOT (~/Flowpad workspace) is excluded on the backend
+  // (never minted, never listed), so no new tab can open on it here.
+  const buckets = useMemo(() => allBuckets.filter((b) => !b.project?.system), [allBuckets]);
 
   // Buckets in parent → subproject render order (a subproject is a project
   // whose folder lives inside another open project's folder). Display-only

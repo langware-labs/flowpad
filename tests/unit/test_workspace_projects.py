@@ -121,3 +121,84 @@ async def test_workspace_folders_materialize_as_projects(project_db, tmp_path, m
     for name in ("proj_a", "proj_b"):
         assert again_by_name[name].is_new is False
         assert again_by_name[name].project_id == by_name[name].project_id
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+@pytest.mark.asyncio
+async def test_agent_mount_root_entity_tagged_hidden(project_db, tmp_path, monkeypatch):
+    """A stale Project entity minted for the agent mount ROOT itself (by a past
+    ``recover_by_path`` before the guard) surfaces in ``get_all_projects`` tagged
+    ``system=True`` — i.e. it lands in the hidden list (filtered out of the picker
+    by default, revealable via "Show system projects"), rather than being dropped.
+    A real work subfolder under the root stays a normal (non-hidden) project."""
+    import dataclasses
+
+    import flow_sdk.config as cfg
+    import flow_sdk.instance_settings as isettings
+    from flow_sdk.builtin.project import Project
+    from flow_sdk.fs_store.path_utils import canonical_posix_path
+
+    home = tmp_path / "home"
+    ws = home / "Flowpad workspace"
+    ws.mkdir(parents=True)
+    records_root = tmp_path / "records"
+    records_root.mkdir()
+
+    patched = dataclasses.replace(
+        isettings.get_instance_settings(),
+        user_home=home,
+        claude_projects_dir=home / ".claude" / "projects",
+        codex_config_path=home / ".codex" / "config.toml",
+        records_root=records_root,
+    )
+    import flow_sdk.fs_store.operations.all_projects as ap
+    monkeypatch.setattr(ap, "get_instance_settings", lambda: patched)
+    monkeypatch.setattr(isettings, "get_instance_settings", lambda: patched)
+    monkeypatch.setattr(cfg, "AGENT_MOUNT_FOLDER", canonical_posix_path(ws))
+
+    # Simulate the pre-guard stale entity sitting at the mount root, plus a real
+    # work subfolder project under it (which must NOT be tagged hidden).
+    stale = Project(name="Flowpad workspace", fs_storage_mount_path=canonical_posix_path(ws))
+    stale.id = Project.allocate_id(stale.model_dump())
+    await stale.save()
+    sub = Project(name="real-project", fs_storage_mount_path=canonical_posix_path(ws / "real-project"))
+    sub.id = Project.allocate_id(sub.model_dump())
+    await sub.save()
+
+    projects = await ap.get_all_projects(include_temp=True, create_missing=False)
+    by_name = {p.name: p for p in projects}
+
+    assert "Flowpad workspace" in by_name, by_name
+    assert by_name["Flowpad workspace"].system is True, "mount root must be tagged hidden"
+    assert "real-project" in by_name, by_name
+    assert by_name["real-project"].system is False, "subfolder project must stay non-hidden"
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+def test_is_hidden_project_predicate(tmp_path, monkeypatch):
+    """``is_hidden_project`` hides on system flag OR system-project path OR the
+    agent mount root; a normal subfolder is not hidden. Paths are validated via
+    the workspace consts, never a hardcoded literal."""
+    import flow_sdk.config as cfg
+    from flow_sdk.config import is_hidden_project
+    from flow_sdk.fs_store.path_utils import canonical_posix_path
+
+    ws = tmp_path / "home" / "Flowpad workspace"
+    ws.mkdir(parents=True)
+    monkeypatch.setattr(cfg, "AGENT_MOUNT_FOLDER", canonical_posix_path(ws))
+    monkeypatch.setattr(cfg, "agent_workspace_root", lambda: ws)
+
+    normal = tmp_path / "some" / "repo"
+    normal.mkdir(parents=True)
+    system_like = tmp_path / "flow_sdk" / "system_projects" / "flowpad_assistant"
+    system_like.mkdir(parents=True)
+
+    # system flag alone hides, regardless of path
+    assert is_hidden_project(str(normal), system_flag=True) is True
+    # structural system-project path hides
+    assert is_hidden_project(str(system_like)) is True
+    # the agent mount ROOT hides
+    assert is_hidden_project(str(ws)) is True
+    # a normal project (and a subfolder under the root) does not
+    assert is_hidden_project(str(normal)) is False
+    assert is_hidden_project(str(ws / "real-project")) is False
