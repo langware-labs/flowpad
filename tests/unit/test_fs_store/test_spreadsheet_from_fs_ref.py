@@ -16,7 +16,6 @@ from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.identifier import is_valid_entity_id
 from flow_sdk.fs_store.indexer.functions.spreadsheet import (
     extract_spreadsheet,
-    spreadsheet_gen_id,
 )
 from flow_sdk.fs_store.record_types import RecordType
 
@@ -65,7 +64,8 @@ def test_csv_indexer_compatible_all_fields(tmp_path: Path) -> None:
     rec = extract_spreadsheet(ref)[0]
 
     assert loaded.type == "spreadsheet"
-    assert loaded.id == rec.id == spreadsheet_gen_id(ref)
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry
+    assert loaded.id == rec.id == SchemaRegistry.get("spreadsheet").mint_id(ref)
     assert is_valid_entity_id(loaded.id)
     assert loaded.format == "csv"
     assert loaded.num_rows == 3

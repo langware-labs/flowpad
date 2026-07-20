@@ -14,7 +14,8 @@ import pytest
 
 from flow_sdk.schema.type_info import register_all
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.indexer.functions.task import extract_task, task_gen_id
+from flow_sdk.fs_store.indexer.functions.task import extract_task
+from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -55,7 +56,7 @@ def test_indexer_round_trips_task_md(tmp_path):
 
     ref = FSRef(folder)
     # id is stable (adopted from frontmatter, not re-minted).
-    assert task_gen_id(ref) == str(t.id)
+    assert SchemaRegistry.get("task").mint_id(ref) == str(t.id)
 
     rec = extract_task(ref)[0]
     assert rec.id == str(t.id)
@@ -109,7 +110,7 @@ def test_indexer_tolerates_legacy_header_json_without_leak(tmp_path):
     )
     ref = FSRef(folder)
     # Legacy id formula preserved.
-    assert task_gen_id(ref) == "11111111-1111-4111-8111-111111111111"
+    assert SchemaRegistry.get("task").mint_id(ref) == "11111111-1111-4111-8111-111111111111"
 
     rec = extract_task(ref)[0]
     assert rec.id == "11111111-1111-4111-8111-111111111111"

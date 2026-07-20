@@ -172,7 +172,7 @@ async def test_folder_is_transient_not_persisted(tmp_path: Path) -> None:
     a walked ref only materializes a record when its TypeInfo declares a
     disk parser. The Folder ENTITY type is registered (minted on demand via
     ``Folder.mint_for_path`` for project context folders) but deliberately
-    declares NO ``from_disk_fn``/``gen_uuid_fn`` — otherwise every directory
+    declares no ``from_disk_fn``/identity callbacks — otherwise every directory
     the project walker visits would be mass-persisted.
     """
     from flow_sdk.fs_store.schema_registry import SchemaRegistry
@@ -183,4 +183,5 @@ async def test_folder_is_transient_not_persisted(tmp_path: Path) -> None:
             "FOLDER must not declare from_disk_fn — the indexer would persist "
             "every walked directory"
         )
-        assert info.gen_uuid_fn is None
+        assert info.id_from_file_fn is None
+        assert info.id_from_folder_fn is None

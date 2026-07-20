@@ -75,41 +75,18 @@ def _command_id_from_key(ref: FSRef) -> str:
     )
 
 
+def command_identity_key(ref: FSRef | Path) -> str:
+    """Natural key passed to the canonical UUID minter."""
+    path = Path(getattr(ref, "_path", ref))
+    scope = getattr(ref, "scope", None) or "user"
+    return f"{RecordType.COMMAND}:{scope}:{path.stem}"
+
+
 def command_id(ref: FSRef) -> str:
     """Cheap id: a pinned frontmatter id (shared command) wins; else the
     deterministic uuid5 of the natural key ``<scope>:<command_name>``."""
     existing = _read_command_frontmatter_id(ref._path)
     return existing if existing else _command_id_from_key(ref)
-
-
-def command_gen_id(ref: FSRef) -> str:
-    """Mint+write id into frontmatter (idempotent), preferring an existing
-    frontmatter id. Mirrors ``claude_plan_gen_id`` so a received command keeps
-    the sender's id and the share chip resolves."""
-    existing = _read_command_frontmatter_id(ref._path)
-    if existing:
-        return existing
-    new_id = _command_id_from_key(ref)
-    try:
-        text = ref._path.read_text(encoding="utf-8")
-    except OSError:
-        return new_id
-    fm = _extract_frontmatter(text)
-    body = _extract_body(text)
-    fields: dict = {}
-    if fm:
-        parsed = _yaml_load(fm)
-        if isinstance(parsed, dict):
-            fields.update(parsed)
-    merged = {"id": new_id, **{k: v for k, v in fields.items() if k not in ("id", "asset_id")}}
-    try:
-        ref._path.write_text(
-            _render_frontmatter(merged) + "\n\n" + body + ("\n" if body and not body.endswith("\n") else ""),
-            encoding="utf-8",
-        )
-    except OSError:
-        pass
-    return new_id
 
 
 def extract_claude_command(ref: FSRef) -> list[FSRecord]:

@@ -12,15 +12,16 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from flow_sdk.schema.type_info import TypeMetadata, render_entity_frontmatter
-from flow_sdk.schema.types import EntityType
-from flow_sdk.schema.view_mode import ViewMode
+from flow_sdk.fs_store.indexer.functions._asset_identity import write_folder_capsule
 from flow_sdk.fs_store.indexer.functions.task import (
     TASK_FRONTMATTER_FIELDS,
     extract_task,
     task_asset_hash,
-    task_gen_id,
+    task_id_from_folder,
 )
+from flow_sdk.schema.type_info import TypeMetadata, render_entity_frontmatter
+from flow_sdk.schema.types import EntityType
+from flow_sdk.schema.view_mode import ViewMode
 
 # The frontmatter written to ``task.md`` = the canonical round-trip field set
 # (single source of truth, shared with the reader ``extract_task``) plus the
@@ -86,7 +87,8 @@ TASK = TypeMetadata(
     main_layout="folder",
     main_file="task.md",
     from_disk_fn=extract_task,
-    gen_uuid_fn=task_gen_id,
+    id_from_folder_fn=task_id_from_folder,
+    id_write_fn=write_folder_capsule,
     asset_hash_fn=task_asset_hash,
     default_body_fn=_task_default_body,
     owns_main_ref=True,

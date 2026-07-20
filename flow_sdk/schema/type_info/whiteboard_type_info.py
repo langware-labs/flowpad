@@ -1,12 +1,13 @@
 """Type metadata for WHITEBOARD."""
-from flow_sdk.schema.type_info import TypeMetadata
-from flow_sdk.schema.types import EntityType
-from flow_sdk.schema.view_mode import ViewMode
+from flow_sdk.fs_store.indexer.functions._asset_identity import write_folder_capsule
 from flow_sdk.fs_store.indexer.functions.whiteboard import (
     extract_whiteboard,
     whiteboard_asset_hash,
-    whiteboard_gen_id,
+    whiteboard_id_from_folder,
 )
+from flow_sdk.schema.type_info import TypeMetadata
+from flow_sdk.schema.types import EntityType
+from flow_sdk.schema.view_mode import ViewMode
 
 WHITEBOARD = TypeMetadata(
     type=EntityType.WHITEBOARD,
@@ -26,6 +27,7 @@ WHITEBOARD = TypeMetadata(
     # index hash oscillated, making receive intermittent).
     main_file="WHITE_BOARD.md",
     from_disk_fn=extract_whiteboard,
-    gen_uuid_fn=whiteboard_gen_id,
+    id_from_folder_fn=whiteboard_id_from_folder,
+    id_write_fn=write_folder_capsule,
     asset_hash_fn=whiteboard_asset_hash,
 )

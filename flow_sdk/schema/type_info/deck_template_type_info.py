@@ -1,15 +1,16 @@
 """Type metadata for DECK_TEMPLATE."""
 from typing import Optional
 
+from flow_sdk.fs_store.indexer.functions._asset_identity import write_folder_capsule
+from flow_sdk.fs_store.indexer.functions.deck_template import (
+    deck_template_asset_hash,
+    deck_template_id_from_folder,
+    extract_deck_template,
+)
 from flow_sdk.schema.type_info import TypeMetadata
 from flow_sdk.schema.type_info.base_meta import BaseMeta
 from flow_sdk.schema.types import EntityType
 from flow_sdk.schema.view_mode import ViewMode
-from flow_sdk.fs_store.indexer.functions.deck_template import (
-    deck_template_asset_hash,
-    deck_template_gen_id,
-    extract_deck_template,
-)
 
 
 class DeckTemplateMeta(BaseMeta):
@@ -35,7 +36,8 @@ DECK_TEMPLATE = TypeMetadata(
     # main file instead of erroring "no main file metadata".
     main_file="template.json",
     from_disk_fn=extract_deck_template,
-    gen_uuid_fn=deck_template_gen_id,
+    id_from_folder_fn=deck_template_id_from_folder,
+    id_write_fn=write_folder_capsule,
     asset_hash_fn=deck_template_asset_hash,
     meta_model=DeckTemplateMeta,
 )

@@ -862,15 +862,15 @@ class Entity(DBEntity):
     ) -> "Entity | None":
         """Load an Entity from a folder/file ``FSRef`` WITHOUT touching the DB.
 
-        A pure on-disk load: it dispatches to the type's registered
-        ``TypeInfo.from_disk_fn`` — the SAME cold-path parser the indexer runs
+        A DB-free on-disk load: it resolves identity through ``TypeInfo`` and
+        dispatches to the registered ``from_disk_fn`` — the SAME cold-path parser the indexer runs
         (e.g. ``extract_dataset``) — and builds the entity generically from the
         returned ``FSRecord``. Only that parser (and, for datasets, the
         ``iter_examples`` it reaches via ``Dataset.examples()``) is type-specific;
         everything here is generic and registry-driven.
 
         Distinct from the async ``from_record``: no ``await``, no ``save()``, no
-        DB row. Use it to load a folder-backed entity and call its on-disk
+        DB row. A missing asset id may be minted and persisted. Use it to load a folder-backed entity and call its on-disk
         accessors (``Dataset.examples()`` etc.). Returns ``None`` when ``ref`` is
         not a record of the resolved type (the parser yields nothing).
         """
@@ -888,9 +888,12 @@ class Entity(DBEntity):
         if info is None or info.from_disk_fn is None:
             return None
 
+        resolved_id = info.extract_id(ref) or info.mint_id(ref)
         records = info.from_disk_fn(ref)
         if not records:
             return None
+        for record in records:
+            object.__setattr__(record, "id", resolved_id)
         return Entity._build_from_fs_record(records[0], fallback_cls=cls)
 
     @classmethod

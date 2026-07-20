@@ -6,7 +6,7 @@ A skill is a folder containing ``SKILL.md`` (markdown + YAML frontmatter) and/or
 Public helpers used outside the indexer:
 - ``parse_skill_yaml_from_dir(path)`` — yaml/frontmatter parse
 - ``extract_skill(ref)`` — parser_fn entry point
-- ``skill_id(ref)`` / ``skill_gen_id(ref)`` — id helpers
+- ``skill_id(ref)`` — compatibility read helper
 - ``skill_asset_hash(ref)`` — folder-content mtime
 - ``resolve_skill_name(yaml_fields, folder_name)`` — display-name picker
 - ``read_frontmatter_id_from_yaml(yaml_fields)`` — id extractor
@@ -27,7 +27,6 @@ from flow_sdk.fs_store.indexer._frontmatter import (
     _yaml_load,
 )
 from flow_sdk.fs_store.indexer.functions._folder_capsule import (
-    folder_capsule_gen_id,
     read_folder_capsule_id,
 )
 from flow_sdk.fs_store.indexer.index_function import IndexerOptions
@@ -71,7 +70,11 @@ def read_frontmatter_id_from_yaml(yaml_fields: dict) -> str | None:
     the caller mints a fresh v4 into the capsule instead of adopting garbage.
     """
     from flow_sdk.fs_store.identifier import adopt_entity_id  # noqa: PLC0415
-    return adopt_entity_id(yaml_fields.get("id") or yaml_fields.get("asset_id"))
+    for candidate in (yaml_fields.get("id"), yaml_fields.get("asset_id")):
+        adopted = adopt_entity_id(candidate)
+        if adopted:
+            return adopted
+    return None
 
 
 def resolve_skill_name(yaml_fields: dict, folder_name: str) -> str:
@@ -117,21 +120,14 @@ def skill_id(ref: FSRef) -> str:
     return path.name.split("-@", 1)[-1] if "-@" in path.name else path.name
 
 
-def skill_gen_id(ref: FSRef) -> str:
-    """Adopt the skill's id from its capsule, else mint a fresh v4 (idempotent).
-
-    Read precedence: (1) the `.flow/id` folder capsule (authoritative, portable);
-    (2) a VALID (v4/v5) `id:` in SKILL.md / skill.yaml frontmatter — adopted and
-    BACKFILLED into `.flow/id` (migrates the skill onto the capsule without
-    changing its id); (3) miss → a fresh random **v4** written to `.flow/id`.
-    No longer name-derives (`uuid5("skill:name")` collided across machines), and
-    now persists for yaml-based skills too (the old code skipped the write).
-    """
-    path = ref._path
-    if not path.is_dir():
-        return skill_id(ref)
-    yaml_fields = parse_skill_yaml_from_dir(path)
-    return folder_capsule_gen_id(path, yaml_fields.get("id"), yaml_fields.get("asset_id"))
+def skill_id_from_folder(ref: FSRef | Path) -> object | None:
+    """Read the capsule, then legacy SKILL.md/yaml fields, without backfill."""
+    path = Path(getattr(ref, "_path", ref))
+    cap = read_folder_capsule_id(path)
+    if cap:
+        return cap
+    fields = parse_skill_yaml_from_dir(path)
+    return read_frontmatter_id_from_yaml(fields)
 
 
 def skill_asset_hash(ref: FSRef) -> float:

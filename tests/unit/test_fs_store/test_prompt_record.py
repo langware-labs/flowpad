@@ -10,7 +10,6 @@ from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer.functions.prompt import (
     _read_prompt_frontmatter_id,
     extract_prompt,
-    prompt_gen_id,
     prompt_project_fn,
 )
 from flow_sdk.fs_store.record_types import RecordType
@@ -82,8 +81,9 @@ def test_gen_id_idempotent_and_preserves_fields(tmp_path: Path):
         "Body stays.\n",
         frontmatter='name: Keeper\nicon: "🚀"\n',
     )
-    first = prompt_gen_id(FSRef(p))
-    second = prompt_gen_id(FSRef(p))
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry
+    first = SchemaRegistry.get("prompt").mint_id(FSRef(p))
+    second = SchemaRegistry.get("prompt").mint_id(FSRef(p))
     assert first == second
     assert _read_prompt_frontmatter_id(p) == first
     [rec] = extract_prompt(FSRef(p))

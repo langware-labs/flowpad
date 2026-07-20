@@ -98,23 +98,39 @@ def _split_plugin_key(plugin_key: str) -> tuple[str, str]:
     return parts[0], (parts[1] if len(parts) > 1 else "unknown")
 
 
-def plugin_id(ref: FSRef) -> str:
+def plugin_identity_key(ref: FSRef | Path) -> str:
     """Stable, filesystem-safe **UUID** id. The natural key
     ``<name>@<marketplace>`` is hashed into a uuid5 with the same
     ``f"{type}:{key}"`` formula ``Entity.allocate_id`` uses, so it matches the DB
     id (a conforming id is kept as-is)."""
-    frag = _read_install(Path(ref.path), ref.json_path or "")
+    path = Path(getattr(ref, "path", ref))
+    json_path = getattr(ref, "json_path", None) or ""
+    frag = _read_install(path, json_path)
     if frag is not None:
         plugin_key = frag[0]
     else:
-        segs = (ref.json_path or "").strip("/").split("/")
+        segs = json_path.strip("/").split("/")
         plugin_key = _unescape_json_pointer(segs[1]) if len(segs) >= 2 else ""
     if not plugin_key:
-        key = ref.json_path or Path(ref.path).name
+        key = json_path or path.name
     else:
         name, marketplace = _split_plugin_key(plugin_key)
         key = f"{name}@{marketplace}"
-    return key if is_valid_entity_id(key) else mint_uuid(f"{RecordType.PLUGIN}:{key}", namespace=uuid.NAMESPACE_DNS)
+    return key
+
+
+def plugin_id_from_file(ref: FSRef | Path) -> str | None:
+    key = plugin_identity_key(ref)
+    return key if is_valid_entity_id(key) else None
+
+
+def plugin_stable_key(ref: FSRef | Path) -> str:
+    return f"{RecordType.PLUGIN}:{plugin_identity_key(ref)}"
+
+
+def plugin_id(ref: FSRef) -> str:
+    existing = plugin_id_from_file(ref)
+    return existing or mint_uuid(plugin_stable_key(ref), namespace=uuid.NAMESPACE_DNS)
 
 
 def extract_plugin(ref: FSRef) -> list[FSRecord]:

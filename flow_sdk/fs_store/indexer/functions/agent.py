@@ -11,7 +11,7 @@ markdown rendering) live in ``flow_sdk/fs_store/operations/agent.py``.
 Public helpers used outside the indexer:
   - ``parse_agent_markdown(text, name)`` — pure frontmatter+body parse
   - ``extract_agent(ref)`` — parser_fn entry
-  - ``agent_id(ref)`` / ``agent_gen_id(ref)`` — id helpers
+  - ``agent_id(ref)`` — compatibility read helper
   - ``AGENTS_SPEC_FIELDS`` / ``KEY_TO_JSON`` / ``JSON_TO_KEY`` — spec mapping
 """
 
@@ -28,7 +28,6 @@ from flow_sdk.fs_store.indexer._frontmatter import (
     _extract_body,
     _extract_frontmatter,
     _yaml_load,
-    adopt_or_mint_id,
 )
 from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
@@ -130,12 +129,12 @@ def agent_peek_entity_id(ref: FSRef) -> str:
     """Entity UUID for an agent .md WITHOUT writing frontmatter back.
 
     Strictly read-only, so it is safe to call from request handlers
-    (``agent_gen_id`` rewrites the source file, which would dirty read-only
+    (``TypeInfo.mint_id`` may rewrite the source file, which would dirty read-only
     mounts and trip the dev reload watcher). Single file read.
 
     Reads the adopted frontmatter UUID capsule when present. On a miss it returns
     the stable ``mint_uuid(f"{RecordType.AGENT}:{name-or-stem}")`` derive — it
-    CANNOT predict the random v4 that ``agent_gen_id`` will mint into a
+    CANNOT predict the random v4 that ``TypeInfo.mint_id`` will persist into a
     not-yet-stamped agent (the documented capsule-v4 asymmetry); once gen_id has
     stamped the capsule, this peek reads and returns that same v4.
     """
@@ -154,17 +153,6 @@ def agent_peek_entity_id(ref: FSRef) -> str:
         key = name.strip() if isinstance(name, str) and name.strip() else ref._path.stem
     return mint_uuid(f"{RecordType.AGENT}:{key}", namespace=uuid.NAMESPACE_DNS)
 
-
-def agent_gen_id(ref: FSRef) -> str:
-    """Adopt the frontmatter capsule id, else mint a fresh v4 and write it.
-
-    Fixes the prior bug where the raw NAME/stem (not a UUID) was written into
-    ``id:`` — the adopt-on-next-index gate rejected it, so agents never
-    self-healed and re-derived ``uuid5("agent:name")`` (a cross-machine collision
-    source) every pass. Now a random **v4** is minted into the ``id:`` capsule;
-    a stable uuid5(path) survives only as the read-only-file fallback.
-    """
-    return adopt_or_mint_id(ref._path, write_back=True)
 
 
 # ── Parse + extract ──────────────────────────────────────────────────────────

@@ -91,9 +91,8 @@ def _spreadsheet_id_from_path(path: Path) -> str:
     return mint_uuid(str(path.resolve()))
 
 
-def spreadsheet_gen_id(ref: FSRef) -> str:
-    """Resolve a spreadsheet's id — the stable uuid5(path). Idempotent."""
-    return _spreadsheet_id_from_path(ref._path)
+def spreadsheet_identity_key(ref: FSRef | Path) -> str:
+    return str(Path(getattr(ref, "_path", ref)).resolve())
 
 
 # ── extractor ─────────────────────────────────────────────────────────────────

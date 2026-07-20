@@ -342,10 +342,13 @@ def mcp_server_id(ref: FSRef) -> str:
     same ``f"{type}:{key}"`` formula ``Entity.allocate_id`` uses — yields a
     path-safe id identical to the one the DB row gets.
     """
-    return mint_uuid(
-        f"{RecordType.MCP_SERVER}:{_record_id(str(ref.path), ref.json_path or '')}",
-        namespace=uuid.NAMESPACE_DNS,
-    )
+    return mint_uuid(mcp_server_identity_key(ref), namespace=uuid.NAMESPACE_DNS)
+
+
+def mcp_server_identity_key(ref: FSRef | Path) -> str:
+    path = Path(getattr(ref, "path", ref))
+    json_path = getattr(ref, "json_path", None) or ""
+    return f"{RecordType.MCP_SERVER}:{_record_id(str(path), json_path)}"
 
 
 def extract_mcp_server(ref: FSRef) -> list[FSRecord]:

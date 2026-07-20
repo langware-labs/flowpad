@@ -32,7 +32,7 @@ from flow_sdk.fs_store.indexer._frontmatter import (
     _extract_body,
     _extract_frontmatter,
     _yaml_load,
-    adopt_or_mint_id,
+    read_frontmatter_id,
 )
 from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
@@ -150,8 +150,8 @@ _DIR_TO_ASSET_TYPE: dict[str, str] = {
 def _markdown_id_from_path(path: Path) -> str:
     """Transitional/read-only fallback key — the stable uuid5(path) value.
 
-    No longer the miss behavior (``markdown_gen_id`` mints a fresh v4 into the
-    frontmatter capsule). Survives only as the ``parse_markdown_text`` read-side
+    No longer the miss behavior (``TypeInfo.mint_id`` persists a fresh v4).
+    Survives only as the ``parse_markdown_text`` read-side
     derive for a not-yet-stamped file.
     """
     from flow_sdk.fs_store.identifier import mint_uuid  # noqa: PLC0415
@@ -159,15 +159,7 @@ def _markdown_id_from_path(path: Path) -> str:
 
 def markdown_id(ref: FSRef) -> str:
     """Cheap id: adopted frontmatter capsule id; else stable derived key (no write)."""
-    return adopt_or_mint_id(ref._path, write_back=False)
-
-def markdown_gen_id(ref: FSRef) -> str:
-    """Adopt the frontmatter capsule id, else mint a fresh v4 and write it back.
-
-    Idempotent. The miss path now mints a random v4 (not uuid5(path)) so a
-    shared/copied doc carries a portable id in its capsule.
-    """
-    return adopt_or_mint_id(ref._path, write_back=True)
+    return read_frontmatter_id(ref._path) or _markdown_id_from_path(ref._path)
 
 def parse_markdown_text(text: str, path: Path | None = None) -> dict[str, Any]:
     """Parse a markdown string with YAML frontmatter into a fields dict.
@@ -202,7 +194,7 @@ def parse_markdown_text(text: str, path: Path | None = None) -> dict[str, Any]:
     from flow_sdk.fs_store.identifier import adopt_entity_id  # noqa: PLC0415
     # Validate-on-adopt (v4/v5 only) — a foreign/hand-authored id is never
     # adopted; derive the stable uuid5(path) instead. Keeps this read-side path
-    # in agreement with ``markdown_gen_id`` (which adopts the same capsule id).
+    # in agreement with the TypeInfo identity reader.
     asset_id = adopt_entity_id(raw_id)
     if not asset_id and path is not None:
         asset_id = _markdown_id_from_path(path)
