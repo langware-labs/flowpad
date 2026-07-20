@@ -29,7 +29,12 @@ from flow_sdk.builtin.user import User
 from flow_sdk.fs_store.operations.flow_message import default_data_dir, unpacked_dir
 from flow_sdk.fs_store.record_paths import record_stem
 from flow_sdk.request_context.methods import get_current_request_info
-from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
+from flow_sdk.responses.response import (
+    ApiFailResponse,
+    ApiResponse,
+    ApiResponseStatus,
+    ApiSuccessResponse,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -440,7 +445,11 @@ async def handle_attachment_install(
 
     if getattr(SchemaRegistry.get(ma.asset_type), "receive_policy", None) == "auto":
         return await _install_row_entity(
-            ma, scope, project_id, overwrite=overwrite, someone_typeid=someone_typeid,
+            ma,
+            scope,
+            project_id,
+            overwrite=overwrite,
+            someone_typeid=someone_typeid,
         )
 
     # Git-reference graph entities (ARTIFACT, and FOLDER for git context-folder
@@ -789,6 +798,76 @@ async def handle_staged_file_content(attachment_id: str, rel_path: str) -> ApiRe
     return ApiSuccessResponse(data={"path": rel_path, "content": content, "truncated": truncated})
 
 
+async def handle_conversation_install_all(
+    conversation_id: str,
+    project_id: str | None,
+    *,
+    someone_typeid=None,
+) -> ApiResponse:
+    """Install EVERY attachment of a conversation into ``project_id``.
+
+    Backs the "install in project" fan-out: picking a project for one attachment
+    binds the whole conversation, so all of its attachments become project assets
+    in one shot (and future arrivals auto-install via the reception path). Reuses
+    ``handle_attachment_install`` per row — idempotent, and one row's failure never
+    aborts the rest. Pure git-transfer references are skipped: their placement is
+    repo-determined, not scope-driven. Rows already filed under this project are
+    skipped.
+    """
+    if not conversation_id:
+        return ApiFailResponse(message="conversation_id is required", status_code=400)
+    if not project_id:
+        return ApiFailResponse(message="project_id is required", status_code=400)
+    try:
+        attachments = await MessageAttachment.get_all({"conversation_id": conversation_id})
+    except Exception as e:  # noqa: BLE001
+        logger.error(
+            "[message_attachment] conversation %s attachment lookup failed: %s",
+            conversation_id,
+            e,
+            exc_info=True,
+        )
+        return ApiFailResponse(message=f"attachment lookup failed: {e}")
+
+    installed: list[str] = []
+    skipped: list[str] = []
+    failed: list[str] = []
+    for ma in attachments:
+        if ma.id is None:
+            continue
+        # Repo-determined placement — never scope-forced into a project.
+        if ma.transfer_mode == TransferMode.GIT.value:
+            skipped.append(ma.id)
+            continue
+        # Already filed under this project — nothing to do.
+        if ma.scope == AttachmentScope.PROJECT.value and ma.project_id == project_id:
+            skipped.append(ma.id)
+            continue
+        try:
+            res = await handle_attachment_install(
+                ma.id,
+                AttachmentScope.PROJECT.value,
+                project_id,
+                someone_typeid=someone_typeid,
+            )
+            # ``use_enum_values=True`` on ApiResponse stores the enum *value*
+            # (the plain string), so compare against ``.value``.
+            if getattr(res, "status", None) == ApiResponseStatus.SUCCESS.value:
+                installed.append(ma.id)
+            else:
+                failed.append(ma.id)
+        except Exception as e:  # noqa: BLE001
+            logger.warning(
+                "[message_attachment] conversation fan-out install for %s failed (non-fatal): %s",
+                ma.id,
+                e,
+                exc_info=True,
+            )
+            failed.append(ma.id)
+
+    return ApiSuccessResponse(data={"installed": installed, "skipped": skipped, "failed": failed})
+
+
 # ---------------------------------------------------------------------------
 # route wrappers
 # ---------------------------------------------------------------------------
@@ -841,6 +920,26 @@ async def uninstall_attachment_action() -> ApiResponse:
     except Exception as e:
         logger.error("[message_attachment] uninstall error: %s", e, exc_info=True)
         return ApiFailResponse(message=f"uninstall failed: {e}")
+
+
+@action.post(action_name="install-attachments", types=["conversation"])
+async def install_conversation_attachments_action() -> ApiResponse:
+    """Fan out an "install in project" pick to the whole conversation: install
+    every attachment of the target conversation into ``project_id``."""
+    try:
+        request_info = get_current_request_info()
+        if not request_info or not request_info.target_entity_typeid:
+            return ApiFailResponse(message="No request info found", status_code=400)
+        body = await request_info.get_post_data() or {}
+        project_id = body.get("project_id") or None
+        return await handle_conversation_install_all(
+            str(request_info.target_entity_typeid.id),
+            project_id,
+            someone_typeid=await _local_owner_typeid(),
+        )
+    except Exception as e:
+        logger.error("[message_attachment] install-attachments error: %s", e, exc_info=True)
+        return ApiFailResponse(message=f"install-attachments failed: {e}")
 
 
 @action.get(action_name="staged-files", types=["message_attachment"])

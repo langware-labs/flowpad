@@ -1,4 +1,4 @@
-import { dataManager, MessageAttachment, Project, TypeId } from '@sdk';
+import { Conversation, dataManager, MessageAttachment, Project, TypeId } from '@sdk';
 import { useProject } from '@sdk/react/hooks';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { Download, FolderDown, Globe, Loader2, Play, Trash2 } from 'lucide-react';
@@ -10,6 +10,7 @@ import { useAllProjects } from '@src/hooks/use-all-projects';
 import { notify } from '@src/notifications';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { openDisplayTarget } from '@src/navigation/open-display-target';
+import { applyProjectToConversation } from '../apply-project-choice';
 
 /** One install-scope toggle: shows Uninstall when THIS scope is installed,
  *  Install (disabled while the other scope holds the install) otherwise. */
@@ -38,7 +39,13 @@ function ScopeButton({
   const testIdSuffix = scope === 'user' ? 'global' : 'project';
   if (installedScope === scope) {
     return (
-      <Button size="sm" variant="outline" disabled={busy} onClick={onUninstall} data-testid={`asset-uninstall-${testIdSuffix}`}>
+      <Button
+        size="sm"
+        variant="outline"
+        disabled={busy}
+        onClick={onUninstall}
+        data-testid={`asset-uninstall-${testIdSuffix}`}
+      >
         {spinner ?? <Trash2 className="h-3.5 w-3.5" />}
         {uninstallLabel}
       </Button>
@@ -197,6 +204,22 @@ export function AssetInstallActions({
         const project = await ensureProject(picked.path, { select: false });
         if (!project.id) throw new Error('picked project has no id');
         const show = await attachment.install('project', project.id);
+        // Picking a project binds the WHOLE conversation to it: bind
+        // conversation.project_id (receiver-local, so the picker never reappears
+        // here) and install the conversation's other attachments into the same
+        // project. Future arrivals auto-install via the reception path.
+        const convId = attachment.conversation_id;
+        if (convId) {
+          try {
+            await applyProjectToConversation(convId, project);
+            const conv = await dataManager.getByTypeId<Conversation>(new TypeId(Conversation.type, convId));
+            if (conv) await conv.installAttachmentsIntoProject(project.id);
+          } catch (bindErr) {
+            // The primary attachment already installed; a fan-out/bind failure
+            // shouldn't fail the pick. The user can re-pick to retry.
+            console.error('[asset-review] conversation bind/fan-out failed', bindErr);
+          }
+        }
         notify.success({ title: t`Installed in project`, message: project.displayName });
         openDisplayTarget(show, navigation);
       } catch (err) {
@@ -260,7 +283,9 @@ export function AssetInstallActions({
         installLabel={setupLabel ?? <Trans>Install in project</Trans>}
         uninstallLabel={<Trans>Uninstall from project</Trans>}
         installIcon={<FolderDown className="h-3.5 w-3.5" />}
-        onInstall={openPicker}
+        // Once the conversation is bound to a project, skip the picker and
+        // install straight into it — the popup never reappears for this conv.
+        onInstall={() => (conversationProjectId ? void doInstall('project', conversationProjectId) : openPicker())}
         onUninstall={() => void doUninstall()}
         disabledTitle={t`Already installed globally — uninstall first`}
       />
