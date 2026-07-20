@@ -2,7 +2,16 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from typing import ClassVar, List, Optional, TYPE_CHECKING
+from typing import ClassVar, List, NamedTuple, Optional, TYPE_CHECKING
+
+
+class MessagePointer(NamedTuple):
+    """One parsed ``Conversation.message_ids`` entry: the FlowMessage id
+    (local ``@`` marker stripped, matching hub-side ids) and the pointer's
+    append timestamp (None when missing/unparseable)."""
+
+    fm_id: str
+    ts: Optional[datetime]
 
 from flow_sdk._compat import StrEnum  # 3.10-safe StrEnum (project pins py3.10)
 from flow_sdk.api.api_types.api_field import APIField
@@ -408,33 +417,63 @@ class Conversation(Entity):
             if fm.body_status == BodyStatus.UPLOADING:
                 await _upload_body_and_finalize(fm, self.id)
 
-    def _first_message_landing_path(self) -> Optional[str]:
-        """Return ``/flow_message/<id>`` for the earliest FM in this conv, or None.
+    def message_pointers(self) -> "list[MessagePointer]":
+        """Parse ``message_ids`` into ordered (oldest-first) FlowMessage pointers.
 
-        Parses ``self.message_ids`` (JSON-encoded list of Pointers ordered
-        oldest-first by jsonl append order). Strips the local ``@`` marker
-        so the path matches hub-side ids.
+        The ONE reader of the projection's JSON shape — the landing path, the
+        inbox unread count, and any future consumer resolve pointers through
+        here. Skips non-FlowMessage/corrupt entries; empty list when the
+        projection is missing or unparseable.
         """
         if not self.message_ids:
-            return None
+            return []
         try:
             import json  # noqa: PLC0415
-            msgs = json.loads(self.message_ids)
+
+            entries = json.loads(self.message_ids)
         except (json.JSONDecodeError, TypeError):
-            return None
-        if not isinstance(msgs, list) or not msgs:
-            return None
-        try:
-            from flow_sdk.fs_store.type_id import TypeId  # noqa: PLC0415
-            tid = TypeId(msgs[0].get("typeid", ""))
-        except (ValueError, AttributeError, TypeError):
-            return None
-        if tid.type != "flow_message" or not tid.id:
-            return None
-        msg_id = tid.id.lstrip("@")
-        if not msg_id:
-            return None
-        return f"/flow_message/{msg_id}"
+            return []
+        if not isinstance(entries, list):
+            return []
+        pointers: list[MessagePointer] = []
+        for entry in entries:
+            typeid = str(entry.get("typeid") or "") if isinstance(entry, dict) else ""
+            if "-" not in typeid:
+                continue
+            ptype, pid = typeid.split("-", 1)
+            pid = pid.lstrip("@")
+            if ptype != "flow_message" or not pid:
+                continue
+            ts_raw = entry.get("ts")
+            try:
+                ts = datetime.fromisoformat(str(ts_raw).replace("Z", "+00:00")) if ts_raw else None
+            except ValueError:
+                ts = None
+            pointers.append(MessagePointer(pid, ts))
+        return pointers
+
+    def is_archived(self) -> bool:
+        """Conversation-level archive with auto-revive (see ``archived_at``):
+        True while the stamp is set and no message NEWER than it has landed.
+        Same comparison as the FE row facets (`conversation-category.ts`
+        ``isArchived``) — a missing/unparseable latest timestamp does NOT
+        revive."""
+        if self.archived_at is None:
+            return False
+        pointers = self.message_pointers()
+        latest_ts = pointers[-1].ts if pointers else None
+        if latest_ts is None:
+            return True
+        archived_at = self.archived_at
+        if latest_ts.tzinfo is None or archived_at.tzinfo is None:
+            latest_ts = latest_ts.replace(tzinfo=None)
+            archived_at = archived_at.replace(tzinfo=None)
+        return latest_ts <= archived_at
+
+    def _first_message_landing_path(self) -> Optional[str]:
+        """Return ``/flow_message/<id>`` for the earliest FM in this conv, or None."""
+        pointers = self.message_pointers()
+        return f"/flow_message/{pointers[0].fm_id}" if pointers else None
 
     async def summary(self) -> str:
         """Plain-text summary of this conversation: a header (title,

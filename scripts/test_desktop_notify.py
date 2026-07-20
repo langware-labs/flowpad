@@ -64,15 +64,18 @@ def cmd_frame(_args: argparse.Namespace) -> int:
     import asyncio
 
     import flow_sdk.server.routes.websocket as ws
+    from flow_sdk.notifications import notify_desktop
 
     captured: dict[str, str] = {}
 
     async def fake_broadcast(message: str) -> None:
         captured["msg"] = message
 
+    # The notification service references websocket.broadcast late, so patching
+    # the transport here still intercepts the frame.
     ws.broadcast = fake_broadcast  # type: ignore[assignment]
 
-    asyncio.run(ws.notify_desktop(
+    asyncio.run(notify_desktop(
         "process_complete",
         title="Task finished",
         body="build ok",
@@ -91,7 +94,7 @@ def cmd_frame(_args: argparse.Namespace) -> int:
         },
     }
 
-    asyncio.run(ws.notify_desktop("message", title="Alice", body="hi", attention=False))
+    asyncio.run(notify_desktop("message", title="Alice", body="hi", attention=False))
     quiet = json.loads(captured["msg"])
     checks["attention=False rides the payload"] = quiet.get("info") == {
         "title": "Alice", "body": "hi", "attention": False,

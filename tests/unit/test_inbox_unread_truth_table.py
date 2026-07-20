@@ -13,6 +13,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from flow_sdk.builtin.conversation import Conversation
 from flow_sdk.inbox import count_unread
 
 FIXTURE = Path(__file__).parent.parent / "fixtures" / "inbox_unread_truth_table.json"
@@ -23,11 +24,14 @@ def _dt(value):
     return datetime.fromisoformat(value.replace("Z", "+00:00")) if value else None
 
 
-def _conversation(row: dict) -> SimpleNamespace:
+def _conversation(row: dict) -> Conversation:
+    # The REAL entity, no DB — pointer parsing (message_pointers) and the
+    # archive auto-revive rule (is_archived) are Conversation behavior, so the
+    # truth table exercises them where they live.
     pointers = [
         {"typeid": f"flow_message-{p['fm']}", "ts": p["ts"]} for p in row.get("pointers", [])
     ]
-    return SimpleNamespace(
+    return Conversation(
         id=row["id"],
         archived_at=_dt(row.get("archived_at")),
         message_ids=json.dumps(pointers) if pointers else None,
