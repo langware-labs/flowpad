@@ -1,6 +1,7 @@
 import { Bookmark, BookmarkType } from '@sdk';
 import { useProject } from '@sdk/react/hooks';
-import { useCallback, useMemo } from 'react';
+import { canNavigateFavorite } from '@src/navigation/favorite-nav';
+import { useCallback, useMemo, useRef } from 'react';
 import { useProjectBookmarks } from './use-project-bookmarks';
 
 export interface FavoriteRef {
@@ -156,6 +157,28 @@ export function useFavorites() {
     [excludeBookmarks, refetch],
   );
 
+  // A favorite whose stored pointer resolves to no route is permanently dead:
+  // `canNavigateFavorite` is a pure function of the bookmark's own `data` blob
+  // and the static nav table (never a load-time race), so a non-navigable
+  // favorite can never become reachable. Reap them — a hard delete, matching
+  // unfavorite — so the menu shows no broken "ghost" rows. Only leaf favorites
+  // are candidates: folders carry no target ref and would always read as
+  // non-navigable.
+  //
+  // Read `favorites` through a ref so this callback's identity stays stable:
+  // its one caller runs it from an effect keyed on menu-open, and a `favorites`
+  // dep would rebuild it on every refetch (including reap's own), re-firing that
+  // effect for no reason.
+  const favoritesRef = useRef(favorites);
+  favoritesRef.current = favorites;
+  const reapDead = useCallback(async () => {
+    const dead = favoritesRef.current.filter((b) => b.id && !canNavigateFavorite(b));
+    if (dead.length === 0) return;
+    excludeBookmarks(dead.map((b) => b.id));
+    await Promise.all(dead.map((b) => b.delete()));
+    await refetch();
+  }, [excludeBookmarks, refetch]);
+
   const renameFavorite = useCallback(
     async (bookmark: Bookmark, newName: string) => {
       const next = newName.trim();
@@ -250,6 +273,7 @@ export function useFavorites() {
     isFavorited,
     addFavorite,
     removeFavorite,
+    reapDead,
     renameFavorite,
     toggleFavorite,
     createFolder,

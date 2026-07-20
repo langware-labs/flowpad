@@ -43,6 +43,15 @@ function toViewMode(v: unknown): ViewMode {
   return toViewModeOrNull(v) ?? toViewModeOrNull(PREF_REGISTRY[PrefKey.VIEW_MODE].defaultValue) ?? ViewMode.Standard;
 }
 
+/**
+ * The "advanced-or-fuller" threshold from the mode hierarchy (Advanced ⊂ Dev),
+ * as a plain predicate so both the `useIsAdvanced` hook and non-hook callers
+ * (e.g. syncDesktopMenu) share one definition of where "advanced" begins.
+ */
+export function isAdvancedMode(mode: ViewMode): boolean {
+  return mode === ViewMode.Advanced || mode === ViewMode.Dev;
+}
+
 const viewModeOverrideListeners = new Set<() => void>();
 // Since the URL's viewMode is also adopted into the persisted preference on load
 // (useDockViewModeOverrideSync), this transient override normally equals the pref.
@@ -83,8 +92,25 @@ function ensureVibeFont(): void {
   document.head.appendChild(link);
 }
 
+// Mirror the effective view mode to the Electron application menu: it is shown
+// only in Advanced/Dev (see electron/main.js `set-menu-visible`). A no-op in the
+// browser build (no electronAPI). Keyed on the advanced boolean, not the exact
+// mode, so Advanced↔Dev and Vibe↔Standard transitions don't re-send.
+let lastMenuVisibleSent: boolean | null = null;
+function syncDesktopMenu(val: ViewMode): void {
+  const visible = isAdvancedMode(val);
+  if (visible === lastMenuVisibleSent) return;
+  const setMenuVisible = (window as unknown as {
+    electronAPI?: { setMenuVisible?: (visible: boolean) => void };
+  }).electronAPI?.setMenuVisible;
+  if (typeof setMenuVisible !== 'function') return;
+  lastMenuVisibleSent = visible;
+  setMenuVisible(visible);
+}
+
 function applyAttribute(val: ViewMode, animate = true): void {
   if (val === ViewMode.Vibe) ensureVibeFont();
+  syncDesktopMenu(val);
   const prev = document.documentElement.getAttribute('data-view');
   // Guard: prefMan fires on EVERY pref change, but only a view-mode change need
   // touch the DOM. Skip the write when the attribute already matches.
@@ -221,8 +247,7 @@ export function useDockViewModeOverrideSync(): void {
 
 /** Semantic boolean accessor — true if Advanced or Dev (hierarchy). */
 export function useIsAdvanced(): boolean {
-  const mode = useViewMode();
-  return mode === ViewMode.Advanced || mode === ViewMode.Dev;
+  return isAdvancedMode(useViewMode());
 }
 
 /** Semantic boolean accessor — true only in Dev mode. */

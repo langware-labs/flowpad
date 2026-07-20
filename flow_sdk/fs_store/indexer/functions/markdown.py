@@ -130,6 +130,10 @@ def markdown_in_folder_fn(
         for md in entries:
             if _is_appledouble(md.name):
                 continue
+            # SKILL.md / skill.md is a skill's doc (claimed by skill_in_folder_fn),
+            # never a standalone MARKDOWN asset — skip so it isn't double-indexed.
+            if md.name.lower() == "skill.md":
+                continue
             try:
                 if not md.is_file():
                     continue
