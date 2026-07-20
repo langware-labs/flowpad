@@ -3,7 +3,8 @@ shadow home at a filesystem-unsafe path.
 
 Proven root cause this session: the indexer's skip-fresh probe built each
 record's shadow home (``<records_root>/<type>/<id>/``) from the **raw**
-``gen_uuid_fn`` id. For an MCP server that id is ``<source_file>:<json_path>`` —
+``TypeInfo.mint_id`` result. For an MCP server the natural key is
+``<source_file>:<json_path>`` —
 e.g. the claude.ai cloud connector
 ``…/.claude.json:/claudeAiMcpEverConnected/claude.ai Google Drive``. A ``:`` is
 illegal in a Windows folder name, so writing that shadow home throws

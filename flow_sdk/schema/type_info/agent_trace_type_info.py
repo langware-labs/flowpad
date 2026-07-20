@@ -2,14 +2,14 @@
 import json
 from typing import Optional
 
+from flow_sdk.fs_store.indexer.functions._asset_identity import json_id, resolved_path_key, write_json_id
+from flow_sdk.fs_store.indexer.functions.agent_trace import (
+    extract_agent_trace,
+)
 from flow_sdk.schema.type_info import TypeMetadata
 from flow_sdk.schema.type_info.base_meta import BaseMeta
 from flow_sdk.schema.types import EntityType
 from flow_sdk.schema.view_mode import ViewMode
-from flow_sdk.fs_store.indexer.functions.agent_trace import (
-    agent_trace_gen_id,
-    extract_agent_trace,
-)
 
 
 class AgentTraceMeta(BaseMeta):
@@ -47,7 +47,9 @@ def _agent_trace_default_body(entity) -> Optional[str]:
 AGENT_TRACE = TypeMetadata(
     type=EntityType.AGENT_TRACE,
     from_disk_fn=extract_agent_trace,
-    gen_uuid_fn=agent_trace_gen_id,
+    id_from_file_fn=json_id,
+    id_stable_key_fn=resolved_path_key,
+    id_write_fn=write_json_id,
     indexed_by_default=True,
     browseable_by=ViewMode.ADVANCED,
     creatable=False,

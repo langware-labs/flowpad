@@ -14,7 +14,6 @@ from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer.functions._report_common import (
     adopt_doc_id,
     load_report,
-    report_gen_id,
     report_id_from_path,
     walk_report_dirs,
 )
@@ -24,10 +23,6 @@ from flow_sdk.fs_store.record_types import RecordType
 
 def asset_cleanup_report_fn(nodes: list[FSRef], opts: IndexerOptions) -> list[FSRef]:
     return walk_report_dirs(nodes, "cleanup_reports", RecordType.ASSET_CLEANUP_REPORT)
-
-
-# Mint+write a stable id into report.json (idempotent).
-asset_cleanup_report_gen_id = report_gen_id
 
 
 def extract_asset_cleanup_report(ref: FSRef) -> list[FSRecord]:

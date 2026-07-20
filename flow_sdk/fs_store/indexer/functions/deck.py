@@ -29,7 +29,6 @@ from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.identifier import mint_uuid
 from flow_sdk.fs_store.indexer.functions._folder_capsule import (
-    folder_capsule_gen_id,
     read_folder_capsule_id,
 )
 from flow_sdk.fs_store.indexer.index_function import IndexerOptions
@@ -86,18 +85,14 @@ def _deck_id_from_path(path: Path) -> str:
     return mint_uuid(f"{RecordType.DECK}:{path.resolve()}", namespace=uuid.NAMESPACE_DNS)
 
 
-def deck_gen_id(ref: FSRef) -> str:
-    """Resolve a deck's id. Idempotent.
+def deck_id_from_folder(ref: FSRef | Path) -> object | None:
+    path = Path(getattr(ref, "_path", ref))
+    cap = read_folder_capsule_id(path)
+    if cap:
+        return cap
+    from flow_sdk.fs_store.identifier import adopt_entity_id  # noqa: PLC0415
 
-    Precedence: the `.flow/id` capsule → a VALID `deck.json` `id` (adopted +
-    backfilled) → a fresh random **v4** into the capsule. uuid5(path) is the
-    read-only fallback.
-    """
-    path = ref._path
-    if not path.is_dir():
-        return _deck_id_from_path(path)
-    manifest = _load_manifest(path)
-    return folder_capsule_gen_id(path, manifest.get("id"))
+    return adopt_entity_id(_load_manifest(path).get("id"))
 
 
 # ── extractor ─────────────────────────────────────────────────────────────────

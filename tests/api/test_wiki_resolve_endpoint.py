@@ -13,8 +13,8 @@ import pytest
 
 from flow_sdk.fs_store.indexer.functions.markdown import (
     extract_markdown,
-    markdown_gen_id as _markdown_gen_id,
 )
+from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.fs_store.fs_ref import FSRef as _FSRef
 
 
@@ -37,7 +37,7 @@ class MarkdownRecord:
 
     @staticmethod
     def genId(ref):
-        return _markdown_gen_id(ref)
+        return SchemaRegistry.get("markdown").mint_id(ref)
   # alias for tests; uses extract_markdown for parsing
 from flow_sdk.fs_store.indexer.functions.whiteboard import extract_whiteboard
 from flow_sdk.fs_store.fs_record import FSRecord

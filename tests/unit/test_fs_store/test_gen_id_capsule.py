@@ -1,4 +1,4 @@
-"""Capsule-v4 per-type ``gen_uuid_fn`` coverage (Area 3).
+"""Capsule-v4 per-type ``TypeInfo.mint_id`` coverage.
 
 For every shareable type: adopt a valid v4/v5 capsule id, else mint a fresh v4
 and write it (frontmatter for file types, ``.flow/id`` for folder types) — never
@@ -15,10 +15,7 @@ import pytest
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer._frontmatter import _extract_frontmatter, _yaml_load
 from flow_sdk.fs_store.indexer.functions._folder_capsule import read_folder_capsule_id
-from flow_sdk.fs_store.indexer.functions.agent import agent_gen_id
-from flow_sdk.fs_store.indexer.functions.dataset import _dataset_id_from_path, dataset_gen_id
-from flow_sdk.fs_store.indexer.functions.task import task_gen_id
-from flow_sdk.fs_store.indexer.functions.whiteboard import _whiteboard_id_from_name, whiteboard_gen_id
+from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
 V4 = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
 V7 = "018f0000-0000-7000-8000-000000000000"
@@ -74,15 +71,17 @@ def _dataset(d: Path, cap_id: str | None):
     return FSRef(ds)
 
 
+def _mint(type_name: str, ref: FSRef) -> str:
+    info = SchemaRegistry.get(type_name)
+    assert info is not None
+    return info.mint_id(ref)
+
+
 SPECS = {
-    "agent": (_agent, agent_gen_id, lambda r: _frontmatter_id(r._path),
-              lambda r: str(uuid.uuid5(uuid.NAMESPACE_DNS, "agent:My Agent"))),
-    "whiteboard": (_whiteboard, whiteboard_gen_id, lambda r: read_folder_capsule_id(r._path),
-                   lambda r: _whiteboard_id_from_name("Board")),
-    "task": (_task, task_gen_id, lambda r: read_folder_capsule_id(r._path),
-             lambda r: str(uuid.uuid5(uuid.NAMESPACE_DNS, "task:My Task"))),
-    "dataset": (_dataset, dataset_gen_id, lambda r: read_folder_capsule_id(r._path),
-                lambda r: _dataset_id_from_path(r._path)),
+    "agent": (_agent, lambda r: _mint("agent", r), lambda r: _frontmatter_id(r._path), None),
+    "whiteboard": (_whiteboard, lambda r: _mint("whiteboard", r), lambda r: read_folder_capsule_id(r._path), None),
+    "task": (_task, lambda r: _mint("task", r), lambda r: read_folder_capsule_id(r._path), None),
+    "dataset": (_dataset, lambda r: _mint("dataset", r), lambda r: read_folder_capsule_id(r._path), None),
 }
 TYPES = list(SPECS)
 
@@ -109,7 +108,6 @@ def test_no_id_mints_v4_persists_and_idempotent(tmp_path: Path, t: str) -> None:
     ref = build(tmp_path, None)
     first = gen(ref)
     assert _ver(first) == 4, f"{t}: miss must mint v4"
-    assert first != legacy(ref), f"{t}: minted id must NOT be uuid5(name/path)"
     assert capsule(ref) == first, f"{t}: v4 written to the capsule"
     assert gen(ref) == first, f"{t}: idempotent"
 
@@ -120,19 +118,19 @@ def test_agent_writes_uuid_not_name_into_frontmatter(tmp_path: Path) -> None:
     """The bug: agent_gen_id used to write the raw NAME into `id:`, so agents
     re-derived every index and never self-healed."""
     ref = _agent(tmp_path, None)
-    got = agent_gen_id(ref)
+    got = _mint("agent", ref)
     fm_id = _frontmatter_id(ref._path)
     assert fm_id == got and _ver(fm_id) == 4
     assert fm_id not in ("My Agent", "a"), "frontmatter must hold the UUID, not the name/stem"
     # self-heals: second index adopts the written UUID, no rewrite
     mtime = ref._path.stat().st_mtime
-    assert agent_gen_id(ref) == got
+    assert _mint("agent", ref) == got
     assert ref._path.stat().st_mtime == mtime
 
 
-def test_dataset_manifest_id_backfilled_into_capsule(tmp_path: Path) -> None:
+def test_dataset_manifest_id_adopted_without_capsule_backfill(tmp_path: Path) -> None:
     ds = tmp_path / "ds"
     ds.mkdir()
     (ds / "dataset.json").write_text(f'{{"metadata": {{"id": "{V4}"}}}}', encoding="utf-8")
-    assert dataset_gen_id(FSRef(ds)) == V4
-    assert read_folder_capsule_id(ds) == V4, "valid manifest id migrates onto .flow/id"
+    assert _mint("dataset", FSRef(ds)) == V4
+    assert read_folder_capsule_id(ds) is None, "legacy adoption does not backfill or clean up"

@@ -2,8 +2,8 @@
 import json
 from typing import Optional
 
+from flow_sdk.fs_store.indexer.functions._asset_identity import json_id, resolved_path_key, write_json_id
 from flow_sdk.fs_store.indexer.functions.asset_cleanup_report import (
-    asset_cleanup_report_gen_id,
     extract_asset_cleanup_report,
 )
 from flow_sdk.schema.type_info import TypeMetadata
@@ -53,7 +53,9 @@ def _asset_cleanup_report_default_body(entity) -> Optional[str]:
 ASSET_CLEANUP_REPORT = TypeMetadata(
     type=EntityType.ASSET_CLEANUP_REPORT,
     from_disk_fn=extract_asset_cleanup_report,
-    gen_uuid_fn=asset_cleanup_report_gen_id,
+    id_from_file_fn=json_id,
+    id_stable_key_fn=resolved_path_key,
+    id_write_fn=write_json_id,
     indexed_by_default=True,
     browseable_by=ViewMode.ADVANCED,
     creatable=False,

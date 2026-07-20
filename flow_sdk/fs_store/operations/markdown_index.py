@@ -97,7 +97,7 @@ def from_markdown(text: str, path: Path | None = None) -> FSRecord:
     # The rendered index.md carries its TypeId in frontmatter (`id:
     # markdown_index-<uuid>`). Strip our own type prefix, then validate-on-
     # adopt; anything non-conforming falls back to the same uuid5(path) the
-    # gen_uuid_fn mints — so re-indexing a rebuilt index.md updates the
+    # TypeInfo.mint_id resolves — so re-indexing a rebuilt index.md updates the
     # original entity row instead of allocating a fresh id.
     raw_id = fields.get("id") or fields.get("asset_id")
     if isinstance(raw_id, str) and raw_id.startswith(f"{RecordType.MARKDOWN_INDEX.value}-"):

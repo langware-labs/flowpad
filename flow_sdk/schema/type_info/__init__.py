@@ -88,7 +88,11 @@ class TypeMetadata:
     shared_child: bool = False
     # Indexer dispatch callables (walked types only).
     from_disk_fn: Any = None
-    gen_uuid_fn: Any = None
+    id_from_file_fn: Any = None
+    id_from_folder_fn: Any = None
+    id_stable_key_fn: Any = None
+    id_namespace: Any = None
+    id_write_fn: Any = None
     asset_hash_fn: Any = None
     post_sync_fn: Any = None
     # Per-type default-body writer used by FSRecord.upsert_main_ref to materialize
@@ -149,7 +153,11 @@ class TypeMetadata:
             parent_share_on_default=self.parent_share_on_default,
             shared_child=self.shared_child,
             from_disk_fn=self.from_disk_fn,
-            gen_uuid_fn=self.gen_uuid_fn,
+            id_from_file_fn=self.id_from_file_fn,
+            id_from_folder_fn=self.id_from_folder_fn,
+            id_stable_key_fn=self.id_stable_key_fn,
+            **({"id_namespace": self.id_namespace} if self.id_namespace is not None else {}),
+            id_write_fn=self.id_write_fn,
             asset_hash_fn=self.asset_hash_fn,
             post_sync_fn=self.post_sync_fn,
             default_body_fn=self.default_body_fn,

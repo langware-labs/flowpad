@@ -122,22 +122,37 @@ def _iter_head_json(path: str | Path) -> Iterator[dict]:
             except json.JSONDecodeError:
                 continue
 
-def claude_session_id(ref: FSRef) -> str:
+def claude_session_identity_key(ref: FSRef | Path) -> str:
     """Stable, filesystem-safe **UUID** id = sessionId from the JSONL head
     envelope (fallback: filename stem). Claude session ids are already UUIDs so
     they're kept as-is; anything non-conforming is hashed with the same
     ``f"{type}:{key}"`` formula ``Entity.allocate_id`` uses, so it matches the DB
     id."""
-    key = ref._path.stem
+    path = Path(getattr(ref, "_path", ref))
+    key = path.stem
     try:
-        for raw in _iter_head_json(ref._path):
+        for raw in _iter_head_json(path):
             sid = raw.get("sessionId")
             if sid:
                 key = str(sid)
                 break
     except OSError:
         pass
-    return key if is_valid_entity_id(key) else mint_uuid(f"{RecordType.CLAUDE_SESSION}:{key}", namespace=uuid.NAMESPACE_DNS)
+    return key
+
+
+def claude_session_id_from_file(ref: FSRef | Path) -> str | None:
+    key = claude_session_identity_key(ref)
+    return key if is_valid_entity_id(key) else None
+
+
+def claude_session_stable_key(ref: FSRef | Path) -> str:
+    return f"{RecordType.CLAUDE_SESSION}:{claude_session_identity_key(ref)}"
+
+
+def claude_session_id(ref: FSRef) -> str:
+    existing = claude_session_id_from_file(ref)
+    return existing or mint_uuid(claude_session_stable_key(ref), namespace=uuid.NAMESPACE_DNS)
 
 # ── Extractor (head + tail read, no stat parse) ──────────────────────────────
 

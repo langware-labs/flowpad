@@ -5,7 +5,7 @@ slot functions:
 - ``dataset_fn`` walker emits one FSRef per ``assets/datasets/<slug>/`` folder.
 - ``extract_dataset`` parses the manifest + rows into one FSRecord with counts.
 - ``iter_examples`` normalizes both layouts into the shared ``Example`` shape.
-- ``dataset_gen_id`` adopts a valid manifest id else mints a stable uuid5.
+- ``TypeInfo.mint_id`` adopts a valid manifest id else mints a capsule v4.
 
 Pure-sync (no scan needed): the walker is called directly with a project node.
 """
@@ -23,11 +23,15 @@ from flow_sdk.fs_store.indexer import IndexerOptions
 from flow_sdk.fs_store.indexer.functions.dataset import (
     dataset_asset_hash,
     dataset_fn,
-    dataset_gen_id,
     extract_dataset,
     iter_examples,
 )
 from flow_sdk.fs_store.record_types import RecordType
+from flow_sdk.fs_store.schema_registry import SchemaRegistry
+
+
+def _mint(ref: FSRef) -> str:
+    return SchemaRegistry.get("dataset").mint_id(ref)
 
 # do not increase timeout without approval — these are pure-sync parses (<1s).
 pytestmark = pytest.mark.timeout(5)
@@ -220,13 +224,13 @@ def test_gen_id_adopts_valid_manifest_id(tmp_path: Path) -> None:
     ds = _seed_csv_dataset(
         tmp_path, "adopt", manifest={"id": valid, "data_layout": "csv"}, csv_text="input\nx\n"
     )
-    assert dataset_gen_id(FSRef(ds)) == valid
+    assert _mint(FSRef(ds)) == valid
 
 
 def test_gen_id_mints_v4_capsule_when_absent(tmp_path: Path) -> None:
     ds = _seed_csv_dataset(tmp_path, "derive", manifest={"data_layout": "csv"}, csv_text="input\nx\n")
-    first = dataset_gen_id(FSRef(ds))
-    second = dataset_gen_id(FSRef(ds))
+    first = _mint(FSRef(ds))
+    second = _mint(FSRef(ds))
     assert first == second  # idempotent (adopted from the .flow/id capsule)
     assert uuid.UUID(first).version == 4  # capsule-v4: a fresh random id, not uuid5(path)
 
@@ -237,7 +241,7 @@ def test_gen_id_ignores_foreign_id_version(tmp_path: Path) -> None:
     ds = _seed_csv_dataset(
         tmp_path, "v7", manifest={"id": v7, "data_layout": "csv"}, csv_text="input\nx\n"
     )
-    minted = dataset_gen_id(FSRef(ds))
+    minted = _mint(FSRef(ds))
     assert minted != v7
     assert uuid.UUID(minted).version == 4  # foreign id rejected → fresh v4 into the capsule
 

@@ -732,7 +732,7 @@ async def _pack_file_backed_attachment(
     else the canonical ``<main_subdir>/<leaf>``. Keying by ``rel_path`` lets the
     receiver mirror the sender's repo layout via the anchor-free restore. The
     leaf name is preserved from the source; the sender's id is pinned into the
-    main doc so the receiver's ``gen_uuid_fn`` materializes the SAME entity.
+    main doc so the receiver's identity resolver materializes the SAME entity.
 
     Build/environment cruft is filtered via ``_ASSET_PACK_IGNORE`` (deep
     ``.venv``/cache trees blow past Windows MAX_PATH on extractall).

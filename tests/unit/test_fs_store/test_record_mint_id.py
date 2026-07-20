@@ -21,10 +21,10 @@ import pytest
 
 from flow_sdk.fs_store.indexer._frontmatter import _extract_body, _extract_frontmatter, _yaml_load
 from flow_sdk.fs_store.indexer.functions.markdown import (
-    markdown_gen_id as _markdown_gen_id,
     markdown_id as _markdown_id,
     extract_markdown as _extract_markdown,
 )
+from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
 class _MarkdownRecordAdapter:
     _mintable = True
@@ -33,7 +33,7 @@ class _MarkdownRecordAdapter:
         return _markdown_id(ref)
     @staticmethod
     def genId(ref):
-        return _markdown_gen_id(ref)
+        return SchemaRegistry.get("markdown").mint_id(ref)
     @staticmethod
     def from_file(path):
         from flow_sdk.fs_store.fs_ref import FSRef
@@ -207,8 +207,7 @@ def test_claude_plan_genId_also_mints(tmp_path: Path) -> None:
     Mirrors the markdown contract: idempotent, migration-safe (writes the
     derived path-uuid5 so any existing DB row by that id stays valid).
     """
-    from flow_sdk.fs_store.indexer.functions.claude_plan import claude_plan_gen_id
-    ClaudePlanRecord = type('CP', (), {'genId': staticmethod(claude_plan_gen_id)})
+    ClaudePlanRecord = type('CP', (), {'genId': staticmethod(lambda ref: SchemaRegistry.get("plan").mint_id(ref))})
 
     p = tmp_path / "plan.md"
     p.write_text("some plan body", encoding="utf-8")
