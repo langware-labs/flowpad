@@ -1,4 +1,5 @@
 ---
+id: a32fd7a6-bdcc-5211-9f8f-d2995177a711
 name: artifact-setup
 description: Set up a RECEIVED artifact so it runs and shows live in the FlowPad Vibe
   display. Use this when a shared artifact has just been installed and needs to be
