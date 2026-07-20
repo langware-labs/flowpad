@@ -41,13 +41,33 @@ async def restore_db():
     ``tmp_path`` file that pytest garbage-collects. Without restoring, every
     later DB-hitting test in the process runs against a foreign (eventually
     deleted) DB — the CI-only test_model_map "capability is None" failures.
+
+    The restore must be LAZY: pytest-asyncio closes this test's event loop
+    right after teardown, so opening the restored driver here (e.g. via a
+    second ``reinit_db``) would hand later tests an engine whose asyncio
+    primitives are bound to a dead loop ("bound to a different event loop"
+    failures). Instead, close the tmp driver in its own loop, point settings
+    back, and reinstall the ``LazyDBDriver`` descriptors so the next test's
+    first DB access builds and opens a fresh driver inside its own loop —
+    the same state a process has at startup.
     """
-    from flow_sdk.db.database import reinit_db
-    from flow_sdk.instance_settings import get_instance_settings
+    from flow_sdk.core.cache.entity_cache import entity_cache, uname_cache
+    from flow_sdk.db.database import close_db
+    from flow_sdk.db.db_entity import DBEntity
+    from flow_sdk.db.db_relationship import DBRelationship
+    from flow_sdk.db.drivers.db_driver import LazyDBDriver
+    from flow_sdk.instance_settings import get_instance_settings, override_db_path
 
     original = get_instance_settings().db_path
     yield
-    await reinit_db(str(original))
+    await close_db()
+    override_db_path(str(original))
+    for klass in (DBEntity, DBRelationship):
+        lazy = LazyDBDriver()
+        lazy.__set_name__(klass, "_db")
+        klass._db = lazy
+    entity_cache.clear()
+    uname_cache.clear()
 
 
 def _clean_instance_env(monkeypatch: pytest.MonkeyPatch) -> None:
