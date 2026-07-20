@@ -1,5 +1,5 @@
 import '@src/i18n-init';
-import { initSentry, toplog } from '@sdk';
+import { toplog } from '@sdk';
 import { sdkConfig } from '@sdk/config/index';
 import { initDesktopBackend } from '@sdk/config/desktop';
 import '@src/styles/index.css';
@@ -15,7 +15,6 @@ import '@src/tabs/agentic-process-tab-adapter';
 import { router } from './router';
 import './styles/highlightjs.css';
 
-initSentry();
 
 function defineGlobals() {
   import('@sdk').then(sdk => {

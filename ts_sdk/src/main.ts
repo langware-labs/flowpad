@@ -11,7 +11,6 @@ import { isHubOnly, markHubModeReady, setSupportedPagesForHubMode } from './util
 import { ActionInfo } from './models';
 import { navigator } from './services/navigationService';
 // import { authService } from './services/authService';
-import * as Sentry from '@sentry/browser';
 import { ContextEntitiesEnum } from './FlowSync/context';
 import { getContextEntityFromLocalStorage, setContextEntityToLocalStorage } from './FlowSync/context-local-storage';
 import { capabilityManager } from './capabilities';
@@ -139,7 +138,6 @@ export async function initSdk(params?: { agentId?: string; setupWorkspace?: bool
         user = new User(bootstrapInfo.user);
         user.markAsExpanded();
         await dataContext.setContextEntityTypeId(ContextEntitiesEnum.LocalUserTypeId, user.typeId);
-        trackUserToSentry(user);
         void ConnectionManager.getInstance().connect();
       }
 
@@ -253,28 +251,6 @@ export async function signup(signup: SignupInfo): Promise<User> {
     throw new Error('Failed to signup');
   }
   return new User(entity_json);
-}
-
-export function trackUserToSentry(logged_in: User) {
-  //Associate user with Sentry
-  Sentry.setUser({
-    id: logged_in.id,
-  });
-
-  //Add custom tags (for filtering in Sentry UI)
-  if (logged_in.id) {
-    Sentry.setTag('user.id', logged_in.id);
-  }
-
-  //Add breadcrumb for audit trail
-  Sentry.addBreadcrumb({
-    category: 'auth',
-    message: `User logged in: ${logged_in.name}`,
-    level: 'info',
-    data: {
-      id: logged_in.id,
-    },
-  });
 }
 
 export async function getErrorMessagesFromAxios(error: any): Promise<string> {
