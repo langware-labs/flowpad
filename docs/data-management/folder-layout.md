@@ -325,7 +325,9 @@ These types are extracted from `~/.claude/settings.json` (or project-level `.cla
 The old `flow_sdk/fs_records/` per-type record classes (`ClaudeRootFsRecord`, `ClaudeSessionFsRecord`, `SkillRecord`, `AgenticProcess`, …) no longer exist. With `FSRecord` knowing nothing about types, all per-type behavior lives in **free functions registered on `TypeInfo`** and dispatched by the indexer:
 
 - `from_disk_fn(FSRef) -> list[FSRecord]` — parse a source file/dir into records (cold path)
-- `gen_uuid_fn(FSRef) -> str` — mint/read the record id (hot path)
+- `id_from_file_fn(FSRef) -> object` / `id_from_folder_fn(FSRef) -> object` — pure candidate readers; `TypeInfo.extract_id()` selects by layout and validates v4/v5
+- `id_stable_key_fn(FSRef) -> str | None`, `id_namespace` — optional deterministic v5 policy
+- `id_write_fn(FSRef, id) -> bool` — optional canonical carrier writer used only by `TypeInfo.mint_id()`
 - `asset_hash_fn(FSRef) -> float` — cheap freshness stat
 - `post_sync_fn`, `default_body_fn`, `meta_model`, `main_subdir`, `main_layout`
 
