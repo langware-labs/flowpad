@@ -13,9 +13,7 @@ from pathlib import Path
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer._frontmatter import (
-    _extract_body,
     _extract_frontmatter,
-    _render_frontmatter,
     _yaml_load,
 )
 from flow_sdk.fs_store.indexer.index_function import IndexerOptions
@@ -58,7 +56,7 @@ def claude_memory_id(ref: FSRef) -> str:
     existing = _read_memory_frontmatter_id(ref._path)
     return existing if existing else _mem_id(ref._path)
 
-def extract_claude_memory(ref: FSRef) -> list[FSRecord]:
+def extract_claude_memory(ref: FSRef, resolved_id: str) -> list[FSRecord]:
     from flow_sdk.fs_store.indexer.functions._claude_projects import _real_path_from_jsonl  # noqa: PLC0415
 
     md_path = ref._path
@@ -68,10 +66,9 @@ def extract_claude_memory(ref: FSRef) -> list[FSRecord]:
     real_path = _real_path_from_jsonl(project_dir)
     real = str(real_path) if real_path else "/" + encoded.lstrip("-").replace("-", "/")
 
-    mem_id = claude_memory_id(ref)
     rec = FSRecord(
         RecordType.CLAUDE_MEMORY,
-        mem_id,
+        resolved_id,
         name=md_path.stem,
         asset_type="memory",
         project_path=real,

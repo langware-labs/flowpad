@@ -129,7 +129,7 @@ def whiteboard_asset_hash(ref: FSRef) -> float:
 
 # ── extractor ────────────────────────────────────────────────────────────────
 
-def extract_whiteboard(ref: FSRef) -> list[FSRecord]:
+def extract_whiteboard(ref: FSRef, resolved_id: str) -> list[FSRecord]:
     """Parse a whiteboard folder into a Record. Replaces ``WhiteboardRecord._from_fsref_sync``.
 
     Eagerly populates: id, name, description, content (name + description +
@@ -141,11 +141,6 @@ def extract_whiteboard(ref: FSRef) -> list[FSRecord]:
     path = ref._path
     fm = _load_whiteboard_fm(path) if path.is_dir() else {}
     wb_name = _resolve_whiteboard_name(fm, path.name)
-    rec_id = (
-        (read_folder_capsule_id(path) if path.is_dir() else None)
-        or _read_frontmatter_id_from_yaml(fm)
-        or _whiteboard_id_from_name(wb_name)  # transitional read fallback for legacy rows
-    )
     description = ""
     if isinstance(fm.get("description"), str):
         description = fm["description"]
@@ -173,7 +168,7 @@ def extract_whiteboard(ref: FSRef) -> list[FSRecord]:
 
     rec_kwargs: dict = {
         "type": RecordType.WHITEBOARD,
-        "id": rec_id,
+        "id": resolved_id,
         "name": wb_name,
         "status": "active",
         "content": content,

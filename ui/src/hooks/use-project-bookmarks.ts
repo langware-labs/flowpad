@@ -1,5 +1,6 @@
 import { Bookmark, QueryRequest } from '@sdk';
 import { useEntitiesQuery, useProject } from '@sdk/react/hooks';
+import { isHubOnly } from '@src/navigation/hub-runtime';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 /**
@@ -32,7 +33,9 @@ export function useProjectBookmarks() {
     error,
     refetch: rawRefetch,
   } = useEntitiesQuery<Bookmark>(queryRequest, {
-    enabled: !!projectTypeId,
+    // Hub mode: the hub backend has no `bookmark` entity (graph/bookmark 422s);
+    // skip the fetch and fall back to an empty list.
+    enabled: !!projectTypeId && !isHubOnly(),
   });
 
   // Wrap refetch to clear exclusions after it completes

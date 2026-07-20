@@ -5,6 +5,7 @@ import apiClient from '../client';
 import { Capability, CapabilityActionName, CapabilityCheck, CapabilityResult } from '../entities/capability';
 import { normalizeKind } from '../models/Kind';
 import { defineGlobal } from '../utils/globals';
+import { isHubOnly } from '../utils/hub-runtime';
 
 export interface CapabilitySnapshot {
   queryKind: string;
@@ -123,6 +124,13 @@ export class CapabilityManager extends EventEmitter {
     }
 
     this.loadPromise = (async () => {
+      // Hub mode: the hub backend has no `capability` entity, so this graph
+      // query would 422. Return an empty set — capabilities are local-only.
+      if (isHubOnly()) {
+        this.capabilities = [];
+        this.emit('change');
+        return this.capabilities;
+      }
       const rows = await apiClient.get<unknown[]>('/graph/capability', {
         params: { include_system: true },
       });

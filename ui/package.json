@@ -80,8 +80,6 @@
     "@radix-ui/react-tooltip": "^1.2.7",
     "@radix-ui/react-use-controllable-state": "^1.1.0",
     "@revolist/react-datagrid": "^4.23.22",
-    "@sentry/browser": "^8.0.0",
-    "@sentry/react": "^9.38.0",
     "@sigma/edge-curve": "^3.1.0",
     "@sigma/node-image": "^3.0.0",
     "@tanstack/react-query": "^5.87.1",

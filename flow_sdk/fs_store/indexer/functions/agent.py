@@ -10,7 +10,7 @@ markdown rendering) live in ``flow_sdk/fs_store/operations/agent.py``.
 
 Public helpers used outside the indexer:
   - ``parse_agent_markdown(text, name)`` — pure frontmatter+body parse
-  - ``extract_agent(ref)`` — parser_fn entry
+  - ``extract_agent(ref, resolved_id)`` — parser_fn entry
   - ``agent_id(ref)`` — compatibility read helper
   - ``AGENTS_SPEC_FIELDS`` / ``KEY_TO_JSON`` / ``JSON_TO_KEY`` — spec mapping
 """
@@ -96,6 +96,7 @@ def _read_frontmatter_id(path: Path) -> str | None:
     fields = _yaml_load(fm) or {}
     raw = fields.get("id") or fields.get("asset_id")
     from flow_sdk.fs_store.identifier import adopt_entity_id  # noqa: PLC0415
+
     return adopt_entity_id(raw)  # validate-on-adopt (v4/v5) → else caller derives
 
 
@@ -126,19 +127,22 @@ def agent_id(ref: FSRef) -> str:
 
 
 def agent_peek_entity_id(ref: FSRef) -> str:
-    """Entity UUID for an agent .md WITHOUT writing frontmatter back.
+    """Entity UUID for an agent .md without writing the source.
 
     Strictly read-only, so it is safe to call from request handlers
-    (``TypeInfo.mint_id`` may rewrite the source file, which would dirty read-only
-    mounts and trip the dev reload watcher). Single file read.
+    (``TypeInfo.mint_id`` persists a missing identity capsule, which would dirty
+    read-only mounts and trip the dev reload watcher).
 
-    Reads the adopted frontmatter UUID capsule when present. On a miss it returns
-    the stable ``mint_uuid(f"{RecordType.AGENT}:{name-or-stem}")`` derive — it
-    CANNOT predict the random v4 that ``TypeInfo.mint_id`` will persist into a
-    not-yet-stamped agent (the documented capsule-v4 asymmetry); once gen_id has
-    stamped the capsule, this peek reads and returns that same v4.
+    Reads the canonical identity capsule first, then valid legacy frontmatter.
+    On a miss it returns the same stable v5 derivation used by indexing.
     """
-    from flow_sdk.fs_store.identifier import adopt_entity_id  # noqa: PLC0415
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    info = SchemaRegistry.get(str(RecordType.AGENT))
+    if info is not None:
+        existing = info.extract_id(ref)
+        if existing is not None:
+            return existing
     try:
         text = ref._path.read_text(encoding="utf-8")
     except OSError:
@@ -146,6 +150,8 @@ def agent_peek_entity_id(ref: FSRef) -> str:
     else:
         fm = _extract_frontmatter(text)
         fields = (_yaml_load(fm) if fm else None) or {}
+        from flow_sdk.fs_store.identifier import adopt_entity_id  # noqa: PLC0415
+
         adopted = adopt_entity_id(fields.get("id") or fields.get("asset_id"))
         if adopted:
             return adopted
@@ -164,6 +170,9 @@ def parse_agent_markdown(text: str, name: str | None = None) -> dict[str, Any]:
     Returns id/name/spec fields + 'prompt' (the body). Used by both the
     indexer extractor and ``operations/agent.py`` helpers.
     """
+    from flow_sdk.capsules import strip_capsule_blocks  # noqa: PLC0415
+
+    text = strip_capsule_blocks(text)
     fm_text = _extract_frontmatter(text)
     fields = _yaml_load(fm_text) if fm_text else {}
     body = _extract_body(text)
@@ -181,7 +190,7 @@ def parse_agent_markdown(text: str, name: str | None = None) -> dict[str, Any]:
     return data
 
 
-def extract_agent(ref: FSRef) -> list[FSRecord]:
+def extract_agent(ref: FSRef, resolved_id: str) -> list[FSRecord]:
     """Parse an agent .md into a Record. Replaces ``AgentRecord._from_fsref_sync``.
 
     Eagerly populates: id, name, description, prompt, content (for FTS body =
@@ -195,6 +204,7 @@ def extract_agent(ref: FSRef) -> list[FSRecord]:
     except OSError:
         return []
     data = parse_agent_markdown(text, name=path.stem)
+    data["id"] = resolved_id
     data["type"] = RecordType.AGENT
     data["status"] = "active"
     # prompt is stored under 'prompt_text' on the shim subclass; for parser_fn-

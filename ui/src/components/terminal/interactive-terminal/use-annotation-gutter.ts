@@ -4,6 +4,7 @@ import { useEntitiesQuery } from '@sdk/react/hooks';
 import type { PtySyncSnapshot, PtySyncSession } from '@sdk/pty-sync/PtySyncSession.js';
 import type { PtyAnchor } from '@sdk/pty-sync/PtySegment.js';
 import { AnnotationRowResolver } from '@sdk/pty-sync/AnnotationRowResolver.js';
+import { isHubOnly } from '@src/navigation/hub-runtime';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 /** Extract prompt anchors from annotations for anchor-based PTY alignment. */
@@ -82,7 +83,9 @@ export function useAnnotationGutter(
   );
 
   const { data: allBookmarks = [], refetch } = useEntitiesQuery<Bookmark>(queryRequest, {
-    enabled: !!workerSessionId,
+    // Hub mode: the hub backend has no `bookmark` entity (graph/bookmark 422s);
+    // skip the fetch and fall back to an empty list.
+    enabled: !!workerSessionId && !isHubOnly(),
   });
 
   const annotationQueryRequest = useMemo(

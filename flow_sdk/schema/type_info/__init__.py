@@ -21,6 +21,7 @@ import pkgutil
 from dataclasses import dataclass, field
 from typing import Any
 
+from flow_sdk.capsules import CapsuleSpec
 from flow_sdk.fs_store.schema_registry import SchemaRegistry, TypeInfo
 from flow_sdk.schema.view_mode import ViewMode
 
@@ -88,11 +89,10 @@ class TypeMetadata:
     shared_child: bool = False
     # Indexer dispatch callables (walked types only).
     from_disk_fn: Any = None
-    id_from_file_fn: Any = None
-    id_from_folder_fn: Any = None
+    capsules: tuple[CapsuleSpec, ...] = ()
+    identity_backend: Any = None
     id_stable_key_fn: Any = None
     id_namespace: Any = None
-    id_write_fn: Any = None
     asset_hash_fn: Any = None
     post_sync_fn: Any = None
     # Per-type default-body writer used by FSRecord.upsert_main_ref to materialize
@@ -153,11 +153,10 @@ class TypeMetadata:
             parent_share_on_default=self.parent_share_on_default,
             shared_child=self.shared_child,
             from_disk_fn=self.from_disk_fn,
-            id_from_file_fn=self.id_from_file_fn,
-            id_from_folder_fn=self.id_from_folder_fn,
+            capsules=tuple(self.capsules),
+            identity_backend=self.identity_backend,
             id_stable_key_fn=self.id_stable_key_fn,
             **({"id_namespace": self.id_namespace} if self.id_namespace is not None else {}),
-            id_write_fn=self.id_write_fn,
             asset_hash_fn=self.asset_hash_fn,
             post_sync_fn=self.post_sync_fn,
             default_body_fn=self.default_body_fn,
@@ -176,17 +175,10 @@ class TypeMetadata:
 
 
 def render_entity_frontmatter(entity: Any, fields: dict[str, Any]) -> str:
-    """Frontmatter block for a ``default_body_fn`` — ALWAYS stamps ``id`` first.
-
-    Entity-id policy: the backing file must carry the entity's UUID, or the
-    indexer cannot adopt the API-created row (validate-on-adopt rejects the
-    name/stem fallback) and mints a duplicate v5-from-path entity on the next
-    walk. Every md-backed ``default_body_fn`` renders through this single
-    chokepoint so a new type can't re-introduce the omission.
-    """
+    """Render domain frontmatter; identity is stored by ``AssetCapsule``."""
     from flow_sdk.fs_store.indexer._frontmatter import _render_frontmatter  # noqa: PLC0415
 
-    return _render_frontmatter({"id": str(entity.id), **fields})
+    return _render_frontmatter(fields)
 
 
 def register_all() -> None:

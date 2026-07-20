@@ -2318,7 +2318,7 @@ async def discover_record_by_path(record_type: str, path: str, *, notify: bool =
                     ):
                         return None
 
-                recs = _from_disk(one_ref)
+                recs = _from_disk(one_ref, resolved_id)
                 if _asyncio.iscoroutine(recs):
                     recs = await recs
                 # Association rule (deepest project wins) — same stamp the
@@ -2337,7 +2337,6 @@ async def discover_record_by_path(record_type: str, path: str, *, notify: bool =
                 except OSError:
                     owner_pid = None
                 for rec in (recs or []):
-                    object.__setattr__(rec, "id", resolved_id)
                     if owner_pid:
                         object.__setattr__(rec, "project_id", owner_pid)
                     ref = getattr(rec, "asset_ref", None) or getattr(rec, "_asset_ref", None)

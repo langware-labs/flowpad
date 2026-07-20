@@ -133,7 +133,7 @@ def plugin_id(ref: FSRef) -> str:
     return existing or mint_uuid(plugin_stable_key(ref), namespace=uuid.NAMESPACE_DNS)
 
 
-def extract_plugin(ref: FSRef) -> list[FSRecord]:
+def extract_plugin(ref: FSRef, resolved_id: str) -> list[FSRecord]:
     """Parse one PLUGIN FSRef into a record matching the legacy item shape."""
     path = Path(ref.path)
     frag = _read_install(path, ref.json_path or "")
@@ -148,7 +148,7 @@ def extract_plugin(ref: FSRef) -> list[FSRecord]:
 
     rec = FSRecord(
         type=RecordType.PLUGIN,
-        id=f"{name}@{marketplace}",
+        id=resolved_id,
         name=name,
         scope=install.get("scope", "user"),
         source_file=source_file,

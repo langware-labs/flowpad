@@ -1,15 +1,20 @@
 """Fast, no-mock contract matrix for every registered filesystem identity."""
 from __future__ import annotations
 
+import inspect
 import json
 import uuid
 from pathlib import Path
 
 import pytest
 
+from flow_sdk.capsules import AssetCapsule
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.indexer._frontmatter import read_frontmatter_id
-from flow_sdk.fs_store.indexer.functions._folder_capsule import read_folder_capsule_id
+from flow_sdk.fs_store.identity_backend import (
+    CapsuleIdentityBackend,
+    DerivedIdentityBackend,
+    NativeJsonIdentityBackend,
+)
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.schema.types import EntityType
 
@@ -54,7 +59,7 @@ def _frontmatter(path: Path, *, canonical: str | None = None, legacy: str | None
     path.write_text("\n".join(rows), encoding="utf-8")
 
 
-def test_every_registered_extractor_has_one_identity_reader() -> None:
+def test_every_registered_extractor_has_one_identity_backend() -> None:
     canonical_types = {str(entity_type) for entity_type in EntityType}
     actual = {
         name for name in SchemaRegistry.get_all_types()
@@ -65,8 +70,28 @@ def test_every_registered_extractor_has_one_identity_reader() -> None:
     assert actual == INDEXED_TYPES
     for name in sorted(actual):
         info = _info(name)
-        readers = [info.id_from_file_fn, info.id_from_folder_fn]
-        assert sum(reader is not None for reader in readers) == 1, name
+        assert info.identity_backend is not None, name
+
+
+def test_exact_capsule_native_derived_partition_and_parser_contract() -> None:
+    capsule_types = set(FRONTMATTER_ALL) | set(FOLDER_PORTABLE)
+    native_types = set(JSON_STABLE)
+    derived_types = INDEXED_TYPES - capsule_types - native_types
+    assert (len(capsule_types), len(native_types), len(derived_types)) == (16, 3, 13)
+
+    for name in sorted(INDEXED_TYPES):
+        info = _info(name)
+        expected_backend = (
+            CapsuleIdentityBackend if name in capsule_types
+            else NativeJsonIdentityBackend if name in native_types
+            else DerivedIdentityBackend
+        )
+        assert isinstance(info.identity_backend, expected_backend), name
+        assert tuple((spec.name, spec.version) for spec in info.capsules) == (
+            (("identity", 1),) if name in capsule_types else ()
+        ), name
+        parameters = list(inspect.signature(info.from_disk_fn).parameters.values())
+        assert [parameter.name for parameter in parameters[:2]] == ["ref", "resolved_id"], name
 
 
 @pytest.mark.parametrize("type_name", FRONTMATTER_ALL)
@@ -103,7 +128,7 @@ def test_missing_portable_file_mints_persists_and_is_idempotent(
     info = _info(type_name)
     first = info.mint_id(path)
     assert uuid.UUID(first).version == 4
-    assert read_frontmatter_id(path) == first
+    assert AssetCapsule.from_path(path).read("identity").data["id"] == first
     assert info.mint_id(path) == first
 
 
@@ -125,8 +150,7 @@ def test_missing_command_uses_scope_natural_key_dns_v5_and_persists(tmp_path: Pa
     expected = str(uuid.uuid5(uuid.NAMESPACE_DNS, "command:project:deploy"))
     info = _info("command")
     assert info.mint_id(ref) == expected
-    assert read_frontmatter_id(path) == expected
-    assert read_frontmatter_id(path) == expected
+    assert AssetCapsule.from_path(path).read("identity").data["id"] == expected
     assert info.mint_id(path) == expected
 
 
@@ -155,7 +179,7 @@ def test_missing_folder_id_mints_persists_and_is_idempotent(
     info = _info(type_name)
     first = info.mint_id(folder)
     assert uuid.UUID(first).version == 4
-    assert read_folder_capsule_id(folder) == first
+    assert AssetCapsule.from_path(folder).read("identity").data["id"] == first
     assert info.mint_id(folder) == first
 
 
@@ -192,13 +216,13 @@ def test_invalid_folder_capsule_falls_through_to_valid_legacy_without_backfill(
     assert capsule.read_bytes() == before
 
 
-def test_markdown_default_body_carries_allocated_id() -> None:
+def test_markdown_default_body_leaves_identity_to_capsule() -> None:
     from types import SimpleNamespace
 
     from flow_sdk.schema.type_info.markdown_type_info import _markdown_default_body
 
     body = _markdown_default_body(SimpleNamespace(id=V4, name="A", title="A"))
-    assert f"id: {V4}" in body
+    assert f"id: {V4}" not in body
     assert "# A" in body
 
 

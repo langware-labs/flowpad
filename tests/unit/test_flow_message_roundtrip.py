@@ -28,10 +28,10 @@ from flow_sdk.builtin.flow_message_bundle import (
 # Helpers
 # ---------------------------------------------------------------------------
 
-_TASK_UUID    = "a1a1a1a1-0000-0000-0000-000000000001"
-_CONV_UUID    = "b2b2b2b2-0000-0000-0000-000000000002"
-_SPEC_UUID    = "c3c3c3c3-0000-0000-0000-000000000003"
-_TASK2_UUID   = "d4d4d4d4-0000-0000-0000-000000000004"
+_TASK_UUID = "a1a1a1a1-0000-4000-8000-000000000001"
+_CONV_UUID = "b2b2b2b2-0000-4000-8000-000000000002"
+_SPEC_UUID = "c3c3c3c3-0000-4000-8000-000000000003"
+_TASK2_UUID = "d4d4d4d4-0000-4000-8000-000000000004"
 
 
 def _make_flow_message(fm_id: str = "aaaa1111-0000-0000-0000-000000000001") -> FlowMessage:
@@ -158,7 +158,13 @@ class TestPackBundle:
             assert expected in names
             content = zf.read(expected).decode("utf-8")
             assert "My Task" in content
-            assert task_id in content  # frontmatter id, so the receiver adopts the row
+            capsule = json.loads(
+                zf.read(
+                    f"attachment/task-{task_id}/agentic-assets/task/My_Task/"
+                    ".flow/capsules/identity.json"
+                )
+            )
+            assert capsule == {"version": 1, "data": {"id": task_id}}
             assert "in_progress" in content
             # Sender-local fields must never ride along in the shared file.
             assert "my_process_id" not in content
@@ -213,13 +219,14 @@ class TestPackBundle:
         """A real on-disk spec-style asset (asset_ref = inner spec.md,
         main_file_is_asset_ref=True) ships its PARENT folder verbatim — both the
         main file and its siblings — using the real on-disk body (not
-        default_body_fn), with the sender's id pinned into spec.md."""
+        default_body_fn). Existing-source bundles are copied byte-for-byte and
+        do not retrofit an identity that was absent on the source."""
         from flow_sdk.builtin.spec import Spec
 
         spec_id = _SPEC_UUID
         folder = tmp_path / "agentic-assets" / "spec" / "hello"
         folder.mkdir(parents=True)
-        # spec.md authored WITHOUT an id in frontmatter → pack must pin it.
+        # spec.md authored WITHOUT identity → pack must preserve it as-is.
         sentinel = "REAL-ON-DISK-SENTINEL-BODY"
         (folder / "spec.md").write_text(
             f"---\ntitle: Hello Spec\nspec_type: plan\n---\n\n{sentinel}\n", encoding="utf-8",
@@ -248,8 +255,8 @@ class TestPackBundle:
             # Real on-disk body, NOT a default_body_fn re-render.
             assert sentinel in main_text
             assert zf.read(notes_arc).decode("utf-8").strip() == sibling
-            # id pinned into the folder's main doc.
-            assert f"id: {spec_id}" in main_text
+            assert "flowpad:capsule identity" not in main_text
+            assert f"id: {spec_id}" not in main_text
 
 
 # ---------------------------------------------------------------------------
@@ -946,11 +953,11 @@ async def test_pack_task_attachment_excludes_sender_local_fields(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_pack_dbonly_spec_pins_id_and_sanitizes_hostile_name(tmp_path):
+async def test_pack_dbonly_spec_capsules_id_and_sanitizes_hostile_name(tmp_path):
     """A DB-only file-backed asset (no on-disk asset_ref → rendered from
     default_body_fn) with a HOSTILE name: the leaf folder name is path-safe (no
-    ``/ : *`` and no traversal escape), the sender id is pinned into the rendered
-    folder main doc, and when default_body_fn is None the branch early-returns
+    ``/ : *`` and no traversal escape), the sender id is written through the
+    folder identity capsule, and when default_body_fn is None the branch early-returns
     writing nothing."""
     from flow_sdk.builtin.spec import Spec
     from flow_sdk.fs_store.schema_registry import SchemaRegistry
@@ -982,8 +989,11 @@ async def test_pack_dbonly_spec_pins_id_and_sanitizes_hostile_name(tmp_path):
         bundle_root = (tmp_path / "_resolve_check").resolve()
         resolved = (bundle_root / main_arc).resolve()
         assert str(resolved).startswith(str(bundle_root))
-        # id pinned into the rendered folder main doc.
+        # Identity is outside frontmatter, in the file's comment capsule.
         body = zf.read(main_arc).decode("utf-8")
+        frontmatter = body.split("---", 2)[1]
+        assert f"id: {spec_id}" not in frontmatter
+        assert "<!-- flowpad:capsule identity" in body
         assert f"id: {spec_id}" in body
 
     # --- default_body_fn None → early return, nothing shipped ---

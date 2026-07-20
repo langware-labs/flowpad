@@ -1,7 +1,7 @@
 """Type metadata for MCP_SERVER."""
 import uuid
 
-from flow_sdk.fs_store.indexer.functions._asset_identity import no_id
+from flow_sdk.fs_store.indexer.functions._asset_identity import derived_identity
 from flow_sdk.fs_store.indexer.functions.mcp_server import (
     extract_mcp_server,
     mcp_server_identity_key,
@@ -19,7 +19,7 @@ MCP_SERVER = TypeMetadata(
     # advertise the structured fields consumers should filter on.
     index_fields=["command", "url", "scope", "worker_type", "connector_type"],
     from_disk_fn=extract_mcp_server,
-    id_from_file_fn=no_id,
+    identity_backend=derived_identity(),
     id_stable_key_fn=mcp_server_identity_key,
     id_namespace=uuid.NAMESPACE_DNS,
 )

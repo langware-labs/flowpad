@@ -125,10 +125,9 @@ The dispatch callables:
 
 | Slot | Signature | Role |
 |---|---|---|
-| `from_disk_fn` | `(FSRef) -> list[FSRecord]` (sync or async) | Parse one discovered ref into one or more records. `index()` only parses refs whose type declares this (`_has_dispatch`). |
-| `id_from_file_fn` / `id_from_folder_fn` | `(FSRef) -> object` | Pure candidate readers. `TypeInfo.extract_id()` selects the one matching the asset layout and adopts only UUID v4/v5 values. |
+| `from_disk_fn` | `(FSRef, resolved_id) -> list[FSRecord]` (sync or async) | Parse payload using the identity resolved once by the caller. |
+| `capsules` / `identity_backend` | `tuple[CapsuleSpec, ...]`, backend | Declare named capsules and observe canonical plus legacy/native identity carriers. |
 | `id_stable_key_fn` / `id_namespace` | `(FSRef) -> str`, `UUID` | Optional natural/path key and namespace for deterministic v5 identity. |
-| `id_write_fn` | `(FSRef, str) -> bool` | Optional canonical carrier writer for portable assets. `TypeInfo.mint_id()` re-reads through `extract_id()` and returns the committed value. |
 | `asset_hash_fn` | `(...) -> str` | Content hash for the type's primary asset (used by skip-fresh / sentinel logic). |
 | `post_sync_fn` | hook | Post-sync side effects. |
 | `default_body_fn` | hook | Default-body writer for `FSRecord.upsert_main_ref` on create. |
@@ -143,8 +142,8 @@ SKILL = TypeMetadata(
     index_fields=["description"],
     main_subdir=".claude/skills", main_layout="folder",
     from_disk_fn=extract_skill,
-    id_from_folder_fn=skill_id_from_folder,
-    id_write_fn=write_folder_capsule,
+    capsules=(CapsuleSpec("identity"),),
+    identity_backend=capsule_identity(skill_id_from_folder),
     asset_hash_fn=skill_asset_hash,
 )
 ```
@@ -156,7 +155,7 @@ For each visited ref of a type that has a `from_disk_fn`:
 1. **Resolve id** via `TypeInfo.extract_id(ref) or TypeInfo.mint_id(ref)`. Existing valid carrier ids are never rewritten. A missing portable id is minted as v4 and persisted; deterministic/provider types mint configured v5 identities. Foreign ids are not adoptable and must fall back to a stable v5 under the entity-id policy. Record the resolved id in `seen_ids` *before* any skip/index decision so a fresh-skip is not later misclassified as an orphan.
 2. **Choose duplicate winners** across the complete candidate set before parsing. For the same `type+id` at multiple live paths, a live DB incumbent path is retained; otherwise canonical lexical path order wins. Every losing path is warned and skipped. Neither source is rewritten or re-keyed.
 3. **Skip-fresh** (unless `opts.force`): a probe `FSRecord` reads its own on-disk `.hash` sentinel and the preloaded DB id set confirms that the indexed row still exists. If both are fresh, increment `skipped` and continue.
-4. **Parse + persist**: call `from_disk_fn(ref)` (awaited or via `to_thread`), overwrite any parser-supplied id with the resolved filesystem id, stamp walk-time `scope`/`project_id` from the FSRef parent-chain onto each record, `await rec.sync_to_db(fts_batch=..., notify=False)`, then `probe.write_hash()` after the DB batch commits (a failed parse stays `index_required` for retry).
+4. **Parse + persist**: call `from_disk_fn(ref, resolved_id)` (awaited or via `to_thread`); the parser constructs the top-level record with that id. Stamp walk-time `scope`/`project_id`, sync, then write the hash after the DB batch commits.
 
 The whole loop runs inside **one DB session** but commits in **bounded batches** (`_INDEX_COMMIT_BATCH = 50`). The engine issues `BEGIN IMMEDIATE` per transaction; a single session spanning the whole scan would hold the SQLite writer lock for seconds/minutes and starve concurrent requests (`database is locked`). Per-batch commits release the lock between batches. This is a contention fix, not a `busy_timeout`/retry change. (See `project_indexer_db_lock_contention.md`.)
 

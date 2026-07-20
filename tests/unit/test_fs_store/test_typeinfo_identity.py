@@ -1,170 +1,213 @@
-"""Fast contract matrix for the runtime asset identity seam."""
-
+"""Fast matrix for TypeInfo's storage-neutral identity policy."""
 from __future__ import annotations
 
 import uuid
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
 
+from flow_sdk.capsules import AssetCapsule, CapsuleData, CapsuleSpec, MalformedCapsuleError
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.indexer._frontmatter import read_frontmatter_id, write_frontmatter_id
-from flow_sdk.fs_store.indexer.functions._folder_capsule import (
-    read_folder_capsule_id,
-    write_folder_capsule_id,
-)
-from flow_sdk.fs_store.schema_registry import TypeInfo
+from flow_sdk.fs_store.identity_backend import CapsuleIdentityBackend, DerivedIdentityBackend
+from flow_sdk.fs_store.indexer._frontmatter import read_frontmatter_id
+from flow_sdk.fs_store.schema_registry import SchemaRegistry, TypeInfo
 from flow_sdk.schema.type_info import TypeMetadata
 
 V4 = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
 V5 = str(uuid.uuid5(uuid.NAMESPACE_URL, "existing"))
 V7 = "018f0000-0000-7000-8000-000000000000"
+IDENTITY = CapsuleSpec("identity", 1)
+
+
+def _capsule_info(*, stable: bool = False, legacy=()) -> TypeInfo:
+    return TypeInfo(
+        type_name="probe",
+        capsules=(IDENTITY,),
+        identity_backend=CapsuleIdentityBackend(legacy_readers=tuple(legacy)),
+        id_stable_key_fn=(lambda ref: "stable-key") if stable else None,
+    )
 
 
 @pytest.mark.parametrize("existing", [V4, V5])
-@pytest.mark.parametrize("folder_backed", [False, True])
-def test_extract_id_dispatches_by_layout_and_adopts_without_writing(
-    tmp_path: Path, existing: str, folder_backed: bool
+@pytest.mark.parametrize("folder", [False, True])
+def test_extract_and_mint_adopt_canonical_file_or_folder(
+    tmp_path: Path, existing: str, folder: bool
 ) -> None:
-    path = tmp_path / ("asset" if folder_backed else "asset.md")
-    path.mkdir() if folder_backed else path.write_text("body", encoding="utf-8")
-    calls: list[str] = []
-    info = TypeInfo(
-        type_name="probe",
-        main_layout="folder" if folder_backed else "file",
-        id_from_file_fn=lambda p: calls.append("file") or existing,
-        id_from_folder_fn=lambda p: calls.append("folder") or existing,
-        id_write_fn=lambda p, value: calls.append("write") or True,
-    )
+    path = tmp_path / ("asset" if folder else "asset.md")
+    path.mkdir() if folder else path.write_text("body\n", encoding="utf-8")
+    AssetCapsule.from_path(path).write("identity", CapsuleData(1, {"id": existing}))
+    info = _capsule_info()
 
     assert info.extract_id(FSRef(path)) == existing
-    assert calls == ["folder" if folder_backed else "file"]
+    assert info.mint_id(FSRef(path), proposed_id=V5) == existing
 
 
-@pytest.mark.parametrize("candidate", [None, "garbage", V7])
-def test_extract_id_rejects_missing_or_non_entity_ids(tmp_path: Path, candidate: str | None) -> None:
-    info = TypeInfo(type_name="probe", id_from_file_fn=lambda path: candidate)
-    assert info.extract_id(tmp_path / "asset.md") is None
+@pytest.mark.parametrize("folder", [False, True])
+def test_absent_portable_identity_persists_one_v4(tmp_path: Path, folder: bool) -> None:
+    path = tmp_path / ("asset" if folder else "asset.md")
+    path.mkdir() if folder else path.write_text("body\n", encoding="utf-8")
+    info = _capsule_info()
 
-
-@pytest.mark.parametrize("folder_backed", [False, True])
-def test_mint_id_persists_one_v4_in_the_configured_carrier(tmp_path: Path, folder_backed: bool) -> None:
-    path = tmp_path / ("asset" if folder_backed else "asset.md")
-    path.mkdir() if folder_backed else path.write_text("body", encoding="utf-8")
-    reader = read_folder_capsule_id if folder_backed else read_frontmatter_id
-    writer = write_folder_capsule_id if folder_backed else write_frontmatter_id
-    info = TypeInfo(
-        type_name="probe",
-        main_layout="folder" if folder_backed else "file",
-        id_from_folder_fn=reader if folder_backed else None,
-        id_from_file_fn=None if folder_backed else reader,
-        id_write_fn=writer,
-    )
-
-    first = info.mint_id(path)
+    first = info.mint_id(FSRef(path))
     assert uuid.UUID(first).version == 4
-    assert reader(path) == first
-    assert info.mint_id(path) == first
+    assert info.mint_id(FSRef(path)) == first
+    assert AssetCapsule.from_path(path).read("identity") == CapsuleData(1, {"id": first})
 
 
-@pytest.mark.parametrize("writer", [None, lambda path, value: False])
-def test_unpersisted_random_id_falls_back_to_stable_path_v5(tmp_path: Path, writer) -> None:
+def test_stable_policy_persists_v5_in_capsule(tmp_path: Path) -> None:
     path = tmp_path / "asset.md"
-    path.write_text("body", encoding="utf-8")
-    info = TypeInfo(
-        type_name="probe",
-        id_from_file_fn=read_frontmatter_id,
-        id_write_fn=writer,
-    )
+    path.write_text("body\n", encoding="utf-8")
+    info = _capsule_info(stable=True)
+
+    expected = str(uuid.uuid5(uuid.NAMESPACE_URL, "stable-key"))
+    assert info.mint_id(path) == expected
+    assert info.extract_id(path) == expected
+
+
+def test_valid_legacy_id_is_adopted_without_backfill(tmp_path: Path) -> None:
+    path = tmp_path / "asset.md"
+    path.write_text(f"---\nid: {V4}\n---\nbody\n", encoding="utf-8")
+    info = _capsule_info(legacy=(read_frontmatter_id,))
+
+    assert info.extract_id(path) == V4
+    assert info.mint_id(path) == V4
+    assert AssetCapsule.from_path(path).read("identity") is None
+
+
+def test_invalid_canonical_uses_valid_legacy_without_rewrite(tmp_path: Path) -> None:
+    path = tmp_path / "asset.md"
+    path.write_text(f"---\nid: {V4}\n---\nbody\n", encoding="utf-8")
+    capsule = AssetCapsule.from_path(path)
+    capsule.write("identity", CapsuleData(1, {"id": V7}))
+    before = path.read_bytes()
+    info = _capsule_info(legacy=(read_frontmatter_id,))
+
+    assert info.mint_id(path) == V4
+    assert path.read_bytes() == before
+
+
+@pytest.mark.parametrize("candidate", ["garbage", V7])
+def test_invalid_canonical_without_legacy_uses_path_v5_and_preserves_bytes(
+    tmp_path: Path, candidate: str
+) -> None:
+    path = tmp_path / "asset.md"
+    path.write_text("body\n", encoding="utf-8")
+    AssetCapsule.from_path(path).write("identity", CapsuleData(1, {"id": candidate}))
+    before = path.read_bytes()
 
     expected = str(uuid.uuid5(uuid.NAMESPACE_URL, str(path.resolve())))
-    assert info.mint_id(path) == expected
-    assert info.mint_id(path) == expected
-    assert read_frontmatter_id(path) is None
+    assert _capsule_info().mint_id(path) == expected
+    assert path.read_bytes() == before
 
 
-def test_stable_key_mints_v5_in_the_configured_namespace(tmp_path: Path) -> None:
-    namespace = uuid.NAMESPACE_DNS
+def test_invalid_legacy_is_distinct_from_absence_and_uses_stable_v5(tmp_path: Path) -> None:
+    path = tmp_path / "asset.md"
+    path.write_text("---\nid: invalid\n---\nbody\n", encoding="utf-8")
+    before = path.read_bytes()
+    info = _capsule_info(legacy=(lambda candidate: "invalid",))
+
+    assert info.mint_id(path) == str(uuid.uuid5(uuid.NAMESPACE_URL, str(path.resolve())))
+    assert AssetCapsule.from_path(path).read("identity") is None
+    assert path.read_bytes() == before
+
+
+def test_read_only_portable_asset_uses_path_v5_without_writing(tmp_path: Path) -> None:
+    path = tmp_path / "asset.md"
+    path.write_text("body\n", encoding="utf-8")
+    ref = FSRef(path, read_only=True)
+
+    assert _capsule_info().mint_id(ref) == str(uuid.uuid5(uuid.NAMESPACE_URL, str(path.resolve())))
+    assert AssetCapsule.from_path(path).read("identity") is None
+
+
+def test_proposed_id_is_persisted_but_filesystem_winner_wins(tmp_path: Path) -> None:
+    path = tmp_path / "asset.md"
+    path.write_text("body\n", encoding="utf-8")
+    info = _capsule_info()
+
+    assert info.mint_id(path, proposed_id=V4) == V4
+    assert info.mint_id(path, proposed_id=V5) == V4
+    with pytest.raises(ValueError, match="UUID v4 or v5"):
+        info.mint_id(path, proposed_id=V7)
+
+
+def test_proposed_id_preserves_source_less_stable_type_identity(tmp_path: Path) -> None:
+    path = tmp_path / "spec.md"
+    path.write_text("body\n", encoding="utf-8")
+    info = _capsule_info(stable=True)
+
+    assert info.mint_id(path, proposed_id=V4) == V4
+    assert info.extract_id(path) == V4
+
+
+def test_malformed_capsule_fails_closed(tmp_path: Path) -> None:
+    path = tmp_path / "asset.md"
+    path.write_text(
+        "<!-- flowpad:capsule identity\nversion: [\nflowpad:endcapsule identity -->\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(MalformedCapsuleError):
+        _capsule_info().mint_id(path)
+
+
+@pytest.mark.parametrize("payload", [{}, {"id": V4, "extra": True}])
+def test_non_identity_capsule_shape_is_malformed(tmp_path: Path, payload: dict) -> None:
+    path = tmp_path / "asset.md"
+    path.write_text("body\n", encoding="utf-8")
+    AssetCapsule.from_path(path).write("identity", CapsuleData(1, payload))
+
+    with pytest.raises(MalformedCapsuleError, match="exactly the 'id' key"):
+        _capsule_info().extract_id(path)
+
+
+def test_folder_main_file_normalizes_to_owning_capsule(tmp_path: Path) -> None:
+    folder = tmp_path / "skill"
+    folder.mkdir()
+    main = folder / "SKILL.md"
+    main.write_text("body\n", encoding="utf-8")
     info = TypeInfo(
         type_name="probe",
-        id_from_file_fn=lambda path: None,
-        id_stable_key_fn=lambda path: "provider:natural-key",
-        id_namespace=namespace,
+        main_layout="folder",
+        main_file="SKILL.md",
+        capsules=(IDENTITY,),
+        identity_backend=CapsuleIdentityBackend(),
     )
-    assert info.mint_id(tmp_path / "virtual") == str(uuid.uuid5(namespace, "provider:natural-key"))
+
+    assert info.capsule_target_for(FSRef(main)) == folder
+    minted = info.mint_id(FSRef(main))
+    assert AssetCapsule.from_path(folder).read("identity") == CapsuleData(1, {"id": minted})
 
 
-def test_stable_key_receives_original_fsref_context(tmp_path: Path) -> None:
-    ref = FSRef(tmp_path / "settings.json", json_path="/hooks/pre")
-    info = TypeInfo(
-        type_name="probe",
-        id_from_file_fn=lambda candidate: None,
-        id_stable_key_fn=lambda candidate: candidate.json_path,
-    )
-    assert info.mint_id(ref) == str(uuid.uuid5(uuid.NAMESPACE_URL, "/hooks/pre"))
-
-
-def test_type_metadata_carries_every_identity_trait_to_runtime() -> None:
-    reader = lambda ref: V4  # noqa: E731
+def test_metadata_carries_identity_traits_and_capsules_affect_hash() -> None:
+    backend = DerivedIdentityBackend()
     key = lambda ref: "key"  # noqa: E731
-    writer = lambda ref, entity_id: True  # noqa: E731
     info = TypeMetadata(
         type="probe",
-        id_from_file_fn=reader,
+        capsules=(IDENTITY,),
+        identity_backend=backend,
         id_stable_key_fn=key,
         id_namespace=uuid.NAMESPACE_DNS,
-        id_write_fn=writer,
     ).to_type_info()
-    assert (info.id_from_file_fn, info.id_stable_key_fn, info.id_namespace, info.id_write_fn) == (
-        reader, key, uuid.NAMESPACE_DNS, writer,
+
+    assert (info.capsules, info.identity_backend, info.id_stable_key_fn, info.id_namespace) == (
+        (IDENTITY,), backend, key, uuid.NAMESPACE_DNS,
     )
+    assert info.schema_hash != TypeInfo(type_name="probe").schema_hash
 
 
-def test_mint_returns_the_id_observed_after_write(tmp_path: Path) -> None:
-    state: dict[str, str] = {}
-    info = TypeInfo(
-        type_name="probe",
-        id_from_file_fn=lambda ref: state.get("id"),
-        id_write_fn=lambda ref, proposed: state.update(id=V5) is None,
+def test_registry_merges_capsules_and_rejects_same_name_conflict() -> None:
+    type_name = "_capsule_merge_probe"
+    backend = CapsuleIdentityBackend()
+    SchemaRegistry.register(
+        TypeInfo(type_name=type_name, capsules=(IDENTITY,), identity_backend=backend)
     )
-    assert info.mint_id(tmp_path / "asset.md") == V5
+    SchemaRegistry.register(TypeInfo(type_name=type_name, capsules=(IDENTITY, CapsuleSpec("review", 1))))
+    assert SchemaRegistry.get(type_name).capsules == (IDENTITY, CapsuleSpec("review", 1))
 
+    with pytest.raises(ValueError, match="Conflicting capsule"):
+        SchemaRegistry.register(TypeInfo(type_name=type_name, capsules=(CapsuleSpec("identity", 2),)))
 
-def test_concurrent_mint_calls_commit_one_portable_id(tmp_path: Path) -> None:
-    path = tmp_path / "asset.md"
-    path.write_text("body", encoding="utf-8")
-    info = TypeInfo(
-        type_name="probe",
-        id_from_file_fn=read_frontmatter_id,
-        id_write_fn=write_frontmatter_id,
-    )
-    with ThreadPoolExecutor(max_workers=8) as pool:
-        ids = set(pool.map(info.mint_id, [FSRef(path) for _ in range(32)]))
-    assert ids == {read_frontmatter_id(path)}
-
-
-def test_frontmatter_legacy_adoption_and_write_do_not_clean_fields(tmp_path: Path) -> None:
-    path = tmp_path / "asset.md"
-    path.write_text(f"---\nid: invalid\nasset_id: {V4}\nlegacy: keep\n---\n\nbody\n", encoding="utf-8")
-    before = path.read_text(encoding="utf-8")
-    assert read_frontmatter_id(path) == V4
-    assert path.read_text(encoding="utf-8") == before
-
-    assert write_frontmatter_id(path, V5)
-    after = path.read_text(encoding="utf-8")
-    assert f"id: {V5}" in after
-    assert f"asset_id: {V4}" in after
-    assert "legacy: keep" in after and "body" in after
-
-
-def test_frontmatter_writer_rejects_foreign_ids(tmp_path: Path) -> None:
-    path = tmp_path / "asset.md"
-    path.write_text("body", encoding="utf-8")
-    assert write_frontmatter_id(path, V7) is False
-
-
-def test_folder_writer_rejects_foreign_ids(tmp_path: Path) -> None:
-    folder = tmp_path / "asset"
-    folder.mkdir()
-    assert write_folder_capsule_id(folder, V7) is False
+    with pytest.raises(ValueError, match="Conflicting identity backend"):
+        SchemaRegistry.register(
+            TypeInfo(type_name=type_name, identity_backend=DerivedIdentityBackend())
+        )

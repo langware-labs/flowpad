@@ -145,7 +145,7 @@ def skill_asset_hash(ref: FSRef) -> float:
     return ts
 
 
-def extract_skill(ref: FSRef) -> list[FSRecord]:
+def extract_skill(ref: FSRef, resolved_id: str) -> list[FSRecord]:
     """Parse a skill folder into a Record. Replaces ``SkillRecord._from_fsref_sync``.
 
     Eagerly populates: id, name, description, content (name + description +
@@ -159,11 +159,6 @@ def extract_skill(ref: FSRef) -> list[FSRecord]:
         path = path.parent
     yaml_fields = parse_skill_yaml_from_dir(path) if path.is_dir() else {}
     skill_name = resolve_skill_name(yaml_fields, path.name)
-    rec_id = (
-        (read_folder_capsule_id(path) if path.is_dir() else None)
-        or read_frontmatter_id_from_yaml(yaml_fields)
-        or skill_id_from_name(skill_name)  # transitional read fallback for legacy rows
-    )
     description = ""
     if isinstance(yaml_fields.get("description"), str):
         description = yaml_fields["description"]
@@ -199,7 +194,7 @@ def extract_skill(ref: FSRef) -> list[FSRecord]:
     if ref.scope:
         rec_kwargs["scope"] = ref.scope
 
-    rec = FSRecord(RecordType.SKILL, rec_id, **rec_kwargs)
+    rec = FSRecord(RecordType.SKILL, resolved_id, **rec_kwargs)
     rec.asset_ref = FSRef(path.resolve())
     return [rec]
 
