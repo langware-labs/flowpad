@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Literal
 
 from flow_sdk.cli import app_config
-from flow_sdk.runtime_settings import get_runtime_settings
+from flow_sdk.instance_settings import get_instance_settings
 
 PrivacyMode = Literal["local", "connected"]
 
@@ -41,7 +41,7 @@ _cache: dict[Path, PrivacyMode] = {}
 
 def get_privacy_mode() -> PrivacyMode:
     """Return the current privacy mode for this instance (default ``connected``)."""
-    key = get_runtime_settings().instance_dir
+    key = get_instance_settings().instance_dir
     cached = _cache.get(key)
     if cached is not None:
         return cached
@@ -61,7 +61,7 @@ def set_privacy_mode(mode: PrivacyMode) -> PrivacyMode:
     if mode not in _VALID:
         raise ValueError(f"Unknown privacy mode {mode!r}; expected one of {_VALID}")
     app_config.set_config(_CONFIG_KEY, mode)
-    _cache[get_runtime_settings().instance_dir] = mode
+    _cache[get_instance_settings().instance_dir] = mode
     return mode
 
 

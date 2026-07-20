@@ -32,18 +32,18 @@ from .base_settings import (
     ENV_FS_RECORD_PATH,
     ENV_MINIHUB_RELOAD,
     ENV_SQLITE_DATABASE_PATH,
-    BaseRuntimeSettings,
+    BaseInstanceSettings,
 )
 
 ENV_FLOWPAD_TEST_SANDBOX = "FLOWPAD_TEST_SANDBOX"
 DEFAULT_TEST_PORT = 9009
 
 
-class TestRuntimeSettings(BaseRuntimeSettings):
+class TestInstanceSettings(BaseInstanceSettings):
     """Test-mode settings. All paths anchored under a sandbox dir."""
 
     @classmethod
-    def from_env(cls) -> "TestRuntimeSettings":
+    def from_env(cls) -> "TestInstanceSettings":
         sandbox = cls._resolve_sandbox()
         sandbox.mkdir(parents=True, exist_ok=True)
 
