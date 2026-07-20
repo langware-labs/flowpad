@@ -1,7 +1,7 @@
 // Core processor classes
 export { FlowData, FlowDataSource, FlowDataType } from './flow-data';
 export type { IFlowData } from './flow-data';
-export { FlowDataFactory } from '../entities/flow/flow-data-factory';
+export { FlowDataFactory } from './flow-data-factory';
 export { FlowStreamProcessor } from './flow-stream-processor';
 export { GroupChannelKey } from './group-channel-key';
 export { ShellCommandProcessor } from './shell-cmd-processor';
@@ -19,11 +19,10 @@ export type { FlowDataChunk } from './flow-events';
 export { decodeXMLEntities, KeyGenerator, parseAttributes, waitForChunks } from './xml-utilities';
 
 // Specialized FlowData types
-export { ShellCmdFlowData as ShellInputFlowData } from '../entities/flow/flow-data-types/shell-input';
-export type { ShellCmd } from '../entities/flow/flow-data-types/shell-input';
-export { ShellOutputFlowData } from '../entities/flow/flow-data-types/shell-output';
-export type { ShellResult } from '../entities/flow/flow-data-types/shell-output';
-export { StateFlowData } from '../entities/flow/flow-data-types/state-message';
+export { ShellCmdFlowData as ShellInputFlowData } from './flow-data-types/shell-input';
+export type { ShellCmd } from './flow-data-types/shell-input';
+export { ShellOutputFlowData } from './flow-data-types/shell-output';
+export type { ShellResult } from './flow-data-types/shell-output';
 
 // FlowDataStream
 export { FlowDataStream } from './flow-data-stream';

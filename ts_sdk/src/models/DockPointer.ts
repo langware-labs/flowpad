@@ -1,4 +1,4 @@
-import { ViewType } from '../utils/ui/view-types';
+import { ViewType, PageId } from '../utils/ui/view-types';
 import type { TypeId } from './TypeId';
 import type { VFSPath } from '../utils/vfs-path';
 
@@ -6,6 +6,8 @@ export interface IDockPointer {
   viewType?: ViewType;
   pointer?: string;
   options?: Record<string, string>;
+  /** Which SPA-surface this dock addresses; defaults to `desk` when absent. */
+  page?: PageId;
   /**
    * Pure-parse projections the SDK consumes WITHOUT touching the UI DockPointer
    * class (the layering bridge: `Tab.getFromDockPointer` takes this interface).

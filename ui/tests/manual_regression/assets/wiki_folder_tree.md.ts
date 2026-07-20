@@ -7,13 +7,6 @@ async function dismissSetupModal(page: import('@playwright/test').Page) {
   });
 }
 
-async function dismissWelcomeModalIfShown(page: import('@playwright/test').Page) {
-  const skipForNow = page.getByRole('button', { name: 'Skip for now' });
-  if (await skipForNow.isVisible({ timeout: 4_000 }).catch(() => false)) {
-    await skipForNow.click();
-  }
-}
-
 test.describe('Wiki folder tree (asset browseable tree)', () => {
   // ── Test 1: Folder tree renders markdown vault roots on expand ────────────
   // Environment-dependent: only asserts vault children when the user has
@@ -23,7 +16,6 @@ test.describe('Wiki folder tree (asset browseable tree)', () => {
     await dismissSetupModal(page);
     await page.goto('/dock/assets/list/markdown');
     await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
-    await dismissWelcomeModalIfShown(page);
 
     const chevron = page.locator('[data-testid^="browseable-chevron-asset-type:markdown"]').first();
     await expect(chevron).toBeVisible({ timeout: 10_000 });
@@ -71,7 +63,6 @@ test.describe('Wiki folder tree (asset browseable tree)', () => {
     await dismissSetupModal(page);
     await page.goto('/dock/assets/list/markdown');
     await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
-    await dismissWelcomeModalIfShown(page);
 
     // The markdown root is auto-expanded by ``expandParentsForPointer`` for
     // /dock/assets/list/markdown. Only click the chevron if it's currently
@@ -111,7 +102,6 @@ test.describe('Wiki folder tree (asset browseable tree)', () => {
     await dismissSetupModal(page);
     await page.goto('/dock/assets/list/markdown');
     await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
-    await dismissWelcomeModalIfShown(page);
 
     // Collect console errors for the "no console errors" assertion.
     const consoleErrors: string[] = [];

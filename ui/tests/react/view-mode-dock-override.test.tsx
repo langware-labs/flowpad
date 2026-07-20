@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createMemoryRouter, RouterProvider, useLocation } from 'react-router';
 
 import { PrefKey, instancePreferences } from '@sdk';
-import { ViewToggle } from '@src/components/view-toggle/view-toggle';
+import { resetRevealedModes, ViewToggle } from '@src/components/view-toggle/view-toggle';
 import {
   setViewMode,
   useDockViewModeOverrideSync,
@@ -43,6 +43,7 @@ describe('DockPointer viewMode override', () => {
     localStorage.clear();
     document.documentElement.classList.remove('view-mode-glow-flicker');
     setViewMode(ViewMode.Standard);
+    resetRevealedModes();
   });
 
   afterEach(() => {
@@ -75,6 +76,9 @@ describe('DockPointer viewMode override', () => {
 
     await waitFor(() => expect(screen.getByTestId('effective-mode').textContent).toBe('standard'));
 
+    // Advanced is hidden by default — double-click the selected Standard
+    // button to reveal it first.
+    fireEvent.doubleClick(screen.getByTestId('view-toggle-standard'));
     fireEvent.click(screen.getByTestId('view-toggle-advanced'));
 
     // The click itself only navigates; the mode then lands via the load-time sync.

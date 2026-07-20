@@ -34,12 +34,39 @@ export interface LocalSecretRef {
   sod_name: string;
 }
 
+export interface EnvLocalSecretRef {
+  kind: 'env-local';
+  env_key: string;
+}
+
 export interface HubSecretRef {
   kind: 'flowpad-hub';
   secret_id: string;
 }
 
-export type SecretOriginLocator = LocalSecretRef | HubSecretRef;
+export interface GcpSecretRef {
+  kind: 'gcp';
+  gcp_project: string;
+  secret: string;
+  version?: string;
+}
+
+export interface OnePasswordSecretRef {
+  kind: '1password';
+  vault: string;
+  item: string;
+  field?: string;
+}
+
+export type SecretOriginLocator =
+  | LocalSecretRef
+  | EnvLocalSecretRef
+  | HubSecretRef
+  | GcpSecretRef
+  | OnePasswordSecretRef;
+
+/** Which local SOD store the wizard caches a provided value into. */
+export type SodStore = 'sodot' | 'env-local';
 
 export interface ProjectSecretOriginSummary {
   typeid: string;
@@ -48,6 +75,24 @@ export interface ProjectSecretOriginSummary {
   kind: SecretOriginLocator['kind'] | string;
   locator: Partial<SecretOriginLocator>;
   scope: SecretPointerScope | string;
+}
+
+/** One row of the value-free resolve-status the Secrets card / wizard reads. */
+export interface SecretResolveStatus {
+  typeid: string;
+  name: string;
+  env_var: string;
+  kind: string;
+  scope: string;
+  sod_store: SodStore | string;
+  status: 'available' | 'missing';
+  setup_hint: {
+    kind: string;
+    sod_store: SodStore | string;
+    provider_label: string;
+    prompt: string;
+    coming_soon?: boolean;
+  };
 }
 
 export interface ProjectContextFolderResolveResult {
@@ -103,18 +148,21 @@ export class Project extends APIEntity<Project> {
   static type: string = 'project';
   computeNode?: ComputeNode | null = null;
   // ── Hub collaboration (Project as a shared unit — mirrors Conversation) ──
-  /** Hub role roster [{user_id, email, name, role}] — mirrors backend
-   *  Project.participants. This is what the Members UI (`useMembers`) reads;
-   *  distinct from the local presence `members` overlay below. The project's
-   *  own (uuid4) id is the shared hub identity — no separate cloud id. */
-  participants: ConversationParticipant[] = [];
+  /** Hub role roster [{user_id, email, name, role}] — the generic ``members``
+   *  cache from the Entity base (redeclared with a default so readers get an
+   *  array). This is what the Members UI (`useMembers`) reads; distinct from the
+   *  local presence `presence` overlay below. The project's own (uuid4) id is the
+   *  shared hub identity — no separate cloud id. */
+  members: ConversationParticipant[] = [];
   /** Last UI view mode used in this project (vibe|standard|advanced|dev);
    *  applied on project load so the mode is remembered per project. */
   last_mode: string | null = null;
   // ── Collaboration overlay (merged from the former CollaborationSpace) ──
   session_code: string | null = null;
   host_member_id: string | null = null;
-  members: ProjectMember[] = [];
+  /** Local collaboration presence (session-code join, no roles). Renamed from
+   *  `members` so that name is free for the hub role roster. */
+  presence: ProjectMember[] = [];
   /** Context folders: extra directories auto-added to every agentic worker's
    *  --add-dir set and browseable in the Explorer as their own root. Mirrors
    *  the backend Project.include_dirs. */
@@ -128,11 +176,11 @@ export class Project extends APIEntity<Project> {
 
   constructor(entity: Partial<Project> = {}) {
     super(entity);
-    this.participants = (entity.participants as ConversationParticipant[] | undefined) ?? [];
+    this.members = (entity.members as ConversationParticipant[] | undefined) ?? [];
     this.last_mode = (entity.last_mode as string | null | undefined) ?? null;
     this.session_code = (entity.session_code as string | null | undefined) ?? null;
     this.host_member_id = (entity.host_member_id as string | null | undefined) ?? null;
-    this.members = (entity.members as ProjectMember[] | undefined) ?? [];
+    this.presence = (entity.presence as ProjectMember[] | undefined) ?? [];
     this.include_dirs = (entity.include_dirs as string[] | undefined) ?? [];
     this.context_dir_infos = (entity.context_dir_infos as ProjectContextDirInfo[] | undefined) ?? [];
     this.secret_origins = (entity.secret_origins as ProjectSecretOriginSummary[] | undefined) ?? [];
@@ -260,6 +308,19 @@ export class Project extends APIEntity<Project> {
     this.adoptContextDirs(await dataManager.callAction(actionInfo));
   }
 
+  /** Get-or-create the `Folder` entity for a directory, WITHOUT attaching it as
+   *  a context folder. Folder ids are deterministic (a Folder's id is its origin
+   *  key), so this is a safe get-or-create: it never links, never indexes, and
+   *  returns the same typeid for the same directory forever. Use it when a
+   *  surface needs an entity for a directory the user is merely browsing (e.g.
+   *  the Assets header's Share); use `addContextDir` when the folder should
+   *  actually join the project's context. */
+  async folderForPath(path: string): Promise<{ typeid: string; path: string; origin_kind: string | null }> {
+    const actionInfo = new ActionInfo('folder-for-path', Project.type, this.typeId.id, 'POST');
+    actionInfo.bodyParameters = { path };
+    return dataManager.callAction(actionInfo);
+  }
+
   /** Detach a context folder. No-op if not attached. */
   async removeContextDir(path: string): Promise<void> {
     const actionInfo = new ActionInfo('remove-context-dir', Project.type, this.typeId.id, 'POST');
@@ -270,17 +331,18 @@ export class Project extends APIEntity<Project> {
   async addSecretPointer(
     name: string,
     envVar: string,
-    options: { locator: SecretOriginLocator; scope?: SecretPointerScope },
+    options: { locator: SecretOriginLocator; scope?: SecretPointerScope; sodStore?: SodStore },
   ): Promise<void> {
     const actionInfo = new ActionInfo('add-secret-pointer', Project.type, this.typeId.id, 'POST');
+    // The backend builds the value-free locator from the generic ``locator`` dict
+    // (any provider kind); ``sod_store`` is where the wizard caches a value.
     actionInfo.bodyParameters = {
       name,
       env_var: envVar,
       scope: options.scope ?? 'private',
       kind: options.locator.kind,
       locator: options.locator,
-      ...(options.locator.kind === 'local' ? { sod_name: options.locator.sod_name } : {}),
-      ...(options.locator.kind === 'flowpad-hub' ? { secret_id: options.locator.secret_id } : {}),
+      ...(options.sodStore ? { sod_store: options.sodStore } : {}),
     };
     this.adoptSecretOrigins(await dataManager.callAction(actionInfo));
   }
@@ -289,6 +351,27 @@ export class Project extends APIEntity<Project> {
     const actionInfo = new ActionInfo('remove-secret-pointer', Project.type, this.typeId.id, 'POST');
     actionInfo.bodyParameters = { typeid };
     this.adoptSecretOrigins(await dataManager.callAction(actionInfo));
+  }
+
+  /** Value-free per-secret resolve status (available/missing) for the Secrets
+   *  card + setup wizard. Never fetches a value. */
+  async secretResolveStatus(): Promise<SecretResolveStatus[]> {
+    const actionInfo = new ActionInfo('secret-resolve-status', Project.type, this.typeId.id, 'POST');
+    const res = await dataManager.callAction<undefined, { secrets?: SecretResolveStatus[] }>(actionInfo);
+    return Array.isArray(res?.secrets) ? res!.secrets : [];
+  }
+
+  /** Setup wizard: store a user-provided value in the secret's designated SOD
+   *  store (sodot or the project .env.local). The value never touches the
+   *  reference json or any hub payload. */
+  async provideSecret(params: { typeid?: string; envVar?: string; value: string }): Promise<void> {
+    const actionInfo = new ActionInfo('provide-secret', Project.type, this.typeId.id, 'POST');
+    actionInfo.bodyParameters = {
+      ...(params.typeid ? { typeid: params.typeid } : {}),
+      ...(params.envVar ? { env_var: params.envVar } : {}),
+      value: params.value,
+    };
+    await dataManager.callAction(actionInfo);
   }
 
   /** Resolve received shared context folders into receiver-local paths. */
@@ -410,7 +493,7 @@ export class Project extends APIEntity<Project> {
 
   /** True when the member's last_seen_at is within `windowMs` of now. */
   isMemberOnline(memberId: string, windowMs: number = 30_000): boolean {
-    const m = this.members.find((x) => x.member_id === memberId);
+    const m = this.presence.find((x) => x.member_id === memberId);
     if (!m || !m.last_seen_at) return false;
     const t = Date.parse(m.last_seen_at);
     if (Number.isNaN(t)) return false;
@@ -439,7 +522,7 @@ export class Project extends APIEntity<Project> {
     if (result) {
       if (result.session_code !== undefined) this.session_code = result.session_code ?? null;
       if (result.host_member_id !== undefined) this.host_member_id = result.host_member_id ?? null;
-      if (Array.isArray(result.members)) this.members = result.members as ProjectMember[];
+      if (Array.isArray(result.presence)) this.presence = result.presence as ProjectMember[];
     }
     return this;
   }
@@ -452,10 +535,10 @@ export class Project extends APIEntity<Project> {
       { member_id: string; name: string },
       Partial<Project>
     >(info);
-    if (result && Array.isArray(result.members)) {
-      this.members = result.members as ProjectMember[];
+    if (result && Array.isArray(result.presence)) {
+      this.presence = result.presence as ProjectMember[];
     }
-    return this.members.find((m) => m.member_id === memberId) ?? null;
+    return this.presence.find((m) => m.member_id === memberId) ?? null;
   }
 
   /** Presence ping — bumps last_seen_at on the backend. */
@@ -464,11 +547,11 @@ export class Project extends APIEntity<Project> {
     info.bodyParameters = { member_id: memberId };
     const result = await dataManager.callAction<
       { member_id: string },
-      { ok: boolean; members: ProjectMember[] }
+      { ok: boolean; presence: ProjectMember[] }
     >(info);
-    if (result && Array.isArray(result.members)) {
-      this.members = result.members;
-      return result.members;
+    if (result && Array.isArray(result.presence)) {
+      this.presence = result.presence;
+      return result.presence;
     }
     return null;
   }

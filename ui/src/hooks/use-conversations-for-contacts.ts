@@ -45,7 +45,7 @@ export function useConversationsForContacts(
         if (c.dismissed_at || c.archived_at) return false;
         if (projectId && c.project_id && c.project_id !== projectId) return false;
         const have = new Set(
-          (c.participants ?? [])
+          (c.members ?? [])
             .map(participantKey)
             .filter((k) => k.length > 0),
         );

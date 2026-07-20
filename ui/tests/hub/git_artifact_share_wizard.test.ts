@@ -39,7 +39,6 @@ import {
   type ResolvedInstance,
 } from './_instances';
 import {
-  dismissWelcomeModal,
   launchBrowser,
   openConversation,
   openInstancePage,
@@ -313,7 +312,6 @@ async function acceptConversationInvitationInUI(inst: InstancePage, conversation
     }).catch(() => undefined);
 
     await page.goto(`${inst.feUrl}/dock/inbox?viewMode=advanced`, { waitUntil: 'domcontentloaded' });
-    await dismissWelcomeModal(page);
 
     const row = page.locator(rowSelector).first();
     if (await row.isVisible({ timeout: 2_000 }).catch(() => false)) {

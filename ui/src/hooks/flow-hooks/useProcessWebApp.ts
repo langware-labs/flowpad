@@ -1,6 +1,5 @@
-import { ActionInfo, AgenticProcess, ArtifactType, Flow } from '@sdk';
+import { ActionInfo, AgenticProcess } from '@sdk';
 import { useMemo } from 'react';
-import { useCurrentArtifacts } from './useCurrentArtifacts';
 
 export interface WebAppConfig {
   /** Direct `get-host` URL (redirects to the dev server; cross-origin iframe). */
@@ -9,40 +8,24 @@ export interface WebAppConfig {
 }
 
 /**
- * Hook to extract web app configuration from artifacts.
- * Gets the last artifact of type WEBAPP and builds the iframe URL.
+ * Build the live-preview URL from the running process's explicit port.
+ * Artifact is the logical/source plane and deliberately carries no runtime
+ * port; placement/runtime discovery belongs to Deployment.
  */
-export function useProcessWebApp(flow: Flow | null | undefined, port: string | null | undefined): WebAppConfig {
-  const { data: artifacts = [] } = useCurrentArtifacts();
-
+export function useProcessWebApp(flow: AgenticProcess | null | undefined, port: string | null | undefined): WebAppConfig {
   const webAppConfig = useMemo(() => {
-    let cacheKey = Date.now();
-    let _port = port;
-    if (!_port) {
-      const webApps = [...artifacts].filter((artifact) => artifact.artifact_type === ArtifactType.WEBAPP);
-      const webApp = webApps.length > 0 ? webApps[webApps.length - 1] : undefined;
-      if (webApp) {
-        cacheKey = Number(webApp.id);
-      }
-      _port = webApp?.metadata?.port as string;
-    }
-
-    if (!_port || !flow) {
+    if (!port || !flow) {
       return { host: '', cacheKey: 0 };
     }
 
-    // `get-host` is registered on the AgenticProcess entity (the legacy Flow
-    // entity was removed). The active "flow" from AgentContext is an
-    // AgenticProcess, so target that type — using Flow.type 404s.
-    const entityType = flow instanceof AgenticProcess ? AgenticProcess.type : Flow.type;
-    const info = new ActionInfo('get-host', entityType, flow.id);
-    info.queryParameters = { port: _port as string };
+    const info = new ActionInfo('get-host', AgenticProcess.type, flow.id);
+    info.queryParameters = { port };
 
     return {
       host: info.fullActionUrl,
-      cacheKey,
+      cacheKey: Date.now(),
     };
-  }, [artifacts, flow, port]);
+  }, [flow, port]);
 
   return webAppConfig;
 }

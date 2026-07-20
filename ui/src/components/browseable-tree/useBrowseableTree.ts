@@ -5,7 +5,14 @@ import type { Browseable, BrowseableRoot } from './types';
 export type LoadState =
   | { status: 'idle' }
   | { status: 'loading' }
-  | { status: 'ready'; children: Browseable[] }
+  /**
+   * `refreshing` = an `invalidate` re-fetch is in flight over children we
+   * already have. The previous children stay rendered until the fresh list
+   * lands, so a burst of entity ops (e.g. create-group-task writing one member
+   * task per member) repaints the rows once instead of flashing "Loading…"
+   * between every op. `loading` is reserved for a genuine first load.
+   */
+  | { status: 'ready'; children: Browseable[]; refreshing?: boolean }
   | { status: 'error'; message: string };
 
 export interface BrowseableTreeState {
@@ -83,6 +90,11 @@ export function useBrowseableTree(roots: BrowseableRoot[], options: BrowseableTr
 
   // Track in-flight fetches to prevent duplicate work on quick toggles.
   const inflight = useRef(new Map<string, Promise<Browseable[]>>());
+
+  // Per-node invalidate generation. A burst of entity ops fires overlapping
+  // `invalidate`s, and their fetches can resolve out of order — an older
+  // response must never overwrite a newer one's children.
+  const refreshSeq = useRef(new Map<string, number>());
 
   const getLoadState = useCallback(
     (id: string): LoadState => state.loadStates.get(id) ?? { status: 'idle' },
@@ -209,15 +221,29 @@ export function useBrowseableTree(roots: BrowseableRoot[], options: BrowseableTr
       }
       inflight.current.delete(nodeId);
       if (node && node.listChildren && state.expandedIds.has(nodeId)) {
-        setLoadState(nodeId, { status: 'loading' });
+        const seq = (refreshSeq.current.get(nodeId) ?? 0) + 1;
+        refreshSeq.current.set(nodeId, seq);
+        // Keep the rows we already have on screen while the re-fetch runs;
+        // only a node with nothing cached shows the "Loading…" placeholder.
+        const cached = loadStatesRef.current.get(nodeId);
+        setLoadState(
+          nodeId,
+          cached?.status === 'ready'
+            ? { status: 'ready', children: cached.children, refreshing: true }
+            : { status: 'loading' },
+        );
         try {
           // `{ refresh: true }` so adapters that own a cache (e.g. the skill /
           // markdown folder adapters' fsStore browseCache) bypass it — an
           // invalidate's whole purpose is to reflect fresh on-disk state (e.g.
           // after a delete). Adapters that always fetch (asset /search) ignore it.
           const children = await node.listChildren({ refresh: true });
+          // A newer invalidate started while this fetch was in flight — its
+          // result is the fresh one; drop ours rather than clobber it.
+          if (refreshSeq.current.get(nodeId) !== seq) return;
           setLoadState(nodeId, { status: 'ready', children });
         } catch (err) {
+          if (refreshSeq.current.get(nodeId) !== seq) return;
           const message = err instanceof Error ? err.message : String(err);
           setLoadState(nodeId, { status: 'error', message });
         }

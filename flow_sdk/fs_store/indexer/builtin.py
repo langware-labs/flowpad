@@ -26,7 +26,6 @@ INDEXABLE_TYPES: list[RecordType] = [
     RecordType.SPEC,
     RecordType.SKILL,
     RecordType.AGENT,
-    RecordType.WORKFLOW,
     RecordType.COMMAND,
     RecordType.CLAUDE_MEMORY,
     RecordType.MARKDOWN,
@@ -87,9 +86,6 @@ def build_default_indexer() -> FSIndexer:
     from flow_sdk.fs_store.indexer.functions.codex_projects import codex_projects_fn
     from flow_sdk.fs_store.indexer.functions.codex_sessions import codex_sessions_fn
     from flow_sdk.fs_store.indexer.functions.copilot_sessions import copilot_sessions_fn
-    from flow_sdk.fs_store.indexer.functions.dataset import dataset_fn
-    from flow_sdk.fs_store.indexer.functions.deck import deck_fn
-    from flow_sdk.fs_store.indexer.functions.deck_template import deck_template_fn
     from flow_sdk.fs_store.indexer.functions.dynamic_workflows import dynamic_workflows_fn
     from flow_sdk.fs_store.indexer.functions.markdown import (
         markdown_flat_fn,
@@ -104,18 +100,15 @@ def build_default_indexer() -> FSIndexer:
         project_folder_walker_fn,
     )
     from flow_sdk.fs_store.indexer.functions.prompt import prompt_project_fn
+    from flow_sdk.fs_store.indexer.functions.repo_assets import repo_assets_fn
     from flow_sdk.fs_store.indexer.functions.skill import skill_fn
+    from flow_sdk.fs_store.indexer.functions.secret_origin import secret_origin_in_folder_fn
     from flow_sdk.fs_store.indexer.functions.spreadsheet import spreadsheet_in_folder_fn
-    from flow_sdk.fs_store.indexer.functions.spec import spec_project_fn
-    from flow_sdk.fs_store.indexer.functions.task import task_fn
     from flow_sdk.fs_store.indexer.functions.todo import todo_fn
     from flow_sdk.fs_store.indexer.functions.usage_report import usage_report_fn
     from flow_sdk.fs_store.indexer.functions.asset_cleanup_report import asset_cleanup_report_fn
     from flow_sdk.fs_store.indexer.functions.whiteboard import whiteboard_fn
-    from flow_sdk.fs_store.indexer.functions.workflow import (
-        workflow_fn,
-        workflow_frontmatter_fn,
-    )
+    from flow_sdk.fs_store.indexer.functions.agentic_flow import agentic_flow_fn
     from flow_sdk.fs_store.indexer.functions.workflow_run import workflow_run_fn
 
     # Transcript handlers are opt-in (full-JSONL parse is expensive — see
@@ -144,13 +137,13 @@ def build_default_indexer() -> FSIndexer:
     idx.add_function(RecordType.USER_HOME_FOLDER, claude_rules_fn, RecordType.CLAUDE_RULES)
     idx.add_function(RecordType.USER_HOME_FOLDER, skill_fn, RecordType.SKILL)
     idx.add_function(RecordType.USER_HOME_FOLDER, whiteboard_fn, RecordType.WHITEBOARD)
+    idx.add_function(RecordType.USER_HOME_FOLDER, agentic_flow_fn, RecordType.AGENTIC_FLOW)
     idx.add_function(RecordType.USER_HOME_FOLDER, agent_trace_fn, RecordType.AGENT_TRACE)
     # Workflow run journals live at ~/.claude/projects/<slug>/<sid>/workflows/wf_*.json.
     idx.add_function(RecordType.USER_HOME_FOLDER, workflow_run_fn, RecordType.WORKFLOW_RUN)
     idx.add_function(RecordType.USER_HOME_FOLDER, usage_report_fn, RecordType.USAGE_REPORT)
     idx.add_function(RecordType.USER_HOME_FOLDER, asset_cleanup_report_fn, RecordType.ASSET_CLEANUP_REPORT)
     idx.add_function(RecordType.USER_HOME_FOLDER, agent_fn, RecordType.AGENT)
-    idx.add_function(RecordType.USER_HOME_FOLDER, workflow_fn, RecordType.WORKFLOW)
     # Dynamic workflows (.js) live beside the .md AMD workflows in .claude/workflows/.
     idx.add_function(RecordType.USER_HOME_FOLDER, dynamic_workflows_fn, RecordType.DYNAMIC_WORKFLOW)
     idx.add_function(RecordType.USER_HOME_FOLDER, command_fn, RecordType.COMMAND)
@@ -181,21 +174,16 @@ def build_default_indexer() -> FSIndexer:
     idx.add_function(RecordType.REAL_PROJECT_CWD, claude_plan_fn, RecordType.PLAN)
     idx.add_function(RecordType.REAL_PROJECT_CWD, claude_md_in_project_root_fn, RecordType.CLAUDE_MD)
     idx.add_function(RecordType.REAL_PROJECT_CWD, claude_rules_fn, RecordType.CLAUDE_RULES)
-    idx.add_function(RecordType.REAL_PROJECT_CWD, spec_project_fn, RecordType.SPEC)
     idx.add_function(RecordType.REAL_PROJECT_CWD, prompt_project_fn, RecordType.PROMPT)
     idx.add_function(RecordType.REAL_PROJECT_CWD, skill_fn, RecordType.SKILL)
     idx.add_function(RecordType.REAL_PROJECT_CWD, whiteboard_fn, RecordType.WHITEBOARD)
+    idx.add_function(RecordType.REAL_PROJECT_CWD, agentic_flow_fn, RecordType.AGENTIC_FLOW)
     idx.add_function(RecordType.REAL_PROJECT_CWD, agent_trace_fn, RecordType.AGENT_TRACE)
     idx.add_function(RecordType.REAL_PROJECT_CWD, usage_report_fn, RecordType.USAGE_REPORT)
     idx.add_function(RecordType.REAL_PROJECT_CWD, asset_cleanup_report_fn, RecordType.ASSET_CLEANUP_REPORT)
     idx.add_function(RecordType.REAL_PROJECT_CWD, agent_fn, RecordType.AGENT)
-    idx.add_function(RecordType.REAL_PROJECT_CWD, workflow_fn, RecordType.WORKFLOW)
     idx.add_function(RecordType.REAL_PROJECT_CWD, dynamic_workflows_fn, RecordType.DYNAMIC_WORKFLOW)
     idx.add_function(RecordType.REAL_PROJECT_CWD, project_folder_walker_fn, RecordType.FOLDER)
-    idx.add_function(RecordType.REAL_PROJECT_CWD, task_fn, RecordType.TASK)
-    idx.add_function(RecordType.REAL_PROJECT_CWD, dataset_fn, RecordType.DATASET)
-    idx.add_function(RecordType.REAL_PROJECT_CWD, deck_template_fn, RecordType.DECK_TEMPLATE)
-    idx.add_function(RecordType.REAL_PROJECT_CWD, deck_fn, RecordType.DECK)
     idx.add_function(RecordType.REAL_PROJECT_CWD, claude_hook_files_fn, RecordType.CLAUDE_HOOK_SOURCE)
     idx.add_function(RecordType.REAL_PROJECT_CWD, mcp_source_files_fn, RecordType.MCP_SERVER_SOURCE)
     idx.add_function(RecordType.REAL_PROJECT_CWD, command_fn, RecordType.COMMAND)
@@ -203,6 +191,7 @@ def build_default_indexer() -> FSIndexer:
     # SYSTEM_ROOT (flowpad_assistant) expanders
     idx.add_function(RecordType.SYSTEM_ROOT, skill_fn, RecordType.SKILL)
     idx.add_function(RecordType.SYSTEM_ROOT, whiteboard_fn, RecordType.WHITEBOARD)
+    idx.add_function(RecordType.SYSTEM_ROOT, agentic_flow_fn, RecordType.AGENTIC_FLOW)
     idx.add_function(RecordType.SYSTEM_ROOT, agent_fn, RecordType.AGENT)
     idx.add_function(RecordType.SYSTEM_ROOT, project_folder_walker_fn, RecordType.FOLDER)
 
@@ -212,18 +201,27 @@ def build_default_indexer() -> FSIndexer:
     idx.add_function(RecordType.CWD_ROOT, skill_fn, RecordType.SKILL)
     idx.add_function(RecordType.CWD_ROOT, whiteboard_fn, RecordType.WHITEBOARD)
     idx.add_function(RecordType.CWD_ROOT, agent_fn, RecordType.AGENT)
-    idx.add_function(RecordType.CWD_ROOT, workflow_fn, RecordType.WORKFLOW)
     idx.add_function(RecordType.CWD_ROOT, dynamic_workflows_fn, RecordType.DYNAMIC_WORKFLOW)
     idx.add_function(RecordType.CWD_ROOT, command_fn, RecordType.COMMAND)
     idx.add_function(RecordType.CWD_ROOT, project_folder_walker_fn, RecordType.FOLDER)
     idx.add_function(RecordType.CWD_ROOT, mcp_source_files_fn, RecordType.MCP_SERVER_SOURCE)
-    idx.add_function(RecordType.CWD_ROOT, deck_template_fn, RecordType.DECK_TEMPLATE)
-    idx.add_function(RecordType.CWD_ROOT, deck_fn, RecordType.DECK)
+
+    # Repo assets: the recursive agentic-assets/<type> hierarchy. One walker
+    # discovers the whole nested tree per scope root (in-function recursion), so
+    # it registers on the roots only (not per repo type). output_type=None → it
+    # always runs and emits many types; each is materialized by its own type.
+    for _root in (
+        RecordType.USER_HOME_FOLDER,
+        RecordType.REAL_PROJECT_CWD,
+        RecordType.SYSTEM_ROOT,
+        RecordType.CWD_ROOT,
+    ):
+        idx.add_function(_root, repo_assets_fn)
 
     # FOLDER (transient scaffold emitted by project_folder_walker_fn) expanders
     idx.add_function(RecordType.FOLDER, markdown_in_folder_fn, RecordType.MARKDOWN)
     idx.add_function(RecordType.FOLDER, spreadsheet_in_folder_fn, RecordType.SPREADSHEET)
-    idx.add_function(RecordType.FOLDER, workflow_frontmatter_fn, RecordType.WORKFLOW)
+    idx.add_function(RecordType.FOLDER, secret_origin_in_folder_fn, RecordType.SECRET_ORIGIN)
     idx.add_function(RecordType.CWD_ROOT, claude_hook_files_fn, RecordType.CLAUDE_HOOK_SOURCE)
 
     # Stage 2 of recursive hook walk: descend into each settings.json source

@@ -536,7 +536,12 @@ export function ConversationView({
     rosterReady &&
     (participants ?? []).length === 2 &&
     !!cloudUserId &&
-    !!otherParticipant &&
+    // The peer's user_id must be RESOLVED, not just the participant row
+    // present: an unresolved roster row (user_id null) passes the
+    // `p.user_id !== cloudUserId` filter and would mint a session draft with
+    // host_user_id=null — the host then materializes a row without its own
+    // identity and never shows the Approve bar (see apply_snapshot heal).
+    !!otherParticipant?.user_id &&
     !workerSession.hasLiveSession;
   const liveSessionDisabledReason = !conversation?.remote
     ? t`Live sessions need a shared conversation`
@@ -544,7 +549,9 @@ export function ConversationView({
       ? t`Live sessions are 1:1 — available in two-person conversations`
       : workerSession.hasLiveSession
         ? t`A live session is already running in this conversation`
-        : null;
+        : otherParticipant && !otherParticipant.user_id
+          ? t`Waiting for the other participant's identity to sync…`
+          : null;
   const [startingSession, setStartingSession] = useState(false);
   const handleStartLiveSession = useCallback(async () => {
     if (!canStartLiveSession || startingSession) return;

@@ -7,7 +7,6 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, List, Optional
 
-from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, computed_field, model_validator
 from pydantic.alias_generators import to_camel
 
@@ -17,7 +16,8 @@ from flow_sdk.api.type_id import TypeId
 from flow_sdk.builtin.faas.compute_node import ComputeNode
 from flow_sdk.builtin.worker_sessions import get_worker_sessions
 from flow_sdk.config import AGENT_MOUNT_FOLDER, PLATFORM_WIN32, StorageProvider
-from flow_sdk.core import Entity, QueryFilter, action
+from flow_sdk.core import Entity, action
+from flow_sdk.core.entity.entity_model import migrate_presence_shaped_members
 from flow_sdk.core.flow.flow_source_control import ComputeSourceControlInitializeOptions
 from flow_sdk.core.flow.mcp_server import MCPConnector, mcp_connector_pool
 from flow_sdk.core.flow.models.execution.env_context import get_env_vars_context
@@ -123,22 +123,18 @@ class Project(Entity):
         default=None,
         description="Stable local member_id of whoever first started collaboration on this project",
     )
-    members: list[dict] = APIField(
+    presence: list[dict] = APIField(
         default_factory=list,
-        description="Collaboration participants: [{member_id, name, joined_at, last_seen_at}]",
+        description="Local collaboration presence: [{member_id, name, joined_at, last_seen_at}] (session-code join, no roles). Renamed from ``members`` to free that name for the hub role roster now on the Entity base.",
     )
     # ── Hub collaboration (Project as a shared unit — mirrors Conversation) ──
     # The project's own (uuid4) id IS the shared hub identity: on share the hub
     # row and the recipient's local mirror both live under it (no separate cloud
     # id). This works because project ids are opaque uuid4, not path-derived.
-    # Hub-authoritative role roster: [{user_id, email, name, role}] with roles
-    # owner/admin/member/reader. Distinct from the local presence ``members``
-    # overlay (session-code join, no roles). Written by the reflected ``members``
-    # action / ``_upsert_hub_project_metadata``; read by the Members UI.
-    participants: list[dict] = APIField(
-        default_factory=list,
-        description="Hub role roster: [{user_id, email, name, role}]. Distinct from presence ``members``.",
-    )
+    # The hub role roster is cached generically on the Entity base as ``members``
+    # ([{user_id, email, name, role}] with roles owner/admin/member/reader),
+    # written by the reflected ``members`` action mirror and read by the Members
+    # UI. Distinct from the local ``presence`` overlay (session-code join, no roles).
     shared_secret_origins: dict[str, dict[str, Any]] = APIField(
         default_factory=dict,
         description="Hub-side value-free secret pointer metadata keyed by SecretOrigin typeid.",
@@ -164,6 +160,11 @@ class Project(Entity):
         description="ISO timestamp of the most recent session activity at this project's cwd, "
         "denormalized from the matching ProjectFsRecord. Null if no sessions yet.",
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _migrate_legacy_presence(cls, data):
+        return migrate_presence_shaped_members(data)
 
     @model_validator(mode="before")
     @classmethod
@@ -262,6 +263,16 @@ class Project(Entity):
                     continue
                 seen.add(key)
                 entry = dict(self.get_context_entry_data(tid) or {})
+                # Receiver path: a project shared TO this instance carries the
+                # value-free reference in the mirrored ``shared_secret_origins``
+                # map (hub-authoritative), not in the local sidecar — the sidecar
+                # is only populated on the machine that authored the pointer. Fall
+                # back to the mirror so a received secret reads its metadata,
+                # mirroring how context folders read ``shared_context_origins``.
+                if not entry and bucket == "shared":
+                    mirror = self.shared_secret_origins.get(key)
+                    if isinstance(mirror, dict):
+                        entry = dict(mirror)
                 locator = entry.get("locator") if isinstance(entry.get("locator"), dict) else {}
                 out.append(
                     {
@@ -270,6 +281,7 @@ class Project(Entity):
                         "env_var": entry.get("env_var") or "",
                         "kind": entry.get("kind") or locator.get("kind") or "",
                         "locator": locator,
+                        "sod_store": entry.get("sod_store") or "",
                         "scope": entry.get("scope") or scope,
                     }
                 )
@@ -534,7 +546,7 @@ class Project(Entity):
             "last_mode",
             "session_code",
             "host_member_id",
-            "members",
+            "presence",
             "include_dirs",
             "context_dir_infos",
             "secret_origins",
@@ -569,6 +581,7 @@ class Project(Entity):
             locator = entry.get("locator") if isinstance(entry.get("locator"), dict) else None
             name = entry.get("name") or ""
             env_var = entry.get("env_var") or ""
+            sod_store = entry.get("sod_store") or ""
             if not locator or not name or not env_var:
                 secret = await SecretOrigin.get_by_id(tid.id)
                 if secret is None:
@@ -576,6 +589,11 @@ class Project(Entity):
                 locator = secret.locator.model_dump(mode="json")
                 name = secret.name or ""
                 env_var = secret.env_var
+                sod_store = secret.effective_sod_store()
+            # ``local`` (sodot-by-name) is machine-specific — the sod_name is
+            # meaningless off-machine, so it never travels. Every other kind
+            # (env-local / gcp / 1password / flowpad-hub) is a value-free pointer
+            # the receiver resolves with their own store/provider.
             if (locator or {}).get("kind") == "local":
                 continue
             payload[str(tid)] = {
@@ -583,6 +601,7 @@ class Project(Entity):
                 "env_var": env_var,
                 "kind": (locator or {}).get("kind"),
                 "locator": locator,
+                "sod_store": sod_store,
             }
         return payload
 
@@ -757,32 +776,6 @@ class Project(Entity):
         compute_node = await self.get_compute_node()
         return ApiSuccessResponse(data={"compute_node": compute_node.model_dump() if compute_node else None})
 
-    async def _get_process_by_source_impl(self, asset_ref: str):
-        """Find an existing process entity associated with the given asset_ref."""
-        from flow_sdk.builtin.process import Flow
-
-        if not asset_ref:
-            raise HTTPException(status_code=400, detail="asset_ref is required")
-
-        process_filter = QueryFilter.by_type(Flow.get_type())
-        child_processes = await self.get_children(child_filter=process_filter)
-
-        for child in child_processes:
-            process_entity = child.value
-            if isinstance(process_entity, Flow) and process_entity.asset_ref == asset_ref:
-                return ApiSuccessResponse(data=process_entity)
-
-        return ApiSuccessResponse(data=None)
-
-    @action.get(action_name="get-process-by-source")
-    async def get_process_by_source(self, asset_ref: str):
-        return await self._get_process_by_source_impl(asset_ref)
-
-    @action.get(action_name="get-flow-by-source")
-    async def get_flow_by_source(self, asset_ref: str):
-        """Backward-compatible alias for get_process_by_source."""
-        return await self._get_process_by_source_impl(asset_ref)
-
     @action.get(action_name="get-compute-node")
     async def get_compute_node_action(self):
         compute_node = await self.get_compute_node()
@@ -884,6 +877,14 @@ class Project(Entity):
 
     # ── Secret pointers (SecretOrigin entities linked via context buckets) ──
 
+    def _assets_sodot_dir(self) -> "Path | None":
+        """``<project mount>/assets/sodot`` — where value-free secret reference
+        json files live so they're indexed + travel with a git-shared project."""
+        from pathlib import Path  # noqa: PLC0415
+
+        mount = self.fs_storage_mount_path
+        return (Path(mount) / "assets" / "sodot") if mount else None
+
     @action.post(action_name="add-secret-pointer")
     async def add_secret_pointer(
         self,
@@ -892,17 +893,21 @@ class Project(Entity):
         scope: str = "private",
         kind: str = "local",
         locator: dict[str, Any] | None = None,
+        sod_store: str = "",
         sod_name: str | None = None,
         secret_id: str | None = None,
     ) -> "ApiResponse":
-        """Attach a value-free secret pointer to this project."""
-        from flow_sdk.builtin.hub_secret_ref import HubSecretRef  # noqa: PLC0415
-        from flow_sdk.builtin.local_secret_ref import LocalSecretRef  # noqa: PLC0415
+        """Attach a value-free secret pointer to this project and write its
+        reference json under ``assets/sodot/<name>.json`` (indexed + travels)."""
         from flow_sdk.builtin.secret_origin import (  # noqa: PLC0415
             SecretOrigin,
             is_valid_secret_origin_env_var,
         )
-        from flow_sdk.builtin.secret_origin_driver import normalize_secret_origin_kind  # noqa: PLC0415
+        from flow_sdk.builtin.secret_origin_driver import (  # noqa: PLC0415
+            get_secret_origin_driver,
+            normalize_secret_origin_kind,
+        )
+        from flow_sdk.builtin.secret_origin_field import SECRET_ORIGIN_ADAPTER  # noqa: PLC0415
 
         name = (name or "").strip()
         env_var = (env_var or "").strip()
@@ -914,38 +919,52 @@ class Project(Entity):
         if scope not in ("private", "shared"):
             return ApiFailResponse(message="scope must be 'private' or 'shared'")
 
+        # Build the value-free locator from an explicit ``locator`` dict, or the
+        # convenience kind + sod_name/secret_id params (back-compat).
         raw_locator = dict(locator or {})
-        resolved_kind = normalize_secret_origin_kind(
-            raw_locator.get("kind") or kind or ("flowpad-hub" if secret_id else "local")
-        )
-        if resolved_kind == "local":
+        if not raw_locator:
+            resolved_kind = normalize_secret_origin_kind(kind or ("flowpad-hub" if secret_id else "local"))
+            raw_locator = {"kind": resolved_kind}
+            if resolved_kind == "local":
+                raw_locator["sod_name"] = (sod_name or name or "").strip()
+            elif resolved_kind == "flowpad-hub":
+                raw_locator["secret_id"] = (secret_id or "").strip()
+        try:
+            loc = SECRET_ORIGIN_ADAPTER.validate_python(raw_locator)
+            get_secret_origin_driver(loc.kind)  # ensure a driver is registered for this kind
+        except Exception as e:  # noqa: BLE001
+            return ApiFailResponse(message=f"Invalid secret locator: {e}")
+
+        # ``local`` (sodot by name) is machine-local — a sod_name is meaningless
+        # off-machine, so it can't be a shared pointer (docs/secret_share.md).
+        if loc.kind == "local":
             if scope == "shared":
-                return ApiFailResponse(message="Local secret pointers can only be private")
-            local_name = (sod_name or raw_locator.get("sod_name") or name or "").strip()
-            if not local_name:
+                return ApiFailResponse(message="Local (sodot-by-name) secret pointers can only be private")
+            if not getattr(loc, "sod_name", ""):
                 return ApiFailResponse(message="sod_name is required for local secret pointers")
-            loc = LocalSecretRef(sod_name=local_name)
-            name = name or local_name
-        elif resolved_kind == "flowpad-hub":
-            hub_id = (secret_id or raw_locator.get("secret_id") or "").strip()
-            if not hub_id:
-                return ApiFailResponse(message="secret_id is required for flowpad-hub secret pointers")
-            loc = HubSecretRef(secret_id=hub_id)
-            name = name or hub_id
-        else:
-            return ApiFailResponse(message=f"Unsupported secret pointer kind: {resolved_kind}")
+        name = name or getattr(loc, "sod_name", "") or getattr(loc, "secret_id", "") or loc.kind
 
         candidate_typeid = f"{BuiltinEntityType.SECRET_ORIGIN.value}-{SecretOrigin.id_for_locator(loc)}"
         for existing in self.secret_origins:
             if existing.get("env_var") == env_var and existing.get("typeid") != candidate_typeid:
                 return ApiFailResponse(message=f"env_var {env_var} is already bound to another secret pointer")
 
-        secret = await SecretOrigin.mint_for(locator=loc, name=name, env_var=env_var)
+        secret = await SecretOrigin.mint_for(locator=loc, name=name, env_var=env_var, sod_store=sod_store)
         data = secret.context_data(scope=scope)
         if scope == "shared":
             self.add_shared_context_entities(secret.typeid, data=data)
         else:
             self.add_private_context_entities(secret.typeid, data=data)
+
+        # Write the value-free reference json so it's indexed like any asset and
+        # travels with the project's git-backed folder (see docs/secret_share.md).
+        sodot_dir = self._assets_sodot_dir()
+        if sodot_dir is not None:
+            try:
+                secret.to_json_asset(sodot_dir / f"{name}.json")
+            except Exception as e:  # noqa: BLE001
+                log.warning("[secret] could not write reference asset for %s: %s", name, e)
+
         await self.save()
         return ApiSuccessResponse(data=self.model_dump(mode="json"))
 
@@ -976,10 +995,104 @@ class Project(Entity):
                     continue
                 targets.append(tid)
         if targets:
+            # Delete the value-free reference asset(s) too so removal is complete.
+            sodot_dir = self._assets_sodot_dir()
+            if sodot_dir is not None:
+                for tid in targets:
+                    entry = self.get_context_entry_data(tid) or {}
+                    nm = (entry.get("name") or "").strip()
+                    if nm:
+                        try:
+                            (sodot_dir / f"{nm}.json").unlink(missing_ok=True)
+                        except OSError:
+                            pass
             self.remove_shared_context_entities(*targets)
             self.remove_private_context_entities(*targets)
             await self.save()
         return ApiSuccessResponse(data=self.model_dump(mode="json"))
+
+    @action.post(action_name="secret-resolve-status")
+    async def secret_resolve_status(self) -> "ApiResponse":
+        """Per-secret resolve status for the Secrets card / wizard: can each
+        secret's value be resolved on THIS machine right now? Value-free — calls
+        ``driver.can_resolve`` (never fetches a value)."""
+        from flow_sdk.builtin.secret_origin_driver import get_secret_origin_driver  # noqa: PLC0415
+        from flow_sdk.builtin.secret_origin_field import SECRET_ORIGIN_ADAPTER  # noqa: PLC0415
+
+        rows: list[dict[str, Any]] = []
+        # Drive off the value-free ``secret_origins`` summary — it reads the local
+        # sidecar on the authoring machine and the mirrored ``shared_secret_origins``
+        # on a receiver, so a shared pointer resolves on both sides.
+        for entry in self.secret_origins:
+            try:
+                loc = SECRET_ORIGIN_ADAPTER.validate_python(entry.get("locator") or {})
+                driver = get_secret_origin_driver(loc.kind)
+            except Exception:  # noqa: BLE001
+                continue
+            try:
+                available = await driver.can_resolve(loc, project=self)
+            except Exception:  # noqa: BLE001
+                available = False
+            hint = driver.setup_hint(loc)
+            rows.append(
+                {
+                    "typeid": entry.get("typeid"),
+                    "name": entry.get("name"),
+                    "env_var": entry.get("env_var"),
+                    "kind": loc.kind,
+                    "scope": entry.get("scope"),
+                    "sod_store": entry.get("sod_store") or hint.get("sod_store"),
+                    "status": "available" if available else "missing",
+                    "setup_hint": hint,
+                }
+            )
+        return ApiSuccessResponse(data={"secrets": rows})
+
+    @action.post(action_name="provide-secret")
+    async def provide_secret(
+        self,
+        typeid: str | None = None,
+        env_var: str | None = None,
+        value: str = "",
+    ) -> "ApiResponse":
+        """Setup wizard: store a user-provided value in the secret's designated
+        SOD store — the encrypted ``sodot`` (for ``local`` pointers) or the
+        project's ``.env.local`` (for ``env-local`` pointers). The value is NEVER
+        written to the reference json or any hub payload. V1 supports the two
+        local stores; external providers (gcp/1password/hub) are 'coming soon'."""
+        from flow_sdk.builtin.secret_origin_driver import (  # noqa: PLC0415
+            SecretProvideUnsupported,
+            get_secret_origin_driver,
+        )
+        from flow_sdk.builtin.secret_origin_field import SECRET_ORIGIN_ADAPTER  # noqa: PLC0415
+
+        if not (value or "").strip():
+            return ApiFailResponse(message="value is required")
+        want_typeid = (typeid or "").strip()
+        want_env_var = (env_var or "").strip()
+        entry = None
+        for row in self.secret_origins:
+            if (want_typeid and row.get("typeid") == want_typeid) or (
+                want_env_var and row.get("env_var") == want_env_var
+            ):
+                entry = row
+                break
+        if entry is None:
+            return ApiFailResponse(message="secret pointer not found on this project")
+        try:
+            loc = SECRET_ORIGIN_ADAPTER.validate_python(entry.get("locator") or {})
+        except Exception as e:  # noqa: BLE001
+            return ApiFailResponse(message=f"invalid locator: {e}")
+
+        # Driver-dispatched, symmetric with resolve(): the driver owns which SOD
+        # store it writes to. External-provider slots raise SecretProvideUnsupported.
+        try:
+            await get_secret_origin_driver(loc.kind).store(loc, value, project=self)
+        except SecretProvideUnsupported as e:
+            return ApiFailResponse(message=str(e))
+        except Exception as e:  # noqa: BLE001
+            return ApiFailResponse(message=f"could not store value: {e}")
+        return ApiSuccessResponse(data={"ok": True, "env_var": entry.get("env_var")})
 
     # ── Context folders (Folder entities linked via context buckets) ────────
 
@@ -1114,6 +1227,36 @@ class Project(Entity):
             await _index_additional_dir(canonical)
         return ApiSuccessResponse(data=self.model_dump(mode="json"))
 
+    @action.post(action_name="folder-for-path")
+    async def folder_for_path(self, path: str) -> "ApiResponse":
+        """Get-or-create the ``Folder`` entity for a directory, without linking it.
+
+        The share gate needs an entity to preflight, but only CONTEXT folders are
+        linked — a directory the user is merely browsing inside the project's own
+        tree has no ``Folder`` yet. Minting is idempotent (a Folder's id IS its
+        origin key), so this is a safe get-or-create: it never attaches a context
+        folder, never indexes, and returns the same id for the same directory
+        forever. Deliberately NOT ``add-context-dir``: clicking Share must not
+        silently restructure the project.
+        """
+        if not path:
+            return ApiFailResponse(message="path is required")
+        from pathlib import Path
+
+        from flow_sdk.builtin.folder import Folder
+
+        canonical = canonical_posix_path(path)
+        if not Path(canonical).is_dir():
+            return ApiFailResponse(message=f"not a directory: {canonical}", status_code=404)
+        folder = await Folder.mint_for_path(canonical)
+        return ApiSuccessResponse(
+            data={
+                "typeid": str(folder.typeid),
+                "path": canonical,
+                "origin_kind": folder.origin.kind if folder.origin else None,
+            }
+        )
+
     @action.post(action_name="resolve-context-folders")
     async def resolve_context_folders(self) -> "ApiResponse":
         """Resolve shared context folders whose receiver-local sidecar is empty."""
@@ -1224,14 +1367,14 @@ class Project(Entity):
 
     async def _upsert_member(self, member_id: str, name: str) -> dict:
         now = _now_iso()
-        members = list(self.members or [])
-        for m in members:
+        presence = list(self.presence or [])
+        for m in presence:
             if m.get("member_id") == member_id:
                 m["name"] = name
                 m["last_seen_at"] = now
                 if not m.get("joined_at"):
                     m["joined_at"] = now
-                self.members = members
+                self.presence = presence
                 await self.save()
                 return m
         entry = {
@@ -1240,18 +1383,18 @@ class Project(Entity):
             "joined_at": now,
             "last_seen_at": now,
         }
-        members.append(entry)
-        self.members = members
+        presence.append(entry)
+        self.presence = presence
         await self.save()
         return entry
 
     async def _touch_member(self, member_id: str) -> bool:
-        members = list(self.members or [])
+        presence = list(self.presence or [])
         now = _now_iso()
-        for m in members:
+        for m in presence:
             if m.get("member_id") == member_id:
                 m["last_seen_at"] = now
-                self.members = members
+                self.presence = presence
                 await self.save()
                 return True
         return False
@@ -1287,7 +1430,7 @@ class Project(Entity):
         # Seed the host as the first member on first call.
         if host_name and host_member_id:
             existing = next(
-                (m for m in (self.members or []) if m.get("member_id") == host_member_id),
+                (m for m in (self.presence or []) if m.get("member_id") == host_member_id),
                 None,
             )
             if existing is None:
@@ -1296,7 +1439,7 @@ class Project(Entity):
 
     @action.post(action_name="join-collaboration")
     async def _http_join_collaboration(self) -> ApiResponse:
-        """POST body: {member_id, name} → add the caller to project.members."""
+        """POST body: {member_id, name} → add the caller to project.presence."""
         request_info = get_current_request_info()
         body = await request_info.get_post_data() if request_info else {}
         member_id = body.get("member_id")
@@ -1315,7 +1458,7 @@ class Project(Entity):
         if not member_id:
             return ApiFailResponse(message="member_id is required")
         updated = await self._touch_member(member_id)
-        return ApiSuccessResponse(data={"ok": updated, "members": self.members})
+        return ApiSuccessResponse(data={"ok": updated, "presence": self.presence})
 
     async def _delete_with_children(self) -> dict:
         """Permanently delete this project and everything that belongs to it.
@@ -1341,7 +1484,6 @@ class Project(Entity):
             FSRecord,
             get_default_records_data_root,
             get_default_records_root,
-            record_stem,
         )
 
         log = logging.getLogger(__name__)
@@ -1350,9 +1492,9 @@ class Project(Entity):
         data_root = get_default_records_data_root()
 
         def _purge_data(rtype: str, rid: str) -> None:
-            # records_data has two on-disk shapes across types: the canonical
-            # <type>/<type>-@<id>/ and the legacy <id>-only used by index types.
-            for sub in (record_stem(rtype, rid), rid):
+            # records_data has two on-disk shapes: the current bare <id>/ and the
+            # legacy uname-sigil <type>-@<id>/ (pre-rename installs).
+            for sub in (str(rid), f"{rtype}-@{rid}"):
                 p = data_root / rtype / sub
                 try:
                     shutil.rmtree(p)  # idempotent — FileNotFoundError when absent

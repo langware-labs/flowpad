@@ -34,9 +34,10 @@ from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
 from flow_sdk.builtin.agentic_process.cli_drivers.claude.stream_worker import (
     ClaudeCLIStreamWorker,
 )
+from flow_sdk.builtin.artifact import Artifact
+from flow_sdk.builtin.deployment import Deployment
 from flow_sdk.builtin.project import Project
 from flow_sdk.responses.response import ApiResponse, ApiResponseStatus
-
 from tests.api.conftest import (
     create_agentic_process,
     default_compute_node_id,
@@ -198,7 +199,6 @@ async def test_show_auto_bookmarks_into_nested_type_tree(bootstrapped_client, us
         return folders, leaves
 
     pid = await create_agentic_process(bootstrapped_client, visible=False, pty_mode=False)
-    base = f"/api/v1/graph/agentic_process/{pid}"
 
     # A resolved skill entity show (payload shape from resolve_display_target).
     ap = await AgenticProcess.get_by_id(pid)
@@ -284,10 +284,12 @@ async def test_register_webapp_artifact_attaches_to_project_and_shows(bootstrapp
     assert resp.status_code == 200, resp.text
     data = ApiResponse(**resp.json()).data
     artifact = data["artifact"]
-    assert artifact["artifact_type"] == "WEBAPP"
-    assert artifact["ref_type"] == "FOLDER"
-    assert artifact["path"] == str(app_dir)
-    assert artifact["port"] == "3300"
+    deployment = data["deployment"]
+    assert artifact["kind"] == "application.web"
+    assert artifact["origin"] == {"kind": "local", "base": str(tmp_path), "rel_path": "frontend"}
+    assert deployment["kind"] == "local.runtime.web"
+    assert deployment["artifact_id"] == artifact["id"]
+    assert deployment["provider_labels"]["flowpad.runtime.port"] == "3300"
     assert data["shown"] == {"kind": "webapp", "port": 3300}
 
     row = await get_agentic_process(bootstrapped_client, pid)
@@ -296,6 +298,20 @@ async def test_register_webapp_artifact_attaches_to_project_and_shows(bootstrapp
     listed = await bootstrapped_client.post(f"{base}/webapp-artifacts", json={})
     listed_data = ApiResponse(**listed.json()).data
     assert [item["id"] for item in listed_data["artifacts"]] == [artifact["id"]]
+    assert listed_data["artifacts"][0]["deployment"]["id"] == deployment["id"]
+
+    # Kind filters honor exact-or-descendant ontology semantics.
+    artifact_entity = await Artifact.get_by_id(artifact["id"])
+    deployment_entity = await Deployment.get_by_id(deployment["id"])
+    assert artifact_entity is not None and deployment_entity is not None
+    artifact_entity.kind = "application.web.react"
+    deployment_entity.kind = "local.runtime.web.vite"
+    await artifact_entity.save(notify=False)
+    await deployment_entity.save(notify=False)
+    descendant_list = await bootstrapped_client.post(f"{base}/webapp-artifacts", json={})
+    descendant_data = ApiResponse(**descendant_list.json()).data
+    assert [item["id"] for item in descendant_data["artifacts"]] == [artifact["id"]]
+    assert descendant_data["artifacts"][0]["deployment"]["id"] == deployment["id"]
 
     update = await bootstrapped_client.post(
         f"{base}/register-webapp-artifact",
@@ -307,9 +323,11 @@ async def test_register_webapp_artifact_attaches_to_project_and_shows(bootstrapp
             "show": False,
         },
     )
-    updated = ApiResponse(**update.json()).data["artifact"]
+    updated_data = ApiResponse(**update.json()).data
+    updated = updated_data["artifact"]
     assert updated["id"] == artifact["id"]
-    assert updated["port"] == "3301"
+    assert updated_data["deployment"]["id"] == deployment["id"]
+    assert updated_data["deployment"]["provider_labels"]["flowpad.runtime.port"] == "3301"
 
 
 @pytest.mark.asyncio
@@ -349,10 +367,10 @@ async def test_register_webapp_artifact_stamps_git_origin(bootstrapped_client, u
     )
     assert resp.status_code == 200, resp.text
     artifact = ApiResponse(**resp.json()).data["artifact"]
-    assert artifact["git_origin"]["provider"] == "file"
-    assert artifact["git_origin"]["branch"] == "feature/webapp"
-    assert artifact["git_origin"]["rel_path"] == "frontend"
-    assert artifact["metadata"]["git_origin"]["rel_path"] == "frontend"
+    assert artifact["origin"]["kind"] == "git"
+    assert artifact["origin"]["provider"] == "file"
+    assert artifact["origin"]["branch"] == "feature/webapp"
+    assert artifact["origin"]["rel_path"] == "frontend"
 
 
 # ---------------------------------------------------------------------------

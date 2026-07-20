@@ -393,6 +393,9 @@ async def list_projects_from_indexer() -> dict[str, Any]:
         # ``activate`` action on project/asset open). Wins the recency sort
         # below; ``modified_at`` (session-file mtimes) is the fallback.
         row["last_active_at"] = info.last_active_at
+        # Declared by `ProjectListItem.system`; the picker's `includeSystem:false`
+        # filter compares against it, so an absent key silently disables it.
+        row["system"] = info.system
 
     projects = list(projects_by_cwd.values())
     projects.sort(key=_recency_ms, reverse=True)

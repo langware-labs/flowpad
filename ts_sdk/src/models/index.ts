@@ -13,6 +13,7 @@ export * from './FSOptions';
 export * from './skill';
 export * from './activation';
 export * from './UserWarning';
-export * from './workflow';
 export * from './DockPointer';
 export * from './GitOrigin';
+export * from './FSOrigin';
+export * from './Kind';

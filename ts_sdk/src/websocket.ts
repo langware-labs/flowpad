@@ -30,6 +30,8 @@ type MessageType =
   | 'cloud_connection_status_msg'
   | 'privacy_mode_msg'
   | 'toplog_state_msg'
+  | 'flow_run_event_msg'
+  | 'flow_node_status_msg'
   | 'ui_command'
   | 'recovered_msg'
   | 'broadcast';
@@ -127,6 +129,42 @@ export interface ToplogStateMessage extends BaseMessage {
   message_type: 'toplog_state_msg';
   enabled: boolean;
   filter: Record<string, boolean>;
+}
+
+/**
+ * Broadcast for every event/lifecycle beat of an AgenticFlow run — the live
+ * run stream. Backend mirror: FlowRunEventMessage in flow_sdk/api/messages.py.
+ */
+export interface FlowRunEventMessage extends BaseMessage {
+  message_type: 'flow_run_event_msg';
+  flow_id: string;
+  run_id: string;
+  /** run_start | event | run_end */
+  kind: string;
+  event: string;
+  data: Record<string, unknown>;
+  node: string;
+  status: string;
+  ts: string;
+}
+
+/**
+ * Broadcast on every FlowManager scheduler transition for a flow node — the
+ * push feed for live queue/active counters and node status lines.
+ * Backend mirror: FlowNodeStatusMessage in flow_sdk/api/messages.py.
+ */
+export interface FlowNodeStatusMessage extends BaseMessage {
+  message_type: 'flow_node_status_msg';
+  flow_id: string;
+  run_id: string;
+  node_id: string;
+  phase: 'queued' | 'merged' | 'started' | 'finished' | 'failed';
+  /** Node runtime counts AFTER this transition. */
+  queued: number;
+  active: number;
+  /** started → {program_kind, process_id?}; finished → {duration_ms, stdout?...}; failed → {error}. */
+  detail: Record<string, unknown>;
+  ts: string;
 }
 
 /**
@@ -587,6 +625,12 @@ export class ConnectionManager extends EventEmitter {
     if (data.message_type === 'privacy_mode_msg') {
       return this.onPrivacyModeMessage(data as PrivacyModeMessage);
     }
+    if (data.message_type === 'flow_run_event_msg') {
+      return this.onFlowRunEventMessage(data as FlowRunEventMessage);
+    }
+    if (data.message_type === 'flow_node_status_msg') {
+      return this.onFlowNodeStatusMessage(data as FlowNodeStatusMessage);
+    }
     if (data.message_type === 'toplog_state_msg') {
       return this.onToplogStateMessage(data as ToplogStateMessage);
     }
@@ -636,6 +680,14 @@ export class ConnectionManager extends EventEmitter {
 
   onToplogStateMessage(data: ToplogStateMessage) {
     this.emit('on_toplog_state_msg', data);
+  }
+
+  onFlowRunEventMessage(data: FlowRunEventMessage) {
+    this.emit('on_flow_run_event_msg', data);
+  }
+
+  onFlowNodeStatusMessage(data: FlowNodeStatusMessage) {
+    this.emit('on_flow_node_status_msg', data);
   }
 
   onUiCommandMessage(data: UiCommandMessage) {

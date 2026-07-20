@@ -46,7 +46,7 @@ function OrganizationBody({ user, orgId }: { user: User; orgId: string }) {
   const { t } = useLingui();
   const orgTypeId = useMemo(() => new TypeId('organization', orgId), [orgId]);
   const { data: org } = useEntity<APIEntity<any>>(orgTypeId);
-  const { members, ready, refresh } = useMembers(orgTypeId);
+  const { members, ready, updating, stale, refresh } = useMembers(orgTypeId);
   const OrgIcon = iconForType('organization');
 
   // The caller's own member row drives the invite gate (the hub re-checks
@@ -68,6 +68,8 @@ function OrganizationBody({ user, orgId }: { user: User; orgId: string }) {
         title={t`Members`}
         members={members}
         ready={ready}
+        updating={updating}
+        stale={stale}
         selfId={user.id}
         invite={
           canInvite
@@ -102,7 +104,7 @@ function TeamsSection({ user }: { user: User }) {
 function TeamRow({ team, selfId }: { team: APIEntity<any>; selfId: string }) {
   const { t } = useLingui();
   const teamTypeId = useMemo(() => new TypeId('team', team.id), [team.id]);
-  const { members, ready } = useMembers(teamTypeId);
+  const { members, ready, updating, stale } = useMembers(teamTypeId);
   const TeamIcon = iconForType('team');
   return (
     <div className="rounded-md border p-3">
@@ -110,7 +112,7 @@ function TeamRow({ team, selfId }: { team: APIEntity<any>; selfId: string }) {
         <TeamIcon className="h-4 w-4" />
         <div className="text-sm font-medium">{(team as any).name || t`Team`}</div>
       </div>
-      <MemberSection members={members} ready={ready} selfId={selfId} compact />
+      <MemberSection members={members} ready={ready} updating={updating} stale={stale} selfId={selfId} compact />
     </div>
   );
 }
@@ -119,6 +121,8 @@ function MemberSection({
   title,
   members,
   ready,
+  updating,
+  stale,
   selfId,
   invite,
   compact,
@@ -126,13 +130,22 @@ function MemberSection({
   title?: string;
   members: EntityMember[];
   ready: boolean;
+  /** Refresh in flight over the shown cache → "updating…". */
+  updating?: boolean;
+  /** Signed in but the refresh failed → "can't update — showing last synced". */
+  stale?: boolean;
   selfId: string;
   invite?: { entityTypeId: TypeId; onInvited: () => void };
   compact?: boolean;
 }) {
   return (
     <div className="flex flex-col gap-2">
-      {title && <div className="text-sm font-semibold text-muted-foreground">{title}</div>}
+      {title && (
+        <div className="flex items-center gap-1.5 text-sm font-semibold text-muted-foreground">
+          <span>{title}</span>
+          {updating && <Loader2 className="h-3 w-3 animate-spin" />}
+        </div>
+      )}
       {!ready && members.length === 0 ? (
         <div className="text-sm text-muted-foreground"><Trans>Loading members…</Trans></div>
       ) : members.length === 0 ? (
@@ -144,7 +157,13 @@ function MemberSection({
           ))}
         </ul>
       )}
-      {invite && !compact && <InviteBox entityTypeId={invite.entityTypeId} onInvited={invite.onInvited} />}
+      {stale && (
+        <div className="text-[11px] text-muted-foreground">
+          <Trans>Can't update — showing last synced</Trans>
+        </div>
+      )}
+      {/* Invite is hidden while offline (stale) — it would only 409. */}
+      {invite && !compact && !stale && <InviteBox entityTypeId={invite.entityTypeId} onInvited={invite.onInvited} />}
     </div>
   );
 }

@@ -78,7 +78,7 @@ beforeAll(async () => {
   // Warm the editor routes once: the Vite dev server cold-transforms the
   // Milkdown/Monaco/Excalidraw bundles on first hit, which would otherwise
   // eat A1/B1's 30s budget. This is fixture warming, not a timeout bump.
-  const warm = trackForCleanup(await dev1.sdk.Workflow.createInProject(null, testEntityName('workflow')));
+  const warm = trackForCleanup(await dev1.sdk.DynamicWorkflow.createInProject(null, testEntityName('workflow')));
   await p1.page.goto(`${p1.feUrl}/dock/assets/editor/workflow/typeid/workflow-${warm.id}?viewMode=advanced`, {
     waitUntil: 'domcontentloaded',
   });
@@ -99,7 +99,7 @@ beforeAll(async () => {
   // Warm the RECEIVER's (p2) editor bundles too — p2 is a SEPARATE Vite dev
   // server, so the first editor open (A3) would otherwise cold-transform the
   // Milkdown/Excalidraw bundles. Route to each editor once to trigger it.
-  const warmWf2 = trackForCleanup(await dev2.sdk.Workflow.createInProject(null, testEntityName('workflow')));
+  const warmWf2 = trackForCleanup(await dev2.sdk.DynamicWorkflow.createInProject(null, testEntityName('workflow')));
   await p2.page.goto(`${p2.feUrl}/dock/assets/editor/workflow/typeid/workflow-${warmWf2.id}?viewMode=advanced`, {
     waitUntil: 'domcontentloaded',
   });
@@ -241,7 +241,7 @@ describe('A. asset-page share: workflow', () => {
   const convTitle = testEntityName('conv');
 
   it('A1 share — dev-1 shares from the workflow editor UI', async () => {
-    const wf = trackForCleanup(await dev1.sdk.Workflow.createInProject(null, testEntityName('workflow')));
+    const wf = trackForCleanup(await dev1.sdk.DynamicWorkflow.createInProject(null, testEntityName('workflow')));
     workflowId = wf.id!;
     await p1.page.goto(`${p1.feUrl}/dock/assets/editor/workflow/typeid/workflow-${workflowId}?viewMode=advanced`, {
       waitUntil: 'domcontentloaded',

@@ -96,7 +96,7 @@ async def ensure_conversation_entity(
         if remote_project_name:
             payload["remote_project_name"] = remote_project_name
         if participants:
-            payload["participants"] = list(participants)
+            payload["members"] = list(participants)  # roster cache field (wire key is ``participants``)
         if title_clean:
             payload["title"] = title_clean
         if parent_typeid is not None:
@@ -108,10 +108,10 @@ async def ensure_conversation_entity(
             conv = await conv.save(someone_typeid, notify=False)
     else:
         dirty = False
-        if participants and not (conv.participants or []):
-            # Backfill participants from the bundle so the reply-recipient
+        if participants and not (conv.members or []):
+            # Backfill the roster from the bundle so the reply-recipient
             # resolver can find the other party's email.
-            conv.participants = list(participants)
+            conv.members = list(participants)
             dirty = True
         if title_clean and not (conv.title or "").strip():
             # Backfill title on first receive — keep an existing local override.

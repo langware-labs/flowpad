@@ -5,19 +5,8 @@ import { ensureAgentAndSkill } from './_seed';
 async function dismissModals(page: Page) {
   await page.addInitScript(() => {
     localStorage.setItem('llm-setup-modal-seen', 'true');
-    localStorage.setItem('flowpad-index-approved', '1');
   });
 }
-async function dismissWelcomeIfShown(page: Page) {
-  for (const n of ['Skip for now', 'Not Now', 'Not now']) {
-    const b = page.getByRole('button', { name: n });
-    if (await b.isVisible({ timeout: 1_500 }).catch(() => false)) {
-      await b.click();
-      return;
-    }
-  }
-}
-
 // Navigate to the agent list, open the first agent editor, and open the Asset
 // Manager popover from the execution-settings gear. Leaves the popover open.
 async function openAgentAssetPopover(page: Page) {
@@ -27,7 +16,6 @@ async function openAgentAssetPopover(page: Page) {
   await ensureAgentAndSkill(page);
   await page.goto('/dock/assets/list/agent');
   await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
-  await dismissWelcomeIfShown(page);
 
   // /dock/assets/list/agent auto-expands the agent root, so a level-2 agent row
   // is usually already present — clicking the chevron would COLLAPSE it. Only

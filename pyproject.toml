@@ -70,7 +70,6 @@ dev = [
     "build",
     "twine",
     "ruff>=0.15.2",
-    "pyinstaller>=6.19.0",
     "pytest-timeout>=2.4.0",
     "pytest-env>=1.2.0",
     "pytest-rerunfailures>=16.0",

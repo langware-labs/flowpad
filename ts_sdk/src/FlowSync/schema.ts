@@ -77,6 +77,9 @@ export interface TypeInfo {
    *  type up in a Vibe session (null ⇒ it just opens). Presentational hint only —
    *  the backend owns the actual dispatch in ``Entity.setup_on_receive``. */
   setup_skill?: string | null;
+  /** Reception seam: ``"auto"`` ⇒ row-only payload auto-installed at unpack
+   *  (no review gate) — its chip navigates instead of opening the review modal. */
+  receive_policy?: string | null;
   schema_hash: string;
   schema: JSONSchemaProperty | null;
 }

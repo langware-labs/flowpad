@@ -1,0 +1,37 @@
+/* swiss-signal — personality layer */
+.reveal h1, .reveal h2, .reveal h3 {
+  font-family: var(--font-display);
+  font-weight: var(--fw-bold);
+  letter-spacing: -0.04em;
+}
+.kicker { font-weight: var(--fw-bold); }
+.accent-rule { width: 140px; height: 8px; background: var(--accent); margin: 0 0 var(--sp-5) 0; }
+
+/* the grid is the design: rules, never boxes */
+.card {
+  background: transparent; border: 0;
+  border-top: 4px solid var(--text);
+  border-radius: 0; padding: var(--sp-4) 0 0 0;
+}
+.metric-value {
+  color: var(--text); font-size: 86px; letter-spacing: -0.05em;
+  font-weight: var(--fw-bold);
+}
+.metric-label {
+  color: var(--text); font-weight: var(--fw-bold);
+  font-size: 15px; letter-spacing: 0.04em;
+}
+.metric-delta { color: var(--accent); font-weight: var(--fw-bold); font-size: 15px; }
+
+.layout-agenda-list li { border-bottom: 2px solid var(--text); }
+.layout-agenda-list li::before {
+  font-size: 46px; font-weight: var(--fw-bold); color: var(--accent);
+  letter-spacing: -0.04em; min-width: 2.6ch;
+}
+.layout-agenda-list .agenda-label { font-weight: var(--fw-bold); letter-spacing: -0.02em; }
+.layout-agenda-list .agenda-detail { color: var(--text-secondary); }
+.subtitle { max-width: 22ch; font-weight: var(--fw-regular); }
+.layout-cover-centered .cover-meta {
+  font-weight: var(--fw-bold); text-transform: uppercase; letter-spacing: 0.08em;
+}
+.layout-closing-centered .closing-contact { font-weight: var(--fw-bold); }

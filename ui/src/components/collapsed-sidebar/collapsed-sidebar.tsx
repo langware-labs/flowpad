@@ -1,7 +1,8 @@
 import { ThemeToggle } from '@src/components/theme-toggle/theme-toggle';
 import { FlowpadAssistantButton } from '@src/components/floating-chat';
 import { useDevMode } from '@src/contexts/dev-mode-context';
-import { DevOnly, ViewMode, useViewMode } from '@src/components/view-mode';
+import { useViewMode } from '@src/components/view-mode';
+import { resolveRail, type RailItemId } from './rail-visibility';
 import { Button } from '@src/components/ui/button';
 import { useNavigationState } from '@src/hooks/use-navigation-state';
 import { UserDropdown } from '@src/pages/flow-page/content-panel/user-dropdown/user-dropdown';
@@ -16,9 +17,17 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from '@src/components/ui/sidebar';
+import { Project } from '@sdk';
+import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
+import { WikiTip } from '@src/components/wiki-tip';
+import { useContext } from '@src/hooks/useContext';
 import { useInboxStore } from '@src/store/use-inbox-store';
+import { useProjectTasks } from '@src/hooks/use-project-tasks';
+import { isTaskActive } from '@src/components/task-bar/constants';
 import { useSpotlightStore } from '@src/store/use-spotlight-store';
 import { BookmarksSlider } from '@src/components/bookmarks-slider/BookmarksSlider';
+import { useUnopenedFavoritesCount } from '@src/hooks/use-unopened-favorites-count';
+import { useHoverIntent } from '@src/hooks/use-hover-intent';
 import { useLingui } from '@lingui/react/macro';
 
 /**
@@ -30,6 +39,7 @@ import {
   ArrowLeft,
   BadgeCheck,
   Bookmark,
+  CheckSquare,
   RefreshCw,
   BookOpen,
   Bug,
@@ -42,121 +52,105 @@ import {
   FolderOpen,
   // Globe,
   Home,
-  Inbox,
   // KeyRound,
-  MessageSquare,
+  Mail,
+  MessageCircle,
   // PlaySquare,
   Search,
   // Settings,
   // Sparkles,
-  // Workflow,
+  Workflow,
   // Variable,
   Webhook,
   Zap,
 } from 'lucide-react';
-import { useCallback, useState } from 'react';
+import React, { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 
-// Per-item placement in the left rail, resolved by the current view mode.
-//   visible   — shown at the top of the rail
-//   collapsed — behind the chevron expander (revealed on hover, or when active)
-//   hidden    — not rendered at all
-// Keyed by ViewMode string values so this config reads exactly like the spec
-// matrix. The hierarchy is dev > advanced > standard; keep each row monotonic
-// (a higher mode never shows less than a lower one).
-type NavVisibility = 'visible' | 'collapsed' | 'hidden';
-// Keyed by the three "core" modes. Vibe (the simplest skin) reuses Standard's
-// already-minimal visibility — see `effectiveMode` below — so the rail needs no
-// per-item Vibe column.
-type CoreViewMode = ViewMode.Standard | ViewMode.Advanced | ViewMode.Dev;
-type NavVisMap = Record<CoreViewMode, NavVisibility>;
-
-const ALL_VISIBLE: NavVisMap = {
-  [ViewMode.Standard]: 'visible',
-  [ViewMode.Advanced]: 'visible',
-  [ViewMode.Dev]: 'visible',
-};
-
+// Per-mode placement lives in rail-visibility.ts (RAIL_DELTAS): each mode ADDS
+// icons on top of the previous mode's rail and can drop inherited ones via
+// `noShow`. This file only declares the items (canonical display order) and
+// renders whatever resolveRail says is visible/collapsed for the current mode.
 type NavItem = {
+  /** Key into the RAIL_DELTAS spec (rail-visibility.ts). */
+  id: RailItemId;
   title: string;
   icon: React.ComponentType<{ className?: string }>;
   viewType: ViewType | null;
-  vis: NavVisMap;
 };
 
 export function CollapsedSidebar() {
   const { navigation, currentDock } = useDockNavigation();
-  // const context = useContext();
+  const { project } = useContext();
   const navigate = useNavigate();
   const location = useLocation();
   const onDiscover = location.pathname === '/discover';
   const { goBack, canGoBack } = useNavigationState();
   const [secondaryExpanded, setSecondaryExpanded] = useState(false);
-  const [bookmarksOpen, setBookmarksOpen] = useState(false);
+  // Rest-to-open; the rail button and panel share one intent (see useHoverIntent).
+  const bookmarks = useHoverIntent();
+  // Align the menu's top edge with the button that opens it, so it reads as
+  // belonging to that icon. Measured rather than a constant: the rail's layout
+  // shifts with view mode and the collapsed-items expander.
+  //
+  // useLayoutEffect, not useEffect: a passive effect lands AFTER paint, so the
+  // menu would render one frame at the fallback top and then jump to the button.
+  const bookmarksBtnRef = useRef<HTMLButtonElement>(null);
+  const [bookmarksAnchorTop, setBookmarksAnchorTop] = useState<number | undefined>(undefined);
+  useLayoutEffect(() => {
+    if (!bookmarks.open) return;
+    setBookmarksAnchorTop(bookmarksBtnRef.current?.getBoundingClientRect().top);
+  }, [bookmarks.open]);
   const devMode = useDevMode();
   const { unread: unreadCount } = useInboxManager();
+  const unopenedFavorites = useUnopenedFavoritesCount();
   const viewMode = useViewMode();
   const { t } = useLingui();
 
+  // Live count for the Tasks badge. useProjectTasks is an unscoped reactive
+  // query (auto-refetches over WS on backend task writes), so the chip tracks
+  // the graph without any polling here. We count *active* tasks — the ones
+  // needing attention now — rather than every task ever created.
+  const { data: tasks } = useProjectTasks();
+  const activeTaskCount = tasks.filter(isTaskActive).length;
+
+  // Canonical display order. Placement per mode is resolved from RAIL_DELTAS —
+  // to change what a mode shows, edit that table, not this list.
   const navItems: readonly NavItem[] = [
-    { title: t`Home`, icon: Home, viewType: null, vis: ALL_VISIBLE },
-    { title: t`Chats`, icon: MessageSquare, viewType: ViewType.SHELL, vis: ALL_VISIBLE },
-    { title: t`Inbox`, icon: Inbox, viewType: ViewType.INBOX, vis: ALL_VISIBLE },
-    // { title: 'Execute Flow', icon: PlaySquare, viewType: ViewType.EXECUTE_FLOW, vis: ALL_VISIBLE },
-    {
-      title: t`Assets`,
-      icon: BookOpen,
-      viewType: ViewType.ASSETS,
-      vis: { [ViewMode.Standard]: 'hidden', [ViewMode.Advanced]: 'visible', [ViewMode.Dev]: 'visible' },
-    },
-    // { title: 'Editor', icon: Code, viewType: ViewType.EDITOR, vis: ALL_VISIBLE },
-    {
-      title: t`Triggers`,
-      icon: Zap,
-      viewType: ViewType.TRIGGERS,
-      vis: { [ViewMode.Standard]: 'hidden', [ViewMode.Advanced]: 'collapsed', [ViewMode.Dev]: 'collapsed' },
-    },
-    {
-      title: t`Hooks`,
-      icon: Webhook,
-      viewType: ViewType.HOOKS,
-      vis: { [ViewMode.Standard]: 'hidden', [ViewMode.Advanced]: 'collapsed', [ViewMode.Dev]: 'collapsed' },
-    },
-    {
-      title: t`Files`,
-      icon: FolderOpen,
-      viewType: ViewType.EXPLORER,
-      vis: { [ViewMode.Standard]: 'collapsed', [ViewMode.Advanced]: 'collapsed', [ViewMode.Dev]: 'collapsed' },
-    },
-    {
-      title: t`Capabilities`,
-      icon: BadgeCheck,
-      viewType: ViewType.CAPABILITIES,
-      vis: { [ViewMode.Standard]: 'hidden', [ViewMode.Advanced]: 'hidden', [ViewMode.Dev]: 'collapsed' },
-    },
-    // { title: 'Environment', icon: Variable, viewType: ViewType.ENVIRONMENT, vis: ALL_VISIBLE },
-    // { title: 'Web App', icon: Globe, viewType: ViewType.WEB_APP, vis: ALL_VISIBLE },
-    // { title: 'Connections', icon: LogIn, viewType: ViewType.CONNECTIONS, vis: ALL_VISIBLE },
-    // { title: 'API Keys', icon: KeyRound, viewType: ViewType.API_KEYS, vis: ALL_VISIBLE },
-    // { title: 'AI Configuration', icon: Settings, viewType: ViewType.AI_CONFIG, vis: ALL_VISIBLE },
-    // { title: 'Machine', icon: Cpu, viewType: ViewType.MACHINE, vis: ALL_VISIBLE },
+    { id: 'home', title: t`Home`, icon: Home, viewType: null },
+    { id: 'chats', title: t`Chats`, icon: MessageCircle, viewType: ViewType.SHELL },
+    { id: 'inbox', title: t`Inbox`, icon: Mail, viewType: ViewType.INBOX },
+    { id: 'tasks', title: t`Tasks`, icon: CheckSquare, viewType: ViewType.TASKS },
+    { id: 'assets', title: t`Assets`, icon: BookOpen, viewType: ViewType.ASSETS },
+    { id: 'triggers', title: t`Triggers`, icon: Zap, viewType: ViewType.TRIGGERS },
+    { id: 'hooks', title: t`Hooks`, icon: Webhook, viewType: ViewType.HOOKS },
+    { id: 'files', title: t`Files`, icon: FolderOpen, viewType: ViewType.EXPLORER },
+    { id: 'capabilities', title: t`Capabilities`, icon: BadgeCheck, viewType: ViewType.CAPABILITIES },
+    { id: 'agentic-flows', title: t`Agentic Flows`, icon: Workflow, viewType: ViewType.AGENTIC_FLOWS },
   ];
 
-  // Partition the nav config by the current view mode: 'visible' items ride the
-  // top rail, 'collapsed' items live behind the chevron expander, 'hidden' drop.
-  // Vibe is the stripped creator skin: its rail keeps only the top navigation
-  // (the back/refresh row, always rendered below) + Home and Inbox buttons, plus
-  // the shared bottom cluster (search / assistant / theme / user login), with the
-  // Bookmarks flyout button rendered after. Everything else (Chats, Assets, …) is
-  // dropped.
-  const isVibe = viewMode === ViewMode.Vibe;
-  const effectiveMode: CoreViewMode = isVibe ? ViewMode.Standard : viewMode;
-  const visibleItems = isVibe
-    ? navItems.filter((item) => item.viewType === null || item.viewType === ViewType.INBOX) // Home + Inbox
-    : navItems.filter((item) => item.vis[effectiveMode] === 'visible');
-  const collapsedItems = isVibe ? [] : navItems.filter((item) => item.vis[effectiveMode] === 'collapsed');
+  // Partition the nav items by the current mode's resolved rail: 'visible'
+  // items ride the top rail, 'collapsed' items live behind the chevron
+  // expander, absent ids drop. The back/refresh row and the bottom cluster are
+  // outside the spec — they render unconditionally below. Bookmarks and
+  // Discover take their visibility from the same spec but keep their bespoke
+  // renderers (flyout toggle / route navigation) in the JSX.
+  const rail = resolveRail(viewMode);
+  const visibleItems = navItems.filter((item) => rail.get(item.id) === 'visible');
+  const collapsedItems = navItems.filter((item) => rail.get(item.id) === 'collapsed');
+  const showBookmarks = rail.get('bookmarks') === 'visible';
 
   const currentView = currentDock?.viewType;
+  // Tasks ride the Assets viewType (`list/task`, or a task doc in the asset
+  // editor), so "is Tasks active" can't come from currentView alone — it reads
+  // the dock pointer. URL-first: derived from currentDock, never from an
+  // upstream click. Assets/project-home subtract it so one click doesn't light
+  // two rail buttons.
+  const currentPointer = currentDock?.pointer ?? '';
+  const onTasks =
+    currentView === ViewType.ASSETS &&
+    (currentPointer.startsWith('list/task') || currentPointer.includes('/task/typeid/'));
+  const onAssets = currentView === ViewType.ASSETS && !onTasks;
   // const { cloudLoginAvailable, cloudApiUrl, isDesktop } = context;
 
   const handleClick = useCallback(
@@ -175,6 +169,14 @@ export function CollapsedSidebar() {
           (window as Record<string, unknown>).__shellNavT0 = performance.now();
           console.log('[PERF] +0ms shell icon clicked');
         }
+        // Tasks is not a dock tab of its own: ViewType.TASKS is retired, and a
+        // task opens through the generic asset surface. openTasks() resolves to
+        // the `list/task` asset list, so route through it rather than openTab
+        // (which would land on the TasksRedirect shim and navigate twice).
+        if (viewType === ViewType.TASKS) {
+          navigation.openTasks();
+          return;
+        }
         // Assets is scope-aware: open the scope-keyed assets tab — the current
         // project's scope when a project is active (tab "<project>'s Assets"),
         // else global (the single "Assets" tab). Scope rides the navigation
@@ -191,13 +193,64 @@ export function CollapsedSidebar() {
     [navigate, navigation],
   );
 
+  /** The rail's count chip. Shared by every rail button that carries one
+   *  (Inbox unread, Bookmarks never-opened) so they can't drift apart — the
+   *  Bookmarks button can't go through renderNavItem, since it has no viewType
+   *  and toggles a flyout instead of navigating. */
+  const NavBadge = ({ count }: { count: number }) =>
+    count > 0 ? (
+      <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-0.5 text-[9px] font-bold leading-none text-destructive-foreground">
+        {count > 99 ? '99+' : count}
+      </span>
+    ) : null;
+
+  /** The active project's rail button: opens that project's assets (the same
+   *  scope-aware target the Assets item routes to), behind the "Flowpad project"
+   *  wiki page the footer's project name points at. The glyph is the project
+   *  type's registry icon, never a hardcoded one. */
+  const renderProjectHomeItem = (proj: NonNullable<ReturnType<typeof useContext>['project']>) => {
+    const ProjectIcon = iconForType(Project.type);
+    return (
+      <SidebarMenuItem>
+        {/* side="right": the rail's regular tooltips open to the right; the
+            WikiTip default (top) would pop the card above the button instead. */}
+        <WikiTip wikiword="Flowpad project" label={t`What is project?`} side="right">
+          <SidebarMenuButton
+            isActive={onAssets}
+            onClick={() => handleClick(ViewType.ASSETS)}
+            aria-label={t`Open project assets — ${proj.displayName}`}
+            className="relative w-full justify-center px-2"
+          >
+            <ProjectIcon className="h-5 w-5" />
+          </SidebarMenuButton>
+        </WikiTip>
+      </SidebarMenuItem>
+    );
+  };
+
+  /** The count chip a rail item carries, if any. */
+  const navBadge = (viewType: ViewType | null): number | undefined => {
+    if (viewType === ViewType.INBOX) return unreadCount;
+    if (viewType === ViewType.TASKS) return activeTaskCount;
+    return undefined;
+  };
+
+  /** Active state for items whose surface isn't identified by viewType alone
+   *  (see `onTasks`). undefined → renderNavItem's default viewType match. */
+  const navActive = (viewType: ViewType | null): boolean | undefined => {
+    if (viewType === ViewType.TASKS) return onTasks;
+    if (viewType === ViewType.ASSETS) return onAssets;
+    return undefined;
+  };
+
   const renderNavItem = (
     item: { title: string; icon: React.ComponentType<{ className?: string }>; viewType: ViewType | null },
     className?: string,
     badge?: number,
+    activeOverride?: boolean,
   ) => {
     const Icon = item.icon;
-    const isActive = item.viewType === null ? !currentView : currentView === item.viewType;
+    const isActive = activeOverride ?? (item.viewType === null ? !currentView : currentView === item.viewType);
 
     return (
       <SidebarMenuItem key={item.title} className={className}>
@@ -208,11 +261,7 @@ export function CollapsedSidebar() {
           className="relative w-full justify-center px-2"
         >
           <Icon className="h-5 w-5" />
-          {badge != null && badge > 0 && (
-            <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-0.5 text-[9px] font-bold leading-none text-destructive-foreground">
-              {badge > 99 ? '99+' : badge}
-            </span>
-          )}
+          <NavBadge count={badge ?? 0} />
         </SidebarMenuButton>
       </SidebarMenuItem>
     );
@@ -220,7 +269,10 @@ export function CollapsedSidebar() {
 
   return (
     <>
-      <Sidebar collapsible="none" className={`flex ${RAIL_WIDTH_CLASS} flex-col border-r`}>
+      {/* Above the slider (z-40): the slider's closed transform parks it over the
+          rail, where it would otherwise paint an opaque strip and swallow the
+          rail's hover. On top, the menu emerges from behind the rail instead. */}
+      <Sidebar collapsible="none" className={`relative z-50 flex ${RAIL_WIDTH_CLASS} flex-col border-r`}>
         <SidebarContent className="flex-1">
           <SidebarGroup className="px-0 py-2">
             <SidebarMenu>
@@ -242,33 +294,45 @@ export function CollapsedSidebar() {
                 </SidebarMenuButton>
               </SidebarMenuItem>
 
-              {visibleItems.map((item) =>
-                renderNavItem(item, undefined, item.viewType === ViewType.INBOX ? unreadCount : undefined),
-              )}
+              {visibleItems.map((item) => (
+                <React.Fragment key={item.title}>
+                  {renderNavItem(item, undefined, navBadge(item.viewType), navActive(item.viewType))}
+                  {/* The active project — sits directly under Home. Not part of the
+                    nav matrix: it exists only while a project is selected, and its
+                    glyph is that project type's registry icon. */}
+                  {item.viewType === null && project && renderProjectHomeItem(project)}
+                </React.Fragment>
+              ))}
 
-              {/* Bookmarks — vibe-mode only. Opens the favorites desktop as a
-                left slide-in flyout (not a dock tab), so it toggles local state
-                rather than routing through handleClick/openTab. The
-                data-left-slider-ignore marker keeps this click from registering
-                as an outside-dismiss and fighting the toggle. */}
-              {isVibe && (
+              {/* Bookmarks — per RAIL_DELTAS (today: vibe-only). Opens the
+                favorites desktop as a left slide-in flyout (not a dock tab), so
+                it toggles local state rather than routing through
+                handleClick/openTab. The data-left-slider-ignore marker keeps
+                this click from registering as an outside-dismiss and fighting
+                the toggle. */}
+              {showBookmarks && (
                 <SidebarMenuItem>
                   <SidebarMenuButton
-                    tooltip={t`Bookmarks`}
-                    isActive={bookmarksOpen}
-                    onClick={() => setBookmarksOpen((v) => !v)}
+                    ref={bookmarksBtnRef}
+                    // No tooltip: SidebarMenuButton places them side="right", i.e.
+                    // on top of the menu this opens. aria-label carries the name.
+                    aria-label={t`Bookmarks`}
+                    isActive={bookmarks.open}
+                    {...bookmarks.hoverProps}
+                    onClick={() => bookmarks.set(!bookmarks.open)}
                     data-left-slider-ignore
                     className="relative w-full justify-center px-2"
                   >
                     <Bookmark className="h-5 w-5" />
+                    <NavBadge count={unopenedFavorites} />
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               )}
 
               {/* Discover — full-page marketplace; a top-level route, not a dock tab,
                 so it navigates directly rather than via navigation.openTab.
-                Dev-only affordance (never shown in Vibe, which is not Dev). */}
-              <DevOnly reserve={false}>
+                Per RAIL_DELTAS (today: dev-only). */}
+              {rail.get('discover') === 'visible' && (
                 <SidebarMenuItem>
                   <SidebarMenuButton
                     tooltip={t`Discover`}
@@ -279,7 +343,7 @@ export function CollapsedSidebar() {
                     <Compass className="h-5 w-5" />
                   </SidebarMenuButton>
                 </SidebarMenuItem>
-              </DevOnly>
+              )}
 
               {collapsedItems.length > 0 && (
                 <div onMouseEnter={() => setSecondaryExpanded(true)} onMouseLeave={() => setSecondaryExpanded(false)}>
@@ -360,7 +424,14 @@ export function CollapsedSidebar() {
           <UserDropdown />
         </div>
       </Sidebar>
-      {isVibe && <BookmarksSlider open={bookmarksOpen} onOpenChange={setBookmarksOpen} />}
+      {showBookmarks && (
+        <BookmarksSlider
+          open={bookmarks.open}
+          onOpenChange={bookmarks.set}
+          hoverProps={bookmarks.hoverProps}
+          anchorTop={bookmarksAnchorTop}
+        />
+      )}
     </>
   );
 }

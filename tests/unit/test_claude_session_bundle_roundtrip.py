@@ -62,7 +62,7 @@ async def test_pack_claude_session_header_whitelist_strips_sender_local(tmp_path
 
     with zipfile.ZipFile(zip_path) as zf:
         names = zf.namelist()
-        header_name = f"attachment/claude_session-@{SESS_ID}/header.json"
+        header_name = f"attachment/claude_session-{SESS_ID}/header.json"
         assert header_name in names
 
         header = json.loads(zf.read(header_name))
@@ -78,7 +78,7 @@ async def test_pack_claude_session_header_whitelist_strips_sender_local(tmp_path
         assert "worker_session_id" not in header
 
         # get_one-miss → no entry written for the missing session.
-        assert not any(f"claude_session-@{MISSING_SESS_ID}" in n for n in names)
+        assert not any(f"claude_session-{MISSING_SESS_ID}" in n for n in names)
 
 
 async def test_unpack_materializes_claude_session_and_fill_merges_on_re_receive(tmp_path):

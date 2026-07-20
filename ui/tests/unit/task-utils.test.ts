@@ -30,8 +30,13 @@ beforeEach(() => {
 // ---------- getAnalysisPath ----------
 
 describe('getAnalysisPath', () => {
-  it('returns null for non-analysis tasks', () => {
-    expect(getAnalysisPath({ task_type: 'bug', analysis_path: '/p' } as any)).toBeNull();
+  // No task_type gate, by design: `analysis_path` is only ever written by
+  // analysis-producing flows (analysis tasks AND the Analyze Status wizard,
+  // which stamps a report onto a *non-analysis* task — see hasStatusAnalysis).
+  // Gating on task_type here would hide the wizard's report on a bug task.
+  it('returns the path whatever the task_type — only analysis flows write it', () => {
+    expect(getAnalysisPath({ task_type: 'bug', analysis_path: '/p' } as any)).toBe('/p');
+    expect(getAnalysisPath({ task_type: 'analysis', analysis_path: '/p' } as any)).toBe('/p');
   });
 
   it('returns null when analysis_path is missing', () => {

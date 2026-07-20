@@ -121,6 +121,8 @@ def test_interactive_spawn_args_use_bare_codex():
         "check_for_update_on_startup=false",
         "-c",
         'projects={"/repo"={trust_level="trusted"}}',
+        "-c",
+        "model_reasoning_effort=low",
         "-C",
         "/repo",
         "-m",
@@ -141,7 +143,13 @@ def test_interactive_spawn_respects_non_bypass_permissions():
     )
     argv, _ = cmd.to_spawn_args()
 
-    assert argv == ["codex", "-c", "check_for_update_on_startup=false"]
+    assert argv == [
+        "codex",
+        "-c",
+        "check_for_update_on_startup=false",
+        "-c",
+        "model_reasoning_effort=low",
+    ]
 
 
 @pytest.mark.parametrize(
@@ -226,7 +234,9 @@ def test_pty_shell_string_uses_bare_codex_not_codex_exec():
     assert "--skip-git-repo-check" not in result
     assert "--ephemeral" not in result
     assert "--json" not in result
-    assert "model_reasoning_effort" not in result
+    # Reasoning-effort override applies on BOTH transports (04a07cf9), so the
+    # PTY shell mirrors to_spawn_args and carries it too.
+    assert "-c model_reasoning_effort=low" in result
     assert "-c check_for_update_on_startup=false" in result
     # User-set settings still flow through.
     assert "-m gpt-5.2" in result

@@ -9,6 +9,28 @@ export enum Layout {
 }
 
 /**
+ * PageId — which SPA-surface ("page") a dock URL addresses. Sits between the
+ * layout keyword and the viewType: `/<layout>/<page>/<viewType>/<pointer>`.
+ * `desk` is today's desktop app and the default; it is NEVER emitted into a URL
+ * (bare `/dock/<viewType>` == page `desk`), so existing URLs are unchanged.
+ *
+ * INVARIANT: no `ViewType` value may ever equal a `PageId` value. Parsing detects
+ * the page positionally ("is the post-layout segment a known page id?"), so a
+ * collision would silently reinterpret a viewType segment as a page. (`desktop`
+ * is a ViewType but `desk` ≠ `desktop`; there is intentionally no `hub` viewType.)
+ */
+export enum PageId {
+  DESK = 'desk',
+  HUB = 'hub',
+}
+
+/** Type-guard: is `value` a known page id? Data-driven like `isValidView` /
+ *  `isValidViewSlot`, so it tracks the enum automatically as pages are added. */
+export function isValidPage(value: string | undefined | null): value is PageId {
+  return value != null && Object.values(PageId).includes(value as PageId);
+}
+
+/**
  * Dev layout keyword - appears in URL as /dev/...
  * Not flexible by design for security, validation, and clarity
  */
@@ -50,10 +72,10 @@ export enum ViewType {
   EXPLORER = 'explorer', // File explorer view
   SKILLS = 'skills', // Claude Code skills editor
   AI_CONFIG = 'ai-config', // AI Configuration (LLM APIs, CLIs)
-  EXECUTE_FLOW = 'execute-flow', // Execute markdown instruction files
   SHOW = 'show', // MCP UI display dock pointer
   APPS = 'apps', // Skill UI apps - /dock/apps/<uname>/<router> mounts AppHost
   GRAPH = 'graph', // Built-in dep-graph viewer - /dock/graph/<type>/<id>
+  WORLDVIEW = 'worldview', // Artifact/deployment hierarchy - /dock/worldview/<type>/<id>
   K_BROWSER = 'k-browser', // Docs knowledge browser - /dock/k-browser/<vfs|typeid>/<value>
   LENS = 'lens', // Lens viewer for specialized content (e.g., transcripts)
   SESSION = 'session', // Live session view (simplified workflow without file)
@@ -64,9 +86,9 @@ export enum ViewType {
   SEARCH = 'search', // Record semantic search view
   TRIGGERS = 'triggers', // Activation rules browser + editor
   CAPABILITIES = 'capabilities', // System capability checks/install/test
+  AGENTIC_FLOWS = 'agentic-flows', // Flow-graph editor/observatory (FlowManager) — dev mode
   PLAN = 'plan', // Plan viewer with Milkdown editor
   CRON = 'cron', // Scheduled cron jobs manager
-  WORKFLOWS = 'workflows', // Workflows manager with markdown editor
   ASSETS = 'assets', // Assets - unified docs/skills/workflows tree
   PROJECT = 'project', // Collaboration on a project — meet, share tabs/docs/plans
   INBOX = 'inbox', // Inbox — received FlowMessages from hub

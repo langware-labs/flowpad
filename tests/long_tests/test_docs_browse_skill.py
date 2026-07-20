@@ -31,6 +31,7 @@ from typing import Callable, NamedTuple
 import pytest
 
 from flow_sdk.builtin.agentic_process import AgenticProcess
+from flow_sdk.builtin.agentic_process.model_tiers import ModelTier
 from flow_sdk.flowpad_types.enums import WorkerType
 from flow_sdk.llm_index import LLMIndexer
 from flow_sdk.transcript_analyzer import EntryKind
@@ -147,6 +148,8 @@ async def browse_setup(
     process = await AgenticProcess(
         worker_type=WorkerType.CLAUDE_CODE,
         workdir=str(vault),
+        # Small tier → haiku for claude: cheapest/fastest for the index walk.
+        cli_config={"model": ModelTier.SM.value},
         visible=False,
     ).save()
     try:

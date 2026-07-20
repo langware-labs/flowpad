@@ -21,6 +21,7 @@ from flow_sdk.builtin.agentic_process import AgenticProcess
 from flow_sdk.flowpad_types.enums import WorkerType
 from flow_sdk.transcript_analyzer import AgentTranscriptFile, EntryKind
 from flow_sdk.transcript_analyzer.resolver import TranscriptNotFoundError, resolve_session_jsonl
+from tests.long_tests._model_tier import small_model_for
 from tests.test_settings import test_service_config
 
 pytestmark = [
@@ -52,9 +53,13 @@ async def _workers_discovered():
 
 
 def _small_cli_config(worker_type: WorkerType) -> dict:
+    # Ask for the cheapest model the worker can actually resolve (see
+    # _model_tier.small_model_for — Copilot must stay unset). The test asserts
+    # only on the echoed name/time, never on the model, so this is safe.
     config = {"permission_mode": "bypassPermissions"}
-    if worker_type is WorkerType.CLAUDE_CODE:
-        config["model"] = "sm"
+    model = small_model_for(worker_type)
+    if model:
+        config["model"] = model
     return config
 
 
@@ -82,6 +87,9 @@ async def test_system_prompt(worker_type, cli_name, tmp_path: Path, _workers_dis
     process.instructions = system_prompt
 
     try:
+        # Anchor transcript-freshness to just before the turn: anything on disk
+        # older than this is a leftover session, not this run's output.
+        turn_started = time.time()
         result = await process.prompt(
             "What is your name and what is the time? Reply with only the name and time."
         )
@@ -100,14 +108,34 @@ async def test_system_prompt(worker_type, cli_name, tmp_path: Path, _workers_dis
             assert path.exists(), path
             assert system_prompt in path.read_text(encoding="utf-8")
 
-        body = await _await_assistant_text(
+        body, saw_fresh = await _await_assistant_text(
             process,
             worker_type,
             random_name=random_name,
             current_time=current_time,
             deadline_s=120,
+            min_mtime=turn_started,
         )
-        infra_error_tokens = ("prompt error:", "not logged in", "authentication", "rate limit")
+        if not saw_fresh:
+            pytest.skip(
+                f"{cli_name} wrote no fresh transcript within 120s — no live turn "
+                f"(CLI stuck/unauthed, or only a stale session on disk)"
+            )
+        # A live turn that never ran (the CLI couldn't authenticate, is stuck on
+        # the login picker, or is rate-limited) is external infra, not a system-
+        # prompt regression — skip rather than red-fail. "authenticat" prefixes
+        # both authenticate/authentication; the OAuth-refresh + login-picker
+        # strings cover the Claude 2.1.2xx "select login method" breakage.
+        infra_error_tokens = (
+            "prompt error:",
+            "not logged in",
+            "authenticat",
+            "oauth",
+            "session expired",
+            "could not be refreshed",
+            "select login method",
+            "rate limit",
+        )
         if any(token in body.lower() for token in infra_error_tokens):
             pytest.skip(f"{cli_name} CLI could not complete a live turn: {body[:500]}")
 
@@ -117,9 +145,26 @@ async def test_system_prompt(worker_type, cli_name, tmp_path: Path, _workers_dis
         await asyncio.shield(_safe_exit(process))
 
 
-def _resolve_transcript(process: AgenticProcess, worker_type: WorkerType) -> AgentTranscriptFile | None:
+def _is_fresh(tf: AgentTranscriptFile | None, min_mtime: float) -> bool:
+    """True if *tf* was written after the turn started.
+
+    Guards against a leftover session file from an earlier run resolving as this
+    turn's transcript — real on a shared real ``$HOME`` where prior QA sessions
+    persist. A stale file is days old, so it fails this cheaply.
+    """
+    if tf is None:
+        return False
+    try:
+        return tf.path.stat().st_mtime >= min_mtime
+    except OSError:
+        return False
+
+
+def _resolve_transcript(
+    process: AgenticProcess, worker_type: WorkerType, min_mtime: float
+) -> AgentTranscriptFile | None:
     tf = process._load_transcript()
-    if tf is not None:
+    if _is_fresh(tf, min_mtime):
         return tf
     session_id = process.session_id
     if not session_id:
@@ -130,7 +175,9 @@ def _resolve_transcript(process: AgenticProcess, worker_type: WorkerType) -> Age
     except (TranscriptNotFoundError, ValueError):
         return None
     if path and path.exists():
-        return AgentTranscriptFile(worker_key, path)
+        tf = AgentTranscriptFile(worker_key, path)
+        if _is_fresh(tf, min_mtime):
+            return tf
     return None
 
 
@@ -158,19 +205,28 @@ async def _await_assistant_text(
     random_name: str,
     current_time: str,
     deadline_s: float,
-) -> str:
+    min_mtime: float,
+) -> tuple[str, bool]:
+    """Return ``(assistant_text, saw_fresh_transcript)``.
+
+    ``saw_fresh_transcript`` lets the caller tell a real system-prompt regression
+    (a fresh transcript that lacks the nonce) from an absent live turn (no fresh
+    transcript at all — CLI stuck/unauthed/stale), which is infra, not a bug.
+    """
     deadline = time.monotonic() + deadline_s
     last_text = ""
     last_transcript: AgentTranscriptFile | None = None
+    saw_fresh = False
     while time.monotonic() < deadline:
-        transcript = _resolve_transcript(process, worker_type)
+        transcript = _resolve_transcript(process, worker_type, min_mtime)
         if transcript is not None:
+            saw_fresh = True
             last_transcript = transcript
             last_text = _assistant_text(transcript)
             if random_name in last_text and current_time in last_text:
-                return last_text
+                return last_text, True
         await asyncio.sleep(2.0)
-    return last_text or _transcript_dump(last_transcript)
+    return (last_text or _transcript_dump(last_transcript)), saw_fresh
 
 
 async def _safe_exit(process: AgenticProcess) -> None:

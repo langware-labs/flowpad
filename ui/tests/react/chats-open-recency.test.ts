@@ -27,11 +27,19 @@
  * `activate` action + the Tab materialization `loadProcess` performs. Closes
  * go through the real `POST /graph/tab/<id>/close`.
  *
- * Expected to FAIL today on every `open →` / `close →` case (the bug); the
- * "create" case locks the working baseline. Fix shape: worker-history
- * surfaces the entity `last_active_at`, the client sorts by
- * max(last_active_time, last_active_at) under the stability window, and the
- * entry's `agentic_process_id` is reconciled after an open.
+ * STATUS: the bug described above is FIXED — all six cases pass. The fix is the
+ * one predicted below: worker-history surfaces the entity `last_active_at`, the
+ * client sorts by max(last_active_time, last_active_at) under the stability
+ * window, and the entry's `agentic_process_id` is reconciled after an open. The
+ * file now stands as the regression guard for that behaviour. (It formerly read
+ * "Expected to FAIL today on every open →/close → case"; that is stale — kept
+ * here only to explain why the cases are phrased as a bug repro.)
+ *
+ * RUNNING IT: needs `FLOW_INSTANCE=<disposable>` AND `FLOWPAD_CLAUDE_HOME=<abs
+ * path>` — and the BACKEND must be launched with the SAME `FLOWPAD_CLAUDE_HOME`,
+ * or worker-history walks a different tree, no fixture session is ever found and
+ * all six cases fail on timeout (including the "create" baseline). Launch via
+ * `FLOWPAD_CLAUDE_HOME=<dir> scripts/instance_ctl.sh launch <name>`.
  */
 import { AgenticProcess, Project, Tab } from '@sdk';
 import { renderHook, waitFor } from '@testing-library/react';

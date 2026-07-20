@@ -1,4 +1,14 @@
-import { AgenticProcess, Plan, QueryRequest, RemoteWorkerSession, Trigger, TypeId, VFSPath } from '@sdk';
+import {
+  AgenticProcess,
+  dataContext,
+  Plan,
+  Project,
+  QueryRequest,
+  RemoteWorkerSession,
+  Trigger,
+  TypeId,
+  VFSPath,
+} from '@sdk';
 import { redirect } from 'react-router';
 import { DockPointer } from '@src/navigation';
 import { ViewType } from '@src/types/ViewType';
@@ -7,7 +17,7 @@ import { DockLoadError, handleDockLoadError } from './dock-load-error';
 import { loadAssetRoute } from './load-asset';
 import { loadConversationRoute } from './load-conversation';
 import { loadLensRoute } from './load-lens';
-import { loadProjectRoute } from './load-project';
+import { loadProject, loadProjectRoute } from './load-project';
 import { loadProcess, ProcessLoadError } from './load-process';
 import { loadShellRoute } from './load-shell';
 import { loadTasksRoute } from './load-tasks';
@@ -15,6 +25,23 @@ import { processLoadErrorToDockError } from './process-load-error-resolution';
 
 export interface DockLoaderContext {
   requestPath: string;
+}
+
+/**
+ * Adopt the project pinned in a dock's scope filter into context. This is the
+ * URL-first project write for CONTEXT-NEUTRAL docks — the scoped browse views
+ * (assets list, explorer, desktop, triggers) whose loaders have no entity to
+ * derive a project from. Without it, entering a project whose landing tab is
+ * one of these views leaves `CurrentProjectTypeId` pointing at the PREVIOUS
+ * project (the stuck-footer switch bug). Entity-backed docks keep their own
+ * derivation: they run after this and their entity's project wins.
+ * Best-effort — a missing project must not fail a browse landing.
+ */
+async function adoptScopeProject(dock: DockPointer): Promise<void> {
+  const scope = dock.scopeFilter;
+  const projectId = scope?.mode === 'project' ? (scope.activeProjectId ?? null) : null;
+  if (!projectId || dataContext.project?.id === projectId) return;
+  await loadProject(new TypeId(Project.type, projectId)).catch(() => {});
 }
 
 async function loadPlanRoute(pointer: string | undefined): Promise<void> {
@@ -26,6 +53,7 @@ async function loadPlanRoute(pointer: string | undefined): Promise<void> {
   // path and redirect to the canonical, process-independent `vfs` form so the
   // view only ever sees the new grammar and the link self-heals on first open.
   if (parsed.kind === 'legacy') {
+    // eslint-disable-next-line @typescript-eslint/only-throw-error
     throw redirect(`/dock/plan/${DockPointer.forPlanByPath(parsed.filePath).pointer}`);
   }
 
@@ -106,10 +134,41 @@ function loadLiveSessionRoute(pointer: string | undefined): void {
   }
 }
 
-export async function loadDockPointer(
+/**
+ * Validate a graph root and adopt it as the URL-owned active entity. This is
+ * intentionally the loader's entire responsibility: graph reads happen in the
+ * mounted view and cloud inventory sync is only triggered by its Sync button.
+ */
+export async function loadGraphIdentityRoute(
   dock: DockPointer,
-  context: DockLoaderContext,
-): Promise<string> {
+  surface: 'graph' | 'worldview',
+): Promise<void> {
+  if (!dock.pointer) return;
+  const parsed = surface === 'worldview'
+    ? DockPointer.parseWorldViewPointer(dock.pointer)
+    : DockPointer.parseGraphPointer(dock.pointer);
+  try {
+    if (!parsed) throw new Error('Expected <type>/<id>');
+    if (surface === 'worldview' && parsed.type !== 'artifact' && parsed.type !== 'deployment') {
+      throw new Error(`Unsupported WorldView root type: ${parsed.type}`);
+    }
+    await dataContext.setActiveEntityTypeId(new TypeId(parsed.type, parsed.id));
+  } catch (error) {
+    throw new DockLoadError(
+      'malformed_graph_pointer',
+      'hard',
+      {
+        action: 'render_error',
+        title: surface === 'worldview' ? 'WorldView not found' : 'Graph root not found',
+        message: `This ${surface === 'worldview' ? 'WorldView' : 'graph'} URL is malformed or unavailable.`,
+      },
+      surface,
+      error,
+    );
+  }
+}
+
+export async function loadDockPointer(dock: DockPointer, context: DockLoaderContext): Promise<string> {
   const label = `loadDockPointer:${dock.viewType ?? 'unknown'}`;
   try {
     switch (dock.viewType) {
@@ -123,6 +182,7 @@ export async function loadDockPointer(
         await loadConversationRoute(dock.pointer);
         break;
       case ViewType.ASSETS:
+        await adoptScopeProject(dock);
         await loadAssetRoute(dock.pointer);
         break;
       case ViewType.TASKS:
@@ -135,6 +195,7 @@ export async function loadDockPointer(
         loadLiveSessionRoute(dock.pointer);
         break;
       case ViewType.TRIGGERS:
+        await adoptScopeProject(dock);
         await Trigger.query(new QueryRequest({ type: Trigger.type, scope: [] }));
         break;
       case ViewType.PLAN:
@@ -143,7 +204,16 @@ export async function loadDockPointer(
       case ViewType.LENS:
         await loadLensRoute(dock.pointer);
         break;
+      case ViewType.GRAPH:
+        await loadGraphIdentityRoute(dock, 'graph');
+        break;
+      case ViewType.WORLDVIEW:
+        await loadGraphIdentityRoute(dock, 'worldview');
+        break;
       default:
+        // Explorer, desktop, and other loader-less views: still honor a
+        // project-pinned scope so a scoped browse landing switches the project.
+        await adoptScopeProject(dock);
         break;
     }
     clearDockLoadError(dock);

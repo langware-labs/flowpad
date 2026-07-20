@@ -38,7 +38,6 @@ async function waitForIndexerIdle(request: APIRequestContext, budgetMs = 45_000)
 async function openSearch(page: Page) {
   await page.addInitScript(() => {
     localStorage.setItem('llm-setup-modal-seen', 'true');
-    localStorage.setItem('flowpad-index-approved', '1');
     // The footer indexing indicator (footer-indexing-indicator) is wrapped in
     // <AdvancedOnly> — it does not exist in the default Standard view.
     localStorage.setItem('viewMode', 'advanced');
@@ -54,13 +53,6 @@ async function openSearch(page: Page) {
     (window as unknown as { setView?: (v: string) => void }).setView?.('advanced');
   });
   await page.locator('html[data-view="advanced"]').waitFor({ timeout: 10_000 });
-  for (const n of ['Skip for now', 'Not Now', 'Not now']) {
-    const b = page.getByRole('button', { name: n });
-    if (await b.isVisible({ timeout: 2_000 }).catch(() => false)) {
-      await b.click();
-      break;
-    }
-  }
 }
 
 const rebuildBtn = (page: Page) => page.locator('[data-testid="rebuild-index"]');

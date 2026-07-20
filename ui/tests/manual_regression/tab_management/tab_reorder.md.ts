@@ -55,7 +55,6 @@ test.describe('Tab Management — drag reorder persists to the backend', () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => {
       localStorage.setItem('llm-setup-modal-seen', 'true');
-      localStorage.setItem('flowpad-index-approved', 'true');
       localStorage.setItem('viewMode', 'advanced');
     });
   });

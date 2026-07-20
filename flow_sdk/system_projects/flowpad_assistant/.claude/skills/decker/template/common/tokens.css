@@ -20,7 +20,15 @@
   --fs-body: 22px;
   --fs-caption: 16px;
 
-  /* Font stacks */
+  /* Font stacks.
+   * --font-display is the headline face and is what gives a deck a voice; a
+   * deck set entirely in --font-sans reads as generic no matter how it is
+   * coloured. Always give it a real fallback CHAIN that degrades to a related
+   * face (e.g. Iowan Old Style -> Palatino -> Georgia -> serif), never to
+   * system-ui — decks are portable single files and the viewer may not be on
+   * the machine that built them. */
+  --font-display: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial,
+    sans-serif;
   --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial,
     sans-serif;
   --font-mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas,

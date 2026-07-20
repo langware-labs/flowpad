@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useTheme } from 'next-themes';
 import { RevoGrid } from '@revolist/react-datagrid';
 import * as XLSX from 'xlsx';
 import type { FSRef } from '@sdk';
@@ -29,6 +30,10 @@ interface Workbook {
  * styles/formulas/charts).
  */
 export function XlsxGrid({ fsRef, reloadKey }: XlsxGridProps) {
+  const { resolvedTheme } = useTheme();
+  // RevoGrid ships light/dark as separate named themes; it won't follow the app's `dark` class.
+  const gridTheme = resolvedTheme === 'dark' ? 'darkCompact' : 'compact';
+
   const [workbook, setWorkbook] = useState<Workbook | null>(null);
   const [activeSheet, setActiveSheet] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -108,7 +113,7 @@ export function XlsxGrid({ fsRef, reloadKey }: XlsxGridProps) {
           readonly
           resize
           rowHeaders
-          theme="compact"
+          theme={gridTheme}
         />
       </div>
       {sheetNames.length > 1 && (

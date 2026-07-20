@@ -14,7 +14,6 @@ const HAS_LLM = Boolean(process.env.ANTHROPIC_API_KEY);
 async function dismissModals(page: Page) {
   await page.addInitScript(() => {
     localStorage.setItem('llm-setup-modal-seen', 'true');
-    localStorage.setItem('flowpad-index-approved', '1');
   });
 }
 

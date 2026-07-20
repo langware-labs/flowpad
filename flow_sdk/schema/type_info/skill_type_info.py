@@ -24,14 +24,15 @@ def _skill_default_body(entity) -> str:
 
 SKILL = TypeMetadata(
     type=EntityType.SKILL,
-    icon="Sparkles",
+    icon="FileBadge",
     displayName="Skills",
     browseable_by=ViewMode.STANDARD,
     creatable=True,
     indexed_by_default=True,
     api_visible=True,
     index_fields=["description"],
-    main_subdir=".claude/skills",
+    asset_class="shared",
+    family="skills",
     main_layout="folder",
     main_file="SKILL.md",
     from_disk_fn=extract_skill,

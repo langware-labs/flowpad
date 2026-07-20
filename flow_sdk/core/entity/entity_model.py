@@ -166,6 +166,28 @@ def _schedule_setup_prompt(ap, seed: str) -> None:
     task.add_done_callback(_RECEPTION_SETUP_TASKS.discard)
 
 
+def migrate_presence_shaped_members(data: Any) -> Any:
+    """Move a legacy presence-shaped ``members`` value to ``presence``.
+
+    Before the roster cache became the generic ``Entity.members``, ``Project``
+    and ``CollaborationRoom`` named this field ``members`` and stored session-code
+    presence rows (``{member_id, ...}``, no ``role``). Old DB rows still carry that
+    key; the hub roster rows have ``user_id``/``role``. A value that is all
+    presence-shaped is migrated to ``presence`` and cleared from ``members`` (the
+    roster self-heals from the hub on next read). Shared by both types'
+    ``mode="before"`` validators — see each ``_migrate_legacy_presence``.
+    """
+    if isinstance(data, dict):
+        legacy = data.get("members")
+        if (
+            isinstance(legacy, list)
+            and legacy
+            and all(isinstance(m, dict) and "member_id" in m and "role" not in m for m in legacy)
+        ):
+            data = {**data, "presence": data.get("presence") or legacy, "members": []}
+    return data
+
+
 class Entity(DBEntity):
     env_vars: SerializeAsAny[EntityEnvVars[EnvVar] | None] = Field(default=None)
     visitor_role: str | None = Field(default=None)
@@ -173,6 +195,18 @@ class Entity(DBEntity):
     tags: List[str] = APIField(default_factory=list)
     system: bool = APIField(default=False, description="True when this entity belongs to an SDK-shipped system project")
     remote: bool = APIField(default=False, description="True when this entity has a hub counterpart at the same id; refreshable from the hub")
+    # Hub-authoritative role roster cache: [{user_id, email, name, role, status}].
+    # Membership is a generic capability of any remote entity — a user always has
+    # a hub-set role on it. This field is a pure READ CACHE: the hub is the source
+    # of truth (resolved from RoleRelationship edges), written here by the reflected
+    # ``members`` action mirror (see _hub_reflect.mirror_hub_response_into_local)
+    # and by the conversation roster fanout, and refreshed on every roster open.
+    # Renamed from the per-type ``participants`` field; the conversation WIRE key
+    # stays ``participants`` (hub contract) and is adapted to ``members`` at ingest.
+    members: List[dict] = APIField(
+        default_factory=list,
+        description="Hub role roster cache: [{user_id, email, name, role, status}]. Hub-authoritative; local is a read cache.",
+    )
     # Git provenance + placement for an asset RECEIVED via a conversation. A raw
     # ``GitOrigin`` dict ({provider,owner,name,branch,head_commit,rel_path}) —
     # stored as json to avoid a core→builtin import cycle; construct/validate via
@@ -270,6 +304,30 @@ class Entity(DBEntity):
     # paths). Used by ``is_stale`` / ``merge_hub_payload`` at the remote
     # boundary. ClassVar so pydantic treats it as config, not a field.
     LOCAL_ONLY_FIELDS: ClassVar[frozenset[str]] = frozenset({"remote", "system", "fetched_at"})
+
+    # The base set of SENDER-LOCAL fields that never travel in the portable entity
+    # JSON (``to_common_json`` — the bundle ``entities.json`` envelope and, in
+    # time, the hub push). These describe THIS machine's copy — placement, mount,
+    # local provenance, local user ids, local-only projections — so the receiver
+    # re-derives them. Per-type additions are declared on ``TypeInfo.local_fields``
+    # (e.g. a claude_session's ``worker_session_id``) and unioned in by
+    # ``_local_fields``. NOTE: dates are deliberately NOT here — the bundle
+    # preserves send-time; the hub body strips them separately.
+    _BASE_LOCAL_FIELDS: ClassVar[frozenset[str]] = frozenset({
+        # placement / mount — the receiver re-derives from its own filesystem
+        "scope", "project_id", "asset_ref", "path",
+        "fs_storage_mount_path", "cwd", "installed_root",
+        # local provenance / flags
+        "git_origin", "remote", "system", "fetched_at",
+        # local user ids — do not resolve on the receiver
+        "created_by", "updated_by",
+        # local-only projections / caches
+        "private_context_entities_", "private_context_entities",
+        "private_context_entity_data", "shared_context_entity_data",
+        "message_count", "tags", "members",
+        # pydantic computed
+        "expand",
+    })
 
     # Mirror-image of LOCAL_ONLY_FIELDS for ``remote=True`` rows: fields the
     # HUB owns and local bookkeeping must never move. ``updated_date`` is the
@@ -1058,14 +1116,40 @@ class Entity(DBEntity):
         Single source of truth for scope, called once per save(); per-type
         ``store()`` overrides must not duplicate this logic. ``scope_project``
         carries a project the caller already resolved (avoids re-resolving).
+
+        The actual root computation is delegated to ``placement.root_for_scope``
+        (the single authority shared with the receive path), so create and
+        receive can no longer diverge on what "user root" means.
         """
-        from pathlib import Path
-        from flow_sdk.instance_settings import get_instance_settings
+        from flow_sdk.fs_store.placement import Scope, root_for_scope  # noqa: PLC0415
         proj = scope_project or await self._resolve_scope_project()
         mount = getattr(proj, "fs_storage_mount_path", None) if proj is not None else None
         if mount:
-            return Path(mount)
-        return get_instance_settings().user_home
+            return root_for_scope(Scope.PROJECT, project_mount=mount)
+        return root_for_scope(Scope.USER)
+
+    async def _resolve_repo_parent_container(self, info) -> "Path | None":
+        """Container for a REPO child = its parent REPO asset's folder, so the
+        child nests at ``<parent-folder>/agentic-assets/<type>/<name>`` (the
+        recursive repo layout). Returns None when this isn't a repo child, the
+        parent is missing/not-yet-placed, or the parent is a (leaf) file asset.
+        """
+        from pathlib import Path  # noqa: PLC0415
+        from flow_sdk.fs_store.placement import AssetClass  # noqa: PLC0415
+
+        if getattr(info, "asset_class", None) != AssetClass.REPO:
+            return None
+        parent = await self.parent()
+        if parent is None:
+            return None
+        pinfo = SchemaRegistry.get(parent.get_type())
+        if pinfo is None or pinfo.asset_class != AssetClass.REPO:
+            return None
+        par_ref = getattr(parent, "asset_ref", None)
+        if not par_ref or pinfo.main_layout != "folder":
+            return None  # a repo child can only nest inside a folder-backed parent
+        # The parent's asset FOLDER owns where the child's agentic-assets/ goes.
+        return pinfo.folder_for(Path(par_ref))
 
     async def check_and_refresh_record(self) -> bool:
         """If the source asset changed since the last index, re-sync. Returns
@@ -1638,6 +1722,36 @@ class Entity(DBEntity):
             await self._share_children()
         return self
 
+    def _local_fields(self) -> frozenset[str]:
+        """The sender-local field set for this entity = the base set (§
+        ``_BASE_LOCAL_FIELDS``) plus the per-type ``TypeInfo.local_fields``
+        additions. These fields never travel in ``to_common_json``."""
+        try:
+            from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+            info = SchemaRegistry.get(self.get_type())
+            extra = getattr(info, "local_fields", None) if info is not None else None
+        except Exception:
+            extra = None
+        return self._BASE_LOCAL_FIELDS | (extra or frozenset())
+
+    def to_common_json(self) -> dict:
+        """The portable entity JSON: a full model dump minus the sender-local
+        fields. This is the SINGLE wire-serialization seam — used by the bundle
+        ``entities.json`` envelope (and, once hub-field parity is verified, the
+        hub push). Sender-local placement/mount/provenance/user-id fields (plus
+        each type's ``TypeInfo.local_fields``) are stripped; the receiver
+        re-derives them. Unlike ``meta_dict`` this is the FULL model (so wire-only
+        fields like ``text``/``status`` travel), not just the persisted subset.
+        ``skip_api_serializer`` suppresses the API serializer that re-injects
+        computed projections (e.g. ``expand``)."""
+        return self.model_dump(
+            mode="json",
+            exclude_none=True,
+            exclude=self._local_fields(),
+            context={"skip_api_serializer": True},
+        )
+
     def _hub_body(self) -> dict:
         """The serialized body to POST to the hub — shared by ``share`` and
         ``create_child``. Excludes local-only / hub-stamped fields (see the
@@ -1658,7 +1772,8 @@ class Entity(DBEntity):
                 "remote", "system", "fetched_at",
                 "message_count",
                 "git_origin",  # local-only provenance; never a hub-synced field
-                "tags", "project_id", "participants",
+                "tags", "project_id",
+                "members",  # roster cache; the hub owns it and rebuilds from role edges
             },
         )
 
@@ -1756,7 +1871,19 @@ class Entity(DBEntity):
         """
         return (await self.nearest_remote_ancestor()) is not None
 
-    async def nearest_remote_ancestor(self: EntityType, _seen: Optional[set] = None) -> Optional["Entity"]:
+    async def nearest_ancestor(self: EntityType, predicate) -> Optional["Entity"]:
+        """First entity (self included) matching ``predicate``, walking the
+        ``parent_type_id`` chain. Cycle-safe; stops at a missing parent."""
+        seen: set = set()
+        cur: Optional["Entity"] = self
+        while cur is not None and cur.id not in seen:
+            if predicate(cur):
+                return cur
+            seen.add(cur.id)
+            cur = await cur.parent()
+        return None
+
+    async def nearest_remote_ancestor(self: EntityType) -> Optional["Entity"]:
         """Closest entity (self or an ancestor) that has its OWN hub row
         (``remote=True``), walking ``parent``. ``None`` if none is remote.
 
@@ -1765,16 +1892,7 @@ class Entity(DBEntity):
         ancestor, so the child is created under a hub-known container while the
         child keeps its true ``parent_type_id`` (the doc) in its own payload.
         """
-        if getattr(self, "remote", False):
-            return self
-        seen = _seen if _seen is not None else set()
-        if self.id in seen:
-            return None
-        seen.add(self.id)
-        p = await self.parent()
-        if p is None:
-            return None
-        return await p.nearest_remote_ancestor(seen)
+        return await self.nearest_ancestor(lambda e: getattr(e, "remote", False))
 
     @classmethod
     async def upsert_from_hub_child(
@@ -2010,15 +2128,26 @@ class Entity(DBEntity):
             return
         type_name = self.get_type()
         info = SchemaRegistry.get(type_name)
-        if info is None or info.main_subdir is None:
+        if info is None or info._resolved_layout[0] is None:
             return
+        # REPO assets nest inside their parent: a repo child lands at
+        # ``<parent-folder>/agentic-assets/<type>/<name>``, recursively. When this
+        # entity is a repo child, its container IS the parent asset's folder, not
+        # the scope root — ``compute_asset_ref`` then appends ``agentic-assets/…``.
+        if scope_root is None:
+            scope_root = await self._resolve_repo_parent_container(info)
         scope_root = scope_root or await self._resolve_scope_root(scope_proj)
         if scope_root is None:
             return
+        # The machine's canonical harness picks the family prefix (.claude/… vs
+        # .agents/…). Create-only path (asset_ref-set entities returned above),
+        # so the capability lookup isn't per-save. Falls back to claude.
+        from flow_sdk.fs_store.placement import resolve_default_harness
+        default_worker = await resolve_default_harness()
         # Transient FSRecord just to compute the asset_ref convention.
         from flow_sdk.fs_store.fs_record import FSRecord
         rec = FSRecord(type=type_name, id=self.id)
-        ar = rec.compute_asset_ref(scope_root, self)
+        ar = rec.compute_asset_ref(scope_root, self, default_worker=default_worker)
         if ar is None or getattr(ar, "_path", None) is None:
             return
         from flow_sdk.fs_store.path_utils import canonical_posix_path
@@ -2369,13 +2498,23 @@ class Entity(DBEntity):
             return [TypeId(type=BuiltinEntityType.PROJECT.value, id=project_id)]
         return []
 
+    async def effective_project_id(self: EntityType) -> "str | None":
+        """Own ``project_id``, else the nearest ``parent_type_id`` ancestor's
+        (e.g. a received claude session scopes to the conversation it was
+        shared into). Read-only: the inherited project is never persisted onto
+        the child, so a later re-mapping of the ancestor is followed live.
+        """
+        found = await self.nearest_ancestor(lambda e: getattr(e, "project_id", None))
+        return found.project_id if found is not None else None
+
     @staticmethod
     async def project_id_of(entity_type: str, entity_id: str) -> "str | None":
         """The owning ``project_id`` of any entity, resolved SERVER-SIDE.
 
         Looks the type up in the registry and goes through its ``get_by_id``
         (which for some types includes on-disk recovery for unindexed rows),
-        returning the target's ``project_id``. Best-effort: ``None`` when the
+        returning the target's ``effective_project_id`` — its own, else the
+        nearest ``parent_type_id`` ancestor's. Best-effort: ``None`` when the
         type/target is unknown or the target is genuinely project-less. This is
         the single, entity-agnostic "what project owns this thing" primitive —
         used by tab project derivation and ``Conversation.resolve_project_id``.
@@ -2385,7 +2524,7 @@ class Entity(DBEntity):
             if model is None:
                 return None
             target = await model.get_by_id(str(entity_id))
-            return getattr(target, "project_id", None) if target is not None else None
+            return await target.effective_project_id() if target is not None else None
         except Exception:
             import logging  # noqa: PLC0415
             logging.getLogger(__name__).debug(

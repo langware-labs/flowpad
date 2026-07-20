@@ -15,6 +15,7 @@ from flow_sdk.fs_store.indexer.functions.codex_projects import (
     _is_valid_cwd,
     _read_codex_projects_from_config,
 )
+from flow_sdk.config import is_system_project_path
 from flow_sdk.fs_store.path_utils import canonical_posix_path
 from flow_sdk.instance_settings import get_instance_settings
 from flow_sdk.utils.file_system import is_temp_path
@@ -35,6 +36,7 @@ class ProjectInfo:
     is_new: bool = False                                  # entity was created by THIS call
     modified_at: str | None = None                        # entity updated_date, when known
     last_active_at: int | None = None                     # entity last_active_at (epoch-ms), when known
+    system: bool = False                                  # SDK-shipped system project (any install)
 
 
 # ── GET vs FETCH ──────────────────────────────────────────────────────────────
@@ -83,6 +85,7 @@ def _entity_to_project_info(proj, cwd: str) -> ProjectInfo:
         worker_types=[],
         modified_at=getattr(proj, "updated_date", None),
         last_active_at=getattr(proj, "last_active_at", None),
+        system=bool(getattr(proj, "system", False)) or is_system_project_path(cwd),
     )
 
 
@@ -257,6 +260,7 @@ async def get_all_projects(
             info.record_project_id = Project.derive_id_for_path(cwd) or info.record_project_id
             info.modified_at = getattr(proj, "updated_date", None)
             info.last_active_at = getattr(proj, "last_active_at", None)
+            info.system = bool(getattr(proj, "system", False)) or is_system_project_path(cwd)
             # Prefer entity name when set (user may have renamed)
             if getattr(proj, "name", None):
                 info.name = proj.name  # type: ignore[assignment]
@@ -264,6 +268,7 @@ async def get_all_projects(
             info.project_id = Project.derive_id_for_path(cwd) or ""
             info.record_project_id = info.project_id
             info.is_new = True
+            info.system = is_system_project_path(cwd)
             to_create.append(info)
 
     # Sequential saves: SQLite serializes writes anyway and asyncio.gather hits

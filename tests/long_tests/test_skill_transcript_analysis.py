@@ -40,6 +40,7 @@ from tests.long_tests._transcript_helpers import (
     await_transcript,
     safe_exit,
 )
+from tests.long_tests._model_tier import small_model_for
 from tests.test_settings import test_service_config
 
 pytestmark = [
@@ -161,6 +162,9 @@ async def test_skill_usage_visible_in_transcript(
         worker_type=worker_type,
         workdir=str(tmp_path),
         additional_dirs=[str(skills_parent)],
+        # Cheapest model the worker can resolve (Copilot stays unset — its auto
+        # mode already picks its small tier). Assertions are model-agnostic.
+        cli_config=({"model": m} if (m := small_model_for(worker_type)) else {}),
         visible=False,
     ).save()
     instruction = (

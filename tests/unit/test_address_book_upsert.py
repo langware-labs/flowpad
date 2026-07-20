@@ -77,7 +77,7 @@ async def test_upsert_matches_participant_that_carries_local_id():
 async def _mk_conv(conv_id: str, participants: list[dict]):
     from flow_sdk.builtin.conversation import Conversation
 
-    conv = Conversation(id=conv_id, participants=participants)
+    conv = Conversation(id=conv_id, members=participants)
     await conv.save()
     return conv
 

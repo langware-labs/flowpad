@@ -80,13 +80,10 @@ def get_shell_record(uid: str) -> FSRecord | None:
 
 def shell_pty_stream_path(record_id: str, pty_pid: str | None):
     """Path to the .pty stream file for a shell session."""
-    from flow_sdk.fs_store.fs_record import record_stem
-    from flow_sdk.fs_store.record_paths import get_default_records_data_root
-
     if pty_pid is None:
         raise ValueError("No pty_pid set")
-    stem = record_stem(BuiltinEntityType.SHELL.value, record_id)
-    return get_default_records_data_root() / BuiltinEntityType.SHELL.value / stem / f"{pty_pid}.pty"
+    from flow_sdk.fs_store.record_paths import data_dir_for
+    return data_dir_for(BuiltinEntityType.SHELL.value, record_id) / f"{pty_pid}.pty"
 
 
 def close_shell_record(record: FSRecord) -> None:

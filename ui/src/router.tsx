@@ -7,15 +7,12 @@ import { WizardHost } from '@src/components/wizard/WizardHost';
 import { HooksView } from '@src/components/hooks-view/hooks-view';
 import { SessionsView } from '@src/components/sessions-view/sessions-view';
 // `WorkflowTracePreviewPage` was a dev-only standalone preview that bypassed
-// the entity layer. The workflow-runner refactor (May 2026) routes everything
-// through the main /dock/assets/editor/workflow URL. Removed.
+// the entity layer. Removed.
 import { BASE_PATH } from '@src/constants/basePath';
-import AgentRedirect from '@src/pages/agent-redirect';
 import DiscoverPage from '@src/pages/discover-page/discover-page';
 import FlowPage from '@src/pages/flow-page/flow-page';
 import FocusLayout from '@src/pages/flow-page/FocusLayout';
 import KeychainApproval from '@src/pages/keychain-approval';
-import LandingPage from '@src/pages/landing-page/landing-page';
 import NotFound from '@src/pages/NotFound';
 import App from '@src/App';
 import { createBrowserRouter, createRoutesFromElements, Navigate, Outlet, Route, useLocation, type ShouldRevalidateFunctionArgs } from 'react-router';
@@ -103,7 +100,6 @@ export const router = createBrowserRouter(
           loadRoot/auth/theme gate it) but OUTSIDE AgentLayout/FlowPage, so it
           renders full-screen with its own chrome (no sidebar/tab strip). */}
       <Route path="discover" element={<DiscoverPage />} />
-      <Route path="agent" element={<AgentRedirect />} loader={loadAgentApp} />
       {/* Root dock routes - use default agent from bootstrap */}
       <Route path="dock" element={<AgentLayout />} loader={loadAgentApp} shouldRevalidate={shouldRevalidateDock} errorElement={<ErrorScreen />}>
         <Route index element={<Navigate to="/" replace />} />
@@ -118,41 +114,12 @@ export const router = createBrowserRouter(
         <Route path=":viewType" element={<FocusLayout />} />
         <Route path=":viewType/*" element={<FocusLayout />} />
       </Route>
-      <Route
-        path="agent/:agentId"
-        element={<AgentLayout />}
-        loader={loadAgentApp}
-        shouldRevalidate={shouldRevalidateDock}
-      >
-        {/* /agent/:agentId */}
-        <Route index element={<LandingPage />} />
-        {/* Dock routes WITHOUT processId - for agent-level views (skills, settings, etc.) */}
-        <Route path="dock/:viewType" element={<FlowPage />} />
-        <Route path="dock/:viewType/*" element={<FlowPage />} />
-        {/* win/ focus-window mirrors (Part 3 §7) — same loaders, chrome-less host */}
-        <Route path="win/:viewType" element={<FocusLayout />} />
-        <Route path="win/:viewType/*" element={<FocusLayout />} />
-        {/* ✅ Validate ONLY the /dock/:viewType route */}
-        <Route path="flow/:processId/dock/:viewType" element={<FlowPage />} />
-        {/* Leave pointer route untouched (no validation) - use wildcard for multi-segment paths */}
-        <Route path="flow/:processId/dock/:viewType/*" element={<FlowPage />} />
-        {/* Dev layout routes (parallel to dock routes) */}
-        <Route path="flow/:processId/dev/:viewType" element={<FlowPage />} />
-        <Route path="flow/:processId/dev/:viewType/*" element={<FlowPage />} />
-        {/* win/ focus-window mirrors for the combined namespace (Part 3 §7) */}
-        <Route path="flow/:processId/win/:viewType" element={<FocusLayout />} />
-        <Route path="flow/:processId/win/:viewType/*" element={<FocusLayout />} />
-        {/* Keep the general flow route as-is */}
-        <Route path="flow/:processId" element={<FlowPage />} loader={loadAgentApp} />
-      </Route>
       <Route path="dev" element={<DeveloperLayout />} loader={loadAgentApp}>
         <Route index element={<SessionsView />} />
         <Route path="main" element={<SessionsView />} />
         <Route path="main/api-keys" element={<ApiKeysView />} />
         {/* Connections route hidden until OAuth flow is fully implemented */}
         <Route path="hooks" element={<HooksView />} />
-        {/* /dev/trace/:runId removed by the workflow-runner refactor.
-            Use /dock/assets/editor/workflow/<asset_ref> instead. */}
         <Route path="*" element={<DevToDockRedirect />} />
       </Route>
 

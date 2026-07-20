@@ -14,6 +14,7 @@ The handler validates the api-key, finalizes the login, and either redirects to
 
 import logging
 import os
+from secrets import compare_digest
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Query
@@ -30,15 +31,73 @@ router = APIRouter(prefix="/auth")
 logger = logging.getLogger(__name__)
 
 
+def _safe_next(candidate: str | None, default: str = "/") -> str:
+    """A same-origin redirect target, or ``default``.
+
+    ``startswith("/")`` alone is not enough: ``//evil.com`` is a protocol-relative
+    URL, which a browser follows straight off the origin. Anything that is not a
+    single-slash absolute path is refused.
+    """
+    if not candidate or not candidate.startswith("/") or candidate.startswith("//"):
+        return default
+    return candidate
+
+
+@router.get("/gate")
+async def gate(
+    cookie_gate: str = Query(None, alias="cookie-gate"),
+    next: str = Query(None),
+):
+    """Trade the cookie-gate secret for the httpOnly cookie, then redirect.
+
+    The browser's one cold request. It cannot already hold the cookie: the
+    callback that armed this instance was curl'd over sandbox loopback, so that
+    Set-Cookie went to curl. The hub therefore points the browser here, secret in
+    hand, and the redirect leaves a clean URL bar.
+
+    Not a path exemption — ``CookieGateMiddleware`` gates this route like every
+    other, and it is reachable precisely *because* the caller presented the
+    secret. Being a route rather than a branch in the middleware is what lets the
+    caller state its intent instead of having it guessed from headers: the hub's
+    curl wants ``login_callback`` and gets it, the browser wants a cookie and
+    asks here.
+
+    On an unarmed instance this is inert — it redirects without setting anything,
+    so a stale gate link still lands in the app rather than 404ing.
+    """
+    from flow_sdk.instance_settings.cookie_gate import get_cookie_gate
+    from flow_sdk.server.middleware.cookie_gate_middleware import COOKIE_NAME
+
+    response = RedirectResponse(url=_safe_next(next), status_code=302)
+
+    secret = get_cookie_gate()
+    if secret is not None and cookie_gate and compare_digest(cookie_gate, secret):
+        response.set_cookie(
+            COOKIE_NAME,
+            secret,
+            path="/",
+            secure=True,
+            httponly=True,
+            samesite="lax",
+        )
+    return response
+
+
 @router.get("/login_callback", response_class=HTMLResponse)
 async def login_callback(
     flowpad_api_key: str = Query(None, alias="flowpad-api-key"),
     next: str = Query(None),
+    cookie_gate: str = Query(None, alias="cookie-gate"),
 ):
     """Cloud-redirect callback. Validates the api-key and finalizes the login.
 
     `next` (same-origin path only) lets deep-link flows redirect back into the
     SPA after a successful login.
+
+    `cookie-gate` arms this instance's request gate (see
+    ``flow_sdk/instance_settings/cookie_gate.py``). The hub passes it here
+    because this request is made by curl over sandbox loopback — a channel the
+    sandbox's public URL cannot see. Optional: absent, nothing changes.
     """
     try:
         from flow_sdk.cli.auth.cloud_login import _finalize_login
@@ -82,8 +141,18 @@ async def login_callback(
             )
         )
 
-        if next and next.startswith("/"):
-            return RedirectResponse(url=next, status_code=302)
+        # Arm strictly AFTER the api-key validates. Arming on an unvalidated
+        # request would let an anonymous caller lock the instance with a secret
+        # only they hold.
+        if cookie_gate:
+            from flow_sdk.instance_settings.cookie_gate import set_cookie_gate
+
+            set_cookie_gate(cookie_gate)
+            logger.info("login_callback: cookie-gate armed for this instance")
+
+        safe_next = _safe_next(next, default="")
+        if safe_next:
+            return RedirectResponse(url=safe_next, status_code=302)
 
         user_id = user_info.get("id", "Unknown")
         s = get_instance_settings()

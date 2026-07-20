@@ -1,0 +1,43 @@
+/* dusk-aurora — personality layer */
+html, body, .reveal-viewport { background: #0f0c18; }
+.reveal .slides section {
+  background:
+    radial-gradient(75% 60% at 8% 4%, rgba(255,122,107,0.20) 0%, transparent 58%),
+    radial-gradient(65% 55% at 96% 92%, rgba(120,110,255,0.22) 0%, transparent 60%),
+    radial-gradient(50% 45% at 70% 10%, rgba(96,200,220,0.10) 0%, transparent 65%),
+    linear-gradient(165deg, #1c1430 0%, #14101f 55%, #0f0c18 100%);
+}
+.reveal h1, .reveal h2, .reveal h3 {
+  font-family: var(--font-display);
+  font-weight: var(--fw-medium);
+  letter-spacing: -0.005em;
+}
+.accent-rule {
+  width: 96px; height: 3px; border: 0; border-radius: 3px;
+  background: linear-gradient(90deg, var(--accent), #8a7bff);
+  margin: 0 0 var(--sp-5) 0;
+}
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--sp-5);
+}
+.metric-value {
+  font-family: var(--font-display); font-size: 70px; font-weight: var(--fw-bold);
+  background: linear-gradient(135deg, #ffb1a3 0%, var(--accent) 45%, #8a7bff 100%);
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent; color: transparent;
+  letter-spacing: -0.02em;
+}
+.metric-label { color: var(--text); font-size: 14px; letter-spacing: 0.12em; }
+.metric-delta { color: var(--text-secondary); font-size: 15px; }
+
+.layout-agenda-list li { border-bottom: 1px solid var(--border); padding: var(--sp-5) 0; }
+.layout-agenda-list li::before {
+  font-family: var(--font-display); color: var(--accent);
+  font-weight: var(--fw-bold); font-size: 28px;
+}
+.layout-agenda-list .agenda-label { font-weight: var(--fw-regular); }
+.subtitle { max-width: 30ch; }
+.layout-cover-centered .cover-meta { letter-spacing: 0.1em; text-transform: uppercase; }

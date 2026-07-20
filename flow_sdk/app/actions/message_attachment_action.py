@@ -24,12 +24,10 @@ from flow_sdk.builtin.message_attachment import (
     AttachmentScope,
     MessageAttachment,
     TransferMode,
-    user_scope_allowed_for,
 )
 from flow_sdk.builtin.user import User
 from flow_sdk.fs_store.operations.flow_message import default_data_dir, unpacked_dir
 from flow_sdk.fs_store.record_paths import record_stem
-from flow_sdk.instance_settings import get_instance_settings
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
 
@@ -60,28 +58,13 @@ def _entry_dir_for(ma: MessageAttachment) -> Path | None:
 
 
 def _user_scope_root() -> Path:
-    """Root that user-scope installs copy under.
+    """Root that user-scope installs copy under — delegates to the single
+    ``placement.root_for_scope`` authority (shared with the create path), so the
+    two can't diverge on what "user root" means. Kept as a named seam because
+    tests monkeypatch it to redirect installs to a temp home."""
+    from flow_sdk.fs_store.placement import Scope, root_for_scope  # noqa: PLC0415
 
-    Bundle relpaths for FS-rooted types are ``.claude/<family>/<leaf>``, so the
-    root is the directory whose ``.claude`` is the instance's claude_home
-    (= ``Path.home()`` in prod; redirected under FLOWPAD_CLAUDE_HOME in tests,
-    which point it at ``<tmp>/.claude`` so the parent stays coherent).
-    """
-    claude_home = get_instance_settings().claude_home
-    if claude_home.name != ".claude":
-        logger.warning(
-            "[message_attachment] claude_home %s is not named .claude — "
-            "user-scope install root may not match discovery",
-            claude_home,
-        )
-    return claude_home.parent
-
-
-def _main_subdir_for(asset_type: str) -> str | None:
-    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
-
-    info = SchemaRegistry.get(asset_type)
-    return getattr(info, "main_subdir", None) if info else None
+    return root_for_scope(Scope.USER)
 
 
 async def _load_ma(attachment_id: str) -> MessageAttachment | None:
@@ -115,7 +98,10 @@ async def _maybe_mint_bookmark(ma: MessageAttachment, someone_typeid) -> None:
 
 
 async def _setup_after_install(
-    ma: MessageAttachment, installed_root: str | None, *, auto_run: bool = True,
+    ma: MessageAttachment,
+    installed_root: str | None,
+    *,
+    auto_run: bool = True,
 ) -> dict | None:
     """The per-type reception dispatch: what to SHOW post-install.
 
@@ -143,6 +129,79 @@ async def _setup_after_install(
         return entity_target(ma.asset_type, ma.asset_id, name=ma.name)
 
 
+async def _cross_link_installed_siblings(ma: MessageAttachment) -> None:
+    """Give this just-installed attachment the message's OTHER installed
+    attachments in its private context — and itself into theirs.
+
+    Receiver-side only, by design: ``private_context_entities_`` is local-only
+    (``share()`` strips it), so a sender-side link would never reach anyone —
+    the recipient must build its own.
+
+    It cannot run at message-arrival time either: a bundle's assets stay STAGED
+    (never indexed, never visible to agents) until installed, so the sibling
+    entities simply do not exist locally yet and would not resolve. They
+    materialize one install at a time, so we (re)link the whole installed set on
+    each install — idempotent and convergent: installing #2 links #1<->#2,
+    installing #3 links all three. Still-staged siblings are skipped; they link
+    themselves in when installed.
+
+    Best-effort — never fails the install. That promise covers the imports too:
+    they sit inside the guard because ``_finalize_install`` calls this unguarded,
+    so an ImportError here would otherwise take down every install.
+    """
+    if not ma.flow_message_id:
+        return
+    try:
+        from flow_sdk.core.entity.cross_link import cross_link_all  # noqa: PLC0415
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[message_attachment] cross-link unavailable (non-fatal): %s", e, exc_info=True)
+        return
+    try:
+        siblings = await MessageAttachment.get_all({"flow_message_id": ma.flow_message_id})
+    except Exception as e:  # noqa: BLE001
+        logger.warning(
+            "[message_attachment] sibling lookup for %s failed (non-fatal): %s",
+            ma.flow_message_id,
+            e,
+            exc_info=True,
+        )
+        return
+
+    entities: list = []
+    seen: set[str] = set()
+    for row in siblings:
+        if not row.installed:
+            continue  # still staged — no local entity to link yet
+        tid = row.target_typeid
+        if tid is None or str(tid) in seen:
+            continue
+        seen.add(str(tid))
+        try:
+            cls = SchemaRegistry.get_entity_cls(tid.type)
+            ent = await cls.get_one({"id": tid.id}) if cls is not None else None
+            if ent is not None:
+                entities.append(ent)
+        except Exception as e:  # noqa: BLE001
+            logger.warning(
+                "[message_attachment] cross-link load %s failed (non-fatal): %s",
+                tid,
+                e,
+                exc_info=True,
+            )
+
+    if len(entities) < 2:
+        return
+    try:
+        await cross_link_all(entities)
+    except Exception as e:  # noqa: BLE001
+        logger.warning(
+            "[message_attachment] attachment cross-link failed (non-fatal): %s",
+            e,
+            exc_info=True,
+        )
+
+
 async def _finalize_install(
     ma: MessageAttachment,
     scope: str,
@@ -161,13 +220,65 @@ async def _finalize_install(
     ma.installed_at = datetime.now(UTC)
     await ma.save(someone_typeid, notify=True)
     await _maybe_mint_bookmark(ma, someone_typeid)
+    # Now that this asset is a real local entity, link it with the message's
+    # other installed attachments (each one's private context gains the rest).
+    await _cross_link_installed_siblings(ma)
     # Git Download clones + indexes only — setup NEVER runs automatically (it's a
     # separate, explicit action; see ``handle_attachment_setup``). Copy-mode
     # install keeps its existing behavior: setup-capable types spawn setup here.
     show = await _setup_after_install(
-        ma, installed_root, auto_run=ma.transfer_mode != TransferMode.GIT.value,
+        ma,
+        installed_root,
+        auto_run=ma.transfer_mode != TransferMode.GIT.value,
     )
     return ApiSuccessResponse(data={"entity": ma, "show": show})
+
+
+async def _install_row_entity(
+    ma: MessageAttachment,
+    scope: str,
+    project_id: str | None,
+    *,
+    overwrite: bool,
+    someone_typeid,
+) -> ApiResponse:
+    """Install a row-only received entry (``TypeInfo.receive_policy == "auto"``:
+    claude_session, flowpad_diagnosis): materialize the entity row from the
+    staged ``header.json`` — the same create-or-fill-merge contract the legacy
+    per-type unpack branches used (a partial row never blocks the real
+    name/slug). No bytes are copied and no reindex runs (row-only types have no
+    record folder); ``project_id`` stays null so scope inherits live through
+    the parent-chain fallback (``Entity.effective_project_id``)."""
+    from flow_sdk.builtin.flow_message_bundle import (  # noqa: PLC0415
+        _fill_merge_entity,
+        _read_entity_header,
+    )
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    entry_dir = _entry_dir_for(ma)
+    if entry_dir is None or not entry_dir.exists():
+        return _staging_gone()
+    header = _read_entity_header(entry_dir)
+    if header is None:
+        return ApiFailResponse(message="staged entry has no header.json", status_code=410)
+    cls = SchemaRegistry.get_entity_cls(ma.asset_type)
+    if cls is None:
+        return ApiFailResponse(message=f"unknown entity type: {ma.asset_type!r}", status_code=400)
+    info = SchemaRegistry.get(ma.asset_type)
+    overrides = getattr(info, "receive_row_overrides", None) or {}
+    payload = {**header, "id": header.get("id") or ma.asset_id, **overrides}
+    existing = await cls.get_one({"id": payload["id"]})
+    if existing is None or overwrite:
+        await cls.model_validate(payload).save(someone_typeid)
+    elif _fill_merge_entity(existing, payload, ("id", "type")):
+        await existing.save(someone_typeid)
+    return await _finalize_install(
+        ma,
+        scope,
+        project_id if scope == AttachmentScope.PROJECT.value else None,
+        None,
+        someone_typeid,
+    )
 
 
 async def _install_artifact_reference(
@@ -244,6 +355,7 @@ async def _install_webapp_artifact_copy(
     if scope != AttachmentScope.PROJECT.value or not project_id:
         return ApiFailResponse(message="a webapp artifact installs into a project", status_code=400)
     from flow_sdk.builtin.project import Project  # noqa: PLC0415
+
     project = await Project.get_one({"id": project_id})
     mount = (getattr(project, "fs_storage_mount_path", "") or "").strip() if project else ""
     if not mount:
@@ -322,6 +434,15 @@ async def handle_attachment_install(
     if scope not in (AttachmentScope.USER.value, AttachmentScope.PROJECT.value):
         return ApiFailResponse(message=f"invalid scope: {scope!r}", status_code=400)
 
+    # Row-only auto types (receive_policy='auto'): materialize the entity row
+    # from the staged header — no bytes, no reindex.
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    if getattr(SchemaRegistry.get(ma.asset_type), "receive_policy", None) == "auto":
+        return await _install_row_entity(
+            ma, scope, project_id, overwrite=overwrite, someone_typeid=someone_typeid,
+        )
+
     # Git-reference graph entities (ARTIFACT, and FOLDER for git context-folder
     # chips): materialized from the staged metadata here. No bytes copied, no
     # clone (that happens at open / via the chip's wizard).
@@ -330,13 +451,21 @@ async def handle_attachment_install(
         and ma.transfer_mode == TransferMode.GIT.value
     ):
         return await _install_artifact_reference(
-            ma, scope, project_id, overwrite=overwrite, someone_typeid=someone_typeid,
+            ma,
+            scope,
+            project_id,
+            overwrite=overwrite,
+            someone_typeid=someone_typeid,
         )
     # Copy mode: a webapp ARTIFACT can't be a git reference — mirror the shipped
     # folder bytes and serve them.
     if ma.asset_type == EntityType.ARTIFACT.value:
         return await _install_webapp_artifact_copy(
-            ma, scope, project_id, overwrite=overwrite, someone_typeid=someone_typeid,
+            ma,
+            scope,
+            project_id,
+            overwrite=overwrite,
+            someone_typeid=someone_typeid,
         )
 
     # Raw FILE attachments (the OS-file-picker lane) have no TypeInfo/RecordType
@@ -347,11 +476,16 @@ async def handle_attachment_install(
     # indexer today — see file_attachment_rel_subdir).
     is_raw_file = ma.asset_type == "file"
 
+    # Resolve the asset class (placement axis) once. Raw ``file`` entries have no
+    # TypeInfo — their staged entry relpath already carries the canonical layout.
+    from flow_sdk.fs_store.placement import user_scope_allowed  # noqa: PLC0415
+
     if is_raw_file:
-        main_subdir = None
+        asset_class = None
     else:
-        main_subdir = _main_subdir_for(ma.asset_type)
-        if main_subdir is None:
+        info = SchemaRegistry.get(ma.asset_type)
+        asset_class = info._resolved_layout[0] if info else None
+        if asset_class is None:
             return ApiFailResponse(
                 message=f"type {ma.asset_type!r} is not an installable file-backed asset", status_code=400
             )
@@ -377,8 +511,9 @@ async def handle_attachment_install(
             # ~/.claude); the staged entry relpath is already .claude-anchored.
             root = _user_scope_root()
         elif ma.transfer_mode != TransferMode.GIT.value:
-            # Same predicate that stamped `user_scope_allowed` at stage time.
-            if not user_scope_allowed_for(main_subdir, ma.transfer_mode):
+            # Same policy that stamped `user_scope_allowed` at stage time —
+            # the single owner is placement.user_scope_allowed.
+            if not user_scope_allowed(asset_class):
                 return ApiFailResponse(
                     message=f"type {ma.asset_type!r} is project-scoped; install into a project instead",
                     status_code=400,
@@ -430,15 +565,17 @@ async def handle_attachment_install(
             # record_type is None — a raw non-markdown file), git-origin nested
             # re-walk + provenance stamp, and the received-asset notify.
             await index_attachments(
-                [ReceivedAsset(
-                    root=root,
-                    scope=scope,
-                    asset_type=ma.asset_type,
-                    asset_id=ma.asset_id,
-                    entry_key=entry_key,
-                    record_type=record_type,
-                    git_origin=ma.git_origin,
-                )],
+                [
+                    ReceivedAsset(
+                        root=root,
+                        scope=scope,
+                        asset_type=ma.asset_type,
+                        asset_id=ma.asset_id,
+                        entry_key=entry_key,
+                        record_type=record_type,
+                        git_origin=ma.git_origin,
+                    )
+                ],
                 project_id=project_id,
                 owner=someone_typeid,
             )
@@ -448,6 +585,17 @@ async def handle_attachment_install(
             status_code=409,
             data={"asset_conflict": True, "conflicts": getattr(e, "conflicts", None)},
         )
+
+    # Metadata axis: overlay the portable entity-JSON envelopes (entities.json)
+    # onto the freshly materialized rows — parent_type_id / labels / status /
+    # semantic_lock, etc. Independent of transfer mode; sender-local fields never
+    # travel, so the receiver's own scope/project_id/asset_ref stay intact.
+    try:
+        from flow_sdk.builtin.flow_message_bundle import apply_entities_overlay  # noqa: PLC0415
+
+        await apply_entities_overlay(unpacked_dir(ma.flow_message_id), someone_typeid)
+    except Exception:
+        logger.warning("[install] entities.json overlay failed for %s", ma.id, exc_info=True)
 
     return await _finalize_install(
         ma,
@@ -504,7 +652,11 @@ async def handle_attachment_uninstall(attachment_id: str, *, someone_typeid=None
     if not ma.scope:
         return ApiFailResponse(message="attachment is not installed", status_code=409)
 
-    if ma.transfer_mode != TransferMode.GIT.value:
+    # Row-only auto types installed no bytes — only the entity row goes
+    # (the shared destroy tail below); there is no installed_root to sweep.
+    row_only = getattr(SchemaRegistry.get(ma.asset_type), "receive_policy", None) == "auto"
+
+    if ma.transfer_mode != TransferMode.GIT.value and not row_only:
         if not ma.installed_root:
             return ApiFailResponse(message="installed_root missing — cannot uninstall", status_code=409)
         entry_dir = _entry_dir_for(ma)

@@ -3,7 +3,6 @@ export * from './use-action';
 export * from './use-debounce-callback';
 export * from './use-domain';
 export * from './use-entity-ops';
-export * from './use-fs-item-flows';
 export * from './use-instance-preferences';
 export * from './useAuth';
 export * from './useCloudStatus';
@@ -22,4 +21,5 @@ export * from './useWarnings';
 export * from './entity-hooks';
 
 // Flow hooks
-export * from './flow-hooks';
+export { useDataStreamText } from './useDataStreamText';
+export { useEntityData, type UseEntityDataResult } from './useEntityData';

@@ -64,11 +64,6 @@ except ImportError as e:
     print(f"[WARN] Failed to import Capability: {e}")
 
 # Flow entity
-try:
-    from flow_sdk.builtin.process import Flow  # noqa: F401
-except ImportError as e:
-    print(f"[WARN] Failed to import Flow: {e}")
-
 # Agentic process entity
 try:
     from flow_sdk.builtin.agentic_process import AgenticProcess  # noqa: F401
@@ -121,11 +116,6 @@ except ImportError as e:
     print(f"[WARN] Failed to import CronEvent: {e}")
 
 try:
-    from flow_sdk.builtin.workflow import Workflow  # noqa: F401
-except ImportError as e:
-    print(f"[WARN] Failed to import Workflow: {e}")
-
-try:
     from flow_sdk.builtin.skill import Skill  # noqa: F401
 except ImportError as e:
     print(f"[WARN] Failed to import Skill: {e}")
@@ -174,6 +164,21 @@ try:
     from flow_sdk.builtin.feed_entry import FeedEntry  # noqa: F401
 except ImportError as e:
     print(f"[WARN] Failed to import FeedEntry: {e}")
+
+try:
+    from flow_sdk.builtin.flow_node import FlowNode  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import FlowNode: {e}")
+
+try:
+    from flow_sdk.builtin.agentic_flow import AgenticFlow  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import AgenticFlow: {e}")
+
+try:
+    from flow_sdk.builtin.agentic_flow_run import AgenticFlowRun  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import AgenticFlowRun: {e}")
 
 try:
     from flow_sdk.builtin.message_attachment import MessageAttachment  # noqa: F401
@@ -252,9 +257,10 @@ except ImportError as e:
     print(f"[WARN] Failed to import DynamicWorkflow: {e}")
 
 try:
-    from flow_sdk.builtin.artifact import Artifact, ArtifactRelation, CodeRef  # noqa: F401
+    from flow_sdk.builtin.artifact import Artifact  # noqa: F401
+    from flow_sdk.builtin.deployment import Deployment  # noqa: F401
 except ImportError as e:
-    print(f"[WARN] Failed to import Artifact entities: {e}")
+    print(f"[WARN] Failed to import Artifact/Deployment entities: {e}")
 
 try:
     from flow_sdk.builtin.markdown_index import MarkdownIndex  # noqa: F401

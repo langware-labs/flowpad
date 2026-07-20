@@ -72,14 +72,15 @@ export function useCurrentDock(): DockPointer | null {
 }
 
 /**
- * True when the current URL is a vibe *home* surface — the bare home (no dock
- * URL) or the HOME view (incl. the `vibeNoProcess` landing) — as opposed to a
- * vibe workspace or any other dock. This is the single predicate for "is there
- * no active session here worth preserving": consumed by `flow-page` to pick the
- * home hero and by the project-open flow to decide whether switching a project
- * should resume its last build process (it shouldn't, on home).
+ * True when the current URL is a *home* surface in ANY view mode — the bare
+ * home (no dock URL) or the HOME view (incl. the vibe `vibeNoProcess` landing)
+ * — as opposed to a workspace or any other dock. This is the single predicate
+ * for "is there no active session here worth preserving": consumed by
+ * `flow-page` to pick the home hero and by the project-open flow to decide
+ * whether switching a project should resume its last tab/build process (it
+ * shouldn't, on home — home stays home, on the new project).
  */
-export function useIsVibeHome(): boolean {
+export function useIsHomeSurface(): boolean {
   const currentDock = useCurrentDock();
   return currentDock === null || currentDock.viewType === ViewType.HOME;
 }

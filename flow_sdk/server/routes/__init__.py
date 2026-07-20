@@ -34,6 +34,8 @@ from .semantic_checker import router as semantic_checker_router
 from .pty_stream import router as pty_stream_router
 from .capabilities import router as capabilities_router
 from .toplog import router as toplog_router
+from .agentic_flows import router as agentic_flows_router
+from .worldview import router as worldview_router
 
 __all__ = [
     "bootstrap_router",
@@ -70,4 +72,6 @@ __all__ = [
     "pty_stream_router",
     "capabilities_router",
     "toplog_router",
+    "agentic_flows_router",
+    "worldview_router",
 ]

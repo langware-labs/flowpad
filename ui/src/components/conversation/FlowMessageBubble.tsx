@@ -3,6 +3,7 @@ import {
   Artifact,
   createConversationForShare,
   dataContext,
+  dataManager,
   FlowMessage,
   gitOriginCloneUrl,
   isImagePath,
@@ -30,6 +31,11 @@ import { MessageRunStatus } from './MessageRunStatus';
 import { PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT } from './constants';
 import { AttachmentChip, AttachmentChipState } from './AttachmentChip';
 import { ContextEntityChip, EntityChip, iconForEntity } from './EntityChip';
+import { useIsAdvanced } from '@src/contexts/view-mode-context';
+import { ProjectSelectorModal, projectListToSelectorItems } from '@src/components/project-selector';
+import { useEnsureProject } from '@src/components/project-selector/use-ensure-project';
+import { useAllProjects } from '@src/hooks/use-all-projects';
+import { notify } from '@src/notifications';
 import { chipStateFor } from './useMessageAttachments';
 import { AssetReviewDialog } from './asset-review/AssetReviewDialog';
 import { TESTABLE_TYPES } from './asset-review/test-prompt';
@@ -277,6 +283,11 @@ export function FlowMessageBubble({
     download: handleDownloadBody,
   } = useAttachments(fm, messageId);
 
+  // Hoisted above the early returns (hook count — see the telemetry note below).
+  // A group parent whose member task is attached to this same message is
+  // context, not the ask: it ships, but its chip is suppressed.
+  const parentTaskIds = useAttachedParentTaskIds(entities);
+
   // Forward-to-another-conversation. Hoisted above the early returns (hook
   // count). The dialog's `commit` override POSTs the backend forward action —
   // the backend clones the message (cloned_from_id provenance, copied
@@ -418,7 +429,11 @@ export function FlowMessageBubble({
   // `prompt` entities render via the attachment-actions row's
   // PromptAttachmentPreview (inside MessageBubble), not as generic chips; the
   // rest ride in the body bundle and only render as live chips once `downloaded`.
-  const otherEntities = entities.filter((t) => t.type !== Prompt.type);
+  // Prompt entities render in the attachment-actions row; a group parent whose
+  // member task is attached here renders not at all (`parentTaskIds`, above).
+  const otherEntities = entities.filter(
+    (t) => t.type !== Prompt.type && !(t.type === Task.type && parentTaskIds.has(String(t.id))),
+  );
   const hasAttachments = attachmentItems.length > 0 || entities.length > 0;
   const bodyStatus = fm.body_status ?? BodyStatus.NA;
   const hasBody = bodyStatus !== BodyStatus.NA;
@@ -724,6 +739,57 @@ function MessageFileChip({ attachment, projectId }: { attachment: MessageAttachm
   );
 }
 
+/**
+ * Ids of attached tasks that are the PARENT of another task attached to the
+ * SAME message — their chips are suppressed.
+ *
+ * An assignment message carries the member's own task AND its group parent:
+ * both must ride as real attachments (only attachments are packed into the body
+ * bundle, so context-only sharing would strand the parent as an unresolvable
+ * reference — see `useTaskAssignmentMessage`). But the message is a request to
+ * do the CHILD's work; the parent is context, reachable via the child's
+ * `parent_id` and the conversation's context row. So it ships, but doesn't
+ * clutter the bubble.
+ *
+ * Only ever hides a parent whose child is attached here too — a task sent on
+ * its own always renders. Resolution is async and self-correcting: until the
+ * child's row is local (pre-download) nothing is hidden, and the parent chip
+ * drops out once it resolves.
+ */
+function useAttachedParentTaskIds(entities: TypeId[]): Set<string> {
+  const taskIds = useMemo(() => entities.filter((t) => t.type === Task.type).map((t) => String(t.id)), [entities]);
+  const key = taskIds.join(',');
+  const [parentIds, setParentIds] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    // A lone task has no sibling to be the parent OF — nothing to hide.
+    if (taskIds.length < 2) {
+      setParentIds(new Set());
+      return;
+    }
+    let cancelled = false;
+    void Promise.all(
+      taskIds.map((id) => dataManager.getByTypeId<Task>(new TypeId(Task.type, id)).catch(() => null)),
+    ).then((tasks) => {
+      if (cancelled) return;
+      const attached = new Set(taskIds);
+      const parents = new Set<string>();
+      for (const t of tasks) {
+        // Only suppress a parent that is itself attached to this message.
+        if (t?.parent_id && attached.has(t.parent_id)) parents.add(t.parent_id);
+      }
+      setParentIds(parents);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // `key` is the stable identity of `taskIds` (order-preserving join).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+
+  return parentIds;
+}
+
 function MessageEntityChip({
   typeId,
   conversationId,
@@ -738,8 +804,15 @@ function MessageEntityChip({
   attachment?: MessageAttachment;
 }) {
   const { navigation } = useDockNavigation();
+  const isAdvanced = useIsAdvanced();
   const { start: startSkillRun, picker: runPicker } = useRunSkillWithProjectPrompt();
   const [reviewOpen, setReviewOpen] = useState(false);
+  // Task install always targets a project (never global): when the conversation
+  // isn't mapped to one, clicking the chip opens this picker to choose it.
+  const [taskPickerOpen, setTaskPickerOpen] = useState(false);
+  const { projects, isLoading: projectsLoading } = useAllProjects({ enabled: taskPickerOpen });
+  const projectItems = useMemo(() => projectListToSelectorItems(projects), [projects]);
+  const ensureProject = useEnsureProject();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data } = useEntity<APIEntity<any>>(typeId);
   const state = chipStateFor(!!data, attachment, forceShow);
@@ -776,17 +849,57 @@ function MessageEntityChip({
         }
       }
     : null;
-  // Assigned-task chip: one click unpacks — installs the staged task folder
-  // (task.md) so it lands in the task list. Git context folders referenced by
-  // the task ride as their own folder chips (the wizard-clone path above);
-  // loose attachment files ride as ordinary file attachments on the message.
+  // Assigned-task chip: clicking unpacks + installs the staged task folder
+  // (task.md) so it lands in the task list. A task ALWAYS installs into a
+  // project — never global: if the conversation is mapped to a project we
+  // install there, otherwise the click opens a project picker and the install
+  // happens once one is chosen (handleTaskProjectPick). Git context folders
+  // referenced by the task ride as their own folder chips (the wizard-clone
+  // path above); loose attachment files ride as ordinary file attachments.
+  const mappedProjectId = projectId ?? dataContext.project?.id ?? null;
   const handleTaskInstall =
     typeId.type === Task.type && attachment && !attachment.installed
       ? async () => {
-          const targetProjectId = projectId ?? dataContext.project?.id ?? null;
-          await attachment.install(targetProjectId ? 'project' : 'user', targetProjectId ?? undefined);
+          if (!mappedProjectId) {
+            setTaskPickerOpen(true);
+            return;
+          }
+          try {
+            await attachment.install('project', mappedProjectId);
+          } catch (err) {
+            console.error('[task-install] failed', err);
+            notify.error({ title: 'Install failed' });
+          }
         }
       : null;
+  // Chosen from the picker (no mapped project): ensure the project exists, then
+  // install the task into it. Never falls back to global scope.
+  const handleTaskProjectPick = async (id: string) => {
+    if (!attachment) return;
+    const picked = projectItems.find((item) => item.id === id);
+    if (!picked?.path) return;
+    setTaskPickerOpen(false);
+    try {
+      const project = await ensureProject(picked.path, { select: false });
+      if (!project.id) throw new Error('picked project has no id');
+      await attachment.install('project', project.id);
+      notify.success({ title: 'Installed in project', message: project.displayName });
+    } catch (err) {
+      console.error('[task-install] project install failed', err);
+      notify.error({ title: 'Install failed' });
+    }
+  };
+  const taskPicker = handleTaskInstall ? (
+    <ProjectSelectorModal
+      open={taskPickerOpen}
+      onOpenChange={setTaskPickerOpen}
+      projects={projectItems}
+      selectedId={null}
+      onSelect={(id) => void handleTaskProjectPick(id)}
+      isLoading={projectsLoading}
+      title="Install task in project"
+    />
+  ) : null;
   // "Run icon near the skill": one-click install-if-needed + run in a Vibe
   // session (see useRunReceivedSkill). Only for skills with a staged/installed
   // attachment — not artifacts or plain shares.
@@ -833,6 +946,7 @@ function MessageEntityChip({
         </span>
         {dialog}
         {runPicker}
+        {taskPicker}
       </>
     );
   }
@@ -842,11 +956,16 @@ function MessageEntityChip({
         ? data
         : new Artifact(data as unknown as Partial<Artifact>)
       : null;
-  // Installed via a MessageAttachment: the chip KEEPS opening the review modal
-  // (uninstall / test live there — requirement: "if already installed,
-  // uninstall appears instead"). The asset itself opens via the modal-adjacent
-  // context panel or any normal entity surface. Chips without an attachment
-  // (plain shares, artifacts) keep their navigation behavior.
+  // Installed via a MessageAttachment: behavior splits by view mode.
+  //  • Advanced (or Dev): the chip KEEPS opening the review modal, where
+  //    uninstall / test live and an "Open" button jumps to the entity view.
+  //  • Standard / Vibe: no uninstall surface — the chip navigates straight to
+  //    the entity view like any normal chip (onClick left undefined).
+  // Chips without an attachment (plain shares, artifacts) keep their navigation
+  // behavior — as do receive_policy='auto' row-only types (shared transcripts,
+  // diagnoses): they auto-installed at unpack with nothing to review, so their
+  // chip navigates straight to the entity.
+  const autoInstalled = dataManager.getTypeInfo?.(typeId.type)?.receive_policy === 'auto';
   return (
     <>
       <span className="inline-flex items-center gap-1">
@@ -858,7 +977,7 @@ function MessageEntityChip({
               ? () => void openArtifact(artifact, { navigation, currentProjectId: projectId ?? null })
               : handleFolderPull
                 ? () => void handleFolderPull()
-                : attachment
+                : attachment && !autoInstalled && isAdvanced
                   ? () => setReviewOpen(true)
                   : undefined
           }

@@ -18,6 +18,7 @@ import {
   type FsFolderDrop,
 } from './fsFolderRoot';
 import { ContextFolderGitBadge } from '@src/components/assets/ContextFolderGitBadge';
+import { matchContextDir } from '@src/hooks/use-context-folder-for-rel';
 
 /**
  * assetContextFoldersRoot — the Assets navigator's "Context folders" root.
@@ -180,10 +181,7 @@ export function assetContextFoldersRoot(deps: AssetContextFoldersRootDeps): Brow
     ownsPointer: (p) => p.viewType === ViewType.ASSETS && DockPointer.parseAssetFsPointer(p.pointer) !== null,
     pathFor: (p) => {
       const rel = normalizeRel(DockPointer.parseAssetFsPointer(p.pointer) ?? '');
-      const match = dirs.find((info) => {
-        const dr = normalizeRel(info.path);
-        return rel === dr || rel.startsWith(`${dr}/`);
-      });
+      const match = matchContextDir(dirs, rel);
       if (!match) return Promise.resolve([root]);
       const chain: Browseable[] = [root, dirNode(match, fsTypeId, onRemove, onDropItem, onExternalDrop, projectId)];
       // Deep-link below the context dir: chain the intermediate fs folder

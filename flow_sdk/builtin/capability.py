@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, ClassVar
 
-from flow_sdk.api.api_types.api_field import APIField
+from flow_sdk.api.api_types.api_field import APIField, Persist
 from flow_sdk.api.api_types.identifier import mint_uuid
 from flow_sdk.core import Entity, action
 from flow_sdk.core.capabilities import (
@@ -12,7 +12,7 @@ from flow_sdk.core.capabilities import (
     get_default_capability_specs,
 )
 from flow_sdk.db.drivers.query import QueryFilter
-from flow_sdk.responses.response import ApiSuccessResponse
+from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
 
 
 def capability_id_for_kind(kind: str) -> str:
@@ -51,6 +51,29 @@ class Capability(Entity):
     last_check: dict[str, Any] | None = APIField(default=None)
     last_install: dict[str, Any] | None = APIField(default=None)
     last_test: dict[str, Any] | None = APIField(default=None)
+    # Device-login session state — runtime-only, broadcast but never persisted
+    # (same shape as AgenticProcess.connection_id / Tab.status). Mirrors the
+    # live DeviceLoginSession for this harness kind; None/idle when no login
+    # is in flight.
+    login_state: str | None = APIField(default=None, persist=Persist.FALSE)
+    login_url: str | None = APIField(default=None, persist=Persist.FALSE)
+    login_code: str | None = APIField(default=None, persist=Persist.FALSE)
+    login_accepts_code: bool | None = APIField(default=None, persist=Persist.FALSE)
+    login_message: str | None = APIField(default=None, persist=Persist.FALSE)
+    # How this harness authenticates its worker: "device" (vendor device login,
+    # default) or "api" (a stored LLM-provider key — see flow_sdk.cli.auth.lm_api_keys
+    # and cli_drivers/api_auth.py). Persisted + user-switchable; like reference_kind
+    # it is deliberately NOT in the ensure_seeded reconcile list, so seeding never
+    # clobbers the user's choice.
+    auth_mode: str = APIField(default="device")
+    # Chosen LMApiProvider value when auth_mode == "api"; None → the driver's
+    # ApiAuthSpec.default_provider.
+    api_provider: str | None = APIField(default=None)
+    # User overrides for the tier→model mapping, layered over the driver's
+    # ApiAuthSpec.tier_models code defaults: {provider: {name: model_slug}} where
+    # name is a tier (sm/md/lg) or a custom option name. Persisted + user-editable;
+    # like auth_mode it is NOT in the ensure_seeded reconcile list.
+    model_map: dict[str, Any] = APIField(default_factory=dict)
 
     @classmethod
     def from_spec(cls, spec: CapabilitySpec) -> "Capability":
@@ -165,3 +188,137 @@ class Capability(Entity):
         result = await get_capability_registry().test(self.kind)
         await self._record_result("last_test", result.result)
         return ApiSuccessResponse(data=result.model_dump(mode="json"))
+
+    # ── Device login (harness CLIs) ─────────────────────────────────────────
+
+    def _login_worker_type(self) -> str | None:
+        from flow_sdk.core.capabilities.registry import worker_type_for_kind
+
+        return worker_type_for_kind(self.kind)
+
+    def _set_login_fields(
+        self,
+        *,
+        state: str | None,
+        url: str | None = None,
+        code: str | None = None,
+        accepts_code: bool | None = None,
+        message: str | None = None,
+    ) -> None:
+        self.login_state = state
+        self.login_url = url
+        self.login_code = code
+        self.login_accepts_code = accepts_code
+        self.login_message = message
+
+    async def _apply_login_session(self, session) -> None:
+        """Mirror a DeviceLoginSession onto the transient login_* fields and
+        broadcast (no DB write — the fields are runtime-only)."""
+        snapshot = session.to_json()
+        self._set_login_fields(
+            state=snapshot["state"],
+            url=snapshot["url"],
+            code=snapshot["code"],
+            accepts_code=snapshot["accepts_code_paste"],
+            message=snapshot["message"],
+        )
+        await self.notify_updated()
+
+    @action.post(action_name="device-login")
+    async def device_login_action(self) -> ApiSuccessResponse | ApiFailResponse:
+        """Start (or restart) this harness CLI's login flow.
+
+        Idempotent: the session pre-probes and short-circuits to
+        ``authenticated`` when the CLI already holds credentials, so a click
+        never wastes a one-time device code.
+        """
+        worker_type = self._login_worker_type()
+        if worker_type is None:
+            return ApiFailResponse(message=f"capability {self.kind!r} has no device login")
+        from flow_sdk.builtin.agentic_process.cli_drivers.device_login import start_device_login
+
+        session = await start_device_login(worker_type, on_change=self._apply_login_session)
+        await self._apply_login_session(session)
+        return ApiSuccessResponse(data=session.to_json())
+
+    @action.post(action_name="device-login-code")
+    async def device_login_code_action(self) -> ApiSuccessResponse | ApiFailResponse:
+        """Inject the browser-shown code into the login PTY (paste-back flows)."""
+        from flow_sdk.builtin.agentic_process.cli_drivers.device_login import get_device_login_session
+        from flow_sdk.request_context.methods import get_current_request_info
+
+        request_info = get_current_request_info()
+        body = await request_info.get_post_data() if request_info else None
+        code = str((body or {}).get("code", "")).strip()
+        worker_type = self._login_worker_type()
+        session = get_device_login_session(worker_type) if worker_type else None
+        if not code or session is None or not session.submit_code(code):
+            return ApiFailResponse(message="no login awaiting a code")
+        return ApiSuccessResponse(data={"submitted": True})
+
+    @action.post(action_name="device-login-cancel")
+    async def device_login_cancel_action(self) -> ApiSuccessResponse:
+        from flow_sdk.builtin.agentic_process.cli_drivers.device_login import get_device_login_session
+
+        worker_type = self._login_worker_type()
+        session = get_device_login_session(worker_type) if worker_type else None
+        if session is not None:
+            session.cancel()
+        self._set_login_fields(state=None)
+        await self.notify_updated()
+        return ApiSuccessResponse(data={"cancelled": session is not None})
+
+    @action.get(action_name="auth-status")
+    async def auth_status_action(self) -> ApiSuccessResponse | ApiFailResponse:
+        """Cheap login-state probe (no version run) — the startup gate's check.
+
+        Mirrors the result onto ``login_state`` (authenticated/idle) and
+        broadcasts so every surface agrees without waiting for a full test.
+        """
+        worker_type = self._login_worker_type()
+        if worker_type is None:
+            return ApiFailResponse(message=f"capability {self.kind!r} has no worker auth")
+        from flow_sdk.builtin.agentic_process.cli_drivers import get_driver
+        from flow_sdk.builtin.agentic_process.cli_drivers.api_auth import driver_api_auth_spec
+        from flow_sdk.builtin.agentic_process.cli_drivers.auth_probe import (
+            WorkerAuthResult,
+            WorkerAuthStatus,
+        )
+
+        spec = driver_api_auth_spec(worker_type)
+        if self.auth_mode == "api" and spec is not None:
+            # API-key auth: the harness runs on a stored LLM-provider key, not the
+            # vendor device login. "logged_in" ⇔ a key is stored (present but not
+            # vendor-validated, so never `verified`). Surface the harness's
+            # supported providers so the UI can offer only possible outcomes.
+            from flow_sdk.cli.auth.lm_api_keys import get_lm_api
+
+            provider = self.api_provider or spec.default_provider.value
+            has_key = bool(get_lm_api(provider))
+            result = WorkerAuthResult(
+                status=WorkerAuthStatus.LOGGED_IN if has_key else WorkerAuthStatus.LOGGED_OUT,
+                verified=False,
+                auth_mode="api",
+                message=(
+                    f"Using {provider} API key" if has_key else f"No {provider} API key configured"
+                ),
+                details={"provider": provider},
+            )
+        else:
+            result = await get_driver(worker_type).auth_probe()
+        # Surface the harness's supported API providers regardless of mode, so the
+        # modal can offer the key section / provider select for any harness.
+        if spec is not None:
+            result.details = {
+                **result.details,
+                "supported_providers": [p.value for p in spec.supported_providers],
+            }
+        # Don't clobber a login in flight; only broadcast when the mirror
+        # actually changes (a no-op probe shouldn't emit a WS frame).
+        if self.login_state not in ("awaiting_user", "starting"):
+            new_state = "authenticated" if result.status.value == "logged_in" else "idle"
+            if new_state != self.login_state or result.message != self.login_message:
+                self.login_state = new_state
+                self.login_message = result.message
+                await self.notify_updated()
+        return ApiSuccessResponse(data=result.to_json())

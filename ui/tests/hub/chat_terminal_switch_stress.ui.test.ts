@@ -49,7 +49,6 @@ import type { Browser } from 'playwright';
 import {
   launchBrowser,
   openInstancePage,
-  dismissWelcomeModal,
   realConsoleErrors,
   resetConsoleErrors,
   type InstancePage,
@@ -137,7 +136,6 @@ describe('chat⇄terminal switch stress in the browser — one session, 10 itera
       (id) => (window as any).navigation.openShellProcess(id),
       proc.id as string,
     );
-    await dismissWelcomeModal(page.page);
     await page.page.getByTestId('terminal-chat-toggle').waitFor({ state: 'visible', timeout: 20_000 });
     await waitToggleEnabled(); // worker idle after the seeded turn
     resetConsoleErrors(page); // drop boot/navigation noise before the measured loop

@@ -7,16 +7,6 @@ const API = apiBase();
 async function dismissSetupModal(page: Page) {
   await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
 }
-async function dismissWelcomeModalIfShown(page: Page) {
-  for (const name of ['Skip for now', 'Not Now', 'Not now']) {
-    const btn = page.getByRole('button', { name });
-    if (await btn.isVisible({ timeout: 2_000 }).catch(() => false)) {
-      await btn.click();
-      return;
-    }
-  }
-}
-
 // Assets page = collapsible BrowseableTree (asset-type roots) + AssetListView.
 // The older LayoutList/Network mode toggle + type pills never shipped.
 test.describe('Assets Page — BrowseableTree + AssetListView', () => {
@@ -33,7 +23,6 @@ test.describe('Assets Page — BrowseableTree + AssetListView', () => {
     await dismissSetupModal(page);
     await page.goto('/dock/assets');
     await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
-    await dismissWelcomeModalIfShown(page);
 
     await expect(page.getByRole('tree'), 'asset-type sidebar tree visible').toBeVisible({ timeout: 15_000 });
     await expect(page.getByRole('treeitem', { level: 1 }).first(), 'at least one level-1 treeitem').toBeVisible();
@@ -44,7 +33,6 @@ test.describe('Assets Page — BrowseableTree + AssetListView', () => {
     await dismissSetupModal(page);
     await page.goto('/dock/assets');
     await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
-    await dismissWelcomeModalIfShown(page);
 
     await expect(page.getByText('Assets', { exact: false }).first()).toBeVisible();
     // No phantom mode toggles.
@@ -61,7 +49,6 @@ test.describe('Assets Page — BrowseableTree + AssetListView', () => {
     await dismissSetupModal(page);
     await page.goto('/dock/assets/list/skill');
     await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
-    await dismissWelcomeModalIfShown(page);
 
     await expect(page.getByText('Select a type to browse', { exact: false })).toHaveCount(0);
     // A search/tag input is rendered above the list.
@@ -77,7 +64,6 @@ test.describe('Assets Page — BrowseableTree + AssetListView', () => {
     await dismissSetupModal(page);
     await page.goto('/dock/assets');
     await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
-    await dismissWelcomeModalIfShown(page);
 
     await expect(page.getByRole('tree')).toBeVisible({ timeout: 15_000 });
     // The asset tree renders a curated root set (agent/skill/markdown/spec);
@@ -94,7 +80,6 @@ test.describe('Assets Page — BrowseableTree + AssetListView', () => {
     await dismissSetupModal(page);
     await page.goto('/dock/assets');
     await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
-    await dismissWelcomeModalIfShown(page);
     await expect(page.getByRole('tree')).toBeVisible({ timeout: 15_000 });
 
     // Pick a level-1 root that has a non-zero count badge (an empty type — e.g.
