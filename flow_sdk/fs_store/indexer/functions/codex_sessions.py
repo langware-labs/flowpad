@@ -103,14 +103,15 @@ def _extract_thread_id(filename: str) -> str | None:
     return "-".join(parts[-5:])
 
 
-def codex_session_id(ref: FSRef) -> str:
+def codex_session_identity_key(ref: FSRef | Path) -> str:
     """Stable, filesystem-safe **UUID** id = session_meta payload.id (the
     thread_id). The thread_id is already a UUID so it's kept as-is; any
     non-conforming fallback is hashed with the same ``f"{type}:{key}"`` formula
     ``Entity.allocate_id`` uses, so it matches the DB id."""
+    path = Path(getattr(ref, "_path", ref))
     key = None
     try:
-        for raw in _iter_head_json(ref._path):
+        for raw in _iter_head_json(path):
             if raw.get("type") == "session_meta":
                 payload = raw.get("payload") or {}
                 if payload.get("id"):
@@ -122,8 +123,22 @@ def codex_session_id(ref: FSRef) -> str:
     except OSError:
         pass
     if key is None:
-        key = _extract_thread_id(ref._path.name) or ref._path.stem
-    return key if is_valid_entity_id(key) else mint_uuid(f"{RecordType.CODEX_SESSION}:{key}", namespace=uuid.NAMESPACE_DNS)
+        key = _extract_thread_id(path.name) or path.stem
+    return key
+
+
+def codex_session_id_from_file(ref: FSRef | Path) -> str | None:
+    key = codex_session_identity_key(ref)
+    return key if is_valid_entity_id(key) else None
+
+
+def codex_session_stable_key(ref: FSRef | Path) -> str:
+    return f"{RecordType.CODEX_SESSION}:{codex_session_identity_key(ref)}"
+
+
+def codex_session_id(ref: FSRef) -> str:
+    existing = codex_session_id_from_file(ref)
+    return existing or mint_uuid(codex_session_stable_key(ref), namespace=uuid.NAMESPACE_DNS)
 
 
 def extract_codex_session(ref: FSRef) -> list[FSRecord]:

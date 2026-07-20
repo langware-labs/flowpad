@@ -52,19 +52,3 @@ def report_id_from_path(path: Path) -> str:
 def adopt_doc_id(data: dict) -> str | None:
     from flow_sdk.fs_store.identifier import adopt_entity_id  # noqa: PLC0415
     return adopt_entity_id(data.get("id"))
-
-
-def report_gen_id(ref: FSRef) -> str:
-    """Mint+write a stable id into report.json (idempotent)."""
-    data = load_report(ref._path)
-    existing = adopt_doc_id(data)
-    if existing:
-        return existing
-    new_id = report_id_from_path(ref._path)
-    if data:
-        data["id"] = new_id
-        try:
-            ref._path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
-        except OSError:
-            pass
-    return new_id

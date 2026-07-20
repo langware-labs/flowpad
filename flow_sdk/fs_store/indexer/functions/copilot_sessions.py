@@ -46,13 +46,26 @@ def copilot_sessions_fn(
     return out
 
 
-def copilot_session_id(ref: FSRef) -> str:
+def copilot_session_identity_key(ref: FSRef | Path) -> str:
     """Stable, filesystem-safe **UUID** id from the session-state directory name
     (already the session UUID in practice — kept as-is when conforming, else
     hashed with the same ``f"{type}:{key}"`` formula ``Entity.allocate_id`` uses
     so it matches the DB id)."""
-    key = ref._path.parent.name
-    return key if is_valid_entity_id(key) else mint_uuid(f"{RecordType.COPILOT_SESSION}:{key}", namespace=uuid.NAMESPACE_DNS)
+    return Path(getattr(ref, "_path", ref)).parent.name
+
+
+def copilot_session_id_from_file(ref: FSRef | Path) -> str | None:
+    key = copilot_session_identity_key(ref)
+    return key if is_valid_entity_id(key) else None
+
+
+def copilot_session_stable_key(ref: FSRef | Path) -> str:
+    return f"{RecordType.COPILOT_SESSION}:{copilot_session_identity_key(ref)}"
+
+
+def copilot_session_id(ref: FSRef) -> str:
+    existing = copilot_session_id_from_file(ref)
+    return existing or mint_uuid(copilot_session_stable_key(ref), namespace=uuid.NAMESPACE_DNS)
 
 
 def extract_copilot_session(ref: FSRef) -> list[FSRecord]:

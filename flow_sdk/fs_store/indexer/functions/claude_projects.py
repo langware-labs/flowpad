@@ -318,21 +318,27 @@ async def _upsert_project_for_cwd(
 
 # ── async parser_fn + getId ──────────────────────────────────────────────────
 
-def claude_project_id(ref: FSRef) -> str:
+def claude_project_identity_key(ref: FSRef | Path) -> str:
     """Deterministic dedup key keyed on canonical cwd.
 
     Matches the deleted ``ProjectFsRecord.getId`` — used by the indexer's
     per-FSRef cache BEFORE extract_claude_project is invoked. The persisted
     record's id remains a uuid4 (set explicitly in _upsert_project_for_cwd).
     """
-    ref_path = Path(ref._path)
+    ref_path = Path(getattr(ref, "_path", ref))
     if _is_claude_encoded_ref(ref_path):
         real = _decode_claude_encoded(ref_path)
         cwd_key = real or str(ref_path)
     else:
         cwd_key = str(ref_path)
     cwd_key = canonical_posix_path(cwd_key) if cwd_key else str(ref_path)
-    return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"project-fsref:{cwd_key}"))
+    return f"project-fsref:{cwd_key}"
+
+
+def claude_project_id(ref: FSRef) -> str:
+    from flow_sdk.fs_store.identifier import mint_uuid  # noqa: PLC0415
+
+    return mint_uuid(claude_project_identity_key(ref), namespace=uuid.NAMESPACE_DNS)
 
 async def extract_claude_project(ref: FSRef) -> list[FSRecord]:
     """Async parser_fn — upsert by canonical cwd. Replaces

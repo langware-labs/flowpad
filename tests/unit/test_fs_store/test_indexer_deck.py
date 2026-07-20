@@ -5,7 +5,7 @@ Covers the slot functions end-to-end:
   a ``deck.json`` build record.
 - ``extract_deck`` denormalizes num_slides / html_file and resolves the
   ``template_ref`` provenance edge from the sibling template's ``.flow/id`` capsule.
-- ``deck_gen_id`` adopts a valid manifest id else mints via the capsule (idempotent).
+- ``TypeInfo.mint_id`` adopts a valid manifest id else mints via the capsule.
 - ``deck_asset_hash`` tracks deck.json + the assembled HTML.
 
 Pure-sync; the walker/slot functions are called directly. Modeled on
@@ -26,10 +26,14 @@ from flow_sdk.fs_store.indexer.functions._folder_capsule import write_folder_cap
 from flow_sdk.fs_store.indexer.functions.deck import (
     deck_asset_hash,
     deck_fn,
-    deck_gen_id,
     extract_deck,
 )
 from flow_sdk.fs_store.record_types import RecordType
+from flow_sdk.fs_store.schema_registry import SchemaRegistry
+
+
+def _mint(ref: FSRef) -> str:
+    return SchemaRegistry.get("deck").mint_id(ref)
 
 # do not increase timeout without approval — these are pure-sync parses (<1s).
 pytestmark = pytest.mark.timeout(5)
@@ -83,13 +87,13 @@ def test_walker_no_decks_dir(tmp_path: Path) -> None:
 def test_gen_id_adopts_valid_manifest_id(tmp_path: Path) -> None:
     valid = str(uuid.uuid4())
     deck = _seed_deck(tmp_path, "adopt", manifest={"id": valid, "title": "A", "slides": []})
-    assert deck_gen_id(FSRef(deck)) == valid
+    assert _mint(FSRef(deck)) == valid
 
 
 def test_gen_id_mints_v4_capsule_when_absent(tmp_path: Path) -> None:
     deck = _seed_deck(tmp_path, "mint")
-    first = deck_gen_id(FSRef(deck))
-    second = deck_gen_id(FSRef(deck))
+    first = _mint(FSRef(deck))
+    second = _mint(FSRef(deck))
     assert first == second
     assert uuid.UUID(first).version == 4
 
@@ -164,7 +168,7 @@ def test_template_ref_none_when_no_template_field(tmp_path: Path) -> None:
 
 def test_extract_id_agrees_with_gen_id(tmp_path: Path) -> None:
     deck = _seed_deck(tmp_path, "agree")
-    gen = deck_gen_id(FSRef(deck))  # stamps the capsule first, as in production
+    gen = _mint(FSRef(deck))
     assert extract_deck(FSRef(deck))[0].id == gen
 
 

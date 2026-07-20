@@ -74,34 +74,6 @@ def claude_plan_id(ref: FSRef) -> str:
     existing = _read_plan_frontmatter_id(ref._path)
     return existing if existing else _plan_id_from_path(ref._path)
 
-def claude_plan_gen_id(ref: FSRef) -> str:
-    """Mint+write id into frontmatter (idempotent). Same shape as the
-    deleted ``ClaudePlanRecord.genId``. Preserves derived uuid5(path)."""
-    existing = _read_plan_frontmatter_id(ref._path)
-    if existing:
-        return existing
-    new_id = _plan_id_from_path(ref._path)
-    try:
-        text = ref._path.read_text(encoding="utf-8")
-    except OSError:
-        return new_id
-    fm = _extract_frontmatter(text)
-    body = _extract_body(text)
-    fields: dict = {}
-    if fm:
-        parsed = _yaml_load(fm)
-        if isinstance(parsed, dict):
-            fields.update(parsed)
-    merged = {"id": new_id, **{k: v for k, v in fields.items() if k not in ("id", "asset_id")}}
-    try:
-        ref._path.write_text(
-            _render_frontmatter(merged) + "\n\n" + body + ("\n" if body and not body.endswith("\n") else ""),
-            encoding="utf-8",
-        )
-    except OSError:
-        pass
-    return new_id
-
 def extract_claude_plan(ref: FSRef) -> list[FSRecord]:
     path = ref._path
     plan_id = claude_plan_id(ref)

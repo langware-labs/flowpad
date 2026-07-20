@@ -11,7 +11,8 @@ from typing import Optional
 
 from flow_sdk.fs_store.indexer.functions.secret_origin import (
     extract_secret_origin,
-    secret_origin_gen_id,
+    secret_origin_id_from_file,
+    secret_origin_identity_key,
 )
 from flow_sdk.schema.type_info import TypeMetadata
 from flow_sdk.schema.type_info.base_meta import BaseMeta
@@ -38,6 +39,7 @@ SECRET_ORIGIN = TypeMetadata(
     main_layout="file",
     main_ext=".json",
     from_disk_fn=extract_secret_origin,
-    gen_uuid_fn=secret_origin_gen_id,
+    id_from_file_fn=secret_origin_id_from_file,
+    id_stable_key_fn=secret_origin_identity_key,
     meta_model=SecretOriginMeta,
 )

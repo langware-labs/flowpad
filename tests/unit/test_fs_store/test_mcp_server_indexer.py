@@ -243,7 +243,7 @@ def test_extract_remote_url_server(tmp_path: Path) -> None:
 
 
 def test_gen_uuid_matches_extracted_record_id(tmp_path: Path) -> None:
-    """The probe's ``gen_uuid_fn`` id must equal the id the extracted record
+    """The probe's ``TypeInfo.mint_id`` must equal the id the extracted record
     ends up with after ``Entity.allocate_id`` normalizes its natural key — so
     the probe's shadow home and the DB row address the same record — and it must
     be a filesystem-safe UUID (no ``:`` that would crash the Windows write).

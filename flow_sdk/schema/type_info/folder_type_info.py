@@ -10,7 +10,7 @@ Deliberate shape:
   destructive paths (fs-records purge, orphan sweeps) rmtree ``asset_ref``
   targets — pointing asset_ref at a user's directory would let an entity
   delete take the directory's contents with it. ``origin``/``path`` are inert.
-- No ``from_disk_fn``/``gen_uuid_fn`` — Folders are never discovered by the
+- No ``from_disk_fn``/identity callbacks — Folders are never discovered by the
   indexer walk; they are minted on demand (``Folder.mint_for_path``/
   ``mint_for_origin``).
 """

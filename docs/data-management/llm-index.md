@@ -85,7 +85,7 @@ An `index.md` file **is** a `MarkdownIndex` entity (a subclass of `Markdown`). I
 This is the one place the ordinary scan walk touches the pipeline. `MARKDOWN_INDEX` registers a `TypeMetadata` with:
 
 - `from_disk_fn = extract_markdown_index` — reads an `index.md` and parses it into a `MARKDOWN_INDEX` record via `flow_sdk.fs_store.operations.markdown_index.from_markdown`. This lets `FSIndexer` re-parse an already-existing `index.md` (e.g. after a restart).
-- `gen_uuid_fn = markdown_index_gen_id` — the id is `uuid5(NAMESPACE_URL, resolved_path)`, the same formula `LLMIndexer.typeid_for` uses, so the entity id and the frontmatter `id:` agree. `from_markdown` adopts the frontmatter `id:` only after stripping the `markdown_index-` prefix and passing `adopt_entity_id` (the v4/v5 gate, per `project_entity_id_policy.md`); a non-conforming id falls back to `uuid5(path)`.
+- `id_from_file_fn = no_id` plus `id_stable_key_fn = markdown_index_identity_key` — `TypeInfo.mint_id()` derives `uuid5(NAMESPACE_URL, resolved_path)`, the same formula `LLMIndexer.typeid_for` uses, so the entity id and the frontmatter `id:` agree. The parser's payload id cannot override the identity resolved by `TypeInfo`; the indexer stamps the resolved id before syncing the record.
 - `indexed_by_default=False`, `browseable=False` — a **system entity**. It is not crawled by the default indexer sweep and does not appear in the records browser; the rebuild AgenticProcess is the only writer, and callers parse via the operations module.
 
 Because the id is a deterministic `uuid5` of the folder path, re-indexing a rebuilt `index.md` updates the original entity row instead of allocating a duplicate.

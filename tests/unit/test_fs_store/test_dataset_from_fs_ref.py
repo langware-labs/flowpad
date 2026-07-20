@@ -25,7 +25,6 @@ from flow_sdk.builtin.dataset import (
 )
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer.functions.dataset import (
-    dataset_gen_id,
     extract_dataset,
     iter_examples,
 )
@@ -104,9 +103,10 @@ def _assert_indexer_compatible(ds_path: Path) -> Dataset:
     """Load via from_fs_ref and assert it equals the indexer cold path."""
     ref = FSRef(ds_path)
     # gen_id stamps the `.flow/id` capsule first — the production index order
-    # (gen_uuid_fn runs before the extractor). The loader + cold-path extractor
+    # (TypeInfo resolves identity before the extractor). The loader + cold-path extractor
     # then adopt that same capsule id (a fresh v4 when the dataset carries no id).
-    gen = dataset_gen_id(ref)
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry
+    gen = SchemaRegistry.get("dataset").mint_id(ref)
     loaded = Dataset.from_fs_ref(ref)
     assert loaded is not None, "from_fs_ref returned None for a real dataset"
     assert isinstance(loaded, Dataset)

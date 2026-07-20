@@ -211,7 +211,9 @@ There are no `FSRecord` subclasses and no `__init_subclass__` auto-registration.
 | `icon` / `browseable` / `creatable` / `api_visible` | Catalog/UI metadata. |
 | `meta_model` | Optional Pydantic model for the `meta` view. |
 | `from_disk_fn` | Cold-path parser: `(FSRef) -> list[FSRecord]`. |
-| `gen_uuid_fn` | Hot-path id mint/read: `(FSRef) -> str`. |
+| `id_from_file_fn` / `id_from_folder_fn` | Pure carrier-specific candidate readers. `TypeInfo.extract_id()` selects one from the asset layout and applies the v4/v5 adoption gate. Exactly one is configured for an indexed type. |
+| `id_stable_key_fn` / `id_namespace` | Optional deterministic key and UUID namespace used by `TypeInfo.mint_id()` for provider/natural/path-v5 identities. |
+| `id_write_fn` | Optional canonical carrier writer used by `TypeInfo.mint_id()`; the committed value is re-read before it is returned. |
 | `asset_hash_fn` | Cheap freshness token: `(FSRef) -> ...`. |
 | `post_sync_fn` | Async hook run after `sync_to_db`. |
 | `default_body_fn` | Per-type default body for `upsert_main_ref`. |

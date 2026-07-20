@@ -25,6 +25,7 @@ from flow_sdk.fs_store.indexer.progress_table import (
     TypeProgressRow,
 )
 from flow_sdk.fs_store.indexer.roots import resolve_project_id_for_cwd
+from flow_sdk.fs_store.path_utils import canonical_posix_path
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.server.search_filters import SCOPED_RECORD_TYPES, ScopeFilter
 
@@ -51,8 +52,8 @@ _PROGRESS_THROTTLE_S = 0.2
 _SCAN_CHUNK_NODES = 256
 
 # Per chunk ref budget for FSIndexer.index()'s skip-fresh probe. The probe
-# (gen_uuid_fn frontmatter read/write-back + on-disk hash equality) is pure
-# sync file I/O; batching it through one asyncio.to_thread call per chunk
+# (TypeInfo identity resolution + on-disk hash equality) is synchronous file
+# I/O; batching it through one asyncio.to_thread call per chunk
 # keeps that I/O off the event loop — previously thousands of fresh-skip
 # iterations ran it inline with no real suspension point (the throttled
 # emit() returns without yielding), parking the loop for the whole stretch.
@@ -106,17 +107,9 @@ class IndexerOptions:
     # Orphan detection is automatic — happens after the main index loop by
     # walking the record homes on disk (no DB query).
     orphan_action: OrphanAction = OrphanAction.INDEX
-    # Dedup-on-adopt: a capsule id (frontmatter / .flow/id) survives move+rename,
-    # but a local ``cp -r`` duplicates it → two entities collapsing into one row.
-    # When True (default), an adopted id already living at a DIFFERENT still-present
-    # path is re-keyed (fresh v4 into the copy's capsule). Set False on the bundle
-    # RECEIVE/install path, where the same id arriving at a new path is intentional
-    # (a shared asset), not a copy to re-key.
-    # This flag also arms the INVERSE reconciliation — the same-path duplicate
-    # sweep: when a parsed file resolves to one id, other pre-existing rows
-    # anchored to the same path that nothing in the walk claims are removed
-    # (the wheel-reinstall / invalid-capsule-id leak). Both directions are one
-    # id⇄path consistency policy, so they toggle together.
+    # Backward-compatible switch for same-path DB reconciliation. Duplicate
+    # source assets are never rewritten: a live incumbent wins and every other
+    # path with the same type+id is warned and skipped regardless of this flag.
     dedup_on_adopt: bool = True
     # When set, the orphan candidate set is intersected with this filter
     # before reporting and acting. Orphan-ness is still determined globally
@@ -178,7 +171,7 @@ def _has_dispatch(info) -> bool:
 
 def ref_typeid(ref) -> str | None:
     """Resolve a repo-asset FSRef to its ``<type>-<id>`` via the type's
-    ``gen_uuid_fn``. None when the ref is absent, isn't a repo asset, or has no id
+    identity API. None when the ref is absent, isn't a repo asset, or has no id
     resolver. The single ref→typeid primitive shared by the enclosure-parent
     derivation (below) and the bundle's descendant collector."""
     if ref is None or ref.record_type is None:
@@ -189,14 +182,51 @@ def ref_typeid(ref) -> str | None:
     if rtype not in SchemaRegistry.get_repo_types():
         return None
     info = SchemaRegistry.get(rtype)
-    gen = getattr(info, "gen_uuid_fn", None) if info else None
-    if gen is None:
+    if info is None:
         return None
     try:
-        rid = gen(ref)
+        rid = info.extract_id(ref) or info.mint_id(ref)
     except Exception:
         return None
     return f"{rtype}-{rid}" if rid else None
+
+
+def duplicate_asset_paths(
+    candidates: list[tuple[str, str, str]],
+    existing_paths: dict[str, dict[str, str]],
+) -> set[tuple[str, str, str]]:
+    """Detect live duplicate ``type+id`` sources and return paths to skip.
+
+    A live DB source wins. Without one, canonical lexical path order chooses
+    the winner. Detection never rewrites or re-keys either source.
+    """
+    grouped: dict[tuple[str, str], set[str]] = {}
+    for type_name, ref_id, path in candidates:
+        grouped.setdefault((type_name, ref_id), set()).add(
+            canonical_posix_path(path)
+        )
+
+    skipped: set[tuple[str, str, str]] = set()
+    for (type_name, ref_id), paths in grouped.items():
+        incumbent = existing_paths.get(type_name, {}).get(ref_id)
+        incumbent_canon: str | None = None
+        if incumbent:
+            try:
+                if Path(incumbent).exists():
+                    incumbent_canon = canonical_posix_path(incumbent)
+            except OSError:
+                pass
+
+        kept = incumbent_canon or min(paths)
+        for path in sorted(paths):
+            if path == kept:
+                continue
+            skipped.add((type_name, ref_id, path))
+            logging.warning(
+                "[asset-id] duplicate asset id; type=%s id=%s kept=%s skipped=%s",
+                type_name, ref_id, kept, path,
+            )
+    return skipped
 
 
 def _is_async_walker(fn: Any) -> bool:
@@ -644,11 +674,6 @@ class FSIndexer:
                 existing_db_ids.clear()
                 existing_db_paths.clear()
 
-        # In-run copy detection: the first index after ``cp -r`` sees BOTH copies
-        # in one walk before either is in the DB. ``{id: canonical_path}`` records
-        # which ref first claimed an id this run so the second is caught as a copy.
-        claimed_ids: dict[str, str] = {}
-
         # Same-path reconciliation (the inverse of dedup-on-adopt, which handles
         # one id at two paths): paths already claimed by MORE THAN ONE row.
         # Classic cause: a wheel reinstall restores an invalid frontmatter id,
@@ -706,128 +731,19 @@ class FSIndexer:
                 pr.write_hash()
             _pending_hashes.clear()
 
-        # Probe worker — runs in a thread, one call per _PROBE_CHUNK_REFS
-        # chunk. Everything here is sync file I/O: gen_uuid_fn reads (and on
-        # first encounter rewrites) frontmatter; index_required compares the
-        # source's current hash against the on-disk ``.hash`` sentinel.
-        # genId is the mint-on-first-encounter variant: idempotent if the
-        # file already carries an id in frontmatter, else writes the
-        # currently derived id back so future scans and lookups are
-        # rename-stable. Types without a custom gen_uuid_fn get the default
-        # mint: stable uuid5 of the path, via the single minter
-        # (policy-conforming).
-        from flow_sdk.fs_store.identifier import mint_uuid  # noqa: PLC0415
-        from flow_sdk.fs_store.indexer.functions._folder_capsule import (  # noqa: PLC0415
-            write_capsule_id,
-        )
-        from flow_sdk.fs_store.path_utils import is_path_under  # noqa: PLC0415
-
-        # Dedup-on-adopt's copy verdict is SCOPED to this run's index roots.
-        # An incumbent that lives UNDER a walk root is a genuine intra-workspace
-        # duplication (a local ``cp -r``) → re-key the copy. An incumbent OUTSIDE
-        # every walk root is a foreign checkout/clone of the same repo — a
-        # legitimately shared committed capsule id (e.g. a sibling git worktree,
-        # or a stale DB row from a past scope), whose authored source file must
-        # NOT be re-minted. Without this, re-indexing one clone re-keys another
-        # clone's committed ids and writes them back over git-tracked files
-        # (the 2026-07-12 mass-re-mint incident).
-        _dedup_root_canons = [
-            canonical_posix_path(str(r._path))
-            for r in (opts.roots if opts.roots is not None else self._roots)
-        ]
-
-        def _incumbent_in_run_scope(incumbent_canon: str) -> bool:
-            return any(
-                is_path_under(incumbent_canon, root) for root in _dedup_root_canons
-            )
-
-        def _root_relpath(canon: str) -> "tuple[str, str] | None":
-            """``(containing scan root, path relative to it)`` for a canonical
-            path, or None when it sits under no root. Two paths with the SAME
-            relpath under DIFFERENT roots are the same file in parallel checkouts
-            of one repo (``flowpad-oss/docs/x.md`` vs ``flowpad-base/docs/x.md``)
-            — a legitimately shared committed id, NOT a ``cp -r`` copy."""
-            from pathlib import PurePosixPath  # noqa: PLC0415
-            for root in _dedup_root_canons:
-                if is_path_under(canon, root):
-                    try:
-                        return root, str(PurePosixPath(canon).relative_to(root))
-                    except ValueError:
-                        continue
-            return None
-
         def _probe_chunk(
             items: list[tuple[FSRef, Any]],
-        ) -> list[tuple[FSRef, Any, str, FSRecord, bool, str | None]]:
-            out: list[tuple[FSRef, Any, str, FSRecord, bool, str | None]] = []
+        ) -> list[tuple[FSRef, Any, str | None, FSRecord | None, bool, str]]:
+            """Resolve one authoritative ID and freshness-probe each asset.
+
+            Identity failures are returned with ``ref_id=None`` and handled as
+            index errors by the async loop. No fallback ID may bypass TypeInfo.
+            """
+            out: list[tuple[FSRef, Any, str | None, FSRecord | None, bool, str]] = []
             for ref, info in items:
-                # Canonical walked path, computed off-loop here (resolve()
-                # syscalls) and threaded through for the same-path dupe
-                # nomination in the parse loop. None when dedup is off.
-                canon_path: str | None = None
-                # Per-ref tolerance: one unreadable source (e.g. a non-UTF-8
-                # file blowing up a frontmatter read) must not abort the whole
-                # index run. Fall back to the path-derived id and mark the ref
-                # stale — the parse path's own try/except then counts it in
-                # the per-type ``errors`` accounting instead of raising out.
+                canon_path = canonical_posix_path(str(ref._path))
                 try:
-                    if info.gen_uuid_fn is not None:
-                        # gen_uuid_fn guarantees a filesystem-safe UUID (never a
-                        # raw natural key with a ``:`` that would crash the
-                        # Windows shadow-home write), identical to the DB id.
-                        ref_id = info.gen_uuid_fn(ref)
-                    else:
-                        ref_id = mint_uuid(str(ref._path))
-                    # Dedup-on-adopt: a capsule id survives move+rename, but a
-                    # local ``cp -r`` duplicates it. If this id already lives at a
-                    # DIFFERENT still-present path (a DB incumbent or an earlier
-                    # ref this run), this ref is a COPY → re-key it (fresh v4 into
-                    # its own capsule) so the two don't collapse. Old path gone →
-                    # a MOVE → keep the id. Missing/errored incumbent stat fails
-                    # safe to MOVE (never spuriously re-key an authored id).
-                    if opts.dedup_on_adopt and ref_id:
-                        cur = canon_path = canonical_posix_path(str(ref._path))
-                        incumbent = (
-                            existing_db_paths.get(str(ref.record_type), {}).get(ref_id)
-                            or claimed_ids.get(ref_id)
-                        )
-                        incumbent_canon = (
-                            canonical_posix_path(incumbent) if incumbent else None
-                        )
-                        # Only a still-present incumbent WITHIN this run's roots
-                        # is a real copy; a foreign clone / out-of-scope path is
-                        # a legitimately shared committed id — leave it alone.
-                        if (
-                            incumbent_canon
-                            and incumbent_canon != cur
-                            and _incumbent_in_run_scope(incumbent_canon)
-                        ):
-                            # An all-projects scan co-walks several checkouts of
-                            # one repo as roots; the SAME committed id then lives
-                            # at the SAME relpath under DIFFERENT roots. That is a
-                            # parallel checkout, NOT a ``cp -r`` copy — adopt it,
-                            # never re-key an authored committed id over its
-                            # git-tracked source (the 2026-07-12 mass re-mint the
-                            # run-scope guard alone didn't cover). A genuine intra-
-                            # tree copy stays under the same root (or a different
-                            # relpath) and still re-keys.
-                            cur_rr = _root_relpath(cur)
-                            inc_rr = _root_relpath(incumbent_canon)
-                            parallel_checkout = (
-                                cur_rr is not None
-                                and inc_rr is not None
-                                and cur_rr[0] != inc_rr[0]
-                                and cur_rr[1] == inc_rr[1]
-                            )
-                            try:
-                                incumbent_present = Path(incumbent).exists()
-                            except OSError:
-                                incumbent_present = False
-                            if incumbent_present and not parallel_checkout:
-                                new_id = mint_uuid()  # v4 for the copy
-                                write_capsule_id(info, ref._path, new_id)
-                                ref_id = new_id
-                        claimed_ids[ref_id] = cur
+                    ref_id = info.extract_id(ref) or info.mint_id(ref)
                     probe = FSRecord(type=str(ref.record_type), id=ref_id, asset_ref=ref)
                     # Skip-fresh: on-disk ``.hash`` equality AND a live DB row.
                     # The probe reads its own sentinel (shadow home) and the
@@ -849,144 +765,168 @@ class FSIndexer:
                     )
                 except Exception as e:
                     logging.warning(
-                        "[FSIndexer] probe failed for %s (%s): %r — falling through to parse",
+                        "[FSIndexer] identity probe failed for %s (%s): %r",
                         ref._path, ref.record_type, e,
                     )
-                    ref_id = mint_uuid(str(ref._path))
-                    probe = FSRecord(type=str(ref.record_type), id=ref_id, asset_ref=ref)
+                    ref_id = None
+                    probe = None
                     fresh = False
                 out.append((ref, info, ref_id, probe, fresh, canon_path))
             return out
 
+        # Probe the complete candidate set before parsing so a no-incumbent
+        # duplicate has a deterministic winner independent of DFS/chunk order.
+        all_probed: list[
+            tuple[FSRef, Any, str | None, FSRecord | None, bool, str]
+        ] = []
+        for chunk_start in range(0, len(dispatchable), _PROBE_CHUNK_REFS):
+            chunk = dispatchable[chunk_start:chunk_start + _PROBE_CHUNK_REFS]
+            all_probed.extend(await asyncio.to_thread(_probe_chunk, chunk))
+        duplicate_paths = await asyncio.to_thread(
+            duplicate_asset_paths,
+            [
+                (str(ref.record_type), ref_id, canon_path)
+                for ref, _info, ref_id, _probe, _fresh, canon_path in all_probed
+                if ref_id
+            ],
+            existing_db_paths,
+        )
+
         async with _db_session() as _idx_session:
-            for chunk_start in range(0, len(dispatchable), _PROBE_CHUNK_REFS):
-                chunk = dispatchable[chunk_start:chunk_start + _PROBE_CHUNK_REFS]
-                probed = await asyncio.to_thread(_probe_chunk, chunk)
-                for ref, info, ref_id, probe, fresh, canon_path in probed:
-                    current_rt = ref.record_type
-                    acc = per_type_counts[ref.record_type]
+            for ref, info, ref_id, probe, fresh, canon_path in all_probed:
+                current_rt = ref.record_type
+                acc = per_type_counts[ref.record_type]
 
-                    # Per-type cap: once we've processed `limit_per_type` records of
-                    # this type (parsed or skip-fresh), skip further refs of the same
-                    # type. ``done`` in the progress table is ``indexed + skipped``,
-                    # so the cap must include both to keep ``done <= limit_per_type``.
-                    # (The probe already ran for capped refs — harmless: gen_id is
-                    # idempotent and the hash check has no side effects.)
-                    if opts.limit_per_type is not None and (acc["indexed"] + acc["skipped"]) >= opts.limit_per_type:
-                        continue
+                # Per-type cap: once we've processed `limit_per_type` records of
+                # this type (parsed or skip-fresh), skip further refs of the same
+                # type. ``done`` in the progress table is ``indexed + skipped``,
+                # so the cap must include both to keep ``done <= limit_per_type``.
+                # (The probe already ran for capped refs; identity resolution
+                # is idempotent and the hash check has no side effects.)
+                if opts.limit_per_type is not None and (acc["indexed"] + acc["skipped"]) >= opts.limit_per_type:
+                    continue
 
-                    # Track this id as "seen" before any skip/index decision so the
-                    # orphan check post-loop won't false-positive a fresh-skip as
-                    # missing.
-                    if ref_id:
-                        seen_ids.setdefault(ref.record_type, set()).add(ref_id)
-
-                    if fresh:
-                        acc["skipped"] += 1
-                        # seen_ids already holds ref_id (added above), so a fresh
-                        # skip is not misclassified as orphan.
-                        await emit()
-                        continue
-
-                    t_start = time.perf_counter()
-                    try:
-                        # Loop is gated by _has_dispatch → from_disk_fn is set.
-                        from_disk = info.from_disk_fn
-                        if asyncio.iscoroutinefunction(from_disk):
-                            records = await from_disk(ref)
-                        else:
-                            records = await asyncio.to_thread(from_disk, ref)
-                        # Walk-time scope/project_id from the FSRef parent-chain.
-                        # Loop-invariant — read once, stamp on each record.
-                        ref_scope = ref.scope
-                        ref_pid = ref.project_id
-                        if ref_pid is not None and project_mounts:
-                            # Association rule: deepest project wins. The walk
-                            # root's project may be an umbrella containing a
-                            # nested project — re-associate to the innermost
-                            # mount that contains this record's path.
-                            try:
-                                ref_pid = deepest_project_id_for_path(
-                                    canonical_posix_path(str(ref._path)),
-                                    project_mounts,
-                                    default=ref_pid,
-                                )
-                            except OSError:
-                                pass
-                        # Enclosure-derived parenthood: a repo asset physically
-                        # nested inside another repo asset's folder inherits it as
-                        # its parent, so a child re-indexed purely from disk (e.g.
-                        # received without an ``entities.json`` envelope) is still
-                        # parented. Loop-invariant — derive once from the FSRef
-                        # parent chain. Only when the enclosing ref is itself a
-                        # repo asset (not the walk root).
-                        parent_typeid = ref_typeid(getattr(ref, "_parent", None))
-                        for rec in records:
-                            if ref_scope is not None:
-                                object.__setattr__(rec, "scope", ref_scope)
-                            if parent_typeid and not getattr(rec, "parent_type_id", None):
-                                object.__setattr__(rec, "parent_type_id", parent_typeid)
-                            if ref_pid is not None:
-                                object.__setattr__(rec, "project_id", ref_pid)
-                            elif not getattr(rec, "project_id", None) and (
-                                # No project-scoped ancestor in the FSRef chain
-                                # (e.g. codex/copilot sessions expanded under
-                                # USER_HOME_FOLDER, received transcripts). If the
-                                # record names a cwd, resolve its owning project
-                                # so it scopes + yields a project tab like a
-                                # locally-indexed claude session does.
-                                cwd_pid := resolve_project_id_for_cwd(getattr(rec, "cwd", None))
-                            ):
-                                object.__setattr__(rec, "project_id", cwd_pid)
-                            await rec.sync_to_db(fts_batch=fts_batch, notify=False)
-                            # Reflect any actually-saved id back into seen_ids in case
-                            # from_fsref returns multiple records (rare) or a different id.
-                            rec_id = getattr(rec, "id", None)
-                            if rec_id:
-                                seen_ids.setdefault(ref.record_type, set()).add(str(rec_id))
-                        acc["indexed"] += len(records)
-                        # Same-path reconciliation: a successful parse enumerates
-                        # the file's COMPLETE record set (all landed in seen_ids
-                        # just above), so any other pre-existing id anchored to
-                        # this exact path is a stale-duplicate candidate. Only
-                        # parsed refs nominate — a fresh-skip or per-type-cap
-                        # skip doesn't prove the file's full id set.
-                        if canon_path is not None and (
-                            prior := dupe_ids_by_path.get(
-                                str(ref.record_type), {}
-                            ).get(canon_path)
-                        ):
-                            stale_dupe_candidates.setdefault(
-                                ref.record_type, set()
-                            ).update(prior)
-                        # Stamp the sentinel only on a successful parse+sync (a
-                        # failed parse stays index_required and is retried) AND
-                        # only after the row commits — defer to the post-commit
-                        # stamp below so a crash before commit leaves no sentinel.
-                        _pending_hashes.append(probe)
-                    except Exception:
-                        acc["errors"] += 1
-                        # Make failures observable, but cap the full traceback to
-                        # the first few per type so a pathological tree (thousands
-                        # of unparseable files) can't flood the log; the one-line
-                        # warning still counts every failure.
-                        logging.warning(
-                            "indexer: failed to index %s (%s)",
-                            getattr(ref, "path", ref),
-                            ref.record_type,
-                            exc_info=acc["errors"] <= 5,
-                        )
-                    acc["duration_ms"] += (time.perf_counter() - t_start) * 1000
-
+                if ref_id is None or probe is None:
+                    acc["errors"] += 1
                     await emit()
+                    continue
 
-                    # Bounded-batch commit: flush this batch's FTS then commit the
-                    # session, releasing the writer lock so concurrent requests
-                    # aren't starved (see batch rationale above the loop).
-                    _since_commit += 1
-                    if _since_commit >= _INDEX_COMMIT_BATCH:
-                        await _commit_batch()
-                        _since_commit = 0
+                # Track this id as "seen" before any skip/index decision so the
+                # orphan check post-loop won't false-positive a fresh-skip as
+                # missing.
+                if ref_id:
+                    seen_ids.setdefault(ref.record_type, set()).add(ref_id)
+
+                if (str(ref.record_type), ref_id, canon_path) in duplicate_paths:
+                    acc["skipped"] += 1
+                    await emit()
+                    continue
+
+                if fresh:
+                    acc["skipped"] += 1
+                    # seen_ids already holds ref_id (added above), so a fresh
+                    # skip is not misclassified as orphan.
+                    await emit()
+                    continue
+
+                t_start = time.perf_counter()
+                try:
+                    # Loop is gated by _has_dispatch → from_disk_fn is set.
+                    from_disk = info.from_disk_fn
+                    if asyncio.iscoroutinefunction(from_disk):
+                        records = await from_disk(ref)
+                    else:
+                        records = await asyncio.to_thread(from_disk, ref)
+                    # Walk-time scope/project_id from the FSRef parent-chain.
+                    # Loop-invariant — read once, stamp on each record.
+                    ref_scope = ref.scope
+                    ref_pid = ref.project_id
+                    if ref_pid is not None and project_mounts:
+                        # Association rule: deepest project wins. The walk
+                        # root's project may be an umbrella containing a
+                        # nested project — re-associate to the innermost
+                        # mount that contains this record's path.
+                        try:
+                            ref_pid = deepest_project_id_for_path(
+                                canonical_posix_path(str(ref._path)),
+                                project_mounts,
+                                default=ref_pid,
+                            )
+                        except OSError:
+                            pass
+                    # Enclosure-derived parenthood: a repo asset physically
+                    # nested inside another repo asset's folder inherits it as
+                    # its parent, so a child re-indexed purely from disk (e.g.
+                    # received without an ``entities.json`` envelope) is still
+                    # parented. Loop-invariant — derive once from the FSRef
+                    # parent chain. Only when the enclosing ref is itself a
+                    # repo asset (not the walk root).
+                    parent_typeid = ref_typeid(getattr(ref, "_parent", None))
+                    for rec in records:
+                        # Identity was resolved exactly once before payload
+                        # extraction. Parsers may still expose legacy/raw ids
+                        # during migration, but those values cannot reach DB.
+                        object.__setattr__(rec, "id", ref_id)
+                        if ref_scope is not None:
+                            object.__setattr__(rec, "scope", ref_scope)
+                        if parent_typeid and not getattr(rec, "parent_type_id", None):
+                            object.__setattr__(rec, "parent_type_id", parent_typeid)
+                        if ref_pid is not None:
+                            object.__setattr__(rec, "project_id", ref_pid)
+                        elif not getattr(rec, "project_id", None) and (
+                            # No project-scoped ancestor in the FSRef chain
+                            # (e.g. codex/copilot sessions expanded under
+                            # USER_HOME_FOLDER, received transcripts). If the
+                            # record names a cwd, resolve its owning project
+                            # so it scopes + yields a project tab like a
+                            # locally-indexed claude session does.
+                            cwd_pid := resolve_project_id_for_cwd(getattr(rec, "cwd", None))
+                        ):
+                            object.__setattr__(rec, "project_id", cwd_pid)
+                        await rec.sync_to_db(fts_batch=fts_batch, notify=False)
+                    acc["indexed"] += len(records)
+                    # Same-path reconciliation: a successful parse enumerates
+                    # the file's COMPLETE record set (all landed in seen_ids
+                    # just above), so any other pre-existing id anchored to
+                    # this exact path is a stale-duplicate candidate. Only
+                    # parsed refs nominate — a fresh-skip or per-type-cap
+                    # skip doesn't prove the file's full id set.
+                    if canon_path is not None and (
+                        prior := dupe_ids_by_path.get(
+                            str(ref.record_type), {}
+                        ).get(canon_path)
+                    ):
+                        stale_dupe_candidates.setdefault(
+                            ref.record_type, set()
+                        ).update(prior)
+                    # Stamp the sentinel only on a successful parse+sync (a
+                    # failed parse stays index_required and is retried) AND
+                    # only after the row commits — defer to the post-commit
+                    # stamp below so a crash before commit leaves no sentinel.
+                    _pending_hashes.append(probe)
+                except Exception:
+                    acc["errors"] += 1
+                    # Make failures observable, but cap the full traceback to
+                    # the first few per type so a pathological tree (thousands
+                    # of unparseable files) can't flood the log; the one-line
+                    # warning still counts every failure.
+                    logging.warning(
+                        "indexer: failed to index %s (%s)",
+                        getattr(ref, "path", ref),
+                        ref.record_type,
+                        exc_info=acc["errors"] <= 5,
+                    )
+                acc["duration_ms"] += (time.perf_counter() - t_start) * 1000
+
+                await emit()
+
+                # Bounded-batch commit: flush this batch's FTS then commit the
+                # session, releasing the writer lock so concurrent requests
+                # aren't starved (see batch rationale above the loop).
+                _since_commit += 1
+                if _since_commit >= _INDEX_COMMIT_BATCH:
+                    await _commit_batch()
+                    _since_commit = 0
 
             # Commit + stamp the trailing partial batch (records since the last
             # bounded-batch commit). The commit was implicit on session exit
