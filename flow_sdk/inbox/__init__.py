@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import weakref
 from datetime import datetime
 from typing import TYPE_CHECKING, Optional
 
@@ -42,8 +43,24 @@ logger = logging.getLogger(__name__)
 
 # Serializes compute→compare→save so two concurrent recomputes can't interleave
 # a stale save over a fresher one. Process-local is enough: the backend is the
-# single writer of the projection.
-_recompute_lock = asyncio.Lock()
+# single writer of the projection. Keyed per running event loop rather than one
+# module-global Lock: an asyncio.Lock is loop-scoped, and a single module Lock
+# breaks under per-test event loops — a loop torn down while a fire-and-forget
+# recompute holds the lock leaves it locked+bound to a dead loop forever, and
+# every later acquire from a new loop raises "bound to a different event loop".
+# In the backend's single long-lived loop this is identical to one Lock.
+_recompute_locks: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Lock]" = (
+    weakref.WeakKeyDictionary()
+)
+
+
+def _recompute_lock() -> asyncio.Lock:
+    loop = asyncio.get_running_loop()
+    lock = _recompute_locks.get(loop)
+    if lock is None:
+        lock = asyncio.Lock()
+        _recompute_locks[loop] = lock
+    return lock
 
 
 def viewer_email() -> Optional[str]:
@@ -193,7 +210,7 @@ async def recompute_unread(reason: str, owner: "TypeId | None" = None) -> "Inbox
     awaited form is for callers that need the fresh value."""
     from flow_sdk.builtin.inbox_manager import InboxManager  # noqa: PLC0415
 
-    async with _recompute_lock:
+    async with _recompute_lock():
         manager = await InboxManager.get_local()
         unread = await _load_and_count()
         if manager.unread != unread:
