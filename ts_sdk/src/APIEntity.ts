@@ -46,6 +46,12 @@ export interface EntityMember {
   status?: string | null;
   [key: string]: unknown;
 }
+
+/** One backend-ranked on-disk occurrence of an asset identity. */
+export interface AssetOccurrence {
+  path: string;
+  first_seen_at: string;
+}
 import { defineGlobal } from './utils/globals';
 import { WikiLink } from './types/wiki';
 
@@ -118,6 +124,10 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
   orphan?: boolean;
   /** ISO 8601 timestamp of the last ``orphan = true`` transition; null otherwise. */
   orphan_since?: string | null;
+  /** Backend-owned live paths for this asset identity, including the primary. */
+  asset_occurrences?: AssetOccurrence[];
+  /** Number of non-primary live paths. The frontend displays, but never derives, it. */
+  duplicate_count?: number;
   created_by?: string;
   created_date?: Date;
   updated_by?: string;

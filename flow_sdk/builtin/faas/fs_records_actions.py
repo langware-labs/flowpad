@@ -2261,6 +2261,8 @@ async def discover_record_by_path(record_type: str, path: str, *, notify: bool =
     pushes a ``data_op_msg`` (bumped ``updated_date``) to watching clients.
     """
     import asyncio as _asyncio  # noqa: PLC0415
+    from datetime import datetime as _datetime  # noqa: PLC0415
+    from datetime import timezone as _timezone  # noqa: PLC0415
 
     import flow_sdk.fs_store.indexer.registrations  # noqa: F401, PLC0415 — trigger auto-registration
     from flow_sdk.fs_store.fs_ref import FSRef as _FSRef  # noqa: PLC0415
@@ -2296,27 +2298,77 @@ async def discover_record_by_path(record_type: str, path: str, *, notify: bool =
                 )
                 resolved_id = _info.extract_id(one_ref) or _info.mint_id(one_ref)
 
-                # Match the full indexer's duplicate rule: a live DB source
-                # wins; a second path carrying the same type+id is observable
-                # but is neither parsed nor rewritten.
+                # Match the full indexer's deterministic primary ranking. A
+                # non-primary path remains observable but is neither parsed nor
+                # rewritten.
                 from flow_sdk.db import get_db_driver  # noqa: PLC0415
-                from flow_sdk.fs_store.indexer.index_function import (  # noqa: PLC0415
-                    duplicate_asset_paths,
+                from flow_sdk.fs_store.asset_occurrences import (  # noqa: PLC0415
+                    resolve_asset_collisions,
+                    stored_asset_occurrences,
                 )
+                from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
+                from flow_sdk.utils.git import git_asset_introduction  # noqa: PLC0415
                 _driver = get_db_driver()
+                _stored = {}
                 if hasattr(_driver, "list_entity_sources_by_type"):
                     _sources = await _driver.list_entity_sources_by_type(record_type)
-                    _existing = {
-                        record_type: {
-                            eid: source[0]
-                            for eid, source in _sources.items()
-                            if source and source[0]
-                        }
-                    }
-                    if duplicate_asset_paths(
-                        [(record_type, resolved_id, expanded)], _existing,
+                    _stored = stored_asset_occurrences(record_type, _sources)
+
+                def _resolve_target():
+                    def _identity(candidate):
+                        if not isinstance(candidate, str):
+                            return record_type, resolved_id, canonical_posix_path(expanded)
+                        candidate_ref = _FSRef(
+                            candidate,
+                            record_type=_RT(record_type),
+                            scope=classify_path(candidate),
+                        )
+                        candidate_id = _info.extract_id(candidate_ref)
+                        if not candidate_id:
+                            return None
+                        return record_type, candidate_id, canonical_posix_path(candidate)
+
+                    return resolve_asset_collisions(
+                        [(record_type, resolved_id, expanded)],
+                        _stored,
+                        _identity,
+                        git_asset_introduction,
+                        _datetime.now(_timezone.utc),
+                    )
+
+                _decisions = await _asyncio.to_thread(_resolve_target)
+                _decision = next(
+                    (
+                        item for item in _decisions
+                        if item.type_name == record_type and item.entity_id == resolved_id
+                    ),
+                    None,
+                )
+                async def _reflect_collision() -> None:
+                    if _decision is None or not _decision.changed:
+                        return
+                    _entity = await _driver.get_by_id(resolved_id, record_type)
+                    if _entity is not None and hasattr(
+                        _entity, "reflect_asset_occurrences"
                     ):
-                        return None
+                        await _entity.reflect_asset_occurrences(
+                            _decision.occurrences, notify=notify,
+                        )
+
+                if _decision is not None and _decision.duplicate_paths:
+                    logging.warning(
+                        "[asset-id] duplicate asset id; type=%s id=%s kept=%s skipped=%s",
+                        record_type,
+                        resolved_id,
+                        _decision.primary_path,
+                        ",".join(_decision.duplicate_paths),
+                    )
+                if (
+                    _decision is not None
+                    and canonical_posix_path(expanded) != _decision.primary_path
+                ):
+                    await _reflect_collision()
+                    return None
 
                 recs = _from_disk(one_ref, resolved_id)
                 if _asyncio.iscoroutine(recs):
@@ -2329,7 +2381,6 @@ async def discover_record_by_path(record_type: str, path: str, *, notify: bool =
                     deepest_project_id_for_path,
                     load_project_mounts,
                 )
-                from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
                 try:
                     owner_pid = deepest_project_id_for_path(
                         canonical_posix_path(expanded), await load_project_mounts()
@@ -2350,6 +2401,7 @@ async def discover_record_by_path(record_type: str, path: str, *, notify: bool =
                     except Exception as _se:
                         logging.debug(f"[fs-records] targeted sync skipped for {record_type}: {_se}")
                     if synced and _normalize_asset_path(ref_path) == target_norm:
+                        await _reflect_collision()
                         return rec
             except Exception as e:
                 logging.debug(f"[fs-records] targeted parse failed for {record_type} @ {expanded}: {e}")

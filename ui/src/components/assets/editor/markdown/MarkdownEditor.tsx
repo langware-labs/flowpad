@@ -27,6 +27,7 @@ import { genericEntityShareSource } from '@src/hooks/share-sources';
 import { useTheme } from 'next-themes';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
+import { AssetCollisionBadge, useAssetCollisionSideTab } from '../AssetCollisionUI';
 
 export const EDITOR_MODES = ['view', 'review', 'editor', 'markdown', 'learning'] as const;
 export type EditorMode = (typeof EDITOR_MODES)[number];
@@ -387,9 +388,11 @@ function MarkdownEditorContent({
     ),
   }), [revisionStatus, gitComputeNodeId, gitFileDir, gitFileName, reload]);
 
+  const collisionTab = useAssetCollisionSideTab();
+
   const allSideTabs = useMemo(
-    () => [revisionsTab, ...(extraSideTabs ?? [])],
-    [revisionsTab, extraSideTabs],
+    () => [revisionsTab, ...(collisionTab ? [collisionTab] : []), ...(extraSideTabs ?? [])],
+    [revisionsTab, collisionTab, extraSideTabs],
   );
 
   const shareSource = useMemo(() => {
@@ -937,6 +940,7 @@ function EditorHeader({ fileName, entityType, dirPath, dirty, viewMode, onViewMo
           {TypeIcon && <TypeIcon className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />}
           <span className="truncate text-sm font-medium" title={fileName}>{fileName}</span>
           {dirty && <span className="text-sm text-amber-500">*</span>}
+          <AssetCollisionBadge />
           {advanced && nameExtras}
         </div>
         <div className="flex min-w-0 items-center gap-1">

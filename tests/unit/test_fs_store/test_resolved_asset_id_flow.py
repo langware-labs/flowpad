@@ -86,5 +86,10 @@ async def test_targeted_discover_warns_and_skips_live_duplicate(
 
     assert record is None
     assert _resolved_id(duplicate) == asset_id
-    assert set(await md_sources()) == {asset_id}
+    sources = await md_sources()
+    assert set(sources) == {asset_id}
+    assert [item["path"] for item in sources[asset_id][3]] == [
+        str(incumbent.resolve()),
+        str(duplicate.resolve()),
+    ]
     assert "duplicate asset id" in caplog.text
