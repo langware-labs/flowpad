@@ -114,13 +114,15 @@ _LEGACY_HEADER_FILE = "header.json"
 # row overrides). They carry their entity JSON via that path, so they are
 # excluded from the ``entities.json`` metadata axis (no double-carry, no overlay
 # re-applying their sender-local host ids).
-_HEADER_SERIALIZED_TYPES = frozenset({
-    "conversation",
-    "flow_message",
-    "claude_session",
-    "flowpad_diagnosis",
-    "remote_worker_session",
-})
+_HEADER_SERIALIZED_TYPES = frozenset(
+    {
+        "conversation",
+        "flow_message",
+        "claude_session",
+        "flowpad_diagnosis",
+        "remote_worker_session",
+    }
+)
 
 
 def _is_git_origin_dict(raw) -> bool:
@@ -1050,9 +1052,7 @@ async def index_attachments(attachments: "list[ReceivedAsset]", *, project_id: s
             if item.scope == AttachmentScope.PROJECT.value:
                 await _reindex_received_assets(item.root, types, project_id=project_id)
             else:
-                await _reindex_root(
-                    item.root, RecordType.USER_HOME_FOLDER, types=types, project_id=project_id
-                )
+                await _reindex_root(item.root, RecordType.USER_HOME_FOLDER, types=types, project_id=project_id)
         if item.git_origin:
             origins = {item.entry_key: item.git_origin}
             entries = {(item.asset_type, item.asset_id)}
@@ -1741,9 +1741,7 @@ async def _stage_attachment(
     else:
         info = SchemaRegistry.get(entry_type)
         asset_class = info._resolved_layout[0] if info else None
-        ma.user_scope_allowed = user_scope_allowed_policy(
-            asset_class, is_git=transfer_mode == TransferMode.GIT.value
-        )
+        ma.user_scope_allowed = user_scope_allowed_policy(asset_class, is_git=transfer_mode == TransferMode.GIT.value)
     await ma.save(owner_typeid, notify=False)
     return ma
 
@@ -2551,6 +2549,22 @@ async def unpack_bundle(
             ),
             None,
         )
+        # If the receiver already bound this conversation to a local project
+        # (picked one for an earlier attachment), every attachment in it — now
+        # and later — installs straight into that project instead of staying
+        # staged / user-scoped. Best-effort: a lookup miss falls back to the
+        # unbound staging path.
+        bound_project_id = None
+        if staging_conv_id:
+            try:
+                _bound_conv = await Conversation.get_one({"id": staging_conv_id})
+                bound_project_id = getattr(_bound_conv, "project_id", None) or None
+            except Exception:
+                logger.warning(
+                    "[unpack] bound-project lookup failed for conv %s; staging unbound",
+                    staging_conv_id,
+                    exc_info=True,
+                )
         staged_mas: list = []
 
         # Git provenance/placement map (type-@id -> GitOrigin dict). Optional; only
@@ -2655,21 +2669,20 @@ async def unpack_bundle(
                     if name in git_transfers_map:
                         continue  # staged above as a git-transfer attachment
                     snap_name, snap_desc = _attachment_snapshot(entry_dir, entry_type)
-                    staged_mas.append(
-                        await _stage_attachment(
-                            top_fm_id=top_fm_id,
-                            conversation_id=staging_conv_id,
-                            entry_key=name,
-                            entry_type=entry_type,
-                            entry_id=entry_id,
-                            unpacked_path=fm_data_ops.staged_entry_rel_path(name),
-                            name=snap_name,
-                            description=snap_desc,
-                            git_origin=(git_origins_map.get(name) or None),
-                            create_bookmark=create_bookmark,
-                            owner_typeid=owner_typeid,
-                        )
+                    file_ma = await _stage_attachment(
+                        top_fm_id=top_fm_id,
+                        conversation_id=staging_conv_id,
+                        entry_key=name,
+                        entry_type=entry_type,
+                        entry_id=entry_id,
+                        unpacked_path=fm_data_ops.staged_entry_rel_path(name),
+                        name=snap_name,
+                        description=snap_desc,
+                        git_origin=(git_origins_map.get(name) or None),
+                        create_bookmark=create_bookmark,
+                        owner_typeid=owner_typeid,
                     )
+                    staged_mas.append(file_ma)
                     # TASK rides the generic staged→install→reindex path like any
                     # folder asset, BUT a collaboration bundle also carries a
                     # CONVERSATION whose branch (below) wants the Task row to exist
@@ -2704,6 +2717,27 @@ async def unpack_bundle(
                                 ("id", "type", "project_id", "status"),
                             ):
                                 await existing_task.save(owner_typeid)
+                    # Conversation already bound to a project → install this
+                    # attachment straight in instead of leaving it staged.
+                    if bound_project_id and file_ma.id:
+                        from flow_sdk.app.actions.message_attachment_action import (  # noqa: PLC0415
+                            handle_attachment_install,
+                        )
+
+                        _res = await handle_attachment_install(
+                            file_ma.id,
+                            "project",
+                            bound_project_id,
+                            overwrite=overwrite,
+                            someone_typeid=owner_typeid,
+                        )
+                        if getattr(_res, "status", None) != "SUCCESS":
+                            logger.warning(
+                                "[unpack] conv-bound auto-install failed for %s-%s: %s",
+                                entry_type,
+                                entry_id,
+                                getattr(_res, "message", _res),
+                            )
                     continue
 
                 if getattr(SchemaRegistry.get(entry_type), "receive_policy", None) == "auto":
@@ -2736,13 +2770,22 @@ async def unpack_bundle(
                         handle_attachment_install,
                     )
 
+                    # A conversation bound to a project claims its auto payloads
+                    # too; otherwise they install user-scoped as before.
+                    _auto_scope, _auto_pid = ("project", bound_project_id) if bound_project_id else ("user", None)
                     res = await handle_attachment_install(
-                        ma.id, "user", None, overwrite=overwrite, someone_typeid=owner_typeid,
+                        ma.id,
+                        _auto_scope,
+                        _auto_pid,
+                        overwrite=overwrite,
+                        someone_typeid=owner_typeid,
                     )
                     if getattr(res, "status", None) != "SUCCESS":
                         logger.warning(
                             "[unpack] auto-install failed for %s-%s: %s",
-                            entry_type, entry_id, getattr(res, "message", res),
+                            entry_type,
+                            entry_id,
+                            getattr(res, "message", res),
                         )
 
                 elif entry_type == EntityType.REMOTE_WORKER_SESSION.value:
