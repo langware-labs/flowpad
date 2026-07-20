@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
 from flow_sdk._compat import UTC
+from flow_sdk import inbox
 from flow_sdk.actions.action_registry import action
 from flow_sdk.builtin.conversation import Conversation
 from flow_sdk.builtin.flow_message import AttachmentType, BodyStatus, DeliveryStatus, FlowMessage, FlowMessageKind
@@ -608,9 +609,7 @@ async def handle_conversation_archive(conversation_id: str, someone_typeid: str)
         return ApiFailResponse(message="Conversation not found")
     conv.archived_at = datetime.now(UTC)
     await conv.save(someone_typeid)
-    with contextlib.suppress(Exception):
-        from flow_sdk.inbox import reconcile
-        await reconcile("conversation-archive")
+    inbox.touch("conversation-archive")
     return ApiSuccessResponse(
         data={
             "conversation_id": conversation_id,
@@ -635,9 +634,7 @@ async def handle_conversation_unarchive(conversation_id: str, someone_typeid: st
         return ApiFailResponse(message="Conversation not found")
     conv.archived_at = None
     await conv.save(someone_typeid)
-    with contextlib.suppress(Exception):
-        from flow_sdk.inbox import reconcile
-        await reconcile("conversation-unarchive")
+    inbox.touch("conversation-unarchive")
     return ApiSuccessResponse(
         data={
             "conversation_id": conversation_id,
@@ -664,9 +661,7 @@ async def handle_conversation_archive_all(someone_typeid: str) -> ApiResponse:
         conv.archived_at = now
         await conv.save(someone_typeid)
         archived += 1
-    with contextlib.suppress(Exception):  # one reconcile after the batch
-        from flow_sdk.inbox import reconcile
-        await reconcile("conversation-archive-all")
+    inbox.touch("conversation-archive-all")
     return ApiSuccessResponse(
         data={
             "archived": archived,
@@ -1928,9 +1923,7 @@ async def handle_inbox_update(fm_id: str, patch: dict, someone_typeid: str) -> A
     if "is_archived" in patch:
         fm.is_archived = bool(patch["is_archived"])
     await fm.save(someone_typeid)
-    with contextlib.suppress(Exception):  # projection repair must never fail the mutation
-        from flow_sdk.inbox import reconcile
-        await reconcile("inbox-update")
+    inbox.touch("inbox-update")
     return ApiSuccessResponse(data={"id": fm_id, "is_read": fm.is_read, "is_archived": fm.is_archived})
 
 
@@ -2102,9 +2095,7 @@ async def handle_inbox_bulk_update(patch: dict, someone_typeid: str) -> ApiRespo
         if changed:
             await fm.save(someone_typeid)
             count += 1
-    with contextlib.suppress(Exception):  # one reconcile per bulk op, after all saves
-        from flow_sdk.inbox import reconcile
-        await reconcile("inbox-bulk-update")
+    inbox.touch("inbox-bulk-update")
     return ApiSuccessResponse(data={"updated": count})
 
 
@@ -3370,9 +3361,7 @@ async def handle_conversation_list(someone_typeid) -> ApiResponse:
 
     # (f) one unread reconcile for the whole batch — invitations materialized
     # in (d) and conversations pruned in (e) both change the projection.
-    with contextlib.suppress(Exception):
-        from flow_sdk.inbox import reconcile
-        await reconcile("conversation-list")
+    inbox.touch("conversation-list")
 
     # return the freshly-merged list.
     merged = await Conversation.get_all({})
@@ -3451,6 +3440,40 @@ async def handle_conversation_sync(someone_typeid: str) -> ApiResponse:
     )
 
 
+async def _announce_new_invitations(fresh_invitations: list) -> None:
+    """OS notification for NEWLY arrived invitations addressed to this viewer.
+
+    The Layer-2 invitation consumer of the generic notification service: a
+    pending invite rides the invitation op — it never reaches the inbound
+    flow_message notify path. One banner per new invite; clicking opens the
+    Inbox (where Accept lives). Re-syncs of already-known invitations stay
+    silent (callers pass only newly-materialized rows). Failure-isolated:
+    a notify hiccup never fails the sync that discovered the invitation.
+    """
+    if not fresh_invitations:
+        return
+    with contextlib.suppress(Exception):
+        from flow_sdk.inbox import invitation_is_pending, viewer_email
+        from flow_sdk.notifications import notify_desktop
+
+        email = viewer_email()
+        now = datetime.now(UTC)
+        for local_inv in fresh_invitations:
+            if not invitation_is_pending(local_inv, email, now):
+                continue
+            inviter = (getattr(local_inv, "inviter_name", None) or "").strip() or "Someone"
+            if local_inv.target_type and local_inv.target_id:
+                body = f"Invitation to join {local_inv.target_name or local_inv.target_type}"
+            else:
+                body = (local_inv.message or "").strip() or "New conversation request"
+            await notify_desktop(
+                "invitation",
+                title=f"{inviter} invited you",
+                body=body,
+                click_target={"view_type": "inbox"},
+            )
+
+
 async def handle_invitation_sync(someone_typeid: str) -> ApiResponse:
     """Pull pending invitations only — no inbox-fetch.
 
@@ -3489,36 +3512,9 @@ async def handle_invitation_sync(someone_typeid: str) -> ApiResponse:
         except Exception as e:
             logger.warning("[invitation-sync] upsert failed: %s", e)
     await _prune_expired_invitations()
-    with contextlib.suppress(Exception):  # pending invitations count as unread pre-accept
-        from flow_sdk.inbox import reconcile
-        await reconcile("invitation-sync")
+    inbox.touch("invitation-sync")
 
-    # OS notification for NEWLY arrived invitations addressed to this viewer.
-    # A pending invite rides the invitation op — it never reaches the inbound
-    # flow_message notify path — so this is its Layer-2 consumer of the generic
-    # notification service. One banner per new invite; clicking opens the Inbox
-    # (where Accept lives). Re-syncs of already-known invitations stay silent.
-    if fresh_invitations:
-        with contextlib.suppress(Exception):
-            from flow_sdk.inbox import invitation_is_pending, viewer_email
-            from flow_sdk.server.routes.websocket import notify_desktop
-
-            email = viewer_email()
-            now = datetime.now(UTC)
-            for local_inv in fresh_invitations:
-                if not invitation_is_pending(local_inv, email, now):
-                    continue
-                inviter = (getattr(local_inv, "inviter_name", None) or "").strip() or "Someone"
-                if local_inv.target_type and local_inv.target_id:
-                    body = f"Invitation to join {local_inv.target_name or local_inv.target_type}"
-                else:
-                    body = (local_inv.message or "").strip() or "New conversation request"
-                await notify_desktop(
-                    "invitation",
-                    title=f"{inviter} invited you",
-                    body=body,
-                    click_target={"view_type": "inbox"},
-                )
+    await _announce_new_invitations(fresh_invitations)
     return ApiSuccessResponse(data={"invitations": inv_count})
 
 

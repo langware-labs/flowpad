@@ -1,28 +1,34 @@
-"""Inbox unread reconciliation — the ONLY publisher of ``InboxManager.unread``.
+"""Inbox unread projection — the ONLY publisher of ``InboxManager.unread``.
 
-Two functions, no repository framework:
+The whole surface, no repository framework:
 
-* ``reconcile(reason)``     — full recompute from canonical rows → save iff changed.
+* ``touch(reason)``            — what every mutation site calls: one line,
+  fire-and-forget, failure-isolated recompute+publish.
+* ``recompute_unread(reason)`` — the awaited form (bootstrap/startup repair,
+  accept transition): full recompute from canonical rows → save iff changed.
 * ``accept_mark_preview_read(...)`` — the invitation-accept transition (mark the
-  *verified* preview read + the Invitation accepted), then reconcile.
+  *verified* preview read + the Invitation accepted), then recompute.
+* ``count_unread(...)`` / ``invitation_is_pending(...)`` — the pure formula
+  (table-tested, no DB). Conversation-domain rules (pointer parsing, archive
+  auto-revive) live on the ``Conversation`` entity itself
+  (``message_pointers()`` / ``is_archived()``), not here.
 
 The counting formula deliberately mirrors the frontend row facets
 (``ui/src/components/conversation/conversation-category.ts`` ``conversationFacets``)
 so the scalar and the rendered Unread list can never disagree:
 
-    unread = active conversations whose latest pointer-backed message is
-             unread-received (one per conversation; a pending conversation-
-             invitation row always counts as one)
-           + pending standalone (membership/entity-share) invitations
+    unread = pending invitations (conversation + membership, one each)
+           + active conversations whose latest pointer-backed message is
+             unread-received (one per conversation; invite-pending
+             conversations are excluded — already counted via the invitation)
 
-Never deltas — every reconcile recomputes from scratch, so duplicate hub
-events, catch-up, retries, and restarts all converge to the same value.
+Never deltas — every recompute starts from scratch, so duplicate hub events,
+catch-up, retries, and restarts all converge to the same value.
 """
 
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 from datetime import datetime
 from typing import TYPE_CHECKING, Optional
@@ -34,13 +40,11 @@ if TYPE_CHECKING:  # pragma: no cover
 
 logger = logging.getLogger(__name__)
 
-# Serializes compute→compare→save so two concurrent reconciles can't interleave
+# Serializes compute→compare→save so two concurrent recomputes can't interleave
 # a stale save over a fresher one. Process-local is enough: the backend is the
 # single writer of the projection.
-_reconcile_lock = asyncio.Lock()
+_recompute_lock = asyncio.Lock()
 
-
-# ── viewer identity ──────────────────────────────────────────────────────────
 
 def viewer_email() -> Optional[str]:
     """Normalized email of the active cloud account, or None when logged out.
@@ -61,53 +65,7 @@ def viewer_email() -> Optional[str]:
         return None
 
 
-# ── pointer / archive helpers ────────────────────────────────────────────────
-
-def _pointers(conv) -> list[dict]:
-    """Parse ``Conversation.message_ids`` (JSON list of ``{"typeid","ts"}``,
-    oldest-first). Empty list on missing/corrupt projections."""
-    if not conv.message_ids:
-        return []
-    try:
-        ptrs = json.loads(conv.message_ids)
-        return ptrs if isinstance(ptrs, list) else []
-    except (json.JSONDecodeError, TypeError):
-        return []
-
-
-def _pointer_fm_id(ptr: dict) -> Optional[str]:
-    """``flow_message-<id>`` → ``<id>`` with the local ``@`` marker stripped."""
-    typeid = str(ptr.get("typeid") or "")
-    if "-" not in typeid:
-        return None
-    ptype, pid = typeid.split("-", 1)
-    return pid.lstrip("@") or None if ptype == "flow_message" else None
-
-
-def _parse_ts(value) -> Optional[datetime]:
-    if not value:
-        return None
-    try:
-        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-    except ValueError:
-        return None
-
-
-def _is_effectively_archived(conv, latest_ts: Optional[datetime]) -> bool:
-    """Conversation-level archive with auto-revive: hidden until a message
-    NEWER than ``archived_at`` lands (same comparison as the FE facets —
-    a missing/unparseable latest ts counts as not-revived)."""
-    if conv.archived_at is None:
-        return False
-    if latest_ts is None:
-        return True
-    archived_at = conv.archived_at
-    if latest_ts.tzinfo is None or archived_at.tzinfo is None:
-        latest_ts, archived_at = latest_ts.replace(tzinfo=None), archived_at.replace(tzinfo=None)
-    return latest_ts <= archived_at
-
-
-# ── the count (pure core — REPL/table-testable with plain objects) ──────────
+# ── the formula (pure — REPL/table-testable with plain objects) ─────────────
 
 def invitation_is_pending(inv, viewer_email: Optional[str], now: datetime) -> bool:
     """Pending = unaccepted, unexpired (vs the injected clock), addressed to
@@ -134,21 +92,14 @@ def count_unread(
     viewer_email: Optional[str],
     now: datetime,
 ) -> int:
-    """The unread formula — pure, over plain rows (the fetch lives in
-    ``_compute_unread``). Mirrors the FE ``conversationFacets`` exactly:
-
-        unread = active conversations whose latest pointer-backed message is
-                 unread-received (a pending conversation-invite row is always
-                 one actionable item)
-               + pending standalone (membership/entity-share) invitations
-    """
+    """The unread formula — pure, over entity rows (the fetch lives in
+    ``_load_and_count``). Mirrors the FE ``conversationFacets`` exactly."""
     pending = [inv for inv in invitations if invitation_is_pending(inv, viewer_email, now)]
 
     # Every pending invitation is one actionable unread item, counted DIRECTLY —
     # never through its conversation row. A conversation invite's placeholder
-    # conversation may not be materialized yet (or has no pointer projection:
-    # _materialize_invitation only inits the jsonl), and gating the count on
-    # that state made a brand-new invitation invisible to the badge.
+    # conversation may not be materialized (or has no pointer projection yet),
+    # and gating on that state made a brand-new invitation invisible.
     # Membership invites (target_type/target_id) have no conversation at all.
     pending_conv_ids = {
         (inv.target_url_path or "").removeprefix("/conversation/")
@@ -163,15 +114,15 @@ def count_unread(
             # Already counted as the pending invitation — skip so the unread
             # preview message can't double-count the same item.
             continue
-        ptrs = _pointers(conv)
-        if not ptrs:
+        pointers = conv.message_pointers()
+        if not pointers:
             continue
-        if _is_effectively_archived(conv, _parse_ts(ptrs[-1].get("ts"))):
+        if conv.is_archived():
             continue
-        latest = fm_by_id.get(_pointer_fm_id(ptrs[-1]) or "")
+        latest = fm_by_id.get(pointers[-1].fm_id)
         if latest is None or getattr(latest, "is_draft", False):
             # Not materialized yet — don't fall back to an older message; the
-            # post-materialization reconcile picks it up.
+            # post-materialization recompute picks it up.
             continue
         if not latest.is_read and latest.sender_id and latest.sender_id not in self_ids:
             unread += 1
@@ -179,7 +130,8 @@ def count_unread(
     return unread
 
 
-async def _compute_unread() -> int:
+async def _load_and_count() -> int:
+    """Fetch the canonical rows and run the pure formula over them."""
     from datetime import timezone  # noqa: PLC0415
 
     from flow_sdk.builtin.conversation import Conversation  # noqa: PLC0415
@@ -207,18 +159,43 @@ async def _compute_unread() -> int:
 
 # ── public surface ───────────────────────────────────────────────────────────
 
-async def reconcile(reason: str, owner: "TypeId | None" = None) -> "InboxManager":
-    """Recompute ``InboxManager.unread`` and publish iff the value changed.
+def touch(reason: str) -> None:
+    """THE one call a mutation site makes after changing read-state.
 
-    Safe to call after ANY read-state mutation; cheap when nothing changed
-    (no save, no data_op). Failure-isolated at call sites — a reconcile
-    hiccup must never fail the mutation that triggered it.
+    Fire-and-forget: schedules :func:`recompute_unread` as a detached task,
+    fully failure-isolated — a projection hiccup can never fail or slow the
+    mutation that triggered it. Call sites need exactly this one line (no
+    await, no try/except, no local import ceremony):
+
+        inbox.touch("inbox-update")
+
+    Use the awaited :func:`recompute_unread` directly only where the caller
+    must observe the fresh value before proceeding (bootstrap/startup repair).
     """
+    async def _run() -> None:
+        try:
+            await recompute_unread(reason)
+        except Exception:  # noqa: BLE001
+            logger.warning("[inbox] recompute failed (%s)", reason, exc_info=True)
+
+    try:
+        asyncio.get_running_loop().create_task(_run())
+    except RuntimeError:
+        # No running loop (sync/startup context) — the bootstrap/startup
+        # repair recompute converges the projection.
+        logger.debug("[inbox] touch(%s) skipped — no running event loop", reason)
+
+
+async def recompute_unread(reason: str, owner: "TypeId | None" = None) -> "InboxManager":
+    """Recompute ``InboxManager.unread`` from canonical rows and publish iff
+    the value changed (at most one entity UPDATE per call; cheap when nothing
+    changed). Mutation call sites should use :func:`touch` instead — this
+    awaited form is for callers that need the fresh value."""
     from flow_sdk.builtin.inbox_manager import InboxManager  # noqa: PLC0415
 
-    async with _reconcile_lock:
+    async with _recompute_lock:
         manager = await InboxManager.get_local()
-        unread = await _compute_unread()
+        unread = await _load_and_count()
         if manager.unread != unread:
             logger.info("[inbox] unread %d -> %d (%s)", manager.unread, unread, reason)
             manager.unread = unread
@@ -238,7 +215,7 @@ async def accept_mark_preview_read(
     Marks the invitation's preview FlowMessage read ONLY when verified — the
     candidate must be ``kind=invitation`` AND reference ``invitation-<id>`` in
     its context entities. Never marks by ordering alone: if nothing verifies,
-    mark nothing and let the next reconcile repair the projection. Membership
+    mark nothing and let the next recompute repair the projection. Membership
     invitations have no preview — only the accepted flag applies.
     """
     from flow_sdk.builtin.conversation import Conversation  # noqa: PLC0415
@@ -261,13 +238,11 @@ async def accept_mark_preview_read(
             preview = candidate
     if preview is None and conversation_id:
         conv = await Conversation.get_by_id(conversation_id)
-        if conv is not None:
-            ptrs = _pointers(conv)
-            first_id = _pointer_fm_id(ptrs[0]) if ptrs else None
-            if first_id:
-                candidate = await FlowMessage.get_by_id(first_id)
-                if _verified(candidate):
-                    preview = candidate
+        pointers = conv.message_pointers() if conv is not None else []
+        if pointers:
+            candidate = await FlowMessage.get_by_id(pointers[0].fm_id)
+            if _verified(candidate):
+                preview = candidate
 
     if preview is not None and not preview.is_read:
         preview.is_read = True
@@ -282,4 +257,4 @@ async def accept_mark_preview_read(
         invitation.accepted = True
         await invitation.save(owner, notify=True)
 
-    await reconcile(f"invitation-accept:{invitation.id}", owner)
+    await recompute_unread(f"invitation-accept:{invitation.id}", owner)

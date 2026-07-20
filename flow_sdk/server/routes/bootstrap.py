@@ -1718,12 +1718,12 @@ async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
         # ``unread`` value is deliberately NOT put in BootstrapInfo (cached 30s)
         # — the FE hydrates it via the normal entity GET/watch channel.
         try:
-            from flow_sdk.inbox import reconcile as _inbox_reconcile
+            from flow_sdk.inbox import recompute_unread as _recompute_unread
 
-            await _inbox_reconcile("bootstrap", user.typeid if user else None)
+            await _recompute_unread("bootstrap", user.typeid if user else None)
         except Exception as e:
-            logging.warning(f"[bootstrap] inbox reconcile failed (non-fatal): {e}")
-        _t.time("inbox_reconcile")
+            logging.warning(f"[bootstrap] inbox recompute failed (non-fatal): {e}")
+        _t.time("inbox_recompute")
 
         sandbox_available = is_sandbox_available()
         sandbox_compute_node: Optional[ComputeNode] = None

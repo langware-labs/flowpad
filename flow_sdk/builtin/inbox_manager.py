@@ -2,8 +2,9 @@
 
 A data-only projection entity: ``unread`` is the ONE number every unread surface
 (sidebar pip, Unread pill, OS dock/launcher badge) renders. It is recomputed and
-published exclusively by ``flow_sdk.inbox.reconcile`` — nothing else writes it,
-and the frontend never computes, increments, or resets it.
+published exclusively by ``flow_sdk.inbox.recompute_unread`` (mutation sites
+call ``inbox.touch(reason)``) — nothing else writes it, and the frontend never
+computes, increments, or resets it.
 
 Deliberately knows nothing about FlowMessages, Conversations, or Invitations:
 the counting formula lives in ``flow_sdk/inbox`` — this class is only the

@@ -17,6 +17,8 @@ import asyncio
 import logging
 import uuid
 from dataclasses import dataclass
+
+from flow_sdk import inbox
 from typing import Any, Callable, Optional
 
 from flow_sdk.cloud_client.ws_client import HubWebSocketManager, hub_ws_manager
@@ -544,11 +546,7 @@ class HubWsBridge:
 
                     # Republish the unread projection now that the row + pointer
                     # projection have settled (never on the intermediate CREATE).
-                    try:
-                        from flow_sdk.inbox import reconcile
-                        await reconcile("inbound-message")
-                    except Exception as _rec_err:  # noqa: BLE001
-                        logger.warning("[bridge] inbox reconcile failed (non-fatal): %s", _rec_err)
+                    inbox.touch("inbound-message")
 
                     # OS-level desktop notification for an inbound message from
                     # *another* user. Emitted HERE — after the message is
@@ -567,7 +565,7 @@ class HubWsBridge:
                         and payload["sender_id"] != local_user.id
                     ):
                         try:
-                            from flow_sdk.server.routes.websocket import notify_desktop
+                            from flow_sdk.notifications import notify_desktop
                             text = " ".join((payload.get("text") or "").split())
                             preview = text if len(text) <= 80 else text[:77] + "..."
                             if not preview:
