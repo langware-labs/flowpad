@@ -622,7 +622,11 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
       <ResizableHandle withHandle />
       <ResizablePanel defaultSize={64} minSize={45}>
         <div className="flex h-full flex-col">
-          <WorkspaceChildStrip processTab={session.processTab} processDock={session.processDock} />
+          <WorkspaceChildStrip
+            processTab={session.processTab}
+            processDock={session.processDock}
+            projectId={project?.id ?? null}
+          />
           <div className="min-h-0 flex-1">
             {/* On the display URL: the agent-driven pin. On a child URL: the
                 child's ContentPanel (chrome-less). */}
