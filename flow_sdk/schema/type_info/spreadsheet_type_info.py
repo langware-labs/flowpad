@@ -1,7 +1,7 @@
 """Type metadata for SPREADSHEET (flat CSV/XLSX file asset)."""
 from typing import List, Optional
 
-from flow_sdk.fs_store.indexer.functions._asset_identity import no_id
+from flow_sdk.fs_store.indexer.functions._asset_identity import derived_identity
 from flow_sdk.fs_store.indexer.functions.spreadsheet import (
     extract_spreadsheet,
     spreadsheet_asset_hash,
@@ -39,7 +39,7 @@ SPREADSHEET = TypeMetadata(
     main_layout="file",
     main_ext=".csv",
     from_disk_fn=extract_spreadsheet,
-    id_from_file_fn=no_id,
+    identity_backend=derived_identity(),
     id_stable_key_fn=spreadsheet_identity_key,
     asset_hash_fn=spreadsheet_asset_hash,
     meta_model=SpreadsheetMeta,

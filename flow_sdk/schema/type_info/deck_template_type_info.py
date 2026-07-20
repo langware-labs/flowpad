@@ -1,7 +1,7 @@
 """Type metadata for DECK_TEMPLATE."""
 from typing import Optional
 
-from flow_sdk.fs_store.indexer.functions._asset_identity import write_folder_capsule
+from flow_sdk.fs_store.indexer.functions._asset_identity import IDENTITY_CAPSULE, capsule_identity, folder_capsule_id
 from flow_sdk.fs_store.indexer.functions.deck_template import (
     deck_template_asset_hash,
     deck_template_id_from_folder,
@@ -36,8 +36,8 @@ DECK_TEMPLATE = TypeMetadata(
     # main file instead of erroring "no main file metadata".
     main_file="template.json",
     from_disk_fn=extract_deck_template,
-    id_from_folder_fn=deck_template_id_from_folder,
-    id_write_fn=write_folder_capsule,
+    capsules=(IDENTITY_CAPSULE,),
+    identity_backend=capsule_identity(folder_capsule_id, deck_template_id_from_folder),
     asset_hash_fn=deck_template_asset_hash,
     meta_model=DeckTemplateMeta,
 )

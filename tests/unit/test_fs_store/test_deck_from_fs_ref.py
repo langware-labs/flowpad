@@ -58,7 +58,7 @@ def test_indexer_compatible_all_fields(tmp_path: Path) -> None:
     ref = FSRef(deck)
     gen = SchemaRegistry.get("deck").mint_id(ref)
     loaded = Deck.from_fs_ref(ref)
-    rec = extract_deck(ref)[0]
+    rec = extract_deck(ref, gen)[0]
     m = rec.meta_dict()["metadata"]
 
     assert loaded.id == gen == rec.id

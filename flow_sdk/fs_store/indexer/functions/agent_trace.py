@@ -68,7 +68,7 @@ def agent_trace_id(ref: FSRef) -> str:
     return _adopt_doc_id(_load_trace(ref._path)) or _trace_id_from_path(ref._path)
 
 
-def extract_agent_trace(ref: FSRef) -> list[FSRecord]:
+def extract_agent_trace(ref: FSRef, resolved_id: str) -> list[FSRecord]:
     """Parse a trace.json into a Record — summary fields only.
 
     FTS content is name + verdict + verdict_reason; the trace payload itself
@@ -80,12 +80,11 @@ def extract_agent_trace(ref: FSRef) -> list[FSRecord]:
     name = str(data.get("name") or path.parent.name)
     verdict = summary.get("verdict")
     verdict_reason = summary.get("verdict_reason")
-    rec_id = _adopt_doc_id(data) or _trace_id_from_path(path)
 
     content_parts = [p for p in (name, verdict, verdict_reason) if p]
     rec = FSRecord(
         type=RecordType.AGENT_TRACE,
-        id=rec_id,
+        id=resolved_id,
         name=name,
         session_id=str(data.get("session_id") or ""),
         worker_type=str(data.get("worker_type") or "claude"),

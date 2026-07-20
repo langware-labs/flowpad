@@ -1,6 +1,7 @@
 """Type metadata for CLAUDE_SESSION."""
 import uuid
 
+from flow_sdk.fs_store.indexer.functions._asset_identity import derived_identity
 from flow_sdk.fs_store.indexer.functions.claude_sessions import (
     claude_session_id_from_file,
     claude_session_stable_key,
@@ -13,7 +14,7 @@ CLAUDE_SESSION = TypeMetadata(
     type=EntityType.CLAUDE_SESSION,
     indexed_by_default=True,
     from_disk_fn=extract_claude_session,
-    id_from_file_fn=claude_session_id_from_file,
+    identity_backend=derived_identity(claude_session_id_from_file),
     id_stable_key_fn=claude_session_stable_key,
     id_namespace=uuid.NAMESPACE_DNS,
     # Shared ClaudeTranscript: row-only passive payload — staged like every

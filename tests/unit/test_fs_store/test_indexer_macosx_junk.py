@@ -84,4 +84,7 @@ def test_extract_markdown_returns_empty_on_binary(tmp_path: Path) -> None:
     """Defense in depth: binary content under .md yields [] instead of raising."""
     p = tmp_path / "binary.md"
     p.write_bytes(_APPLEDOUBLE)
-    assert extract_markdown(FSRef(p, record_type=RecordType.MARKDOWN)) == []
+    assert extract_markdown(
+        FSRef(p, record_type=RecordType.MARKDOWN),
+        "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+    ) == []

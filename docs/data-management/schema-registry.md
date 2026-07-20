@@ -39,8 +39,9 @@ class TypeInfo:
     # --- Runtime refs (NOT in hash, NOT persisted) ---
     entity_cls: type | None = ...     # the Entity subclass (db_base_record)
     post_sync_fn / from_disk_fn / asset_hash_fn / default_body_fn: Any
-    id_from_file_fn / id_from_folder_fn: Any  # pure carrier readers
-    id_stable_key_fn / id_write_fn: Any       # mint policy + carrier writer
+    capsules: tuple[CapsuleSpec, ...]
+    identity_backend: IdentityBackend | None
+    id_stable_key_fn: Any
     id_namespace: UUID
     metadata: Any                     # the TypeMetadata instance it was built from
     meta_model: Any                   # per-type pydantic FS↔DB schema model
@@ -48,9 +49,9 @@ class TypeInfo:
     main_layout: str = "file"         # "file" | "folder"
 ```
 
-There is **no `record_cls` field** — `FSRecord` is now the single concrete record class (no `Record` subclasses), so a per-type record class is no longer registered. Per-type record behavior lives in free functions (`from_disk_fn`, the carrier-specific identity slots, etc.) attached to the `TypeInfo`, not on a subclass.
+There is **no `record_cls` field** — `FSRecord` is now the single concrete record class (no `Record` subclasses), so a per-type record class is no longer registered. Per-type record behavior lives in free functions and declarative runtime slots (`from_disk_fn`, `capsules`, `identity_backend`, etc.) attached to the `TypeInfo`, not on a subclass.
 
-`TypeInfo.extract_id(ref)` is the pure public extraction seam. It chooses `id_from_folder_fn` for folder-backed assets and `id_from_file_fn` otherwise, then passes the candidate through the UUID v4/v5 adoption gate. `TypeInfo.mint_id(ref)` rechecks extraction under a per-asset cross-process lock and is the only filesystem minting seam: deterministic types supply `id_stable_key_fn`/`id_namespace`; portable types supply `id_write_fn`, whose committed value is re-read before return.
+`TypeInfo.extract_id(ref)` is the pure public extraction seam. Its identity backend observes the canonical named capsule and then ordered read-only legacy/native candidates; TypeInfo applies the UUID v4/v5 adoption policy. `TypeInfo.mint_id(ref, proposed_id=None)` re-observes before minting and persists portable identity through the backend's atomic `store_if_absent`. Deterministic types supply `id_stable_key_fn`/`id_namespace`. Parsers receive the resolved value and do not mint.
 
 ### Dynamic properties
 
@@ -83,8 +84,8 @@ SKILL = TypeMetadata(
     main_subdir=".claude/skills",
     main_layout="folder",
     from_disk_fn=extract_skill,
-    id_from_folder_fn=skill_id_from_folder,
-    id_write_fn=write_folder_capsule,
+    capsules=(CapsuleSpec("identity"),),
+    identity_backend=capsule_identity(skill_id_from_folder),
     asset_hash_fn=skill_asset_hash,
 )
 ```
@@ -105,7 +106,7 @@ This is the **only** remaining `__init_subclass__` auto-registration. There is n
 
 `register()` is idempotent and **merges on re-register** (`schema_registry.py:357`). The declarative `TypeMetadata` and the Entity `__init_subclass__` typically both register the same `type_name`; the merge:
 - unions `locations`,
-- fills `entity_cls`, `metadata`, `meta_model`, and the per-type function refs (`post_sync_fn`, `from_disk_fn`, identity readers/key/writer/namespace, `asset_hash_fn`, `default_body_fn`) on first non-None,
+- fills `entity_cls`, `metadata`, `meta_model`, and the per-type runtime refs (`post_sync_fn`, `from_disk_fn`, `capsules`, `identity_backend`, stable-key/namespace policy, `asset_hash_fn`, `default_body_fn`) on first non-None,
 - OR-merges the boolean flags (`browseable`, `creatable`, `indexed_by_default`, `api_visible`),
 - overwrites `icon`, `main_subdir`, `main_layout`, `index_fields` when the new value is set.
 

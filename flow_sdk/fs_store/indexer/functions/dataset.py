@@ -398,7 +398,7 @@ def iter_examples(
 
 # ── extractor ─────────────────────────────────────────────────────────────────
 
-def extract_dataset(ref: FSRef) -> list[FSRecord]:
+def extract_dataset(ref: FSRef, resolved_id: str) -> list[FSRecord]:
     """Parse a dataset folder into a single FSRecord with denormalized counts."""
     path = ref._path
     if not path.is_dir() or not (path / MANIFEST).is_file():
@@ -407,11 +407,10 @@ def extract_dataset(ref: FSRef) -> list[FSRecord]:
 
     # Capsule wins (gen_id stamped it), else manifest id, else uuid5(path) — the
     # same precedence as the TypeInfo reader, so direct extraction agrees.
-    ds_id = read_folder_capsule_id(path) or _id_from_manifest(ds_meta, path)
     layout = _coerce_enum(ds_meta.get("data_layout"), DataLayoutEnum, DataLayoutEnum.CSV)
     field_spec = ds_meta.get("field_spec") if isinstance(ds_meta.get("field_spec"), dict) else {}
     delimiter = ds_meta.get("delimiter") or ","
-    examples = iter_examples(path, layout, field_spec, delimiter, dataset_id=ds_id)
+    examples = iter_examples(path, layout, field_spec, delimiter, dataset_id=resolved_id)
 
     kind_counts: dict[str, int] = {}
     num_annotated = num_multi_output = num_binary_inputs = 0
@@ -446,7 +445,7 @@ def extract_dataset(ref: FSRef) -> list[FSRecord]:
 
     rec_kwargs: dict[str, Any] = {
         "type": RecordType.DATASET,
-        "id": ds_id,
+        "id": resolved_id,
         "name": name,
         "status": "active",
         "content": content,
