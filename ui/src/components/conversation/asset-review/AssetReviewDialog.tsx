@@ -256,21 +256,18 @@ export function AssetReviewDialog({
         {/* Per-attachment live subscriptions (render nothing). */}
         {open && ordered.map((a) => <AttachmentLiveSubscriber key={a.id} id={a.id} onUpdate={applyLive} />)}
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <SelectedIcon className="h-4 w-4 shrink-0 text-primary" />
-            <span className="truncate">{selected.name ?? typeWordOf(selected.asset_type)}</span>
-            <span className="rounded-full border border-border px-2 py-0.5 text-[10px] font-normal uppercase tracking-wide text-muted-foreground">
-              {typeWordOf(selected.asset_type)}
-            </span>
-          </DialogTitle>
-          {selected.description ? (
-            <DialogDescription>{selected.description}</DialogDescription>
-          ) : (
-            <DialogDescription>
+          {/* Whole-popup title — the per-entity icon/name/type moved down to the
+              selected-entity pane. Singular vs plural tracks the list size. */}
+          <DialogTitle className="font-bold">
+            {multi ? (
+              <Trans>Received attachments — review before installing.</Trans>
+            ) : (
               <Trans>Received attachment — review before installing.</Trans>
-            </DialogDescription>
-          )}
-          <SourceRow ma={selected} />
+            )}
+          </DialogTitle>
+          <DialogDescription className="sr-only">
+            <Trans>Review each attached asset and choose how to install it.</Trans>
+          </DialogDescription>
         </DialogHeader>
 
         {/* Install header — buttons stay on top. Scope actions batch the whole
@@ -395,6 +392,19 @@ export function AssetReviewDialog({
             </div>
           )}
           <div className="min-w-0 flex-1">
+            {/* Selected-entity header — icon, name and type chip, plus its
+                description and provenance. Changes as the list selection moves. */}
+            <div className="mb-3 flex flex-col gap-1">
+              <div className="flex items-center gap-2">
+                <SelectedIcon className="h-4 w-4 shrink-0 text-primary" />
+                <span className="truncate font-semibold">{selected.name ?? typeWordOf(selected.asset_type)}</span>
+                <span className="rounded-full border border-border px-2 py-0.5 text-[10px] font-normal uppercase tracking-wide text-muted-foreground">
+                  {typeWordOf(selected.asset_type)}
+                </span>
+              </div>
+              {selected.description && <p className="text-[12px] text-muted-foreground">{selected.description}</p>}
+              <SourceRow ma={selected} />
+            </div>
             <StagedAssetViewer attachment={selected} />
           </div>
         </div>
