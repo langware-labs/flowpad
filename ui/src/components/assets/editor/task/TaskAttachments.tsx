@@ -1,6 +1,7 @@
 import {
   dataContext,
   Folder,
+  formatGitOrigin,
   gitOriginCloneUrl,
   launchWizard,
   Project,
@@ -9,6 +10,8 @@ import {
   VFSPath,
   type GitOrigin,
 } from '@sdk';
+import { resolveLocalGitRoot } from '@src/utils/gitUtils';
+import { type Attachment, attachmentKey, makeAttachmentEntry, normalizeAttachments } from './task-attachments-utils';
 import { useEntity } from '@sdk/react/hooks';
 import { hasBrowseableDrag, hasExternalFilesDrag, readBrowseableDrag } from '@src/components/browseable-tree/drag';
 import { isFsDragItem } from '@src/components/browseable-tree/adapters/fsFolderRoot';
@@ -21,16 +24,6 @@ import { notify } from '@src/notifications';
 import { File as FileIcon, Folder as FolderIcon, GitBranch, Plus, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 
-interface Attachment {
-  path: string;
-  label: string;
-  /** For a git context folder: the repo origin captured at attach time, so it
-   *  rides in task.md to the recipient — who has neither the local checkout nor
-   *  the sender's Folder entity. A click on a not-present git folder launches
-   *  the git-context-folder clone wizard with this origin's URL. */
-  git_origin?: GitOrigin;
-}
-
 interface TaskAttachmentsProps {
   task: Task;
   save: (patch: Partial<Task>) => Promise<void>;
@@ -42,29 +35,12 @@ interface TaskAttachmentsProps {
   heading?: ReactNode;
 }
 
-/** task.artifacts entries are `string | {path, label, git_origin?}` — normalize for display. */
-function normalizeAttachments(artifacts: unknown): Attachment[] {
-  if (!Array.isArray(artifacts)) return [];
-  const out: Attachment[] = [];
-  for (const a of artifacts) {
-    if (typeof a === 'string' && a) {
-      out.push({ path: a, label: a.split('/').pop() || a });
-    } else if (a && typeof a === 'object' && typeof a.path === 'string') {
-      out.push({
-        path: a.path,
-        label: a.label || a.path.split('/').pop(),
-        ...(a.git_origin ? { git_origin: a.git_origin as GitOrigin } : {}),
-      });
-    }
-  }
-  return out;
-}
-
 /**
  * Local, per-machine record of which git folders this user has installed for a
- * task (keyed by task id → set of attachment paths). Lives in localStorage, NOT
- * in the task's shared `artifacts` — install is a per-recipient action, so it
- * must never ride to other people who receive the task.
+ * task (keyed by task id → set of attachment KEYS — the machine-independent
+ * `attachmentKey`, never the sender's path). Lives in localStorage, NOT in the
+ * task's shared `artifacts` — install is a per-recipient action, so it must
+ * never ride to other people who receive the task.
  */
 const gitInstalledKey = (taskId: string) => `flowpad.task.gitInstalled.${taskId}`;
 
@@ -189,60 +165,82 @@ export function TaskAttachments({ task, save, readOnly = false, heading }: TaskA
 
   const addPaths = useCallback(
     async (paths: string[]) => {
-      const existing = new Set(attachments.map((a) => a.path));
-      const fresh = paths.filter((p) => p && !existing.has(p));
-      if (!fresh.length) return;
-      const added: Attachment[] = await Promise.all(
-        fresh.map(async (p) => {
-          const git_origin = await resolveGitOrigin(p);
-          return { path: p, label: p.split('/').pop() || p, ...(git_origin ? { git_origin } : {}) };
-        }),
-      );
-      persist([...attachments, ...added]);
+      const existingKeys = new Set(attachments.map(attachmentKey));
+      const added: Attachment[] = [];
+      for (const p of paths) {
+        if (!p) continue;
+        // Git folder: identity is the origin; a machine-independent offset
+        // within its context folder replaces the sender's absolute path.
+        const git_origin = await resolveGitOrigin(p);
+        const entry = makeAttachmentEntry(p, git_origin, git_origin ? (gitDirFor(p)?.path ?? null) : null);
+        const key = attachmentKey(entry);
+        if (existingKeys.has(key)) continue;
+        existingKeys.add(key);
+        added.push(entry);
+      }
+      if (added.length) persist([...attachments, ...added]);
     },
-    [attachments, persist, resolveGitOrigin],
+    [attachments, persist, resolveGitOrigin, gitDirFor],
   );
 
-  const removePath = useCallback(
-    (path: string) => persist(attachments.filter((a) => a.path !== path)),
+  const removeEntry = useCallback(
+    (key: string) => persist(attachments.filter((a) => attachmentKey(a) !== key)),
     [attachments, persist],
   );
 
-  // Click behavior for a git context folder, matching the old message chip: the
-  // FIRST click always launches the git-context-folder clone/install wizard
-  // (URL from the origin that rode on the attachment) — regardless of whether
-  // the repo already exists on this machine. Once the wizard completes, the
-  // folder is installed and later clicks open its content. Every non-git entry
-  // opens in place.
+  const pullGitFolder = useCallback(
+    (a: Attachment) => {
+      const url = a.git_origin ? gitOriginCloneUrl(a.git_origin) : '';
+      if (!url) return null;
+      return launchWizard('git-context-folder', {
+        title: `Pull ${a.label}`,
+        payload: {
+          projectId: scopeProjectId ?? dataContext.project?.id ?? null,
+          scope: 'private',
+          mode: 'existing',
+          url,
+        },
+      });
+    },
+    [scopeProjectId],
+  );
+
+  // Click behavior for a git context folder, matching the message chip: the
+  // FIRST click launches the git-context-folder clone/install wizard (URL
+  // derived from the origin the attachment carries). Once installed, later
+  // clicks resolve THIS machine's own checkout from the origin and open the
+  // exact subfolder — never the sender's path. Every non-git entry opens in
+  // place by its local path.
   const openEntry = useCallback(
     async (a: Attachment) => {
-      if (a.git_origin && !installedGitPaths.has(a.path)) {
-        const url = gitOriginCloneUrl(a.git_origin);
-        if (url) {
-          const result = await launchWizard('git-context-folder', {
-            title: `Pull ${a.label}`,
-            payload: {
-              projectId: scopeProjectId ?? dataContext.project?.id ?? null,
-              scope: 'private',
-              mode: 'existing',
-              url,
-            },
-          });
-          if (result.status === 'done') {
+      if (a.git_origin) {
+        const key = attachmentKey(a);
+        if (!installedGitPaths.has(key)) {
+          const result = await pullGitFolder(a);
+          if (result?.status === 'done') {
             setInstalledGitPaths((prev) => {
-              const next = new Set(prev).add(a.path);
+              const next = new Set(prev).add(key);
               writeInstalledGitPaths(task.id, next);
               return next;
             });
           }
           return;
         }
+        // Installed: resolve this machine's checkout root and open the subfolder.
+        const root = await resolveLocalGitRoot(a.git_origin, gitDirs);
+        if (root) {
+          navigation.openFolder(a.rel ? `${root}/${a.rel}` : root);
+          return;
+        }
+        // Marked installed but no local checkout found (e.g. removed) → re-pull.
+        await pullGitFolder(a);
+        return;
       }
-      // Installed git folder, or any non-git entry: open its content. A git
-      // folder is always a directory; otherwise fall back to the label heuristic.
-      openPathContent(absolutePath(a.path), a.git_origin ? true : looksLikeFolder(a.label));
+      // Non-git entry: open its content by the (local) path. A folder browses;
+      // otherwise fall back to the label heuristic.
+      if (a.path) openPathContent(absolutePath(a.path), looksLikeFolder(a.label));
     },
-    [installedGitPaths, absolutePath, openPathContent, scopeProjectId, task.id],
+    [installedGitPaths, absolutePath, openPathContent, task.id, gitDirs, navigation, pullGitFolder],
   );
 
   const pickAndAdd = useCallback(
@@ -359,13 +357,11 @@ export function TaskAttachments({ task, save, readOnly = false, heading }: TaskA
         ) : (
           <div className="flex flex-col gap-0.5">
             {attachments.map((a) => {
-              const isFolderish = looksLikeFolder(a.label);
-              const git = isGitPath(a.path) || !!a.git_origin;
+              const git = !!a.git_origin || (a.path ? isGitPath(a.path) : false);
+              const isFolderish = git || looksLikeFolder(a.label);
+              const key = attachmentKey(a);
               return (
-                <div
-                  key={a.path}
-                  className="group flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted"
-                >
+                <div key={key} className="group flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted">
                   <span className="relative shrink-0">
                     {isFolderish ? (
                       <FolderIcon className="h-4 w-4 text-muted-foreground" />
@@ -380,14 +376,14 @@ export function TaskAttachments({ task, save, readOnly = false, heading }: TaskA
                     type="button"
                     onClick={() => void openEntry(a)}
                     className="min-w-0 flex-1 truncate text-left hover:underline"
-                    title={a.path}
+                    title={a.path ?? (a.git_origin ? formatGitOrigin(a.git_origin) : a.label)}
                   >
                     {a.label}
                   </button>
                   {!readOnly && (
                     <button
                       type="button"
-                      onClick={() => removePath(a.path)}
+                      onClick={() => removeEntry(key)}
                       className="hidden shrink-0 rounded p-0.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive group-hover:block"
                       title="Remove"
                     >

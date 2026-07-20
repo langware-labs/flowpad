@@ -11,13 +11,15 @@ Mechanism under test (see ``flow_sdk/app/actions/group_task_action.py``):
   - ``create-group-task`` fans the task out to one ``is_child`` member task per
     member on the hub (title-only clone, ``assignee`` = member) and sends each a
     membership invitation (``editor`` on their child + ``guest`` on the parent).
-  - A member owns only ``status`` / ``submission_url`` / ``completed_at``. When a
-    member edits status locally with ``Hub-Reflect: true``, the remote member
-    task mirrors the change to its hub row (there is NO hub→local push for plain
-    tasks — freshness is pull-based by design).
+  - A member owns only ``status`` / ``completed_at`` (their deliverable rides a
+    ``Comment`` on the member task, not a field). When a member edits status
+    locally with ``Hub-Reflect: true``, the remote member task mirrors the
+    change to its hub row (there is NO hub→local push for plain tasks —
+    freshness is pull-based by design).
   - The owner pulls freshness with the ``sync-group`` action, which LWW-merges
-    ``_MEMBER_OWNED_FIELDS = ("status", "submission_url")`` from each child's hub
-    row onto the owner's local child mirror.
+    ``_MEMBER_OWNED_FIELDS = ("status",)`` from each child's hub row onto the
+    owner's local child mirror, and pulls each child's comments (the member's
+    submission note) via ``_sync_remote_children``.
 
 Topology: three real backends (instance_ctl ``dev-1`` = owner, ``dev-2`` = m1,
 ``dev-3`` = m2) + the local hub. Each backend owns its own hub connection — the
