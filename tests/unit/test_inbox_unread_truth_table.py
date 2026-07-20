@@ -25,7 +25,7 @@ def _dt(value):
 
 
 def _conversation(row: dict) -> Conversation:
-    # The REAL entity, no DB — pointer parsing (message_pointers) and the
+    # The REAL entity, no DB — message-ref parsing (message_refs) and the
     # archive auto-revive rule (is_archived) are Conversation behavior, so the
     # truth table exercises them where they live.
     pointers = [

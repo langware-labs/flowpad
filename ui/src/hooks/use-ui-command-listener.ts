@@ -3,7 +3,7 @@ import { useEffect } from 'react';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import {
-  clickTargetToPointer,
+  dockPointerForClickTarget,
   renderDesktopNotification,
   type NotificationClickTarget,
   type NotificationPayload,
@@ -113,7 +113,7 @@ export function useUiCommandListener(): void {
     // handled separately by useSyncOsBadge, driven by InboxManager.unread).
     const bridge = (window as unknown as { electronAPI?: NotifyBridge }).electronAPI;
     bridge?.onNotificationClick?.(({ clickTarget }) => {
-      const pointer = clickTargetToPointer(clickTarget);
+      const pointer = dockPointerForClickTarget(clickTarget);
       if (pointer) navigateTo(pointer);
     });
 

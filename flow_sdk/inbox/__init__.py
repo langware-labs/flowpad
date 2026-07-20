@@ -11,7 +11,7 @@ The whole surface, no repository framework:
 * ``count_unread(...)`` / ``invitation_is_pending(...)`` — the pure formula
   (table-tested, no DB). Conversation-domain rules (pointer parsing, archive
   auto-revive) live on the ``Conversation`` entity itself
-  (``message_pointers()`` / ``is_archived()``), not here.
+  (``message_refs()`` / ``is_archived()``), not here.
 
 The counting formula deliberately mirrors the frontend row facets
 (``ui/src/components/conversation/conversation-category.ts`` ``conversationFacets``)
@@ -114,12 +114,12 @@ def count_unread(
             # Already counted as the pending invitation — skip so the unread
             # preview message can't double-count the same item.
             continue
-        pointers = conv.message_pointers()
-        if not pointers:
+        refs = conv.message_refs()
+        if not refs:
             continue
         if conv.is_archived():
             continue
-        latest = fm_by_id.get(pointers[-1].fm_id)
+        latest = fm_by_id.get(refs[-1].id)
         if latest is None or getattr(latest, "is_draft", False):
             # Not materialized yet — don't fall back to an older message; the
             # post-materialization recompute picks it up.
@@ -238,9 +238,9 @@ async def accept_mark_preview_read(
             preview = candidate
     if preview is None and conversation_id:
         conv = await Conversation.get_by_id(conversation_id)
-        pointers = conv.message_pointers() if conv is not None else []
-        if pointers:
-            candidate = await FlowMessage.get_by_id(pointers[0].fm_id)
+        refs = conv.message_refs() if conv is not None else []
+        if refs:
+            candidate = await FlowMessage.get_by_id(refs[0].id)
             if _verified(candidate):
                 preview = candidate
 
