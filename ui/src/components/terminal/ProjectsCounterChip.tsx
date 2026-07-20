@@ -101,6 +101,122 @@ function bucketRowLabel(bucket: TabProjectBucket): string {
   return `Project unavailable (${bucket.projectId.slice(0, 8)})`;
 }
 
+/**
+ * True when `childPath` names a location strictly INSIDE `parentPath` — the
+ * containment test that makes one project a subproject of another. Both inputs
+ * pass through {@link canonicalPath} first, so this is cross-platform: `\` →
+ * `/`, and trailing / duplicate separators are normalized away. The compare is
+ * case-insensitive so grouping is correct on case-insensitive filesystems
+ * (Windows, macOS) and remains safe on Linux for this display-only feature. The
+ * trailing-separator boundary stops `/foo/bar` from reading as inside
+ * `/foo/barn`. Pure + dependency-free so it's unit-testable in isolation.
+ */
+export function isPathInside(childPath: string, parentPath: string): boolean {
+  const child = canonicalPath(childPath).toLowerCase();
+  const parent = canonicalPath(parentPath).toLowerCase();
+  if (!child || !parent || child === parent) return false;
+  return child.startsWith(`${parent}/`);
+}
+
+/** One indentation column of a tree row: a pass-through vertical, the elbow that
+ *  connects a child to its parent (last child stops the vertical at center), or
+ *  blank space where an ancestor branch has already ended. */
+type GuideCell = 'blank' | 'through' | 'elbow' | 'elbow-last';
+
+/** A menu row plus the tree-guide columns to draw at its left (empty = top level). */
+export interface ProjectTreeRow {
+  bucket: TabProjectBucket;
+  guides: GuideCell[];
+}
+
+/**
+ * Arrange open project buckets into parent → subproject render order for the
+ * menu. A bucket is a SUBPROJECT of another when its mount path lives inside
+ * that other bucket's mount path (deepest enclosing open project wins as the
+ * parent). This is a pure DISPLAY grouping — no entity/graph relationship is
+ * created or implied. Buckets without a resolved path (loading / missing) can't
+ * be contained, so they stay top-level. Siblings at every level keep the flat
+ * {@link compareBuckets} order; a subproject stays nested under its parent
+ * regardless of which one is the current scope. Returns rows in render order,
+ * each carrying the guide columns for its depth.
+ */
+export function buildProjectTreeRows(buckets: ReadonlyArray<TabProjectBucket>): ProjectTreeRow[] {
+  const paths = new Map<string, string>(); // projectId -> canonical mount path
+  for (const b of buckets) {
+    const mount = b.project?.fs_storage_mount_path;
+    if (mount) paths.set(b.projectId, canonicalPath(mount));
+  }
+
+  // Each pathed bucket's parent = the DEEPEST other pathed bucket that contains
+  // it (longest matching parent path wins for correct multi-level nesting).
+  const parentId = new Map<string, string>();
+  for (const b of buckets) {
+    const childPath = paths.get(b.projectId);
+    if (!childPath) continue;
+    let best: { id: string; len: number } | null = null;
+    for (const other of buckets) {
+      if (other.projectId === b.projectId) continue;
+      const parentPath = paths.get(other.projectId);
+      if (parentPath && isPathInside(childPath, parentPath) && (!best || parentPath.length > best.len)) {
+        best = { id: other.projectId, len: parentPath.length };
+      }
+    }
+    if (best) parentId.set(b.projectId, best.id);
+  }
+
+  // Children index + roots, each sibling list in the flat compareBuckets order.
+  const childrenOf = new Map<string, TabProjectBucket[]>();
+  const roots: TabProjectBucket[] = [];
+  for (const b of [...buckets].sort(compareBuckets)) {
+    const pid = parentId.get(b.projectId);
+    if (!pid) {
+      roots.push(b);
+      continue;
+    }
+    const siblings = childrenOf.get(pid);
+    if (siblings) siblings.push(b);
+    else childrenOf.set(pid, [b]);
+  }
+
+  // Depth-first flatten, carrying the guide columns down each branch.
+  const rows: ProjectTreeRow[] = [];
+  const walkChildren = (ownerId: string, prefix: GuideCell[]) => {
+    const kids = childrenOf.get(ownerId) ?? [];
+    kids.forEach((kid, i) => {
+      const isLast = i === kids.length - 1;
+      rows.push({ bucket: kid, guides: [...prefix, isLast ? 'elbow-last' : 'elbow'] });
+      walkChildren(kid.projectId, [...prefix, isLast ? 'blank' : 'through']);
+    });
+  };
+  for (const root of roots) {
+    rows.push({ bucket: root, guides: [] });
+    walkChildren(root.projectId, []);
+  }
+  return rows;
+}
+
+/** Left-edge tree guides for one menu row (file-explorer style). Each column is
+ *  a 16px cell; verticals connect flush across adjacent rows because the row
+ *  buttons stack with no gap. Purely decorative, so `aria-hidden`. */
+function RowGuides({ guides }: { guides: GuideCell[] }) {
+  if (guides.length === 0) return null;
+  return (
+    <span aria-hidden className="flex shrink-0 self-stretch">
+      {guides.map((cell, i) => (
+        <span key={i} className="relative w-4 self-stretch">
+          {cell === 'through' || cell === 'elbow' ? (
+            <span className="absolute bottom-0 left-2 top-0 w-px bg-border" />
+          ) : null}
+          {cell === 'elbow-last' ? <span className="absolute left-2 top-0 h-1/2 w-px bg-border" /> : null}
+          {cell === 'elbow' || cell === 'elbow-last' ? (
+            <span className="absolute left-2 top-1/2 h-px w-2 bg-border" />
+          ) : null}
+        </span>
+      ))}
+    </span>
+  );
+}
+
 // Worker entries for the action strip — mirrors the tab strip's opener
 // buttons.
 /**
@@ -173,7 +289,10 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
   const { currentDock, navigation } = useDockNavigation();
   const { buckets, globalTabCount } = useTabProjectBuckets();
 
-  const sorted = useMemo(() => [...buckets].sort(compareBuckets), [buckets]);
+  // Buckets in parent → subproject render order (a subproject is a project
+  // whose folder lives inside another open project's folder). Display-only
+  // nesting; see buildProjectTreeRows.
+  const treeRows = useMemo(() => buildProjectTreeRows(buckets), [buckets]);
 
   const tabTotal = buckets.reduce((sum, b) => sum + b.tabCount, 0);
   const projectTotal = buckets.length;
@@ -393,7 +512,7 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
                   </button>
                 </li>
               ) : null}
-              {isGlobalScope && sorted.length > 0 ? (
+              {isGlobalScope && treeRows.length > 0 ? (
                 // Small mid-title separating the Global row from the project
                 // buckets below it.
                 <li key="__projects_title__" aria-hidden>
@@ -402,16 +521,21 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
                   </SectionHairlineTitle>
                 </li>
               ) : null}
-              {sorted.map((bucket) => {
+              {treeRows.map(({ bucket, guides }) => {
                 const isCurrent = bucket.projectId === currentProjectId;
                 const isRecovering = recoveringId === bucket.projectId;
                 const isMissing = bucket.state === 'missing';
-                let leadingIcon: React.ReactNode = null;
+                // Live/loading rows lead with the per-type PROJECT icon from the
+                // TypeInfo registry (never a hardcoded glyph); a missing row
+                // swaps in its recover affordance instead.
+                let leadingIcon: React.ReactNode = (
+                  <ProjectIcon className={`h-3.5 w-3.5 shrink-0 ${isCurrent ? 'text-primary' : 'text-muted-foreground'}`} />
+                );
                 if (isMissing) {
                   leadingIcon = isRecovering ? (
-                    <Loader2 className="h-3 w-3 shrink-0 animate-spin" />
+                    <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
                   ) : (
-                    <RotateCcw className="h-3 w-3 shrink-0" />
+                    <RotateCcw className="h-3.5 w-3.5 shrink-0" />
                   );
                 }
                 const rowClass = `flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-muted ${
@@ -426,6 +550,7 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
                       onClick={() => void handleSelect(bucket)}
                       className={rowClass}
                     >
+                      <RowGuides guides={guides} />
                       {leadingIcon}
                       <span className="min-w-0 flex-1 truncate">{bucketRowLabel(bucket)}</span>
                       {isMissing && !isRecovering ? (
