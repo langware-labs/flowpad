@@ -5567,6 +5567,11 @@ msgstr "אירועים בקבוצה"
 msgid "Group name"
 msgstr ""
 
+#: src/components/conversation/ConversationContextPanel.tsx
+#: src/components/conversation/ConversationContextPanel.tsx
+msgid "Group Task"
+msgstr ""
+
 #: src/components/terminal/openers/AskInstallOneOfDialog.tsx
 msgid "Harness is required"
 msgstr "Harness נדרש"
@@ -7127,6 +7132,11 @@ msgstr "חבר"
 #: src/components/task-bar/TaskCard.tsx
 #~ msgid "member task"
 #~ msgstr ""
+
+#: src/components/conversation/ConversationContextPanel.tsx
+#: src/components/conversation/ConversationContextPanel.tsx
+msgid "Member Task"
+msgstr ""
 
 #: src/components/task-bar/TaskCard.tsx
 #~ msgid "member tasks"
@@ -8689,6 +8699,7 @@ msgstr ""
 #~ msgid "open"
 #~ msgstr "פתוח"
 
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
@@ -11756,9 +11767,10 @@ msgstr "מזהה Shell"
 msgid "Shell Name"
 msgstr "שם Shell"
 
+#. placeholder {0}: '{permissionDecision: allow or deny}'
 #: src/components/hooks-view/HookEditor.tsx
-msgid "Should I allow this tool? Respond with JSON: '{permissionDecision: allow or deny}'"
-msgstr ""
+msgid "Should I allow this tool? Respond with JSON: {0}"
+msgstr "האם להרשות כלי זה? הגב ב-JSON: {0}"
 
 #: src/components/claude-terminal/claude-terminal.tsx
 msgid "Show"

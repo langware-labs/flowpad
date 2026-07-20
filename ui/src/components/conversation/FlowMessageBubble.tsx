@@ -31,6 +31,11 @@ import { MessageRunStatus } from './MessageRunStatus';
 import { PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT } from './constants';
 import { AttachmentChip, AttachmentChipState } from './AttachmentChip';
 import { ContextEntityChip, EntityChip, iconForEntity } from './EntityChip';
+import { useIsAdvanced } from '@src/contexts/view-mode-context';
+import { ProjectSelectorModal, projectListToSelectorItems } from '@src/components/project-selector';
+import { useEnsureProject } from '@src/components/project-selector/use-ensure-project';
+import { useAllProjects } from '@src/hooks/use-all-projects';
+import { notify } from '@src/notifications';
 import { chipStateFor } from './useMessageAttachments';
 import { AssetReviewDialog } from './asset-review/AssetReviewDialog';
 import { TESTABLE_TYPES } from './asset-review/test-prompt';
@@ -799,8 +804,15 @@ function MessageEntityChip({
   attachment?: MessageAttachment;
 }) {
   const { navigation } = useDockNavigation();
+  const isAdvanced = useIsAdvanced();
   const { start: startSkillRun, picker: runPicker } = useRunSkillWithProjectPrompt();
   const [reviewOpen, setReviewOpen] = useState(false);
+  // Task install always targets a project (never global): when the conversation
+  // isn't mapped to one, clicking the chip opens this picker to choose it.
+  const [taskPickerOpen, setTaskPickerOpen] = useState(false);
+  const { projects, isLoading: projectsLoading } = useAllProjects({ enabled: taskPickerOpen });
+  const projectItems = useMemo(() => projectListToSelectorItems(projects), [projects]);
+  const ensureProject = useEnsureProject();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data } = useEntity<APIEntity<any>>(typeId);
   const state = chipStateFor(!!data, attachment, forceShow);
@@ -837,17 +849,57 @@ function MessageEntityChip({
         }
       }
     : null;
-  // Assigned-task chip: one click unpacks — installs the staged task folder
-  // (task.md) so it lands in the task list. Git context folders referenced by
-  // the task ride as their own folder chips (the wizard-clone path above);
-  // loose attachment files ride as ordinary file attachments on the message.
+  // Assigned-task chip: clicking unpacks + installs the staged task folder
+  // (task.md) so it lands in the task list. A task ALWAYS installs into a
+  // project — never global: if the conversation is mapped to a project we
+  // install there, otherwise the click opens a project picker and the install
+  // happens once one is chosen (handleTaskProjectPick). Git context folders
+  // referenced by the task ride as their own folder chips (the wizard-clone
+  // path above); loose attachment files ride as ordinary file attachments.
+  const mappedProjectId = projectId ?? dataContext.project?.id ?? null;
   const handleTaskInstall =
     typeId.type === Task.type && attachment && !attachment.installed
       ? async () => {
-          const targetProjectId = projectId ?? dataContext.project?.id ?? null;
-          await attachment.install(targetProjectId ? 'project' : 'user', targetProjectId ?? undefined);
+          if (!mappedProjectId) {
+            setTaskPickerOpen(true);
+            return;
+          }
+          try {
+            await attachment.install('project', mappedProjectId);
+          } catch (err) {
+            console.error('[task-install] failed', err);
+            notify.error({ title: 'Install failed' });
+          }
         }
       : null;
+  // Chosen from the picker (no mapped project): ensure the project exists, then
+  // install the task into it. Never falls back to global scope.
+  const handleTaskProjectPick = async (id: string) => {
+    if (!attachment) return;
+    const picked = projectItems.find((item) => item.id === id);
+    if (!picked?.path) return;
+    setTaskPickerOpen(false);
+    try {
+      const project = await ensureProject(picked.path, { select: false });
+      if (!project.id) throw new Error('picked project has no id');
+      await attachment.install('project', project.id);
+      notify.success({ title: 'Installed in project', message: project.displayName });
+    } catch (err) {
+      console.error('[task-install] project install failed', err);
+      notify.error({ title: 'Install failed' });
+    }
+  };
+  const taskPicker = handleTaskInstall ? (
+    <ProjectSelectorModal
+      open={taskPickerOpen}
+      onOpenChange={setTaskPickerOpen}
+      projects={projectItems}
+      selectedId={null}
+      onSelect={(id) => void handleTaskProjectPick(id)}
+      isLoading={projectsLoading}
+      title="Install task in project"
+    />
+  ) : null;
   // "Run icon near the skill": one-click install-if-needed + run in a Vibe
   // session (see useRunReceivedSkill). Only for skills with a staged/installed
   // attachment — not artifacts or plain shares.
@@ -894,6 +946,7 @@ function MessageEntityChip({
         </span>
         {dialog}
         {runPicker}
+        {taskPicker}
       </>
     );
   }
@@ -903,14 +956,15 @@ function MessageEntityChip({
         ? data
         : new Artifact(data as unknown as Partial<Artifact>)
       : null;
-  // Installed via a MessageAttachment: the chip KEEPS opening the review modal
-  // (uninstall / test live there — requirement: "if already installed,
-  // uninstall appears instead"). The asset itself opens via the modal-adjacent
-  // context panel or any normal entity surface. Chips without an attachment
-  // (plain shares, artifacts) keep their navigation behavior — as do
-  // receive_policy='auto' row-only types (shared transcripts, diagnoses):
-  // they auto-installed at unpack with nothing to review, so their chip
-  // navigates straight to the entity.
+  // Installed via a MessageAttachment: behavior splits by view mode.
+  //  • Advanced (or Dev): the chip KEEPS opening the review modal, where
+  //    uninstall / test live and an "Open" button jumps to the entity view.
+  //  • Standard / Vibe: no uninstall surface — the chip navigates straight to
+  //    the entity view like any normal chip (onClick left undefined).
+  // Chips without an attachment (plain shares, artifacts) keep their navigation
+  // behavior — as do receive_policy='auto' row-only types (shared transcripts,
+  // diagnoses): they auto-installed at unpack with nothing to review, so their
+  // chip navigates straight to the entity.
   const autoInstalled = dataManager.getTypeInfo?.(typeId.type)?.receive_policy === 'auto';
   return (
     <>
@@ -923,7 +977,7 @@ function MessageEntityChip({
               ? () => void openArtifact(artifact, { navigation, currentProjectId: projectId ?? null })
               : handleFolderPull
                 ? () => void handleFolderPull()
-                : attachment && !autoInstalled
+                : attachment && !autoInstalled && isAdvanced
                   ? () => setReviewOpen(true)
                   : undefined
           }
