@@ -1,6 +1,5 @@
 import { PageId, ViewType } from '@sdk';
 import { useAuth } from '@sdk/react/hooks';
-import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useProjects } from '@src/hooks/use-projects';
 import { Building2, FolderGit2, Globe } from 'lucide-react';
@@ -23,7 +22,7 @@ export function HubHome() {
   const firstName = currentUser?.name?.split(' ')[0] || 'there';
 
   const openAtlas = (root: 'world' | 'organization') =>
-    navigation.openDock(new DockPointer(ViewType.ATLAS, root, undefined, undefined, PageId.HUB));
+    navigation.openPage(PageId.HUB, ViewType.ATLAS, root);
 
   return (
     <div className="flex h-full flex-col overflow-auto">

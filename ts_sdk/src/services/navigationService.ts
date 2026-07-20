@@ -2,6 +2,7 @@ import * as Sentry from '@sentry/browser';
 import { runInAction } from 'mobx';
 import { config } from '../config';
 import { dataContext, isTypeId, TypeId } from '../FlowSync';
+import { isHubOnly } from '../utils/hub-runtime';
 import { cloudManager } from './cloud_login';
 import { secretsService } from './secrets-service';
 import { secretApprovalGate } from './secretApprovalGate';
@@ -65,7 +66,7 @@ class Navigator {
   }
 
   async navigateToLogin(_loginCallbackUrl: string = window.location.href, _connection?: string): Promise<void> {
-    if (!(await this.ensureSecretsEnabled())) return;
+    if (!isHubOnly() && !(await this.ensureSecretsEnabled())) return;
     void dataContext.setActiveEntityTypeId(null);
     // cloudManager handles env-mode vs system-browser-mode internally.
     // The connection param is ignored — the cloud's login form handles provider choice.

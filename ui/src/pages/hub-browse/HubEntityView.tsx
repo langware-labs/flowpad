@@ -29,11 +29,8 @@ export function HubEntityView({ pointer }: { pointer?: string }) {
   const { data, isLoading } = useEntity<any>(typeId, { enabled: !!typeId });
   const entity = data as Record<string, unknown> | null | undefined;
 
-  const title =
-    (typeof entity?.title === 'string' && entity.title) ||
-    (typeof entity?.name === 'string' && entity.name) ||
-    id ||
-    'Entity';
+  // Reuse the SDK's canonical label (name → uname → title → <type>-<id> chain).
+  const title = (data?.displayName as string) || id || 'Entity';
 
   const content = useMemo(() => {
     if (!entity) return '';
