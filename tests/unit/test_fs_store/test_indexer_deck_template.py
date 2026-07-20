@@ -35,6 +35,10 @@ from flow_sdk.fs_store.schema_registry import SchemaRegistry
 def _mint(ref: FSRef) -> str:
     return SchemaRegistry.get("deck_template").mint_id(ref)
 
+
+def _extract(ref: FSRef):
+    return extract_deck_template(ref, _mint(ref))
+
 # do not increase timeout without approval — these are pure-sync parses (<1s).
 pytestmark = pytest.mark.timeout(5)
 
@@ -140,7 +144,7 @@ def test_extract_happy_path(tmp_path: Path) -> None:
         layouts=["cover-centered", "agenda-list", "closing-centered"],
         common={"tokens.css": ":root { --bg: #fff; }"},
     )
-    records = extract_deck_template(FSRef(tpl))
+    records = _extract(FSRef(tpl))
     assert len(records) == 1
     rec = records[0]
     assert rec.type == RecordType.DECK_TEMPLATE
@@ -156,7 +160,7 @@ def test_extract_happy_path(tmp_path: Path) -> None:
 
 def test_extract_defaults_name_to_slug(tmp_path: Path) -> None:
     tpl = _seed_template(tmp_path, "untitled", layouts=["blank-canvas"])
-    rec = extract_deck_template(FSRef(tpl))[0]
+    rec = _extract(FSRef(tpl))[0]
     assert rec.name == "untitled"
     assert rec.meta_dict()["metadata"]["page_types"] == []
 
@@ -165,7 +169,7 @@ def test_extract_free_data_section_passthrough(tmp_path: Path) -> None:
     tpl = _seed_template(
         tmp_path, "d", manifest_data={"owner": "eran", "brand": "acme"}
     )
-    meta = extract_deck_template(FSRef(tpl))[0].meta_dict()["metadata"]
+    meta = _extract(FSRef(tpl))[0].meta_dict()["metadata"]
     assert meta["data"] == {"owner": "eran", "brand": "acme"}
 
 
@@ -173,21 +177,21 @@ def test_extract_layouts_ignore_non_html(tmp_path: Path) -> None:
     tpl = _seed_template(tmp_path, "mix", layouts=["cover-centered"])
     (tpl / "layouts" / "notes.txt").write_text("not a layout", encoding="utf-8")
     (tpl / "layouts" / "partials").mkdir()
-    meta = extract_deck_template(FSRef(tpl))[0].meta_dict()["metadata"]
+    meta = _extract(FSRef(tpl))[0].meta_dict()["metadata"]
     assert meta["layouts"] == ["cover-centered"]
 
 
 def test_extract_non_template_folder_returns_empty(tmp_path: Path) -> None:
     plain = tmp_path / "assets" / "deck-templates" / "no-manifest"
     plain.mkdir(parents=True)
-    assert extract_deck_template(FSRef(plain)) == []
+    assert extract_deck_template(FSRef(plain), "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee") == []
 
 
 def test_extract_id_agrees_with_gen_id(tmp_path: Path) -> None:
     """extract and gen_id must resolve the same id (capsule precedence)."""
     tpl = _seed_template(tmp_path, "agree", layouts=["cover-centered"])
     gen = _mint(FSRef(tpl))
-    rec = extract_deck_template(FSRef(tpl))[0]
+    rec = _extract(FSRef(tpl))[0]
     assert rec.id == gen
 
 

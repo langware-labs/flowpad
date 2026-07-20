@@ -118,15 +118,15 @@ def _read_meta(path: Path) -> tuple[str, str]:
         return "", ""
     return _meta_field(head, "name"), _meta_field(head, "description")
 
-def extract_dynamic_workflow(ref: FSRef) -> list[FSRecord]:
-    return [extract_dynamic_workflow_from_path(ref._path)]
+def extract_dynamic_workflow(ref: FSRef, resolved_id: str) -> list[FSRecord]:
+    return [extract_dynamic_workflow_from_path(ref._path, resolved_id=resolved_id)]
 
-def extract_dynamic_workflow_from_path(path: str | Path) -> FSRecord:
+def extract_dynamic_workflow_from_path(path: str | Path, *, resolved_id: str | None = None) -> FSRecord:
     path = Path(path)
     name, description = _read_meta(path)
     rec = FSRecord(
         type=RecordType.DYNAMIC_WORKFLOW,
-        id=_adopted_id_or_path(path),
+        id=resolved_id or _adopted_id_or_path(path),
         name=name or path.stem,
         description=description,
         source_file=str(path),

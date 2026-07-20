@@ -1,7 +1,7 @@
 """Type metadata for TODO_FILE."""
 import uuid
 
-from flow_sdk.fs_store.indexer.functions._asset_identity import no_id
+from flow_sdk.fs_store.indexer.functions._asset_identity import derived_identity
 from flow_sdk.fs_store.indexer.functions.todo import (
     extract_todo,
     todo_identity_key,
@@ -15,7 +15,7 @@ TODO_FILE = TypeMetadata(
     indexed_by_default=True,
     api_visible=True,
     from_disk_fn=extract_todo,
-    id_from_file_fn=no_id,
+    identity_backend=derived_identity(),
     id_stable_key_fn=todo_identity_key,
     id_namespace=uuid.NAMESPACE_DNS,
 )

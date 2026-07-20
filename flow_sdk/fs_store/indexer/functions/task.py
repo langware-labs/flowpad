@@ -260,7 +260,7 @@ def _strip_leading_heading(body: str) -> str:
     return "\n".join(lines).strip()
 
 
-def _extract_from_task_md(ref: FSRef, task_md: Path, task_dir: Path) -> list:
+def _extract_from_task_md(ref: FSRef, task_md: Path, task_dir: Path, resolved_id: str) -> list:
     from flow_sdk.fs_store.fs_record import FSRecord  # local import avoids circular
 
     try:
@@ -270,7 +270,7 @@ def _extract_from_task_md(ref: FSRef, task_md: Path, task_dir: Path) -> list:
     fields = _parse_frontmatter_fields(text)
     kwargs: dict[str, Any] = {
         "type": RecordType.TASK,
-        "id": _task_id_from_fields(fields, task_dir),
+        "id": resolved_id,
         "name": str(fields.get("title") or task_dir.name),
         "title": str(fields.get("title") or task_dir.name),
         "status": str(fields.get("status") or "to_do"),
@@ -288,18 +288,15 @@ def _extract_from_task_md(ref: FSRef, task_md: Path, task_dir: Path) -> list:
     return [rec]
 
 
-def _extract_from_manifest(ref: FSRef, manifest: Path, task_dir: Path) -> list:
+def _extract_from_manifest(ref: FSRef, manifest: Path, task_dir: Path, resolved_id: str) -> list:
     from flow_sdk.fs_store.fs_record import FSRecord  # local import avoids circular
 
     data = _read_legacy_data(manifest)
-    task_id = data.get("task_id") or data.get("id")
-    if not task_id:
-        return []
     name = data.get("title") or data.get("name") or task_dir.name
     status = data.get("status") or "to_do"
     kwargs: dict[str, Any] = {
         "type": RecordType.TASK,
-        "id": str(task_id),
+        "id": resolved_id,
         "name": name,
         "title": name,
         "status": status,
@@ -318,18 +315,18 @@ def _extract_from_manifest(ref: FSRef, manifest: Path, task_dir: Path) -> list:
     return [rec]
 
 
-def extract_task(ref: FSRef) -> list:
+def extract_task(ref: FSRef, resolved_id: str) -> list:
     """Parse a task folder (``task.md``, or legacy ``header.json``) into a Record."""
     path = ref._path
     if path.is_dir():
         task_md = path / "task.md"
         if task_md.is_file():
-            return _extract_from_task_md(ref, task_md, path)
+            return _extract_from_task_md(ref, task_md, path, resolved_id)
         manifest = _legacy_manifest(path)
         if manifest is not None:
-            return _extract_from_manifest(ref, manifest, path)
+            return _extract_from_manifest(ref, manifest, path, resolved_id)
         return []
     # Legacy: ref points directly at a header.json/manifest.json file.
     if path.is_file():
-        return _extract_from_manifest(ref, path, path.parent)
+        return _extract_from_manifest(ref, path, path.parent, resolved_id)
     return []

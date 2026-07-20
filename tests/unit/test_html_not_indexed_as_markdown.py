@@ -33,7 +33,10 @@ def test_html_file_does_not_extract_as_markdown(tmp_path: Path) -> None:
     html = tmp_path / "open-me.html"
     html.write_text(_HTML, encoding="utf-8")
 
-    recs = extract_markdown(FSRef(str(html), record_type=RecordType.MARKDOWN))
+    recs = extract_markdown(
+        FSRef(str(html), record_type=RecordType.MARKDOWN),
+        "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+    )
 
     assert recs == [], f"HTML indexed as markdown: {[getattr(r, 'name', None) for r in recs]}"
 
@@ -43,7 +46,10 @@ def test_real_markdown_still_extracts(tmp_path: Path) -> None:
     md = tmp_path / "note.md"
     md.write_text("# Title\n\nbody\n", encoding="utf-8")
 
-    recs = extract_markdown(FSRef(str(md), record_type=RecordType.MARKDOWN))
+    recs = extract_markdown(
+        FSRef(str(md), record_type=RecordType.MARKDOWN),
+        "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+    )
 
     assert len(recs) == 1
     assert recs[0].type == RecordType.MARKDOWN

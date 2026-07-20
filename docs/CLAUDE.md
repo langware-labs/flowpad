@@ -14,7 +14,7 @@ id: "e54d4265-bef1-5abb-8f25-d8204141caed"
 
    * See `docs/fs-ref.md` for the full FSRef doctrine.
 
-3. `FSRecord` (`flow_sdk/fs_store/fs_record.py`) is the **single concrete record class** — there are no Record subclasses. Per-type behavior lives in the registered `TypeInfo` slots (`from_disk_fn`, `id_from_file_fn`/`id_from_folder_fn`, `id_stable_key_fn`, `id_namespace`, `id_write_fn`, `asset_hash_fn`, `post_sync_fn`, `meta_model`, `default_body_fn`, `owns_main_ref`, `main_subdir`/`main_layout`/`main_ext`), authored in `flow_sdk/schema/type_info/<type>_*info.py` and registered via `register_all()`. `TypeInfo.extract_id()` selects the file/folder reader and validates adoption; `TypeInfo.mint_id()` is the single filesystem minting seam. FSRecord itself knows nothing about types.
+3. `FSRecord` (`flow_sdk/fs_store/fs_record.py`) is the **single concrete record class** — there are no Record subclasses. Per-type behavior lives in the registered `TypeInfo` slots (`from_disk_fn`, `capsules`, `identity_backend`, `id_stable_key_fn`, `id_namespace`, `asset_hash_fn`, `post_sync_fn`, `meta_model`, `default_body_fn`, `owns_main_ref`, `main_subdir`/`main_layout`/`main_ext`), authored in `flow_sdk/schema/type_info/<type>_*info.py` and registered via `register_all()`. `TypeInfo.extract_id()` observes and validates identity; `TypeInfo.mint_id()` is the single filesystem minting seam. Parsers receive the resolved id as `from_disk_fn(ref, resolved_id)` and never resolve it themselves. FSRecord itself knows nothing about types.
 
    * The following were **deliberately removed** with the old `Record` class and must not be reintroduced: `state.json` / `RecordState` / `PropertyRecord` caching, `raw_json` + dict-like item access, auto-save on attribute mutation, `parent_ref`/`children_refs`/`origin_ref` on the record (the Entity DB owns edges), and polymorphic legacy load fallbacks.
 
@@ -28,7 +28,7 @@ id: "e54d4265-bef1-5abb-8f25-d8204141caed"
 
 7. Read-only is FSRef-level: `FSRef.read_only` is inherited from the parent ref — marking a parent read-only blocks writes on all its children. External and read-only are independent axes.
 
-8. Entity ids are UUID v4/v5 only, minted through `mint_uuid(key=None, *, namespace=...)` (`flow_sdk/fs_store/identifier.py`): `uuid5(namespace, key)` for a stable key, else `uuid4`. Filesystem assets resolve identity through `TypeInfo.extract_id()` followed by `TypeInfo.mint_id()` only when extraction finds no adoptable id. Foreign/non-conforming ids (e.g. a hand-authored v7) are ignored and replaced with a stable v5, never kept. See the repo-root CLAUDE.md entity-id policy.
+8. Entity ids are UUID v4/v5 only, minted through `mint_uuid(key=None, *, namespace=...)` (`flow_sdk/fs_store/identifier.py`): `uuid5(namespace, key)` for a stable key, else `uuid4`. Filesystem assets resolve identity through `TypeInfo.extract_id()` followed by `TypeInfo.mint_id()` only when extraction finds no adoptable id. Portable identity is the named `identity` capsule: Markdown uses a YAML HTML-comment block; folder assets use `.flow/capsules/identity.json`. Legacy frontmatter and `.flow/id` are read-only fallbacks with no backfill. Foreign/non-conforming ids (e.g. v7) produce a stable v5 without rewriting invalid bytes. See `docs/data-management/asset-capsules.md`.
 
 9. `FSRecord.fingerprint` is the deterministic identity key: `uuid5(NAMESPACE_URL, f"{type}:{asset_ref.path or name}")`. When no explicit `id` is given, `save()` mints the id from `fingerprint`. Constructor-provided `id` always wins.
 

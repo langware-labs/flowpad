@@ -111,6 +111,22 @@ before the first render — every Home load that lands on a cache miss pays
 its full cost. Heavy one-time work belongs in a detached startup task (§2);
 recurring freshness work must be hash/stat-gated.
 
+After the response arrives, `initSdk` projects identity according to the
+server-declared page set:
+
+- **Hub-only** (the backend advertises no `desk` page): `CloudManager` receives
+  the full bootstrap response and `initSdk` awaits that projection before the
+  router renders. `bootstrap.user` is the authoritative cloud session,
+  `cloudUrl` is the serving origin, and cloud connection status mirrors the
+  existing `ConnectionManager` socket. Browser login/logout navigate to the
+  same-origin `/api/v1/login` and `/api/v1/logout` routes; the Hub does not call
+  desktop `/cloud/*` bridge endpoints.
+- **Desktop**: `bootstrap.user` remains the local desktop identity while
+  `CloudManager` seeds cloud identity and connection state from
+  `desktop_info`. That bootstrap remains fire-and-forget so it does not add a
+  new render gate; subsequent cloud state continues through the desktop
+  `/cloud/status` and cloud-status WebSocket channels.
+
 Budgets (measured 2026-06-10, dev instance, ~3,000 transcripts):
 
 | Metric | Before | After |

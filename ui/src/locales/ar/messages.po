@@ -2774,6 +2774,10 @@ msgstr ""
 msgid "Conversation title"
 msgstr ""
 
+#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
+msgid "Conversations"
+msgstr ""
+
 #: src/components/account/database-section.tsx
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
@@ -2934,6 +2938,10 @@ msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Could not change sign-in method"
+msgstr ""
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Could not check sign-in"
 msgstr ""
 
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
@@ -3908,6 +3916,7 @@ msgstr ""
 #~ msgid "doc name"
 #~ msgstr ""
 
+#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Docs"
 msgstr ""
@@ -4481,6 +4490,10 @@ msgstr ""
 msgid "Everyone the project is shared with gets it"
 msgstr ""
 
+#: src/pages/hub-home/HubHome.tsx
+msgid "Everything you can reach, as a live graph."
+msgstr ""
+
 #: src/components/conversation/ExecutePromptDialog.tsx
 #~ msgid "Execute"
 #~ msgstr ""
@@ -4579,6 +4592,10 @@ msgstr ""
 
 #: src/components/assistance-viewer/AssistanceViewer.tsx
 msgid "Expert Assistance"
+msgstr ""
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "Explore your organization and everything you can reach."
 msgstr ""
 
 #: src/components/code-editor/CodeEditor.tsx
@@ -5282,9 +5299,9 @@ msgstr ""
 #~ msgid "flows"
 #~ msgstr ""
 
-#: src/components/execute-flow-view/execute-flow-view.tsx
-#~ msgid "Flows"
-#~ msgstr ""
+#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
+msgid "Flows"
+msgstr ""
 
 #: src/components/project-list/ProjectList.tsx
 #~ msgid "Flows:"
@@ -5678,6 +5695,7 @@ msgstr ""
 
 #: src/pages/flow-page/vibe-new-chat.tsx
 #: src/pages/home-landing/HomeLanding.tsx
+#: src/pages/hub-home/HubHome.tsx
 msgid "Hey <0>{firstName}</0>"
 msgstr ""
 
@@ -5760,6 +5778,7 @@ msgstr ""
 #~ msgid "History"
 #~ msgstr ""
 
+#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "Home"
@@ -6953,6 +6972,8 @@ msgstr ""
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 #: src/components/triggers-view/TriggerInvocationsPanel.tsx
 #: src/pages/discover-page/discover-page.tsx
+#: src/pages/hub-browse/HubEntityView.tsx
+#: src/pages/hub-browse/HubRecordsView.tsx
 msgid "Loading…"
 msgstr ""
 
@@ -7814,6 +7835,10 @@ msgstr ""
 #~ msgid "No content to display"
 #~ msgstr ""
 
+#: src/pages/hub-browse/HubEntityView.tsx
+msgid "No content."
+msgstr ""
+
 #: src/components/lens-viewer/ClaudeContextViewer.tsx
 msgid "No context data"
 msgstr ""
@@ -8594,6 +8619,10 @@ msgstr ""
 msgid "Not runnable here"
 msgstr ""
 
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Not signed in — please re-authenticate"
+msgstr ""
+
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "Not started — your first prompt will request access to {hostName}'s machine."
 msgstr ""
@@ -8608,6 +8637,10 @@ msgstr ""
 
 #: src/components/conversation/ConversationContextPanel.tsx
 msgid "Nothing here yet — use the + below to add one."
+msgstr ""
+
+#: src/pages/hub-browse/HubRecordsView.tsx
+msgid "Nothing here yet."
 msgstr ""
 
 #: src/components/entity-context/EntityContextPanel.tsx
@@ -8657,6 +8690,10 @@ msgstr ""
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Nothing to save"
+msgstr ""
+
+#: src/pages/hub-browse/HubEntityView.tsx
+msgid "Nothing to show."
 msgstr ""
 
 #: src/components/history-dropdown.tsx
@@ -9217,6 +9254,8 @@ msgid "Ordered list"
 msgstr ""
 
 #: src/components/account/organization-panel.tsx
+#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
+#: src/pages/hub-home/HubHome.tsx
 msgid "Organization"
 msgstr ""
 
@@ -9812,6 +9851,7 @@ msgid "projected"
 msgstr ""
 
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
+#: src/pages/hub-home/HubHome.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Projects"
 msgstr ""
@@ -12396,6 +12436,10 @@ msgstr ""
 msgid "Steps taken"
 msgstr ""
 
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Still signed in"
+msgstr ""
+
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/triggers-view/TriggerInvocationsPanel.tsx
 msgid "Stop"
@@ -12627,6 +12671,7 @@ msgid "Tasked"
 msgstr ""
 
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
+#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/lens-viewer/shared/transcript-features/TranscriptStats.tsx
 msgid "Tasks"
 msgstr ""
@@ -12642,6 +12687,10 @@ msgstr ""
 #: src/pages/discover-page/discover-page.tsx
 #~ msgid "Teams across the org"
 #~ msgstr ""
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "Teams and people across your org."
+msgstr ""
 
 #: src/pages/flow-page/vibe-workspace.tsx
 #~ msgid "Tell the assistant what to build."
@@ -12668,6 +12717,7 @@ msgstr ""
 msgid "test"
 msgstr ""
 
+#: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Test"
 msgstr ""
@@ -13428,6 +13478,10 @@ msgstr ""
 msgid "Unsure"
 msgstr ""
 
+#: src/pages/hub-home/HubHome.tsx
+msgid "Untitled project"
+msgstr ""
+
 #: src/components/terminal/HistoryModal.tsx
 msgid "Untitled session"
 msgstr ""
@@ -14133,6 +14187,11 @@ msgstr ""
 
 #: src/components/project-list/ProjectList.tsx
 msgid "Your Projects"
+msgstr ""
+
+#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
+#: src/pages/hub-home/HubHome.tsx
+msgid "Your world"
 msgstr ""
 
 #: src/components/chat-input.tsx

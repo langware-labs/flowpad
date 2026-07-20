@@ -12,9 +12,7 @@ from __future__ import annotations
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer.functions._report_common import (
-    adopt_doc_id,
     load_report,
-    report_id_from_path,
     walk_report_dirs,
 )
 from flow_sdk.fs_store.indexer.index_function import IndexerOptions
@@ -25,17 +23,16 @@ def usage_report_fn(nodes: list[FSRef], opts: IndexerOptions) -> list[FSRef]:
     return walk_report_dirs(nodes, "usage_reports", RecordType.USAGE_REPORT)
 
 
-def extract_usage_report(ref: FSRef) -> list[FSRecord]:
+def extract_usage_report(ref: FSRef, resolved_id: str) -> list[FSRecord]:
     """Parse a report.json into a Record — headline fields only."""
     path = ref._path
     doc = load_report(path)
     payload = doc.get("data") if isinstance(doc.get("data"), dict) else {}
     name = str(doc.get("name") or path.parent.name)
-    rec_id = adopt_doc_id(doc) or report_id_from_path(path)
 
     rec = FSRecord(
         type=RecordType.USAGE_REPORT,
-        id=rec_id,
+        id=resolved_id,
         name=name,
         period_start=payload.get("period_start"),
         period_end=payload.get("period_end"),

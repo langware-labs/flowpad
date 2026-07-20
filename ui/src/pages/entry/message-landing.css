@@ -1,0 +1,262 @@
+/* Styles for the MessageLanding page (and WrongAccountPanel, which reuses
+ * .nl-btn / .nl-center). Standalone — no other stylesheet is required. */
+
+.nl-page,
+.nl-page *,
+.nl-page *::before,
+.nl-page *::after,
+.nl-center,
+.nl-center * {
+  box-sizing: border-box;
+}
+
+.nl-center {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+  min-height: 300px;
+}
+
+.nl-spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid rgba(79, 70, 229, 0.2);
+  border-bottom-color: #4f46e5;
+  border-radius: 50%;
+  animation: nl-spin 0.8s linear infinite;
+}
+
+@keyframes nl-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.nl-error {
+  color: #ef4444;
+  font-size: 15px;
+}
+
+.nl-page {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: #f5f4ff;
+  color: #1a1a2e;
+  line-height: 1.6;
+  min-height: 100vh;
+}
+
+.nl-header {
+  background: #4f46e5;
+  padding: 20px 32px;
+  text-align: center;
+}
+
+.nl-header h1 {
+  color: #fff;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  margin: 0;
+}
+
+.nl-container {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 40px 32px 80px;
+}
+
+.nl-intro {
+  margin-bottom: 20px;
+}
+
+.nl-task-from {
+  font-size: 15px;
+  color: #555;
+  margin-bottom: 6px;
+}
+
+.nl-msg {
+  margin-bottom: 24px;
+  font-size: 15px;
+  color: #444;
+}
+
+.nl-section-label {
+  font-size: 16px;
+  font-weight: 700;
+  color: #1a1a2e;
+  margin-bottom: 16px;
+}
+
+.nl-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 32px;
+}
+
+@media (max-width: 700px) {
+  .nl-options {
+    grid-template-columns: 1fr;
+  }
+}
+
+.nl-option {
+  background: #fff;
+  border-radius: 10px;
+  padding: 24px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+}
+
+.nl-option h3 {
+  font-size: 15px;
+  font-weight: 700;
+  margin-bottom: 12px;
+}
+
+.nl-option p,
+.nl-option li {
+  font-size: 14px;
+  color: #555;
+  margin-bottom: 6px;
+}
+
+.nl-option ol {
+  padding-left: 18px;
+  list-style-type: decimal;
+}
+
+.nl-option code {
+  background: #f0efff;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 13px;
+  color: #4f46e5;
+  word-break: break-all;
+}
+
+.nl-agent-icon {
+  flex-shrink: 0;
+  vertical-align: middle;
+  color: #4f46e5;
+}
+
+.nl-btn {
+  display: inline-block;
+  margin-top: 14px;
+  padding: 10px 22px;
+  background: #4f46e5;
+  color: #fff;
+  text-decoration: none;
+  border-radius: 7px;
+  font-size: 14px;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+}
+
+.nl-btn:hover {
+  background: #4338ca;
+}
+
+.nl-btn-outline {
+  background: #fff;
+  color: #4f46e5;
+  border: 2px solid #4f46e5;
+}
+
+.nl-btn-outline:hover {
+  background: #f0efff;
+}
+
+.nl-prompt-box {
+  border: 1px solid #d4d0ff;
+  border-radius: 8px;
+  padding: 10px 14px 12px;
+  background: #faf9ff;
+  margin-top: 4px;
+}
+
+.nl-prompt-box-top {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 6px;
+}
+
+.nl-prompt-text {
+  font-size: 13px;
+  color: #333;
+  line-height: 1.5;
+  width: 100%;
+  margin: 0;
+}
+
+.nl-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  background: #f0efff;
+  color: #4f46e5;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.nl-copy-btn:hover {
+  background: #e0deff;
+}
+
+.nl-prompt-copy {
+  padding: 4px 6px;
+}
+
+.nl-plan-wrap {
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+}
+
+.nl-plan-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.nl-plan-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: #4f46e5;
+}
+
+.nl-copy-label {
+  font-size: 13px;
+}
+
+.nl-plan-content {
+  font-size: 13px;
+  color: #333;
+  background: #f8f8ff;
+  padding: 16px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 320px;
+  overflow-y: auto;
+  font-family: 'SFMono-Regular', Consolas, monospace;
+  margin: 0;
+}
+
+.nl-footer {
+  text-align: center;
+  margin-top: 40px;
+  font-size: 12px;
+  color: #aaa;
+}

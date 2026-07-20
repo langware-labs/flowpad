@@ -6,7 +6,5 @@ export interface ISDKConfig {
   auth_provider: string;
   flowpad_app_host: string;
   flowpad_app_port?: number;
-  sentry_dsn: string;
-  sentry_project: string;
   check_refresh_token: boolean;
 }

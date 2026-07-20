@@ -4,6 +4,7 @@ import { QueryRequest } from '../FlowSync/query';
 import { ActionInfo, TypeId, gitOriginFromUrl, type GitOrigin } from '../models';
 import { DockPointerData } from '../models/DockPointer';
 import type { AssetDescriptor } from '../process/asset-descriptor';
+import { isHubOnly } from '../utils/hub-runtime';
 import { ViewType } from '../utils/ui/view-types';
 import { Agent } from './agent';
 import { Artifact, IArtifact } from './artifact';
@@ -220,6 +221,9 @@ export class Project extends APIEntity<Project> {
     if (this.computeNode) {
       return this.computeNode;
     }
+    // Hub mode: the hub backend has no local compute node (`get-compute-node`
+    // 401s). No node here — callers already treat null as "no compute node".
+    if (isHubOnly()) return null;
     const actionInfo = new ActionInfo('get-compute-node', Project.type, this.typeId.id, 'GET');
     const responseComputeNode = await dataManager.callAction<void, { compute_node: any }>(actionInfo);
 
@@ -479,6 +483,9 @@ export class Project extends APIEntity<Project> {
    *  through); the project pickers sort by it (recency wins over session
    *  `modified_at`). Static form mirrors `Tab.activateById`. */
   static async activateById(id: string): Promise<void> {
+    // Hub mode: `project/<id>/activate` 401s on the hub backend. This is a
+    // fire-and-forget recency stamp — safely a no-op when unavailable.
+    if (isHubOnly()) return;
     const info = new ActionInfo('activate', Project.type, id, 'POST');
     await dataManager.callAction<undefined, unknown>(info);
   }

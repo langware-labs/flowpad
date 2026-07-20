@@ -97,7 +97,6 @@ export default defineConfig(({ mode }) => {
       exclude: ['playwright-core', 'playwright'],
       include: [
         'axios',
-        '@sentry/browser',
         'uuid',
         'immer',
         'mobx',
@@ -137,7 +136,6 @@ export default defineConfig(({ mode }) => {
         'axios',
         'mobx',
         'immer',
-        '@sentry/browser',
         '@msgpack/msgpack',
         'uuid',
         'events',

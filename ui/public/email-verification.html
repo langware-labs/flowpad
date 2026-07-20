@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Verify your email | Flowpad</title>
+    <!--
+      Auth-edge terminal page: the login callback redirects here when the
+      account's email is not yet verified (auth0_provider). Static re-author of
+      the legacy Lit <email-verification-model> — same copy/palette, zero
+      runtime deps (the legacy page pulled Lit + Shoelace + a remote CDN shell).
+      Keeps the one behavior that matters: ?target_path= is stored to
+      localStorage['loginCallbackUrl'] so the post-verification login can
+      resume where the user was headed.
+    -->
+    <style>
+      body {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        height: 100vh;
+        margin: 0;
+        font-family: Arial, sans-serif;
+        text-align: center;
+        background-color: #f9f9f9;
+      }
+      .header {
+        font-size: 2.1rem;
+        font-weight: bold;
+        color: #1e024e;
+        margin-bottom: 10px;
+      }
+      .message {
+        font-size: 1.3rem;
+        color: #555;
+        margin-bottom: 20px;
+      }
+      .icons-group {
+        position: relative;
+        display: inline-block;
+      }
+      .email-icon {
+        font-size: 9rem;
+        color: gray;
+        line-height: 1;
+      }
+      .check-icon {
+        font-size: 3rem;
+        color: #4caf50;
+        position: absolute;
+        right: -0.4rem;
+        bottom: 0.6rem;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="header">Verify Your Email</div>
+    <p class="message">Please check your email for a link to verify your email address.</p>
+    <p class="message">Once verified, you'll be able to continue.</p>
+    <div class="icons-group">
+      <span class="email-icon">&#9993;</span>
+      <span class="check-icon">&#10003;</span>
+    </div>
+    <script>
+      // Preserve the login continuation across the verification round-trip.
+      const targetPath = new URLSearchParams(window.location.search).get('target_path');
+      if (targetPath) {
+        localStorage.setItem('loginCallbackUrl', targetPath);
+      }
+    </script>
+  </body>
+</html>

@@ -35,6 +35,10 @@ from flow_sdk.fs_store.schema_registry import SchemaRegistry
 def _mint(ref: FSRef) -> str:
     return SchemaRegistry.get("deck").mint_id(ref)
 
+
+def _extract(ref: FSRef):
+    return extract_deck(ref, _mint(ref))
+
 # do not increase timeout without approval — these are pure-sync parses (<1s).
 pytestmark = pytest.mark.timeout(5)
 
@@ -109,7 +113,7 @@ def test_extract_denormalizes_slides_and_html(tmp_path: Path) -> None:
             {"layout": "closing-centered", "slots": {"title": "Thanks"}},
         ],
     })
-    rec = extract_deck(FSRef(deck))[0]
+    rec = _extract(FSRef(deck))[0]
     assert rec.type == RecordType.DECK
     assert rec.name == "Brand Deck"
     m = rec.meta_dict()["metadata"]
@@ -122,7 +126,7 @@ def test_extract_denormalizes_slides_and_html(tmp_path: Path) -> None:
 def test_extract_prefers_foldername_html(tmp_path: Path) -> None:
     deck = _seed_deck(tmp_path, "pick", html_name="pick.html")
     (deck / "other.html").write_text("<html></html>", encoding="utf-8")
-    assert extract_deck(FSRef(deck))[0].meta_dict()["metadata"]["html_file"] == "pick.html"
+    assert _extract(FSRef(deck))[0].meta_dict()["metadata"]["html_file"] == "pick.html"
 
 
 def test_extract_ignores_mcp_html(tmp_path: Path) -> None:
@@ -131,13 +135,13 @@ def test_extract_ignores_mcp_html(tmp_path: Path) -> None:
     (deck / "deck.json").write_text(json.dumps({"title": "M", "slides": []}), encoding="utf-8")
     (deck / "picker.mcp.html").write_text("<html></html>", encoding="utf-8")
     (deck / "mcp.html").write_text("<html></html>", encoding="utf-8")
-    assert extract_deck(FSRef(deck))[0].meta_dict()["metadata"]["html_file"] == "mcp.html"
+    assert _extract(FSRef(deck))[0].meta_dict()["metadata"]["html_file"] == "mcp.html"
 
 
 def test_extract_non_deck_folder_returns_empty(tmp_path: Path) -> None:
     plain = tmp_path / "assets" / "decks" / "empty"
     plain.mkdir(parents=True)
-    assert extract_deck(FSRef(plain)) == []
+    assert extract_deck(FSRef(plain), "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee") == []
 
 
 # ── provenance (template_ref) ──────────────────────────────────────────────────
@@ -148,7 +152,7 @@ def test_template_ref_resolves_from_capsule(tmp_path: Path) -> None:
     deck = _seed_deck(tmp_path, "pitch", manifest={
         "title": "Pitch", "template": "../../deck-templates/aurora", "slides": [],
     })
-    assert extract_deck(FSRef(deck))[0].meta_dict()["metadata"]["template_ref"] == tpl_id
+    assert _extract(FSRef(deck))[0].meta_dict()["metadata"]["template_ref"] == tpl_id
 
 
 def test_template_ref_none_when_template_uncapsuled(tmp_path: Path) -> None:
@@ -156,12 +160,12 @@ def test_template_ref_none_when_template_uncapsuled(tmp_path: Path) -> None:
     deck = _seed_deck(tmp_path, "pitch", manifest={
         "title": "Pitch", "template": "../../deck-templates/aurora", "slides": [],
     })
-    assert extract_deck(FSRef(deck))[0].meta_dict()["metadata"]["template_ref"] is None
+    assert _extract(FSRef(deck))[0].meta_dict()["metadata"]["template_ref"] is None
 
 
 def test_template_ref_none_when_no_template_field(tmp_path: Path) -> None:
     deck = _seed_deck(tmp_path, "solo", manifest={"title": "Solo", "slides": []})
-    assert extract_deck(FSRef(deck))[0].meta_dict()["metadata"]["template_ref"] is None
+    assert _extract(FSRef(deck))[0].meta_dict()["metadata"]["template_ref"] is None
 
 
 # ── extract/gen agreement (production order: gen stamps capsule, extract reads it) ──
@@ -169,7 +173,7 @@ def test_template_ref_none_when_no_template_field(tmp_path: Path) -> None:
 def test_extract_id_agrees_with_gen_id(tmp_path: Path) -> None:
     deck = _seed_deck(tmp_path, "agree")
     gen = _mint(FSRef(deck))
-    assert extract_deck(FSRef(deck))[0].id == gen
+    assert _extract(FSRef(deck))[0].id == gen
 
 
 # ── asset hash ─────────────────────────────────────────────────────────────────

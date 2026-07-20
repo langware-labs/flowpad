@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from flow_sdk.fs_store.indexer.functions._asset_identity import write_folder_capsule
+from flow_sdk.fs_store.indexer.functions._asset_identity import IDENTITY_CAPSULE, capsule_identity, folder_capsule_id
 from flow_sdk.fs_store.indexer.functions.task import (
     TASK_FRONTMATTER_FIELDS,
     extract_task,
@@ -87,8 +87,8 @@ TASK = TypeMetadata(
     main_layout="folder",
     main_file="task.md",
     from_disk_fn=extract_task,
-    id_from_folder_fn=task_id_from_folder,
-    id_write_fn=write_folder_capsule,
+    capsules=(IDENTITY_CAPSULE,),
+    identity_backend=capsule_identity(folder_capsule_id, task_id_from_folder),
     asset_hash_fn=task_asset_hash,
     default_body_fn=_task_default_body,
     owns_main_ref=True,

@@ -18,9 +18,7 @@ from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.identifier import mint_uuid
 from flow_sdk.fs_store.indexer._frontmatter import (
-    _extract_body,
     _extract_frontmatter,
-    _render_frontmatter,
     _yaml_load,
 )
 from flow_sdk.fs_store.indexer.index_function import IndexerOptions
@@ -89,7 +87,7 @@ def command_id(ref: FSRef) -> str:
     return existing if existing else _command_id_from_key(ref)
 
 
-def extract_claude_command(ref: FSRef) -> list[FSRecord]:
+def extract_claude_command(ref: FSRef, resolved_id: str) -> list[FSRecord]:
     """Parse a single ``.md`` command file into a Record.
 
     Replaces ``ClaudeCommandFsRecord._from_fsref_sync``. The record is a base
@@ -101,11 +99,14 @@ def extract_claude_command(ref: FSRef) -> list[FSRecord]:
         content = md_file.read_text(encoding="utf-8")
     except OSError:
         return []
+    from flow_sdk.capsules import strip_capsule_blocks  # noqa: PLC0415
+
+    content = strip_capsule_blocks(content)
     scope = ref.scope or "user"
     command_name = md_file.stem
     rec = FSRecord(
         type=RecordType.COMMAND,
-        id=command_id(ref),
+        id=resolved_id,
         name=command_name,
         command_name=command_name,
         content=content,

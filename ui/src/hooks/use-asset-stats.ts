@@ -1,6 +1,7 @@
 import apiClient from '@sdk/client';
 import { useEntityOps } from '@sdk/react/hooks';
 import { scopeFilterKey, scopeToQueryString, type ScopeFilter } from '@src/lib/scope-filter';
+import { isHubOnly } from '@src/navigation/hub-runtime';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useMemo } from 'react';
 
@@ -32,6 +33,9 @@ export function useAssetStats(scope?: ScopeFilter): { stats: AssetStats; isLoadi
 
   const { data, isLoading } = useQuery<AssetStats>({
     queryKey: [QUERY_KEY, scopeKey],
+    // Hub mode: no local fs-records `/asset-stats` endpoint (404). Skip the
+    // fetch and report empty counts.
+    enabled: !isHubOnly(),
     queryFn: async () => {
       const qs = scope ? scopeToQueryString(scope) : '';
       const raw = await apiClient.get<Partial<AssetStats>>(qs ? `${STATS_PATH}?${qs}` : STATS_PATH);

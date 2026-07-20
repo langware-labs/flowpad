@@ -2774,6 +2774,10 @@ msgstr "Conversation project set"
 msgid "Conversation title"
 msgstr "Conversation title"
 
+#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
+msgid "Conversations"
+msgstr "Conversations"
+
 #: src/components/account/database-section.tsx
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
@@ -2935,6 +2939,10 @@ msgstr "Could not change privacy mode"
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Could not change sign-in method"
 msgstr "Could not change sign-in method"
+
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Could not check sign-in"
+msgstr "Could not check sign-in"
 
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
 msgid "Could not copy the code"
@@ -3908,6 +3916,7 @@ msgstr "Distance"
 #~ msgid "doc name"
 #~ msgstr "doc name"
 
+#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Docs"
 msgstr "Docs"
@@ -4484,6 +4493,10 @@ msgstr "Every skill, agent, spec, and document this project ships."
 msgid "Everyone the project is shared with gets it"
 msgstr "Everyone the project is shared with gets it"
 
+#: src/pages/hub-home/HubHome.tsx
+msgid "Everything you can reach, as a live graph."
+msgstr "Everything you can reach, as a live graph."
+
 #: src/components/conversation/ExecutePromptDialog.tsx
 #~ msgid "Execute"
 #~ msgstr "Execute"
@@ -4583,6 +4596,10 @@ msgstr "Expected format: /dock/show/<entity-vfs>?page=<page>&component=<componen
 #: src/components/assistance-viewer/AssistanceViewer.tsx
 msgid "Expert Assistance"
 msgstr "Expert Assistance"
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "Explore your organization and everything you can reach."
+msgstr "Explore your organization and everything you can reach."
 
 #: src/components/code-editor/CodeEditor.tsx
 msgid "Explorer"
@@ -5285,9 +5302,9 @@ msgstr "Flowpad.ai Logo"
 #~ msgid "flows"
 #~ msgstr "flows"
 
-#: src/components/execute-flow-view/execute-flow-view.tsx
-#~ msgid "Flows"
-#~ msgstr "Flows"
+#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
+msgid "Flows"
+msgstr "Flows"
 
 #: src/components/project-list/ProjectList.tsx
 #~ msgid "Flows:"
@@ -5681,6 +5698,7 @@ msgstr "Helpers used"
 
 #: src/pages/flow-page/vibe-new-chat.tsx
 #: src/pages/home-landing/HomeLanding.tsx
+#: src/pages/hub-home/HubHome.tsx
 msgid "Hey <0>{firstName}</0>"
 msgstr "Hey <0>{firstName}</0>"
 
@@ -5763,6 +5781,7 @@ msgstr "Highlight changes since the last stamp"
 #~ msgid "History"
 #~ msgstr "History"
 
+#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "Home"
@@ -6956,6 +6975,8 @@ msgstr "Loading..."
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 #: src/components/triggers-view/TriggerInvocationsPanel.tsx
 #: src/pages/discover-page/discover-page.tsx
+#: src/pages/hub-browse/HubEntityView.tsx
+#: src/pages/hub-browse/HubRecordsView.tsx
 msgid "Loading…"
 msgstr "Loading…"
 
@@ -7817,6 +7838,10 @@ msgstr "No content available"
 #~ msgid "No content to display"
 #~ msgstr "No content to display"
 
+#: src/pages/hub-browse/HubEntityView.tsx
+msgid "No content."
+msgstr "No content."
+
 #: src/components/lens-viewer/ClaudeContextViewer.tsx
 msgid "No context data"
 msgstr "No context data"
@@ -8597,6 +8622,10 @@ msgstr "not respected"
 msgid "Not runnable here"
 msgstr "Not runnable here"
 
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Not signed in — please re-authenticate"
+msgstr "Not signed in — please re-authenticate"
+
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "Not started — your first prompt will request access to {hostName}'s machine."
 msgstr "Not started — your first prompt will request access to {hostName}'s machine."
@@ -8612,6 +8641,10 @@ msgstr "Note: File is missing"
 #: src/components/conversation/ConversationContextPanel.tsx
 msgid "Nothing here yet — use the + below to add one."
 msgstr "Nothing here yet — use the + below to add one."
+
+#: src/pages/hub-browse/HubRecordsView.tsx
+msgid "Nothing here yet."
+msgstr "Nothing here yet."
 
 #: src/components/entity-context/EntityContextPanel.tsx
 msgid "Nothing in private context yet."
@@ -8661,6 +8694,10 @@ msgstr "Nothing to push"
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Nothing to save"
 msgstr "Nothing to save"
+
+#: src/pages/hub-browse/HubEntityView.tsx
+msgid "Nothing to show."
+msgstr "Nothing to show."
 
 #: src/components/history-dropdown.tsx
 #~ msgid "Nothing yet!"
@@ -9222,6 +9259,8 @@ msgid "Ordered list"
 msgstr "Ordered list"
 
 #: src/components/account/organization-panel.tsx
+#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
+#: src/pages/hub-home/HubHome.tsx
 msgid "Organization"
 msgstr "Organization"
 
@@ -9817,6 +9856,7 @@ msgid "projected"
 msgstr "projected"
 
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
+#: src/pages/hub-home/HubHome.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Projects"
 msgstr "Projects"
@@ -12405,6 +12445,10 @@ msgstr "step: {0}ms · debounce: {1}ms"
 msgid "Steps taken"
 msgstr "Steps taken"
 
+#: src/components/harness-login/HarnessLoginModal.tsx
+msgid "Still signed in"
+msgstr "Still signed in"
+
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/triggers-view/TriggerInvocationsPanel.tsx
 msgid "Stop"
@@ -12636,6 +12680,7 @@ msgid "Tasked"
 msgstr "Tasked"
 
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
+#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/lens-viewer/shared/transcript-features/TranscriptStats.tsx
 msgid "Tasks"
 msgstr "Tasks"
@@ -12651,6 +12696,10 @@ msgstr "Teams"
 #: src/pages/discover-page/discover-page.tsx
 #~ msgid "Teams across the org"
 #~ msgstr "Teams across the org"
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "Teams and people across your org."
+msgstr "Teams and people across your org."
 
 #: src/pages/flow-page/vibe-workspace.tsx
 #~ msgid "Tell the assistant what to build."
@@ -12677,6 +12726,7 @@ msgstr "Terminal Sessions"
 msgid "test"
 msgstr "test"
 
+#: src/components/harness-login/HarnessLoginModal.tsx
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Test"
 msgstr "Test"
@@ -13437,6 +13487,10 @@ msgstr "unsure"
 msgid "Unsure"
 msgstr "Unsure"
 
+#: src/pages/hub-home/HubHome.tsx
+msgid "Untitled project"
+msgstr "Untitled project"
+
 #: src/components/terminal/HistoryModal.tsx
 msgid "Untitled session"
 msgstr "Untitled session"
@@ -14143,6 +14197,11 @@ msgstr "Your one-time code is below. Click <0>Copy code & open GitHub</0> — we
 #: src/components/project-list/ProjectList.tsx
 msgid "Your Projects"
 msgstr "Your Projects"
+
+#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
+#: src/pages/hub-home/HubHome.tsx
+msgid "Your world"
+msgstr "Your world"
 
 #: src/components/chat-input.tsx
 #~ msgid "ZIP file upload is only available as a codebase connection"

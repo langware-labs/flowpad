@@ -1,7 +1,7 @@
 """Type metadata for DATASET."""
 from typing import Optional
 
-from flow_sdk.fs_store.indexer.functions._asset_identity import write_folder_capsule
+from flow_sdk.fs_store.indexer.functions._asset_identity import IDENTITY_CAPSULE, capsule_identity, folder_capsule_id
 from flow_sdk.fs_store.indexer.functions.dataset import (
     dataset_asset_hash,
     dataset_id_from_folder,
@@ -40,8 +40,8 @@ DATASET = TypeMetadata(
     # (main_file_is_asset_ref unset), so this only names the marker/body file.
     main_file="dataset.json",
     from_disk_fn=extract_dataset,
-    id_from_folder_fn=dataset_id_from_folder,
-    id_write_fn=write_folder_capsule,
+    capsules=(IDENTITY_CAPSULE,),
+    identity_backend=capsule_identity(folder_capsule_id, dataset_id_from_folder),
     asset_hash_fn=dataset_asset_hash,
     meta_model=DatasetMeta,
 )

@@ -63,7 +63,7 @@ def _assert_indexer_compatible(tpl_path: Path) -> DeckTemplate:
     assert loaded is not None, "from_fs_ref returned None for a real deck template"
     assert isinstance(loaded, DeckTemplate)
 
-    rec = extract_deck_template(ref)[0]
+    rec = extract_deck_template(ref, gen)[0]
     meta = rec.meta_dict()["metadata"]
 
     assert loaded.id == gen == rec.id

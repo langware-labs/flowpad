@@ -111,11 +111,10 @@ def _project_nodes(
         if (et, resolved_id, path) in duplicates:
             continue
         try:
-            recs = from_disk(n)
+            recs = from_disk(n, resolved_id)
         except Exception:
             continue
         for rec in recs or []:
-            object.__setattr__(rec, "id", resolved_id)
             d = rec.meta_dict()
             rid = d.get("id")
             if rid is not None:

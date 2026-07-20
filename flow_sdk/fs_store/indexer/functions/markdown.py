@@ -190,6 +190,9 @@ def parse_markdown_text(text: str, path: Path | None = None) -> dict[str, Any]:
     Public — used by ``extract_markdown`` here and by
     ``flow_sdk.fs_store.operations.markdown_index.from_markdown``.
     """
+    from flow_sdk.capsules import strip_capsule_blocks  # noqa: PLC0415
+
+    text = strip_capsule_blocks(text)
     fm_text = _extract_frontmatter(text)
     fields = _yaml_load(fm_text) if fm_text else {}
     body = _extract_body(text)
@@ -307,7 +310,7 @@ def _resolve_vault_root(path: Path) -> str | None:
     return None
 
 
-def extract_markdown(ref: FSRef) -> list[FSRecord]:
+def extract_markdown(ref: FSRef, resolved_id: str) -> list[FSRecord]:
     """Parse a .md file into a Record. Replaces ``MarkdownRecord._from_fsref_sync``."""
     path = ref._path
     # Single-file index paths bypass the walker's ``*.md`` glob; without this
@@ -324,6 +327,7 @@ def extract_markdown(ref: FSRef) -> list[FSRecord]:
         # rather than raising into the indexer's error counter.
         return []
     data = parse_markdown_text(text, path=path)
+    data["id"] = resolved_id
     data["type"] = RecordType.MARKDOWN
     data["status"] = "active"
     # name is the title (MarkdownRecord overrode name to read title; we

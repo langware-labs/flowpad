@@ -53,6 +53,7 @@ dependencies = [
     "colorama",
     "apscheduler~=3.10",
     "pathspec",
+    "pyyaml>=6.0",
 ]
 
 [project.urls]

@@ -7,7 +7,7 @@ collection of meta fields as direct instance attributes (default).
 Per-type typed metadata models are opt-in via ``TypeInfo.meta_model``.
 
 All per-type behavior lives in free functions registered on
-``TypeInfo`` (from_disk_fn, identity callbacks, asset_hash_fn, post_sync_fn,
+``TypeInfo`` (from_disk_fn, identity backend, asset_hash_fn, post_sync_fn,
 main_subdir, main_layout). FSRecord itself knows nothing about types.
 
 The class deliberately omits the following — every one of them was
@@ -705,20 +705,23 @@ class FSRecord(Generic[M]):
             return None
         return body_fn(entity)
 
-    def upsert_main_ref(self, entity) -> None:
+    def upsert_main_ref(self, entity) -> str | None:
         """Write default_body into asset_ref iff the file doesn't yet exist —
         or on EVERY save for ``owns_main_ref`` types (the entity is the file's
         sole editor, so entity-side edits must reach the on-disk source of
         truth; otherwise the next rescan would revert them).
 
-        No-op if the record has no asset_ref OR no default_body for the type.
+        Returns the filesystem identity committed by ``TypeInfo`` when the type
+        has an identity policy. No-op if the record has no asset_ref.
         Asset_ref must be under the user's scope_root — never under records_root.
         """
         from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
         ar = self._asset_ref
         if ar is None:
-            return
+            return None
+        if ar.read_only:
+            raise IOError(f"FSRef at {ar.path!r} is read-only")
         info = SchemaRegistry.get(self.type)
         # For folder types whose asset_ref is the folder (skill/whiteboard), the
         # body lives at <folder>/<main_file>. Resolve the real file before the
@@ -726,22 +729,44 @@ class FSRecord(Generic[M]):
         # otherwise short-circuit the first-create write.
         path = info.body_path_for(ar._path) if info else ar._path
         owns = bool(info and info.owns_main_ref)
-        # Folder-backed entities carry their id in a `.flow/id` capsule inside the
-        # folder — the portable, move-safe identity home (and the only place a
-        # main-doc-less folder can store its id). Written for EVERY folder-backed
-        # type, BEFORE the body-None early-return below, so a folder with no main
-        # doc still gets a capsule on create.
-        if info and info.folder_backed and getattr(entity, "id", None):
-            from flow_sdk.fs_store.indexer.functions._folder_capsule import (  # noqa: PLC0415
-                write_folder_capsule_id,
-            )
-            write_folder_capsule_id(ar._path, str(entity.id))
-        if path.exists() and not owns:
-            return
-        body = self.default_body(entity)
-        if body is None:
-            return
-        write_text_if_changed(path, body)  # mkdirs; unchanged → don't touch mtime/index hash
+        if not path.exists() or owns:
+            body = self.default_body(entity)
+            if body is not None:
+                # An owned Markdown renderer replaces domain content but never
+                # owns capsule bytes. Validate/snapshot every named block,
+                # render, then restore the raw blocks before one atomic write.
+                if path.exists() and path.suffix.lower() in {".md", ".markdown"}:
+                    from flow_sdk.capsules import (  # noqa: PLC0415
+                        restore_capsule_blocks,
+                        snapshot_capsule_blocks,
+                    )
+
+                    existing = path.read_text(encoding="utf-8")
+                    body = restore_capsule_blocks(body, snapshot_capsule_blocks(existing))
+                try:
+                    unchanged = path.exists() and path.read_text(encoding="utf-8") == body
+                except OSError:
+                    unchanged = False
+                if not unchanged:
+                    from flow_sdk.fs_store.indexer._frontmatter import (  # noqa: PLC0415
+                        _atomic_write_text,
+                    )
+
+                    _atomic_write_text(path, body)
+            elif info and info.folder_backed:
+                # Main-doc-less folder assets still need an existing carrier
+                # target before AssetCapsule.from_path can select FolderCapsule.
+                ar._path.mkdir(parents=True, exist_ok=True)
+
+        entity_id = getattr(entity, "id", None)
+        if info is None or info.identity_backend is None or not entity_id:
+            return None
+        committed_id = info.mint_id(ar, proposed_id=str(entity_id))
+        # The carrier is authoritative. A create can race an existing asset at
+        # the same path (or use a deterministic policy), so the record must not
+        # keep advertising the losing proposed DB id after the commit.
+        self.__dict__["id"] = committed_id
+        return committed_id
 
     # ── DB integration ────────────────────────────────────────────────────
 

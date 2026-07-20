@@ -9,6 +9,7 @@ file-indexed row and a DB-minted row collide on one id across machines.
 """
 from typing import Optional
 
+from flow_sdk.fs_store.indexer.functions._asset_identity import derived_identity
 from flow_sdk.fs_store.indexer.functions.secret_origin import (
     extract_secret_origin,
     secret_origin_id_from_file,
@@ -39,7 +40,7 @@ SECRET_ORIGIN = TypeMetadata(
     main_layout="file",
     main_ext=".json",
     from_disk_fn=extract_secret_origin,
-    id_from_file_fn=secret_origin_id_from_file,
+    identity_backend=derived_identity(secret_origin_id_from_file),
     id_stable_key_fn=secret_origin_identity_key,
     meta_model=SecretOriginMeta,
 )

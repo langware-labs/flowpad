@@ -1,5 +1,6 @@
 import { Bookmark, QueryRequest, dataContext } from '@sdk';
 import { useEntitiesQuery } from '@sdk/react/hooks';
+import { isHubOnly } from '@src/navigation/hub-runtime';
 import { defaultScopeFilter } from '@src/lib/scope-filter';
 import { bookmarkInScope } from '@src/lib/bookmark-scope';
 import { isFavoriteBookmark, isUnopened } from './use-favorites';
@@ -36,7 +37,8 @@ export function useUnopenedFavoritesCount(): number {
     () => new QueryRequest({ type: 'bookmark', scope: [], name: 'useUnopenedFavoritesCount' }),
     [],
   );
-  const { data: bookmarks = [] } = useEntitiesQuery<Bookmark>(queryRequest);
+  // Hub mode: `bookmark` is a local-only entity (422 on the hub) — skip the fetch.
+  const { data: bookmarks = [] } = useEntitiesQuery<Bookmark>(queryRequest, { enabled: !isHubOnly() });
 
   const currentProjectId = dataContext.project?.id ?? null;
   const scope = useMemo(() => defaultScopeFilter(currentProjectId), [currentProjectId]);
