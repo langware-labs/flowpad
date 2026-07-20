@@ -68,11 +68,11 @@ def copilot_session_id(ref: FSRef) -> str:
     return existing or mint_uuid(copilot_session_stable_key(ref), namespace=uuid.NAMESPACE_DNS)
 
 
-def extract_copilot_session(ref: FSRef) -> list[FSRecord]:
-    return [extract_copilot_session_from_path(ref._path)]
+def extract_copilot_session(ref: FSRef, resolved_id: str) -> list[FSRecord]:
+    return [extract_copilot_session_from_path(ref._path, resolved_id=resolved_id)]
 
 
-def extract_copilot_session_from_path(path: str | Path) -> FSRecord:
+def extract_copilot_session_from_path(path: str | Path, *, resolved_id: str | None = None) -> FSRecord:
     """Build a Record from a Copilot ``events.jsonl`` path.
 
     Envelope fields (session id / cwd) come from ``read_copilot_session_meta``
@@ -99,7 +99,7 @@ def extract_copilot_session_from_path(path: str | Path) -> FSRecord:
 
     rec = FSRecord(
         type=RecordType.COPILOT_SESSION,
-        id=session_id,
+        id=resolved_id or session_id,
         name=session_id,
         session_id=session_id,
         cwd=cwd,

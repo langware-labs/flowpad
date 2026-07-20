@@ -5,6 +5,7 @@ import {
   DockPointerData,
   type IDockPointer,
   Layout,
+  PageId,
   QueryRequest,
   Shell,
   toplog,
@@ -192,7 +193,7 @@ export class NavigationActions {
     const base = pointer instanceof DockPointer ? pointer : new DockPointer(pointer);
     let dock =
       extraOptions && Object.keys(extraOptions).length > 0
-        ? new DockPointer(base.viewType, base.pointer, { ...base.options, ...extraOptions }, base.layout)
+        ? new DockPointer(base.viewType, base.pointer, { ...base.options, ...extraOptions }, base.layout, base.page)
         : base;
 
     // URL-first default scope for scope-aware surfaces (assets, triggers, file
@@ -230,7 +231,7 @@ export class NavigationActions {
 
     const layout = preserveWindowLayout(currentPath, dock.layout);
     const targetDock =
-      layout === dock.layout ? dock : new DockPointer(dock.viewType, dock.pointer, dock.options, layout);
+      layout === dock.layout ? dock : new DockPointer(dock.viewType, dock.pointer, dock.options, layout, dock.page);
     const fullUrl = targetDock.toUrl(currentPath);
 
     if (currentUrl === fullUrl || pendingDockNavigationUrl === fullUrl) {
@@ -334,7 +335,7 @@ export class NavigationActions {
    */
   openDockInWindow(pointer: IDockPointer | DockPointer): void {
     const base = pointer instanceof DockPointer ? pointer : new DockPointer(pointer);
-    const winDock = new DockPointer(base.viewType, base.pointer, base.options, Layout.WIN);
+    const winDock = new DockPointer(base.viewType, base.pointer, base.options, Layout.WIN, base.page);
     window.open(this.getDockUrl(winDock), '_blank');
   }
 
@@ -354,6 +355,15 @@ export class NavigationActions {
       ...(options?.pinned !== undefined && { pinned: options.pinned.toString() }),
     });
     this.openDock(pointer);
+  }
+
+  /**
+   * Open a view on a specific SPA-surface (page). The hub rail/home use this to
+   * keep navigation under `page=hub` — `forTab`/`forHome` are desk-only, so
+   * routing a hub view through them would silently revert the page to `desk`.
+   */
+  openPage(page: PageId, viewType: ViewType = ViewType.HOME, pointer?: string): void {
+    this.openDock(new DockPointer(viewType, pointer, undefined, undefined, page));
   }
 
   closeTab(tabType: ViewType): void {

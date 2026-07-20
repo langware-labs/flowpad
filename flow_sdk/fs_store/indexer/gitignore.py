@@ -38,9 +38,11 @@ _WALK_IGNORED: frozenset[str] = frozenset({
     # macOS zip-extraction junk: __MACOSX holds only AppleDouble (._*)
     # resource-fork sidecars — binary, never real content.
     "__MACOSX",
-    # Flowpad-generated state dirs (llm_index summary caches, markdown-index
-    # sidecars, instance state). Never content — no walker should enter them.
-    ".flowpad", ".markdown_index", ".llm_index",
+    # Flowpad-generated state and metadata dirs. They may travel with an asset,
+    # but no content walker should enter them.
+    # Asset-local FlowPad metadata (named capsules, legacy ids, and future
+    # carriers) is transportable content, but never an asset-discovery root.
+    ".flow", ".flowpad", ".markdown_index", ".llm_index",
 })
 
 

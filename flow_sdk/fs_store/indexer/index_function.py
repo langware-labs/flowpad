@@ -834,9 +834,9 @@ class FSIndexer:
                     # Loop is gated by _has_dispatch → from_disk_fn is set.
                     from_disk = info.from_disk_fn
                     if asyncio.iscoroutinefunction(from_disk):
-                        records = await from_disk(ref)
+                        records = await from_disk(ref, ref_id)
                     else:
-                        records = await asyncio.to_thread(from_disk, ref)
+                        records = await asyncio.to_thread(from_disk, ref, ref_id)
                     # Walk-time scope/project_id from the FSRef parent-chain.
                     # Loop-invariant — read once, stamp on each record.
                     ref_scope = ref.scope
@@ -863,10 +863,6 @@ class FSIndexer:
                     # repo asset (not the walk root).
                     parent_typeid = ref_typeid(getattr(ref, "_parent", None))
                     for rec in records:
-                        # Identity was resolved exactly once before payload
-                        # extraction. Parsers may still expose legacy/raw ids
-                        # during migration, but those values cannot reach DB.
-                        object.__setattr__(rec, "id", ref_id)
                         if ref_scope is not None:
                             object.__setattr__(rec, "scope", ref_scope)
                         if parent_typeid and not getattr(rec, "parent_type_id", None):

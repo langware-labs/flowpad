@@ -33,6 +33,10 @@ from flow_sdk.fs_store.schema_registry import SchemaRegistry
 def _mint(ref: FSRef) -> str:
     return SchemaRegistry.get("dataset").mint_id(ref)
 
+
+def _extract(ref: FSRef):
+    return extract_dataset(ref, _mint(ref))
+
 # do not increase timeout without approval — these are pure-sync parses (<1s).
 pytestmark = pytest.mark.timeout(5)
 
@@ -120,7 +124,7 @@ def test_csv_happy_path(tmp_path: Path) -> None:
             "eval,9+1,10\n"
         ),
     )
-    records = extract_dataset(FSRef(ds))
+    records = _extract(FSRef(ds))
     assert len(records) == 1
     rec = records[0]
     assert rec.type == RecordType.DATASET
@@ -170,7 +174,7 @@ def test_io_folder_happy_path(tmp_path: Path) -> None:
             "0002": {"input": "foo", "expected": "bar"},
         },
     )
-    records = extract_dataset(FSRef(ds))
+    records = _extract(FSRef(ds))
     assert len(records) == 1
     meta = records[0].meta_dict()["metadata"]
     assert meta["num_examples"] == 2
@@ -591,7 +595,7 @@ def test_dataset_json_extra_keys_preserved_in_record(tmp_path: Path) -> None:
         manifest={"data_layout": "io_folder"},
         manifest_data={"owner": "eran"},
     )
-    rec = extract_dataset(FSRef(ds))[0]
+    rec = _extract(FSRef(ds))[0]
     assert rec.meta_dict()["metadata"]["data"]["owner"] == "eran"  # free dataset data section
 
 
@@ -620,7 +624,7 @@ def test_extract_surfaces_new_counts(tmp_path: Path) -> None:
             "0003": {"input": "i", "files": {"ground_truth.txt": "g"}},       # annotated
         },
     )
-    meta = extract_dataset(FSRef(ds))[0].meta_dict()["metadata"]
+    meta = _extract(FSRef(ds))[0].meta_dict()["metadata"]
     assert meta["num_examples"] == 3
     assert meta["num_binary_inputs"] == 1
     assert meta["num_multi_output"] == 1
@@ -676,7 +680,7 @@ def test_mixed_dataset_endtoend(tmp_path: Path) -> None:
     assert [a.index for a in rich.ground_truth_slot.artifacts] == [None, 2]
     assert rich.layout == "pages"
 
-    meta = extract_dataset(FSRef(ds))[0].meta_dict()["metadata"]
+    meta = _extract(FSRef(ds))[0].meta_dict()["metadata"]
     assert meta["num_examples"] == 2
     assert meta["num_multi_output"] == 1
     assert meta["num_annotated"] == 2  # both examples have a ground_truth slot
@@ -742,7 +746,7 @@ def test_dataset_json_two_section(tmp_path: Path) -> None:
         manifest={"data_layout": "io_folder", "title": "T"},
         manifest_data={"owner": "eran", "team": "ml"},
     )
-    meta = extract_dataset(FSRef(ds))[0].meta_dict()["metadata"]
+    meta = _extract(FSRef(ds))[0].meta_dict()["metadata"]
     assert meta["data_layout"] == "io_folder"          # known field from metadata section
     assert meta["data"] == {"owner": "eran", "team": "ml"}  # free dataset data section
 
@@ -754,5 +758,5 @@ def test_dataset_schema_passthrough(tmp_path: Path) -> None:
         examples={"0001": {"input": "i"}},
         manifest={"data_layout": "io_folder", "schema": schema},
     )
-    meta = extract_dataset(FSRef(ds))[0].meta_dict()["metadata"]
+    meta = _extract(FSRef(ds))[0].meta_dict()["metadata"]
     assert meta["schema"] == schema  # opaque known field, surfaced verbatim

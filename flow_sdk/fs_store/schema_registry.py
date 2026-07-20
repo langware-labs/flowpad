@@ -14,30 +14,19 @@ from __future__ import annotations
 
 import hashlib
 import json
-import tempfile
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, ClassVar
 
-from filelock import FileLock
-
+from flow_sdk.capsules import CapsuleSpec
+from flow_sdk.fs_store.identity_backend import IdentityBackend, IdentityState
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.instance_settings import get_instance_settings
 from flow_sdk.schema.view_mode import ViewMode, view_mode_rank, visible_in
 
 _MAX_LOG_ENTRIES: int = 100
-_IDENTITY_MINT_LOCK_DIR = Path(tempfile.gettempdir()) / "flowpad-asset-id-locks"
-
-
-def _identity_mint_lock(path: Path) -> FileLock:
-    """Cross-process lock for one canonical asset identity carrier."""
-    _IDENTITY_MINT_LOCK_DIR.mkdir(parents=True, exist_ok=True)
-    digest = hashlib.sha256(str(path.resolve()).encode()).hexdigest()
-    return FileLock(str(_IDENTITY_MINT_LOCK_DIR / f"{digest}.lock"))
-
-
 def _schema_dir() -> Path:
     """Resolve the per-instance schema dir at call time.
 
@@ -257,17 +246,14 @@ class TypeInfo:
     # in ``fs_store/indexer/functions/<type>.py``. The indexer reads these
     # instead of duck-typing classmethods on the entity:
     #   from_disk_fn:      Callable[[FSRef, str], list[FSRecord]] — parse payload
-    #   id_from_file_fn:   Callable[[FSRef | Path], object] — pure file id reader
-    #   id_from_folder_fn: Callable[[FSRef | Path], object] — pure folder id reader
+    #   identity_backend:  IdentityBackend — carrier observation/persistence
     #   id_stable_key_fn:  Callable[[FSRef | Path], str | None] — v5 key
-    #   id_write_fn:       Callable[[FSRef | Path, str], bool] — persist minted id
     #   asset_hash_fn:     Callable[[FSRef], float] — cheap freshness stat
     from_disk_fn: Any = field(default=None, compare=False, repr=False)
-    id_from_file_fn: Any = field(default=None, compare=False, repr=False)
-    id_from_folder_fn: Any = field(default=None, compare=False, repr=False)
+    capsules: tuple[CapsuleSpec, ...] = field(default_factory=tuple)
+    identity_backend: IdentityBackend | None = field(default=None, compare=False, repr=False)
     id_stable_key_fn: Any = field(default=None, compare=False, repr=False)
     id_namespace: uuid.UUID = field(default=uuid.NAMESPACE_URL, compare=False, repr=False)
-    id_write_fn: Any = field(default=None, compare=False, repr=False)
     asset_hash_fn: Any = field(default=None, compare=False, repr=False)
     # Per-type default-body writer: Callable[[entity], str]. Read by
     # FSRecord.default_body / upsert_main_ref to materialize the backing file on
@@ -391,6 +377,17 @@ class TypeInfo:
         """Return the concrete asset path accepted by identity callbacks."""
         return Path(getattr(ref, "_path", ref))
 
+    def capsule_target_for(self, ref: Any) -> Path:
+        """Return the owning file/folder used by this type's capsule backend."""
+        path = self._identity_path(ref)
+        if not self.folder_backed:
+            return path
+        if path.is_dir():
+            return path
+        if self.main_file and path.name == self.main_file:
+            return path.parent
+        return path
+
     def extract_id(self, ref: Any) -> str | None:
         """Read and validate this asset type's existing id without writing.
 
@@ -400,39 +397,70 @@ class TypeInfo:
         """
         from flow_sdk.fs_store.identifier import adopt_entity_id  # noqa: PLC0415
 
-        reader = self.id_from_folder_fn if self.folder_backed else self.id_from_file_fn
-        if reader is None:
+        if self.identity_backend is None:
             return None
-        return adopt_entity_id(reader(ref))
+        observation = self.identity_backend.observe(self.capsule_target_for(ref))
+        if observation.state is IdentityState.MALFORMED:
+            if observation.error is not None:
+                raise observation.error
+            raise ValueError(observation.detail or "malformed asset identity")
+        return adopt_entity_id(observation.candidate) if observation.state is IdentityState.VALID else None
 
-    def mint_id(self, ref: Any) -> str:
+    def mint_id(self, ref: Any, *, proposed_id: str | None = None) -> str:
         """Return the existing id, or mint this asset type's configured id.
 
-        Portable assets have no stable key: they receive a random v4 which is
-        returned only after ``id_write_fn`` confirms persistence.  If the asset
-        cannot carry that id, the stable path-v5 fallback keeps repeated scans
-        idempotent.  Natural/provider identities supply ``id_stable_key_fn`` and
-        therefore mint their configured deterministic v5 directly.
+        Portable assets have no stable key: they receive a random v4 only when
+        their backend commits it. If the asset cannot carry that id, the stable
+        path-v5 fallback keeps repeated scans idempotent. Natural/provider
+        identities supply ``id_stable_key_fn`` and mint deterministic v5 ids.
         """
-        from flow_sdk.fs_store.identifier import mint_uuid  # noqa: PLC0415
+        from flow_sdk.fs_store.identifier import is_valid_entity_id, mint_uuid  # noqa: PLC0415
 
-        path = self._identity_path(ref)
-        with _identity_mint_lock(path):
-            existing = self.extract_id(ref)
-            if existing is not None:
-                return existing
+        if proposed_id is not None and not is_valid_entity_id(proposed_id):
+            raise ValueError("proposed entity id must be a UUID v4 or v5")
 
-            stable_key = self.id_stable_key_fn(ref) if self.id_stable_key_fn is not None else None
-            minted = mint_uuid(stable_key, namespace=self.id_namespace)
+        path = self.capsule_target_for(ref)
+        observation = (
+            self.identity_backend.observe(path)
+            if self.identity_backend is not None
+            else None
+        )
+        if observation is not None and observation.state is IdentityState.MALFORMED:
+            if observation.error is not None:
+                raise observation.error
+            raise ValueError(observation.detail or "malformed asset identity")
+        if observation is not None and observation.state is IdentityState.VALID:
+            return str(observation.candidate)
 
-            if self.id_write_fn is not None:
-                self.id_write_fn(ref, minted)
-                committed = self.extract_id(ref)
-                if committed is not None:
-                    return committed
-            if stable_key:
-                return minted
-            return mint_uuid(str(path.resolve()), namespace=self.id_namespace)
+        stable_key = self.id_stable_key_fn(ref) if self.id_stable_key_fn is not None else None
+        # Invalid canonical data is never overwritten or treated as a brand-new
+        # portable asset.  Derive a stable v5 until the source is repaired.
+        if observation is not None and observation.state is IdentityState.INVALID_ID:
+            return mint_uuid(stable_key or str(path.resolve()), namespace=self.id_namespace)
+
+        minted = proposed_id or mint_uuid(stable_key, namespace=self.id_namespace)
+        read_only = bool(getattr(ref, "read_only", False))
+        if self.identity_backend is not None and not read_only:
+            committed = self.identity_backend.store_if_absent(path, minted)
+            if committed.state is IdentityState.VALID:
+                return str(committed.candidate)
+            if committed.state is IdentityState.MALFORMED and committed.error is not None:
+                from flow_sdk.capsules import (  # noqa: PLC0415
+                    DuplicateCapsuleError,
+                    MalformedCapsuleError,
+                    UnsupportedCapsuleVersionError,
+                )
+                # OS/storage write failures fall back deterministically below;
+                # source corruption still fails closed.
+                if isinstance(
+                    committed.error,
+                    (MalformedCapsuleError, DuplicateCapsuleError, UnsupportedCapsuleVersionError),
+                ):
+                    raise committed.error
+
+        if stable_key:
+            return minted
+        return mint_uuid(str(path.resolve()), namespace=self.id_namespace)
 
     @property
     def _resolved_layout(self) -> "tuple[Any, Any, str | None]":
@@ -472,6 +500,10 @@ class TypeInfo:
             "icon": self.icon,
             "parent_type": self.parent_type,
             "locations": sorted(self.locations),
+            "capsules": [
+                {"name": spec.name, "version": spec.version}
+                for spec in sorted(self.capsules, key=lambda item: item.name)
+            ],
         }
         return hashlib.md5(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()[:16]
 
@@ -639,16 +671,27 @@ class SchemaRegistry:
                 existing.post_sync_fn = info.post_sync_fn
             if info.from_disk_fn is not None:
                 existing.from_disk_fn = info.from_disk_fn
-            if info.id_from_file_fn is not None:
-                existing.id_from_file_fn = info.id_from_file_fn
-            if info.id_from_folder_fn is not None:
-                existing.id_from_folder_fn = info.id_from_folder_fn
+            if info.capsules:
+                merged_capsules = {spec.name: spec for spec in existing.capsules}
+                for spec in info.capsules:
+                    current = merged_capsules.get(spec.name)
+                    if current is not None and current != spec:
+                        raise ValueError(
+                            f"Conflicting capsule declaration for type {info.type_name!r}: "
+                            f"{current!r} vs {spec!r}"
+                        )
+                    merged_capsules[spec.name] = spec
+                existing.capsules = tuple(merged_capsules[name] for name in sorted(merged_capsules))
+            if info.identity_backend is not None:
+                if existing.identity_backend is not None and existing.identity_backend != info.identity_backend:
+                    raise ValueError(
+                        f"Conflicting identity backend registration for type {info.type_name!r}"
+                    )
+                existing.identity_backend = info.identity_backend
             if info.id_stable_key_fn is not None:
                 existing.id_stable_key_fn = info.id_stable_key_fn
             if info.id_namespace != uuid.NAMESPACE_URL:
                 existing.id_namespace = info.id_namespace
-            if info.id_write_fn is not None:
-                existing.id_write_fn = info.id_write_fn
             if info.asset_hash_fn is not None:
                 existing.asset_hash_fn = info.asset_hash_fn
             if info.default_body_fn is not None:

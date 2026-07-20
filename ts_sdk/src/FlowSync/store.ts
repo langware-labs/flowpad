@@ -7,6 +7,7 @@ import { IEntity } from '../IEntity';
 import { ActionInfo, BootstrapInfo, ScanInfo } from '../models';
 import { TypeId } from '../models/TypeId';
 import { dockOptionsToScopeFilter } from '../utils/scope-filter';
+import { isHubOnly } from '../utils/hub-runtime';
 import { isAbsoluteMachinePath } from '../utils/vfs-path';
 import { UserRole } from '../services/membershipService';
 import {
@@ -217,6 +218,12 @@ export class DataManager<T extends Manageable> extends EventEmitter {
   }
 
   async refreshScanInfo(): Promise<void> {
+    // Hub mode: the hub backend has no local fs-records `/index-status` (404).
+    // Seed an empty (idle, never-indexed) scan info instead of round-tripping.
+    if (isHubOnly()) {
+      this.setScanInfo({ total_indexed: 0, last_indexed_at: null, never_indexed: true, stale: false });
+      return;
+    }
     try {
       const raw = await apiClient.get<any>('/graph/compute_node/@local/fs-records/index-status');
       this.setScanInfo({

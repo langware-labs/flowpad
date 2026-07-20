@@ -8,6 +8,7 @@ No mocks: real test DB + real FSIndexer. Exercises exactly what unpack_bundle
 runs for a file-backed asset entry.
 """
 import filecmp
+from pathlib import Path
 
 import pytest
 
@@ -90,6 +91,11 @@ async def test_restore_heals_content_less_stub(tmp_path):
     await stub.save()
     pre = await Spec.get_one({"id": SPEC_ID})
     assert pre is not None and not (pre.content or "").strip(), "precondition: empty stub"
+    # A DB-only stub must not leave a second live filesystem claimant. A live
+    # source with the same id is an intentional duplicate and is skipped.
+    import shutil
+
+    shutil.rmtree(Path(stub.asset_ref).parent)
 
     # Receiver copies the bundle source into the project and reindexes. The
     # body lands on the SAME row (the pinned frontmatter id resolves to it).

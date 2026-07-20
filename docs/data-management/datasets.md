@@ -27,7 +27,7 @@ without caring which layout produced it.
 
 ## 0. The two-section convention (`metadata` + `data`)
 
-**Every dataset JSON file** — `dataset.json`, `example.json`, and the `<slot>.json`
+**Every domain dataset JSON file** — `dataset.json`, `example.json`, and the `<slot>.json`
 sidecars — is a two-section document:
 
 ```jsonc
@@ -47,6 +47,9 @@ Both sections are **mandatory**: a *flat* JSON (one with neither key) is treated
 malformed — both sections come back empty, so `kind`/`data_layout`/etc. written at
 the top level are **ignored**. Always nest under `metadata`/`data`.
 
+The FlowPad-managed `.flow/capsules/*.json` files are not dataset domain
+documents and use the capsule schema described under Portability below.
+
 > The `csv` layout is the one exception — `data.csv` cells are not JSON docs; its
 > leftover columns land in `Example.metadata` (see §2).
 
@@ -60,7 +63,6 @@ configuration + metadata, in the two-section form:
 ```jsonc
 {
   "metadata": {
-    "id": "f81d4fae-7dec-11d0-a765-00a0c91e6bf6", // optional but recommended (Portability)
     "title": "Grader E2E",                         // display name
     "description": "End-to-end grading eval cases", // free text
     "data_layout": "io_folder",                    // "csv" | "io_folder" (default "csv")
@@ -80,10 +82,18 @@ Computed fields you **do not** write — the indexer fills them in:
 
 ### Portability
 
-If you omit `id`, the dataset's id is derived from its **absolute folder path**,
-so moving the folder to another machine/path changes its identity. **Pin a `id`
-(UUID v4 or v5) in the manifest** to keep a stable identity across relocation —
-that is what makes a dataset transferable.
+On the first writable index, FlowPad mints a UUID v4 and stores it in the
+dataset folder's named identity capsule:
+
+```json
+// .flow/capsules/identity.json
+{"version": 1, "data": {"id": "3f2dcaba-0e1f-49b0-b220-467938e4875d"}}
+```
+
+Copy or move the complete dataset folder, including `.flow/`, to retain that
+identity. You may create the capsule yourself with a valid UUID v4 or v5 when
+pre-pinning is required. An existing `metadata.id` inside `dataset.json` remains
+a read-only compatibility source, but new identity is never written there.
 
 ---
 
@@ -206,7 +216,8 @@ accepted as a back-compat alias; `example.json` wins per section on conflict).
 
 ```
 assets/datasets/grader-e2e/
-  dataset.json                     # { "metadata": { "id": "...", "data_layout": "io_folder", "title": "Grader E2E" } }
+  .flow/capsules/identity.json     # { "version": 1, "data": { "id": "<uuid-v4-or-v5>" } }
+  dataset.json                     # { "metadata": { "data_layout": "io_folder", "title": "Grader E2E" }, "data": {} }
   examples/0001/
     input.pdf                      # raw input (binary; referenced, not read)
     input.json                     # { "metadata": { "pages": 3 }, "data": {} }   ← input sidecar
@@ -253,7 +264,8 @@ multi data; use `input`/`expected` for the simple single-text case.
 - [ ] Every `*.json` is two-section — known keys under `metadata`, free under `data`
       (a flat JSON is ignored).
 - [ ] Folder is at `assets/datasets/<slug>/` with a `dataset.json` at its root.
-- [ ] `dataset.json` `metadata` sets `data_layout` (`csv` or `io_folder`) and a pinned `id`.
+- [ ] `dataset.json` `metadata` sets `data_layout` (`csv` or `io_folder`); preserve
+      `.flow/capsules/identity.json` when copying or moving the dataset.
 - [ ] **csv**: `data.csv` present; non-standard headers remapped via `field_spec`.
 - [ ] **io_folder**: every `examples/<name>/` has an `input` artifact (file/folder).
 - [ ] Gold goes under `ground_truth` (structured gold → folder form, e.g.
@@ -262,5 +274,6 @@ multi data; use `input`/`expected` for the simple single-text case.
       `metadata` carries `kind`/`layout`.
 - [ ] Run the indexer (`flow record index`) to register the dataset and counts.
 
-See also: [Folder Layout](folder-layout.md) (internal records-root layout) and
-[Schema Registry](schema-registry.md) (how the `dataset` type is registered).
+See also: [Asset capsules](asset-capsules.md) (portable identity), [Folder
+Layout](folder-layout.md) (internal records-root layout), and [Schema
+Registry](schema-registry.md) (how the `dataset` type is registered).

@@ -123,7 +123,7 @@ def secret_origin_identity_key(ref: FSRef | Path) -> str | None:
 
 # ── extractor ─────────────────────────────────────────────────────────────────
 
-def extract_secret_origin(ref: FSRef) -> list[FSRecord]:
+def extract_secret_origin(ref: FSRef, resolved_id: str) -> list[FSRecord]:
     """Parse a value-free secret reference json into one FSRecord.
 
     Single-path index bypasses the walker's scoping, so gate on the ``.json`` ext
@@ -146,14 +146,9 @@ def extract_secret_origin(ref: FSRef) -> list[FSRecord]:
     except ValueError as e:
         logger.warning("[secret-origin] refusing non-value-free reference %s: %s", path, e)
         return []
-    sid = _convergent_id(data)
-    if not sid:
-        logger.warning("[secret-origin] %s has no adoptable id and no resolvable locator", path)
-        return []
-
     rec = FSRecord(
         type=RecordType.SECRET_ORIGIN,
-        id=sid,
+        id=resolved_id,
         name=str(data.get("name") or path.stem),
         status="active",
         content=str(data.get("name") or path.stem),

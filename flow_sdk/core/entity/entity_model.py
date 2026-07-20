@@ -889,11 +889,9 @@ class Entity(DBEntity):
             return None
 
         resolved_id = info.extract_id(ref) or info.mint_id(ref)
-        records = info.from_disk_fn(ref)
+        records = info.from_disk_fn(ref, resolved_id)
         if not records:
             return None
-        for record in records:
-            object.__setattr__(record, "id", resolved_id)
         return Entity._build_from_fs_record(records[0], fallback_cls=cls)
 
     @classmethod

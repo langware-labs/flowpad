@@ -12,6 +12,7 @@ from flow_sdk.app.actions.group_task_action import (
 )
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer.functions.task import extract_task
+from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.schema.type_info import register_all
 
 
@@ -21,8 +22,6 @@ def _registered():
 
 
 def _task_md_body_from(entity) -> str:
-    from flow_sdk.fs_store.schema_registry import SchemaRegistry
-
     return SchemaRegistry.get("task").default_body_fn(entity)
 
 
@@ -130,7 +129,8 @@ def test_group_fields_round_trip_task_md(tmp_path):
     folder.mkdir(parents=True)
     (folder / "task.md").write_text(_task_md_body_from(child), encoding="utf-8")
 
-    rec = extract_task(FSRef(folder))[0]
+    ref = FSRef(folder)
+    rec = extract_task(ref, SchemaRegistry.get("task").mint_id(ref))[0]
     assert rec.parent_id == "11111111-2222-4333-8444-555566667777"
     assert rec.assignee == "bob@x.com"
     assert rec.kind == "standard"
@@ -144,7 +144,8 @@ def test_group_kind_round_trips(tmp_path):
     folder.mkdir(parents=True)
     (folder / "task.md").write_text(_task_md_body_from(parent), encoding="utf-8")
 
-    rec = extract_task(FSRef(folder))[0]
+    ref = FSRef(folder)
+    rec = extract_task(ref, SchemaRegistry.get("task").mint_id(ref))[0]
     assert rec.kind == "group"
     # Empty parent_id is dropped from frontmatter (not a leak, just clean yaml).
     assert "parent_id" not in (folder / "task.md").read_text(encoding="utf-8")

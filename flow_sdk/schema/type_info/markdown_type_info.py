@@ -1,5 +1,5 @@
 """Type metadata for MARKDOWN."""
-from flow_sdk.fs_store.indexer.functions._asset_identity import frontmatter_id, write_frontmatter
+from flow_sdk.fs_store.indexer.functions._asset_identity import IDENTITY_CAPSULE, capsule_identity, frontmatter_id
 from flow_sdk.fs_store.indexer.functions.markdown import (
     extract_markdown,
 )
@@ -34,8 +34,8 @@ MARKDOWN = TypeMetadata(
     asset_class="internal",
     family="docs",
     from_disk_fn=extract_markdown,
-    id_from_file_fn=frontmatter_id,
-    id_write_fn=write_frontmatter,
+    capsules=(IDENTITY_CAPSULE,),
+    identity_backend=capsule_identity(frontmatter_id),
     post_sync_fn=reconcile_folder_doc_edges,
     default_body_fn=_markdown_default_body,
     # On receive, a note has no setup agent — it just opens (setup_skill=None).

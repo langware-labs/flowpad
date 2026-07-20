@@ -5,6 +5,7 @@ import { IDockPointer } from '../models/DockPointer';
 import { TypeId } from '../models/TypeId';
 import { EntityTypes } from '../schema/types';
 import { dockOptionsToScopeFilter } from '../utils/scope-filter';
+import { isHubOnly } from '../utils/hub-runtime';
 import { Project } from './project';
 
 /** A terminal target's display fields, read off the (cached/resolved) entity. */
@@ -352,6 +353,9 @@ export class Tab extends APIEntity<Tab> implements ITab {
    *  sessions view + footer projects-chip read; replaces the old reactive
    *  `tab?visible=true` entity query. (Project-scoped views use `list`.) */
   static async listAll(): Promise<Tab[]> {
+    // Hub mode runs ephemeral: the hub backend has no `tab` entity, so a
+    // `list_all` would 422. Return an empty set — tabs are never persisted here.
+    if (isHubOnly()) return [];
     const info = new ActionInfo('list_all', Tab.type, null, 'GET');
     const res = await dataManager.callAction<undefined, { tabs: ITab[] }>(info);
     return Tab.fromResponse(res?.tabs ?? []);
