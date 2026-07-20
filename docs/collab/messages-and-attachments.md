@@ -217,6 +217,13 @@ mode means "restore the record from the checkout and sender metadata", not
 artifact declaration and `GitOrigin`; the sender's absolute path is deliberately
 cleared on receive and resolved later when the receiver opens the artifact.
 
+Copy-mode file-backed assets carry named capsules with their source bytes:
+Markdown identity remains in its comment block and folder identity remains in
+`.flow/capsules/identity.json`. Packing and restoring existing sources never
+injects, rewrites, or repairs an id; duplicate/conflicting copied identities are
+left to the indexer's warn-and-skip rule. Only a source-less rendered fallback
+mints its proposed bundle id through `TypeInfo` after the path exists.
+
 ### Download (receiver)
 
 `download_body()` (`flow_sdk/builtin/flow_message.py:636`) **refuses with

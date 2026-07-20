@@ -156,11 +156,16 @@ def claude_session_id(ref: FSRef) -> str:
 
 # ── Extractor (head + tail read, no stat parse) ──────────────────────────────
 
-def extract_claude_session(ref: FSRef) -> list[FSRecord]:
+def extract_claude_session(ref: FSRef, resolved_id: str) -> list[FSRecord]:
     """Parse a JSONL session into a Record. Replaces ``ClaudeSessionRecord._from_fsref_sync``."""
-    return [extract_claude_session_from_path(ref._path)]
+    return [extract_claude_session_from_path(ref._path, resolved_id=resolved_id)]
 
-def extract_claude_session_from_path(path: str | Path, *, include_content: bool = True) -> FSRecord:
+def extract_claude_session_from_path(
+    path: str | Path,
+    *,
+    include_content: bool = True,
+    resolved_id: str | None = None,
+) -> FSRecord:
     """Build a Record from a JSONL transcript path.
 
     Envelope fields are read cheaply: first ``_HEAD_LINES`` lines for
@@ -237,7 +242,7 @@ def extract_claude_session_from_path(path: str | Path, *, include_content: bool 
 
     rec = FSRecord(
         type=RecordType.CLAUDE_SESSION,
-        id=session_id,
+        id=resolved_id or session_id,
         name=name,
         session_id=session_id,
         slug=slug,

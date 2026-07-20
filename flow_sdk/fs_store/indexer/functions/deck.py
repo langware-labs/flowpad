@@ -10,9 +10,9 @@ self-contained ``<name>.html``:
 
 Provenance: the deck records which ``deck_template`` it was built from. The
 extractor resolves ``deck.json["template"]`` (a relative path) to the sibling
-template folder and reads that folder's ``.flow/id`` capsule (read-only) — so a
-deck carries a ``template_ref`` edge to its template once the template is
-indexed (else ``None``).
+template folder and asks the deck-template ``TypeInfo`` for its existing
+filesystem identity (read-only) — so a deck carries a ``template_ref`` edge to
+its template once an identity exists (else ``None``).
 
 Type metadata lives in ``flow_sdk/schema/type_info/deck_type_info.py``; this
 module provides the walker + slot functions only. Modeled on
@@ -116,7 +116,7 @@ def _find_html(path: Path) -> str:
 
 def _resolve_template_ref(deck_dir: Path, manifest: dict[str, Any]) -> str | None:
     """Resolve deck.json ``template`` (relative path) → the source deck_template's
-    entity id, by reading the sibling template folder's ``.flow/id`` capsule.
+    entity id through the deck-template type's identity backend.
 
     Read-only: returns ``None`` when there's no template ref, the folder is
     missing, or the template hasn't been indexed yet (no capsule). Never mints —
@@ -131,7 +131,15 @@ def _resolve_template_ref(deck_dir: Path, manifest: dict[str, Any]) -> str | Non
         return None
     if not tpl_dir.is_dir():
         return None
-    return read_folder_capsule_id(tpl_dir)
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    info = SchemaRegistry.get(str(RecordType.DECK_TEMPLATE))
+    if info is None:
+        return None
+    try:
+        return info.extract_id(FSRef(tpl_dir, record_type=RecordType.DECK_TEMPLATE))
+    except Exception:
+        return None
 
 
 def _slide_text(manifest: dict[str, Any]) -> str:
@@ -154,14 +162,12 @@ def _slide_text(manifest: dict[str, Any]) -> str:
     return "\n".join(parts)
 
 
-def extract_deck(ref: FSRef) -> list[FSRecord]:
+def extract_deck(ref: FSRef, resolved_id: str) -> list[FSRecord]:
     """Parse a deck folder into a single FSRecord with denormalized build data."""
     path = ref._path
     if not path.is_dir() or not (path / MANIFEST).is_file():
         return []
     manifest = _load_manifest(path)
-
-    deck_id = read_folder_capsule_id(path) or _deck_id_from_path(path)
 
     slides = manifest.get("slides")
     num_slides = len(slides) if isinstance(slides, list) else 0
@@ -183,7 +189,7 @@ def extract_deck(ref: FSRef) -> list[FSRecord]:
 
     rec_kwargs: dict[str, Any] = {
         "type": RecordType.DECK,
-        "id": deck_id,
+        "id": resolved_id,
         "name": name,
         "status": "active",
         "content": content,

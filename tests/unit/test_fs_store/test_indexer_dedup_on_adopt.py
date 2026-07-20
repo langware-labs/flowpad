@@ -13,17 +13,20 @@ from pathlib import Path
 import pytest
 
 from flow_sdk.db import get_db_driver
+from flow_sdk.capsules import AssetCapsule
 from flow_sdk.fs_store.indexer import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
 from tests.unit.test_fs_store._md_harness import (
     MD_OPTS as _OPTS,
 )
 from tests.unit.test_fs_store._md_harness import (
-    fm_id as _fm_id,
-)
-from tests.unit.test_fs_store._md_harness import (
     md_indexer as _md_indexer,
 )
+
+
+def _capsule_id(path: Path) -> str | None:
+    data = AssetCapsule.from_path(path).read("identity")
+    return str(data.data["id"]) if data is not None else None
 from tests.unit.test_fs_store._md_harness import (
     md_sources as _sources,
 )
@@ -49,15 +52,15 @@ async def test_copy_is_warned_and_skipped_without_rekey(
 ) -> None:
     idx, a, aid = await _seed_one(tmp_path)
     b = a.with_name("b.md")
-    shutil.copyfile(a, b)  # both present, both carry the same frontmatter id
-    assert _fm_id(b) == aid
+    shutil.copyfile(a, b)  # both present, both carry the same comment capsule
+    assert _capsule_id(b) == aid
     before = b.read_bytes()
     with caplog.at_level(logging.WARNING):
         result = await idx.index(IndexerOptions(**_OPTS))
     src = await _sources()
     assert list(src) == [aid]
     assert (src[aid][0] or "").endswith("a.md"), "the live DB incumbent wins"
-    assert _fm_id(b) == aid and b.read_bytes() == before
+    assert _capsule_id(b) == aid and b.read_bytes() == before
     assert result.per_type[RecordType.MARKDOWN].skipped == 2  # incumbent fresh + duplicate
     assert "duplicate asset id" in caplog.text
     assert f"id={aid}" in caplog.text
@@ -82,7 +85,7 @@ async def test_legacy_dedup_flag_does_not_change_skip_policy(tmp_path: Path) -> 
     b = a.with_name("b.md")
     shutil.copyfile(a, b)
     await idx.index(IndexerOptions(**_OPTS, dedup_on_adopt=False))
-    assert _fm_id(a) == _fm_id(b) == aid
+    assert _capsule_id(a) == _capsule_id(b) == aid
     assert set(await _sources()) == {aid}
 
 
@@ -124,4 +127,4 @@ async def test_live_incumbent_beats_canonical_path_order(tmp_path: Path) -> None
     src = await _sources()
     assert set(src) == {aid}
     assert (src[aid][0] or "").endswith("b.md")
-    assert _fm_id(a) == _fm_id(b) == aid
+    assert _capsule_id(a) == _capsule_id(b) == aid

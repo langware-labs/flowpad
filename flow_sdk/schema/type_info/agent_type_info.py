@@ -1,5 +1,5 @@
 """Type metadata for AGENT."""
-from flow_sdk.fs_store.indexer.functions._asset_identity import frontmatter_id, write_frontmatter
+from flow_sdk.fs_store.indexer.functions._asset_identity import IDENTITY_CAPSULE, capsule_identity, frontmatter_id
 from flow_sdk.fs_store.indexer.functions.agent import (
     extract_agent,
 )
@@ -27,8 +27,8 @@ AGENT = TypeMetadata(
     type=EntityType.AGENT,
     displayName="Agents",
     from_disk_fn=extract_agent,
-    id_from_file_fn=frontmatter_id,
-    id_write_fn=write_frontmatter,
+    capsules=(IDENTITY_CAPSULE,),
+    identity_backend=capsule_identity(frontmatter_id),
     indexed_by_default=True,
     browseable_by=ViewMode.STANDARD,
     creatable=True,

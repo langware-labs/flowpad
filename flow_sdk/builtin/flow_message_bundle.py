@@ -731,8 +731,7 @@ async def _pack_file_backed_attachment(
     lives inside a git repo (a ``GitOrigin`` is then recorded in ``origins``),
     else the canonical ``<main_subdir>/<leaf>``. Keying by ``rel_path`` lets the
     receiver mirror the sender's repo layout via the anchor-free restore. The
-    leaf name is preserved from the source; the sender's id is pinned into the
-    main doc so the receiver's identity resolver materializes the SAME entity.
+    leaf name and every capsule byte are preserved from an existing source.
 
     Build/environment cruft is filtered via ``_ASSET_PACK_IGNORE`` (deep
     ``.venv``/cache trees blow past Windows MAX_PATH on extractall).
@@ -804,15 +803,7 @@ async def _pack_file_backed_attachment(
             dest = subdir / f"{safe}{info.main_ext}"
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_text(default_body_fn(ent), encoding="utf-8")
-        _ensure_id_in_md_frontmatter(dest, entry_id)
-        # Also pin the `.flow/id` capsule for folder-backed types (the folder is
-        # dest.parent), so the id travels even when the main doc isn't the id home.
-        if getattr(info, "folder_backed", False):
-            from flow_sdk.fs_store.indexer.functions._folder_capsule import (  # noqa: PLC0415
-                write_folder_capsule_id,
-            )
-
-            write_folder_capsule_id(dest.parent, entry_id)
+        _mint_rendered_asset_identity(info, dest, entry_type, entry_id)
         return
 
     # Origin present → key by repo-relative path (mirror sender layout); else the
@@ -822,27 +813,27 @@ async def _pack_file_backed_attachment(
     dest.parent.mkdir(parents=True, exist_ok=True)
     if src_root.is_dir():
         shutil.copytree(src_root, dest, dirs_exist_ok=True, ignore=_ASSET_PACK_IGNORE)
-        # Pin the id into the folder's main doc (TypeInfo.main_file)…
-        main_file = getattr(info, "main_file", None)
-        if main_file:
-            doc = dest / main_file
-            if doc.exists():
-                _ensure_id_in_md_frontmatter(doc, entry_id)
-        # …and into the `.flow/id` capsule for folder-backed types, so the
-        # receiver adopts the sender's id even for a yaml-only skill or a
-        # main-doc-less folder (whose id has nowhere else to travel).
-        if getattr(info, "folder_backed", False):
-            from flow_sdk.fs_store.indexer.functions._folder_capsule import (  # noqa: PLC0415
-                write_folder_capsule_id,
-            )
-
-            write_folder_capsule_id(dest, entry_id)
     else:
         shutil.copy2(src_root, dest)
-        # Single-file markdown asset: pin the id into its frontmatter. Skip
-        # non-markdown bodies (e.g. dynamic_workflow ``.js``) — no YAML fm there.
-        if dest.suffix == ".md":
-            _ensure_id_in_md_frontmatter(dest, entry_id)
+
+
+def _mint_rendered_asset_identity(info, body_path: Path, entry_type: str, entry_id: str) -> str:
+    """Persist identity for a source-less body through the type's sole seam.
+
+    Existing-source bundles never call this helper: their files and folder
+    capsules are copied byte-for-byte. A rendered fallback is newly
+    materialized, so TypeInfo may safely persist the proposed bundle id after
+    the body exists (``AssetCapsule.from_path`` accepts existing paths only).
+    """
+    from flow_sdk.fs_store.fs_ref import FSRef  # noqa: PLC0415
+    from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
+
+    if info.main_layout == "folder":
+        asset_path = info.asset_ref_for(body_path.parent)
+    else:
+        asset_path = body_path
+    ref = FSRef(asset_path, record_type=RecordType(entry_type))
+    return info.mint_id(ref, proposed_id=entry_id)
 
 
 def _safe_entity_name(entity) -> str:
@@ -1895,43 +1886,6 @@ _ASSET_PACK_IGNORE = shutil.ignore_patterns(
 )
 
 
-def _inject_id_into_frontmatter_text(text: str, entry_id: str) -> "str | None":
-    """Return ``text`` with ``id: <entry_id>`` ensured in its YAML frontmatter
-    (other fields + body preserved), or None when the id already matches — so a
-    caller can keep the original bytes verbatim. Single source of truth for the
-    "carry the sender's id into a shared markdown asset" contract, shared by the
-    spec restore and the FS-rooted packer."""
-    from flow_sdk.fs_store.indexer._frontmatter import (  # noqa: PLC0415
-        _extract_body,
-        _extract_frontmatter,
-        _render_frontmatter,
-        _yaml_load,
-    )
-
-    fm = _extract_frontmatter(text)
-    fields = (_yaml_load(fm) or {}) if fm else {}
-    if not isinstance(fields, dict):
-        fields = {}
-    if fields.get("id") == entry_id:
-        return None
-    body = _extract_body(text) if fm else text
-    merged = {"id": entry_id, **{k: v for k, v in fields.items() if k != "id"}}
-    return _render_frontmatter(merged) + "\n\n" + body.lstrip("\n")
-
-
-def _ensure_id_in_md_frontmatter(md_path: Path, entry_id: str) -> None:
-    """Idempotently ensure a markdown file's YAML frontmatter carries
-    ``id: <entry_id>``. No-op when the id already matches; rewrites the file
-    with the id injected (preserving other fields + body) otherwise."""
-    try:
-        text = md_path.read_text(encoding="utf-8")
-    except OSError:
-        return
-    rewritten = _inject_id_into_frontmatter_text(text, entry_id)
-    if rewritten is not None:
-        md_path.write_text(rewritten, encoding="utf-8")
-
-
 def _zip_bundle(tmp_root: Path, dest_dir: Path | None, fm_id: str | None) -> Path:
     """Zip ``tmp_root`` contents into ``<dest_dir>/<slug>.flowmsg`` and return the path."""
     short_id = fm_id[:8] if fm_id else "msg"
@@ -2697,13 +2651,15 @@ async def unpack_bundle(
                             }
                             existing_task = await Task.get_one({"id": task_id})
                             if existing_task is None or overwrite:
-                                await Task.model_validate(task_payload).save(owner_typeid)
+                                await _save_entity_db_only(
+                                    Task.model_validate(task_payload), owner_typeid
+                                )
                             elif _fill_merge_entity(
                                 existing_task,
                                 task_payload,
                                 ("id", "type", "project_id", "status"),
                             ):
-                                await existing_task.save(owner_typeid)
+                                await _save_entity_db_only(existing_task, owner_typeid)
                     continue
 
                 if getattr(SchemaRegistry.get(entry_type), "receive_policy", None) == "auto":

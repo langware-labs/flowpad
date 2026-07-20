@@ -243,7 +243,7 @@ def claude_hook_id(ref: FSRef) -> str:
     return mint_uuid(claude_hook_identity_key(ref), namespace=uuid.NAMESPACE_DNS)
 
 
-def extract_claude_hook(ref: FSRef) -> list[FSRecord]:
+def extract_claude_hook(ref: FSRef, resolved_id: str) -> list[FSRecord]:
     """Parse one CLAUDE_HOOK FSRef into a record matching the legacy hook item shape."""
     path = Path(ref.path)
     frag = _read_hook_fragment(path, ref.json_path or "")
@@ -273,7 +273,7 @@ def extract_claude_hook(ref: FSRef) -> list[FSRecord]:
     if frag["flowpad_hook_id"]:
         fields["flowpad_hook_id"] = frag["flowpad_hook_id"]
 
-    rec = FSRecord(type=RecordType.CLAUDE_HOOK, id=_hook_id(scope, frag), **fields)
+    rec = FSRecord(type=RecordType.CLAUDE_HOOK, id=resolved_id, **fields)
     object.__setattr__(rec, "_asset_ref", FSRef(path, read_only=True, json_path=ref.json_path))
     return [rec]
 

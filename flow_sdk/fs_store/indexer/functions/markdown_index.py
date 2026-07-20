@@ -43,7 +43,7 @@ def markdown_index_identity_key(ref: FSRef | Path) -> str:
 
 # ── Extractor ─────────────────────────────────────────────────────────────────
 
-def extract_markdown_index(ref: FSRef) -> list[FSRecord]:
+def extract_markdown_index(ref: FSRef, resolved_id: str) -> list[FSRecord]:
     """Parse an ``index.md`` file into a MARKDOWN_INDEX Record.
 
     Delegates to ``from_markdown`` in the operations module so the parse
@@ -56,4 +56,5 @@ def extract_markdown_index(ref: FSRef) -> list[FSRecord]:
         return []
     from flow_sdk.fs_store.operations.markdown_index import from_markdown  # noqa: PLC0415
     rec = from_markdown(text, path=path)
+    rec.id = resolved_id
     return [rec]

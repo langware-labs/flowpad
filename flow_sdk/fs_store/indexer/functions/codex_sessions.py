@@ -141,12 +141,17 @@ def codex_session_id(ref: FSRef) -> str:
     return existing or mint_uuid(codex_session_stable_key(ref), namespace=uuid.NAMESPACE_DNS)
 
 
-def extract_codex_session(ref: FSRef) -> list[FSRecord]:
+def extract_codex_session(ref: FSRef, resolved_id: str) -> list[FSRecord]:
     """Parse a rollout JSONL into a Record (head fields only — stats lazy)."""
-    return [extract_codex_session_from_path(ref._path)]
+    return [extract_codex_session_from_path(ref._path, resolved_id=resolved_id)]
 
 
-def extract_codex_session_from_path(path: str | Path, *, include_content: bool = True) -> FSRecord:
+def extract_codex_session_from_path(
+    path: str | Path,
+    *,
+    include_content: bool = True,
+    resolved_id: str | None = None,
+) -> FSRecord:
     """Build a Record from a rollout JSONL path.
 
     Envelope fields (session_id / cwd / version / originator) are read from the
@@ -198,7 +203,7 @@ def extract_codex_session_from_path(path: str | Path, *, include_content: bool =
 
     rec = FSRecord(
         type=RecordType.CODEX_SESSION,
-        id=session_id,
+        id=resolved_id or session_id,
         name=session_id,
         session_id=session_id,
         cwd=cwd,

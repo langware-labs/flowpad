@@ -98,7 +98,6 @@ def deck_template_id_from_folder(ref: FSRef | Path) -> object | None:
     if cap:
         return cap
     meta, _ = _load_manifest(path)
-    from flow_sdk.fs_store.identifier import adopt_entity_id  # noqa: PLC0415
 
     return adopt_entity_id(meta.get("id"))
 
@@ -115,7 +114,7 @@ def _scan_layouts(path: Path) -> list[str]:
     )
 
 
-def extract_deck_template(ref: FSRef) -> list[FSRecord]:
+def extract_deck_template(ref: FSRef, resolved_id: str) -> list[FSRecord]:
     """Parse a deck-template folder into a single FSRecord with denormalized
     layout data. The layouts on disk are the truth; the manifest's declared
     ``page_types`` ride along as semantic metadata."""
@@ -126,12 +125,6 @@ def extract_deck_template(ref: FSRef) -> list[FSRecord]:
 
     # Capsule wins (gen_id stamped it), else manifest id, else uuid5(path) — the
     # same precedence as the TypeInfo reader, so direct extraction agrees.
-    tpl_id = (
-        read_folder_capsule_id(path)
-        or adopt_entity_id(tpl_meta.get("id"))
-        or _deck_template_id_from_path(path)
-    )
-
     layouts = _scan_layouts(path)
     raw_page_types = tpl_meta.get("page_types")
     page_types = (
@@ -159,7 +152,7 @@ def extract_deck_template(ref: FSRef) -> list[FSRecord]:
 
     rec_kwargs: dict[str, Any] = {
         "type": RecordType.DECK_TEMPLATE,
-        "id": tpl_id,
+        "id": resolved_id,
         "name": name,
         "status": "active",
         "content": content,

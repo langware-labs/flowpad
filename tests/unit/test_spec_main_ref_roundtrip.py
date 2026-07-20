@@ -37,26 +37,29 @@ def test_spec_main_ref_roundtrip_is_stable(tmp_path):
     object.__setattr__(rec, "_asset_ref", ar)
 
     # 1. owns_main_ref writes specs/<safe>/spec.md (folder + main_file).
-    rec.upsert_main_ref(entity)
+    resolved_id = rec.upsert_main_ref(entity)
     md = ar._path
     assert md.name == "spec.md", f"expected inner spec.md, got {md}"
     assert md.parent.parent.name == "spec", f"expected agentic-assets/spec/<name>/spec.md, got {md}"
     assert md.exists()
     written = md.read_text(encoding="utf-8")
     assert written.startswith("---")
-    assert spec_id in written
+    from flow_sdk.fs_store.indexer._frontmatter import _extract_frontmatter, _yaml_load
+    assert "id" not in (_yaml_load(_extract_frontmatter(written)) or {})
+    from flow_sdk.capsules import AssetCapsule
+    assert AssetCapsule.from_path(md).read("identity").data["id"] == resolved_id
     assert "SENTINEL-body line" in written
 
     # 2. extract_spec returns body-only content (frontmatter stripped).
-    recs = extract_spec(FSRef(md))
+    recs = extract_spec(FSRef(md), resolved_id)
     assert len(recs) == 1
     out = recs[0]
-    assert out.id == spec_id
+    assert out.id == resolved_id
     assert out.spec_type == "plan"
     assert getattr(out, "title", None) == title
     assert "SENTINEL-body line" in out.content
     assert not out.content.lstrip().startswith("---"), "frontmatter leaked into content"
-    assert spec_id not in out.content, "id frontmatter leaked into content"
+    assert resolved_id not in out.content, "capsule id leaked into content"
 
     # 3. WRITE-ONCE / "user data is user data": a manual edit to the existing
     #    file must survive a subsequent save — upsert_main_ref must NOT
@@ -68,6 +71,6 @@ def test_spec_main_ref_roundtrip_is_stable(tmp_path):
     assert "USER-EDITED-LINE" in after, "user edit to the file was clobbered"
     assert "totally different body" not in after, "save re-rendered the user's file"
     # And extraction still reflects the file (the source of truth), not entity2.
-    recs2 = extract_spec(FSRef(md))
+    recs2 = extract_spec(FSRef(md), resolved_id)
     assert "USER-EDITED-LINE" in recs2[0].content
     assert recs2[0].title == title
