@@ -110,10 +110,21 @@ export function useFavoritesRoots(opts?: {
     const refreshFolder = (folderId?: string | null) => {
       if (folderId) refreshNode(folderId);
     };
+    // A leaf favorite whose pointer resolves nowhere is a dead "ghost" — never
+    // render it (useFavorites.reapDead also hard-deletes these when the slider
+    // opens; this keeps them off-screen immediately, without waiting on the
+    // reap's refetch). Folders carry no target ref, so they bypass the check.
+    //
+    // `canNavigateFavorite` parses the stored pointer (JSON + Date allocs), and
+    // the overlapping filter/leaf paths would otherwise re-run it several times
+    // per leaf per render — resolve it once per favorite into a lookup set.
+    const navigableIds = new Set(favorites.filter(canNavigateFavorite).map((b) => b.id));
+    const isVisible = (b: Bookmark): boolean =>
+      filter(b) && (b.bookmark_type === BookmarkType.FAVORITE_FOLDER || navigableIds.has(b.id));
     const asLeaf = (b: Bookmark): Browseable => {
       const summary = summaryForBookmark(b, summaries);
       const title = b.name || summary?.name || b.displayName;
-      const navigable = canNavigateFavorite(b);
+      const navigable = navigableIds.has(b.id);
       const pointer = navigable ? pointerForFavorite(b) : null;
       const Icon = navigable ? resolveIcon(b) : X;
       const createdAgo = formatTimeAgo(b.created_date);
@@ -188,7 +199,7 @@ export function useFavoritesRoots(opts?: {
       if (!folderId || seen.has(folderId)) return [];
       seen.add(folderId);
       return childrenOf(folderId)
-        .filter(filter)
+        .filter(isVisible)
         .flatMap((k) =>
           k.bookmark_type === BookmarkType.FAVORITE_FOLDER ? leavesUnder(k.id ?? '', seen) : [k],
         );
@@ -197,7 +208,7 @@ export function useFavoritesRoots(opts?: {
     const asFolder = (folder: Bookmark): Browseable => {
       const title = folder.name || folder.title || folder.displayName;
       const allChildren = folder.id ? childrenOf(folder.id) : [];
-      const children = allChildren.filter(filter);
+      const children = allChildren.filter(isVisible);
       // The badge counts only what's NEVER been opened, so an all-opened folder
       // carries no badge (like a fully-read inbox); the tooltip still reports
       // full membership.
@@ -291,8 +302,8 @@ export function useFavoritesRoots(opts?: {
 
     // Only TOP-LEVEL folders render at root; nested subfolders surface inside
     // their parent via asFolder's recursive listChildren.
-    const visibleFolders = rootFolders.filter(filter);
-    const visibleRootFavorites = rootFavorites.filter(filter);
+    const visibleFolders = rootFolders.filter(isVisible);
+    const visibleRootFavorites = rootFavorites.filter(isVisible);
 
     return {
       // One root container, OS-style: folders and unfiled favorites share the
