@@ -81,7 +81,7 @@ class SecretsNotEnabledError(RuntimeError):
 
 
 @dataclass(frozen=True)
-class BaseInstanceSettings:
+class BaseRuntimeSettings:
     """Resolved per-instance config. Defaults are prod values."""
 
     # ---- Identity ----
@@ -191,7 +191,7 @@ class BaseInstanceSettings:
     # -----------------------------------------------------------------
 
     @classmethod
-    def from_env(cls, name: str = "prod") -> BaseInstanceSettings:
+    def from_env(cls, name: str = "prod") -> BaseRuntimeSettings:
         """Build a base instance with the given name (default ``"prod"``).
 
         ``name`` flows through from the resolver in ``__init__.get_instance_settings``,
@@ -208,7 +208,7 @@ class BaseInstanceSettings:
     @staticmethod
     def _build_from_env(
         *, cls: type, instance_name: str, is_dev: bool, default_port: int,
-    ) -> "BaseInstanceSettings":
+    ) -> "BaseRuntimeSettings":
         """Shared from_env body — Phase F consolidation.
 
         Replaces the per-subclass duplication of ~50 lines of dataclass
@@ -619,4 +619,4 @@ def _reset_sod_key_cache() -> None:
 
 
 # Public alias — code reads ``InstanceSettings`` for type annotations.
-InstanceSettings = BaseInstanceSettings
+RuntimeSettings = BaseRuntimeSettings

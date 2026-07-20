@@ -36,8 +36,8 @@ anyway.
 
 from __future__ import annotations
 
-from flow_sdk.instance_settings import get_instance_settings
-from flow_sdk.instance_settings.base_settings import SecretsNotEnabledError
+from flow_sdk.runtime_settings import get_runtime_settings
+from flow_sdk.runtime_settings.base_settings import SecretsNotEnabledError
 
 _SECRET_NAME = "cookie_gate"
 
@@ -59,12 +59,12 @@ _cache: dict[str, str | None] = {}
 
 
 def _read() -> str | None:
-    if not get_instance_settings().cookie_gate_marker_path.exists():
+    if not get_runtime_settings().cookie_gate_marker_path.exists():
         # Unarmed — the default, and every desktop install. Returning here on a
         # stat() is what keeps the sod, and therefore the keychain, untouched.
         return None
     try:
-        return get_instance_settings().sod.read(_SECRET_NAME)
+        return get_runtime_settings().sod.read(_SECRET_NAME)
     except SecretsNotEnabledError:
         # Under FLOWPAD_DESKTOP=1 the sod key must be seeded by Electron before
         # it can be read. Resolve to "not gated" rather than failing closed —
@@ -80,7 +80,7 @@ def _read() -> str | None:
 
 def get_cookie_gate() -> str | None:
     """The secret this instance is gated on, or ``None`` when it is not gated."""
-    key = get_instance_settings().instance_name
+    key = get_runtime_settings().instance_name
     if key in _cache:
         return _cache[key]
     value = _read() or None
@@ -97,7 +97,7 @@ def set_cookie_gate(value: str) -> None:
     """
     if not value:
         raise ValueError("cookie-gate secret must be non-empty")
-    settings = get_instance_settings()
+    settings = get_runtime_settings()
     # sod.write has no mkdir of its own, and its FileLock needs the dir to exist.
     # It does today only because _finalize_login runs enable_secrets() first —
     # not something a public setter should depend on. Same shape as
