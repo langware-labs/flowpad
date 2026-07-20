@@ -64,6 +64,11 @@ export enum PrefKey {
   ERROR_TIME_SPAN = 'preferences.errors.time_span',
   ERROR_STATUS_FILTER = 'preferences.errors.status_filter',
   ERROR_DEDUPLICATE = 'preferences.errors.deduplicate',
+  // debug
+  // Dev-only: which SPA page the local desktop server serves — 'desk' (default)
+  // or 'hub'. Toggled from the version modal; read by the backend at bootstrap
+  // to set supported_pages. Must match flow_sdk/server/routes/bootstrap.py.
+  APP_PAGE = 'preferences.dev.app_page',
   // debug (sniffer)
   SNIFFER_MAX_EVENTS = 'preferences.debug.sniffer_max_events',
   SNIFFER_TIME_SPAN = 'preferences.debug.sniffer_time_span',
@@ -264,6 +269,21 @@ export const PREF_REGISTRY: Record<PrefKey, PrefInfo> = {
       { value: 'standard', label: 'Standard' },
       { value: 'advanced', label: 'Advanced' },
       { value: 'dev', label: 'Dev' },
+    ],
+  },
+  [PrefKey.APP_PAGE]: {
+    key: PrefKey.APP_PAGE,
+    // Not surfaced in the Preferences screen: it's a dev-only debug toggle that
+    // lives in the version modal. Not a boot key: the backend drives the actual
+    // page selection via supported_pages at bootstrap, so no first-paint seed.
+    category: 'debug',
+    label: 'App page (dev)',
+    description: "Which page the local server renders: 'desk' (default) or 'hub'. Dev-only.",
+    dataType: PrefDataType.STRING,
+    defaultValue: 'desk',
+    options: [
+      { value: 'desk', label: 'Desktop' },
+      { value: 'hub', label: 'Hub' },
     ],
   },
   [PrefKey.CHAT_UI_MODE]: {
