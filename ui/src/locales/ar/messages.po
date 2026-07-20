@@ -10122,6 +10122,10 @@ msgstr ""
 msgid "Received attachment — review before installing."
 msgstr ""
 
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
+msgid "Received attachments — review before installing."
+msgstr ""
+
 #. placeholder {0}: currentDock?.pointer || 'none'
 #: src/components/app-host/AppHost.tsx
 #: src/components/show-view/ShowView.tsx
@@ -10679,6 +10683,10 @@ msgstr ""
 
 #: src/components/terminal/interactive-terminal/side-windows/AnalysisPanel.tsx
 msgid "Review changes"
+msgstr ""
+
+#: src/components/conversation/asset-review/AssetReviewDialog.tsx
+msgid "Review each attached asset and choose how to install it."
 msgstr ""
 
 #: src/components/chats-navigator/ChatHistoryRow.tsx
