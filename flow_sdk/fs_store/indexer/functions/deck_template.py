@@ -29,7 +29,6 @@ from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.identifier import adopt_entity_id, mint_uuid
 from flow_sdk.fs_store.indexer.functions._folder_capsule import (
-    folder_capsule_gen_id,
     read_folder_capsule_id,
 )
 from flow_sdk.fs_store.indexer.index_function import IndexerOptions
@@ -93,18 +92,15 @@ def _deck_template_id_from_path(path: Path) -> str:
     )
 
 
-def deck_template_gen_id(ref: FSRef) -> str:
-    """Resolve a deck template's id. Idempotent.
-
-    Precedence: the `.flow/id` capsule → a VALID `template.json` `id` (adopted +
-    backfilled into the capsule) → a fresh random **v4** into the capsule. The
-    uuid5(path) derive survives only as a read-only / transitional fallback.
-    """
-    path = ref._path
-    if not path.is_dir():
-        return _deck_template_id_from_path(path)
+def deck_template_id_from_folder(ref: FSRef | Path) -> object | None:
+    path = Path(getattr(ref, "_path", ref))
+    cap = read_folder_capsule_id(path)
+    if cap:
+        return cap
     meta, _ = _load_manifest(path)
-    return folder_capsule_gen_id(path, meta.get("id"))
+    from flow_sdk.fs_store.identifier import adopt_entity_id  # noqa: PLC0415
+
+    return adopt_entity_id(meta.get("id"))
 
 
 # ── extractor ─────────────────────────────────────────────────────────────────
@@ -129,7 +125,7 @@ def extract_deck_template(ref: FSRef) -> list[FSRecord]:
     tpl_meta, tpl_data = _load_manifest(path)
 
     # Capsule wins (gen_id stamped it), else manifest id, else uuid5(path) — the
-    # same precedence deck_template_gen_id uses, so extract and gen agree.
+    # same precedence as the TypeInfo reader, so direct extraction agrees.
     tpl_id = (
         read_folder_capsule_id(path)
         or adopt_entity_id(tpl_meta.get("id"))

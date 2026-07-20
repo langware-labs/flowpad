@@ -86,9 +86,26 @@ def _adopted_id_or_path(path: Path) -> str:
         head = ""
     return adopt_entity_id(_meta_field(head, "id")) or _id_for_path(path)
 
+
+def dynamic_workflow_id_from_file(ref: FSRef | Path) -> str | None:
+    """Read only an embedded valid id; derivation belongs to TypeInfo.mint_id."""
+    from flow_sdk.api.api_types.identifier import adopt_entity_id  # noqa: PLC0415
+
+    path = Path(getattr(ref, "_path", ref))
+    try:
+        head = path.read_text(encoding="utf-8", errors="replace")[:_META_PEEK_BYTES]
+    except OSError:
+        return None
+    return adopt_entity_id(_meta_field(head, "id"))
+
+
+def dynamic_workflow_identity_key(ref: FSRef | Path) -> str:
+    path = Path(getattr(ref, "_path", ref))
+    return f"{RecordType.DYNAMIC_WORKFLOW}:{path.resolve()}"
+
 def dynamic_workflow_id(ref: FSRef) -> str:
-    """gen_uuid_fn — adopt the script's embedded id, else stable v5 from path."""
-    return _adopted_id_or_path(ref._path)
+    """Compatibility helper: adopt embedded id, else derive stable path-v5."""
+    return _adopted_id_or_path(Path(getattr(ref, "_path", ref)))
 
 # ── Extractor ────────────────────────────────────────────────────────────────
 

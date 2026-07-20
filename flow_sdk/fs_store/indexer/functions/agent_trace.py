@@ -68,22 +68,6 @@ def agent_trace_id(ref: FSRef) -> str:
     return _adopt_doc_id(_load_trace(ref._path)) or _trace_id_from_path(ref._path)
 
 
-def agent_trace_gen_id(ref: FSRef) -> str:
-    """Mint+write a stable id into trace.json (idempotent)."""
-    data = _load_trace(ref._path)
-    existing = _adopt_doc_id(data)
-    if existing:
-        return existing
-    new_id = _trace_id_from_path(ref._path)
-    if data:
-        data["id"] = new_id
-        try:
-            ref._path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
-        except OSError:
-            pass
-    return new_id
-
-
 def extract_agent_trace(ref: FSRef) -> list[FSRecord]:
     """Parse a trace.json into a Record — summary fields only.
 

@@ -8,21 +8,25 @@ folder (e.g. a project) can carry its id. ``.flow/id`` is CONTENT, not ignorable
 — it must travel; do not gitignore it (downstream repos that blanket-ignore
 ``.flow/`` must add ``!.flow/id``).
 
-Mirrors the file/frontmatter capsule (``_frontmatter.adopt_or_mint_id``): adopt a
-valid id, else mint a fresh v4 and write it. Deriving an id from the folder's
-name/path is retired — that was the cross-machine collision source.
+Mirrors the file/frontmatter carrier: read and write are separate pure/mutating
+operations; ``TypeInfo`` alone decides whether an ID must be minted.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 
-def _capsule_path(folder: Path) -> Path:
-    return folder / ".flow" / "id"
+def _asset_path(ref: Any) -> Path:
+    return Path(getattr(ref, "_path", ref))
 
 
-def read_folder_capsule_id(folder: Path) -> str | None:
+def _capsule_path(folder: Any) -> Path:
+    return _asset_path(folder) / ".flow" / "id"
+
+
+def read_folder_capsule_id(folder: Any) -> str | None:
     """Adopt the folder's ``.flow/id`` capsule id (validated v4/v5), else ``None``.
 
     Routes through ``adopt_entity_id`` so a foreign/garbage capsule id (a v7, a
@@ -37,7 +41,7 @@ def read_folder_capsule_id(folder: Path) -> str | None:
     return adopt_entity_id(raw)
 
 
-def write_folder_capsule_id(folder: Path, entity_id: str) -> bool:
+def write_folder_capsule_id(folder: Any, entity_id: str) -> bool:
     """Write ``entity_id`` into ``<folder>/.flow/id`` — returns whether it persisted.
 
     Uses ``write_text_if_changed`` so an unchanged id never churns mtime/index
@@ -45,49 +49,15 @@ def write_folder_capsule_id(folder: Path, entity_id: str) -> bool:
     abort an index run — and returns ``False`` in that case so callers can fall
     back without a confirming re-read.
     """
-    from flow_sdk.fs_store.fs_record import write_text_if_changed  # noqa: PLC0415
+    from flow_sdk.fs_store.identifier import adopt_entity_id  # noqa: PLC0415
+    from flow_sdk.fs_store.indexer._frontmatter import _atomic_write_text  # noqa: PLC0415
+
+    adopted = adopt_entity_id(entity_id)
+    if adopted is None:
+        return False
 
     try:
-        write_text_if_changed(_capsule_path(folder), entity_id.strip() + "\n")
+        _atomic_write_text(_capsule_path(folder), adopted + "\n")
         return True
     except OSError:
         return False
-
-
-def write_capsule_id(info: object, path: Path, entity_id: str) -> bool:
-    """Force ``entity_id`` into the entity's capsule — the ``.flow/id`` sidecar
-    for a folder-backed type, the file frontmatter otherwise. Returns whether it
-    persisted. Used to re-key a copied entity (dedup-on-adopt).
-    """
-    if info is not None and getattr(info, "folder_backed", False):
-        return write_folder_capsule_id(path, entity_id)
-    from flow_sdk.fs_store.indexer._frontmatter import write_frontmatter_id  # noqa: PLC0415
-
-    return write_frontmatter_id(path, entity_id)
-
-
-def folder_capsule_gen_id(folder: Path, *candidate_raw_ids: object) -> str:
-    """Resolve a folder entity's id (the one place the folder-capsule precedence
-    lives). Adopt the ``.flow/id`` capsule; else adopt the first VALID (v4/v5)
-    legacy candidate — a frontmatter/manifest id — and BACKFILL it into the
-    capsule (migrating the entity onto ``.flow/id`` without changing its id);
-    else mint a fresh v4 and write it. A read-only folder (write swallowed) falls
-    back to a stable uuid5(path) so scans stay idempotent.
-
-    Each folder type passes its raw legacy id candidates in precedence order; the
-    helper validates them, so callers hand over the raw values unadopted.
-    """
-    from flow_sdk.fs_store.identifier import adopt_entity_id, mint_uuid  # noqa: PLC0415
-
-    cap = read_folder_capsule_id(folder)
-    if cap:
-        return cap
-    for raw in candidate_raw_ids:
-        adopted = adopt_entity_id(raw)
-        if adopted:
-            write_folder_capsule_id(folder, adopted)
-            return adopted
-    new_id = mint_uuid()  # no key → uuid4
-    if write_folder_capsule_id(folder, new_id):
-        return new_id
-    return mint_uuid(str(folder.resolve()))

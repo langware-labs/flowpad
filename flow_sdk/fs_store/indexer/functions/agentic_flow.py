@@ -18,7 +18,6 @@ from flow_sdk.fs_store.identifier import mint_uuid
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer.functions._folder_capsule import (
-    folder_capsule_gen_id,
     read_folder_capsule_id,
 )
 from flow_sdk.fs_store.indexer.index_function import IndexerOptions
@@ -53,14 +52,15 @@ def _load_doc(flow_dir: Path) -> FlowDoc | None:
         return None
 
 
-def agentic_flow_gen_id(ref: FSRef) -> str:
-    """Adopt the flow's id: `.flow/id` capsule → embedded graph.json ``id``
-    (adopted + backfilled into the capsule) → fresh v4."""
-    path = ref._path
-    if not path.is_dir():
-        return path.name
+def agentic_flow_id_from_folder(ref: FSRef | Path) -> object | None:
+    path = Path(getattr(ref, "_path", ref))
+    cap = read_folder_capsule_id(path)
+    if cap:
+        return cap
     doc = _load_doc(path)
-    return folder_capsule_gen_id(path, doc.id if doc else None, None)
+    from flow_sdk.fs_store.identifier import adopt_entity_id  # noqa: PLC0415
+
+    return adopt_entity_id(doc.id if doc else None)
 
 
 def agentic_flow_asset_hash(ref: FSRef) -> float:

@@ -1,11 +1,9 @@
 """Type metadata for PLAN."""
+from flow_sdk.fs_store.indexer.functions._asset_identity import frontmatter_id, resolved_path_key, write_frontmatter
+from flow_sdk.fs_store.indexer.functions.claude_plan import extract_claude_plan
 from flow_sdk.schema.type_info import TypeMetadata
 from flow_sdk.schema.types import EntityType
 from flow_sdk.schema.view_mode import ViewMode
-from flow_sdk.fs_store.indexer.functions.claude_plan import (
-    claude_plan_gen_id,
-    extract_claude_plan,
-)
 
 PLAN = TypeMetadata(
     type=EntityType.PLAN,
@@ -18,5 +16,7 @@ PLAN = TypeMetadata(
     harness="claude",
     family="plans",
     from_disk_fn=extract_claude_plan,
-    gen_uuid_fn=claude_plan_gen_id,
+    id_from_file_fn=frontmatter_id,
+    id_stable_key_fn=resolved_path_key,
+    id_write_fn=write_frontmatter,
 )

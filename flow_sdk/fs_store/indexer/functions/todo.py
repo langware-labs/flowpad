@@ -53,10 +53,11 @@ def todo_id(ref: FSRef) -> str:
     ``f"{type}:{key}"`` formula ``Entity.allocate_id`` uses, so it matches the DB
     id and is free of any path-illegal character.
     """
-    return mint_uuid(
-        f"{RecordType.TODO_FILE}:todo:{Path(ref.path).stem}",
-        namespace=uuid.NAMESPACE_DNS,
-    )
+    return mint_uuid(todo_identity_key(ref), namespace=uuid.NAMESPACE_DNS)
+
+
+def todo_identity_key(ref: FSRef | Path) -> str:
+    return f"{RecordType.TODO_FILE}:todo:{Path(getattr(ref, 'path', ref)).stem}"
 
 
 def extract_todo(ref: FSRef) -> list[FSRecord]:

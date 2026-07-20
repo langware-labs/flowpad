@@ -1,13 +1,15 @@
 """Type metadata for PROJECT."""
+import uuid
 from typing import Optional
 
+from flow_sdk.fs_store.indexer.functions._asset_identity import no_id
+from flow_sdk.fs_store.indexer.functions.claude_projects import (
+    claude_project_identity_key,
+    extract_claude_project,
+)
 from flow_sdk.schema.type_info import TypeMetadata
 from flow_sdk.schema.type_info.base_meta import BaseMeta
 from flow_sdk.schema.types import EntityType
-from flow_sdk.fs_store.indexer.functions.claude_projects import (
-    extract_claude_project,
-    claude_project_id,
-)
 
 
 class ProjectMeta(BaseMeta):
@@ -43,6 +45,8 @@ PROJECT = TypeMetadata(
     indexed_by_default=True,
     api_visible=True,
     from_disk_fn=extract_claude_project,
-    gen_uuid_fn=claude_project_id,
+    id_from_file_fn=no_id,
+    id_stable_key_fn=claude_project_identity_key,
+    id_namespace=uuid.NAMESPACE_DNS,
     meta_model=ProjectMeta,
 )

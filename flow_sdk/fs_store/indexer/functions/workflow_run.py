@@ -71,11 +71,17 @@ def _skill_id_from_path(script_path: str) -> str | None:
 
 def workflow_run_id(ref: FSRef) -> str:
     """Stable uuid5 from the provider runId (a stable natural key). Doubles as
-    the gen_uuid_fn: the journal is provider-owned (read-only), so — unlike
+    the stable-key callback: the journal is provider-owned (read-only), so — unlike
     agent_trace — we never write an id back; uuid5(runId) is stable across
     rescans without persistence."""
-    data = _load_journal(ref._path)
-    return mint_uuid(_run_id(data, ref._path))
+    path = Path(getattr(ref, "_path", ref))
+    data = _load_journal(path)
+    return mint_uuid(_run_id(data, path))
+
+
+def workflow_run_identity_key(ref: FSRef | Path) -> str:
+    path = Path(getattr(ref, "_path", ref))
+    return _run_id(_load_journal(path), path)
 
 
 def extract_workflow_run(ref: FSRef) -> list[FSRecord]:

@@ -1,15 +1,16 @@
 """Type metadata for DYNAMIC_WORKFLOW — an authored dynamic-workflow script asset."""
 from typing import Optional
 
+from flow_sdk.fs_store.indexer.functions.dynamic_workflows import (
+    dynamic_workflow_default_body,
+    dynamic_workflow_id_from_file,
+    dynamic_workflow_identity_key,
+    extract_dynamic_workflow,
+)
 from flow_sdk.schema.type_info import TypeMetadata
 from flow_sdk.schema.type_info.base_meta import BaseMeta
 from flow_sdk.schema.types import EntityType
 from flow_sdk.schema.view_mode import ViewMode
-from flow_sdk.fs_store.indexer.functions.dynamic_workflows import (
-    dynamic_workflow_default_body,
-    dynamic_workflow_id,
-    extract_dynamic_workflow,
-)
 
 
 class DynamicWorkflowMeta(BaseMeta):
@@ -29,7 +30,8 @@ DYNAMIC_WORKFLOW = TypeMetadata(
     family="workflows",
     main_ext=".js",
     from_disk_fn=extract_dynamic_workflow,
-    gen_uuid_fn=dynamic_workflow_id,
+    id_from_file_fn=dynamic_workflow_id_from_file,
+    id_stable_key_fn=dynamic_workflow_identity_key,
     default_body_fn=dynamic_workflow_default_body,
     meta_model=DynamicWorkflowMeta,
 )

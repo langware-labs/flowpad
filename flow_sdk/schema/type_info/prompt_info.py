@@ -1,14 +1,14 @@
 """Type metadata for PROMPT (docs/prompt-library.md)."""
 from typing import Optional
 
+from flow_sdk.fs_store.indexer.functions._asset_identity import frontmatter_id, resolved_path_key, write_frontmatter
+from flow_sdk.fs_store.indexer.functions.prompt import (
+    extract_prompt,
+)
 from flow_sdk.schema.type_info import TypeMetadata, render_entity_frontmatter
 from flow_sdk.schema.type_info.base_meta import BaseMeta
 from flow_sdk.schema.types import EntityType
 from flow_sdk.schema.view_mode import ViewMode
-from flow_sdk.fs_store.indexer.functions.prompt import (
-    extract_prompt,
-    prompt_gen_id,
-)
 
 
 class PromptMeta(BaseMeta):
@@ -47,7 +47,9 @@ def _prompt_default_body(entity) -> str:
 PROMPT = TypeMetadata(
     type=EntityType.PROMPT,
     from_disk_fn=extract_prompt,
-    gen_uuid_fn=prompt_gen_id,
+    id_from_file_fn=frontmatter_id,
+    id_stable_key_fn=resolved_path_key,
+    id_write_fn=write_frontmatter,
     indexed_by_default=True,
     browseable_by=ViewMode.STANDARD,
     # quick-create/registry.ts carries the `prompt` descriptor. Quick-create opens
