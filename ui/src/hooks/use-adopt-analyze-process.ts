@@ -1,4 +1,4 @@
-import { AgenticProcess, isProcessActive, type Task, type WizardData } from '@sdk';
+import { AgenticProcess, isWorkerRunning, WorkerStatus, type Task, type WizardData } from '@sdk';
 import type { WizardModalAttachment } from '@src/components/wizard/wizard-modal';
 import { useProcessState } from '@src/hooks/use-process-state';
 import { useEffect, useMemo, useState } from 'react';
@@ -49,8 +49,13 @@ export function useAdoptAnalyzeProcess(task: Task | null): WizardModalAttachment
     };
   }, [processId]);
 
-  const { status } = useProcessState(process);
-  const running = !!process && isProcessActive(status);
+  // Gate on WORKER status, not process `status`: a wizard whose agent finished
+  // its turn without closing sits at worker COMPLETE while process `status`
+  // lags at RUNNING — adopting that would reconnect to a dead run and spin
+  // forever. Only reflect a genuinely-active worker (mid-turn or starting up).
+  const { workerStatus } = useProcessState(process);
+  const running =
+    !!process && workerStatus != null && (isWorkerRunning(workerStatus) || workerStatus === WorkerStatus.INITIALIZING);
 
   return useMemo<WizardModalAttachment | null>(() => {
     if (!running || !process) return null;

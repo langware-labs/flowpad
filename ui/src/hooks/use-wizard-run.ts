@@ -118,7 +118,7 @@ export function useWizardRun<T = unknown>(options: UseWizardRunOptions<T>): Wiza
     }
     setPhase('running');
     try {
-      const started = await startWizardProcess<T>(request);
+      const started = await startWizardProcess<T>(request, { headless: true });
       runningRef.current = { process: started.process, target: started.target, request };
       if (mountedRef.current) setProcess(started.process);
       void started.result.then((res) => {
