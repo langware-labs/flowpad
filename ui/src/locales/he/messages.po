@@ -733,12 +733,12 @@ msgstr ""
 msgid "Add"
 msgstr "הוסף"
 
-#: src/components/assistance-viewer/TaskDetail.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 msgid "Add a comment..."
 msgstr "הוסף הערה..."
 
 #: src/components/assets/editor/markdown/ReviewSurface.tsx
+#: src/components/assets/editor/task/TaskComments.tsx
 msgid "Add a comment…"
 msgstr "הוסף תגובה…"
 
@@ -2526,7 +2526,7 @@ msgid "Comment"
 msgstr "תגובה"
 
 #. placeholder {0}: comments?.length || 0
-#: src/components/assistance-viewer/TaskDetail.tsx
+#: src/components/assets/editor/task/TaskComments.tsx
 msgid "Comments ({0})"
 msgstr "הערות ({0})"
 
@@ -3467,6 +3467,10 @@ msgstr "מחק צ'אט"
 #: src/components/chats-navigator/ChatsNavigator.tsx
 msgid "Delete chat?"
 msgstr "מחק שיחה?"
+
+#: src/components/assets/editor/task/TaskComments.tsx
+msgid "Delete comment"
+msgstr ""
 
 #: src/components/graph-context/GraphContextViewer.tsx
 msgid "Delete context"
@@ -6728,8 +6732,12 @@ msgid "Loading checkpoint diff..."
 msgstr "טוען הבדלים של נקודת בדיקה..."
 
 #: src/components/assistance-viewer/TaskDetail.tsx
-msgid "Loading comments..."
-msgstr "טוען הערות..."
+#~ msgid "Loading comments..."
+#~ msgstr "טוען הערות..."
+
+#: src/components/assets/editor/task/TaskComments.tsx
+msgid "Loading comments…"
+msgstr ""
 
 #: src/components/assets/editor/revisions/AssetDiffTabs.tsx
 msgid "Loading comparison…"
@@ -7776,7 +7784,7 @@ msgstr "אין שיתוף פעולה פתוח"
 msgid "No color"
 msgstr "ללא צבע"
 
-#: src/components/assistance-viewer/TaskDetail.tsx
+#: src/components/assets/editor/task/TaskComments.tsx
 msgid "No comments yet."
 msgstr "אין הערות עדיין."
 
@@ -11504,7 +11512,7 @@ msgstr "סרגל כלים בחירה"
 msgid "Self-Summary"
 msgstr "סיכום עצמי"
 
-#: src/components/assistance-viewer/TaskDetail.tsx
+#: src/components/assets/editor/task/TaskComments.tsx
 #: src/components/conversation/MessageComposer.tsx
 #: src/components/conversation/PromptComposerDialog.tsx
 #: src/components/entity-execution-panel/CompactExecutionInput.tsx

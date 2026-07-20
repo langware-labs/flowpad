@@ -733,12 +733,12 @@ msgstr "Activity"
 msgid "Add"
 msgstr "Add"
 
-#: src/components/assistance-viewer/TaskDetail.tsx
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 msgid "Add a comment..."
 msgstr "Add a comment..."
 
 #: src/components/assets/editor/markdown/ReviewSurface.tsx
+#: src/components/assets/editor/task/TaskComments.tsx
 msgid "Add a comment…"
 msgstr "Add a comment…"
 
@@ -2526,7 +2526,7 @@ msgid "Comment"
 msgstr "Comment"
 
 #. placeholder {0}: comments?.length || 0
-#: src/components/assistance-viewer/TaskDetail.tsx
+#: src/components/assets/editor/task/TaskComments.tsx
 msgid "Comments ({0})"
 msgstr "Comments ({0})"
 
@@ -3467,6 +3467,10 @@ msgstr "Delete chat"
 #: src/components/chats-navigator/ChatsNavigator.tsx
 msgid "Delete chat?"
 msgstr "Delete chat?"
+
+#: src/components/assets/editor/task/TaskComments.tsx
+msgid "Delete comment"
+msgstr "Delete comment"
 
 #: src/components/graph-context/GraphContextViewer.tsx
 msgid "Delete context"
@@ -6728,8 +6732,12 @@ msgid "Loading checkpoint diff..."
 msgstr "Loading checkpoint diff..."
 
 #: src/components/assistance-viewer/TaskDetail.tsx
-msgid "Loading comments..."
-msgstr "Loading comments..."
+#~ msgid "Loading comments..."
+#~ msgstr "Loading comments..."
+
+#: src/components/assets/editor/task/TaskComments.tsx
+msgid "Loading comments…"
+msgstr "Loading comments…"
 
 #: src/components/assets/editor/revisions/AssetDiffTabs.tsx
 msgid "Loading comparison…"
@@ -7776,7 +7784,7 @@ msgstr "No collaboration open"
 msgid "No color"
 msgstr "No color"
 
-#: src/components/assistance-viewer/TaskDetail.tsx
+#: src/components/assets/editor/task/TaskComments.tsx
 msgid "No comments yet."
 msgstr "No comments yet."
 
@@ -11504,7 +11512,7 @@ msgstr "Selection toolbar"
 msgid "Self-Summary"
 msgstr "Self-Summary"
 
-#: src/components/assistance-viewer/TaskDetail.tsx
+#: src/components/assets/editor/task/TaskComments.tsx
 #: src/components/conversation/MessageComposer.tsx
 #: src/components/conversation/PromptComposerDialog.tsx
 #: src/components/entity-execution-panel/CompactExecutionInput.tsx

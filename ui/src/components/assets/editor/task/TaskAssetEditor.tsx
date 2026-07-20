@@ -16,6 +16,7 @@ import { MemberTasksSection } from './MemberTasksSection';
 import { OwnerButton } from './OwnerButton';
 import { ParentTaskBlock } from './ParentTaskBlock';
 import { TaskAttachments } from './TaskAttachments';
+import { TaskComments } from './TaskComments';
 
 interface TaskAssetEditorProps {
   /** FSRef to the task folder. task.md / spec.md are resolved via child(). */
@@ -225,6 +226,8 @@ export function TaskAssetEditor({ fsRef, task: providedTask }: TaskAssetEditorPr
           </div>
 
           <TaskAttachments task={task} save={save} />
+
+          <TaskComments task={task} />
         </div>
       </div>
     );
@@ -325,8 +328,13 @@ export function TaskAssetEditor({ fsRef, task: providedTask }: TaskAssetEditorPr
       </div>
 
       {/* ── Body ───────────────────────────────────────────────── */}
-      <MemberTasksSection task={task} />
-      <TaskAttachments task={task} save={save} />
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+        <MemberTasksSection task={task} />
+        <TaskAttachments task={task} save={save} />
+        <div className="px-6 py-4">
+          <TaskComments task={task} />
+        </div>
+      </div>
     </div>
   );
 }
