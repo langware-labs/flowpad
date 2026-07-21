@@ -20,6 +20,7 @@ import { useMemo, useState } from 'react';
 import { useParams } from 'react-router';
 import { useContext } from '@sdk/react/hooks';
 import { useColorPalette } from '../hooks/useColorPalette';
+import { useCloudAlerts } from '../hooks/use-cloud-alerts';
 
 interface FooterProps {
   className?: string;
@@ -53,6 +54,9 @@ export function Footer({ className = '' }: FooterProps) {
   const [showCommunityAssistance, setShowCommunityAssistance] = useState(false);
   useColorPalette(agent?.site_config);
   usePendingCompletionSound();
+  // Pop a distinct, prominent error when the cloud/hub is unreachable or a
+  // sign-in fails — so "no hub" doesn't read as a silent "not signed in".
+  useCloudAlerts();
 
   return (
     <footer

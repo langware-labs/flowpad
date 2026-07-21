@@ -114,6 +114,16 @@ export interface ProjectContextDirInfo {
   typeid?: string;
 }
 
+/** Optional per-project home branding read from `.flow/customization/`.
+ *  Mirrors the backend `Project.customization` computed field. `home.png` bytes
+ *  are fetched on demand via the `fs` download action; here only the flag. */
+export interface ProjectCustomization {
+  /** From `.flow/customization/string.json` — overrides the home greeting. */
+  home_title?: string | null;
+  /** True when `.flow/customization/home.png` exists → render it as background. */
+  has_home_background?: boolean;
+}
+
 interface ProjectContextFolderResolveResponse {
   include_dirs?: unknown;
   context_folder_results?: unknown;
@@ -174,6 +184,9 @@ export class Project extends APIEntity<Project> {
   /** Project secret pointers. Value-free metadata only; values are never
    *  exposed through the SDK and resolve only inside worker launch. */
   secret_origins: ProjectSecretOriginSummary[] = [];
+  /** Optional per-project home branding from `.flow/customization/`. Mirrors the
+   *  backend computed `Project.customization`. Read-only. */
+  customization: ProjectCustomization = {};
 
   constructor(entity: Partial<Project> = {}) {
     super(entity);
@@ -185,6 +198,7 @@ export class Project extends APIEntity<Project> {
     this.include_dirs = (entity.include_dirs as string[] | undefined) ?? [];
     this.context_dir_infos = (entity.context_dir_infos as ProjectContextDirInfo[] | undefined) ?? [];
     this.secret_origins = (entity.secret_origins as ProjectSecretOriginSummary[] | undefined) ?? [];
+    this.customization = (entity.customization as ProjectCustomization | undefined) ?? {};
   }
 
   // Land on the project's collaboration/home view at /dock/project/<id>

@@ -502,12 +502,20 @@ msgstr ""
 msgid "<0>{0}</0> already exists in the workspace."
 msgstr ""
 
+#: src/components/task-receive/IncomingProjectDialog.tsx
+msgid "<0>{attemptedName}</0> already exists in this workspace. Choose a different folder name."
+msgstr ""
+
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "<0>{senderName}</0> shared <1>{taskTitle}</1> with you, but we couldn't find a local clone of the repository. Clone it to see the task."
 msgstr ""
 
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "<0>{senderName}</0> shared <1>{taskTitle}</1> with you."
+msgstr ""
+
+#: src/components/task-receive/IncomingProjectDialog.tsx
+msgid "<0>{senderName}</0> shared a project with you"
 msgstr ""
 
 #: src/components/flowdata-renderer/UnknownMessageComponent.tsx
@@ -621,6 +629,10 @@ msgstr ""
 #: src/components/conversation/asset-review/TestPromptDialog.tsx
 #~ msgid "A new Vibe session opens and runs the skill. Optionally describe what to use it for."
 #~ msgstr ""
+
+#: src/components/task-receive/IncomingProjectDialog.tsx
+msgid "A project with that name exists"
+msgstr ""
 
 #: src/components/triggers-view/TriggersList.tsx
 msgid "About FSOp triggers"
@@ -1249,6 +1261,10 @@ msgstr ""
 msgid "API Keys"
 msgstr ""
 
+#: src/components/version-popover/version-popover.tsx
+msgid "App page"
+msgstr ""
+
 #: src/components/account/secrets-section.tsx
 msgid "App secrets are stored in your operating system keychain. Enable to allow Flowpad to securely store third-party API keys and other secrets used by your flows."
 msgstr ""
@@ -1847,6 +1863,8 @@ msgstr ""
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/spec-editor/SpecEditor.tsx
 #: src/components/spec-editor/SpecEditor.tsx
+#: src/components/task-receive/IncomingProjectDialog.tsx
+#: src/components/task-receive/IncomingProjectDialog.tsx
 #: src/components/task-receive/IncomingTaskDialog.tsx
 #: src/components/task-receive/IncomingTaskDialog.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
@@ -2009,6 +2027,10 @@ msgstr ""
 #: src/components/chat-input.tsx
 #~ msgid "Checking..."
 #~ msgstr ""
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "Checking…"
+msgstr ""
 
 #: src/components/code-editor/DiffViewer.tsx
 msgid "Checkpoint:"
@@ -2259,6 +2281,7 @@ msgid "Click to download"
 msgstr ""
 
 #: src/components/collaboration/ProjectViewHeader.tsx
+#: src/pages/hub-home/HubHome.tsx
 msgid "Click to rename"
 msgstr ""
 
@@ -2299,6 +2322,10 @@ msgstr ""
 msgid "Clone project from git"
 msgstr ""
 
+#: src/components/task-receive/IncomingProjectDialog.tsx
+msgid "Cloning the template and indexing it."
+msgstr ""
+
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Cloning…"
@@ -2311,6 +2338,7 @@ msgstr ""
 #: src/components/search-index/SweepOrphansDialog.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/tabs/TabStrip.tsx
+#: src/components/task-receive/IncomingProjectDialog.tsx
 #: src/components/task-receive/IncomingTaskDialog.tsx
 #: src/components/task-receive/IncomingTaskDialog.tsx
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
@@ -2361,6 +2389,11 @@ msgstr ""
 msgid "Close to the Right"
 msgstr ""
 
+#: src/pages/flow-page/workspace-child-strip.tsx
+#: src/pages/flow-page/workspace-child-strip.tsx
+msgid "Close workspace"
+msgstr ""
+
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 msgid "Closed"
 msgstr ""
@@ -2376,8 +2409,8 @@ msgid "Cloud hub"
 msgstr ""
 
 #: src/components/graph-view/GraphView.tsx
-msgid "Cloud WorldView"
-msgstr ""
+#~ msgid "Cloud WorldView"
+#~ msgstr ""
 
 #: src/components/markdown-view.tsx
 msgid "code"
@@ -3059,6 +3092,10 @@ msgstr ""
 msgid "Couldn't read this folder's Git status."
 msgstr ""
 
+#: src/components/task-receive/IncomingProjectDialog.tsx
+msgid "Couldn't set up the project"
+msgstr ""
+
 #: src/components/account/db-stats.tsx
 msgid "Count"
 msgstr ""
@@ -3491,6 +3528,10 @@ msgstr ""
 msgid "Delete context?"
 msgstr ""
 
+#: src/pages/hub-home/HubHome.tsx
+msgid "Delete desktop"
+msgstr ""
+
 #: src/components/account/system-diagnoses.tsx
 #: src/components/account/system-diagnoses.tsx
 msgid "Delete diagnosis"
@@ -3624,6 +3665,10 @@ msgstr ""
 msgid "Deployment details"
 msgstr ""
 
+#: src/components/graph-view/GraphView.tsx
+msgid "Deployment WorldView"
+msgstr ""
+
 #: src/components/graph-view/ui/TopBar.tsx
 msgid "depth"
 msgstr ""
@@ -3676,12 +3721,18 @@ msgstr ""
 msgid "Description:"
 msgstr ""
 
+#: src/components/version-popover/version-popover.tsx
 #: src/pages/desktop/DesktopPage.tsx
+#: src/pages/hub-home/HubHome.tsx
 msgid "Desktop"
 msgstr ""
 
 #: src/components/version-popover/version-popover.tsx
 msgid "Desktop version"
+msgstr ""
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "Desktops"
 msgstr ""
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
@@ -4922,8 +4973,8 @@ msgstr ""
 msgid "Failed to send reply."
 msgstr ""
 
-#: src/components/diagnose/diagnosis-details.tsx
-#: src/components/diagnose/diagnosis-details.tsx
+#: src/components/diagnose/use-diagnosis-report.ts
+#: src/components/diagnose/use-diagnosis-report.ts
 #: src/pages/home-landing/feed/HomeFeedColumn.tsx
 #: src/pages/home-landing/feed/HomeFeedColumn.tsx
 msgid "Failed to send report"
@@ -5902,6 +5953,7 @@ msgid "https://github.com/owner/repo.git"
 msgstr ""
 
 #: src/components/version-popover/version-popover.tsx
+#: src/components/version-popover/version-popover.tsx
 msgid "Hub"
 msgstr ""
 
@@ -6519,8 +6571,21 @@ msgstr ""
 msgid "Latest on PyPI"
 msgstr ""
 
+#: src/pages/hub-home/HubHome.tsx
+msgid "Launch"
+msgstr ""
+
+#. placeholder {0}: pendingTemplate.title
+#: src/pages/hub-home/HubHome.tsx
+msgid "Launch {0}?"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Launch a session first"
+msgstr ""
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "Launching…"
 msgstr ""
 
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
@@ -7013,7 +7078,6 @@ msgstr ""
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 #: src/pages/flow-page/content-panel/content-panel.tsx
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
-#: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 msgid "Login"
 msgstr ""
 
@@ -7494,6 +7558,7 @@ msgstr ""
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
 #: src/components/quick-create/DesktopSurface.tsx
 #: src/pages/flow-page/vibe-workspace.tsx
+#: src/pages/hub-home/HubHome.tsx
 msgid "New"
 msgstr ""
 
@@ -7541,6 +7606,10 @@ msgstr ""
 
 #: src/components/contact-picker/CreateContactsGroupDialog.tsx
 msgid "New contacts group"
+msgstr ""
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "New Desktop"
 msgstr ""
 
 #: src/components/collaboration/sidebar/NewDocButton.tsx
@@ -7820,6 +7889,10 @@ msgstr ""
 #: src/components/quick-create/QuickCreateDialog.tsx
 #: src/components/quick-create/QuickCreateMenu.tsx
 msgid "No compute node available"
+msgstr ""
+
+#: src/components/task-receive/IncomingProjectDialog.tsx
+msgid "No compute node available in this workspace."
 msgstr ""
 
 #: src/components/contact-picker/AddressBookButton.tsx
@@ -8603,6 +8676,10 @@ msgstr ""
 msgid "Not configured"
 msgstr ""
 
+#: src/pages/hub-home/HubHome.tsx
+msgid "Not found"
+msgstr ""
+
 #: src/components/harness-login/HarnessLoginModal.tsx
 #~ msgid "Not installed"
 #~ msgstr ""
@@ -8872,6 +8949,14 @@ msgstr ""
 
 #: src/components/account/database-section.tsx
 msgid "Open DB Folder"
+msgstr ""
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "Open desktop"
+msgstr ""
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "Open desktop →"
 msgstr ""
 
 #: src/components/version-popover/diagnosis-report-modal.tsx
@@ -9233,6 +9318,10 @@ msgstr ""
 msgid "Opening task…"
 msgstr ""
 
+#: src/components/task-receive/IncomingProjectDialog.tsx
+msgid "Opening your project…"
+msgstr ""
+
 #: src/components/project-setup-screen/project-setup-screen.tsx
 #~ msgid "Opening..."
 #~ msgstr ""
@@ -9257,6 +9346,10 @@ msgstr ""
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "Organization"
+msgstr ""
+
+#: src/components/graph-view/GraphView.tsx
+msgid "Organization WorldView"
 msgstr ""
 
 #: src/components/account/user-info.tsx
@@ -9326,6 +9419,10 @@ msgstr ""
 
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
 msgid "Package this share into a portable <0>.flowmsg</0> file that recipients can import."
+msgstr ""
+
+#: src/components/version-popover/version-popover.tsx
+msgid "Page"
 msgstr ""
 
 #: src/components/ui/pagination.tsx
@@ -9424,6 +9521,10 @@ msgstr ""
 #: src/components/collaboration/LiveSessionView.tsx
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Pause"
+msgstr ""
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "Paused"
 msgstr ""
 
 #: src/components/assets/editor/agent-trace/AgentTraceView.tsx
@@ -10141,6 +10242,10 @@ msgstr ""
 msgid "Ready to share"
 msgstr ""
 
+#: src/components/task-receive/IncomingProjectDialog.tsx
+msgid "Ready!"
+msgstr ""
+
 #: src/components/favorites/FavoritesEditDialog.tsx
 msgid "Rearrange favorites, create folders, and organize your bookmarks."
 msgstr ""
@@ -10271,6 +10376,7 @@ msgstr ""
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
 #: src/components/git/RepoPicker.tsx
+#: src/components/graph-view/GraphView.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
 #: src/components/inbox-view/InboxView.tsx
 #: src/components/lens-viewer/ClaudeContextViewer.tsx
@@ -10350,6 +10456,10 @@ msgstr ""
 
 #: src/components/capabilities-view/CapabilitiesView.tsx
 msgid "Refresh status"
+msgstr ""
+
+#: src/components/graph-view/GraphView.tsx
+msgid "Refreshing…"
 msgstr ""
 
 #: src/components/task-bar/TaskDetailPanel.tsx
@@ -10494,6 +10604,7 @@ msgstr ""
 msgid "Repo"
 msgstr ""
 
+#: src/components/task-receive/IncomingProjectDialog.tsx
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Repo:"
 msgstr ""
@@ -10510,6 +10621,10 @@ msgstr ""
 #: src/components/account/system-diagnoses.tsx
 #: src/components/diagnose/diagnosis-action-buttons.tsx
 msgid "Report issue"
+msgstr ""
+
+#: src/components/diagnose/use-diagnosis-report.ts
+msgid "Report sent to the Flowpad team"
 msgstr ""
 
 #: src/components/diagnose/diagnosis-action-buttons.tsx
@@ -10665,6 +10780,7 @@ msgstr ""
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
 #: src/components/assets/editor/MissingAssetCard.tsx
 #: src/components/machine-overview/machine-overview.tsx
+#: src/components/task-receive/IncomingProjectDialog.tsx
 #: src/components/task-receive/IncomingTaskDialog.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Retry"
@@ -10908,6 +11024,10 @@ msgstr ""
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 msgid "running"
+msgstr ""
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "Running"
 msgstr ""
 
 #: src/components/lens-viewer/ClaudeContextViewer.tsx
@@ -11731,12 +11851,28 @@ msgstr ""
 msgid "Set up →"
 msgstr ""
 
+#: src/components/task-receive/IncomingProjectDialog.tsx
+msgid "Set up <0>{projectName}</0> in this workspace. We'll clone the template and index it so it's ready to use."
+msgstr ""
+
 #: src/components/assets/AddGitFolderDialog.tsx
 msgid "Set up a git-backed context folder for this project."
 msgstr ""
 
 #: src/components/assets/AddGitFolderDialog.tsx
 msgid "Set up an existing git repository as the context folder"
+msgstr ""
+
+#: src/components/task-receive/IncomingProjectDialog.tsx
+msgid "Set up as this name"
+msgstr ""
+
+#: src/components/task-receive/IncomingProjectDialog.tsx
+msgid "Set up project"
+msgstr ""
+
+#: src/components/task-receive/IncomingProjectDialog.tsx
+msgid "Setting up your project…"
 msgstr ""
 
 #: src/components/settings-view/SettingsView.tsx
@@ -12000,9 +12136,9 @@ msgstr ""
 msgid "sidechain"
 msgstr ""
 
-#: src/components/harness-login/HarnessLoginModal.tsx
-#~ msgid "Sign in"
-#~ msgstr ""
+#: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
+msgid "Sign in"
+msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 #~ msgid "Sign in to a coding assistant"
@@ -12587,8 +12723,8 @@ msgid "Switching…"
 msgstr ""
 
 #: src/components/graph-view/GraphView.tsx
-msgid "Sync"
-msgstr ""
+#~ msgid "Sync"
+#~ msgstr ""
 
 #. placeholder {0}: row.type
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
@@ -12596,8 +12732,8 @@ msgid "Sync {0} changes"
 msgstr ""
 
 #: src/components/graph-view/GraphView.tsx
-msgid "Syncing…"
-msgstr ""
+#~ msgid "Syncing…"
+#~ msgstr ""
 
 #: src/components/triggers-view/TriggerListItem.tsx
 msgid "Synthesize event"
@@ -12966,6 +13102,10 @@ msgstr ""
 
 #: src/components/persistent-iframe.tsx
 msgid "This may take up to 20 seconds"
+msgstr ""
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "This opens a new FlowPad desktop and sets up the template project (clone + index) so it's ready to use."
 msgstr ""
 
 #: src/components/conversation/MessageBubble.tsx
@@ -13447,6 +13587,10 @@ msgstr ""
 
 #: src/components/assets/ContextFolderBrowser.tsx
 msgid "Unpushed changes"
+msgstr ""
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "Unreachable"
 msgstr ""
 
 #: src/components/inbox-view/InboxView.tsx
@@ -14192,6 +14336,10 @@ msgstr ""
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "Your world"
+msgstr ""
+
+#: src/components/graph-view/GraphView.tsx
+msgid "Your WorldView"
 msgstr ""
 
 #: src/components/chat-input.tsx

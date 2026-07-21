@@ -1,8 +1,10 @@
-import { ExecutionEnvironmentStatus, PageId, ViewType, WorldViewProjection } from '@sdk';
+import { ExecutionEnvironmentStatus, gitOriginFromUrl, gitOriginRepoFullName, PageId, ViewType, WorldViewProjection } from '@sdk';
+import type { GitOrigin } from '@sdk';
 import { useAuth } from '@sdk/react/hooks';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useProjects } from '@src/hooks/use-projects';
-import { useDesktops, type Step, type DesktopDetails } from '@src/hooks/use-desktops';
+import { useDesktops, type Step, type DesktopDetails, type TemplateLaunch } from '@src/hooks/use-desktops';
+import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import {
   Building2,
   CheckCircle,
@@ -124,6 +126,28 @@ export function HubHome() {
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 30_000);
     return () => clearInterval(id);
+  }, []);
+
+  // "Launch a template" deep link: /dock/hub/home?template=<git-url>[&title=&sender=].
+  // Show a generic "Would you like to launch X?" confirm, then launch a desktop
+  // that self-provisions the template (clone + index) on the box.
+  const [pendingTemplate, setPendingTemplate] = useState<TemplateLaunch | null>(null);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const templateUrl = params.get('template');
+    if (!templateUrl) return;
+    const branch = params.get('branch') || '';
+    const gitOrigin: GitOrigin | null = gitOriginFromUrl(templateUrl, branch);
+    // Clean the URL so a refresh doesn't re-prompt.
+    const url = new URL(window.location.href);
+    for (const k of ['template', 'branch', 'title', 'sender']) url.searchParams.delete(k);
+    window.history.replaceState(null, '', url.toString());
+    if (!gitOrigin) return;
+    setPendingTemplate({
+      gitOrigin,
+      title: params.get('title') || gitOriginRepoFullName(gitOrigin) || 'Template',
+      senderName: params.get('sender') || 'Someone',
+    });
   }, []);
 
   const firstName = currentUser?.name?.split(' ')[0] || 'there';
@@ -317,6 +341,22 @@ export function HubHome() {
           )}
         </div>
       </div>
+
+      {/* "Launch a template" confirm — from a ?template=<git-url> deep link. */}
+      {pendingTemplate && (
+        <ConfirmDialog
+          open={!!pendingTemplate}
+          onOpenChange={(o) => { if (!o) setPendingTemplate(null); }}
+          title={t`Launch ${pendingTemplate.title}?`}
+          description={t`This opens a new FlowPad desktop and sets up the template project (clone + index) so it's ready to use.`}
+          confirmLabel={t`Launch`}
+          onConfirm={() => {
+            const template = pendingTemplate;
+            setPendingTemplate(null);
+            void launch({ template });
+          }}
+        />
+      )}
     </div>
   );
 }
