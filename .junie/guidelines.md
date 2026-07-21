@@ -149,3 +149,9 @@ If a backend route can't be called through `apiClient` because it doesn't return
 ## Type icons (non-negotiable)
 
 **Every per-type icon in the UI comes from the backend type registry (`TypeInfo.icon`) — never hardcode a glyph for an entity type at a call site.** Resolve it at render time via `iconForType(type)` (`ui/src/components/graph-view/icons/iconRegistry.ts`), which reads the bootstrap-loaded SchemaRegistry and falls back to a generic document glyph for unknown/icon-less types. If a type's icon is wrong or missing, fix its `TypeInfo` (`flow_sdk/schema/type_info/<type>_*info.py`) so every surface picks it up — don't patch the one component.
+
+<!-- flowpad:capsule identity
+version: 1
+data:
+  id: 4608a716-34cc-4210-ac9a-198394ff76fe
+flowpad:endcapsule identity -->

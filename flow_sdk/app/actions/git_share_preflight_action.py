@@ -56,22 +56,30 @@ def _result(code: str | None, git_origin: dict | None = None) -> dict:
 
 async def _entity_local_path(cls, entity_id: str) -> str | None:
     """Resolve a graph entity's local path from its stored origin or path."""
+    from pathlib import Path  # noqa: PLC0415
+
     ent = await cls.get_one({"id": entity_id})
     if ent is None:
         return None
+    # A locally-minted or already-resolved entity caches its on-disk ``path``.
+    # When that path still exists it is the authoritative "this machine"
+    # location for EVERY origin kind — a git-origin folder minted here from a
+    # local worktree is present even if its repo was never opened as a Claude
+    # project (so ``find_local_repo_for_url`` can't re-derive it). Prefer the
+    # cached path so preflight probes the live tree's CURRENT git state instead
+    # of falsely reporting the folder unresolved.
+    cached = (getattr(ent, "path", "") or "").strip()
+    if cached and Path(cached).exists():
+        return cached
     origin = getattr(ent, "origin", None)
     if getattr(origin, "kind", None) == "local":
-        from pathlib import Path  # noqa: PLC0415
-
         return str(Path(origin.base) / (origin.rel_path or "."))
     if getattr(origin, "kind", None) == "git":
-        from pathlib import Path  # noqa: PLC0415
-
         from flow_sdk.utils.git import find_local_repo_for_url  # noqa: PLC0415
 
         repo = await asyncio.to_thread(find_local_repo_for_url, origin.clone_url())
         return str(Path(repo) / (origin.rel_path or ".")) if repo else None
-    return ((getattr(ent, "path", "") or "").strip() or None)
+    return cached or None
 
 
 async def _resolve_asset_git_path(entity_type: str, entity_id: str) -> str | None:

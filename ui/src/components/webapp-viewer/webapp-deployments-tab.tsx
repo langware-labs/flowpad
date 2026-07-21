@@ -1,4 +1,5 @@
 import { Trans } from '@lingui/react/macro';
+import { WorldViewProjection } from '@sdk';
 import { ScrollArea } from '@src/components/ui/scroll-area';
 import { useCurrentDeployments } from '@src/hooks/flow-hooks';
 import { DockPointer, useDockNavigation } from '@src/navigation';
@@ -18,7 +19,11 @@ export const WebappDeploymentsTab: React.FC = () => {
   const { navigation } = useDockNavigation();
 
   if (isLoading) {
-    return <div className="flex h-full items-center justify-center text-sm text-muted-foreground"><Trans>Loading deployments…</Trans></div>;
+    return (
+      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+        <Trans>Loading deployments…</Trans>
+      </div>
+    );
   }
 
   if (deployments.length === 0) {
@@ -26,7 +31,9 @@ export const WebappDeploymentsTab: React.FC = () => {
       <div className="flex h-full items-center justify-center text-muted-foreground">
         <div className="text-center">
           <Cloud className="mx-auto mb-2 h-8 w-8 opacity-50" />
-          <p><Trans>No deployments observed yet</Trans></p>
+          <p>
+            <Trans>No deployments observed yet</Trans>
+          </p>
         </div>
       </div>
     );
@@ -40,9 +47,14 @@ export const WebappDeploymentsTab: React.FC = () => {
             type="button"
             key={deployment.id}
             className="rounded-md border p-3 text-left transition-colors hover:bg-muted"
-            onClick={() => navigation.openDock(
-              DockPointer.forWorldView(deployment.typeId, { selected: deployment.typeId.toString() }),
-            )}
+            onClick={() =>
+              navigation.openDock(
+                DockPointer.forWorldView(WorldViewProjection.DEPLOYMENT, {
+                  focus: deployment.typeId,
+                  selected: deployment.typeId.toString(),
+                }),
+              )
+            }
           >
             <div className="flex items-center gap-2">
               <span className={`h-2 w-2 rounded-full ${STATUS_COLOR[deployment.status.sync_state]}`} />

@@ -216,6 +216,53 @@ class Project(Entity):
 
     @computed_field
     @property
+    def customization(self) -> dict[str, Any]:
+        """Optional per-project home branding, read from ``.flow/customization/``.
+
+        A project (e.g. a launched template) can ship a ``.flow/customization/``
+        folder to brand the desktop home when it is the active project:
+        * ``string.json`` → ``{"home_title": "..."}`` overrides the greeting.
+        * ``home.png`` present → the home renders it as a background.
+
+        Strictly sync + best-effort (missing mount / dir / file / bad JSON →
+        defaults), like ``include_dirs`` — it serializes into the Project
+        payload the UI already receives, so no route or bootstrap change.
+        The image bytes are served on demand via the generic ``fs`` download
+        action; here we only surface a boolean so the UI knows to ask.
+        """
+        import json  # noqa: PLC0415
+        from pathlib import Path  # noqa: PLC0415
+
+        default = {"home_title": None, "has_home_background": False}
+        root = self.fs_storage_mount_path
+        if not root:
+            return default
+        cust_dir = Path(root) / ".flow" / "customization"
+        # Fast path: almost every project has no customization dir — one stat and
+        # out, rather than stat-ing each file below on every serialization.
+        try:
+            if not cust_dir.is_dir():
+                return default
+        except OSError:
+            return default
+        home_title: str | None = None
+        try:
+            string_path = cust_dir / "string.json"
+            if string_path.is_file():
+                data = json.loads(string_path.read_text(encoding="utf-8"))
+                raw = data.get("home_title") if isinstance(data, dict) else None
+                if isinstance(raw, str) and raw.strip():
+                    home_title = raw.strip()
+        except (OSError, ValueError):
+            pass
+        try:
+            has_bg = (cust_dir / "home.png").is_file()
+        except OSError:
+            has_bg = False
+        return {"home_title": home_title, "has_home_background": has_bg}
+
+    @computed_field
+    @property
     def context_dir_infos(self) -> list[dict[str, str]]:
         """Per-context-folder info the UI needs beyond the bare path.
 

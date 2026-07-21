@@ -5,6 +5,7 @@ import type { FSOriginField, FSOriginInput } from '../../models/FSOrigin';
 import { normalizeFSOrigin } from '../../models/FSOrigin';
 import { ARTIFACT_KINDS, normalizeKind } from '../../models/Kind';
 import { ViewType } from '../../utils/ui/view-types';
+import { WorldViewProjection } from '../../worldview/projection';
 
 /** The clean logical/source-plane Artifact contract. Kinds remain open strings. */
 export interface IArtifact extends IEntity {
@@ -92,7 +93,10 @@ export class Artifact extends APIEntity<Artifact> implements IArtifact {
   }
 
   override get dockPointer(): DockPointerData {
-    return new DockPointerData(ViewType.WORLDVIEW, `${Artifact.type}/${this.id}`);
+    return new DockPointerData(ViewType.WORLDVIEW, WorldViewProjection.DEPLOYMENT, {
+      focus: `${Artifact.type}-${this.id}`,
+      selected: `${Artifact.type}-${this.id}`,
+    });
   }
 
   override toJSON(): Record<string, unknown> {

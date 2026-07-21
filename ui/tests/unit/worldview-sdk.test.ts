@@ -3,11 +3,13 @@ import {
   Artifact,
   Deployment,
   WorldViewManager,
+  WorldViewProjection,
   isValidKind,
   kindAncestors,
   kindMatches,
   normalizeKind,
   normalizeApiPathForBase,
+  parseWorldViewGraph,
   type WorldViewGraph,
   type WorldViewHttpClient,
 } from '@sdk';
@@ -15,6 +17,18 @@ import { describe, expect, it } from 'vitest';
 
 const ARTIFACT_ID = '11111111-1111-4111-8111-111111111111';
 const DEPLOYMENT_ID = '22222222-2222-5222-8222-222222222222';
+
+function emptyWorldViewGraph(): WorldViewGraph {
+  return {
+    schema_version: 1,
+    projection: WorldViewProjection.DEPLOYMENT,
+    root: null,
+    nodes: [],
+    edges: [],
+    counts: { nodes: 0, edges: 0 },
+    sync: null,
+  };
+}
 
 describe('dot-kind ontology', () => {
   it('normalizes, validates, matches descendants, and expands ancestors', () => {
@@ -242,13 +256,7 @@ describe('WorldViewManager', () => {
 
   it('uses canonical API paths and already-unwrapped envelope data', async () => {
     const calls: Array<{ method: string; path: string; body?: unknown }> = [];
-    const graph: WorldViewGraph = {
-      root: `deployment-${DEPLOYMENT_ID}`,
-      nodes: [],
-      edges: [],
-      counts: { nodes: 0, edges: 0 },
-      sync: null,
-    };
+    const graph = emptyWorldViewGraph();
     const client: WorldViewHttpClient = {
       get<T>(path: string): Promise<T> {
         calls.push({ method: 'GET', path });
@@ -275,17 +283,97 @@ describe('WorldViewManager', () => {
     };
     const manager = new WorldViewManager(client);
 
-    await expect(manager.load()).resolves.toBe(graph);
-    await expect(manager.sync()).resolves.toBe(graph);
+    await expect(manager.load()).resolves.toEqual(graph);
+    await expect(manager.refresh(WorldViewProjection.DEPLOYMENT)).resolves.toEqual(graph);
+    await expect(manager.sync()).resolves.toEqual(graph);
     await expect(manager.linkArtifact(DEPLOYMENT_ID, ARTIFACT_ID)).resolves.toBeInstanceOf(Deployment);
     expect(calls).toEqual([
-      { method: 'GET', path: '/api/v1/worldview' },
-      { method: 'POST', path: '/api/v1/worldview/sync', body: {} },
+      { method: 'GET', path: '/api/v1/worldview/deployment' },
+      { method: 'POST', path: '/api/v1/worldview/deployment/refresh', body: {} },
+      { method: 'POST', path: '/api/v1/worldview/deployment/refresh', body: {} },
       {
         method: 'POST',
         path: `/api/v1/graph/deployment/${DEPLOYMENT_ID}/link-artifact`,
         body: { artifact_id: ARTIFACT_ID },
       },
     ]);
+  });
+});
+
+describe('WorldView wire contract', () => {
+  it('accepts open node types and distinct typed edges between the same nodes', () => {
+    const graph = parseWorldViewGraph({
+      schema_version: 1,
+      projection: 'organization',
+      root: `organization-${ARTIFACT_ID}`,
+      nodes: [
+        {
+          type: 'organization',
+          id: ARTIFACT_ID,
+          key: `organization-${ARTIFACT_ID}`,
+          label: 'Flowpad',
+          is_ghost: false,
+          properties: {},
+        },
+        {
+          type: 'person',
+          id: DEPLOYMENT_ID,
+          key: `person-${DEPLOYMENT_ID}`,
+          label: 'Ada',
+          is_ghost: false,
+          properties: {},
+        },
+      ],
+      edges: [
+        {
+          from: { type: 'organization', id: ARTIFACT_ID },
+          to: { type: 'person', id: DEPLOYMENT_ID },
+          kind: 'member',
+          topology: 'hierarchy',
+        },
+        {
+          from: { type: 'organization', id: ARTIFACT_ID },
+          to: { type: 'person', id: DEPLOYMENT_ID },
+          kind: 'owner',
+          topology: 'association',
+        },
+      ],
+      counts: { nodes: 2, edges: 2 },
+      sync: null,
+    });
+
+    expect(graph.projection).toBe(WorldViewProjection.ORGANIZATION);
+    expect(graph.edges.map((edge) => edge.topology)).toEqual(['hierarchy', 'association']);
+  });
+
+  it('rejects extra fields, mismatched counts, and broken graph references', () => {
+    expect(() => parseWorldViewGraph({ ...emptyWorldViewGraph(), layout: 'circle' })).toThrow(
+      'not part of the WorldView contract',
+    );
+    expect(() => parseWorldViewGraph({ ...emptyWorldViewGraph(), counts: { nodes: 1, edges: 0 } })).toThrow(
+      'counts must match',
+    );
+    expect(() =>
+      parseWorldViewGraph({
+        ...emptyWorldViewGraph(),
+        root: `deployment-${DEPLOYMENT_ID}`,
+      }),
+    ).toThrow('root must reference');
+    expect(() =>
+      parseWorldViewGraph({
+        ...emptyWorldViewGraph(),
+        nodes: [
+          {
+            type: 'deployment',
+            id: DEPLOYMENT_ID,
+            key: `wrong-${DEPLOYMENT_ID}`,
+            label: null,
+            is_ghost: false,
+            properties: {},
+          },
+        ],
+        counts: { nodes: 1, edges: 0 },
+      }),
+    ).toThrow('key must match');
   });
 });

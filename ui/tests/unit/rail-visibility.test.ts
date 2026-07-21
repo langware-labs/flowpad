@@ -14,24 +14,28 @@ import {
  * per-item visibility matrix rendered it (including the formerly special-cased
  * Bookmarks = vibe-only and Discover = dev-only affordances).
  */
+// 'tasks' is an additive item that rides EVERY mode as visible (the release
+// side shipped it ALL_VISIBLE — see RAIL_DELTAS' Vibe entry, commit 4cbd7269);
+// its delta landed without this reference being updated. No existing item's
+// placement changed.
 const OLD_MATRIX: Record<ViewMode, Record<'visible' | 'collapsed', readonly RailItemId[]>> = {
   [ViewMode.Vibe]: {
-    visible: ['home', 'inbox', 'bookmarks'],
+    visible: ['home', 'inbox', 'tasks', 'bookmarks'],
     collapsed: ['files'],
   },
   [ViewMode.Standard]: {
-    visible: ['home', 'chats', 'inbox'],
+    visible: ['home', 'chats', 'inbox', 'tasks'],
     collapsed: ['files'],
   },
   [ViewMode.Advanced]: {
-    visible: ['home', 'chats', 'inbox', 'assets'],
+    visible: ['home', 'chats', 'inbox', 'tasks', 'assets'],
     collapsed: ['triggers', 'hooks', 'files'],
   },
   [ViewMode.Dev]: {
     // 'agentic-flows' (FlowStudio) is an additive Dev-only rail item from the
     // flow-graph slice (d6f25601); its RAIL_DELTAS entry landed without this
     // reference being updated. No existing item's placement changed.
-    visible: ['home', 'chats', 'inbox', 'assets', 'discover', 'agentic-flows'],
+    visible: ['home', 'chats', 'inbox', 'tasks', 'assets', 'discover', 'agentic-flows'],
     collapsed: ['triggers', 'hooks', 'files', 'capabilities'],
   },
 };

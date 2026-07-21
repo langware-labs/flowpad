@@ -75,3 +75,24 @@ export function useSelectExistingProject() {
     [navigation],
   );
 }
+
+/**
+ * Shared "clone a git repo into a fresh Project, then open it" step, used by
+ * both the QuickCreate "From git" flow and the received-template
+ * `IncomingProjectDialog`. Centralizes the `Project.createFromGitUrl` result
+ * contract (ok / collision / error) plus the open-on-success, so the two call
+ * sites can't drift. Returns the raw result; each caller maps it to its own UI
+ * (form banner vs. step machine).
+ */
+export function useCloneGitProjectAndOpen() {
+  const selectExisting = useSelectExistingProject();
+
+  return useCallback(
+    async (computeNodeId: string, url: string, opts?: { targetName?: string; branch?: string }) => {
+      const result = await Project.createFromGitUrl(computeNodeId, url, opts?.targetName, opts?.branch);
+      if (result.kind === 'ok') await selectExisting(result.project);
+      return result;
+    },
+    [selectExisting],
+  );
+}

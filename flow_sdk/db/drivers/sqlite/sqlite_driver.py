@@ -835,20 +835,28 @@ class SQLiteDBDriver(DBDriver):
     async def list_entity_sources_by_type(
         self,
         type_name: str,
-    ) -> dict[str, tuple[str | None, str | None, str | None]]:
-        """Return ``{id: (asset_ref, scope, project_id)}`` for every row of
-        ``type_name``. One lean SELECT — used by the indexer's orphan
-        detection to include DB rows that have no shadow record dir."""
+    ) -> dict[str, tuple[str | None, str | None, str | None, list | None, datetime | None]]:
+        """Return source/provenance/collision state for every row of a type."""
         if not self.session_factory:
             return {}
         sql = (
             "SELECT id, json_extract(data, '$.asset_ref'), "
-            "json_extract(data, '$.scope'), json_extract(data, '$.project_id') "
+            "json_extract(data, '$.scope'), json_extract(data, '$.project_id'), "
+            "json_extract(data, '$.asset_occurrences'), created_date "
             "FROM entities WHERE type = :type"
         )
         async with self._session_ctx(write=False) as session:
             result = await session.execute(text(sql), {"type": type_name})
-            return {str(row[0]): (row[1], row[2], row[3]) for row in result.fetchall()}
+            out = {}
+            for row in result.fetchall():
+                occurrences = row[4]
+                if isinstance(occurrences, str):
+                    try:
+                        occurrences = json.loads(occurrences)
+                    except ValueError:
+                        occurrences = None
+                out[str(row[0])] = (row[1], row[2], row[3], occurrences, row[5])
+            return out
 
     async def delete_entities_by_type(
         self,

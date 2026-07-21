@@ -21,7 +21,7 @@ type Props = {
   nodeCount: number;
   visibleNodeCount: number;
   edgeCount: number;
-  hidden: Set<string>;
+  hidden: ReadonlySet<string>;
   building: boolean;
   actionDisabled?: boolean;
   depthOptions?: number[];
@@ -31,6 +31,7 @@ type Props = {
   onSelectAllTypes: () => void;
   onClearAllTypes: () => void;
   onSearch: (q: string) => SearchResultRow[];
+  searchQuery?: string;
   onSelectResult: (key: string) => void;
   onRebuild: () => void;
   onChangeDepth: (depth: number) => void;
@@ -56,6 +57,7 @@ export function TopBar({
   onSelectAllTypes,
   onClearAllTypes,
   onSearch,
+  searchQuery = '',
   onSelectResult,
   onRebuild,
   onChangeDepth,
@@ -77,7 +79,7 @@ export function TopBar({
           <span className="title-dot" />
           <span>{title}</span>
         </div>
-        <SearchInput onQueryChange={onSearch} onSelect={onSelectResult} />
+        <SearchInput query={searchQuery} onQueryChange={onSearch} onSelect={onSelectResult} />
         {colorMode && onChangeColorMode && (
           <div className="color-mode-control" role="group" aria-label={t`Color by`}>
             {WORLDVIEW_COLOR_MODES.map((mode) => (
@@ -95,8 +97,12 @@ export function TopBar({
         )}
         <div className="spacer" />
         <div className="counts">
-          <span><strong>{visibleNodeCount}</strong> / {nodeCount} <Trans>nodes</Trans></span>
-          <span><strong>{edgeCount}</strong> <Trans>edges</Trans></span>
+          <span>
+            <strong>{visibleNodeCount}</strong> / {nodeCount} <Trans>nodes</Trans>
+          </span>
+          <span>
+            <strong>{edgeCount}</strong> <Trans>edges</Trans>
+          </span>
         </div>
         <button className="btn" onClick={onRebuild} disabled={building || actionDisabled}>
           <RefreshCw size={12} className={building ? 'spin' : ''} />
@@ -113,18 +119,26 @@ export function TopBar({
       {localMode && (
         <div className="local-banner">
           <Target size={12} />
-          <span className="local-label"><Trans>Local graph:</Trans></span>
+          <span className="local-label">
+            <Trans>Local graph:</Trans>
+          </span>
           <span className="local-root">{localMode.rootLabel}</span>
           <span className="local-meta">({localMode.rootType})</span>
           <span className="local-sep" />
-          <span className="local-meta"><Trans>depth</Trans></span>
+          <span className="local-meta">
+            <Trans>depth</Trans>
+          </span>
           {depthOptions.map((d) => (
             <button
               key={d}
               type="button"
               className={`depth-btn ${d === localMode.depth ? 'active' : ''}`}
               onClick={() => onChangeDepth(d)}
-              title={d === 0 ? `Show complete hierarchy from ${localMode.rootLabel}` : `Show ${d} hop${d > 1 ? 's' : ''} from ${localMode.rootLabel}`}
+              title={
+                d === 0
+                  ? `Show complete hierarchy from ${localMode.rootLabel}`
+                  : `Show ${d} hop${d > 1 ? 's' : ''} from ${localMode.rootLabel}`
+              }
             >
               {d === 0 ? t`All` : d}
             </button>

@@ -10,6 +10,7 @@ import type { GraphLayout } from './loadDepGraph';
 import { cameraRatioForVisibleSpan } from './graphCamera';
 import { drawGraphNodeHover, drawGraphNodeLabel } from './graphLabels';
 import { colorForWorldViewMode } from './heat';
+import { applyCircleForestLayout } from './circleLayout';
 import { DEFAULT_WORLDVIEW_COLOR_MODE, type WorldViewColorMode } from '@src/types/WorldViewColorMode';
 
 const FLICKER_COLOR: Record<'create' | 'update' | 'delete', string> = {
@@ -78,6 +79,7 @@ export class GraphEngine {
 
   init(container: HTMLElement): void {
     if (this.layout === 'dagre') this.applyDagreLayout();
+    else if (this.layout === 'circle') applyCircleForestLayout(this.graph);
     else this.applyForceLayout();
 
     this.sigma = new Sigma(this.graph, container, {
@@ -319,7 +321,7 @@ export class GraphEngine {
     this.sigma.getMouseCaptor().on('mouseleave', handleUp);
   }
 
-  setHiddenTypes(types: Set<string>): void {
+  setHiddenTypes(types: ReadonlySet<string>): void {
     this.hiddenTypes = new Set(types);
     this.sigma?.refresh();
   }

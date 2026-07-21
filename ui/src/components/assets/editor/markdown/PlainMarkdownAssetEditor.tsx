@@ -18,6 +18,7 @@ import { dataContext, FrontMatterFsRef, ProcessKind } from '@sdk';
 import type { APIEntity, FSRef } from '@sdk';
 import { useDocTranslations } from '@src/components/assets/editor/translations/useDocTranslations';
 import { History } from 'lucide-react';
+import { AssetCollisionProvider } from '../AssetCollisionUI';
 
 interface PlainMarkdownAssetEditorProps {
   /** FSRef to the .md file. */
@@ -141,15 +142,17 @@ export function PlainMarkdownAssetEditor({ fsRef, assetType }: PlainMarkdownAsse
 
   return (
     <>
-      <MarkdownEditor
-        fsRef={editorRef}
-        chatTarget={chatTarget}
-        toolbar={toolbar}
-        extraSideTabs={[translationsTab, runsTab]}
-        onDelete={deletable?.delete ? onDelete : undefined}
-        deleteLabel={deletable?.name ?? undefined}
-        reloadKey={reloadKey}
-      />
+      <AssetCollisionProvider entity={entity}>
+        <MarkdownEditor
+          fsRef={editorRef}
+          chatTarget={chatTarget}
+          toolbar={toolbar}
+          extraSideTabs={[translationsTab, runsTab]}
+          onDelete={deletable?.delete ? onDelete : undefined}
+          deleteLabel={deletable?.name ?? undefined}
+          reloadKey={reloadKey}
+        />
+      </AssetCollisionProvider>
       {mcpModal}
     </>
   );

@@ -19,9 +19,7 @@ def normalize_kind(kind: str) -> str:
         raise TypeError("kind must be a string")
     normalized = kind.strip().lower()
     if not KIND_PATTERN.fullmatch(normalized):
-        raise ValueError(
-            "kind must contain dot-separated lowercase letters, numbers, '_' or '-'"
-        )
+        raise ValueError("kind must contain dot-separated lowercase letters, numbers, '_' or '-'")
     return normalized
 
 
@@ -30,9 +28,7 @@ def kind_matches(query: str, candidate: str) -> bool:
 
     normalized_query = normalize_kind(query)
     normalized_candidate = normalize_kind(candidate)
-    return normalized_candidate == normalized_query or normalized_candidate.startswith(
-        f"{normalized_query}."
-    )
+    return normalized_candidate == normalized_query or normalized_candidate.startswith(f"{normalized_query}.")
 
 
 def kind_ancestors(kind: str, *, include_self: bool = False) -> list[str]:

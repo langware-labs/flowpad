@@ -671,12 +671,38 @@ function HarnessDetail({ kind, onBack, keys }: { kind: string; onBack: () => voi
 }
 
 /**
+ * localStorage flag that records the user has already seen + dismissed the
+ * startup harness-login gate. Once set, the gate never auto-opens again — the
+ * footer warning remains the (click-driven) path back in. Restored from the
+ * retired DesktopSetupModal so a user (or test harness) can opt out of the nag.
+ */
+const HARNESS_GATE_SEEN_KEY = 'llm-setup-modal-seen';
+
+function harnessGateDismissed(): boolean {
+  try {
+    return localStorage.getItem(HARNESS_GATE_SEEN_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+export function markHarnessGateSeen(): void {
+  try {
+    localStorage.setItem(HARNESS_GATE_SEEN_KEY, 'true');
+  } catch {
+    /* private-mode / storage-disabled — nag stays, which is acceptable */
+  }
+}
+
+/**
  * Startup gate: probe every assistant's sign-in state (cheap, no version run)
- * and auto-open only when NONE is signed in. Partial states are covered by the
- * footer warning, which opens this modal on click.
+ * and auto-open only when NONE is signed in AND the user hasn't already
+ * dismissed the gate. Partial states are covered by the footer warning, which
+ * opens this modal on click.
  */
 function useHarnessLoginGate() {
   useEffect(() => {
+    if (harnessGateDismissed()) return;
     let cancelled = false;
     void (async () => {
       try {
@@ -1006,7 +1032,15 @@ export function HarnessLoginModalRoot() {
 
   if (!open) return null;
   return (
-    <Dialog open onOpenChange={setOpen}>
+    <Dialog
+      open
+      onOpenChange={(next) => {
+        // Dismissing the gate is a durable choice — record it so the startup
+        // gate stops auto-opening (footer warning still reopens on demand).
+        if (!next) markHarnessGateSeen();
+        setOpen(next);
+      }}
+    >
       <DialogContent className="sm:max-w-[440px]">
         <style>{`@keyframes hlIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}`}</style>
         {selected === 'mapping' ? (
