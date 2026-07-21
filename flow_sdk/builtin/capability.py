@@ -92,24 +92,27 @@ class Capability(Entity):
             system=True,
         )
 
-    # Per-driver seed guard: the spec→row reconcile is idempotent but costs a
-    # DB read per spec, and ensure_seeded is called from every classmethod
-    # accessor. We key the guard to the DB DRIVER instance we seeded against,
-    # not a bare bool — so ANY driver swap (a test fixture pointing _db at an
-    # isolated DB, or a production reinit_db "Switch DB") auto-invalidates the
-    # guard and re-seeds against the now-active DB. A bare bool would latch True
-    # on the first (possibly throwaway) DB and starve every later driver of its
-    # capability rows.
+    # Seed guard, keyed to the DB driver it seeded against — NOT a bare bool.
+    # The spec→row reconcile is idempotent but costs a DB read per spec, and
+    # ensure_seeded runs on every classmethod accessor, so we skip repeats. But
+    # ``cls._db`` is hot-swappable: reinit_db (UI "Switch DB"), clear_all_data,
+    # and the isolated-driver test fixtures all rebind the active driver. A bare
+    # "seeded once" latch would stay True across a swap and skip seeding the NEW
+    # database — leaving it without the system rows, so ``get_by_kind`` returns
+    # None against a db that was never seeded. Storing the driver instance we
+    # seeded lets a swap auto-invalidate the guard: we re-seed whenever the
+    # active driver differs from the last one seeded.
     _seeded_driver: ClassVar[object] = None
 
     @classmethod
     async def ensure_seeded(cls) -> list["Capability"]:
-        if cls._seeded_driver is cls._db:
+        db = cls._db
+        if cls._seeded_driver is db:
             return []
         seeded: list[Capability] = []
         for spec in get_default_capability_specs():
             expected = cls.from_spec(spec)
-            existing = await cls._db.get_by_id(expected.id, cls.get_type())
+            existing = await db.get_by_id(expected.id, cls.get_type())
             if existing is None:
                 seeded.append(await expected.save(notify=False))
                 continue
@@ -132,7 +135,7 @@ class Capability(Entity):
                     setattr(existing, field, expected_value)
                     changed = True
             seeded.append(await existing.save(notify=False) if changed else existing)
-        cls._seeded_driver = cls._db
+        cls._seeded_driver = db
         return seeded
 
     @classmethod

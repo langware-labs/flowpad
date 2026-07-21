@@ -64,10 +64,10 @@ def _expected_markdown_paths(root: Path) -> set[Path]:
         if not _has_typed_ancestor(d):
             try:
                 for md in d.glob("*.md"):
-                    # Mirror the walker's own by-name skip: a folder's SKILL.md
-                    # is claimed as a typed skill-carrier (markdown_in_folder_fn),
-                    # never emitted as a plain MARKDOWN ref — regardless of the
-                    # parent dir name. Keep this oracle in sync with that rule.
+                    # SKILL.md / skill.md is a skill's doc (claimed by the typed
+                    # skill indexer), never a standalone MARKDOWN asset — the
+                    # walker skips it by name regardless of parent dir, so mirror
+                    # that here.
                     if md.name.lower() == "skill.md":
                         continue
                     if md.is_file():

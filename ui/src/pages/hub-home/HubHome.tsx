@@ -2,7 +2,7 @@ import { ExecutionEnvironmentStatus, PageId, ViewType, WorldViewProjection } fro
 import { useAuth } from '@sdk/react/hooks';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useProjects } from '@src/hooks/use-projects';
-import { useDesktops, type Step } from '@src/hooks/use-desktops';
+import { useDesktops, type Step, type DesktopDetails } from '@src/hooks/use-desktops';
 import {
   Building2,
   CheckCircle,
@@ -17,7 +17,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 function StepIcon({ status }: { status: Step['status'] }) {
   if (status === 'loading') return <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />;
@@ -41,9 +41,30 @@ function statusCardClass(status?: ExecutionEnvironmentStatus): string {
   return (status && STATUS_STYLE[status]?.card) || 'border-border';
 }
 
-function DesktopStatus({ status }: { status?: ExecutionEnvironmentStatus }) {
+/** "12m", "1h 5m" — minutes granularity, clamped at 0. */
+function fmtDur(ms: number): string {
+  const m = Math.max(0, Math.floor(ms / 60000));
+  return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h ${m % 60}m`;
+}
+
+function fmtSize(cpu?: number, memMb?: number): string | null {
+  if (!cpu || !memMb) return null;
+  const mem = memMb >= 1024 ? `${(memMb / 1024).toFixed(memMb % 1024 ? 1 : 0)} GiB` : `${memMb} MiB`;
+  return `${cpu} vCPU · ${mem}`;
+}
+
+/** Second line of a desktop card: dot + label + (for running) time used / pauses-in + size. */
+function DesktopStatus({ info, now }: { info?: DesktopDetails; now: number }) {
   const { t } = useLingui();
-  if (!status) return <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-muted-foreground/40" />;
+  if (!info) {
+    return (
+      <span className="flex items-center gap-1.5 pl-7 text-[11px] text-muted-foreground/50">
+        <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-muted-foreground/40" />
+        {t`Checking…`}
+      </span>
+    );
+  }
+  const status = info.status;
   const labels: Record<ExecutionEnvironmentStatus, string> = {
     [ExecutionEnvironmentStatus.READY]: t`Running`,
     [ExecutionEnvironmentStatus.PAUSED]: t`Paused`,
@@ -51,10 +72,18 @@ function DesktopStatus({ status }: { status?: ExecutionEnvironmentStatus }) {
     [ExecutionEnvironmentStatus.ERROR]: t`Unreachable`,
     [ExecutionEnvironmentStatus.NEW]: t`New`,
   };
+  const parts: string[] = [];
+  if (status === ExecutionEnvironmentStatus.READY) {
+    if (info.started_at) parts.push(`${fmtDur(now - new Date(info.started_at).getTime())} used`);
+    if (info.end_at) parts.push(`pauses in ${fmtDur(new Date(info.end_at).getTime() - now)}`);
+  }
+  const size = fmtSize(info.cpu_count, info.memory_mb);
+  if (size) parts.push(size);
   return (
-    <span className="flex shrink-0 items-center gap-1.5 text-[11px] text-muted-foreground" title={status}>
+    <span className="flex min-w-0 items-center gap-1.5 pl-7 text-[11px] text-muted-foreground" title={status}>
       <span className={`h-2 w-2 shrink-0 rounded-full ${STATUS_STYLE[status]?.dot ?? 'bg-muted-foreground/40'}`} />
-      {labels[status] ?? status}
+      <span className="shrink-0">{labels[status] ?? status}</span>
+      {parts.length > 0 && <span className="truncate text-muted-foreground/70">· {parts.join(' · ')}</span>}
     </span>
   );
 }
@@ -82,13 +111,20 @@ export function HubHome() {
     renameDesktop,
     deleteDesktop,
     deletingId,
-    statuses,
+    details,
   } = useDesktops();
   const launchStarted = steps.some((s) => s.status !== 'idle');
 
   // Inline rename: single-click a desktop name to edit it.
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draftName, setDraftName] = useState('');
+
+  // Tick every 30s so the "used / pauses in" countdowns stay live without a reload.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(id);
+  }, []);
 
   const firstName = currentUser?.name?.split(' ')[0] || 'there';
 
@@ -177,62 +213,64 @@ export function HubHome() {
                 data-testid="desktop-card"
                 data-node-id={d.id}
                 data-provider-id={d.node_provider_id}
-                data-status={statuses[d.id]}
-                className={`group flex items-center gap-3 rounded-lg border bg-card px-4 py-3 transition-colors ${statusCardClass(
-                  statuses[d.id],
+                data-status={details[d.id]?.status}
+                className={`group flex flex-col gap-1.5 rounded-lg border bg-card px-4 py-3 transition-colors ${statusCardClass(
+                  details[d.id]?.status,
                 )}`}
               >
-                <Monitor className="h-4 w-4 shrink-0 text-muted-foreground" />
-                {editingId === d.id ? (
-                  <input
-                    autoFocus
-                    value={draftName}
-                    onChange={(e) => setDraftName(e.target.value)}
-                    onBlur={() => {
-                      void renameDesktop(d, draftName);
-                      setEditingId(null);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') e.currentTarget.blur();
-                      else if (e.key === 'Escape') setEditingId(null);
-                    }}
-                    data-testid="desktop-name-input"
-                    className="min-w-0 flex-1 border-b border-border bg-transparent text-sm outline-none"
-                  />
-                ) : (
+                <div className="flex items-center gap-3">
+                  <Monitor className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  {editingId === d.id ? (
+                    <input
+                      autoFocus
+                      value={draftName}
+                      onChange={(e) => setDraftName(e.target.value)}
+                      onBlur={() => {
+                        void renameDesktop(d, draftName);
+                        setEditingId(null);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') e.currentTarget.blur();
+                        else if (e.key === 'Escape') setEditingId(null);
+                      }}
+                      data-testid="desktop-name-input"
+                      className="min-w-0 flex-1 border-b border-border bg-transparent text-sm outline-none"
+                    />
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDraftName(d.name || '');
+                        setEditingId(d.id);
+                      }}
+                      className="min-w-0 flex-1 truncate text-left text-sm hover:underline"
+                      title={t`Click to rename`}
+                      data-testid="desktop-name"
+                    >
+                      {d.name || t`Desktop`}
+                    </button>
+                  )}
                   <button
                     type="button"
-                    onClick={() => {
-                      setDraftName(d.name || '');
-                      setEditingId(d.id);
-                    }}
-                    className="min-w-0 flex-1 truncate text-left text-sm hover:underline"
-                    title={t`Click to rename`}
-                    data-testid="desktop-name"
+                    onClick={() => void openDesktop(d)}
+                    aria-label={t`Open desktop`}
+                    data-testid="desktop-open"
+                    className="text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
                   >
-                    {d.name || t`Desktop`}
+                    <ExternalLink className="h-4 w-4" />
                   </button>
-                )}
-                <DesktopStatus status={statuses[d.id]} />
-                <button
-                  type="button"
-                  onClick={() => void openDesktop(d)}
-                  aria-label={t`Open desktop`}
-                  data-testid="desktop-open"
-                  className="text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
-                >
-                  <ExternalLink className="h-4 w-4" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void deleteDesktop(d)}
-                  disabled={deletingId === d.id}
-                  aria-label={t`Delete desktop`}
-                  data-testid="desktop-delete"
-                  className="text-muted-foreground opacity-0 transition-opacity hover:text-destructive disabled:opacity-50 group-hover:opacity-100"
-                >
-                  {deletingId === d.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => void deleteDesktop(d)}
+                    disabled={deletingId === d.id}
+                    aria-label={t`Delete desktop`}
+                    data-testid="desktop-delete"
+                    className="text-muted-foreground opacity-0 transition-opacity hover:text-destructive disabled:opacity-50 group-hover:opacity-100"
+                  >
+                    {deletingId === d.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                  </button>
+                </div>
+                <DesktopStatus info={details[d.id]} now={now} />
               </div>
             ))}
 
