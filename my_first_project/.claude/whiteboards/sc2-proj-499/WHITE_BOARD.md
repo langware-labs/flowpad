@@ -1,8 +1,6 @@
 ---
-version: 2
+version: 3
 ---
-
-
 
 <!-- BEGIN whiteboard:auto -->
 ```mermaid
