@@ -108,14 +108,17 @@ class OpsActionsMixin:
             return ApiFailResponse(message=str(e))
 
     async def _status_op(self) -> ApiResponse:
-        """Report the backing environment's live status as JSON: {"status": <value>}.
+        """Report the backing environment's live status + cheap metadata as JSON.
 
-        Cheap and side-effect-free — for E2B this is a single get_info() call (no
-        connect, no resume). A node that was never set up reports NEW.
+        Shape: {"status", and for E2B also "started_at", "end_at", "cpu_count",
+        "memory_mb"} — all from a single side-effect-free get_info() (no connect,
+        no resume). A node that was never set up reports {"status": "NEW"}.
         """
         try:
-            status = await self.get_node_status()
-            return ApiSuccessResponse(data={"status": status.value})
+            if not self.node_provider_id:
+                return ApiSuccessResponse(data={"status": (await self.get_node_status()).value})
+            details = await self.compute_provider.get_node_details(self.node_provider_id)
+            return ApiSuccessResponse(data=details)
         except Exception as e:
             return ApiFailResponse(message=str(e))
 

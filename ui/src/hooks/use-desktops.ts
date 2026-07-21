@@ -52,6 +52,19 @@ interface WorkspaceReadyResult {
 }
 
 /**
+ * Live per-desktop info from `ops/status` (one cheap get_info). `started_at` is
+ * the current run's start (resets on resume); `end_at` is when the sandbox
+ * auto-pauses/expires. Fields beyond `status` are E2B-only.
+ */
+export interface DesktopDetails {
+  status: ExecutionEnvironmentStatus;
+  started_at?: string | null;
+  end_at?: string | null;
+  cpu_count?: number;
+  memory_mb?: number;
+}
+
+/**
  * The OSS↔hub wire-field divergence lives ONLY in these two helpers. The hub's
  * ComputeNode field is `node_provider`, but the OSS entity types it
  * `node_provider_type` and drops the former on `toJSON()`. `readProvider`
@@ -113,16 +126,16 @@ export function useDesktops() {
   const desktops = useMemo(() => (nodes ?? []).filter(isDesktop), [nodes]);
 
   // ---- live status (probed on load) ----
-  const [statuses, setStatuses] = useState<Record<string, ExecutionEnvironmentStatus>>({});
-  const statusesRef = useRef(statuses);
-  statusesRef.current = statuses;
+  const [details, setDetails] = useState<Record<string, DesktopDetails>>({});
+  const detailsRef = useRef(details);
+  detailsRef.current = details;
 
-  const probeStatus = useCallback(async (nodeId: string): Promise<ExecutionEnvironmentStatus> => {
+  const probeDetails = useCallback(async (nodeId: string): Promise<DesktopDetails> => {
     try {
-      const res = await opsCall<{ status: string }>(nodeId, 'status');
-      return (res?.status as ExecutionEnvironmentStatus) ?? ExecutionEnvironmentStatus.ERROR;
+      const res = await opsCall<DesktopDetails>(nodeId, 'status');
+      return res ?? { status: ExecutionEnvironmentStatus.ERROR };
     } catch {
-      return ExecutionEnvironmentStatus.ERROR;
+      return { status: ExecutionEnvironmentStatus.ERROR };
     }
   }, []);
 
@@ -130,16 +143,16 @@ export function useDesktops() {
   // re-probing the whole list on every add/delete would be one call per desktop.
   useEffect(() => {
     const liveIds = new Set(desktops.map((d) => d.id));
-    setStatuses((prev) => {
+    setDetails((prev) => {
       const kept = Object.entries(prev).filter(([id]) => liveIds.has(id));
       return kept.length === Object.keys(prev).length ? prev : Object.fromEntries(kept);
     });
-    const fresh = desktops.filter((d) => !(d.id in statusesRef.current));
+    const fresh = desktops.filter((d) => !(d.id in detailsRef.current));
     if (!fresh.length) return;
-    void Promise.all(fresh.map(async (d) => [d.id, await probeStatus(d.id)] as const)).then((entries) =>
-      setStatuses((prev) => ({ ...prev, ...Object.fromEntries(entries) })),
+    void Promise.all(fresh.map(async (d) => [d.id, await probeDetails(d.id)] as const)).then((entries) =>
+      setDetails((prev) => ({ ...prev, ...Object.fromEntries(entries) })),
     );
-  }, [desktops, probeStatus]);
+  }, [desktops, probeDetails]);
 
   // ---- launch ----
   const [steps, setSteps] = useState<Step[]>(INITIAL_STEPS);
@@ -200,7 +213,7 @@ export function useDesktops() {
 
       // The just-launched sandbox is up — seed its status so the list effect
       // doesn't re-probe it.
-      setStatuses((s) => ({ ...s, [node.id]: ExecutionEnvironmentStatus.READY }));
+      setDetails((s) => ({ ...s, [node.id]: { status: ExecutionEnvironmentStatus.READY } }));
       setLaunchUrl(url);
       if (tab) tab.location.href = url;
       await refetch();
@@ -231,14 +244,14 @@ export function useDesktops() {
       const tab = window.open('', '_blank');
       try {
         // A paused sandbox's URL 404s until it's resumed; a gone one can't open at all.
-        const status = await probeStatus(node.id);
+        const { status } = await probeDetails(node.id);
         if (status === ExecutionEnvironmentStatus.NOT_FOUND || status === ExecutionEnvironmentStatus.ERROR) {
           tab?.close();
           return;
         }
         if (status === ExecutionEnvironmentStatus.PAUSED) {
           await opsCall(node.id, 'resume');
-          setStatuses((s) => ({ ...s, [node.id]: ExecutionEnvironmentStatus.READY }));
+          setDetails((s) => ({ ...s, [node.id]: { status: ExecutionEnvironmentStatus.READY } }));
         }
         const url = await resolveHostUrl(node.id);
         if (tab) tab.location.href = url;
@@ -246,7 +259,7 @@ export function useDesktops() {
         tab?.close();
       }
     },
-    [probeStatus],
+    [probeDetails],
   );
 
   // ---- delete / terminate ----
@@ -284,6 +297,6 @@ export function useDesktops() {
     renameDesktop,
     deleteDesktop,
     deletingId,
-    statuses,
+    details,
   };
 }
