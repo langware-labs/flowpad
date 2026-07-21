@@ -386,6 +386,67 @@ def get_agent_mount_folder() -> str:
 AGENT_MOUNT_FOLDER = get_agent_mount_folder()
 
 
+def agent_workspace_root() -> Path:
+    """Per-instance agent mount ROOT (``<user_home>/Flowpad workspace``).
+
+    Matches the folder scanned by ``iter_workspace_project_paths`` and used as
+    the default agent working directory, resolved through instance settings so a
+    named dev instance points at its own home rather than ``Path.home()``.
+    """
+    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
+    return get_instance_settings().user_home / "Flowpad workspace"
+
+
+@lru_cache(maxsize=8)
+def _canonical_mount_roots(*raw_roots: str) -> frozenset[str]:
+    """Canonical forms of the agent mount roots, cached per distinct value pair.
+
+    Keyed on the raw root strings so a test that monkeypatches the roots gets its
+    own cache entry (no stale/leaked value), while a real scan resolves each root
+    once instead of re-running ``Path.resolve()`` for every cwd in the loop.
+    """
+    from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
+
+    out: set[str] = set()
+    for raw in raw_roots:
+        try:
+            out.add(canonical_posix_path(raw))
+        except (OSError, ValueError):
+            continue
+    return frozenset(out)
+
+
+def is_agent_mount_root(path: str | Path) -> bool:
+    """True when ``path`` is the agent mount ROOT itself — never a project.
+
+    The mount root is the container where agentic processes do their work; it is
+    infrastructure, not a user project. Without this gate, agentic-process init
+    (``Project.recover_by_path``) mints a stray "Flowpad workspace" project the
+    first time a process runs at the root with no specific project bound. Only
+    the bare root is excluded — real work subfolders under it stay projects.
+    """
+    from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
+
+    try:
+        target = canonical_posix_path(path)
+    except (OSError, ValueError):
+        return False
+    return target in _canonical_mount_roots(AGENT_MOUNT_FOLDER, str(agent_workspace_root()))
+
+
+def is_hidden_project(cwd: str | Path, system_flag: bool = False) -> bool:
+    """True when a project should be hidden from the default project lists.
+
+    A project is hidden when it is an SDK-shipped system project OR the agent
+    mount ROOT (``~/Flowpad workspace``). The path checks route through the
+    workspace consts (``is_system_project_path`` / ``is_agent_mount_root``) —
+    never a hardcoded literal. Hidden projects are still revealable via the
+    "Show system projects" preference, which flips the ``system`` filter off.
+    """
+    return system_flag or is_system_project_path(cwd) or is_agent_mount_root(cwd)
+
+
 # ---------------------------------------------------------------------------
 # Service URL configuration
 # ---------------------------------------------------------------------------

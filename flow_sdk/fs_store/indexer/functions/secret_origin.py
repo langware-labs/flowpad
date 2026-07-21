@@ -94,15 +94,36 @@ def secret_origin_in_folder_fn(nodes: list[FSRef], opts: IndexerOptions) -> list
 
 # ── id mint ───────────────────────────────────────────────────────────────────
 
-def secret_origin_gen_id(ref: FSRef) -> str | None:
-    """The convergent id read from the file (never path-derived)."""
-    data = _load_doc(ref._path)
-    return _convergent_id(data) if data is not None else None
+def secret_origin_id_from_file(ref: FSRef | Path) -> str | None:
+    """Read only the embedded entity id; locator derivation is the mint seam."""
+    from flow_sdk.fs_store.identifier import adopt_entity_id  # noqa: PLC0415
+
+    data = _load_doc(Path(getattr(ref, "_path", ref)))
+    return adopt_entity_id(data.get("id")) if data is not None else None
+
+
+def secret_origin_identity_key(ref: FSRef | Path) -> str | None:
+    data = _load_doc(Path(getattr(ref, "_path", ref)))
+    locator = data.get("locator") if data else None
+    if not isinstance(locator, dict):
+        return None
+    kind = str(locator.get("kind") or "local")
+    field_names = {
+        "local": ("sod_name",),
+        "env-local": ("env_key",),
+        "flowpad-hub": ("secret_id",),
+        "gcp": ("gcp_project", "secret", "version"),
+        "1password": ("vault", "item", "field"),
+    }.get(kind)
+    if field_names is None:
+        return None
+    disc = ":".join(str(locator.get(name) or "") for name in field_names)
+    return f"secret-origin:{kind}:{disc}"
 
 
 # ── extractor ─────────────────────────────────────────────────────────────────
 
-def extract_secret_origin(ref: FSRef) -> list[FSRecord]:
+def extract_secret_origin(ref: FSRef, resolved_id: str) -> list[FSRecord]:
     """Parse a value-free secret reference json into one FSRecord.
 
     Single-path index bypasses the walker's scoping, so gate on the ``.json`` ext
@@ -125,14 +146,9 @@ def extract_secret_origin(ref: FSRef) -> list[FSRecord]:
     except ValueError as e:
         logger.warning("[secret-origin] refusing non-value-free reference %s: %s", path, e)
         return []
-    sid = _convergent_id(data)
-    if not sid:
-        logger.warning("[secret-origin] %s has no adoptable id and no resolvable locator", path)
-        return []
-
     rec = FSRecord(
         type=RecordType.SECRET_ORIGIN,
-        id=sid,
+        id=resolved_id,
         name=str(data.get("name") or path.stem),
         status="active",
         content=str(data.get("name") or path.stem),

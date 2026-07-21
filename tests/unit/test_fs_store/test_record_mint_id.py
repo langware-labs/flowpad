@@ -17,14 +17,16 @@ import re
 import uuid as _uuid
 from pathlib import Path
 
-import pytest
-
+from flow_sdk.capsules import AssetCapsule, strip_capsule_blocks
 from flow_sdk.fs_store.indexer._frontmatter import _extract_body, _extract_frontmatter, _yaml_load
 from flow_sdk.fs_store.indexer.functions.markdown import (
-    markdown_gen_id as _markdown_gen_id,
-    markdown_id as _markdown_id,
     extract_markdown as _extract_markdown,
 )
+from flow_sdk.fs_store.indexer.functions.markdown import (
+    markdown_id as _markdown_id,
+)
+from flow_sdk.fs_store.schema_registry import SchemaRegistry
+
 
 class _MarkdownRecordAdapter:
     _mintable = True
@@ -33,15 +35,16 @@ class _MarkdownRecordAdapter:
         return _markdown_id(ref)
     @staticmethod
     def genId(ref):
-        return _markdown_gen_id(ref)
+        return SchemaRegistry.get("markdown").mint_id(ref)
     @staticmethod
     def from_file(path):
         from flow_sdk.fs_store.fs_ref import FSRef
-        return _extract_markdown(FSRef(path))[0]
+        ref = FSRef(path)
+        resolved_id = SchemaRegistry.get("markdown").mint_id(ref)
+        return _extract_markdown(ref, resolved_id)[0]
 
 MarkdownRecord = _MarkdownRecordAdapter
 from flow_sdk.fs_store.fs_ref import FSRef
-
 
 _UUID_RE = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
@@ -100,11 +103,8 @@ def test_genId_mints_v4_capsule_when_no_frontmatter(tmp_path: Path) -> None:
     assert _uuid.UUID(minted).version == 4, "miss must mint a random v4"
     assert minted != path_uuid5, "genId must NOT derive uuid5(path) anymore"
     text = p.read_text(encoding="utf-8")
-    fm = _extract_frontmatter(text)
-    assert fm is not None, "frontmatter must be present after mint"
-    # Field is `id`, not `asset_id`
-    assert (_yaml_load(fm) or {}).get("id") == minted
-    assert (_yaml_load(fm) or {}).get("asset_id") is None
+    assert _extract_frontmatter(text) is None
+    assert AssetCapsule.from_path(p).read("identity").data["id"] == minted
     # Body survives
     assert "# body only" in _extract_body(text)
     assert "nothing else" in _extract_body(text)
@@ -123,13 +123,13 @@ def test_genId_mints_when_frontmatter_has_no_id(tmp_path: Path) -> None:
     text = p.read_text(encoding="utf-8")
     fm = _extract_frontmatter(text)
     fields = _yaml_load(fm) or {}
-    # Minted id lands in `id`
-    assert fields.get("id") == minted
+    assert fields.get("id") is None
+    assert AssetCapsule.from_path(p).read("identity").data["id"] == minted
     # Existing fields preserved
     assert fields.get("title") == "Greeting"
     assert fields.get("tags") == ["a", "b"]
     # Body preserved verbatim-ish (whitespace-insensitive comparison)
-    new_body = _extract_body(text)
+    new_body = strip_capsule_blocks(_extract_body(text))
     assert new_body.strip() == original_body.strip()
 
 
@@ -153,7 +153,7 @@ def test_getId_after_genId_returns_minted(tmp_path: Path) -> None:
     p = tmp_path / "g.md"
     _write_md(p, "# body\n", frontmatter="title: T\n")
     minted = MarkdownRecord.genId(FSRef(p))
-    assert MarkdownRecord.getId(FSRef(p)) == minted
+    assert SchemaRegistry.get("markdown").extract_id(FSRef(p)) == minted
 
 
 def test_genId_does_not_overwrite_existing_asset_id(tmp_path: Path) -> None:
@@ -198,7 +198,8 @@ def test_genId_on_empty_file_still_returns_id(tmp_path: Path) -> None:
     minted = MarkdownRecord.genId(FSRef(p))
     assert _UUID_RE.match(minted)
     text = p.read_text(encoding="utf-8")
-    assert _extract_frontmatter(text) is not None
+    assert _extract_frontmatter(text) is None
+    assert AssetCapsule.from_path(p).read("identity").data["id"] == minted
 
 
 def test_claude_plan_genId_also_mints(tmp_path: Path) -> None:
@@ -207,8 +208,7 @@ def test_claude_plan_genId_also_mints(tmp_path: Path) -> None:
     Mirrors the markdown contract: idempotent, migration-safe (writes the
     derived path-uuid5 so any existing DB row by that id stays valid).
     """
-    from flow_sdk.fs_store.indexer.functions.claude_plan import claude_plan_gen_id
-    ClaudePlanRecord = type('CP', (), {'genId': staticmethod(claude_plan_gen_id)})
+    ClaudePlanRecord = type('CP', (), {'genId': staticmethod(lambda ref: SchemaRegistry.get("plan").mint_id(ref))})
 
     p = tmp_path / "plan.md"
     p.write_text("some plan body", encoding="utf-8")
@@ -217,11 +217,11 @@ def test_claude_plan_genId_also_mints(tmp_path: Path) -> None:
 
     result = ClaudePlanRecord.genId(ref)
     assert result == expected_derived
-    # File was rewritten with frontmatter containing the minted id
+    # File was rewritten with a named capsule, not frontmatter identity.
     text = p.read_text(encoding="utf-8")
     fm = _extract_frontmatter(text)
-    assert fm is not None
-    assert (_yaml_load(fm) or {}).get("id") == result
+    assert fm is None
+    assert AssetCapsule.from_path(p).read("identity").data["id"] == result
     # Body preserved
     assert "some plan body" in _extract_body(text)
 

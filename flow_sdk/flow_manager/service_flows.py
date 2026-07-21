@@ -75,23 +75,28 @@ async def set_service_flows() -> None:
 async def _find_flow(name: str) -> AgenticFlow | None:
     """Resolve a seeded flow by name, tolerating duplicate rows.
 
-    Duplicates happen when the folder's ``.flow/id`` capsule gets re-keyed
-    (e.g. a concurrent instance's dedup-on-adopt) and the next scan mints a
-    second row. Prefer the row whose id matches the CURRENT capsule — that is
-    the identity the indexer and the UI resolve — else the newest row.
+    Prefer the row whose id matches the filesystem identity resolved by the
+    type registry — the same identity the indexer and UI use — else the newest
+    row. The resolver includes canonical capsules and read-only legacy fallbacks.
     """
     rows = await AgenticFlow.get_all({"name": name})
     if not rows:
         return None
     if len(rows) == 1:
         return rows[0]
-    from flow_sdk.fs_store.indexer.functions._folder_capsule import read_folder_capsule_id
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
     logger.warning("set_service_flows: %d rows named %r — resolving via capsule", len(rows), name)
+    info = SchemaRegistry.get("agentic_flow")
     for row in rows:
         folder = row.folder
-        if folder is not None and read_folder_capsule_id(folder) == row.id:
-            return row
+        if folder is None or info is None:
+            continue
+        try:
+            if info.extract_id(folder) == row.id:
+                return row
+        except Exception:
+            logger.warning("set_service_flows: unreadable identity for %s", folder, exc_info=True)
     return max(rows, key=lambda r: str(r.created_date or ""))
 
 

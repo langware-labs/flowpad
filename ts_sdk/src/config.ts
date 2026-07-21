@@ -6,8 +6,6 @@ export type DeployEnv = 'LOCAL' | 'DEVELOPMENT' | 'STAGING' | 'PRODUCTION';
 export const config = {
   SUBPATH: '',
   DEPLOY_ENV: sdkConfig.deploy_env.toUpperCase() as DeployEnv,
-  SENTRY_DSN: sdkConfig.sentry_dsn,
-  SENTRY_PROJECT: sdkConfig.sentry_project,
   AUTH_PROVIDER: sdkConfig.auth_provider,
   SERVER_URL: sdkConfig.serverUrl,
   WS_URL: sdkConfig.wsUrl,

@@ -25,6 +25,7 @@ except ImportError:
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
+from flow_sdk.config import is_agent_mount_root
 from flow_sdk.utils.file_system import is_temp_path
 
 # ── Codex project path helpers (inlined from former fs_records/codex/codex_project.py) ──
@@ -41,7 +42,11 @@ def _is_valid_cwd(cwd: str) -> bool:
         return False
     if cwd == "/":
         return False
-    return not is_temp_path(cwd)
+    if is_temp_path(cwd):
+        return False
+    # The agent mount ROOT (~/Flowpad workspace) is infrastructure, never a
+    # project; its work subfolders are still valid cwds. See ``is_agent_mount_root``.
+    return not is_agent_mount_root(cwd)
 
 
 def _read_codex_projects_from_config(config_path: Path) -> dict[str, dict]:

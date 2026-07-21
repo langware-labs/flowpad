@@ -95,6 +95,8 @@ async def test_folder_walker_on_flowpad_oss(tmp_path: Path, capsys) -> None:
     """Run scan() over flowpad-oss, report timing, assert exact MD count and
     project_id propagation."""
     indexer = build_default_indexer()
+    expected = _expected_markdown_paths(PROJECT_ROOT)
+    before_markdown = {path: path.read_bytes() for path in expected}
 
     test_pid = "test-pid-flowpad-oss"
     custom_roots = (
@@ -103,6 +105,7 @@ async def test_folder_walker_on_flowpad_oss(tmp_path: Path, capsys) -> None:
             record_type=RecordType.REAL_PROJECT_CWD,
             scope="project",
             project_id=test_pid,
+            read_only=True,
         ),
     )
 
@@ -133,7 +136,6 @@ async def test_folder_walker_on_flowpad_oss(tmp_path: Path, capsys) -> None:
     )
 
     # Exact-count check: independently walk disk under the same rules.
-    expected = _expected_markdown_paths(PROJECT_ROOT)
     extra = md_paths - expected
     missing = expected - md_paths
     assert not missing, (
@@ -146,6 +148,12 @@ async def test_folder_walker_on_flowpad_oss(tmp_path: Path, capsys) -> None:
     )
     assert len(md_refs) == len(expected), (
         f"count mismatch: walker={len(md_refs)} expected={len(expected)}"
+    )
+    assert all(ref.read_only for ref in md_refs), (
+        "read-only must inherit from the real-repository root onto every asset"
+    )
+    assert {path: path.read_bytes() for path in expected} == before_markdown, (
+        "walking the real repository must not write identity capsules"
     )
 
     # project_id must inherit via the parent chain onto every MARKDOWN ref.
@@ -172,7 +180,7 @@ async def test_folder_is_transient_not_persisted(tmp_path: Path) -> None:
     a walked ref only materializes a record when its TypeInfo declares a
     disk parser. The Folder ENTITY type is registered (minted on demand via
     ``Folder.mint_for_path`` for project context folders) but deliberately
-    declares NO ``from_disk_fn``/``gen_uuid_fn`` — otherwise every directory
+    declares no ``from_disk_fn``/identity callbacks — otherwise every directory
     the project walker visits would be mass-persisted.
     """
     from flow_sdk.fs_store.schema_registry import SchemaRegistry
@@ -183,4 +191,4 @@ async def test_folder_is_transient_not_persisted(tmp_path: Path) -> None:
             "FOLDER must not declare from_disk_fn — the indexer would persist "
             "every walked directory"
         )
-        assert info.gen_uuid_fn is None
+        assert info.identity_backend is None

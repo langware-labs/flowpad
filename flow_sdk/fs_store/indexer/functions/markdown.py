@@ -32,7 +32,7 @@ from flow_sdk.fs_store.indexer._frontmatter import (
     _extract_body,
     _extract_frontmatter,
     _yaml_load,
-    adopt_or_mint_id,
+    read_frontmatter_id,
 )
 from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
@@ -130,6 +130,10 @@ def markdown_in_folder_fn(
         for md in entries:
             if _is_appledouble(md.name):
                 continue
+            # SKILL.md / skill.md is a skill's doc (claimed by skill_in_folder_fn),
+            # never a standalone MARKDOWN asset — skip so it isn't double-indexed.
+            if md.name.lower() == "skill.md":
+                continue
             try:
                 if not md.is_file():
                     continue
@@ -170,8 +174,8 @@ _DIR_TO_ASSET_TYPE: dict[str, str] = {
 def _markdown_id_from_path(path: Path) -> str:
     """Transitional/read-only fallback key — the stable uuid5(path) value.
 
-    No longer the miss behavior (``markdown_gen_id`` mints a fresh v4 into the
-    frontmatter capsule). Survives only as the ``parse_markdown_text`` read-side
+    No longer the miss behavior (``TypeInfo.mint_id`` persists a fresh v4).
+    Survives only as the ``parse_markdown_text`` read-side
     derive for a not-yet-stamped file.
     """
     from flow_sdk.fs_store.identifier import mint_uuid  # noqa: PLC0415
@@ -181,16 +185,7 @@ def _markdown_id_from_path(path: Path) -> str:
 
 def markdown_id(ref: FSRef) -> str:
     """Cheap id: adopted frontmatter capsule id; else stable derived key (no write)."""
-    return adopt_or_mint_id(ref._path, write_back=False)
-
-
-def markdown_gen_id(ref: FSRef) -> str:
-    """Adopt the frontmatter capsule id, else mint a fresh v4 and write it back.
-
-    Idempotent. The miss path now mints a random v4 (not uuid5(path)) so a
-    shared/copied doc carries a portable id in its capsule.
-    """
-    return adopt_or_mint_id(ref._path, write_back=True)
+    return read_frontmatter_id(ref._path) or _markdown_id_from_path(ref._path)
 
 
 def parse_markdown_text(text: str, path: Path | None = None) -> dict[str, Any]:
@@ -199,6 +194,9 @@ def parse_markdown_text(text: str, path: Path | None = None) -> dict[str, Any]:
     Public — used by ``extract_markdown`` here and by
     ``flow_sdk.fs_store.operations.markdown_index.from_markdown``.
     """
+    from flow_sdk.capsules import strip_capsule_blocks  # noqa: PLC0415
+
+    text = strip_capsule_blocks(text)
     fm_text = _extract_frontmatter(text)
     fields = _yaml_load(fm_text) if fm_text else {}
     body = _extract_body(text)
@@ -227,7 +225,7 @@ def parse_markdown_text(text: str, path: Path | None = None) -> dict[str, Any]:
 
     # Validate-on-adopt (v4/v5 only) — a foreign/hand-authored id is never
     # adopted; derive the stable uuid5(path) instead. Keeps this read-side path
-    # in agreement with ``markdown_gen_id`` (which adopts the same capsule id).
+    # in agreement with the TypeInfo identity reader.
     asset_id = adopt_entity_id(raw_id)
     if not asset_id and path is not None:
         asset_id = _markdown_id_from_path(path)
@@ -316,7 +314,7 @@ def _resolve_vault_root(path: Path) -> str | None:
     return None
 
 
-def extract_markdown(ref: FSRef) -> list[FSRecord]:
+def extract_markdown(ref: FSRef, resolved_id: str) -> list[FSRecord]:
     """Parse a .md file into a Record. Replaces ``MarkdownRecord._from_fsref_sync``."""
     path = ref._path
     # Single-file index paths bypass the walker's ``*.md`` glob; without this
@@ -333,6 +331,7 @@ def extract_markdown(ref: FSRef) -> list[FSRecord]:
         # rather than raising into the indexer's error counter.
         return []
     data = parse_markdown_text(text, path=path)
+    data["id"] = resolved_id
     data["type"] = RecordType.MARKDOWN
     data["status"] = "active"
     # name is the title (MarkdownRecord overrode name to read title; we

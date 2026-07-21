@@ -109,6 +109,31 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     canAddAsTab: true,
     chrome: 'fullbleed',
   },
+  // Org/World graph canvas for the hub page. Fullbleed like Home; the pointer
+  // (`world` | `organization`) selects the root, so it stays part of tab
+  // identity (world and org are distinct tabs — no `foldsPointer`).
+  [ViewType.ATLAS]: {
+    title: 'Atlas',
+    iconName: 'GitGraph',
+    tabLocation: 'dedicated',
+    canAddAsTab: true,
+    chrome: 'fullbleed',
+  },
+  // Hub entity list by type (page=hub). Standard workspace chrome; the pointer
+  // (the OSS entity type) selects which list, so it stays part of tab identity.
+  [ViewType.HUB_RECORDS]: {
+    title: 'Records',
+    iconName: 'ListChecks',
+    tabLocation: 'dedicated',
+    canAddAsTab: true,
+  },
+  // Hub single-entity viewer (page=hub). Pointer = `<type>/<id>`.
+  [ViewType.HUB_ENTITY]: {
+    title: 'Entity',
+    iconName: 'FileText',
+    tabLocation: 'dedicated',
+    canAddAsTab: true,
+  },
   [ViewType.SYSTEM_PROFILE]: {
     title: 'System Profile',
     iconName: 'Activity',

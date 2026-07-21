@@ -3,6 +3,7 @@ import { apiClient } from '@sdk/client';
 import { dataManager } from '@sdk';
 import { isBrowseableIn, type ViewMode } from '@sdk/FlowSync/schema';
 import { useViewMode } from '@src/contexts/view-mode-context';
+import { isHubOnly } from '@src/navigation/hub-runtime';
 
 export interface AssetTypeVault {
   typeid: string;
@@ -95,6 +96,12 @@ export function useAssetTypes(options: UseAssetTypesOptions = {}): { types: Asse
 
   useEffect(() => {
     if (!withVaults) return;
+    // Hub mode: the hub backend has no `/assets/types` route (404). There are no
+    // markdown vaults there — leave vaults empty and skip the request.
+    if (isHubOnly()) {
+      setIsLoading(false);
+      return;
+    }
     let cancelled = false;
     apiClient
       .get<{ types: AssetTypeInfo[] }>('/assets/types')

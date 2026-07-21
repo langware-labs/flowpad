@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Work email required | Flowpad</title>
+    <!--
+      Auth-edge terminal page: the login callback redirects here when a personal
+      email is used where an organization email is required (auth0_provider).
+      Static re-author of the legacy Lit <work-email-error> — same copy/palette,
+      zero runtime deps (the legacy page pulled Lit + Shoelace + a remote CDN
+      shell).
+    -->
+    <style>
+      body {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        height: 100vh;
+        margin: 0;
+        font-family: Arial, sans-serif;
+        text-align: center;
+        background-color: #f9f9f9;
+      }
+      .header {
+        font-size: 2.5rem;
+        font-weight: bold;
+        color: #1e024e;
+        margin: 10px;
+      }
+      .icon {
+        margin-top: 10px;
+        font-size: 7rem;
+        color: grey;
+        line-height: 1;
+      }
+      .message {
+        font-size: 1.3rem;
+        color: #555;
+        margin: 10px;
+      }
+      .button {
+        display: inline-block;
+        background: #007bff;
+        color: white;
+        padding: 10px 20px;
+        border-radius: 8px;
+        text-decoration: none;
+        font-size: 16px;
+        font-weight: bold;
+        transition: background 0.3s ease;
+        margin: 10px;
+      }
+      .button:hover {
+        background: #0056b3;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="header">
+      <div>Work email required</div>
+      <div class="icon">&#9888;</div>
+    </div>
+    <p class="message">
+      Please use your organization's email to register.
+      <br />
+      Work emails usually look like <strong>you@company.com</strong>.
+    </p>
+    <a href="/" class="button">Signup</a>
+  </body>
+</html>

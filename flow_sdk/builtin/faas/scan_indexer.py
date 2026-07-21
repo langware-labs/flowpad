@@ -18,6 +18,8 @@ from pathlib import Path
 from typing import Any
 
 from flow_sdk.fs_store.indexer import IndexerOptions, get_shared_indexer
+from flow_sdk.fs_store.indexer.index_function import duplicate_asset_paths
+from flow_sdk.fs_store.path_utils import canonical_posix_path
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.schema.types import EntityType
@@ -80,7 +82,8 @@ def _normalize(d: dict, simple: str, full: str) -> dict:
 
 
 def _project_nodes(
-    nodes, entity_type: EntityType, simple: str, full: str
+    nodes, entity_type: EntityType, simple: str, full: str,
+    existing_paths: dict[str, dict[str, str]] | None = None,
 ) -> list[dict]:
     """Project the terminal FSRefs of one type into deduped, normalized dicts."""
     info = SchemaRegistry.get(str(entity_type))
@@ -90,11 +93,25 @@ def _project_nodes(
     et = str(entity_type)
     out: list[dict] = []
     seen: set[str] = set()
+    resolved: list[tuple[Any, str, str]] = []
     for n in nodes:
         if n.record_type is None or str(n.record_type) != et:
             continue
         try:
-            recs = from_disk(n)
+            rid = info.extract_id(n) or info.mint_id(n)
+            resolved.append((n, rid, canonical_posix_path(str(n._path))))
+        except Exception:
+            continue
+
+    duplicates = duplicate_asset_paths(
+        [(et, rid, path) for _n, rid, path in resolved],
+        existing_paths or {},
+    )
+    for n, resolved_id, path in resolved:
+        if (et, resolved_id, path) in duplicates:
+            continue
+        try:
+            recs = from_disk(n, resolved_id)
         except Exception:
             continue
         for rec in recs or []:
@@ -118,7 +135,19 @@ async def _walk_type_records(
     nodes = await idx.scan(
         IndexerOptions(types=[RecordType(str(entity_type))], roots=scoped_roots)
     )
-    return _project_nodes(nodes, entity_type, simple, full)
+    existing_paths: dict[str, dict[str, str]] = {}
+    from flow_sdk.db import get_db_driver  # noqa: PLC0415
+    driver = get_db_driver()
+    if hasattr(driver, "list_entity_sources_by_type"):
+        rows = await driver.list_entity_sources_by_type(str(entity_type))
+        existing_paths[str(entity_type)] = {
+            eid: source[0]
+            for eid, source in rows.items()
+            if source and source[0]
+        }
+    return _project_nodes(
+        nodes, entity_type, simple, full, existing_paths=existing_paths,
+    )
 
 
 def _in_window(modified_at: str | None, start: str | None, end: str | None) -> bool:

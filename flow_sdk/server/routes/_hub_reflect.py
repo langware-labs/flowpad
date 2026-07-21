@@ -124,12 +124,6 @@ async def reflect_to_hub(
         # consistent (the hub is the source of truth for every differing scalar).
         hub_resp = await hub_put(et, hub_id, body or {})
         updates = _merge_hub_entity_into_local(entity, hub_resp)
-        # A reflected PUT REPLACES the local update — so body fields the hub
-        # doesn't model (absent from its response, e.g. a task's local-only
-        # ``artifacts`` attachments) would be silently dropped. Apply those
-        # from the incoming body, with hub-returned fields staying
-        # authoritative (they overwrite on key collision below).
-        updates = {**_hub_unknown_updates_from_body(entity, body, hub_resp), **updates}
         if updates:
             entity.apply_field_updates(updates)
             await entity.save(notify=True)  # local row + data_op broadcast to watchers
@@ -197,20 +191,31 @@ def _normalize_hub_response(action_name: str, hub_resp: Any) -> Any:
 
 _MISSING = object()
 
+# Collection fields that carry their OWN dedicated sync path and must never be
+# overwritten by a bare entity PUT response: the roster (``participants`` /
+# ``members`` — owned by the ``members`` reflect, and echoed in the hub's
+# ``{user_id,…}`` shape rather than the local normalized ``{email,name}``) and
+# the conversation message projections (rebuilt from the pointer log, guarded
+# again downstream by ``apply_field_updates``). Every OTHER hub-modeled field —
+# scalars AND collections the hub genuinely owns (a task's ``artifacts``,
+# ``tags``, ``links``, ``metadata``) — is hub-authoritative and merges.
+_MERGE_SKIP_FIELDS = frozenset({"participants", "members", "message_ids", "message_count"})
+
 
 def _merge_hub_entity_into_local(entity: Entity, hub_resp: Any) -> dict[str, Any]:
-    """Select the hub-authoritative SCALAR fields to merge onto the local entity.
+    """Select the hub-authoritative fields to merge onto the local entity.
 
-    A reflected ``update`` returns the hub's view of the entity. We apply each API
-    field whose hub value is a scalar (``str`` / ``int`` / ``float`` / ``bool`` /
-    ``None``) and differs from the local value — which carries the renamed field plus
-    server-set timestamps, and deliberately SKIPS list/dict fields. ``participants``
-    (a list) is the important skip: its local shape is the normalized ``{email,name}``
-    from the members reflect and must not be clobbered by the hub's ``{user_id,…}``
-    shape (it has its own sync path). Projection-guarded fields are dropped downstream
-    by the entity's ``apply_field_updates`` (e.g. Conversation strips
-    ``message_count`` / ``message_ids``). Local-only fields (``project_id``,
-    ``dismissed_at``, ``archived_at``) are absent from the hub response → preserved.
+    A reflected ``update`` returns the hub's view of the entity, and the hub is
+    the source of truth: every API field the hub echoes (scalar OR collection)
+    that differs from the local value is applied, so a remote entity reflects
+    IMMEDIATELY into the local row — including hub-modeled collections like a
+    task's ``artifacts``. The only exclusions are ``_MERGE_SKIP_FIELDS`` (the
+    roster + message projections, which own their own sync and carry a divergent
+    hub shape). Local-only fields (``project_id``, ``dismissed_at``,
+    ``archived_at``, a task's ``session_id`` …) are absent from the hub response
+    → preserved untouched. Anything the hub doesn't model doesn't reflect — the
+    fix for a field that SHOULD travel is to model it on the hub, not to
+    re-apply it locally from the request body.
 
     Returns the dict of fields to apply, empty when nothing changed (so the caller
     skips the save+broadcast entirely).
@@ -219,27 +224,7 @@ def _merge_hub_entity_into_local(entity: Entity, hub_resp: Any) -> dict[str, Any
         return {}
     updates: dict[str, Any] = {}
     for k, v in hub_resp.items():
-        if not entity.is_api_field(k):
-            continue
-        if v is not None and not isinstance(v, (str, int, float, bool)):
-            continue  # skip list/dict (participants, nested objects, projections-as-list)
-        if getattr(entity, k, _MISSING) != v:
-            updates[k] = v
-    return updates
-
-
-def _hub_unknown_updates_from_body(entity: Entity, body: dict[str, Any] | None, hub_resp: Any) -> dict[str, Any]:
-    """The incoming update's LOCAL-ONLY field changes — API fields the hub's
-    response doesn't carry (the hub doesn't model them), which a plain local
-    update would have applied. Restores those semantics for reflected PUTs so
-    a remote entity can still persist its hub-unknown fields locally.
-    """
-    if not isinstance(body, dict):
-        return {}
-    hub_keys = set(hub_resp.keys()) if isinstance(hub_resp, dict) else set()
-    updates: dict[str, Any] = {}
-    for k, v in body.items():
-        if k in ("id", "type") or k in hub_keys:
+        if k in _MERGE_SKIP_FIELDS:
             continue
         if not entity.is_api_field(k):
             continue

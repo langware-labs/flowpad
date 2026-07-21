@@ -1,12 +1,14 @@
 """Type metadata for SKILL."""
-from flow_sdk.schema.type_info import TypeMetadata, render_entity_frontmatter
-from flow_sdk.schema.types import EntityType
-from flow_sdk.schema.view_mode import ViewMode
+from flow_sdk.fs_store.indexer.functions._asset_identity import IDENTITY_CAPSULE, capsule_identity, folder_capsule_id
 from flow_sdk.fs_store.indexer.functions.skill import (
     extract_skill,
     skill_asset_hash,
-    skill_gen_id,
+    skill_id_from_folder,
 )
+from flow_sdk.schema.type_info import TypeMetadata, render_entity_frontmatter
+from flow_sdk.schema.types import EntityType
+from flow_sdk.schema.view_mode import ViewMode
+
 
 def _skill_default_body(entity) -> str:
     """SKILL.md written to the skill's main_ref on create.
@@ -36,7 +38,8 @@ SKILL = TypeMetadata(
     main_layout="folder",
     main_file="SKILL.md",
     from_disk_fn=extract_skill,
-    gen_uuid_fn=skill_gen_id,
+    capsules=(IDENTITY_CAPSULE,),
+    identity_backend=capsule_identity(folder_capsule_id, skill_id_from_folder),
     asset_hash_fn=skill_asset_hash,
     default_body_fn=_skill_default_body,
     # On receive, a skill is set up by running ITSELF in a Vibe session — the

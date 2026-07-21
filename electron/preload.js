@@ -66,4 +66,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setBadge: (n) => ipcRenderer.invoke('set-badge', n),
   notifyAttention: () => ipcRenderer.invoke('notify-attention'),
   onNotificationClick: (callback) => ipcRenderer.on('notification-click', (_event, data) => callback(data)),
+
+  // Show/hide the application menu. The renderer calls this with the current
+  // "is advanced view mode" boolean; the menu is only shown in Advanced/Dev.
+  // On macOS a minimal baseline menu stays installed even when hidden.
+  setMenuVisible: (visible) => ipcRenderer.send('set-menu-visible', visible),
 });

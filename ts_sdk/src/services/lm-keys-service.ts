@@ -1,4 +1,5 @@
 import apiClient from '../client';
+import { isHubOnly } from '../utils/hub-runtime';
 import { LMApiProvider } from './lm-providers';
 
 const ACTION = 'lm_keys';
@@ -34,6 +35,9 @@ export class LmKeysService {
   }
 
   list(): Promise<LmApiKeySummary[]> {
+    // Hub mode: LM keys live on the local compute node (`compute_node/@local`),
+    // which the hub backend does not have. Report none configured.
+    if (isHubOnly()) return Promise.resolve([]);
     return apiClient.get(this.base);
   }
 

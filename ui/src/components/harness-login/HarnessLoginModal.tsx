@@ -89,6 +89,8 @@ function useHarness(kind: string, keys: LmApiKeySummary[]) {
   );
   const { data: capability } = useEntity<Capability>(typeId, { enabled: !!typeId, watch: true });
   const [busy, setBusy] = useState(false);
+  // Separate from `busy` so re-testing auth doesn't compute status to 'busy'.
+  const [testing, setTesting] = useState(false);
   const [pasted, setPasted] = useState('');
 
   const worker = workerOf(kind);
@@ -146,6 +148,26 @@ function useHarness(kind: string, keys: LmApiKeySummary[]) {
     }
   }, [capability, t]);
 
+  // Re-run the vendor's own auth check. The backend mirrors the result onto
+  // login_state and broadcasts it, so the watched capability self-corrects (a
+  // dead token flips the row to signed-out); the toast confirms the outcome.
+  const testAuth = useCallback(async () => {
+    if (!capability) return;
+    setTesting(true);
+    try {
+      const r = await capability.authStatus();
+      if (r.status === 'logged_in') {
+        notify.success({ title: t`Still signed in`, message: r.message || undefined, durationMs: 3000 });
+      } else {
+        notify.warning({ title: t`Not signed in — please re-authenticate`, message: r.message || undefined, durationMs: 5000 });
+      }
+    } catch {
+      notify.error({ title: t`Could not check sign-in`, durationMs: 4000 });
+    } finally {
+      setTesting(false);
+    }
+  }, [capability, t]);
+
   const copyAndOpen = useCallback(async () => {
     if (!capability?.login_url) return;
     if (capability.login_code) {
@@ -192,6 +214,8 @@ function useHarness(kind: string, keys: LmApiKeySummary[]) {
     signIn,
     copyAndOpen,
     submitCode,
+    testing,
+    testAuth,
     // API-key auth (consumer view — keys are managed centrally)
     authMode,
     authBadge,
@@ -443,7 +467,7 @@ function HarnessDetail({ kind, onBack, keys }: { kind: string; onBack: () => voi
   const { t } = useLingui();
   const {
     capability, status, statusText: st, name, account, Icon, iconClassName, pasted, setPasted,
-    signIn, copyAndOpen, submitCode,
+    signIn, copyAndOpen, submitCode, testing, testAuth,
     authMode, authBadge, configuredProviders, activeProvider, apiAvailable, setAuthMode,
   } = useHarness(kind, keys);
 
@@ -539,9 +563,21 @@ function HarnessDetail({ kind, onBack, keys }: { kind: string; onBack: () => voi
               <Check className="h-4 w-4" />
               <Trans>You're signed in and ready to go.</Trans>
             </div>
-            <Button variant="outline" className="w-full" onClick={onBack}>
-              <Trans>Done</Trans>
-            </Button>
+            <div className="flex w-full gap-2">
+              <Button
+                variant="outline"
+                className="flex-1 gap-1.5"
+                disabled={testing}
+                data-testid="harness-test-auth"
+                onClick={() => void testAuth()}
+              >
+                {testing && <Loader2 className="h-4 w-4 animate-spin" />}
+                <Trans>Test</Trans>
+              </Button>
+              <Button variant="outline" className="flex-1" onClick={onBack}>
+                <Trans>Done</Trans>
+              </Button>
+            </div>
           </div>
         ) : status === 'awaiting' ? (
           <div className="flex flex-col gap-4">
