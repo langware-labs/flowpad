@@ -75,7 +75,7 @@ export enum ViewType {
   SHOW = 'show', // MCP UI display dock pointer
   APPS = 'apps', // Skill UI apps - /dock/apps/<uname>/<router> mounts AppHost
   GRAPH = 'graph', // Built-in dep-graph viewer - /dock/graph/<type>/<id>
-  WORLDVIEW = 'worldview', // Artifact/deployment hierarchy - /dock/worldview/<type>/<id>
+  WORLDVIEW = 'worldview', // Shared projections - /dock[/hub]/worldview/<world|organization|deployment>
   K_BROWSER = 'k-browser', // Docs knowledge browser - /dock/k-browser/<vfs|typeid>/<value>
   LENS = 'lens', // Lens viewer for specialized content (e.g., transcripts)
   SESSION = 'session', // Live session view (simplified workflow without file)
@@ -98,7 +98,7 @@ export enum ViewType {
   DIAGNOSIS = 'diagnosis', // Single FlowpadDiagnosis viewer - /dock/diagnosis/<id>
   DESKTOP = 'desktop', // Full-page favorites desktop (BrowseableGrid) - /dock/desktop
   LIVE_SESSION = 'live_session', // Live remote-worker session (terminal chat) - /dock/live_session/<id>
-  ATLAS = 'atlas', // Org/World graph canvas (page=hub) - /dock/hub/atlas/<world|organization>
+  ATLAS = 'atlas', // Retired decode-only alias; loader redirects to /dock/hub/worldview/…
   HUB_RECORDS = 'records', // Hub entity list by type (page=hub) - /dock/hub/records/<type>
   HUB_ENTITY = 'entity', // Hub single-entity viewer (page=hub) - /dock/hub/entity/<type>/<id>
 }

@@ -1,23 +1,35 @@
 import Graph from 'graphology';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { GraphView } from '@src/components/graph-view/GraphView';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const loadWorldView = vi.hoisted(() => vi.fn());
-const syncWorldView = vi.hoisted(() => vi.fn());
+const refreshWorldView = vi.hoisted(() => vi.fn());
 const setUrlState = vi.hoisted(() => vi.fn());
 const engineLayouts = vi.hoisted(() => [] as Array<string | undefined>);
-const engineColorModes = vi.hoisted(() => [] as string[]);
-const graphUrlState = vi.hoisted(() => ({ color: 'type' as 'type' | 'footprint' | 'cost' | 'activity' }));
+const engineSignals = vi.hoisted(() => [] as string[]);
+const engineRoots = vi.hoisted(() => [] as string[]);
+const graphUrlState = vi.hoisted(() => ({
+  projection: 'deployment' as 'world' | 'organization' | 'deployment',
+  signal: 'type' as 'type' | 'footprint' | 'cost' | 'activity',
+}));
 
 vi.mock('next-themes', () => ({ useTheme: () => ({ resolvedTheme: 'dark' }) }));
 vi.mock('@src/components/graph-view/url-state', () => ({
   useGraphUrlState: () => ({
-    state: { local: null, selected: null, depth: 0, color: graphUrlState.color },
+    state: {
+      projection: graphUrlState.projection,
+      focus: null,
+      selected: null,
+      depth: 4,
+      signal: graphUrlState.signal,
+      hidden: new Set(),
+      query: '',
+    },
     setState: setUrlState,
   }),
 }));
-vi.mock('@src/components/graph-view/graph/loadWorldView', () => ({ loadWorldView, syncWorldView }));
+vi.mock('@src/components/graph-view/graph/loadWorldView', () => ({ loadWorldView, refreshWorldView }));
 vi.mock('@src/components/graph-view/graph/loadDepGraph', async (importOriginal) => {
   const original = await importOriginal<typeof import('@src/components/graph-view/graph/loadDepGraph')>();
   return { ...original, loadDepGraph: vi.fn(), rebuildDepGraph: vi.fn() };
@@ -29,12 +41,13 @@ vi.mock('@src/components/graph-view/graph/graphEngine', () => ({
       readonly layout?: string,
     ) {
       engineLayouts.push(layout);
+      engineRoots.push(graph.nodes()[0] ?? '');
     }
     init() {}
     destroy() {}
     setTheme() {}
     setColorMode(mode: string) {
-      engineColorModes.push(mode);
+      engineSignals.push(mode);
     }
     setHiddenTypes() {}
     selectNode() {}
@@ -45,7 +58,7 @@ vi.mock('@src/components/graph-view/graph/graphEngine', () => ({
       return [];
     }
     setLocalMode() {
-      return { root: null, depth: 6, visibleCount: 0 };
+      return { root: null, depth: 4, visibleCount: 0 };
     }
     onNodeSelect() {
       return () => {};
@@ -56,40 +69,42 @@ vi.mock('@src/components/graph-view/graph/graphEngine', () => ({
   },
 }));
 
-function graph(): Graph {
+function graph(prefix = 'deployment'): Graph {
   const result = new Graph({ type: 'directed' });
-  result.addNode('deployment-aaaaaaaa-aaaa-5aaa-8aaa-aaaaaaaaaaaa', {
-    label: 'Cloud WorldView',
-    entityType: 'deployment',
+  result.addNode(`${prefix}-aaaaaaaa-aaaa-5aaa-8aaa-aaaaaaaaaaaa`, {
+    label: 'Deployment WorldView',
+    entityType: prefix,
     entityId: 'aaaaaaaa-aaaa-5aaa-8aaa-aaaaaaaaaaaa',
   });
   return result;
 }
 
-describe('WorldView explicit sync', () => {
+describe('WorldView refresh', () => {
   afterEach(cleanup);
 
   beforeEach(() => {
     engineLayouts.length = 0;
-    engineColorModes.length = 0;
-    graphUrlState.color = 'type';
+    engineSignals.length = 0;
+    engineRoots.length = 0;
+    graphUrlState.projection = 'deployment';
+    graphUrlState.signal = 'type';
     setUrlState.mockReset();
-    loadWorldView.mockReset().mockResolvedValue(graph());
-    syncWorldView.mockReset().mockResolvedValue(graph());
+    loadWorldView.mockReset().mockImplementation((projection: string) => Promise.resolve(graph(projection)));
+    refreshWorldView.mockReset().mockResolvedValue(graph());
   });
 
-  it('loads locally on mount and invokes cloud sync only after clicking Sync', async () => {
+  it('loads one projection and refreshes it only after the explicit action', async () => {
     render(<GraphView surface="worldview" />);
 
-    const button = await screen.findByRole('button', { name: /Sync/i });
+    const button = await screen.findByRole('button', { name: /Refresh/i });
     await waitFor(() => expect((button as HTMLButtonElement).disabled).toBe(false));
-    expect(loadWorldView).toHaveBeenCalledTimes(1);
-    expect(syncWorldView).not.toHaveBeenCalled();
-    expect(engineLayouts).toEqual(['force']);
+    expect(loadWorldView).toHaveBeenCalledWith('deployment');
+    expect(refreshWorldView).not.toHaveBeenCalled();
+    expect(engineLayouts).toEqual(['circle']);
 
     fireEvent.click(button);
 
-    await waitFor(() => expect(syncWorldView).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(refreshWorldView).toHaveBeenCalledWith('deployment'));
   });
 
   it('turns the compact color selector into URL-state navigation intent', async () => {
@@ -98,17 +113,47 @@ describe('WorldView explicit sync', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Footprint' }));
 
-    expect(setUrlState).toHaveBeenCalledWith({ color: 'footprint' });
-    expect(engineColorModes).toContain('type');
+    expect(setUrlState).toHaveBeenCalledWith({ signal: 'footprint' });
+    expect(engineSignals).toContain('type');
   });
 
-  it('shows neutral unknown coverage when an observation mode has no data', async () => {
-    graphUrlState.color = 'cost';
+  it('shows neutral unknown coverage when an observation signal has no data', async () => {
+    graphUrlState.signal = 'cost';
     render(<GraphView surface="worldview" />);
 
     const legend = await screen.findByLabelText('Net cost observation color legend');
     expect(legend.textContent).toContain('0/1 coverage');
     expect(legend.textContent).toContain('Unknown · 1');
-    expect(engineColorModes).toContain('cost');
+    expect(engineSignals).toContain('cost');
+  });
+
+  it('never renders a completed refresh under a different projection', async () => {
+    let resolveRefresh: ((value: Graph) => void) | undefined;
+    refreshWorldView.mockReturnValue(
+      new Promise<Graph>((resolve) => {
+        resolveRefresh = resolve;
+      }),
+    );
+    const rendered = render(<GraphView surface="worldview" />);
+    const button = await screen.findByRole('button', { name: /Refresh/i });
+    await waitFor(() => expect((button as HTMLButtonElement).disabled).toBe(false));
+
+    fireEvent.click(button);
+    await waitFor(() => expect(refreshWorldView).toHaveBeenCalledWith('deployment'));
+
+    graphUrlState.projection = 'world';
+    rendered.rerender(<GraphView surface="worldview" />);
+    await waitFor(() => expect(loadWorldView).toHaveBeenCalledWith('world'));
+
+    await act(() => {
+      resolveRefresh?.(graph('stale-refresh'));
+      return Promise.resolve();
+    });
+    await waitFor(() => {
+      expect(loadWorldView.mock.calls.filter(([projection]) => projection === 'world')).toHaveLength(2);
+    });
+
+    expect(engineRoots).not.toContain('stale-refresh-aaaaaaaa-aaaa-5aaa-8aaa-aaaaaaaaaaaa');
+    expect(engineRoots.at(-1)).toBe('world-aaaaaaaa-aaaa-5aaa-8aaa-aaaaaaaaaaaa');
   });
 });

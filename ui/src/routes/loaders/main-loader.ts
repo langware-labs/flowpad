@@ -6,17 +6,10 @@
  * Shell/process loading lives in `./load-shell` and `./load-process`.
  */
 
-import {
-  AgenticProcess,
-  ContextEntitiesEnum,
-  dataContext,
-  initSdk,
-  Project,
-  systemTools,
-  TypeId,
-} from '@sdk';
+import { AgenticProcess, ContextEntitiesEnum, dataContext, initSdk, Project, systemTools, TypeId } from '@sdk';
 import { DockPointer } from '@src/navigation';
 import { canonicalProcessDockPath } from '@src/navigation/process-dock-canonicalization';
+import { canonicalWorldViewDockPath } from '@src/navigation/worldview-dock-canonicalization';
 import { pageRedirectUrl } from '@src/navigation/supported-pages';
 import { setupTabAndAdopt } from '@src/tabs/setup-tab-and-adopt';
 import { ViewType } from '@src/types/ViewType';
@@ -104,6 +97,13 @@ export async function loadAgentApp(args: LoaderArgs) {
     throw redirect(canonical);
   }
 
+  const canonicalWorldView = canonicalWorldViewDockPath(requestUrl.pathname, requestUrl.search);
+  if (canonicalWorldView) {
+    t.done(slowThresholdSeconds);
+    // eslint-disable-next-line @typescript-eslint/only-throw-error
+    throw redirect(canonicalWorldView);
+  }
+
   let dockForSetup: DockPointer | null = null;
 
   // URL-first tab materialization: the loader is the single writer, but it now
@@ -124,11 +124,7 @@ export async function loadAgentApp(args: LoaderArgs) {
   // parsed pointer's `page` (NOT `params.viewType`, which binds a non-desk page
   // segment as the viewType). `bootstrapInfo` is ready — initSdk is awaited above.
   if (dockForSetup) {
-    const pageRedirect = pageRedirectUrl(
-      dockForSetup,
-      dataContext.bootstrapInfo?.supported_pages,
-      requestUrl.pathname,
-    );
+    const pageRedirect = pageRedirectUrl(dockForSetup, dataContext.bootstrapInfo?.supported_pages, requestUrl.pathname);
     if (pageRedirect) {
       t.done(slowThresholdSeconds);
       // eslint-disable-next-line @typescript-eslint/only-throw-error
@@ -155,7 +151,9 @@ export async function loadAgentApp(args: LoaderArgs) {
       await dataContext.setActiveEntityTypeId(new TypeId(AgenticProcess.type, sessionProcessId));
       const process = await AgenticProcess.getById(sessionProcessId).catch(() => null);
       if (process?.project_id) {
-        await loadProject(new TypeId(Project.type, process.project_id)).catch(() => systemTools.resolveProjectContext(process.workdir, process));
+        await loadProject(new TypeId(Project.type, process.project_id)).catch(() =>
+          systemTools.resolveProjectContext(process.workdir, process),
+        );
       } else {
         // Global (projectless) session — a workdir match adopts it into a project;
         // otherwise resolveProjectContext clears the active project to null (the

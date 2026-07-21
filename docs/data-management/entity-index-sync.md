@@ -76,6 +76,29 @@ async def get_record(self) -> "FSRecord | None":
 
 It looks the record up by `(type, id)` — there is no `"type/id"` string to parse and no `record` property.
 
+### Filesystem occurrence projection
+
+An Entity's `asset_ref` is the primary live path for its `(type, id)`. When the
+same filesystem identity is present at more than one path, the indexer also
+reflects a primary-first `asset_occurrences` list into the Entity DB. Primary
+selection is deterministic: earliest Git introduction commit, then trusted
+filesystem birth time (`st_birthtime` only), then the occurrence's persisted
+`first_seen_at`, then canonical path. Missing or re-keyed paths disappear from
+the projection on the next validating scan.
+
+`asset_occurrences` is a local, `Persist.FALSE` field and `duplicate_count` is
+the computed number of occurrences excluding the primary. Both are stripped
+from common/hub serialization: they describe this machine's filesystem and are
+not domain content, capsule data, or shareable entity state. The frontend only
+mirrors these backend fields. A warning badge displays `duplicate_count` and
+opens a read-only primary/duplicate path panel; it does not calculate identity,
+ranking, or remediation.
+
+Only the primary Record is parsed and synchronized. Duplicate paths are skipped
+with a warning and are never deleted, rewritten, or assigned a replacement id.
+This keeps the Entity DB aligned with the selected filesystem source without
+changing any user-owned asset.
+
 ---
 
 ## `Record.sync_to_db()` Implementation
