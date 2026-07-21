@@ -1,7 +1,7 @@
 import { cloudManager, connectionManager, dataContext } from '@sdk';
 import { ViewType } from '@src/types/ViewType';
 import type { NotificationAction } from './types';
-import { notify } from './notify';
+import { dismiss, notify } from './notify';
 
 /**
  * Maps backend WS signals into `notify()` calls — the single ingest point.
@@ -107,6 +107,37 @@ function handleHubClientError(msg: HubClientErrorMsg): void {
       message: rawMessage || `The cloud rejected the request (${statusCode}).`,
       actions: [detail],
     });
+  }
+}
+
+// --- cloud connection slot ---------------------------------------------------
+
+/**
+ * The `hub_client_error` path above reacts to a FAILED hub HTTP request. This
+ * reacts to the connection STATUS SLOT, so an outage that never rides a request
+ * (WS connection dropped, or a box that boots unreachable and makes no cloud
+ * call) still surfaces. Reuses the SAME toast ids as the request path so the two
+ * collapse to one live toast instead of double-firing, and clears on recovery.
+ * Reads the authoritative slot rather than the event payload. Desktop-only.
+ */
+function handleCloudConnectionStatus(): void {
+  if (!cloudManager.connectionControlsAvailable) return;
+  const status = cloudManager.connectionSlot.status;
+  if (status === 'error') {
+    notify.error({
+      id: 'cloud-unreachable',
+      title: 'Cloud is not available',
+      message: "We couldn't reach the cloud service. Check your connection or try again in a moment.",
+    });
+  } else if (status === 'auth_rejected') {
+    notify.error({
+      id: 'cloud-auth-expired',
+      title: 'Cloud sign-in expired',
+      message: 'Please sign in again to keep using cloud features.',
+      actions: [{ label: 'Sign in', command: 'cloud.signin' }],
+    });
+  } else if (status === 'connected' || status === 'verified') {
+    dismiss('cloud-unreachable');
   }
 }
 
@@ -221,7 +252,10 @@ function onFlowDataEvent(typeId: unknown, flowData: Record<string, unknown>): vo
 export function initNotificationIngest(): () => void {
   flushBootstrapNotice();
   cloudManager.on('hub_client_error', handleHubClientError);
+  cloudManager.on('connection_status_changed', handleCloudConnectionStatus);
   connectionManager.on('on_flow_data', onFlowDataEvent);
+  // Catch a box that already booted into an errored connection before this wired up.
+  handleCloudConnectionStatus();
 
   // Dev-only test bridge: lets browser automation drive the real ingest path
   // (hub errors, hook_op flow data) and the dispatcher directly. Stripped from
@@ -237,6 +271,7 @@ export function initNotificationIngest(): () => void {
 
   return () => {
     cloudManager.off('hub_client_error', handleHubClientError);
+    cloudManager.off('connection_status_changed', handleCloudConnectionStatus);
     connectionManager.off('on_flow_data', onFlowDataEvent);
   };
 }
