@@ -450,11 +450,11 @@ async def clear_all_data() -> ClearAllResult:
     entity_cache.clear()
     uname_cache.clear()
 
-    # Capability system rows are wiped along with the DB below, but the
-    # once-per-process seed guard is an in-memory cache of "DB has been
-    # seeded". Reset it so the capability specs are re-seeded on next access
-    # — otherwise a factory reset silently loses all capabilities until the
-    # process restarts.
+    # Capability system rows are wiped along with the DB below, and the seed
+    # guard caches which driver was seeded. The wipe reinits a fresh driver
+    # (auto-invalidating the driver-keyed guard), but clear it explicitly too so
+    # the capability specs are re-seeded on next access — otherwise a factory
+    # reset could silently lose all capabilities until the process restarts.
     from flow_sdk.builtin.capability import Capability  # noqa: PLC0415
 
     Capability._seeded_driver = None
