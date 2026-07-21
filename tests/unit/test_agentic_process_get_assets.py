@@ -504,8 +504,9 @@ def test_agent_peek_entity_id_reads_capsule_without_writing(tmp_path):
     returns that same id. An already-adopted frontmatter UUID wins on both."""
     from flow_sdk.fs_store.fs_ref import FSRef
     from flow_sdk.fs_store.identifier import is_valid_entity_id
-    from flow_sdk.fs_store.indexer.functions.agent import agent_gen_id, agent_peek_entity_id
+    from flow_sdk.fs_store.indexer.functions.agent import agent_peek_entity_id
     from flow_sdk.fs_store.record_types import RecordType
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
     md = _write_agent_md(tmp_path / "peek_agent.md", "peeky")
     before = md.read_bytes()
@@ -513,7 +514,7 @@ def test_agent_peek_entity_id_reads_capsule_without_writing(tmp_path):
     assert md.read_bytes() == before, "peek must not write"
     assert is_valid_entity_id(peeked)
     # gen_id stamps a fresh v4 into the frontmatter capsule; peek then reads it.
-    minted = agent_gen_id(FSRef(md, record_type=RecordType.AGENT))
+    minted = SchemaRegistry.get("agent").mint_id(FSRef(md, record_type=RecordType.AGENT))
     assert uuid.UUID(minted).version == 4
     assert agent_peek_entity_id(FSRef(md, record_type=RecordType.AGENT)) == minted
 

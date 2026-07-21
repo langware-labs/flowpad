@@ -555,20 +555,19 @@ class FsRecordsActionsMixin:
         return ApiSuccessResponse(data={"results": results, "query": q, "total": len(results), "indexer_ready": True})
 
     @staticmethod
-    def _ref_gen_id(ref) -> "str | None":
-        """Mint the deterministic id for an FSRef via its type's gen_uuid_fn.
+    def _ref_id(ref) -> "str | None":
+        """Extract or mint an FSRef id through its registered TypeInfo.
 
-        Returns None when the type has no gen_uuid_fn or minting raises —
+        Returns None when the type has no identity policy or resolution raises —
         callers decide the fallback (the scan list falls back to the path; the
-        diff loop skips). Single source of truth for the gen_id dispatch dance.
+        diff loop skips).
         """
         from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
         info = SchemaRegistry.get(str(ref.record_type)) if ref.record_type is not None else None
-        gen_uuid_fn = getattr(info, "gen_uuid_fn", None) if info else None
-        if gen_uuid_fn is None:
+        if info is None:
             return None
         try:
-            return gen_uuid_fn(ref) or None
+            return info.extract_id(ref) or info.mint_id(ref)
         except Exception:
             return None
 
@@ -637,8 +636,9 @@ class FsRecordsActionsMixin:
         if scope_explicit:
             scope_filter = await resolve_project_scope(ScopeFilter.from_query_params(qp))
         else:
-            # GET scan is read-only: enumerate roots without materialising
-            # missing Project rows, and carry the cwd metadata into
+            # GET scan does not materialise missing Project rows. Asset identity
+            # is still resolved below, so a new writable asset receives its ID.
+            # Carry the cwd metadata into
             # _resolve_scoped_roots so the helper is not scanned twice.
             scope_filter = await get_all_scope_filter(create_missing=False)
         scoped_roots = await self._resolve_scoped_roots(scope_filter, foreground=foreground)
@@ -698,7 +698,7 @@ class FsRecordsActionsMixin:
                 st = n._path.stat()
                 b["total_bytes"] += st.st_size
                 if filter_type:
-                    rec_id = self._ref_gen_id(n) or str(n._path)
+                    rec_id = self._ref_id(n) or str(n._path)
                     b["_records"].append({
                         "id": rec_id,
                         "name": n._path.stem,
@@ -714,7 +714,7 @@ class FsRecordsActionsMixin:
             # types. Total scan_ms (below) is the meaningful number.
             b["scan_ms"] = 0.0
 
-        # ----- Diff classification (cheap, no writes) -----
+        # ----- Diff classification (cheap; identity-only writes for new assets) -----
         # For every indexable type, compare each FSRef against the DB state map
         # to bucket as new / stale / mis_scoped / fresh, then derive orphans via
         # (db_ids ∪ shadow_dir_ids) − seen_ids. Skipped when scope-filtered
@@ -752,7 +752,7 @@ class FsRecordsActionsMixin:
                 rt_name = str(rt)
                 if rt_name not in _indexable_names:
                     continue
-                ref_id = self._ref_gen_id(ref)
+                ref_id = self._ref_id(ref)
                 if not ref_id:
                     continue
                 _seen_ids[rt_name].add(ref_id)
@@ -1314,10 +1314,9 @@ class FsRecordsActionsMixin:
             for rt, pt in result.per_type.items()
         ]
 
-        # For a path-scoped run, mint the TypeId(s) for the named file so the
+        # For a path-scoped run, resolve the TypeId(s) for the named file so the
         # caller (CLI / agent) can navigate straight to it — the whole point of
-        # "index then open". Deterministic (v5 gen_id from the path), so it
-        # matches what the indexer just stored.
+        # "index then open". It matches what the indexer just stored.
         indexed_typeids: list[str] = []
         indexed_typeid: str | None = None
         if index_path and _p.is_file():
@@ -1326,7 +1325,7 @@ class FsRecordsActionsMixin:
             _rtypes = types_filter or [RecordType(str(rt)) for rt in result.per_type.keys()]
             for _rt in _rtypes:
                 try:
-                    _id = self._ref_gen_id(FSRef(_p, record_type=_rt))
+                    _id = self._ref_id(FSRef(_p, record_type=_rt))
                 except Exception:
                     _id = None
                 if _id:
@@ -2286,7 +2285,8 @@ async def discover_record_by_path(record_type: str, path: str, *, notify: bool =
         return None
 
     if Path(expanded).exists():
-        _from_disk = getattr(_SR.get(record_type), "from_disk_fn", None)
+        _info = _SR.get(record_type)
+        _from_disk = getattr(_info, "from_disk_fn", None)
         if _from_disk is not None:
             try:
                 one_ref = _FSRef(
@@ -2294,7 +2294,31 @@ async def discover_record_by_path(record_type: str, path: str, *, notify: bool =
                     record_type=_RT(record_type),
                     scope=classify_path(expanded),
                 )
-                recs = _from_disk(one_ref)
+                resolved_id = _info.extract_id(one_ref) or _info.mint_id(one_ref)
+
+                # Match the full indexer's duplicate rule: a live DB source
+                # wins; a second path carrying the same type+id is observable
+                # but is neither parsed nor rewritten.
+                from flow_sdk.db import get_db_driver  # noqa: PLC0415
+                from flow_sdk.fs_store.indexer.index_function import (  # noqa: PLC0415
+                    duplicate_asset_paths,
+                )
+                _driver = get_db_driver()
+                if hasattr(_driver, "list_entity_sources_by_type"):
+                    _sources = await _driver.list_entity_sources_by_type(record_type)
+                    _existing = {
+                        record_type: {
+                            eid: source[0]
+                            for eid, source in _sources.items()
+                            if source and source[0]
+                        }
+                    }
+                    if duplicate_asset_paths(
+                        [(record_type, resolved_id, expanded)], _existing,
+                    ):
+                        return None
+
+                recs = _from_disk(one_ref, resolved_id)
                 if _asyncio.iscoroutine(recs):
                     recs = await recs
                 # Association rule (deepest project wins) — same stamp the

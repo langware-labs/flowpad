@@ -23,8 +23,6 @@ export interface ITask extends IEntity {
   group_name?: string | null;
   /** Group-task parent pointer; '' = top-level. Children own only their status. */
   parent_id?: string;
-  /** The member's deliverable (repo / PR / doc / app URL); rides hub reflection. */
-  submission_url?: string | null;
   last_viewed_at?: Date;
   due_at?: Date;
   start_date?: string | null;
@@ -87,7 +85,6 @@ export class Task extends APIEntity<Task> implements ITask {
   kind?: string;
   group_name?: string | null;
   parent_id?: string;
-  submission_url?: string | null;
   last_viewed_at?: Date;
   due_at?: Date;
   start_date?: string | null;
@@ -146,7 +143,6 @@ export class Task extends APIEntity<Task> implements ITask {
     this.kind = entity.kind;
     this.group_name = entity.group_name;
     this.parent_id = entity.parent_id;
-    this.submission_url = entity.submission_url;
     this.last_viewed_at = entity.last_viewed_at;
     this.due_at = entity.due_at;
     this.start_date = entity.start_date;

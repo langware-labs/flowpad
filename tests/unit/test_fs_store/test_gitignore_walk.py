@@ -91,6 +91,7 @@ def test_gitignore_true_implies_denylist(tmp_path: Path) -> None:
 
 def test_flowpad_state_dirs_denylisted(tmp_path: Path) -> None:
     _touch(tmp_path / "keep.md")
+    _touch(tmp_path / ".flow" / "capsules" / "identity.json")
     _touch(tmp_path / ".llm_index" / "summaries" / "abc.summary.md")
     _touch(tmp_path / ".flowpad" / "state.md")
     _touch(tmp_path / ".markdown_index" / "x.md")

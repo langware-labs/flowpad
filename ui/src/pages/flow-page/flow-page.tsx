@@ -8,6 +8,7 @@ import { SidebarProvider } from '@src/components/ui/sidebar';
 import { useIsVibe } from '@src/components/view-mode';
 import { useDockNavigation, useIsHomeSurface } from '@src/navigation/useDockNavigation';
 import { ViewType } from '@src/types/ViewType';
+import { PageId } from '@sdk';
 import { useEffect, useMemo } from 'react';
 import { ContentPanel } from './content-panel/content-panel';
 import { VibeWorkspace } from './vibe-workspace';
@@ -56,6 +57,10 @@ export default function FlowPage() {
   const { currentDock } = useDockNavigation();
   const isHomeSurface = useIsHomeSurface();
   const isVibeNoProcess = currentDock?.viewType === ViewType.HOME && currentDock.options?.vibeNoProcess === 'true';
+  // The hub page is its own SPA-surface — vibe skinning (a desk view-mode) does
+  // not apply. Route it through the standard layout so ContentPanel's page=hub
+  // dispatch renders HubHome / the Atlas instead of the desk VibeNewChat hero.
+  const hubMode = currentDock?.page === PageId.HUB;
 
   // Vibe mode: a stripped Lovable-style skin that still carries the left rail in
   // its already-reserved footprint. CollapsedSidebar renders a minimal rail in
@@ -63,7 +68,7 @@ export default function FlowPage() {
   // cluster (search / assistant / theme / user login) — with the middle nav
   // (Chats, Inbox, Assets, …) dropped. Same width as Standard/Advanced, so the
   // content column and footer controls don't shift when the view mode changes.
-  if (isVibe) {
+  if (isVibe && !hubMode) {
     return (
       <SidebarProvider defaultOpen={false} className="h-full !min-h-0">
         <div data-testid="flow-page" className="flex h-full w-full overflow-hidden bg-background">

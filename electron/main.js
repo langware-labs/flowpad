@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, clipboard, Notification } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, clipboard, Notification, Menu } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const log = require('electron-log');
@@ -13,6 +13,8 @@ const { SOD_KEY_KEYCHAIN_SERVICE, PYPI_PACKAGE, PYTHON_VERSION } = UvManager;
 const UPGRADE_COMMAND = `uv tool install ${PYPI_PACKAGE}@latest --python ${PYTHON_VERSION} --force`;
 const DIAGNOSE_COMMAND = 'flow diagnose';
 const { isNewer } = require('./semver');
+
+const isMac = process.platform === 'darwin';
 
 // Register flowpad:// as a custom protocol so the OS routes deep links here.
 // Must be called before app.whenReady().
@@ -329,13 +331,54 @@ app.on('second-instance', (_event, argv) => {
 //
 // handleDeepLink will see mainWindow === null and stash the URL into
 // pendingDeepLink, which startApp consumes after backend warmup.
-if (process.platform !== 'darwin') {
+if (!isMac) {
   const argvDeepLink = process.argv.find(arg => arg.startsWith('flowpad://'));
   if (argvDeepLink) {
     log.info(`[deep-link] picked up from process.argv: ${argvDeepLink}`);
     handleDeepLink(argvDeepLink);
   }
 }
+
+// --- Application menu (view-mode gated) ---------------------------------
+//
+// The menu is shown only in Advanced/Dev view modes. The renderer owns the
+// view-mode state and pushes the current "should the menu be visible" boolean
+// over the `set-menu-visible` channel (see preload.js / view-mode-context.tsx).
+//
+// macOS caveat: the menu lives in the system bar, and `setMenuBarVisibility`
+// is a no-op there. `setApplicationMenu(null)` would strip Cmd+Q, Copy/Paste,
+// window shortcuts, etc. So on macOS we always install a MINIMAL BASELINE menu
+// (App / Edit / Window) even when "hidden", and swap in the fuller menu (adds
+// File + View) when advanced. On Windows/Linux the in-window bar is genuinely
+// hidden when not advanced.
+let menuVisible = false;
+
+function buildMenuTemplate(advanced) {
+  const template = [];
+  if (isMac) template.push({ role: 'appMenu' });
+  if (advanced) template.push({ role: 'fileMenu' });
+  template.push({ role: 'editMenu' });
+  if (advanced) template.push({ role: 'viewMenu' });
+  template.push({ role: 'windowMenu' });
+  return template;
+}
+
+function applyMenu() {
+  // Non-mac + hidden: strip the bar entirely. Otherwise install the
+  // advanced-or-baseline template (advanced === menuVisible); on macOS the
+  // baseline stays so Cmd+Q / Copy-Paste / window shortcuts survive.
+  const menu = !menuVisible && !isMac ? null : Menu.buildFromTemplate(buildMenuTemplate(menuVisible));
+  Menu.setApplicationMenu(menu);
+  // No-op on macOS (menu lives in the system bar); meaningful on Win/Linux.
+  if (mainWindow) mainWindow.setMenuBarVisibility(menuVisible);
+}
+
+ipcMain.on('set-menu-visible', (_event, visible) => {
+  const next = !!visible;
+  if (next === menuVisible) return;
+  menuVisible = next;
+  applyMenu();
+});
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -394,7 +437,7 @@ function createWindow() {
     log.info(`[nav] did-navigate-in-page (SPA/pushState) url=${url} ${navState()}`);
   });
 
-  if (process.platform === 'darwin') {
+  if (isMac) {
     // macOS surfaces the buttons two ways and never reaches the renderer:
     //  - a raw mouse `input-event` (button 'back'/'forward'); and
     //  - with drivers like Logitech Options / Options+ (or the trackpad), a
@@ -537,6 +580,11 @@ async function startApp() {
   setupElectronAutoUpdater();
 
   createWindow();
+
+  // Install the default (hidden/baseline) menu now that the app is ready and the
+  // window exists — so the app never flashes Electron's stock menu before the
+  // renderer reports its view mode over `set-menu-visible`.
+  applyMenu();
 
   // Wait for the loading page to finish loading so IPC listeners are ready
   if (mainWindow.webContents.isLoading()) {

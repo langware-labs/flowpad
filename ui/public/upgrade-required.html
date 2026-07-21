@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Update required | Flowpad</title>
+    <!--
+      Terminal page for a desktop sign-in the hub cannot complete because the
+      client predates the per-instance login identity (< 0.2.90).
+      `append_desktop_api_key` redirects here instead of passing a keyless
+      redirect back to the old app (which would fail with its baked-in
+      "No API key provided" error and no hint of the remedy).
+      Palette matches the auth pages (EmailVerifyElement / SignupElement):
+      deep purple #1e024e headlines, green #4caf50 icon, green #3cb916
+      accents, app purple gradient background.
+    -->
+    <style>
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 100vh;
+        margin: 0;
+        color: #1e024e;
+        background: linear-gradient(135deg, #a855f7 0%, #7e22ce 45%, #1e024e 100%);
+      }
+      .card {
+        background: #fff;
+        border-radius: 20px;
+        padding: 44px 48px;
+        max-width: 480px;
+        box-shadow: 0 12px 40px rgba(30, 2, 78, 0.35);
+        text-align: center;
+      }
+      .icon {
+        font-size: 3rem;
+        color: #4caf50;
+        line-height: 1;
+        margin-bottom: 12px;
+      }
+      h1 {
+        font-size: 1.6rem;
+        font-weight: bold;
+        color: #1e024e;
+        margin: 0 0 12px;
+      }
+      p {
+        font-size: 15px;
+        line-height: 1.5;
+        margin: 8px 0;
+        color: #444;
+      }
+      .steps {
+        text-align: left;
+        display: inline-block;
+        margin-top: 12px;
+        border-left: 3px solid #3cb916;
+        padding-left: 16px;
+      }
+      .steps b {
+        color: #1e024e;
+      }
+      .already-updated {
+        margin-top: 20px;
+        font-size: 13px;
+        color: #666;
+      }
+      .reason {
+        margin-top: 24px;
+        font-size: 12px;
+        color: #999;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <div class="icon">&#10003;</div>
+      <h1>Almost there &mdash; update Flowpad</h1>
+      <p>Your sign-in worked. Your Flowpad app is just a little too old to connect to the cloud.</p>
+      <div class="steps">
+        <p><b>1.</b> Restart Flowpad &mdash; it updates itself to the latest version.</p>
+        <p><b>2.</b> Once it's back, sign in again.</p>
+      </div>
+      <p class="already-updated">Already up to date? Just open Flowpad and sign in again from the app.</p>
+      <p class="reason"></p>
+    </div>
+    <script>
+      // Machine-readable marker for support/telemetry screenshots. textContent
+      // assignment keeps the client-controlled value inert (no HTML injection).
+      const reason = new URLSearchParams(window.location.search).get('reason');
+      if (reason) {
+        document.querySelector('.reason').textContent = 'reason: ' + reason;
+      }
+    </script>
+  </body>
+</html>

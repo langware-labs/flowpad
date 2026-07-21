@@ -13,7 +13,6 @@ from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer._frontmatter import (
     _extract_body,
     _extract_frontmatter,
-    _render_frontmatter,
     _yaml_load,
 )
 from flow_sdk.fs_store.indexer.index_function import IndexerOptions
@@ -71,39 +70,7 @@ def spec_id(ref: FSRef) -> str:
     return existing if existing else _spec_id_from_path(ref._path)
 
 
-def spec_gen_id(ref: FSRef) -> str:
-    """Mint+write a stable id into the frontmatter (idempotent).
-
-    Preserves any existing derived id so DB rows keyed on uuid5(path) stay
-    valid. Same shape as the deleted ``SpecRecord.genId``.
-    """
-    existing = _read_spec_frontmatter_id(ref._path)
-    if existing:
-        return existing
-    new_id = _spec_id_from_path(ref._path)
-    try:
-        text = ref._path.read_text(encoding="utf-8")
-    except OSError:
-        return new_id
-    fm = _extract_frontmatter(text)
-    body = _extract_body(text)
-    fields: dict = {}
-    if fm:
-        parsed = _yaml_load(fm)
-        if isinstance(parsed, dict):
-            fields.update(parsed)
-    merged = {"id": new_id, **{k: v for k, v in fields.items() if k not in ("id", "asset_id")}}
-    try:
-        ref._path.write_text(
-            _render_frontmatter(merged) + "\n\n" + body + ("\n" if body and not body.endswith("\n") else ""),
-            encoding="utf-8",
-        )
-    except OSError:
-        pass
-    return new_id
-
-
-def extract_spec(ref: FSRef) -> list[FSRecord]:
+def extract_spec(ref: FSRef, resolved_id: str) -> list[FSRecord]:
     """Parse a spec.md into a Record. Replaces ``SpecRecord._from_fsref_sync``.
 
     ``content`` is the body ONLY (frontmatter stripped) so the entity↔record
@@ -120,6 +87,9 @@ def extract_spec(ref: FSRef) -> list[FSRecord]:
     content = ""
     try:
         text = path.read_text(encoding="utf-8")
+        from flow_sdk.capsules import strip_capsule_blocks  # noqa: PLC0415
+
+        text = strip_capsule_blocks(text)
         content = _extract_body(text)  # body only — frontmatter stripped
         # Parse frontmatter with the YAML loader (not line-splitting) so quoted
         # values — e.g. a title containing a colon, which the renderer quotes —
@@ -134,10 +104,9 @@ def extract_spec(ref: FSRef) -> list[FSRecord]:
                     spec_type = str(fields["spec_type"])
     except OSError:
         pass
-    rec_id = _read_spec_frontmatter_id(path) or _spec_id_from_path(path)
     rec = FSRecord(
         type=RecordType.SPEC,
-        id=rec_id,
+        id=resolved_id,
         name=name,
         title=name,
         spec_type=spec_type,

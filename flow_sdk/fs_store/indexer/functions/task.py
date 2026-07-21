@@ -6,7 +6,7 @@ A task is now a FOLDER asset (like ``skill``): ``<project>/tasks/<name>/`` holds
 from the markdown walker via ``markdown._TYPED_RECORD_DIRS``).
 
 Legacy ``tasks/<title>/header.json`` (or ``manifest.json``) folders are still
-tolerated for the migration window — ``extract_task``/``task_gen_id`` read the
+tolerated for the migration window — extraction and the TypeInfo reader use the
 JSON manifest when no ``task.md`` is present, preserving the exact id formula so
 DB rows keyed by that value stay valid. The next entity save materializes
 ``task.md`` (Task ``owns_main_ref``), self-healing legacy folders.
@@ -28,7 +28,6 @@ from flow_sdk.fs_store.indexer._frontmatter import (
     _yaml_load,
 )
 from flow_sdk.fs_store.indexer.functions._folder_capsule import (
-    folder_capsule_gen_id,
     read_folder_capsule_id,
 )
 from flow_sdk.fs_store.indexer.functions.skill import read_frontmatter_id_from_yaml
@@ -48,7 +47,6 @@ TASK_FRONTMATTER_FIELDS = (
     "kind",
     "parent_id",
     "assignee",
-    "submission_url",
     "priority",
     "tags",
     "due_at",
@@ -199,7 +197,7 @@ def _mint_task_id(key: str) -> str:
 
 def _task_id_from_fields(fields: dict, task_dir: Path) -> str:
     """`.flow/id` capsule (gen_id stamped it) → validated task.md frontmatter id →
-    folder-name-derived v5 (transitional). Matches ``task_gen_id`` precedence."""
+    folder-name-derived v5 (transitional). Matches TypeInfo reader precedence."""
     cap = read_folder_capsule_id(task_dir)
     if cap:
         return cap
@@ -214,24 +212,23 @@ def _task_id_from_fields(fields: dict, task_dir: Path) -> str:
 # ---------------------------------------------------------------------------
 
 
-def task_gen_id(ref: FSRef) -> str:
-    """Resolve the task id.
-
-    Precedence: the `.flow/id` capsule → a VALID task.md frontmatter id → a VALID
-    legacy manifest id (each adopted + backfilled into the capsule) → a fresh
-    random **v4** into the capsule. The folder-name uuid5 survives only as a
-    read-only / transitional read fallback (``_mint_task_id``).
-    """
-    task_dir = ref._path if ref._path.is_dir() else ref._path.parent
-    candidates: list = []
-    task_md = task_dir / "task.md"
-    if task_md.is_file():
-        fields = _read_task_md_fields(task_md)
-        candidates += [fields.get("id"), fields.get("asset_id")]
+def task_id_from_folder(ref: FSRef | Path) -> object | None:
+    """Read capsule, task.md, then legacy manifest without writing/backfill."""
+    path = Path(getattr(ref, "_path", ref))
+    task_dir = path if path.is_dir() else path.parent
+    cap = read_folder_capsule_id(task_dir)
+    if cap:
+        return cap
+    fields = _read_task_md_fields(task_dir / "task.md")
+    for candidate in (fields.get("id"), fields.get("asset_id")):
+        if is_valid_entity_id(candidate):
+            return candidate
     manifest = _legacy_manifest(task_dir)
     data = _read_legacy_data(manifest) if manifest else {}
-    candidates += [data.get("task_id"), data.get("id")]
-    return folder_capsule_gen_id(task_dir, *candidates)
+    for candidate in (data.get("task_id"), data.get("id")):
+        if is_valid_entity_id(candidate):
+            return candidate
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -263,7 +260,7 @@ def _strip_leading_heading(body: str) -> str:
     return "\n".join(lines).strip()
 
 
-def _extract_from_task_md(ref: FSRef, task_md: Path, task_dir: Path) -> list:
+def _extract_from_task_md(ref: FSRef, task_md: Path, task_dir: Path, resolved_id: str) -> list:
     from flow_sdk.fs_store.fs_record import FSRecord  # local import avoids circular
 
     try:
@@ -273,7 +270,7 @@ def _extract_from_task_md(ref: FSRef, task_md: Path, task_dir: Path) -> list:
     fields = _parse_frontmatter_fields(text)
     kwargs: dict[str, Any] = {
         "type": RecordType.TASK,
-        "id": _task_id_from_fields(fields, task_dir),
+        "id": resolved_id,
         "name": str(fields.get("title") or task_dir.name),
         "title": str(fields.get("title") or task_dir.name),
         "status": str(fields.get("status") or "to_do"),
@@ -291,18 +288,15 @@ def _extract_from_task_md(ref: FSRef, task_md: Path, task_dir: Path) -> list:
     return [rec]
 
 
-def _extract_from_manifest(ref: FSRef, manifest: Path, task_dir: Path) -> list:
+def _extract_from_manifest(ref: FSRef, manifest: Path, task_dir: Path, resolved_id: str) -> list:
     from flow_sdk.fs_store.fs_record import FSRecord  # local import avoids circular
 
     data = _read_legacy_data(manifest)
-    task_id = data.get("task_id") or data.get("id")
-    if not task_id:
-        return []
     name = data.get("title") or data.get("name") or task_dir.name
     status = data.get("status") or "to_do"
     kwargs: dict[str, Any] = {
         "type": RecordType.TASK,
-        "id": str(task_id),
+        "id": resolved_id,
         "name": name,
         "title": name,
         "status": status,
@@ -321,18 +315,18 @@ def _extract_from_manifest(ref: FSRef, manifest: Path, task_dir: Path) -> list:
     return [rec]
 
 
-def extract_task(ref: FSRef) -> list:
+def extract_task(ref: FSRef, resolved_id: str) -> list:
     """Parse a task folder (``task.md``, or legacy ``header.json``) into a Record."""
     path = ref._path
     if path.is_dir():
         task_md = path / "task.md"
         if task_md.is_file():
-            return _extract_from_task_md(ref, task_md, path)
+            return _extract_from_task_md(ref, task_md, path, resolved_id)
         manifest = _legacy_manifest(path)
         if manifest is not None:
-            return _extract_from_manifest(ref, manifest, path)
+            return _extract_from_manifest(ref, manifest, path, resolved_id)
         return []
     # Legacy: ref points directly at a header.json/manifest.json file.
     if path.is_file():
-        return _extract_from_manifest(ref, path, path.parent)
+        return _extract_from_manifest(ref, path, path.parent, resolved_id)
     return []

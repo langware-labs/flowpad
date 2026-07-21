@@ -14,7 +14,8 @@ import pytest
 
 from flow_sdk.schema.type_info import register_all
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.indexer.functions.task import extract_task, task_gen_id
+from flow_sdk.fs_store.indexer.functions.task import extract_task
+from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -28,7 +29,7 @@ def _task_md_body_from(entity) -> str:
     return SchemaRegistry.get("task").default_body_fn(entity)
 
 
-def test_default_body_stamps_id_and_omits_sender_local():
+def test_default_body_omits_identity_and_sender_local():
     from flow_sdk.builtin.task import Task
 
     t = Task(title="My Task", status="in_progress", priority="high")
@@ -36,7 +37,7 @@ def test_default_body_stamps_id_and_omits_sender_local():
     t.my_process_id = "sender-proc"
     body = _task_md_body_from(t)
 
-    assert f"id: {t.id}" in body
+    assert f"id: {t.id}" not in body
     assert "My Task" in body and "in_progress" in body and "high" in body
     # Sender-local keys never written.
     for leak in ("project_root", "/sender/only", "my_process_id", "sender-proc", "project_id"):
@@ -54,10 +55,10 @@ def test_indexer_round_trips_task_md(tmp_path):
     (folder / "spec.md").write_text("# Plan\n\nstep 1", encoding="utf-8")
 
     ref = FSRef(folder)
-    # id is stable (adopted from frontmatter, not re-minted).
-    assert task_gen_id(ref) == str(t.id)
+    # New identity is stored beside the folder, not in task.md frontmatter.
+    assert SchemaRegistry.get("task").mint_id(ref, proposed_id=str(t.id)) == str(t.id)
 
-    rec = extract_task(ref)[0]
+    rec = extract_task(ref, str(t.id))[0]
     assert rec.id == str(t.id)
     assert rec.name == "Ship It"
     assert rec.status == "in_progress"
@@ -90,7 +91,10 @@ def test_orphan_task_self_heals_on_save(tmp_path):
     rec.upsert_main_ref(task)
     task_md = ar._path / "task.md"
     assert task_md.is_file(), "save must write task.md into the freshly-created folder"
-    assert f"id: {task.id}" in task_md.read_text(encoding="utf-8")
+    assert f"id: {task.id}" not in task_md.read_text(encoding="utf-8")
+    from flow_sdk.capsules import AssetCapsule
+
+    assert AssetCapsule.from_path(ar._path).read("identity").data["id"] == str(task.id)
 
 
 def test_indexer_tolerates_legacy_header_json_without_leak(tmp_path):
@@ -109,9 +113,9 @@ def test_indexer_tolerates_legacy_header_json_without_leak(tmp_path):
     )
     ref = FSRef(folder)
     # Legacy id formula preserved.
-    assert task_gen_id(ref) == "11111111-1111-4111-8111-111111111111"
+    assert SchemaRegistry.get("task").mint_id(ref) == "11111111-1111-4111-8111-111111111111"
 
-    rec = extract_task(ref)[0]
+    rec = extract_task(ref, "11111111-1111-4111-8111-111111111111")[0]
     assert rec.id == "11111111-1111-4111-8111-111111111111"
     assert rec.name == "Legacy Task"
     # asset_ref → folder so the next save self-heals into task.md.

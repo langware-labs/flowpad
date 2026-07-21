@@ -1,14 +1,19 @@
 """Type metadata for SPEC."""
 from typing import Optional
 
+from flow_sdk.fs_store.indexer.functions._asset_identity import (
+    IDENTITY_CAPSULE,
+    capsule_identity,
+    frontmatter_id,
+    resolved_path_key,
+)
+from flow_sdk.fs_store.indexer.functions.spec import (
+    extract_spec,
+)
 from flow_sdk.schema.type_info import TypeMetadata, render_entity_frontmatter
 from flow_sdk.schema.type_info.base_meta import BaseMeta
 from flow_sdk.schema.types import EntityType
 from flow_sdk.schema.view_mode import ViewMode
-from flow_sdk.fs_store.indexer.functions.spec import (
-    extract_spec,
-    spec_gen_id,
-)
 
 
 class SpecMeta(BaseMeta):
@@ -36,7 +41,9 @@ def _spec_default_body(entity) -> str:
 SPEC = TypeMetadata(
     type=EntityType.SPEC,
     from_disk_fn=extract_spec,
-    gen_uuid_fn=spec_gen_id,
+    capsules=(IDENTITY_CAPSULE,),
+    identity_backend=capsule_identity(frontmatter_id),
+    id_stable_key_fn=resolved_path_key,
     indexed_by_default=True,
     browseable_by=ViewMode.STANDARD,
     icon="FileText",

@@ -423,6 +423,14 @@ class Project(Entity):
 
         canonical = canonical_posix_path(path)
 
+        # The agent mount ROOT (~/Flowpad workspace) is infrastructure, not a
+        # project — refuse to resolve OR mint one for it so ``get_project`` falls
+        # back to the ``@local`` project. Real work subfolders under it are
+        # unaffected. See ``is_agent_mount_root``.
+        from flow_sdk.config import is_agent_mount_root  # noqa: PLC0415 — avoid import cycle
+        if is_agent_mount_root(canonical):
+            return None
+
         # Phase 1: existing project at this canonical cwd.
         existing = await cls.find_by_cwd(canonical)
         if existing is not None:

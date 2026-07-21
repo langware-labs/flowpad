@@ -15,7 +15,7 @@ from flow_sdk.fs_store.indexer.functions.codex_projects import (
     _is_valid_cwd,
     _read_codex_projects_from_config,
 )
-from flow_sdk.config import is_system_project_path
+from flow_sdk.config import agent_workspace_root, is_hidden_project
 from flow_sdk.fs_store.path_utils import canonical_posix_path
 from flow_sdk.instance_settings import get_instance_settings
 from flow_sdk.utils.file_system import is_temp_path
@@ -85,7 +85,7 @@ def _entity_to_project_info(proj, cwd: str) -> ProjectInfo:
         worker_types=[],
         modified_at=getattr(proj, "updated_date", None),
         last_active_at=getattr(proj, "last_active_at", None),
-        system=bool(getattr(proj, "system", False)) or is_system_project_path(cwd),
+        system=is_hidden_project(cwd, bool(getattr(proj, "system", False))),
     )
 
 
@@ -145,7 +145,7 @@ def iter_workspace_project_paths(include_temp: bool = False) -> Iterator[Path]:
     skipped. Same semantics as the Claude/Codex iterators: only existing dirs,
     temp paths excluded unless ``include_temp``.
     """
-    workspace = get_instance_settings().user_home / "Flowpad workspace"
+    workspace = agent_workspace_root()
     try:
         # list() forces eager evaluation: iterdir() is a lazy generator, so a
         # missing workspace dir would otherwise raise at the for-loop below,
@@ -260,7 +260,7 @@ async def get_all_projects(
             info.record_project_id = Project.derive_id_for_path(cwd) or info.record_project_id
             info.modified_at = getattr(proj, "updated_date", None)
             info.last_active_at = getattr(proj, "last_active_at", None)
-            info.system = bool(getattr(proj, "system", False)) or is_system_project_path(cwd)
+            info.system = is_hidden_project(cwd, bool(getattr(proj, "system", False)))
             # Prefer entity name when set (user may have renamed)
             if getattr(proj, "name", None):
                 info.name = proj.name  # type: ignore[assignment]
@@ -268,7 +268,7 @@ async def get_all_projects(
             info.project_id = Project.derive_id_for_path(cwd) or ""
             info.record_project_id = info.project_id
             info.is_new = True
-            info.system = is_system_project_path(cwd)
+            info.system = is_hidden_project(cwd)
             to_create.append(info)
 
     # Sequential saves: SQLite serializes writes anyway and asyncio.gather hits
@@ -290,6 +290,8 @@ async def get_all_projects(
         # include_temp=True indexer run) doesn't resurface in the picker.
         if not include_temp and is_temp_path(cwd):
             continue
+        # A stale mount-root entity is tagged system=True by _entity_to_project_info
+        # (via is_hidden_project) rather than dropped, so it lands in the hidden list.
         fs_by_cwd[cwd] = _entity_to_project_info(proj, cwd)
 
     # `modified_at` may arrive as ISO string or datetime — coerce for ordering.

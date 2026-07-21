@@ -2,9 +2,9 @@
 import json
 from typing import Optional
 
+from flow_sdk.fs_store.indexer.functions._asset_identity import NATIVE_JSON_IDENTITY, resolved_path_key
 from flow_sdk.fs_store.indexer.functions.usage_report import (
     extract_usage_report,
-    usage_report_gen_id,
 )
 from flow_sdk.schema.type_info import TypeMetadata
 from flow_sdk.schema.type_info.base_meta import BaseMeta
@@ -54,7 +54,8 @@ def _usage_report_default_body(entity) -> Optional[str]:
 USAGE_REPORT = TypeMetadata(
     type=EntityType.USAGE_REPORT,
     from_disk_fn=extract_usage_report,
-    gen_uuid_fn=usage_report_gen_id,
+    identity_backend=NATIVE_JSON_IDENTITY,
+    id_stable_key_fn=resolved_path_key,
     indexed_by_default=True,
     browseable_by=ViewMode.ADVANCED,
     creatable=False,

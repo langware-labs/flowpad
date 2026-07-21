@@ -17,7 +17,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from '@src/components/ui/sidebar';
-import { Project } from '@sdk';
+import { PageId, Project } from '@sdk';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { WikiTip } from '@src/components/wiki-tip';
 import { useContext } from '@src/hooks/useContext';
@@ -50,7 +50,9 @@ import {
   // Code,
   // Cpu,
   FolderOpen,
-  // Globe,
+  Globe,
+  Building2,
+  FileText,
   Home,
   // KeyRound,
   Mail,
@@ -77,6 +79,9 @@ type NavItem = {
   title: string;
   icon: React.ComponentType<{ className?: string }>;
   viewType: ViewType | null;
+  /** Hub-rail items only: dock pointer distinguishing same-viewType targets
+   *  (Atlas world vs organization). Ignored on the desk rail. */
+  pointer?: string;
 };
 
 export function CollapsedSidebar() {
@@ -135,10 +140,27 @@ export function CollapsedSidebar() {
   // outside the spec — they render unconditionally below. Bookmarks and
   // Discover take their visibility from the same spec but keep their bespoke
   // renderers (flyout toggle / route navigation) in the JSX.
+  // Hub page has its own minimal rail — Home + the two Atlas roots. It bypasses
+  // the desk RAIL_DELTAS/mode matrix entirely (those views don't exist on hub).
+  const hubMode = currentDock?.page === PageId.HUB;
+  // Built only in hub mode (desk is the common case — don't allocate/translate 7
+  // unused entries every desk render).
+  const hubItems: readonly NavItem[] = hubMode
+    ? [
+        { id: 'home', title: t`Home`, icon: Home, viewType: ViewType.HOME },
+        { id: 'conversations', title: t`Conversations`, icon: MessageCircle, viewType: ViewType.HUB_RECORDS, pointer: 'conversation' },
+        { id: 'tasks', title: t`Tasks`, icon: CheckSquare, viewType: ViewType.HUB_RECORDS, pointer: 'task' },
+        { id: 'docs', title: t`Docs`, icon: FileText, viewType: ViewType.HUB_RECORDS, pointer: 'markdown' },
+        { id: 'flows', title: t`Flows`, icon: Workflow, viewType: ViewType.HUB_RECORDS, pointer: 'agentic_flow' },
+        { id: 'world', title: t`Your world`, icon: Globe, viewType: ViewType.ATLAS, pointer: 'world' },
+        { id: 'organization', title: t`Organization`, icon: Building2, viewType: ViewType.ATLAS, pointer: 'organization' },
+      ]
+    : [];
+
   const rail = resolveRail(viewMode);
-  const visibleItems = navItems.filter((item) => rail.get(item.id) === 'visible');
-  const collapsedItems = navItems.filter((item) => rail.get(item.id) === 'collapsed');
-  const showBookmarks = rail.get('bookmarks') === 'visible';
+  const visibleItems = hubMode ? hubItems : navItems.filter((item) => rail.get(item.id) === 'visible');
+  const collapsedItems = hubMode ? [] : navItems.filter((item) => rail.get(item.id) === 'collapsed');
+  const showBookmarks = !hubMode && rail.get('bookmarks') === 'visible';
 
   const currentView = currentDock?.viewType;
   // Tasks ride the Assets viewType (`list/task`, or a task doc in the asset
@@ -153,8 +175,19 @@ export function CollapsedSidebar() {
   const onAssets = currentView === ViewType.ASSETS && !onTasks;
   // const { cloudLoginAvailable, cloudApiUrl, isDesktop } = context;
 
+  // Hub-rail active state: pointer-carrying items (Atlas world/organization,
+  // records/<type>) match on viewType + pointer; the rest on viewType alone.
+  const hubActive = (item: NavItem): boolean =>
+    currentView === item.viewType && (!item.pointer || currentPointer === item.pointer);
+
   const handleClick = useCallback(
-    (viewType: ViewType | null) => {
+    (viewType: ViewType | null, pointer?: string) => {
+      // Hub page: keep every rail click under page=hub (desk factories would
+      // revert the page). Home → /dock/hub/home; Atlas → /dock/hub/atlas/<root>.
+      if (hubMode) {
+        navigation.openPage(PageId.HUB, viewType ?? ViewType.HOME, pointer);
+        return;
+      }
       if (viewType === null) {
         if (import.meta.env.DEV) (window as Record<string, unknown>).__homeNavT0 = performance.now();
         // Guard on the LIVE browser URL: navigation.openDock commits via raw
@@ -190,7 +223,7 @@ export function CollapsedSidebar() {
         navigation.openTab(viewType);
       }
     },
-    [navigate, navigation],
+    [navigate, navigation, hubMode],
   );
 
   /** The rail's count chip. Shared by every rail button that carries one
@@ -243,8 +276,12 @@ export function CollapsedSidebar() {
     return undefined;
   };
 
+  // Per-item badge/active, forked once by page so the render loop stays flat.
+  const itemBadge = (item: NavItem) => (hubMode ? undefined : navBadge(item.viewType));
+  const itemActive = (item: NavItem) => (hubMode ? hubActive(item) : navActive(item.viewType));
+
   const renderNavItem = (
-    item: { title: string; icon: React.ComponentType<{ className?: string }>; viewType: ViewType | null },
+    item: NavItem,
     className?: string,
     badge?: number,
     activeOverride?: boolean,
@@ -257,7 +294,7 @@ export function CollapsedSidebar() {
         <SidebarMenuButton
           tooltip={item.title}
           isActive={isActive}
-          onClick={() => handleClick(item.viewType)}
+          onClick={() => handleClick(item.viewType, item.pointer)}
           className="relative w-full justify-center px-2"
         >
           <Icon className="h-5 w-5" />
@@ -296,11 +333,11 @@ export function CollapsedSidebar() {
 
               {visibleItems.map((item) => (
                 <React.Fragment key={item.title}>
-                  {renderNavItem(item, undefined, navBadge(item.viewType), navActive(item.viewType))}
+                  {renderNavItem(item, undefined, itemBadge(item), itemActive(item))}
                   {/* The active project — sits directly under Home. Not part of the
                     nav matrix: it exists only while a project is selected, and its
-                    glyph is that project type's registry icon. */}
-                  {item.viewType === null && project && renderProjectHomeItem(project)}
+                    glyph is that project type's registry icon. Desk-only. */}
+                  {!hubMode && item.viewType === null && project && renderProjectHomeItem(project)}
                 </React.Fragment>
               ))}
 
@@ -332,7 +369,7 @@ export function CollapsedSidebar() {
               {/* Discover — full-page marketplace; a top-level route, not a dock tab,
                 so it navigates directly rather than via navigation.openTab.
                 Per RAIL_DELTAS (today: dev-only). */}
-              {rail.get('discover') === 'visible' && (
+              {!hubMode && rail.get('discover') === 'visible' && (
                 <SidebarMenuItem>
                   <SidebarMenuButton
                     tooltip={t`Discover`}

@@ -103,15 +103,23 @@ export async function completeWizard<T = unknown>(
 export function buildWizardPrompt(
   processId: string,
   request: WizardLaunchRequest,
+  opts?: { headless?: boolean },
 ): string {
   const prompt = request.wizardData?.prompt?.trim() || `Help me complete the ${request.wizardName} setup.`;
   const payload = request.wizardData?.payload
     ? `\n\nWizard data:\n${JSON.stringify(request.wizardData.payload, null, 2)}`
     : '';
+  // Tell the agent how it is being presented so it can decide whether to close
+  // itself. Headless (WizardButton) has no UI to close it, so the agent MUST
+  // close; an interactive popup lets the user close it, so a wait-for-user
+  // agent may defer. Agents that always self-close ignore this line.
+  const presentation = opts?.headless
+    ? `\n\nPresentation: headless — no wizard UI is shown, so you MUST close the wizard yourself when done (do not wait for a user to close it).`
+    : `\n\nPresentation: interactive popup — a wizard UI is shown; if your instructions say to let the user close it, wait for them instead of closing yourself.`;
   return `${prompt}${payload}
 
 When the wizard is complete, close it by running:
 flow wizard ${processId} close '{"status":"done","data":{}}'
 
-If the user cancels or the setup cannot complete, run the same command with status "cancel" or "error".`;
+If the user cancels or the setup cannot complete, run the same command with status "cancel" or "error".${presentation}`;
 }

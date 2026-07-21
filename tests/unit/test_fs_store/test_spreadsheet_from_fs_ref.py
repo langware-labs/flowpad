@@ -16,9 +16,9 @@ from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.identifier import is_valid_entity_id
 from flow_sdk.fs_store.indexer.functions.spreadsheet import (
     extract_spreadsheet,
-    spreadsheet_gen_id,
 )
 from flow_sdk.fs_store.record_types import RecordType
+from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
 # do not increase timeout without approval — these are pure-sync parses (<1s).
 pytestmark = pytest.mark.timeout(5)
@@ -62,10 +62,11 @@ def test_non_tabular_file_returns_none(tmp_path: Path) -> None:
 def test_csv_indexer_compatible_all_fields(tmp_path: Path) -> None:
     ref = _ref(_seed_csv(tmp_path))
     loaded = Spreadsheet.from_fs_ref(ref)
-    rec = extract_spreadsheet(ref)[0]
+    resolved_id = SchemaRegistry.get("spreadsheet").mint_id(ref)
+    rec = extract_spreadsheet(ref, resolved_id)[0]
 
     assert loaded.type == "spreadsheet"
-    assert loaded.id == rec.id == spreadsheet_gen_id(ref)
+    assert loaded.id == rec.id == SchemaRegistry.get("spreadsheet").mint_id(ref)
     assert is_valid_entity_id(loaded.id)
     assert loaded.format == "csv"
     assert loaded.num_rows == 3

@@ -11,6 +11,7 @@ export interface UseCloudStatusResult {
   login: LoginSlot<HubLoginStatus>;
   connection: ConnectionSlot<HubConnectionStatus>;
   cloudUrl: string;
+  connectionControlsAvailable: boolean;
 }
 
 /**
@@ -32,5 +33,6 @@ export function useCloudStatus(): UseCloudStatusResult {
     login: cloudManager.loginSlot as LoginSlot<HubLoginStatus>,
     connection: cloudManager.connectionSlot as ConnectionSlot<HubConnectionStatus>,
     cloudUrl: cloudManager.cloudUrl,
+    connectionControlsAvailable: cloudManager.connectionControlsAvailable,
   };
 }

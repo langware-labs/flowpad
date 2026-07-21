@@ -16,7 +16,6 @@ from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer._frontmatter import (
     _extract_body,
     _extract_frontmatter,
-    _render_frontmatter,
     _yaml_load,
 )
 from flow_sdk.fs_store.indexer.index_function import IndexerOptions
@@ -83,35 +82,7 @@ def prompt_id(ref: FSRef) -> str:
     return existing if existing else _prompt_id_from_path(ref._path)
 
 
-def prompt_gen_id(ref: FSRef) -> str:
-    """Mint+write a stable id into the frontmatter (idempotent)."""
-    existing = _read_prompt_frontmatter_id(ref._path)
-    if existing:
-        return existing
-    new_id = _prompt_id_from_path(ref._path)
-    try:
-        text = ref._path.read_text(encoding="utf-8")
-    except OSError:
-        return new_id
-    fm = _extract_frontmatter(text)
-    body = _extract_body(text)
-    fields: dict = {}
-    if fm:
-        parsed = _yaml_load(fm)
-        if isinstance(parsed, dict):
-            fields.update(parsed)
-    merged = {"id": new_id, **{k: v for k, v in fields.items() if k != "id"}}
-    try:
-        ref._path.write_text(
-            _render_frontmatter(merged) + "\n\n" + body + ("\n" if body and not body.endswith("\n") else ""),
-            encoding="utf-8",
-        )
-    except OSError:
-        pass
-    return new_id
-
-
-def extract_prompt(ref: FSRef) -> list[FSRecord]:
+def extract_prompt(ref: FSRef, resolved_id: str) -> list[FSRecord]:
     """Parse a ``prompts/<name>.md`` into a PROMPT record.
 
     Frontmatter ``name`` falls back to the file stem; ``icon``/``color`` are
@@ -129,11 +100,12 @@ def extract_prompt(ref: FSRef) -> list[FSRecord]:
     group_id = adopt_entity_id(fields.get("group_id"))
 
     try:
-        body = _extract_body(path.read_text(encoding="utf-8"))
+        from flow_sdk.capsules import strip_capsule_blocks  # noqa: PLC0415
+
+        body = _extract_body(strip_capsule_blocks(path.read_text(encoding="utf-8")))
     except OSError:
         body = ""
 
-    rec_id = _read_prompt_frontmatter_id(path) or _prompt_id_from_path(path)
     extra: dict = {}
     if icon is not None:
         extra["icon"] = str(icon)
@@ -154,7 +126,7 @@ def extract_prompt(ref: FSRef) -> list[FSRecord]:
         extra["last_used_at"] = last_used_at
     rec = FSRecord(
         type=RecordType.PROMPT,
-        id=rec_id,
+        id=resolved_id,
         name=name,
         text=body.strip(),
         **extra,

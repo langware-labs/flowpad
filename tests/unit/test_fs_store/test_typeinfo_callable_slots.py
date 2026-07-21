@@ -1,11 +1,12 @@
 """TypeInfo per-type indexer dispatch slots.
 
 The indexer reaches each type's parse/id/asset-hash logic through callable
-slots on ``TypeInfo`` (``from_disk_fn`` / ``gen_uuid_fn`` / ``asset_hash_fn``),
+slots on ``TypeInfo`` (``from_disk_fn`` / identity backend / ``asset_hash_fn``),
 registered next to their definitions in ``fs_store/indexer/functions/<type>``.
 These replaced the old per-entity ``from_disk``/``gen_id``/``asset_hash``
 classmethod shims (and the dead ``parser_fn`` slot).
 """
+from flow_sdk.fs_store.identity_backend import DerivedIdentityBackend
 from flow_sdk.fs_store.schema_registry import SchemaRegistry, TypeInfo
 from flow_sdk.schema.view_mode import ViewMode
 
@@ -16,8 +17,9 @@ def test_slots_excluded_from_schema_hash():
     plain = TypeInfo(**base)
     with_slots = TypeInfo(
         **base,
-        from_disk_fn=lambda ref: [],
-        gen_uuid_fn=lambda ref: "id",
+        from_disk_fn=lambda ref, resolved_id: [],
+        identity_backend=DerivedIdentityBackend(),
+        id_stable_key_fn=lambda ref: "key",
         asset_hash_fn=lambda ref: 1.0,
     )
     assert plain.schema_hash == with_slots.schema_hash
@@ -27,13 +29,13 @@ def test_register_merge_fills_but_never_clobbers():
     """Re-register fills an unset slot but never overwrites a set one with None."""
     t = "_slot_merge_probe"
     fn_a = lambda ref: ["a"]  # noqa: E731
-    gen = lambda ref: "g"  # noqa: E731
+    backend = DerivedIdentityBackend()
 
     # First registration sets from_disk_fn only.
     SchemaRegistry.register(TypeInfo(type_name=t, from_disk_fn=fn_a))
     info = SchemaRegistry.get(t)
     assert info.from_disk_fn is fn_a
-    assert info.gen_uuid_fn is None
+    assert info.identity_backend is None
 
     # Second registration (e.g. entity __init_subclass__) passes no slots —
     # must NOT clobber the existing from_disk_fn with None.
@@ -42,11 +44,11 @@ def test_register_merge_fills_but_never_clobbers():
     assert info.from_disk_fn is fn_a
     assert info.icon == "Probe"
 
-    # Third registration fills the previously-unset gen_uuid_fn.
-    SchemaRegistry.register(TypeInfo(type_name=t, gen_uuid_fn=gen))
+    # Third registration fills the previously-unset identity reader.
+    SchemaRegistry.register(TypeInfo(type_name=t, identity_backend=backend))
     info = SchemaRegistry.get(t)
     assert info.from_disk_fn is fn_a
-    assert info.gen_uuid_fn is gen
+    assert info.identity_backend is backend
 
 
 def test_builtin_types_have_dispatch_slots_wired():
@@ -61,7 +63,7 @@ def test_builtin_types_have_dispatch_slots_wired():
         info = SchemaRegistry.get(t)
         assert info is not None, f"{t}: no TypeInfo registered"
         assert info.from_disk_fn is not None, f"{t}: from_disk_fn missing"
-        assert info.gen_uuid_fn is not None, f"{t}: gen_uuid_fn missing"
+        assert info.identity_backend is not None, f"{t}: identity backend missing"
 
 
 def test_asset_hash_fn_only_for_folder_inner_file_types():

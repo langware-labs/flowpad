@@ -177,7 +177,6 @@ async def test_sync_group_merges_member_owned_fields(bootstrapped_client, hub_fa
         child.id: {
             "id": child.id,
             "status": "done",
-            "submission_url": "https://github.com/x/y/pull/7",
             "completed_at": "2026-07-14T10:00:00Z",
             "updated_date": "2999-01-01T00:00:00Z",  # newer than local → stale
         }
@@ -187,6 +186,15 @@ async def test_sync_group_merges_member_owned_fields(bootstrapped_client, hub_fa
         return hub_rows.get(entity_id)
 
     monkeypatch.setattr(gta, "hub_get", fake_hub_get)
+    # The owner-side sync ALSO pulls each child's comments via
+    # ``_sync_remote_children`` (a separate ``hub_get``); stub it to no children
+    # so this test stays focused on the member-owned field merge.
+    import flow_sdk.app.actions.flow_message_action as fma
+
+    async def fake_sync_remote_children(*a, **k):
+        return set()
+
+    monkeypatch.setattr(fma, "_sync_remote_children", fake_sync_remote_children)
 
     resp = await bootstrapped_client.post(f"{GRAPH}/task/{parent['id']}/sync-group", json={})
     assert resp.status_code == 200, resp.text
@@ -194,5 +202,4 @@ async def test_sync_group_merges_member_owned_fields(bootstrapped_client, hub_fa
 
     fresh = await Task.get_one({"id": child.id})
     assert fresh.status == "done"
-    assert fresh.submission_url == "https://github.com/x/y/pull/7"
     assert fresh.completed_at is not None

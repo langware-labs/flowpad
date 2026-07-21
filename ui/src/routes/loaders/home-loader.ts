@@ -1,5 +1,5 @@
-import { ContextEntitiesEnum, dataContext, initSdk, TypeId } from '@sdk';
-import type { LoaderFunctionArgs as LoaderArgs } from 'react-router';
+import { ContextEntitiesEnum, dataContext, initSdk, isHubOnly, TypeId } from '@sdk';
+import { redirect, type LoaderFunctionArgs as LoaderArgs } from 'react-router';
 import { TimeIt } from '@src/utils/timeit';
 
 /**
@@ -32,6 +32,13 @@ export async function loadHomePage(args: LoaderArgs) {
   // the home view. Cheap on warm calls, the actual gate on cold load.
   await initSdk(params);
   t.time('initSdk');
+
+  // Hub page has no desktop home. When the served backend serves only the hub
+  // (no `desk`), the index route lands on the hub home instead of HomeLanding.
+  if (isHubOnly()) {
+    // eslint-disable-next-line @typescript-eslint/only-throw-error
+    throw redirect('/dock/hub/home');
+  }
 
   await ensureComputeNodeLoaded();
   t.time('ensureComputeNode');

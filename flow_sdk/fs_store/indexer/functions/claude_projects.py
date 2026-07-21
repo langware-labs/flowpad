@@ -13,7 +13,6 @@ from __future__ import annotations
 import json
 import os
 import re
-import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -136,56 +135,32 @@ def claude_projects_fn(
 # ── Per-record find / upsert (records_root-scoped, used by extract_*) ────────
 
 def _find_project_record_by_cwd(cwd: str) -> FSRecord | None:
-    """Linear scan of records_root/project/ for a record at canonical cwd.
-
-    Cheap (project counts << 1k). Reads metadata.json / data.json directly
-    to extract cwd — avoids the polymorphic ``Record.load`` path which
-    tries ``object.__setattr__(rec, "cwd", v)`` and chokes on the cwd
-    property (no setter). Only when cwd matches do we materialise the
-    record via ``Record.load`` (or fall through to direct dict construction).
-    """
+    """Return the first ID-sorted project record matching canonical ``cwd``."""
     if not cwd:
         return None
     canonical = canonical_posix_path(cwd)
-    from flow_sdk.fs_store.record_paths import (  # noqa: PLC0415
-        get_default_records_root,
-        is_record_dir,
+    records = sorted(
+        FSRecord.discover(RecordType.PROJECT),
+        key=lambda record: str(record.id or ""),
     )
-    type_dir = get_default_records_root() / RecordType.PROJECT
-    if not type_dir.is_dir():
-        return None
-    for entry in sorted(type_dir.iterdir()):
-        if not is_record_dir(entry):
-            continue
-        data_file = entry / "data" / "_data.json"
-        # Read cwd from data/_data.json without instantiating the record.
-        rec_cwd = ""
-        if data_file.exists():
-            try:
-                obj = json.loads(data_file.read_text())
-                fields = obj.get("data", obj)
-                rec_cwd = fields.get("cwd") or canonical_posix_path(
-                    fields.get("real_path") or ""
-                )
-            except (json.JSONDecodeError, OSError):
-                continue
-        if rec_cwd != canonical:
-            continue
-        # Match — construct a base Record from the merged metadata + data
-        # without going through the polymorphic setattr loop.
-        try:
-            meta = json.loads(meta_file.read_text()).get("data", {})
-            data = json.loads(data_file.read_text()).get("data", {}) if data_file.exists() else {}
-            merged = {**meta, **data}
-            rec = FSRecord(**merged)
-            object.__setattr__(rec, "_source_file", str(meta_file))
-            object.__setattr__(rec, "_path", str(entry))
-            return rec
-        except (json.JSONDecodeError, OSError, ValueError):
-            continue
+    for record in records:
+        candidates = (
+            getattr(record, "cwd", None),
+            getattr(record, "fs_storage_mount_path", None),
+            getattr(record, "real_path", None),
+        )
+        if any(
+            value and canonical_posix_path(str(value)) == canonical
+            for value in candidates
+        ):
+            return record
+        name = getattr(record, "name", None)
+        if name and Path(str(name)).is_absolute():
+            if canonical_posix_path(str(name)) == canonical:
+                return record
     return None
 
-def _compute_project_session_stats(rec: Record) -> tuple[int, str | None]:
+def _compute_project_session_stats(rec: FSRecord) -> tuple[int, str | None]:
     """Walk Claude + Codex on-disk session sources and return aggregate
     ``(session_count, last_session_at)`` for this record's cwd."""
     total = 0
@@ -278,6 +253,7 @@ async def _refresh_session_stats_and_save(rec: FSRecord) -> FSRecord:
 async def _upsert_project_for_cwd(
     cwd: str,
     *,
+    resolved_id: str,
     claude_project: bool | None = None,
     codex_project: bool | None = None,
     encoded_path: str | None = None,
@@ -288,6 +264,7 @@ async def _upsert_project_for_cwd(
     canonical = canonical_posix_path(cwd)
     existing = _find_project_record_by_cwd(canonical)
     if existing is not None:
+        existing.id = resolved_id
         if claude_project is not None:
             existing.claude_project = claude_project
         if codex_project is not None:
@@ -299,12 +276,11 @@ async def _upsert_project_for_cwd(
         object.__setattr__(existing, "last_indexed_at", _now_iso())
         return await _refresh_session_stats_and_save(existing)
 
-    # Fresh — construct a base Record with a uuid4 id.
-    # Project ids are uuid4, NOT uuid5-derived (uuid5 is used only for the
-    # dedup key returned by claude_project_id / genId_fn).
+    # Fresh filesystem-record identity was resolved centrally by TypeInfo.
+    # The shareable Project entity keeps its separate opaque-v4 policy.
     kwargs: dict = {
         "type": RecordType.PROJECT,
-        "id": str(uuid.uuid4()),
+        "id": resolved_id,
         "cwd": canonical,
         "claude_project": bool(claude_project),
         "codex_project": bool(codex_project),
@@ -316,25 +292,29 @@ async def _upsert_project_for_cwd(
     rec = FSRecord(**kwargs)
     return await _refresh_session_stats_and_save(rec)
 
-# ── async parser_fn + getId ──────────────────────────────────────────────────
+# ── Identity reader/key + async parser_fn ────────────────────────────────────
 
-def claude_project_id(ref: FSRef) -> str:
-    """Deterministic dedup key keyed on canonical cwd.
-
-    Matches the deleted ``ProjectFsRecord.getId`` — used by the indexer's
-    per-FSRef cache BEFORE extract_claude_project is invoked. The persisted
-    record's id remains a uuid4 (set explicitly in _upsert_project_for_cwd).
-    """
-    ref_path = Path(ref._path)
+def _canonical_project_cwd(ref: FSRef | Path) -> str:
+    """Resolve a direct cwd or Claude-encoded ref to one canonical cwd."""
+    ref_path = Path(getattr(ref, "_path", ref))
     if _is_claude_encoded_ref(ref_path):
-        real = _decode_claude_encoded(ref_path)
-        cwd_key = real or str(ref_path)
+        resolved = _decode_claude_encoded(ref_path)
+        cwd = str(resolved) if resolved is not None else str(ref_path)
     else:
-        cwd_key = str(ref_path)
-    cwd_key = canonical_posix_path(cwd_key) if cwd_key else str(ref_path)
-    return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"project-fsref:{cwd_key}"))
+        cwd = str(ref_path)
+    return canonical_posix_path(cwd) if cwd else str(ref_path)
 
-async def extract_claude_project(ref: FSRef) -> list[FSRecord]:
+def claude_project_identity_key(ref: FSRef | Path) -> str:
+    """Stable v5 key for the filesystem project record, keyed by cwd."""
+    return f"project-fsref:{_canonical_project_cwd(ref)}"
+
+
+def existing_project_record_id(ref: FSRef | Path) -> str | None:
+    """Read an existing filesystem project-record id without minting."""
+    record = _find_project_record_by_cwd(_canonical_project_cwd(ref))
+    return str(record.id) if record is not None and record.id is not None else None
+
+async def extract_claude_project(ref: FSRef, resolved_id: str) -> list[FSRecord]:
     """Async parser_fn — upsert by canonical cwd. Replaces
     the deleted ``ProjectFsRecord.from_fsref``."""
     ref_path = Path(ref._path)
@@ -343,11 +323,11 @@ async def extract_claude_project(ref: FSRef) -> list[FSRecord]:
         if real is None or not _is_valid_cwd(real):
             return []
         rec = await _upsert_project_for_cwd(
-            real, claude_project=True, encoded_path=ref_path.name,
+            real, resolved_id=resolved_id, claude_project=True, encoded_path=ref_path.name,
         )
         return [rec]
     ref_str = str(ref_path)
     if not _is_valid_cwd(ref_str):
         return []
-    rec = await _upsert_project_for_cwd(ref_str, codex_project=True)
+    rec = await _upsert_project_for_cwd(ref_str, resolved_id=resolved_id, codex_project=True)
     return [rec]

@@ -72,3 +72,20 @@ export async function mintInviteLink(typeId: TypeId, role: string = 'member'): P
   };
   return await dataManager.callAction<unknown, InviteLink>(info);
 }
+
+/**
+ * Redeem a shareable invite link — POST ``members/redeem`` (typeless).
+ *
+ * The token rides as the POST body, never a query string: beyond keeping it out
+ * of logs/history/Referer, the hub's graph router merges query params over the
+ * body, so a query param would silently override the field. Authenticated-only
+ * by design (anonymous → 401; the ``/invite/<token>`` page owns the login
+ * bounce). Returns the server-chosen, open-redirect-validated landing URL.
+ */
+export async function redeemInviteLink(token: string): Promise<{ redirect_url: string }> {
+  const info = new ActionInfo('members', null, null, 'POST');
+  info.subpath = 'redeem';
+  info.hubReflect = true; // links are hub-owned — reflect to the hub
+  info.bodyParameters = { token };
+  return await dataManager.callAction<unknown, { redirect_url: string }>(info);
+}

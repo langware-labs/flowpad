@@ -14,11 +14,9 @@ from __future__ import annotations
 from pathlib import Path
 
 from flow_sdk.flow_manager.flow_doc import FlowDoc, parse_flow_doc
-from flow_sdk.fs_store.identifier import mint_uuid
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer.functions._folder_capsule import (
-    folder_capsule_gen_id,
     read_folder_capsule_id,
 )
 from flow_sdk.fs_store.indexer.index_function import IndexerOptions
@@ -53,14 +51,15 @@ def _load_doc(flow_dir: Path) -> FlowDoc | None:
         return None
 
 
-def agentic_flow_gen_id(ref: FSRef) -> str:
-    """Adopt the flow's id: `.flow/id` capsule → embedded graph.json ``id``
-    (adopted + backfilled into the capsule) → fresh v4."""
-    path = ref._path
-    if not path.is_dir():
-        return path.name
+def agentic_flow_id_from_folder(ref: FSRef | Path) -> object | None:
+    path = Path(getattr(ref, "_path", ref))
+    cap = read_folder_capsule_id(path)
+    if cap:
+        return cap
     doc = _load_doc(path)
-    return folder_capsule_gen_id(path, doc.id if doc else None, None)
+    from flow_sdk.fs_store.identifier import adopt_entity_id  # noqa: PLC0415
+
+    return adopt_entity_id(doc.id if doc else None)
 
 
 def agentic_flow_asset_hash(ref: FSRef) -> float:
@@ -81,24 +80,17 @@ def agentic_flow_asset_hash(ref: FSRef) -> float:
     return ts
 
 
-def extract_agentic_flow(ref: FSRef) -> list[FSRecord]:
+def extract_agentic_flow(ref: FSRef, resolved_id: str) -> list[FSRecord]:
     """Parse a flow folder into a Record row (name/description/enabled/content)."""
     path = ref._path
     doc = _load_doc(path) if path.is_dir() else None
     name = (doc.name if doc and doc.name else path.name)
-    rec_id = (
-        (read_folder_capsule_id(path) if path.is_dir() else None)
-        or (doc.id if doc else None)
-        # Transitional read-only fallback (gen_uuid backfills the capsule).
-        # Path-keyed like the capsule scheme, minted through the one minter.
-        or str(mint_uuid(str(path.resolve())))
-    )
     node_names = " ".join(n.name or n.node_type for n in doc.nodes) if doc else ""
     content = "\n".join(p for p in (name, doc.description if doc else "", node_names) if p)
 
     rec_kwargs: dict = {
         "type": RecordType.AGENTIC_FLOW,
-        "id": rec_id,
+        "id": resolved_id,
         "name": name,
         "status": "active",
         "content": content,

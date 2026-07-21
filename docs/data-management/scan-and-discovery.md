@@ -4,7 +4,7 @@ id: 56fb0e59-2f93-57c1-bec9-49a18b3151c5
 
 # Scan and Discovery
 
-This document describes the discovery mechanisms used throughout `flow_sdk` to locate, load, and index records from disk. The current model is a single **DFS walker** — `FSIndexer` (`flow_sdk/fs_store/indexer/index_function.py`) — that starts from a small set of roots, fans out through transient *waypoint* types, and dispatches per-type parser slots (`from_disk_fn` / `gen_uuid_fn` / `asset_hash_fn`) declared in `flow_sdk/schema/type_info/<type>_info.py`. It also covers Claude/Codex session lookup helpers, `RecordQuery` filtering, the scan/index HTTP actions, and error-record handling.
+This document describes the discovery mechanisms used throughout `flow_sdk` to locate, load, and index records from disk. The current model is a single **DFS walker** — `FSIndexer` (`flow_sdk/fs_store/indexer/index_function.py`) — that starts from a small set of roots, fans out through transient *waypoint* types, and dispatches per-type parser, identity, and freshness slots declared in `flow_sdk/schema/type_info/<type>_info.py`. It also covers Claude/Codex session lookup helpers, `RecordQuery` filtering, the scan/index HTTP actions, and error-record handling.
 
 > **Disk is the source of truth.** Records are scanned from disk; the Entity/DB layer is a queryable index that can be deleted and rebuilt from disk without data loss. See `docs/CLAUDE.md`.
 
@@ -35,7 +35,7 @@ Two public coroutines:
 
 | Method | Purpose |
 |---|---|
-| `scan(opts)` | DFS over the roots; returns the flat list of visited `FSRef`s. No parse, no DB. |
+| `scan(opts)` | DFS over the roots; returns the flat list of visited `FSRef`s. No payload parse and no DB write. Callers that project scan results resolve identity through `TypeInfo`, which may persist a missing portable id. |
 | `index(opts)` | Runs `scan()`, then for each visited ref whose type declares a `from_disk_fn`, parses it into `FSRecord`s and persists them (`rec.sync_to_db(...)`) plus an FTS upsert. Returns an `IndexResult`. |
 
 `IndexerOptions` (frozen dataclass) controls a run: `limit`, `limit_per_type`, `include_temp`, `types` (index filter), `roots` (per-call root override), `force` (bypass skip-fresh), `gitignore`, `project_id`, `orphan_action`, `scope_filter`, and `on_progress`.
@@ -115,7 +115,7 @@ Walkers are typically synchronous file I/O. `scan()` runs them in chunks of `_SC
 
 ---
 
-## Per-type Dispatch Slots: `from_disk_fn` / `gen_uuid_fn` / `asset_hash_fn`
+## Per-type Dispatch Slots: parsing, identity, and freshness
 
 **Source:** `flow_sdk/schema/type_info/__init__.py` (`TypeMetadata`), registered into `SchemaRegistry` (`flow_sdk/fs_store/schema_registry.py`, `TypeInfo`).
 
@@ -125,8 +125,9 @@ The dispatch callables:
 
 | Slot | Signature | Role |
 |---|---|---|
-| `from_disk_fn` | `(FSRef) -> list[FSRecord]` (sync or async) | Parse one discovered ref into one or more records. `index()` only parses refs whose type declares this (`_has_dispatch`). |
-| `gen_uuid_fn` | `(FSRef) -> str` | Mint-on-first-encounter id: idempotent if the file already carries an id (e.g. frontmatter), else writes the derived id back so future scans are rename-stable. Falls back to a `mint_uuid(path)` uuid5 when absent. |
+| `from_disk_fn` | `(FSRef, resolved_id) -> list[FSRecord]` (sync or async) | Parse payload using the identity resolved once by the caller. |
+| `capsules` / `identity_backend` | `tuple[CapsuleSpec, ...]`, backend | Declare named capsules and observe canonical plus legacy/native identity carriers. |
+| `id_stable_key_fn` / `id_namespace` | `(FSRef) -> str`, `UUID` | Optional natural/path key and namespace for deterministic v5 identity. |
 | `asset_hash_fn` | `(...) -> str` | Content hash for the type's primary asset (used by skip-fresh / sentinel logic). |
 | `post_sync_fn` | hook | Post-sync side effects. |
 | `default_body_fn` | hook | Default-body writer for `FSRecord.upsert_main_ref` on create. |
@@ -141,7 +142,8 @@ SKILL = TypeMetadata(
     index_fields=["description"],
     main_subdir=".claude/skills", main_layout="folder",
     from_disk_fn=extract_skill,
-    gen_uuid_fn=skill_gen_id,
+    capsules=(CapsuleSpec("identity"),),
+    identity_backend=capsule_identity(skill_id_from_folder),
     asset_hash_fn=skill_asset_hash,
 )
 ```
@@ -150,9 +152,10 @@ SKILL = TypeMetadata(
 
 For each visited ref of a type that has a `from_disk_fn`:
 
-1. **Mint id** via `gen_uuid_fn` (or default `mint_uuid(path)`), record it in `seen_ids` *before* any skip/index decision (so a fresh-skip isn't later misclassified as an orphan).
-2. **Skip-fresh** (unless `opts.force`): a probe `FSRecord` reads its own on-disk `.hash` sentinel; if `not index_required`, increment `skipped` and continue. This is pure on-disk equality — no parse, no DB read.
-3. **Parse + persist**: call `from_disk_fn(ref)` (awaited or via `to_thread`), stamp walk-time `scope`/`project_id` from the FSRef parent-chain onto each record, `await rec.sync_to_db(fts_batch=..., notify=False)`, then `probe.write_hash()` on success (a failed parse stays `index_required` for retry).
+1. **Resolve id** via `TypeInfo.extract_id(ref) or TypeInfo.mint_id(ref)`. Existing valid carrier ids are never rewritten. A missing portable id is minted as v4 and persisted; deterministic/provider types mint configured v5 identities. Foreign ids are not adoptable and must fall back to a stable v5 under the entity-id policy. Record the resolved id in `seen_ids` *before* any skip/index decision so a fresh-skip is not later misclassified as an orphan.
+2. **Choose duplicate winners** across the complete candidate set before parsing. For the same `type+id` at multiple live paths, a live DB incumbent path is retained; otherwise canonical lexical path order wins. Every losing path is warned and skipped. Neither source is rewritten or re-keyed.
+3. **Skip-fresh** (unless `opts.force`): a probe `FSRecord` reads its own on-disk `.hash` sentinel and the preloaded DB id set confirms that the indexed row still exists. If both are fresh, increment `skipped` and continue.
+4. **Parse + persist**: call `from_disk_fn(ref, resolved_id)` (awaited or via `to_thread`); the parser constructs the top-level record with that id. Stamp walk-time `scope`/`project_id`, sync, then write the hash after the DB batch commits.
 
 The whole loop runs inside **one DB session** but commits in **bounded batches** (`_INDEX_COMMIT_BATCH = 50`). The engine issues `BEGIN IMMEDIATE` per transaction; a single session spanning the whole scan would hold the SQLite writer lock for seconds/minutes and starve concurrent requests (`database is locked`). Per-batch commits release the lock between batches. This is a contention fix, not a `busy_timeout`/retry change. (See `project_indexer_db_lock_contention.md`.)
 

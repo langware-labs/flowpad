@@ -5,7 +5,7 @@ Covers the slot functions end-to-end:
   child of a walked FOLDER (mirrors ``markdown_in_folder_fn``).
 - ``extract_spreadsheet`` denormalizes format + row/col counts (CSV) and sheet
   names (XLSX) and gates on the extension.
-- ``spreadsheet_gen_id`` is a stable, valid (v5) entity id.
+- ``TypeInfo.mint_id`` produces a stable, valid (v5) entity id.
 - ``spreadsheet_asset_hash`` tracks the file's mtime.
 
 Pure-sync; the walker/slot functions are called directly. Modeled on
@@ -25,13 +25,18 @@ from flow_sdk.fs_store.indexer import IndexerOptions
 from flow_sdk.fs_store.indexer.functions.spreadsheet import (
     extract_spreadsheet,
     spreadsheet_asset_hash,
-    spreadsheet_gen_id,
     spreadsheet_in_folder_fn,
 )
 from flow_sdk.fs_store.record_types import RecordType
+from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
 # do not increase timeout without approval — these are pure-sync parses (<1s).
 pytestmark = pytest.mark.timeout(5)
+
+
+def _extract(ref: FSRef):
+    resolved_id = SchemaRegistry.get("spreadsheet").mint_id(ref)
+    return extract_spreadsheet(ref, resolved_id)
 
 _WORKBOOK_XML = (
     '<?xml version="1.0"?>'
@@ -99,7 +104,7 @@ def test_walker_is_not_recursive(tmp_path: Path) -> None:
 
 def test_extract_csv_counts_rows_and_cols(tmp_path: Path) -> None:
     p = _seed_csv(tmp_path, "d.csv")
-    rec = extract_spreadsheet(FSRef(p))[0]
+    rec = _extract(FSRef(p))[0]
     assert rec.type == RecordType.SPREADSHEET
     assert rec.name == "d.csv"
     assert rec.metadata["format"] == "csv"
@@ -112,7 +117,7 @@ def test_extract_csv_counts_rows_and_cols(tmp_path: Path) -> None:
 
 def test_extract_csv_ragged_rows_use_max_cols(tmp_path: Path) -> None:
     p = _seed_csv(tmp_path, "ragged.csv", text="a,b,c\n1,2\n3,4,5,6\n")
-    rec = extract_spreadsheet(FSRef(p))[0]
+    rec = _extract(FSRef(p))[0]
     assert rec.metadata["num_cols"] == 4
     assert rec.metadata["num_rows"] == 3
 
@@ -121,7 +126,7 @@ def test_extract_csv_ragged_rows_use_max_cols(tmp_path: Path) -> None:
 
 def test_extract_xlsx_reads_sheet_names(tmp_path: Path) -> None:
     p = _seed_xlsx(tmp_path, "book.xlsx")
-    rec = extract_spreadsheet(FSRef(p))[0]
+    rec = _extract(FSRef(p))[0]
     assert rec.metadata["format"] == "xlsx"
     assert rec.metadata["sheet_names"] == ["Revenue", "Costs"]
 
@@ -129,7 +134,7 @@ def test_extract_xlsx_reads_sheet_names(tmp_path: Path) -> None:
 def test_extract_xlsx_bad_zip_is_tolerated(tmp_path: Path) -> None:
     p = tmp_path / "corrupt.xlsx"
     p.write_text("not really a zip", encoding="utf-8")
-    rec = extract_spreadsheet(FSRef(p))[0]
+    rec = _extract(FSRef(p))[0]
     assert rec.metadata["format"] == "xlsx"
     assert rec.metadata["sheet_names"] == []
 
@@ -138,7 +143,7 @@ def test_extract_gates_on_extension(tmp_path: Path) -> None:
     # A single-path index of a non-tabular file must NOT mint a spreadsheet.
     other = tmp_path / "readme.txt"
     other.write_text("hi", encoding="utf-8")
-    assert extract_spreadsheet(FSRef(other)) == []
+    assert extract_spreadsheet(FSRef(other), "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee") == []
 
 
 # ── id + freshness ──────────────────────────────────────────────────────────
@@ -146,11 +151,11 @@ def test_extract_gates_on_extension(tmp_path: Path) -> None:
 def test_gen_id_is_stable_and_valid(tmp_path: Path) -> None:
     p = _seed_csv(tmp_path, "d.csv")
     ref = FSRef(p)
-    first = spreadsheet_gen_id(ref)
-    assert first == spreadsheet_gen_id(ref)  # deterministic
+    first = SchemaRegistry.get("spreadsheet").mint_id(ref)
+    assert first == SchemaRegistry.get("spreadsheet").mint_id(ref)
     assert is_valid_entity_id(first)  # v4/v5 mint policy
     # The extractor stamps the same id.
-    assert extract_spreadsheet(ref)[0].id == first
+    assert extract_spreadsheet(ref, first)[0].id == first
 
 
 def test_asset_hash_tracks_mtime(tmp_path: Path) -> None:

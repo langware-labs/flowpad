@@ -1,15 +1,16 @@
 """Type metadata for DECK."""
 from typing import Optional
 
+from flow_sdk.fs_store.indexer.functions._asset_identity import IDENTITY_CAPSULE, capsule_identity, folder_capsule_id
+from flow_sdk.fs_store.indexer.functions.deck import (
+    deck_asset_hash,
+    deck_id_from_folder,
+    extract_deck,
+)
 from flow_sdk.schema.type_info import TypeMetadata
 from flow_sdk.schema.type_info.base_meta import BaseMeta
 from flow_sdk.schema.types import EntityType
 from flow_sdk.schema.view_mode import ViewMode
-from flow_sdk.fs_store.indexer.functions.deck import (
-    deck_asset_hash,
-    deck_gen_id,
-    extract_deck,
-)
 
 
 class DeckMeta(BaseMeta):
@@ -36,7 +37,8 @@ DECK = TypeMetadata(
     # (main_file_is_asset_ref default False) so the viewer reads <folder>/*.html.
     main_file="deck.json",
     from_disk_fn=extract_deck,
-    gen_uuid_fn=deck_gen_id,
+    capsules=(IDENTITY_CAPSULE,),
+    identity_backend=capsule_identity(folder_capsule_id, deck_id_from_folder),
     asset_hash_fn=deck_asset_hash,
     meta_model=DeckMeta,
 )

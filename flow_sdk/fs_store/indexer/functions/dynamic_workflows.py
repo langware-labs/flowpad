@@ -86,9 +86,26 @@ def _adopted_id_or_path(path: Path) -> str:
         head = ""
     return adopt_entity_id(_meta_field(head, "id")) or _id_for_path(path)
 
+
+def dynamic_workflow_id_from_file(ref: FSRef | Path) -> str | None:
+    """Read only an embedded valid id; derivation belongs to TypeInfo.mint_id."""
+    from flow_sdk.api.api_types.identifier import adopt_entity_id  # noqa: PLC0415
+
+    path = Path(getattr(ref, "_path", ref))
+    try:
+        head = path.read_text(encoding="utf-8", errors="replace")[:_META_PEEK_BYTES]
+    except OSError:
+        return None
+    return adopt_entity_id(_meta_field(head, "id"))
+
+
+def dynamic_workflow_identity_key(ref: FSRef | Path) -> str:
+    path = Path(getattr(ref, "_path", ref))
+    return f"{RecordType.DYNAMIC_WORKFLOW}:{path.resolve()}"
+
 def dynamic_workflow_id(ref: FSRef) -> str:
-    """gen_uuid_fn — adopt the script's embedded id, else stable v5 from path."""
-    return _adopted_id_or_path(ref._path)
+    """Compatibility helper: adopt embedded id, else derive stable path-v5."""
+    return _adopted_id_or_path(Path(getattr(ref, "_path", ref)))
 
 # ── Extractor ────────────────────────────────────────────────────────────────
 
@@ -101,15 +118,15 @@ def _read_meta(path: Path) -> tuple[str, str]:
         return "", ""
     return _meta_field(head, "name"), _meta_field(head, "description")
 
-def extract_dynamic_workflow(ref: FSRef) -> list[FSRecord]:
-    return [extract_dynamic_workflow_from_path(ref._path)]
+def extract_dynamic_workflow(ref: FSRef, resolved_id: str) -> list[FSRecord]:
+    return [extract_dynamic_workflow_from_path(ref._path, resolved_id=resolved_id)]
 
-def extract_dynamic_workflow_from_path(path: str | Path) -> FSRecord:
+def extract_dynamic_workflow_from_path(path: str | Path, *, resolved_id: str | None = None) -> FSRecord:
     path = Path(path)
     name, description = _read_meta(path)
     rec = FSRecord(
         type=RecordType.DYNAMIC_WORKFLOW,
-        id=_adopted_id_or_path(path),
+        id=resolved_id or _adopted_id_or_path(path),
         name=name or path.stem,
         description=description,
         source_file=str(path),

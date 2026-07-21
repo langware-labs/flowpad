@@ -12,6 +12,8 @@
 
 import { EventEmitter } from 'events';
 import apiClient from '../client';
+import { API_PREFIX } from '../config/SDKConfig';
+import { isHubOnly } from '../utils/hub-runtime';
 import { User } from '../entities/user';
 import { createCloudLoginFailedWarning } from '../models/UserWarning';
 import type { CloudConnectionStatusMessage, CloudLoginStatusMessage, OAuthMessage } from '../websocket';
@@ -23,6 +25,7 @@ import {
   ConnectionSlot,
   HubConnectionStatus,
   HubLoginStatus,
+  LocalConnectionStatus,
   LoginSlot,
   isHubConnected,
   makeConnectionSlot,
@@ -69,6 +72,12 @@ interface DesktopInfoSeed {
   hub_ws_verified?: boolean;
   hub_ws_status?: HubConnectionStatus;
   hub_ws_error?: string | null;
+}
+
+/** The cloud-relevant slice of the graph bootstrap response. */
+export interface CloudBootstrapSeed {
+  user?: User | Record<string, unknown> | null;
+  desktop_info?: DesktopInfoSeed | null;
 }
 
 export interface CloudStatusData extends DesktopInfoSeed {
@@ -123,10 +132,31 @@ class CloudManager extends EventEmitter {
   private _pending: { resolve: (r: CloudLoginResult) => void; reject: (e: Error) => void; off: () => void } | null = null;
   private _initialized = false;
 
-  /** Seed initial state from bootstrapInfo.desktop_info. Called once from main.ts. */
-  async bootstrap(seed: DesktopInfoSeed | null | undefined) {
+  /** Seed initial state from the graph bootstrap response. Called once from main.ts. */
+  async bootstrap(bootstrap: CloudBootstrapSeed) {
     if (this._initialized) return;
     this._initialized = true;
+
+    if (isHubOnly()) {
+      this._cloudUrl = window.location.origin;
+
+      const { ConnectionManager } = await import('../websocket');
+      const cm = ConnectionManager.getInstance();
+      cm.on('connection_status_changed', (slot: ConnectionSlot<LocalConnectionStatus>) => {
+        this._applyConnectionStatus(slot.status, slot.error);
+      });
+      const localConnection = cm.connectionSlot;
+      this._applyConnectionStatus(localConnection.status, localConnection.error, false);
+
+      if (bootstrap.user) {
+        await this._setLoggedIn(bootstrap.user as unknown as Record<string, unknown>);
+      } else {
+        await this._setLoggedOut();
+      }
+      return;
+    }
+
+    const seed = bootstrap.desktop_info;
     this._cloudUrl = seed?.cloud_url ?? '';
 
     if (seed?.login) {
@@ -176,7 +206,12 @@ class CloudManager extends EventEmitter {
     if (this.isLoggedIn) await this._refreshFromStatus();
   }
 
-  async login(): Promise<CloudLoginResult> {
+  async login(): Promise<CloudLoginResult | void> {
+    if (isHubOnly()) {
+      window.location.assign(`${API_PREFIX}/login`);
+      return;
+    }
+
     // Hard gate: in Local (private) data-privacy mode the cloud is off-limits.
     // The UI guard + hidden login button handle the user-facing copy; this is
     // the defensive SDK-side check (the backend 403s independently).
@@ -221,7 +256,20 @@ class CloudManager extends EventEmitter {
     return promise;
   }
 
-  async logout(): Promise<void> {
+  /**
+   * @param returnTo Hub mode only: where the provider sends the browser after
+   *   logout (e.g. a login-with-callback URL so an invitee can re-auth as the
+   *   correct account and land back on the accept flow). The hub validates it
+   *   server-side. Ignored on the desktop path.
+   */
+  async logout(returnTo?: string): Promise<void> {
+    if (isHubOnly()) {
+      window.location.assign(
+        returnTo ? `${API_PREFIX}/logout?returnTo=${encodeURIComponent(returnTo)}` : `${API_PREFIX}/logout`,
+      );
+      return;
+    }
+
     const data = await apiClient.post<{ cloud_logout_url: string }>('/cloud/logout');
     // Server broadcasts LOGGED_OUT + DISCONNECTED; mirror immediately for snappy UI.
     await this._setLoggedOut();
@@ -302,6 +350,10 @@ class CloudManager extends EventEmitter {
   }
   get cloudUrl() {
     return this._cloudUrl;
+  }
+  /** Manual bridge controls exist only on the desktop backend. */
+  get connectionControlsAvailable() {
+    return !isHubOnly();
   }
 
   // New canonical getters
@@ -469,6 +521,9 @@ class CloudManager extends EventEmitter {
   }
 
   private async _refreshFromStatus(): Promise<CloudStatusData | null> {
+    // Hub mode: the hub backend has no `/cloud/status` route (404). No cloud
+    // login/connection layer to refresh — treat as a no-op.
+    if (isHubOnly()) return null;
     try {
       const data = await apiClient.get<CloudStatusData>('/cloud/status');
       if (data?.cloud_url) this._cloudUrl = data.cloud_url;
@@ -562,6 +617,8 @@ class CloudManager extends EventEmitter {
 export const cloudManager = new CloudManager();
 export const cloudLogin = () => cloudManager.login();
 export const cloudLogout = () => cloudManager.logout();
-export const getCloudStatus = () => apiClient.get<CloudStatusData>('/cloud/status');
+export const getCloudStatus = (): Promise<CloudStatusData | null> =>
+  // Hub mode: `/cloud/status` is not implemented on the hub backend (404).
+  isHubOnly() ? Promise.resolve(null) : apiClient.get<CloudStatusData>('/cloud/status');
 
 export default cloudManager;

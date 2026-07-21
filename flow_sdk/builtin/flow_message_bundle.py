@@ -114,13 +114,15 @@ _LEGACY_HEADER_FILE = "header.json"
 # row overrides). They carry their entity JSON via that path, so they are
 # excluded from the ``entities.json`` metadata axis (no double-carry, no overlay
 # re-applying their sender-local host ids).
-_HEADER_SERIALIZED_TYPES = frozenset({
-    "conversation",
-    "flow_message",
-    "claude_session",
-    "flowpad_diagnosis",
-    "remote_worker_session",
-})
+_HEADER_SERIALIZED_TYPES = frozenset(
+    {
+        "conversation",
+        "flow_message",
+        "claude_session",
+        "flowpad_diagnosis",
+        "remote_worker_session",
+    }
+)
 
 
 def _is_git_origin_dict(raw) -> bool:
@@ -731,8 +733,7 @@ async def _pack_file_backed_attachment(
     lives inside a git repo (a ``GitOrigin`` is then recorded in ``origins``),
     else the canonical ``<main_subdir>/<leaf>``. Keying by ``rel_path`` lets the
     receiver mirror the sender's repo layout via the anchor-free restore. The
-    leaf name is preserved from the source; the sender's id is pinned into the
-    main doc so the receiver's ``gen_uuid_fn`` materializes the SAME entity.
+    leaf name and every capsule byte are preserved from an existing source.
 
     Build/environment cruft is filtered via ``_ASSET_PACK_IGNORE`` (deep
     ``.venv``/cache trees blow past Windows MAX_PATH on extractall).
@@ -804,15 +805,7 @@ async def _pack_file_backed_attachment(
             dest = subdir / f"{safe}{info.main_ext}"
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_text(default_body_fn(ent), encoding="utf-8")
-        _ensure_id_in_md_frontmatter(dest, entry_id)
-        # Also pin the `.flow/id` capsule for folder-backed types (the folder is
-        # dest.parent), so the id travels even when the main doc isn't the id home.
-        if getattr(info, "folder_backed", False):
-            from flow_sdk.fs_store.indexer.functions._folder_capsule import (  # noqa: PLC0415
-                write_folder_capsule_id,
-            )
-
-            write_folder_capsule_id(dest.parent, entry_id)
+        _mint_rendered_asset_identity(info, dest, entry_type, entry_id)
         return
 
     # Origin present → key by repo-relative path (mirror sender layout); else the
@@ -822,27 +815,27 @@ async def _pack_file_backed_attachment(
     dest.parent.mkdir(parents=True, exist_ok=True)
     if src_root.is_dir():
         shutil.copytree(src_root, dest, dirs_exist_ok=True, ignore=_ASSET_PACK_IGNORE)
-        # Pin the id into the folder's main doc (TypeInfo.main_file)…
-        main_file = getattr(info, "main_file", None)
-        if main_file:
-            doc = dest / main_file
-            if doc.exists():
-                _ensure_id_in_md_frontmatter(doc, entry_id)
-        # …and into the `.flow/id` capsule for folder-backed types, so the
-        # receiver adopts the sender's id even for a yaml-only skill or a
-        # main-doc-less folder (whose id has nowhere else to travel).
-        if getattr(info, "folder_backed", False):
-            from flow_sdk.fs_store.indexer.functions._folder_capsule import (  # noqa: PLC0415
-                write_folder_capsule_id,
-            )
-
-            write_folder_capsule_id(dest, entry_id)
     else:
         shutil.copy2(src_root, dest)
-        # Single-file markdown asset: pin the id into its frontmatter. Skip
-        # non-markdown bodies (e.g. dynamic_workflow ``.js``) — no YAML fm there.
-        if dest.suffix == ".md":
-            _ensure_id_in_md_frontmatter(dest, entry_id)
+
+
+def _mint_rendered_asset_identity(info, body_path: Path, entry_type: str, entry_id: str) -> str:
+    """Persist identity for a source-less body through the type's sole seam.
+
+    Existing-source bundles never call this helper: their files and folder
+    capsules are copied byte-for-byte. A rendered fallback is newly
+    materialized, so TypeInfo may safely persist the proposed bundle id after
+    the body exists (``AssetCapsule.from_path`` accepts existing paths only).
+    """
+    from flow_sdk.fs_store.fs_ref import FSRef  # noqa: PLC0415
+    from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
+
+    if info.main_layout == "folder":
+        asset_path = info.asset_ref_for(body_path.parent)
+    else:
+        asset_path = body_path
+    ref = FSRef(asset_path, record_type=RecordType(entry_type))
+    return info.mint_id(ref, proposed_id=entry_id)
 
 
 def _safe_entity_name(entity) -> str:
@@ -1050,9 +1043,7 @@ async def index_attachments(attachments: "list[ReceivedAsset]", *, project_id: s
             if item.scope == AttachmentScope.PROJECT.value:
                 await _reindex_received_assets(item.root, types, project_id=project_id)
             else:
-                await _reindex_root(
-                    item.root, RecordType.USER_HOME_FOLDER, types=types, project_id=project_id
-                )
+                await _reindex_root(item.root, RecordType.USER_HOME_FOLDER, types=types, project_id=project_id)
         if item.git_origin:
             origins = {item.entry_key: item.git_origin}
             entries = {(item.asset_type, item.asset_id)}
@@ -1741,9 +1732,7 @@ async def _stage_attachment(
     else:
         info = SchemaRegistry.get(entry_type)
         asset_class = info._resolved_layout[0] if info else None
-        ma.user_scope_allowed = user_scope_allowed_policy(
-            asset_class, is_git=transfer_mode == TransferMode.GIT.value
-        )
+        ma.user_scope_allowed = user_scope_allowed_policy(asset_class, is_git=transfer_mode == TransferMode.GIT.value)
     await ma.save(owner_typeid, notify=False)
     return ma
 
@@ -1893,43 +1882,6 @@ _ASSET_PACK_IGNORE = shutil.ignore_patterns(
     ".pytest_cache",
     ".ruff_cache",
 )
-
-
-def _inject_id_into_frontmatter_text(text: str, entry_id: str) -> "str | None":
-    """Return ``text`` with ``id: <entry_id>`` ensured in its YAML frontmatter
-    (other fields + body preserved), or None when the id already matches — so a
-    caller can keep the original bytes verbatim. Single source of truth for the
-    "carry the sender's id into a shared markdown asset" contract, shared by the
-    spec restore and the FS-rooted packer."""
-    from flow_sdk.fs_store.indexer._frontmatter import (  # noqa: PLC0415
-        _extract_body,
-        _extract_frontmatter,
-        _render_frontmatter,
-        _yaml_load,
-    )
-
-    fm = _extract_frontmatter(text)
-    fields = (_yaml_load(fm) or {}) if fm else {}
-    if not isinstance(fields, dict):
-        fields = {}
-    if fields.get("id") == entry_id:
-        return None
-    body = _extract_body(text) if fm else text
-    merged = {"id": entry_id, **{k: v for k, v in fields.items() if k != "id"}}
-    return _render_frontmatter(merged) + "\n\n" + body.lstrip("\n")
-
-
-def _ensure_id_in_md_frontmatter(md_path: Path, entry_id: str) -> None:
-    """Idempotently ensure a markdown file's YAML frontmatter carries
-    ``id: <entry_id>``. No-op when the id already matches; rewrites the file
-    with the id injected (preserving other fields + body) otherwise."""
-    try:
-        text = md_path.read_text(encoding="utf-8")
-    except OSError:
-        return
-    rewritten = _inject_id_into_frontmatter_text(text, entry_id)
-    if rewritten is not None:
-        md_path.write_text(rewritten, encoding="utf-8")
 
 
 def _zip_bundle(tmp_root: Path, dest_dir: Path | None, fm_id: str | None) -> Path:
@@ -2551,6 +2503,22 @@ async def unpack_bundle(
             ),
             None,
         )
+        # If the receiver already bound this conversation to a local project
+        # (picked one for an earlier attachment), every attachment in it — now
+        # and later — installs straight into that project instead of staying
+        # staged / user-scoped. Best-effort: a lookup miss falls back to the
+        # unbound staging path.
+        bound_project_id = None
+        if staging_conv_id:
+            try:
+                _bound_conv = await Conversation.get_one({"id": staging_conv_id})
+                bound_project_id = getattr(_bound_conv, "project_id", None) or None
+            except Exception:
+                logger.warning(
+                    "[unpack] bound-project lookup failed for conv %s; staging unbound",
+                    staging_conv_id,
+                    exc_info=True,
+                )
         staged_mas: list = []
 
         # Git provenance/placement map (type-@id -> GitOrigin dict). Optional; only
@@ -2655,21 +2623,20 @@ async def unpack_bundle(
                     if name in git_transfers_map:
                         continue  # staged above as a git-transfer attachment
                     snap_name, snap_desc = _attachment_snapshot(entry_dir, entry_type)
-                    staged_mas.append(
-                        await _stage_attachment(
-                            top_fm_id=top_fm_id,
-                            conversation_id=staging_conv_id,
-                            entry_key=name,
-                            entry_type=entry_type,
-                            entry_id=entry_id,
-                            unpacked_path=fm_data_ops.staged_entry_rel_path(name),
-                            name=snap_name,
-                            description=snap_desc,
-                            git_origin=(git_origins_map.get(name) or None),
-                            create_bookmark=create_bookmark,
-                            owner_typeid=owner_typeid,
-                        )
+                    file_ma = await _stage_attachment(
+                        top_fm_id=top_fm_id,
+                        conversation_id=staging_conv_id,
+                        entry_key=name,
+                        entry_type=entry_type,
+                        entry_id=entry_id,
+                        unpacked_path=fm_data_ops.staged_entry_rel_path(name),
+                        name=snap_name,
+                        description=snap_desc,
+                        git_origin=(git_origins_map.get(name) or None),
+                        create_bookmark=create_bookmark,
+                        owner_typeid=owner_typeid,
                     )
+                    staged_mas.append(file_ma)
                     # TASK rides the generic staged→install→reindex path like any
                     # folder asset, BUT a collaboration bundle also carries a
                     # CONVERSATION whose branch (below) wants the Task row to exist
@@ -2697,13 +2664,34 @@ async def unpack_bundle(
                             }
                             existing_task = await Task.get_one({"id": task_id})
                             if existing_task is None or overwrite:
-                                await Task.model_validate(task_payload).save(owner_typeid)
+                                await _save_entity_db_only(Task.model_validate(task_payload), owner_typeid)
                             elif _fill_merge_entity(
                                 existing_task,
                                 task_payload,
                                 ("id", "type", "project_id", "status"),
                             ):
-                                await existing_task.save(owner_typeid)
+                                await _save_entity_db_only(existing_task, owner_typeid)
+                    # Conversation already bound to a project → install this
+                    # attachment straight in instead of leaving it staged.
+                    if bound_project_id and file_ma.id:
+                        from flow_sdk.app.actions.message_attachment_action import (  # noqa: PLC0415
+                            handle_attachment_install,
+                        )
+
+                        _res = await handle_attachment_install(
+                            file_ma.id,
+                            "project",
+                            bound_project_id,
+                            overwrite=overwrite,
+                            someone_typeid=owner_typeid,
+                        )
+                        if getattr(_res, "status", None) != "SUCCESS":
+                            logger.warning(
+                                "[unpack] conv-bound auto-install failed for %s-%s: %s",
+                                entry_type,
+                                entry_id,
+                                getattr(_res, "message", _res),
+                            )
                     continue
 
                 if getattr(SchemaRegistry.get(entry_type), "receive_policy", None) == "auto":
@@ -2736,13 +2724,22 @@ async def unpack_bundle(
                         handle_attachment_install,
                     )
 
+                    # A conversation bound to a project claims its auto payloads
+                    # too; otherwise they install user-scoped as before.
+                    _auto_scope, _auto_pid = ("project", bound_project_id) if bound_project_id else ("user", None)
                     res = await handle_attachment_install(
-                        ma.id, "user", None, overwrite=overwrite, someone_typeid=owner_typeid,
+                        ma.id,
+                        _auto_scope,
+                        _auto_pid,
+                        overwrite=overwrite,
+                        someone_typeid=owner_typeid,
                     )
                     if getattr(res, "status", None) != "SUCCESS":
                         logger.warning(
                             "[unpack] auto-install failed for %s-%s: %s",
-                            entry_type, entry_id, getattr(res, "message", res),
+                            entry_type,
+                            entry_id,
+                            getattr(res, "message", res),
                         )
 
                 elif entry_type == EntityType.REMOTE_WORKER_SESSION.value:

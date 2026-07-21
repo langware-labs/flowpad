@@ -1,5 +1,6 @@
 import { type WizardData, type WizardProcessResult } from '@sdk';
 import { useWizardRun } from '@src/hooks/use-wizard-run';
+import type { WizardModalAttachment } from '@src/components/wizard/wizard-modal';
 import { cn } from '@src/lib/utils';
 import { Loader2, Wrench } from 'lucide-react';
 import { type ReactNode } from 'react';
@@ -13,6 +14,9 @@ export interface WizardButtonProps<T = unknown> {
   errorTitle?: string;
   /** Fired with the final result if the button is still mounted. */
   onResult?: (result: WizardProcessResult<T>) => void;
+  /** An already-running wizard process to reconnect to on mount (reflects it
+   *  instead of showing idle). Pass null when none is running. */
+  adopt?: WizardModalAttachment | null;
   /** Resting-state content (icon + label). Replaced by the spinner while running. */
   children: ReactNode;
   /** Label shown next to the spinner while running. Default "Working". */
@@ -37,6 +41,7 @@ export function WizardButton<T = unknown>({
   successMessage,
   errorTitle,
   onResult,
+  adopt,
   children,
   runningLabel = 'Working',
   className,
@@ -50,6 +55,7 @@ export function WizardButton<T = unknown>({
     successMessage,
     errorTitle,
     onResult,
+    adopt,
   });
   const running = phase === 'running';
 
