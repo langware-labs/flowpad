@@ -7,7 +7,6 @@ from contextvars import ContextVar
 
 DEFAULT_BROWSE_LIMIT = 20
 import types
-import functools
 from typing import (
     Any,
     ClassVar,
@@ -30,25 +29,36 @@ except ImportError:
         def instrument(msg):
             def decorator(func):
                 return func
+
             return decorator
 
-from dataclasses import dataclass, field
+
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from pydantic import Field, SerializationInfo, SerializeAsAny, TypeAdapter, ValidationError, computed_field, field_validator, model_serializer
-
-from flow_sdk.config import StorageProvider
-from flow_sdk.flowpad_types.enums import AuthRole, ExpansionType
-from flow_sdk.api.api_types.api_field import APIField, Persist
-from flow_sdk.db.drivers.db_base_record import BuiltinEntityType, TypeId
-from flow_sdk.db.drivers.query import ExpressionNode, OrderType, QueryFilter, QueryOp
-from flow_sdk.fs_store.schema_registry import SchemaRegistry
+from pydantic import (
+    Field,
+    SerializationInfo,
+    SerializeAsAny,
+    TypeAdapter,
+    ValidationError,
+    computed_field,
+    field_validator,
+    model_serializer,
+)
 
 import flow_sdk.service_log as service_log
+from flow_sdk.api.api_types.api_field import APIField, Persist
+from flow_sdk.config import StorageProvider
 from flow_sdk.db import DBEntity
 from flow_sdk.db.db_entity import EntityExpansion
+from flow_sdk.db.drivers.db_base_record import BuiltinEntityType, TypeId
 from flow_sdk.db.drivers.db_driver import RelationshipDirection
+from flow_sdk.db.drivers.query import ExpressionNode, OrderType, QueryFilter, QueryOp
+from flow_sdk.flowpad_types.enums import AuthRole, ExpansionType
+from flow_sdk.fs_store.schema_registry import SchemaRegistry
+
 from .blob_index_entity_model import BLOB_INDEX_VFS_PATH, BlobIndexEntity
 from .entity_env.env_types import EntityEnvVars, EnvVar, EnvVarType
 
@@ -132,10 +142,12 @@ def _asset_updated_epoch(record_type: str, src_path: str) -> float | None:
         pass
     try:
         from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
         info = SchemaRegistry.get(record_type)
         hash_fn = getattr(info, "asset_hash_fn", None) if info else None
         if hash_fn is not None:
             from flow_sdk.fs_store.fs_ref import FSRef  # noqa: PLC0415
+
             val = float(hash_fn(FSRef(src_path)))
             if 0 < val <= _MAX_ASSET_EPOCH:
                 epoch = val if epoch is None else max(epoch, val)
@@ -194,7 +206,10 @@ class Entity(DBEntity):
     labels: List[str] | None = APIField(default=None)
     tags: List[str] = APIField(default_factory=list)
     system: bool = APIField(default=False, description="True when this entity belongs to an SDK-shipped system project")
-    remote: bool = APIField(default=False, description="True when this entity has a hub counterpart at the same id; refreshable from the hub")
+    remote: bool = APIField(
+        default=False,
+        description="True when this entity has a hub counterpart at the same id; refreshable from the hub",
+    )
     # Hub-authoritative role roster cache: [{user_id, email, name, role, status}].
     # Membership is a generic capability of any remote entity — a user always has
     # a hub-set role on it. This field is a pure READ CACHE: the hub is the source
@@ -313,21 +328,36 @@ class Entity(DBEntity):
     # (e.g. a claude_session's ``worker_session_id``) and unioned in by
     # ``_local_fields``. NOTE: dates are deliberately NOT here — the bundle
     # preserves send-time; the hub body strips them separately.
-    _BASE_LOCAL_FIELDS: ClassVar[frozenset[str]] = frozenset({
-        # placement / mount — the receiver re-derives from its own filesystem
-        "scope", "project_id", "asset_ref", "path",
-        "fs_storage_mount_path", "cwd", "installed_root",
-        # local provenance / flags
-        "git_origin", "remote", "system", "fetched_at",
-        # local user ids — do not resolve on the receiver
-        "created_by", "updated_by",
-        # local-only projections / caches
-        "private_context_entities_", "private_context_entities",
-        "private_context_entity_data", "shared_context_entity_data",
-        "message_count", "tags", "members",
-        # pydantic computed
-        "expand",
-    })
+    _BASE_LOCAL_FIELDS: ClassVar[frozenset[str]] = frozenset(
+        {
+            # placement / mount — the receiver re-derives from its own filesystem
+            "scope",
+            "project_id",
+            "asset_ref",
+            "path",
+            "fs_storage_mount_path",
+            "cwd",
+            "installed_root",
+            # local provenance / flags
+            "git_origin",
+            "remote",
+            "system",
+            "fetched_at",
+            # local user ids — do not resolve on the receiver
+            "created_by",
+            "updated_by",
+            # local-only projections / caches
+            "private_context_entities_",
+            "private_context_entities",
+            "private_context_entity_data",
+            "shared_context_entity_data",
+            "message_count",
+            "tags",
+            "members",
+            # pydantic computed
+            "expand",
+        }
+    )
 
     # Mirror-image of LOCAL_ONLY_FIELDS for ``remote=True`` rows: fields the
     # HUB owns and local bookkeeping must never move. ``updated_date`` is the
@@ -419,8 +449,13 @@ class Entity(DBEntity):
     # VFS path relative to a root entity (e.g., compute node)
     root_vfs_path: str | None = APIField(default=None, description="VFS path relative to a root entity")
 
-    scope: str | None = APIField(default=None, description="Discovery scope: 'user' | 'project' | 'system'. Stamped from the asset path at the save chokepoints (from_record / _prepare_for_storage) and by the FSRef walk at index time.")
-    project_id: str | None = APIField(default=None, description="Owning project id, when applicable. Stamped at index time from the FSRef walk.")
+    scope: str | None = APIField(
+        default=None,
+        description="Discovery scope: 'user' | 'project' | 'system'. Stamped from the asset path at the save chokepoints (from_record / _prepare_for_storage) and by the FSRef walk at index time.",
+    )
+    project_id: str | None = APIField(
+        default=None, description="Owning project id, when applicable. Stamped at index time from the FSRef walk."
+    )
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -515,10 +550,13 @@ class Entity(DBEntity):
         if not query:
             return []
         from flow_sdk.db import get_db_driver
+
         driver = get_db_driver()
         if not hasattr(driver, "fts_search"):
             return []
-        return await driver.fts_search(query=query, limit=limit, record_type=record_type, status=status, calibration=calibration)
+        return await driver.fts_search(
+            query=query, limit=limit, record_type=record_type, status=status, calibration=calibration
+        )
 
     @classmethod
     async def browse(
@@ -533,6 +571,7 @@ class Entity(DBEntity):
         populated so callers can display meaningful names without filesystem reads.
         """
         from flow_sdk.db import get_db_driver
+
         driver = get_db_driver()
         if not hasattr(driver, "browse_by_type"):
             return []
@@ -561,27 +600,31 @@ class Entity(DBEntity):
             f = canonical_posix_path(d).rstrip("/")
             if not f:
                 continue
-            folder_terms.append(ExpressionNode(
-                op=QueryOp.AND,
-                operands=[
-                    ExpressionNode(op=QueryOp.GE, operands=["asset_ref", f + "/"]),
-                    ExpressionNode(op=QueryOp.LT, operands=["asset_ref", f + "0"]),
-                ],
-            ))
+            folder_terms.append(
+                ExpressionNode(
+                    op=QueryOp.AND,
+                    operands=[
+                        ExpressionNode(op=QueryOp.GE, operands=["asset_ref", f + "/"]),
+                        ExpressionNode(op=QueryOp.LT, operands=["asset_ref", f + "0"]),
+                    ],
+                )
+            )
         if not folder_terms:
             return []
 
         folder_expr: ExpressionNode = (
-            folder_terms[0] if len(folder_terms) == 1
-            else ExpressionNode(op=QueryOp.OR, operands=folder_terms)
+            folder_terms[0] if len(folder_terms) == 1 else ExpressionNode(op=QueryOp.OR, operands=folder_terms)
         )
 
         match: ExpressionNode = folder_expr
         if not opts.include_system:
-            match = ExpressionNode(op=QueryOp.AND, operands=[
-                match,
-                ExpressionNode(op=QueryOp.NE, operands=["system", True]),
-            ])
+            match = ExpressionNode(
+                op=QueryOp.AND,
+                operands=[
+                    match,
+                    ExpressionNode(op=QueryOp.NE, operands=["system", True]),
+                ],
+            )
 
         types_to_query = opts.types if opts.types else SchemaRegistry.get_all_entity_types()
 
@@ -601,12 +644,10 @@ class Entity(DBEntity):
 
         results.sort(key=lambda e: getattr(e, "asset_ref", "") or "")
         end = opts.offset + opts.limit if opts.limit else None
-        return results[opts.offset:end]
+        return results[opts.offset : end]
 
     @classmethod
-    async def get_by_asset_ref(
-        cls, path: "str | Path", *, resolve_containing: bool = False
-    ) -> "Entity | None":
+    async def get_by_asset_ref(cls, path: "str | Path", *, resolve_containing: bool = False) -> "Entity | None":
         """Resolve the single entity whose ``asset_ref`` equals ``path``.
 
         ``asset_ref`` is globally unique (one entity per file path across all
@@ -628,8 +669,7 @@ class Entity(DBEntity):
 
         path_str = str(path)
         candidates = [
-            ecls for ecls in SchemaRegistry.get_all_entity_classes()
-            if "asset_ref" in getattr(ecls, "model_fields", {})
+            ecls for ecls in SchemaRegistry.get_all_entity_classes() if "asset_ref" in getattr(ecls, "model_fields", {})
         ]
 
         async def _try(ecls: type) -> "Entity | None":
@@ -647,9 +687,7 @@ class Entity(DBEntity):
         return await cls._get_by_containing_folder(path_str, candidates)
 
     @classmethod
-    async def _get_by_containing_folder(
-        cls, path_str: str, candidates: list[type]
-    ) -> "Entity | None":
+    async def _get_by_containing_folder(cls, path_str: str, candidates: list[type]) -> "Entity | None":
         """Deepest folder-backed entity whose ``asset_ref`` is an ancestor dir
         of ``path_str``. Pure DB lookup (indexed ``asset_ref IN`` per type) —
         no disk access, no discovery."""
@@ -669,10 +707,12 @@ class Entity(DBEntity):
 
         async def _hits(ecls: type) -> "list[Entity]":
             try:
-                return await ecls.get_all(QueryFilter(
-                    type=ecls.get_type(),
-                    match=ExpressionNode(op=QueryOp.IN, operands=["asset_ref", ancestors]),
-                ))
+                return await ecls.get_all(
+                    QueryFilter(
+                        type=ecls.get_type(),
+                        match=ExpressionNode(op=QueryOp.IN, operands=["asset_ref", ancestors]),
+                    )
+                )
             except Exception:
                 return []
 
@@ -695,7 +735,9 @@ class Entity(DBEntity):
         Project uses fs_storage_mount_path).
         """
         import uuid as _uuid
+
         from flow_sdk.fs_store.identifier import is_valid_entity_id, mint_uuid
+
         rid = data.get("id") or ""
         if rid and is_valid_entity_id(rid):
             return rid
@@ -735,9 +777,7 @@ class Entity(DBEntity):
             entity_field_names = set(entity_cls.model_fields.keys())
             missing = entity_field_names - set(data.keys()) - {"id", "type"}
             if missing:
-                record_fields = set(
-                    getattr(record, '_property_types', None) or {}
-                ) | set(
+                record_fields = set(getattr(record, "_property_types", None) or {}) | set(
                     object.__getattribute__(record, "__dict__").keys()
                 )
                 for k in missing & record_fields:
@@ -798,10 +838,7 @@ class Entity(DBEntity):
             entity.type = record_type
             # Hub-owned fields (the LWW clock), captured before the setattr loop
             # can overwrite them with stale disk-mirrored values from meta_dict().
-            hub_owned = {
-                f: getattr(entity, f, None)
-                for f in type(entity).HUB_AUTHORITATIVE_FIELDS
-            }
+            hub_owned = {f: getattr(entity, f, None) for f in type(entity).HUB_AUTHORITATIVE_FIELDS}
             all_updates = {**data, **record_domain, **stamp}
             for k, v in all_updates.items():
                 # Restrict to declared model fields so read-only computed
@@ -835,7 +872,7 @@ class Entity(DBEntity):
 
         # Propagate PropertyRecord values to matching entity fields
         already_set = set(data.keys()) | set(record_domain.keys())
-        if hasattr(record, '_property_types'):
+        if hasattr(record, "_property_types"):
             for prop_name in record._property_types:
                 if hasattr(entity, prop_name) and prop_name not in already_set:
                     try:
@@ -950,18 +987,22 @@ class Entity(DBEntity):
         """Upsert this entity into the FTS5 table with the given content."""
         from flow_sdk.db import get_db_driver
         from flow_sdk.db.drivers.sqlite.sqlite_driver import FtsEntry
+
         driver = get_db_driver()
         if hasattr(driver, "fts_upsert"):
-            await driver.fts_upsert(FtsEntry(
-                entity_id=self.id,
-                entity_type=type_name,
-                name=getattr(self, "name", None) or None,
-                content=content,
-            ))
+            await driver.fts_upsert(
+                FtsEntry(
+                    entity_id=self.id,
+                    entity_type=type_name,
+                    name=getattr(self, "name", None) or None,
+                    content=content,
+                )
+            )
 
     async def get_record(self) -> "FSRecord | None":
         """Return the fs-record associated with this entity, or None if none exists."""
         from flow_sdk.fs_store.fs_record import FSRecord  # noqa: PLC0415 — lazy
+
         return FSRecord.load_or_none(self.get_type(), self.id)
 
     async def destroy(self) -> None:
@@ -995,6 +1036,7 @@ class Entity(DBEntity):
     async def removeSearchIndex(self) -> None:
         """Remove this entity from the FTS5 table."""
         from flow_sdk.db import get_db_driver
+
         driver = get_db_driver()
         if hasattr(driver, "fts_delete"):
             await driver.fts_delete(self.id)
@@ -1058,6 +1100,7 @@ class Entity(DBEntity):
         # FSRecord is the single record class. Load the shadow if present;
         # otherwise construct a fresh one with the entity's id+type.
         from flow_sdk.fs_store.fs_record import FSRecord
+
         try:
             record = FSRecord.load(type_name, entity.id)
         except FileNotFoundError:
@@ -1068,6 +1111,7 @@ class Entity(DBEntity):
             ar_str = getattr(entity, "asset_ref", None)
             if ar_str:
                 from flow_sdk.fs_store.fs_ref import FSRef
+
                 record.asset_ref = FSRef(ar_str)
         # The single declarative DB→disk write: persisted fields + the special
         # asset_ref (always mirrored so main_ref resolves). Partial-merge, so
@@ -1077,6 +1121,7 @@ class Entity(DBEntity):
         if ar_str:
             payload["asset_ref"] = ar_str
         import asyncio
+
         try:
             # upsert_main_ref writes default_body iff main_ref doesn't exist
             # — write goes through the FSRef contract, never raw Path.write_text.
@@ -1084,6 +1129,7 @@ class Entity(DBEntity):
             await asyncio.to_thread(record.save_metadata, payload)
         except Exception as exc:
             from flow_sdk.fs_store.operations.record_error import from_exception  # lazy (circular-safe)
+
             from_exception(record, exc, trigger="store").save()
             return None
         # Immediately index into FTS5 so the entity is searchable without a scan.
@@ -1096,6 +1142,7 @@ class Entity(DBEntity):
         """Return the project entity when the request is project-scoped
         (POST /api/v1/graph/project/<id>/<type>), else None."""
         from flow_sdk.request_context.methods import get_current_request_info
+
         request_info = get_current_request_info()
         if (
             request_info is not None
@@ -1123,6 +1170,7 @@ class Entity(DBEntity):
         receive can no longer diverge on what "user root" means.
         """
         from flow_sdk.fs_store.placement import Scope, root_for_scope  # noqa: PLC0415
+
         proj = scope_project or await self._resolve_scope_project()
         mount = getattr(proj, "fs_storage_mount_path", None) if proj is not None else None
         if mount:
@@ -1136,6 +1184,7 @@ class Entity(DBEntity):
         parent is missing/not-yet-placed, or the parent is a (leaf) file asset.
         """
         from pathlib import Path  # noqa: PLC0415
+
         from flow_sdk.fs_store.placement import AssetClass  # noqa: PLC0415
 
         if getattr(info, "asset_class", None) != AssetClass.REPO:
@@ -1185,11 +1234,13 @@ class Entity(DBEntity):
     async def get_links(self) -> list:
         """Outgoing wiki links from this entity."""
         from flow_sdk import wiki
+
         return await wiki.outgoing(self.type, self.id)
 
     async def get_backlinks(self) -> list:
         """Inbound wiki links pointing at this entity."""
         from flow_sdk import wiki
+
         return await wiki.backlinks(self.type, self.id)
 
     async def reindex(self, body: str | None = None) -> list[dict]:
@@ -1273,9 +1324,7 @@ class Entity(DBEntity):
         request_info = get_current_request_info()
         user = request_info.user if request_info is not None else None
         if user is None:
-            raise ValueError(
-                "Entity.favorite() requires an authenticated user in the request context"
-            )
+            raise ValueError("Entity.favorite() requires an authenticated user in the request context")
 
         existing = await self._favorite_bookmark()
         if existing is not None:
@@ -1371,12 +1420,15 @@ class Entity(DBEntity):
             return str(raw)
         if project_id:
             from flow_sdk.builtin.project import Project  # noqa: PLC0415
+
             proj = await Project.get_one({"id": project_id})
             mount = (getattr(proj, "fs_storage_mount_path", "") or "").strip() if proj else ""
             return mount or None
         return None
 
-    async def _spawn_setup_session(self, skill: str, *, project_id: str | None = None, workdir: str | None = None) -> dict:
+    async def _spawn_setup_session(
+        self, skill: str, *, project_id: str | None = None, workdir: str | None = None
+    ) -> dict:
         """Spawn the headless Vibe setup process and return its DisplayTarget. Split
         out of ``setup_on_receive`` so open-existing and install share one spawn."""
         from flow_sdk.core.display_target import _entity_payload  # noqa: PLC0415
@@ -1404,7 +1456,9 @@ class Entity(DBEntity):
             _schedule_setup_prompt(ap, f"Use the {skill_name} skill to set up {typeid_str}.")
             return _entity_payload(ap)
         except Exception:
-            service_log.warn(f"[reception] setup_on_receive spawn failed for {typeid_str}; opening entity", exc_info=True)
+            service_log.warn(
+                f"[reception] setup_on_receive spawn failed for {typeid_str}; opening entity", exc_info=True
+            )
             return _entity_payload(self)
 
     @property
@@ -1431,11 +1485,13 @@ class Entity(DBEntity):
     @property
     def current_config(self):
         from flow_sdk.request_context.methods import get_current_service_config  # noqa: PLC0415
+
         return get_current_service_config()
 
     @property
     def fs_storage(self):
         from flow_sdk.request_context.methods import get_entity_storage  # noqa: PLC0415
+
         entity_storage = get_entity_storage(self.typeid, entity=self)
         if not entity_storage:
             raise ValueError(f"Entity storage not found for {self.typeid}")
@@ -1444,6 +1500,7 @@ class Entity(DBEntity):
     @property
     def embedded_storage(self):
         from flow_sdk.request_context.methods import get_entity_embedded_storage  # noqa: PLC0415
+
         entity_storage = get_entity_embedded_storage(self.typeid)
         if not entity_storage:
             raise ValueError(f"Entity blob storage not found for {self.typeid}")
@@ -1501,12 +1558,16 @@ class Entity(DBEntity):
         # Best-effort — log on failure so a wiki hiccup never blocks deletes.
         try:
             from flow_sdk import wiki
+
             await wiki.delete_for_id(cls.get_type(), str(eid))
         except Exception as wiki_exc:
             import logging
+
             logging.getLogger(__name__).warning(
                 "wiki.delete_for_id failed for %s:%s — %s",
-                cls.get_type(), eid, wiki_exc,
+                cls.get_type(),
+                eid,
+                wiki_exc,
             )
 
         # Orphan-Tab cleanup — the HTTP delete path (handle_delete_by_id) bypasses
@@ -1765,15 +1826,20 @@ class Entity(DBEntity):
             exclude_none=True,
             exclude={
                 "private_context_entities_",
-                "private_context_entities",   # Pydantic computed field — backend computes it
+                "private_context_entities",  # Pydantic computed field — backend computes it
                 "private_context_entity_data",
                 "shared_context_entity_data",
-                "created_by", "updated_by",
-                "created_date", "updated_date",
-                "remote", "system", "fetched_at",
+                "created_by",
+                "updated_by",
+                "created_date",
+                "updated_date",
+                "remote",
+                "system",
+                "fetched_at",
                 "message_count",
                 "git_origin",  # local-only provenance; never a hub-synced field
-                "tags", "project_id",
+                "tags",
+                "project_id",
                 "members",  # roster cache; the hub owns it and rebuilds from role edges
             },
         )
@@ -1937,6 +2003,7 @@ class Entity(DBEntity):
             await ent.ensure_child_edge()
         except Exception as e:  # noqa: BLE001
             import logging
+
             logging.getLogger(__name__).warning(
                 "upsert_from_hub_child: edge recreation failed for %s: %s", ent.typeid, e
             )
@@ -1970,9 +2037,7 @@ class Entity(DBEntity):
         return True
 
     @classmethod
-    async def materialize_share_parent(
-        cls, payload: dict, someone_typeid: Optional[str] = None
-    ) -> Optional[str]:
+    async def materialize_share_parent(cls, payload: dict, someone_typeid: Optional[str] = None) -> Optional[str]:
         """Hook for ``parent_share_on_default`` types: ensure the entity's
         parent exists locally (upsert-by-deterministic-id) and return its
         typeid, or None. No-op on the base class."""
@@ -2036,7 +2101,9 @@ class Entity(DBEntity):
         merged["fetched_at"] = datetime.now(timezone.utc)
         return merged
 
-    async def save(self: EntityType, owner: DBEntity | TypeId | types.NoneType = None, notify: bool = True) -> EntityType:
+    async def save(
+        self: EntityType, owner: DBEntity | TypeId | types.NoneType = None, notify: bool = True
+    ) -> EntityType:
         user_id = owner
         if isinstance(owner, Entity):
             user_id = owner.typeid
@@ -2083,12 +2150,16 @@ class Entity(DBEntity):
             if not was_create and self.type != "tab" and hasattr(self, "project_id"):
                 try:
                     from flow_sdk.builtin.tab import reconcile_tab_project
+
                     await reconcile_tab_project(self.type, str(self.id), getattr(self, "project_id", None))
                 except Exception as tab_exc:
                     import logging
+
                     logging.getLogger(__name__).warning(
                         "Tab project-reconcile failed for %s:%s — %s",
-                        self.type, self.id, tab_exc,
+                        self.type,
+                        self.id,
+                        tab_exc,
                     )
         # Invalidate authorization cache since entity properties have changed
         from ..auth.auth_cache import get_auth_cache
@@ -2144,14 +2215,17 @@ class Entity(DBEntity):
         # .agents/…). Create-only path (asset_ref-set entities returned above),
         # so the capability lookup isn't per-save. Falls back to claude.
         from flow_sdk.fs_store.placement import resolve_default_harness
+
         default_worker = await resolve_default_harness()
         # Transient FSRecord just to compute the asset_ref convention.
         from flow_sdk.fs_store.fs_record import FSRecord
+
         rec = FSRecord(type=type_name, id=self.id)
         ar = rec.compute_asset_ref(scope_root, self, default_worker=default_worker)
         if ar is None or getattr(ar, "_path", None) is None:
             return
         from flow_sdk.fs_store.path_utils import canonical_posix_path
+
         path_str = canonical_posix_path(ar.path)
         if hasattr(self, "asset_ref"):
             self.asset_ref = path_str
@@ -2176,7 +2250,30 @@ class Entity(DBEntity):
         if not path:
             return None
         from flow_sdk.fs_store.indexer.roots import classify_path  # noqa: PLC0415
+
         return classify_path(path)
+
+    def _scope_already_decided(self) -> bool:
+        """True when ``scope`` must NOT be re-derived from the asset path.
+
+        Two distinct cases, which a plain ``scope in (None, "")`` test cannot
+        tell apart:
+
+        * A **fresh** entity whose caller explicitly declared ``scope`` — including
+          a deliberate ``None`` — owns that decision. A received asset carries no
+          scope at DOWNLOADED and is stamped only at INSTALLED with the chosen
+          scope (docs/collab/messages-and-attachments.md §6). Without this, the
+          phantom user-home placement of a not-yet-installed asset stamped it
+          ``'user'``, so it showed as personal before the user chose anything.
+        * An already-stamped entity (any non-empty scope) keeps its label.
+
+        A DB-loaded row always reports the field as "set", so it is deliberately
+        NOT covered by the first case — legacy rows with a null scope keep
+        back-filling on their next save exactly as before.
+        """
+        if "scope" in self.model_fields_set and not self.exist_in_db:
+            return True
+        return getattr(self, "scope", None) not in (None, "")
 
     def _stamp_scope_from_asset_ref(self) -> None:
         """Derive ``scope`` ('user'|'project'|'system') from ``asset_ref``.
@@ -2184,7 +2281,7 @@ class Entity(DBEntity):
         No-op when the entity has no scope field, the field is already set, or
         the path can't be classified — so it never clobbers an explicit scope.
         """
-        if not hasattr(self, "scope") or getattr(self, "scope", None) not in (None, ""):
+        if not hasattr(self, "scope") or self._scope_already_decided():
             return
         inferred = self._scope_from_path(getattr(self, "asset_ref", None))
         if inferred:
@@ -2205,7 +2302,7 @@ class Entity(DBEntity):
         No-op when there is no ``scope`` field or it is already set, mirroring
         ``_stamp_scope_from_asset_ref`` (never clobbers an explicit scope).
         """
-        if not hasattr(self, "scope") or getattr(self, "scope", None) not in (None, ""):
+        if not hasattr(self, "scope") or self._scope_already_decided():
             return
         if self._scope_from_path(getattr(self, "asset_ref", None)) == "system":
             self.scope = "system"
@@ -2234,12 +2331,16 @@ class Entity(DBEntity):
         # Best-effort — log on failure so a wiki hiccup never blocks deletes.
         try:
             from flow_sdk import wiki
+
             await wiki.delete_for_id(self.type, str(self.id))
         except Exception as wiki_exc:
             import logging
+
             logging.getLogger(__name__).warning(
                 "wiki.delete_for_id failed for %s:%s — %s",
-                self.type, self.id, wiki_exc,
+                self.type,
+                self.id,
+                wiki_exc,
             )
 
         # Soft-close any content Tab pointing at this entity so a deleted target
@@ -2264,14 +2365,18 @@ class Entity(DBEntity):
             return
         try:
             from flow_sdk.builtin.tab import _tabs_for_target
+
             for tab in await _tabs_for_target(entity_type, str(entity_id)):
                 if getattr(tab, "visible", False):
                     await tab.close()
         except Exception as tab_exc:
             import logging
+
             logging.getLogger(__name__).warning(
                 "Tab orphan-cleanup failed for %s:%s — %s",
-                entity_type, entity_id, tab_exc,
+                entity_type,
+                entity_id,
+                tab_exc,
             )
 
     async def update(self):
@@ -2341,14 +2446,16 @@ class Entity(DBEntity):
             data_type    = "json"
             attributes   = {"event": <name>, "payload": {...}, ...}
         """
-        await self.emit_flow_data({
-            "attributes": {
-                "element-type": "entity_event",
-                "data-type": "json",
-                "event": event,
-                "payload": payload or {},
-            },
-        })
+        await self.emit_flow_data(
+            {
+                "attributes": {
+                    "element-type": "entity_event",
+                    "data-type": "json",
+                    "event": event,
+                    "payload": payload or {},
+                },
+            }
+        )
 
     async def save_relationship(self, to_e, relationship_or_str, direction=RelationshipDirection.Outgoing, create=True):
         """Override save_relationship to invalidate cache when relationships are saved."""
@@ -2399,7 +2506,8 @@ class Entity(DBEntity):
 
         # Exclude None values and private keys to remove
         data = {
-            key: value for key, value in data.items()
+            key: value
+            for key, value in data.items()
             if value is not None and (key in computed_keys or self.is_api_field(key))
         }
         return data
@@ -2528,9 +2636,8 @@ class Entity(DBEntity):
             return await target.effective_project_id() if target is not None else None
         except Exception:
             import logging  # noqa: PLC0415
-            logging.getLogger(__name__).debug(
-                "project_id_of: failed for %s/%s", entity_type, entity_id, exc_info=True
-            )
+
+            logging.getLogger(__name__).debug("project_id_of: failed for %s/%s", entity_type, entity_id, exc_info=True)
             return None
 
     @computed_field
@@ -2715,9 +2822,7 @@ class Entity(DBEntity):
             return [*self.shared_context_entities, *self.private_context_entities]
         raise ValueError(f"bucket must be 'shared' | 'private' | 'both', got {bucket!r}")
 
-    def context_of_type(
-        self, type_name: str, *, bucket: Literal["shared", "private", "both"] = "both"
-    ) -> List[TypeId]:
+    def context_of_type(self, type_name: str, *, bucket: Literal["shared", "private", "both"] = "both") -> List[TypeId]:
         """All context entries of the given entity type in the requested bucket."""
         return [t for t in self._bucket_view(bucket) if t.type == type_name]
 
@@ -2785,8 +2890,8 @@ class Entity(DBEntity):
         Returns:
             List of Trigger entities connected to this entity (typed as Entity to avoid circular imports)
         """
-        from flow_sdk.flowpad_types.enums import BuiltInRelationshipTypes
         from flow_sdk.builtin.trigger import Trigger
+        from flow_sdk.flowpad_types.enums import BuiltInRelationshipTypes
 
         relationships = await self.get_outgoing_relationships(
             relationships_filter=QueryFilter(type=BuiltInRelationshipTypes.ConnectedTo)
@@ -2812,6 +2917,7 @@ class Entity(DBEntity):
 
     async def save_oauth_credentials(self, oauth_name: str, credentials: str, foreign_key: str = None) -> None:
         from flow_sdk.request_context.methods import set_user_credentials  # noqa: PLC0415
+
         await set_user_credentials(self, oauth_name, credentials, foreign_key)
 
         if self.env_vars is None:
@@ -2853,6 +2959,7 @@ class Entity(DBEntity):
 
         try:
             from flow_sdk.request_context.methods import delete_user_credentials  # noqa: PLC0415
+
             # Pass self.id as foreign_key to match the device-flow write convention
             # in flow_sdk.app.actions.desktop_oauth._save_github_token_to_sod —
             # otherwise the composed SOD key diverges and the token is silently
@@ -2889,8 +2996,8 @@ _action_registry.register(
 
 
 async def _http_favorite(self: Entity):
-    from flow_sdk.responses.response import ApiSuccessResponse  # noqa: PLC0415
     from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
+    from flow_sdk.responses.response import ApiSuccessResponse  # noqa: PLC0415
 
     request_info = get_current_request_info()
     body = await request_info.get_post_data() if request_info is not None else {}
@@ -2908,6 +3015,7 @@ async def _http_favorite(self: Entity):
 
 async def _http_unfavorite(self: Entity):
     from flow_sdk.responses.response import ApiSuccessResponse  # noqa: PLC0415
+
     deleted = await self.unfavorite()
     return ApiSuccessResponse(data={"deleted": deleted, "favorited": False})
 
@@ -2920,8 +3028,8 @@ async def _http_setup(self: Entity):
     directly (no setup skill) or spawns a headless Vibe setup session and returns
     ITS target. Project/workdir default to the entity's own binding; the caller may
     override ``project_id`` (e.g. the conversation-mapped project)."""
-    from flow_sdk.responses.response import ApiSuccessResponse  # noqa: PLC0415
     from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
+    from flow_sdk.responses.response import ApiSuccessResponse  # noqa: PLC0415
 
     request_info = get_current_request_info()
     body = await request_info.get_post_data() if request_info is not None else {}
@@ -2961,9 +3069,9 @@ async def _http_set_group(self: Entity):
     cycles, namespace immutability) live in ``Group.validate_membership`` —
     this handler only parses the body and delegates (docs/entities-groups.md).
     """
-    from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
-    from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
     from flow_sdk.builtin.group import Group  # noqa: PLC0415
+    from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
+    from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
 
     request_info = get_current_request_info()
     body = await request_info.get_post_data() if request_info is not None else {}
@@ -3000,8 +3108,8 @@ async def _http_semantic_waive(self: Entity):
     the CURRENT content, stamp validated_by=user / status=ok, and resolve the
     open lock_break annotations. Body: ``{"relationship_id": ...}`` — must
     reference a dependson row touching this entity."""
-    from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
     from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
+    from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
     from flow_sdk.semantic_lock.runner import waive_relationship  # noqa: PLC0415
 
     request_info = get_current_request_info()
@@ -3045,9 +3153,7 @@ async def _http_activate(self: Entity):
     async with record_sync_guard(self.get_type(), self.id):
         persisted, did_stamp = await self._db.stamp_last_active_at(self.id, stamped_at)
         if persisted is None:
-            return ApiFailResponse(
-                message=f"Entity no longer exists: {self.typeid}", status_code=404
-            )
+            return ApiFailResponse(message=f"Entity no longer exists: {self.typeid}", status_code=404)
 
         # A soft-closed (``visible=False``) Tab is not a resolver candidate, and
         # activation is recency-only — it NEVER re-shows membership (reopen goes
@@ -3067,9 +3173,7 @@ async def _http_activate(self: Entity):
                 import asyncio  # noqa: PLC0415
 
                 try:
-                    await asyncio.to_thread(
-                        record.save_metadata_field, "last_active_at", stamped_at
-                    )
+                    await asyncio.to_thread(record.save_metadata_field, "last_active_at", stamped_at)
                 except Exception as exc:
                     from flow_sdk.fs_store.operations.record_error import (  # noqa: PLC0415
                         from_exception,

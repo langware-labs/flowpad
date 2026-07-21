@@ -1,15 +1,19 @@
-"""Installing a task asset into a project and indexing it must stamp the task
-entity with that project's scope.
+"""INSTALLED phase, project scope: installing an asset into a project must
+stamp the entity with the CHOSEN scope, not only the project_id.
 
-Repro of the observed bug: the "Install in project" flow copies a task onto
-disk at ``<project>/agentic-assets/task/<name>/task.md`` (the recursive
-repo-asset layout), then indexes. Observed in the live DB: the resulting
-``task`` entity stays ``scope='user'`` with an empty ``project_id`` — so it is
-absent from the project's scope and the conversation still shows the
-"Select Project" pill.
+Per the reception phase model (docs/collab/messages-and-attachments.md §6):
+"Phase 4 INSTALLED — the ONE install action: copy/clone + reindex with the
+chosen scope/project stamped."
 
-No mocks: real test DB + a real Project row + the real ``build_default_indexer``
-walk over a project root FSRef, then read the persisted task back.
+Bug: for project scope, ``index_attachments`` calls
+``_reindex_received_assets``, which delegates to ``_reindex_root``, whose root
+FSRef hardcodes ``scope="user"`` (flow_message_bundle.py:913) and only threads
+``project_id``. So an install-in-project yields ``scope='user'`` +
+``project_id=<project>`` — and project-scope views keep only scope in
+{project, system}, so the asset stays invisible in the project it was
+installed into.
+
+No mocks: real Project + real task.md on disk + the real reception indexer.
 """
 
 from __future__ import annotations
@@ -30,6 +34,9 @@ from flow_sdk.fs_store.schema_registry import SchemaRegistry
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]  # do not increase timeout without approval
 
 TASK_ID = "6fcd0025-84e9-4c0b-a13d-8f3a4f295dd6"
+INSTALLED_TASK_ID = "c41f77a2-9b0e-4d63-8a51-6e2c9d4f7b38"
+
+_TASK_MD = "---\nid: {tid}\ntitle: ex7a\nstatus: to_do\ntask_type: Task\nkind: standard\n---\n\n# ex7a\n"
 
 
 async def _make_project(root: Path, name: str) -> Project:
@@ -41,20 +48,13 @@ async def _make_project(root: Path, name: str) -> Project:
 
 
 async def test_installed_task_asset_is_stamped_with_project(tmp_path: Path) -> None:
-    # 1. A real folder project.
+    """Control: a project-scope root FSRef DOES stamp both project_id and scope."""
     proj = await _make_project(tmp_path / "cyber6", "cyber6")
 
-    # 2. Copy the task asset into the project exactly where "Install in project"
-    #    places it: <project>/agentic-assets/task/<name>/task.md.
     task_dir = tmp_path / "cyber6" / "agentic-assets" / "task" / "ex7a"
     task_dir.mkdir(parents=True, exist_ok=True)
-    (task_dir / "task.md").write_text(
-        f"---\nid: {TASK_ID}\ntitle: ex7a\nstatus: to_do\ntask_type: Task\nkind: standard\n---\n\n# ex7a\n",
-        encoding="utf-8",
-    )
+    (task_dir / "task.md").write_text(_TASK_MD.format(tid=TASK_ID), encoding="utf-8")
 
-    # 3. Index the project root — the same project-scope root the indexer seeds
-    #    for a real project mount (scope='project' + derived project_id).
     indexer = build_default_indexer()
     await indexer.index(
         IndexerOptions(
@@ -73,87 +73,39 @@ async def test_installed_task_asset_is_stamped_with_project(tmp_path: Path) -> N
     )
 
     task_cls = SchemaRegistry.get_entity_cls("task")
-    assert task_cls is not None, "task entity class not registered"
-    # get_all (not get_one) — get_one eager-expands blob storage, which the
-    # unit-DB fixture doesn't wire; we only need the persisted scalar fields.
     tasks = await task_cls.get_all({"id": TASK_ID})
     assert tasks, "index did not materialize the task row"
     task = tasks[0]
 
-    # 4. THE RULE: a task copied into a project and indexed belongs to that
-    #    project. Observed bug: it comes back scope='user', project_id=''.
     assert task.project_id == proj.id, (
         f"installed task not associated with its project: got project_id={task.project_id!r}, expected {proj.id!r}"
     )
     assert task.scope == "project", f"installed task not project-scoped: got scope={task.scope!r}, expected 'project'"
 
 
-PREEXISTING_TASK_ID = "aaaa0025-84e9-4c0b-a13d-8f3a4f295dd6"
+async def test_install_in_project_stamps_project_scope(tmp_path: Path) -> None:
+    """The REAL install path for project scope must stamp scope='project'."""
+    from flow_sdk.builtin.flow_message_bundle import _reindex_received_assets
 
-_TASK_MD = (
-    f"---\nid: {PREEXISTING_TASK_ID}\ntitle: ex7a\nstatus: to_do\ntask_type: Task\nkind: standard\n---\n\n# ex7a\n"
-)
+    proj = await _make_project(tmp_path / "cyber6b", "cyber6b")
 
+    task_dir = tmp_path / "cyber6b" / "agentic-assets" / "task" / "ex7a-installed"
+    task_dir.mkdir(parents=True, exist_ok=True)
+    (task_dir / "task.md").write_text(_TASK_MD.format(tid=INSTALLED_TASK_ID), encoding="utf-8")
 
-async def test_reindex_restamps_preexisting_user_task(tmp_path: Path) -> None:
-    """The realistic install flow: the task already exists as a USER-scope
-    record (a received task), THEN the asset is copied into the project and
-    re-indexed. The re-index must re-associate it with the project.
-    """
-    proj = await _make_project(tmp_path / "cyber6", "cyber6")
+    # The exact call install makes for AttachmentScope.PROJECT
+    # (index_attachments -> _reindex_received_assets).
+    await _reindex_received_assets(Path(proj.fs_storage_mount_path), (RecordType.TASK,), project_id=proj.id)
 
-    # 1. Precondition: the task first exists at user scope (received task),
-    #    indexed from a user-scope root — scope='user', project_id=''.
-    user_dir = tmp_path / "userhome" / "agentic-assets" / "task" / "ex7a"
-    user_dir.mkdir(parents=True, exist_ok=True)
-    (user_dir / "task.md").write_text(_TASK_MD, encoding="utf-8")
-
-    indexer = build_default_indexer()
-    await indexer.index(
-        IndexerOptions(
-            roots=(
-                FSRef(
-                    tmp_path / "userhome",
-                    record_type=RecordType.REAL_PROJECT_CWD,
-                    scope="user",
-                    project_id=None,
-                ),
-            ),
-            types=(RecordType.TASK,),
-            force=True,
-            verbose=False,
-        )
-    )
     task_cls = SchemaRegistry.get_entity_cls("task")
-    pre = (await task_cls.get_all({"id": PREEXISTING_TASK_ID}))[0]
-    assert pre.scope == "user" and not pre.project_id, (
-        f"precondition not set up: scope={pre.scope!r} project_id={pre.project_id!r}"
-    )
+    tasks = await task_cls.get_all({"id": INSTALLED_TASK_ID})
+    assert tasks, "install reindex did not materialize the task row"
+    task = tasks[0]
 
-    # 2. Now the asset is copied into the project and re-indexed over the
-    #    project-scope root (the "Install in project" + index step).
-    proj_dir = tmp_path / "cyber6" / "agentic-assets" / "task" / "ex7a"
-    proj_dir.mkdir(parents=True, exist_ok=True)
-    (proj_dir / "task.md").write_text(_TASK_MD, encoding="utf-8")
-
-    await indexer.index(
-        IndexerOptions(
-            roots=(
-                FSRef(
-                    Path(proj.fs_storage_mount_path),
-                    record_type=RecordType.REAL_PROJECT_CWD,
-                    scope="project",
-                    project_id=proj.id,
-                ),
-            ),
-            types=(RecordType.TASK,),
-            force=True,
-            verbose=False,
-        )
-    )
-
-    task = (await task_cls.get_all({"id": PREEXISTING_TASK_ID}))[0]
     assert task.project_id == proj.id, (
-        f"re-indexed task not associated with its project: got project_id={task.project_id!r}, expected {proj.id!r}"
+        f"installed task lost its project: got project_id={task.project_id!r}, expected {proj.id!r}"
     )
-    assert task.scope == "project", f"re-indexed task not project-scoped: got scope={task.scope!r}, expected 'project'"
+    assert task.scope == "project", (
+        f"install-in-project did not stamp the chosen scope: got scope={task.scope!r}, "
+        f"expected 'project' (project_id={task.project_id!r})"
+    )
