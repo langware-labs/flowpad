@@ -345,7 +345,18 @@ def reset(
     port = None
     if relaunch:
         if backend_only:
-            _relaunch_backend_only(name)
+            new_pid = _relaunch_backend_only(name)
+            # Re-sync launcher.json's backend_pid to the freshly-spawned process.
+            # backend_only keeps launcher.json (it's in _KEEP so the still-running
+            # vite bookkeeping survives), but the file otherwise carries the OLD,
+            # now-dead backend_pid. Consumers that SIGTERM launcher.json['backend_pid']
+            # to restart the backend (e.g. the ws-reconnect-after-restart api test)
+            # would kill a stale pid and never actually restart the live backend.
+            lpath = _instance_dir(name) / "launcher.json"
+            launcher = _read_json(lpath)
+            if launcher:
+                launcher["backend_pid"] = new_pid
+                lpath.write_text(json.dumps(launcher, indent=2))
         else:
             _relaunch_full(name)
         _pin_view_mode_for_qa(name)

@@ -145,17 +145,11 @@ class GCPInventoryProvider:
         billing_project: str | None = None,
     ) -> None:
         self._runner = runner or _gcloud_json
-        configured_project = (
-            billing_project
-            if billing_project is not None
-            else os.environ.get(GCP_BILLING_PROJECT_ENV)
-        )
+        configured_project = billing_project if billing_project is not None else os.environ.get(GCP_BILLING_PROJECT_ENV)
         self._billing_project = str(configured_project or "").strip() or None
 
     async def collect(self) -> InventorySnapshot:
-        organization_rows = await self._runner(
-            ["organizations", "list", "--quiet", "--format=json"]
-        )
+        organization_rows = await self._runner(["organizations", "list", "--quiet", "--format=json"])
         organizations: list[OrganizationInventory] = []
         for row in organization_rows:
             try:
@@ -172,22 +166,16 @@ class GCPInventoryProvider:
                 if self._billing_project:
                     resource_args.append(f"--billing-project={self._billing_project}")
                 resource_args.extend(("--quiet", "--format=json"))
-                resource_rows = await self._runner(
-                    resource_args
-                )
+                resource_rows = await self._runner(resource_args)
                 resources: list[InventoryResource] = []
                 for resource_row in resource_rows:
                     try:
                         resources.append(parse_gcp_resource(resource_row))
                     except ValueError:
                         continue
-                organizations.append(
-                    OrganizationInventory(organization=organization, resources=resources)
-                )
+                organizations.append(OrganizationInventory(organization=organization, resources=resources))
             except InventoryProviderError as exc:
-                organizations.append(
-                    OrganizationInventory(organization=organization, error=str(exc))
-                )
+                organizations.append(OrganizationInventory(organization=organization, error=str(exc)))
         return InventorySnapshot(
             provider=self.name,
             observed_at=utc_now_iso(),

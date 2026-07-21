@@ -103,14 +103,17 @@ export function useAssetTypes(options: UseAssetTypesOptions = {}): { types: Asse
       return;
     }
     let cancelled = false;
+    (window as any).__DBG_TYPES = ((window as any).__DBG_TYPES || '') + 'fire;';
     apiClient
       .get<{ types: AssetTypeInfo[] }>('/assets/types')
       .then((res) => {
+        (window as any).__DBG_TYPES += (cancelled ? 'resolved-cancelled;' : 'resolved-set;');
         if (cancelled) return;
         setVaults(res?.types?.find((t) => t.type_name === 'markdown')?.vaults || []);
         setIsLoading(false);
       })
-      .catch(() => {
+      .catch((e) => {
+        (window as any).__DBG_TYPES += 'catch:' + (e?.message || e) + ';';
         if (!cancelled) setIsLoading(false);
       });
     return () => {

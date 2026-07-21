@@ -97,9 +97,7 @@ def _deployment_for_resource(
             artifact_id = label_id
             artifact_link_source = ArtifactLinkSource.GCP_LABEL
         else:
-            warnings.append(
-                f"{resource.full_resource_name}: ignored invalid {GCP_ARTIFACT_LABEL} label"
-            )
+            warnings.append(f"{resource.full_resource_name}: ignored invalid {GCP_ARTIFACT_LABEL} label")
     return Deployment(
         id=gcp_deployment_id(resource.full_resource_name),
         name=resource.name,
@@ -135,9 +133,7 @@ def _sync_labels(report: WorldViewSyncReport) -> dict[str, str]:
 def _root_deployment(report: WorldViewSyncReport) -> Deployment:
     message = None
     if report.organizations_failed:
-        message = (
-            f"{report.organizations_failed} of {report.organizations_total} organization inventories failed"
-        )
+        message = f"{report.organizations_failed} of {report.organizations_total} organization inventories failed"
     return Deployment(
         id=WORLDVIEW_ROOT_ID,
         name="Google Cloud",
@@ -277,9 +273,7 @@ def _plans_for_snapshot(
         parent_name = plan.parent_full_resource_name
         if parent_name is not None and parent_name not in plans:
             fallback = plan.fallback_parent_full_resource_name
-            plan.parent_full_resource_name = (
-                fallback if fallback != full_name and fallback in plans else None
-            )
+            plan.parent_full_resource_name = fallback if fallback != full_name and fallback in plans else None
     return plans, failed_scopes
 
 
@@ -382,11 +376,7 @@ async def reconcile_snapshot(snapshot: InventorySnapshot) -> WorldViewSyncReport
 
     for full_name, plan in plans.items():
         parent_name = plan.parent_full_resource_name
-        parent_id = (
-            gcp_deployment_id(parent_name)
-            if parent_name is not None
-            else WORLDVIEW_ROOT_ID
-        )
+        parent_id = gcp_deployment_id(parent_name) if parent_name is not None else WORLDVIEW_ROOT_ID
         plan.deployment.parent_type_id = _typeid(parent_id)
         saved, created, updated, old_parent = await _upsert(plan.deployment)
         report.created += int(created)

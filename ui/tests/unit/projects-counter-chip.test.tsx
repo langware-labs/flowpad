@@ -96,7 +96,7 @@ describe('ProjectsCounterChip', () => {
     expect(chip.textContent).toContain('2');
     // The chip labels the current project as a prefix segment (added 5937eaa4):
     // `<projectName> — <count summary>`.
-    expect(chip.getAttribute('aria-label')).toBe('11111111 — 2 active projects with 3 open tabs');
+    expect(chip.getAttribute('aria-label')).toBe('11111111 — 2 open projects, 3 open tabs');
   });
 
   it('keeps per-project tab counts in the popover list', async () => {
@@ -255,7 +255,7 @@ describe('ProjectsCounterChip', () => {
 
     const chip = screen.getByTestId('projects-counter-chip');
     expect(chip.textContent).toContain('Global');
-    expect(chip.getAttribute('aria-label')).toBe('Global — 2 active projects with 3 open tabs');
+    expect(chip.getAttribute('aria-label')).toBe('Global — 2 open projects, 3 open tabs');
   });
 
   it('lists a current-marked Global row (with its count) above the projects', async () => {

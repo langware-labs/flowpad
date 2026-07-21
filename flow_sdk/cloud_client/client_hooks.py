@@ -95,9 +95,14 @@ async def _is_auth_failure_envelope(response: httpx.Response) -> bool:
 
     message = _envelope_message(body).lower()
     path = response.request.url.path
-    if path.endswith("/current-user") and (
-        "user not found" in message or "request info not found" in message
-    ):
+    # ``/current-user`` exists ONLY to resolve the caller's identity from their
+    # token. A 2xx *fail* envelope there means the token did not resolve to a
+    # user — a credential rejection — no matter the exact hub wording ("user
+    # not found", "request info not found", "failed to resolve current user",
+    # …). Match on the path alone so a hub message-copy change can't silently
+    # stop clearing invalid/stale creds. (Genuine 4xx/5xx server errors take the
+    # status>=400 branch in ``_on_response`` and never reach here.)
+    if path.endswith("/current-user"):
         return True
 
     return any(

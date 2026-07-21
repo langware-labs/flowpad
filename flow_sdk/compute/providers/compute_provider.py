@@ -183,6 +183,15 @@ class ComputeProvider(ABC):
             ExecutionEnvironmentStatus
         """
 
+    async def get_node_details(self, provider_node_id: str) -> dict:
+        """Status plus any cheap live metadata for the node.
+
+        Base returns just the status; providers with a cheap richer probe (E2B
+        get_info) override to add started_at / end_at / cpu_count / memory_mb.
+        """
+        status = await self.get_node_status(provider_node_id)
+        return {"status": status.value}
+
     def get_host(self, provider_node_id: str, port: int) -> str:
         """Get the host address to connect to the compute node.
 
