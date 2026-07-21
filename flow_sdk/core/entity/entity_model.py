@@ -2239,13 +2239,35 @@ class Entity(DBEntity):
         from flow_sdk.fs_store.indexer.roots import classify_path  # noqa: PLC0415
         return classify_path(path)
 
+    def _scope_already_decided(self) -> bool:
+        """True when ``scope`` must NOT be re-derived from the asset path.
+
+        Two distinct cases, which a plain ``scope in (None, "")`` test cannot
+        tell apart:
+
+        * A **fresh** entity whose caller explicitly declared ``scope`` — including
+          a deliberate ``None`` — owns that decision. A received asset carries no
+          scope at DOWNLOADED and is stamped only at INSTALLED with the chosen
+          scope (docs/collab/messages-and-attachments.md §6). Without this, the
+          phantom user-home placement of a not-yet-installed asset stamped it
+          ``'user'``, so it showed as personal before the user chose anything.
+        * An already-stamped entity (any non-empty scope) keeps its label.
+
+        A DB-loaded row always reports the field as "set", so it is deliberately
+        NOT covered by the first case — legacy rows with a null scope keep
+        back-filling on their next save exactly as before.
+        """
+        if "scope" in self.model_fields_set and not self.exist_in_db:
+            return True
+        return getattr(self, "scope", None) not in (None, "")
+
     def _stamp_scope_from_asset_ref(self) -> None:
         """Derive ``scope`` ('user'|'project'|'system') from ``asset_ref``.
 
         No-op when the entity has no scope field, the field is already set, or
         the path can't be classified — so it never clobbers an explicit scope.
         """
-        if not hasattr(self, "scope") or getattr(self, "scope", None) not in (None, ""):
+        if not hasattr(self, "scope") or self._scope_already_decided():
             return
         inferred = self._scope_from_path(getattr(self, "asset_ref", None))
         if inferred:
@@ -2266,7 +2288,7 @@ class Entity(DBEntity):
         No-op when there is no ``scope`` field or it is already set, mirroring
         ``_stamp_scope_from_asset_ref`` (never clobbers an explicit scope).
         """
-        if not hasattr(self, "scope") or getattr(self, "scope", None) not in (None, ""):
+        if not hasattr(self, "scope") or self._scope_already_decided():
             return
         if self._scope_from_path(getattr(self, "asset_ref", None)) == "system":
             self.scope = "system"

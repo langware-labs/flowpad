@@ -6216,7 +6216,6 @@ msgstr "Install & restart"
 #: src/components/conversation/asset-review/AssetInstallActions.tsx
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
-#: src/components/conversation/asset-review/AssetReviewDialog.tsx
 msgid "Install failed"
 msgstr "Install failed"
 
@@ -6231,7 +6230,6 @@ msgstr "Install global"
 
 #: src/components/conversation/asset-review/AssetInstallActions.tsx
 #: src/components/conversation/asset-review/AssetInstallActions.tsx
-#: src/components/conversation/asset-review/AssetReviewDialog.tsx
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
 msgid "Install in project"
 msgstr "Install in project"

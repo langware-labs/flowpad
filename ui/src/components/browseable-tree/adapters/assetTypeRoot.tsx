@@ -6,7 +6,7 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { resultTypeId } from '@src/navigation/record-type-nav';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { AssetMode, AssetRoutingMethod } from '@src/navigation/asset-doc-types';
-import { VFSPath } from '@sdk';
+import { VFSPath, isTypeId, TypeId } from '@sdk';
 import { ViewType } from '@src/types/ViewType';
 import type { AssetTypeInfo } from '@src/hooks/use-asset-types';
 import type { SearchResult } from '@src/hooks/use-asset-search';
@@ -94,10 +94,9 @@ async function fetchAssetsOfType(typeName: string, filter: AssetFilter, limit: n
   applyFilterToParams(urlParams, filter);
   try {
     const data = (await apiClient.get(`/search?${urlParams.toString()}`)) as { results?: SearchResult[] } | null;
-    const results = data?.results ?? [];
-    // Member tasks (group-task children) live in their group task's editor
-    // ("Member tasks" section), not the asset tree.
-    return typeName === 'task' ? results.filter((r) => !r.parent_id) : results;
+    // Member tasks (group-task children) are kept here — the tree nests them
+    // under their parent (see buildTaskTree) rather than dropping them.
+    return data?.results ?? [];
   } catch {
     return [];
   }
@@ -191,6 +190,82 @@ function basename(p: string): string {
   return idx >= 0 ? p.slice(idx + 1) : p;
 }
 
+/** Bare entity uuid for a raw id string that may be a `<type>-<uuid>` typeid or
+ *  already a bare uuid. A task's `parent_id` is the parent's entity id in either
+ *  form, so both sides of the parent↔child match must be normalized. */
+function bareEntityId(raw: string | null | undefined): string {
+  const s = (raw ?? '').trim();
+  if (!s) return '';
+  try {
+    if (isTypeId(s)) return new TypeId(s).id;
+  } catch {
+    /* not a typeid — use as-is */
+  }
+  return s;
+}
+
+/**
+ * Build the task rows for the asset tree with member (child) tasks nested under
+ * their parent. `parent_id` ("" = top-level, else the parent task's entity id)
+ * defines the relationship. Children whose parent is present in this result page
+ * render indented under it — children first, then the parent's own folder files
+ * (task.md / spec.md …). A child whose parent is absent (top-level, or an orphan
+ * the page's limit cut off) renders at the root so nothing disappears.
+ */
+function buildTaskTree(
+  type: AssetTypeInfo,
+  results: SearchResult[],
+  rootId: string,
+  onAfterDelete: () => void,
+): Browseable[] {
+  const byId = new Map<string, SearchResult>();
+  for (const r of results) {
+    const id = resultTypeId(r)?.id;
+    if (id) byId.set(id, r);
+  }
+  const childrenByParent = new Map<string, SearchResult[]>();
+  const topLevel: SearchResult[] = [];
+  for (const r of results) {
+    const pid = bareEntityId(r.parent_id);
+    if (pid && byId.has(pid)) {
+      const arr = childrenByParent.get(pid) ?? [];
+      arr.push(r);
+      childrenByParent.set(pid, arr);
+    } else {
+      topLevel.push(r);
+    }
+  }
+
+  // A tree node's identity is its asset path, so a duplicate DB record for one
+  // on-disk task must collapse to a single row (shared across the whole tree).
+  const seen = new Set<string>();
+  const buildNode = (r: SearchResult, ancestry: Set<string>): Browseable | null => {
+    const node = assetChild(type.type_name, type.icon, r, !!type.folder_backed, rootId, onAfterDelete);
+    if (seen.has(node.id)) return null;
+    seen.add(node.id);
+    const selfBare = resultTypeId(r)?.id ?? '';
+    // Guard against a `parent_id` cycle: don't recurse into an ancestor.
+    const childResults = selfBare && !ancestry.has(selfBare) ? (childrenByParent.get(selfBare) ?? []) : [];
+    if (childResults.length === 0) return node;
+    const nextAncestry = new Set(ancestry);
+    if (selfBare) nextAncestry.add(selfBare);
+    const childNodes = childResults.map((cr) => buildNode(cr, nextAncestry)).filter((n): n is Browseable => n !== null);
+    // Combine member (child) task rows with the parent's own folder-backed
+    // listChildren (task.md / spec.md …) — children first, folder files after.
+    const folderList = node.listChildren;
+    return {
+      ...node,
+      hasChildren: true,
+      listChildren: async (opts) => {
+        const folderRows = folderList ? await folderList(opts) : [];
+        return [...childNodes, ...folderRows];
+      },
+    };
+  };
+
+  return topLevel.map((r) => buildNode(r, new Set<string>())).filter((n): n is Browseable => n !== null);
+}
+
 /**
  * Per-type entity counts, keyed by `type_name`, supplied by the asset page from
  * the single `index-status` response it already fetches — so the sidebar renders
@@ -271,6 +346,11 @@ export function assetTypeRoot(type: AssetTypeInfo, deps: AssetTypeRootDeps): Bro
   };
   const listChildren = async (): Promise<Browseable[]> => {
     const results = await fetchAssetsOfType(type.type_name, filter, limit);
+    // Tasks nest: a group/parent task's member (child) tasks render indented
+    // under it (children first, then the parent's folder files). See buildTaskTree.
+    if (type.type_name === 'task') {
+      return buildTaskTree(type, results, rootId, onAfterDelete);
+    }
     // A tree node's identity is its asset path (`asset:<type>:<path>`), so the
     // same file surfaced by more than one search result (e.g. discovered under
     // multiple scopes, or duplicate DB records for one on-disk asset) must
