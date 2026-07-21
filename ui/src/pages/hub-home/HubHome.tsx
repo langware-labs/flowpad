@@ -1,4 +1,4 @@
-import { PageId, ViewType, WorldViewProjection } from '@sdk';
+import { ExecutionEnvironmentStatus, PageId, ViewType, WorldViewProjection } from '@sdk';
 import { useAuth } from '@sdk/react/hooks';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useProjects } from '@src/hooks/use-projects';
@@ -19,8 +19,6 @@ import {
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useState } from 'react';
 
-type HubWorldViewProjection = typeof WorldViewProjection.WORLD | typeof WorldViewProjection.ORGANIZATION;
-
 function StepIcon({ status }: { status: Step['status'] }) {
   if (status === 'loading') return <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />;
   if (status === 'success') return <CheckCircle className="h-3.5 w-3.5 text-green-500" />;
@@ -28,35 +26,35 @@ function StepIcon({ status }: { status: Step['status'] }) {
   return <Circle className="h-3.5 w-3.5 text-muted-foreground/40" />;
 }
 
-// Live desktop status (ExecutionEnvironmentStatus from the backend `ops/status`).
-// `card` tints the whole desktop block so status reads at a glance.
-const STATUS_META: Record<string, { label: string; dot: string; card: string }> = {
-  READY: { label: 'Running', dot: 'bg-green-500', card: 'border-green-500/40 bg-green-500/5' },
-  PAUSED: { label: 'Paused', dot: 'bg-yellow-500', card: 'border-yellow-500/40 bg-yellow-500/5' },
-  NOT_FOUND: { label: 'Not found', dot: 'bg-muted-foreground/40', card: 'border-border opacity-60' },
-  ERROR: { label: 'Unreachable', dot: 'bg-destructive', card: 'border-destructive/40 bg-destructive/5' },
-  NEW: { label: 'New', dot: 'bg-muted-foreground/40', card: 'border-border' },
+// Live desktop status styling, keyed off the backend `ExecutionEnvironmentStatus`
+// (`ops/status`). `card` tints the whole desktop block so status reads at a glance.
+const STATUS_STYLE: Record<ExecutionEnvironmentStatus, { dot: string; card: string }> = {
+  [ExecutionEnvironmentStatus.READY]: { dot: 'bg-green-500', card: 'border-green-500/40 bg-green-500/5' },
+  [ExecutionEnvironmentStatus.PAUSED]: { dot: 'bg-yellow-500', card: 'border-yellow-500/40 bg-yellow-500/5' },
+  [ExecutionEnvironmentStatus.NOT_FOUND]: { dot: 'bg-muted-foreground/40', card: 'border-border opacity-60' },
+  [ExecutionEnvironmentStatus.ERROR]: { dot: 'bg-destructive', card: 'border-destructive/40 bg-destructive/5' },
+  [ExecutionEnvironmentStatus.NEW]: { dot: 'bg-muted-foreground/40', card: 'border-border' },
 };
 
 /** Border/background tint for a desktop card, by live status. */
-function statusCardClass(status?: string): string {
-  if (!status) return 'border-border';
-  return STATUS_META[status]?.card ?? 'border-border';
+function statusCardClass(status?: ExecutionEnvironmentStatus): string {
+  return (status && STATUS_STYLE[status]?.card) || 'border-border';
 }
 
-function DesktopStatus({ status }: { status?: string }) {
-  if (!status) {
-    return (
-      <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground/60">
-        <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-muted-foreground/40" />
-      </span>
-    );
-  }
-  const meta = STATUS_META[status] ?? { label: status, dot: 'bg-muted-foreground/40' };
+function DesktopStatus({ status }: { status?: ExecutionEnvironmentStatus }) {
+  const { t } = useLingui();
+  if (!status) return <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-muted-foreground/40" />;
+  const labels: Record<ExecutionEnvironmentStatus, string> = {
+    [ExecutionEnvironmentStatus.READY]: t`Running`,
+    [ExecutionEnvironmentStatus.PAUSED]: t`Paused`,
+    [ExecutionEnvironmentStatus.NOT_FOUND]: t`Not found`,
+    [ExecutionEnvironmentStatus.ERROR]: t`Unreachable`,
+    [ExecutionEnvironmentStatus.NEW]: t`New`,
+  };
   return (
     <span className="flex shrink-0 items-center gap-1.5 text-[11px] text-muted-foreground" title={status}>
-      <span className={`h-2 w-2 shrink-0 rounded-full ${meta.dot}`} />
-      {meta.label}
+      <span className={`h-2 w-2 shrink-0 rounded-full ${STATUS_STYLE[status]?.dot ?? 'bg-muted-foreground/40'}`} />
+      {labels[status] ?? status}
     </span>
   );
 }
@@ -94,7 +92,7 @@ export function HubHome() {
 
   const firstName = currentUser?.name?.split(' ')[0] || 'there';
 
-  const openWorldView = (projection: HubWorldViewProjection) =>
+  const openWorldView = (projection: WorldViewProjection) =>
     navigation.openPage(PageId.HUB, ViewType.WORLDVIEW, projection);
 
   return (
