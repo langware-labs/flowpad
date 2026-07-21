@@ -4,8 +4,11 @@ A GROUP task is one task instantiated for every member of a contacts group:
 the original task becomes the overview (``kind=group``) and each member gets
 their own child "member task" (``parent_id`` = the group task, ``assignee`` =
 the member). Only the title is cloned; a member task owns nothing but its
-``status`` / ``completed_at`` / ``submission_url`` — every display field
-resolves from the parent at render time.
+``status`` / ``completed_at`` — every display field resolves from the parent at
+render time. The member's deliverable is not a field: they record it as a
+standard ``Comment`` on their member task, which auto-shares to the hub and is
+pulled onto the owner's mirror during ``sync-group`` (see
+``_sync_group_owner``).
 
 Transport is the hub + membership invitations (NOT the git/push-notify
 shared-task channel): children are created on the hub as real ``is_child``
@@ -52,12 +55,18 @@ from flow_sdk.responses.response import ApiResponse, ApiSuccessResponse
 logger = logging.getLogger(__name__)
 
 # The ONLY fields a member owns; the owner-side sync merges exactly these from
-# each member task's hub row.
-_MEMBER_OWNED_FIELDS = ("status", "submission_url")
+# each member task's hub row. The member's deliverable is no longer a field —
+# it rides as a ``Comment`` on the member task (pulled separately below).
+_MEMBER_OWNED_FIELDS = ("status",)
 # Display fields the member-side sync merges onto the local parent mirror
 # (single source of truth: children never store their own copies).
 _PARENT_DISPLAY_FIELDS = ("title", "description", "priority")
 _PARENT_DISPLAY_DATETIMES = ("due_at", "start_date")
+# Owner-authored collection fields pulled onto the parent mirror too, so the
+# member's read-only "Files & Folders" shows the owner's attachments (each entry
+# carries a ``git_origin`` reference for context/git folders). List-valued, so
+# merged separately from the string display fields below.
+_PARENT_DISPLAY_COLLECTIONS = ("artifacts",)
 
 
 def _safe_task_folder_name(title: str | None) -> str:
@@ -415,12 +424,27 @@ async def sync_group() -> ApiResponse:
 
 
 async def _sync_group_owner(task: Task, someone_typeid) -> int:
-    """Merge member-owned fields from each member task's hub row (LWW)."""
+    """Merge member-owned fields from each member task's hub row (LWW), and pull
+    each member task's comments (the member's "done + submission url" note)."""
+    # Lazy import: flow_message_action imports this module's helpers, so a
+    # top-level import would be circular.
+    from flow_sdk.app.actions.flow_message_action import _sync_remote_children  # noqa: PLC0415
+
     children = await Task.get_all({"parent_id": task.id}) or []
     synced = 0
     for child in children:
         if not child.remote or not child.id:
             continue
+        # Pull the child's comments FIRST, independent of the task-row LWW
+        # below: a new comment (the member's submission note) is an is_child of
+        # the member task on the hub and does NOT bump the task's own
+        # updated_date, so the ``is_stale`` gate would otherwise skip it. The
+        # owner is authorized on the child, so this reflects the comment into
+        # the local DB for the group analyzer to read.
+        try:
+            await _sync_remote_children(child.typeid, BuiltinEntityType.COMMENT.value, someone_typeid)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("[group-task] comment pull for %s failed (non-fatal): %s", child.id, e)
         hub_row = await hub_get(BuiltinEntityType.TASK, child.id)
         if not isinstance(hub_row, dict) or not hub_row.get("id"):
             continue
@@ -475,6 +499,14 @@ async def _sync_group_member(child: Task, someone_typeid) -> int:
     for k in _PARENT_DISPLAY_DATETIMES:
         v = Task._as_datetime(hub_parent.get(k))
         if v is not None and v != getattr(parent, k, None):
+            setattr(parent, k, v)
+            changed = True
+    for k in _PARENT_DISPLAY_COLLECTIONS:
+        # The hub owns the attachment list; reflect it verbatim (including an
+        # empty list, so a member sees the owner's removals). Absent key (older
+        # hub / never set) → leave the local value untouched.
+        v = hub_parent.get(k)
+        if isinstance(v, list) and v != getattr(parent, k, None):
             setattr(parent, k, v)
             changed = True
     if not changed:

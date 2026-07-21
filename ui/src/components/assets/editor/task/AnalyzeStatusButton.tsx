@@ -1,7 +1,7 @@
 import { ActionInfo, dataManager, Task, TaskKind, type WizardData, type WizardProcessResult } from '@sdk';
-import { DONE_GATE_FIELDS } from '@src/components/task-bar/constants';
 import { openArtifact } from '@src/components/task-bar/task-utils';
 import { WizardButton } from '@src/components/wizard/WizardButton';
+import { useAdoptAnalyzeProcess } from '@src/hooks/use-adopt-analyze-process';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { ScanSearch } from 'lucide-react';
 import { useCallback } from 'react';
@@ -33,6 +33,9 @@ interface AnalyzeStatusButtonProps {
 export function AnalyzeStatusButton({ task, onAnalyzed, className }: AnalyzeStatusButtonProps) {
   const { navigation } = useDockNavigation();
   const isGroup = task.kind === TaskKind.GROUP;
+  // If an analyze run for this task is still going, reconnect to it (spinner +
+  // live tool count) instead of showing a fresh button.
+  const adopt = useAdoptAnalyzeProcess(task);
 
   const buildRequest = useCallback(async (): Promise<WizardData> => {
     if (isGroup) {
@@ -50,7 +53,6 @@ export function AnalyzeStatusButton({ task, onAnalyzed, className }: AnalyzeStat
         mode: isGroup ? 'group' : 'standard',
         projectId: task.project_id ?? null,
         taskFolder: task.asset_ref ?? null,
-        doneGateFields: DONE_GATE_FIELDS.map((f) => f.field),
       },
       prompt: isGroup
         ? 'Analyze the status of this group task across all its member tasks and produce the owner summary.'
@@ -84,6 +86,7 @@ export function AnalyzeStatusButton({ task, onAnalyzed, className }: AnalyzeStat
       }}
       errorTitle="Analyze Status failed"
       onResult={handleResult}
+      adopt={adopt}
       runningLabel="Analyzing"
       className={className}
       disabled={!task.id}

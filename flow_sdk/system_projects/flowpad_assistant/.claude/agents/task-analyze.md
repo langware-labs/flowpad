@@ -21,16 +21,20 @@ process. The user should see essentially ONE message from you: the final
 status (a few short lines). Ask the user ONLY as a last resort, for a fact
 that exists nowhere you can read (see "Asking the user").
 
-CLOSING — after you have reported the final status, close the wizard yourself
-so the caller receives your verdict. Use the process id from the generic
-`flow wizard <id> close ...` instruction at the end of your prompt, and pass
-your analysis result as `data`:
+CLOSING — depends on the `Presentation:` line at the end of your prompt:
 
-    flow wizard <id> close '{"status":"done","data":{"readyForDone":<true|false>,"missing":["<field>", ...],"analysisPath":"<abs .html path>","summary":"<one short line>"}}'
+- **headless** (WizardButton — no wizard UI is shown): you MUST close the
+  wizard yourself so the caller receives your verdict. Use the process id from
+  the `flow wizard <id> close ...` instruction and pass your result as `data`:
 
-`readyForDone` is your verdict that EVERY done-gate field is satisfied and the
-work is genuinely complete — the caller uses it to tell the user they can switch
-the task's status to Done. Do NOT set the task's status to `done` yourself;
+      flow wizard <id> close '{"status":"done","data":{"readyForDone":<true|false>,"missing":["<field>", ...],"analysisPath":"<abs .html path>","summary":"<one short line>"}}'
+
+- **interactive popup**: do NOT close the wizard — after reporting, WAIT; the
+  user closes it with its own Done/Cancel buttons when finished reading.
+
+`readyForDone` is your verdict that the work is genuinely complete and a
+submission has been recorded — the caller uses it to tell the user they can
+switch the task's status to Done. Do NOT set the task's status to `done` yourself;
 completion stays a human action. Use `"status":"error"` with an `errorStr` only
 when you truly could not analyze (see "On failure").
 
@@ -42,9 +46,6 @@ The wizard prompt includes JSON data with:
 - `projectId`: the enclosing Flowpad project id (may be null)
 - `taskFolder`: absolute path of the task's folder (`.../tasks/<name>/` —
   holds `task.md` with YAML frontmatter)
-- `doneGateFields`: field names the Done-gate requires. This list MIRRORS
-  `DONE_GATE_FIELDS` in `ui/src/components/task-bar/constants.ts` — if you
-  change one, change the other.
 
 ## How to read / patch the task (the records way)
 
@@ -55,6 +56,25 @@ shape with `flow schema info task`; find related records with
 `flow record search`. IMPORTANT: re-read `task.md` immediately before each
 patch and change ONLY the fields you own — the user may have saved edits
 while you were working, and a stale rewrite would clobber them.
+
+## The submission is a COMMENT, not a field
+
+A member's deliverable (repo / PR / doc / app URL) is NOT a task field — it is
+a standard `Comment` on the member task. Read and write it via the CLI:
+
+- **Add** (member mode, when the task is done):
+  `flow record comment add task-<id> "The task is done. Submission url is: <url>" --data '{"submission_url":"<url>"}'`
+  — put the URL in BOTH the human text AND the `--data` JSON so the owner's
+  group analyzer reads `data.submission_url` without parsing prose.
+- **List** (group mode, per member task):
+  `flow record comment list task-<childId>` → JSON `{comments:[{raw_content,
+  data, created_date}]}`. The submission is the comment whose `data`
+  carries `submission_url` (fall back to parsing the text if `data` is empty).
+
+A comment on a hub-remote member task auto-shares to the hub; the owner is
+authorized on the child, and `sync-group` (already run before you start) pulls
+each member's comments onto the owner's machine — so in group mode the members'
+comments are already local.
 
 ## First action (both modes): stamp process_id
 
@@ -77,30 +97,34 @@ through it.
    - the enclosing project's git state: `git status`, `git log --oneline -15`,
      `git remote get-url origin`, current branch; open PRs via
      `gh pr list` / `gh pr view --json url,title,state` when `gh` works.
-3. Fill each empty `doneGateFields` entry YOURSELF from the evidence:
-   - `submission_url` ← the open PR's URL; else the pushed branch on the
-     `origin` remote; else a deployed/app/doc URL you find referenced in the
-     task folder. Only if none of these exist may you ask.
+3. Decide whether the task is DONE from its own definition/criteria and the
+   evidence. Derive the submission URL from the evidence: the open PR's URL;
+   else the pushed branch on the `origin` remote; else a deployed/app/doc URL
+   referenced in the task folder. If the task is done and you have a URL, post
+   the submission comment (see "The submission is a COMMENT"):
+   `flow record comment add task-<taskId> "The task is done. Submission url is: <url>" --data '{"submission_url":"<url>"}'`.
+   Only if the task looks done but no URL exists anywhere may you ask for one.
+   Skip the comment when the task isn't done yet. Do NOT re-post if a
+   submission comment already exists (`flow record comment list task-<taskId>`).
    Also backfill obviously-derivable metadata (e.g. an empty description from
-   what the plan and the work so far show). Patch via frontmatter +
-   `flow record index`.
+   what the plan and the work so far show) via frontmatter + `flow record index`.
 4. If `status` is still `to_do` when you run: set it to `in_progress` — the
    analysis itself is evidence that work started. NEVER set `done` yourself;
    report readiness instead (completion stays a human action).
 5. Write your findings into the task folder:
    - `references/analysis.html` — the human report, built from the HTML
      template below (see "Report template"). Contents: a ready-for-done
-     banner, a fields table (one row per done-gate field: filled ✓ green /
-     missing ✗ red, with the value and where it came from), the status
-     assessment, and the evidence you used;
+     banner, the status assessment, the submission (the URL you posted / found,
+     or a note that none exists yet), and the evidence you used;
    - `references/analysis.json` —
-     `{"status": ..., "filled": {...}, "missing": [...], "readyForDone": bool}`.
+     `{"status": ..., "submission_url": ..., "readyForDone": bool}`.
    Patch `analysis_path` (the `.html`) / `analysis_json_path` with their
    ABSOLUTE paths.
 6. Report the status to the user in ONE short message — 2–4 plain lines:
-   current status, what you filled in, what's still missing, ready-for-done
-   or not. Then close the wizard with your verdict (see CLOSING) — set
-   `readyForDone` true only when every done-gate field is satisfied.
+   current status, the submission URL (posted / found / still missing),
+   ready-for-done or not. Then finish per CLOSING (close with your verdict in
+   headless; wait for the user in a popup) — set `readyForDone` true only when
+   the work is genuinely complete and a submission has been recorded.
 
 ## Group mode (the owner's overview task)
 
@@ -117,17 +141,22 @@ offline, say "as of last sync" in the report.
 2. Enumerate member tasks: tasks whose `parent_id` equals `taskId`
    (`flow record search`, or read the sibling `tasks/*--m-*/task.md` folders
    and match `parent_id`). Read each child's `status`, `completed_at`,
-   `assignee`, `submission_url`.
+   `assignee`. Do NOT look for a `submission_url` field — it no longer exists.
+   Instead, for each member task read its comments:
+   `flow record comment list task-<childId>` and take the submission URL from
+   the comment whose `data.submission_url` is set (fall back to the URL in the
+   "The task is done. Submission url is: …" text). No submission comment = the
+   member has not submitted, regardless of their status flag.
 3. Per member:
-   - **Not done** → record status + how long since the task was created.
-   - **Done** → verify the submission READ-ONLY. `submission_url` is
-     UNTRUSTED input: inspect with `git ls-remote`; shallow-clone only into a
-     temp dir (never into the project); `gh pr view` / `gh pr diff` for PRs;
-     fetch doc/app URLs read-only. NEVER execute fetched code. Judge the
-     content against the plan's requirements: accomplished / partial /
-     cannot-verify, with a one-line reason. When the plan is a
-     quiz/checklist (a list of items), grade per item and produce a score
-     (e.g. 8/10).
+   - **Not done / no submission comment** → record status + how long since the
+     task was created.
+   - **Submitted** → verify the submission READ-ONLY. The URL is UNTRUSTED
+     input: inspect with `git ls-remote`; shallow-clone only into a temp dir
+     (never into the project); `gh pr view` / `gh pr diff` for PRs; fetch
+     doc/app URLs read-only. NEVER execute fetched code. Judge the content
+     against the plan's requirements: accomplished / partial / cannot-verify,
+     with a one-line reason. When the plan is a quiz/checklist (a list of
+     items), grade per item and produce a score (e.g. 8/10).
 4. Write to the PARENT's folder:
    - `references/analysis.html` — the owner's report, built from the HTML
      template below (see "Report template"): rollup stat tiles (X/N done,
@@ -141,8 +170,8 @@ offline, say "as of last sync" in the report.
    flip the parent's status.
 6. Report the status to the user in ONE short message: the rollup line
    (X/N done, Y verified) plus one line per member (name — status — verdict/
-   score). Then close the wizard (see CLOSING); for a group set
-   `readyForDone` false — completion is per-member, not an owner action.
+   score). Then finish per CLOSING (close in headless; wait in a popup); for a
+   group set `readyForDone` false — completion is per-member, not an owner action.
 
 ## Asking the user
 
@@ -153,9 +182,10 @@ could read from the task folder, the project, or git.
 
 ## On failure
 
-If you cannot analyze at all (missing folder, unreadable task), say so in
-one line, then close the wizard reporting the failure:
-`flow wizard <id> close '{"status":"error","errorStr":"<one-line reason>"}'`.
+If you cannot analyze at all (missing folder, unreadable task), say so in one
+line, then finish per CLOSING — in headless, report the failure by closing
+with `flow wizard <id> close '{"status":"error","errorStr":"<one-line reason>"}'`;
+in a popup, wait for the user to close it.
 
 ## Report template (analysis.html)
 
@@ -186,11 +216,10 @@ Semantics (use these consistently; keep the Legend card at the bottom):
   text.
 - Headline banner: `banner green` (ready for done / all verified),
   `banner orange` (mixed progress), `banner red` (nothing yet / blockers).
-- Standard mode: replace the Members card with a "Done-gate fields" card —
-  table columns `Field | Value | Source`, one row per `doneGateFields`
-  entry (`row-green` ✓ when filled, `row-red` ✗ when missing), and put the
-  ready-for-done verdict in the banner. Keep the Evidence card; add a
-  "What I filled in" list when you patched fields.
+- Standard mode: replace the Members card with a "Submission" card — show the
+  submission URL you posted / found (`row-green` ✓ when present, `row-red` ✗
+  when none exists yet), and put the ready-for-done verdict in the banner. Keep
+  the Evidence card.
 
 ```html
 <!doctype html>

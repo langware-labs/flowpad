@@ -1,5 +1,5 @@
 import { SharedTaskView } from '@src/components/task-bar/SharedTaskView';
-import { missingDoneGateFields, PRIORITY_CONFIG, STATUS_LABELS } from '@src/components/task-bar/constants';
+import { PRIORITY_CONFIG, STATUS_LABELS } from '@src/components/task-bar/constants';
 import { openArtifact } from '@src/components/task-bar/task-utils';
 import { Input } from '@src/components/ui/input';
 import { useEntityByPath } from '@src/hooks/use-entity-by-path';
@@ -12,12 +12,12 @@ import { notify } from '@src/notifications';
 import { Archive, ArrowLeft, FileText, User as UserIcon } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AnalyzeStatusButton } from './AnalyzeStatusButton';
-import { DoneGateDialog } from './DoneGateDialog';
 import { MemberTasksSection } from './MemberTasksSection';
 import { OwnerButton } from './OwnerButton';
 import { ParentTaskBlock } from './ParentTaskBlock';
 import { TaskAttachments } from './TaskAttachments';
 import { AssetCollisionBadge } from '../AssetCollisionUI';
+import { TaskComments } from './TaskComments';
 
 interface TaskAssetEditorProps {
   /** FSRef to the task folder. task.md / spec.md are resolved via child(). */
@@ -83,8 +83,6 @@ export function TaskAssetEditor({ fsRef, task: providedTask }: TaskAssetEditorPr
   const [title, setTitle] = useState(task?.title ?? '');
   useEffect(() => setTitle(task?.title ?? ''), [taskKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const [doneGateOpen, setDoneGateOpen] = useState(false);
-
   // Member task: opportunistically pull fresh parent display fields from the
   // hub (quiet no-op offline). Fire-and-forget — the watched parent query
   // repaints when the merge lands.
@@ -126,18 +124,6 @@ export function TaskAssetEditor({ fsRef, task: providedTask }: TaskAssetEditorPr
     [save],
   );
 
-  const handleStatusClick = useCallback(
-    (value: string) => {
-      const t = taskRef.current;
-      if (value === 'done' && t && missingDoneGateFields(t as unknown as Record<string, unknown>).length > 0) {
-        setDoneGateOpen(true); // gate — no save yet
-        return;
-      }
-      applyStatus(value);
-    },
-    [applyStatus],
-  );
-
   if (!task) {
     return <div className="flex h-full items-center justify-center text-sm text-muted-foreground">Loading…</div>;
   }
@@ -162,7 +148,7 @@ export function TaskAssetEditor({ fsRef, task: providedTask }: TaskAssetEditorPr
       {STATUS_OPTIONS.map((opt) => (
         <button
           key={opt.value}
-          onClick={() => handleStatusClick(opt.value)}
+          onClick={() => applyStatus(opt.value)}
           className={cn(
             'px-3 py-1 text-xs font-medium transition-colors',
             status === opt.value ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted',
@@ -183,15 +169,6 @@ export function TaskAssetEditor({ fsRef, task: providedTask }: TaskAssetEditorPr
       <Archive className="h-3.5 w-3.5" />
       Archive
     </button>
-  );
-
-  const doneGateDialog = (
-    <DoneGateDialog
-      task={task}
-      open={doneGateOpen}
-      onOpenChange={setDoneGateOpen}
-      onConfirmDone={() => applyStatus('done')}
-    />
   );
 
   // ── Member task: parent context on top, this task's own section below ──
@@ -225,6 +202,10 @@ export function TaskAssetEditor({ fsRef, task: providedTask }: TaskAssetEditorPr
             )}
           </ParentTaskBlock>
 
+          {/* Parent's comments, read-only. Collapsed by default and rendered
+              only when the parent actually has at least one comment. */}
+          <TaskComments task={parent} readOnly collapsible hideWhenEmpty title="Parent comments" />
+
           {/* This task — only the child's OWN data, nothing repeated from above. */}
           <div className="flex flex-col gap-3">
             <div className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
@@ -252,10 +233,12 @@ export function TaskAssetEditor({ fsRef, task: providedTask }: TaskAssetEditorPr
             </div>
           </div>
 
-          <TaskAttachments task={task} save={save} />
-        </div>
+          <div className="shrink-0">
+            <TaskAttachments task={task} save={save} />
+          </div>
 
-        {doneGateDialog}
+          <TaskComments task={task} />
+        </div>
       </div>
     );
   }
@@ -356,10 +339,18 @@ export function TaskAssetEditor({ fsRef, task: providedTask }: TaskAssetEditorPr
       </div>
 
       {/* ── Body ───────────────────────────────────────────────── */}
-      <MemberTasksSection task={task} />
-      <TaskAttachments task={task} save={save} />
-
-      {doneGateDialog}
+      {/* Each section takes its natural height and the column scrolls as a whole.
+          TaskAttachments' internal `flex-1` is neutralized by the plain block
+          wrapper so it can't grow and overlap the comments below it. */}
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+        <MemberTasksSection task={task} />
+        <div className="shrink-0">
+          <TaskAttachments task={task} save={save} />
+        </div>
+        <div className="shrink-0 px-6 py-4">
+          <TaskComments task={task} />
+        </div>
+      </div>
     </div>
   );
 }

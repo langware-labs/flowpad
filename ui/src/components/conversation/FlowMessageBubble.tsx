@@ -32,10 +32,6 @@ import { PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT } from './constants';
 import { AttachmentChip, AttachmentChipState } from './AttachmentChip';
 import { ContextEntityChip, EntityChip, iconForEntity } from './EntityChip';
 import { useIsAdvanced } from '@src/contexts/view-mode-context';
-import { ProjectSelectorModal, projectListToSelectorItems } from '@src/components/project-selector';
-import { useEnsureProject } from '@src/components/project-selector/use-ensure-project';
-import { useAllProjects } from '@src/hooks/use-all-projects';
-import { notify } from '@src/notifications';
 import { chipStateFor } from './useMessageAttachments';
 import { AssetReviewDialog } from './asset-review/AssetReviewDialog';
 import { TESTABLE_TYPES } from './asset-review/test-prompt';
@@ -571,6 +567,9 @@ export function FlowMessageBubble({
                 attachment={messageAttachments?.find(
                   (ma) => ma.asset_type === typeId.type && ma.asset_id === String(typeId.id),
                 )}
+                // The whole message's attachments — the review modal lists them
+                // all on the left, with the clicked chip pinned + selected.
+                siblingAttachments={messageAttachments}
               />
             ))}
           </div>
@@ -580,7 +579,12 @@ export function FlowMessageBubble({
         {fileAttachments.length > 0 && (
           <div className="flex flex-wrap gap-1">
             {fileAttachments.map((ma) => (
-              <MessageFileChip key={`file:${ma.id}`} attachment={ma} projectId={attachmentProjectId} />
+              <MessageFileChip
+                key={`file:${ma.id}`}
+                attachment={ma}
+                projectId={attachmentProjectId}
+                siblingAttachments={messageAttachments}
+              />
             ))}
           </div>
         )}
@@ -710,7 +714,15 @@ export function FlowMessageBubble({
  * File chip (installed); clicking opens the review modal (install / uninstall +
  * content preview live there), matching the entity-chip flow.
  */
-function MessageFileChip({ attachment, projectId }: { attachment: MessageAttachment; projectId?: string | null }) {
+function MessageFileChip({
+  attachment,
+  projectId,
+  siblingAttachments,
+}: {
+  attachment: MessageAttachment;
+  projectId?: string | null;
+  siblingAttachments?: MessageAttachment[];
+}) {
   const [reviewOpen, setReviewOpen] = useState(false);
   const typeId = new TypeId('file', String(attachment.asset_id ?? ''));
   return (
@@ -730,8 +742,8 @@ function MessageFileChip({ attachment, projectId }: { attachment: MessageAttachm
         <AssetReviewDialog
           open={reviewOpen}
           onClose={() => setReviewOpen(false)}
-          attachment={attachment}
-          targetTypeId={typeId}
+          attachments={siblingAttachments?.length ? siblingAttachments : [attachment]}
+          initialAttachmentId={attachment.id}
           attachmentProjectId={projectId ?? null}
         />
       )}
@@ -796,23 +808,19 @@ function MessageEntityChip({
   projectId,
   forceShow,
   attachment,
+  siblingAttachments,
 }: {
   typeId: TypeId;
   conversationId: string;
   projectId?: string | null;
   forceShow: boolean;
   attachment?: MessageAttachment;
+  siblingAttachments?: MessageAttachment[];
 }) {
   const { navigation } = useDockNavigation();
   const isAdvanced = useIsAdvanced();
   const { start: startSkillRun, picker: runPicker } = useRunSkillWithProjectPrompt();
   const [reviewOpen, setReviewOpen] = useState(false);
-  // Task install always targets a project (never global): when the conversation
-  // isn't mapped to one, clicking the chip opens this picker to choose it.
-  const [taskPickerOpen, setTaskPickerOpen] = useState(false);
-  const { projects, isLoading: projectsLoading } = useAllProjects({ enabled: taskPickerOpen });
-  const projectItems = useMemo(() => projectListToSelectorItems(projects), [projects]);
-  const ensureProject = useEnsureProject();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data } = useEntity<APIEntity<any>>(typeId);
   const state = chipStateFor(!!data, attachment, forceShow);
@@ -849,57 +857,13 @@ function MessageEntityChip({
         }
       }
     : null;
-  // Assigned-task chip: clicking unpacks + installs the staged task folder
-  // (task.md) so it lands in the task list. A task ALWAYS installs into a
-  // project — never global: if the conversation is mapped to a project we
-  // install there, otherwise the click opens a project picker and the install
-  // happens once one is chosen (handleTaskProjectPick). Git context folders
-  // referenced by the task ride as their own folder chips (the wizard-clone
-  // path above); loose attachment files ride as ordinary file attachments.
-  const mappedProjectId = projectId ?? dataContext.project?.id ?? null;
-  const handleTaskInstall =
-    typeId.type === Task.type && attachment && !attachment.installed
-      ? async () => {
-          if (!mappedProjectId) {
-            setTaskPickerOpen(true);
-            return;
-          }
-          try {
-            await attachment.install('project', mappedProjectId);
-          } catch (err) {
-            console.error('[task-install] failed', err);
-            notify.error({ title: 'Install failed' });
-          }
-        }
-      : null;
-  // Chosen from the picker (no mapped project): ensure the project exists, then
-  // install the task into it. Never falls back to global scope.
-  const handleTaskProjectPick = async (id: string) => {
-    if (!attachment) return;
-    const picked = projectItems.find((item) => item.id === id);
-    if (!picked?.path) return;
-    setTaskPickerOpen(false);
-    try {
-      const project = await ensureProject(picked.path, { select: false });
-      if (!project.id) throw new Error('picked project has no id');
-      await attachment.install('project', project.id);
-      notify.success({ title: 'Installed in project', message: project.displayName });
-    } catch (err) {
-      console.error('[task-install] project install failed', err);
-      notify.error({ title: 'Install failed' });
-    }
-  };
-  const taskPicker = handleTaskInstall ? (
-    <ProjectSelectorModal
-      open={taskPickerOpen}
-      onOpenChange={setTaskPickerOpen}
-      projects={projectItems}
-      selectedId={null}
-      onSelect={(id) => void handleTaskProjectPick(id)}
-      isLoading={projectsLoading}
-      title="Install task in project"
-    />
-  ) : null;
+  // Assigned-task chips install through the SAME review dialog as every other
+  // staged entity — the dialog's Select-project / Install-in-project owns the
+  // placement (project scope). No separate task project-picker: a staged task
+  // chip falls through to `setReviewOpen(true)` below, so the click opens one
+  // surface (the review dialog), never a picker-then-dialog pair. Git context
+  // folders referenced by the task ride as their own folder chips (the
+  // wizard-clone path above); loose attachment files ride as file attachments.
   // "Run icon near the skill": one-click install-if-needed + run in a Vibe
   // session (see useRunReceivedSkill). Only for skills with a staged/installed
   // attachment — not artifacts or plain shares.
@@ -922,8 +886,8 @@ function MessageEntityChip({
     <AssetReviewDialog
       open={reviewOpen}
       onClose={() => setReviewOpen(false)}
-      attachment={attachment}
-      targetTypeId={typeId}
+      attachments={siblingAttachments?.length ? siblingAttachments : [attachment]}
+      initialAttachmentId={attachment.id}
       attachmentProjectId={projectId ?? null}
     />
   );
@@ -934,19 +898,12 @@ function MessageEntityChip({
           <EntityChip
             entity={{ typeId, type: typeId.type, id: typeId.id, name: attachment!.name ?? typeId.type }}
             staged
-            onClick={
-              handleFolderPull
-                ? () => void handleFolderPull()
-                : handleTaskInstall
-                  ? () => void handleTaskInstall()
-                  : () => setReviewOpen(true)
-            }
+            onClick={handleFolderPull ? () => void handleFolderPull() : () => setReviewOpen(true)}
           />
           {runButton}
         </span>
         {dialog}
         {runPicker}
-        {taskPicker}
       </>
     );
   }
