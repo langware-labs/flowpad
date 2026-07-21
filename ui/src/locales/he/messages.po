@@ -6216,7 +6216,6 @@ msgstr "התקן והפעל מחדש"
 #: src/components/conversation/asset-review/AssetInstallActions.tsx
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
-#: src/components/conversation/asset-review/AssetReviewDialog.tsx
 msgid "Install failed"
 msgstr "ההתקנה נכשלה"
 
@@ -6231,7 +6230,6 @@ msgstr "התקנה גלובלית"
 
 #: src/components/conversation/asset-review/AssetInstallActions.tsx
 #: src/components/conversation/asset-review/AssetInstallActions.tsx
-#: src/components/conversation/asset-review/AssetReviewDialog.tsx
 #: src/components/conversation/asset-review/AssetReviewDialog.tsx
 msgid "Install in project"
 msgstr "התקנה בפרויקט"
