@@ -265,6 +265,29 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
   }
 
   /**
+   * Fan out an "install in project" pick to the whole conversation: install
+   * EVERY attachment of this conversation into ``projectId``. Backs binding a
+   * conversation to a project so all its current assets (and, via the reception
+   * path, future arrivals) become project assets. Receiver-local — no
+   * hub-reflect. Returns the per-attachment outcome buckets.
+   */
+  async installAttachmentsIntoProject(
+    projectId: string,
+  ): Promise<{ installed: string[]; skipped: string[]; failed: string[] }> {
+    const action = new ActionInfo('install-attachments', this.typeId.type, this.typeId.id, 'POST');
+    action.bodyParameters = { project_id: projectId };
+    const res = await dataManager.callAction<
+      unknown,
+      { installed: string[]; skipped: string[]; failed: string[] }
+    >(action);
+    return {
+      installed: res?.installed ?? [],
+      skipped: res?.skipped ?? [],
+      failed: res?.failed ?? [],
+    };
+  }
+
+  /**
    * Reactive subscription to FlowMessage activity on this conversation.
    *
    * Wraps APIEntity's event emitter so callers can write

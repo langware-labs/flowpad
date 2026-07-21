@@ -47,7 +47,11 @@ export interface StartedWizard<T = unknown> {
  * always headless (`visible:false`); whether a modal viewer mounts on it is the
  * caller's choice — that's the only difference between the two paths.
  */
-export async function startWizardProcess<T = unknown>(request: WizardLaunchRequest): Promise<StartedWizard<T>> {
+export async function startWizardProcess<T = unknown>(
+  request: WizardLaunchRequest,
+  opts?: { headless?: boolean },
+): Promise<StartedWizard<T>> {
+  const headless = opts?.headless ?? false;
   const computeNode = await ComputeNode.getById('@local');
   if (!computeNode) throw new Error('No local compute node');
 
@@ -68,7 +72,7 @@ export async function startWizardProcess<T = unknown>(request: WizardLaunchReque
     { visible: false, pty_mode: false },
   );
 
-  const initialPrompt = buildWizardPrompt(process.id, request);
+  const initialPrompt = buildWizardPrompt(process.id, request, { headless });
   // Subscribe for the close event BEFORE embedding/prompting so we can't miss it.
   const wizardClosed = awaitWizardResult<T>(process);
 
@@ -80,16 +84,26 @@ export async function startWizardProcess<T = unknown>(request: WizardLaunchReque
     console.warn(`[startWizardProcess] failed to embed wizard agent ${request.wizardName}`, e);
   }
 
-  // A prompt-level failure never fires `wizard.closed`, so race it in as an
-  // error result rather than leaving `result` pending forever.
-  const result = Promise.race<WizardProcessResult<T>>([
-    wizardClosed,
-    new Promise<WizardProcessResult<T>>((resolve) => {
-      void process.prompt(initialPrompt).catch((err) => {
+  // `result` resolves on the FIRST of:
+  //  - `wizard.closed` — the agent closed with its verdict (preferred; carries data);
+  //  - prompt error — the turn failed;
+  //  - (headless only) the prompt RESOLVING — the agent's turn ended cleanly.
+  // The last one is the safety net: a headless run must not hang forever just
+  // because the agent finished without closing the wizard (worker_status goes
+  // `complete`, but no `wizard.closed` ever arrives). Modal runs deliberately
+  // omit it — there the user closes via Done, so a bare turn-end must NOT end
+  // the wizard.
+  const result = new Promise<WizardProcessResult<T>>((resolve) => {
+    void wizardClosed.then(resolve);
+    void process
+      .prompt(initialPrompt)
+      .then(() => {
+        if (headless) resolve({ status: 'done', data: null });
+      })
+      .catch((err) => {
         resolve({ status: 'error', data: null, errorStr: err instanceof Error ? err.message : String(err) });
       });
-    }),
-  ]);
+  });
 
   return { process, target, result };
 }
