@@ -203,7 +203,11 @@ class CloudManager extends EventEmitter {
     // leaving the avatar stuck on whatever state we saw last.
     cm.on('on_reconnected', () => { void this._refreshFromStatus(); });
 
-    if (this.isLoggedIn) await this._refreshFromStatus();
+    // Always verify login on load, even when the bootstrap seed says logged-out:
+    // a freshly-booted sandbox whose auto-login failed seeds logged-out and would
+    // otherwise never run a check, so the footer cloud-disconnected warning (with
+    // its sign-in action) wouldn't surface. This IS the "login check first" on open.
+    await this._refreshFromStatus();
   }
 
   async login(): Promise<CloudLoginResult | void> {
@@ -521,9 +525,12 @@ class CloudManager extends EventEmitter {
   }
 
   private async _refreshFromStatus(): Promise<CloudStatusData | null> {
-    // Hub mode: the hub backend has no `/cloud/status` route (404). No cloud
-    // login/connection layer to refresh — treat as a no-op.
-    if (isHubOnly()) return null;
+    // No cloud layer to refresh in these modes, so don't hit `/cloud/status`:
+    //  - Hub mode: the hub backend has no such route (404).
+    //  - Local (private) data-privacy mode: the cloud is off-limits by contract
+    //    (see login()'s hard gate). Gating here — not just at the callers — keeps
+    //    bootstrap's unconditional on-load refresh and on_reconnected both correct.
+    if (isHubOnly() || privacyManager.isLocal) return null;
     try {
       const data = await apiClient.get<CloudStatusData>('/cloud/status');
       if (data?.cloud_url) this._cloudUrl = data.cloud_url;

@@ -915,6 +915,18 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         await project.save()
         await project.setup_for_desktop()
 
+        # Explicit one-shot scan of the freshly cloned tree so the project is
+        # fully indexed (skills/agents/assets discoverable) the moment the caller
+        # lands in it — save()/setup_for_desktop() only stamp an empty index
+        # sentinel. This is user-initiated (an explicit clone request), so it's
+        # the sanctioned one-shot index, not a banned auto-walk — the same call
+        # Project.add_context_dir makes on a new context folder.
+        from flow_sdk.builtin.agentic_process.agentic_process import (
+            _index_additional_dir,
+        )
+
+        await _index_additional_dir(target_dir)
+
         return ApiSuccessResponse(data={"project": project.model_dump(mode="json")})
 
     @action.post(action_name="find-local-repo")

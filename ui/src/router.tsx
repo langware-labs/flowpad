@@ -18,7 +18,15 @@ import WrongAccountPage from '@src/pages/entry/WrongAccountPage';
 import MessageLanding from '@src/pages/entry/MessageLanding';
 import NotFound from '@src/pages/NotFound';
 import App from '@src/App';
-import { createBrowserRouter, createRoutesFromElements, Navigate, Outlet, Route, useLocation, type ShouldRevalidateFunctionArgs } from 'react-router';
+import {
+  createBrowserRouter,
+  createRoutesFromElements,
+  Navigate,
+  Outlet,
+  Route,
+  useLocation,
+  type ShouldRevalidateFunctionArgs,
+} from 'react-router';
 
 /**
  * Root-level `/dev/<anything-not-main-or-hooks>` URLs forward to `/dock/<same>`.
@@ -60,11 +68,7 @@ import { loadHomePage } from './routes/loaders/home-loader';
 import { loadAgentApp } from './routes/loaders/main-loader';
 import { loadRoot } from './routes/loaders/root-loader';
 
-function shouldRevalidateDock({
-  currentUrl,
-  nextUrl,
-  defaultShouldRevalidate,
-}: ShouldRevalidateFunctionArgs): boolean {
+function shouldRevalidateDock({ currentUrl, nextUrl, defaultShouldRevalidate }: ShouldRevalidateFunctionArgs): boolean {
   if (
     // The dock loader (`loadAgentApp` → `loadDockPointer`) is the single writer
     // of URL-derived context — project, process, conversation, asset, … — and
@@ -103,8 +107,8 @@ export const router = createBrowserRouter(
           bookmarks/links keep working after the console is retired. (On a
           desk-only server these targets get bounced back to /dock/home by the
           main-loader supported_pages guard, so they're harmless there.) */}
-      <Route path="organization" element={<Navigate to="/dock/hub/atlas/organization" replace />} />
-      <Route path="org-graph" element={<Navigate to="/dock/hub/atlas/world" replace />} />
+      <Route path="organization" element={<Navigate to="/dock/hub/worldview/organization" replace />} />
+      <Route path="org-graph" element={<Navigate to="/dock/hub/worldview/world" replace />} />
       {/* Discover — full-page asset marketplace. Sits inside RootLayout (so
           loadRoot/auth/theme gate it) but OUTSIDE AgentLayout/FlowPage, so it
           renders full-screen with its own chrome (no sidebar/tab strip). */}
@@ -117,7 +121,13 @@ export const router = createBrowserRouter(
       <Route path="wrong_account" element={<WrongAccountPage />} />
       <Route path="flow_message/:messageId" element={<MessageLanding />} />
       {/* Root dock routes - use default agent from bootstrap */}
-      <Route path="dock" element={<AgentLayout />} loader={loadAgentApp} shouldRevalidate={shouldRevalidateDock} errorElement={<ErrorScreen />}>
+      <Route
+        path="dock"
+        element={<AgentLayout />}
+        loader={loadAgentApp}
+        shouldRevalidate={shouldRevalidateDock}
+        errorElement={<ErrorScreen />}
+      >
         <Route index element={<Navigate to="/" replace />} />
         <Route path=":viewType" element={<FlowPage />} />
         <Route path=":viewType/*" element={<FlowPage />} />

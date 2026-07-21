@@ -77,7 +77,14 @@ async def reindex_paths(
     # the raw touched path — extract_skill et al. would mis-name a raw inner path.
     async def _resync(entity, fallback: str):
         target = str(getattr(entity, "asset_ref", None) or fallback)
-        return await discover_record_by_path(entity.type, target, notify=True)
+        # Thread the already-resolved entity id so a portable asset whose in-file
+        # identity capsule was wiped by a full-content overwrite re-stamps the
+        # ORIGINAL id (same entity updates) instead of forking a fresh v4. Only
+        # consulted on a capsule miss; folder/carrier-intact types ignore it.
+        entity_id = getattr(entity, "id", None)
+        return await discover_record_by_path(
+            entity.type, target, notify=True, proposed_id=str(entity_id) if entity_id else None
+        )
 
     # De-dupe while preserving order.
     changed = list(dict.fromkeys(_norm(x) for x in paths))

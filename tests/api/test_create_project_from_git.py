@@ -61,6 +61,47 @@ async def test_create_project_from_git_happy_path(bootstrapped_client):
 # do not increase timeout without approval
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)
+async def test_create_project_from_git_indexes_clone(bootstrapped_client, monkeypatch):
+    """A successful clone must run a one-shot indexer scan of the cloned tree so
+    the project lands fully indexed (skills/agents/assets discoverable), not just
+    minted. We spy the sanctioned ``_index_additional_dir`` seam to assert the
+    wiring without depending on indexer corpus timing."""
+    import flow_sdk.builtin.agentic_process.agentic_process as agentic_process
+
+    bootstrap = await bootstrapped_client.get("/api/v1/graph/bootstrap")
+    cn_id = _cn_id(bootstrap.json())
+
+    leaf = "Indexed-World"
+    target = Path(AGENT_MOUNT_FOLDER) / leaf
+    if target.exists():
+        import shutil
+        shutil.rmtree(target)
+
+    indexed: list[str] = []
+
+    async def _spy_index(path: str) -> None:
+        indexed.append(path)
+
+    # Patched at the module attribute — the action imports the symbol lazily
+    # inside the function body, so it resolves the patched version at call time.
+    monkeypatch.setattr(agentic_process, "_index_additional_dir", _spy_index)
+
+    with patch("flow_sdk.utils.git.git_clone", side_effect=_fake_git_clone):
+        r = await bootstrapped_client.post(
+            f"/api/v1/graph/compute_node/{cn_id}/create-project-from-git",
+            json={"git_origin": _origin(f"https://github.com/octocat/{leaf}.git")},
+        )
+
+    assert r.status_code == 200, r.text
+    project = r.json()["data"]["project"]
+    assert project["fs_storage_mount_path"].endswith(f"/{leaf}")
+    # The cloned tree was scanned exactly once, at its own path.
+    assert indexed == [str(target)]
+
+
+# do not increase timeout without approval
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)
 async def test_create_project_from_git_collision_suggests(bootstrapped_client):
     bootstrap = await bootstrapped_client.get("/api/v1/graph/bootstrap")
     cn_id = _cn_id(bootstrap.json())

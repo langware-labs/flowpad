@@ -126,13 +126,17 @@ export function StatusBar({ className = '' }: StatusBarProps) {
         >
           <button
             onClick={() => navigation.openDock(DockPointer.forProject(project.id))}
-            className="shrink-0 whitespace-nowrap text-xs font-medium transition-colors hover:underline"
+            // Flexible, truncating slot: it is the ONE element in the footer
+            // allowed to shrink. min-w-0 defeats the flex min-content floor so
+            // the name ellipsizes (instead of overrunning the bar) under width
+            // pressure; max-w keeps one long name from starving the counters.
+            // Full name stays reachable via title + aria-label.
+            className="block min-w-0 max-w-[34ch] shrink truncate text-left text-xs font-medium transition-colors hover:underline"
             style={isRoot ? glowStyle : { color: 'var(--muted-foreground)' }}
+            title={project.displayName}
             aria-label={isRoot ? rootTooltip : projectPath ? t`Open project view — ${projectPath}` : t`Open project view`}
           >
-            {project.displayName.length > 20
-              ? `${project.displayName.slice(0, 20)}…`
-              : project.displayName}
+            {project.displayName}
           </button>
         </WikiTip>
         {projectPath && computeNode && (

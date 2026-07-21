@@ -1616,6 +1616,21 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     if (cachedSource) {
       source.expand = this.mergeExpansions(cachedSource.expand, source.expand);
 
+      // Collision occurrences are a complete backend projection. They must
+      // replace the cached array: deepAssign merges arrays by index and would
+      // otherwise retain deleted trailing paths after a 3 -> 2 -> 1 update.
+      let assignSource = source;
+      if (Array.isArray(source.asset_occurrences)) {
+        cachedSource.asset_occurrences = source.asset_occurrences.map(
+          (occurrence: unknown) =>
+            occurrence && typeof occurrence === 'object'
+              ? { ...(occurrence as Record<string, unknown>) }
+              : occurrence,
+        );
+        const { asset_occurrences: _assetOccurrences, ...rest } = source;
+        assignSource = rest;
+      }
+
       const maybeOnEntityUpdate = (cachedSource as any).onEntityUpdate;
       const hasEntityUpdateHook = typeof maybeOnEntityUpdate === 'function';
       if (hasEntityUpdateHook) {
@@ -1628,11 +1643,11 @@ export class DataManager<T extends Manageable> extends EventEmitter {
 
       // When entities provide their own update hook, avoid clobbering normalized
       // state fields with raw snake_case payloads.
-      if (hasEntityUpdateHook && source && typeof source === 'object' && 'state' in source) {
-        const { state: _ignoredState, ...rest } = source;
+      if (hasEntityUpdateHook && assignSource && typeof assignSource === 'object' && 'state' in assignSource) {
+        const { state: _ignoredState, ...rest } = assignSource;
         this.deepAssign(cachedSource, rest);
       } else {
-        this.deepAssign(cachedSource, source);
+        this.deepAssign(cachedSource, assignSource);
       }
       // ``deepAssign`` re-adds the raw ``shared_context_entities`` /
       // ``private_context_entities`` string arrays without the constructor's

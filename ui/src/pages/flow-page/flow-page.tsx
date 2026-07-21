@@ -59,7 +59,7 @@ export default function FlowPage() {
   const isVibeNoProcess = currentDock?.viewType === ViewType.HOME && currentDock.options?.vibeNoProcess === 'true';
   // The hub page is its own SPA-surface — vibe skinning (a desk view-mode) does
   // not apply. Route it through the standard layout so ContentPanel's page=hub
-  // dispatch renders HubHome / the Atlas instead of the desk VibeNewChat hero.
+  // dispatch renders HubHome / WorldView instead of the desk VibeNewChat hero.
   const hubMode = currentDock?.page === PageId.HUB;
 
   // Vibe mode: a stripped Lovable-style skin that still carries the left rail in

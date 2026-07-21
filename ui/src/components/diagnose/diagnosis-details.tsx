@@ -1,17 +1,12 @@
 import { DiagnosisActionButtons } from '@src/components/diagnose/diagnosis-action-buttons';
-import {
-  copyToClipboard,
-  FlowpadDiagnosis,
-  forwardDiagnosis,
-  sendDiagnosisEmailReport,
-  TypeId,
-} from '@sdk';
+import { useDiagnosisReport } from '@src/components/diagnose/use-diagnosis-report';
+import { copyToClipboard, FlowpadDiagnosis, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { notify } from '@src/notifications';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { Copy, Loader2 } from 'lucide-react';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 
 interface DiagnosisDetailsProps {
@@ -82,8 +77,7 @@ export function DiagnosisDetails({
   );
   const { data: diag, isLoading } = useEntity<FlowpadDiagnosis>(typeId, { enabled: !!typeId });
 
-  const [reporting, setReporting] = useState(false);
-  const [reportError, setReportError] = useState<string | undefined>(undefined);
+  const { report, forward, busy, reported, error: reportError } = useDiagnosisReport(diagnosisId);
 
   const fields: Field[] = diag ? diagnosisFields(diag) : [];
 
@@ -95,37 +89,19 @@ export function DiagnosisDetails({
 
   // "Report issue" — email the diagnosis to the Flowpad team.
   const handleReportIssue = useCallback(async () => {
-    if (!diagnosisId) return;
-    setReporting(true);
-    setReportError(undefined);
-    try {
-      await sendDiagnosisEmailReport(diagnosisId);
-      onActionDone?.();
-    } catch (e) {
-      setReportError(e instanceof Error ? e.message : t`Failed to send report`);
-    } finally {
-      setReporting(false);
-    }
-  }, [diagnosisId, onActionDone, t]);
+    if (await report()) onActionDone?.();
+  }, [report, onActionDone]);
 
   // "Forward" — attach the diagnosis entity into the chosen conversation.
   const handleForward = useCallback(
     async (targetConversationId: string) => {
-      if (!diagnosisId) return;
-      setReporting(true);
-      setReportError(undefined);
-      try {
-        await forwardDiagnosis(targetConversationId, diagnosisId);
+      if (await forward(targetConversationId)) {
         // Open the conversation we just forwarded into, replacing the current view.
         navigation.openDock(DockPointer.forConversation(targetConversationId));
         onActionDone?.();
-      } catch (e) {
-        setReportError(e instanceof Error ? e.message : t`Failed to send report`);
-      } finally {
-        setReporting(false);
       }
     },
-    [diagnosisId, navigation, onActionDone, t],
+    [forward, navigation, onActionDone],
   );
 
   if (isLoading) {
@@ -187,8 +163,9 @@ export function DiagnosisDetails({
           diagnosis), Forward posts the report into a chosen conversation. */}
       <DiagnosisActionButtons
         suggestedConversationId={conversationId}
-        busy={reporting}
+        busy={busy}
         error={reportError}
+        reported={reported}
         showDismiss={false}
         canReport={!!diagnosisId}
         diagnosisId={diagnosisId}

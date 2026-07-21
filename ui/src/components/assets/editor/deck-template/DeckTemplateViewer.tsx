@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { FSRef, type DeckTemplate } from '@sdk';
 import { Dialog, DialogContent } from '@src/components/ui/dialog';
 import { entityReloadKey } from '@src/utils/entity-reload-key';
+import { AssetCollisionBadge } from '../AssetCollisionUI';
 
 /**
  * DeckTemplateViewer — a gallery of a deck template's layouts.
@@ -124,7 +125,10 @@ export function DeckTemplateViewer({ fsRef, deckTemplate }: DeckTemplateViewerPr
   return (
     <div className="flex h-full flex-col overflow-auto">
       <div className="border-b border-border px-6 py-4">
-        <h1 className="text-lg font-semibold">{title}</h1>
+        <div className="flex items-center gap-2">
+          <h1 className="text-lg font-semibold">{title}</h1>
+          <AssetCollisionBadge />
+        </div>
         <p className="text-sm text-muted-foreground">
           {layouts.length} layout{layouts.length === 1 ? '' : 's'}
           {deckTemplate?.description ? ` · ${deckTemplate.description}` : ''}

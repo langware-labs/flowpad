@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { FolderOpen, Home, Link, Trash2 } from 'lucide-react';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { AssetEditor, AssetMode, AssetRoutingMethod } from '@src/navigation/asset-doc-types';
@@ -213,6 +213,15 @@ export function useAssetsModel() {
   // (react-query `isLoading` is first-load-only, so scope refetches with a warm
   // cache don't re-flash it). Dev mode never gates on counts.
   const menuLoading = typesLoading || (!isDev && statsLoading);
+  {
+    const w = window as any;
+    w.__DBG_RENDER = (w.__DBG_RENDER || 0) + 1;
+    w.__DBG_ASSET_LOAD = { typesLoading, statsLoading, isDev, menuLoading, renders: w.__DBG_RENDER, t: Date.now() };
+  }
+  useEffect(() => {
+    const w = window as any;
+    w.__DBG_MOUNTS = (w.__DBG_MOUNTS || 0) + 1;
+  }, []);
 
   // Reactivity only: keep each type's tree root live. A created / indexed /
   // scanned entity arrives as a `data_op`; this re-fetches the affected root
