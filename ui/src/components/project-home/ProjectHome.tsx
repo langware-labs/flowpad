@@ -3,6 +3,7 @@ import { MembersAvatarStack } from '@src/components/conversation/MembersAvatarSt
 import { QuickCreatePanel, useQuickCreatePick } from '@src/components/quick-create/QuickCreatePanel';
 import { SecretsCard } from './SecretsCard';
 import { HomeCustomizationCard } from './HomeCustomizationCard';
+import { VibeAgentsCard } from './VibeAgentsCard';
 import { Button } from '@src/components/ui/button';
 import { useContext as useDataContext } from '@src/hooks/useContext';
 import { WorkerToolbar } from '@src/components/workers/WorkerToolbar';
@@ -178,6 +179,11 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, showSe
           {/* Home customization — title + background written to .flow/customization/. */}
           {dataCtx.project?.id === projectId && dataCtx.project && (
             <HomeCustomizationCard project={dataCtx.project as unknown as Project} />
+          )}
+
+          {/* Vibe agents — kind==vibe agents layered onto the standard vibe agent. */}
+          {dataCtx.project?.id === projectId && dataCtx.project && (
+            <VibeAgentsCard project={dataCtx.project as unknown as Project} />
           )}
         </div>
       </div>
