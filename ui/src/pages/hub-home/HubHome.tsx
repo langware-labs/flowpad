@@ -2,6 +2,8 @@ import { ExecutionEnvironmentStatus, gitOriginFromUrl, gitOriginRepoFullName, Pa
 import type { GitOrigin } from '@sdk';
 import { useAuth } from '@sdk/react/hooks';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { DockPointer } from '@src/navigation/DockPointer';
+import { useContext } from '@src/hooks/useContext';
 import { useProjects } from '@src/hooks/use-projects';
 import { useDesktops, type Step, type DesktopDetails, type TemplateLaunch } from '@src/hooks/use-desktops';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
@@ -102,6 +104,9 @@ export function HubHome() {
   const { t } = useLingui();
   const { currentUser } = useAuth();
   const { navigation } = useDockNavigation();
+  // Current project is the same source the footer's StatusBar reads
+  // (dataContext.project), so the highlighted card and the footer always agree.
+  const { project: currentProject } = useContext();
   const { projects } = useProjects();
   const {
     desktops,
@@ -213,14 +218,29 @@ export function HubHome() {
               <Trans>Projects</Trans>
             </h2>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {projects.map((p) => (
-                <div key={p.id} className="flex items-center gap-3 rounded-lg border border-border bg-card px-4 py-3">
-                  <FolderGit2 className="h-4 w-4 shrink-0 text-muted-foreground" />
-                  <span className="truncate text-sm" title={p.name ?? undefined}>
-                    {p.name || t`Untitled project`}
-                  </span>
-                </div>
-              ))}
+              {projects.map((p) => {
+                const isCurrent = currentProject?.id === p.id;
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    aria-pressed={isCurrent}
+                    // Clicking opens the project dock, which sets CurrentProject
+                    // context — the same navigation the footer's name button uses,
+                    // so the footer follows the click. URL-first: only openDock.
+                    onClick={() => navigation.openDock(DockPointer.forProject(p.id))}
+                    className={`flex items-center gap-3 rounded-lg border px-4 py-3 text-left transition-colors hover:bg-accent ${
+                      isCurrent ? 'border-primary bg-primary/5' : 'border-border bg-card'
+                    }`}
+                    title={p.displayName}
+                  >
+                    <FolderGit2 className={`h-4 w-4 shrink-0 ${isCurrent ? 'text-primary' : 'text-muted-foreground'}`} />
+                    <span className="truncate text-sm">
+                      {p.displayName || t`Untitled project`}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           </div>
         )}

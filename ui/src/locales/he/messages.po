@@ -1585,6 +1585,10 @@ msgstr "שרת הסיוג לא מגיב. אנא נסה שוב מאוחר יות�
 msgid "Backend URL not configured"
 msgstr "URL של Backend לא מוגדר"
 
+#: src/components/project-home/HomeCustomizationCard.tsx
+msgid "Background image"
+msgstr ""
+
 #: src/components/account/database-section.tsx
 msgid "Backing up..."
 msgstr "מגבה..."
@@ -1678,6 +1682,11 @@ msgstr "ענף"
 #: src/components/GitHubConnectionDialog.tsx
 msgid "Branch:"
 msgstr "ענף:"
+
+#. placeholder {0}: HOME_STRINGS_PATH.replace('/string.json', '')
+#: src/components/project-home/HomeCustomizationCard.tsx
+msgid "Brand this project's home ({0}). Applies on every home surface when this is the active project."
+msgstr ""
 
 #: src/components/ui/breadcrumb.tsx
 msgid "breadcrumb"
@@ -4936,6 +4945,10 @@ msgstr "נכשל בפתיחת תיקיית הרישומים"
 msgid "Failed to open project"
 msgstr "נכשל בפתיחת הפרויקט"
 
+#: src/components/project-home/HomeCustomizationCard.tsx
+msgid "Failed to remove image"
+msgstr ""
+
 #: src/components/workflows-view/WorkflowsNavigator.tsx
 #~ msgid "Failed to rename workflow"
 #~ msgstr "שינוי שם זרימת עבודה נכשל"
@@ -4967,6 +4980,10 @@ msgstr "כשל בשמירת סוד"
 #: src/tabs/useTerminalStripController.tsx
 msgid "Failed to save the context snapshot."
 msgstr "שגיאה בשמירת תמונת ההקשר."
+
+#: src/components/project-home/HomeCustomizationCard.tsx
+msgid "Failed to save title"
+msgstr ""
 
 #: src/components/conversation/MessageComposer.tsx
 msgid "Failed to send draft"
@@ -5051,6 +5068,10 @@ msgstr "נכשלה עדכון החוק"
 #: src/components/hooks-manager/index.tsx
 msgid "Failed to update trigger"
 msgstr "עדכון הטריגר נכשל"
+
+#: src/components/project-home/HomeCustomizationCard.tsx
+msgid "Failed to upload image"
+msgstr ""
 
 #: src/components/chat-input.tsx
 #~ msgid "Failed to upload the zip file. Please try again."
@@ -5834,9 +5855,30 @@ msgstr "הדגש שינויים מאז הלהט האחרון"
 
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
+#: src/components/project-home/HomeCustomizationCard.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "Home"
 msgstr "בית"
+
+#: src/components/project-home/HomeCustomizationCard.tsx
+msgid "Home background"
+msgstr ""
+
+#: src/components/project-home/HomeCustomizationCard.tsx
+msgid "Home background removed"
+msgstr ""
+
+#: src/components/project-home/HomeCustomizationCard.tsx
+msgid "Home background updated"
+msgstr ""
+
+#: src/components/project-home/HomeCustomizationCard.tsx
+msgid "Home title"
+msgstr ""
+
+#: src/components/project-home/HomeCustomizationCard.tsx
+msgid "Home title saved"
+msgstr ""
 
 #: src/components/lens-viewer/shared/transcript-features/TranscriptEntryItem.tsx
 msgid "hook"
@@ -6456,6 +6498,10 @@ msgstr "לשמור"
 #: src/components/image-annotator/ImageAnnotator.tsx
 msgid "Keep editing"
 msgstr "המשך עריכה"
+
+#: src/components/project-home/HomeCustomizationCard.tsx
+msgid "Keep the default greeting…"
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 #~ msgid "Keep Waiting"
@@ -10487,6 +10533,10 @@ msgstr "טען מחדש את רשימת MarkdownIndex."
 #~ msgid "Remind in {count} {0}"
 #~ msgstr "הזכר בעוד {count} {0}"
 
+#: src/components/project-home/HomeCustomizationCard.tsx
+msgid "Remove"
+msgstr ""
+
 #: src/components/conversation/MessageComposer.tsx
 msgid "Remove attachment"
 msgstr "הסרת קובץ מצורף"
@@ -10595,6 +10645,10 @@ msgstr "שינוי שם מועדף"
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "Reopen"
 msgstr "פתח מחדש"
+
+#: src/components/project-home/HomeCustomizationCard.tsx
+msgid "Replace"
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/pty-events-viewer/PTYEventsViewer.tsx
 #: src/components/terminal/interactive-terminal/pty-events-viewer/PTYEventsViewer.tsx
@@ -11098,6 +11152,7 @@ msgstr "מדדי Sandbox"
 #: src/components/hooks-manager/TriggerForm.tsx
 #: src/components/hooks-view/HookEditor.tsx
 #: src/components/image-annotator/AnnotatorToolbar.tsx
+#: src/components/project-home/HomeCustomizationCard.tsx
 #: src/components/project-home/SecretsCard.tsx
 #: src/components/prompt-library/PromptEditDialog.tsx
 #: src/components/spec-editor/SpecEditor.tsx
@@ -13682,6 +13737,10 @@ msgstr "שדרג ל-v{0}"
 #: src/components/version-popover/version-popover.tsx
 msgid "Upgrading…"
 msgstr "משדרג…"
+
+#: src/components/project-home/HomeCustomizationCard.tsx
+msgid "Upload"
+msgstr ""
 
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "Upload files"
