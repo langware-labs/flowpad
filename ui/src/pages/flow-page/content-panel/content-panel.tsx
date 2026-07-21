@@ -26,7 +26,6 @@ import { HomeLanding } from '@src/pages/home-landing';
 import { HubHome } from '@src/pages/hub-home/HubHome';
 import { HubRecordsView } from '@src/pages/hub-browse/HubRecordsView';
 import { HubEntityView } from '@src/pages/hub-browse/HubEntityView';
-import OrgGraphReview from '@src/components/org-graph/OrgGraphReview';
 import { LiveStatus } from '@src/pages/live-status';
 import { SearchView } from '@src/pages/search-view/SearchView';
 
@@ -167,7 +166,6 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
     [navigation],
   );
 
-
   // Shell entity sync is automatic via DataOp stream — no manual sync needed.
 
   // React to shouldOpenEnvironmentTab flag
@@ -233,19 +231,11 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
   // SPA-surfaces stay cleanly independent — see PAGES_DOCKPOINTER_SPEC.
   const renderHubBody = (vt: ViewType | null) => {
     switch (vt) {
-      case ViewType.ATLAS:
-        // pointer selects the Atlas root: `organization` re-roots at the org node
-        // and type-filters to org→teams→people (the legacy hub's Organization
-        // view); anything else is the viewer-rooted "your world" atlas.
-        return currentDock?.pointer === 'organization' ? (
-          <OrgGraphReview
-            rootPreference="organization"
-            filterTypes={['organization', 'team', 'user']}
-            title="Organization"
-            subtitle="teams & people"
-          />
-        ) : (
-          <OrgGraphReview rootPreference="viewer" />
+      case ViewType.WORLDVIEW:
+        return (
+          <Suspense fallback={null}>
+            <WorldView />
+          </Suspense>
         );
       case ViewType.HUB_RECORDS:
         return <HubRecordsView type={currentDock?.pointer} />;
@@ -280,7 +270,9 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
         >
           <AlertTriangle className="h-9 w-9 text-destructive" />
           <div>
-            <h2 className="text-base font-semibold text-foreground"><Trans>Tab failed to open</Trans></h2>
+            <h2 className="text-base font-semibold text-foreground">
+              <Trans>Tab failed to open</Trans>
+            </h2>
             <p className="mt-1 max-w-md text-sm">
               {activeLifecycle?.error || <Trans>The tab content could not be prepared.</Trans>}
             </p>
@@ -303,7 +295,9 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
         return checkpointHash ? (
           <DiffViewer checkpoint_hash={checkpointHash} />
         ) : (
-          <div className="p-4 text-gray-500"><Trans>No checkpoint selected</Trans></div>
+          <div className="p-4 text-gray-500">
+            <Trans>No checkpoint selected</Trans>
+          </div>
         );
       case ViewType.MARKDOWN:
         return <MarkdownViewer />;
@@ -311,7 +305,9 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
         return activeSurveyData && onSurveyComplete ? (
           <SurveyView surveyData={activeSurveyData} onComplete={onSurveyComplete} />
         ) : (
-          <div className="p-6 text-muted-foreground"><Trans>No active survey</Trans></div>
+          <div className="p-6 text-muted-foreground">
+            <Trans>No active survey</Trans>
+          </div>
         );
       case ViewType.SYSTEM_PROFILE:
         return <LiveStatus />;
@@ -329,8 +325,12 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
           <div className="flex h-full flex-col items-center justify-center gap-4 rounded-lg border border-dashed border-gray-200 p-6 text-center">
             <LogIn className="h-10 w-10 text-gray-400" />
             <div>
-              <h2 className="text-lg font-semibold"><Trans>Login Required</Trans></h2>
-              <p className="mt-1 text-sm text-gray-500"><Trans>Please log in to view and manage environment variables.</Trans></p>
+              <h2 className="text-lg font-semibold">
+                <Trans>Login Required</Trans>
+              </h2>
+              <p className="mt-1 text-sm text-gray-500">
+                <Trans>Please log in to view and manage environment variables.</Trans>
+              </p>
             </div>
             <Button onClick={() => void navigator.navigateToLogin()} className="px-6">
               <Trans>Login</Trans>
@@ -422,13 +422,17 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
         return currentDock?.pointer ? (
           <ProcessTerminal key={currentDock.pointer} processId={currentDock.pointer} />
         ) : (
-          <div className="flex h-full items-center justify-center text-muted-foreground"><Trans>No process ID specified</Trans></div>
+          <div className="flex h-full items-center justify-center text-muted-foreground">
+            <Trans>No process ID specified</Trans>
+          </div>
         );
       case ViewType.LIVE_SESSION:
         return currentDock?.pointer ? (
           <LiveSessionView key={currentDock.pointer} sessionId={currentDock.pointer} />
         ) : (
-          <div className="flex h-full items-center justify-center text-muted-foreground"><Trans>No live session specified</Trans></div>
+          <div className="flex h-full items-center justify-center text-muted-foreground">
+            <Trans>No live session specified</Trans>
+          </div>
         );
       case ViewType.ASSETS:
         return <AssetsPage />;
@@ -485,9 +489,7 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
               so xterm fits on first paint — a flex-col parent broke its initial sizing.
               No entrance animation: a tab switch must be visually instant (a fade
               reads as page navigation, not a tab switch). */}
-          <div className="absolute inset-0 mt-0 h-full flex-1 overflow-auto">
-            {renderBody(bodyViewType)}
-          </div>
+          <div className="absolute inset-0 mt-0 h-full flex-1 overflow-auto">{renderBody(bodyViewType)}</div>
         </div>
       </div>
     </div>

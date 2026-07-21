@@ -24,6 +24,7 @@ import { WhiteboardAssetEditor } from './whiteboard/WhiteboardAssetEditor';
 import { DeckTemplateViewer } from './deck-template/DeckTemplateViewer';
 import { DeckViewer } from './deck/DeckViewer';
 import { SpreadsheetAssetEditor } from './spreadsheet/SpreadsheetAssetEditor';
+import { AssetCollisionProvider, AssetCollisionShell } from './AssetCollisionUI';
 
 interface AssetEditorRouterProps {
   /** The ViewType.ASSETS pointer, e.g. "editor/<editor>/<method>/<value>". */
@@ -188,7 +189,11 @@ export function AssetEditorRouter({ pointer }: AssetEditorRouterProps) {
           type={Skill.type}
           fsRef={fsRef}
           typeLabel="skill"
-          render={(skill) => <SkillAssetEditor fsRef={fsRef!} skill={skill} />}
+          render={(skill) => (
+            <AssetCollisionProvider entity={skill}>
+              <SkillAssetEditor fsRef={fsRef!} skill={skill} />
+            </AssetCollisionProvider>
+          )}
         />
       );
     case AssetEditor.TASK:
@@ -197,7 +202,11 @@ export function AssetEditorRouter({ pointer }: AssetEditorRouterProps) {
           type={Task.type}
           fsRef={fsRef}
           typeLabel="task"
-          render={(task) => <TaskAssetEditor fsRef={fsRef!} task={task} />}
+          render={(task) => (
+            <AssetCollisionShell entity={task}>
+              <TaskAssetEditor fsRef={fsRef!} task={task} />
+            </AssetCollisionShell>
+          )}
         />
       );
     case AssetEditor.AGENT:
@@ -206,7 +215,11 @@ export function AssetEditorRouter({ pointer }: AssetEditorRouterProps) {
           type={Agent.type}
           fsRef={fsRef}
           typeLabel="agent"
-          render={(agent) => <AgentAssetEditor fsRef={fsRef!} agent={agent} />}
+          render={(agent) => (
+            <AssetCollisionProvider entity={agent}>
+              <AgentAssetEditor fsRef={fsRef!} agent={agent} />
+            </AssetCollisionProvider>
+          )}
         />
       );
     case AssetEditor.WHITEBOARD:
@@ -215,7 +228,11 @@ export function AssetEditorRouter({ pointer }: AssetEditorRouterProps) {
           type={Whiteboard.type}
           fsRef={fsRef}
           typeLabel="whiteboard"
-          render={(whiteboard) => <WhiteboardAssetEditor fsRef={fsRef!} whiteboard={whiteboard} />}
+          render={(whiteboard) => (
+            <AssetCollisionShell entity={whiteboard}>
+              <WhiteboardAssetEditor fsRef={fsRef!} whiteboard={whiteboard} />
+            </AssetCollisionShell>
+          )}
         />
       );
     case AssetEditor.DECK_TEMPLATE:
@@ -225,7 +242,9 @@ export function AssetEditorRouter({ pointer }: AssetEditorRouterProps) {
           fsRef={fsRef}
           typeLabel="deck template"
           render={(deckTemplate) => (
-            <DeckTemplateViewer fsRef={fsRef} deckTemplate={deckTemplate} />
+            <AssetCollisionShell entity={deckTemplate}>
+              <DeckTemplateViewer fsRef={fsRef} deckTemplate={deckTemplate} />
+            </AssetCollisionShell>
           )}
         />
       );
@@ -235,7 +254,11 @@ export function AssetEditorRouter({ pointer }: AssetEditorRouterProps) {
           type={Deck.type}
           fsRef={fsRef}
           typeLabel="deck"
-          render={(deck) => <DeckViewer fsRef={fsRef} deck={deck} />}
+          render={(deck) => (
+            <AssetCollisionShell entity={deck}>
+              <DeckViewer fsRef={fsRef} deck={deck} />
+            </AssetCollisionShell>
+          )}
         />
       );
     case AssetEditor.SPREADSHEET:
@@ -245,7 +268,9 @@ export function AssetEditorRouter({ pointer }: AssetEditorRouterProps) {
           fsRef={fsRef}
           typeLabel="spreadsheet"
           render={(spreadsheet) => (
-            <SpreadsheetAssetEditor fsRef={fsRef!} spreadsheet={spreadsheet} />
+            <AssetCollisionShell entity={spreadsheet}>
+              <SpreadsheetAssetEditor fsRef={fsRef!} spreadsheet={spreadsheet} />
+            </AssetCollisionShell>
           )}
         />
       );
@@ -255,7 +280,11 @@ export function AssetEditorRouter({ pointer }: AssetEditorRouterProps) {
           type={AgentTrace.type}
           fsRef={fsRef}
           typeLabel="agent trace"
-          render={(trace) => <AgentTraceAssetEditor fsRef={fsRef!} trace={trace} />}
+          render={(trace) => (
+            <AssetCollisionShell entity={trace}>
+              <AgentTraceAssetEditor fsRef={fsRef!} trace={trace} />
+            </AssetCollisionShell>
+          )}
         />
       );
     case AssetEditor.DYNAMIC_WORKFLOW:
@@ -264,7 +293,11 @@ export function AssetEditorRouter({ pointer }: AssetEditorRouterProps) {
           type={DynamicWorkflow.type}
           fsRef={fsRef}
           typeLabel="dynamic workflow"
-          render={(workflow) => <DynamicWorkflowAssetEditor fsRef={fsRef!} workflow={workflow} />}
+          render={(workflow) => (
+            <AssetCollisionShell entity={workflow}>
+              <DynamicWorkflowAssetEditor fsRef={fsRef!} workflow={workflow} />
+            </AssetCollisionShell>
+          )}
         />
       );
     case AssetEditor.USAGE_REPORT:
@@ -273,7 +306,11 @@ export function AssetEditorRouter({ pointer }: AssetEditorRouterProps) {
           type={UsageReport.type}
           fsRef={fsRef}
           typeLabel="usage report"
-          render={(report) => <UsageReportAssetEditor fsRef={fsRef!} report={report} />}
+          render={(report) => (
+            <AssetCollisionShell entity={report}>
+              <UsageReportAssetEditor fsRef={fsRef!} report={report} />
+            </AssetCollisionShell>
+          )}
         />
       );
     case AssetEditor.ASSET_CLEANUP_REPORT:
@@ -282,7 +319,11 @@ export function AssetEditorRouter({ pointer }: AssetEditorRouterProps) {
           type={AssetCleanupReport.type}
           fsRef={fsRef}
           typeLabel="asset cleanup report"
-          render={(report) => <AssetCleanupReportAssetEditor fsRef={fsRef!} report={report} />}
+          render={(report) => (
+            <AssetCollisionShell entity={report}>
+              <AssetCleanupReportAssetEditor fsRef={fsRef!} report={report} />
+            </AssetCollisionShell>
+          )}
         />
       );
     case AssetEditor.MARKDOWN:

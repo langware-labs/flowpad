@@ -6,6 +6,7 @@ import { TypeId } from '../models/TypeId';
 import { EntityTypes } from '../schema/types';
 import { dockOptionsToScopeFilter } from '../utils/scope-filter';
 import { isHubOnly } from '../utils/hub-runtime';
+import { normalizeWorldViewDockPointer } from '../worldview/dock-pointer';
 import { Project } from './project';
 
 /** A terminal target's display fields, read off the (cached/resolved) entity. */
@@ -42,7 +43,10 @@ function displayForTarget(
 
 const LEGACY_LAYOUT_SEGMENTS = new Set(['dock', 'dev', 'win']);
 
-function targetDockPointer(targetType: string | null | undefined, targetId: string | null | undefined): {
+function targetDockPointer(
+  targetType: string | null | undefined,
+  targetId: string | null | undefined,
+): {
   viewType: string;
   pointer: string;
 } | null {
@@ -75,9 +79,7 @@ function normalizeLegacyPointer(
 
     if (
       targetDock &&
-      (path === targetDock.pointer ||
-        path === `${targetType}-${targetId}` ||
-        path === `${targetType}/${targetId}`)
+      (path === targetDock.pointer || path === `${targetType}-${targetId}` || path === `${targetType}/${targetId}`)
     ) {
       return targetDock;
     }
@@ -104,6 +106,16 @@ function normalizeLegacyPointer(
   }
   if (!rawViewType) return null;
   return { viewType: rawViewType, pointer: rawSubPointer };
+}
+
+function withCanonicalTabHash(pointer: IDockPointer): IDockPointer {
+  const normalized = normalizeWorldViewDockPointer(pointer);
+  const viewType = normalized.viewType ?? '';
+  const subPointer = normalized.pointer ?? '';
+  return {
+    ...normalized,
+    tabHash: normalized.tabHash ?? `${viewType}|${subPointer}`,
+  };
 }
 
 /**
@@ -203,21 +215,11 @@ export class Tab extends APIEntity<Tab> implements ITab {
     if (!this.pointer) return null;
     try {
       const parsed = JSON.parse(this.pointer) as IDockPointer;
-      const viewType = parsed.viewType ?? '';
-      const subPointer = parsed.pointer ?? '';
-      return {
-        ...parsed,
-        tabHash: parsed.tabHash ?? `${viewType}|${subPointer}`,
-      };
+      return withCanonicalTabHash(parsed);
     } catch {
       const normalized = normalizeLegacyPointer(this.pointer, this.target_type, this.target_id);
       if (!normalized) return null;
-      const { viewType, pointer: subPointer } = normalized;
-      return {
-        viewType,
-        pointer: subPointer,
-        tabHash: `${viewType}|${subPointer}`,
-      } as IDockPointer;
+      return withCanonicalTabHash(normalized as IDockPointer);
     }
   }
 
@@ -281,7 +283,10 @@ export class Tab extends APIEntity<Tab> implements ITab {
    */
   static async resolveDockTarget(dock: IDockPointer): Promise<{
     targetTypeId: TypeId | null;
-    target: (APIEntity<any> & TerminalTargetFields & { project_id?: string | null; cwd?: string | null; workdir?: string | null }) | null;
+    target:
+      | (APIEntity<any> &
+          TerminalTargetFields & { project_id?: string | null; cwd?: string | null; workdir?: string | null })
+      | null;
     projectId: string | null;
   }> {
     // One cast names the fields we read off the heterogeneous target
@@ -326,10 +331,7 @@ export class Tab extends APIEntity<Tab> implements ITab {
     return { targetTypeId, target, projectId };
   }
 
-  static async getFromDockPointer(
-    dock: IDockPointer,
-    opts: { parentTabId?: string | null } = {},
-  ): Promise<Tab[]> {
+  static async getFromDockPointer(dock: IDockPointer, opts: { parentTabId?: string | null } = {}): Promise<Tab[]> {
     const pointerJson = dock.toJSON?.();
     if (!pointerJson) return [];
 

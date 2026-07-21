@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from flow_sdk.api.type_id import TypeId
 from flow_sdk.builtin.artifact import Artifact
 from flow_sdk.builtin.deployment import Deployment
 from flow_sdk.worldview.models import (
     WorldViewEdge,
+    WorldViewEdgeTopology,
     WorldViewEndpoint,
     WorldViewGraph,
     WorldViewNode,
+    WorldViewProjection,
     WorldViewSyncReport,
 )
 from flow_sdk.worldview.reconcile import WORLDVIEW_ROOT_ID, sync_report_from_root
@@ -64,8 +68,9 @@ async def build_worldview(
 ) -> WorldViewGraph:
     """Project all Artifacts and Deployments without using the dep-graph cache."""
 
-    artifacts = sorted(await Artifact.get_all(), key=lambda entity: entity.id)
-    deployments = sorted(await Deployment.get_all(), key=lambda entity: entity.id)
+    artifacts, deployments = await asyncio.gather(Artifact.get_all(), Deployment.get_all())
+    artifacts.sort(key=lambda entity: entity.id)
+    deployments.sort(key=lambda entity: entity.id)
     nodes = [_artifact_node(entity) for entity in artifacts]
     nodes.extend(_deployment_node(entity) for entity in deployments)
     node_keys = {node.key for node in nodes}
@@ -73,7 +78,12 @@ async def build_worldview(
     edges: list[WorldViewEdge] = []
     edge_keys: set[tuple[str, str, str]] = set()
 
-    def add_edge(source: TypeId, target: TypeId, kind: str) -> None:
+    def add_edge(
+        source: TypeId,
+        target: TypeId,
+        kind: str,
+        topology: WorldViewEdgeTopology,
+    ) -> None:
         source_key, target_key = str(source), str(target)
         key = (source_key, target_key, kind)
         if source_key not in node_keys or target_key not in node_keys or key in edge_keys:
@@ -84,6 +94,7 @@ async def build_worldview(
                 from_=WorldViewEndpoint(type=source.type, id=source.id),
                 to=WorldViewEndpoint(type=target.type, id=target.id),
                 kind=kind,
+                topology=topology,
             )
         )
 
@@ -91,7 +102,12 @@ async def build_worldview(
         if not entity.parent_type_id:
             continue
         try:
-            add_edge(TypeId(entity.parent_type_id), entity.typeid, "child")
+            add_edge(
+                TypeId(entity.parent_type_id),
+                entity.typeid,
+                "child",
+                WorldViewEdgeTopology.HIERARCHY,
+            )
         except ValueError:
             continue
 
@@ -99,12 +115,18 @@ async def build_worldview(
     for deployment in deployments:
         artifact = artifact_by_id.get(deployment.artifact_id or "")
         if artifact is not None:
-            add_edge(artifact.typeid, deployment.typeid, "deployed_as")
+            add_edge(
+                artifact.typeid,
+                deployment.typeid,
+                "deployed_as",
+                WorldViewEdgeTopology.ASSOCIATION,
+            )
 
     root = next((item for item in deployments if item.id == WORLDVIEW_ROOT_ID), None)
     report = sync_report if sync_report is not None else sync_report_from_root(root)
     edges.sort(key=lambda edge: (str(edge.from_.type), edge.from_.id, edge.to.type, edge.to.id, edge.kind))
     return WorldViewGraph(
+        projection=WorldViewProjection.DEPLOYMENT,
         root=str(root.typeid) if root is not None else None,
         nodes=nodes,
         edges=edges,
