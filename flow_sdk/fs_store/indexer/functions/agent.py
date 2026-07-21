@@ -35,6 +35,7 @@ from flow_sdk.fs_store.record_types import RecordType
 # Fields stored in _data that map to the Claude Code --agents JSON spec
 AGENTS_SPEC_FIELDS = (
     "description",
+    "kind",
     "tools",
     "disallowed_tools",
     "model",

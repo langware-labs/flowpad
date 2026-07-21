@@ -1,4 +1,4 @@
-import { AgenticProcess, apiClient, ComputeNode, dataContext, ProcessKind, Project, TypeId } from '@sdk';
+import { Agent, AgentKind, AgenticProcess, apiClient, ComputeNode, dataContext, ProcessKind, Project, QueryFilter, QueryRequest, TypeId } from '@sdk';
 import { useProject } from '@sdk/react/hooks';
 import { ViewMode } from '@src/contexts/view-mode-context';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -41,6 +41,36 @@ export async function embedVibeAgent(proc: AgenticProcess): Promise<void> {
     else console.warn('[Vibe] vibe agent not indexed; continuing without persona');
   } catch (e) {
     console.warn('[Vibe] failed to embed vibe agent; continuing without persona', e);
+  }
+  // Layer the project's kind==vibe agents ON TOP of the standard vibe agent.
+  // Embedding after the vibe agent, in created-date order, makes them render
+  // after it in the instructions (embed order == render order, see backend
+  // _load_materialized_agents_json). Best-effort — a failed extra embed degrades.
+  try {
+    await embedVibeKindAgents(proc);
+  } catch (e) {
+    console.warn('[Vibe] failed to embed kind==vibe agents', e);
+  }
+}
+
+/**
+ * Embed the "relevant ones only" — the project's `kind==vibe` agent assets, in
+ * created-date order — as extra personas after the standard vibe agent. Part of
+ * the generic vibe process start; a plain query (not the process's special-asset
+ * list), scoped to the process's project.
+ */
+async function embedVibeKindAgents(proc: AgenticProcess): Promise<void> {
+  const projectId = proc.project_id;
+  if (!projectId) return;
+  const req = new QueryRequest({
+    type: Agent.type,
+    scope: [new TypeId(Project.type, projectId)],
+    name: `vibeAgents:${projectId}`,
+    query: new QueryFilter({ match: { kind: AgentKind.Vibe }, order_by: { created_date: 'asc' } }),
+  });
+  const agents = await Agent.query<Agent>(req);
+  for (const agent of agents) {
+    if (agent.asset_ref) await proc.loadEmbeddedAgent(agent.asset_ref);
   }
 }
 
