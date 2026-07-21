@@ -10,6 +10,7 @@ import {
   TypeId,
 } from '@sdk';
 import { useAuth, useEntitiesQuery } from '@sdk/react/hooks';
+import { notify } from '@src/notifications';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 /**
@@ -268,6 +269,15 @@ export function useDesktops() {
         patch('health', {
           detail: result.logged_in ? `signed in as ${result.login_detail}` : 'opened without cloud sign-in',
         });
+        // Don't let a failed cloud sign-in pass silently: the desktop opened, but
+        // couldn't reach the hub to sign in (e.g. hub down / WORKSPACE_HUB_URL unset).
+        if (!result.logged_in) {
+          notify.warning({
+            id: 'desktop-no-signin',
+            title: 'Desktop opened without cloud sign-in',
+            message: "Couldn't reach the hub to sign this desktop in — it may be down or unreachable. You can sign in from inside the desktop.",
+          });
+        }
         return result;
       });
 
