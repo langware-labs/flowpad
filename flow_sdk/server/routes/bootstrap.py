@@ -1198,7 +1198,7 @@ async def _index_system_project_markdowns(projects: list[Project]) -> None:
 
     from flow_sdk.core.entity import Entity  # noqa: PLC0415
     from flow_sdk.fs_store.fs_ref import FSRef as _FSRef  # noqa: PLC0415
-    from flow_sdk.fs_store.indexer.functions.markdown import extract_markdown  # noqa: PLC0415
+    from flow_sdk.fs_store.indexer.functions.markdown import extract_markdown, markdown_id  # noqa: PLC0415
 
     for proj in projects:
         mount = proj.fs_storage_mount_path
@@ -1211,7 +1211,13 @@ async def _index_system_project_markdowns(projects: list[Project]) -> None:
                 continue
             for md_path in base.rglob("*.md"):
                 try:
-                    records = extract_markdown(_FSRef(md_path))
+                    # Resolve id READ-ONLY (frontmatter id, else stable
+                    # uuid5(path)) — extract_markdown requires it since capsule
+                    # refactor 4f94fb92, and bootstrap must not stamp identity
+                    # capsules into tracked repo/system docs. Deterministic id
+                    # also makes this seeding idempotent across bootstraps.
+                    _md_ref = _FSRef(md_path)
+                    records = extract_markdown(_md_ref, markdown_id(_md_ref))
                     if not records:
                         continue
                     rec = records[0]
