@@ -1,8 +1,9 @@
-import { dataContext, TypeId, ViewType } from '@sdk';
-import { worldViewGraphFromPayload, safeWorldViewProperties } from '@src/components/graph-view/graph/loadWorldView';
+import { dataContext, PageId, TypeId, ViewType, WorldViewProjection, type WorldViewGraph } from '@sdk';
+import { worldViewGraphFromPayload } from '@src/components/graph-view/graph/loadWorldView';
 import { cameraRatioForVisibleSpan } from '@src/components/graph-view/graph/graphCamera';
 import { compactGraphLabel, fitLabelToWidth } from '@src/components/graph-view/graph/graphLabels';
 import { DockPointer } from '@src/navigation/DockPointer';
+import { canonicalWorldViewDockPath } from '@src/navigation/worldview-dock-canonicalization';
 import { DockLoadError } from '@src/routes/loaders/dock-load-error';
 import { loadGraphIdentityRoute } from '@src/routes/loaders/load-dock-pointer';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -10,23 +11,67 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 const ROOT_ID = 'aaaaaaaa-aaaa-5aaa-8aaa-aaaaaaaaaaaa';
 const CHILD_ID = 'bbbbbbbb-bbbb-5bbb-8bbb-bbbbbbbbbbbb';
 
+function payload(overrides: Partial<WorldViewGraph> = {}): WorldViewGraph {
+  const base: WorldViewGraph = {
+    schema_version: 1,
+    projection: WorldViewProjection.DEPLOYMENT,
+    root: `deployment-${ROOT_ID}`,
+    nodes: [
+      {
+        type: 'deployment',
+        id: ROOT_ID,
+        key: `deployment-${ROOT_ID}`,
+        label: 'Deployment WorldView',
+        is_ghost: false,
+        properties: {},
+      },
+      {
+        type: 'deployment',
+        id: CHILD_ID,
+        key: `deployment-${CHILD_ID}`,
+        label: 'web',
+        is_ghost: false,
+        properties: {},
+      },
+    ],
+    edges: [
+      {
+        from: { type: 'deployment', id: ROOT_ID },
+        to: { type: 'deployment', id: CHILD_ID },
+        kind: 'child',
+        topology: 'hierarchy',
+      },
+    ],
+    counts: { nodes: 2, edges: 1 },
+    sync: null,
+  };
+  return { ...base, ...overrides };
+}
+
 describe('WorldView route identity', () => {
   afterEach(() => vi.restoreAllMocks());
 
-  it('round-trips a typed root and exposes it as the tab target', () => {
+  it('uses a projection pointer and exposes query focus as the tab target', () => {
     const root = new TypeId('deployment', ROOT_ID);
-    const dock = DockPointer.forWorldView(root, { depth: 4, selected: `deployment-${CHILD_ID}` });
-    const url = dock.toUrl();
-    const parsed = DockPointer.fromUrl(url);
+    const dock = DockPointer.forWorldView(WorldViewProjection.DEPLOYMENT, {
+      focus: root,
+      depth: 6,
+      selected: `deployment-${CHILD_ID}`,
+    });
+    const parsed = DockPointer.fromUrl(dock.toUrl());
 
-    expect(url).toBe(`/dock/worldview/deployment/${ROOT_ID}?depth=4&selected=deployment-${CHILD_ID}`);
+    expect(dock.toUrl()).toBe(
+      `/dock/worldview/deployment?focus=deployment-${ROOT_ID}&depth=6&selected=deployment-${CHILD_ID}`,
+    );
     expect(parsed.targetTypeId?.toString()).toBe(root.toString());
-    expect(DockPointer.parseWorldViewPointer(parsed.pointer)).toEqual({ type: 'deployment', id: ROOT_ID });
+    expect(DockPointer.parseWorldViewProjection(parsed.pointer)).toBe('deployment');
   });
 
-  it('loader writes only the URL root identity into context', async () => {
+  it('loader writes only URL focus identity into context', async () => {
     const setActive = vi.spyOn(dataContext, 'setActiveEntityTypeId').mockResolvedValue(undefined as never);
-    const dock = DockPointer.forWorldView(new TypeId('deployment', ROOT_ID));
+    const dock = DockPointer.forWorldView(WorldViewProjection.DEPLOYMENT, {
+      focus: `deployment-${ROOT_ID}`,
+    });
 
     await loadGraphIdentityRoute(dock, 'worldview');
 
@@ -34,64 +79,105 @@ describe('WorldView route identity', () => {
     expect((setActive.mock.calls[0][0] as TypeId).toString()).toBe(`deployment-${ROOT_ID}`);
   });
 
-  it('rejects non-Artifact/Deployment roots before the view mounts', async () => {
+  it('rejects a non-projection pointer before the view mounts', async () => {
     const dock = new DockPointer(ViewType.WORLDVIEW, `project/${ROOT_ID}`);
 
     await expect(loadGraphIdentityRoute(dock, 'worldview')).rejects.toBeInstanceOf(DockLoadError);
   });
+
+  it('canonicalizes retired Atlas and entity-root URLs in the route loader', () => {
+    expect(canonicalWorldViewDockPath('/dock/hub/atlas/organization', '')).toBe('/dock/hub/worldview/organization');
+    expect(canonicalWorldViewDockPath('/dock/hub/worldview/world', '?signal=cost&hide=user,artifact')).toBe(
+      '/dock/hub/worldview/world?hide=artifact%2Cuser',
+    );
+    expect(canonicalWorldViewDockPath(`/dock/worldview/deployment/${ROOT_ID}`, '?color=cost')).toBe(
+      `/dock/worldview/deployment?signal=cost&focus=deployment-${ROOT_ID}`,
+    );
+    const persisted = DockPointer.fromJSON(JSON.stringify({ viewType: 'atlas', pointer: 'world' }));
+    expect(persisted?.page).toBe(PageId.HUB);
+    expect(persisted?.toUrl()).toBe('/dock/hub/worldview/world');
+  });
 });
 
 describe('WorldView graph projection', () => {
-  it('keeps child edges directed for the circular layout', () => {
-    const graph = worldViewGraphFromPayload({
-      nodes: [
-        { type: 'deployment', id: ROOT_ID, key: `deployment-${ROOT_ID}`, label: 'Cloud WorldView' },
-        { type: 'deployment', id: CHILD_ID, key: `deployment-${CHILD_ID}`, label: 'web' },
-      ],
-      edges: [
-        {
-          from: { type: 'deployment', id: ROOT_ID },
-          to: { type: 'deployment', id: CHILD_ID },
-          kind: 'child',
-        },
-      ],
-    });
+  it('keeps hierarchy topology, root, and directed edges for the circle renderer', () => {
+    const graph = worldViewGraphFromPayload(payload());
 
     expect(graph.type).toBe('directed');
+    expect(graph.multi).toBe(true);
+    expect(graph.getAttribute('worldViewRoot')).toBe(`deployment-${ROOT_ID}`);
     expect(graph.hasDirectedEdge(`deployment-${ROOT_ID}`, `deployment-${CHILD_ID}`)).toBe(true);
+    expect(graph.getEdgeAttribute(graph.edges()[0], 'topology')).toBe('hierarchy');
   });
 
-  it('keeps only the selected-node property allow-list', () => {
-    const safe = safeWorldViewProperties({
-      type: 'deployment',
-      id: CHILD_ID,
-      properties: {
-        kind: 'gcp.run.service',
-        target: { provider: 'gcp', scope: 'projects/demo' },
-        status: { sync_state: 'current', observed_at: '2026-07-18T00:00:00Z' },
-        provider_labels: { environment: 'demo' },
-        source_revision: 'abc123',
-        artifact_id: ROOT_ID,
-        parent_type_id: `deployment-${ROOT_ID}`,
-        provider_payload: { secret: 'must-not-render' },
-      },
-    });
+  it('preserves projection-safe backend properties without a second UI schema', () => {
+    const graph = worldViewGraphFromPayload(
+      payload({
+        nodes: [
+          {
+            type: 'deployment',
+            id: ROOT_ID,
+            key: `deployment-${ROOT_ID}`,
+            label: 'root',
+            is_ghost: false,
+            properties: { kind: 'gcp.project', provider_labels: { environment: 'demo' }, role: 'owner' },
+          },
+        ],
+        edges: [],
+        counts: { nodes: 1, edges: 0 },
+      }),
+    );
 
-    expect(safe).toEqual({
-      kind: 'gcp.run.service',
-      target: { provider: 'gcp', scope: 'projects/demo' },
-      status: { sync_state: 'current', observed_at: '2026-07-18T00:00:00Z' },
+    expect(graph.getNodeAttribute(`deployment-${ROOT_ID}`, 'properties')).toEqual({
+      kind: 'gcp.project',
       provider_labels: { environment: 'demo' },
-      source_revision: 'abc123',
+      role: 'owner',
     });
+  });
+
+  it('keeps distinct role edges between the same entities', () => {
+    const graph = worldViewGraphFromPayload(
+      payload({
+        edges: [
+          {
+            from: { type: 'deployment', id: ROOT_ID },
+            to: { type: 'deployment', id: CHILD_ID },
+            kind: 'owner',
+            topology: 'association',
+          },
+          {
+            from: { type: 'deployment', id: ROOT_ID },
+            to: { type: 'deployment', id: CHILD_ID },
+            kind: 'editor',
+            topology: 'association',
+          },
+        ],
+        counts: { nodes: 2, edges: 2 },
+      }),
+    );
+
+    expect(graph.size).toBe(2);
   });
 
   it('uses compact canvas labels while preserving the complete source label', () => {
     const fullLabel = `projects/demo/secrets/default_compute_node-${CHILD_ID}/versions/1`;
-    const graph = worldViewGraphFromPayload({
-      nodes: [{ type: 'deployment', id: CHILD_ID, label: fullLabel }],
-      edges: [],
-    });
+    const graph = worldViewGraphFromPayload(
+      payload({
+        root: `deployment-${CHILD_ID}`,
+        nodes: [
+          {
+            type: 'deployment',
+            id: CHILD_ID,
+            key: `deployment-${CHILD_ID}`,
+            label: fullLabel,
+            is_ghost: false,
+            properties: {},
+          },
+        ],
+        edges: [],
+        counts: { nodes: 1, edges: 0 },
+      }),
+    );
     const key = `deployment-${CHILD_ID}`;
 
     expect(graph.getNodeAttribute(key, 'label')).toBe(fullLabel);

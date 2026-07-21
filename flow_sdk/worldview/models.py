@@ -5,16 +5,24 @@ from __future__ import annotations
 import re
 from datetime import datetime, timezone
 from math import isfinite
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StrictBool,
+    StrictInt,
+    StrictStr,
+    field_validator,
+    model_validator,
+)
 
 from flow_sdk._compat import StrEnum
+from flow_sdk.api.api_types.identifier import is_valid_entity_id
 from flow_sdk.worldview.ontology import normalize_kind
 
-_RFC3339_PATTERN = re.compile(
-    r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$"
-)
+_RFC3339_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$")
 
 
 def _rfc3339(value: Any, *, optional: bool = False) -> str | None:
@@ -59,6 +67,17 @@ class DeploymentObservationKind(StrEnum):
     COST = "cost"
     SIZE = "size"
     ACTIVITY = "activity"
+
+
+class WorldViewProjection(StrEnum):
+    WORLD = "world"
+    ORGANIZATION = "organization"
+    DEPLOYMENT = "deployment"
+
+
+class WorldViewEdgeTopology(StrEnum):
+    HIERARCHY = "hierarchy"
+    ASSOCIATION = "association"
 
 
 class DeploymentObservation(BaseModel):
@@ -236,34 +255,128 @@ class WorldViewSyncReport(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
-class WorldViewNode(BaseModel):
-    type: str
-    id: str
-    key: str
-    label: str | None = None
-    is_ghost: bool = False
+class _WorldViewWireModel(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+
+def _require_trimmed_text(value: Any, message: str) -> str:
+    if not isinstance(value, str) or not value or value != value.strip():
+        raise ValueError(message)
+    return value
+
+
+def _require_entity_id(value: Any, message: str) -> str:
+    if not is_valid_entity_id(value):
+        raise ValueError(message)
+    return value
+
+
+class WorldViewNode(_WorldViewWireModel):
+    type: StrictStr
+    id: StrictStr
+    key: StrictStr
+    label: StrictStr | None = None
+    is_ghost: StrictBool = False
     properties: dict[str, Any] = Field(default_factory=dict)
 
+    @field_validator("type", "key", mode="before")
+    @classmethod
+    def _required_text(cls, value: Any) -> str:
+        return _require_trimmed_text(value, "value must be a non-empty trimmed string")
 
-class WorldViewEndpoint(BaseModel):
-    type: str
-    id: str
+    @field_validator("id", mode="before")
+    @classmethod
+    def _valid_entity_id(cls, value: Any) -> str:
+        return _require_entity_id(value, "WorldView node id must be a UUID v4 or v5")
+
+    @model_validator(mode="after")
+    def _key_matches_identity(self) -> WorldViewNode:
+        expected = f"{self.type}-{self.id}"
+        if self.key != expected:
+            raise ValueError(f"WorldView node key must equal {expected}")
+        return self
 
 
-class WorldViewEdge(BaseModel):
+class WorldViewEndpoint(_WorldViewWireModel):
+    type: StrictStr
+    id: StrictStr
+
+    @field_validator("type", mode="before")
+    @classmethod
+    def _valid_type(cls, value: Any) -> str:
+        return _require_trimmed_text(value, "endpoint type must be a non-empty trimmed string")
+
+    @field_validator("id", mode="before")
+    @classmethod
+    def _valid_entity_id(cls, value: Any) -> str:
+        return _require_entity_id(value, "WorldView endpoint id must be a UUID v4 or v5")
+
+
+class WorldViewEdge(_WorldViewWireModel):
     from_: WorldViewEndpoint = Field(alias="from")
     to: WorldViewEndpoint
-    kind: str
+    kind: StrictStr
+    topology: WorldViewEdgeTopology
 
-    model_config = {"populate_by_name": True}
+    @field_validator("kind", mode="before")
+    @classmethod
+    def _valid_kind(cls, value: Any) -> str:
+        return _require_trimmed_text(value, "edge kind must be a non-empty trimmed string")
 
 
-class WorldViewGraph(BaseModel):
-    root: str | None = None
+class WorldViewCounts(_WorldViewWireModel):
+    nodes: StrictInt
+    edges: StrictInt
+
+    @field_validator("nodes", "edges")
+    @classmethod
+    def _non_negative(cls, value: int) -> int:
+        if value < 0:
+            raise ValueError("WorldView counts must be non-negative")
+        return value
+
+
+class WorldViewGraph(_WorldViewWireModel):
+    schema_version: Literal[1] = 1
+    projection: WorldViewProjection
+    root: StrictStr | None = None
     nodes: list[WorldViewNode] = Field(default_factory=list)
     edges: list[WorldViewEdge] = Field(default_factory=list)
-    counts: dict[str, int] = Field(default_factory=lambda: {"nodes": 0, "edges": 0})
+    counts: WorldViewCounts
     sync: WorldViewSyncReport | None = None
+
+    @field_validator("schema_version", mode="before")
+    @classmethod
+    def _strict_schema_version(cls, value: Any) -> int:
+        if type(value) is not int or value != 1:
+            raise ValueError("schema_version must be the integer 1")
+        return value
+
+    @model_validator(mode="after")
+    def _validate_graph_integrity(self) -> WorldViewGraph:
+        node_keys: set[str] = set()
+        for node in self.nodes:
+            if node.key in node_keys:
+                raise ValueError(f"duplicate WorldView node key: {node.key}")
+            node_keys.add(node.key)
+
+        if self.root is not None and self.root not in node_keys:
+            raise ValueError("WorldView root must reference an existing node key")
+
+        edge_keys: set[tuple[str, str, str, WorldViewEdgeTopology]] = set()
+        for edge in self.edges:
+            source_key = f"{edge.from_.type}-{edge.from_.id}"
+            target_key = f"{edge.to.type}-{edge.to.id}"
+            if source_key not in node_keys or target_key not in node_keys:
+                raise ValueError("WorldView edge endpoints must reference existing nodes")
+            edge_key = (source_key, target_key, edge.kind, edge.topology)
+            if edge_key in edge_keys:
+                raise ValueError("duplicate WorldView edge")
+            edge_keys.add(edge_key)
+
+        if self.counts.nodes != len(self.nodes) or self.counts.edges != len(self.edges):
+            raise ValueError("WorldView counts must match the node and edge arrays")
+        return self
 
 
 class LinkArtifactRequest(BaseModel):
@@ -285,9 +398,12 @@ __all__ = [
     "OrganizationInventory",
     "ObservationCoverage",
     "WorldViewEdge",
+    "WorldViewEdgeTopology",
     "WorldViewEndpoint",
     "WorldViewGraph",
+    "WorldViewCounts",
     "WorldViewNode",
+    "WorldViewProjection",
     "WorldViewSyncReport",
     "normalize_kind",
     "utc_now_iso",
