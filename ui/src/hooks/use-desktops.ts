@@ -1,6 +1,6 @@
 import { ActionInfo, ComputeNode, ComputeProviderType, dataContext, dataManager, QueryRequest, TypeId } from '@sdk';
 import { useAuth, useEntitiesQuery } from '@sdk/react/hooks';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 /**
  * Desktops = cloud FlowPad instances running in E2B — a ComputeNode whose
@@ -49,6 +49,16 @@ export function isDesktop(node: ComputeNode): boolean {
   return provider === ComputeProviderType.E2B && flavor === 'workspace';
 }
 
+/** Next auto-name: one past the highest existing "Desktop N" (so it reads as latest). */
+function nextDesktopName(desktops: ComputeNode[]): string {
+  let max = 0;
+  for (const d of desktops) {
+    const m = /^Desktop (\d+)$/.exec(d.name ?? '');
+    if (m) max = Math.max(max, parseInt(m[1], 10));
+  }
+  return `Desktop ${max + 1}`;
+}
+
 /** Resolve a desktop's public URL via the hub's get-host action. */
 async function resolveHostUrl(nodeId: string): Promise<string> {
   const host = new ActionInfo('get-host', ComputeNode.type, nodeId, 'GET');
@@ -69,6 +79,41 @@ export function useDesktops() {
   const { data: nodes, isLoading, refetch } = useEntitiesQuery<ComputeNode>(desktopsRequest, { enabled: !!user });
 
   const desktops = useMemo(() => (nodes ?? []).filter(isDesktop), [nodes]);
+
+  // ---- live status (probed on load) ----
+  // nodeId → ExecutionEnvironmentStatus value ('READY'|'PAUSED'|'NOT_FOUND'|'ERROR'|'NEW').
+  const [statuses, setStatuses] = useState<Record<string, string>>({});
+  const [statusLoading, setStatusLoading] = useState(false);
+
+  const probeStatus = useCallback(async (nodeId: string): Promise<string> => {
+    try {
+      const info = new ActionInfo('ops', ComputeNode.type, nodeId, 'POST');
+      info.subpath = ['status'];
+      const res = await dataManager.callAction<void, { status: string }>(info);
+      return res?.status ?? 'ERROR';
+    } catch {
+      return 'ERROR';
+    }
+  }, []);
+
+  const refreshStatuses = useCallback(
+    async (list: ComputeNode[]) => {
+      if (list.length === 0) return;
+      setStatusLoading(true);
+      // Concurrent — the status op is a single cheap get_info() per node.
+      const entries = await Promise.all(list.map(async (d) => [d.id, await probeStatus(d.id)] as const));
+      setStatuses(Object.fromEntries(entries));
+      setStatusLoading(false);
+    },
+    [probeStatus],
+  );
+
+  // Refresh whenever the set of desktops changes (initial load, launch, delete).
+  const desktopIdsKey = desktops.map((d) => d.id).join(',');
+  useEffect(() => {
+    if (desktops.length) void refreshStatuses(desktops);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [desktopIdsKey]);
 
   // ---- launch ----
   const [steps, setSteps] = useState<Step[]>(INITIAL_STEPS);
@@ -111,7 +156,7 @@ export function useDesktops() {
         // The hub's ComputeNode field is `node_provider` (the OSS entity serializes
         // `node_provider_type`); send the hub's shape explicitly so the provider
         // isn't dropped — else ops/setup fails with "provider is not set".
-        const draft = new ComputeNode({ name: 'Desktop', node_config: { flavor: 'workspace' } });
+        const draft = new ComputeNode({ name: nextDesktopName(desktops), node_config: { flavor: 'workspace' } });
         const entityJson = { ...draft.toJSON(), node_provider: ComputeProviderType.E2B };
         await dataManager.save(draft.typeId, scope, entityJson as never);
 
@@ -146,20 +191,49 @@ export function useDesktops() {
       launchingRef.current = false;
       setLaunching(false);
     }
-  }, [patch, refetch]);
+  }, [patch, refetch, desktops]);
+
+  // ---- rename ----
+  const renameDesktop = useCallback(
+    async (node: ComputeNode, name: string) => {
+      const trimmed = name.trim();
+      if (!trimmed || trimmed === node.name) return;
+      // Preserve the hub's `node_provider` wire field on update (the OSS entity
+      // doesn't type it, so toJSON drops it — re-inject to avoid clobbering it).
+      const provider = (node as unknown as { node_provider?: string }).node_provider ?? node.node_provider_type;
+      const entityJson = { ...node.toJSON(), name: trimmed, node_provider: provider };
+      await dataManager.save(node.typeId, [], entityJson as never);
+      await refetch();
+    },
+    [refetch],
+  );
 
   // ---- open an existing desktop ----
-  const openDesktop = useCallback(async (node: ComputeNode) => {
-    // Claim the tab synchronously (this runs within the click gesture) before the
-    // async get-host, so the browser doesn't block it as a popup.
-    const tab = window.open('', '_blank');
-    try {
-      const url = await resolveHostUrl(node.id);
-      if (tab) tab.location.href = url;
-    } catch {
-      tab?.close();
-    }
-  }, []);
+  const openDesktop = useCallback(
+    async (node: ComputeNode) => {
+      // Claim the tab synchronously (this runs within the click gesture) before the
+      // async work below, so the browser doesn't block it as a popup.
+      const tab = window.open('', '_blank');
+      try {
+        // A paused sandbox's URL 404s until it's resumed; a gone one can't open at all.
+        const status = await probeStatus(node.id);
+        if (status === 'NOT_FOUND' || status === 'ERROR') {
+          throw new Error(status === 'NOT_FOUND' ? 'Desktop not found' : 'Desktop unreachable');
+        }
+        if (status === 'PAUSED') {
+          const resume = new ActionInfo('ops', ComputeNode.type, node.id, 'POST');
+          resume.subpath = ['resume'];
+          await dataManager.callAction(resume);
+          setStatuses((s) => ({ ...s, [node.id]: 'READY' }));
+        }
+        const url = await resolveHostUrl(node.id);
+        if (tab) tab.location.href = url;
+      } catch {
+        tab?.close();
+      }
+    },
+    [probeStatus],
+  );
 
   // ---- delete / terminate ----
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -195,7 +269,11 @@ export function useDesktops() {
     steps,
     launchUrl,
     openDesktop,
+    renameDesktop,
     deleteDesktop,
     deletingId,
+    statuses,
+    statusLoading,
+    refreshStatuses: () => refreshStatuses(desktops),
   };
 }
