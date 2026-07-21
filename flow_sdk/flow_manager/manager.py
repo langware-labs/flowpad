@@ -361,7 +361,8 @@ class FlowManager:
             logger.debug("FlowManager: run %s record failed", direction, exc_info=True)
 
     def _stamp_example(self, exec_dir: Path, run: _Run, node_id: str, seq: int,
-                       fe: FlowEvent | None, process_id: str | None = None) -> None:
+                       fe: FlowEvent | None, process_id: str | None = None,
+                       agent_id: str | None = None) -> None:
         """Born-compatible Dataset example: id is deterministic → idempotent promotion."""
         from flow_sdk.fs_store.identifier import mint_uuid
 
@@ -371,6 +372,8 @@ class FlowManager:
             source.update({"event": fe.event, "source_node": fe.source_node, "hop": fe.hop})
         if process_id:
             source["process_id"] = process_id
+        if agent_id:
+            source["agent_id"] = agent_id
         try:
             from flow_sdk.builtin.dataset import EXAMPLE_META
 
@@ -607,10 +610,46 @@ class FlowManager:
 
     # ── agent execution ───────────────────────────────────────────────────────
 
+    async def _resolve_agent_def(self, node: FlowNodeDef) -> dict[str, Any]:
+        """The node's Agent DEFINITION, aligned with trigger→Trigger: when
+        ``node_data.typeid`` references an Agent entity, its md (Claude Code
+        --agents spec: model, system prompt) is the base — node fields
+        override. Purely-inline nodes resolve to an empty definition.
+
+        Raises RuntimeError on a dangling reference — a mistyped/deleted Agent
+        must fail the execution loudly, not silently fall back to inline."""
+        from flow_sdk.flow_manager.flow_doc import agent_ref
+
+        agent_id = agent_ref(node)
+        if not agent_id:
+            return {}
+        from flow_sdk.builtin.agent import Agent
+        from flow_sdk.fs_store.indexer.functions.agent import parse_agent_markdown
+
+        entity = await Agent.get_by_id(agent_id)
+        if entity is None or not entity.asset_ref:
+            raise RuntimeError(f"agent node {node.id}: Agent {agent_id!r} not found")
+        try:
+            parsed = parse_agent_markdown(Path(entity.asset_ref).read_text(encoding="utf-8"),
+                                          name=entity.name)
+        except OSError as e:
+            raise RuntimeError(f"agent node {node.id}: Agent md unreadable: {e}") from e
+        parsed["agent_id"] = agent_id
+        return parsed
+
+    @staticmethod
+    def _agent_model(agent_def: dict[str, Any], nd: dict[str, Any]) -> str:
+        """CLI model: node ``model_size`` override wins, else the Agent md's
+        ``model`` (already a CLI name), else the sm default."""
+        from flow_sdk.builtin.flow_node import MODEL_SIZE_TO_CLI
+
+        if nd.get("model_size"):
+            return MODEL_SIZE_TO_CLI.get(str(nd["model_size"]), "haiku")
+        return str(agent_def.get("model") or "") or "haiku"
+
     async def _spawn_agent(self, run: _Run, node: FlowNodeDef, fe: FlowEvent,
                            rt: _NodeRuntime, seq: int) -> None:
         from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
-        from flow_sdk.builtin.flow_node import MODEL_SIZE_TO_CLI
 
         cfg = run.flow.doc.config
         if run.processes >= cfg.max_processes:
@@ -619,31 +658,37 @@ class FlowManager:
             return
         run.processes += 1
         nd = node.node_data
+        agent_def = await self._resolve_agent_def(node)
         proc = AgenticProcess(
             workdir=nd.get("workdir"),
             visible=bool(nd.get("visible", False)),
-            name=f"Flow {run.flow.doc.name or run.flow.flow_id[:8]}: {node.name or node.id[:8]}",
-            cli_config={"model": MODEL_SIZE_TO_CLI.get(str(nd.get("model_size") or "sm"), "haiku")},
+            name=f"Flow {run.flow.doc.name or run.flow.flow_id[:8]}: "
+                 f"{node.name or agent_def.get('name') or node.id[:8]}",
+            cli_config={"model": self._agent_model(agent_def, nd)},
         )
         # Standardized input record in the process's OWN folders (id is minted
         # at construction, so the record dir is known pre-save) — the preamble
         # points the agent at it.
         exec_base = execution_base(proc)
         prepare_execution_io(exec_base, fe)
-        instruction = self._agent_instruction(run, node, fe, exec_base)
+        instruction = self._agent_instruction(run, node, fe, exec_base, agent_def)
         proc.instruction_content = instruction
         await proc.save()
         await proc.start_pty(instruction=instruction, visible=bool(nd.get("visible", False)))
         await self._attach_to_run(run, proc)
-        run.journal.append("agent_spawn", {"node": node.id, "process_id": proc.id,
-                                           "execution": {"seq": seq}})
+        spawn_row: dict[str, Any] = {"node": node.id, "process_id": proc.id,
+                                     "execution": {"seq": seq}}
+        if agent_def.get("agent_id"):
+            spawn_row["agent_id"] = agent_def["agent_id"]
+        run.journal.append("agent_spawn", spawn_row)
         await self._broadcast_node_status(run, node, "started",
                                           {"program_kind": nd.get("program_kind", "instruction"),
                                            "process_id": proc.id})
-        asyncio.create_task(self._watch_agent(run, node, proc.id, rt, seq, fe))
+        asyncio.create_task(self._watch_agent(run, node, proc.id, rt, seq, fe,
+                                              agent_id=agent_def.get("agent_id")))
 
     def _agent_instruction(self, run: _Run, node: FlowNodeDef, fe: FlowEvent,
-                           exec_base: Path) -> str:
+                           exec_base: Path, agent_def: dict[str, Any] | None = None) -> str:
         nd = node.node_data
         prompt = f" {nd.get('prompt')}" if nd.get("prompt") else ""
         base = (
@@ -651,6 +696,11 @@ class FlowManager:
             if nd.get("program_kind") == "skill"
             else f"{nd.get('program_ref') or ''}{prompt}"
         )
+        # A referenced Agent definition's system prompt (md body) leads; the
+        # node's inline program/prompt rides after it as the task addendum.
+        definition = str((agent_def or {}).get("prompt") or "")
+        if definition:
+            base = f"{definition}\n\n{base}" if base.strip() else definition
         preview = json.dumps(fe.data, indent=2, default=str)
         if len(preview) > 2000:
             preview = preview[:2000] + "\n… (truncated — read the input file for the full event)"
@@ -667,7 +717,8 @@ class FlowManager:
         return base + context
 
     async def _watch_agent(self, run: _Run, node: FlowNodeDef, proc_id: str,
-                           rt: _NodeRuntime, seq: int, fe: FlowEvent) -> None:
+                           rt: _NodeRuntime, seq: int, fe: FlowEvent,
+                           agent_id: str | None = None) -> None:
         """One-shot agent execution: wait for the turn to complete (busy→idle),
         stop the process, auto-emit ``done {output, output_files}``, free the slot."""
         from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
@@ -713,7 +764,8 @@ class FlowManager:
         finally:
             duration = int((time.monotonic() - started) * 1000)
             if exec_base is not None:
-                self._stamp_example(exec_base, run, node.id, seq, fe, process_id=proc_id)
+                self._stamp_example(exec_base, run, node.id, seq, fe, process_id=proc_id,
+                                    agent_id=agent_id)
             if failed:
                 self._finish_execution(run, rt)
                 run.journal.append("node_error", {"node": node.id, "process_id": proc_id,
