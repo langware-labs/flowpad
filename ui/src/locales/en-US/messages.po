@@ -2361,6 +2361,11 @@ msgstr "Close terminal"
 msgid "Close to the Right"
 msgstr "Close to the Right"
 
+#: src/pages/flow-page/workspace-child-strip.tsx
+#: src/pages/flow-page/workspace-child-strip.tsx
+msgid "Close workspace"
+msgstr "Close workspace"
+
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 msgid "Closed"
 msgstr "Closed"

@@ -2361,6 +2361,11 @@ msgstr "סגור טרמינל"
 msgid "Close to the Right"
 msgstr "סגור לימין"
 
+#: src/pages/flow-page/workspace-child-strip.tsx
+#: src/pages/flow-page/workspace-child-strip.tsx
+msgid "Close workspace"
+msgstr ""
+
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 msgid "Closed"
 msgstr "סגור"
