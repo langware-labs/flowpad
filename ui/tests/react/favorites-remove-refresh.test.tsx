@@ -6,6 +6,12 @@ import { Bookmark, BookmarkType } from '@sdk';
 const FOLDER = '00000000-0000-4000-8000-000000000001';
 const LEAF = '00000000-0000-4000-8000-000000000011';
 const ROOT_LEAF = '00000000-0000-4000-8000-000000000021';
+// Real (resolvable) entity ids so each leaf clears the ghost-reap navigability
+// gate (`canNavigateFavorite`) and actually renders — a favorite whose target
+// resolves nowhere is now hidden before its toolbar is reachable. Must be valid
+// entity ids (UUID v4/v5) or `resultTypeId` rejects them and the pointer is null.
+const LEAF_ENTITY = '00000000-0000-4000-8000-0000000000aa';
+const ROOT_LEAF_ENTITY = '00000000-0000-4000-8000-0000000000bb';
 
 const h = vi.hoisted(() => ({ bookmarks: [] as Bookmark[], refreshNode: vi.fn(), refetch: vi.fn() }));
 
@@ -32,13 +38,13 @@ const leafInFolder = new Bookmark({
   bookmark_type: BookmarkType.FAVORITE,
   title: 'git-basics',
   parent_id: FOLDER,
-  data: { entity_type: 'markdown', entity_id: 'x' },
+  data: { entity_type: 'markdown', entity_id: LEAF_ENTITY },
 });
 const rootLeaf = new Bookmark({
   id: ROOT_LEAF,
   bookmark_type: BookmarkType.FAVORITE,
   title: 'loose',
-  data: { entity_type: 'markdown', entity_id: 'y' },
+  data: { entity_type: 'markdown', entity_id: ROOT_LEAF_ENTITY },
 });
 for (const b of [folder, leafInFolder, rootLeaf]) b.delete = vi.fn(() => Promise.resolve());
 

@@ -303,7 +303,20 @@ async def test_download_flow_message_returns_zip(bootstrapped_client):
     buf = io.BytesIO(download_resp.content)
     with zipfile.ZipFile(buf, "r") as zf:
         names = zf.namelist()
-    assert "header.json" in names, f"header.json missing from zip. Files: {names}"
+        # The top-level FlowMessage envelope was renamed header.json ->
+        # flow_message.json in the entities.json metadata-transport refactor
+        # (readers still accept the legacy name). Assert the envelope is present
+        # AND carries this message's identity — not just that some filename exists.
+        envelope_name = next(
+            (n for n in ("flow_message.json", "header.json") if n in names), None
+        )
+        assert envelope_name is not None, (
+            f"top-level FlowMessage envelope (flow_message.json) missing from zip. Files: {names}"
+        )
+        envelope = json.loads(zf.read(envelope_name))
+    assert envelope.get("id") == message_id, (
+        f"envelope {envelope_name} does not carry the message id: {envelope}"
+    )
 
 
 # ---------------------------------------------------------------------------

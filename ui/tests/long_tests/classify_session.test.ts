@@ -20,6 +20,9 @@ import {
 } from '@sdk';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiTestSetup, get_local_compute_node, getTestSignupInfo } from '../utils/test-utils';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 
 // ── Instruction template ────────────────────────────────────────────────────
 
@@ -76,29 +79,42 @@ describe('classify_session', () => {
     const computeNode = await get_local_compute_node();
     const localFsTypeId = new TypeId(ComputeNode.type, '@local');
 
-    // ── 1. Fetch the most recent live Claude session ────────────────────────
-    // worker-history scans the provider's current on-disk history. The generic
-    // fs-records collection is a shadow index and may retain orphaned rows after
-    // a fixture removes its source transcript.
-    const historyRaw = await apiClient.get<WorkerHistoryCandidate[] | { data?: WorkerHistoryCandidate[] }>(
-      `${GRAPH_API_PREFIX}/${ComputeNode.type}/@local/worker-history?limit=50`,
+    // ── 1. Seed a tiny, CONTROLLED Claude session to fork (hermetic) ─────────
+    // Do NOT grab the machine's most-recent on-disk session (worker-history[0]):
+    // in a live QA run that "latest" session is an unrelated/huge transcript
+    // (e.g. the QA cycle's own orchestration session), whose resumed context
+    // derails the trivial classify instruction so the artifact is never written.
+    // Instead run ONE minimal turn in a throwaway workdir to mint our own session,
+    // then fork THAT — the pipeline under test (fork → turn → artifact) is
+    // exercised identically, but deterministically.
+    const seedWorkdir = fs.mkdtempSync(path.join(os.tmpdir(), 'classify-seed-'));
+    const seed = await computeNode.createProcess(
+      { workdir: seedWorkdir, permissionMode: 'bypassPermissions' },
+      { visible: false, pty_mode: false },
     );
-    const history = Array.isArray(historyRaw) ? historyRaw : Array.isArray(historyRaw?.data) ? historyRaw.data : [];
-    const candidate = history.find((entry) => entry.worker_type === 'claude' && typeof entry.worker_id === 'string');
-
-    if (!candidate?.worker_id) {
-      throw new Error('Need at least one live Claude session on disk');
+    await seed.watch();
+    const seedDone = new Promise<void>((resolve) => {
+      const unsub = seed.on('complete', () => {
+        unsub();
+        resolve();
+      });
+    });
+    await seed.executeInstruction('Reply with exactly: SEED_OK', { sync: false });
+    await Promise.race([
+      seedDone,
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('seed session turn did not complete')), 90_000),
+      ),
+    ]);
+    const seedText = String((seed as any).session_id ?? '');
+    if (!seedText) {
+      // If the model was unavailable/limited, skip rather than fail — same
+      // policy as the classify turn below.
+      context.skip('seed session did not capture a session_id (Claude unavailable?)');
     }
 
-    // Resolve once more through the authoritative provider lookup before the
-    // fork. This proves both the transcript and its original cwd still exist.
-    const session = await computeNode.findSession(candidate.worker_id, 'claude');
-    if (!session?.cwd) {
-      throw new Error('Selected Claude session or its original cwd no longer resolves on disk');
-    }
-
-    const sessionId = session.session_id;
-    const cwd = session.cwd;
+    const sessionId = seedText;
+    const cwd = seedWorkdir;
 
     console.log(`[classify] forking session ${sessionId} in ${cwd}`);
 
