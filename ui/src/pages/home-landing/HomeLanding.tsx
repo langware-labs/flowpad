@@ -12,9 +12,8 @@ import { SessionInput } from '@src/components/session-input/session-input';
 import { useGlobalSearchScope } from '@src/hooks/use-global-search-scope';
 import { AdvancedOnly, VibeSwap } from '@src/components/view-mode';
 import { useProjects } from '@src/hooks/use-projects';
-import { useProject } from '@src/hooks/useProject';
-import { useFS } from '@src/hooks/useFS';
-import { isCompleteGitOrigin, Project, TypeId } from '@sdk';
+import { HomeCustomBackground, HomeGreeting, useHomeCustomization } from '@src/components/home-customization';
+import { isCompleteGitOrigin } from '@sdk';
 import { useStartVibeSession } from '@src/pages/flow-page/use-start-vibe-session';
 import { useAuth } from '@sdk/react/hooks';
 import { useSystemTools } from '@src/hooks/use-system-tools';
@@ -29,7 +28,7 @@ import { HomeFeedColumn } from './feed';
 import { X, CheckCircle2 } from 'lucide-react';
 import { useInboxStore } from '@src/store/use-inbox-store';
 import { listInboxMessages } from '@src/components/inbox-view/inbox-api';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { GitOrigin, LastScanResult } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { VIBE_MODEL_DEFAULT, VibeModelSelect, type VibeModelTier } from '@src/pages/flow-page/vibe-model-select';
@@ -131,22 +130,8 @@ export function HomeLanding() {
   const firstName = currentUser?.name?.split(' ')[0] || 'there';
 
   // Per-project home branding from the ACTIVE project's `.flow/customization/`
-  // (see backend Project.customization). A `home_title` overrides the greeting;
-  // `home.png` renders as the home background. Absent → today's default home.
-  const { project } = useProject();
-  const custom = project?.customization;
-  const homeTitle = custom?.home_title || null; // already trimmed server-side
-  const projectTypeId = useMemo(
-    () => (project?.id ? new TypeId(Project.type, project.id) : undefined),
-    [project?.id],
-  );
-  const fs = useFS(projectTypeId);
-  const homeBgUrl =
-    custom?.has_home_background && fs ? fs.getDownloadUrl('.flow/customization/home.png') : null;
-  // Render the greeting: the `.flow/customization` override when set, else the
-  // layout's default. One decision point, two heroes (standard + vibe).
-  const greeting = (spanClassName: string, fallback: React.ReactNode): React.ReactNode =>
-    homeTitle ? <span className={spanClassName}>{homeTitle}</span> : fallback;
+  // — shared across every home surface (see useHomeCustomization).
+  const { homeTitle, homeBackgroundUrl } = useHomeCustomization();
 
   const [draftPrompt, setDraftPrompt] = useState('');
 
@@ -195,19 +180,7 @@ export function HomeLanding() {
 
   return (
     <div className="relative flex h-full flex-col overflow-hidden">
-      {/* Per-project home background image (`.flow/customization/home.png`), with
-          a scrim so foreground text stays legible. Rendered behind everything. */}
-      {homeBgUrl && (
-        <>
-          <div
-            aria-hidden
-            className="pointer-events-none absolute inset-0 z-0 bg-cover bg-center"
-            style={{ backgroundImage: `url("${homeBgUrl}")` }}
-            data-testid="home-custom-background"
-          />
-          <div aria-hidden className="pointer-events-none absolute inset-0 z-0 bg-background/60" />
-        </>
-      )}
+      <HomeCustomBackground url={homeBackgroundUrl} />
       <div className="relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden">
       <VibeSwap
         vibe={
@@ -222,12 +195,15 @@ export function HomeLanding() {
             />
             <div className="relative z-10 flex w-full max-w-2xl flex-col items-center gap-6 text-center">
               <h1 className="text-4xl font-bold tracking-tight sm:text-5xl">
-                {greeting(
-                  'vibe-gradient-text',
-                  <Trans>
-                    Build something <span className="vibe-gradient-text">amazing</span>
-                  </Trans>,
-                )}
+                <HomeGreeting
+                  override={homeTitle}
+                  className="vibe-gradient-text"
+                  fallback={
+                    <Trans>
+                      Build something <span className="vibe-gradient-text">amazing</span>
+                    </Trans>
+                  }
+                />
               </h1>
               <p className="text-lg text-muted-foreground">
                 <Trans>Create apps and tools by chatting with AI</Trans>
@@ -300,12 +276,15 @@ export function HomeLanding() {
           {/* Hero — fixed at the top, never scrolls */}
           <div className="flex shrink-0 flex-col items-center gap-6 text-center">
             <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">
-              {greeting(
-                'bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent',
-                <Trans>
-                  Hey <span className="bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">{firstName}</span>
-                </Trans>,
-              )}
+              <HomeGreeting
+                override={homeTitle}
+                className="bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent"
+                fallback={
+                  <Trans>
+                    Hey <span className="bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">{firstName}</span>
+                  </Trans>
+                }
+              />
             </h1>
 
             <div className="flex w-full max-w-3xl flex-col items-end gap-2">
