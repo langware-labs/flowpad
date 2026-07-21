@@ -1,4 +1,4 @@
-import { MessageAttachment, TypeId } from '@sdk';
+import { MessageAttachment, Project, TypeId } from '@sdk';
 import { gitOriginCloneUrl, type GitOrigin } from '@sdk/models/GitOrigin';
 import { useEntity } from '@sdk/react/hooks';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -11,9 +11,7 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { editorForType } from '@src/navigation/asset-doc-types';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { ProjectSelectorModal, projectListToSelectorItems } from '@src/components/project-selector';
-import { useEnsureProject } from '@src/components/project-selector/use-ensure-project';
-import { useAllProjects } from '@src/hooks/use-all-projects';
+import { OpenProjectComponent } from '@src/components/open-project-component/open-project-component';
 import { AssetEditorRouter } from '@src/components/assets/editor/AssetEditorRouter';
 import { notify } from '@src/notifications';
 import { buildDockPointer, iconForEntity } from '../EntityChip';
@@ -233,18 +231,15 @@ export function AssetReviewDialog({
   const installable = useMemo(() => liveOrdered.filter((a) => !isGitAttachment(a)), [liveOrdered]);
 
   // Install target: the conversation mapping wins; otherwise the project the
-  // user picks via the top-right "Select project" button.
+  // user picks through the switch-project dialog on "Install in project".
   const [selectedProject, setSelectedProject] = useState<{ id: string; name: string } | null>(null);
   const targetProjectId = attachmentProjectId ?? selectedProject?.id ?? null;
 
-  const [busy, setBusy] = useState(false);
+  // Which scope action is in flight — ONLY that button spins; the others just
+  // disable. A single `busy` boolean made every button spin at once.
+  const [busyAction, setBusyAction] = useState<null | 'project' | 'global' | 'uninstall'>(null);
+  const busy = busyAction != null;
   const [pickerOpen, setPickerOpen] = useState(false);
-  // Set when the picker was opened by "Install in project" (vs. the bare
-  // "Select project" button) — install the whole list once a project resolves.
-  const [installAfterPick, setInstallAfterPick] = useState(false);
-  const { projects, isLoading: projectsLoading } = useAllProjects({ enabled: pickerOpen });
-  const projectItems = useMemo(() => projectListToSelectorItems(projects), [projects]);
-  const ensureProject = useEnsureProject();
 
   // ── Batch install state (over the non-git attachments) ───────────────────
   const scopes = installable.map((a) => a.effectiveScope);
@@ -258,7 +253,7 @@ export function AssetReviewDialog({
   const selectedInstalled = selected.effectiveScope != null;
 
   const installAllToProject = async (projectId: string, name?: string) => {
-    setBusy(true);
+    setBusyAction('project');
     try {
       for (const a of installable) await a.install('project', projectId);
       notify.success({ title: t`Installed in project`, message: name ?? '' });
@@ -266,7 +261,7 @@ export function AssetReviewDialog({
       console.error('[asset-review] batch project install failed', err);
       notify.error({ title: t`Install failed` });
     } finally {
-      setBusy(false);
+      setBusyAction(null);
     }
   };
 
@@ -275,13 +270,13 @@ export function AssetReviewDialog({
       void installAllToProject(targetProjectId, selectedProject?.name);
       return;
     }
-    // No target yet — open the picker and install once one is chosen.
-    setInstallAfterPick(true);
+    // No target yet — open the switch-project dialog (Open folder / Create new
+    // included) and install once a project is picked (handleProjectPicked).
     setPickerOpen(true);
   };
 
   const handleInstallGlobal = async () => {
-    setBusy(true);
+    setBusyAction('global');
     try {
       for (const a of installable) await a.install('user');
       notify.success({ title: t`Installed`, message: t`${installable.length} attachments` });
@@ -289,12 +284,12 @@ export function AssetReviewDialog({
       console.error('[asset-review] batch global install failed', err);
       notify.error({ title: t`Install failed` });
     } finally {
-      setBusy(false);
+      setBusyAction(null);
     }
   };
 
   const handleUninstallAll = async () => {
-    setBusy(true);
+    setBusyAction('uninstall');
     try {
       for (const a of installable) if (a.effectiveScope != null) await a.uninstall();
       notify.success({ title: t`Uninstalled` });
@@ -302,25 +297,16 @@ export function AssetReviewDialog({
       console.error('[asset-review] batch uninstall failed', err);
       notify.error({ title: t`Uninstall failed` });
     } finally {
-      setBusy(false);
+      setBusyAction(null);
     }
   };
 
-  const handlePickProject = async (pathId: string) => {
-    const item = projectItems.find((i) => i.id === pathId);
-    if (!item?.path) return;
-    setPickerOpen(false);
-    const runInstall = installAfterPick;
-    setInstallAfterPick(false);
-    try {
-      const project = await ensureProject(item.path, { select: false });
-      if (!project.id) throw new Error('picked project has no id');
-      setSelectedProject({ id: project.id, name: project.displayName });
-      if (runInstall) await installAllToProject(project.id, project.displayName);
-    } catch (err) {
-      console.error('[asset-review] project selection failed', err);
-      notify.error({ title: t`Install failed` });
-    }
+  // Chosen via OpenProjectComponent (project row / Open folder / Create new) —
+  // remember it as the target and install the whole list into it.
+  const handleProjectPicked = async (project: Project) => {
+    if (!project.id) return;
+    setSelectedProject({ id: project.id, name: project.displayName });
+    await installAllToProject(project.id, project.displayName);
   };
 
   // Advanced-mode affordance: once an asset is installed its entity exists, so
@@ -334,7 +320,9 @@ export function AssetReviewDialog({
     onClose();
   };
 
-  const spinner = busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null;
+  // Spinner ONLY on the button whose action is running — others just disable.
+  const spinnerFor = (action: 'project' | 'global' | 'uninstall') =>
+    busyAction === action ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null;
   const SelectedIcon = iconFor(selected);
   const multi = ordered.length > 1;
 
@@ -389,7 +377,7 @@ export function AssetReviewDialog({
                   onClick={() => void handleUninstallAll()}
                   data-testid="asset-uninstall-project"
                 >
-                  {spinner ?? <Trash2 className="h-3.5 w-3.5" />}
+                  {spinnerFor('uninstall') ?? <Trash2 className="h-3.5 w-3.5" />}
                   <Trans>Uninstall from project</Trans>
                 </Button>
               ) : (
@@ -401,7 +389,7 @@ export function AssetReviewDialog({
                   onClick={handleInstallProject}
                   data-testid="asset-install-project"
                 >
-                  {spinner ?? <FolderDown className="h-3.5 w-3.5" />}
+                  {spinnerFor('project') ?? <FolderDown className="h-3.5 w-3.5" />}
                   <Trans>Install in project</Trans>
                 </Button>
               )}
@@ -414,7 +402,7 @@ export function AssetReviewDialog({
                     onClick={() => void handleUninstallAll()}
                     data-testid="asset-uninstall-global"
                   >
-                    {spinner ?? <Trash2 className="h-3.5 w-3.5" />}
+                    {spinnerFor('uninstall') ?? <Trash2 className="h-3.5 w-3.5" />}
                     <Trans>Uninstall</Trans>
                   </Button>
                 ) : (
@@ -426,7 +414,7 @@ export function AssetReviewDialog({
                     onClick={() => void handleInstallGlobal()}
                     data-testid="asset-install-global"
                   >
-                    {spinner ?? <Globe className="h-3.5 w-3.5" />}
+                    {spinnerFor('global') ?? <Globe className="h-3.5 w-3.5" />}
                     <Trans>Install global</Trans>
                   </Button>
                 ))}
@@ -494,17 +482,10 @@ export function AssetReviewDialog({
           </div>
         </div>
 
-        <ProjectSelectorModal
+        <OpenProjectComponent
           open={pickerOpen}
-          onOpenChange={(o) => {
-            setPickerOpen(o);
-            if (!o) setInstallAfterPick(false);
-          }}
-          projects={projectItems}
-          selectedId={null}
-          onSelect={(id) => void handlePickProject(id)}
-          isLoading={projectsLoading}
-          title={t`Install in project`}
+          onOpenChange={setPickerOpen}
+          onPicked={(project) => void handleProjectPicked(project)}
         />
       </DialogContent>
     </Dialog>

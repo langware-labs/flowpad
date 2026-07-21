@@ -24,7 +24,7 @@ import { useWizardRun } from '@src/hooks/use-wizard-run';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { cn } from '@src/lib/utils';
 import { notify } from '@src/notifications';
-import { File as FileIcon, Folder as FolderIcon, GitBranch, Loader2, Plus, Wrench, X } from 'lucide-react';
+import { Download, File as FileIcon, Folder as FolderIcon, GitBranch, Loader2, Plus, Wrench, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 
 interface TaskAttachmentsProps {
@@ -106,25 +106,36 @@ function GitPullAttachmentRow({
         <FolderIcon className="h-4 w-4 text-muted-foreground" />
         <GitBranch className="absolute -bottom-1 -right-1 h-2.5 w-2.5 rounded-full bg-background text-orange-500" />
       </span>
-      <button
-        type="button"
-        onClick={run.onClick}
-        className="min-w-0 flex-1 truncate text-left hover:underline"
+      <span
+        className="min-w-0 flex-1 truncate"
         title={attachment.git_origin ? formatGitOrigin(attachment.git_origin) : attachment.label}
       >
         {attachment.label}
+      </span>
+      <button
+        type="button"
+        onClick={run.onClick}
+        aria-busy={running}
+        title="Pull · double-click to open the wizard"
+        className="inline-flex shrink-0 items-center gap-1 rounded-full border border-transparent px-2 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-muted-foreground/10"
+      >
+        {running ? (
+          <>
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            {run.toolCount > 0 && (
+              <>
+                <span>· {run.toolCount}</span>
+                <Wrench className="h-3 w-3" />
+              </>
+            )}
+          </>
+        ) : (
+          <>
+            <Download className="h-3.5 w-3.5" />
+            <span>Pull</span>
+          </>
+        )}
       </button>
-      {running && (
-        <span className="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground" title="pulling…">
-          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          {run.toolCount > 0 && (
-            <>
-              <span>· {run.toolCount}</span>
-              <Wrench className="h-3 w-3" />
-            </>
-          )}
-        </span>
-      )}
       {onRemove && (
         <button
           type="button"
