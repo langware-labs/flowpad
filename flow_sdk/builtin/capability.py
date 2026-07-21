@@ -92,14 +92,19 @@ class Capability(Entity):
             system=True,
         )
 
-    # Once-per-process guard: the spec→row reconcile is idempotent but costs a
+    # Per-driver seed guard: the spec→row reconcile is idempotent but costs a
     # DB read per spec, and ensure_seeded is called from every classmethod
-    # accessor. First successful run flips this; later calls are free.
-    _seeded_once: ClassVar[bool] = False
+    # accessor. We key the guard to the DB DRIVER instance we seeded against,
+    # not a bare bool — so ANY driver swap (a test fixture pointing _db at an
+    # isolated DB, or a production reinit_db "Switch DB") auto-invalidates the
+    # guard and re-seeds against the now-active DB. A bare bool would latch True
+    # on the first (possibly throwaway) DB and starve every later driver of its
+    # capability rows.
+    _seeded_driver: ClassVar[object] = None
 
     @classmethod
     async def ensure_seeded(cls) -> list["Capability"]:
-        if cls._seeded_once:
+        if cls._seeded_driver is cls._db:
             return []
         seeded: list[Capability] = []
         for spec in get_default_capability_specs():
@@ -127,7 +132,7 @@ class Capability(Entity):
                     setattr(existing, field, expected_value)
                     changed = True
             seeded.append(await existing.save(notify=False) if changed else existing)
-        cls._seeded_once = True
+        cls._seeded_driver = cls._db
         return seeded
 
     @classmethod

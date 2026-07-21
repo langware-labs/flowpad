@@ -1647,7 +1647,18 @@ class FsRecordsActionsMixin:
 
         # Expand ~ and resolve to a Path. Don't require the file to exist yet —
         # we'll let the discovery layer decide.
+        #
+        # The frontend's VFS encoding strips the leading slash off a compute-node-
+        # rooted path (``compute_node-@local/Users/…`` parses to entitySubPath
+        # ``Users/…``), and ``useEntityByPath`` sends that relative form straight
+        # here. Anchor a non-absolute path at the compute-node root ``/`` —
+        # mirroring ``VFSPath.machinePath`` — so it resolves the SAME on-disk asset
+        # as the absolute machinePath. Without this the path resolves against the
+        # backend CWD, misses, and 404s: the "not available" MissingAssetCard bug
+        # this route's regression guard covers.
         expanded = str(Path(raw_path).expanduser())
+        if not Path(expanded).is_absolute():
+            expanded = "/" + expanded
 
         # Pass 1 + fast recovery (targeted single-file parse + sync) live in
         # the shared ``discover_record_by_path`` helper — also used by
@@ -2241,7 +2252,9 @@ def _normalize_asset_path(p: str) -> str:
     return p
 
 
-async def discover_record_by_path(record_type: str, path: str, *, notify: bool = False):
+async def discover_record_by_path(
+    record_type: str, path: str, *, notify: bool = False, proposed_id: str | None = None
+):
     """Find-or-recover ONE record by absolute path — the interactive fast path.
 
     If the source exists, parse JUST this file/folder via the type's
@@ -2259,6 +2272,16 @@ async def discover_record_by_path(record_type: str, path: str, *, notify: bool =
     the fresh-parse ``sync_to_db`` broadcasts the entity op — this is the
     force-reindex path used by ``reindex_paths`` so a changed file re-parses AND
     pushes a ``data_op_msg`` (bumped ``updated_date``) to watching clients.
+
+    ``proposed_id`` (reindex only): the id of the entity ALREADY resolved for
+    this path via ``get_by_asset_ref``. A portable asset (e.g. markdown) carries
+    its id in an in-file identity capsule; a full-content overwrite (a real agent
+    replacing a doc) wipes that capsule, so a bare re-parse would ``mint_id`` a
+    FRESH v4 and fork a NEW entity, leaving the original's ``updated_date``
+    frozen. Threading the known id makes ``mint_id`` re-stamp the capsule with the
+    ORIGINAL id so the SAME entity updates in place. Consulted only on a capsule
+    MISS — a still-present valid carrier id always wins, and folder types are
+    unaffected (their capsule lives outside the edited file).
     """
     import asyncio as _asyncio  # noqa: PLC0415
 
@@ -2294,7 +2317,9 @@ async def discover_record_by_path(record_type: str, path: str, *, notify: bool =
                     record_type=_RT(record_type),
                     scope=classify_path(expanded),
                 )
-                resolved_id = _info.extract_id(one_ref) or _info.mint_id(one_ref)
+                resolved_id = _info.extract_id(one_ref) or _info.mint_id(
+                    one_ref, proposed_id=proposed_id
+                )
 
                 # Match the full indexer's duplicate rule: a live DB source
                 # wins; a second path carrying the same type+id is observable

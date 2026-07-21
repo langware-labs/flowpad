@@ -35,11 +35,13 @@
  * "Expected to FAIL today on every open →/close → case"; that is stale — kept
  * here only to explain why the cases are phrased as a bug repro.)
  *
- * RUNNING IT: needs `FLOW_INSTANCE=<disposable>` AND `FLOWPAD_CLAUDE_HOME=<abs
- * path>` — and the BACKEND must be launched with the SAME `FLOWPAD_CLAUDE_HOME`,
- * or worker-history walks a different tree, no fixture session is ever found and
- * all six cases fail on timeout (including the "create" baseline). Launch via
- * `FLOWPAD_CLAUDE_HOME=<dir> scripts/instance_ctl.sh launch <name>`.
+ * RUNNING IT: needs `FLOW_INSTANCE=<disposable>`. The claude/transcript home is
+ * resolved with the backend's own precedence — `FLOWPAD_CLAUDE_HOME`, then
+ * `CLAUDE_CONFIG_DIR`, else `~/.claude` — so the fixtures always land in the
+ * tree worker-history walks. If you launch the backend with an explicit
+ * cycle-owned `FLOWPAD_CLAUDE_HOME` (`FLOWPAD_CLAUDE_HOME=<dir>
+ * scripts/instance_ctl.sh launch <name>`), export the SAME value to this run so
+ * both agree on that dir instead of the shared `~/.claude` default.
  */
 import { AgenticProcess, Project, Tab } from '@sdk';
 import { renderHook, waitFor } from '@testing-library/react';
@@ -64,10 +66,18 @@ const OVER_WINDOW_MS = STABILITY_MS + 600;
 
 const RUN = randomUUID();
 const FLOW_INSTANCE = process.env.FLOW_INSTANCE?.trim() || '';
-const CLAUDE_HOME = process.env.FLOWPAD_CLAUDE_HOME;
-if (!CLAUDE_HOME || !path.isAbsolute(CLAUDE_HOME)) {
-  throw new Error('FLOWPAD_CLAUDE_HOME must be an absolute cycle-owned path for chats-open-recency');
-}
+// Resolve the ONE claude/transcript home the backend walks, mirroring
+// InstanceSettings._resolve_claude_home exactly: FLOWPAD_CLAUDE_HOME wins, then
+// Claude Code's native CLAUDE_CONFIG_DIR, else ~/.claude. The backend selects
+// its home by the SAME precedence, so writing fixtures here guarantees
+// worker-history finds them whether the cycle launched the backend with an
+// explicit cycle-owned home or on the default. (Hard-throwing when the env was
+// unset was stricter than both the backend and the FLOW_INSTANCE-only react
+// harness — which never sets FLOWPAD_CLAUDE_HOME — leaving the suite
+// un-collectable under its own documented run command.)
+const CLAUDE_HOME = path.resolve(
+  process.env.FLOWPAD_CLAUDE_HOME || process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'),
+);
 const FLOW_HOME = path.resolve(process.env.FLOW_HOME || path.join(os.homedir(), '.flow'));
 /** NON-scratch encoded dir name so worker-history does not filter it (unlike
  *  `-history-merge-test-`, which is scratch-listed). */
