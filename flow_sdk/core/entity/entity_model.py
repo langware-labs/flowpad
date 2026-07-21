@@ -716,6 +716,24 @@ class Entity(DBEntity):
             finally:
                 _SUPPRESS_STORE.reset(token)
         data = record.meta_dict()
+        # Lift the type's DECLARED typed metadata out of the nested ``metadata``
+        # section onto top-level entity fields — symmetric with the DOWN path
+        # (``metadata_payload``), which writes exactly the ``meta_model`` fields.
+        # ``extract_*`` parsers stash known fields under a single ``metadata``
+        # key that ``meta_dict()`` keeps nested; without this the DB row silently
+        # keeps entity-field DEFAULTS for every meta_model field (e.g. deck
+        # ``num_slides``/``html_file``/``template_ref``, deck_template
+        # ``num_layouts``) — the drift ``_build_from_fs_record`` already corrects
+        # for the DB-free ``from_fs_ref`` loader. Scoped to meta_model field
+        # names so arbitrary carrier keys stay nested for types that expose a
+        # generic ``metadata`` dict field (e.g. a skill's ``eval``); ``metadata``
+        # is left in ``data`` so that dict field still populates.
+        _nested = data.get("metadata")
+        if isinstance(_nested, dict):
+            _mm = getattr(SchemaRegistry.get(record_type), "meta_model", None)
+            for _k in getattr(_mm, "model_fields", None) or {}:
+                if _k in _nested and _k not in data:
+                    data[_k] = _nested[_k]
         entity_uuid = entity_cls.allocate_id(data)
         # Filter by the *record's* type, not entity_cls.get_type(). The latter
         # is "entity" when entity_cls falls back to base Entity (most types

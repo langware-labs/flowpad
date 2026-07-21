@@ -12,6 +12,7 @@ import React from 'react';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { applyAllTabs, getAllTabsSnapshot } from '@src/tabs/all-tabs-store';
 import { ViewType } from '@src/types/ViewType';
+import { TooltipProvider } from '@src/components/ui/tooltip';
 
 const openDock = vi.fn();
 let currentDock: DockPointer | null = null;
@@ -78,7 +79,14 @@ describe('WorkspaceChildStrip', () => {
     const topLevel = row('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', { parent_tab_id: null });
     applyAllTabs([processTab(), child, foreign, topLevel]);
 
-    render(<WorkspaceChildStrip processTab={processTab()} processDock={processDock()} />);
+    render(
+      // The Close-workspace control renders a radix Tooltip, which needs an
+      // ambient TooltipProvider — the real app supplies one at its root
+      // (App.tsx). Mirror that here.
+      <TooltipProvider>
+        <WorkspaceChildStrip processTab={processTab()} processDock={processDock()} />
+      </TooltipProvider>,
+    );
 
     expect(screen.getByTestId('workspace-display-tab')).toBeTruthy();
     expect(screen.getByText('child bbbb')).toBeTruthy();
@@ -88,7 +96,14 @@ describe('WorkspaceChildStrip', () => {
 
   it('clicking the Display header navigates to the process dock', () => {
     applyAllTabs([processTab()]);
-    render(<WorkspaceChildStrip processTab={processTab()} processDock={processDock()} />);
+    render(
+      // The Close-workspace control renders a radix Tooltip, which needs an
+      // ambient TooltipProvider — the real app supplies one at its root
+      // (App.tsx). Mirror that here.
+      <TooltipProvider>
+        <WorkspaceChildStrip processTab={processTab()} processDock={processDock()} />
+      </TooltipProvider>,
+    );
 
     fireEvent.click(screen.getByTestId('workspace-display-tab'));
     expect(openDock).toHaveBeenCalledTimes(1);
@@ -102,7 +117,14 @@ describe('WorkspaceChildStrip', () => {
     currentDock = new DockPointer(new Tab(child).dockPointer!);
     vi.spyOn(Tab, 'closeById').mockResolvedValue([]);
 
-    render(<WorkspaceChildStrip processTab={processTab()} processDock={processDock()} />);
+    render(
+      // The Close-workspace control renders a radix Tooltip, which needs an
+      // ambient TooltipProvider — the real app supplies one at its root
+      // (App.tsx). Mirror that here.
+      <TooltipProvider>
+        <WorkspaceChildStrip processTab={processTab()} processDock={processDock()} />
+      </TooltipProvider>,
+    );
     fireEvent.click(screen.getAllByLabelText('Close tab')[0]);
 
     expect(openDock).toHaveBeenCalled();
