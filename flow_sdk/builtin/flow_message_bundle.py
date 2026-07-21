@@ -906,11 +906,26 @@ async def _reindex_root(root: Path, record_type, *, types=None, project_id: str 
     from flow_sdk.fs_store.fs_ref import FSRef
     from flow_sdk.fs_store.indexer import IndexerOptions
     from flow_sdk.fs_store.indexer.builtin import build_default_indexer
+    from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
+
+    # Scope follows the root's ``record_type`` — the FSRef provenance convention
+    # (docs/fs-ref.md): USER_HOME_FOLDER → user, REAL_PROJECT_CWD/CWD_ROOT →
+    # project, SYSTEM_ROOT → system. This used to hardcode "user", so an
+    # install INTO a project walked under a user-scoped root and every row
+    # landed scope='user' with project_id set — which project-scoped views
+    # (scope in {project, system}) filter out, hiding the asset in the very
+    # project it was installed into.
+    scope = {
+        RecordType.USER_HOME_FOLDER: "user",
+        RecordType.REAL_PROJECT_CWD: "project",
+        RecordType.CWD_ROOT: "project",
+        RecordType.SYSTEM_ROOT: "system",
+    }.get(record_type, "user")
 
     indexer = build_default_indexer()
     await indexer.index(
         IndexerOptions(
-            roots=(FSRef(root, record_type=record_type, scope="user", project_id=project_id),),
+            roots=(FSRef(root, record_type=record_type, scope=scope, project_id=project_id),),
             types=types,
             force=True,
             verbose=False,
@@ -2661,6 +2676,14 @@ async def unpack_bundle(
                                 "status": task_data.get("status", "to_do"),
                                 "spec_type": task_data.get("spec_type") or None,
                                 "project_id": None,
+                                # DOWNLOADED carries NO scope — the install
+                                # action stamps the chosen user/project scope
+                                # (docs/collab/messages-and-attachments.md §6).
+                                # Declared explicitly so the save chokepoint
+                                # honors it instead of deriving 'user' from the
+                                # phantom user-home placement of a row that is
+                                # never written to disk.
+                                "scope": None,
                             }
                             existing_task = await Task.get_one({"id": task_id})
                             if existing_task is None or overwrite:
