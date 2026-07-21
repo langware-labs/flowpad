@@ -1,4 +1,4 @@
-import { PageId, ViewType } from '@sdk';
+import { PageId, ViewType, WorldViewProjection } from '@sdk';
 import { useAuth } from '@sdk/react/hooks';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useProjects } from '@src/hooks/use-projects';
@@ -7,6 +7,7 @@ import {
   Building2,
   CheckCircle,
   Circle,
+  ExternalLink,
   FolderGit2,
   Globe,
   Loader2,
@@ -16,12 +17,48 @@ import {
   XCircle,
 } from 'lucide-react';
 import { Trans, useLingui } from '@lingui/react/macro';
+import { useState } from 'react';
+
+type HubWorldViewProjection = typeof WorldViewProjection.WORLD | typeof WorldViewProjection.ORGANIZATION;
 
 function StepIcon({ status }: { status: Step['status'] }) {
   if (status === 'loading') return <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />;
   if (status === 'success') return <CheckCircle className="h-3.5 w-3.5 text-green-500" />;
   if (status === 'error') return <XCircle className="h-3.5 w-3.5 text-destructive" />;
   return <Circle className="h-3.5 w-3.5 text-muted-foreground/40" />;
+}
+
+// Live desktop status (ExecutionEnvironmentStatus from the backend `ops/status`).
+// `card` tints the whole desktop block so status reads at a glance.
+const STATUS_META: Record<string, { label: string; dot: string; card: string }> = {
+  READY: { label: 'Running', dot: 'bg-green-500', card: 'border-green-500/40 bg-green-500/5' },
+  PAUSED: { label: 'Paused', dot: 'bg-yellow-500', card: 'border-yellow-500/40 bg-yellow-500/5' },
+  NOT_FOUND: { label: 'Not found', dot: 'bg-muted-foreground/40', card: 'border-border opacity-60' },
+  ERROR: { label: 'Unreachable', dot: 'bg-destructive', card: 'border-destructive/40 bg-destructive/5' },
+  NEW: { label: 'New', dot: 'bg-muted-foreground/40', card: 'border-border' },
+};
+
+/** Border/background tint for a desktop card, by live status. */
+function statusCardClass(status?: string): string {
+  if (!status) return 'border-border';
+  return STATUS_META[status]?.card ?? 'border-border';
+}
+
+function DesktopStatus({ status }: { status?: string }) {
+  if (!status) {
+    return (
+      <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground/60">
+        <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-muted-foreground/40" />
+      </span>
+    );
+  }
+  const meta = STATUS_META[status] ?? { label: status, dot: 'bg-muted-foreground/40' };
+  return (
+    <span className="flex shrink-0 items-center gap-1.5 text-[11px] text-muted-foreground" title={status}>
+      <span className={`h-2 w-2 shrink-0 rounded-full ${meta.dot}`} />
+      {meta.label}
+    </span>
+  );
 }
 
 /**
@@ -37,12 +74,27 @@ export function HubHome() {
   const { currentUser } = useAuth();
   const { navigation } = useDockNavigation();
   const { projects } = useProjects();
-  const { desktops, launch, launching, steps, launchUrl, openDesktop, deleteDesktop, deletingId } = useDesktops();
+  const {
+    desktops,
+    launch,
+    launching,
+    steps,
+    launchUrl,
+    openDesktop,
+    renameDesktop,
+    deleteDesktop,
+    deletingId,
+    statuses,
+  } = useDesktops();
   const launchStarted = steps.some((s) => s.status !== 'idle');
+
+  // Inline rename: single-click a desktop name to edit it.
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [draftName, setDraftName] = useState('');
 
   const firstName = currentUser?.name?.split(' ')[0] || 'there';
 
-  const openWorldView = (projection: 'world' | 'organization') =>
+  const openWorldView = (projection: HubWorldViewProjection) =>
     navigation.openPage(PageId.HUB, ViewType.WORLDVIEW, projection);
 
   return (
@@ -67,7 +119,7 @@ export function HubHome() {
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <button
             type="button"
-            onClick={() => openWorldView('world')}
+            onClick={() => openWorldView(WorldViewProjection.WORLD)}
             data-testid="hub-home-world"
             className="group flex flex-col items-start gap-2 rounded-xl border border-border bg-card p-5 text-left transition-colors hover:bg-accent"
           >
@@ -82,7 +134,7 @@ export function HubHome() {
 
           <button
             type="button"
-            onClick={() => openWorldView('organization')}
+            onClick={() => openWorldView(WorldViewProjection.ORGANIZATION)}
             data-testid="hub-home-organization"
             className="group flex flex-col items-start gap-2 rounded-xl border border-border bg-card p-5 text-left transition-colors hover:bg-accent"
           >
@@ -127,17 +179,51 @@ export function HubHome() {
                 data-testid="desktop-card"
                 data-node-id={d.id}
                 data-provider-id={d.node_provider_id}
-                className="group flex items-center gap-3 rounded-lg border border-border bg-card px-4 py-3"
+                data-status={statuses[d.id]}
+                className={`group flex items-center gap-3 rounded-lg border bg-card px-4 py-3 transition-colors ${statusCardClass(
+                  statuses[d.id],
+                )}`}
               >
                 <Monitor className="h-4 w-4 shrink-0 text-muted-foreground" />
+                {editingId === d.id ? (
+                  <input
+                    autoFocus
+                    value={draftName}
+                    onChange={(e) => setDraftName(e.target.value)}
+                    onBlur={() => {
+                      void renameDesktop(d, draftName);
+                      setEditingId(null);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') e.currentTarget.blur();
+                      else if (e.key === 'Escape') setEditingId(null);
+                    }}
+                    data-testid="desktop-name-input"
+                    className="min-w-0 flex-1 border-b border-border bg-transparent text-sm outline-none"
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDraftName(d.name || '');
+                      setEditingId(d.id);
+                    }}
+                    className="min-w-0 flex-1 truncate text-left text-sm hover:underline"
+                    title={t`Click to rename`}
+                    data-testid="desktop-name"
+                  >
+                    {d.name || t`Desktop`}
+                  </button>
+                )}
+                <DesktopStatus status={statuses[d.id]} />
                 <button
                   type="button"
                   onClick={() => void openDesktop(d)}
-                  className="min-w-0 flex-1 truncate text-left text-sm hover:underline"
-                  title={d.name || undefined}
+                  aria-label={t`Open desktop`}
                   data-testid="desktop-open"
+                  className="text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
                 >
-                  {d.name || t`Desktop`}
+                  <ExternalLink className="h-4 w-4" />
                 </button>
                 <button
                   type="button"
