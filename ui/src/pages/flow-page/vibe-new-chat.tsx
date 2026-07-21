@@ -1,4 +1,5 @@
 import { SessionInput } from '@src/components/session-input/session-input';
+import { HomeCustomBackground, HomeGreeting, useHomeCustomization } from '@src/components/home-customization';
 import { OpenProjectComponent } from '@src/components/open-project-component/open-project-component';
 import { normalizePath, useProjectOpener } from '@src/components/open-project-component/use-open-project';
 import { NewProjectDialog } from '@src/components/project-selector';
@@ -37,6 +38,7 @@ export function VibeNewChat() {
   const [isNewProjectOpen, setIsNewProjectOpen] = useState(false);
   const [isOpeningFolder, setIsOpeningFolder] = useState(false);
   const firstName = currentUser?.name?.split(' ')[0] || 'there';
+  const { homeTitle, homeBackgroundUrl } = useHomeCustomization();
   const defaultWorkspacePath = useMemo(
     () => dataContext.bootstrapInfo?.desktop_info?.paths?.workspace || '',
     [],
@@ -61,6 +63,7 @@ export function VibeNewChat() {
 
   return (
     <div className="relative flex h-full flex-col items-center justify-center overflow-hidden px-4">
+      <HomeCustomBackground url={homeBackgroundUrl} />
       <div
         aria-hidden
         className="vibe-hero-gradient pointer-events-none absolute inset-x-0 bottom-0 h-2/3"
@@ -70,9 +73,15 @@ export function VibeNewChat() {
         data-testid="vibe-new-chat"
       >
         <h1 className="text-3xl font-bold tracking-tight">
-          <Trans>
-            Hey <span className="bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">{firstName}</span>
-          </Trans>
+          <HomeGreeting
+            override={homeTitle}
+            className="bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent"
+            fallback={
+              <Trans>
+                Hey <span className="bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">{firstName}</span>
+              </Trans>
+            }
+          />
         </h1>
         <div className="w-full">
           <SessionInput

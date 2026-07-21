@@ -2,6 +2,7 @@ import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
 import { MembersAvatarStack } from '@src/components/conversation/MembersAvatarStack';
 import { QuickCreatePanel, useQuickCreatePick } from '@src/components/quick-create/QuickCreatePanel';
 import { SecretsCard } from './SecretsCard';
+import { HomeCustomizationCard } from './HomeCustomizationCard';
 import { Button } from '@src/components/ui/button';
 import { useContext as useDataContext } from '@src/hooks/useContext';
 import { WorkerToolbar } from '@src/components/workers/WorkerToolbar';
@@ -172,6 +173,11 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, showSe
           {/* Project secrets — value-free references + setup wizard. */}
           {dataCtx.project?.id === projectId && dataCtx.project && (
             <SecretsCard project={dataCtx.project as unknown as Project} />
+          )}
+
+          {/* Home customization — title + background written to .flow/customization/. */}
+          {dataCtx.project?.id === projectId && dataCtx.project && (
+            <HomeCustomizationCard project={dataCtx.project as unknown as Project} />
           )}
         </div>
       </div>
