@@ -5,6 +5,7 @@ import {
   dataContext,
   dataManager,
   ExecutionEnvironmentStatus,
+  type GitOrigin,
   QueryRequest,
   TypeId,
 } from '@sdk';
@@ -43,6 +44,15 @@ const INITIAL_STEPS: Step[] = [
   { id: 'health', label: 'Starting FlowPad and signing in', status: 'idle' },
   { id: 'open', label: 'Opening desktop', status: 'idle' },
 ];
+
+// Placeholder shown in the claimed tab while a desktop launches; replaced with the
+// real URL only once every step succeeds. It's a standalone blank-tab document (no
+// app stylesheet in scope), so the colors are inlined rather than theme tokens.
+const PREPARING_DESKTOP_HTML =
+  '<!doctype html><meta charset="utf-8"><title>Preparing desktop…</title>' +
+  '<style>html,body{height:100%;margin:0;display:grid;place-items:center;' +
+  'background:#0b0b0c;color:#e5e5e5;font:14px system-ui,sans-serif}</style>' +
+  '<div>Preparing your desktop…</div>';
 
 /** Only the fields we read from ops/workspace-ready. */
 interface WorkspaceReadyResult {
@@ -113,6 +123,50 @@ async function resolveHostUrl(nodeId: string): Promise<string> {
   return result.url;
 }
 
+/**
+ * A template to auto-load into the freshly launched desktop — "X shared a
+ * project with you." The box-side `HomeLanding` reads these off its landing URL
+ * and clones + indexes the template into a fresh Project.
+ */
+export interface TemplateLaunch {
+  gitOrigin: GitOrigin;
+  /** Display name for the box-side copy + the derived folder name. */
+  title: string;
+  senderName: string;
+}
+
+/**
+ * Point the desktop entry URL at the template-setup landing on the BOX.
+ *
+ * The box only self-provisions when it lands on `/dock/home?action=open&…`, so
+ * we thread the template through the box's own same-origin redirect: a gated
+ * host URL carries a `next=` (single-slash) path that the cookie-gate exchange
+ * honors, so we overwrite `next`; a bare host URL we resolve the landing path
+ * against directly. Either way the box arrives at `/dock/home` with the params.
+ */
+function withTemplateLanding(hostUrl: string, template: TemplateLaunch): string {
+  const landingParams = new URLSearchParams({
+    action: 'open',
+    project_template: '1',
+    git_origin: JSON.stringify(template.gitOrigin),
+    title: template.title,
+    sender_name: template.senderName,
+  });
+  const landingPath = `/dock/home?${landingParams.toString()}`;
+  try {
+    const u = new URL(hostUrl);
+    if (u.searchParams.has('next')) {
+      // Gated entry — the gate redirects to `next` after arming the cookie.
+      u.searchParams.set('next', landingPath);
+      return u.toString();
+    }
+    // Bare host — resolve the landing path against the same origin.
+    return new URL(landingPath, u.origin).toString();
+  } catch {
+    return hostUrl;
+  }
+}
+
 export function useDesktops() {
   const { user } = useAuth();
 
@@ -164,8 +218,9 @@ export function useDesktops() {
     setSteps((prev) => prev.map((s) => (s.id === id ? { ...s, ...next } : s)));
   }, []);
 
-  const launch = useCallback(async () => {
+  const launch = useCallback(async (opts?: { template?: TemplateLaunch }) => {
     if (launchingRef.current) return;
+    const template = opts?.template;
     // Prefer the workspace scope (hub does workspace.add_child); fall back to
     // owner scope ([]) when hub mode exposes no workspace — the node is still
     // owned by the caller and listed by the role-scoped query.
@@ -175,8 +230,15 @@ export function useDesktops() {
     setLaunchUrl(null);
     setSteps(INITIAL_STEPS);
 
-    // Claim the tab while we still hold the click gesture; fill its URL after the awaits.
+    // Claim the tab while we still hold the click gesture, but DON'T load the
+    // desktop into it yet — show a "preparing" placeholder and only navigate to
+    // the real URL once every launch step has succeeded (bug: the desktop must
+    // open only when ready, not flash a blank/half-ready tab).
     const tab = window.open('', '_blank');
+    if (tab) {
+      tab.document.write(PREPARING_DESKTOP_HTML);
+      tab.document.close();
+    }
 
     const run = async <T,>(id: StepId, fn: () => Promise<T>): Promise<T> => {
       patch(id, { status: 'loading', detail: undefined });
@@ -209,7 +271,12 @@ export function useDesktops() {
         return result;
       });
 
-      const url = await run('open', () => resolveHostUrl(node.id));
+      const url = await run('open', async () => {
+        const host = await resolveHostUrl(node.id);
+        // When launching from a template, land the box on its self-provision
+        // route so it clones + indexes the template before the user sees it.
+        return template ? withTemplateLanding(host, template) : host;
+      });
 
       // The just-launched sandbox is up — seed its status so the list effect
       // doesn't re-probe it.
