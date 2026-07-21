@@ -31,13 +31,24 @@ const WORKSPACE_PORT = 9007;
 const WORKSPACE_FLAVOR = 'workspace';
 
 export type StepStatus = 'idle' | 'loading' | 'success' | 'error';
-export type StepId = 'launch' | 'health' | 'open';
+export type StepId = 'launch' | 'health' | 'setup-git' | 'open';
 
 export interface Step {
   id: StepId;
   label: string;
   status: StepStatus;
   detail?: string;
+}
+
+/** Steps for the launch progress list. The `setup-git` step is only present
+ *  when launching from a git repo (the hub clones + copies it into the box). */
+function initialSteps(withGit: boolean): Step[] {
+  return [
+    { id: 'launch', label: 'Launching desktop', status: 'idle' },
+    { id: 'health', label: 'Starting FlowPad and signing in', status: 'idle' },
+    ...(withGit ? [{ id: 'setup-git' as const, label: 'Setting up the git repo', status: 'idle' as const }] : []),
+    { id: 'open', label: 'Opening desktop', status: 'idle' },
+  ];
 }
 
 const INITIAL_STEPS: Step[] = [
@@ -48,12 +59,17 @@ const INITIAL_STEPS: Step[] = [
 
 // Placeholder shown in the claimed tab while a desktop launches; replaced with the
 // real URL only once every step succeeds. It's a standalone blank-tab document (no
-// app stylesheet in scope), so the colors are inlined rather than theme tokens.
-const PREPARING_DESKTOP_HTML =
-  '<!doctype html><meta charset="utf-8"><title>Preparing desktop…</title>' +
-  '<style>html,body{height:100%;margin:0;display:grid;place-items:center;' +
-  'background:#0b0b0c;color:#e5e5e5;font:14px system-ui,sans-serif}</style>' +
-  '<div>Preparing your desktop…</div>';
+// app stylesheet in scope), so the colors are inlined rather than theme tokens. The
+// `line` reflects the current launch step so the user sees progress (point 4).
+function preparingDesktopHtml(line: string): string {
+  const safe = line.replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c] as string));
+  return (
+    '<!doctype html><meta charset="utf-8"><title>Preparing desktop…</title>' +
+    '<style>html,body{height:100%;margin:0;display:grid;place-items:center;' +
+    'background:#0b0b0c;color:#e5e5e5;font:14px system-ui,sans-serif}</style>' +
+    `<div>${safe}</div>`
+  );
+}
 
 /** Only the fields we read from ops/workspace-ready. */
 interface WorkspaceReadyResult {
@@ -106,7 +122,7 @@ export function isDesktop(node: ComputeNode): boolean {
 }
 
 /** Next auto-name: one past the highest existing "Desktop N" (so it reads as latest). */
-function nextDesktopName(desktops: ComputeNode[]): string {
+export function nextDesktopName(desktops: ComputeNode[]): string {
   let max = 0;
   for (const d of desktops) {
     const m = /^Desktop (\d+)$/.exec(d.name ?? '');
@@ -125,47 +141,15 @@ async function resolveHostUrl(nodeId: string): Promise<string> {
 }
 
 /**
- * A template to auto-load into the freshly launched desktop — "X shared a
- * project with you." The box-side `HomeLanding` reads these off its landing URL
- * and clones + indexes the template into a fresh Project.
+ * A git repo to set up in a freshly launched desktop. After the box is up, the
+ * hub clones the repo (authed when private) and copies it into the box, then
+ * the box materializes it into a fresh, indexed Project. Public repos need no
+ * auth; private repos are gated on GitHub device-auth before launch.
  */
-export interface TemplateLaunch {
+export interface GitSetup {
   gitOrigin: GitOrigin;
-  /** Display name for the box-side copy + the derived folder name. */
-  title: string;
-  senderName: string;
-}
-
-/**
- * Point the desktop entry URL at the template-setup landing on the BOX.
- *
- * The box only self-provisions when it lands on `/dock/home?action=open&…`, so
- * we thread the template through the box's own same-origin redirect: a gated
- * host URL carries a `next=` (single-slash) path that the cookie-gate exchange
- * honors, so we overwrite `next`; a bare host URL we resolve the landing path
- * against directly. Either way the box arrives at `/dock/home` with the params.
- */
-function withTemplateLanding(hostUrl: string, template: TemplateLaunch): string {
-  const landingParams = new URLSearchParams({
-    action: 'open',
-    project_template: '1',
-    git_origin: JSON.stringify(template.gitOrigin),
-    title: template.title,
-    sender_name: template.senderName,
-  });
-  const landingPath = `/dock/home?${landingParams.toString()}`;
-  try {
-    const u = new URL(hostUrl);
-    if (u.searchParams.has('next')) {
-      // Gated entry — the gate redirects to `next` after arming the cookie.
-      u.searchParams.set('next', landingPath);
-      return u.toString();
-    }
-    // Bare host — resolve the landing path against the same origin.
-    return new URL(landingPath, u.origin).toString();
-  } catch {
-    return hostUrl;
-  }
+  /** Folder/display name for the set-up project. */
+  name: string;
 }
 
 export function useDesktops() {
@@ -219,9 +203,9 @@ export function useDesktops() {
     setSteps((prev) => prev.map((s) => (s.id === id ? { ...s, ...next } : s)));
   }, []);
 
-  const launch = useCallback(async (opts?: { template?: TemplateLaunch }) => {
+  const launch = useCallback(async (opts?: { name?: string; gitSetup?: GitSetup }) => {
     if (launchingRef.current) return;
-    const template = opts?.template;
+    const gitSetup = opts?.gitSetup;
     // Prefer the workspace scope (hub does workspace.add_child); fall back to
     // owner scope ([]) when hub mode exposes no workspace — the node is still
     // owned by the caller and listed by the role-scoped query.
@@ -229,20 +213,26 @@ export function useDesktops() {
     launchingRef.current = true;
     setLaunching(true);
     setLaunchUrl(null);
-    setSteps(INITIAL_STEPS);
+    setSteps(initialSteps(!!gitSetup));
 
     // Claim the tab while we still hold the click gesture, but DON'T load the
     // desktop into it yet — show a "preparing" placeholder and only navigate to
     // the real URL once every launch step has succeeded (bug: the desktop must
     // open only when ready, not flash a blank/half-ready tab).
     const tab = window.open('', '_blank');
-    if (tab) {
-      tab.document.write(PREPARING_DESKTOP_HTML);
-      tab.document.close();
-    }
+    const paintTab = (line: string) => {
+      if (tab) {
+        tab.document.open();
+        tab.document.write(preparingDesktopHtml(line));
+        tab.document.close();
+      }
+    };
+    paintTab('Preparing your desktop…');
 
     const run = async <T,>(id: StepId, fn: () => Promise<T>): Promise<T> => {
       patch(id, { status: 'loading', detail: undefined });
+      const stepLabel = initialSteps(!!gitSetup).find((s) => s.id === id)?.label;
+      if (stepLabel) paintTab(`${stepLabel}…`);
       try {
         const result = await fn();
         patch(id, { status: 'success' });
@@ -255,7 +245,7 @@ export function useDesktops() {
 
     try {
       const node = await run('launch', async () => {
-        const draft = new ComputeNode({ name: nextDesktopName(desktops), node_config: { flavor: WORKSPACE_FLAVOR } });
+        const draft = new ComputeNode({ name: opts?.name?.trim() || nextDesktopName(desktops), node_config: { flavor: WORKSPACE_FLAVOR } });
         await dataManager.save(draft.typeId, scope, hubEntityJson(draft) as never);
         // A bare workspace needs no LM-proxy key, and minting one costs round-trips.
         const providerId = await opsCall<string>(draft.id, 'setup', { skip_lm_proxy: true });
@@ -281,12 +271,22 @@ export function useDesktops() {
         return result;
       });
 
-      const url = await run('open', async () => {
-        const host = await resolveHostUrl(node.id);
-        // When launching from a template, land the box on its self-provision
-        // route so it clones + indexes the template before the user sees it.
-        return template ? withTemplateLanding(host, template) : host;
-      });
+      // Set up the git repo: the HUB clones it (authed when private) and copies
+      // the tree into the now-running box, which materializes + indexes it into
+      // a Project. Runs after the box is up so copy_folder has a target.
+      if (gitSetup) {
+        await run('setup-git', async () => {
+          patch('setup-git', { detail: `cloning ${gitSetup.name}…` });
+          const result = await opsCall<{ project?: unknown; message?: string }>(node.id, 'setup-git', {
+            git_origin: gitSetup.gitOrigin,
+            name: gitSetup.name,
+          });
+          if (!result?.project) throw new Error(result?.message || 'Git setup did not return a project');
+          return result;
+        });
+      }
+
+      const url = await run('open', () => resolveHostUrl(node.id));
 
       // The just-launched sandbox is up — seed its status so the list effect
       // doesn't re-probe it.

@@ -65,7 +65,7 @@ export function HomeLanding() {
     const fmId = params.get('fm') || '';
     const convId = params.get('conversation_id') || '';
     const taskId = params.get('task_id') || '';
-    const isTemplate = params.get('project_template') === '1';
+    const isGitSetup = params.get('setup_git') === '1';
     const title = params.get('title') || 'Shared';
     const senderName = params.get('sender_name') || 'Someone';
     const gitOriginParam = params.get('git_origin');
@@ -81,7 +81,7 @@ export function HomeLanding() {
 
     // Clean URL so refreshing doesn't re-trigger
     const url = new URL(window.location.href);
-    for (const key of ['action', 'fm', 'conversation_id', 'task_id', 'project_template', 'title', 'sender_name', 'git_origin']) {
+    for (const key of ['action', 'fm', 'conversation_id', 'task_id', 'setup_git', 'title', 'sender_name', 'git_origin']) {
       url.searchParams.delete(key);
     }
     window.history.replaceState(null, '', url.toString());
@@ -89,7 +89,7 @@ export function HomeLanding() {
     // Template launch: "X shared a project with you" — clone the template repo
     // into a fresh, indexed Project on THIS box. Checked before the task branch
     // because a template also carries a git_origin (but no task_id).
-    if (isTemplate && gitOrigin) {
+    if (isGitSetup && gitOrigin) {
       setPendingProject({ gitOrigin, projectName: title, senderName });
       return;
     }
