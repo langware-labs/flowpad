@@ -10,8 +10,7 @@ import { FolderOpen, FolderPlus, FolderSearch, Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useStartVibeSession } from './use-start-vibe-session';
-import { VIBE_MODEL_DEFAULT, VibeModelSelect, type VibeModelTier } from './vibe-model-select';
-import { VibeWorkerSelect } from './vibe-worker-select';
+import { VIBE_MODEL_DEFAULT, type VibeModelTier } from './vibe-model-select';
 import { VibeRecentSessions } from './vibe-recent-sessions';
 import { DEFAULT_WORKER_TYPE, type WorkerType } from '@src/components/workers/worker-types';
 
@@ -32,8 +31,8 @@ export function VibeNewChat() {
   const { currentUser } = useAuth();
   const startVibe = useStartVibeSession();
   const [draft, setDraft] = useState('');
-  const [model, setModel] = useState<VibeModelTier>(VIBE_MODEL_DEFAULT);
-  const [workerType, setWorkerType] = useState<WorkerType>(DEFAULT_WORKER_TYPE);
+  const model: VibeModelTier = VIBE_MODEL_DEFAULT;
+  const workerType: WorkerType = DEFAULT_WORKER_TYPE;
   const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
   const [isNewProjectOpen, setIsNewProjectOpen] = useState(false);
   const [isOpeningFolder, setIsOpeningFolder] = useState(false);
@@ -89,12 +88,6 @@ export function VibeNewChat() {
             value={draft}
             onChange={setDraft}
             allowAttachments
-            footerSlot={(
-              <div className="flex flex-wrap items-center gap-1.5">
-                <VibeModelSelect value={model} onChange={setModel} />
-                <VibeWorkerSelect value={workerType} onChange={setWorkerType} />
-              </div>
-            )}
             onSubmit={(msg, files) => startVibe(msg, files, model, workerType)}
           />
         </div>

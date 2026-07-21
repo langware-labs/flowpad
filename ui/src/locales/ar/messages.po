@@ -1585,6 +1585,10 @@ msgstr ""
 msgid "Backend URL not configured"
 msgstr ""
 
+#: src/components/project-home/HomeCustomizationCard.tsx
+msgid "Background image"
+msgstr ""
+
 #: src/components/account/database-section.tsx
 msgid "Backing up..."
 msgstr ""
@@ -1677,6 +1681,11 @@ msgstr ""
 
 #: src/components/GitHubConnectionDialog.tsx
 msgid "Branch:"
+msgstr ""
+
+#. placeholder {0}: HOME_STRINGS_PATH.replace('/string.json', '')
+#: src/components/project-home/HomeCustomizationCard.tsx
+msgid "Brand this project's home ({0}). Applies on every home surface when this is the active project."
 msgstr ""
 
 #: src/components/ui/breadcrumb.tsx
@@ -4933,6 +4942,10 @@ msgstr ""
 msgid "Failed to open project"
 msgstr ""
 
+#: src/components/project-home/HomeCustomizationCard.tsx
+msgid "Failed to remove image"
+msgstr ""
+
 #: src/components/workflows-view/WorkflowsNavigator.tsx
 #~ msgid "Failed to rename workflow"
 #~ msgstr ""
@@ -4963,6 +4976,10 @@ msgstr ""
 
 #: src/tabs/useTerminalStripController.tsx
 msgid "Failed to save the context snapshot."
+msgstr ""
+
+#: src/components/project-home/HomeCustomizationCard.tsx
+msgid "Failed to save title"
 msgstr ""
 
 #: src/components/conversation/MessageComposer.tsx
@@ -5047,6 +5064,10 @@ msgstr ""
 
 #: src/components/hooks-manager/index.tsx
 msgid "Failed to update trigger"
+msgstr ""
+
+#: src/components/project-home/HomeCustomizationCard.tsx
+msgid "Failed to upload image"
 msgstr ""
 
 #: src/components/chat-input.tsx
@@ -5831,8 +5852,29 @@ msgstr ""
 
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
+#: src/components/project-home/HomeCustomizationCard.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "Home"
+msgstr ""
+
+#: src/components/project-home/HomeCustomizationCard.tsx
+msgid "Home background"
+msgstr ""
+
+#: src/components/project-home/HomeCustomizationCard.tsx
+msgid "Home background removed"
+msgstr ""
+
+#: src/components/project-home/HomeCustomizationCard.tsx
+msgid "Home background updated"
+msgstr ""
+
+#: src/components/project-home/HomeCustomizationCard.tsx
+msgid "Home title"
+msgstr ""
+
+#: src/components/project-home/HomeCustomizationCard.tsx
+msgid "Home title saved"
 msgstr ""
 
 #: src/components/lens-viewer/shared/transcript-features/TranscriptEntryItem.tsx
@@ -6452,6 +6494,10 @@ msgstr ""
 
 #: src/components/image-annotator/ImageAnnotator.tsx
 msgid "Keep editing"
+msgstr ""
+
+#: src/components/project-home/HomeCustomizationCard.tsx
+msgid "Keep the default greeting…"
 msgstr ""
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
@@ -10482,6 +10528,10 @@ msgstr ""
 #~ msgid "Remind in {count} {0}"
 #~ msgstr ""
 
+#: src/components/project-home/HomeCustomizationCard.tsx
+msgid "Remove"
+msgstr ""
+
 #: src/components/conversation/MessageComposer.tsx
 msgid "Remove attachment"
 msgstr ""
@@ -10589,6 +10639,10 @@ msgstr ""
 
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "Reopen"
+msgstr ""
+
+#: src/components/project-home/HomeCustomizationCard.tsx
+msgid "Replace"
 msgstr ""
 
 #: src/components/terminal/interactive-terminal/pty-events-viewer/PTYEventsViewer.tsx
@@ -11091,6 +11145,7 @@ msgstr ""
 #: src/components/hooks-manager/TriggerForm.tsx
 #: src/components/hooks-view/HookEditor.tsx
 #: src/components/image-annotator/AnnotatorToolbar.tsx
+#: src/components/project-home/HomeCustomizationCard.tsx
 #: src/components/project-home/SecretsCard.tsx
 #: src/components/prompt-library/PromptEditDialog.tsx
 #: src/components/spec-editor/SpecEditor.tsx
@@ -13672,6 +13727,10 @@ msgstr ""
 
 #: src/components/version-popover/version-popover.tsx
 msgid "Upgrading…"
+msgstr ""
+
+#: src/components/project-home/HomeCustomizationCard.tsx
+msgid "Upload"
 msgstr ""
 
 #: src/components/simple-file-manager/SimpleFileManager.tsx
