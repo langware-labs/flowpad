@@ -22,3 +22,27 @@ export function openHarnessLoginModal(): void {
   if (isHubOnly()) return;
   useHarnessLoginStore.getState().setOpen(true);
 }
+
+// One-time "don't nag me again" flag for the STARTUP auto-open only. A user who
+// has dismissed the login modal once should not have it re-open on every app
+// mount (the footer warning still surfaces the partial/none-signed-in state and
+// re-opens the modal on click — an explicit user action, never suppressed). This
+// is the historical `DesktopSetupModal` contract that the harness-login gate
+// dropped; dozens of manual-regression tests dismiss the modal via this key.
+const SETUP_SEEN_KEY = 'llm-setup-modal-seen';
+
+export function hasDismissedHarnessLogin(): boolean {
+  try {
+    return localStorage.getItem(SETUP_SEEN_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+export function markHarnessLoginDismissed(): void {
+  try {
+    localStorage.setItem(SETUP_SEEN_KEY, 'true');
+  } catch {
+    /* storage unavailable — best-effort suppression only */
+  }
+}

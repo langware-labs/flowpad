@@ -37,7 +37,12 @@ import { Trans, useLingui } from '@lingui/react/macro';
 import { lucideByName } from '@src/lib/lucide-by-name';
 import { openExternal } from '@src/lib/open-external';
 import { openWikiModal } from '@src/components/wiki-tip/wiki-modal';
-import { openHarnessLoginModal, useHarnessLoginStore } from './harness-login-store';
+import {
+  hasDismissedHarnessLogin,
+  markHarnessLoginDismissed,
+  openHarnessLoginModal,
+  useHarnessLoginStore,
+} from './harness-login-store';
 
 const INSTALL_WIKI_PAGE = 'Install a harness';
 
@@ -693,7 +698,10 @@ function useHarnessLoginGate() {
           }),
         );
         const anySignedIn = results.some((r) => r?.status === 'logged_in');
-        if (!cancelled && !anySignedIn) openHarnessLoginModal();
+        // Auto-open only if the user hasn't already dismissed it — otherwise the
+        // modal would re-nag on every app mount. Explicit re-opens (footer
+        // warning) bypass this suppression by calling openHarnessLoginModal().
+        if (!cancelled && !anySignedIn && !hasDismissedHarnessLogin()) openHarnessLoginModal();
       } catch {
         /* capabilities unavailable — never block startup */
       }
@@ -1006,7 +1014,14 @@ export function HarnessLoginModalRoot() {
 
   if (!open) return null;
   return (
-    <Dialog open onOpenChange={setOpen}>
+    <Dialog
+      open
+      onOpenChange={(o) => {
+        // Remember an explicit dismissal so the startup gate stops re-nagging.
+        if (!o) markHarnessLoginDismissed();
+        setOpen(o);
+      }}
+    >
       <DialogContent className="sm:max-w-[440px]">
         <style>{`@keyframes hlIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}`}</style>
         {selected === 'mapping' ? (
