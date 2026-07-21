@@ -173,7 +173,7 @@ msgstr "{0} בתים"
 #. placeholder {3}: summary.error
 #: src/components/machine-overview/service-status-led.tsx
 msgid "{0} current · {1} stale · {2} partial · {3} error"
-msgstr ""
+msgstr "{0} עדכני · {1} מיושן · {2} חלקי · {3} שגיאה"
 
 #. placeholder {0}: tooBig.length
 #. placeholder {1}: tooBig.join(', ')
@@ -710,7 +710,7 @@ msgstr "פעיל: {activeDbPath}"
 
 #: src/components/graph-view/ui/TopBar.tsx
 msgid "Activity"
-msgstr ""
+msgstr "פעילות"
 
 #: src/components/skills-viewer/amd-editor/components/ElementBlock.tsx
 #~ msgid "add"
@@ -997,7 +997,7 @@ msgstr "כל השפות"
 
 #: src/components/machine-overview/service-status-led.tsx
 msgid "All observed deployments are current"
-msgstr ""
+msgstr "כל הפריסות עדכניות"
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 #: src/components/terminal/HistoryModal.tsx
@@ -1571,7 +1571,7 @@ msgstr "מאוזן"
 
 #: src/components/artifacts/artifact-form.tsx
 msgid "Base path"
-msgstr ""
+msgstr "נתיב בסיס"
 
 #: src/components/hooks-view/HookEditor.tsx
 msgid "Bash Command *"
@@ -1645,7 +1645,7 @@ msgstr "סימניות"
 
 #: src/components/artifacts/artifact-form.tsx
 msgid "Branch"
-msgstr ""
+msgstr "ענף"
 
 #: src/components/GitHubConnectionDialog.tsx
 msgid "Branch:"
@@ -2024,7 +2024,7 @@ msgstr "בחר תיקייה…"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Choose which model each tier uses, or add your own — per assistant and provider."
-msgstr ""
+msgstr "ניתן לבחור את המודל לכל דרגה, או להוסיף מודל משלך — לכל עוזר וספק."
 
 #: src/components/assets/ProjectPickerModal.tsx
 msgid "Choose which projects to filter by. Sorted by latest activity."
@@ -2045,7 +2045,7 @@ msgstr "Claude"
 
 #: src/components/icons/ClaudeRestoreIcon.tsx
 msgid "Claude (restored session)"
-msgstr ""
+msgstr "Claude (סשן שוחזר)"
 
 #: src/components/hooks-manager/HookForm.tsx
 #: src/components/project-home/ProjectHome.tsx
@@ -2084,7 +2084,7 @@ msgstr "הרצה נקייה - אין מה להחזיר."
 #. placeholder {0}: selected.size
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
 msgid "Clean up ({0})"
-msgstr ""
+msgstr "ניקוי ({0})"
 
 #: src/components/recovery/cleanup-modal.tsx
 msgid "Cleaned invalid sessions"
@@ -2092,15 +2092,15 @@ msgstr "ניקיון הפעולות הלא תקינות"
 
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
 msgid "Cleaning…"
-msgstr ""
+msgstr "מתבצע ניקוי…"
 
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
 msgid "Cleanup complete"
-msgstr ""
+msgstr "ניקוי הושלם"
 
 #: src/components/assets/editor/asset-cleanup/AssetCleanupReportAssetEditor.tsx
 msgid "Cleanup failed"
-msgstr ""
+msgstr "הניקיון נכשל"
 
 #: src/components/graph-context/GraphContextViewer.tsx
 #: src/components/hooks/EventListPanel.tsx
@@ -2336,7 +2336,7 @@ msgstr "סגור סימנייה"
 #: src/components/navigator-panel/NavigatorSearch.tsx
 #: src/components/navigator-panel/NavigatorSearch.tsx
 msgid "Close search"
-msgstr ""
+msgstr "סגירת החיפוש"
 
 #: src/components/tabs/TabStrip.tsx
 msgid "Close tab"
@@ -2366,7 +2366,7 @@ msgstr "Hub בענן"
 
 #: src/components/graph-view/GraphView.tsx
 msgid "Cloud WorldView"
-msgstr ""
+msgstr "תצוגת עולם בענן"
 
 #: src/components/markdown-view.tsx
 msgid "code"
@@ -2382,7 +2382,7 @@ msgstr "הקוד הועתק"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Code copied — paste it in the page we opened"
-msgstr ""
+msgstr "הקוד הועתק — יש להדביק אותו בדף שפתחנו"
 
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
 msgid "Code copied — paste it on the GitHub page"
@@ -2430,15 +2430,15 @@ msgstr "הפעלת Codex"
 
 #: src/pages/flow-page/VibeCollaborateButton.tsx
 msgid "Collaborate"
-msgstr ""
+msgstr "שיתוף פעולה"
 
 #: src/pages/flow-page/VibeCollaborateButton.tsx
 msgid "Collaborate on this session"
-msgstr ""
+msgstr "שיתוף פעולה בסשן זה"
 
 #: src/pages/flow-page/VibeCollaborateButton.tsx
 msgid "Collaboration"
-msgstr ""
+msgstr "שיתוף פעולה"
 
 #: src/components/browseable-tree/BrowseableTree.tsx
 #: src/components/browseable-tree/BrowseableTree.tsx
@@ -2465,7 +2465,7 @@ msgstr "צבע"
 
 #: src/components/graph-view/ui/TopBar.tsx
 msgid "Color by"
-msgstr ""
+msgstr "צבע לפי"
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Column visibility & trace filters"
@@ -2525,7 +2525,7 @@ msgstr "commit"
 
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
 msgid "Commit & continue"
-msgstr ""
+msgstr "לבצע commit ולהמשיך"
 
 #: src/components/terminal/interactive-terminal/WorktreeButtons.tsx
 #: src/components/terminal/interactive-terminal/WorktreeButtons.tsx
@@ -2542,7 +2542,7 @@ msgstr "commit נכשל"
 
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
 msgid "Commit your changes to share them"
-msgstr ""
+msgstr "יש לבצע commit לשינויים כדי לשתף אותם"
 
 #: src/components/assets/editor/skill/UsagePanel.tsx
 msgid "Commit/clean this asset first — Improve runs only on a clean-git asset."
@@ -2643,7 +2643,7 @@ msgstr "מחובר · {0}"
 
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "Connected to {hostName}'s machine."
-msgstr ""
+msgstr "חיבור פעיל למכונה של {hostName}."
 
 #: src/components/GitHubConnectionDialog.tsx
 msgid "Connected to GitHub"
@@ -2686,7 +2686,7 @@ msgstr "אנשי קשר"
 #. placeholder {0}: name.trim()
 #: src/components/contact-picker/CreateContactsGroupDialog.tsx
 msgid "Contacts group \"{0}\" created"
-msgstr ""
+msgstr "קבוצת אנשי קשר \"{0}\" נוצרה"
 
 #: src/components/hooks-view/HooksTable.tsx
 msgid "Content"
@@ -2722,7 +2722,7 @@ msgstr "פעולות רשימת הקשר"
 
 #: src/components/context-process/ContextProcessButton.tsx
 msgid "Context process"
-msgstr ""
+msgstr "תהליך הקשר"
 
 #: src/components/lens-viewer/ClaudeContextViewer.tsx
 msgid "context tokens"
@@ -2762,7 +2762,7 @@ msgstr "כותרת שיחה"
 
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 msgid "Conversations"
-msgstr ""
+msgstr "שיחות"
 
 #: src/components/account/database-section.tsx
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
@@ -2917,7 +2917,7 @@ msgstr "עלות"
 
 #: src/pages/flow-page/vibe-workspace.tsx
 msgid "Could not annotate view"
-msgstr ""
+msgstr "לא ניתן להוסיף הערות לתצוגה"
 
 #: src/components/privacy-mode/privacy-mode-popover.tsx
 msgid "Could not change privacy mode"
@@ -2925,7 +2925,7 @@ msgstr "לא היה ניתן לשנות את מצב הפרטיות"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Could not change sign-in method"
-msgstr ""
+msgstr "לא ניתן היה לשנות את שיטת ההתחברות"
 
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
 msgid "Could not copy the code"
@@ -2957,7 +2957,7 @@ msgstr "שגיאה בהקפאת ההקשר"
 
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "Could not generate a link"
-msgstr ""
+msgstr "לא ניתן ליצור קישור"
 
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 msgid "Could not load source: {error}"
@@ -2986,7 +2986,7 @@ msgstr "לא ניתן לפתור את ספריית הבית מתוך מידע bo
 #: src/components/assets/ShareContextFolderButton.tsx
 #: src/components/assets/ShareContextFolderButton.tsx
 msgid "Could not resolve this folder"
-msgstr ""
+msgstr "לא ניתן לפתור את התיקייה"
 
 #: src/components/execute-flow-view/instruction-panel/instruction-panel.tsx
 #~ msgid "Could not save changes"
@@ -2999,7 +2999,7 @@ msgstr ""
 #: src/pages/flow-page/vibe-no-process-workspace.tsx
 #: src/pages/flow-page/vibe-workspace.tsx
 msgid "Could not start"
-msgstr ""
+msgstr "לא ניתן להתחיל"
 
 #: src/components/graph-context/RunAutomationPanel.tsx
 msgid "Could not start automation"
@@ -3015,7 +3015,7 @@ msgstr "לא יכול להתחיל חדר"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Could not start sign-in"
-msgstr ""
+msgstr "לא ניתן להתחיל כניסה"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 #~ msgid "Could not start the login flow"
