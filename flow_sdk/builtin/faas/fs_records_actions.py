@@ -2241,7 +2241,9 @@ def _normalize_asset_path(p: str) -> str:
     return p
 
 
-async def discover_record_by_path(record_type: str, path: str, *, notify: bool = False):
+async def discover_record_by_path(
+    record_type: str, path: str, *, notify: bool = False, proposed_id: str | None = None
+):
     """Find-or-recover ONE record by absolute path — the interactive fast path.
 
     If the source exists, parse JUST this file/folder via the type's
@@ -2296,7 +2298,15 @@ async def discover_record_by_path(record_type: str, path: str, *, notify: bool =
                     record_type=_RT(record_type),
                     scope=classify_path(expanded),
                 )
-                resolved_id = _info.extract_id(one_ref) or _info.mint_id(one_ref)
+                # ``proposed_id`` (reindex): a portable asset carries its id in an
+                # in-file capsule; a full-content overwrite wipes it, so a bare
+                # re-parse would mint a FRESH v4 and fork a NEW entity, freezing
+                # the original's updated_date. On a capsule MISS, re-stamp the
+                # known id so the SAME entity updates. A still-present valid
+                # carrier id always wins; folder types are unaffected.
+                resolved_id = _info.extract_id(one_ref) or _info.mint_id(
+                    one_ref, proposed_id=proposed_id
+                )
 
                 # Match the full indexer's deterministic primary ranking. A
                 # non-primary path remains observable but is neither parsed nor

@@ -3063,6 +3063,13 @@ class AgenticProcess(Entity):
             # instructions are materialized into process instruction assets.
             composed_prompt = self.driver.compose_prompt(message, self.get_agents_json())
             handler = StreamingResponseHandler()
+            # Block on the startup capability sweep if it's still in flight: the
+            # headless spawn env (build_worker_spawn_env) consumes the discovered
+            # harness bin folder and raises "CLI not found" on a miss WITHOUT the
+            # re-discover fallback the PTY-direct path has. A prompt arriving
+            # within the sweep window (env-probe's `zsh -ilc` can take seconds)
+            # would otherwise fail spuriously on a fresh backend.
+            await self._await_capability_discovery()
             worker = self.driver.stream_worker(self)
             register_prompt_worker(self.id, worker)
         except BaseException:
@@ -3960,9 +3967,15 @@ class AgenticProcess(Entity):
 
         try:
             from flow_sdk.fs_store.fs_ref import FSRef as _FSRef
-            from flow_sdk.fs_store.indexer.functions.markdown import extract_markdown
+            from flow_sdk.fs_store.indexer.functions.markdown import extract_markdown, markdown_id
 
-            records = extract_markdown(_FSRef(Path(plan_file_path)))
+            # extract_markdown requires a resolved id (capsule refactor 4f94fb92
+            # made it a positional arg). Resolve it READ-ONLY via markdown_id
+            # (adopted frontmatter id, else the stable uuid5(path)) — the plan
+            # file is a transient Claude transcript artifact we must not mutate
+            # with an identity-capsule write.
+            _ref = _FSRef(Path(plan_file_path))
+            records = extract_markdown(_ref, markdown_id(_ref))
             if not records:
                 return ApiFailResponse(message=f"could not parse {plan_file_path}")
             rec = records[0]
