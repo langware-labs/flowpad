@@ -6,6 +6,8 @@
 
 ## Testing Environment
 
+- Focused run (2026-07-20, asset identity collisions): dedicated `collision-15` backend `http://localhost:6015` and frontend `http://localhost:5015`, Chromium/Playwright on macOS. Both file-backed lifecycle and folder-backed Git precedence scenarios passed; the named instance was killed and its generated env file removed after the run. In this execution harness, detached launcher children were reaped when launch ran in a separate command session, so launch + test + teardown were kept in one session. The API client used the instance's explicit IPv4 address because Node resolved `localhost` to `::1` while uvicorn listened on IPv4.
+
 - Focused run (2026-07-12, Browserbase local Live View): dedicated `browserbase-14` backend `http://localhost:6014`; current-source production bundle served through Caddy at `http://localhost:5114`; one ngrok origin carried both frontend and `/api`/WebSocket proxy traffic. Browserbase Chromium navigated the public app to `/dock/search`; local Google Chrome 150 embedded Browserbase `debuggerFullscreenUrl`. All experiment daemons and public ports were closed after evidence capture. Result: `ui/tests/manual_regression/_results/2026-07-12T12-37-14/`.
 - Current focused run (2026-07-10, Claude Vibe Workspace): dedicated `vibe-12` backend `http://localhost:6012`, frontend `http://localhost:5012`, Chrome Canary 152 through DebugMCP/CDP. The instance was reset backend-only with keychain preservation before every scenario and killed at cycle end. Live projects were mounted under `/tmp` so Vite did not reload on fixture/evidence writes.
 - Current cycle (2026-07-07, Phases 11+12 only): main backend 9008 restarted by user request mid-cycle (manual detached start; frontend 4098 stayed up); hub 8093 UP all cycle. Dedicated instances launched+killed by the cycle: qa7 (be 6007/fe 5007, the workhorse), qa5 (be 6005, whiteboard agent), qa3 (be 6004, bounded fixture HOME for corpus-bound search tests). Host: 14 cores; load oscillated 4→46 all day from the user's own live sessions (which also edited ui/src + ran their own playwright mid-cycle — see 2026-07-07 learnings for the contamination rules). Python 3.10.17, Node v22.15.0.
@@ -22,6 +24,12 @@
 - Last cycle (2026-05-30, record-removal branch): backend 9008 + frontend 4098 both reachable (HTTP 200) throughout. Phases 1-4 green (1522 / 441 / 51 / 907). 1 real fix (bootstrap `types` shape, 4 tests). No port conflicts this run.
 
 ## Learnings
+
+### 2026-07-20 — Asset identity collision browser coverage
+
+- Backend-owned shrinking arrays must replace the SDK cache value. `deepAssign` merges arrays by index, so a `3 → 2` `asset_occurrences` WebSocket update otherwise retains the deleted trailing path even while `duplicate_count` updates correctly.
+- macOS temporary paths can cross the `/var` ↔ `/private/var` symlink boundary. Git fixtures must canonicalize the temporary repository root with `realpath` before deriving relative pathspecs.
+- The collision drawer is URL-owned (`asset-duplicates:<typeid>`). Validate Back/Forward restoration and live `2 → 1 → 0` removal while the drawer remains open; a fresh-open-only assertion misses cache projection defects.
 
 ### 2026-07-12 — Browserbase remote control shown in a local iframe
 
@@ -509,3 +517,8 @@ Any Playwright test whose duration exceeds 60s is reported as **timeout** — a 
 - **Hub seeding**: `../test_flowpad/FlowPad/ops/scripts/setup_test_users.sh` still broken (`User.grant_access_to_public_data` missing) — it creates alice then dies before bob. Seed bob via `POST http://localhost:8093/api/v1/signup {email,password,name}`. hub_tests conftest reads creds from `FLOWPAD_CLOUD_USER_EMAIL/PASSWORD` env (unset → 36 skips w/ password:null).
 - **Hub `/api/v1/current-user` returns HTTP 200 + `{status:FAIL}` for an invalid/absent token** while every other route returns 401 → flow_sdk's 401-based credential-clear never fires (`test_invalid_key_clears_credentials` FAIL). Pure-hub repro via raw curl. Hub-side fix (return 401).
 - **Short-lived-token hub tests skip** without `TESTING=true` on the hub launch ("expires_in_seconds is only allowed when TESTING=true") — deliberate gate; restarting the shared hub in TESTING mode was deemed too risky mid-cycle.
+
+### 2026-07-20 — Asset collision scenario
+- The isolated launcher may be reaped after a source edit/watchfiles restart; a foreground PTY backend/frontend on the same named instance produced a stable machine-read verdict.
+- Playwright API requests needed `API_URL=http://127.0.0.1:<port>` when the backend was IPv4-only; the browser frontend remained reachable through the configured localhost URL.
+- Asset collision coverage passed: file/folder copies, primary-excluded counts, URL back/forward drawer state, copy removal lifecycle, and Git introduction precedence.

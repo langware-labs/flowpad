@@ -64,6 +64,12 @@ def _expected_markdown_paths(root: Path) -> set[Path]:
         if not _has_typed_ancestor(d):
             try:
                 for md in d.glob("*.md"):
+                    # SKILL.md / skill.md is a skill's doc (claimed by the typed
+                    # skill indexer), never a standalone MARKDOWN asset — the
+                    # walker skips it by name regardless of parent dir, so mirror
+                    # that here.
+                    if md.name.lower() == "skill.md":
+                        continue
                     if md.is_file():
                         expected.add(md.resolve())
             except OSError:
