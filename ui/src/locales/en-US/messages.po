@@ -502,6 +502,10 @@ msgstr "<0/>Hard refresh"
 msgid "<0>{0}</0> already exists in the workspace."
 msgstr "<0>{0}</0> already exists in the workspace."
 
+#: src/components/task-receive/IncomingProjectDialog.tsx
+msgid "<0>{attemptedName}</0> already exists in this workspace. Choose a different folder name."
+msgstr "<0>{attemptedName}</0> already exists in this workspace. Choose a different folder name."
+
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "<0>{senderName}</0> shared <1>{taskTitle}</1> with you, but we couldn't find a local clone of the repository. Clone it to see the task."
 msgstr "<0>{senderName}</0> shared <1>{taskTitle}</1> with you, but we couldn't find a local clone of the repository. Clone it to see the task."
@@ -509,6 +513,10 @@ msgstr "<0>{senderName}</0> shared <1>{taskTitle}</1> with you, but we couldn't 
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "<0>{senderName}</0> shared <1>{taskTitle}</1> with you."
 msgstr "<0>{senderName}</0> shared <1>{taskTitle}</1> with you."
+
+#: src/components/task-receive/IncomingProjectDialog.tsx
+msgid "<0>{senderName}</0> shared a project with you"
+msgstr "<0>{senderName}</0> shared a project with you"
 
 #: src/components/flowdata-renderer/UnknownMessageComponent.tsx
 #~ msgid "<0>Data:</0> {0}"
@@ -621,6 +629,10 @@ msgstr "A live session is already running in this conversation"
 #: src/components/conversation/asset-review/TestPromptDialog.tsx
 #~ msgid "A new Vibe session opens and runs the skill. Optionally describe what to use it for."
 #~ msgstr "A new Vibe session opens and runs the skill. Optionally describe what to use it for."
+
+#: src/components/task-receive/IncomingProjectDialog.tsx
+msgid "A project with that name exists"
+msgstr "A project with that name exists"
 
 #: src/components/triggers-view/TriggersList.tsx
 msgid "About FSOp triggers"
@@ -1249,6 +1261,10 @@ msgstr "API Key, Backend URL, or Machine ID not configured"
 msgid "API Keys"
 msgstr "API Keys"
 
+#: src/components/version-popover/version-popover.tsx
+msgid "App page"
+msgstr "App page"
+
 #: src/components/account/secrets-section.tsx
 msgid "App secrets are stored in your operating system keychain. Enable to allow Flowpad to securely store third-party API keys and other secrets used by your flows."
 msgstr "App secrets are stored in your operating system keychain. Enable to allow Flowpad to securely store third-party API keys and other secrets used by your flows."
@@ -1847,6 +1863,8 @@ msgstr "Can't update — showing last synced"
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 #: src/components/spec-editor/SpecEditor.tsx
 #: src/components/spec-editor/SpecEditor.tsx
+#: src/components/task-receive/IncomingProjectDialog.tsx
+#: src/components/task-receive/IncomingProjectDialog.tsx
 #: src/components/task-receive/IncomingTaskDialog.tsx
 #: src/components/task-receive/IncomingTaskDialog.tsx
 #: src/components/terminal/interactive-terminal/AnnotationGutter.tsx
@@ -2009,6 +2027,10 @@ msgstr "checking…"
 #: src/components/chat-input.tsx
 #~ msgid "Checking..."
 #~ msgstr "Checking..."
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "Checking…"
+msgstr "Checking…"
 
 #: src/components/code-editor/DiffViewer.tsx
 msgid "Checkpoint:"
@@ -2259,6 +2281,7 @@ msgid "Click to download"
 msgstr "Click to download"
 
 #: src/components/collaboration/ProjectViewHeader.tsx
+#: src/pages/hub-home/HubHome.tsx
 msgid "Click to rename"
 msgstr "Click to rename"
 
@@ -2299,6 +2322,10 @@ msgstr "Clone failed."
 msgid "Clone project from git"
 msgstr "Clone project from git"
 
+#: src/components/task-receive/IncomingProjectDialog.tsx
+msgid "Cloning the template and indexing it."
+msgstr "Cloning the template and indexing it."
+
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Cloning…"
@@ -2311,6 +2338,7 @@ msgstr "Cloning…"
 #: src/components/search-index/SweepOrphansDialog.tsx
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 #: src/components/tabs/TabStrip.tsx
+#: src/components/task-receive/IncomingProjectDialog.tsx
 #: src/components/task-receive/IncomingTaskDialog.tsx
 #: src/components/task-receive/IncomingTaskDialog.tsx
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
@@ -2361,6 +2389,11 @@ msgstr "Close terminal"
 msgid "Close to the Right"
 msgstr "Close to the Right"
 
+#: src/pages/flow-page/workspace-child-strip.tsx
+#: src/pages/flow-page/workspace-child-strip.tsx
+msgid "Close workspace"
+msgstr "Close workspace"
+
 #: src/components/project-activity-strip/BookmarkColumn.tsx
 msgid "Closed"
 msgstr "Closed"
@@ -2376,8 +2409,8 @@ msgid "Cloud hub"
 msgstr "Cloud hub"
 
 #: src/components/graph-view/GraphView.tsx
-msgid "Cloud WorldView"
-msgstr "Cloud WorldView"
+#~ msgid "Cloud WorldView"
+#~ msgstr "Cloud WorldView"
 
 #: src/components/markdown-view.tsx
 msgid "code"
@@ -3059,6 +3092,10 @@ msgstr "Couldn’t load transcript"
 msgid "Couldn't read this folder's Git status."
 msgstr "Couldn't read this folder's Git status."
 
+#: src/components/task-receive/IncomingProjectDialog.tsx
+msgid "Couldn't set up the project"
+msgstr "Couldn't set up the project"
+
 #: src/components/account/db-stats.tsx
 msgid "Count"
 msgstr "Count"
@@ -3491,6 +3528,10 @@ msgstr "Delete context"
 msgid "Delete context?"
 msgstr "Delete context?"
 
+#: src/pages/hub-home/HubHome.tsx
+msgid "Delete desktop"
+msgstr "Delete desktop"
+
 #: src/components/account/system-diagnoses.tsx
 #: src/components/account/system-diagnoses.tsx
 msgid "Delete diagnosis"
@@ -3624,6 +3665,10 @@ msgstr "Deployed"
 msgid "Deployment details"
 msgstr "Deployment details"
 
+#: src/components/graph-view/GraphView.tsx
+msgid "Deployment WorldView"
+msgstr "Deployment WorldView"
+
 #: src/components/graph-view/ui/TopBar.tsx
 msgid "depth"
 msgstr "depth"
@@ -3676,13 +3721,19 @@ msgstr "Description like prepare my daily brief"
 msgid "Description:"
 msgstr "Description:"
 
+#: src/components/version-popover/version-popover.tsx
 #: src/pages/desktop/DesktopPage.tsx
+#: src/pages/hub-home/HubHome.tsx
 msgid "Desktop"
 msgstr "Desktop"
 
 #: src/components/version-popover/version-popover.tsx
 msgid "Desktop version"
 msgstr "Desktop version"
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "Desktops"
+msgstr "Desktops"
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "Detach"
@@ -4925,8 +4976,8 @@ msgstr "Failed to send draft"
 msgid "Failed to send reply."
 msgstr "Failed to send reply."
 
-#: src/components/diagnose/diagnosis-details.tsx
-#: src/components/diagnose/diagnosis-details.tsx
+#: src/components/diagnose/use-diagnosis-report.ts
+#: src/components/diagnose/use-diagnosis-report.ts
 #: src/pages/home-landing/feed/HomeFeedColumn.tsx
 #: src/pages/home-landing/feed/HomeFeedColumn.tsx
 msgid "Failed to send report"
@@ -5905,6 +5956,7 @@ msgid "https://github.com/owner/repo.git"
 msgstr "https://github.com/owner/repo.git"
 
 #: src/components/version-popover/version-popover.tsx
+#: src/components/version-popover/version-popover.tsx
 msgid "Hub"
 msgstr "Hub"
 
@@ -6522,9 +6574,22 @@ msgstr "Latest on GitHub"
 msgid "Latest on PyPI"
 msgstr "Latest on PyPI"
 
+#: src/pages/hub-home/HubHome.tsx
+msgid "Launch"
+msgstr "Launch"
+
+#. placeholder {0}: pendingTemplate.title
+#: src/pages/hub-home/HubHome.tsx
+msgid "Launch {0}?"
+msgstr "Launch {0}?"
+
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Launch a session first"
 msgstr "Launch a session first"
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "Launching…"
+msgstr "Launching…"
 
 #: src/components/lens-viewer/HeartbeatEventsViewer.tsx
 msgid "Layers"
@@ -7016,7 +7081,6 @@ msgstr "Log mode"
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 #: src/pages/flow-page/content-panel/content-panel.tsx
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
-#: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 msgid "Login"
 msgstr "Login"
 
@@ -7497,6 +7561,7 @@ msgstr "new"
 #: src/components/project-activity-strip/RecentConversationsStrip.tsx
 #: src/components/quick-create/DesktopSurface.tsx
 #: src/pages/flow-page/vibe-workspace.tsx
+#: src/pages/hub-home/HubHome.tsx
 msgid "New"
 msgstr "New"
 
@@ -7545,6 +7610,10 @@ msgstr "New Claude Session"
 #: src/components/contact-picker/CreateContactsGroupDialog.tsx
 msgid "New contacts group"
 msgstr "New contacts group"
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "New Desktop"
+msgstr "New Desktop"
 
 #: src/components/collaboration/sidebar/NewDocButton.tsx
 #: src/components/collaboration/sidebar/NewDocButton.tsx
@@ -7824,6 +7893,10 @@ msgstr "No community tickets"
 #: src/components/quick-create/QuickCreateMenu.tsx
 msgid "No compute node available"
 msgstr "No compute node available"
+
+#: src/components/task-receive/IncomingProjectDialog.tsx
+msgid "No compute node available in this workspace."
+msgstr "No compute node available in this workspace."
 
 #: src/components/contact-picker/AddressBookButton.tsx
 msgid "No contacts found."
@@ -8606,6 +8679,10 @@ msgstr "Not checked"
 msgid "Not configured"
 msgstr "Not configured"
 
+#: src/pages/hub-home/HubHome.tsx
+msgid "Not found"
+msgstr "Not found"
+
 #: src/components/harness-login/HarnessLoginModal.tsx
 #~ msgid "Not installed"
 #~ msgstr "Not installed"
@@ -8876,6 +8953,14 @@ msgstr "Open Context"
 #: src/components/account/database-section.tsx
 msgid "Open DB Folder"
 msgstr "Open DB Folder"
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "Open desktop"
+msgstr "Open desktop"
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "Open desktop →"
+msgstr "Open desktop →"
 
 #: src/components/version-popover/diagnosis-report-modal.tsx
 msgid "Open diagnosis as a tab"
@@ -9238,6 +9323,10 @@ msgstr "Opening [[{name}]]…"
 msgid "Opening task…"
 msgstr "Opening task…"
 
+#: src/components/task-receive/IncomingProjectDialog.tsx
+msgid "Opening your project…"
+msgstr "Opening your project…"
+
 #: src/components/project-setup-screen/project-setup-screen.tsx
 #~ msgid "Opening..."
 #~ msgstr "Opening..."
@@ -9263,6 +9352,10 @@ msgstr "Ordered list"
 #: src/pages/hub-home/HubHome.tsx
 msgid "Organization"
 msgstr "Organization"
+
+#: src/components/graph-view/GraphView.tsx
+msgid "Organization WorldView"
+msgstr "Organization WorldView"
 
 #: src/components/account/user-info.tsx
 msgid "Organization:"
@@ -9332,6 +9425,10 @@ msgstr "pacing"
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
 msgid "Package this share into a portable <0>.flowmsg</0> file that recipients can import."
 msgstr "Package this share into a portable <0>.flowmsg</0> file that recipients can import."
+
+#: src/components/version-popover/version-popover.tsx
+msgid "Page"
+msgstr "Page"
 
 #: src/components/ui/pagination.tsx
 msgid "pagination"
@@ -9430,6 +9527,10 @@ msgstr "pattern"
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Pause"
 msgstr "Pause"
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "Paused"
+msgstr "Paused"
 
 #: src/components/assets/editor/agent-trace/AgentTraceView.tsx
 msgid "peak"
@@ -10146,6 +10247,10 @@ msgstr "Ready to Connect"
 msgid "Ready to share"
 msgstr "Ready to share"
 
+#: src/components/task-receive/IncomingProjectDialog.tsx
+msgid "Ready!"
+msgstr "Ready!"
+
 #: src/components/favorites/FavoritesEditDialog.tsx
 msgid "Rearrange favorites, create folders, and organize your bookmarks."
 msgstr "Rearrange favorites, create folders, and organize your bookmarks."
@@ -10276,6 +10381,7 @@ msgstr "referenced but not in entities table"
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
 #: src/components/display-toolbar/WebappDisplayToolbar.tsx
 #: src/components/git/RepoPicker.tsx
+#: src/components/graph-view/GraphView.tsx
 #: src/components/hooks-view/HooksBrowser.tsx
 #: src/components/inbox-view/InboxView.tsx
 #: src/components/lens-viewer/ClaudeContextViewer.tsx
@@ -10356,6 +10462,10 @@ msgstr "Refresh stats"
 #: src/components/capabilities-view/CapabilitiesView.tsx
 msgid "Refresh status"
 msgstr "Refresh status"
+
+#: src/components/graph-view/GraphView.tsx
+msgid "Refreshing…"
+msgstr "Refreshing…"
 
 #: src/components/task-bar/TaskDetailPanel.tsx
 #~ msgid "Related entity"
@@ -10499,6 +10609,7 @@ msgstr "Reply to sender…"
 msgid "Repo"
 msgstr "Repo"
 
+#: src/components/task-receive/IncomingProjectDialog.tsx
 #: src/components/task-receive/IncomingTaskDialog.tsx
 msgid "Repo:"
 msgstr "Repo:"
@@ -10516,6 +10627,10 @@ msgstr "Report failed."
 #: src/components/diagnose/diagnosis-action-buttons.tsx
 msgid "Report issue"
 msgstr "Report issue"
+
+#: src/components/diagnose/use-diagnosis-report.ts
+msgid "Report sent to the Flowpad team"
+msgstr "Report sent to the Flowpad team"
 
 #: src/components/diagnose/diagnosis-action-buttons.tsx
 msgid "Reported"
@@ -10670,6 +10785,7 @@ msgstr "Resume the context process"
 #: src/components/assets/editor/markdown/MarkdownEditor.tsx
 #: src/components/assets/editor/MissingAssetCard.tsx
 #: src/components/machine-overview/machine-overview.tsx
+#: src/components/task-receive/IncomingProjectDialog.tsx
 #: src/components/task-receive/IncomingTaskDialog.tsx
 #: src/pages/live-status/LiveStatus.tsx
 msgid "Retry"
@@ -10916,6 +11032,10 @@ msgstr "Run the skill \"{name}\" on the current context."
 #: src/components/terminal/interactive-terminal/command-status-viewer/CommandStatusViewer.tsx
 msgid "running"
 msgstr "running"
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "Running"
+msgstr "Running"
 
 #: src/components/lens-viewer/ClaudeContextViewer.tsx
 msgid "Running /context…"
@@ -11738,6 +11858,10 @@ msgstr "Set up (runs an agentic process)"
 msgid "Set up →"
 msgstr "Set up →"
 
+#: src/components/task-receive/IncomingProjectDialog.tsx
+msgid "Set up <0>{projectName}</0> in this workspace. We'll clone the template and index it so it's ready to use."
+msgstr "Set up <0>{projectName}</0> in this workspace. We'll clone the template and index it so it's ready to use."
+
 #: src/components/assets/AddGitFolderDialog.tsx
 msgid "Set up a git-backed context folder for this project."
 msgstr "Set up a git-backed context folder for this project."
@@ -11745,6 +11869,18 @@ msgstr "Set up a git-backed context folder for this project."
 #: src/components/assets/AddGitFolderDialog.tsx
 msgid "Set up an existing git repository as the context folder"
 msgstr "Set up an existing git repository as the context folder"
+
+#: src/components/task-receive/IncomingProjectDialog.tsx
+msgid "Set up as this name"
+msgstr "Set up as this name"
+
+#: src/components/task-receive/IncomingProjectDialog.tsx
+msgid "Set up project"
+msgstr "Set up project"
+
+#: src/components/task-receive/IncomingProjectDialog.tsx
+msgid "Setting up your project…"
+msgstr "Setting up your project…"
 
 #: src/components/settings-view/SettingsView.tsx
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
@@ -12009,9 +12145,9 @@ msgstr "Sidebar"
 msgid "sidechain"
 msgstr "sidechain"
 
-#: src/components/harness-login/HarnessLoginModal.tsx
-#~ msgid "Sign in"
-#~ msgstr "Sign in"
+#: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
+msgid "Sign in"
+msgstr "Sign in"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 #~ msgid "Sign in to a coding assistant"
@@ -12596,8 +12732,8 @@ msgid "Switching…"
 msgstr "Switching…"
 
 #: src/components/graph-view/GraphView.tsx
-msgid "Sync"
-msgstr "Sync"
+#~ msgid "Sync"
+#~ msgstr "Sync"
 
 #. placeholder {0}: row.type
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
@@ -12605,8 +12741,8 @@ msgid "Sync {0} changes"
 msgstr "Sync {0} changes"
 
 #: src/components/graph-view/GraphView.tsx
-msgid "Syncing…"
-msgstr "Syncing…"
+#~ msgid "Syncing…"
+#~ msgstr "Syncing…"
 
 #: src/components/triggers-view/TriggerListItem.tsx
 msgid "Synthesize event"
@@ -12976,6 +13112,10 @@ msgstr "This live session was declined."
 #: src/components/persistent-iframe.tsx
 msgid "This may take up to 20 seconds"
 msgstr "This may take up to 20 seconds"
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "This opens a new FlowPad desktop and sets up the template project (clone + index) so it's ready to use."
+msgstr "This opens a new FlowPad desktop and sets up the template project (clone + index) so it's ready to use."
 
 #: src/components/conversation/MessageBubble.tsx
 msgid "This permanently deletes the message and all of its data for everyone in the conversation. This can't be undone."
@@ -13457,6 +13597,10 @@ msgstr "Unpin {0}"
 #: src/components/assets/ContextFolderBrowser.tsx
 msgid "Unpushed changes"
 msgstr "Unpushed changes"
+
+#: src/pages/hub-home/HubHome.tsx
+msgid "Unreachable"
+msgstr "Unreachable"
 
 #: src/components/inbox-view/InboxView.tsx
 #: src/components/inbox-view/InboxView.tsx
@@ -14202,6 +14346,10 @@ msgstr "Your Projects"
 #: src/pages/hub-home/HubHome.tsx
 msgid "Your world"
 msgstr "Your world"
+
+#: src/components/graph-view/GraphView.tsx
+msgid "Your WorldView"
+msgstr "Your WorldView"
 
 #: src/components/chat-input.tsx
 #~ msgid "ZIP file upload is only available as a codebase connection"

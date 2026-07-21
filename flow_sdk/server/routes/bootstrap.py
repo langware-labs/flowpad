@@ -1320,30 +1320,21 @@ def _write_pref(key: str, value: Any) -> None:
         logging.warning(f"[onboarding] failed to write {key} to preferences.json")
 
 
-# Dotted PrefKeys (mirrored in ts_sdk/src/preferences/prefRegistry.ts) that pick
-# which SPA page this local desktop server advertises in `supported_pages`.
-_VIEW_MODE_KEY = "preferences.ui.view_mode"
-_APP_PAGE_KEY = "preferences.dev.app_page"
-
-
 def _resolve_supported_pages() -> list[str]:
     """Which SPA page(s) this local server advertises in bootstrap.
 
     The same OSS bundle renders either the desktop (`desk`) or the hub (`hub`)
-    page, selected purely by `supported_pages`. The local desktop server normally
-    serves only `desk`; a dev may opt into rendering the hub page for
-    testing/debuggability via the `preferences.dev.app_page` toggle in the version
-    modal. Returning `["hub"]` (not both) makes the frontend's `isHubOnly()` true
-    so it lands on `/dock/hub/home` — the whole point of a hub-debug view.
+    page, selected by `supported_pages`. The local desktop server serves BOTH:
+    `desk` stays first so it remains the default landing home (an unqualified
+    dock never redirects away from desktop), while `hub` is also advertised so
+    the hub page's dock URLs (`/dock/hub/...`) are reachable in the same build
+    without the version-modal toggle.
 
-    Gated on Dev view mode so a stale `app_page=hub` can never strand a non-dev
-    user: the toggle that clears it only exists in Dev.
+    Because `desk` is present, the frontend's `isHubOnly()` stays false, so the
+    app keeps calling the desktop-only endpoints (`tab`, `capability`,
+    `bookmark`, ...) as normal.
     """
-    view_mode = _read_pref(_VIEW_MODE_KEY, "vibe")
-    app_page = _read_pref(_APP_PAGE_KEY, "desk")
-    if view_mode == "dev" and app_page == "hub":
-        return ["hub"]
-    return ["desk"]
+    return ["desk", "hub"]
 
 
 async def create_onboarding_assets(user: User) -> None:
