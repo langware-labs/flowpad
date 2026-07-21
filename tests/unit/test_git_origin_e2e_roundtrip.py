@@ -133,9 +133,12 @@ async def test_skill_reflects_same_repo_path_through_real_pack_unpack(tmp_path):
     recv_proj.mkdir()
     project = Project(name="reflect-dst", fs_storage_mount_path=str(recv_proj))
     await project.save(notify=False)
-    # Local conversation mapped to the receiver project (what the UI's project
-    # selection on an incoming share produces); install targets it explicitly.
-    conv = Conversation(id=CONV_ID, title="reflect", project_id=project.id)
+    # The receiver conversation is NOT yet bound to a project at receive time —
+    # the project pick IS the explicit install (see ``_install_staged``). A
+    # conversation already bound to a project is a different, separately-tested
+    # path (reception auto-install; test_conversation_project_binding.py), which
+    # would install the copy-mode skill at unpack instead of staging it.
+    conv = Conversation(id=CONV_ID, title="reflect")
     await conv.save(notify=False)
 
     # Wipe the sender's local skill row so the receiver materializes fresh from

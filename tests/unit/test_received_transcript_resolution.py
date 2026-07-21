@@ -48,14 +48,19 @@ def test_resolver_falls_back_to_received_store(isolated_instance, worker):
     assert resolve_session_jsonl(worker, sid) == dest
 
 
-def test_sender_resolves_local_cli_transcript(isolated_instance, tmp_path, monkeypatch):
+def test_sender_resolves_local_cli_transcript(isolated_instance):
     """Sender side: the machine that ran the session resolves it from the local
     CLI dir (the path tried first) and prefers it over the received store — the
-    fallback must not shadow a real local run."""
-    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    fallback must not shadow a real local run.
+
+    The resolver reads the *instance-configured* Claude projects dir
+    (``get_instance_settings().claude_projects_dir``), never a hardcoded
+    ``~/.claude`` — that is the whole point of the resolver rewrite. A local run
+    lands there, so the transcript must be placed where the resolver actually
+    looks, not at a hand-built HOME-derived path."""
     sid = str(uuid.uuid4())
-    proj = tmp_path / "home" / ".claude" / "projects" / "encoded-proj"
-    proj.mkdir(parents=True)
+    proj = isolated_instance.claude_projects_dir / "encoded-proj"
+    proj.mkdir(parents=True, exist_ok=True)
     local = proj / f"{sid}.jsonl"
     local.write_text(f'{{"sessionId":"{sid}","origin":"local"}}\n', encoding="utf-8")
 
