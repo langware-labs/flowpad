@@ -1,4 +1,4 @@
-import { ContextEntitiesEnum, dataContext, Project } from '@sdk';
+import { ContextEntitiesEnum, dataContext } from '@sdk';
 import { useProject } from '@sdk/react/hooks';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
@@ -9,8 +9,8 @@ import {
   NewProjectDialog,
   NewProjectFromGitDialog,
   ProjectSelectorModal,
+  useCloneGitProjectAndOpen,
   useEnsureProject,
-  useSelectExistingProject,
 } from '@src/components/project-selector';
 import {
   DropdownMenu,
@@ -52,7 +52,7 @@ export function QuickCreateMenu({ children, open, onOpenChange, onPick }: QuickC
   const { computeNode } = useAgentContext();
   const { navigation } = useDockNavigation();
   const ensureProject = useEnsureProject();
-  const selectExisting = useSelectExistingProject();
+  const cloneGitProject = useCloneGitProjectAndOpen();
   const [projectModalOpen, setProjectModalOpen] = useState(false);
   const [newLocalProjectOpen, setNewLocalProjectOpen] = useState(false);
   const [newGitProjectOpen, setNewGitProjectOpen] = useState(false);
@@ -95,9 +95,8 @@ export function QuickCreateMenu({ children, open, onOpenChange, onPick }: QuickC
       if (!computeNode) {
         throw new Error('No compute node available');
       }
-      const result = await Project.createFromGitUrl(computeNode.id, url, acceptSuggested, branch);
+      const result = await cloneGitProject(computeNode.id, url, { targetName: acceptSuggested, branch });
       if (result.kind === 'ok') {
-        await selectExisting(result.project);
         return { ok: true };
       }
       if (result.kind === 'collision') {
@@ -105,7 +104,7 @@ export function QuickCreateMenu({ children, open, onOpenChange, onPick }: QuickC
       }
       throw new Error(result.message);
     },
-    [computeNode, selectExisting],
+    [computeNode, cloneGitProject],
   );
 
   const projectItems = useMemo(
