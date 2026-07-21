@@ -192,19 +192,27 @@ export function TaskAssetEditor({ fsRef, task: providedTask }: TaskAssetEditorPr
         <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-6 py-4">
           {/* Parent's Files & Folders ride INSIDE the parent card's border
               (read-only), shown only when the parent has any, so the member
-              sees the group's shared assets grouped under the parent. */}
-          <ParentTaskBlock
-            parent={parent}
-            onOpenParent={() => navigation.openDock(DockPointer.forAssetEditorByTypeId('task', parent.typeId))}
-          >
-            {Array.isArray(parent.artifacts) && parent.artifacts.length > 0 && (
-              <TaskAttachments task={parent} save={NOOP_SAVE} readOnly />
-            )}
-          </ParentTaskBlock>
+              sees the group's shared assets grouped under the parent.
+              `shrink-0`: the card is `overflow-hidden`, so as a flex child its
+              automatic min-height is 0 and the scroll column would otherwise
+              compress it to its header — clipping the description + attachments.
+              Pin its height and let the column scroll instead. */}
+          <div className="shrink-0">
+            <ParentTaskBlock
+              parent={parent}
+              onOpenParent={() => navigation.openDock(DockPointer.forAssetEditorByTypeId('task', parent.typeId))}
+            >
+              {Array.isArray(parent.artifacts) && parent.artifacts.length > 0 && (
+                <TaskAttachments task={parent} save={NOOP_SAVE} readOnly />
+              )}
+            </ParentTaskBlock>
+          </div>
 
-          {/* Parent's comments, read-only. Collapsed by default and rendered
-              only when the parent actually has at least one comment. */}
-          <TaskComments task={parent} readOnly collapsible hideWhenEmpty title="Parent comments" />
+          {/* Parent's comments, read-only — collapsible and collapsed by
+              default, always present as an affordance (even with no comments). */}
+          <div className="shrink-0">
+            <TaskComments task={parent} readOnly collapsible title="Parent comments" />
+          </div>
 
           {/* This task — only the child's OWN data, nothing repeated from above. */}
           <div className="flex flex-col gap-3">
