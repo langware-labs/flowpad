@@ -35,11 +35,37 @@ async def test_worldview_load_and_manual_link_use_standard_envelopes(client):
     assert linked_body.status == "SUCCESS"
     assert linked_body.data["artifact_link_source"] == "manual"
 
-    loaded = await client.get("/api/v1/worldview")
+    loaded = await client.get("/api/v1/worldview/deployment")
     loaded_body = ApiResponse(**loaded.json())
     assert loaded_body.status == "SUCCESS"
+    assert loaded_body.data["schema_version"] == 1
+    assert loaded_body.data["projection"] == "deployment"
     assert loaded_body.data["counts"]["nodes"] == len(loaded_body.data["nodes"])
-    assert any(edge["kind"] == "deployed_as" for edge in loaded_body.data["edges"])
+    assert any(
+        edge["kind"] == "deployed_as" and edge["topology"] == "association" for edge in loaded_body.data["edges"]
+    )
+
+    legacy = await client.get("/api/v1/worldview")
+    legacy_body = ApiResponse(**legacy.json())
+    assert legacy_body.status == "SUCCESS"
+    assert legacy_body.data == loaded_body.data
+
+
+@pytest.mark.parametrize(
+    ("method", "projection"),
+    [("get", "world"), ("get", "organization"), ("get", "unknown"), ("post", "world")],
+)
+async def test_worldview_rejects_unsupported_local_projections(client, method, projection):
+    suffix = "/refresh" if method == "post" else ""
+    response = await getattr(client, method)(f"/api/v1/worldview/{projection}{suffix}")
+    body = ApiResponse(**response.json())
+    assert response.status_code == 400
+    assert body.status == "FAIL"
+    assert body.message == f"WorldView projection '{projection}' is not supported by this backend"
+    assert body.data == {
+        "code": "worldview_projection_not_supported",
+        "supported_projections": ["deployment"],
+    }
 
 
 async def test_worldview_link_validation_uses_fail_envelope_and_http_400(client):
@@ -78,9 +104,7 @@ async def test_worldview_sync_endpoint_accepts_a_fake_read_only_provider(client,
                         organization=InventoryOrganization(
                             id="api-fake-org",
                             name="API Fake Org",
-                            full_resource_name=(
-                                "//cloudresourcemanager.googleapis.com/organizations/api-fake-org"
-                            ),
+                            full_resource_name=("//cloudresourcemanager.googleapis.com/organizations/api-fake-org"),
                         )
                     )
                 ],
@@ -90,8 +114,13 @@ async def test_worldview_sync_endpoint_accepts_a_fake_read_only_provider(client,
         return await sync_with(FakeProvider())
 
     monkeypatch.setattr(route_module, "sync_worldview", fake_sync)
-    response = await client.post("/api/v1/worldview/sync")
+    response = await client.post("/api/v1/worldview/deployment/refresh")
     body = ApiResponse(**response.json())
     assert body.status == "SUCCESS"
     assert body.data["sync"]["organizations_succeeded"] == 1
     assert body.data["root"].startswith("deployment-")
+
+    legacy = await client.post("/api/v1/worldview/sync")
+    legacy_body = ApiResponse(**legacy.json())
+    assert legacy_body.status == "SUCCESS"
+    assert legacy_body.data["projection"] == "deployment"

@@ -103,6 +103,8 @@
 
 /* ============ Top bar ============ */
 .top-bar {
+  position: relative;
+  z-index: 40;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;

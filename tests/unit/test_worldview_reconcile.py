@@ -55,7 +55,7 @@ async def test_reconcile_is_idempotent_and_projects_links_and_hierarchy():
     first = await reconcile_snapshot(_snapshot(org_id, [resource]))
     second = await reconcile_snapshot(_snapshot(org_id, [resource]))
     deployment = await Deployment.get_by_id(gcp_deployment_id(full_name))
-    assert first.created >= 4  # root, org, project, resource
+    assert first.created >= 3  # org, project, resource; the singleton root may pre-exist
     assert second.created == 0
     assert deployment is not None
     assert deployment.parent_type_id is not None
@@ -64,7 +64,12 @@ async def test_reconcile_is_idempotent_and_projects_links_and_hierarchy():
     graph = await build_worldview()
     kinds = {edge.kind for edge in graph.edges}
     assert {"child", "deployed_as"}.issubset(kinds)
-    assert graph.counts == {"nodes": len(graph.nodes), "edges": len(graph.edges)}
+    assert graph.schema_version == 1
+    assert graph.projection == "deployment"
+    assert graph.root is not None
+    assert {edge.kind: edge.topology for edge in graph.edges}["child"] == "hierarchy"
+    assert {edge.kind: edge.topology for edge in graph.edges}["deployed_as"] == "association"
+    assert graph.counts.model_dump() == {"nodes": len(graph.nodes), "edges": len(graph.edges)}
 
 
 @pytest.mark.asyncio
@@ -203,9 +208,7 @@ async def test_partial_multi_org_sync_continues_and_preserves_failed_scope():
                 organization=InventoryOrganization(
                     id=success_org_id,
                     name="Success org",
-                    full_resource_name=(
-                        f"//cloudresourcemanager.googleapis.com/organizations/{success_org_id}"
-                    ),
+                    full_resource_name=(f"//cloudresourcemanager.googleapis.com/organizations/{success_org_id}"),
                 ),
                 resources=[
                     InventoryResource(
@@ -221,9 +224,7 @@ async def test_partial_multi_org_sync_continues_and_preserves_failed_scope():
                 organization=InventoryOrganization(
                     id=failed_org_id,
                     name="Failed org",
-                    full_resource_name=(
-                        f"//cloudresourcemanager.googleapis.com/organizations/{failed_org_id}"
-                    ),
+                    full_resource_name=(f"//cloudresourcemanager.googleapis.com/organizations/{failed_org_id}"),
                 ),
                 error="permission denied",
             ),
@@ -258,10 +259,6 @@ async def test_organization_asset_never_becomes_its_own_parent():
 
     graph = await build_worldview()
     assert all(
-        not (
-            edge.kind == "child"
-            and edge.from_.type == edge.to.type
-            and edge.from_.id == edge.to.id
-        )
+        not (edge.kind == "child" and edge.from_.type == edge.to.type and edge.from_.id == edge.to.id)
         for edge in graph.edges
     )
