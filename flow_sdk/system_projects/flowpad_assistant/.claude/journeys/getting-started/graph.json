@@ -66,33 +66,17 @@
     {
       "id": "step3b",
       "node_type": "guided_step",
-      "name": "Use the agent",
+      "name": "Use your agent",
       "node_data": {
-        "status_line": "Now click the highlighted Use agent button.",
+        "status_line": "Click the highlighted Use agent button \u2014 it loads your agent into a live vibe workspace.",
         "present": {
           "highlight": "UseAgent"
         },
         "await": {
           "topic": "app.ui.button.clicked",
           "target": "UseAgent"
-        }
-      }
-    },
-    {
-      "id": "step4",
-      "node_type": "guided_step",
-      "name": "Use your agent",
-      "node_data": {
-        "group": "Use your vibe agent",
-        "status_line": "Your agent is loading into a live vibe process\u2026",
-        "present": {},
-        "await": {
-          "topic": "app.entity.created",
-          "target": "agentic_process:*",
-          "matchEvent": {
-            "process_type": "chat"
-          }
-        }
+        },
+        "group": "Use your vibe agent"
       }
     },
     {
@@ -163,16 +147,6 @@
       }
     },
     {
-      "id": "e4",
-      "from": {
-        "node": "step4",
-        "event": "done"
-      },
-      "to": {
-        "node": "step5"
-      }
-    },
-    {
       "id": "e5",
       "from": {
         "node": "step5",
@@ -183,13 +157,13 @@
       }
     },
     {
-      "id": "e3b",
+      "id": "e3b5",
       "from": {
         "node": "step3b",
         "event": "done"
       },
       "to": {
-        "node": "step4"
+        "node": "step5"
       }
     }
   ],
