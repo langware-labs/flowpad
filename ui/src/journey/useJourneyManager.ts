@@ -1,4 +1,4 @@
-import { dataContext, dataManager, EventBus, Journey, Project, QueryFilter, QueryRequest, TypeId } from '@sdk';
+import { dataContext, dataManager, Journey, Project, QueryFilter, QueryRequest, targetOf, TypeId } from '@sdk';
 import { useOnTopic, useProject } from '@sdk/react/hooks';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { AssetEditor } from '@src/navigation/asset-doc-types';
@@ -91,14 +91,11 @@ export function useJourneyManager(state: UseJourneyResult): void {
   // handler only wakes the journal refetch; the store stays the truth. This
   // replaces the old post-advance `.then(refresh)` chain and closes the
   // journal-WS-watch gap (updates only reached watch-holding tabs).
-  useEffect(() => {
-    if (!journeyId) return;
-    return EventBus.on(
-      'flow.step.done',
-      () => void refresh(),
-      { target: `agentic_flow:${journeyId}` },
-    );
-  }, [journeyId, refresh]);
+  // useOnTopic rides the handler on a ref, so refresh's unstable identity
+  // cannot churn the subscription (it resubscribes only on target change).
+  useOnTopic('flow.step.done', () => {
+    if (journeyId) void refresh();
+  }, { target: journeyId ? targetOf('agentic_flow', journeyId) : 'agentic_flow:none' });
 
   // ── present the current step (once per cursor) ──
   const presentedRef = useRef<string | null>(null);

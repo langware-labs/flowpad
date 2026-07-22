@@ -8,12 +8,13 @@ Naming rule: anything with ``topic`` in its name is the unified system;
 ``event``/``message``/``op`` elsewhere is legacy.
 """
 from flow_sdk.topics.bus import TopicEventBus, emit_topic, event_bus, on_topic
-from flow_sdk.topics.envelope import FlowEvent, FlowEventCtx
+from flow_sdk.topics.envelope import FlowEvent, FlowEventCtx, target_of
 
 __all__ = [
     "FlowEvent",
     "FlowEventCtx",
     "TopicEventBus",
+    "target_of",
     "emit_topic",
     "event_bus",
     "on_topic",

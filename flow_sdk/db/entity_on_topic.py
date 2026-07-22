@@ -1,9 +1,9 @@
 """Entity-family bus adapter (docs/flow-events.md phase 3) — the deletable
 bridge that dual-publishes every entity write as a standard FlowEvent.
 
-Hooked at the TWO funnels every ``DataOpMessage`` flows through
-(``DBEntity._notify_observers`` for CREATE/UPDATE, ``add_entity_op_notification``
-for DELETE). Legacy ``data_op_msg`` invalidation is untouched.
+Hooked at the ONE funnel every ``DataOpMessage`` flows through —
+``DBEntity.add_entity_op_notification`` (all four mint sites call it, for
+CREATE/UPDATE/DELETE alike). Legacy ``data_op_msg`` invalidation is untouched.
 
 Lean on purpose: ``data`` carries ``{entity_type, id}`` only — never the
 serialized row. Law 5 (event ≠ proof) means subscribers fetch what they need;
@@ -39,20 +39,21 @@ def emit_entity_topic(msg: "DataOpMessage") -> None:
     """Map one DataOpMessage onto ``entity.created/updated/deleted``.
     Best-effort — never fails the write that triggered it."""
     try:
-        to_entity = getattr(msg, "to_entity", None)
+        to_entity = msg.to_entity
         if to_entity is None:
             return
-        subtopic = _OP_TO_SUBTOPIC.get(str(getattr(msg, "op", "") or "").lower())
+        subtopic = _OP_TO_SUBTOPIC.get(str(msg.op or "").lower())
         if not subtopic:
             return
         from flow_sdk.topics import emit_topic
+        from flow_sdk.topics.envelope import target_of
 
-        from_entity = getattr(msg, "from_entity", None)
+        from_entity = msg.from_entity
         emit_topic(
             f"entity.{subtopic}",
-            f"{to_entity.type}:{to_entity.id}",
+            target_of(to_entity.type, to_entity.id),
             {"entity_type": to_entity.type, "id": to_entity.id},
-            ctx={"scope": [f"{from_entity.type}:{from_entity.id}"] if from_entity else []},
+            ctx={"scope": [target_of(from_entity.type, from_entity.id)] if from_entity else []},
         )
     except Exception:
         logger.debug("entity.on_topic: emission failed", exc_info=True)

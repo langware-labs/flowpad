@@ -38,12 +38,20 @@ def test_envelope_contract_roundtrip():
     assert event.model_dump() == FIXTURE["envelope"]
 
 
-def test_envelope_defaults_mint_id_and_stamp_origin():
-    e1 = FlowEvent(topic="a.b", target="x:1")
-    e2 = FlowEvent(topic="a.b", target="x:1")
+def test_envelope_mints_id_and_bus_stamps_tier_origin():
+    # Direct construction: origin is REQUIRED (tier-agnostic wire model —
+    # mirror of the TS contract); the BUS stamps its tier at emit().
+    e1 = FlowEvent(topic="a.b", target="x:1", ctx={"origin": "sandbox"})
+    e2 = FlowEvent(topic="a.b", target="x:1", ctx={"origin": "sandbox"})
     assert e1.id != e2.id  # minted per event
-    assert e1.ctx.origin == "local_server"  # backend tier default
     assert e1.timestamp.endswith("Z") or "+" in e1.timestamp
+
+    bus = TopicEventBus()  # backend default tier
+    bus.on("a.*", lambda e: None)
+    assert bus.emit("a.b", "x:1").ctx.origin == "local_server"
+    sandbox_bus = TopicEventBus(tier="sandbox")
+    sandbox_bus.on("a.*", lambda e: None)
+    assert sandbox_bus.emit("a.b", "x:1").ctx.origin == "sandbox"
 
 
 # ── bus behavior ──────────────────────────────────────────────────────────────

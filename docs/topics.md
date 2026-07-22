@@ -10,8 +10,7 @@ interaction all speak it. The journey engine, triggers, and any future recorder 
 ordinary subscribers.
 
 **Naming rule (grep-able):** anything with `topic` in its name is the unified system
-(`on_topic` / `onTopic`, `emit_topic` / `emitTopic`, `<family>.on_topic.py` /
-`<family>.onTopic.ts`, `topic_msg`). Anything named `event` / `message` / `op` is legacy.
+(`on_topic` / `onTopic`, `emit_topic` / `emitTopic`, `<family>_on_topic.py` / `<family>.onTopic.ts`, `topic_msg`). Anything named `event` / `message` / `op` is legacy.
 
 ## Topic — a free ontological string
 
@@ -80,7 +79,8 @@ EventBus.on(topic_pattern, handler, {target?, scope?}) → unsub
   - type: `Agent.on_topic("entity.created", h)` → `target = agent:*`
   - emit: `entity.emit_topic(topic, data)` → target from `self`
 - **Adapter files**: each legacy family gets a small, deletable bridge named
-  `<family>.on_topic.py` / `<family>.onTopic.ts` beside it.
+  `<family>_on_topic.py` (Python — dots don't make importable modules) /
+  `<family>.onTopic.ts` (TS) beside it.
 
 ## Laws
 

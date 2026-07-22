@@ -77,6 +77,15 @@ export function topicMatches(pattern: string, topic: string): boolean {
   return segmentsMatch(pattern.split('.'), topic.split('.'));
 }
 
+/**
+ * THE owner of the normative colon target form (`type:id`). Deliberately NOT
+ * TypeId serialization — TypeId renders with a DASH (`type-id`); the bus
+ * grammar is colon-separated (docs/topics.md). Twin: flow_sdk/topics/envelope.py.
+ */
+export function targetOf(entityType: string, entityId: string): string {
+  return `${entityType}:${entityId}`;
+}
+
 /** Exact match, or `type:*` — pattern up to the first colon, then `*` for the rest. */
 export function targetMatches(pattern: string, target: string): boolean {
   if (pattern === target || pattern === '*') return true;
@@ -86,6 +95,14 @@ export function targetMatches(pattern: string, target: string): boolean {
 
 export class TopicEventBus {
   private subs = new Map<symbol, Subscription>();
+
+  /** The shared per-subscription predicate (pattern + target filter); the
+   *  scope filter needs the built envelope, so it stays at the caller. */
+  private static subMatches(sub: Subscription, topicSegments: string[], target: string): boolean {
+    if (sub.pattern !== '*' && !segmentsMatch(sub.segments, topicSegments)) return false;
+    if (sub.filters?.target !== undefined && !targetMatches(sub.filters.target, target)) return false;
+    return true;
+  }
 
   /**
    * Fire-and-forget. Fills `id`/`timestamp`, defaults `ctx.origin` to `app`.
@@ -99,8 +116,7 @@ export class TopicEventBus {
     const topicSegments = topic.split('.');
     let event: FlowEvent | null = null; // built lazily on the first match
     for (const sub of this.subs.values()) {
-      if (sub.pattern !== '*' && !segmentsMatch(sub.segments, topicSegments)) continue;
-      if (sub.filters?.target !== undefined && !targetMatches(sub.filters.target, target)) continue;
+      if (!TopicEventBus.subMatches(sub, topicSegments, target)) continue;
       event ??= {
         id: uuidv4(),
         timestamp: new Date().toISOString(),
@@ -134,8 +150,7 @@ export class TopicEventBus {
   deliver(event: FlowEvent): void {
     const topicSegments = event.topic.split('.');
     for (const sub of this.subs.values()) {
-      if (sub.pattern !== '*' && !segmentsMatch(sub.segments, topicSegments)) continue;
-      if (sub.filters?.target !== undefined && !targetMatches(sub.filters.target, event.target)) continue;
+      if (!TopicEventBus.subMatches(sub, topicSegments, event.target)) continue;
       if (sub.filters?.scope?.length && !sub.filters.scope.some((s) => event.ctx.scope?.includes(s))) continue;
       try {
         sub.handler(event);
