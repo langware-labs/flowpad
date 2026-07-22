@@ -370,9 +370,11 @@ class ComputeNode(PtyActionsMixin, FsRecordsActionsMixin, OpsActionsMixin, ScanA
         remote_zip = f"/tmp/flowpad-copy-{uuid.uuid4().hex}.zip"
         await self.write_files([SendFileEntry(remote_path=remote_zip, data=buf)])
         try:
+            # Prefer python's stdlib zipfile: sandbox images ship python3 but
+            # NOT the `unzip` binary (exits 127 there); unzip is the fallback.
             cmd = await self.run_command(
-                f"mkdir -p {shlex.quote(remote_path)} && "
-                f"cd {shlex.quote(remote_path)} && unzip -o {shlex.quote(remote_zip)}"
+                f"mkdir -p {shlex.quote(remote_path)} && cd {shlex.quote(remote_path)} && "
+                f"(python3 -m zipfile -e {shlex.quote(remote_zip)} . || unzip -o {shlex.quote(remote_zip)})"
             )
             await cmd.wait()
             if cmd.exit_code != 0:
