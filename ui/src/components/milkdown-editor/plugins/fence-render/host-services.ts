@@ -14,7 +14,13 @@
 import { $ctx } from '@milkdown/utils';
 
 export interface FenceHostServices {
-  /** Open a file in the appropriate editor, optionally at a line. */
+  /**
+   * Open a file in the appropriate editor, optionally at a line.
+   *
+   * `path` is an ABSOLUTE MACHINE path. The host converts it to whatever the
+   * dock layer addresses files with, so renderers never deal in VFS paths or
+   * compute nodes.
+   */
   openFile(path: string, options?: { line?: number }): void;
   /** Root path of the project the current document belongs to, if any. */
   documentProjectRoot(): string | null;
