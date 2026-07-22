@@ -19,6 +19,7 @@
  * delivery pipeline is live, so the 'claude' assertion can't pass vacuously.
  */
 import { render, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import {
@@ -79,12 +80,21 @@ function oscTitle(title: string): string {
   return `\x1b]0;${title}\x07`;
 }
 
+/** The session-less TabbedTerminal body renders ProjectHome, whose favorites
+ *  mini-desktop reads react-query — the real tree gets its client from App.tsx,
+ *  so the harness has to supply one too or the render throws. */
+const testQueryClient = new QueryClient({
+  defaultOptions: { queries: { retry: false } },
+});
+
 function TerminalWorkspace() {
   const TabbedTerminal = TabbedTerminalComponent;
   return (
-    <div style={{ height: 320 }}>
-      <TabbedTerminal className="h-full" />
-    </div>
+    <QueryClientProvider client={testQueryClient}>
+      <div style={{ height: 320 }}>
+        <TabbedTerminal className="h-full" />
+      </div>
+    </QueryClientProvider>
   );
 }
 

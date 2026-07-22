@@ -23,7 +23,12 @@ export function dockPointerForFile(
 ): DockPointer {
   const editor = isMarkdownDocumentPath(path) ? AssetEditor.MARKDOWN : editorForPath(path);
   if (editor !== AssetEditor.CODE) {
-    return AssetDocPointer.forVfs(editor, path).toDockPointer();
+    // Carry the line across too. The asset editors name it `initialLine`
+    // (`MilkdownEditor`'s "place the caret here on mount" prop) rather than the
+    // code editor's `line`, so translate instead of dropping it — without this
+    // an "open at line" into a .md target silently loses the line.
+    const assetOptions = options?.line ? { initialLine: String(options.line) } : undefined;
+    return AssetDocPointer.forVfs(editor, path, undefined, assetOptions).toDockPointer();
   }
   return DockPointer.forFile(path, options);
 }

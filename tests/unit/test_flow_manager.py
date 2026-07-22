@@ -531,8 +531,83 @@ async def test_agent_process_budget_trips_before_spawn(tmp_path):
     rt = fm._node_rt(flow.id, "a")
     rt.active += 1
     run.active += 1
-    from flow_sdk.flow_manager.envelope import FlowEvent
+    from flow_sdk.flow_manager.envelope import RunEvent
 
-    await fm._spawn_agent(run, node, FlowEvent(
+    await fm._spawn_agent(run, node, RunEvent(
         event="go", flow_id=flow.id, execution_id=run.id), rt, seq=1)
     assert run.error and "max_processes" in run.error
+
+
+# ── agent node → Agent entity reference (definition alignment) ────────────────
+
+
+AGENT_MD = """---
+name: summarizer
+description: test agent definition
+model: sonnet
+---
+You are the summarizer. Always answer in one line.
+"""
+
+
+@async_context
+async def test_agent_node_resolves_agent_entity_definition(tmp_path):
+    """An agent node referencing an Agent entity (node_data.typeid) resolves
+    the md definition: system prompt leads the instruction, md model applies,
+    node model_size overrides it."""
+    from flow_sdk.builtin.agent import Agent
+
+    md = tmp_path / "summarizer.md"
+    md.write_text(AGENT_MD, encoding="utf-8")
+    agent = Agent(name="summarizer", asset_ref=str(md))
+    await agent.save()
+
+    flow = await _make_flow(tmp_path, "agentref",
+        [{"id": "a", "node_type": "agent",
+          "node_data": {"typeid": f"agent-{agent.id}", "prompt": "Summarize the payload."}}],
+        [_edge("e1", EXTERNAL_SOURCE, "go", "a")])
+    fm = FlowManager()
+    loaded = await fm.load_flow(flow.id)
+    node = loaded.doc.node("a")
+    assert loaded.doc.validate_graph() == []
+
+    agent_def = await fm._resolve_agent_def(node)
+    assert agent_def["agent_id"] == agent.id
+    assert agent_def["model"] == "sonnet"
+    # md model applies; node model_size (when set) wins.
+    assert fm._agent_model(agent_def, node.node_data) == "sonnet"
+    assert fm._agent_model(agent_def, {**node.node_data, "model_size": "sm"}) == "haiku"
+
+    run = await fm._start_run(loaded)
+    from flow_sdk.flow_manager.envelope import RunEvent
+
+    fe = RunEvent(event="go", data={"x": 1}, flow_id=flow.id, execution_id=run.id)
+    instruction = fm._agent_instruction(run, node, fe, tmp_path / "exec", agent_def)
+    # Definition's system prompt leads; the node prompt rides after as addendum.
+    assert instruction.startswith("You are the summarizer.")
+    assert "Summarize the payload." in instruction
+    assert instruction.index("You are the summarizer.") < instruction.index("Summarize the payload.")
+    run.finalized = True  # abandon the synthetic run without executing
+
+
+@async_context
+async def test_agent_node_dangling_reference_fails_loudly(tmp_path):
+    flow = await _make_flow(tmp_path, "agentdangle",
+        [{"id": "a", "node_type": "agent",
+          "node_data": {"typeid": "agent-2c9f8e64-3b21-4b4e-9a10-5f37f3d1c111"}}],
+        [_edge("e1", EXTERNAL_SOURCE, "go", "a")])
+    fm = FlowManager()
+    loaded = await fm.load_flow(flow.id)
+    with pytest.raises(RuntimeError, match="not found"):
+        await fm._resolve_agent_def(loaded.doc.node("a"))
+
+
+def test_agent_node_without_definition_fails_validation():
+    doc = parse_flow_doc(_doc(
+        [{"id": "a", "node_type": "agent", "node_data": {}}], []))
+    problems = "\n".join(doc.validate_graph())
+    assert "need an Agent reference" in problems
+    # Any one of typeid / program_ref / prompt satisfies it.
+    ok = parse_flow_doc(_doc(
+        [{"id": "a", "node_type": "agent", "node_data": {"prompt": "hi"}}], []))
+    assert ok.validate_graph() == []

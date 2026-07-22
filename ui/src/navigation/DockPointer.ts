@@ -54,6 +54,19 @@ export const VIEW_MODE_PARAM = 'viewMode';
 export const LANG_PARAM = 'lang';
 
 /**
+ * URL query-param key carrying the ACTIVE USER JOURNEY across the app. Null by
+ * default; when set, the guided journey tray is shown for that journey and the
+ * orchestrator drives its current step. Like the other option params it rides in
+ * `options` (so it is reload- and back-button-safe, and deliberately EXCLUDED
+ * from `tabHash` — showing a journey never spawns a tab). It is TOPMOST/sticky:
+ * `openDock` carries it onto any target that doesn't set one, so the journey
+ * stays visible across navigation until explicitly closed. Pairs with
+ * `DockPointer.journeyId` / `withJourney()`, `useActiveJourneyId()` (home root),
+ * and `navigation.showJourney()` / `closeJourney()`.
+ */
+export const JOURNEY_PARAM = 'journeyId';
+
+/**
  * Canonicalize a compute-node-relative path: forward slashes, collapsed
  * separators, no leading/trailing slash. Single owner of the rel-path form the
  * `fs/<relPath>` assets pointer carries (fsFolderRoot re-exports this for the
@@ -286,10 +299,33 @@ export class DockPointer implements IDockPointer {
 
   /** Clone this dock pointed at a translated body, or back to the original with null. */
   withLang(lang: string | null): DockPointer {
+    return this.withOption(LANG_PARAM, lang);
+  }
+
+  /**
+   * The user journey this dock is showing, or null. URL-carried (reload- and
+   * back-safe) and excluded from `tabHash`, so a journey overlays the current
+   * surface instead of spawning a tab. See {@link JOURNEY_PARAM}.
+   */
+  get journeyId(): string | null {
+    return this.options?.[JOURNEY_PARAM] ?? null;
+  }
+
+  /**
+   * Clone this dock with one URL option set (or cleared with null) — the
+   * generic form behind `withLang`/`withJourney` and the sticky-param
+   * carry-forward in `openDock`.
+   */
+  withOption(key: string, value: string | null): DockPointer {
     const nextOptions = { ...(this.options ?? {}) };
-    if (lang) nextOptions[LANG_PARAM] = lang;
-    else delete nextOptions[LANG_PARAM];
+    if (value) nextOptions[key] = value;
+    else delete nextOptions[key];
     return new DockPointer(this.viewType, this.pointer, nextOptions, this.layout, this.page);
+  }
+
+  /** Clone this dock showing a journey, or close it (clear the param) with null. */
+  withJourney(journeyId: string | null): DockPointer {
+    return this.withOption(JOURNEY_PARAM, journeyId);
   }
 
   /**

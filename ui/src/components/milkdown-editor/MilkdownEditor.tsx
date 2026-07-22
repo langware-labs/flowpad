@@ -17,7 +17,7 @@ import { gfm, insertTableCommand } from '@milkdown/preset-gfm';
 import { tableBlock } from '@milkdown/components/table-block';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { listener, listenerCtx } from '@milkdown/plugin-listener';
-import { prism } from '@milkdown/plugin-prism';
+import { prism, prismConfig } from '@milkdown/plugin-prism';
 import { emoji } from '@milkdown/plugin-emoji';
 import { history } from '@milkdown/plugin-history';
 import { trailing } from '@milkdown/plugin-trailing';
@@ -28,6 +28,9 @@ import type { EditorState } from '@milkdown/prose/state';
 import { TextSelection } from '@milkdown/prose/state';
 import type { MarkType } from '@milkdown/prose/model';
 import type { EditorView } from '@milkdown/prose/view';
+import { dataContext, VFSPath } from '@sdk';
+import { LOCAL_COMPUTE_NODE } from '@src/navigation/asset-doc-types';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import {
   Bold, Italic, Code, Heading1, Heading2, Heading3,
   List, ListOrdered, SquareCode, Pilcrow, ExternalLink,
@@ -37,21 +40,16 @@ import {
   Table as TableIcon,
 } from 'lucide-react';
 
-// Prism core must be imported before language components
-import 'prismjs';
-// Prism languages
-import 'prismjs/components/prism-typescript';
-import 'prismjs/components/prism-javascript';
-import 'prismjs/components/prism-python';
-import 'prismjs/components/prism-bash';
-import 'prismjs/components/prism-json';
-import 'prismjs/components/prism-yaml';
-import 'prismjs/components/prism-markdown';
-import 'prismjs/components/prism-css';
-import 'prismjs/components/prism-jsx';
-import 'prismjs/components/prism-tsx';
-
 import './milkdown.css';
+import './plugins/fence-render/fence-render.css';
+import { configureRefractor } from './plugins/prism-languages';
+import { fenceRenderPlugins, fenceHostServicesCtx, type FenceHostServices } from './plugins/fence-render';
+// Concrete fence renderers self-register on import. Listed here, at the
+// composition point, rather than inside the plugin — the same direction
+// `AssetsPage` imports its column modules, and it keeps `fence-render/` free of
+// any dependency on the renderers built on top of it.
+import './plugins/fence-render/renderers/mermaid';
+import './plugins/fence-render/renderers/interface';
 import {
   bidiPlugins,
   setDirCommand, unsetDirCommand,
@@ -127,6 +125,22 @@ function getBlockStartLines(body: string): number[] {
     }
   }
   return starts;
+}
+
+/**
+ * A project's absolute root directory on disk.
+ *
+ * `fs_storage_mount_path` is the field that actually holds it — it is what
+ * `Project.getProjectByPath` longest-prefix-matches against. `cwd` is a
+ * secondary. Deliberately NO `name` fallback: a project's name is not a path,
+ * and falling back to it silently produced a *relative* root that resolved
+ * source pointers to unopenable paths.
+ */
+function projectRootOf(
+  project: { fs_storage_mount_path?: string | null; cwd?: string | null } | null | undefined,
+): string | null {
+  const root = project?.fs_storage_mount_path || project?.cwd || '';
+  return root.startsWith('/') ? root : null;
 }
 
 /** Top-level child index of the caret in the doc, or null if not resolvable. */
@@ -757,6 +771,44 @@ function SelectionToolbar({
 
 function MilkdownEditorInner({ content, onChange, editorMode, plugins, onActiveStateChange, onSelectionRectChange, onCursorLineChange, initialLine, direction, editorRef }: MilkdownEditorProps & { onActiveStateChange?: (s: ActiveState) => void; onSelectionRectChange?: (r: SelectionRect | null) => void; editorRef?: React.MutableRefObject<Editor | null> }) {
   const isReadOnly = editorMode === 'view' || editorMode === 'review';
+  const { navigation, currentDock } = useDockNavigation();
+
+  /*
+   * Capabilities lent to fence renderers (see `plugins/fence-render/host-services`).
+   * Held in a ref because the Milkdown editor is constructed once: the ctx slice
+   * closes over this ref, so navigation and the active project stay current
+   * without rebuilding the editor.
+   *
+   * `projectRootById` only answers for the project already in context. There is
+   * no by-id project fetch in the SDK today (`Project` exposes `getProjectByPath`,
+   * not a get-by-id), and firing a query per rendered block would be worse than
+   * a clear "not open" reason on the button.
+   */
+  const hostServicesRef = useRef<FenceHostServices>({
+    openFile: () => {},
+    documentProjectRoot: () => null,
+    projectRootById: () => null,
+  });
+  hostServicesRef.current = {
+    openFile: (path, options) => {
+      // Renderers resolve to an ABSOLUTE MACHINE path; editor docks address
+      // files as VFS paths (`compute_node-<id>/abs/path`). Converting here keeps
+      // that convention at the app boundary instead of teaching every renderer
+      // about compute nodes — without it the dock URL loses the entity prefix
+      // and the code editor never resolves the file.
+      //
+      // The entity is taken from the DOCUMENT's own dock so the source opens on
+      // the same compute node the doc is being read on. `LOCAL_COMPUTE_NODE` is
+      // only a fallback: it serializes to the `@local` uname, which the code
+      // editor does not resolve to a filesystem.
+      const docTypeId = VFSPath.parse(currentDock?.pointer ?? '').typeId ?? LOCAL_COMPUTE_NODE;
+      navigation.openFile(VFSPath.fromMachinePath(path, docTypeId).rawPath, options);
+    },
+    documentProjectRoot: () => projectRootOf(dataContext.project),
+    projectRootById: (projectId) =>
+      dataContext.project?.id === projectId ? projectRootOf(dataContext.project) : null,
+  };
+
   const localRef = useRef<Editor | null>(null);
   const setEditor = (e: Editor | null) => {
     localRef.current = e;
@@ -813,6 +865,17 @@ function MilkdownEditorInner({ content, onChange, editorMode, plugins, onActiveS
           ctx.set(defaultValueCtx, initialContentRef.current);
           // Read-only modes disable editing but keep the DOM interactive
           // (anchors remain clickable, hover events still fire).
+          // Register the grammars refractor's common bundle lacks. Must be
+          // set before `prism` builds its decoration plugin.
+          ctx.set(prismConfig.key, { configureRefractor });
+          // Lend fence renderers the app capabilities they can't reach from a
+          // NodeView. Backed by a ref so the values stay live for the life of
+          // the editor rather than freezing at construction.
+          ctx.set(fenceHostServicesCtx.key, {
+            openFile: (path, options) => hostServicesRef.current.openFile(path, options),
+            documentProjectRoot: () => hostServicesRef.current.documentProjectRoot(),
+            projectRootById: (id) => hostServicesRef.current.projectRootById(id),
+          });
           ctx.update(editorViewOptionsCtx, (prev) => ({
             ...prev,
             editable: () => !isReadOnlyRef.current,
@@ -868,7 +931,11 @@ function MilkdownEditorInner({ content, onChange, editorMode, plugins, onActiveS
         // attrs, and re-emits the wrappers on serialize when attrs are
         // non-default. Default-attr nodes round-trip byte-identical to the
         // unmodified commonmark output.
-        .use(bidiPlugins);
+        .use(bidiPlugins)
+        // Renderable code fences (```mermaid → diagram) with a Render | Code
+        // tab strip. Render-only: no schema, parser or serializer changes, so
+        // fence markdown round-trips byte-identically.
+        .use(fenceRenderPlugins);
 
       // Register extra plugins (e.g. plan-note mark)
       if (plugins) {
