@@ -706,3 +706,45 @@ async def test_tripped_run_emits_flow_failed(tmp_path):
         unsub()
     assert got[0].data["status"] == "tripped"
     assert "exceeds max" in (got[0].data["error"] or "")
+
+
+@async_context
+async def test_entry_reserve_survives_concurrent_finalize_sweep(tmp_path):
+    """Regression (found live, phase-4 drill): a run must not sink between
+    _start_run and its entry event landing — a concurrent drain's
+    _maybe_finalize_all() used to sweep the 0/0 run before routing."""
+    ran: list[str] = []
+
+    @flow_functions.register("v2_reserve_probe")
+    def _probe(event_name, data, ctx):
+        ran.append(event_name)
+        return {}
+
+    flow = await _make_flow(tmp_path, "reserveflow",
+        [{"id": "t1", "node_type": "trigger",
+          "node_data": {"typeid": "trigger-2c9f8e64-3b21-4b4e-9a10-5f37f3d1c999"}},
+         _fn("a", "v2_reserve_probe")],
+        [_edge("e1", "t1", "fired", "a")])
+    fm = FlowManager()
+
+    # Simulate the interleave at its WORST point: the sweep runs during
+    # _start_run's own awaits (row save/attach/broadcast) — the run is already
+    # registered but its entry event hasn't routed. Born-reserved pending=1
+    # must hold it alive.
+    orig_broadcast = fm._broadcast_run_event
+
+    async def sweeping_broadcast(run, kind, payload):
+        if kind == "run_start":
+            fm._maybe_finalize_all()      # the concurrent drain's sweep
+            await asyncio.sleep(0)        # let any wrongly-scheduled finalize land
+        await orig_broadcast(run, kind, payload)
+
+    fm._broadcast_run_event = sweeping_broadcast
+    run_ids = await fm.on_trigger_fired("2c9f8e64-3b21-4b4e-9a10-5f37f3d1c999")
+    assert run_ids, "run should start"
+    await _until(lambda: ran == ["fired"], "entry event delivered despite sweep")
+    await _until(lambda: not fm.live_run_ids(), "run finalized after routing")
+    entries = read_run_journal(tmp_path / "reserveflow", run_ids[0])
+    kinds = [e["kind"] for e in entries]
+    # Ordering restored: the run must END after its entry event, never before.
+    assert kinds.index("run_end") > kinds.index("event")
