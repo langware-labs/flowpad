@@ -54,14 +54,13 @@
       "name": "Write the instructions",
       "node_data": {
         "group": "Create your vibe agent",
-        "status_line": "Write: \"You are shopping master, find the best deal, always show product name and price\" \u2014 then save.",
-        "present": {},
+        "status_line": "Write: \"You are shopping master, find the best deal, always show product name and price\" \u2014 then click the Use agent button.",
+        "present": {
+          "highlight": "UseAgent"
+        },
         "await": {
-          "topic": "app.entity.updated",
-          "target": "agent:*",
-          "matchEvent": {
-            "name": "shopping-master"
-          }
+          "topic": "app.ui.button.clicked",
+          "target": "UseAgent"
         }
       }
     },
@@ -71,13 +70,14 @@
       "name": "Use your agent",
       "node_data": {
         "group": "Use your vibe agent",
-        "status_line": "Click the highlighted Use agent button \u2014 it loads your agent into a live process and opens the vibe workspace.",
-        "present": {
-          "highlight": "UseAgent"
-        },
+        "status_line": "Your agent is loading into a live vibe process\u2026",
+        "present": {},
         "await": {
-          "topic": "app.ui.button.clicked",
-          "target": "UseAgent"
+          "topic": "app.entity.created",
+          "target": "agentic_process:*",
+          "matchEvent": {
+            "process_type": "chat"
+          }
         }
       }
     },
@@ -93,7 +93,7 @@
           "topic": "app.entity.updated",
           "target": "agentic_process:*",
           "matchEvent": {
-            "is_turn_busy": true
+            "status": "running"
           }
         }
       }
