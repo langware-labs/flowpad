@@ -137,6 +137,7 @@ async def browse(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResp
     try:
         storage = await _get_storage_for_entity(request_info)
         items = await storage.list_dir(fs_info.vpath.abs_vfspath)
+        _stamp_local_paths(items, storage, fs_info.vpath.abs_vfspath)
         return ApiSuccessResponse(data=items)
     except FileNotFoundError as e:
         logger.error(f"Browse error: {e}")
@@ -147,6 +148,31 @@ async def browse(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResp
             return _permission_denied_response(fs_info.vpath.entity_sub_path)
         logger.error(f"Browse error: {e}")
         return ApiFailResponse(message=f"Failed to browse directory: {str(e)}")
+
+
+def _stamp_local_paths(items, storage, root: str) -> None:
+    """Fill each item's transient ``local_path`` when its bytes are on disk.
+
+    Only the server can resolve an entity's storage root (embedded storage sits
+    under a temp dir), so the client must not derive it — deriving it is what
+    produced ``/task_inst.md`` at the filesystem root. Same contract as
+    ``FlowMessage.Attachment.local_path``: present ⇒ downloaded and openable.
+    """
+    from pathlib import Path
+
+    root = (root or "").strip("/")
+    for item in items or []:
+        if getattr(item, "is_dir", False):
+            continue
+        rel = str(getattr(item, "vfs_abs_path", "") or "").strip("/")
+        if root and rel.startswith(root + "/"):
+            rel = rel[len(root) + 1 :]
+        try:
+            p = Path(storage.get_storage_path(rel))
+            if p.is_file():
+                item.local_path = str(p)
+        except Exception as e:  # noqa: BLE001
+            logger.debug(f"local_path resolution skipped for {rel}: {e}")
 
 
 async def push_entity_files_to_hub(entity) -> int:
