@@ -12,8 +12,9 @@ import {
 } from '@src/components/ui/dialog';
 import { Input } from '@src/components/ui/input';
 import { notify } from '@src/notifications';
+import { hasGitHubRepoAccess } from '@src/utils/gitUtils';
 import { CheckCircle2, GitBranch, Github, Loader2 } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 
 export interface NewProjectFromGitDialogProps {
@@ -72,11 +73,17 @@ export function NewProjectFromGitDialog({ open, onOpenChange, onCreate, initialU
   const { t } = useLingui();
   const [url, setUrl] = useState(initialUrl ?? '');
   const [branch, setBranch] = useState<string | null>(initialBranch ?? null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  // One user action, two sequential phases — never concurrent, so one value
+  // rather than a pair of booleans that can disagree.
+  const [phase, setPhase] = useState<'idle' | 'checking' | 'cloning'>('idle');
+  const [accessError, setAccessError] = useState<string | null>(null);
   const [suggestion, setSuggestion] = useState<{ suggestedName: string; attemptedName: string } | null>(null);
   const [githubConnected, setGithubConnected] = useState<boolean>(false);
   // Picker state: null = step 1 (repo table). Non-null = step 2 (branches for this repo).
   const [pickedRepo, setPickedRepo] = useState<RepoSummary | null>(null);
+  // Last URL that passed the access probe — lets a collision retry skip a
+  // second identical `ls-remote` for a repo already proven readable.
+  const probedUrlRef = useRef<string | null>(null);
 
   // Re-poll on every open AND whenever userTypeId becomes available — handles
   // the bootstrap race where the dialog mounts before dataContext.userTypeId is
@@ -86,8 +93,10 @@ export function NewProjectFromGitDialog({ open, onOpenChange, onCreate, initialU
     setUrl(initialUrl ?? '');
     setBranch(initialBranch ?? null);
     setPickedRepo(null);
-    setIsSubmitting(false);
+    setPhase('idle');
+    setAccessError(null);
     setSuggestion(null);
+    probedUrlRef.current = null;
 
     let cancelled = false;
     const poll = async () => {
@@ -114,6 +123,10 @@ export function NewProjectFromGitDialog({ open, onOpenChange, onCreate, initialU
     if (!open) return;
     const handler = (msg: { auth_method?: string; status?: string }) => {
       if (msg.auth_method === 'github' && msg.status === 'success') {
+        // A stale "no access" verdict was reached WITHOUT the token that just
+        // arrived — drop it so the user isn't looking at an answer that no
+        // longer holds. Re-clicking Clone re-probes with the new credential.
+        setAccessError(null);
         void fetchGithubStatus().then((r) => {
           if (r !== null) setGithubConnected(r);
         });
@@ -137,14 +150,37 @@ export function NewProjectFromGitDialog({ open, onOpenChange, onCreate, initialU
     }
   }, []);
 
-  const canSubmit = !!url.trim() && !isSubmitting;
+  const isBusy = phase !== 'idle';
+  const canSubmit = !!url.trim() && !isBusy;
 
   const submit = useCallback(
     async (acceptSuggested?: string) => {
-      if (isSubmitting || !url.trim()) return;
-      setIsSubmitting(true);
+      const target = url.trim();
+      if (isBusy || !target) return;
       try {
-        const res = await onCreate(url.trim(), acceptSuggested, branch ?? undefined);
+        // Gate on the SAME credential path the clone will use, so we never
+        // commit to a clone we already know fails. `null` means the question
+        // couldn't be asked at all (bad URL / backend unreachable) — a
+        // different failure from a real denial, so it gets its own message.
+        // Skipped once a URL has been cleared, so accepting a name suggestion
+        // doesn't re-probe a repo we just proved readable.
+        if (probedUrlRef.current !== target) {
+          setPhase('checking');
+          setAccessError(null);
+          const access = await hasGitHubRepoAccess(target);
+          if (!access?.hasAccess) {
+            setAccessError(
+              access === null
+                ? t`Couldn't reach that repository. Check the URL and try again.`
+                : t`No access to this repository. Connect GitHub if it's private, or check the URL.`,
+            );
+            return;
+          }
+          probedUrlRef.current = target;
+        }
+
+        setPhase('cloning');
+        const res = await onCreate(target, acceptSuggested, branch ?? undefined);
         if (res.ok) {
           onOpenChange(false);
         } else {
@@ -155,10 +191,10 @@ export function NewProjectFromGitDialog({ open, onOpenChange, onCreate, initialU
           title: err instanceof Error ? err.message : t`Failed to clone repository`,
         });
       } finally {
-        setIsSubmitting(false);
+        setPhase('idle');
       }
     },
-    [isSubmitting, url, branch, onCreate, onOpenChange],
+    [isBusy, url, branch, onCreate, onOpenChange, t],
   );
 
   const handlePickRepo = useCallback((repo: RepoSummary) => {
@@ -180,10 +216,10 @@ export function NewProjectFromGitDialog({ open, onOpenChange, onCreate, initialU
   // happened. The footer Cancel button is separately disabled in JSX below.
   const handleOpenChange = useCallback(
     (next: boolean) => {
-      if (!next && isSubmitting) return;
+      if (!next && isBusy) return;
       onOpenChange(next);
     },
-    [isSubmitting, onOpenChange],
+    [isBusy, onOpenChange],
   );
 
   return (
@@ -191,13 +227,13 @@ export function NewProjectFromGitDialog({ open, onOpenChange, onCreate, initialU
       <DialogContent
         className="sm:max-w-2xl"
         onEscapeKeyDown={(e) => {
-          if (isSubmitting) e.preventDefault();
+          if (isBusy) e.preventDefault();
         }}
         onPointerDownOutside={(e) => {
-          if (isSubmitting) e.preventDefault();
+          if (isBusy) e.preventDefault();
         }}
         onInteractOutside={(e) => {
-          if (isSubmitting) e.preventDefault();
+          if (isBusy) e.preventDefault();
         }}
       >
         <DialogHeader>
@@ -233,6 +269,7 @@ export function NewProjectFromGitDialog({ open, onOpenChange, onCreate, initialU
               onChange={(e) => {
                 setUrl(e.target.value);
                 if (suggestion) setSuggestion(null);
+                if (accessError) setAccessError(null);
               }}
               autoFocus
               spellCheck={false}
@@ -270,17 +307,25 @@ export function NewProjectFromGitDialog({ open, onOpenChange, onCreate, initialU
                   variant="outline"
                   className="ml-auto h-6 px-2 text-xs"
                   onClick={() => void submit(suggestion.suggestedName)}
-                  disabled={isSubmitting}
+                  disabled={isBusy}
                 >
                   <Trans>Use suggestion</Trans>
                 </Button>
               </div>
             </div>
           )}
-          {isSubmitting && (
+          {accessError && (
+            <div
+              className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive"
+              data-testid="git-access-error"
+            >
+              {accessError}
+            </div>
+          )}
+          {isBusy && (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              <Trans>Cloning…</Trans>
+              {phase === 'checking' ? <Trans>Checking access…</Trans> : <Trans>Cloning…</Trans>}
             </div>
           )}
 
@@ -306,11 +351,11 @@ export function NewProjectFromGitDialog({ open, onOpenChange, onCreate, initialU
           )}
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isBusy}>
             <Trans>Cancel</Trans>
           </Button>
-          <Button onClick={() => void submit()} disabled={!canSubmit}>
-            {isSubmitting && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+          <Button onClick={() => void submit()} disabled={!canSubmit} data-testid="git-clone-submit">
+            {isBusy && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
             {branch ? <Trans>Clone @ {branch}</Trans> : <Trans>Clone</Trans>}
           </Button>
         </DialogFooter>
