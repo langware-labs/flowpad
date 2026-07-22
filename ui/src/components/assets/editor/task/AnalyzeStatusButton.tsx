@@ -54,6 +54,15 @@ export function AnalyzeStatusButton({ task, onAnalyzed, className }: AnalyzeStat
         projectId: task.project_id ?? null,
         taskFolder: task.asset_ref ?? null,
       },
+      // Mirrors AnalyzeStatusResult — the prompt renders these as the close
+      // command's `data`, so the agent fills them in instead of pasting `{}`
+      // and leaving us with a "success" that carries no report.
+      resultShape: {
+        readyForDone: '<true|false>',
+        missing: ['<field>'],
+        analysisPath: '<absolute path to references/analysis.html>',
+        summary: '<one short line>',
+      },
       prompt: isGroup
         ? 'Analyze the status of this group task across all its member tasks and produce the owner summary.'
         : 'Analyze the current status of this task, fill in missing fields where you can, and report progress.',
