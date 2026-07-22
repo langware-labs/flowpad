@@ -9,6 +9,7 @@ import {
   TypeId,
   VFSPath,
   type GitOrigin,
+  type WizardData,
 } from '@sdk';
 import { resolveLocalGitRoot } from '@src/utils/gitUtils';
 import { type Attachment, attachmentKey, makeAttachmentEntry, normalizeAttachments } from './task-attachments-utils';
@@ -18,10 +19,12 @@ import { isFsDragItem } from '@src/components/browseable-tree/adapters/fsFolderR
 import { openArtifact } from '@src/components/task-bar/task-utils';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { useProjectContextFolders } from '@src/hooks/use-project-context-folders';
+import { useAdoptWizardProcess } from '@src/hooks/use-adopt-wizard-process';
+import { useWizardRun } from '@src/hooks/use-wizard-run';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { cn } from '@src/lib/utils';
 import { notify } from '@src/notifications';
-import { File as FileIcon, Folder as FolderIcon, GitBranch, Plus, X } from 'lucide-react';
+import { Download, File as FileIcon, Folder as FolderIcon, GitBranch, Loader2, Plus, Wrench, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 
 interface TaskAttachmentsProps {
@@ -64,6 +67,88 @@ function writeInstalledGitPaths(taskId: string, paths: ReadonlySet<string>): voi
 
 /** Heuristic: an attachment label with no file extension is a folder. */
 const looksLikeFolder = (label: string) => !/\.[A-Za-z0-9]{1,8}$/.test(label);
+
+/**
+ * A not-yet-installed git-context-folder attachment row. Clicking it runs the
+ * `git-context-folder` clone/install wizard HEADLESS (spinner + live tool count
+ * here on the row); double-click opens the full wizard. If a pull for this task
+ * is already running when the row (re)mounts, it reconnects to it instead of
+ * showing fresh — the same topic/kind behaviour as the Analyze button.
+ */
+function GitPullAttachmentRow({
+  attachment,
+  targetTypeId,
+  buildRequest,
+  onPulled,
+  onRemove,
+}: {
+  attachment: Attachment;
+  targetTypeId: string;
+  buildRequest: (a: Attachment) => WizardData;
+  onPulled: (a: Attachment) => void;
+  onRemove?: () => void;
+}) {
+  const adopt = useAdoptWizardProcess('git-context-folder', targetTypeId);
+  const run = useWizardRun({
+    wizardName: 'git-context-folder',
+    buildRequest: () => buildRequest(attachment),
+    successMessage: 'Your git folder is ready',
+    errorTitle: 'Pull failed',
+    onResult: (r) => {
+      if (r.status === 'done') onPulled(attachment);
+    },
+    adopt,
+  });
+  const running = run.phase === 'running';
+  return (
+    <div className="group flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted">
+      <span className="relative shrink-0">
+        <FolderIcon className="h-4 w-4 text-muted-foreground" />
+        <GitBranch className="absolute -bottom-1 -right-1 h-2.5 w-2.5 rounded-full bg-background text-orange-500" />
+      </span>
+      <span
+        className="min-w-0 flex-1 truncate"
+        title={attachment.git_origin ? formatGitOrigin(attachment.git_origin) : attachment.label}
+      >
+        {attachment.label}
+      </span>
+      <button
+        type="button"
+        onClick={run.onClick}
+        aria-busy={running}
+        title="Pull · double-click to open the wizard"
+        className="inline-flex shrink-0 items-center gap-1 rounded-full border border-transparent px-2 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-muted-foreground/10"
+      >
+        {running ? (
+          <>
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            {run.toolCount > 0 && (
+              <>
+                <span>· {run.toolCount}</span>
+                <Wrench className="h-3 w-3" />
+              </>
+            )}
+          </>
+        ) : (
+          <>
+            <Download className="h-3.5 w-3.5" />
+            <span>Pull</span>
+          </>
+        )}
+      </button>
+      {onRemove && (
+        <button
+          type="button"
+          onClick={onRemove}
+          className="hidden shrink-0 rounded p-0.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive group-hover:block"
+          title="Remove"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      )}
+    </div>
+  );
+}
 
 /** Machine path of an in-app tree drag (`fs-file:<typeid>:<rel>` rows). */
 function machinePathFromDrag(typeIdStr: string, relPath: string): string | null {
@@ -203,6 +288,34 @@ export function TaskAttachments({ task, save, readOnly = false, heading }: TaskA
       });
     },
     [scopeProjectId],
+  );
+
+  // Wizard-request builder for the inline (headless) pull row. Same payload as
+  // `pullGitFolder`, but stamps `targetTypeId` (this task) so the run is
+  // reconnectable and can be surfaced in the modal on double-click.
+  const buildPullRequest = useCallback(
+    (a: Attachment): WizardData => ({
+      title: `Pull ${a.label}`,
+      targetTypeId: task.typeId.toString(),
+      payload: {
+        projectId: scopeProjectId ?? dataContext.project?.id ?? null,
+        scope: 'private',
+        mode: 'existing',
+        url: a.git_origin ? gitOriginCloneUrl(a.git_origin) : '',
+      },
+    }),
+    [scopeProjectId, task.typeId],
+  );
+
+  const markGitInstalled = useCallback(
+    (a: Attachment) => {
+      setInstalledGitPaths((prev) => {
+        const next = new Set(prev).add(attachmentKey(a));
+        writeInstalledGitPaths(task.id, next);
+        return next;
+      });
+    },
+    [task.id],
   );
 
   // Click behavior for a git context folder, matching the message chip: the
@@ -358,8 +471,23 @@ export function TaskAttachments({ task, save, readOnly = false, heading }: TaskA
           <div className="flex flex-col gap-0.5">
             {attachments.map((a) => {
               const git = !!a.git_origin || (a.path ? isGitPath(a.path) : false);
-              const isFolderish = git || looksLikeFolder(a.label);
               const key = attachmentKey(a);
+              // A not-yet-installed shared git folder: click = headless pull
+              // (spinner + tool count on the row), double-click = full wizard,
+              // and it reconnects to an in-flight pull for this task.
+              if (git && a.git_origin && !installedGitPaths.has(key)) {
+                return (
+                  <GitPullAttachmentRow
+                    key={key}
+                    attachment={a}
+                    targetTypeId={task.typeId.toString()}
+                    buildRequest={buildPullRequest}
+                    onPulled={markGitInstalled}
+                    onRemove={!readOnly ? () => removeEntry(key) : undefined}
+                  />
+                );
+              }
+              const isFolderish = git || looksLikeFolder(a.label);
               return (
                 <div key={key} className="group flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted">
                   <span className="relative shrink-0">

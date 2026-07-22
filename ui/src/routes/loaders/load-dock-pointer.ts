@@ -139,19 +139,20 @@ function loadLiveSessionRoute(pointer: string | undefined): void {
  * intentionally the loader's entire responsibility: graph reads happen in the
  * mounted view and cloud inventory sync is only triggered by its Sync button.
  */
-export async function loadGraphIdentityRoute(
-  dock: DockPointer,
-  surface: 'graph' | 'worldview',
-): Promise<void> {
-  if (!dock.pointer) return;
-  const parsed = surface === 'worldview'
-    ? DockPointer.parseWorldViewPointer(dock.pointer)
-    : DockPointer.parseGraphPointer(dock.pointer);
+export async function loadGraphIdentityRoute(dock: DockPointer, surface: 'graph' | 'worldview'): Promise<void> {
   try {
-    if (!parsed) throw new Error('Expected <type>/<id>');
-    if (surface === 'worldview' && parsed.type !== 'artifact' && parsed.type !== 'deployment') {
-      throw new Error(`Unsupported WorldView root type: ${parsed.type}`);
+    if (surface === 'worldview') {
+      if (!DockPointer.parseWorldViewProjection(dock.pointer)) {
+        throw new Error('Expected a WorldView projection');
+      }
+      const focus = dock.options?.focus;
+      await dataContext.setActiveEntityTypeId(focus ? new TypeId(focus) : null);
+      return;
     }
+
+    if (!dock.pointer) return;
+    const parsed = DockPointer.parseGraphPointer(dock.pointer);
+    if (!parsed) throw new Error('Expected <type>/<id>');
     await dataContext.setActiveEntityTypeId(new TypeId(parsed.type, parsed.id));
   } catch (error) {
     throw new DockLoadError(

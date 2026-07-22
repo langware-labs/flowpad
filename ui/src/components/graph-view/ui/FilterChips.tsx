@@ -8,7 +8,7 @@ import { hexForType } from './typeColors';
 
 type Props = {
   graph: Graph | null;
-  hidden: Set<string>;
+  hidden: ReadonlySet<string>;
   onToggle: (type: string) => void;
   onSelectAll: () => void;
   onClearAll: () => void;

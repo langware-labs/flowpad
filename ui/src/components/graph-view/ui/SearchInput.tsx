@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Search } from 'lucide-react';
 import { useLingui } from '@lingui/react/macro';
 import { EntityIcon } from './EntityIcon';
@@ -11,6 +11,7 @@ export type SearchResultRow = {
 };
 
 type Props = {
+  query?: string;
   onQueryChange: (query: string) => SearchResultRow[];
   onSelect: (key: string) => void;
 };
@@ -28,31 +29,28 @@ function highlight(text: string, q: string) {
   );
 }
 
-export function SearchInput({ onQueryChange, onSelect }: Props) {
+export function SearchInput({ query = '', onQueryChange, onSelect }: Props) {
   const { t } = useLingui();
-  const [value, setValue] = useState('');
+  const [value, setValue] = useState(query);
   const [results, setResults] = useState<SearchResultRow[]>([]);
   const [activeIdx, setActiveIdx] = useState(0);
   const [open, setOpen] = useState(false);
-  const debounceRef = useRef<number | null>(null);
+  useEffect(() => setValue(query), [query]);
 
   useEffect(() => {
-    if (debounceRef.current !== null) window.clearTimeout(debounceRef.current);
     if (!value.trim()) {
       setResults([]);
       setOpen(false);
       return;
     }
-    debounceRef.current = window.setTimeout(() => {
+    const debounce = window.setTimeout(() => {
       const next = onQueryChange(value.trim());
       setResults(next);
       setActiveIdx(0);
       setOpen(true);
     }, 200);
-    return () => {
-      if (debounceRef.current !== null) window.clearTimeout(debounceRef.current);
-    };
-  }, [value, onQueryChange]);
+    return () => window.clearTimeout(debounce);
+  }, [onQueryChange, value]);
 
   const handleSelect = (row: SearchResultRow) => {
     onSelect(row.key);
@@ -83,7 +81,11 @@ export function SearchInput({ onQueryChange, onSelect }: Props) {
           className="search-input"
           placeholder={t`Search nodes…`}
           value={value}
-          onChange={(e) => setValue(e.target.value)}
+          onChange={(e) => {
+            const next = e.target.value;
+            setValue(next);
+            if (!next.trim() && query) onQueryChange('');
+          }}
           onFocus={() => results.length > 0 && setOpen(true)}
           onBlur={() => setTimeout(() => setOpen(false), 150)}
           onKeyDown={handleKeyDown}
@@ -103,10 +105,14 @@ export function SearchInput({ onQueryChange, onSelect }: Props) {
               }}
               onMouseEnter={() => setActiveIdx(i)}
             >
-              <span className="icon"><EntityIcon type={row.type} size={14} /></span>
+              <span className="icon">
+                <EntityIcon type={row.type} size={14} />
+              </span>
               <span className="body">
                 <div className="label">{highlight(row.label, value)}</div>
-                <div className="meta">{row.type} · {row.id.slice(0, 8)}</div>
+                <div className="meta">
+                  {row.type} · {row.id.slice(0, 8)}
+                </div>
               </span>
             </div>
           ))}

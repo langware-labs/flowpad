@@ -144,7 +144,11 @@ const ASSETS: AssetSpec[] = [
     create: async (sdk) => { const w = trackForCleanup(await sdk.DynamicWorkflow.createInProject(null, testEntityName('workflow'))); return { id: w.id!, name: w.name ?? w.title }; } },
   { type: 'markdown', mainSubdir: 'docs',
     create: async (sdk) => { const m = trackForCleanup(await sdk.Markdown.createInProject(null, testEntityName('markdown'))); return { id: m.id!, name: m.name ?? m.title }; } },
-  { type: 'spec', mainSubdir: 'specs',
+  // spec is a REPO-class asset (asset_class="repo"): it lands in the recursive
+  // agentic-assets/ container as agentic-assets/spec/<name>/spec.md, NOT the
+  // old repo-root specs/ dir. See commit 65ae24d3 (repo assets) — main_subdir
+  // is DERIVED from the placement axis (family_subdir → root_prefix/family).
+  { type: 'spec', mainSubdir: 'agentic-assets/spec',
     create: async (sdk) => { const s = trackForCleanup(new sdk.Spec({ title: testEntityName('spec'), content: '# Spec body\n' })); await s.save(); return { id: s.id!, name: s.title ?? s.name }; } },
   { type: 'prompt', mainSubdir: 'prompts',
     create: async (sdk) => { const p = trackForCleanup(await sdk.Prompt.create({ name: testEntityName('prompt'), text: 'do the thing' })); return { id: p.id!, name: p.name ?? p.title }; } },

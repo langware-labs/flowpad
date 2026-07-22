@@ -121,9 +121,72 @@ describe('DockPointer.toJSON / fromJSON', () => {
     const roundtrip = DockPointer.fromJSON(json!);
     expect(roundtrip?.tabHash).toBe(origHash);
   });
+
+  it('normalizes an entity-rooted WorldView pointer through the shared SDK decoder', () => {
+    const artifactId = 'a7d50eb3-d7a7-4c06-9ee2-a8787ae2f843';
+    const dock = DockPointer.fromJSON(
+      JSON.stringify({
+        viewType: 'worldview',
+        pointer: `artifact/${artifactId}`,
+        options: { color: 'cost', selected: `artifact-${artifactId}` },
+      }),
+    );
+
+    expect(dock).toEqual(
+      expect.objectContaining({
+        viewType: ViewType.WORLDVIEW,
+        pointer: 'deployment',
+        page: PageId.DESK,
+        options: {
+          focus: `artifact-${artifactId}`,
+          selected: `artifact-${artifactId}`,
+          signal: 'cost',
+        },
+      }),
+    );
+    expect(dock?.tabHash).toBe('worldview|deployment');
+  });
 });
 
 describe('Tab.dockPointer legacy pointer compatibility', () => {
+  it('normalizes a persisted Atlas tab to the Hub organization WorldView', () => {
+    const tab = new Tab({
+      id: '7f0e48ac-c169-4ba7-a606-837916a2c927',
+      pointer: JSON.stringify({ viewType: 'atlas', pointer: 'organization', options: { color: 'cost' } }),
+    });
+
+    expect(tab.dockPointer).toEqual(
+      expect.objectContaining({
+        viewType: ViewType.WORLDVIEW,
+        pointer: 'organization',
+        page: PageId.HUB,
+        tabHash: 'hub|worldview|organization',
+        options: undefined,
+      }),
+    );
+  });
+
+  it('normalizes a persisted entity-rooted WorldView tab before tab-key comparison', () => {
+    const deploymentId = '90f0adcf-d2f5-49a2-8dcc-9ef42701cd07';
+    const tab = new Tab({
+      id: 'ba88f66c-02f0-4f62-9784-44b57a5f57a5',
+      pointer: `worldview|deployment/${deploymentId}`,
+      target_type: 'deployment',
+      target_id: deploymentId,
+    });
+
+    expect(tab.dockPointer).toEqual(
+      expect.objectContaining({
+        viewType: ViewType.WORLDVIEW,
+        pointer: 'deployment',
+        options: { focus: `deployment-${deploymentId}` },
+        page: PageId.DESK,
+        tabHash: 'worldview|deployment',
+      }),
+    );
+    expect(tab.getKey()).toBe('worldview|deployment');
+  });
+
   it('normalizes stale dock/shell-<id> rows to /dock/shell/shell-<id>', () => {
     const shellId = '8fc3bec4-0f33-4333-8b2b-c95a8f0ae194';
     const tab = new Tab({

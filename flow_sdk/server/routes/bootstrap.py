@@ -1198,7 +1198,7 @@ async def _index_system_project_markdowns(projects: list[Project]) -> None:
 
     from flow_sdk.core.entity import Entity  # noqa: PLC0415
     from flow_sdk.fs_store.fs_ref import FSRef as _FSRef  # noqa: PLC0415
-    from flow_sdk.fs_store.indexer.functions.markdown import extract_markdown  # noqa: PLC0415
+    from flow_sdk.fs_store.indexer.functions.markdown import extract_markdown, markdown_id  # noqa: PLC0415
 
     for proj in projects:
         mount = proj.fs_storage_mount_path
@@ -1211,7 +1211,13 @@ async def _index_system_project_markdowns(projects: list[Project]) -> None:
                 continue
             for md_path in base.rglob("*.md"):
                 try:
-                    records = extract_markdown(_FSRef(md_path))
+                    # Resolve id READ-ONLY (frontmatter id, else stable
+                    # uuid5(path)) — extract_markdown requires it since capsule
+                    # refactor 4f94fb92, and bootstrap must not stamp identity
+                    # capsules into tracked repo/system docs. Deterministic id
+                    # also makes this seeding idempotent across bootstraps.
+                    _md_ref = _FSRef(md_path)
+                    records = extract_markdown(_md_ref, markdown_id(_md_ref))
                     if not records:
                         continue
                     rec = records[0]
@@ -1312,6 +1318,23 @@ def _write_pref(key: str, value: Any) -> None:
 
     if not write_instance_pref(key, value):
         logging.warning(f"[onboarding] failed to write {key} to preferences.json")
+
+
+def _resolve_supported_pages() -> list[str]:
+    """Which SPA page(s) this local server advertises in bootstrap.
+
+    The same OSS bundle renders either the desktop (`desk`) or the hub (`hub`)
+    page, selected by `supported_pages`. The local desktop server serves BOTH:
+    `desk` stays first so it remains the default landing home (an unqualified
+    dock never redirects away from desktop), while `hub` is also advertised so
+    the hub page's dock URLs (`/dock/hub/...`) are reachable in the same build
+    without the version-modal toggle.
+
+    Because `desk` is present, the frontend's `isHubOnly()` stays false, so the
+    app keeps calling the desktop-only endpoints (`tab`, `capability`,
+    `bookmark`, ...) as normal.
+    """
+    return ["desk", "hub"]
 
 
 async def create_onboarding_assets(user: User) -> None:
@@ -1846,9 +1869,10 @@ async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
             records_root=str(get_instance_settings().records_root),
             supported_locales=get_supported_locales(),
             translation_targets=get_translation_targets(),
-            # This is the local desktop server — it serves only the `desk` page.
-            # A hub backend reports its own set here.
-            supported_pages=["desk"],
+            # Local desktop server serves the `desk` page by default; a dev can
+            # opt into the `hub` page via preferences.dev.app_page (see
+            # _resolve_supported_pages). A hub backend reports its own set here.
+            supported_pages=_resolve_supported_pages(),
             privacy_mode=get_privacy_mode(),
             notice=notice,
         )

@@ -4,7 +4,7 @@ import { useTheme } from 'next-themes';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { GraphEngine, type NodeData } from './graph/graphEngine';
 import { loadDepGraph, rebuildDepGraph, type GraphLayout } from './graph/loadDepGraph';
-import { loadWorldView, syncWorldView } from './graph/loadWorldView';
+import { loadWorldView, refreshWorldView } from './graph/loadWorldView';
 import { heatSummaryForGraph } from './graph/heat';
 import type { Theme } from './graph/themeColors';
 import { HeatLegend } from './ui/HeatLegend';
@@ -12,15 +12,22 @@ import { PropertyPanel } from './ui/PropertyPanel';
 import { TopBar } from './ui/TopBar';
 import { useGraphUrlState, type GraphSurface } from './url-state';
 import type { WorldViewColorMode } from '@src/types/WorldViewColorMode';
+import { WorldViewProjection } from '@sdk';
 import './graph-view.css';
 
 export type GraphViewProps = {
   surface?: GraphSurface;
 };
 
+type PendingGraph = {
+  surface: GraphSurface;
+  projection: WorldViewProjection | null;
+  graph: Graph;
+};
+
 const SURFACE_LAYOUT: Record<GraphSurface, GraphLayout> = {
   dependency: 'force',
-  worldview: 'force',
+  worldview: 'circle',
 };
 
 /**
@@ -36,7 +43,7 @@ export function GraphView({ surface = 'dependency' }: GraphViewProps) {
 
   const containerRef = useRef<HTMLDivElement>(null);
   const engineRef = useRef<GraphEngine | null>(null);
-  const pendingGraphRef = useRef<Graph | null>(null);
+  const pendingGraphRef = useRef<PendingGraph | null>(null);
   const urlStateRef = useRef(urlState);
   const setUrlStateRef = useRef(setUrlState);
   const themeRef = useRef(theme);
@@ -45,7 +52,6 @@ export function GraphView({ surface = 'dependency' }: GraphViewProps) {
   themeRef.current = theme;
 
   const [graph, setGraph] = useState<Graph | null>(null);
-  const [hidden, setHidden] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [acting, setActing] = useState(false);
@@ -59,7 +65,9 @@ export function GraphView({ surface = 'dependency' }: GraphViewProps) {
 
   const navigateSelection = useCallback((key: string | null) => setUrlStateRef.current({ selected: key }), []);
 
-  const navigateFocus = useCallback((key: string) => setUrlStateRef.current({ local: key, selected: key }), []);
+  const navigateFocus = useCallback((key: string) => setUrlStateRef.current({ focus: key, selected: key }), []);
+
+  const projection = urlState.projection ?? WorldViewProjection.DEPLOYMENT;
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -71,15 +79,21 @@ export function GraphView({ surface = 'dependency' }: GraphViewProps) {
 
     void (async () => {
       try {
-        const nextGraph =
-          pendingGraphRef.current ?? (surface === 'worldview' ? await loadWorldView() : await loadDepGraph());
+        const pending = pendingGraphRef.current;
         pendingGraphRef.current = null;
+        let nextGraph: Graph;
+        if (pending?.surface === surface && pending.projection === (surface === 'worldview' ? projection : null)) {
+          nextGraph = pending.graph;
+        } else if (surface === 'worldview') {
+          nextGraph = await loadWorldView(projection);
+        } else {
+          nextGraph = await loadDepGraph();
+        }
         if (cancelled || !containerRef.current) return;
 
         const engine = new GraphEngine(nextGraph, SURFACE_LAYOUT[surface]);
         engineRef.current = engine;
         setGraph(nextGraph);
-        setHidden(new Set());
 
         // Sigma event handlers only express navigation intent. The URL update
         // comes back through the sync effect below before selection/focus is
@@ -90,12 +104,14 @@ export function GraphView({ surface = 'dependency' }: GraphViewProps) {
         requestAnimationFrame(() => {
           if (cancelled || !containerRef.current) return;
           const requested = urlStateRef.current;
-          engine.setColorMode(requested.color);
+          engine.setColorMode(
+            surface === 'worldview' && projection === WorldViewProjection.DEPLOYMENT ? requested.signal : 'type',
+          );
           engine.init(containerRef.current);
           engine.setTheme(themeRef.current);
-          const localFilter = requested.local && !(surface === 'worldview' && requested.depth === 0);
-          if (localFilter && nextGraph.hasNode(requested.local!)) {
-            const local = engine.setLocalMode(requested.local, requested.depth);
+          engine.setHiddenTypes(requested.hidden);
+          if (requested.focus && nextGraph.hasNode(requested.focus)) {
+            const local = engine.setLocalMode(requested.focus, requested.depth);
             setLocalVisibleCount(local.visibleCount);
           } else {
             engine.setLocalMode(null);
@@ -125,53 +141,52 @@ export function GraphView({ surface = 'dependency' }: GraphViewProps) {
       cancelled = true;
       cleanup?.();
     };
-  }, [navigateFocus, navigateSelection, reloadKey, surface]);
+  }, [navigateFocus, navigateSelection, projection, reloadKey, surface]);
 
   useEffect(() => {
     engineRef.current?.setTheme(theme);
   }, [theme]);
 
   useEffect(() => {
-    if (surface === 'worldview') engineRef.current?.setColorMode(urlState.color);
-  }, [surface, urlState.color]);
+    if (surface === 'worldview') {
+      engineRef.current?.setColorMode(projection === WorldViewProjection.DEPLOYMENT ? urlState.signal : 'type');
+    }
+  }, [projection, surface, urlState.signal]);
+
+  useEffect(() => {
+    engineRef.current?.setHiddenTypes(urlState.hidden);
+  }, [urlState.hidden]);
 
   // URL -> engine is the only path that applies selection and local focus.
   useEffect(() => {
     const engine = engineRef.current;
     if (!engine || !graph) return;
-    const localFilter = urlState.local && !(surface === 'worldview' && urlState.depth === 0);
-    if (localFilter && graph.hasNode(urlState.local!)) {
-      const local = engine.setLocalMode(urlState.local, urlState.depth);
+    if (urlState.focus && graph.hasNode(urlState.focus)) {
+      const local = engine.setLocalMode(urlState.focus, urlState.depth);
       setLocalVisibleCount(local.visibleCount);
     } else {
       engine.setLocalMode(null);
       setLocalVisibleCount(surface === 'worldview' ? graph.order : 0);
     }
     engine.selectNode(urlState.selected && graph.hasNode(urlState.selected) ? urlState.selected : null);
-  }, [graph, surface, urlState.depth, urlState.local, urlState.selected]);
+  }, [graph, surface, urlState.depth, urlState.focus, urlState.selected]);
 
   const toggleType = useCallback((type: string) => {
-    setHidden((previous) => {
-      const next = new Set(previous);
-      if (next.has(type)) next.delete(type);
-      else next.add(type);
-      engineRef.current?.setHiddenTypes(next);
-      return next;
-    });
+    const next = new Set(urlStateRef.current.hidden);
+    if (next.has(type)) next.delete(type);
+    else next.add(type);
+    setUrlStateRef.current({ hidden: next });
   }, []);
 
   const selectAllTypes = useCallback(() => {
-    const empty = new Set<string>();
-    engineRef.current?.setHiddenTypes(empty);
-    setHidden(empty);
+    setUrlStateRef.current({ hidden: new Set() });
   }, []);
 
   const clearAllTypes = useCallback(() => {
     if (!graph) return;
     const all = new Set<string>();
     graph.forEachNode((_node, attributes) => all.add(attributes.entityType as string));
-    engineRef.current?.setHiddenTypes(all);
-    setHidden(all);
+    setUrlStateRef.current({ hidden: all });
   }, [graph]);
 
   const handleAction = useCallback(async () => {
@@ -179,10 +194,18 @@ export function GraphView({ surface = 'dependency' }: GraphViewProps) {
     setError(null);
     try {
       if (surface === 'worldview') {
-        pendingGraphRef.current = await syncWorldView();
+        pendingGraphRef.current = {
+          surface,
+          projection,
+          graph: await refreshWorldView(projection),
+        };
       } else {
         await rebuildDepGraph();
-        pendingGraphRef.current = await loadDepGraph();
+        pendingGraphRef.current = {
+          surface,
+          projection: null,
+          graph: await loadDepGraph(),
+        };
       }
       setReloadKey((key) => key + 1);
     } catch (cause) {
@@ -190,33 +213,39 @@ export function GraphView({ surface = 'dependency' }: GraphViewProps) {
     } finally {
       setActing(false);
     }
-  }, [surface]);
+  }, [projection, surface]);
 
   const handleDepth = useCallback((depth: number) => setUrlState({ depth }), [setUrlState]);
-  const handleColorMode = useCallback(
-    (color: WorldViewColorMode) => setUrlState({ color }),
-    [setUrlState],
-  );
-  const handleExitLocal = useCallback(() => setUrlState({ local: null }), [setUrlState]);
-  const handleSearch = useCallback((query: string) => engineRef.current?.searchNodes(query) ?? [], []);
+  const handleColorMode = useCallback((signal: WorldViewColorMode) => setUrlState({ signal }), [setUrlState]);
+  const handleExitLocal = useCallback(() => setUrlState({ focus: null }), [setUrlState]);
+  const handleSearch = useCallback((query: string) => {
+    if (query !== urlStateRef.current.query) setUrlStateRef.current({ query });
+    return engineRef.current?.searchNodes(query) ?? [];
+  }, []);
 
   const nodeCount = graph?.order ?? 0;
   const edgeCount = graph?.size ?? 0;
   const visibleNodeCount = useMemo(() => {
     if (!graph) return 0;
-    if (hidden.size === 0) return graph.order;
+    if (urlState.hidden.size === 0) return graph.order;
     let count = 0;
     graph.forEachNode((_node, attributes) => {
-      if (!hidden.has(attributes.entityType as string)) count += 1;
+      if (!urlState.hidden.has(attributes.entityType as string)) count += 1;
     });
     return count;
-  }, [graph, hidden]);
+  }, [graph, urlState.hidden]);
 
   const isWorldView = surface === 'worldview';
-  const title = isWorldView ? t`Cloud WorldView` : t`Context Graph`;
+  let title = t`Context Graph`;
+  if (isWorldView) {
+    if (projection === WorldViewProjection.WORLD) title = t`Your WorldView`;
+    else if (projection === WorldViewProjection.ORGANIZATION) title = t`Organization WorldView`;
+    else title = t`Deployment WorldView`;
+  }
+  const supportsSignals = isWorldView && projection === WorldViewProjection.DEPLOYMENT;
   const heatSummary = useMemo(
-    () => (isWorldView && graph ? heatSummaryForGraph(graph, urlState.color) : null),
-    [graph, isWorldView, urlState.color],
+    () => (supportsSignals && graph ? heatSummaryForGraph(graph, urlState.signal) : null),
+    [graph, supportsSignals, urlState.signal],
   );
 
   return (
@@ -225,23 +254,23 @@ export function GraphView({ surface = 'dependency' }: GraphViewProps) {
         <div className="main-col">
           <TopBar
             title={title}
-            actionLabel={isWorldView ? t`Sync` : t`Rebuild`}
-            actionPendingLabel={isWorldView ? t`Syncing…` : t`Building…`}
+            actionLabel={isWorldView ? t`Refresh` : t`Rebuild`}
+            actionPendingLabel={isWorldView ? t`Refreshing…` : t`Building…`}
             graph={graph}
             nodeCount={nodeCount}
             visibleNodeCount={visibleNodeCount}
             edgeCount={edgeCount}
-            hidden={hidden}
+            hidden={urlState.hidden}
             building={acting}
             actionDisabled={loading}
-            depthOptions={isWorldView ? [0, 2, 4, 6] : [1, 2, 3]}
-            colorMode={isWorldView ? urlState.color : undefined}
+            depthOptions={isWorldView ? [1, 2, 4, 6, 12] : [1, 2, 3]}
+            colorMode={supportsSignals ? urlState.signal : undefined}
             localMode={
-              urlState.local && graph?.hasNode(urlState.local)
+              urlState.focus && graph?.hasNode(urlState.focus)
                 ? {
-                    rootKey: urlState.local,
-                    rootLabel: graph.getNodeAttribute(urlState.local, 'label') as string,
-                    rootType: graph.getNodeAttribute(urlState.local, 'entityType') as string,
+                    rootKey: urlState.focus,
+                    rootLabel: graph.getNodeAttribute(urlState.focus, 'label') as string,
+                    rootType: graph.getNodeAttribute(urlState.focus, 'entityType') as string,
                     depth: urlState.depth,
                     visibleCount: localVisibleCount,
                   }
@@ -251,10 +280,11 @@ export function GraphView({ surface = 'dependency' }: GraphViewProps) {
             onSelectAllTypes={selectAllTypes}
             onClearAllTypes={clearAllTypes}
             onSearch={handleSearch}
+            searchQuery={urlState.query}
             onSelectResult={(key) => navigateSelection(key)}
             onRebuild={() => void handleAction()}
             onChangeDepth={handleDepth}
-            onChangeColorMode={isWorldView ? handleColorMode : undefined}
+            onChangeColorMode={supportsSignals ? handleColorMode : undefined}
             onExitLocal={handleExitLocal}
           />
           <div className="graph-container">
@@ -263,7 +293,7 @@ export function GraphView({ surface = 'dependency' }: GraphViewProps) {
               <div className="overlay">
                 <div className="spinner" />
                 <p>{isWorldView ? <Trans>Loading WorldView…</Trans> : <Trans>Loading dependency graph…</Trans>}</p>
-                <p className="sub">{isWorldView ? '/api/v1/worldview' : '/api/v1/dep_graph'}</p>
+                <p className="sub">{isWorldView ? `/api/v1/worldview/${projection}` : '/api/v1/dep_graph'}</p>
               </div>
             )}
             {error && !loading && (
@@ -277,7 +307,7 @@ export function GraphView({ surface = 'dependency' }: GraphViewProps) {
         </div>
         <PropertyPanel
           node={selected}
-          localRootKey={urlState.local}
+          localRootKey={urlState.focus}
           showWorldViewProperties={isWorldView}
           onNeighborClick={(key) => navigateSelection(key)}
           onFocus={navigateFocus}

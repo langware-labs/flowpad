@@ -109,7 +109,7 @@ class Capability(Entity):
         seeded: list[Capability] = []
         for spec in get_default_capability_specs():
             expected = cls.from_spec(spec)
-            existing = await cls._db.get_by_id(expected.id, cls.get_type())
+            existing = await db.get_by_id(expected.id, cls.get_type())
             if existing is None:
                 seeded.append(await expected.save(notify=False))
                 continue

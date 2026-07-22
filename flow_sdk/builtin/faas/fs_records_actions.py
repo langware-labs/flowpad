@@ -1647,7 +1647,18 @@ class FsRecordsActionsMixin:
 
         # Expand ~ and resolve to a Path. Don't require the file to exist yet —
         # we'll let the discovery layer decide.
+        #
+        # The frontend's VFS encoding strips the leading slash off a compute-node-
+        # rooted path (``compute_node-@local/Users/…`` parses to entitySubPath
+        # ``Users/…``), and ``useEntityByPath`` sends that relative form straight
+        # here. Anchor a non-absolute path at the compute-node root ``/`` —
+        # mirroring ``VFSPath.machinePath`` — so it resolves the SAME on-disk asset
+        # as the absolute machinePath. Without this the path resolves against the
+        # backend CWD, misses, and 404s: the "not available" MissingAssetCard bug
+        # this route's regression guard covers.
         expanded = str(Path(raw_path).expanduser())
+        if not Path(expanded).is_absolute():
+            expanded = "/" + expanded
 
         # Pass 1 + fast recovery (targeted single-file parse + sync) live in
         # the shared ``discover_record_by_path`` helper — also used by
@@ -2241,7 +2252,9 @@ def _normalize_asset_path(p: str) -> str:
     return p
 
 
-async def discover_record_by_path(record_type: str, path: str, *, notify: bool = False):
+async def discover_record_by_path(
+    record_type: str, path: str, *, notify: bool = False, proposed_id: str | None = None
+):
     """Find-or-recover ONE record by absolute path — the interactive fast path.
 
     If the source exists, parse JUST this file/folder via the type's
@@ -2259,8 +2272,20 @@ async def discover_record_by_path(record_type: str, path: str, *, notify: bool =
     the fresh-parse ``sync_to_db`` broadcasts the entity op — this is the
     force-reindex path used by ``reindex_paths`` so a changed file re-parses AND
     pushes a ``data_op_msg`` (bumped ``updated_date``) to watching clients.
+
+    ``proposed_id`` (reindex only): the id of the entity ALREADY resolved for
+    this path via ``get_by_asset_ref``. A portable asset (e.g. markdown) carries
+    its id in an in-file identity capsule; a full-content overwrite (a real agent
+    replacing a doc) wipes that capsule, so a bare re-parse would ``mint_id`` a
+    FRESH v4 and fork a NEW entity, leaving the original's ``updated_date``
+    frozen. Threading the known id makes ``mint_id`` re-stamp the capsule with the
+    ORIGINAL id so the SAME entity updates in place. Consulted only on a capsule
+    MISS — a still-present valid carrier id always wins, and folder types are
+    unaffected (their capsule lives outside the edited file).
     """
     import asyncio as _asyncio  # noqa: PLC0415
+    from datetime import datetime as _datetime  # noqa: PLC0415
+    from datetime import timezone as _timezone  # noqa: PLC0415
 
     import flow_sdk.fs_store.indexer.registrations  # noqa: F401, PLC0415 — trigger auto-registration
     from flow_sdk.fs_store.fs_ref import FSRef as _FSRef  # noqa: PLC0415
@@ -2294,29 +2319,87 @@ async def discover_record_by_path(record_type: str, path: str, *, notify: bool =
                     record_type=_RT(record_type),
                     scope=classify_path(expanded),
                 )
-                resolved_id = _info.extract_id(one_ref) or _info.mint_id(one_ref)
-
-                # Match the full indexer's duplicate rule: a live DB source
-                # wins; a second path carrying the same type+id is observable
-                # but is neither parsed nor rewritten.
-                from flow_sdk.db import get_db_driver  # noqa: PLC0415
-                from flow_sdk.fs_store.indexer.index_function import (  # noqa: PLC0415
-                    duplicate_asset_paths,
+                # ``proposed_id`` (reindex): a portable asset carries its id in an
+                # in-file capsule; a full-content overwrite wipes it, so a bare
+                # re-parse would mint a FRESH v4 and fork a NEW entity, freezing
+                # the original's updated_date. On a capsule MISS, re-stamp the
+                # known id so the SAME entity updates. A still-present valid
+                # carrier id always wins; folder types are unaffected.
+                resolved_id = _info.extract_id(one_ref) or _info.mint_id(
+                    one_ref, proposed_id=proposed_id
                 )
+
+                # Match the full indexer's deterministic primary ranking. A
+                # non-primary path remains observable but is neither parsed nor
+                # rewritten.
+                from flow_sdk.db import get_db_driver  # noqa: PLC0415
+                from flow_sdk.fs_store.asset_occurrences import (  # noqa: PLC0415
+                    resolve_asset_collisions,
+                    stored_asset_occurrences,
+                )
+                from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
+                from flow_sdk.utils.git import git_asset_introduction  # noqa: PLC0415
                 _driver = get_db_driver()
+                _stored = {}
                 if hasattr(_driver, "list_entity_sources_by_type"):
                     _sources = await _driver.list_entity_sources_by_type(record_type)
-                    _existing = {
-                        record_type: {
-                            eid: source[0]
-                            for eid, source in _sources.items()
-                            if source and source[0]
-                        }
-                    }
-                    if duplicate_asset_paths(
-                        [(record_type, resolved_id, expanded)], _existing,
+                    _stored = stored_asset_occurrences(record_type, _sources)
+
+                def _resolve_target():
+                    def _identity(candidate):
+                        if not isinstance(candidate, str):
+                            return record_type, resolved_id, canonical_posix_path(expanded)
+                        candidate_ref = _FSRef(
+                            candidate,
+                            record_type=_RT(record_type),
+                            scope=classify_path(candidate),
+                        )
+                        candidate_id = _info.extract_id(candidate_ref)
+                        if not candidate_id:
+                            return None
+                        return record_type, candidate_id, canonical_posix_path(candidate)
+
+                    return resolve_asset_collisions(
+                        [(record_type, resolved_id, expanded)],
+                        _stored,
+                        _identity,
+                        git_asset_introduction,
+                        _datetime.now(_timezone.utc),
+                    )
+
+                _decisions = await _asyncio.to_thread(_resolve_target)
+                _decision = next(
+                    (
+                        item for item in _decisions
+                        if item.type_name == record_type and item.entity_id == resolved_id
+                    ),
+                    None,
+                )
+                async def _reflect_collision() -> None:
+                    if _decision is None or not _decision.changed:
+                        return
+                    _entity = await _driver.get_by_id(resolved_id, record_type)
+                    if _entity is not None and hasattr(
+                        _entity, "reflect_asset_occurrences"
                     ):
-                        return None
+                        await _entity.reflect_asset_occurrences(
+                            _decision.occurrences, notify=notify,
+                        )
+
+                if _decision is not None and _decision.duplicate_paths:
+                    logging.warning(
+                        "[asset-id] duplicate asset id; type=%s id=%s kept=%s skipped=%s",
+                        record_type,
+                        resolved_id,
+                        _decision.primary_path,
+                        ",".join(_decision.duplicate_paths),
+                    )
+                if (
+                    _decision is not None
+                    and canonical_posix_path(expanded) != _decision.primary_path
+                ):
+                    await _reflect_collision()
+                    return None
 
                 recs = _from_disk(one_ref, resolved_id)
                 if _asyncio.iscoroutine(recs):
@@ -2329,7 +2412,6 @@ async def discover_record_by_path(record_type: str, path: str, *, notify: bool =
                     deepest_project_id_for_path,
                     load_project_mounts,
                 )
-                from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
                 try:
                     owner_pid = deepest_project_id_for_path(
                         canonical_posix_path(expanded), await load_project_mounts()
@@ -2350,6 +2432,7 @@ async def discover_record_by_path(record_type: str, path: str, *, notify: bool =
                     except Exception as _se:
                         logging.debug(f"[fs-records] targeted sync skipped for {record_type}: {_se}")
                     if synced and _normalize_asset_path(ref_path) == target_norm:
+                        await _reflect_collision()
                         return rec
             except Exception as e:
                 logging.debug(f"[fs-records] targeted parse failed for {record_type} @ {expanded}: {e}")

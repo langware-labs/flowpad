@@ -28,7 +28,10 @@ describe('deck entity — indexes with the viewer shape and routes to the DeckVi
 
   it('indexing a project root mints a deck entity anchored at the folder', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'deck-fe-'));
-    const deckDir = path.join(root, 'assets', 'decks', 'nightowl');
+    // Repo assets live under `agentic-assets/<family>/<slug>/` (placement
+    // refactor 7f0f8d92 / 65ae24d3) — the recursive `repo_assets_fn` walker
+    // discovers them keyed by the deck type's `family` ("deck").
+    const deckDir = path.join(root, 'agentic-assets', 'deck', 'nightowl');
     fs.mkdirSync(deckDir, { recursive: true });
     fs.writeFileSync(
       path.join(deckDir, 'deck.json'),
@@ -50,17 +53,22 @@ describe('deck entity — indexes with the viewer shape and routes to the DeckVi
     expect(result?.type).toBe('deck');
     expect(result?.indexed, 'deck walker must index the folder').toBe(1);
 
-    // The index stamps the deck's id into its `.flow/id` capsule — fetch by it.
+    // The index stamps the deck's id into its named identity capsule
+    // (`.flow/capsules/identity.json` — canonical AssetCapsule store; the bare
+    // `.flow/id` is a read-only legacy carrier) — fetch by it.
     // (The DB record carries name + asset_ref; the metadata-derived typed fields
     // like num_slides project via `from_fs_ref` on disk-load — the path the
     // viewer uses, covered by the python test_deck_from_fs_ref unit test — not
     // the DB GET, matching deck_template's behaviour.)
-    const id = fs.readFileSync(path.join(deckDir, '.flow', 'id'), 'utf-8').trim();
+    const capsule = JSON.parse(
+      fs.readFileSync(path.join(deckDir, '.flow', 'capsules', 'identity.json'), 'utf-8'),
+    );
+    const id = String(capsule.data.id).trim();
     const entity: any = await apiClient.get(`/graph/deck/${id}`).then((r: any) => r?.data ?? r);
     expect(entity.type).toBe('deck');
     expect(entity.name).toBe('NightOwl Pitch');
     // asset_ref is the deck FOLDER (the backend resolves symlinks, e.g. macOS
     // /private prefix — match on the suffix rather than the raw temp path).
-    expect(entity.asset_ref).toMatch(/assets\/decks\/nightowl$/);
+    expect(entity.asset_ref).toMatch(/agentic-assets\/deck\/nightowl$/);
   }, 15000);
 });

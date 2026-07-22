@@ -455,18 +455,24 @@ export function UserDropdown() {
             </TooltipProvider>
           </>
         ) : isLocal ? null : (
+          // Logged-out: a round, avatar-sized icon button in the rail's icon language
+          // (not a filled CTA pill — de-emphasized per NN/g). Reuses the shared Button
+          // for focus-ring/disabled a11y; className carries the round/dashed look.
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
-                  variant="default"
-                  size="sm"
+                  variant="ghost"
+                  size="icon"
+                  aria-label={t`Sign in`}
+                  data-testid="user-login-button"
                   onClick={() => {
                     trackEvent({ event: 'login_clicked', event_source: 'page_header' });
-                    navigator.navigateToLogin();
+                    void navigator.navigateToLogin();
                   }}
+                  className="h-8 w-8 rounded-full border border-dashed border-border text-muted-foreground hover:border-solid hover:text-foreground"
                 >
-                  <Trans>Login</Trans>
+                  <LogIn className="h-4 w-4" />
                 </Button>
               </TooltipTrigger>
               <TooltipContent side="top">{cloudLoginTooltip('logged_out', 'disconnected', cloudUrl)}</TooltipContent>

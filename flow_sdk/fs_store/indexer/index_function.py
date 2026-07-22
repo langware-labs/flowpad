@@ -17,6 +17,11 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Protocol
 
+from flow_sdk.fs_store.asset_occurrences import (
+    StoredOccurrenceMap,
+    resolve_asset_collisions,
+    stored_asset_occurrences,
+)
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer.progress_table import (
@@ -25,7 +30,6 @@ from flow_sdk.fs_store.indexer.progress_table import (
     TypeProgressRow,
 )
 from flow_sdk.fs_store.indexer.roots import resolve_project_id_for_cwd
-from flow_sdk.fs_store.path_utils import canonical_posix_path
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.server.search_filters import SCOPED_RECORD_TYPES, ScopeFilter
 
@@ -139,6 +143,8 @@ class PerTypeIndexResult:
     # pre-existing rows anchored to a walked file that resolved to a
     # different id this run and were claimed by nothing else.
     dupes_removed: int = 0
+    duplicate_groups: int = 0
+    duplicate_occurrences: int = 0
 
 
 @dataclass(slots=True)
@@ -151,6 +157,8 @@ class IndexResult:
     total_orphans_db_removed: int = 0
     total_orphans_disk_removed: int = 0
     total_dupes_removed: int = 0
+    total_duplicate_groups: int = 0
+    total_duplicate_occurrences: int = 0
 
 
 class IndexerFunc(Protocol):
@@ -189,44 +197,6 @@ def ref_typeid(ref) -> str | None:
     except Exception:
         return None
     return f"{rtype}-{rid}" if rid else None
-
-
-def duplicate_asset_paths(
-    candidates: list[tuple[str, str, str]],
-    existing_paths: dict[str, dict[str, str]],
-) -> set[tuple[str, str, str]]:
-    """Detect live duplicate ``type+id`` sources and return paths to skip.
-
-    A live DB source wins. Without one, canonical lexical path order chooses
-    the winner. Detection never rewrites or re-keys either source.
-    """
-    grouped: dict[tuple[str, str], set[str]] = {}
-    for type_name, ref_id, path in candidates:
-        grouped.setdefault((type_name, ref_id), set()).add(
-            canonical_posix_path(path)
-        )
-
-    skipped: set[tuple[str, str, str]] = set()
-    for (type_name, ref_id), paths in grouped.items():
-        incumbent = existing_paths.get(type_name, {}).get(ref_id)
-        incumbent_canon: str | None = None
-        if incumbent:
-            try:
-                if Path(incumbent).exists():
-                    incumbent_canon = canonical_posix_path(incumbent)
-            except OSError:
-                pass
-
-        kept = incumbent_canon or min(paths)
-        for path in sorted(paths):
-            if path == kept:
-                continue
-            skipped.add((type_name, ref_id, path))
-            logging.warning(
-                "[asset-id] duplicate asset id; type=%s id=%s kept=%s skipped=%s",
-                type_name, ref_id, kept, path,
-            )
-    return skipped
 
 
 def _is_async_walker(fn: Any) -> bool:
@@ -362,10 +332,10 @@ def _db_missing_orphans(
     """
     return {
         eid
-        for eid, (aref, _scope, _pid) in db_rows.items()
-        if eid not in seen
+        for eid, source in db_rows.items()
+        if (aref := source[0] if source else None)
+        and eid not in seen
         and eid not in disk_ids
-        and aref
         and not Path(str(aref)).exists()
     }
 
@@ -562,6 +532,7 @@ class FSIndexer:
                 "indexed": 0, "errors": 0, "duration_ms": 0.0, "skipped": 0,
                 "orphans_found": 0, "orphans_db_removed": 0, "orphans_disk_removed": 0,
                 "orphan_ids": [], "dupes_removed": 0,
+                "duplicate_groups": 0, "duplicate_occurrences": 0,
             }
             for rt in per_type_totals
         }
@@ -658,6 +629,7 @@ class FSIndexer:
         # ``{type: {id: asset_ref}}`` — the incumbent path an id already lives at.
         # Powers dedup-on-adopt (move vs copy). Same lean SELECT as the id set.
         existing_db_paths: dict[str, dict[str, str]] = {}
+        stored_occurrences = StoredOccurrenceMap()
         if hasattr(driver, "list_entity_sources_by_type"):
             try:
                 for rt in per_type_totals:
@@ -666,6 +638,11 @@ class FSIndexer:
                     existing_db_paths[str(rt)] = {
                         rid: src[0] for rid, src in rows.items() if src and src[0]
                     }
+                    type_occurrences = stored_asset_occurrences(str(rt), rows)
+                    stored_occurrences.update(type_occurrences)
+                    stored_occurrences.synthetic_keys.update(
+                        getattr(type_occurrences, "synthetic_keys", ())
+                    )
             except Exception:
                 logging.warning(
                     "[FSIndexer] could not preload DB ids for skip-fresh row check; "
@@ -673,6 +650,7 @@ class FSIndexer:
                 )
                 existing_db_ids.clear()
                 existing_db_paths.clear()
+                stored_occurrences.clear()
 
         # Same-path reconciliation (the inverse of dedup-on-adopt, which handles
         # one id at two paths): paths already claimed by MORE THAN ONE row.
@@ -782,15 +760,73 @@ class FSIndexer:
         for chunk_start in range(0, len(dispatchable), _PROBE_CHUNK_REFS):
             chunk = dispatchable[chunk_start:chunk_start + _PROBE_CHUNK_REFS]
             all_probed.extend(await asyncio.to_thread(_probe_chunk, chunk))
-        duplicate_paths = await asyncio.to_thread(
-            duplicate_asset_paths,
-            [
-                (str(ref.record_type), ref_id, canon_path)
-                for ref, _info, ref_id, _probe, _fresh, canon_path in all_probed
-                if ref_id
-            ],
-            existing_db_paths,
-        )
+        def _resolve_occurrences():
+            from flow_sdk.fs_store.fs_ref import FSRef  # noqa: PLC0415
+            from flow_sdk.utils.git import git_asset_introduction  # noqa: PLC0415
+
+            stored_identities: dict[str, tuple[str, str, str]] = {}
+            for (type_name, entity_id), occurrences in stored_occurrences.items():
+                info = SchemaRegistry.get(type_name)
+                if info is None:
+                    continue
+                for occurrence in occurrences:
+                    try:
+                        path = occurrence.path
+                        if not Path(path).exists():
+                            continue
+                        rid = info.extract_id(FSRef(path, record_type=RecordType(type_name)))
+                        if rid == entity_id:
+                            stored_identities[path] = (type_name, entity_id, path)
+                    except Exception:
+                        continue
+
+            def identity(candidate):
+                if isinstance(candidate, str):
+                    return stored_identities.get(canonical_posix_path(candidate))
+                ref, _info, ref_id, _probe, _fresh, canon_path = candidate
+                if ref_id is None:
+                    return None
+                return (str(ref.record_type), ref_id, canon_path)
+
+            return resolve_asset_collisions(
+                all_probed,
+                stored_occurrences,
+                identity,
+                git_asset_introduction,
+                datetime.now(timezone.utc),
+            )
+
+        collision_decisions = await asyncio.to_thread(_resolve_occurrences)
+        collision_by_key = {
+            (item.type_name, item.entity_id): item for item in collision_decisions
+        }
+        duplicate_paths = {
+            (item.type_name, item.entity_id, path)
+            for item in collision_decisions
+            for path in item.duplicate_paths
+        }
+        primary_swaps = {
+            (item.type_name, item.entity_id, item.primary_path)
+            for item in collision_decisions
+            if item.primary_path is not None
+            and stored_occurrences.get((item.type_name, item.entity_id))
+            and stored_occurrences[(item.type_name, item.entity_id)][0].path
+            != item.primary_path
+        }
+        for item in collision_decisions:
+            if not item.duplicate_paths:
+                continue
+            rt = RecordType(item.type_name)
+            acc = per_type_counts[rt]
+            acc["duplicate_groups"] += 1
+            acc["duplicate_occurrences"] += len(item.duplicate_paths)
+            logging.warning(
+                "[asset-id] duplicate asset id; type=%s id=%s kept=%s skipped=%s",
+                item.type_name,
+                item.entity_id,
+                item.primary_path,
+                ",".join(item.duplicate_paths),
+            )
 
         async with _db_session() as _idx_session:
             for ref, info, ref_id, probe, fresh, canon_path in all_probed:
@@ -822,7 +858,9 @@ class FSIndexer:
                     await emit()
                     continue
 
-                if fresh:
+                if fresh and (
+                    str(ref.record_type), ref_id, canon_path
+                ) not in primary_swaps:
                     acc["skipped"] += 1
                     # seen_ids already holds ref_id (added above), so a fresh
                     # skip is not misclassified as orphan.
@@ -929,6 +967,17 @@ class FSIndexer:
             # before; _commit_batch makes it explicit so the trailing batch's
             # sentinels are stamped under the same write-ahead ordering.
             await _commit_batch()
+
+            # Reflect the complete collision view only after all primaries have
+            # been parsed/skipped, so a newly-created row is available too.
+            for (type_name, entity_id), decision in collision_by_key.items():
+                if not decision.changed:
+                    continue
+                entity = await driver.get_by_id(entity_id, type_name)
+                if entity is not None and hasattr(entity, "reflect_asset_occurrences"):
+                    await entity.reflect_asset_occurrences(
+                        decision.occurrences, notify=True,
+                    )
 
             # Phase marker before the (potentially long) orphan sweep: without
             # it the last loop snapshot (done==total, no text) is what watchers
@@ -1060,6 +1109,8 @@ class FSIndexer:
                         "indexed": 0, "errors": 0, "duration_ms": 0.0, "skipped": 0,
                         "orphans_found": 0, "orphans_db_removed": 0, "orphans_disk_removed": 0,
                         "orphan_ids": [],
+                        "dupes_removed": 0,
+                        "duplicate_groups": 0, "duplicate_occurrences": 0,
                     }
                 )
                 acc["orphans_found"] = len(ids)
@@ -1091,6 +1142,8 @@ class FSIndexer:
                 orphans_disk_removed=int(acc.get("orphans_disk_removed", 0)),
                 orphan_ids=tuple(acc.get("orphan_ids", []) or []),
                 dupes_removed=int(acc.get("dupes_removed", 0)),
+                duplicate_groups=int(acc.get("duplicate_groups", 0)),
+                duplicate_occurrences=int(acc.get("duplicate_occurrences", 0)),
             )
 
         duration = (time.perf_counter() - t0) * 1000
@@ -1111,6 +1164,10 @@ class FSIndexer:
             total_orphans_db_removed=sum(p.orphans_db_removed for p in per_type.values()),
             total_orphans_disk_removed=sum(p.orphans_disk_removed for p in per_type.values()),
             total_dupes_removed=sum(p.dupes_removed for p in per_type.values()),
+            total_duplicate_groups=sum(p.duplicate_groups for p in per_type.values()),
+            total_duplicate_occurrences=sum(
+                p.duplicate_occurrences for p in per_type.values()
+            ),
         )
 
     @staticmethod
