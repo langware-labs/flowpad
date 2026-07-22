@@ -1,14 +1,47 @@
-import { Check, Circle, CircleDot, Play, RotateCcw, Type, X } from 'lucide-react';
+import { Check, Circle, CircleDot, KeyRound, Link2, Play, RotateCcw, Type, Wrench, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import Confetti from 'react-confetti';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { Button } from '@src/components/ui/button';
 import { cn } from '@src/lib/utils';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { animateMinimizeToElement } from '@src/lib/minimize-to-element';
 import { markJourneyDismissed } from './journey-dismissed';
+import { JourneyStepLive } from './JourneyStepLive';
 import { groupSteps, useBusyRun, type JourneyStep, type UseJourneyResult } from './use-journey';
 import type { JourneyManagerView } from './useJourneyManager';
+
+/** One lit act button per step — label/icon follow the act kind. */
+function ActButtonContent({ kind }: { kind: string }) {
+  if (kind === 'setup_capability')
+    return (
+      <>
+        <Wrench className="h-3 w-3" />
+        <Trans>Set up</Trans>
+      </>
+    );
+  if (kind === 'oauth_connect')
+    return (
+      <>
+        <Link2 className="h-3 w-3" />
+        <Trans>Connect</Trans>
+      </>
+    );
+  if (kind === 'device_login')
+    return (
+      <>
+        <KeyRound className="h-3 w-3" />
+        <Trans>Log in</Trans>
+      </>
+    );
+  return (
+    <>
+      <Type className="h-3 w-3" />
+      <Trans>Fill text</Trans>
+    </>
+  );
+}
 
 const INDIGO = '#5b5bf0';
 const AMBER = '#f6a723';
@@ -136,6 +169,30 @@ export function JourneyTray({ state, view }: { state: UseJourneyResult; view?: J
     navigation.closeJourney();
   }, [navigation]);
 
+  // ── the finale, IN PLACE: completing the last step flips the journal to
+  // `complete` and the celebration happens right here — confetti bursting from
+  // the steps panel on whatever screen the user is on, never a page swap.
+  const [celebration, setCelebration] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  // Track (journal, status) pairs: the burst fires when THE journal being
+  // watched transitions into `complete` — status alone misses a fresh run
+  // completing while an older complete journal was the last thing displayed.
+  const prevJournalRef = useRef<{ id?: string; status?: string }>({ id: journal?.id, status: journal?.status });
+  useEffect(() => {
+    const prev = prevJournalRef.current;
+    prevJournalRef.current = { id: journal?.id, status: journal?.status };
+    const completedNow =
+      journal?.status === 'complete' && prev.id === journal.id && prev.status && prev.status !== 'complete';
+    if (!completedNow) return;
+    const rect = containerRef.current?.getBoundingClientRect();
+    setCelebration(
+      rect
+        ? { x: rect.x, y: rect.y, w: rect.width, h: rect.height }
+        : { x: window.innerWidth / 2 - 160, y: window.innerHeight / 2 - 100, w: 320, h: 200 },
+    );
+    const timer = window.setTimeout(() => setCelebration(null), 6000);
+    return () => window.clearTimeout(timer);
+  }, [journal?.id, journal?.status]);
+
   if (!journey || typeof document === 'undefined') return null;
 
   const complete = journal?.status === 'complete';
@@ -146,6 +203,20 @@ export function JourneyTray({ state, view }: { state: UseJourneyResult; view?: J
   // the rail wins, so a tray dragged near it slid UNDERNEATH and its header
   // stopped receiving pointer events ("it's not moving, it's covered").
   return createPortal(
+    <>
+    {celebration && (
+      <div className="pointer-events-none fixed inset-0 z-[120]" data-testid="journey-confetti">
+        <Confetti
+          width={window.innerWidth}
+          height={window.innerHeight}
+          recycle={false}
+          numberOfPieces={420}
+          gravity={0.25}
+          initialVelocityY={14}
+          confettiSource={{ x: celebration.x, y: celebration.y, w: celebration.w, h: celebration.h }}
+        />
+      </div>
+    )}
     <div
       ref={containerRef}
       role="dialog"
@@ -228,6 +299,7 @@ export function JourneyTray({ state, view }: { state: UseJourneyResult; view?: J
                   {current && step.status_line && (
                     <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">{step.status_line}</p>
                   )}
+                  {current && step.act && <JourneyStepLive act={step.act} />}
                 </div>
               </li>
             );
@@ -292,8 +364,7 @@ export function JourneyTray({ state, view }: { state: UseJourneyResult; view?: J
                 style={{ backgroundColor: INDIGO }}
                 data-testid="journey-tray-act"
               >
-                <Type className="h-3 w-3" />
-                <Trans>Fill text</Trans>
+                <ActButtonContent kind={currentStep.act?.kind ?? 'fill'} />
               </Button>
             ) : (
               <Button
@@ -344,7 +415,8 @@ export function JourneyTray({ state, view }: { state: UseJourneyResult; view?: J
           </Button>
         )}
       </div>
-    </div>,
+    </div>
+    </>,
     document.body,
   );
 }
