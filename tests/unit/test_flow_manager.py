@@ -764,8 +764,7 @@ async def test_flow_subscription_starts_run_with_mapped_entry(tmp_path):
         seen.append({"event": event_name, "data": data})
         return {}
 
-    flow = await _make_flow(tmp_path, "subflow", [_fn("a", "v2_sub_probe")], [],
-        config=None)
+    flow = await _make_flow(tmp_path, "subflow", [_fn("a", "v2_sub_probe")], [])
     import json as _json
     doc = _json.loads((tmp_path / "subflow" / "graph.json").read_text())
     doc["subscriptions"] = [{"id": "s1", "pattern": "drill.sub.*",
@@ -851,8 +850,6 @@ async def test_flow_subscription_self_loop_brake_allows_chaining(tmp_path):
 
 
 def test_flow_doc_subscription_validation():
-    doc = parse_flow_doc(_doc([_fn("a", "x")], []))
-    doc.subscriptions = []
     import json as _json
     parsed = parse_flow_doc(_json.dumps({
         "version": 1, "nodes": [{"id": "a", "node_type": "function",
@@ -903,3 +900,36 @@ async def test_flow_subscription_ping_pong_capped(tmp_path):
     # A entered once externally + at most cap(3) subscription entries.
     assert len(a_entries) <= 4
     await _until(lambda: not fm.live_run_ids(), "loop drained after cap")
+
+
+@async_context
+async def test_flow_subscription_fanout_enters_every_subscribed_flow(tmp_path):
+    """One envelope fanning out to TWO subscribed flows must enter BOTH —
+    dedup is per (flow, envelope), never global (regression: a global id set
+    let the first flow consume the envelope for everyone)."""
+    import json as _json
+    from flow_sdk.topics import emit_topic
+
+    entered: list[str] = []
+
+    @flow_functions.register("v2_fan_x")
+    def _x(event_name, data, ctx):
+        entered.append("x")
+        return {}
+
+    @flow_functions.register("v2_fan_y")
+    def _y(event_name, data, ctx):
+        entered.append("y")
+        return {}
+
+    fm = FlowManager()
+    for name, fn_name, node in (("fan-x", "v2_fan_x", "nx"), ("fan-y", "v2_fan_y", "ny")):
+        flow = await _make_flow(tmp_path, name, [_fn(node, fn_name)], [])
+        doc = _json.loads((tmp_path / name / "graph.json").read_text())
+        doc["subscriptions"] = [{"pattern": "fan.*", "node": node}]
+        (tmp_path / name / "graph.json").write_text(_json.dumps(doc))
+        await fm.load_flow(flow.id)
+
+    emit_topic("fan.out", "x:1")  # ONE envelope, two subscribers
+    await _until(lambda: sorted(entered) == ["x", "y"], "both flows entered")
+    await _until(lambda: not fm.live_run_ids(), "runs finalized")
