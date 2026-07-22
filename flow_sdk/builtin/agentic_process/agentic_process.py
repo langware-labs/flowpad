@@ -6781,6 +6781,22 @@ class AgenticProcess(Entity):
             if report_dict == self.status_report:
                 return
             self.status_report = report_dict
+            # Unified-bus dual-publish (docs/flow-events.md phase 6): lean
+            # status transition — the full report keeps riding the legacy
+            # watcher-scoped channel below.
+            try:
+                from flow_sdk.topics import emit_topic
+                from flow_sdk.topics.envelope import target_of
+
+                emit_topic(
+                    "agent.status",
+                    target_of("agentic_process", self.id),
+                    {"worker_status": (current.value if current is not None else ""),
+                     "process_status": self.status,
+                     "busy": current_busy},
+                )
+            except Exception:
+                logger.debug("agent.status emission failed", exc_info=True)
             try:
                 await self.save()
             except Exception:

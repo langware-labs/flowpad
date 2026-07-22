@@ -273,6 +273,26 @@ class HubWsBridge:
         """
         from flow_sdk.cloud_client.events import EntityEvent  # noqa: PLC0415
 
+        # Unified-bus dual-publish (docs/flow-events.md phase 6): hub-origin
+        # events relay under their OWN family (hub.entity.<op>) — never
+        # entity.* — so no local subscriber treats them as local writes until
+        # phase-9 scope authorization. origin: "hub"; actor preserved when the
+        # payload carries one.
+        try:
+            from flow_sdk.topics import emit_topic
+            from flow_sdk.topics.envelope import target_of
+
+            emit_topic(
+                f"hub.entity.{op}",
+                target_of(entity_type, entity_id),
+                {"entity_type": entity_type, "id": entity_id,
+                 "parent_type": parent_type, "parent_id": parent_id},
+                ctx={"origin": "hub",
+                     "actor": str(data.get("actor")) if isinstance(data, dict) and data.get("actor") else None},
+            )
+        except Exception:
+            logger.debug("hub.entity relay emission failed", exc_info=True)
+
         if not self._subscriptions:
             return
         event = EntityEvent(
