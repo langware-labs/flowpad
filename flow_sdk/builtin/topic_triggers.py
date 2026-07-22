@@ -164,7 +164,8 @@ async def _fire_topic_trigger_locked(trigger_id: str, event: "FlowEvent") -> Non
     # Shared fire steps (same helpers as schedule/fsop). Topic fires carry no
     # file changes; the ENVELOPE rides the log entry below (handlers gain an
     # event kwarg when one needs it).
-    await activate_flows_for_trigger(trigger_id, trigger.name or trigger_id)
+    await activate_flows_for_trigger(trigger_id, trigger.name or trigger_id,
+                                     envelope=event)
     await dispatch_trigger_actions(trigger, changes=[])
 
     _append_log(trigger.name or trigger_id, {

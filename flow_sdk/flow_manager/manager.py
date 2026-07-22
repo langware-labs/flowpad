@@ -428,18 +428,27 @@ class FlowManager:
 
     # ── activation ────────────────────────────────────────────────────────────
 
-    async def on_trigger_fired(self, trigger_id: str) -> list[str]:
+    async def on_trigger_fired(self, trigger_id: str, envelope: Any = None) -> list[str]:
         """Trigger fire → start a run in every active flow referencing it.
-        Returns started run ids. Called from the trigger fire paths."""
+        Returns started run ids. Called from the trigger fire paths.
+        ``envelope`` (topic-trigger fires) preserves the triggering
+        FlowEvent's id/actor onto the entry RunEvent — the relay law at this
+        door too, matching the subscription path."""
         run_ids: list[str] = []
         for flow in await self.flows_referencing_trigger(trigger_id):
             for node in flow.doc.trigger_nodes_for(trigger_id):
                 run = await self._start_run(flow)  # born reserved (see _Run)
                 try:
+                    extra: dict[str, Any] = {}
+                    if envelope is not None:
+                        extra = {"id": envelope.id, "actor": envelope.ctx.actor}
                     fe = RunEvent(
                         event=TRIGGER_FIRED_EVENT, data={"trigger_id": trigger_id},
                         flow_id=flow.flow_id, execution_id=run.id, source_node=node.id,
+                        **extra,
                     )
+                    if run.actor is None and fe.actor:
+                        run.actor = fe.actor
                     self._record_run_event(run, fe, "input")
                     await self._route(run, fe)
                 finally:

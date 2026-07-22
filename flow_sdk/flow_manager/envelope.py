@@ -16,12 +16,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from flow_sdk.core.capabilities.models import now_iso
-
-
-def _mint_event_id() -> str:
-    from flow_sdk.fs_store.identifier import mint_uuid
-
-    return str(mint_uuid())
+from flow_sdk.fs_store.identifier import mint_uuid
 
 # Virtual source node id for externally injected events (edges may route from it).
 EXTERNAL_SOURCE = "$external"
@@ -31,7 +26,7 @@ class RunEvent(BaseModel):
     # Identity (provenance alignment, docs/flow-events.md phase 7): minted at
     # construction; PRESERVED from the bus envelope when a run is entered from
     # one (the relay law at the flow door — never re-minted).
-    id: str = Field(default_factory=lambda: _mint_event_id())
+    id: str = Field(default_factory=lambda: str(mint_uuid()))
     # Who caused it, target form — flows from the entry envelope's ctx.actor.
     actor: str | None = None
     event: str

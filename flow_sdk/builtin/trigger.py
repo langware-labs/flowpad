@@ -114,14 +114,16 @@ def _parse_interval_expr(expr: str) -> int:
     return int(expr)
 
 
-async def activate_flows_for_trigger(trigger_id: str, trigger_name: str) -> None:
+async def activate_flows_for_trigger(trigger_id: str, trigger_name: str,
+                                     envelope=None) -> None:
     """Flow activation on any trigger fire — THE shared step for every trigger
     kind (schedule / fsop / topic): enters a run in each flow whose trigger
-    node references this Trigger entity."""
+    node references this Trigger entity. ``envelope`` (topic fires only)
+    preserves the triggering FlowEvent's id/actor onto the run entry."""
     try:
         from flow_sdk.flow_manager import get_flow_manager
 
-        await get_flow_manager().on_trigger_fired(trigger_id)
+        await get_flow_manager().on_trigger_fired(trigger_id, envelope=envelope)
     except Exception:
         logger.exception("Trigger %s: flow activation failed", trigger_name)
 
