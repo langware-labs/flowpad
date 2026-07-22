@@ -295,6 +295,43 @@ async def test_19_counters_stay_in_bounds(tmp_path):
     assert fresh.total_steps == total and fresh.steps_left == total
 
 
+@pytest.fixture
+def only_my_journeys():
+    """Drop every Journey row first — `auto_launch_for` scans them ALL.
+
+    The unit DB is not reset between tests and pytest-randomly shuffles the
+    order, so a journey left behind by another test would join the candidate
+    set and decide the winner."""
+    @async_context
+    async def _clear():
+        for j in await Journey.get_all({}):
+            await j.delete()
+    _clear()
+    yield
+
+
+async def _make_auto(root, name: str, *ids: str) -> Journey:
+    """An auto-launch journey rooted at ``root/name`` (folder created)."""
+    folder = root / name
+    folder.mkdir(parents=True, exist_ok=True)
+    journey = Journey(name=name, asset_ref=str(folder))
+    await journey.save()
+    doc = {
+        "version": 1, "id": journey.id, "name": name, "enabled": True,
+        "auto_launch": True,
+        "nodes": [_step(i) for i in ids],
+        "edges": [{"id": f"e{n}", "from": {"node": a, "event": "done"}, "to": {"node": b}}
+                  for n, (a, b) in enumerate(zip(ids, ids[1:]))],
+    }
+    (folder / "graph.json").write_text(json.dumps(doc), encoding="utf-8")
+    return journey
+
+
+def _system_root(tmp_path):
+    """A path that `config.is_system_project_path` recognises structurally."""
+    return tmp_path / "flow_sdk" / "system_projects" / "flowpad_assistant" / ".claude" / "journeys"
+
+
 @async_context
 async def test_20_journals_are_per_user(tmp_path):
     journey = await _make(tmp_path, "s1", "s2")
@@ -304,3 +341,39 @@ async def test_20_journals_are_per_user(tmp_path):
     await journey.advance(USER, "s1")
     assert (await journey.progress(OTHER)).cursor == "s1"   # untouched by my advance
     assert (await journey.progress(USER)).cursor == "s2"
+
+
+# ── 21-23: auto-launch selection ──────────────────────────────────────────────
+
+
+@async_context
+async def test_21_auto_launch_picks_the_only_journey(tmp_path, only_my_journeys):
+    journey = await _make_auto(_system_root(tmp_path), "getting-started", "s1", "s2")
+    assert journey.is_system()
+    j = await Journey.auto_launch_for(USER)
+    assert j is not None and j.journey_id == journey.id
+
+
+@async_context
+async def test_22_project_journey_beats_the_system_one(tmp_path, only_my_journeys):
+    # System one saved FIRST, so row order alone would hand it the win.
+    system = await _make_auto(_system_root(tmp_path), "getting-started", "s1", "s2")
+    project = await _make_auto(tmp_path / "repo" / ".claude" / "journeys", "onboarding", "a1")
+    assert system.is_system() and not project.is_system()
+
+    j = await Journey.auto_launch_for(USER)
+    assert j is not None and j.journey_id == project.id
+    assert await system.progress(USER) is None      # never launched
+
+
+@async_context
+async def test_23_completed_project_journey_falls_back_to_system(tmp_path, only_my_journeys):
+    system = await _make_auto(_system_root(tmp_path), "getting-started", "s1")
+    project = await _make_auto(tmp_path / "repo" / ".claude" / "journeys", "onboarding", "a1")
+
+    await project.launch(USER)
+    done = await project.advance(USER, "a1")
+    assert done.status == JourneyStatus.COMPLETE.value
+
+    j = await Journey.auto_launch_for(USER)
+    assert j is not None and j.journey_id == system.id

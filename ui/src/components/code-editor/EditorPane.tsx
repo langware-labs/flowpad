@@ -60,6 +60,11 @@ interface EditorFileData {
 interface EditorPaneProps {
   file?: EditorFileData;
   readOnly?: boolean;
+  /**
+   * 1-indexed line to reveal on open, from the dock's `?line=` option. A deep
+   * link into a file (e.g. an interface block's "Open in editor") lands here.
+   */
+  revealLine?: number | null;
   onExecuteScript?: () => void;
   onShellCmd?: (command: string) => void;
   onDirtyChange?: (isDirty: boolean) => void;
@@ -70,6 +75,7 @@ let shikiHighlighter: Highlighter | null = null;
 export const EditorPane: React.FC<EditorPaneProps> = ({
   file,
   readOnly,
+  revealLine,
   onExecuteScript,
   onShellCmd,
   onDirtyChange,
@@ -210,15 +216,32 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
     };
   }, [file]);
 
+  // A deep link is honoured once per (file, line): re-revealing on every content
+  // change would fight the user as they scroll away from it.
+  const revealedRef = useRef<string | null>(null);
+
   useEffect(() => {
     const editor = editorRef.current;
-    if (!editor || isUserScrolling) return;
-
+    if (!editor) return;
     const model = editor.getModel();
     if (!model) return;
 
+    // An explicit line wins over the tail-follow below. Without this the
+    // `revealLine(getLineCount())` call would scroll a deep link straight to
+    // the bottom of the file the moment content settled.
+    if (revealLine && revealLine > 0) {
+      const key = `${file?.path ?? ''}#${revealLine}`;
+      if (revealedRef.current === key) return;
+      const line = Math.min(revealLine, model.getLineCount());
+      editor.revealLineInCenter(line);
+      editor.setPosition({ lineNumber: line, column: 1 });
+      revealedRef.current = key;
+      return;
+    }
+
+    if (isUserScrolling) return;
     editor.revealLine(model.getLineCount());
-  }, [file, file?.content, isUserScrolling]);
+  }, [file, file?.content, isUserScrolling, revealLine]);
 
   const clearSaveTimeout = useCallback(() => {
     if (!saveTimeoutRef.current) return;

@@ -36,6 +36,8 @@ function pointerForDock(
       return projectId ? DockPointer.forAssetProjectHome({ scope: projectScope(projectId) }) : null;
     case 'wiki':
       return DockPointer.forWiki(dock.name ?? '');
+    case 'asset_list':
+      return DockPointer.forAssetList(dock.name ?? '');
     default:
       return null;
   }
@@ -56,7 +58,7 @@ function pointerForDock(
  */
 export function useJourneyManager(state: UseJourneyResult): void {
   const { journey, journal, currentStep, refresh } = state;
-  const { navigation } = useDockNavigation();
+  const { navigation, currentDock } = useDockNavigation();
   const { project } = useProject();
 
   const journeyId = journey?.id ?? null;
@@ -99,7 +101,11 @@ export function useJourneyManager(state: UseJourneyResult): void {
     if (pointer) {
       navigation.openDock(present.highlight ? pointer.withHighlight(present.highlight) : pointer);
     } else if (present.highlight) {
-      navigation.highlight(present.highlight);
+      // Highlight-only step: light the topic IN PLACE. Only fall back to the
+      // home-root highlight when there is no dock to stay on — a step like
+      // "click Use agent" must not navigate the user away from the editor.
+      if (currentDock) navigation.openDock(currentDock.withHighlight(present.highlight));
+      else navigation.highlight(present.highlight);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [journeyId, currentStep?.node_id, assetRef, computeNodeTypeId, projectId]);
@@ -128,13 +134,17 @@ export function useJourneyManager(state: UseJourneyResult): void {
       const confirm = currentStep.await?.confirm;
       if (confirm) {
         const scope = projectId && confirm.scope !== 'all' ? [new TypeId(Project.type, projectId)] : [];
+        const filter = confirm.match ? new QueryFilter({ match: confirm.match }) : null;
         const request = new QueryRequest({
           type: confirm.type ?? '',
           scope,
           name: `journeyConfirm:${journeyId}:${currentStep.node_id}`,
-          query: confirm.match ? new QueryFilter({ match: confirm.match }) : null,
+          // `local` confirms match client-side (QueryFilter.validate) — for
+          // serialization-derived fields the server query can't see.
+          query: confirm.local ? null : filter,
         });
-        const rows = await dataManager.query(request, true);
+        let rows = await dataManager.query(request, true);
+        if (confirm.local && filter) rows = rows.filter((r) => filter.validate(r));
         if (rows.length < (confirm.min ?? 1)) return;
       }
       doAdvance(currentStep.node_id);
@@ -152,9 +162,11 @@ export function useJourneyManager(state: UseJourneyResult): void {
     filterTarget !== undefined ? { target: filterTarget } : undefined,
   );
 
-  // Confirm-gated steps auto-satisfy if already true (reload / pre-done work).
+  // Confirm-gated steps auto-satisfy if already true (reload / pre-done work) —
+  // unless the await is `fresh` (about a NEW occurrence), where pre-existing
+  // state must not count and only the event may wake the check.
   useEffect(() => {
-    if (currentStep?.await?.confirm) void tryComplete();
+    if (currentStep?.await?.confirm && !currentStep.await.fresh) void tryComplete();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [journeyId, currentStep?.node_id]);
 

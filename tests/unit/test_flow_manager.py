@@ -531,9 +531,9 @@ async def test_agent_process_budget_trips_before_spawn(tmp_path):
     rt = fm._node_rt(flow.id, "a")
     rt.active += 1
     run.active += 1
-    from flow_sdk.flow_manager.envelope import FlowEvent
+    from flow_sdk.flow_manager.envelope import RunEvent
 
-    await fm._spawn_agent(run, node, FlowEvent(
+    await fm._spawn_agent(run, node, RunEvent(
         event="go", flow_id=flow.id, execution_id=run.id), rt, seq=1)
     assert run.error and "max_processes" in run.error
 
@@ -579,9 +579,9 @@ async def test_agent_node_resolves_agent_entity_definition(tmp_path):
     assert fm._agent_model(agent_def, {**node.node_data, "model_size": "sm"}) == "haiku"
 
     run = await fm._start_run(loaded)
-    from flow_sdk.flow_manager.envelope import FlowEvent
+    from flow_sdk.flow_manager.envelope import RunEvent
 
-    fe = FlowEvent(event="go", data={"x": 1}, flow_id=flow.id, execution_id=run.id)
+    fe = RunEvent(event="go", data={"x": 1}, flow_id=flow.id, execution_id=run.id)
     instruction = fm._agent_instruction(run, node, fe, tmp_path / "exec", agent_def)
     # Definition's system prompt leads; the node prompt rides after as addendum.
     assert instruction.startswith("You are the summarizer.")

@@ -5,7 +5,7 @@ runtime, ``flow_doc.py`` for the document model, ``flow_functions.py`` for the
 FlowFunction registry, ``function_runner.py`` for the subprocess runtime.
 """
 from flow_sdk.flow_manager import flow_functions
-from flow_sdk.flow_manager.envelope import EXTERNAL_SOURCE, FlowEvent
+from flow_sdk.flow_manager.envelope import EXTERNAL_SOURCE, RunEvent
 from flow_sdk.flow_manager.flow_doc import (
     AGENT_DONE_EVENT,
     CATCH_ALL_EVENT,
@@ -28,7 +28,7 @@ __all__ = [
     "FlowConfig",
     "FlowDoc",
     "FlowEdgeDef",
-    "FlowEvent",
+    "RunEvent",
     "FlowManager",
     "FlowNodeDef",
     "empty_flow_doc",

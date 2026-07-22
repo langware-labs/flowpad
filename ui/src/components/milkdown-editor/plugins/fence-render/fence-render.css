@@ -163,6 +163,52 @@
   border-color: hsl(var(--foreground) / 0.4);
 }
 
+/* ── source provenance row ───────────────────────────────────────────────── */
+
+.milkdown-editor-wrapper .interface-card-source {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-top: 0.75rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid hsl(var(--border) / 0.6);
+}
+
+.milkdown-editor-wrapper .interface-card-source-label {
+  font-family: monospace;
+  font-size: 11px;
+  color: hsl(var(--muted-foreground));
+  overflow-wrap: anywhere;
+}
+
+.milkdown-editor-wrapper .interface-card-open {
+  flex-shrink: 0;
+  padding: 0 0.625rem;
+  border-radius: 0.25rem;
+  border: 1px solid hsl(var(--border));
+  background: transparent;
+  font-size: 11px;
+  line-height: 1.5rem;
+  font-weight: 500;
+  color: hsl(var(--foreground));
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+.milkdown-editor-wrapper .interface-card-open:hover:not(:disabled) {
+  background-color: hsl(var(--muted));
+  border-color: hsl(var(--foreground) / 0.4);
+}
+
+/* Unresolvable pointer. Still rendered, so the contract shows it *has* a
+   source; the tooltip carries the reason it can't be opened. */
+.milkdown-editor-wrapper .interface-card-open:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 /* ── inline-editable values ──────────────────────────────────────────────── */
 
 .milkdown-editor-wrapper .interface-card-editable {

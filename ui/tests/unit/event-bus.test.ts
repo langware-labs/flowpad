@@ -6,7 +6,7 @@ import {
   onAppTopic,
   topicMatches,
   targetMatches,
-  type TopicEvent,
+  type FlowEvent,
 } from '@sdk';
 
 describe('topicMatches — segment-wise glob over the dot path', () => {
@@ -52,7 +52,7 @@ describe('TopicEventBus', () => {
   });
 
   it('emit/on round-trip delivers the full envelope', () => {
-    const seen: TopicEvent[] = [];
+    const seen: FlowEvent[] = [];
     bus.on('app.page.signal', (e) => seen.push(e));
     bus.emit('app.page.signal', 'next', { extra: 1 });
 
@@ -67,7 +67,7 @@ describe('TopicEventBus', () => {
   });
 
   it('ctx.origin can be overridden (sandbox tier)', () => {
-    const seen: TopicEvent[] = [];
+    const seen: FlowEvent[] = [];
     bus.on('*', (e) => seen.push(e));
     bus.emit('app.page.signal', 'next', {}, { origin: 'sandbox' });
     expect(seen[0].ctx.origin).toBe('sandbox');
@@ -115,7 +115,7 @@ describe('app. ontology sugar over the singleton', () => {
   beforeEach(() => EventBus.clear());
 
   it('emitAppTopic/onAppTopic assemble the app. prefix — full topics inside', () => {
-    const seen: TopicEvent[] = [];
+    const seen: FlowEvent[] = [];
     const unsub = onAppTopic('route.*', (e) => seen.push(e));
     emitAppTopic('route.loaded', 'dock:home');
     expect(seen).toHaveLength(1);
