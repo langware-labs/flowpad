@@ -192,7 +192,7 @@ export function useJourneyManager(state: UseJourneyResult): JourneyManagerView {
 
   // ── await: confirm predicate (the proof) ──
   const busyRef = useRef(false);
-  const tryComplete = useCallback(async (event?: { topic?: string; data?: Record<string, unknown> }) => {
+  const tryComplete = useCallback(async (event?: { ctx?: { actor?: string }; data?: Record<string, unknown> }) => {
     if (!currentStep || busyRef.current || advancedRef.current === currentStep.node_id) return;
     // matchEvent: the row that JUST changed must itself satisfy the match —
     // "you just did X", immune to ambient churn on other rows of the type.
@@ -235,7 +235,10 @@ export function useJourneyManager(state: UseJourneyResult): JourneyManagerView {
       else {
         // A user-interaction advance means the user is already navigating
         // somewhere of their own choosing — the next step stays transparent.
-        suppressNextDockRef.current = (event?.topic ?? '').startsWith('app.ui.');
+        // Read the envelope's ATTRIBUTION (ctx.actor, stamped by the emitter),
+        // not a topic-prefix guess: any user-caused event qualifies, whatever
+        // its topic is named.
+        suppressNextDockRef.current = (event?.ctx?.actor ?? '').startsWith('user:');
         doAdvance(currentStep.node_id);
       }
     } catch (e) {

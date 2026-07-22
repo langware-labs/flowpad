@@ -153,20 +153,32 @@ export class NavigationActions {
   }
 
   /**
+   * THE primitive for editing query params on the LIVE URL without any other
+   * navigation: read the current URL, apply the mutator, no-op when nothing
+   * changed, commit. Every "tweak a param in place" flow goes through here —
+   * hand-rolling the split/mutate/clear/commit ritual per caller is how the
+   * `path || '/'` guard and the pending-nav clear drift apart.
+   */
+  private updateLiveUrlParams(mutate: (params: URLSearchParams) => void): void {
+    const current = NavigationActions.getCurrentBrowserUrl();
+    const [path, query] = current.split('?');
+    const params = new URLSearchParams(query ?? '');
+    mutate(params);
+    const rest = params.toString();
+    const url = rest ? `${path || '/'}?${rest}` : path || '/';
+    if (current === url) return;
+    NavigationActions.clearCommittedPendingNavigation();
+    this.commitBrowserNavigation(url, url);
+  }
+
+  /**
    * Set `?highlight=` on the LIVE URL without any other navigation — the
    * transparent form of highlighting: wherever the user is (or is arriving,
    * mid-route-change), only the param changes. Rebuilding from `currentDock`
    * here would race an in-flight navigation and yank the user backwards.
    */
   applyHighlightInPlace(wikiword: string): void {
-    const current = NavigationActions.getCurrentBrowserUrl();
-    const [path, query] = current.split('?');
-    const params = new URLSearchParams(query ?? '');
-    if (params.get(HIGHLIGHT_PARAM) === wikiword) return;
-    params.set(HIGHLIGHT_PARAM, wikiword);
-    NavigationActions.clearCommittedPendingNavigation();
-    const url = `${path || '/'}?${params.toString()}`;
-    this.commitBrowserNavigation(url, url);
+    this.updateLiveUrlParams((params) => params.set(HIGHLIGHT_PARAM, wikiword));
   }
 
   /**
@@ -231,14 +243,7 @@ export class NavigationActions {
     const dock = this.currentDock;
     if (!dock?.journeyId) {
       // Home root (or any non-dock URL) carrying the param: drop just that key.
-      const current = NavigationActions.getCurrentBrowserUrl();
-      NavigationActions.clearCommittedPendingNavigation();
-      const [path, query] = current.split('?');
-      const params = new URLSearchParams(query ?? '');
-      params.delete(JOURNEY_PARAM);
-      const rest = params.toString();
-      const url = rest ? `${path}?${rest}` : path || '/';
-      this.commitBrowserNavigation(url, url);
+      this.updateLiveUrlParams((params) => params.delete(JOURNEY_PARAM));
       return;
     }
     NavigationActions.clearCommittedPendingNavigation();

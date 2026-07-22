@@ -49,23 +49,51 @@ export function TopicHighlightObserver() {
         : word.replace(/["\\]/g, '\\$&');
     const findAll = () =>
       Array.from(document.querySelectorAll<HTMLElement>(`[data-topic="${esc}"]`));
+    let interval = 0;
     const sync = () =>
       setEls((prev) => {
         const next = findAll();
+        // The cold-boot poll has done its job once anything is found; from
+        // here the (filtered) MutationObserver alone tracks replacements.
+        if (next.length > 0 && interval) {
+          window.clearInterval(interval);
+          interval = 0;
+        }
         // Keep the previous array identity when the set is unchanged, so the
         // effects below don't churn on every mutation/tick.
         if (prev.length === next.length && prev.every((el, i) => el === next[i])) return prev;
         return next;
       });
     sync();
-    const observer = new MutationObserver(sync);
+    // The highlight is PERSISTENT, so this observer lives for the whole step —
+    // it must not cost a full-tree query per unrelated mutation (streaming
+    // chat, live process output). Two dampeners: only mutations whose
+    // added/removed nodes are (or contain) a topic-tagged element trigger a
+    // re-sync, and bursts coalesce into one query per animation frame.
+    let rafId = 0;
+    const touchesTopic = (records: MutationRecord[]) =>
+      records.some((r) =>
+        [...r.addedNodes, ...r.removedNodes].some(
+          (n) =>
+            n instanceof HTMLElement && (n.dataset.topic !== undefined || n.querySelector('[data-topic]') !== null),
+        ),
+      );
+    const observer = new MutationObserver((records) => {
+      if (!touchesTopic(records)) return;
+      if (rafId) return;
+      rafId = requestAnimationFrame(() => {
+        rafId = 0;
+        sync();
+      });
+    });
     observer.observe(document.body, { childList: true, subtree: true });
-    // Belt and braces: a slow re-sync catches anything the observer misses
-    // during cold-boot render churn. Exists only while a highlight is requested.
-    const interval = window.setInterval(sync, 500);
+    // Cold-boot only: render churn during app boot once slipped past the
+    // observer, so poll until the first hit — sync() self-cancels it.
+    interval = window.setInterval(sync, 500);
     return () => {
       observer.disconnect();
-      window.clearInterval(interval);
+      if (rafId) cancelAnimationFrame(rafId);
+      if (interval) window.clearInterval(interval);
     };
   }, [word]);
 
