@@ -24,6 +24,7 @@ from flow_sdk.cloud_client.transport.hub_http import (
     hub_graph_url,
     hub_post,
     hub_put,
+    hub_upload_entity_file,
 )
 
 __all__ = [
@@ -39,4 +40,5 @@ __all__ = [
     "hub_graph_url",
     "hub_post",
     "hub_put",
+    "hub_upload_entity_file",
 ]

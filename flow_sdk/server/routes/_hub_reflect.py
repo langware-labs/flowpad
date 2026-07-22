@@ -21,7 +21,7 @@ from flow_sdk.cli.auth.hub_login import is_logged_in
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.instance_settings.privacy_mode import is_local_mode
-from flow_sdk.utils.hub import HubError, hub_delete, hub_get, hub_post, hub_put
+from flow_sdk.utils.hub import HubError, hub_delete, hub_get, hub_post, hub_put, hub_upload_entity_file
 
 logger = logging.getLogger(__name__)
 
@@ -111,14 +111,7 @@ async def _reflect_fs_to_hub(et, hub_id: str, sub_path: str | None) -> Any:
         # The local handler reads these same objects afterwards — rewind, or it
         # writes an empty file into the cache.
         await f.seek(0)
-        await hub_post(
-            et,
-            {},
-            hub_id,
-            "fs",
-            sub_path,
-            files={"uploaded_file": (f.filename, content, f.content_type or "application/octet-stream")},
-        )
+        await hub_upload_entity_file(et, hub_id, f.filename, content, sub_path)
     return REFLECT_CONTINUE_LOCAL
 
 

@@ -149,6 +149,50 @@ async def browse(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResp
         return ApiFailResponse(message=f"Failed to browse directory: {str(e)}")
 
 
+async def push_entity_files_to_hub(entity) -> int:
+    """Upload an entity's EXISTING VFS files to its freshly created hub twin.
+
+    The write counterpart of ``fetch_remote_entity_file`` below, and the reason
+    it can't simply ride the share request: ``Entity.share()`` POSTs the entity
+    as JSON, which carries every FIELD but no bytes — and ``fs/upload`` needs
+    the id that POST just minted. So files already in storage need this one
+    pass. Live uploads afterwards are handled per-request by
+    ``_hub_reflect._reflect_fs_to_hub``; that only fires once the entity is
+    ALREADY remote, which is exactly the window this closes.
+
+    Type-agnostic, like ``share()``. Best-effort: a hub failure must never fail
+    the share, and an entity with no files costs one empty directory listing.
+    """
+    if not getattr(entity, "id", None) or not getattr(entity, "remote", False):
+        return 0
+    try:
+        from pathlib import Path
+
+        from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
+        from flow_sdk.utils.hub import hub_upload_entity_file
+
+        et = BuiltinEntityType(entity.get_type())
+        storage = get_entity_storage(entity.typeid)
+        items = await storage.list_dir(VFSPath.from_entity_path(entity.typeid, "").abs_vfspath)
+    except Exception as e:  # noqa: BLE001
+        logger.debug(f"share: no files to push for {entity.typeid}: {e}")
+        return 0
+
+    pushed = 0
+    for item in items or []:
+        name = getattr(item, "display_name", None)
+        if getattr(item, "is_dir", False) or not name:
+            continue
+        try:
+            content = Path(storage.get_storage_path(item.vfs_abs_path)).read_bytes()
+            await hub_upload_entity_file(et, entity.id, name, content)
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"share: file push failed for {entity.typeid}/{name}: {e}")
+            continue
+        pushed += 1
+    return pushed
+
+
 async def fetch_remote_entity_file(typeid, vfs_path: str, storage: "LocalStorageDriver") -> bool:
     """Pull a missing VFS file from the hub for ANY hub-mirrored (``remote``) entity.
 
