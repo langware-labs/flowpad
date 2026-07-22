@@ -211,6 +211,60 @@ confirm-against-store hook (law 5, generalized from journey `confirm`) and an
 emit-storm guard. fsop/schedule/hook keep working; conceptually they demote to
 emitters (`fs.*`, `time.*`, `hook.*`) behind the same subscription front.
 
+**Detail (planned 2026-07-22):**
+
+*Entity + registration (`flow_sdk/builtin/trigger.py`):*
+- `TriggerType.TOPIC = "topic"` + three fields: `topic_pattern: str`,
+  `topic_target: str|None`, `topic_scope: list[str]` (names prefixed to avoid
+  colliding with the entity's own scope field). Validation on save: pattern
+  non-empty, no bare `"*"` for enabled triggers (a firehose trigger is always
+  a mistake — pointed error).
+- Registration follows the schedule/fsop precedent: `_register_topic_subscription()`
+  called from the same post-save seam (`_register_post_save` in
+  `server/builtin_triggers.py` + trigger.py:499's create path) — subscribes
+  `event_bus.on(pattern, handler, target=..., scope=...)`; unsubscribers held
+  in a module registry keyed by trigger id so disable/delete/re-register
+  replaces cleanly (the APScheduler `replace_existing` idiom). Boot: a
+  startup sweep arms every enabled TOPIC trigger (same place fsop arms
+  watchers).
+
+*Fire path — reuse `_fire_schedule_job`'s shape, not a new pipeline:*
+- New `_fire_topic_trigger(trigger_id, event: FlowEvent)`: counter/last_run
+  update → **confirm hook** → flow activation (`on_trigger_fired`) → action
+  dispatch via `get_action_handler` with `changes=[]` and the ENVELOPE riding
+  a new optional `event=` kwarg (handlers that don't know it ignore it) →
+  trigger-log entry embedding the envelope (phase-7 preview).
+- **Confirm-against-store (law 5)**: optional `confirm: {type, filter}` on the
+  trigger — when set, run the entity query and fire only on a match (the
+  journey `confirm` generalized). Default: no confirm (the event's identity
+  data is usually enough).
+- **Storm guard (the bus has no budgets)**: per-trigger token bucket —
+  `max_fires_per_minute` (default 30) tracked in-memory on the subscription;
+  exceeding it drops fires and writes ONE `storm_suppressed` trigger-log
+  entry per window (never silent). Also the structural cycle brake: a TOPIC
+  trigger's own action emissions carry `ctx` untouched — a trigger whose
+  actions re-emit its own pattern hits the bucket, not infinity.
+
+*Flow entry:* nothing new — `on_trigger_fired(trigger_id)` already enters
+every flow whose trigger node references the Trigger entity; a TOPIC trigger
+is just a new fire source for the same id.
+
+*Tests (`tests/unit/test_topic_triggers.py`):* register → emit matching topic
+→ actions dispatch + counter bumps; target/scope filters gate; disable →
+no fire; re-register replaces (no double-fire); storm guard trips at the cap
+and logs once; confirm-gated trigger fires only when the store query matches;
+`entity.created` on UsageReport fires a TOPIC trigger end-to-end (the phase-3
+acceptance scenario completed).
+
+*Live drill (flow-5):* create a TOPIC trigger `{pattern: "entity.created",
+target: "usage_report:*"}` wired to a flow's trigger node; run the
+daily-analysis backfill; the new flow starts from the report's creation event
+— a flow triggered by another flow's output, with zero hand wiring.
+
+*Deferred within phase 4:* fsop/schedule/hook demotion to emitters stays
+conceptual (they keep working as-is); their `fs.*`/`time.*`/`hook.*` emission
+adapters land in phase 6 with the other emitters.
+
 ### Log
 
 ## Phase 5 — Flows subscribe directly  ☐
