@@ -268,9 +268,23 @@ class CloudManager extends EventEmitter {
    */
   async logout(returnTo?: string): Promise<void> {
     if (isHubOnly()) {
-      window.location.assign(
-        returnTo ? `${API_PREFIX}/logout?returnTo=${encodeURIComponent(returnTo)}` : `${API_PREFIX}/logout`,
-      );
+      // Hub server: CALL the logout API (XHR clears the session cookie
+      // server-side) instead of navigating the page through the provider's
+      // redirect chain, then land the SPA ourselves. Caveat: an IdP top-level
+      // logout redirect (Auth0 /v2/logout) can't ride an XHR — custom-JWT
+      // hubs don't need one.
+      try {
+        await apiClient.get('/logout', {
+          // Redirect endpoint — no {status,data} envelope; wrap the raw body
+          // so the client interceptor's unwrap stays harmless.
+          transformResponse: (raw: string) => ({ data: raw }),
+        });
+      } catch {
+        // A failed call means the session is already unusable; still finish
+        // with the local redirect below.
+      }
+      await this._setLoggedOut();
+      window.location.assign(returnTo ?? '/');
       return;
     }
 
