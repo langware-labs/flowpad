@@ -418,7 +418,10 @@ class DBEntity(DBBaseRecord):
                 op = OperationType.CREATE
             else:
                 op = OperationType.UPDATE
-            self_op = DataOpMessage(data=self, op=op, to_entity=self.typeid)
+            # from_entity = the save's owner — rides the notification so the
+            # unified-bus adapter can stamp containment scope (phase 3).
+            self_op = DataOpMessage(data=self, op=op, to_entity=self.typeid,
+                                    from_entity=owner)
             await self.add_entity_op_notification(self_op)
             self._notify_observers(self_op)
         self._dirty = False
@@ -434,6 +437,12 @@ class DBEntity(DBBaseRecord):
     async def add_entity_op_notification(op_message: DataOpMessage, notify_immediately: bool = False):
         from flow_sdk.core.network.resource_tracker import handle_entity_op
 
+        # Unified-bus dual-publish (docs/flow-events.md phase 3): every entity
+        # write becomes entity.created/updated/deleted. This is the ONE funnel
+        # all DataOpMessage sites flow through; legacy invalidation untouched.
+        from flow_sdk.db.entity_on_topic import emit_entity_topic
+
+        emit_entity_topic(op_message)
         await handle_entity_op(op_message)
 
     async def update(self: DBEntityType) -> DBEntityType:
