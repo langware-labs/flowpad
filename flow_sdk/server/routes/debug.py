@@ -87,7 +87,12 @@ async def debug_trigger_callbacks():
 @router.post("/api/v1/debug/emit_topic")
 async def emit_topic_route(request: Request):
     """Dev/QA: emit a FlowEvent on the backend bus — proves the
-    backend→topic_msg→app-bus pipe end-to-end (docs/flow-events.md phase 1)."""
+    backend→topic_msg→app-bus pipe end-to-end (docs/flow-events.md phase 1).
+
+    Validates the topic against the shared grammar by default; pass
+    ``force: true`` to exercise the permissive-bus path with a malformed name
+    (the bus itself never gates — this gate is only a typo guard for humans).
+    """
     try:
         body = await request.json()
     except Exception:
@@ -96,7 +101,35 @@ async def emit_topic_route(request: Request):
     target = str((body or {}).get("target") or "")
     if not topic or not target:
         return ApiFailResponse(message="topic and target are required")
+    if not (body or {}).get("force"):
+        from flow_sdk.topics.grammar import is_valid_topic
+
+        if not is_valid_topic(topic):
+            return ApiFailResponse(
+                message=f"invalid topic {topic!r} (dot-separated lowercase; pass force:true to emit anyway)"
+            )
     from flow_sdk.topics import emit_topic
 
     event = emit_topic(topic, target, (body or {}).get("data") or {})
     return ApiSuccessResponse(data=event.model_dump() if event else None)
+
+
+@router.get("/api/v1/debug/observed_topics")
+async def observed_topics_route():
+    """Topics seen on the backend bus since boot (bounded in-memory map) —
+    the anonymous half of the taxonomy gardening view. Blessed topics are
+    ordinary entities (``GET /api/v1/graph/topic``); the browse surface merges
+    the two and dims names that appear here but have no entity row.
+
+    Standard ``ApiResponse`` envelope::
+
+        { "status": "SUCCESS", "data": {
+            "observed": {"<topic>": {"count": 3, "first_ts": "...",
+                                      "last_ts": "...", "last_target": "..."}},
+            "count": <int>
+        } }
+    """
+    from flow_sdk.topics import event_bus
+
+    observed = event_bus.observed_topics()
+    return ApiSuccessResponse(data={"observed": observed, "count": len(observed)})

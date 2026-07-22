@@ -1,12 +1,21 @@
 /**
  * Open dot-kind ontology shared by entities that need hierarchical kinds.
  *
- * Kinds are deliberately strings, not an enum: providers and plugins may add
- * descendants without requiring an SDK release.  This module is the one place
- * that owns normalization, validation, matching, and ancestor expansion so
- * Artifact, Deployment, and Capability do not grow subtly different rules.
+ * COMPAT SHIM — the grammar now lives in `topics/grammar.ts` (one
+ * dot-taxonomy for kinds, bus topics, and capabilities). These names keep
+ * their exact historical behavior (normalize throws on invalid input); new
+ * code should import from `topics/grammar` directly. Kept until the Phase-5
+ * importer migration retires this module.
  */
-export const KIND_PATTERN = /^[a-z0-9_-]+(?:\.[a-z0-9_-]+)*$/;
+import {
+  TOPIC_PATTERN,
+  normalizeTopic,
+  topicAncestors,
+  topicIsWithin,
+  tryTopic,
+} from '../topics/grammar';
+
+export const KIND_PATTERN = TOPIC_PATTERN;
 
 /** A small starter vocabulary, not a closed set of allowed Artifact kinds. */
 export const ARTIFACT_KINDS = {
@@ -27,29 +36,21 @@ export function normalizeKind(value: string): string {
   if (typeof value !== 'string') {
     throw new Error('kind must be a string');
   }
-  const normalized = value.trim().toLowerCase();
-  if (!KIND_PATTERN.test(normalized)) {
+  try {
+    return normalizeTopic(value);
+  } catch {
     throw new Error(`Invalid kind: ${value}`);
   }
-  return normalized;
 }
 
 /** True when a value can be normalized into a valid dot kind. */
 export function isValidKind(value: unknown): value is string {
-  if (typeof value !== 'string') return false;
-  try {
-    normalizeKind(value);
-    return true;
-  } catch {
-    return false;
-  }
+  return tryTopic(value) !== null;
 }
 
 /** Exact-or-descendant match; `workload` matches `workload.service.http`. */
 export function kindMatches(queryKind: string, candidateKind: string): boolean {
-  const query = normalizeKind(queryKind);
-  const candidate = normalizeKind(candidateKind);
-  return candidate === query || candidate.startsWith(`${query}.`);
+  return topicIsWithin(normalizeKind(candidateKind), normalizeKind(queryKind));
 }
 
 /**
@@ -57,7 +58,5 @@ export function kindMatches(queryKind: string, candidateKind: string): boolean {
  * the normalized kind itself. Mirrors Python `kind_ancestors` exactly.
  */
 export function kindAncestors(kind: string, includeSelf = false): string[] {
-  const segments = normalizeKind(kind).split('.');
-  const count = includeSelf ? segments.length : segments.length - 1;
-  return Array.from({ length: count }, (_, index) => segments.slice(0, index + 1).join('.'));
+  return topicAncestors(normalizeKind(kind), includeSelf);
 }

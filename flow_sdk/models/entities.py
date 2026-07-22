@@ -151,6 +151,11 @@ except ImportError as e:
     print(f"[WARN] Failed to import ContactsGroup: {e}")
 
 try:
+    from flow_sdk.builtin.topic import Topic  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import Topic: {e}")
+
+try:
     from flow_sdk.builtin.prompt import Prompt  # noqa: F401
 except ImportError as e:
     print(f"[WARN] Failed to import Prompt: {e}")

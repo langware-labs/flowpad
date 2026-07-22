@@ -30,5 +30,49 @@
     { "pattern": "agent:*", "target": "agent:9999", "matches": true },
     { "pattern": "agent:*", "target": "agentic_flow:1", "matches": false },
     { "pattern": "*", "target": "anything:x", "matches": true }
-  ]
+  ],
+  "grammar": {
+    "comment": "Shared dot-taxonomy grammar (flow_sdk/topics/grammar.py <-> ts_sdk/src/topics/grammar.ts). normalize cases map raw -> canonical (null = rejected); pattern cases map pattern -> valid; within cases pin the lenient hierarchy-prefix semantics.",
+    "normalize_cases": [
+      { "raw": "flow.step.done", "canonical": "flow.step.done" },
+      { "raw": "  Application.Web ", "canonical": "application.web" },
+      { "raw": "--acme--.orders.created", "canonical": "--acme--.orders.created" },
+      { "raw": "gcp.compute.instance", "canonical": "gcp.compute.instance" },
+      { "raw": "a_b-c.d", "canonical": "a_b-c.d" },
+      { "raw": "", "canonical": null },
+      { "raw": "flow..done", "canonical": null },
+      { "raw": "flow.step.", "canonical": null },
+      { "raw": "flow step", "canonical": null },
+      { "raw": "flow:step", "canonical": null },
+      { "raw": "orders.--acme--.created", "canonical": null }
+    ],
+    "pattern_cases": [
+      { "pattern": "flow.*", "valid": true },
+      { "pattern": "entity.updated", "valid": true },
+      { "pattern": "flow.*.done", "valid": true },
+      { "pattern": "--acme--.orders.*", "valid": true },
+      { "pattern": "*", "valid": false },
+      { "pattern": "", "valid": false },
+      { "pattern": "Flow.*", "valid": false },
+      { "pattern": "flow..*", "valid": false },
+      { "pattern": "orders.--acme--.*", "valid": false }
+    ],
+    "within_cases": [
+      { "topic": "workload.service.http", "prefix": "workload", "within": true },
+      { "topic": "workload.service.http", "prefix": "workload.service", "within": true },
+      { "topic": "workload.service.http", "prefix": "workload.service.http", "within": true },
+      { "topic": "workloads.other", "prefix": "workload", "within": false },
+      { "topic": "workload", "prefix": "workload.service", "within": false },
+      { "topic": " Harness.Claude.CLI ", "prefix": "harness", "within": true }
+    ],
+    "namespace_cases": [
+      { "topic": "--acme--.orders.created", "namespace": "acme", "rest": "orders.created" },
+      { "topic": "flow.step.done", "namespace": null, "rest": "flow.step.done" },
+      { "topic": "--acme--", "namespace": "acme", "rest": "" }
+    ],
+    "reserved_roots": [
+      "agent", "app", "application", "content", "entity", "flow",
+      "gcp", "hub", "local", "node", "resource", "workload"
+    ]
+  }
 }

@@ -141,6 +141,27 @@ def test_unsubscribe_stops_delivery():
     assert got == ["u.a"]
 
 
+def test_observed_topics_bounded_and_entity_free():
+    from flow_sdk.topics.bus import _OBSERVED_CAP
+
+    bus = TopicEventBus()
+    # Zero subscribers: emits are still observed (that's the gardening point).
+    bus.emit("lonely.topic", "x:1")
+    bus.emit("lonely.topic", "x:2")
+    observed = bus.observed_topics()
+    assert observed["lonely.topic"]["count"] == 2
+    assert observed["lonely.topic"]["last_target"] == "x:2"
+    assert observed["lonely.topic"]["first_ts"] <= observed["lonely.topic"]["last_ts"]
+
+    # Cap enforced drop-oldest.
+    for i in range(_OBSERVED_CAP + 10):
+        bus.emit(f"burst.t{i}", "x:1")
+    observed = bus.observed_topics()
+    assert len(observed) == _OBSERVED_CAP
+    assert "lonely.topic" not in observed  # oldest dropped
+    assert f"burst.t{_OBSERVED_CAP + 9}" in observed
+
+
 def test_module_singleton_conveniences():
     got: list[str] = []
     unsub = on_topic("conv.*", lambda e: got.append(e.topic))

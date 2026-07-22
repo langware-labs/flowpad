@@ -141,6 +141,9 @@ class EntityType(StrEnum):
     FOLDER = "folder"
     SECRET_ORIGIN = "secret_origin"
     CONTACTS_GROUP = "contacts_group"
+    # A blessed dot-taxonomy topic name (flow_sdk/builtin/topic.py). Optional
+    # enrichment — anonymous topics (plain strings) need no entity at all.
+    TOPIC = "topic"
 
     # ── DB / hub entity types (formerly BuiltinEntityType-only) ──────────────
     USER = "user"

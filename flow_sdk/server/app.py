@@ -137,6 +137,17 @@ async def _on_server_startup():
     except Exception as _e:  # noqa: BLE001
         print(f"  Capability seed: failed ({_e})")
 
+    # Seed the shipped topic vocabulary as system Topic entities (the taxonomy
+    # catalog IS the entities — no separate registry). Idempotent: uuid5 ids
+    # converge on re-runs; user topics are never touched.
+    try:
+        from flow_sdk.builtin.topic import seed_system_topics
+
+        _topic_rows = await seed_system_topics()
+        print(f"  Topic seed: {_topic_rows} row(s) written")
+    except Exception as _e:  # noqa: BLE001
+        print(f"  Topic seed: failed ({_e})")
+
     # Discover capability values in the background (every restart). The env
     # probe runs in a separate subprocess with a hard cap — nothing blocks
     # startup; values land in the discovery dict + entity rows when ready.
