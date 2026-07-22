@@ -377,14 +377,38 @@ adapter file per the naming rule (`<family>_on_topic.py`).
   agent turn — worker ticks → bus → phase-4 trigger, end to end. 2 unit
   tests (node transitions, hub relay); agent.status covered by the drill.
 
-## Phase 7 — Journals speak FlowEvent  ☐
+## Phase 7 — Journals speak FlowEvent  ✅
 
 RunJournal event rows embed the full standard envelope (id, actor, scope);
 trigger-log + JourneyJournal likewise; `example.json.source` aligns with `ctx`
 (gains actor + event id) — training-data provenance and the event system share
 one vocabulary.
 
+**Detail (planned 2026-07-22):** the honest slice is PROVENANCE ALIGNMENT —
+run-internal RunEvents are engine wiring, not bus envelopes, so they don't
+grow scope/origin; they gain the two identity fields that make records
+traceable:
+- `RunEvent.id` (minted) + `RunEvent.actor` — and when a run is ENTERED from
+  a bus envelope (subscription entry / topic-trigger fire), the envelope's
+  `id` and `ctx.actor` are PRESERVED onto the entry RunEvent (never
+  re-minted — the relay law at the flow door). `inject` gains
+  `envelope: FlowEvent | None`.
+- Journal `event` rows carry `event_id` (+ `actor` when present); run
+  input/output records inherit both via model_dump.
+- `_Run.actor` = the entry event's actor; `example.json.source` gains
+  `actor` + `event_id` — training examples finally answer "who caused this"
+  and link to the exact envelope.
+- Trigger-log already embeds the envelope (phase 4). JourneyJournal advance
+  is REST-driven (no envelope at that door) — unchanged, noted.
+
 ### Log
+- 2026-07-22 — shipped as planned: RunEvent.id (minted) + .actor; inject
+  gains `envelope=` and PRESERVES the bus envelope's id/actor at the flow
+  door (relay law); journal event rows carry event_id (+ actor); _Run.actor
+  stamps example.json.source with actor + event_id. Test: subscription entry
+  from an actor-carrying envelope → journal row AND execution example both
+  hold the verbatim envelope id + user:u-42. Live drill on flow-5 confirms
+  entry rows carry event_id. 66 tests green across the suites.
 
 ## Phase 8 — Strangle the WS dialect  ☐  ⚠ the only wire-changing phase
 

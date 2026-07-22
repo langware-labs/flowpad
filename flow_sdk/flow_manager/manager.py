@@ -117,7 +117,7 @@ class _Run:
     __slots__ = ("id", "flow", "journal", "started_at", "pending", "active",
                  "hops", "processes", "events", "executions", "error", "finalized",
                  "seq", "in_count", "out_count", "record_dir", "suspended",
-                 "suspended_nodes")
+                 "suspended_nodes", "actor")
 
     def __init__(self, run_id: str, flow: _LoadedFlow) -> None:
         self.id = run_id
@@ -148,6 +148,8 @@ class _Run:
         # awaiting node to release before routing.
         self.suspended = 0
         self.suspended_nodes: set[str] = set()
+        # The entry event's actor (target form) — stamps example provenance.
+        self.actor: Optional[str] = None
 
     @property
     def deadline_exceeded(self) -> bool:
@@ -363,6 +365,7 @@ class FlowManager:
                     sub.event or event.topic,
                     {"topic": event.topic, "target": event.target, "data": event.data},
                     target_node=sub.node or None,
+                    envelope=event,
                 )
             except ValueError as e:
                 logger.warning("FlowManager: subscription entry refused for %s: %s",
@@ -454,6 +457,7 @@ class FlowManager:
         execution_id: str | None = None,
         source_node: str = EXTERNAL_SOURCE,
         target_node: str | None = None,
+        envelope: Any = None,
     ) -> Optional[RunEvent]:
         """External/entry point: deliver an event into a flow.
 
@@ -474,8 +478,15 @@ class FlowManager:
             # (suspended decremented before the successor's pending reserve).
             run.pending += 1
         try:
+            # Provenance alignment (phase 7): a run entered FROM a bus envelope
+            # preserves its id + actor — the relay law at the flow door.
+            extra: dict[str, Any] = {}
+            if envelope is not None:
+                extra = {"id": envelope.id, "actor": envelope.ctx.actor}
             fe = RunEvent(event=event, data=data or {}, flow_id=flow_id,
-                          execution_id=run.id, source_node=source_node)
+                          execution_id=run.id, source_node=source_node, **extra)
+            if run.actor is None and fe.actor:
+                run.actor = fe.actor
             if source_node == EXTERNAL_SOURCE:
                 self._record_run_event(run, fe, "input", target_node=target_node)
             # A guided_step advance: the frontend injects the parked node's `done`.
@@ -576,7 +587,10 @@ class FlowManager:
         source: dict[str, Any] = {"flow_id": run.flow.flow_id, "run_id": run.id,
                                   "node_id": node_id, "seq": seq}
         if fe is not None:
-            source.update({"event": fe.event, "source_node": fe.source_node, "hop": fe.hop})
+            source.update({"event": fe.event, "source_node": fe.source_node,
+                           "hop": fe.hop, "event_id": fe.id})
+        if run.actor:
+            source["actor"] = run.actor
         if process_id:
             source["process_id"] = process_id
         if agent_id:
@@ -1227,8 +1241,12 @@ class FlowManager:
     # ── observability ─────────────────────────────────────────────────────────
 
     def _journal_event(self, run: _Run, fe: RunEvent) -> None:
-        run.journal.append("event", {"event": fe.event, "data": fe.data,
-                                     "source_node": fe.source_node, "hop": fe.hop})
+        row: dict[str, Any] = {"event": fe.event, "data": fe.data,
+                               "source_node": fe.source_node, "hop": fe.hop,
+                               "event_id": fe.id}
+        if fe.actor:
+            row["actor"] = fe.actor
+        run.journal.append("event", row)
         asyncio.ensure_future(self._broadcast_run_event(
             run, "event", {"event": fe.event, "data": fe.data, "node": fe.source_node}))
 
