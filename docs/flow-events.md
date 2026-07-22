@@ -54,6 +54,9 @@ vocabulary — zero behavior, zero wire change.
 no `TopicEvent` in ts_sdk/ui; all existing tests green.
 
 ### Log
+- 2026-07-19 — shipped with phase 1 (one commit). Run-local envelope is
+  `RunEvent`; standard `FlowEvent`/`FlowEventCtx` in `flow_sdk/topics/envelope.py`
+  + TS rename. Both grep gates pass; flow suites green unchanged.
 
 ## Phase 1 — Bus core, both sides  ✅
 
@@ -79,6 +82,13 @@ emit on the backend arrives at an app-bus subscriber with the SAME event id
 and `origin: "local_server"`.
 
 ### Log
+- 2026-07-19 — shipped. Python bus (`topics/bus.py`) + `TopicMessage` frame +
+  `ws_forward` (allowlist `["flow.*"]`) armed at startup; TS `deliver()` +
+  `ws-bridge` wired via `UiTopicEmitter`. Contract fixture
+  `tests/fixtures/flow_event_contract.json` parsed by BOTH suites (py 16,
+  ts 17 tests). Live drill on flow-5: backend-minted id `bcff6c26…` observed
+  verbatim on the app bus with `origin: local_server`. Scope cut as planned:
+  app→backend forwarding deferred. Mini-analyzer regression complete.
 
 ## Phase 2 — Flow-boundary emitter  ☐
 
