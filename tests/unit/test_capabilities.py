@@ -312,6 +312,14 @@ async def test_run_discovery_populates_dict_and_mirrors_rows(monkeypatch, tmp_pa
             self.value = None
             self.value_type = None
             self.last_check = None
+            self.state = "none"
+            self.last_install = None
+
+        # Real derive_state semantics over the fake's fields.
+        def derive_state(self, result, *, attempted=False):
+            from flow_sdk.builtin.capability import Capability
+
+            return Capability.derive_state(self, result, attempted=attempted)
 
         async def save(self, notify=True):
             saved_rows.append((self.kind, self.value, self.value_type, self.last_check))

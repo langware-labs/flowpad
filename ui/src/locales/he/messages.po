@@ -106,6 +106,10 @@ msgstr "(אין שדות)"
 #~ msgid "(no git repo)"
 #~ msgstr "(אין מאגר git)"
 
+#: src/pages/entry/LaunchLanding.tsx
+msgid "(no repo given)"
+msgstr ""
+
 #: src/components/inbox-view/InboxView.tsx
 msgid "(no subject)"
 msgstr "(ללא נושא)"
@@ -1898,6 +1902,7 @@ msgstr "לא ניתן לעדכן — מוצגים הנתונים מהסנכרו�
 #: src/components/triggers-view/TriggerEditor.tsx
 #: src/components/version-popover/version-popover.tsx
 #: src/components/wizard/WizardHost.tsx
+#: src/pages/entry/LaunchLanding.tsx
 #: src/pages/home-landing/feed/HomeFeedColumn.tsx
 #: src/pages/hub-home/NewDesktopDialog.tsx
 #: src/pages/live-status/LiveStatus.tsx
@@ -2025,6 +2030,10 @@ msgstr "בדוק הודעות חדשות"
 #: src/components/capabilities-view/CapabilitiesView.tsx
 msgid "Checking"
 msgstr "בדיקה"
+
+#: src/components/project-selector/NewProjectFromGitDialog.tsx
+msgid "Checking access…"
+msgstr ""
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
 msgid "Checking Git eligibility…"
@@ -2376,8 +2385,6 @@ msgstr "משבוט…"
 #: src/components/terminal/interactive-terminal/TraceGutter.tsx
 #: src/components/version-popover/diagnose-modal.tsx
 #: src/components/version-popover/diagnosis-report-modal.tsx
-#: src/journey/JourneyTray.tsx
-#: src/journey/JourneyTray.tsx
 msgid "Close"
 msgstr "סגור"
 
@@ -3129,9 +3136,17 @@ msgstr "לא היה ניתן לעדכן"
 msgid "Couldn't check for updates: {error}"
 msgstr "לא ניתן לבדוק עדכונים: {error}"
 
+#: src/pages/entry/LaunchLanding.tsx
+msgid "Couldn't finish preparing your sandbox"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/side-windows/SkillsAgentsPanel.tsx
 msgid "Couldn’t load transcript"
 msgstr "לא ניתן לטעון את התמליל"
+
+#: src/components/project-selector/NewProjectFromGitDialog.tsx
+msgid "Couldn't reach that repository. Check the URL and try again."
+msgstr ""
 
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
 msgid "Couldn't read this folder's Git status."
@@ -4735,6 +4750,10 @@ msgstr "ייצוא SVG"
 msgid "Exported"
 msgstr "יוצא"
 
+#: src/pages/entry/LaunchLanding.tsx
+msgid "External link"
+msgstr ""
+
 #: src/components/account/danger-zone.tsx
 #~ msgid "External Terminal"
 #~ msgstr "טרמינל חיצוני"
@@ -5222,6 +5241,10 @@ msgstr "קבצים"
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Files on disk not yet in the DB"
 msgstr "קבצים בדיסק שעדיין לא בDB"
+
+#: src/journey/JourneyTray.tsx
+msgid "Fill text"
+msgstr ""
 
 #: src/components/git/BranchPicker.tsx
 msgid "Filter branches…"
@@ -6708,6 +6731,10 @@ msgstr ""
 msgid "Launch a session first"
 msgstr "הפעל סדרה תחילה"
 
+#: src/pages/entry/LaunchLanding.tsx
+msgid "Launch sandbox"
+msgstr ""
+
 #: src/pages/hub-home/HubHome.tsx
 msgid "Launching…"
 msgstr ""
@@ -7154,6 +7181,7 @@ msgstr "טוען..."
 #: src/components/browseable-tree/BrowseableTree.tsx
 #: src/components/collaboration/CollaborationPage.tsx
 #: src/components/collaboration/SharedSessionsList.tsx
+#: src/components/file-preview/FilePreviewSheet.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
 #: src/components/inbox-view/InboxView.tsx
 #: src/components/inbox-view/InboxView.tsx
@@ -7487,6 +7515,11 @@ msgstr "דקה שעה יום חודש יום שבוע — או \"30s\" / \"5m\" 
 #: src/components/claude-terminal/claude-terminal.tsx
 msgid "Minimize"
 msgstr "הקטן"
+
+#: src/journey/JourneyTray.tsx
+#: src/journey/JourneyTray.tsx
+msgid "Minimize to the journey icon"
+msgstr ""
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Mis-Sc"
@@ -7867,6 +7900,7 @@ msgstr "טרמינל חדש"
 #~ msgstr "זרימת עבודה חדשה"
 
 #: src/components/ui/pagination.tsx
+#: src/journey/JourneyTray.tsx
 msgid "Next"
 msgstr "הבא"
 
@@ -7891,6 +7925,10 @@ msgstr "הודעה הבאה — תוזרק כשהסוכן יהיה רגוע. ל�
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
 msgid "next: {0}"
 msgstr "הבא: {0}"
+
+#: src/components/project-selector/NewProjectFromGitDialog.tsx
+msgid "No access to this repository. Connect GitHub if it's private, or check the URL."
+msgstr ""
 
 #: src/components/triggers-view/FsopTriggerDetail.tsx
 msgid "No actions configured."
@@ -8026,6 +8064,7 @@ msgstr "אין כרטיסי קהילה"
 #: src/components/open-project-component/use-open-project.ts
 #: src/components/quick-create/QuickCreateDialog.tsx
 #: src/components/quick-create/QuickCreateMenu.tsx
+#: src/pages/flow-page/vibe-new-chat.tsx
 msgid "No compute node available"
 msgstr "אין צומת חישוב זמין"
 
@@ -8912,6 +8951,10 @@ msgstr "אין מה לשמור"
 msgid "Nothing to show."
 msgstr "אין מה להציג"
 
+#: src/pages/entry/LaunchLanding.tsx
+msgid "Nothing was launched. You can close this tab."
+msgstr ""
+
 #: src/components/history-dropdown.tsx
 #~ msgid "Nothing yet!"
 #~ msgstr "עדיין אין כאן!"
@@ -9156,6 +9199,10 @@ msgstr "פתח תיקייה"
 msgid "Open folder: {projectPath}"
 msgstr "פתיחת התיקייה: {projectPath}"
 
+#: src/pages/flow-page/vibe-new-chat.tsx
+msgid "Open from git"
+msgstr ""
+
 #: src/components/terminal/ProjectsCounterChip.tsx
 #: src/components/terminal/ProjectsCounterChip.tsx
 #: src/tabs/useTerminalStripController.tsx
@@ -9188,6 +9235,8 @@ msgstr "פתיחה בכרטיסייה חדשה"
 #: src/components/conversation/AttachmentChip.tsx
 #: src/components/entity-execution-panel/MetaMessageChip.tsx
 #: src/components/entity-execution-panel/MetaMessageChip.tsx
+#: src/components/file-preview/FilePreviewSheet.tsx
+#: src/components/file-preview/FilePreviewSheet.tsx
 msgid "Open in editor"
 msgstr "פתח בעורך"
 
@@ -9386,6 +9435,10 @@ msgstr "פתח JSONL גולמי בכרטיסייה חדשה"
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 msgid "Open the rendered index.md."
 msgstr "פתח את ה-index.md המעובד."
+
+#: src/pages/entry/LaunchLanding.tsx
+msgid "Open the sandbox"
+msgstr ""
 
 #: src/components/workers/WorkerToolbar.tsx
 msgid "Open the session"
@@ -9911,9 +9964,13 @@ msgstr "לפני כלי"
 msgid "Preferences"
 msgstr "העדפות"
 
-#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
-#~ msgid "Preparing…"
-#~ msgstr "מתכונן…"
+#: src/pages/entry/LaunchLanding.tsx
+msgid "Preparing your sandbox…"
+msgstr ""
+
+#: src/pages/entry/LaunchLanding.tsx
+msgid "Preparing…"
+msgstr "מתכונן…"
 
 #: src/components/collaboration/RoomTabs.tsx
 #~ msgid "Press Enter to save, Esc to cancel"
@@ -13304,6 +13361,10 @@ msgstr "עדיין לא ניתן לשתף את התיקייה"
 msgid "This folder-backed asset has no main file metadata."
 msgstr "לנכס תיקייה זה אין מטא-נתונים של קובץ ראשי"
 
+#: src/pages/entry/LaunchLanding.tsx
+msgid "This link doesn't name a repository we can launch."
+msgstr ""
+
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "This live session has ended."
 msgstr "הסשן הלייב הסתיים."
@@ -14454,6 +14515,10 @@ msgstr "בתהליך…"
 msgid "Worktree"
 msgstr "Worktree"
 
+#: src/pages/entry/LaunchLanding.tsx
+msgid "Would you like to launch a sandbox for this repository?"
+msgstr ""
+
 #: src/components/collaboration/StartRoomDialog.tsx
 msgid "XKCD-J3F2"
 msgstr "XKCD-J3F2"
@@ -14556,6 +14621,10 @@ msgstr "קוד החד-פעמי שלך נמצא להלן. לחץ על <0>העתק
 #: src/components/project-list/ProjectList.tsx
 msgid "Your Projects"
 msgstr "הפרויקטים שלך"
+
+#: src/pages/entry/LaunchLanding.tsx
+msgid "Your sandbox is ready"
+msgstr ""
 
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/pages/hub-home/HubHome.tsx

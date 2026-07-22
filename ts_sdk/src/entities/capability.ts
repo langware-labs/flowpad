@@ -6,6 +6,11 @@ import { kindMatches } from '../models/Kind';
 
 export type CapabilityActionName = 'check' | 'install' | 'test';
 
+/** Four-state readiness (mirror of the backend CapabilityState enum).
+ *  available = ready to use; not_available = probed/attempted and
+ *  definitively not ready; none = user never tried; error = probe failed. */
+export type CapabilityState = 'available' | 'not_available' | 'none' | 'error';
+
 export interface CapabilityResult {
   ok: boolean;
   available: boolean;
@@ -13,6 +18,7 @@ export interface CapabilityResult {
   details?: Record<string, unknown>;
   process_id?: string | null;
   checked_at?: string;
+  state?: CapabilityState;
 }
 
 export interface CapabilityCheck {
@@ -61,6 +67,8 @@ export interface ICapability extends IEntity {
   value?: Record<string, unknown> | null;
   /** Static RecordType of `value` (e.g. "folder"); from the backend spec. */
   value_type?: string | null;
+  /** Persisted four-state readiness (see CapabilityState). */
+  state?: CapabilityState;
   last_check?: CapabilityResult | null;
   last_install?: CapabilityResult | null;
   last_test?: CapabilityResult | null;
@@ -94,6 +102,7 @@ export class Capability extends APIEntity<Capability> implements ICapability {
   install_prompt: string | null = null;
   value: Record<string, unknown> | null = null;
   value_type: string | null = null;
+  state: CapabilityState = 'none';
   last_check: CapabilityResult | null = null;
   last_install: CapabilityResult | null = null;
   last_test: CapabilityResult | null = null;
@@ -142,6 +151,7 @@ export class Capability extends APIEntity<Capability> implements ICapability {
     this.install_prompt = entity.install_prompt ?? this.install_prompt;
     this.value = entity.value ?? this.value;
     this.value_type = entity.value_type ?? this.value_type;
+    this.state = entity.state ?? this.state;
     this.last_check = entity.last_check ?? this.last_check;
     this.last_install = entity.last_install ?? this.last_install;
     this.last_test = entity.last_test ?? this.last_test;

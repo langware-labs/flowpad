@@ -2,8 +2,16 @@ import { EventEmitter } from 'events';
 
 import { dataManager } from '../APIEntity';
 import apiClient from '../client';
-import { Capability, CapabilityActionName, CapabilityCheck, CapabilityResult } from '../entities/capability';
+import {
+  Capability,
+  CapabilityActionName,
+  CapabilityCheck,
+  CapabilityResult,
+  CapabilityState,
+  ICapability,
+} from '../entities/capability';
 import { normalizeKind } from '../models/Kind';
+import { EventBus } from '../topics/EventBus';
 import { defineGlobal } from '../utils/globals';
 import { isHubOnly } from '../utils/hub-runtime';
 
@@ -43,6 +51,8 @@ export interface CapabilityAccess {
   icon: string;
   available: boolean;
   checked: boolean;
+  /** Persisted four-state readiness (mirror of CapabilityState). */
+  state: CapabilityState;
   runnable: boolean;
   installable: boolean;
   worker_type: string | null;
@@ -265,6 +275,62 @@ export class CapabilityManager extends EventEmitter {
     } finally {
       this.ensureCheckPromises.delete(query);
     }
+  }
+
+  /**
+   * Tri-state readiness for an exact capability kind: true = available,
+   * false = not available, null = unknown (never tried / errored — retryable
+   * via setupCapability). Reads the persisted row state; does NOT probe.
+   */
+  async checkCapability(kind: string): Promise<boolean | null> {
+    const query = normalizeKind(kind);
+    await this.load(true);
+    const state = this.capabilities.find((c) => c.kind === query)?.state ?? 'none';
+    if (state === 'available') return true;
+    if (state === 'not_available') return false;
+    return null;
+  }
+
+  /**
+   * Run the capability's setup (backend install verb) to a terminal verdict:
+   * resolves true ⇔ the capability is available afterwards.
+   *
+   * When install spawns an agentic process, resolution waits for the install
+   * monitor's terminal row write (`last_install.details.install_finalized`,
+   * arriving over the entity WS channel) — the monitor always terminates and
+   * persists a verdict, so no client-side timeout is layered on top.
+   */
+  async setupCapability(kind: string): Promise<boolean> {
+    const query = normalizeKind(kind);
+    await this.load();
+    const row = this.capabilities.find((c) => c.kind === query);
+    if (!row) throw new Error(`Capability ${query} was not found`);
+
+    let resolveTerminal: () => void;
+    const terminal = new Promise<void>((resolve) => {
+      resolveTerminal = resolve;
+    });
+    let expectedProcessId: string | null = null;
+    const off = EventBus.on(
+      'app.entity.updated',
+      (event) => {
+        const entity = (event.data?.entity ?? null) as ICapability | null;
+        const install = entity?.last_install;
+        if (!install?.details?.install_finalized) return;
+        if (expectedProcessId && install.process_id !== expectedProcessId) return;
+        resolveTerminal();
+      },
+      { target: `capability:${row.id}` },
+    );
+    try {
+      const check = await row.install();
+      expectedProcessId = check.result.process_id ?? null;
+      if (expectedProcessId) await terminal;
+    } finally {
+      off();
+    }
+    void this.getSummary(true);
+    return (await this.checkCapability(query)) === true;
   }
 
   async check(queryKind: string): Promise<CapabilitySnapshot> {

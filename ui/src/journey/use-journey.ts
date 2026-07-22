@@ -92,10 +92,22 @@ export interface JourneyAwaitSpec {
  * like any other event.
  */
 export interface JourneyActSpec {
-  kind: 'fill';
+  /**
+   * `fill` types text into a `data-topic` surface. The setup kinds drive the
+   * capability system through its existing verbs: `setup_capability` fires the
+   * install agentic process, `oauth_connect` opens the provider's OAuth flow,
+   * `device_login` starts the capability's device-login session (surfaced by
+   * the harness login modal). Their completion is NOT the act — the step's
+   * `await` gates on the capability row reaching the wanted state.
+   */
+  kind: 'fill' | 'setup_capability' | 'oauth_connect' | 'device_login';
   /** Topic word of the target surface — `[data-topic="…"]`. */
   target: string;
   text?: string;
+  /** Capability kind for `setup_capability` / `device_login`. */
+  capability?: string;
+  /** OAuth provider for `oauth_connect` (default "github"). */
+  provider?: string;
 }
 
 /** One guided step, read from the journey folder's `graph.json`. */

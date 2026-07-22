@@ -44,6 +44,9 @@ class CapabilityAccess(BaseModel):
     icon: str = "BadgeCheck"
     available: bool = False
     checked: bool = False
+    # Four-state readiness from the persisted row (CapabilityState value);
+    # "none" until the row exists / has ever been stamped.
+    state: str = "none"
     runnable: bool = True
     installable: bool = False
     worker_type: str | None = None
@@ -162,6 +165,14 @@ async def compute_capabilities_summary(wait_for_discovery: bool = True) -> Capab
                 # always a determination — an unavailable CLI reads "Unavailable",
                 # not "Not checked".
                 checked=True,
+                # Row state is authoritative (it encodes "never tried"); fall
+                # back to deriving from this fresh check for rows not yet
+                # stamped (derive without a row can't promote to NOT_AVAILABLE).
+                state=(
+                    row.state
+                    if row is not None
+                    else ("available" if check.result.available else "none")
+                ),
                 runnable=spec.runnable,
                 installable=installable,
                 worker_type=_worker_type_for(kind),
