@@ -23,9 +23,11 @@ import { AssetEditor, AssetMode, AssetRoutingMethod, editorForType, LOCAL_COMPUT
 import {
   ALL_SCOPE_FILTER,
   dockOptionsToScopeFilter,
+  pinnedProjectId,
   scopeFilterKey,
   scopeFilterToDockOptions,
   withScopeFilterOptions,
+  withoutScopeFilterOptions,
   type ScopeFilter,
 } from '@src/lib/scope-filter';
 import { dockOptionsToSideWindows, withSideWindowsOptions, type SideWindowsState } from '@src/lib/side-windows';
@@ -208,6 +210,42 @@ export class DockPointer implements IDockPointer {
       this.viewType,
       this.pointer,
       withScopeFilterOptions(this.options, scope),
+      this.layout,
+      this.page,
+    );
+  }
+
+  /**
+   * The project this dock pins as its active-project context (`project` scope
+   * mode), or null. Reads through the scope selectors — no call site picks the
+   * mode/id fields apart itself.
+   */
+  get scopeProjectId(): string | null {
+    return pinnedProjectId(this.scopeFilter);
+  }
+
+  /**
+   * Is this dock's TAB IDENTITY keyed by its scope? True for the scope-keyed
+   * views (Assets, Explorer) whose `tabHash` folds every sub-pointer of one
+   * scope into a single tab. Only these can be stranded by an unsatisfiable
+   * scope — their tab literally cannot be minted without a live project — so
+   * it's the one class of dock that needs scope repair before materialization.
+   */
+  get scopeKeyed(): boolean {
+    return !!(this.viewType && VIEWER_REGISTRY[this.viewType]?.scopeKeyed);
+  }
+
+  /**
+   * Clone this pointer with its scope removed — same surface, no scope keys.
+   * The recovery for a scope that can't be satisfied (see `repairUnsatisfiableScope`
+   * in main-loader): the dock keeps showing what the URL names, just unscoped,
+   * instead of filtering against a project that isn't there.
+   */
+  withoutScopeFilter(): DockPointer {
+    return new DockPointer(
+      this.viewType,
+      this.pointer,
+      withoutScopeFilterOptions(this.options),
       this.layout,
       this.page,
     );
