@@ -106,6 +106,10 @@ msgstr ""
 #~ msgid "(no git repo)"
 #~ msgstr ""
 
+#: src/pages/entry/LaunchLanding.tsx
+msgid "(no repo given)"
+msgstr ""
+
 #: src/components/inbox-view/InboxView.tsx
 msgid "(no subject)"
 msgstr ""
@@ -1898,6 +1902,7 @@ msgstr ""
 #: src/components/triggers-view/TriggerEditor.tsx
 #: src/components/version-popover/version-popover.tsx
 #: src/components/wizard/WizardHost.tsx
+#: src/pages/entry/LaunchLanding.tsx
 #: src/pages/home-landing/feed/HomeFeedColumn.tsx
 #: src/pages/hub-home/NewDesktopDialog.tsx
 #: src/pages/live-status/LiveStatus.tsx
@@ -2024,6 +2029,10 @@ msgstr ""
 
 #: src/components/capabilities-view/CapabilitiesView.tsx
 msgid "Checking"
+msgstr ""
+
+#: src/components/project-selector/NewProjectFromGitDialog.tsx
+msgid "Checking access…"
 msgstr ""
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
@@ -2376,8 +2385,6 @@ msgstr ""
 #: src/components/terminal/interactive-terminal/TraceGutter.tsx
 #: src/components/version-popover/diagnose-modal.tsx
 #: src/components/version-popover/diagnosis-report-modal.tsx
-#: src/journey/JourneyTray.tsx
-#: src/journey/JourneyTray.tsx
 msgid "Close"
 msgstr ""
 
@@ -3129,8 +3136,16 @@ msgstr ""
 msgid "Couldn't check for updates: {error}"
 msgstr ""
 
+#: src/pages/entry/LaunchLanding.tsx
+msgid "Couldn't finish preparing your sandbox"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/side-windows/SkillsAgentsPanel.tsx
 msgid "Couldn’t load transcript"
+msgstr ""
+
+#: src/components/project-selector/NewProjectFromGitDialog.tsx
+msgid "Couldn't reach that repository. Check the URL and try again."
 msgstr ""
 
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
@@ -4732,6 +4747,10 @@ msgstr ""
 msgid "Exported"
 msgstr ""
 
+#: src/pages/entry/LaunchLanding.tsx
+msgid "External link"
+msgstr ""
+
 #: src/components/account/danger-zone.tsx
 #~ msgid "External Terminal"
 #~ msgstr ""
@@ -5218,6 +5237,10 @@ msgstr ""
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Files on disk not yet in the DB"
+msgstr ""
+
+#: src/journey/JourneyTray.tsx
+msgid "Fill text"
 msgstr ""
 
 #: src/components/git/BranchPicker.tsx
@@ -6705,6 +6728,10 @@ msgstr ""
 msgid "Launch a session first"
 msgstr ""
 
+#: src/pages/entry/LaunchLanding.tsx
+msgid "Launch sandbox"
+msgstr ""
+
 #: src/pages/hub-home/HubHome.tsx
 msgid "Launching…"
 msgstr ""
@@ -7151,6 +7178,7 @@ msgstr ""
 #: src/components/browseable-tree/BrowseableTree.tsx
 #: src/components/collaboration/CollaborationPage.tsx
 #: src/components/collaboration/SharedSessionsList.tsx
+#: src/components/file-preview/FilePreviewSheet.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
 #: src/components/inbox-view/InboxView.tsx
 #: src/components/inbox-view/InboxView.tsx
@@ -7483,6 +7511,11 @@ msgstr ""
 
 #: src/components/claude-terminal/claude-terminal.tsx
 msgid "Minimize"
+msgstr ""
+
+#: src/journey/JourneyTray.tsx
+#: src/journey/JourneyTray.tsx
+msgid "Minimize to the journey icon"
 msgstr ""
 
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
@@ -7864,6 +7897,7 @@ msgstr ""
 #~ msgstr ""
 
 #: src/components/ui/pagination.tsx
+#: src/journey/JourneyTray.tsx
 msgid "Next"
 msgstr ""
 
@@ -7887,6 +7921,10 @@ msgstr ""
 #. placeholder {0}: new Date(trigger.next_run).toLocaleString()
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
 msgid "next: {0}"
+msgstr ""
+
+#: src/components/project-selector/NewProjectFromGitDialog.tsx
+msgid "No access to this repository. Connect GitHub if it's private, or check the URL."
 msgstr ""
 
 #: src/components/triggers-view/FsopTriggerDetail.tsx
@@ -8023,6 +8061,7 @@ msgstr ""
 #: src/components/open-project-component/use-open-project.ts
 #: src/components/quick-create/QuickCreateDialog.tsx
 #: src/components/quick-create/QuickCreateMenu.tsx
+#: src/pages/flow-page/vibe-new-chat.tsx
 msgid "No compute node available"
 msgstr ""
 
@@ -8909,6 +8948,10 @@ msgstr ""
 msgid "Nothing to show."
 msgstr ""
 
+#: src/pages/entry/LaunchLanding.tsx
+msgid "Nothing was launched. You can close this tab."
+msgstr ""
+
 #: src/components/history-dropdown.tsx
 #~ msgid "Nothing yet!"
 #~ msgstr ""
@@ -9151,6 +9194,10 @@ msgstr ""
 msgid "Open folder: {projectPath}"
 msgstr ""
 
+#: src/pages/flow-page/vibe-new-chat.tsx
+msgid "Open from git"
+msgstr ""
+
 #: src/components/terminal/ProjectsCounterChip.tsx
 #: src/components/terminal/ProjectsCounterChip.tsx
 #: src/tabs/useTerminalStripController.tsx
@@ -9183,6 +9230,8 @@ msgstr ""
 #: src/components/conversation/AttachmentChip.tsx
 #: src/components/entity-execution-panel/MetaMessageChip.tsx
 #: src/components/entity-execution-panel/MetaMessageChip.tsx
+#: src/components/file-preview/FilePreviewSheet.tsx
+#: src/components/file-preview/FilePreviewSheet.tsx
 msgid "Open in editor"
 msgstr ""
 
@@ -9380,6 +9429,10 @@ msgstr ""
 
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 msgid "Open the rendered index.md."
+msgstr ""
+
+#: src/pages/entry/LaunchLanding.tsx
+msgid "Open the sandbox"
 msgstr ""
 
 #: src/components/workers/WorkerToolbar.tsx
@@ -9906,9 +9959,13 @@ msgstr ""
 msgid "Preferences"
 msgstr ""
 
-#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
-#~ msgid "Preparing…"
-#~ msgstr ""
+#: src/pages/entry/LaunchLanding.tsx
+msgid "Preparing your sandbox…"
+msgstr ""
+
+#: src/pages/entry/LaunchLanding.tsx
+msgid "Preparing…"
+msgstr ""
 
 #: src/components/collaboration/RoomTabs.tsx
 #~ msgid "Press Enter to save, Esc to cancel"
@@ -13295,6 +13352,10 @@ msgstr ""
 msgid "This folder-backed asset has no main file metadata."
 msgstr ""
 
+#: src/pages/entry/LaunchLanding.tsx
+msgid "This link doesn't name a repository we can launch."
+msgstr ""
+
 #: src/components/collaboration/LiveSessionView.tsx
 msgid "This live session has ended."
 msgstr ""
@@ -14445,6 +14506,10 @@ msgstr ""
 msgid "Worktree"
 msgstr ""
 
+#: src/pages/entry/LaunchLanding.tsx
+msgid "Would you like to launch a sandbox for this repository?"
+msgstr ""
+
 #: src/components/collaboration/StartRoomDialog.tsx
 msgid "XKCD-J3F2"
 msgstr ""
@@ -14546,6 +14611,10 @@ msgstr ""
 
 #: src/components/project-list/ProjectList.tsx
 msgid "Your Projects"
+msgstr ""
+
+#: src/pages/entry/LaunchLanding.tsx
+msgid "Your sandbox is ready"
 msgstr ""
 
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx

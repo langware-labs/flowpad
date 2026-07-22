@@ -13,6 +13,7 @@ import {
 import { Input } from '@src/components/ui/input';
 import { notify } from '@src/notifications';
 import { hasGitHubRepoAccess } from '@src/utils/gitUtils';
+import { SETUP_GITHUB_JOURNEY_ID, SetupJourneyButton } from '@src/journey/SetupJourneyButton';
 import { CheckCircle2, GitBranch, Github, Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
@@ -250,15 +251,20 @@ export function NewProjectFromGitDialog({ open, onOpenChange, onCreate, initialU
               <span className="text-muted-foreground">
                 <Trans>Tip: connect GitHub to clone private repos.</Trans>
               </span>
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-6 px-2 text-xs"
-                onClick={() => void handleConnectGithub()}
-              >
-                <Github className="mr-1.5 h-3 w-3" />
-                <Trans>Connect</Trans>
-              </Button>
+              <div className="flex items-center gap-1.5">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-6 px-2 text-xs"
+                  onClick={() => void handleConnectGithub()}
+                >
+                  <Github className="mr-1.5 h-3 w-3" />
+                  <Trans>Connect</Trans>
+                </Button>
+                <SetupJourneyButton journeyId={SETUP_GITHUB_JOURNEY_ID} variant="ghost">
+                  <Trans>Guided setup</Trans>
+                </SetupJourneyButton>
+              </div>
             </div>
           )}
           {/* URL input (always visible) */}

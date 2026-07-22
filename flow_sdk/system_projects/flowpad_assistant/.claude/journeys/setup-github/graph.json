@@ -1,0 +1,113 @@
+{
+  "version": 1,
+  "id": "e485cbde-7d23-5a7f-aaf0-852ecdf754bb",
+  "name": "Set up GitHub",
+  "description": "Connect your GitHub account and get the gh CLI installed and logged in — guided, with live progress.",
+  "enabled": true,
+  "auto_launch": false,
+  "gate": {
+    "requires_capabilities": ["source_control.github", "source_control.github.gh"]
+  },
+  "config": {
+    "deadline_s": 2592000,
+    "retention_runs": 3
+  },
+  "nodes": [
+    {
+      "id": "s1-connect",
+      "node_type": "guided_step",
+      "name": "Connect your GitHub account",
+      "node_data": {
+        "group": "GitHub account",
+        "status_line": "Click Connect and approve FlowPad in the browser window that opens.",
+        "present": {},
+        "act": {
+          "kind": "oauth_connect",
+          "target": "GitHubConnect",
+          "provider": "github"
+        },
+        "await": {
+          "topic": "app.entity.updated",
+          "target": "capability:*",
+          "confirm": {
+            "type": "capability",
+            "match": {
+              "kind": "source_control.github",
+              "state": "available"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "s2-install-gh",
+      "node_type": "guided_step",
+      "name": "Install the GitHub CLI",
+      "node_data": {
+        "group": "GitHub CLI",
+        "status_line": "Click Set up — an agent installs gh; watch its progress below.",
+        "present": {},
+        "act": {
+          "kind": "setup_capability",
+          "target": "GhInstall",
+          "capability": "source_control.github.gh"
+        },
+        "await": {
+          "topic": "app.entity.updated",
+          "target": "capability:*",
+          "confirm": {
+            "type": "capability",
+            "match": {
+              "op": "$AND",
+              "operands": [
+                { "op": "$EQ", "operands": ["kind", "source_control.github.gh"] },
+                { "op": "$IS_NOT_NULL", "operands": ["value"] }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "s3-login-gh",
+      "node_type": "guided_step",
+      "name": "Log in with gh",
+      "node_data": {
+        "group": "GitHub CLI",
+        "status_line": "Click Log in, copy the one-time code, and approve it at github.com/login/device.",
+        "present": {},
+        "act": {
+          "kind": "device_login",
+          "target": "GhLogin",
+          "capability": "source_control.github.gh"
+        },
+        "await": {
+          "topic": "app.entity.updated",
+          "target": "capability:*",
+          "confirm": {
+            "type": "capability",
+            "match": {
+              "kind": "source_control.github.gh",
+              "state": "available"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "from": { "node": "s1-connect", "event": "done" },
+      "to": { "node": "s2-install-gh" }
+    },
+    {
+      "id": "e2",
+      "from": { "node": "s2-install-gh", "event": "done" },
+      "to": { "node": "s3-login-gh" }
+    }
+  ],
+  "start": {
+    "kind": "root"
+  }
+}

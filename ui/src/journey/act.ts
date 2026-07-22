@@ -1,4 +1,6 @@
-import { EventBus } from '@sdk';
+import { Capability, capabilityManager, EventBus, oauthService } from '@sdk';
+
+import type { JourneyActSpec } from './use-journey';
 
 /** A step's act landed / could not land. The step's `await` listens for these
  *  like any other bus event — gating stays ONE mechanism (see docs/topics.md). */
@@ -68,9 +70,7 @@ export function performFill(target: string, text: string): boolean {
   return document.execCommand('insertText', false, text);
 }
 
-/** Run a step's act and announce the outcome on the bus. */
-export function runAct(act: { kind: string; target: string; text?: string }): boolean {
-  const ok = act.kind === 'fill' ? performFill(act.target, act.text ?? '') : false;
+function announce(act: { kind: string; target: string }, ok: boolean): boolean {
   EventBus.emit(
     ok ? ACT_DONE_TOPIC : ACT_FAILED_TOPIC,
     actTarget(act.kind, act.target),
@@ -78,4 +78,50 @@ export function runAct(act: { kind: string; target: string; text?: string }): bo
     { origin: 'app' },
   );
   return ok;
+}
+
+/** The capability row an act aims at (exact kind), or null. */
+async function capabilityRow(kind: string | undefined): Promise<Capability | null> {
+  if (!kind) return null;
+  await capabilityManager.load();
+  return capabilityManager.getAll().find((c) => c.kind === kind) ?? null;
+}
+
+/**
+ * The async act kinds drive the capability system through its existing verbs.
+ * "Done" here means the flow STARTED (install process spawned, OAuth window
+ * opened, login session live) — the step's `await` gates on the capability
+ * row actually reaching the wanted state.
+ */
+async function runSetupAct(act: JourneyActSpec): Promise<boolean> {
+  try {
+    if (act.kind === 'setup_capability') {
+      if (!act.capability) return announce(act, false);
+      await capabilityManager.install(act.capability);
+      return announce(act, true);
+    }
+    if (act.kind === 'oauth_connect') {
+      await oauthService.connect(act.provider ?? 'github');
+      return announce(act, true);
+    }
+    if (act.kind === 'device_login') {
+      const row = await capabilityRow(act.capability);
+      if (!row) return announce(act, false);
+      // Progress (URL + one-time code) arrives on the row's login_* fields
+      // over WS — the tray renders them for device_login steps.
+      await row.deviceLogin();
+      return announce(act, true);
+    }
+    return announce(act, false);
+  } catch {
+    return announce(act, false);
+  }
+}
+
+/** Run a step's act and announce the outcome on the bus. */
+export function runAct(act: JourneyActSpec): boolean | Promise<boolean> {
+  if (act.kind === 'fill') {
+    return announce(act, performFill(act.target, act.text ?? ''));
+  }
+  return runSetupAct(act);
 }

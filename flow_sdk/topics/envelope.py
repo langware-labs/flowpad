@@ -14,7 +14,14 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
-from flow_sdk.core.capabilities.models import now_iso
+def now_iso() -> str:
+    """ISO-8601 UTC timestamp. Deliberately local (not imported from
+    capabilities.models, its historical home): capabilities.models now imports
+    the topics grammar, so importing back from here is a circular import that
+    breaks server boot."""
+    from datetime import datetime, timezone
+
+    return datetime.now(timezone.utc).isoformat()
 from flow_sdk.fs_store.identifier import mint_uuid
 
 TopicOrigin = Literal["app", "local_server", "hub", "sandbox"]

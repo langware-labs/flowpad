@@ -1,4 +1,4 @@
-import { dataContext, dataManager, Journey, Project, QueryFilter, QueryRequest, targetOf, TypeId } from '@sdk';
+import { capabilityManager, dataContext, dataManager, Journey, Project, QueryFilter, QueryRequest, targetOf, TypeId } from '@sdk';
 import { useOnTopic, useProject } from '@sdk/react/hooks';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AssetEditor } from '@src/navigation/asset-doc-types';
@@ -186,7 +186,8 @@ export function useJourneyManager(state: UseJourneyResult): JourneyManagerView {
   const doAct = useCallback(() => {
     if (!act) return;
     setActRan(true);
-    runAct(act);
+    // Async acts announce their own outcome on the bus; nothing to await here.
+    void runAct(act);
   }, [act]);
 
   // ── await: confirm predicate (the proof) ──
@@ -204,18 +205,28 @@ export function useJourneyManager(state: UseJourneyResult): JourneyManagerView {
     try {
       const confirm = currentStep.await?.confirm;
       if (confirm) {
-        const scope = projectId && confirm.scope !== 'all' ? [new TypeId(Project.type, projectId)] : [];
         const filter = confirm.match ? new QueryFilter({ match: confirm.match }) : null;
-        const request = new QueryRequest({
-          type: confirm.type ?? '',
-          scope,
-          name: `journeyConfirm:${journeyId}:${currentStep.node_id}`,
-          // `local` confirms match client-side (QueryFilter.validate) — for
-          // serialization-derived fields the server query can't see.
-          query: confirm.local ? null : filter,
-        });
-        let rows = await dataManager.query(request, true);
-        if (confirm.local && filter) rows = rows.filter((r) => filter.validate(r));
+        let rows: unknown[];
+        if (confirm.type === 'capability') {
+          // Capability rows are SYSTEM entities — the generic /graph query
+          // excludes them, so confirm resolves through the capability
+          // manager's own loader (include_system) and matches client-side.
+          await capabilityManager.load(true);
+          rows = capabilityManager.getAll();
+          if (filter) rows = rows.filter((r) => filter.validate(r));
+        } else {
+          const scope = projectId && confirm.scope !== 'all' ? [new TypeId(Project.type, projectId)] : [];
+          const request = new QueryRequest({
+            type: confirm.type ?? '',
+            scope,
+            name: `journeyConfirm:${journeyId}:${currentStep.node_id}`,
+            // `local` confirms match client-side (QueryFilter.validate) — for
+            // serialization-derived fields the server query can't see.
+            query: confirm.local ? null : filter,
+          });
+          rows = await dataManager.query(request, true);
+          if (confirm.local && filter) rows = rows.filter((r) => filter.validate(r));
+        }
         if (rows.length < (confirm.min ?? 1)) return;
       }
       // `manual`: the signal ARMS the step — the user clicks Next to move on,

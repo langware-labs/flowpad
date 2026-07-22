@@ -33,6 +33,10 @@ WORKDIR /app
 COPY pyproject.toml README.md ./
 COPY flow_sdk ./flow_sdk
 RUN uv pip install --system .
+# The unconstrained resolve above can land fastmcp 4.x pre-releases whose mcp
+# 2.0 beta drops ``mcp.types`` (server crashes on import). Pin the stable
+# series the host runs (fastmcp 3.x / mcp 1.x).
+RUN uv pip install --system 'fastmcp<4' 'mcp<2'
 
 # Use the file-based keyring backend. Inside a slim container there is no
 # macOS Keychain / SecretService / kwallet, so the default backend would

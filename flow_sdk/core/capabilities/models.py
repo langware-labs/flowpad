@@ -6,6 +6,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from flow_sdk._compat import StrEnum
+from flow_sdk.topics.grammar import topic_is_within
 
 
 def now_iso() -> str:
@@ -38,12 +39,35 @@ class CapabilityKind(StrEnum):
     CODEX_CLI = "harness.codex.cli"
     COPILOT_CLI = "harness.copilot.cli"
     CHROME_AUTHENTICATED = "browsing.chrome.authenticated"
+    # Source control: parent = "a GitHub connection FlowPad can use" (OAuth
+    # token OR gh); child = the gh CLI specifically (installed + authenticated).
+    GITHUB = "source_control.github"
+    GITHUB_GH = "source_control.github.gh"
+
+
+class CapabilityState(StrEnum):
+    """Four-state capability readiness, persisted on the Capability row.
+
+    AVAILABLE     — ready to use.
+    NOT_AVAILABLE — probed/attempted and definitively not ready (and the user
+                    has engaged with it: an explicit check/install/login, or a
+                    prior non-NONE state). Background discovery alone never
+                    produces this — see ``Capability.derive_state``.
+    NONE          — the user never tried; nothing is known or intended.
+    ERROR         — the probe itself failed (retryable; distinct from a clean
+                    "not available" verdict).
+    """
+
+    AVAILABLE = "available"
+    NOT_AVAILABLE = "not_available"
+    NONE = "none"
+    ERROR = "error"
 
 
 def capability_kind_matches(query_kind: str, capability_kind: str) -> bool:
-    query = query_kind.strip().lower()
-    candidate = capability_kind.strip().lower()
-    return candidate == query or candidate.startswith(f"{query}.")
+    # Delegates to the shared dot-taxonomy grammar (lenient prefix semantics —
+    # never raises, matching this function's historical contract).
+    return topic_is_within(capability_kind, query_kind)
 
 
 # Infix segment for MCP-server capabilities: ``<service>.mcp.<worker_type>``
@@ -94,6 +118,11 @@ class CapabilityResult(BaseModel):
     details: dict[str, Any] = Field(default_factory=dict)
     process_id: str | None = None
     checked_at: str = Field(default_factory=now_iso)
+    # Four-state verdict this result implies (see CapabilityState). Kept
+    # alongside ok/available (which stay authoritative for existing callers);
+    # the persisted row state is derived via ``Capability.derive_state`` so
+    # NONE ("never tried") survives passive discovery.
+    state: str = CapabilityState.NONE.value
 
 
 class CapabilityCheck(BaseModel):

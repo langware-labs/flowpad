@@ -28,6 +28,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/c
 import { cn } from '@src/lib/utils';
 import { useFlowDataTrace } from '@src/hooks/use-flow-data-trace';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { SETUP_GITHUB_JOURNEY_ID, SetupJourneyButton } from '@src/journey/SetupJourneyButton';
 import type { TraceEvent } from '@src/types/trace-event';
 import {
   BadgeCheck,
@@ -216,7 +217,7 @@ function CapabilityProcessRun({
 }
 
 /** Lazily tail a capability's last/active install process by id. */
-function RowProcess({ processId }: { processId: string }) {
+export function RowProcess({ processId }: { processId: string }) {
   const { navigation } = useDockNavigation();
   const typeId = useMemo(() => {
     try {
@@ -403,6 +404,16 @@ function IntentSection({
       </button>
       {open && (
         <div>
+          {intent.intent === 'source_control' && !intent.available && (
+            <div className="flex items-center justify-between gap-2 border-b bg-muted/20 px-3 py-2">
+              <span className="text-xs text-muted-foreground">
+                <Trans>Connect GitHub and the gh CLI with a guided setup.</Trans>
+              </span>
+              <SetupJourneyButton journeyId={SETUP_GITHUB_JOURNEY_ID}>
+                <Trans>Set up GitHub</Trans>
+              </SetupJourneyButton>
+            </div>
+          )}
           {intent.capabilities.map((access) => (
             <CapabilityAccessRow
               key={access.kind}
