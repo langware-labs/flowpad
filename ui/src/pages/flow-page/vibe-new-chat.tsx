@@ -1,4 +1,5 @@
 import { SessionInput } from '@src/components/session-input/session-input';
+import { HomeCustomBackground, HomeGreeting, useHomeCustomization } from '@src/components/home-customization';
 import { OpenProjectComponent } from '@src/components/open-project-component/open-project-component';
 import { normalizePath, useProjectOpener } from '@src/components/open-project-component/use-open-project';
 import { NewProjectDialog } from '@src/components/project-selector';
@@ -9,8 +10,7 @@ import { FolderOpen, FolderPlus, FolderSearch, Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useStartVibeSession } from './use-start-vibe-session';
-import { VIBE_MODEL_DEFAULT, VibeModelSelect, type VibeModelTier } from './vibe-model-select';
-import { VibeWorkerSelect } from './vibe-worker-select';
+import { VIBE_MODEL_DEFAULT, type VibeModelTier } from './vibe-model-select';
 import { VibeRecentSessions } from './vibe-recent-sessions';
 import { DEFAULT_WORKER_TYPE, type WorkerType } from '@src/components/workers/worker-types';
 
@@ -31,12 +31,13 @@ export function VibeNewChat() {
   const { currentUser } = useAuth();
   const startVibe = useStartVibeSession();
   const [draft, setDraft] = useState('');
-  const [model, setModel] = useState<VibeModelTier>(VIBE_MODEL_DEFAULT);
-  const [workerType, setWorkerType] = useState<WorkerType>(DEFAULT_WORKER_TYPE);
+  const model: VibeModelTier = VIBE_MODEL_DEFAULT;
+  const workerType: WorkerType = DEFAULT_WORKER_TYPE;
   const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
   const [isNewProjectOpen, setIsNewProjectOpen] = useState(false);
   const [isOpeningFolder, setIsOpeningFolder] = useState(false);
   const firstName = currentUser?.name?.split(' ')[0] || 'there';
+  const { homeTitle, homeBackgroundUrl } = useHomeCustomization();
   const defaultWorkspacePath = useMemo(
     () => dataContext.bootstrapInfo?.desktop_info?.paths?.workspace || '',
     [],
@@ -61,6 +62,7 @@ export function VibeNewChat() {
 
   return (
     <div className="relative flex h-full flex-col items-center justify-center overflow-hidden px-4">
+      <HomeCustomBackground url={homeBackgroundUrl} />
       <div
         aria-hidden
         className="vibe-hero-gradient pointer-events-none absolute inset-x-0 bottom-0 h-2/3"
@@ -70,9 +72,15 @@ export function VibeNewChat() {
         data-testid="vibe-new-chat"
       >
         <h1 className="text-3xl font-bold tracking-tight">
-          <Trans>
-            Hey <span className="bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">{firstName}</span>
-          </Trans>
+          <HomeGreeting
+            override={homeTitle}
+            className="bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent"
+            fallback={
+              <Trans>
+                Hey <span className="bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">{firstName}</span>
+              </Trans>
+            }
+          />
         </h1>
         <div className="w-full">
           <SessionInput
@@ -80,12 +88,6 @@ export function VibeNewChat() {
             value={draft}
             onChange={setDraft}
             allowAttachments
-            footerSlot={(
-              <div className="flex flex-wrap items-center gap-1.5">
-                <VibeModelSelect value={model} onChange={setModel} />
-                <VibeWorkerSelect value={workerType} onChange={setWorkerType} />
-              </div>
-            )}
             onSubmit={(msg, files) => startVibe(msg, files, model, workerType)}
           />
         </div>

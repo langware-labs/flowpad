@@ -24,6 +24,7 @@ import { useInboxStore } from '@src/store/use-inbox-store';
 import { useProjectTasks } from '@src/hooks/use-project-tasks';
 import { isTaskActive } from '@src/components/task-bar/constants';
 import { useSpotlightStore } from '@src/store/use-spotlight-store';
+import { JourneyBadge } from '@src/journey/JourneyBadge';
 import { BookmarksSlider } from '@src/components/bookmarks-slider/BookmarksSlider';
 import { useUnopenedFavoritesCount } from '@src/hooks/use-unopened-favorites-count';
 import { useHoverIntent } from '@src/hooks/use-hover-intent';
@@ -458,6 +459,7 @@ export function CollapsedSidebar() {
               <Bug className="h-4 w-4" />
             </Button>
           )}
+          <JourneyBadge />
           <Button
             variant="ghost"
             size="icon"

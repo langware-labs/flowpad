@@ -17,7 +17,7 @@ import { gfm, insertTableCommand } from '@milkdown/preset-gfm';
 import { tableBlock } from '@milkdown/components/table-block';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { listener, listenerCtx } from '@milkdown/plugin-listener';
-import { prism } from '@milkdown/plugin-prism';
+import { prism, prismConfig } from '@milkdown/plugin-prism';
 import { emoji } from '@milkdown/plugin-emoji';
 import { history } from '@milkdown/plugin-history';
 import { trailing } from '@milkdown/plugin-trailing';
@@ -37,21 +37,16 @@ import {
   Table as TableIcon,
 } from 'lucide-react';
 
-// Prism core must be imported before language components
-import 'prismjs';
-// Prism languages
-import 'prismjs/components/prism-typescript';
-import 'prismjs/components/prism-javascript';
-import 'prismjs/components/prism-python';
-import 'prismjs/components/prism-bash';
-import 'prismjs/components/prism-json';
-import 'prismjs/components/prism-yaml';
-import 'prismjs/components/prism-markdown';
-import 'prismjs/components/prism-css';
-import 'prismjs/components/prism-jsx';
-import 'prismjs/components/prism-tsx';
-
 import './milkdown.css';
+import './plugins/fence-render/fence-render.css';
+import { configureRefractor } from './plugins/prism-languages';
+import { fenceRenderPlugins } from './plugins/fence-render';
+// Concrete fence renderers self-register on import. Listed here, at the
+// composition point, rather than inside the plugin — the same direction
+// `AssetsPage` imports its column modules, and it keeps `fence-render/` free of
+// any dependency on the renderers built on top of it.
+import './plugins/fence-render/renderers/mermaid';
+import './plugins/fence-render/renderers/interface';
 import {
   bidiPlugins,
   setDirCommand, unsetDirCommand,
@@ -813,6 +808,9 @@ function MilkdownEditorInner({ content, onChange, editorMode, plugins, onActiveS
           ctx.set(defaultValueCtx, initialContentRef.current);
           // Read-only modes disable editing but keep the DOM interactive
           // (anchors remain clickable, hover events still fire).
+          // Register the grammars refractor's common bundle lacks. Must be
+          // set before `prism` builds its decoration plugin.
+          ctx.set(prismConfig.key, { configureRefractor });
           ctx.update(editorViewOptionsCtx, (prev) => ({
             ...prev,
             editable: () => !isReadOnlyRef.current,
@@ -868,7 +866,11 @@ function MilkdownEditorInner({ content, onChange, editorMode, plugins, onActiveS
         // attrs, and re-emits the wrappers on serialize when attrs are
         // non-default. Default-attr nodes round-trip byte-identical to the
         // unmodified commonmark output.
-        .use(bidiPlugins);
+        .use(bidiPlugins)
+        // Renderable code fences (```mermaid → diagram) with a Render | Code
+        // tab strip. Render-only: no schema, parser or serializer changes, so
+        // fence markdown round-trips byte-identically.
+        .use(fenceRenderPlugins);
 
       // Register extra plugins (e.g. plan-note mark)
       if (plugins) {
