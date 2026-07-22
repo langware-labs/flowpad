@@ -410,7 +410,14 @@ traceable:
   hold the verbatim envelope id + user:u-42. Live drill on flow-5 confirms
   entry rows carry event_id. 66 tests green across the suites.
 
-## Phase 8 — Strangle the WS dialect  ☐  ⚠ the only wire-changing phase
+## Phase 8 — Strangle the WS dialect  ⏸ PARKED (2026-07-22, user decision)  ⚠ the only wire-changing phase
+
+> Parked indefinitely — phases 0-7 are self-contained without it; dual-publish
+> means the legacy dialect keeps working untouched. **Standing rule while
+> parked: NEW push-style events go on the bus (a topic + allowlist entry),
+> never as a new WSMessageType** — the legacy dialect is frozen, not growing.
+> Tier D (per-connection subscriptions) still rides with phase 9 whenever
+> that lands.
 
 Migrate the legacy WS dialect one class at a time: dual-publish the topic
 twin → move that class's frontend consumers from `cm.on('on_<type>_msg')` to
