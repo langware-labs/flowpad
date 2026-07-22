@@ -1,12 +1,7 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { HighlightBeacon } from '@src/components/wiki-tip/HighlightBeacon';
-import {
-  HIGHLIGHT_ENTER_MS,
-  HIGHLIGHT_LINGER_MS,
-  useHighlight,
-  type HighlightPhase,
-} from '@src/components/wiki-tip/highlight';
+import { HIGHLIGHT_ENTER_MS, useHighlight, type HighlightPhase } from '@src/components/wiki-tip/highlight';
 
 /** The standard highlight treatment, applied generically (same classes the
  *  wiki-tip components use — see docs/wikitip.md). */
@@ -38,7 +33,11 @@ export function TopicHighlightObserver() {
   const [el, setEl] = useState<HTMLElement | null>(null);
   const [phase, setPhase] = useState<HighlightPhase>('idle');
 
-  // Locate the tagged element — immediately, or when it mounts.
+  // Track the LIVE tagged element for the whole highlight window. The observer
+  // never stops while the word is set: on a cold load the target is often found
+  // early and then REPLACED when its surface re-renders (the footer once
+  // project context loads) — holding the first node would orphan the highlight,
+  // so re-resolve whenever the held node leaves the DOM.
   useEffect(() => {
     if (!word) {
       setEl(null);
@@ -50,24 +49,27 @@ export function TopicHighlightObserver() {
         ? CSS.escape(word)
         : word.replace(/["\\]/g, '\\$&');
     const find = () => document.querySelector<HTMLElement>(`[data-topic="${esc}"]`);
-    const found = find();
-    if (found) {
-      setEl(found);
-      return;
-    }
-    setEl(null);
-    const observer = new MutationObserver(() => {
-      const late = find();
-      if (late) {
-        setEl(late);
-        observer.disconnect();
-      }
-    });
+    const sync = () => setEl((prev) => (prev && prev.isConnected ? prev : find()));
+    sync();
+    // Two wake-ups, belt and braces: MutationObserver for the common case, and
+    // a slow interval that catches anything it misses during cold-boot render
+    // churn (the interval only exists while a highlight is requested — one
+    // querySelector per tick, nothing on the steady state).
+    const observer = new MutationObserver(sync);
     observer.observe(document.body, { childList: true, subtree: true });
-    return () => observer.disconnect();
+    const interval = window.setInterval(sync, 500);
+    return () => {
+      observer.disconnect();
+      window.clearInterval(interval);
+    };
   }, [word]);
 
-  // The standard lifecycle: enter (attention) → linger (calm) → idle (fade).
+  // Lifecycle: enter (brief attention pulse) → linger — and STAY there. The
+  // URL is the state: while `?highlight=` names this topic the ring persists
+  // (for a journey step the param stands until the step advances). A timed
+  // fade here raced cold boots — the whole 5.6s window burned during app
+  // loading, so the user never saw it. The wiki feed's component-local
+  // useLingeringHighlight keeps its own fade; this generic observer does not.
   useEffect(() => {
     if (!word || !el) {
       setPhase('idle');
@@ -75,11 +77,7 @@ export function TopicHighlightObserver() {
     }
     setPhase('enter');
     const toLinger = window.setTimeout(() => setPhase('linger'), HIGHLIGHT_ENTER_MS);
-    const toIdle = window.setTimeout(() => setPhase('idle'), HIGHLIGHT_ENTER_MS + HIGHLIGHT_LINGER_MS);
-    return () => {
-      window.clearTimeout(toLinger);
-      window.clearTimeout(toIdle);
-    };
+    return () => window.clearTimeout(toLinger);
   }, [word, el]);
 
   // Decorate the live element; cleanup restores it exactly.
