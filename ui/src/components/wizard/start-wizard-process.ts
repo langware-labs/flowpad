@@ -55,7 +55,10 @@ export async function startWizardProcess<T = unknown>(
   const computeNode = await ComputeNode.getById('@local');
   if (!computeNode) throw new Error('No local compute node');
 
-  const target = `wizard:${request.wizardName}:${Date.now()}`;
+  // Prefer a STABLE target (the subject entity's TypeId) so the run is
+  // reconnectable via useProcessesForTarget regardless of whether the agent got
+  // around to stamping process_id. Fall back to a unique key when no subject.
+  const target = request.wizardData?.targetTypeId?.trim() || `wizard:${request.wizardName}:${Date.now()}`;
   const process = await computeNode.createProcess(
     {
       targetVfsPath: target,
