@@ -249,6 +249,39 @@ async def git_clone(
         return False, f"Git clone error: {e}"
 
 
+async def git_remote_access(clone_url: str, token: Optional[str] = None) -> Tuple[bool, Optional[str]]:
+    """Can we read ``clone_url``, and what is its default branch?
+
+    ``git ls-remote --symref <url> HEAD`` is the cheap, provider-agnostic
+    reachability probe: it answers for public repos anonymously and for private
+    ones with ``token``, without fetching a single object. Same credential path
+    as ``git_clone``, so "the check passed" and "the clone will work" cannot
+    disagree.
+
+    Returns (accessible, default_branch or None).
+    """
+    try:
+        auth_args, env = _git_token_auth(token)
+        env = {**(env or os.environ), "GIT_TERMINAL_PROMPT": "0"}
+        cmd = ["git", *auth_args, "ls-remote", "--symref", clone_url, "HEAD"]
+
+        def _run():
+            return subprocess.run(cmd, capture_output=True, text=True, timeout=20, env=env)
+
+        result = await asyncio.to_thread(_run)
+        if result.returncode != 0:
+            logger.info("[git] ls-remote %s denied: %s", clone_url, (result.stderr or "").strip()[:200])
+            return False, None
+        # "ref: refs/heads/main\tHEAD" — the symref line names the default branch.
+        for line in (result.stdout or "").splitlines():
+            if line.startswith("ref:") and "refs/heads/" in line:
+                return True, line.split("refs/heads/", 1)[1].split()[0].strip()
+        return True, None
+    except Exception as e:
+        logger.warning("[git] ls-remote error for %s: %s", clone_url, e)
+        return False, None
+
+
 async def git_add_commit_push(repo_path: str, paths: list[str], commit_message: str) -> GitPushResult:
     """Stage the given paths, commit if anything is staged, and push to origin."""
     try:

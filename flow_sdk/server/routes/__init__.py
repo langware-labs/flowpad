@@ -36,6 +36,7 @@ from .capabilities import router as capabilities_router
 from .toplog import router as toplog_router
 from .agentic_flows import router as agentic_flows_router
 from .journeys import router as journeys_router
+from .git import router as git_router
 from .worldview import router as worldview_router
 
 __all__ = [
@@ -75,5 +76,6 @@ __all__ = [
     "toplog_router",
     "agentic_flows_router",
     "journeys_router",
+    "git_router",
     "worldview_router",
 ]
