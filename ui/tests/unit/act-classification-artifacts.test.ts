@@ -54,9 +54,11 @@ describe('getArtifactPaths for skill_creation tasks', () => {
     } as any;
 
     const artifacts = getArtifactPaths(task);
-    const analysisMd = artifacts.find((a) => a.label === 'analysis.md');
+    // The analysis report artifact is an .html report (see task-utils
+    // getArtifactPaths / openAnalysisReport — "reports are .html").
+    const analysisHtml = artifacts.find((a) => a.label === 'analysis.html');
     const analysisJson = artifacts.find((a) => a.label === 'analysis.json');
-    expect(analysisMd).toBeDefined();
+    expect(analysisHtml).toBeDefined();
     expect(analysisJson).toBeDefined();
   });
 

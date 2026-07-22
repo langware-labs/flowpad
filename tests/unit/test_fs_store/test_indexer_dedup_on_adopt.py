@@ -1,7 +1,8 @@
-"""Duplicate capsule IDs are observable and non-mutating.
+"""Duplicate capsule IDs are ranked deterministically and remain non-mutating.
 
-The live DB incumbent wins; without one, canonical path order chooses a stable
-winner. Every duplicate is warned and skipped without changing either asset.
+Git introduction, filesystem birth time, persisted first-seen time, then
+canonical path select the primary. Every duplicate is warned and skipped
+without changing either asset.
 """
 
 from __future__ import annotations
@@ -12,8 +13,8 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.db import get_db_driver
 from flow_sdk.capsules import AssetCapsule
+from flow_sdk.db import get_db_driver
 from flow_sdk.fs_store.indexer import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
 from tests.unit.test_fs_store._md_harness import (
@@ -22,17 +23,17 @@ from tests.unit.test_fs_store._md_harness import (
 from tests.unit.test_fs_store._md_harness import (
     md_indexer as _md_indexer,
 )
-
-
-def _capsule_id(path: Path) -> str | None:
-    data = AssetCapsule.from_path(path).read("identity")
-    return str(data.data["id"]) if data is not None else None
 from tests.unit.test_fs_store._md_harness import (
     md_sources as _sources,
 )
 from tests.unit.test_fs_store._md_harness import (
     seed_one_md as _seed_one,
 )
+
+
+def _capsule_id(path: Path) -> str | None:
+    data = AssetCapsule.from_path(path).read("identity")
+    return str(data.data["id"]) if data is not None else None
 
 
 @pytest.mark.asyncio
@@ -59,9 +60,15 @@ async def test_copy_is_warned_and_skipped_without_rekey(
         result = await idx.index(IndexerOptions(**_OPTS))
     src = await _sources()
     assert list(src) == [aid]
-    assert (src[aid][0] or "").endswith("a.md"), "the live DB incumbent wins"
+    assert (src[aid][0] or "").endswith("a.md"), "the ranked primary stays stable"
     assert _capsule_id(b) == aid and b.read_bytes() == before
     assert result.per_type[RecordType.MARKDOWN].skipped == 2  # incumbent fresh + duplicate
+    assert result.per_type[RecordType.MARKDOWN].duplicate_groups == 1
+    assert result.per_type[RecordType.MARKDOWN].duplicate_occurrences == 1
+    assert result.total_duplicate_groups == 1
+    assert result.total_duplicate_occurrences == 1
+    occurrence_paths = [item["path"] for item in src[aid][3]]
+    assert occurrence_paths == [str(a.resolve()), str(b.resolve())]
     assert "duplicate asset id" in caplog.text
     assert f"id={aid}" in caplog.text
 
@@ -80,6 +87,43 @@ async def test_copy_skip_is_idempotent(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_missing_primary_promotes_remaining_occurrence(tmp_path: Path) -> None:
+    idx, a, aid = await _seed_one(tmp_path)
+    b = a.with_name("b.md")
+    shutil.copyfile(a, b)
+    await idx.index(IndexerOptions(**_OPTS))
+
+    a.unlink()
+    result = await idx.index(IndexerOptions(**_OPTS))
+
+    src = await _sources()
+    assert (src[aid][0] or "").endswith("b.md")
+    assert [item["path"] for item in src[aid][3]] == [str(b.resolve())]
+    assert result.per_type[RecordType.MARKDOWN].indexed == 1
+
+
+@pytest.mark.asyncio
+async def test_legacy_singleton_row_persists_initial_occurrence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    idx, a, aid = await _seed_one(tmp_path)
+    driver = get_db_driver()
+    entity = await driver.get_by_id(aid, "markdown")
+    await entity.reflect_asset_occurrences(())
+    original_sources = driver.list_entity_sources_by_type
+
+    async def legacy_sources(type_name: str):
+        rows = await original_sources(type_name)
+        return {entity_id: source[:3] for entity_id, source in rows.items()}
+
+    monkeypatch.setattr(driver, "list_entity_sources_by_type", legacy_sources)
+    await idx.index(IndexerOptions(**_OPTS))
+
+    rows = await original_sources("markdown")
+    assert [item["path"] for item in rows[aid][3]] == [str(a.resolve())]
+
+
+@pytest.mark.asyncio
 async def test_legacy_dedup_flag_does_not_change_skip_policy(tmp_path: Path) -> None:
     idx, a, aid = await _seed_one(tmp_path)
     b = a.with_name("b.md")
@@ -91,8 +135,14 @@ async def test_legacy_dedup_flag_does_not_change_skip_policy(tmp_path: Path) -> 
 
 @pytest.mark.asyncio
 async def test_no_incumbent_uses_canonical_path_winner(
-    tmp_path: Path, caplog: pytest.LogCaptureFixture,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr(
+        "flow_sdk.fs_store.asset_occurrences._trusted_birth_time",
+        lambda _path: None,
+    )
     await get_db_driver().delete_entities_by_type("markdown")
     docs = tmp_path / "proj" / ".claude" / "docs"
     docs.mkdir(parents=True)
@@ -115,7 +165,13 @@ async def test_no_incumbent_uses_canonical_path_winner(
 
 
 @pytest.mark.asyncio
-async def test_live_incumbent_beats_canonical_path_order(tmp_path: Path) -> None:
+async def test_persisted_primary_beats_canonical_path_order(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "flow_sdk.fs_store.asset_occurrences._trusted_birth_time",
+        lambda _path: None,
+    )
     idx, a, aid = await _seed_one(tmp_path)
     b = a.with_name("b.md")
     a.rename(b)

@@ -7,6 +7,8 @@ import { DiagnosisReportModal } from '@src/components/version-popover/diagnosis-
 import { sdkConfig } from '@sdk/config/index';
 import { connectionManager } from '@sdk/websocket';
 import { useIsDev } from '@src/components/view-mode';
+import { usePreference } from '@src/hooks/use-preference';
+import { instancePreferences, PrefKey } from '@sdk';
 import { useContext } from '@sdk/react/hooks';
 import { useMinimizeOnClose } from '@src/hooks/use-minimize-on-close';
 import { Trans, useLingui } from '@lingui/react/macro';
@@ -291,6 +293,22 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
   const electronApi = getElectronApi();
   const mode: 'Desktop' | 'Browser' = electronApi ? 'Desktop' : 'Browser';
 
+  // Dev-only: which SPA page the local server renders. The backend reads this
+  // preference at bootstrap to set supported_pages, so changing it needs a full
+  // reload to re-bootstrap. Flush the debounced save first so the reload sees it.
+  const [appPage] = usePreference<string>(PrefKey.APP_PAGE);
+  const [switchingPage, setSwitchingPage] = useState(false);
+  const selectAppPage = useCallback(
+    async (page: 'desk' | 'hub') => {
+      if (page === (appPage ?? 'desk') || switchingPage) return;
+      setSwitchingPage(true);
+      instancePreferences.set(PrefKey.APP_PAGE, page);
+      await instancePreferences.saveJson();
+      window.location.reload();
+    },
+    [appPage, switchingPage],
+  );
+
   const fetchData = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -459,6 +477,35 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
               {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
             </button>
           </div>
+
+          {/* Dev-only: render the local desktop server's hub page for testing/debugging. */}
+          {isDev && (
+            <div className="flex items-center justify-between rounded-md border bg-muted/30 px-2 py-1.5">
+              <span className="text-[11px] font-medium text-muted-foreground"><Trans>Page</Trans></span>
+              <div className="flex items-center gap-0.5 rounded-md bg-muted p-0.5" role="group" aria-label={t`App page`}>
+                {(['desk', 'hub'] as const).map((page) => {
+                  const active = (appPage ?? 'desk') === page;
+                  return (
+                    <button
+                      key={page}
+                      type="button"
+                      data-testid={`app-page-${page}`}
+                      aria-pressed={active}
+                      disabled={switchingPage}
+                      onClick={() => void selectAppPage(page)}
+                      className={`rounded-sm px-2 py-0.5 text-[11px] font-medium transition-colors disabled:opacity-50 ${
+                        active
+                          ? 'bg-background text-foreground shadow-sm'
+                          : 'text-muted-foreground hover:text-foreground'
+                      }`}
+                    >
+                      {page === 'desk' ? <Trans>Desktop</Trans> : <Trans>Hub</Trans>}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {error && (
             <div className="rounded-md border border-destructive/30 bg-destructive/10 px-2 py-1.5 text-[11px] text-destructive">

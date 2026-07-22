@@ -5,6 +5,7 @@ import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { AssetEditor } from '@src/navigation/asset-doc-types';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { entityReloadKey } from '@src/utils/entity-reload-key';
+import { AssetCollisionBadge } from '../AssetCollisionUI';
 
 /**
  * DeckViewer — the presenter surface for a generated `deck` entity.
@@ -120,6 +121,7 @@ export function DeckViewer({ fsRef, deck }: DeckViewerProps) {
     <div className="flex h-full w-full flex-col bg-neutral-950">
       <div className="flex items-center gap-3 border-b border-border px-4 py-2">
         <span className="truncate text-sm font-medium text-neutral-100">{title}</span>
+        <AssetCollisionBadge />
         {numSlides && numSlides > 0 ? (
           <span className="shrink-0 text-xs text-neutral-500">{numSlides} slides</span>
         ) : null}

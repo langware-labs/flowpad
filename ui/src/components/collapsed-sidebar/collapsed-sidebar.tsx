@@ -17,7 +17,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from '@src/components/ui/sidebar';
-import { PageId, Project } from '@sdk';
+import { PageId, Project, WorldViewProjection } from '@sdk';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { WikiTip } from '@src/components/wiki-tip';
 import { useContext } from '@src/hooks/useContext';
@@ -80,7 +80,7 @@ type NavItem = {
   icon: React.ComponentType<{ className?: string }>;
   viewType: ViewType | null;
   /** Hub-rail items only: dock pointer distinguishing same-viewType targets
-   *  (Atlas world vs organization). Ignored on the desk rail. */
+   *  (WorldView world vs organization). Ignored on the desk rail. */
   pointer?: string;
 };
 
@@ -140,7 +140,7 @@ export function CollapsedSidebar() {
   // outside the spec — they render unconditionally below. Bookmarks and
   // Discover take their visibility from the same spec but keep their bespoke
   // renderers (flyout toggle / route navigation) in the JSX.
-  // Hub page has its own minimal rail — Home + the two Atlas roots. It bypasses
+  // Hub page has its own minimal rail — Home + the two WorldView projections. It bypasses
   // the desk RAIL_DELTAS/mode matrix entirely (those views don't exist on hub).
   const hubMode = currentDock?.page === PageId.HUB;
   // Built only in hub mode (desk is the common case — don't allocate/translate 7
@@ -148,12 +148,30 @@ export function CollapsedSidebar() {
   const hubItems: readonly NavItem[] = hubMode
     ? [
         { id: 'home', title: t`Home`, icon: Home, viewType: ViewType.HOME },
-        { id: 'conversations', title: t`Conversations`, icon: MessageCircle, viewType: ViewType.HUB_RECORDS, pointer: 'conversation' },
+        {
+          id: 'conversations',
+          title: t`Conversations`,
+          icon: MessageCircle,
+          viewType: ViewType.HUB_RECORDS,
+          pointer: 'conversation',
+        },
         { id: 'tasks', title: t`Tasks`, icon: CheckSquare, viewType: ViewType.HUB_RECORDS, pointer: 'task' },
         { id: 'docs', title: t`Docs`, icon: FileText, viewType: ViewType.HUB_RECORDS, pointer: 'markdown' },
         { id: 'flows', title: t`Flows`, icon: Workflow, viewType: ViewType.HUB_RECORDS, pointer: 'agentic_flow' },
-        { id: 'world', title: t`Your world`, icon: Globe, viewType: ViewType.ATLAS, pointer: 'world' },
-        { id: 'organization', title: t`Organization`, icon: Building2, viewType: ViewType.ATLAS, pointer: 'organization' },
+        {
+          id: 'world',
+          title: t`Your world`,
+          icon: Globe,
+          viewType: ViewType.WORLDVIEW,
+          pointer: WorldViewProjection.WORLD,
+        },
+        {
+          id: 'organization',
+          title: t`Organization`,
+          icon: Building2,
+          viewType: ViewType.WORLDVIEW,
+          pointer: WorldViewProjection.ORGANIZATION,
+        },
       ]
     : [];
 
@@ -175,7 +193,7 @@ export function CollapsedSidebar() {
   const onAssets = currentView === ViewType.ASSETS && !onTasks;
   // const { cloudLoginAvailable, cloudApiUrl, isDesktop } = context;
 
-  // Hub-rail active state: pointer-carrying items (Atlas world/organization,
+  // Hub-rail active state: pointer-carrying items (WorldView world/organization,
   // records/<type>) match on viewType + pointer; the rest on viewType alone.
   const hubActive = (item: NavItem): boolean =>
     currentView === item.viewType && (!item.pointer || currentPointer === item.pointer);
@@ -183,7 +201,7 @@ export function CollapsedSidebar() {
   const handleClick = useCallback(
     (viewType: ViewType | null, pointer?: string) => {
       // Hub page: keep every rail click under page=hub (desk factories would
-      // revert the page). Home → /dock/hub/home; Atlas → /dock/hub/atlas/<root>.
+      // revert the page). Home → /dock/hub/home; WorldView → /dock/hub/worldview/<projection>.
       if (hubMode) {
         navigation.openPage(PageId.HUB, viewType ?? ViewType.HOME, pointer);
         return;
@@ -280,12 +298,7 @@ export function CollapsedSidebar() {
   const itemBadge = (item: NavItem) => (hubMode ? undefined : navBadge(item.viewType));
   const itemActive = (item: NavItem) => (hubMode ? hubActive(item) : navActive(item.viewType));
 
-  const renderNavItem = (
-    item: NavItem,
-    className?: string,
-    badge?: number,
-    activeOverride?: boolean,
-  ) => {
+  const renderNavItem = (item: NavItem, className?: string, badge?: number, activeOverride?: boolean) => {
     const Icon = item.icon;
     const isActive = activeOverride ?? (item.viewType === null ? !currentView : currentView === item.viewType);
 

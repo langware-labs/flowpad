@@ -3,6 +3,7 @@ import type { IEntity } from '../IEntity';
 import { DockPointerData } from '../models/DockPointer';
 import { normalizeKind } from '../models/Kind';
 import { ViewType } from '../utils/ui/view-types';
+import { WorldViewProjection } from '../worldview/projection';
 
 export type ArtifactLinkSource = 'manual' | 'gcp_label';
 export type DeploymentSyncState = 'current' | 'stale' | 'partial' | 'error';
@@ -112,7 +113,10 @@ export class Deployment extends APIEntity<Deployment> implements IDeployment {
   }
 
   override get dockPointer(): DockPointerData {
-    return new DockPointerData(ViewType.WORLDVIEW, `${Deployment.type}/${this.id}`);
+    return new DockPointerData(ViewType.WORLDVIEW, WorldViewProjection.DEPLOYMENT, {
+      focus: `${Deployment.type}-${this.id}`,
+      selected: `${Deployment.type}-${this.id}`,
+    });
   }
 
   private validateStructure(): void {
@@ -170,10 +174,7 @@ function normalizeObservations(
     const observedAt = normalizeTimestamp(observation.observed_at, `observations.${kind}.observed_at`);
     const source = observation.source.trim();
     const unit = normalizeOptionalText(observation.unit, `observations.${kind}.unit`);
-    const windowStart = normalizeOptionalTimestamp(
-      observation.window_start,
-      `observations.${kind}.window_start`,
-    );
+    const windowStart = normalizeOptionalTimestamp(observation.window_start, `observations.${kind}.window_start`);
     const windowEnd = normalizeOptionalTimestamp(observation.window_end, `observations.${kind}.window_end`);
     if ((windowStart === null) !== (windowEnd === null)) {
       throw new Error(`Invalid Deployment structure: observations.${kind} window requires both endpoints`);

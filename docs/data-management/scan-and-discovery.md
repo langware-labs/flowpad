@@ -153,11 +153,25 @@ SKILL = TypeMetadata(
 For each visited ref of a type that has a `from_disk_fn`:
 
 1. **Resolve id** via `TypeInfo.extract_id(ref) or TypeInfo.mint_id(ref)`. Existing valid carrier ids are never rewritten. A missing portable id is minted as v4 and persisted; deterministic/provider types mint configured v5 identities. Foreign ids are not adoptable and must fall back to a stable v5 under the entity-id policy. Record the resolved id in `seen_ids` *before* any skip/index decision so a fresh-skip is not later misclassified as an orphan.
-2. **Choose duplicate winners** across the complete candidate set before parsing. For the same `type+id` at multiple live paths, a live DB incumbent path is retained; otherwise canonical lexical path order wins. Every losing path is warned and skipped. Neither source is rewritten or re-keyed.
+2. **Resolve live occurrences** across the complete candidate set before parsing. `resolve_asset_collisions()` groups canonical filesystem paths by `type+id` and chooses one primary deterministically: earliest Git introduction commit, then trusted filesystem birth time (`st_birthtime`, never `ctime`), then persisted `first_seen_at`, then canonical path. Git is probed only for groups with multiple live paths and failures fall through to the next rank. Every losing path is warned and skipped; no source bytes, capsules, or ids are rewritten.
 3. **Skip-fresh** (unless `opts.force`): a probe `FSRecord` reads its own on-disk `.hash` sentinel and the preloaded DB id set confirms that the indexed row still exists. If both are fresh, increment `skipped` and continue.
 4. **Parse + persist**: call `from_disk_fn(ref, resolved_id)` (awaited or via `to_thread`); the parser constructs the top-level record with that id. Stamp walk-time `scope`/`project_id`, sync, then write the hash after the DB batch commits.
 
 The whole loop runs inside **one DB session** but commits in **bounded batches** (`_INDEX_COMMIT_BATCH = 50`). The engine issues `BEGIN IMMEDIATE` per transaction; a single session spanning the whole scan would hold the SQLite writer lock for seconds/minutes and starve concurrent requests (`database is locked`). Per-batch commits release the lock between batches. This is a contention fix, not a `busy_timeout`/retry change. (See `project_indexer_db_lock_contention.md`.)
+
+### Filesystem occurrence projection
+
+Collision state describes what is live on the filesystem, not an alternate
+identity store. Each decision records `AssetOccurrence(path, first_seen_at)` in
+primary-first order. A narrowed discovery pass retains a previously observed
+out-of-scope path only when it still exists and a read-only identity check still
+resolves it to the same `type+id`; deleted or re-keyed paths are pruned.
+
+The winning path is the only occurrence parsed and synchronized. Losing paths
+remain byte-identical and keep their existing ids, so indexing never resolves a
+copy conflict by mutating user assets. Per-type and total index results report
+`duplicate_groups` and `duplicate_occurrences`, and each group is warned once
+per run.
 
 ### Orphan handling
 
