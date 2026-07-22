@@ -54,7 +54,7 @@ FunctionRuntime = Literal["inline", "subprocess"]
 # that the frontend orchestrator observes; when satisfied the orchestrator injects
 # this node's `done`, routed onward by the ordinary edge machinery. No new viewer,
 # no DOM interception — pure guidance/orchestration over standard surfaces.
-GUIDED_PRESENT_KINDS = {"asset_editor", "wiki", "home", "asset_list"}
+GUIDED_PRESENT_KINDS = {"asset_editor", "wiki", "home", "asset_list", "root"}
 # The await side is a unified-bus subscription (docs/topics.md): `topic` names
 # the awaited event (`app.page.signal`, `app.route.loaded`, `app.entity.created`,
 # or `manual` for Continue-only), `target`/`vfs`/`home` filter it, and an
@@ -92,6 +92,10 @@ class FlowConfig(BaseModel):
     max_hops: int = 16          # per-run event-hop budget (cycle guard)
     max_processes: int = 10     # per-run spawned-process budget
     deadline_s: int = 600       # per-run wall-clock budget
+    # Subscription-entry storm cap (runs started by the subscriptions: block,
+    # per minute). Bounds cross-flow ping-pong loops the self-brake can't see
+    # (A→B→A chains mint fresh envelopes every hop). One warn per window.
+    max_entries_per_minute: int = 30
 
 
 class FlowNodeDef(BaseModel):
@@ -118,6 +122,22 @@ class FlowNodeDef(BaseModel):
         return "subprocess" if str(self.node_data.get("function") or "").endswith(".py") else "inline"
 
 
+class FlowSubscriptionDef(BaseModel):
+    """A graph-level unified-bus subscription (docs/flow-events.md phase 5):
+    a matching FlowEvent starts a FRESH run — entry event ``event`` (default:
+    the bus topic string), ``data = {topic, target, data}``, delivered to
+    ``node`` directly when set, else edge-routed from ``$external``."""
+
+    id: str = ""
+    pattern: str
+    target: Optional[str] = None
+    scope: list[str] = Field(default_factory=list)
+    # Entry event name inside the flow; defaults to the bus topic.
+    event: Optional[str] = None
+    # Direct-delivery node (bypasses edge routing), like inject's target_node.
+    node: Optional[str] = None
+
+
 class EdgeEndpoint(BaseModel):
     node: str
     event: str = CATCH_ALL_EVENT
@@ -142,6 +162,7 @@ class FlowDoc(BaseModel):
     description: str = ""
     enabled: bool = True  # the flow's active switch
     config: FlowConfig = Field(default_factory=FlowConfig)
+    subscriptions: list[FlowSubscriptionDef] = Field(default_factory=list)
     nodes: list[FlowNodeDef] = Field(default_factory=list)
     edges: list[FlowEdgeDef] = Field(default_factory=list)
 
@@ -210,6 +231,15 @@ class FlowDoc(BaseModel):
             target = self.node(e.to_node)
             if target is not None and target.node_type == "trigger":
                 problems.append(f"edge {e.id}: trigger nodes accept no inputs")
+        for sub in self.subscriptions:
+            # Same pointed pattern rules as TOPIC triggers — one owner.
+            from flow_sdk.builtin.topic_triggers import validate_topic_trigger
+
+            problem = validate_topic_trigger(sub.pattern)
+            if problem:
+                problems.append(f"subscription {sub.id or sub.pattern!r}: {problem}")
+            if sub.node and sub.node not in known:
+                problems.append(f"subscription {sub.id or sub.pattern!r}: unknown node {sub.node}")
         for n in self.nodes:
             if n.node_type == "agent":
                 nd = n.node_data

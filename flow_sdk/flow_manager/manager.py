@@ -36,6 +36,7 @@ import logging
 import shutil
 import time
 import uuid
+from collections import OrderedDict
 from pathlib import Path
 from typing import Any, Optional
 
@@ -262,6 +263,16 @@ class FlowManager:
         self._flows: dict[str, _LoadedFlow] = {}
         self._runs: dict[str, _Run] = {}
         self._runtime: dict[tuple[str, str], _NodeRuntime] = {}
+        # Graph-level bus subscriptions (docs/flow-events.md phase 5):
+        # flow id → live unsubscribers, re-armed whenever the doc (re)loads.
+        self._flow_subs: dict[str, list] = {}
+        # Bounded LRU of consumed entry-envelope ids — at-least-once delivery
+        # must not double-start a run (bus law 2 made concrete at the door).
+        self._seen_entry_ids: "OrderedDict[str, None]" = OrderedDict()
+        # flow id → [window_start, entries, warned] — the subscription-entry
+        # storm cap (config.max_entries_per_minute).
+        self._entry_windows: dict[str, list] = {}
+        self._rearm_unsub = None  # the entity.updated re-arm subscription
 
     # ── flow loading (disk is truth; mtime-validated cache) ───────────────────
 
@@ -288,6 +299,7 @@ class FlowManager:
         # The entity's enabled switch wins when it and the doc disagree.
         loaded.enabled = bool(entity.enabled) and doc.enabled
         self._flows[flow_id] = loaded
+        self._arm_subscriptions(loaded)
         return loaded
 
     async def flows_referencing_trigger(self, trigger_id: str) -> list[_LoadedFlow]:
@@ -297,6 +309,102 @@ class FlowManager:
             if loaded and loaded.enabled and trigger_id in loaded.doc.trigger_ids():
                 out.append(loaded)
         return out
+
+    # ── graph-level bus subscriptions (phase 5) ───────────────────────────────
+
+    def _arm_subscriptions(self, loaded: _LoadedFlow) -> None:
+        """(Re-)arm the flow's ``subscriptions:`` block — replace semantics on
+        every doc (re)load; a disabled flow disarms."""
+        from flow_sdk.topics import event_bus
+
+        for unsub in self._flow_subs.pop(loaded.flow_id, []):
+            unsub()
+        if not loaded.enabled or not loaded.doc.subscriptions:
+            return
+        unsubs = []
+        for sub in loaded.doc.subscriptions:
+            unsubs.append(event_bus.on(
+                sub.pattern,
+                self._subscription_handler(loaded.flow_id, sub),
+                target=sub.target or None,
+                scope=list(sub.scope) or None,
+            ))
+        self._flow_subs[loaded.flow_id] = unsubs
+        logger.info("FlowManager: %s armed %d subscription(s)",
+                    loaded.flow_id[:8], len(unsubs))
+
+    def _subscription_handler(self, flow_id: str, sub):
+        from flow_sdk.topics.envelope import FlowEvent, target_of
+
+        async def _on_event(event: "FlowEvent") -> None:
+            # SELF-LOOP BRAKE: every flow.* boundary emission carries its own
+            # flow in ctx.scope — a flow subscribing to its own boundaries
+            # would spawn runs forever. Cross-flow chaining stays legal.
+            if target_of("agentic_flow", flow_id) in event.ctx.scope:
+                return
+            # Entry dedup (bounded LRU): at-least-once can't double-start.
+            if event.id in self._seen_entry_ids:
+                return
+            self._seen_entry_ids[event.id] = None
+            while len(self._seen_entry_ids) > 1024:
+                self._seen_entry_ids.popitem(last=False)
+            if not self._entry_storm_allows(flow_id):
+                return
+            try:
+                await self.inject(
+                    flow_id,
+                    sub.event or event.topic,
+                    {"topic": event.topic, "target": event.target, "data": event.data},
+                    target_node=sub.node or None,
+                )
+            except ValueError as e:
+                logger.warning("FlowManager: subscription entry refused for %s: %s",
+                               flow_id[:8], e)
+
+        return _on_event
+
+    def _entry_storm_allows(self, flow_id: str) -> bool:
+        """Cap subscription entries per flow per minute — bounds cross-flow
+        ping-pong (fresh envelopes per hop defeat id-dedup and the self-brake).
+        One warning per window, never silent."""
+        loaded = self._flows.get(flow_id)
+        cap = loaded.doc.config.max_entries_per_minute if loaded else 30
+        now = time.monotonic()
+        window = self._entry_windows.setdefault(flow_id, [now, 0, False])
+        if now - window[0] > 60.0:
+            window[0], window[1], window[2] = now, 0, False
+        window[1] += 1
+        if window[1] <= max(1, cap):
+            return True
+        if not window[2]:
+            window[2] = True
+            logger.warning(
+                "FlowManager: %s subscription entries exceeded %d/min — "
+                "suppressing until the window resets (cross-flow loop?)",
+                flow_id[:8], cap)
+        return False
+
+    async def arm_all_flow_subscriptions(self) -> None:
+        """Boot sweep — flows load lazily, so subscription-only flows must be
+        loaded (and thereby armed) once at startup. After boot, graph edits
+        re-arm through the entity.updated re-arm subscription below."""
+        from flow_sdk.topics import event_bus
+
+        for entity in await AgenticFlow.get_all({}):
+            try:
+                await self.load_flow(entity.id, entity)
+            except Exception:
+                logger.exception("FlowManager: boot subscription arm failed for %s", entity.id)
+        if self._rearm_unsub is None:
+            # Bus dogfooding: an AgenticFlow save re-loads + re-arms that flow.
+            async def _rearm(event) -> None:
+                flow_id = str(event.data.get("id") or "")
+                if flow_id:
+                    self._flows.pop(flow_id, None)  # force mtime-independent reload
+                    await self.load_flow(flow_id)
+
+            self._rearm_unsub = event_bus.on(
+                "entity.updated", _rearm, target="agentic_flow:*")
 
     # ── activation ────────────────────────────────────────────────────────────
 

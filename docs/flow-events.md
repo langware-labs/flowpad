@@ -281,7 +281,7 @@ adapters land in phase 6 with the other emitters.
   trigger → palette-drill run, complete with correct journal ordering — a
   flow chained off another flow's output, zero hand wiring. 53/53 + suites.
 
-## Phase 5 — Flows subscribe directly  ☐
+## Phase 5 — Flows subscribe directly  ✅
 
 Graph-level `subscriptions:` block (or a pattern trigger-node variant): the
 flow declares `{pattern, target?, scope?}`; entry passes through `inject`
@@ -331,6 +331,18 @@ subscription; second identical deliver attempt deduped.
 support later).
 
 ### Log
+- 2026-07-22 — shipped, one addition BEYOND plan: the chaining test built a
+  mutual A↔B ping-pong (fresh envelopes per hop defeat both id-dedup and the
+  self-brake), so the deferred rate cap landed NOW —
+  `config.max_entries_per_minute` (default 30) per flow, one warning per
+  window, with a ping-pong regression test. Everything else as planned:
+  FlowSubscriptionDef (+ validation reusing validate_topic_trigger), arming
+  on doc load + boot sweep + entity.updated re-arm (bus dogfooding),
+  envelope-id LRU dedup, self-loop brake via ctx.scope. Live drill:
+  palette-drill dropped its Trigger indirection for
+  `subscriptions: [{pattern: entity.created, target: usage_report:*}]` —
+  backfill report creation started the run with the mapped {topic, target,
+  data} entry. 34/34 flow suite.
 
 ## Phase 6 — Remaining emitters  ☐
 

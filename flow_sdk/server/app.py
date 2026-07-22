@@ -284,6 +284,10 @@ async def _start_fsop_watcher() -> None:
         from flow_sdk.builtin.topic_triggers import start_topic_triggers
 
         await start_topic_triggers()
+        # Arm graph-level flow subscriptions (flow-events phase 5).
+        from flow_sdk.flow_manager import get_flow_manager
+
+        await get_flow_manager().arm_all_flow_subscriptions()
         print(f"  FSOp watcher: started ({len(fsop_watcher)} trigger(s))")
     except Exception:
         logging.getLogger(__name__).exception("FSOp watcher: failed to start")
