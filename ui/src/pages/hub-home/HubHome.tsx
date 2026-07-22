@@ -123,6 +123,9 @@ export function HubHome() {
   const launchStarted = steps.some((s) => s.status !== 'idle');
   // Absent on older hubs that don't advertise the flag yet — treat as enabled.
   const desktopsEnabled = dataContext.bootstrapInfo?.desktops_enabled !== false;
+  // Creating a desktop needs BOTH a provisioning-capable hub (e2b key) and a
+  // signed-in user — a visitor's launch would just 401.
+  const canCreateDesktop = desktopsEnabled && !!currentUser;
 
   // Inline rename: single-click a desktop name to edit it.
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -250,11 +253,11 @@ export function HubHome() {
             <Tooltip>
               <TooltipTrigger asChild>
                 {/* span keeps the tooltip working while the button is disabled */}
-                <span className="flex" tabIndex={desktopsEnabled ? -1 : 0}>
+                <span className="flex" tabIndex={canCreateDesktop ? -1 : 0}>
                   <button
                     type="button"
                     onClick={() => setNewDesktop({})}
-                    disabled={launching || !desktopsEnabled}
+                    disabled={launching || !canCreateDesktop}
                     data-testid="new-desktop-button"
                     className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-primary/20 bg-primary/10 px-4 py-3 text-sm font-semibold text-primary transition-colors hover:bg-primary/20 disabled:pointer-events-none disabled:border-primary/20 disabled:bg-primary/5"
                   >
@@ -263,9 +266,9 @@ export function HubHome() {
                   </button>
                 </span>
               </TooltipTrigger>
-              {!desktopsEnabled && (
+              {!canCreateDesktop && (
                 <TooltipContent>
-                  <Trans>Sandbox unavailable</Trans>
+                  {!desktopsEnabled ? <Trans>Sandbox unavailable</Trans> : <Trans>Sign in to create desktops</Trans>}
                 </TooltipContent>
               )}
             </Tooltip>
