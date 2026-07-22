@@ -49,6 +49,49 @@ def topic_matches(pattern: str, topic: str) -> bool:
     return _segments_match(pattern.split("."), topic.split("."))
 
 
+def validate_bus_pattern(pattern: "str | None") -> Optional[str]:
+    """THE bus-pattern grammar gate (shared by TOPIC triggers and flow
+    subscriptions): a pointed problem string, or None when valid."""
+    stripped = (pattern or "").strip()
+    if not stripped:
+        return "a non-empty topic pattern is required"
+    if stripped == "*":
+        return ('pattern "*" would fire on EVERY event in the system — '
+                'subscribe to a family (e.g. "entity.*", "flow.*") instead')
+    return None
+
+
+class FixedWindowStormGuard:
+    """Per-key fixed-window rate cap — THE storm-guard shape for bus
+    subscribers (the bus itself has no budgets). One suppression callback per
+    window, never silent. Keys are caller-defined (trigger id, flow id...)."""
+
+    __slots__ = ("_window_s", "_windows")
+
+    def __init__(self, window_s: float = 60.0) -> None:
+        self._window_s = window_s
+        # key → [window_start_monotonic, fires, suppression_signalled]
+        self._windows: dict[str, list] = {}
+
+    def allows(self, key: str, cap: int, on_suppress: Callable[[], None]) -> bool:
+        import time
+
+        now = time.monotonic()
+        window = self._windows.setdefault(key, [now, 0, False])
+        if now - window[0] > self._window_s:
+            window[0], window[1], window[2] = now, 0, False
+        window[1] += 1
+        if window[1] <= max(1, cap):
+            return True
+        if not window[2]:
+            window[2] = True
+            on_suppress()
+        return False
+
+    def clear(self, key: str) -> None:
+        self._windows.pop(key, None)
+
+
 def target_matches(pattern: str, target: str) -> bool:
     """Exact match, or ``type:*`` — pattern up to the first colon, then ``*``."""
     if pattern == target or pattern == "*":

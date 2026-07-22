@@ -55,6 +55,8 @@ FunctionRuntime = Literal["inline", "subprocess"]
 # this node's `done`, routed onward by the ordinary edge machinery. No new viewer,
 # no DOM interception — pure guidance/orchestration over standard surfaces.
 GUIDED_PRESENT_KINDS = {"asset_editor", "wiki", "home", "asset_list", "root"}
+# What a guided step can do FOR the user, offered as a button on the step.
+GUIDED_ACT_KINDS = {"fill"}
 # The await side is a unified-bus subscription (docs/topics.md): `topic` names
 # the awaited event (`app.page.signal`, `app.route.loaded`, `app.entity.created`,
 # or `manual` for Continue-only), `target`/`vfs`/`home` filter it, and an
@@ -232,10 +234,11 @@ class FlowDoc(BaseModel):
             if target is not None and target.node_type == "trigger":
                 problems.append(f"edge {e.id}: trigger nodes accept no inputs")
         for sub in self.subscriptions:
-            # Same pointed pattern rules as TOPIC triggers — one owner.
-            from flow_sdk.builtin.topic_triggers import validate_topic_trigger
+            # The topics-owned bus-pattern grammar gate (same rule as TOPIC
+            # triggers — one owner, right dependency direction).
+            from flow_sdk.topics import validate_bus_pattern
 
-            problem = validate_topic_trigger(sub.pattern)
+            problem = validate_bus_pattern(sub.pattern)
             if problem:
                 problems.append(f"subscription {sub.id or sub.pattern!r}: {problem}")
             if sub.node and sub.node not in known:
@@ -252,10 +255,14 @@ class FlowDoc(BaseModel):
             if n.node_type == "guided_step":
                 nd = n.node_data
                 present = nd.get("present") or {}
-                dock = present.get("dock") or {}
-                if dock.get("kind") not in GUIDED_PRESENT_KINDS:
+                # A dock is OPTIONAL: a step may highlight in place (moving the
+                # user off the surface they must click would defeat it), or
+                # present nothing at all and just wait. Only the kind is checked,
+                # and only when a dock is actually given.
+                dock = present.get("dock")
+                if dock is not None and dock.get("kind") not in GUIDED_PRESENT_KINDS:
                     problems.append(
-                        f"node {n.id}: guided_step needs node_data.present.dock.kind "
+                        f"node {n.id}: guided_step present.dock.kind must be "
                         f"in {sorted(GUIDED_PRESENT_KINDS)}"
                     )
                 await_spec = nd.get("await") or {}
@@ -265,6 +272,20 @@ class FlowDoc(BaseModel):
                         f"node {n.id}: guided_step needs node_data.await.topic "
                         "(a non-empty bus topic string, e.g. 'app.page.signal', or 'manual')"
                     )
+                # `act` — what the journey OFFERS to do for the user (a step
+                # button, not an automatic side effect). It aims at a topic word
+                # like `present.highlight` does, so a missing target is dead.
+                act = nd.get("act")
+                if act is not None:
+                    if act.get("kind") not in GUIDED_ACT_KINDS:
+                        problems.append(
+                            f"node {n.id}: guided_step act.kind must be in {sorted(GUIDED_ACT_KINDS)}"
+                        )
+                    if not (act.get("target") or "").strip():
+                        problems.append(
+                            f"node {n.id}: guided_step act needs a target (a topic word, "
+                            "e.g. 'AgentInstructions')"
+                        )
                 continue
             if n.node_type != "function":
                 continue

@@ -27,10 +27,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import time
-from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Callable, Optional
+
+from flow_sdk.topics import FixedWindowStormGuard, validate_bus_pattern
 
 if TYPE_CHECKING:  # pragma: no cover
     from flow_sdk.builtin.trigger import Trigger
@@ -44,28 +44,13 @@ _subscriptions: dict[str, Callable[[], None]] = {}
 # counter's read-modify-write can't lose updates under concurrent events and
 # the storm window counts deterministically. Different triggers stay parallel.
 _locks: dict[str, "asyncio.Lock"] = {}
-@dataclass
-class _StormWindow:
-    start: float
-    fires: int = 0
-    suppressed_logged: bool = False
-
-
-# trigger id → the current fixed storm window.
-_fire_windows: dict[str, _StormWindow] = {}
-
-_WINDOW_S = 60.0
+# Per-trigger fire cap — the shared topics-owned guard shape.
+_storm_guard = FixedWindowStormGuard()
 
 
 def validate_topic_trigger(pattern: Optional[str]) -> Optional[str]:
-    """The pointed pre-save check: a problem string, or None when valid."""
-    stripped = (pattern or "").strip()
-    if not stripped:
-        return "TOPIC triggers need a non-empty topic_pattern"
-    if stripped == "*":
-        return ('topic_pattern "*" would fire on EVERY event in the system — '
-                "subscribe to a family (e.g. \"entity.*\", \"flow.*\") instead")
-    return None
+    """The pointed pre-save check — delegates to the topics-owned grammar gate."""
+    return validate_bus_pattern(pattern)
 
 
 def register_topic_trigger(trigger: "Trigger") -> None:
@@ -98,7 +83,7 @@ def unregister_topic_trigger(trigger_id: Optional[str]) -> None:
     unsub = _subscriptions.pop(trigger_id or "", None)
     if unsub:
         unsub()
-    _fire_windows.pop(trigger_id or "", None)
+    _storm_guard.clear(trigger_id or "")
     _locks.pop(trigger_id or "", None)
 
 
@@ -114,16 +99,9 @@ async def start_topic_triggers() -> None:
 
 
 def _storm_allows(trigger_id: str, trigger_name: str, cap: int) -> bool:
-    """Fixed-window token check; logs ONE storm_suppressed entry per window."""
-    now = time.monotonic()
-    window = _fire_windows.setdefault(trigger_id, _StormWindow(start=now))
-    if now - window.start > _WINDOW_S:
-        window.start, window.fires, window.suppressed_logged = now, 0, False
-    window.fires += 1
-    if window.fires <= max(1, cap):
-        return True
-    if not window.suppressed_logged:
-        window.suppressed_logged = True
+    """Fixed-window fire cap; logs ONE storm_suppressed entry per window."""
+
+    def _on_suppress() -> None:
         _append_log(trigger_name, {
             "hook_event": "storm_suppressed",
             "trigger": False,
@@ -131,7 +109,8 @@ def _storm_allows(trigger_id: str, trigger_name: str, cap: int) -> bool:
             "rule_name": trigger_name,
         })
         logger.warning("TOPIC trigger %s: storm guard tripped (cap %d/min)", trigger_name, cap)
-    return False
+
+    return _storm_guard.allows(trigger_id, cap, _on_suppress)
 
 
 async def _confirmed(trigger: "Trigger") -> bool:

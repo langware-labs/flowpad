@@ -266,12 +266,14 @@ class FlowManager:
         # Graph-level bus subscriptions (docs/flow-events.md phase 5):
         # flow id → live unsubscribers, re-armed whenever the doc (re)loads.
         self._flow_subs: dict[str, list] = {}
-        # Bounded LRU of consumed entry-envelope ids — at-least-once delivery
-        # must not double-start a run (bus law 2 made concrete at the door).
-        self._seen_entry_ids: "OrderedDict[str, None]" = OrderedDict()
-        # flow id → [window_start, entries, warned] — the subscription-entry
-        # storm cap (config.max_entries_per_minute).
-        self._entry_windows: dict[str, list] = {}
+        # Bounded LRU of consumed (flow_id, envelope_id) entries — at-least-once
+        # delivery must not double-start a run, while ONE envelope fanning out
+        # to several subscribed flows must enter each of them (bus law 2 made
+        # concrete at the door, per flow).
+        self._seen_entry_ids: "OrderedDict[tuple[str, str], None]" = OrderedDict()
+        # Per-flow subscription-entry storm cap (config.max_entries_per_minute)
+        # — the shared topics-owned guard shape.
+        self._entry_guard = None  # built lazily (topics import)
         self._rearm_unsub = None  # the entity.updated re-arm subscription
 
     # ── flow loading (disk is truth; mtime-validated cache) ───────────────────
@@ -319,6 +321,8 @@ class FlowManager:
 
         for unsub in self._flow_subs.pop(loaded.flow_id, []):
             unsub()
+        if self._entry_guard is not None:
+            self._entry_guard.clear(loaded.flow_id)
         if not loaded.enabled or not loaded.doc.subscriptions:
             return
         unsubs = []
@@ -342,10 +346,13 @@ class FlowManager:
             # would spawn runs forever. Cross-flow chaining stays legal.
             if target_of("agentic_flow", flow_id) in event.ctx.scope:
                 return
-            # Entry dedup (bounded LRU): at-least-once can't double-start.
-            if event.id in self._seen_entry_ids:
+            # Entry dedup (bounded LRU), PER FLOW: at-least-once can't
+            # double-start this flow, but the same envelope fanning out to
+            # other subscribed flows still enters each of them.
+            dedup_key = (flow_id, event.id)
+            if dedup_key in self._seen_entry_ids:
                 return
-            self._seen_entry_ids[event.id] = None
+            self._seen_entry_ids[dedup_key] = None
             while len(self._seen_entry_ids) > 1024:
                 self._seen_entry_ids.popitem(last=False)
             if not self._entry_storm_allows(flow_id):
@@ -366,23 +373,21 @@ class FlowManager:
     def _entry_storm_allows(self, flow_id: str) -> bool:
         """Cap subscription entries per flow per minute — bounds cross-flow
         ping-pong (fresh envelopes per hop defeat id-dedup and the self-brake).
-        One warning per window, never silent."""
+        One warning per window, never silent. Shared guard shape from topics/."""
+        if self._entry_guard is None:
+            from flow_sdk.topics import FixedWindowStormGuard
+
+            self._entry_guard = FixedWindowStormGuard()
         loaded = self._flows.get(flow_id)
         cap = loaded.doc.config.max_entries_per_minute if loaded else 30
-        now = time.monotonic()
-        window = self._entry_windows.setdefault(flow_id, [now, 0, False])
-        if now - window[0] > 60.0:
-            window[0], window[1], window[2] = now, 0, False
-        window[1] += 1
-        if window[1] <= max(1, cap):
-            return True
-        if not window[2]:
-            window[2] = True
+
+        def _warn() -> None:
             logger.warning(
                 "FlowManager: %s subscription entries exceeded %d/min — "
                 "suppressing until the window resets (cross-flow loop?)",
                 flow_id[:8], cap)
-        return False
+
+        return self._entry_guard.allows(flow_id, cap, _warn)
 
     async def arm_all_flow_subscriptions(self) -> None:
         """Boot sweep — flows load lazily, so subscription-only flows must be
@@ -390,6 +395,10 @@ class FlowManager:
         re-arm through the entity.updated re-arm subscription below."""
         from flow_sdk.topics import event_bus
 
+        # Conscious no-unscoped-get_all exception: a boot-time SYSTEM sweep
+        # (same class as flows_referencing_trigger above) — flows must be
+        # loaded to know whether their doc declares subscriptions; no row data
+        # leaves the process.
         for entity in await AgenticFlow.get_all({}):
             try:
                 await self.load_flow(entity.id, entity)
@@ -399,9 +408,17 @@ class FlowManager:
             # Bus dogfooding: an AgenticFlow save re-loads + re-arms that flow.
             async def _rearm(event) -> None:
                 flow_id = str(event.data.get("id") or "")
-                if flow_id:
-                    self._flows.pop(flow_id, None)  # force mtime-independent reload
-                    await self.load_flow(flow_id)
+                if not flow_id:
+                    return
+                self._flows.pop(flow_id, None)  # force mtime-independent reload
+                if await self.load_flow(flow_id) is None and flow_id in self._flow_subs:
+                    # Reload failed (bad graph / gone entity): disarm the stale
+                    # subscriptions rather than leaving them live against a doc
+                    # that no longer parses.
+                    for unsub in self._flow_subs.pop(flow_id, []):
+                        unsub()
+                    logger.warning("FlowManager: %s subscriptions disarmed (reload failed)",
+                                   flow_id[:8])
 
             self._rearm_unsub = event_bus.on(
                 "entity.updated", _rearm, target="agentic_flow:*")
