@@ -79,6 +79,7 @@ from .routes import (
     toplog_router,
     agentic_flows_router,
     journeys_router,
+    git_router,
     transcripts_router,
     ui_router,
     version_router,
@@ -529,6 +530,7 @@ server.add_router(capabilities_router)
 server.add_router(toplog_router)
 server.add_router(agentic_flows_router)
 server.add_router(journeys_router)
+server.add_router(git_router)
 server.add_router(worldview_router)
 
 server.on_startup(_on_server_startup)
