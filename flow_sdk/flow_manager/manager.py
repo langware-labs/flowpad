@@ -368,7 +368,9 @@ class FlowManager:
                 await self._route(run, fe)
         finally:
             run.pending -= 1
-        self._maybe_finalize(run)
+            # Inside finally: a raise above (e.g. unknown target node) must not
+            # orphan a fresh run at 0/0 until some later sweep finds it.
+            self._maybe_finalize(run)
         return fe
 
     async def _start_run(self, flow: _LoadedFlow) -> _Run:

@@ -114,6 +114,35 @@ def _parse_interval_expr(expr: str) -> int:
     return int(expr)
 
 
+async def activate_flows_for_trigger(trigger_id: str, trigger_name: str) -> None:
+    """Flow activation on any trigger fire — THE shared step for every trigger
+    kind (schedule / fsop / topic): enters a run in each flow whose trigger
+    node references this Trigger entity."""
+    try:
+        from flow_sdk.flow_manager import get_flow_manager
+
+        await get_flow_manager().on_trigger_fired(trigger_id)
+    except Exception:
+        logger.exception("Trigger %s: flow activation failed", trigger_name)
+
+
+async def dispatch_trigger_actions(trigger: "Trigger", changes: list) -> None:
+    """Action dispatch on any trigger fire — THE shared loop for every trigger
+    kind. Per-action try/except so one bad handler can't skip the rest.
+    ``changes`` is empty for schedule/topic fires; FSOp passes its batch."""
+    for action in trigger.actions:
+        try:
+            handler = get_action_handler(action.action_type)
+            if handler is None:
+                logger.warning("Trigger %s: no handler for action_type=%s",
+                               trigger.name, action.action_type)
+                continue
+            await handler.execute(trigger, action=action, changes=changes)
+        except Exception:
+            logger.exception("Trigger %s: action %s raised during dispatch",
+                             trigger.name, action.action_type)
+
+
 async def _fire_schedule_job(trigger_id: str) -> None:
     """Callback executed by APScheduler when a schedule trigger fires.
 
@@ -137,33 +166,11 @@ async def _fire_schedule_job(trigger_id: str) -> None:
         entity.last_run = datetime.now(timezone.utc)
         await entity.update()
 
-        # Dispatch actions via the shared registry. ``changes`` is empty for
-        # schedule fires — FSOp fires populate it via _fire(trigger, batch).
-        # RUN_SCRIPT then reports CHANGES_COUNT=0 / FIRST_*="" to the script.
-        # Flow activation for schedule fires.
-        try:
-            from flow_sdk.flow_manager import get_flow_manager
-
-            await get_flow_manager().on_trigger_fired(trigger_id)
-        except Exception:
-            logger.exception("Schedule trigger %s: flow activation failed", trigger_id)
-
-        for action in entity.actions:
-            try:
-                handler = get_action_handler(action.action_type)
-                if handler is None:
-                    logger.warning(
-                        "Schedule trigger %s: no handler for action_type=%s",
-                        entity.name, action.action_type,
-                    )
-                    continue
-                # Schedule fires carry no file changes; pass an empty list.
-                await handler.execute(entity, action=action, changes=[])
-            except Exception:
-                logger.exception(
-                    "Schedule trigger %s: action %s raised during dispatch",
-                    entity.name, action.action_type,
-                )
+        # Shared fire steps (same helpers as fsop/topic): flow activation +
+        # action dispatch. ``changes`` is empty for schedule fires — RUN_SCRIPT
+        # then reports CHANGES_COUNT=0 / FIRST_*="" to the script.
+        await activate_flows_for_trigger(trigger_id, entity.name or trigger_id)
+        await dispatch_trigger_actions(entity, changes=[])
 
         # Legacy back-compat: schedule triggers with ``instruction`` set spawn
         # an AgenticProcess. Pre-dates the actions list; kept so existing
@@ -554,6 +561,14 @@ class Trigger(Entity):
             self.action = TriggerAction(**action_data) if isinstance(action_data, dict) else action_data
         if "hook_events" in body:
             self.hook_events = body["hook_events"]
+
+        if self.trigger_type == "topic":
+            # Mirror create: a bad pattern must FAIL the update, not silently
+            # decline to arm on re-register.
+            from flow_sdk.builtin.topic_triggers import validate_topic_trigger
+            problem = validate_topic_trigger(self.topic_pattern)
+            if problem:
+                return ApiFailResponse(message=problem)
 
         await self.update()
 

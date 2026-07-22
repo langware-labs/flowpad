@@ -28,6 +28,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Callable, Optional
 
@@ -43,17 +44,25 @@ _subscriptions: dict[str, Callable[[], None]] = {}
 # counter's read-modify-write can't lose updates under concurrent events and
 # the storm window counts deterministically. Different triggers stay parallel.
 _locks: dict[str, "asyncio.Lock"] = {}
-# trigger id → (window_start_monotonic, fires_in_window, suppression_logged)
-_fire_windows: dict[str, list] = {}
+@dataclass
+class _StormWindow:
+    start: float
+    fires: int = 0
+    suppressed_logged: bool = False
+
+
+# trigger id → the current fixed storm window.
+_fire_windows: dict[str, _StormWindow] = {}
 
 _WINDOW_S = 60.0
 
 
 def validate_topic_trigger(pattern: Optional[str]) -> Optional[str]:
     """The pointed pre-save check: a problem string, or None when valid."""
-    if not (pattern or "").strip():
+    stripped = (pattern or "").strip()
+    if not stripped:
         return "TOPIC triggers need a non-empty topic_pattern"
-    if pattern.strip() == "*":
+    if stripped == "*":
         return ('topic_pattern "*" would fire on EVERY event in the system — '
                 "subscribe to a family (e.g. \"entity.*\", \"flow.*\") instead")
     return None
@@ -107,14 +116,14 @@ async def start_topic_triggers() -> None:
 def _storm_allows(trigger_id: str, trigger_name: str, cap: int) -> bool:
     """Fixed-window token check; logs ONE storm_suppressed entry per window."""
     now = time.monotonic()
-    window = _fire_windows.setdefault(trigger_id, [now, 0, False])
-    if now - window[0] > _WINDOW_S:
-        window[0], window[1], window[2] = now, 0, False
-    window[1] += 1
-    if window[1] <= max(1, cap):
+    window = _fire_windows.setdefault(trigger_id, _StormWindow(start=now))
+    if now - window.start > _WINDOW_S:
+        window.start, window.fires, window.suppressed_logged = now, 0, False
+    window.fires += 1
+    if window.fires <= max(1, cap):
         return True
-    if not window[2]:
-        window[2] = True
+    if not window.suppressed_logged:
+        window.suppressed_logged = True
         _append_log(trigger_name, {
             "hook_event": "storm_suppressed",
             "trigger": False,
@@ -126,7 +135,12 @@ def _storm_allows(trigger_id: str, trigger_name: str, cap: int) -> bool:
 
 
 async def _confirmed(trigger: "Trigger") -> bool:
-    """Law 5: when a confirm query is declared, the STORE decides."""
+    """Law 5: when a confirm query is declared, the STORE decides.
+
+    Conscious exception to the no-unscoped-get_all rule: this is a SYSTEM-level
+    existence gate (fires run as the system, not a user request) and returns no
+    row data to anyone — it only decides fire/skip. Scope-walking arrives with
+    ctx.scope delivery authorization (phase 9)."""
     confirm = trigger.confirm or {}
     ctype = str(confirm.get("type") or "")
     if not ctype:
@@ -150,8 +164,11 @@ async def _fire_topic_trigger(trigger_id: str, event: "FlowEvent") -> None:
 
 
 async def _fire_topic_trigger_locked(trigger_id: str, event: "FlowEvent") -> None:
-    from flow_sdk.builtin.hook_models import get_action_handler
-    from flow_sdk.builtin.trigger import Trigger
+    from flow_sdk.builtin.trigger import (
+        Trigger,
+        activate_flows_for_trigger,
+        dispatch_trigger_actions,
+    )
 
     trigger = await Trigger.get_by_id(trigger_id)
     if not (trigger and trigger.enabled):
@@ -165,28 +182,11 @@ async def _fire_topic_trigger_locked(trigger_id: str, event: "FlowEvent") -> Non
     trigger.last_run = datetime.now(timezone.utc)
     await trigger.update()
 
-    # Flow activation — a TOPIC trigger is just a new fire source for the
-    # same trigger id every flow trigger-node already references.
-    try:
-        from flow_sdk.flow_manager import get_flow_manager
-
-        await get_flow_manager().on_trigger_fired(trigger_id)
-    except Exception:
-        logger.exception("TOPIC trigger %s: flow activation failed", trigger.name)
-
-    for action in trigger.actions:
-        try:
-            handler = get_action_handler(action.action_type)
-            if handler is None:
-                logger.warning("TOPIC trigger %s: no handler for action_type=%s",
-                               trigger.name, action.action_type)
-                continue
-            # Topic fires carry no file changes; the envelope rides the log
-            # entry below (handlers gain an event kwarg when one needs it).
-            await handler.execute(trigger, action=action, changes=[])
-        except Exception:
-            logger.exception("TOPIC trigger %s: action %s raised",
-                             trigger.name, action.action_type)
+    # Shared fire steps (same helpers as schedule/fsop). Topic fires carry no
+    # file changes; the ENVELOPE rides the log entry below (handlers gain an
+    # event kwarg when one needs it).
+    await activate_flows_for_trigger(trigger_id, trigger.name or trigger_id)
+    await dispatch_trigger_actions(trigger, changes=[])
 
     _append_log(trigger.name or trigger_id, {
         "hook_event": "topic_fire",
