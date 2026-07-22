@@ -48,8 +48,10 @@ because the user never reads your transcript.
 2. `references/analysis.json` written.
 3. `analysis_path` + `analysis_json_path` patched into `task.md` frontmatter
    as ABSOLUTE paths, and `process_id` stamped.
-4. `status` moved off `to_do` (standard mode only — a group parent's status is
-   never yours). Running at all is evidence work started.
+4. `status` was moved off `to_do` back at your FIRST action (standard mode only
+   — a group parent's status is never yours). If you are reading this and it is
+   still `to_do`, you skipped the opening stamp: do it now, and treat that as
+   the miss it is.
 5. **`flow record index <taskFolder>` run, and it SUCCEEDED.** Nothing you
    wrote to `task.md` reaches the app until it does — a skipped or failing
    index makes every edit above invisible. If it errors, say so in your report
@@ -107,16 +109,25 @@ authorized on the child, and `sync-group` (already run before you start) pulls
 each member's comments onto the owner's machine — so in group mode the members'
 comments are already local.
 
-## First action (both modes): stamp process_id
+## First action (both modes): stamp process_id, and open the task
 
-Your own wizard process id appears in the close command at the end of your
-prompt (`flow wizard <processId> close …`). Patch `process_id: <processId>`
-into the task's frontmatter FIRST — the UI's live progress row attaches
-through it.
+Before you read anything, patch the task's frontmatter and
+`flow record index <taskFolder>` it:
+
+- `process_id: <processId>` — your own wizard process id, from the close
+  command at the end of your prompt (`flow wizard <processId> close …`). The
+  UI's live progress row attaches through it.
+- `status: in_progress`, **standard mode only, and only if it is `to_do`** —
+  you being here IS work starting, so the board must say so while you run, not
+  after. Leave any other status alone, and never touch a GROUP parent's status
+  (its children own theirs).
+
+Do this FIRST and index it FIRST. Both fields are how the user watches the run
+happen; stamped at the end they describe a run that is already over.
 
 ## Standard mode
 
-1. Stamp `process_id` (above). Read `task.md` (fields + body). The task's
+1. Stamp `process_id` + open the task (above). Read `task.md` (fields + body). The task's
    DEFINITION is not one fixed file — assemble it from whatever exists:
    the description in `task.md`, any markdown/doc files among the task's
    attachments (`artifacts` entries — the file names vary), and the text of
@@ -139,10 +150,7 @@ through it.
    submission comment already exists (`flow record comment list task-<taskId>`).
    Also backfill obviously-derivable metadata (e.g. an empty description from
    what the plan and the work so far show) via frontmatter + `flow record index`.
-4. If `status` is still `to_do` when you run: set it to `in_progress` — the
-   analysis itself is evidence that work started. NEVER set `done` yourself;
-   report readiness instead (completion stays a human action).
-5. Write your findings into the task folder:
+4. Write your findings into the task folder:
    - `references/analysis.html` — the human report, built from the HTML
      template below (see "Report template"). Contents: a ready-for-done
      banner, the status assessment, the submission (the URL you posted / found,
@@ -151,7 +159,7 @@ through it.
      `{"status": ..., "submission_url": ..., "readyForDone": bool}`.
    Patch `analysis_path` (the `.html`) / `analysis_json_path` with their
    ABSOLUTE paths.
-6. Report the status to the user in ONE short message — 2–4 plain lines:
+5. Report the status to the user in ONE short message — 2–4 plain lines:
    current status, the submission URL (posted / found / still missing),
    ready-for-done or not. Then finish per CLOSING (close with your verdict in
    headless; wait for the user in a popup) — set `readyForDone` true only when
