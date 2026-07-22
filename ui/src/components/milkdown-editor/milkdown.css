@@ -309,6 +309,21 @@
   padding: 0;
 }
 
+/*
+ * Prism token names collide with Tailwind utility class names. A highlight
+ * decoration is emitted as `<span class="token table class-name">`, and
+ * Tailwind's `.table` utility (`display: table`) then turns that inline run of
+ * code into a block-level table box — the token lands on its own line and the
+ * surrounding text breaks around it. Seen with the TOML table header
+ * `[server]`; the markdown grammar emits `token table` too.
+ *
+ * Highlight decorations are ALWAYS inline runs of code text, so pin that
+ * regardless of which utility name a grammar happens to reuse.
+ */
+.milkdown-editor-wrapper .ProseMirror pre .token {
+  display: inline;
+}
+
 .milkdown-editor-wrapper .token.comment,
 .milkdown-editor-wrapper .token.prolog,
 .milkdown-editor-wrapper .token.doctype,
