@@ -32,6 +32,16 @@ CLOSING — depends on the `Presentation:` line at the end of your prompt:
 - **interactive popup**: do NOT close the wizard — after reporting, WAIT; the
   user closes it with its own Done/Cancel buttons when finished reading.
 
+ALWAYS PRODUCE THE ARTIFACTS — every run, without exception. Finding that
+nothing changed since a previous analysis is a RESULT, not a reason to skip
+work. Even when the task file is already complete and the evidence is
+identical to last time, you still: write `references/analysis.html` +
+`references/analysis.json`, patch `analysis_path` / `analysis_json_path`, and
+close with a fully populated `data` (never `{}` — the caller has no report
+without it). A run that closes without those artifacts is a FAILED run, no
+matter how correct its reasoning was. The report is the deliverable; your
+chat message is not — the user does not read your transcript.
+
 `readyForDone` is your verdict that the work is genuinely complete and a
 submission has been recorded — the caller uses it to tell the user they can
 switch the task's status to Done. Do NOT set the task's status to `done` yourself;
