@@ -35,7 +35,7 @@
       "name": "Create a sub agent",
       "node_data": {
         "group": "Create your vibe agent",
-        "status_line": "Click the highlighted Sub agent tile and name your agent.",
+        "status_line": "Click the highlighted Sub agent tile and name it \"shopping-master\".",
         "present": {
           "dock": {
             "kind": "home"
@@ -59,12 +59,9 @@
         "await": {
           "topic": "app.entity.updated",
           "target": "agent:*",
-          "confirm": {
-            "type": "agent",
-            "min": 1,
-            "scope": "all"
-          },
-          "fresh": true
+          "matchEvent": {
+            "name": "shopping-master"
+          }
         }
       }
     },
@@ -79,14 +76,8 @@
           "highlight": "UseAgent"
         },
         "await": {
-          "topic": "app.entity.created",
-          "target": "agentic_process:*",
-          "confirm": {
-            "type": "agentic_process",
-            "min": 1,
-            "scope": "all"
-          },
-          "fresh": true
+          "topic": "app.ui.button.clicked",
+          "target": "UseAgent"
         }
       }
     },
@@ -101,14 +92,8 @@
         "await": {
           "topic": "app.entity.updated",
           "target": "agentic_process:*",
-          "confirm": {
-            "type": "agentic_process",
-            "match": {
-              "is_turn_busy": true
-            },
-            "min": 1,
-            "scope": "all",
-            "local": true
+          "matchEvent": {
+            "is_turn_busy": true
           }
         }
       }

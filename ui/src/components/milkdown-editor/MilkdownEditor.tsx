@@ -28,7 +28,8 @@ import type { EditorState } from '@milkdown/prose/state';
 import { TextSelection } from '@milkdown/prose/state';
 import type { MarkType } from '@milkdown/prose/model';
 import type { EditorView } from '@milkdown/prose/view';
-import { dataContext } from '@sdk';
+import { dataContext, VFSPath } from '@sdk';
+import { LOCAL_COMPUTE_NODE } from '@src/navigation/asset-doc-types';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import {
   Bold, Italic, Code, Heading1, Heading2, Heading3,
@@ -770,7 +771,7 @@ function SelectionToolbar({
 
 function MilkdownEditorInner({ content, onChange, editorMode, plugins, onActiveStateChange, onSelectionRectChange, onCursorLineChange, initialLine, direction, editorRef }: MilkdownEditorProps & { onActiveStateChange?: (s: ActiveState) => void; onSelectionRectChange?: (r: SelectionRect | null) => void; editorRef?: React.MutableRefObject<Editor | null> }) {
   const isReadOnly = editorMode === 'view' || editorMode === 'review';
-  const { navigation } = useDockNavigation();
+  const { navigation, currentDock } = useDockNavigation();
 
   /*
    * Capabilities lent to fence renderers (see `plugins/fence-render/host-services`).
@@ -789,7 +790,20 @@ function MilkdownEditorInner({ content, onChange, editorMode, plugins, onActiveS
     projectRootById: () => null,
   });
   hostServicesRef.current = {
-    openFile: (path, options) => navigation.openFile(path, options),
+    openFile: (path, options) => {
+      // Renderers resolve to an ABSOLUTE MACHINE path; editor docks address
+      // files as VFS paths (`compute_node-<id>/abs/path`). Converting here keeps
+      // that convention at the app boundary instead of teaching every renderer
+      // about compute nodes — without it the dock URL loses the entity prefix
+      // and the code editor never resolves the file.
+      //
+      // The entity is taken from the DOCUMENT's own dock so the source opens on
+      // the same compute node the doc is being read on. `LOCAL_COMPUTE_NODE` is
+      // only a fallback: it serializes to the `@local` uname, which the code
+      // editor does not resolve to a filesystem.
+      const docTypeId = VFSPath.parse(currentDock?.pointer ?? '').typeId ?? LOCAL_COMPUTE_NODE;
+      navigation.openFile(VFSPath.fromMachinePath(path, docTypeId).rawPath, options);
+    },
     documentProjectRoot: () => projectRootOf(dataContext.project),
     projectRootById: (projectId) =>
       dataContext.project?.id === projectId ? projectRootOf(dataContext.project) : null,

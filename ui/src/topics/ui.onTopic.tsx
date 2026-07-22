@@ -1,4 +1,4 @@
-import { emitAppTopic, EventBus } from '@sdk';
+import { emitAppTopic, EventBus, startTopicBridge } from '@sdk';
 import { useEffect } from 'react';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { dockTarget } from './dock-target';
@@ -19,6 +19,11 @@ import { dockTarget } from './dock-target';
  */
 export function UiTopicEmitter() {
   const { currentDock } = useDockNavigation();
+
+  // 0. backend→app relay: topic_msg WS frames feed the app bus (idempotent).
+  useEffect(() => {
+    startTopicBridge();
+  }, []);
 
   // 1. clicks on topic-tagged elements
   useEffect(() => {

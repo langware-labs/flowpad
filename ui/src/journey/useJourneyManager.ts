@@ -127,8 +127,15 @@ export function useJourneyManager(state: UseJourneyResult): void {
 
   // ── await: confirm predicate (the proof) ──
   const busyRef = useRef(false);
-  const tryComplete = useCallback(async () => {
+  const tryComplete = useCallback(async (event?: { data?: Record<string, unknown> }) => {
     if (!currentStep || busyRef.current || advancedRef.current === currentStep.node_id) return;
+    // matchEvent: the row that JUST changed must itself satisfy the match —
+    // "you just did X", immune to ambient churn on other rows of the type.
+    const matchEvent = currentStep.await?.matchEvent;
+    if (matchEvent) {
+      const entity = event?.data?.entity;
+      if (!entity || !new QueryFilter({ match: matchEvent }).validate(entity)) return;
+    }
     busyRef.current = true;
     try {
       const confirm = currentStep.await?.confirm;
@@ -158,15 +165,17 @@ export function useJourneyManager(state: UseJourneyResult): void {
   // ── await: ONE live subscription — the current step's ──
   useOnTopic(
     stepAwait?.topic || 'journey.idle',
-    () => void tryComplete(),
+    (event) => void tryComplete(event),
     filterTarget !== undefined ? { target: filterTarget } : undefined,
   );
 
   // Confirm-gated steps auto-satisfy if already true (reload / pre-done work) —
-  // unless the await is `fresh` (about a NEW occurrence), where pre-existing
-  // state must not count and only the event may wake the check.
+  // unless the await is `fresh` or `matchEvent` (about a NEW occurrence), where
+  // pre-existing state must not count and only the event may wake the check.
   useEffect(() => {
-    if (currentStep?.await?.confirm && !currentStep.await.fresh) void tryComplete();
+    if (currentStep?.await?.confirm && !currentStep.await.fresh && !currentStep.await.matchEvent) {
+      void tryComplete();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [journeyId, currentStep?.node_id]);
 
