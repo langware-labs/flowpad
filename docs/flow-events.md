@@ -288,6 +288,48 @@ flow declares `{pattern, target?, scope?}`; entry passes through `inject`
 (inheriting run budgets as the loop guard) with event-id dedup so at-least-once
 can't double-start a run. Removes the one-Trigger-entity-per-source indirection.
 
+**Detail (planned 2026-07-22):**
+
+*Document (`flow_doc.py`)*: `FlowDoc.subscriptions: list[FlowSubscriptionDef]`
+— `{id, pattern, target?, scope?, event?, node?}`. On a matching FlowEvent the
+flow gets a FRESH run whose entry event is `event` (default: the bus topic
+string), `data = {topic, target, data}` (the envelope's payload nested — a
+function reads the full context), delivered to `node` directly when set, else
+edge-routed from `$external`. `validate_graph`: non-empty/non-`*` pattern
+(same pointed message as TOPIC triggers — reuse `validate_topic_trigger`),
+`node` must exist.
+
+*Manager*: per-flow arming — `_arm_subscriptions(loaded)` diffs on doc load
+(`_flow_subs: dict[flow_id, list[unsub]]`; disabled flow → disarmed). Two
+arming paths: a BOOT SWEEP (`arm_all_flow_subscriptions()`, called beside
+`start_topic_triggers`) because flows load lazily, and a bus-dogfooding
+re-arm — the manager itself subscribes `entity.updated` target
+`agentic_flow:*` and reloads/re-arms that flow (graph edits arm without a
+restart).
+
+*Safety*:
+- **Event-id dedup at entry**: bounded per-manager LRU of seen envelope ids
+  (cap 1024) — at-least-once delivery can't double-start a run.
+- **Self-loop brake**: an event whose `ctx.scope` contains this flow's own
+  target (`agentic_flow:<id>` — every `flow.*` boundary emission carries it)
+  never enters the same flow — a flow subscribing to its own boundary events
+  would otherwise spawn runs forever. Cross-flow chaining stays legal.
+- Run budgets (hops/processes/deadline) apply as-is; a per-subscription rate
+  cap is DEFERRED (TOPIC triggers already offer capped subscription→flow).
+
+*Tests*: subscription entry (pattern+target → run with mapped event/data);
+direct-`node` delivery; dedup (same envelope delivered twice → one run);
+self-loop brake (flow.done of flow A never re-enters A; B chaining off A
+works); re-arm on doc change; validation.
+
+*Live drill (flow-5)*: palette-drill drops its Trigger-entity indirection —
+graph gains `subscriptions: [{pattern: "entity.created", target:
+"usage_report:*"}]`; daily backfill → palette-drill run starts from the
+subscription; second identical deliver attempt deduped.
+
+*UI*: none this phase (subscriptions are graph.json-authored; inspector
+support later).
+
 ### Log
 
 ## Phase 6 — Remaining emitters  ☐
