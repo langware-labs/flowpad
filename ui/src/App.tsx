@@ -26,6 +26,7 @@ import { useSyncOsBadge } from '@src/hooks/useInboxManager';
 import { Spotlight, useSpotlightHotkey } from '@src/components/spotlight';
 import { JourneyController } from '@src/journey/JourneyController';
 import { UiTopicEmitter } from '@src/topics/ui.onTopic';
+import { TopicHighlightObserver } from '@src/topics/highlight.onTopic';
 import { useDockViewModeOverrideSync } from '@src/contexts/view-mode-context';
 import { isHubOnly } from '@src/navigation/hub-runtime';
 
@@ -113,6 +114,7 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
         <ImageAnnotatorRoot />
         <Spotlight />
         <UiTopicEmitter />
+        <TopicHighlightObserver />
         <JourneyController />
         <ActivityProgressModalRoot />
         <WikiModalRoot />

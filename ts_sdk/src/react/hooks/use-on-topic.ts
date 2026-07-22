@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { EventBus, TopicFilters, TopicHandler } from '../../topics/EventBus';
+import { EventBus, TopicFilters, FlowEventHandler } from '../../topics/EventBus';
 
 /**
  * Subscribe to the unified event bus for exactly the lifetime of the caller —
@@ -8,7 +8,7 @@ import { EventBus, TopicFilters, TopicHandler } from '../../topics/EventBus';
  * handler rides a ref: the latest closure fires without resubscribing every
  * render.
  */
-export function useOnTopic(pattern: string, handler: TopicHandler, filters?: TopicFilters): void {
+export function useOnTopic(pattern: string, handler: FlowEventHandler, filters?: TopicFilters): void {
   const handlerRef = useRef(handler);
   handlerRef.current = handler;
 

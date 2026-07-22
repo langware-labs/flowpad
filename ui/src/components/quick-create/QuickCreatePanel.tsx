@@ -17,6 +17,7 @@ import { useAddContextFolder } from '@src/hooks/use-add-context-folder';
 import type { ContextFolderScope } from '@src/hooks/use-project-context-folders';
 import { notify } from '@src/notifications';
 import { cn } from '@src/lib/utils';
+import { topicTag } from '@src/topics/topic-tag';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { KeyRound, MessageSquarePlus } from 'lucide-react';
 import {
@@ -138,7 +139,9 @@ function TippedTile({ wikiword, ...tile }: { wikiword: string } & DesktopTilePro
       buttonLabel={t`What is ${tile.label}?`}
       openDelay={TILE_TIP_DELAY}
     >
-      <DesktopTile {...tile} />
+      {/* Every tile is a topic (its wikiword): highlightable by journeys and
+          click-observable on the EventBus, with no per-tile wiring. */}
+      <DesktopTile {...topicTag(wikiword, 'button')} {...tile} />
     </WikiTip>
   );
 }

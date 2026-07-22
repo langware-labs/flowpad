@@ -34,7 +34,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
 if TYPE_CHECKING:  # pragma: no cover
-    from flow_sdk.flow_manager.envelope import FlowEvent
+    from flow_sdk.flow_manager.envelope import RunEvent
     from flow_sdk.flow_manager.flow_doc import FlowNodeDef
     from flow_sdk.flow_manager.manager import _Run
 
@@ -74,7 +74,7 @@ def _api_base() -> str:
 async def run_function_subprocess(
     flow_folder: Path,
     node: "FlowNodeDef",
-    fe: "FlowEvent",
+    fe: "RunEvent",
     run: "_Run",
     folders: dict[str, str],
 ) -> FunctionResult:

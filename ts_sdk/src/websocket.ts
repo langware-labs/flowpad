@@ -31,6 +31,7 @@ type MessageType =
   | 'privacy_mode_msg'
   | 'toplog_state_msg'
   | 'flow_run_event_msg'
+  | 'topic_msg'
   | 'flow_node_status_msg'
   | 'ui_command'
   | 'recovered_msg'
@@ -135,6 +136,12 @@ export interface ToplogStateMessage extends BaseMessage {
  * Broadcast for every event/lifecycle beat of an AgenticFlow run — the live
  * run stream. Backend mirror: FlowRunEventMessage in flow_sdk/api/messages.py.
  */
+/** The unified event-bus frame — one serialized FlowEvent (docs/flow-events.md). */
+export interface TopicMsg extends BaseMessage {
+  message_type: 'topic_msg';
+  event: import('./topics/EventBus').FlowEvent;
+}
+
 export interface FlowRunEventMessage extends BaseMessage {
   message_type: 'flow_run_event_msg';
   flow_id: string;
@@ -625,6 +632,9 @@ export class ConnectionManager extends EventEmitter {
     if (data.message_type === 'privacy_mode_msg') {
       return this.onPrivacyModeMessage(data as PrivacyModeMessage);
     }
+    if (data.message_type === 'topic_msg') {
+      return this.onTopicMessage(data as TopicMsg);
+    }
     if (data.message_type === 'flow_run_event_msg') {
       return this.onFlowRunEventMessage(data as FlowRunEventMessage);
     }
@@ -680,6 +690,11 @@ export class ConnectionManager extends EventEmitter {
 
   onToplogStateMessage(data: ToplogStateMessage) {
     this.emit('on_toplog_state_msg', data);
+  }
+
+  /** Unified event bus frame → the ws-bridge feeds it into the app EventBus. */
+  onTopicMessage(data: TopicMsg) {
+    this.emit('on_topic_msg', data);
   }
 
   onFlowRunEventMessage(data: FlowRunEventMessage) {

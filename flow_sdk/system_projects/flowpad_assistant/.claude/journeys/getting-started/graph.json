@@ -2,7 +2,7 @@
   "version": 1,
   "id": "5eaa7e57-1111-4222-8333-444455556666",
   "name": "Getting started",
-  "description": "A quick guided tour: click through two pages, create your first vibe agent, use it, and celebrate.",
+  "description": "Build your first vibe agent: a shopping master that finds the best deals \u2014 created, instructed, and put to work, step by step.",
   "enabled": true,
   "auto_launch": true,
   "config": {
@@ -13,84 +13,87 @@
     {
       "id": "step1",
       "node_type": "guided_step",
-      "name": "Click here",
+      "name": "Open your project home",
       "node_data": {
-        "status_line": "Open the first page and click the button.",
+        "status_line": "Click the highlighted Project home entry.",
         "present": {
           "dock": {
-            "kind": "asset_editor",
-            "vfs": "page1.html"
-          }
+            "kind": "asset_list",
+            "name": "agent"
+          },
+          "highlight": "ProjectHome"
         },
         "await": {
-          "topic": "app.page.signal",
-          "target": "next"
+          "topic": "app.route.loaded",
+          "target": "dock:assets/project-home"
         }
       }
     },
     {
       "id": "step2",
       "node_type": "guided_step",
-      "name": "And now here",
+      "name": "Create a sub agent",
       "node_data": {
-        "status_line": "Nice \u2014 now click through the second page.",
+        "group": "Create your vibe agent",
+        "status_line": "Click the highlighted Sub agent tile and name it \"shopping-master\".",
         "present": {
           "dock": {
-            "kind": "asset_editor",
-            "vfs": "page2.html"
-          }
+            "kind": "home"
+          },
+          "highlight": "Sub agents"
         },
         "await": {
-          "topic": "app.page.signal",
-          "target": "next"
+          "topic": "app.ui.button.clicked",
+          "target": "Sub agents"
         }
       }
     },
     {
       "id": "step3",
       "node_type": "guided_step",
-      "name": "Create a vibe agent",
+      "name": "Write the instructions",
       "node_data": {
-        "status_line": "Create your first vibe agent from your project home.",
+        "group": "Create your vibe agent",
+        "status_line": "Write: \"You are shopping master, find the best deal, always show product name and price\" \u2014 then click the Use agent button.",
         "present": {
-          "dock": {
-            "kind": "home"
-          },
-          "highlight": "VibeAgents"
+          "highlight": "UseAgent"
         },
         "await": {
-          "topic": "app.entity.created",
-          "target": "agent:*",
-          "confirm": {
-            "type": "agent",
-            "match": {
-              "kind": "vibe"
-            },
-            "min": 1,
-            "scope": "all"
-          }
+          "topic": "app.ui.button.clicked",
+          "target": "UseAgent"
         }
       }
     },
     {
       "id": "step4",
       "node_type": "guided_step",
-      "name": "Use your vibe agent",
+      "name": "Use your agent",
       "node_data": {
-        "status_line": "Open the vibe workspace and put your agent to work.",
-        "present": {
-          "dock": {
-            "kind": "home"
-          },
-          "highlight": "VibeAgents"
-        },
+        "group": "Use your vibe agent",
+        "status_line": "Your agent is loading into a live vibe process\u2026",
+        "present": {},
         "await": {
           "topic": "app.entity.created",
-          "target": "artifact:*",
-          "confirm": {
-            "type": "artifact",
-            "scope": "project",
-            "min": 1
+          "target": "agentic_process:*",
+          "matchEvent": {
+            "process_type": "chat"
+          }
+        }
+      }
+    },
+    {
+      "id": "step5",
+      "node_type": "guided_step",
+      "name": "Ask it to find a smartphone",
+      "node_data": {
+        "group": "Use your vibe agent",
+        "status_line": "Ask your shopping master to search for a smartphone.",
+        "present": {},
+        "await": {
+          "topic": "app.entity.updated",
+          "target": "agentic_process:*",
+          "matchEvent": {
+            "status": "running"
           }
         }
       }
@@ -149,6 +152,16 @@
       "id": "e4",
       "from": {
         "node": "step4",
+        "event": "done"
+      },
+      "to": {
+        "node": "step5"
+      }
+    },
+    {
+      "id": "e5",
+      "from": {
+        "node": "step5",
         "event": "done"
       },
       "to": {

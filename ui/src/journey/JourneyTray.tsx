@@ -1,10 +1,10 @@
 import { Check, Circle, CircleDot, Play, RotateCcw, X } from 'lucide-react';
-import { useState } from 'react';
+import { useMemo } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { Button } from '@src/components/ui/button';
 import { cn } from '@src/lib/utils';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import type { UseJourneyResult } from './use-journey';
+import { groupSteps, useBusyRun, type JourneyStep, type UseJourneyResult } from './use-journey';
 
 const INDIGO = '#5b5bf0';
 const AMBER = '#f6a723';
@@ -21,22 +21,16 @@ export function JourneyTray({ state }: { state: UseJourneyResult }) {
   const { t } = useLingui();
   const { journey, journal, steps, currentStep, cursorIndex, refresh } = state;
   const { navigation } = useDockNavigation();
-  const [busy, setBusy] = useState(false);
+  const { busy, run } = useBusyRun(refresh);
+  const doneIds = useMemo(
+    () => new Set((journal?.entries ?? []).map((e) => e.node_id)),
+    [journal?.entries],
+  );
 
   if (!journey) return null;
 
   const complete = journal?.status === 'complete';
   const stepsLeft = journal?.steps_left ?? steps.length;
-  const doneIds = new Set((journal?.entries ?? []).map((e) => e.node_id));
-
-  const run = (op: () => Promise<unknown>) => {
-    if (busy) return;
-    setBusy(true);
-    op()
-      .then(() => refresh())
-      .catch((e: unknown) => console.error('[Journey] action failed', e))
-      .finally(() => setBusy(false));
-  };
 
   return (
     <div
@@ -71,37 +65,72 @@ export function JourneyTray({ state }: { state: UseJourneyResult }) {
       </div>
 
       <ul className="flex max-h-64 flex-col gap-0.5 overflow-y-auto overscroll-contain p-2">
-        {steps.map((step, i) => {
-          const done = complete || doneIds.has(step.node_id) || (cursorIndex >= 0 && i < cursorIndex);
-          const current = !complete && i === cursorIndex;
-          return (
-            <li
-              key={step.node_id}
-              data-current={current || undefined}
-              className={cn('flex items-start gap-2 rounded px-2 py-1.5 text-xs', current && 'bg-muted/60')}
-            >
-              <span className="mt-0.5 shrink-0">
-                {done ? (
-                  <Check className="h-3.5 w-3.5" style={{ color: INDIGO }} aria-hidden />
-                ) : current ? (
-                  <CircleDot className="h-3.5 w-3.5" style={{ color: AMBER }} aria-hidden />
-                ) : (
-                  <Circle className="h-3.5 w-3.5 text-muted-foreground" aria-hidden />
+        {groupSteps(steps).map((section) => {
+          const isDone = (i: number) =>
+            complete || doneIds.has(steps[i].node_id) || (cursorIndex >= 0 && i < cursorIndex);
+          const renderStep = (step: JourneyStep, i: number, indent: boolean) => {
+            const done = isDone(i);
+            const current = !complete && i === cursorIndex;
+            return (
+              <li
+                key={step.node_id}
+                data-current={current || undefined}
+                className={cn(
+                  'flex items-start gap-2 rounded px-2 py-1.5 text-xs',
+                  current && 'bg-muted/60',
+                  indent && 'ml-4',
                 )}
-              </span>
-              <div className="min-w-0 flex-1">
-                <p
-                  className={cn(
-                    'truncate',
-                    current ? 'font-medium text-foreground' : done ? 'text-muted-foreground' : 'text-foreground/80',
+              >
+                <span className="mt-0.5 shrink-0">
+                  {done ? (
+                    <Check className="h-3.5 w-3.5" style={{ color: INDIGO }} aria-hidden />
+                  ) : current ? (
+                    <CircleDot className="h-3.5 w-3.5" style={{ color: AMBER }} aria-hidden />
+                  ) : (
+                    <Circle className="h-3.5 w-3.5 text-muted-foreground" aria-hidden />
                   )}
-                >
-                  {step.name}
-                </p>
-                {current && step.status_line && (
-                  <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">{step.status_line}</p>
-                )}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p
+                    className={cn(
+                      'truncate',
+                      current ? 'font-medium text-foreground' : done ? 'text-muted-foreground' : 'text-foreground/80',
+                    )}
+                  >
+                    {step.name}
+                  </p>
+                  {current && step.status_line && (
+                    <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">{step.status_line}</p>
+                  )}
+                </div>
+              </li>
+            );
+          };
+
+          if (section.group === null) {
+            return section.indices.map((i) => renderStep(steps[i], i, false));
+          }
+          const groupDone = section.indices.every(isDone);
+          const groupCurrent = !complete && section.indices.includes(cursorIndex);
+          return (
+            <li key={`group:${section.group}:${section.indices[0]}`} data-group={section.group}>
+              <div className="flex items-center gap-2 px-2 pb-0.5 pt-1.5 text-[10px] font-semibold uppercase tracking-wide">
+                <span className="shrink-0">
+                  {groupDone ? (
+                    <Check className="h-3 w-3" style={{ color: INDIGO }} aria-hidden />
+                  ) : (
+                    <CircleDot
+                      className={cn('h-3 w-3', !groupCurrent && 'text-muted-foreground')}
+                      style={groupCurrent ? { color: AMBER } : undefined}
+                      aria-hidden
+                    />
+                  )}
+                </span>
+                <span className={groupCurrent ? 'text-foreground' : 'text-muted-foreground'}>{section.group}</span>
               </div>
+              <ul className="flex flex-col gap-0.5">
+                {section.indices.map((i) => renderStep(steps[i], i, true))}
+              </ul>
             </li>
           );
         })}
