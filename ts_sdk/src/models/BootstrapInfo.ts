@@ -117,6 +117,9 @@ export interface BootstrapInfo {
   sandbox_available?: boolean;
   /** Raw ComputeNode payload for the @sandbox node (E2B-backed). Hydrate via dataContext.sandboxComputeNode. */
   sandbox_compute_node?: ComputeNode;
+  /** Hub only: whether the hub can provision cloud desktops (e2b workspaces).
+   *  False when the hub has no e2b API key; "New Desktop" is disabled on it. */
+  desktops_enabled?: boolean;
   /** True iff at least one docker worker is currently connected. */
   docker_available?: boolean;
   /** Raw ComputeNode payloads for each live @docker-<name> node. Hydrate via dataContext.dockerComputeNodes. */
