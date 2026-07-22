@@ -42,41 +42,38 @@ export interface Step {
 
 /** Steps for the launch progress list. The `setup-git` step is only present
  *  when launching from a git repo (the hub clones + copies it into the box). */
+const STEP_LABELS: Record<StepId, string> = {
+  launch: 'Launching desktop',
+  health: 'Starting FlowPad and signing in',
+  'setup-git': 'Setting up the git repo',
+  open: 'Opening desktop',
+};
+
 function initialSteps(withGit: boolean): Step[] {
-  return [
-    { id: 'launch', label: 'Launching desktop', status: 'idle' },
-    { id: 'health', label: 'Starting FlowPad and signing in', status: 'idle' },
-    ...(withGit ? [{ id: 'setup-git' as const, label: 'Setting up the git repo', status: 'idle' as const }] : []),
-    { id: 'open', label: 'Opening desktop', status: 'idle' },
-  ];
+  const ids: StepId[] = withGit ? ['launch', 'health', 'setup-git', 'open'] : ['launch', 'health', 'open'];
+  return ids.map((id) => ({ id, label: STEP_LABELS[id], status: 'idle' }));
 }
 
-const INITIAL_STEPS: Step[] = [
-  { id: 'launch', label: 'Launching desktop', status: 'idle' },
-  { id: 'health', label: 'Starting FlowPad and signing in', status: 'idle' },
-  { id: 'open', label: 'Opening desktop', status: 'idle' },
-];
+/** Id of the step-label element in the placeholder document (updated in place). */
+const PREPARING_LINE_ID = 'step';
 
 // Placeholder shown in the claimed tab while a desktop launches; replaced with the
 // real URL only once every step succeeds. It's a standalone blank-tab document (no
-// app stylesheet in scope), so the colors are inlined rather than theme tokens. The
-// `line` reflects the current launch step so the user sees progress (point 4).
-function preparingDesktopHtml(line: string): string {
-  const safe = line.replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c] as string));
-  return (
-    '<!doctype html><meta charset="utf-8"><title>Preparing desktop…</title>' +
-    '<style>html,body{height:100%;margin:0;display:grid;place-items:center;' +
-    'background:#0b0b0c;color:#e5e5e5;font:14px system-ui,sans-serif}' +
-    '.w{display:flex;flex-direction:column;align-items:center;gap:14px}' +
-    // Three-dot spinner: the "still working, next step coming" cue while a step runs.
-    '.d{display:flex;gap:6px}.d i{width:6px;height:6px;border-radius:50%;background:#8b8b90;' +
-    'animation:b 1.4s ease-in-out infinite}.d i:nth-child(2){animation-delay:.2s}' +
-    '.d i:nth-child(3){animation-delay:.4s}' +
-    '@keyframes b{0%,80%,100%{opacity:.25;transform:scale(.8)}40%{opacity:1;transform:scale(1)}}' +
-    '</style>' +
-    `<div class="w"><div>${safe}</div><div class="d"><i></i><i></i><i></i></div></div>`
-  );
-}
+// app stylesheet in scope), so the colors are inlined rather than theme tokens.
+// Written ONCE — later steps only swap the line's text, so the dot animation runs
+// continuously instead of restarting on every transition.
+const PREPARING_DESKTOP_HTML =
+  '<!doctype html><meta charset="utf-8"><title>Preparing desktop…</title>' +
+  '<style>html,body{height:100%;margin:0;display:grid;place-items:center;' +
+  'background:#0b0b0c;color:#e5e5e5;font:14px system-ui,sans-serif}' +
+  '.w{display:flex;flex-direction:column;align-items:center;gap:14px}' +
+  // Three-dot spinner: the "still working, next step coming" cue while a step runs.
+  '.d{display:flex;gap:6px}.d i{width:6px;height:6px;border-radius:50%;background:#8b8b90;' +
+  'animation:b 1.4s ease-in-out infinite}.d i:nth-child(2){animation-delay:.2s}' +
+  '.d i:nth-child(3){animation-delay:.4s}' +
+  '@keyframes b{0%,80%,100%{opacity:.25;transform:scale(.8)}40%{opacity:1;transform:scale(1)}}' +
+  '</style>' +
+  `<div class="w"><div id="${PREPARING_LINE_ID}"></div><div class="d"><i></i><i></i><i></i></div></div>`;
 
 /** Only the fields we read from ops/workspace-ready. */
 interface WorkspaceReadyResult {
@@ -201,7 +198,7 @@ export function useDesktops() {
   }, [desktops, probeDetails]);
 
   // ---- launch ----
-  const [steps, setSteps] = useState<Step[]>(INITIAL_STEPS);
+  const [steps, setSteps] = useState<Step[]>(() => initialSteps(false));
   const [launching, setLaunching] = useState(false);
   const [launchUrl, setLaunchUrl] = useState<string | null>(null);
   const launchingRef = useRef(false);
@@ -227,19 +224,20 @@ export function useDesktops() {
     // the real URL once every launch step has succeeded (bug: the desktop must
     // open only when ready, not flash a blank/half-ready tab).
     const tab = window.open('', '_blank');
+    if (tab) {
+      tab.document.write(PREPARING_DESKTOP_HTML);
+      tab.document.close();
+    }
+    // Swap only the label so the dot animation keeps running across steps.
     const paintTab = (line: string) => {
-      if (tab) {
-        tab.document.open();
-        tab.document.write(preparingDesktopHtml(line));
-        tab.document.close();
-      }
+      const el = tab?.document.getElementById(PREPARING_LINE_ID);
+      if (el) el.textContent = line;
     };
     paintTab('Preparing your desktop…');
 
     const run = async <T,>(id: StepId, fn: () => Promise<T>): Promise<T> => {
       patch(id, { status: 'loading', detail: undefined });
-      const stepLabel = initialSteps(!!gitSetup).find((s) => s.id === id)?.label;
-      if (stepLabel) paintTab(`${stepLabel}…`);
+      paintTab(`${STEP_LABELS[id]}…`);
       try {
         const result = await fn();
         patch(id, { status: 'success' });

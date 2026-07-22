@@ -41,16 +41,19 @@ export function NewDesktopDialog({ open, onOpenChange, defaultName, initialGitUr
   const [connecting, setConnecting] = useState(false);
   const [error, setError] = useState('');
 
+  // Reset on OPEN only. `defaultName` changes whenever the desktop list refetches
+  // (it's derived from it), so depending on it here would wipe what the user has
+  // already typed mid-dialog.
   useEffect(() => {
-    if (open) {
-      setName(defaultName);
-      setUrl(initialGitUrl ?? '');
-      setNeedsGithub(false);
-      setConnecting(false);
-      setError('');
-      setChecking(false);
-    }
-  }, [open, defaultName, initialGitUrl]);
+    if (!open) return;
+    setName(defaultName);
+    setUrl(initialGitUrl ?? '');
+    setNeedsGithub(false);
+    setConnecting(false);
+    setError('');
+    setChecking(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   const finish = useCallback(
     (gitSetup?: GitSetup) => {
@@ -112,7 +115,10 @@ export function NewDesktopDialog({ open, onOpenChange, defaultName, initialGitUr
     void oauthService.connect('github').catch((e: unknown) => {
       connectionManager.off('on_llm_config_msg', handler);
       setConnecting(false);
-      setError(e instanceof Error ? e.message : t`Couldn't start GitHub connection.`);
+      // Prefer the backend's ApiFailResponse message over axios's generic
+      // "Request failed with status code 500" (same unwrap NewProjectFromGitDialog does).
+      const ax = e as { response?: { data?: { message?: string } }; message?: string };
+      setError(ax.response?.data?.message ?? ax.message ?? t`Couldn't start GitHub connection.`);
     });
   }, [validateAndMaybeLaunch, t]);
 
