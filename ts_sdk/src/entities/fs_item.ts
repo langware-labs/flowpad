@@ -15,6 +15,11 @@ export class FSItem extends APIEntity<FSItem> {
   vfs_abs_path: string;
   upload_progress?: number;
   symlink_target?: string;
+  /** Resolved absolute path on THIS machine, set by the server only when the
+   *  bytes are on local disk. Transient (API responses only). Mirrors a message
+   *  attachment's `local_path`: only the server can resolve an entity's storage
+   *  root, so never derive this client-side. */
+  local_path?: string;
   // Computed once at construction so it survives Immer's produce() in stores
   // that hold FSItem instances — Immer strips class getters but preserves
   // enumerable instance fields. Consumers (sort comparators, find-by-name)
@@ -34,6 +39,7 @@ export class FSItem extends APIEntity<FSItem> {
     this.vfs_abs_path = entity.vfs_abs_path || '';
     this.upload_progress = entity.upload_progress;
     this.symlink_target = entity.symlink_target;
+    this.local_path = entity.local_path;
     this.name = this._computeName();
   }
 

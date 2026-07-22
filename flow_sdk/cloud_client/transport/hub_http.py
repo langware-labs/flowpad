@@ -549,3 +549,32 @@ async def hub_put(
     reason = _extract_reason(resp)
     logger.warning("[hub] PUT %s returned %s: %s", url, resp.status_code, resp.text[:200])
     raise HubError(resp.status_code, reason, code=_extract_error_code(resp))
+
+
+async def hub_upload_entity_file(
+    entity_type: BuiltinEntityType,
+    entity_id: str,
+    filename: str,
+    content: bytes,
+    sub_path: str = "upload",
+) -> None:
+    """Upload ONE file into an entity's hub VFS.
+
+    The single call behind both halves of entity-file write-through: the
+    per-upload mirror in ``_hub_reflect._reflect_fs_to_hub`` (a shared entity's
+    live writes) and the catch-up in ``Entity.share()`` (files that already
+    existed when the hub twin was created — they can't ride the create POST,
+    which is JSON, and ``fs/upload`` needs the id to exist first).
+
+    ``sub_path`` is the destination DIRECTORY, not the target name — the hub
+    takes the filename from the multipart part. Passing ``upload/<name>`` would
+    nest it as ``<name>/<name>``.
+    """
+    await hub_post(
+        entity_type,
+        {},
+        entity_id,
+        "fs",
+        sub_path,
+        files={"uploaded_file": (filename, content, "application/octet-stream")},
+    )
