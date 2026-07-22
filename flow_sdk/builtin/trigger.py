@@ -37,6 +37,9 @@ class TriggerType(StrEnum):
     HOOK = "hook"
     SCHEDULE = "schedule"
     FSOP = "fsop"
+    # A unified-bus subscription (docs/flow-events.md phase 4): fires on
+    # matching FlowEvents instead of files/cron/hooks.
+    TOPIC = "topic"
 
 
 def _allowlisted_roots() -> list[Path]:
@@ -241,6 +244,14 @@ class Trigger(Entity):
     debounce_ms: int = APIField(1600, description="awatch debounce in ms — max wait before yielding a coalesced batch (FSOp only). Raise on noisy paths (npm install bursts).")
     respect_gitignore: bool = APIField(default=False, description="If True, walk for .gitignore files under watch_path and drop matching events (FSOp only).")
     ignore_patterns: list[str] = APIField(default_factory=list, description="Extra gitignore-style ignore patterns (FSOp only). Applied in addition to .gitignore.")
+
+    # TOPIC trigger fields — a unified-bus subscription (topic_ prefix avoids
+    # colliding with the entity's own scope field).
+    topic_pattern: Optional[str] = APIField(None, description="Bus topic pattern, segment-glob (TOPIC triggers only), e.g. 'entity.created' or 'flow.*'. Bare '*' is rejected.")
+    topic_target: Optional[str] = APIField(None, description="Optional target filter in colon form: 'usage_report:*' or an exact 'type:id' (TOPIC only)")
+    topic_scope: list[str] = APIField(default_factory=list, description="Optional scope filter — colon-form targets the event's ctx.scope must intersect (TOPIC only)")
+    max_fires_per_minute: int = APIField(default=30, description="Storm guard for TOPIC triggers: fires beyond this per-minute cap are dropped (one storm_suppressed log entry per window)")
+    confirm: Optional[dict[str, Any]] = APIField(None, description="Optional confirm-against-store gate (TOPIC only): {type, filter} — the entity query must match or the fire is skipped (event != proof)")
 
     _api_visible: ClassVar[bool] = True
     _unique: ClassVar[list[str]] = []
@@ -472,6 +483,15 @@ class Trigger(Entity):
             "scope": body.get("scope", "user"),
         }
 
+        if trigger_type == "topic":
+            from flow_sdk.builtin.topic_triggers import validate_topic_trigger
+            problem = validate_topic_trigger(body.get("topic_pattern"))
+            if problem:
+                return ApiFailResponse(message=problem)
+            kwargs["topic_pattern"] = body["topic_pattern"]
+            for field in ("topic_target", "topic_scope", "max_fires_per_minute", "confirm"):
+                if field in body:
+                    kwargs[field] = body[field]
         if trigger_type == "schedule":
             kwargs["expr"] = body.get("expr", "* * * * *")
             kwargs["sched_trigger_type"] = body.get("sched_trigger_type", "cron")
@@ -503,6 +523,9 @@ class Trigger(Entity):
             # (without waiting for the next server boot).
             from flow_sdk.server.fsop_watcher import fsop_watcher
             await fsop_watcher.on_trigger_saved(entity)
+        elif trigger_type == "topic":
+            from flow_sdk.builtin.topic_triggers import register_topic_trigger
+            register_topic_trigger(entity)
 
         return ApiSuccessResponse(data=entity)
 
@@ -519,7 +542,9 @@ class Trigger(Entity):
 
         for field in ("name", "description", "enabled", "scope", "expr",
                       "sched_trigger_type", "log_mode", "trigger_type",
-                      "instruction", "workdir", "project_id"):
+                      "instruction", "workdir", "project_id",
+                      "topic_pattern", "topic_target", "topic_scope",
+                      "max_fires_per_minute", "confirm"):
             if field in body:
                 setattr(self, field, body[field])
         if "mask" in body:
@@ -540,6 +565,10 @@ class Trigger(Entity):
             # existing task and starts a fresh one.
             from flow_sdk.server.fsop_watcher import fsop_watcher
             await fsop_watcher.on_trigger_saved(self)
+        elif self.trigger_type == "topic":
+            # Re-arm (replace) — pattern/filters/enabled may have changed.
+            from flow_sdk.builtin.topic_triggers import register_topic_trigger
+            register_topic_trigger(self)
 
         return ApiSuccessResponse(data=self)
 
@@ -553,6 +582,9 @@ class Trigger(Entity):
                     scheduler.remove_job(self.id)
             except Exception as e:
                 logger.debug(f"APScheduler remove_job error (may not exist): {e}")
+        elif self.trigger_type == "topic" and self.id:
+            from flow_sdk.builtin.topic_triggers import unregister_topic_trigger
+            unregister_topic_trigger(self.id)
         elif self.trigger_type == "fsop" and self.id:
             try:
                 from flow_sdk.server.fsop_watcher import fsop_watcher

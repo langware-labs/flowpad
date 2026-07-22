@@ -123,7 +123,13 @@ class _Run:
         self.flow = flow
         self.journal = RunJournal(flow.folder, run_id)
         self.started_at = time.monotonic()
-        self.pending = 0      # deliveries enqueued, not yet started
+        # BORN RESERVED: a fresh run starts with pending=1 — the ENTRY RESERVE.
+        # _start_run awaits (row save/attach/broadcast) while the run is already
+        # registered; without the reserve a concurrent drain's finalize sweep
+        # latches `finalized` before the entry event ever routes (seen live:
+        # a TOPIC trigger firing from another run's entity write). The entry
+        # path (on_trigger_fired / inject) releases it after first routing.
+        self.pending = 1
         self.active = 0       # executions in flight
         self.hops = 0
         self.processes = 0
@@ -300,13 +306,16 @@ class FlowManager:
         run_ids: list[str] = []
         for flow in await self.flows_referencing_trigger(trigger_id):
             for node in flow.doc.trigger_nodes_for(trigger_id):
-                run = await self._start_run(flow)
-                fe = RunEvent(
-                    event=TRIGGER_FIRED_EVENT, data={"trigger_id": trigger_id},
-                    flow_id=flow.flow_id, execution_id=run.id, source_node=node.id,
-                )
-                self._record_run_event(run, fe, "input")
-                await self._route(run, fe)
+                run = await self._start_run(flow)  # born reserved (see _Run)
+                try:
+                    fe = RunEvent(
+                        event=TRIGGER_FIRED_EVENT, data={"trigger_id": trigger_id},
+                        flow_id=flow.flow_id, execution_id=run.id, source_node=node.id,
+                    )
+                    self._record_run_event(run, fe, "input")
+                    await self._route(run, fe)
+                finally:
+                    run.pending -= 1
                 self._maybe_finalize(run)
                 run_ids.append(run.id)
         return run_ids
@@ -333,27 +342,32 @@ class FlowManager:
             raise ValueError(f"Flow {flow_id} is not active")
         run = self._runs.get(execution_id) if execution_id else None
         if run is None:
-            run = await self._start_run(flow)
-        fe = RunEvent(event=event, data=data or {}, flow_id=flow_id,
-                       execution_id=run.id, source_node=source_node)
-        if source_node == EXTERNAL_SOURCE:
-            self._record_run_event(run, fe, "input", target_node=target_node)
-        # A guided_step advance: the frontend injects the parked node's `done`.
-        # Release the park (mirror of the reserve in _enter_guided_step) BEFORE
-        # routing, so the successor hop's pending reserve is in place when the
-        # run is re-evaluated for sink.
-        if source_node in run.suspended_nodes:
-            run.suspended_nodes.discard(source_node)
-            run.suspended = max(0, run.suspended - 1)
-            self._emit_flow_topic(run, "step.done", {"node_id": source_node, "event": event})
-        if target_node:
-            node = flow.doc.node(target_node)
-            if node is None:
-                raise ValueError(f"Unknown node: {target_node}")
-            self._journal_event(run, fe)
-            await self._deliver(run, node, fe)
+            run = await self._start_run(flow)  # born reserved (see _Run)
         else:
-            await self._route(run, fe)
+            # JOIN RESERVE: the delivery below must land before any concurrent
+            # finalize sweep evaluates this run — covers the guided-release gap
+            # (suspended decremented before the successor's pending reserve).
+            run.pending += 1
+        try:
+            fe = RunEvent(event=event, data=data or {}, flow_id=flow_id,
+                          execution_id=run.id, source_node=source_node)
+            if source_node == EXTERNAL_SOURCE:
+                self._record_run_event(run, fe, "input", target_node=target_node)
+            # A guided_step advance: the frontend injects the parked node's `done`.
+            if source_node in run.suspended_nodes:
+                run.suspended_nodes.discard(source_node)
+                run.suspended = max(0, run.suspended - 1)
+                self._emit_flow_topic(run, "step.done", {"node_id": source_node, "event": event})
+            if target_node:
+                node = flow.doc.node(target_node)
+                if node is None:
+                    raise ValueError(f"Unknown node: {target_node}")
+                self._journal_event(run, fe)
+                await self._deliver(run, node, fe)
+            else:
+                await self._route(run, fe)
+        finally:
+            run.pending -= 1
         self._maybe_finalize(run)
         return fe
 

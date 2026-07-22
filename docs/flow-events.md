@@ -203,7 +203,7 @@ DELETE paths, 445/874). One adapter hooks both.*
   (UsageReport lifecycle → created/updated/deleted, lean data, owner scope);
   fs_store regression 599/599.
 
-## Phase 4 — Triggers become subscriptions  ☐
+## Phase 4 — Triggers become subscriptions  ✅
 
 `TriggerType.TOPIC {pattern, target?, scope?}` on the Trigger entity, firing
 the existing action machinery + `on_trigger_fired` flow entry. Rides with a
@@ -266,6 +266,20 @@ conceptual (they keep working as-is); their `fs.*`/`time.*`/`hook.*` emission
 adapters land in phase 6 with the other emitters.
 
 ### Log
+- 2026-07-22 — shipped. `builtin/topic_triggers.py` (registry + fire path +
+  storm guard + confirm), TriggerType.TOPIC + 5 fields, full create/update/
+  delete lifecycle + boot sweep. Deviations: (a) fires for one trigger are
+  SERIALIZED (per-trigger asyncio.Lock) — concurrent fires lost counter
+  updates; (b) handlers do NOT yet receive the envelope kwarg (fixed
+  signature) — it rides the trigger-log entry instead, until a handler needs
+  it. **Bonus find:** the live drill exposed a latent FlowManager race — a
+  fresh run could be finalize-swept during `_start_run`'s awaits, before its
+  entry event routed (journal showed run_end BEFORE the entry event). Fixed
+  at the invariant: runs are BORN RESERVED (`_Run.pending = 1`, released by
+  the entry path) + a regression test simulating the sweep at the worst
+  window. Live drill green: daily-analysis report `entity.created` → TOPIC
+  trigger → palette-drill run, complete with correct journal ordering — a
+  flow chained off another flow's output, zero hand wiring. 53/53 + suites.
 
 ## Phase 5 — Flows subscribe directly  ☐
 
