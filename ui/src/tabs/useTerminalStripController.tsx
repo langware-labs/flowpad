@@ -80,6 +80,13 @@ export interface TerminalStripController {
   leading: React.ReactNode;
   /** Trailing opener toolbar (null unless `addTabButton`). */
   trailing: React.ReactNode;
+  /**
+   * The spawn openers as descriptors (claude/codex/copilot/terminal/sandbox/
+   * docker/history/…). Exposed so a surface can render a *subset* itself —
+   * e.g. the project home's launcher takes only `terminal` — instead of
+   * re-deriving a button's label/icon/pending state from the raw handlers.
+   */
+  openers: OpenerDescriptor[];
   /** History / resume / install dialogs — render once in the host. */
   modals: React.ReactNode;
   isTabCreationPending: boolean;
@@ -467,6 +474,7 @@ export function useTerminalStripController({
     closeShortcutLabel: `${modLabel}+W`,
     leading,
     trailing,
+    openers,
     modals,
     isTabCreationPending,
     isClaudeCreationPending,

@@ -7,6 +7,7 @@ import { Maximize2 } from 'lucide-react';
 import { useMemo } from 'react';
 import { useLingui } from '@lingui/react/macro';
 import { DesktopSurface } from './DesktopSurface';
+import type { PanelHandlers } from './QuickCreatePanel';
 
 /**
  * MiniDesktop — the compact desktop strip on the home landing. When scoped, the
@@ -15,7 +16,7 @@ import { DesktopSurface } from './DesktopSurface';
  * "<project> Desktop" tab); unscoped it opens the global desktop. URL-first,
  * same surface with more slots.
  */
-export function MiniDesktop({ scope }: { scope?: ScopeFilter }) {
+export function MiniDesktop({ scope, panelProps }: { scope?: ScopeFilter; panelProps?: PanelHandlers }) {
   const { t } = useLingui();
   const { navigation } = useDockNavigation();
 
@@ -28,7 +29,7 @@ export function MiniDesktop({ scope }: { scope?: ScopeFilter }) {
 
   return (
     <div className="relative rounded-lg border border-border bg-card/50 px-4 py-3">
-      <DesktopSurface className="pr-6" filter={filter} />
+      <DesktopSurface className="pr-6" filter={filter} panelProps={panelProps} />
 
       <button
         type="button"
