@@ -46,4 +46,22 @@ describe('TopicHighlightObserver — generic highlight from the topic tag alone'
     await waitFor(() => expect(late.getAttribute('data-highlighted')).toBe('true'));
     late.remove();
   });
+
+  it('a REPLACED tagged element re-lights (cold-load re-render path)', async () => {
+    // The real-world failure: the footer button is found early, then the footer
+    // re-renders when project context loads, swapping the DOM node — the
+    // highlight must follow the replacement, not die with the first node.
+    mount('/?highlight=SwapTopic');
+    const first = document.createElement('div');
+    first.setAttribute('data-topic', 'SwapTopic');
+    document.body.appendChild(first);
+    await waitFor(() => expect(first.getAttribute('data-highlighted')).toBe('true'));
+
+    first.remove();
+    const second = document.createElement('div');
+    second.setAttribute('data-topic', 'SwapTopic');
+    document.body.appendChild(second);
+    await waitFor(() => expect(second.getAttribute('data-highlighted')).toBe('true'));
+    second.remove();
+  });
 });
