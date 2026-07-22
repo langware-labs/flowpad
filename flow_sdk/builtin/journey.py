@@ -101,10 +101,6 @@ class Journey(Entity):
     description: str = APIField(default="")
     asset_ref: str = APIField(default="")
     enabled: bool = APIField(default=True, description="The journey's active switch.")
-    auto_launch: bool = APIField(
-        default=False,
-        description="Launch this journey on project load (loader redirects to ?journeyId=).",
-    )
 
     _api_visible: ClassVar[bool] = True
 
@@ -119,35 +115,50 @@ class Journey(Entity):
     # graph.json and derive done/current/upcoming from cursor + entries.
 
     def auto_launch_enabled(self) -> bool:
-        """The `auto_launch` flag, read straight from graph.json.
+        """The `auto_launch` flag — disk (graph.json) is the single source of
+        truth, read through the one shared reader the indexer also uses."""
+        from flow_sdk.fs_store.indexer.functions.journey import read_auto_launch
 
-        Read from disk rather than the `auto_launch` column because record
-        metadata is not synced onto entity fields — disk stays the truth, same as
-        every other journey property."""
-        import json  # noqa: PLC0415
+        return read_auto_launch(Path(self.asset_ref)) if self.asset_ref else False
+
+    def is_system(self) -> bool:
+        """True when this journey ships inside an SDK system project.
+
+        Systemness is a property of the LOCATION (see
+        ``config.is_system_project_path``); a journey sits a few levels below
+        the project dir (``<project>/.claude/journeys/<name>``), so walk up."""
+        from flow_sdk.config import is_system_project_path
 
         if not self.asset_ref:
-            return bool(self.auto_launch)
-        try:
-            raw = json.loads((Path(self.asset_ref) / "graph.json").read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            return bool(self.auto_launch)
-        return bool(raw.get("auto_launch", self.auto_launch))
+            return False
+        return any(is_system_project_path(p) for p in Path(self.asset_ref).parents)
 
     @staticmethod
-    async def auto_launch_for(user_id: str) -> Optional["Journey"]:
-        """The journey to enter on project load, or None.
+    async def auto_launch_for(user_id: str) -> Optional["JourneyJournal"]:
+        """The JOURNAL to enter on project load, or None — launched if needed.
 
-        A journey the user already completed is never re-entered."""
+        Auto-LAUNCH, not merely auto-show: an existing active journal is
+        returned as-is (its `progress` fetch is the only journal query), else a
+        fresh one is started. A journey the user already completed is never
+        re-entered.
+
+        A user's OWN project's journey always beats a shipped system one: a
+        repo that carries an onboarding journey must not lose the race to
+        ``flowpad_assistant``'s getting-started just because of DB row order.
+        The system journey stays the fallback for projects with none."""
         from flow_sdk.builtin.journey_journal import JourneyStatus
 
-        for journey in await Journey.get_all({}):
+        # Stable sort → project journeys first, original order kept within each group.
+        candidates = sorted(await Journey.get_all({}), key=lambda j: j.is_system())
+        for journey in candidates:
             if not journey.enabled or not journey.auto_launch_enabled():
                 continue
             current = await journey.progress(user_id)
             if current is not None and current.status == JourneyStatus.COMPLETE.value:
                 continue
-            return journey
+            if current is not None and current.is_active:
+                return current
+            return await journey.launch(user_id)
         return None
 
     def doc(self) -> Optional["FlowDoc"]:
@@ -281,39 +292,27 @@ class Journey(Entity):
 
     def materialize_folder(self) -> Path:
         """Create the folder + stub files for a fresh journey (idempotent)."""
-        from flow_sdk.flow_manager.flow_doc import empty_flow_doc
+        from flow_sdk.builtin.flow_folder import scaffold_flow_folder
 
-        slug = (
-            "".join(c if c.isalnum() or c in "-_" else "-" for c in (self.name or "journey")).strip("-")
-            or "journey"
-        )
-        folder = Path(self.asset_ref) if self.asset_ref else journeys_home_dir() / slug
-        folder.mkdir(parents=True, exist_ok=True)
-        (folder / "runs").mkdir(exist_ok=True)
-        graph = folder / "graph.json"
-        if not graph.exists():
-            graph.write_text(empty_flow_doc(self.id or "", self.name), encoding="utf-8")
-        display = folder / "display.json"
-        if not display.exists():
-            display.write_text('{"version": 1, "nodes": {}}\n', encoding="utf-8")
-        if self.id:
-            capsule = folder / ".flow"
-            capsule.mkdir(exist_ok=True)
-            id_file = capsule / "id"
-            if not id_file.exists():
-                id_file.write_text(self.id, encoding="utf-8")
-        self.asset_ref = str(folder)
-        return folder
+        return scaffold_flow_folder(self, journeys_home_dir(), "journey")
 
     async def save(self, *args, **kwargs):  # type: ignore[override]
         result = await super().save(*args, **kwargs)
-        try:
-            prev_ref = self.asset_ref
-            self.materialize_folder()
-            if self.asset_ref != prev_ref:
-                await self.update()
-        except Exception:
-            import logging
+        from flow_sdk.builtin.flow_folder import rescaffold_after_save
 
-            logging.getLogger(__name__).exception("Journey: folder scaffold failed")
+        await rescaffold_after_save(self, "Journey")
         return result
+
+
+# Journeys run on the shared FlowManager engine — register as a flow-doc-backed
+# entity type so the engine resolves them without a journey special case.
+def _register_with_flow_engine() -> None:
+    try:
+        from flow_sdk.flow_manager.manager import register_flow_entity_loader
+
+        register_flow_entity_loader(Journey.get_by_id)
+    except Exception:  # pragma: no cover — engine optional in slim contexts
+        logger.debug("Journey: flow-engine registration skipped", exc_info=True)
+
+
+_register_with_flow_engine()

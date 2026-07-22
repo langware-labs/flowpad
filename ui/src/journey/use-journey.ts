@@ -1,11 +1,43 @@
 import { dataContext, FSRef, Journey, JourneyJournal, QueryRequest } from '@sdk';
 import { useEntitiesQuery } from '@sdk/react/hooks';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useActiveJourneyId } from './use-active-journey-id';
+
+/**
+ * The shared busy-guarded mutation wrapper for journey UI (Tray/Viewer):
+ * one op at a time, always `refresh()` on success (the mutation→refresh
+ * contract — WS journal updates only reach watching tabs), errors logged.
+ */
+export function useBusyRun(refresh: () => void): {
+  busy: boolean;
+  run: (op: () => Promise<unknown>, then?: () => void) => void;
+} {
+  const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
+  const run = useCallback(
+    (op: () => Promise<unknown>, then?: () => void) => {
+      if (busyRef.current) return;
+      busyRef.current = true;
+      setBusy(true);
+      op()
+        .then(() => {
+          refresh();
+          then?.();
+        })
+        .catch((e: unknown) => console.error('[Journey] action failed', e))
+        .finally(() => {
+          busyRef.current = false;
+          setBusy(false);
+        });
+    },
+    [refresh],
+  );
+  return { busy, run };
+}
 
 /** Where a step points the user — a standard dock pointer descriptor. */
 export interface JourneyPresentDock {
-  kind?: 'asset_editor' | 'home' | 'wiki';
+  kind?: 'asset_editor' | 'home' | 'wiki' | 'asset_list';
   vfs?: string;
   name?: string;
 }
@@ -16,6 +48,10 @@ export interface JourneyConfirmSpec {
   match?: Record<string, unknown>;
   min?: number;
   scope?: 'project' | 'all';
+  /** Apply `match` CLIENT-side over the fetched rows (QueryFilter.validate)
+   *  instead of in the server query — for serialization-derived fields the DB
+   *  can't match (e.g. agentic_process.is_turn_busy). */
+  local?: boolean;
 }
 
 /**
@@ -30,6 +66,17 @@ export interface JourneyAwaitSpec {
   vfs?: string;
   home?: boolean;
   confirm?: JourneyConfirmSpec;
+  /** Match against the EVENT'S OWN entity (`event.data.entity`, QueryFilter
+   *  semantics): the row that just changed must itself satisfy this — the
+   *  precise form of "you just did X", immune to ambient churn on other rows
+   *  of the same type. Steps using it never auto-satisfy on mount (there is no
+   *  event to match); the tray's Continue stays the escape hatch. */
+  matchEvent?: Record<string, unknown>;
+  /** The await is about a NEW occurrence: skip the on-mount confirm auto-check
+   *  (which would satisfy against PRE-EXISTING state — e.g. "create an agent"
+   *  must not auto-pass because old agents exist). The event must arrive; the
+   *  confirm still gates it. Reload mid-step falls back to the tray's Continue. */
+  fresh?: boolean;
 }
 
 /** One guided step, read from the journey folder's `graph.json`. */
@@ -37,8 +84,31 @@ export interface JourneyStep {
   node_id: string;
   name: string;
   status_line: string;
+  /** Sub-step grouping: consecutive steps sharing a `group` render under one
+   *  expandable header in the tray/viewer. Pure presentation — the journal's
+   *  cursor/entries machinery is flat and unchanged. */
+  group?: string;
   present: { dock?: JourneyPresentDock; highlight?: string };
   await: JourneyAwaitSpec;
+}
+
+/** A render section: ungrouped steps stand alone; grouped ones share a header. */
+export interface JourneyStepGroup {
+  group: string | null;
+  /** Indices into the flat `steps` array (order preserved). */
+  indices: number[];
+}
+
+/** Fold the flat step list into consecutive-`group` sections for rendering. */
+export function groupSteps(steps: JourneyStep[]): JourneyStepGroup[] {
+  const sections: JourneyStepGroup[] = [];
+  steps.forEach((step, i) => {
+    const group = step.group ?? null;
+    const last = sections[sections.length - 1];
+    if (last && last.group !== null && last.group === group) last.indices.push(i);
+    else sections.push({ group, indices: [i] });
+  });
+  return sections;
 }
 
 export interface UseJourneyResult {
@@ -69,6 +139,7 @@ function parseSteps(graphText: string): JourneyStep[] {
         node_id: node.id,
         name: node.name || node.id,
         status_line: (data.status_line as string) ?? '',
+        group: (data.group as string | undefined) || undefined,
         present: (data.present as JourneyStep['present']) ?? {},
         await: (data.await as JourneyStep['await']) ?? {},
       };

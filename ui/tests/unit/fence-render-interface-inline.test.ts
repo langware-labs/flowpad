@@ -27,7 +27,7 @@ beforeEach(() => {
   host = document.createElement('div');
   document.body.replaceChildren(host);
   commit = vi.fn();
-  ctx = { theme: 'dark', blockId: 'b1', editable: true, commit };
+  ctx = { theme: 'dark', blockId: 'b1', editable: true, host: { openFile: () => {}, documentProjectRoot: () => null, projectRootById: () => null }, commit };
   renderInterfaceCard(SOURCE, host, ctx);
 });
 
@@ -196,6 +196,7 @@ describe('read-only host', () => {
       theme: 'dark',
       blockId: 'b1',
       editable: false,
+      host: { openFile: () => {}, documentProjectRoot: () => null, projectRootById: () => null },
       commit: roCommit,
     });
   });

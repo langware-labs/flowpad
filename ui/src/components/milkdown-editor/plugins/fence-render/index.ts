@@ -27,14 +27,22 @@ import { codeBlockSchema } from '@milkdown/preset-commonmark';
 import type { MilkdownPlugin } from '@milkdown/ctx';
 
 import { fenceModePlugin } from './fence-mode';
-import { fenceNodeViewConstructor } from './node-view';
+import { fenceHostServicesCtx } from './host-services';
+import { createFenceNodeViewConstructor } from './node-view';
 
 export const fenceRenderPlugins: MilkdownPlugin[] = [
   fenceModePlugin,
-  $view(codeBlockSchema.node, () => fenceNodeViewConstructor),
+  fenceHostServicesCtx,
+  // Read the slice per render rather than closing over its value here: the
+  // plugin is built once, but navigation and the active project move under it.
+  $view(codeBlockSchema.node, (ctx) =>
+    createFenceNodeViewConstructor(() => ctx.get(fenceHostServicesCtx.key)),
+  ),
 ];
 
 export { registerFenceRenderer, getFenceRenderer } from './registry';
 export type { FenceRenderer, FenceRenderContext, FenceTheme } from './registry';
 export { setFenceMode, fenceModeFromDecorations, fenceModeKey } from './fence-mode';
+export { fenceHostServicesCtx, NO_HOST_SERVICES } from './host-services';
+export type { FenceHostServices } from './host-services';
 export type { FenceMode } from './fence-mode';

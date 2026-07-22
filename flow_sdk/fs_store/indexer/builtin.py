@@ -204,6 +204,10 @@ def build_default_indexer() -> FSIndexer:
     idx.add_function(RecordType.CWD_ROOT, claude_rules_fn, RecordType.CLAUDE_RULES)
     idx.add_function(RecordType.CWD_ROOT, skill_fn, RecordType.SKILL)
     idx.add_function(RecordType.CWD_ROOT, whiteboard_fn, RecordType.WHITEBOARD)
+    # A cloned repo is scanned as a CWD_ROOT (``_index_additional_dir``), so a
+    # journey a project SHIPS in .claude/journeys/ only becomes an entity —
+    # and can only auto-launch — if the expander runs for this root too.
+    idx.add_function(RecordType.CWD_ROOT, journey_fn, RecordType.JOURNEY)
     idx.add_function(RecordType.CWD_ROOT, agent_fn, RecordType.AGENT)
     idx.add_function(RecordType.CWD_ROOT, dynamic_workflows_fn, RecordType.DYNAMIC_WORKFLOW)
     idx.add_function(RecordType.CWD_ROOT, command_fn, RecordType.COMMAND)

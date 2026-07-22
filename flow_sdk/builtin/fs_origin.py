@@ -79,6 +79,12 @@ class FSOrigin(BaseModel):
     # The asset ROOT relative to the origin's root — a folder for folder-layout
     # types, a file for file-layout types. Universal across backends.
     rel_path: str = ""
+    # Optional project this origin resolves inside. When set it is the most
+    # direct way back to a local path — ``project.cwd`` + ``rel_path`` — without
+    # inferring a checkout from repo coordinates. Empty means "resolve some
+    # other way" (a local origin's ``base``, or the caller's own project), so
+    # every origin persisted before this field keeps validating unchanged.
+    project_id: str = ""
 
     @property
     def transportable(self) -> bool:

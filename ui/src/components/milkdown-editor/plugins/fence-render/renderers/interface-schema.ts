@@ -19,6 +19,7 @@
  * rewritten out of a view.
  */
 
+import { isSafeRelPath, normalizeFSOrigin, type FSOriginField } from '@sdk';
 import { parse as parseYaml } from 'yaml';
 import { z } from 'zod';
 
@@ -31,12 +32,27 @@ const paramValueSchema = z.union([
   }),
 ]);
 
+/**
+ * Where the contract is grounded in code.
+ *
+ * `origin` is the SDK's filesystem-origin union verbatim — validated loosely
+ * here and handed to `normalizeFSOrigin()` below, which owns the real shape
+ * (including the "a missing `kind` means git" rule the backend discriminator
+ * uses). Re-deriving that discrimination in zod would give us a second,
+ * drifting definition of what an origin is.
+ */
+const sourceSchema = z.object({
+  origin: z.record(z.string(), z.unknown()),
+  line: z.number().int().positive().optional(),
+});
+
 export const interfaceSpecSchema = z.object({
   name: z.string().min(1, 'name must not be empty'),
   description: z.string().optional(),
   params: z.record(z.string(), paramValueSchema).optional(),
   returns: z.string().optional(),
   errors: z.array(z.string()).optional(),
+  source: sourceSchema.optional(),
 });
 
 export type InterfaceSpecInput = z.infer<typeof interfaceSpecSchema>;
@@ -48,6 +64,12 @@ export interface InterfaceParam {
   description?: string;
 }
 
+/** A contract's grounding in source: where the code lives, and which line. */
+export interface InterfaceSource {
+  origin: FSOriginField;
+  line?: number;
+}
+
 /** Normalized form the renderer draws from. */
 export interface InterfaceSpec {
   name: string;
@@ -55,6 +77,7 @@ export interface InterfaceSpec {
   params: InterfaceParam[];
   returns?: string;
   errors: string[];
+  source?: InterfaceSource;
 }
 
 export const OPTIONAL_SUFFIX = '?';
@@ -119,5 +142,27 @@ export function parseInterfaceBlock(source: string): InterfaceSpec {
     params,
     returns: spec.returns,
     errors: spec.errors ?? [],
+    source: spec.source ? normalizeSource(spec.source) : undefined,
   };
+}
+
+/**
+ * Turn the YAML `source` mapping into a real origin.
+ *
+ * `normalizeFSOrigin` is the SDK's own json-boundary converter — the same one
+ * the wire path uses — so a hand-authored block and a backend-persisted origin
+ * are read by identical rules, including the missing-`kind`-means-git
+ * tolerance. Everything here throws on bad input; the NodeView turns that into
+ * the block's inline error chip.
+ */
+function normalizeSource(raw: { origin: Record<string, unknown>; line?: number }): InterfaceSource {
+  const origin = normalizeFSOrigin(raw.origin as Parameters<typeof normalizeFSOrigin>[0]);
+  if (!origin) throw new Error('source.origin: not a valid origin');
+
+  // The same repo-relative safety rule the backend enforces. FE and BE must
+  // agree on this, so use the shared predicate rather than a local check.
+  if (!isSafeRelPath(origin.rel_path)) {
+    throw new Error(`source.origin.rel_path: unsafe or missing path "${origin.rel_path}"`);
+  }
+  return { origin, line: raw.line };
 }

@@ -20,6 +20,7 @@ import type {
   ViewMutationRecord,
 } from '@milkdown/prose/view';
 import { fenceModeFromDecorations, setFenceMode, type FenceMode } from './fence-mode';
+import { NO_HOST_SERVICES, type FenceHostServices } from './host-services';
 import { getFenceRenderer, type FenceRenderer, type FenceTheme } from './registry';
 
 /** Debounce for re-rendering while the user types in the source pane. */
@@ -101,6 +102,8 @@ class FenceRenderNodeView implements NodeView {
   private readonly getPos: () => number | undefined;
   private readonly renderer: FenceRenderer;
   private readonly blockId: string;
+  /** Read per render, not captured, so host state stays live. */
+  private readonly getHost: () => FenceHostServices;
 
   private readonly tabs: HTMLElement;
   private readonly preview: HTMLElement;
@@ -135,11 +138,13 @@ class FenceRenderNodeView implements NodeView {
     getPos: () => number | undefined,
     decorations: readonly Decoration[],
     renderer: FenceRenderer,
+    getHost: () => FenceHostServices,
   ) {
     this.node = node;
     this.view = view;
     this.getPos = getPos;
     this.renderer = renderer;
+    this.getHost = getHost;
     this.blockId = `fence-render-${++blockIdCounter}`;
     this.mode = fenceModeFromDecorations(decorations);
 
@@ -294,6 +299,7 @@ class FenceRenderNodeView implements NodeView {
         theme,
         blockId: this.blockId,
         editable,
+        host: this.getHost(),
         commit: this.commit,
       });
       if (token !== this.renderToken) return; // superseded by a newer render
@@ -360,8 +366,22 @@ class FenceRenderNodeView implements NodeView {
   }
 }
 
-export const fenceNodeViewConstructor: NodeViewConstructor = (node, view, getPos, decorations) => {
-  const renderer = getFenceRenderer(node.attrs.language as string);
-  if (!renderer) return defaultFenceView(node);
-  return new FenceRenderNodeView(node, view, getPos, decorations, renderer);
-};
+/**
+ * Build the `code_block` NodeView constructor.
+ *
+ * Takes a *getter* for host services rather than the services themselves: the
+ * plugin is created once at editor construction, but navigation and the active
+ * project change under it.
+ */
+export function createFenceNodeViewConstructor(
+  getHost: () => FenceHostServices = () => NO_HOST_SERVICES,
+): NodeViewConstructor {
+  return (node, view, getPos, decorations) => {
+    const renderer = getFenceRenderer(node.attrs.language as string);
+    if (!renderer) return defaultFenceView(node);
+    return new FenceRenderNodeView(node, view, getPos, decorations, renderer, getHost);
+  };
+}
+
+/** Default-wired constructor, for tests and for hosts with nothing to lend. */
+export const fenceNodeViewConstructor: NodeViewConstructor = createFenceNodeViewConstructor();

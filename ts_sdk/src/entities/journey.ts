@@ -66,7 +66,6 @@ export class JourneyJournal extends APIEntity<JourneyJournal> implements IJourne
 export interface IJourney extends IEntity {
   asset_ref?: string;
   enabled?: boolean;
-  auto_launch?: boolean;
 }
 
 /**
@@ -75,21 +74,20 @@ export interface IJourney extends IEntity {
  * plus static `resume`); every one resolves to the {@link JourneyJournal} that
  * IS the progress.
  *
- * `auto_launch` makes the project loader redirect into this journey
- * (`?journeyId=`) on load.
+ * The `auto_launch` flag lives in the journey's `graph.json` (disk is the
+ * single source of truth); the loader asks the backend via `/auto-launch`
+ * rather than reading a field here.
  */
 @registerEntity
 export class Journey extends APIEntity<Journey> implements IJourney {
   static type: string = 'journey';
   asset_ref?: string;
   enabled?: boolean;
-  auto_launch?: boolean;
 
   constructor(entity: Partial<IJourney> = {}) {
     super(entity);
     this.asset_ref = entity.asset_ref;
     this.enabled = entity.enabled;
-    this.auto_launch = entity.auto_launch;
   }
 
   private get base(): string {

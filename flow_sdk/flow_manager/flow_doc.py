@@ -54,7 +54,7 @@ FunctionRuntime = Literal["inline", "subprocess"]
 # that the frontend orchestrator observes; when satisfied the orchestrator injects
 # this node's `done`, routed onward by the ordinary edge machinery. No new viewer,
 # no DOM interception — pure guidance/orchestration over standard surfaces.
-GUIDED_PRESENT_KINDS = {"asset_editor", "wiki", "home"}
+GUIDED_PRESENT_KINDS = {"asset_editor", "wiki", "home", "asset_list"}
 # The await side is a unified-bus subscription (docs/topics.md): `topic` names
 # the awaited event (`app.page.signal`, `app.route.loaded`, `app.entity.created`,
 # or `manual` for Continue-only), `target`/`vfs`/`home` filter it, and an

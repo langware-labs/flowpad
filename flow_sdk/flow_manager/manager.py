@@ -41,7 +41,7 @@ from typing import Any, Optional
 
 from flow_sdk.builtin.agentic_flow import AgenticFlow
 from flow_sdk.core.capabilities.models import now_iso
-from flow_sdk.flow_manager.envelope import EXTERNAL_SOURCE, FlowEvent
+from flow_sdk.flow_manager.envelope import EXTERNAL_SOURCE, RunEvent
 from flow_sdk.flow_manager.flow_doc import (
     AGENT_DONE_EVENT,
     TRIGGER_FIRED_EVENT,
@@ -77,7 +77,7 @@ def execution_base(proc: Any) -> Path:
     return proc._record_dir() / "execution"
 
 
-def prepare_execution_io(base: Path, fe: "FlowEvent") -> tuple[Path, Path]:
+def prepare_execution_io(base: Path, fe: "RunEvent") -> tuple[Path, Path]:
     """Materialize the standardized I/O record for one execution: mkdir
     ``input/`` + ``output/`` and write ``input/event.json``. THE one writer of
     the input-record convention. Best-effort — a read-only disk never fails
@@ -166,7 +166,7 @@ class _NodeRuntime:
     def __init__(self) -> None:
         from collections import deque
 
-        self.queue: "deque[tuple[FlowEvent, FlowNodeDef, _Run]]" = deque()
+        self.queue: "deque[tuple[RunEvent, FlowNodeDef, _Run]]" = deque()
         self.active = 0
         self.pending_ids: set[str] = set()
 
@@ -220,23 +220,35 @@ class InlineFlowCtx:
         self.logs.append(str(msg))
 
 
-def _delivery_identity(event: FlowEvent) -> str:
+def _delivery_identity(event: RunEvent) -> str:
     return f"{event.event}|{json.dumps(event.data, sort_keys=True, default=str)}"
 
 
-async def _resolve_flow_entity(flow_id: str) -> Any:
-    """The flow's backing entity: an AgenticFlow, or a Journey (same folder-doc
-    shape — asset_ref/enabled/graph.json — driven by the same engine). Journeys
-    are typed separately so they stay out of the Flows list, but they run here."""
-    entity = await AgenticFlow.get_by_id(flow_id)
-    if entity is not None:
-        return entity
-    try:
-        from flow_sdk.builtin.journey import Journey
+# Entity types that back a flow doc — the same folder shape (asset_ref /
+# enabled / graph.json) driven by this engine. AgenticFlow is the native type;
+# any other folder-doc type (e.g. Journey, typed separately so it stays out of
+# the Flows list) REGISTERS its loader on import instead of being special-cased
+# here — membership is data, not an if/else chain.
+_FLOW_ENTITY_LOADERS: list[Any] = [AgenticFlow.get_by_id]
 
-        return await Journey.get_by_id(flow_id)
-    except Exception:
-        return None
+
+def register_flow_entity_loader(loader: Any) -> None:
+    """Register an async ``flow_id -> entity | None`` loader for a folder-doc
+    entity type that runs on FlowManager."""
+    if loader not in _FLOW_ENTITY_LOADERS:
+        _FLOW_ENTITY_LOADERS.append(loader)
+
+
+async def _resolve_flow_entity(flow_id: str) -> Any:
+    """The flow's backing entity, resolved through the registered loaders."""
+    for loader in _FLOW_ENTITY_LOADERS:
+        try:
+            entity = await loader(flow_id)
+        except Exception:
+            entity = None
+        if entity is not None:
+            return entity
+    return None
 
 
 class FlowManager:
@@ -289,7 +301,7 @@ class FlowManager:
         for flow in await self.flows_referencing_trigger(trigger_id):
             for node in flow.doc.trigger_nodes_for(trigger_id):
                 run = await self._start_run(flow)
-                fe = FlowEvent(
+                fe = RunEvent(
                     event=TRIGGER_FIRED_EVENT, data={"trigger_id": trigger_id},
                     flow_id=flow.flow_id, execution_id=run.id, source_node=node.id,
                 )
@@ -308,7 +320,7 @@ class FlowManager:
         execution_id: str | None = None,
         source_node: str = EXTERNAL_SOURCE,
         target_node: str | None = None,
-    ) -> Optional[FlowEvent]:
+    ) -> Optional[RunEvent]:
         """External/entry point: deliver an event into a flow.
 
         Joins the run named by ``execution_id`` (how subprocess emissions come
@@ -322,7 +334,7 @@ class FlowManager:
         run = self._runs.get(execution_id) if execution_id else None
         if run is None:
             run = await self._start_run(flow)
-        fe = FlowEvent(event=event, data=data or {}, flow_id=flow_id,
+        fe = RunEvent(event=event, data=data or {}, flow_id=flow_id,
                        execution_id=run.id, source_node=source_node)
         if source_node == EXTERNAL_SOURCE:
             self._record_run_event(run, fe, "input", target_node=target_node)
@@ -370,7 +382,7 @@ class FlowManager:
 
     # ── standardized I/O records ──────────────────────────────────────────────
 
-    def _record_run_event(self, run: _Run, fe: FlowEvent, direction: str,
+    def _record_run_event(self, run: _Run, fe: RunEvent, direction: str,
                           target_node: str | None = None) -> None:
         """The run-level I/O record: entry events → ``input/event-N.json``,
         terminal (unrouted) emissions → ``output/event-N.json`` (numbered =
@@ -391,7 +403,7 @@ class FlowManager:
             logger.debug("FlowManager: run %s record failed", direction, exc_info=True)
 
     def _stamp_example(self, exec_dir: Path, run: _Run, node_id: str, seq: int,
-                       fe: FlowEvent | None, process_id: str | None = None,
+                       fe: RunEvent | None, process_id: str | None = None,
                        agent_id: str | None = None) -> None:
         """Born-compatible Dataset example: id is deterministic → idempotent promotion."""
         from flow_sdk.fs_store.identifier import mint_uuid
@@ -419,7 +431,7 @@ class FlowManager:
 
     # ── routing ───────────────────────────────────────────────────────────────
 
-    async def _route(self, run: _Run, fe: FlowEvent) -> None:
+    async def _route(self, run: _Run, fe: RunEvent) -> None:
         """Deliver ``fe`` along the flow's edges (exact event or catch-all)."""
         cfg = run.flow.doc.config
         run.hops = max(run.hops, fe.hop)
@@ -441,7 +453,7 @@ class FlowManager:
         for node in targets:
             await self._deliver(run, node, fe)
 
-    async def _deliver(self, run: _Run, node: FlowNodeDef, fe: FlowEvent) -> None:
+    async def _deliver(self, run: _Run, node: FlowNodeDef, fe: RunEvent) -> None:
         if node.node_type == "trigger":
             return  # triggers accept no inputs
         rt = self._node_rt(run.flow.flow_id, node.id)
@@ -503,7 +515,7 @@ class FlowManager:
 
     # ── execution per node type ───────────────────────────────────────────────
 
-    async def _execute(self, run: _Run, node: FlowNodeDef, fe: FlowEvent,
+    async def _execute(self, run: _Run, node: FlowNodeDef, fe: RunEvent,
                        rt: _NodeRuntime, seq: int) -> None:
         if node.node_type == "guided_step":
             await self._enter_guided_step(run, node, fe, rt, seq)
@@ -514,7 +526,7 @@ class FlowManager:
 
     # ── guided_step (User Journey — human-in-the-loop) ────────────────────────
 
-    async def _enter_guided_step(self, run: _Run, node: FlowNodeDef, fe: FlowEvent,
+    async def _enter_guided_step(self, run: _Run, node: FlowNodeDef, fe: RunEvent,
                                  rt: _NodeRuntime, seq: int) -> None:
         """Park the run at a guided step: record the entry, broadcast the
         "waiting for you to…" one-liner, then RESERVE ``suspended`` (keeps the
@@ -540,7 +552,7 @@ class FlowManager:
 
     # ── FlowFunction execution (inline + subprocess) ──────────────────────────
 
-    async def _run_function(self, run: _Run, node: FlowNodeDef, fe: FlowEvent,
+    async def _run_function(self, run: _Run, node: FlowNodeDef, fe: RunEvent,
                             rt: _NodeRuntime, seq: int) -> None:
         if node.function_runtime() == "inline":
             await self._run_function_inline(run, node, fe, rt, seq)
@@ -548,7 +560,7 @@ class FlowManager:
             await self._run_function_subprocess(run, node, fe, rt, seq)
 
 
-    async def _run_function_inline(self, run: _Run, node: FlowNodeDef, fe: FlowEvent,
+    async def _run_function_inline(self, run: _Run, node: FlowNodeDef, fe: RunEvent,
                                    rt: _NodeRuntime, seq: int) -> None:
         from flow_sdk.flow_manager import flow_functions
 
@@ -591,7 +603,7 @@ class FlowManager:
         await self._broadcast_node_status(run, node, "finished",
                                           {"duration_ms": duration, "runtime": "inline"})
 
-    async def _run_function_subprocess(self, run: _Run, node: FlowNodeDef, fe: FlowEvent,
+    async def _run_function_subprocess(self, run: _Run, node: FlowNodeDef, fe: RunEvent,
                                        rt: _NodeRuntime, seq: int) -> None:
         from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
         from flow_sdk.builtin.process_lifecycle import ProcessStatus
@@ -705,7 +717,7 @@ class FlowManager:
             return MODEL_SIZE_TO_CLI.get(str(nd["model_size"]), "haiku")
         return str(agent_def.get("model") or "") or "haiku"
 
-    async def _spawn_agent(self, run: _Run, node: FlowNodeDef, fe: FlowEvent,
+    async def _spawn_agent(self, run: _Run, node: FlowNodeDef, fe: RunEvent,
                            rt: _NodeRuntime, seq: int) -> None:
         from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
 
@@ -745,7 +757,7 @@ class FlowManager:
         asyncio.create_task(self._watch_agent(run, node, proc.id, rt, seq, fe,
                                               agent_id=agent_def.get("agent_id")))
 
-    def _agent_instruction(self, run: _Run, node: FlowNodeDef, fe: FlowEvent,
+    def _agent_instruction(self, run: _Run, node: FlowNodeDef, fe: RunEvent,
                            exec_base: Path, agent_def: dict[str, Any] | None = None) -> str:
         nd = node.node_data
         prompt = f" {nd.get('prompt')}" if nd.get("prompt") else ""
@@ -775,7 +787,7 @@ class FlowManager:
         return base + context
 
     async def _watch_agent(self, run: _Run, node: FlowNodeDef, proc_id: str,
-                           rt: _NodeRuntime, seq: int, fe: FlowEvent,
+                           rt: _NodeRuntime, seq: int, fe: RunEvent,
                            agent_id: str | None = None) -> None:
         """One-shot agent execution: wait for the turn to complete (busy→idle),
         stop the process, auto-emit ``done {output, output_files}``, free the slot."""
@@ -887,7 +899,7 @@ class FlowManager:
         """SYNC on purpose: the ``pending`` reserve must land before the caller
         releases its execution slot (or returns to the event loop) — counters
         must never hit 0/0 mid-handoff. The hop itself runs as a loop task."""
-        fe = FlowEvent(event=event, data=data, flow_id=run.flow.flow_id,
+        fe = RunEvent(event=event, data=data, flow_id=run.flow.flow_id,
                        execution_id=run.id, source_node=node_id, hop=run.hops + 1)
         # Chain hops run as loop tasks, not stack frames — long chains (and the
         # hop-capped cycle case) must never grow the call stack. The pending
@@ -1044,7 +1056,7 @@ class FlowManager:
 
     # ── observability ─────────────────────────────────────────────────────────
 
-    def _journal_event(self, run: _Run, fe: FlowEvent) -> None:
+    def _journal_event(self, run: _Run, fe: RunEvent) -> None:
         run.journal.append("event", {"event": fe.event, "data": fe.data,
                                      "source_node": fe.source_node, "hop": fe.hop})
         asyncio.ensure_future(self._broadcast_run_event(

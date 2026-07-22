@@ -1,12 +1,12 @@
 import { Journey, JourneyJournal } from '@sdk';
 import { Check, Circle, Clock, Compass, History, Loader2, Play, RotateCcw } from 'lucide-react';
-import { useCallback, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { Button } from '@src/components/ui/button';
 import { useIsAdvanced } from '@src/contexts/view-mode-context';
 import { cn } from '@src/lib/utils';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { useActiveJournal, useJourneySteps } from './use-journey';
+import { groupSteps, useActiveJournal, useBusyRun, useJourneySteps, type JourneyStep } from './use-journey';
 
 const STATUS_LABEL: Record<string, string> = {
   new: 'Not started',
@@ -28,28 +28,19 @@ export function JourneyViewer({ journey }: { journey: Journey }) {
   const isAdvanced = useIsAdvanced();
   const { steps, loading } = useJourneySteps(journey);
   const { journal: activeJournal, refresh } = useActiveJournal();
-  const [busy, setBusy] = useState(false);
+  const { busy, run } = useBusyRun(refresh);
   const [history, setHistory] = useState<JourneyJournal[] | null>(null);
 
   const journal = activeJournal?.journey_id === journey.id ? activeJournal : null;
-  const cursorIndex = journal?.cursor ? steps.findIndex((s) => s.node_id === journal.cursor) : -1;
-  const doneIds = new Set((journal?.entries ?? []).map((e) => e.node_id));
-  const complete = journal?.status === 'complete';
-
-  const run = useCallback(
-    (op: () => Promise<unknown>, then?: () => void) => {
-      if (busy) return;
-      setBusy(true);
-      op()
-        .then(() => {
-          refresh();
-          then?.();
-        })
-        .catch((e: unknown) => console.error('[Journey] action failed', e))
-        .finally(() => setBusy(false));
-    },
-    [busy, refresh],
+  const cursorIndex = useMemo(
+    () => (journal?.cursor ? steps.findIndex((s) => s.node_id === journal.cursor) : -1),
+    [journal?.cursor, steps],
   );
+  const doneIds = useMemo(
+    () => new Set((journal?.entries ?? []).map((e) => e.node_id)),
+    [journal?.entries],
+  );
+  const complete = journal?.status === 'complete';
 
   const show = () => navigation.showJourney(journey.id);
 
@@ -78,39 +69,56 @@ export function JourneyViewer({ journey }: { journey: Journey }) {
       </header>
 
       <ol className="flex flex-col gap-1">
-        {steps.map((step, i) => {
-          const done = complete || doneIds.has(step.node_id);
-          const current = !complete && i === cursorIndex;
-          return (
-            <li
-              key={step.node_id}
-              className={cn(
-                'flex items-start gap-3 rounded-lg px-3 py-2.5',
-                current && 'bg-primary/5 ring-1 ring-primary/30',
-              )}
-            >
-              <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center">
-                {done ? (
-                  <Check className="h-4 w-4 text-emerald-500" />
-                ) : current ? (
-                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
-                    {i + 1}
-                  </span>
-                ) : (
-                  <Circle className="h-4 w-4 text-muted-foreground/40" />
+        {groupSteps(steps).map((section) => {
+          const renderStep = (step: JourneyStep, i: number, indent: boolean) => {
+            const done = complete || doneIds.has(step.node_id);
+            const current = !complete && i === cursorIndex;
+            return (
+              <li
+                key={step.node_id}
+                className={cn(
+                  'flex items-start gap-3 rounded-lg px-3 py-2.5',
+                  current && 'bg-primary/5 ring-1 ring-primary/30',
+                  indent && 'ml-6',
                 )}
-              </span>
-              <div className="min-w-0">
-                <div
-                  className={cn(
-                    'text-sm font-medium',
-                    current ? 'text-primary' : done ? 'text-foreground' : 'text-muted-foreground',
+              >
+                <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center">
+                  {done ? (
+                    <Check className="h-4 w-4 text-emerald-500" />
+                  ) : current ? (
+                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
+                      {i + 1}
+                    </span>
+                  ) : (
+                    <Circle className="h-4 w-4 text-muted-foreground/40" />
                   )}
-                >
-                  {step.name}
+                </span>
+                <div className="min-w-0">
+                  <div
+                    className={cn(
+                      'text-sm font-medium',
+                      current ? 'text-primary' : done ? 'text-foreground' : 'text-muted-foreground',
+                    )}
+                  >
+                    {step.name}
+                  </div>
+                  {step.status_line && <div className="text-xs text-muted-foreground">{step.status_line}</div>}
                 </div>
-                {step.status_line && <div className="text-xs text-muted-foreground">{step.status_line}</div>}
+              </li>
+            );
+          };
+
+          if (section.group === null) {
+            return section.indices.map((i) => renderStep(steps[i], i, false));
+          }
+          return (
+            <li key={`group:${section.group}:${section.indices[0]}`} data-group={section.group}>
+              <div className="px-3 pb-0.5 pt-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                {section.group}
               </div>
+              <ol className="flex flex-col gap-1">
+                {section.indices.map((i) => renderStep(steps[i], i, true))}
+              </ol>
             </li>
           );
         })}

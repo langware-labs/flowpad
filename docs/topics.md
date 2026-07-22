@@ -1,5 +1,9 @@
 # Topics — the unified event bus
 
+> **Delivery status lives in [flow-events.md](flow-events.md)** — the phased
+> worklog. The consolidating envelope name is **`FlowEvent`**; this document
+> remains the language rationale.
+
 One event language spanning the whole app, front and back: entity changes, filesystem
 changes, flow-engine boundaries, worker/agent status, compute-node liveness, and UI
 interaction all speak it. The journey engine, triggers, and any future recorder are
@@ -127,3 +131,9 @@ it safe to exist. Not built now.
    machinery)
 5. Compute-node liveness unification
 6. Recorder interface stub
+
+<!-- flowpad:capsule identity
+version: 1
+data:
+  id: c3e9416c-2a1c-45d7-9e29-f0e813f29159
+flowpad:endcapsule identity -->
