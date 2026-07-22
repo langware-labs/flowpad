@@ -193,8 +193,12 @@ async def test_run_and_execution_records_are_example_shaped(tmp_path):
     # Born-compatible examples: deterministic id + provenance source block.
     ex = json.loads((exec_dir / "example.json").read_text())["metadata"]
     assert ex["kind"] == "train"
-    assert ex["source"] == {"flow_id": flow.id, "run_id": fe.execution_id, "node_id": "a",
-                            "seq": 1, "event": "ask", "source_node": EXTERNAL_SOURCE, "hop": 0}
+    src = ex["source"]
+    assert src["event_id"] == fe.id  # phase 7: envelope identity in provenance
+    assert {k: src[k] for k in ("flow_id", "run_id", "node_id", "seq", "event",
+                                "source_node", "hop")} == {
+        "flow_id": flow.id, "run_id": fe.execution_id, "node_id": "a",
+        "seq": 1, "event": "ask", "source_node": EXTERNAL_SOURCE, "hop": 0}
     run_ex = json.loads((run_dir / "execution" / "example.json").read_text())["metadata"]
     assert run_ex["source"]["node_id"] == "$run"
 
@@ -933,3 +937,39 @@ async def test_flow_subscription_fanout_enters_every_subscribed_flow(tmp_path):
     emit_topic("fan.out", "x:1")  # ONE envelope, two subscribers
     await _until(lambda: sorted(entered) == ["x", "y"], "both flows entered")
     await _until(lambda: not fm.live_run_ids(), "runs finalized")
+
+
+@async_context
+async def test_entry_envelope_id_and_actor_preserved(tmp_path):
+    """Phase 7: a run entered from a bus envelope preserves its id + actor —
+    into the journal event row AND the example provenance."""
+    import json as _json
+    from flow_sdk.topics import FlowEvent, event_bus
+
+    @flow_functions.register("v2_prov")
+    def _p(event_name, data, ctx):
+        return {}
+
+    flow = await _make_flow(tmp_path, "provflow", [_fn("a", "v2_prov")], [])
+    doc = _json.loads((tmp_path / "provflow" / "graph.json").read_text())
+    doc["subscriptions"] = [{"pattern": "prov.*", "node": "a"}]
+    (tmp_path / "provflow" / "graph.json").write_text(_json.dumps(doc))
+    fm = FlowManager()
+    await fm.load_flow(flow.id)
+
+    env = FlowEvent(topic="prov.go", target="x:1",
+                    ctx={"origin": "local_server", "actor": "user:u-42"})
+    event_bus.deliver(env)
+    await _until(lambda: fm.live_run_ids() or None, "run started")
+    await _until(lambda: not fm.live_run_ids(), "run finalized")
+
+    run_id = (await AgenticFlowRun.get_all({"flow_id": flow.id}))[0].id
+    entries = read_run_journal(tmp_path / "provflow", run_id)
+    entry_row = next(e for e in entries if e["kind"] == "event")
+    assert entry_row["event_id"] == env.id      # preserved, never re-minted
+    assert entry_row["actor"] == "user:u-42"
+
+    exec_ex = _json.loads((run_record_dir(run_id) / "executions" / "1-a"
+                           / "example.json").read_text())["metadata"]["source"]
+    assert exec_ex["event_id"] == env.id
+    assert exec_ex["actor"] == "user:u-42"
