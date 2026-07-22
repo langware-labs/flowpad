@@ -6,8 +6,10 @@ Intended for development, manual QA, and integration-test assertions.
 
 import time
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
+
+from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
 
 from .websocket import get_active_connection, get_connection_infos
 
@@ -80,3 +82,21 @@ async def debug_trigger_callbacks():
 
     items = trigger_callbacks.list_registered()
     return ApiSuccessResponse(data={"callbacks": items, "count": len(items)})
+
+
+@router.post("/api/v1/debug/emit_topic")
+async def emit_topic_route(request: Request):
+    """Dev/QA: emit a FlowEvent on the backend bus — proves the
+    backend→topic_msg→app-bus pipe end-to-end (docs/flow-events.md phase 1)."""
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    topic = str((body or {}).get("topic") or "")
+    target = str((body or {}).get("target") or "")
+    if not topic or not target:
+        return ApiFailResponse(message="topic and target are required")
+    from flow_sdk.topics import emit_topic
+
+    event = emit_topic(topic, target, (body or {}).get("data") or {})
+    return ApiSuccessResponse(data=event.model_dump() if event else None)

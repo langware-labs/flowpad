@@ -27,7 +27,7 @@ INDEXED_TYPES = {
     "claude_hook", "claude_md", "claude_memory", "claude_rules",
     "claude_session", "codex_session", "command", "copilot_session",
     "dataset", "deck_template", "deck", "dynamic_workflow",
-    "markdown_index", "markdown", "mcp_server", "plan", "plugin",
+    "journey", "markdown_index", "markdown", "mcp_server", "plan", "plugin",
     "project", "prompt", "secret_origin", "skill", "spec", "spreadsheet",
     "task", "todo_file", "usage_report", "whiteboard", "workflow_run",
 }
@@ -36,7 +36,8 @@ FRONTMATTER_PORTABLE = ("agent", "claude_md", "markdown")
 FRONTMATTER_STABLE = ("plan", "claude_memory", "claude_rules", "spec", "prompt")
 FRONTMATTER_ALL = FRONTMATTER_PORTABLE + FRONTMATTER_STABLE + ("command",)
 FOLDER_PORTABLE = (
-    "agentic_flow", "dataset", "deck", "deck_template", "skill", "task", "whiteboard",
+    "agentic_flow", "dataset", "deck", "deck_template", "journey", "skill", "task",
+    "whiteboard",
 )
 JSON_STABLE = ("agent_trace", "asset_cleanup_report", "usage_report")
 
@@ -77,7 +78,7 @@ def test_exact_capsule_native_derived_partition_and_parser_contract() -> None:
     capsule_types = set(FRONTMATTER_ALL) | set(FOLDER_PORTABLE)
     native_types = set(JSON_STABLE)
     derived_types = INDEXED_TYPES - capsule_types - native_types
-    assert (len(capsule_types), len(native_types), len(derived_types)) == (16, 3, 13)
+    assert (len(capsule_types), len(native_types), len(derived_types)) == (17, 3, 13)
 
     for name in sorted(INDEXED_TYPES):
         info = _info(name)
@@ -200,7 +201,7 @@ def _folder_with_legacy(root: Path, type_name: str) -> Path:
         (folder / "deck.json").write_text(json.dumps({"id": V5}))
     elif type_name == "deck_template":
         (folder / "template.json").write_text(json.dumps({"metadata": {"id": V5}, "data": {}}))
-    elif type_name == "agentic_flow":
+    elif type_name in ("agentic_flow", "journey"):
         (folder / "graph.json").write_text(json.dumps({"id": V5, "nodes": [], "edges": []}))
     return folder
 

@@ -58,8 +58,10 @@ def journey_id_from_folder(ref: FSRef | Path) -> object | None:
     return adopt_entity_id(doc.id if doc else None)
 
 
-def _auto_launch(journey_dir: Path) -> bool:
-    """The journey's `auto_launch` flag, read from the RAW graph.json.
+def read_auto_launch(journey_dir: Path) -> bool:
+    """The journey's `auto_launch` flag, read from the RAW graph.json — the ONE
+    reader (``Journey.auto_launch_enabled`` calls this too; disk is the single
+    source of truth).
 
     Read raw rather than off the parsed FlowDoc: `auto_launch` is a journey-only
     concern the shared FlowDoc schema doesn't model, so it would be dropped."""
@@ -111,8 +113,7 @@ def extract_journey(ref: FSRef, resolved_id: str) -> list[FSRecord]:
     if doc:
         steps = [n for n in doc.nodes if n.node_type == "guided_step"]
         rec_kwargs["metadata"] = {"enabled": doc.enabled, "version": doc.version,
-                                  "step_count": len(steps),
-                                  "auto_launch": _auto_launch(path)}
+                                  "step_count": len(steps)}
     rec = FSRecord(**rec_kwargs)
     object.__setattr__(rec, "_asset_ref", FSRef(path.resolve()))
     return [rec]

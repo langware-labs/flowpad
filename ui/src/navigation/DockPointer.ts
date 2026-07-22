@@ -299,10 +299,7 @@ export class DockPointer implements IDockPointer {
 
   /** Clone this dock pointed at a translated body, or back to the original with null. */
   withLang(lang: string | null): DockPointer {
-    const nextOptions = { ...(this.options ?? {}) };
-    if (lang) nextOptions[LANG_PARAM] = lang;
-    else delete nextOptions[LANG_PARAM];
-    return new DockPointer(this.viewType, this.pointer, nextOptions, this.layout, this.page);
+    return this.withOption(LANG_PARAM, lang);
   }
 
   /**
@@ -314,12 +311,21 @@ export class DockPointer implements IDockPointer {
     return this.options?.[JOURNEY_PARAM] ?? null;
   }
 
+  /**
+   * Clone this dock with one URL option set (or cleared with null) — the
+   * generic form behind `withLang`/`withJourney` and the sticky-param
+   * carry-forward in `openDock`.
+   */
+  withOption(key: string, value: string | null): DockPointer {
+    const nextOptions = { ...(this.options ?? {}) };
+    if (value) nextOptions[key] = value;
+    else delete nextOptions[key];
+    return new DockPointer(this.viewType, this.pointer, nextOptions, this.layout, this.page);
+  }
+
   /** Clone this dock showing a journey, or close it (clear the param) with null. */
   withJourney(journeyId: string | null): DockPointer {
-    const nextOptions = { ...(this.options ?? {}) };
-    if (journeyId) nextOptions[JOURNEY_PARAM] = journeyId;
-    else delete nextOptions[JOURNEY_PARAM];
-    return new DockPointer(this.viewType, this.pointer, nextOptions, this.layout, this.page);
+    return this.withOption(JOURNEY_PARAM, journeyId);
   }
 
   /**

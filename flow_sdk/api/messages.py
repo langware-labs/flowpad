@@ -39,6 +39,8 @@ class WSMessageType(Enum):
     TOPLOG_STATE_MSG = "toplog_state_msg"
     FLOW_RUN_EVENT_MSG = "flow_run_event_msg"
     FLOW_NODE_STATUS_MSG = "flow_node_status_msg"
+    # The unified event bus frame (docs/flow-events.md) — carries one FlowEvent.
+    TOPIC_MSG = "topic_msg"
 
 
 class ExeMessageSubType(StrEnum):
@@ -182,6 +184,17 @@ class FlowNodeStatusMessage(BaseMessage):
     active: int = 0
     detail: Dict[str, Any] = {}
     ts: str = ""
+
+
+class TopicMessage(BaseMessage):
+    """The unified event-bus frame: one serialized FlowEvent
+    (flow_sdk/topics/envelope.py), forwarded backend→app for the declared
+    allowlist only (topics/ws_forward.py). The envelope rides as a plain dict
+    so its schema stays pinned by the contract fixture, independent of
+    BaseMessage plumbing. TS mirror: ``TopicMsg`` in ``ts_sdk/src/websocket.ts``."""
+
+    message_type: str = WSMessageType.TOPIC_MSG.value
+    event: Dict[str, Any]
 
 
 class BroadcastMessage(BaseMessage):

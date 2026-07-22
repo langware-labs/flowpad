@@ -1,0 +1,34 @@
+{
+  "comment": "Cross-language FlowEvent contract — parsed by tests/unit/test_topic_bus.py (Python) and ui/tests/unit/event-bus.test.ts (TS). Both buses must accept this envelope verbatim and agree on every matching case.",
+  "envelope": {
+    "id": "7f3f0c7e-2c65-4a4f-9d3e-1b2a3c4d5e6f",
+    "timestamp": "2026-07-19T12:00:00.000000Z",
+    "topic": "flow.step.done",
+    "target": "agentic_flow:63e6a325-97be-46f4-a1a5-a9750d4c1d8d",
+    "data": { "run_id": "r-1", "node": "analyze" },
+    "ctx": {
+      "actor": "user:u-1",
+      "scope": ["agentic_flow_run:r-1", "project:p-1"],
+      "origin": "local_server"
+    }
+  },
+  "topic_cases": [
+    { "pattern": "*", "topic": "anything.at.all", "matches": true },
+    { "pattern": "flow.step.done", "topic": "flow.step.done", "matches": true },
+    { "pattern": "flow.step.done", "topic": "flow.step.failed", "matches": false },
+    { "pattern": "flow.*", "topic": "flow.step.done", "matches": true },
+    { "pattern": "flow.*", "topic": "flow.done", "matches": true },
+    { "pattern": "flow.*", "topic": "flow", "matches": false },
+    { "pattern": "flow.*.done", "topic": "flow.step.done", "matches": true },
+    { "pattern": "flow.*.done", "topic": "flow.step.extra.done", "matches": false },
+    { "pattern": "app.rou*", "topic": "app.route.loaded", "matches": false },
+    { "pattern": "entity.updated", "topic": "entity.updated.deep", "matches": false }
+  ],
+  "target_cases": [
+    { "pattern": "agent:1234", "target": "agent:1234", "matches": true },
+    { "pattern": "agent:1234", "target": "agent:9999", "matches": false },
+    { "pattern": "agent:*", "target": "agent:9999", "matches": true },
+    { "pattern": "agent:*", "target": "agentic_flow:1", "matches": false },
+    { "pattern": "*", "target": "anything:x", "matches": true }
+  ]
+}
