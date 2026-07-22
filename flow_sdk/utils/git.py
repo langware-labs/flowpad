@@ -23,20 +23,20 @@ _GIT_TOKEN_CREDENTIAL_HELPER = (
 )
 
 
-def _git_auth_prefix(token: Optional[str]) -> list[str]:
-    """`git -c credential.helper=…` args that authenticate via the token in the
-    child env, or `[]` when no token (public clone)."""
-    if not token:
-        return []
-    return ["-c", f"credential.helper={_GIT_TOKEN_CREDENTIAL_HELPER}"]
+def _git_token_auth(token: Optional[str]) -> Tuple[list[str], Optional[dict]]:
+    """Auth for one git invocation: `(extra argv, child env)`.
 
-
-def _git_child_env(token: Optional[str]) -> Optional[dict]:
-    """Child env for an authed git op: the token (read by the helper) plus
-    GIT_TERMINAL_PROMPT=0 so a bad/absent token fails fast instead of hanging."""
+    The argv installs an inline `credential.helper` that names the env var; the
+    env carries the token itself (never argv, never the on-disk URL) plus
+    GIT_TERMINAL_PROMPT=0 so a bad/absent token fails fast instead of hanging.
+    `([], None)` when there's no token — a plain public clone.
+    """
     if not token:
-        return None
-    return {**os.environ, _GIT_TOKEN_ENV: token, "GIT_TERMINAL_PROMPT": "0"}
+        return [], None
+    return (
+        ["-c", f"credential.helper={_GIT_TOKEN_CREDENTIAL_HELPER}"],
+        {**os.environ, _GIT_TOKEN_ENV: token, "GIT_TERMINAL_PROMPT": "0"},
+    )
 
 
 @dataclass
@@ -227,11 +227,10 @@ async def git_clone(
     Returns (success, message).
     """
     try:
-        cmd = ["git", *_git_auth_prefix(token), "clone", clone_url, target_dir]
+        auth_args, env = _git_token_auth(token)
+        cmd = ["git", *auth_args, "clone", clone_url, target_dir]
         if branch:
             cmd += ["--branch", branch]
-
-        env = _git_child_env(token)
 
         def _run(args):
             return subprocess.run(args, capture_output=True, text=True, timeout=120, env=env)

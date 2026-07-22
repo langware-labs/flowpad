@@ -134,8 +134,8 @@ export function HubHome() {
 
   // New-desktop modal (name + optional git). Opened by the New Desktop card, or
   // pre-filled from a `?setup_git=<git-url>` deep link.
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [prefillGitUrl, setPrefillGitUrl] = useState<string | undefined>(undefined);
+  // One state: null = closed. Open sites can't disagree about the prefill.
+  const [newDesktop, setNewDesktop] = useState<{ gitUrl?: string } | null>(null);
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const gitUrl = params.get('setup_git');
@@ -144,8 +144,7 @@ export function HubHome() {
     const url = new URL(window.location.href);
     url.searchParams.delete('setup_git');
     window.history.replaceState(null, '', url.toString());
-    setPrefillGitUrl(gitUrl);
-    setDialogOpen(true);
+    setNewDesktop({ gitUrl });
   }, []);
 
   const firstName = currentUser?.name?.split(' ')[0] || 'there';
@@ -247,7 +246,7 @@ export function HubHome() {
             {/* New desktop — always first, high-contrast + theme-aware. */}
             <button
               type="button"
-              onClick={() => { setPrefillGitUrl(undefined); setDialogOpen(true); }}
+              onClick={() => setNewDesktop({})}
               disabled={launching}
               data-testid="new-desktop-button"
               className="flex items-center justify-center gap-2 rounded-lg border border-primary/50 bg-primary/10 px-4 py-3 text-sm font-medium text-primary transition-colors hover:bg-primary/20 disabled:opacity-60"
@@ -357,10 +356,10 @@ export function HubHome() {
 
       {/* New-desktop modal: name + optional git repo (with the connect-GitHub gate). */}
       <NewDesktopDialog
-        open={dialogOpen}
-        onOpenChange={setDialogOpen}
+        open={!!newDesktop}
+        onOpenChange={(o) => { if (!o) setNewDesktop(null); }}
         defaultName={nextDesktopName(desktops)}
-        initialGitUrl={prefillGitUrl}
+        initialGitUrl={newDesktop?.gitUrl}
         onLaunch={(opts) => void launch(opts)}
       />
     </div>
