@@ -80,6 +80,10 @@ class Docs(Markdown):
     title: str = APIField(default="")
     tags: List[str] = APIField(default_factory=list)
     links: List[str] = APIField(default_factory=list)
+    # Dot-taxonomy subjects this doc is ABOUT (frontmatter `topics:` list,
+    # canonical topic names). The doc→topic edge for `flow topic get` — the
+    # doc points at the topic, never the reverse (docs/topics.md).
+    topics: List[str] = APIField(default_factory=list)
 
 
 class ClaudeMemory(Markdown):

@@ -1,0 +1,125 @@
+"""`flow topic ...` CLI subgroup.
+
+Subject-scoped context for agents: ``flow topic <name> get`` pulls everything
+bound to a dot-taxonomy topic — docs whose frontmatter lists it, source files
+carrying a ``topic`` capsule, wiki mentions — assembled server-side by
+``POST /api/v1/topics/context`` (see flow_sdk/server/routes/topics.py).
+
+Modes (LLMIndex summary tiers):
+    line  — one line per bound doc / code site (the orientation pass)
+    block — a ≤60-word summary per doc (the working set)
+    full  — whole doc bodies (size-capped; only when load-bearing)
+
+Output is human-readable text — it is written to be pasted into an agent's
+context window, not parsed. Exit codes: 0 ok; 2 invalid args; 5 server error.
+"""
+
+from __future__ import annotations
+
+import os
+from typing import Optional
+
+import typer
+from typing_extensions import Annotated
+
+from flow_sdk.cli.commands._common import (
+    discover_port as _discover_port,
+    fail as _fail,
+    post_graph_json as _post_graph_json,
+)
+
+topic_app = typer.Typer(
+    name="topic",
+    help="Subject-scoped context: docs + code sites bound to a dot-taxonomy topic.",
+    add_completion=False,
+    no_args_is_help=True,
+)
+
+EXIT_OK = 0
+EXIT_INVALID_ARG = 2
+EXIT_CONNECTION_ERROR = 5
+
+
+def _render(data: dict) -> str:
+    lines: list[str] = []
+    topic = data.get("topic") or {}
+    mode = data.get("mode")
+    name = topic.get("name", "")
+    if topic.get("blessed"):
+        title = topic.get("title") or name
+        lines.append(f"# Topic: {name} — {title}")
+        if topic.get("description"):
+            lines.append(topic["description"])
+    else:
+        lines.append(f"# Topic: {name} (anonymous — no blessed entity)")
+    for ancestor in topic.get("ancestors") or []:
+        desc = ancestor.get("description") or ancestor.get("title") or ""
+        lines.append(f"  under {ancestor['name']}: {desc}")
+
+    docs = data.get("docs") or []
+    lines.append("")
+    lines.append(f"## Docs ({len(docs)})")
+    for doc in docs:
+        ref = doc.get("asset_ref") or doc.get("id")
+        lines.append(f"- {doc.get('title') or ref} [{', '.join(doc.get('topics') or [])}]")
+        lines.append(f"  {ref}")
+        if mode == "line":
+            lines.append(f"  {doc.get('line', '')}")
+        if mode in ("block", "full") and doc.get("block"):
+            lines.append(f"  {doc['block']}")
+        if mode == "full" and doc.get("body") is not None:
+            lines.append("")
+            lines.append(f"--- BEGIN {ref} ---")
+            lines.append(doc["body"].rstrip())
+            suffix = " (TRUNCATED)" if doc.get("truncated") else ""
+            lines.append(f"--- END {ref}{suffix} ---")
+
+    code = data.get("code") or []
+    lines.append("")
+    lines.append(f"## Code sites ({len(code)})")
+    for site in code:
+        lines.append(f"- {site['path']}:{site['line']}")
+        for tname, one_liner in (site.get("topics") or {}).items():
+            lines.append(f"    {tname}: {one_liner}")
+
+    mentions = data.get("mentions") or []
+    if mentions:
+        lines.append("")
+        lines.append(f"## Mentions ({len(mentions)})")
+        for m in mentions:
+            lines.append(f"- {m['src_type']}-{m['src_id']} (line {m['line']})")
+    return "\n".join(lines)
+
+
+@topic_app.command(
+    "get",
+    help="Pull the context bundle for a topic. NAME is a dot-taxonomy topic (e.g. flow.runs).",
+)
+def topic_get(
+    name: Annotated[str, typer.Argument(help="Topic name, e.g. flow.runs")],
+    mode: Annotated[str, typer.Option("--mode", "-m", help="line | block | full")] = "line",
+    root: Annotated[
+        Optional[str],
+        typer.Option("--root", help="Root to scan for code topic-capsules (default: cwd)."),
+    ] = None,
+) -> None:
+    if not name or not name.strip():
+        _fail(EXIT_INVALID_ARG, "INVALID_TOPIC", "Empty topic name")
+    if mode not in ("line", "block", "full"):
+        _fail(EXIT_INVALID_ARG, "INVALID_MODE", f"mode must be line|block|full, got {mode!r}")
+    port = _discover_port()
+    url = f"http://127.0.0.1:{port}/api/v1/topics/context"
+
+    def _on_error(status_code: int, rbody: dict) -> None:
+        message = str(rbody.get("message") or f"HTTP {status_code}")
+        if status_code == 400:
+            _fail(EXIT_INVALID_ARG, "INVALID_ARG", message)
+        _fail(EXIT_CONNECTION_ERROR, "SERVER_ERROR", message)
+
+    data = _post_graph_json(
+        url,
+        {"name": name.strip(), "mode": mode, "root": root or os.getcwd()},
+        timeout=30,
+        on_error=_on_error,
+    )
+    typer.echo(_render(data))
