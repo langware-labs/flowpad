@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import io
 import uuid
+from types import SimpleNamespace
 
 import pytest
 from starlette.datastructures import UploadFile
@@ -255,3 +256,69 @@ async def test_cache_miss_returns_false_when_hub_has_nothing(monkeypatch, tmp_pa
 
     ok = await fetch_remote_entity_file(TypeId(f"task-{uuid.uuid4()}"), "data/a.txt", _Storage(tmp_path))
     assert ok is False
+
+
+class _PrefixStorage:
+    """Faithful stand-in for ``LocalStorageDriver``'s path contract.
+
+    Two details the earlier fake glossed over, and which together caused a real
+    ENOENT on every share-time push: ``list_dir`` yields items whose
+    ``vfs_abs_path`` INCLUDES the ``<type>-<id>/`` prefix, while
+    ``get_storage_path`` PREPENDS that same folder — so handing it the absolute
+    path nests the id twice.
+    """
+
+    def __init__(self, root, entity_folder):
+        self.root = root
+        self.entity_folder = entity_folder
+
+    def get_storage_path(self, rel: str) -> str:
+        return str(self.root / self.entity_folder / rel.strip("/"))
+
+    async def list_dir(self, _root):
+        from types import SimpleNamespace
+
+        return [
+            SimpleNamespace(display_name="a1.md", is_dir=False, vfs_abs_path=f"{self.entity_folder}/a1.md"),
+            SimpleNamespace(display_name="sub", is_dir=True, vfs_abs_path=f"{self.entity_folder}/sub"),
+        ]
+
+
+@pytest.mark.timeout(30)
+@pytest.mark.asyncio
+async def test_share_push_reads_via_entity_relative_path(monkeypatch, tmp_path):
+    """Regression: the share-time push must strip the entity prefix before
+    calling ``get_storage_path``, or every file 'push' dies on ENOENT while the
+    share still reports success — the bytes silently never reach the hub."""
+    import flow_sdk.actions.fs.fs_actions as fsa
+    import flow_sdk.utils.hub as hub
+    from flow_sdk.actions.fs.fs_actions import push_entity_files_to_hub
+
+    folder = "task-abc123"
+    (tmp_path / folder).mkdir()
+    (tmp_path / folder / "a1.md").write_bytes(b"payload")
+
+    sent = []
+
+    async def _fake_upload(et, entity_id, filename, content, sub_path="upload"):
+        sent.append((entity_id, filename, content))
+
+    monkeypatch.setattr(hub, "hub_upload_entity_file", _fake_upload)
+    monkeypatch.setattr(fsa, "get_entity_storage", lambda _tid: _PrefixStorage(tmp_path, folder))
+    monkeypatch.setattr(
+        fsa.VFSPath, "from_entity_path", staticmethod(lambda *a, **k: SimpleNamespace(abs_vfspath=folder))
+    )
+
+    class _Ent:
+        id = "abc123"
+        remote = True
+        typeid = "task-abc123"
+
+        @staticmethod
+        def get_type():
+            return "task"
+
+    pushed = await push_entity_files_to_hub(_Ent())
+
+    assert pushed == 1, "the file must be pushed (a directory is skipped)"
+    assert sent == [("abc123", "a1.md", b"payload")]
