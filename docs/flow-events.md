@@ -344,14 +344,38 @@ support later).
   backfill report creation started the run with the mapped {topic, target,
   data} entry. 34/34 flow suite.
 
-## Phase 6 — Remaining emitters  ☐
+## Phase 6 — Remaining emitters  ✅
 
 Worker status tick → `agent.status` (target = the AgenticProcess); hub bridge
 `_dispatch_event` re-emits with `origin: hub` + preserved `actor`; compute-node
 liveness → `node.*`; UI completes tag + `openDock` chokepoint coverage. Each an
-adapter file per the naming rule (`<family>.on_topic.py`).
+adapter file per the naming rule (`<family>_on_topic.py`).
+
+**Detail (planned 2026-07-22):**
+- `agent.status` — emitted from the change-gated seam in
+  `_emit_status_report` (agentic_process.py): lean data
+  `{worker_status, process_status, busy}`, target `agentic_process:<id>`;
+  the full report keeps riding its legacy watcher-scoped channel.
+- Hub relay — `hub_bridge._dispatch_event` re-emits as **`hub.entity.<op>`**
+  (NOT `entity.*`): until phase-9 scope authorization, hub-origin events stay
+  in their own family so no TOPIC trigger / flow subscription treats them as
+  local writes by accident; `origin: "hub"`, target = colon form. Documented
+  deviation from the original table.
+- `node.connected/disconnected/…` — emitted from `auth_state.
+  set_connection_status` (the ONE funnel every hub-connection transition
+  already flows through), target = the local ComputeNode; the wider
+  three-mechanism liveness unification stays future work.
+- UI coverage — already at need (clicks / route-loaded / sandbox signals via
+  `UiTopicEmitter`); broader `data-topic` tagging is CONTENT work, deferred.
 
 ### Log
+- 2026-07-22 — shipped as planned: agent.status (change-gated seam, lean
+  data), hub.entity.<op> relay (own family + origin:hub + actor when
+  carried), node.<transition> from the set_connection_status funnel
+  (target = get_local ComputeNode). Live drill was three phases dogfooding:
+  a TOPIC trigger `{pattern: agent.status}` fired 4× during a palette-drill
+  agent turn — worker ticks → bus → phase-4 trigger, end to end. 2 unit
+  tests (node transitions, hub relay); agent.status covered by the drill.
 
 ## Phase 7 — Journals speak FlowEvent  ☐
 
