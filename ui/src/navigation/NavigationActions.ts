@@ -149,8 +149,25 @@ export class NavigationActions {
    * Used by the WikiTip backward link ("click here to highlight the feedentry").
    */
   highlight(wikiword: string): void {
+    this.openHomeRoot(wikiword);
+  }
+
+  /**
+   * Navigate to the app home root `/`, optionally with `?highlight=`, CARRYING
+   * the sticky URL options (journeyId) from the live URL — the home root is not
+   * a dock URL, so openDock's carry-forward can't do it. This is also the
+   * "start dock" surface a journey can name (`start: {kind: "root"}`).
+   */
+  openHomeRoot(highlightWord?: string): void {
     NavigationActions.clearCommittedPendingNavigation();
-    const url = `/?${HIGHLIGHT_PARAM}=${encodeURIComponent(wikiword)}`;
+    const params = new URLSearchParams();
+    if (highlightWord) params.set(HIGHLIGHT_PARAM, highlightWord);
+    for (const key of STICKY_OPTION_PARAMS) {
+      const live = NavigationActions.currentUrlOption(key);
+      if (live) params.set(key, live);
+    }
+    const rest = params.toString();
+    const url = rest ? `/?${rest}` : '/';
     if (NavigationActions.getCurrentBrowserUrl() === url) return;
     this.commitBrowserNavigation(url, url);
   }

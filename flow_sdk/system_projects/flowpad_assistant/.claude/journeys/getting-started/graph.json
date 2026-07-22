@@ -11,21 +11,17 @@
   },
   "nodes": [
     {
-      "id": "step1",
+      "id": "step0",
       "node_type": "guided_step",
-      "name": "Open your project home",
+      "name": "Open your project page",
       "node_data": {
-        "status_line": "Click the highlighted Project home entry.",
+        "status_line": "Click your highlighted project name in the footer to open its page.",
         "present": {
-          "dock": {
-            "kind": "asset_list",
-            "name": "agent"
-          },
-          "highlight": "ProjectHome"
+          "highlight": "ProjectPage"
         },
         "await": {
-          "topic": "app.route.loaded",
-          "target": "dock:assets/project-home"
+          "topic": "app.ui.button.clicked",
+          "target": "ProjectPage"
         }
       }
     },
@@ -37,9 +33,6 @@
         "group": "Create your vibe agent",
         "status_line": "Click the highlighted Sub agent tile and name it \"shopping-master\".",
         "present": {
-          "dock": {
-            "kind": "home"
-          },
           "highlight": "Sub agents"
         },
         "await": {
@@ -119,9 +112,9 @@
   ],
   "edges": [
     {
-      "id": "e1",
+      "id": "e0",
       "from": {
-        "node": "step1",
+        "node": "step0",
         "event": "done"
       },
       "to": {
@@ -168,5 +161,8 @@
         "node": "congrats"
       }
     }
-  ]
+  ],
+  "start": {
+    "kind": "root"
+  }
 }
