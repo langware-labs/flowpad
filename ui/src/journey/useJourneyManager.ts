@@ -69,7 +69,7 @@ function pointerForDock(
  */
 export function useJourneyManager(state: UseJourneyResult): JourneyManagerView {
   const { journey, journal, currentStep, start, refresh } = state;
-  const { navigation, currentDock } = useDockNavigation();
+  const { navigation } = useDockNavigation();
   const { project } = useProject();
 
   const journeyId = journey?.id ?? null;
@@ -81,6 +81,11 @@ export function useJourneyManager(state: UseJourneyResult): JourneyManagerView {
 
   // ── advance (guarded so a flapping signal can't double-fire a step) ──
   const advancedRef = useRef<string | null>(null);
+  // TRANSPARENCY: when a step advances because of the user's OWN UI action
+  // (an `app.ui.*` event — they clicked something and are already navigating),
+  // the NEXT step must not override their destination with its dock. Consumed
+  // once by the present effect: highlight-in-place only for that present.
+  const suppressNextDockRef = useRef(false);
   const doAdvance = useCallback(
     (nodeId: string, event: 'done' | 'skipped' = 'done') => {
       if (!journey || advancedRef.current === nodeId) return;
@@ -124,7 +129,15 @@ export function useJourneyManager(state: UseJourneyResult): JourneyManagerView {
     // A FRESH run begins at the journey's START dock (graph.json `start`): the
     // entry step inherits it as its surface when it doesn't name its own.
     const fresh = (journal?.entries?.length ?? 0) === 0;
-    const dock = present.dock ?? (fresh ? (start ?? undefined) : undefined);
+    let dock = present.dock ?? (fresh ? (start ?? undefined) : undefined);
+
+    // Consume the transparency flag: this step was reached by the user's own
+    // click — they are already navigating; don't override their destination.
+    // The highlight still applies, in place.
+    if (suppressNextDockRef.current) {
+      suppressNextDockRef.current = false;
+      dock = undefined;
+    }
 
     if (dock?.kind === 'root') {
       // The app home `/` is not a dock URL — navigate there directly, carrying
@@ -136,11 +149,10 @@ export function useJourneyManager(state: UseJourneyResult): JourneyManagerView {
     if (pointer) {
       navigation.openDock(present.highlight ? pointer.withHighlight(present.highlight) : pointer);
     } else if (present.highlight) {
-      // Highlight-only step: light the topic IN PLACE. Only fall back to the
-      // home-root highlight when there is no dock to stay on — a step like
-      // "click Use agent" must not navigate the user away from the editor.
-      if (currentDock) navigation.openDock(currentDock.withHighlight(present.highlight));
-      else navigation.highlight(present.highlight);
+      // Highlight-only step: light the topic IN PLACE — a pure param update on
+      // the live URL. Rebuilding from `currentDock` would race an in-flight
+      // navigation (the user's own click) and yank them backwards.
+      navigation.applyHighlightInPlace(present.highlight);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [journeyId, journal?.id, currentStep?.node_id, assetRef, computeNodeTypeId, projectId]);
@@ -179,7 +191,7 @@ export function useJourneyManager(state: UseJourneyResult): JourneyManagerView {
 
   // ── await: confirm predicate (the proof) ──
   const busyRef = useRef(false);
-  const tryComplete = useCallback(async (event?: { data?: Record<string, unknown> }) => {
+  const tryComplete = useCallback(async (event?: { topic?: string; data?: Record<string, unknown> }) => {
     if (!currentStep || busyRef.current || advancedRef.current === currentStep.node_id) return;
     // matchEvent: the row that JUST changed must itself satisfy the match —
     // "you just did X", immune to ambient churn on other rows of the type.
@@ -209,7 +221,12 @@ export function useJourneyManager(state: UseJourneyResult): JourneyManagerView {
       // `manual`: the signal ARMS the step — the user clicks Next to move on,
       // so they can see what just happened (e.g. the text an act filled in).
       if (currentStep.await?.manual) setArmed(true);
-      else doAdvance(currentStep.node_id);
+      else {
+        // A user-interaction advance means the user is already navigating
+        // somewhere of their own choosing — the next step stays transparent.
+        suppressNextDockRef.current = (event?.topic ?? '').startsWith('app.ui.');
+        doAdvance(currentStep.node_id);
+      }
     } catch (e) {
       console.error('[Journey] confirm query failed', e);
     } finally {

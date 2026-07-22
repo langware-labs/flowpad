@@ -153,6 +153,23 @@ export class NavigationActions {
   }
 
   /**
+   * Set `?highlight=` on the LIVE URL without any other navigation — the
+   * transparent form of highlighting: wherever the user is (or is arriving,
+   * mid-route-change), only the param changes. Rebuilding from `currentDock`
+   * here would race an in-flight navigation and yank the user backwards.
+   */
+  applyHighlightInPlace(wikiword: string): void {
+    const current = NavigationActions.getCurrentBrowserUrl();
+    const [path, query] = current.split('?');
+    const params = new URLSearchParams(query ?? '');
+    if (params.get(HIGHLIGHT_PARAM) === wikiword) return;
+    params.set(HIGHLIGHT_PARAM, wikiword);
+    NavigationActions.clearCommittedPendingNavigation();
+    const url = `${path || '/'}?${params.toString()}`;
+    this.commitBrowserNavigation(url, url);
+  }
+
+  /**
    * Navigate to the app home root `/`, optionally with `?highlight=`, CARRYING
    * the sticky URL options (journeyId) from the live URL — the home root is not
    * a dock URL, so openDock's carry-forward can't do it. This is also the
