@@ -189,7 +189,31 @@ export function TaskAttachments({ task, save, readOnly = false, heading }: TaskA
       const added: Attachment[] = [];
       for (const rel of relPaths) {
         const name = rel.split('/').pop() || rel;
-        if (!name || existingKeys.has(name)) continue;
+        if (!name) continue;
+        const machinePath = VFSPath.fromTypeId(sourceTypeId, rel).machinePath;
+
+        // A GIT folder is a REFERENCE, never bytes — its content is a whole
+        // repo that each machine resolves from its own checkout. Keep the
+        // existing git entry shape; copying it would both lose `git_origin`
+        // and try to blob-copy a directory.
+        const gitOrigin = machinePath ? await resolveGitOrigin(machinePath) : undefined;
+        if (gitOrigin) {
+          const entry = makeAttachmentEntry(machinePath, gitOrigin, gitDirFor(machinePath)?.path ?? null);
+          if (existingKeys.has(attachmentKey(entry))) continue;
+          existingKeys.add(attachmentKey(entry));
+          added.push(entry);
+          continue;
+        }
+        // A plain DIRECTORY has no bytes to copy either — keep it as a local
+        // path reference (opens for this user; does not travel).
+        if (looksLikeFolder(name)) {
+          if (!machinePath || existingKeys.has(machinePath)) continue;
+          existingKeys.add(machinePath);
+          added.push({ path: machinePath, label: name });
+          continue;
+        }
+
+        if (existingKeys.has(name)) continue;
         try {
           const blob = await fsManager.download(sourceTypeId, rel, { asBlob: true });
           await fsManager.uploadFromBlob(task.typeId, '/', blob as Blob, name);
@@ -205,7 +229,7 @@ export function TaskAttachments({ task, save, readOnly = false, heading }: TaskA
       }
       if (added.length) persist([...attachments, ...added]);
     },
-    [attachments, persist, task.typeId],
+    [attachments, persist, task.typeId, resolveGitOrigin, gitDirFor],
   );
 
   const removeEntry = useCallback(
