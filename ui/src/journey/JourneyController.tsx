@@ -10,6 +10,6 @@ import { JourneyTray } from './JourneyTray';
  */
 export function JourneyController() {
   const state = useShownJourney();
-  useJourneyManager(state);
-  return <JourneyTray state={state} />;
+  const view = useJourneyManager(state);
+  return <JourneyTray state={state} view={view} />;
 }

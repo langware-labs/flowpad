@@ -1,4 +1,4 @@
-import { Check, Circle, CircleDot, Play, RotateCcw, X } from 'lucide-react';
+import { Check, Circle, CircleDot, Play, RotateCcw, Type, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Trans, useLingui } from '@lingui/react/macro';
@@ -8,6 +8,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { animateMinimizeToElement } from '@src/lib/minimize-to-element';
 import { markJourneyDismissed } from './journey-dismissed';
 import { groupSteps, useBusyRun, type JourneyStep, type UseJourneyResult } from './use-journey';
+import type { JourneyManagerView } from './useJourneyManager';
 
 const INDIGO = '#5b5bf0';
 const AMBER = '#f6a723';
@@ -62,7 +63,7 @@ function elementSize(el: HTMLElement | null): { w: number; h: number } {
  * in the left rail (which keeps pulsing while a journey is in progress), so
  * the way back is shown, not told.
  */
-export function JourneyTray({ state }: { state: UseJourneyResult }) {
+export function JourneyTray({ state, view }: { state: UseJourneyResult; view?: JourneyManagerView }) {
   const { t } = useLingui();
   const { journey, journal, steps, currentStep, cursorIndex, refresh } = state;
   const { navigation } = useDockNavigation();
@@ -278,17 +279,41 @@ export function JourneyTray({ state }: { state: UseJourneyResult }) {
         )}
         {journal && !complete && currentStep && (
           <>
-            <Button
-              type="button"
-              size="sm"
-              disabled={busy}
-              onClick={() => run(() => journey.advance(currentStep.node_id, 'done'))}
-              className="h-7 px-3 text-xs text-white hover:brightness-110"
-              style={{ backgroundColor: INDIGO }}
-              data-testid="journey-tray-continue"
-            >
-              <Trans>Continue</Trans>
-            </Button>
+            {/* The step's own act comes FIRST and replaces Continue while it is
+                pending: one lit button at a time, so the tray always shows a
+                single obvious next move ("Fill text" → then "Next"). */}
+            {view?.actPending ? (
+              <Button
+                type="button"
+                size="sm"
+                disabled={busy}
+                onClick={view.doAct}
+                className="h-7 gap-1.5 px-3 text-xs text-white hover:brightness-110 animate-pulse"
+                style={{ backgroundColor: INDIGO }}
+                data-testid="journey-tray-act"
+              >
+                <Type className="h-3 w-3" />
+                <Trans>Fill text</Trans>
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                size="sm"
+                disabled={busy}
+                onClick={() => run(() => journey.advance(currentStep.node_id, 'done'))}
+                className={cn(
+                  'h-7 px-3 text-xs text-white hover:brightness-110',
+                  // A `manual` await keeps Next dark until its signal lands, then
+                  // lights it — the step's completion is visible, not guessed.
+                  currentStep.await?.manual && !view?.armed && 'opacity-60',
+                  currentStep.await?.manual && view?.armed && 'animate-pulse',
+                )}
+                style={{ backgroundColor: INDIGO }}
+                data-testid="journey-tray-continue"
+              >
+                {currentStep.await?.manual ? <Trans>Next</Trans> : <Trans>Continue</Trans>}
+              </Button>
+            )}
             <Button
               type="button"
               size="sm"

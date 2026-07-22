@@ -101,7 +101,11 @@ export function AgentAssetEditor({ fsRef, agent: providedAgent }: AgentAssetEdit
           </Button>
         </div>
       )}
-      <div className="min-h-0 flex-1">
+      {/* Tagged so a journey can aim at the instructions body — highlight it, or
+          fill it via `act:{kind:'fill', target:'AgentInstructions'}`. The tag
+          goes on the CONTAINER; the act resolves the editable inside it, which
+          the rich editor owns and may re-create. */}
+      <div className="min-h-0 flex-1" {...topicTag('AgentInstructions', 'input')}>
         <MarkdownEditor
           fsRef={editorRef}
           chatTarget={chatTarget}
