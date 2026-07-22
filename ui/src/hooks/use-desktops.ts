@@ -66,8 +66,15 @@ function preparingDesktopHtml(line: string): string {
   return (
     '<!doctype html><meta charset="utf-8"><title>Preparing desktop…</title>' +
     '<style>html,body{height:100%;margin:0;display:grid;place-items:center;' +
-    'background:#0b0b0c;color:#e5e5e5;font:14px system-ui,sans-serif}</style>' +
-    `<div>${safe}</div>`
+    'background:#0b0b0c;color:#e5e5e5;font:14px system-ui,sans-serif}' +
+    '.w{display:flex;flex-direction:column;align-items:center;gap:14px}' +
+    // Three-dot spinner: the "still working, next step coming" cue while a step runs.
+    '.d{display:flex;gap:6px}.d i{width:6px;height:6px;border-radius:50%;background:#8b8b90;' +
+    'animation:b 1.4s ease-in-out infinite}.d i:nth-child(2){animation-delay:.2s}' +
+    '.d i:nth-child(3){animation-delay:.4s}' +
+    '@keyframes b{0%,80%,100%{opacity:.25;transform:scale(.8)}40%{opacity:1;transform:scale(1)}}' +
+    '</style>' +
+    `<div class="w"><div>${safe}</div><div class="d"><i></i><i></i><i></i></div></div>`
   );
 }
 
