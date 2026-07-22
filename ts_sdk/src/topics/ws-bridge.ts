@@ -14,6 +14,9 @@ export function startTopicBridge(): void {
   if (started) return;
   started = true;
   ConnectionManager.getInstance().on('on_topic_msg', (msg: TopicMsg) => {
-    if (msg?.event?.topic) EventBus.deliver(msg.event);
+    if (!msg?.event?.topic) return;
+    // debug-level: visible only with verbose console — the phase-1 drill probe.
+    console.debug('[topics] delivered', msg.event.topic, msg.event.id, msg.event.ctx?.origin);
+    EventBus.deliver(msg.event);
   });
 }
