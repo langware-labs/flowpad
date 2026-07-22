@@ -115,7 +115,8 @@ class _Run:
 
     __slots__ = ("id", "flow", "journal", "started_at", "pending", "active",
                  "hops", "processes", "events", "executions", "error", "finalized",
-                 "seq", "in_count", "out_count", "record_dir")
+                 "seq", "in_count", "out_count", "record_dir", "suspended",
+                 "suspended_nodes")
 
     def __init__(self, run_id: str, flow: _LoadedFlow) -> None:
         self.id = run_id
@@ -134,6 +135,12 @@ class _Run:
         self.error: Optional[str] = None
         self.finalized = False
         self.record_dir: Path = run_record_dir(run_id)
+        # guided_step parking: a run waits at a human-driven node until the
+        # frontend injects its `done`. `suspended` keeps the run alive (mirrors
+        # pending/active in maybe_sink); `suspended_nodes` lets inject find the
+        # awaiting node to release before routing.
+        self.suspended = 0
+        self.suspended_nodes: set[str] = set()
 
     @property
     def deadline_exceeded(self) -> bool:
@@ -144,7 +151,8 @@ class _Run:
         return self.seq
 
     def maybe_sink(self) -> bool:
-        return not self.finalized and self.pending == 0 and self.active == 0
+        return (not self.finalized and self.pending == 0 and self.active == 0
+                and self.suspended == 0)
 
 
 class _NodeRuntime:
@@ -216,6 +224,21 @@ def _delivery_identity(event: FlowEvent) -> str:
     return f"{event.event}|{json.dumps(event.data, sort_keys=True, default=str)}"
 
 
+async def _resolve_flow_entity(flow_id: str) -> Any:
+    """The flow's backing entity: an AgenticFlow, or a Journey (same folder-doc
+    shape — asset_ref/enabled/graph.json — driven by the same engine). Journeys
+    are typed separately so they stay out of the Flows list, but they run here."""
+    entity = await AgenticFlow.get_by_id(flow_id)
+    if entity is not None:
+        return entity
+    try:
+        from flow_sdk.builtin.journey import Journey
+
+        return await Journey.get_by_id(flow_id)
+    except Exception:
+        return None
+
+
 class FlowManager:
     def __init__(self) -> None:
         self._flows: dict[str, _LoadedFlow] = {}
@@ -226,7 +249,7 @@ class FlowManager:
 
     async def load_flow(self, flow_id: str, entity: AgenticFlow | None = None) -> Optional[_LoadedFlow]:
         if entity is None:
-            entity = await AgenticFlow.get_by_id(flow_id)
+            entity = await _resolve_flow_entity(flow_id)
         if entity is None or not entity.asset_ref:
             return None
         folder = Path(entity.asset_ref)
@@ -303,6 +326,13 @@ class FlowManager:
                        execution_id=run.id, source_node=source_node)
         if source_node == EXTERNAL_SOURCE:
             self._record_run_event(run, fe, "input", target_node=target_node)
+        # A guided_step advance: the frontend injects the parked node's `done`.
+        # Release the park (mirror of the reserve in _enter_guided_step) BEFORE
+        # routing, so the successor hop's pending reserve is in place when the
+        # run is re-evaluated for sink.
+        if source_node in run.suspended_nodes:
+            run.suspended_nodes.discard(source_node)
+            run.suspended = max(0, run.suspended - 1)
         if target_node:
             node = flow.doc.node(target_node)
             if node is None:
@@ -330,7 +360,7 @@ class FlowManager:
             row = AgenticFlowRun(id=run.id, name=f"run {run.id[:8]}", flow_id=flow.flow_id,
                                  status=RunStatus.RUNNING.value, started_at=now_iso())
             await row.save()
-            parent = await AgenticFlow.get_by_id(flow.flow_id)
+            parent = await _resolve_flow_entity(flow.flow_id)
             if parent is not None:
                 await parent.attach_child(row)
         except Exception:
@@ -475,10 +505,38 @@ class FlowManager:
 
     async def _execute(self, run: _Run, node: FlowNodeDef, fe: FlowEvent,
                        rt: _NodeRuntime, seq: int) -> None:
-        if node.node_type == "function":
+        if node.node_type == "guided_step":
+            await self._enter_guided_step(run, node, fe, rt, seq)
+        elif node.node_type == "function":
             await self._run_function(run, node, fe, rt, seq)
         else:
             await self._spawn_agent(run, node, fe, rt, seq)
+
+    # ── guided_step (User Journey — human-in-the-loop) ────────────────────────
+
+    async def _enter_guided_step(self, run: _Run, node: FlowNodeDef, fe: FlowEvent,
+                                 rt: _NodeRuntime, seq: int) -> None:
+        """Park the run at a guided step: record the entry, broadcast the
+        "waiting for you to…" one-liner, then RESERVE ``suspended`` (keeps the
+        run alive) and release this execution slot WITHOUT emitting ``done``.
+        The frontend orchestrator injects this node's ``done`` when the step's
+        standard signal (dock reached / entity query / process status) is
+        satisfied — see ``inject`` for the release + route."""
+        exec_dir = inline_exec_dir(run.id, seq, node.id)
+        prepare_execution_io(exec_dir, fe)
+        nd = node.node_data
+        detail = {
+            "status_line": nd.get("status_line") or "",
+            "present": nd.get("present") or {},
+            "await": nd.get("await") or {},
+        }
+        run.journal.append("guided_wait", {"node": node.id, "execution": {"seq": seq}, **detail})
+        # Reserve BEFORE releasing the slot — counters must never hit 0/0 while a
+        # step is parked, or a concurrent finalize would sink a waiting run.
+        run.suspended += 1
+        run.suspended_nodes.add(node.id)
+        self._finish_execution(run, rt)
+        await self._broadcast_node_status(run, node, "waiting", detail)
 
     # ── FlowFunction execution (inline + subprocess) ──────────────────────────
 

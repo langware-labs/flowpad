@@ -23,6 +23,7 @@ export * from './services/index';
 export * from './preferences/prefRegistry';
 export * from './preferences/indexingConsent';
 export * from './stores/fsStore';
+export * from './topics/EventBus';
 export * from './stores/ontology-store';
 export * from './utils';
 export * from './websocket';

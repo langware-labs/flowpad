@@ -5,8 +5,12 @@ import { Button } from '@src/components/ui/button';
 import { useVibeAgents } from '@src/hooks/use-vibe-agents';
 import { notify } from '@src/notifications';
 import { Bot, Loader2, Plus, Sparkles, X } from 'lucide-react';
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
+import { HighlightBeacon } from '@src/components/wiki-tip/HighlightBeacon';
+import { useLingeringHighlight } from '@src/components/wiki-tip/highlight';
+import { topicTag } from '@src/topics/topic-tag';
+import { cn } from '@src/lib/utils';
 
 interface VibeAgentsCardProps {
   project: Project | null | undefined;
@@ -23,6 +27,15 @@ export const VibeAgentsCard: React.FC<VibeAgentsCardProps> = ({ project }) => {
   const { t } = useLingui();
   const { agents, refetch } = useVibeAgents(project?.id);
   const [busyId, setBusyId] = useState<string | null>(null);
+
+  // Onboarding highlight: a journey step can point `present.highlight:"VibeAgents"`
+  // at this card (mirrors FeedEntryCard's wiki-tip highlight). The card
+  // self-declares its word; ?highlight=VibeAgents lights the ring + beacon.
+  const cardRef = useRef<HTMLDivElement>(null);
+  const { active, phase } = useLingeringHighlight('VibeAgents');
+  useEffect(() => {
+    if (active) cardRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }, [active]);
 
   // Hide agents already in the set from the add-picker.
   const alreadyVibe = useMemo(() => new Set(agents.map((a) => `agent-${a.id}`)), [agents]);
@@ -58,7 +71,18 @@ export const VibeAgentsCard: React.FC<VibeAgentsCardProps> = ({ project }) => {
   };
 
   return (
-    <div className="rounded-lg border border-border p-4" data-testid="vibe-agents-card">
+    <div
+      ref={cardRef}
+      {...topicTag('VibeAgents', 'button')}
+      data-highlighted={active || undefined}
+      className={cn(
+        'relative rounded-lg border border-border p-4 transition-all duration-500',
+        active && 'border-primary bg-primary/5 ring-2 ring-primary ring-offset-1 ring-offset-background',
+        phase === 'enter' && 'animate-pulse',
+      )}
+      data-testid="vibe-agents-card"
+    >
+      {active && <HighlightBeacon />}
       <div className="mb-3 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <Sparkles className="h-4 w-4 text-muted-foreground" />

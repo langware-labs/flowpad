@@ -4,6 +4,7 @@ export * from './use-debounce-callback';
 export * from './use-domain';
 export * from './use-entity-ops';
 export * from './use-instance-preferences';
+export * from './use-on-topic';
 export * from './useAuth';
 export * from './useCloudStatus';
 export * from './useConnectionStatus';

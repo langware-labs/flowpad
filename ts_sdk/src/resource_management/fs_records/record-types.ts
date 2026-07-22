@@ -88,4 +88,5 @@ export enum RecordType {
   DYNAMIC_WORKFLOW = 'dynamic_workflow',
   USAGE_REPORT = 'usage_report',
   ASSET_CLEANUP_REPORT = 'asset_cleanup_report',
+  JOURNEY = 'journey',
 }

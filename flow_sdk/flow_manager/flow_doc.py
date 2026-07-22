@@ -45,8 +45,21 @@ EXTERNAL_SOURCE_NODE = "$external"
 TRIGGER_FIRED_EVENT = "fired"
 AGENT_DONE_EVENT = "done"
 
-NodeType = Literal["trigger", "agent", "function"]
+NodeType = Literal["trigger", "agent", "function", "guided_step"]
 FunctionRuntime = Literal["inline", "subprocess"]
+
+# guided_step — a human-in-the-loop node (User Journeys). It PRESENTS a place in
+# the app (a standard dock pointer + optional wiki-word highlight), then PARKS the
+# run waiting for a standard signal (dock reached / entity query / process status)
+# that the frontend orchestrator observes; when satisfied the orchestrator injects
+# this node's `done`, routed onward by the ordinary edge machinery. No new viewer,
+# no DOM interception — pure guidance/orchestration over standard surfaces.
+GUIDED_PRESENT_KINDS = {"asset_editor", "wiki", "home"}
+# The await side is a unified-bus subscription (docs/topics.md): `topic` names
+# the awaited event (`app.page.signal`, `app.route.loaded`, `app.entity.created`,
+# or `manual` for Continue-only), `target`/`vfs`/`home` filter it, and an
+# optional `confirm` store-query proves it (event ≠ proof). The engine only
+# requires the topic — the frontend JourneyManager owns the semantics.
 
 # Retired spellings → the pointed message users get instead of a pydantic enum error.
 _RETIRED_NODE_TYPES = {
@@ -204,6 +217,23 @@ class FlowDoc(BaseModel):
                     problems.append(
                         f"node {n.id}: agent nodes need an Agent reference (typeid) "
                         "or an inline program (program_ref / prompt)"
+                    )
+                continue
+            if n.node_type == "guided_step":
+                nd = n.node_data
+                present = nd.get("present") or {}
+                dock = present.get("dock") or {}
+                if dock.get("kind") not in GUIDED_PRESENT_KINDS:
+                    problems.append(
+                        f"node {n.id}: guided_step needs node_data.present.dock.kind "
+                        f"in {sorted(GUIDED_PRESENT_KINDS)}"
+                    )
+                await_spec = nd.get("await") or {}
+                topic = await_spec.get("topic")
+                if not isinstance(topic, str) or not topic:
+                    problems.append(
+                        f"node {n.id}: guided_step needs node_data.await.topic "
+                        "(a non-empty bus topic string, e.g. 'app.page.signal', or 'manual')"
                     )
                 continue
             if n.node_type != "function":
