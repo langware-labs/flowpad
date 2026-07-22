@@ -14,7 +14,7 @@ import { v4 as uuidv4 } from 'uuid';
 export type TopicOrigin = 'app' | 'local_server' | 'hub' | 'sandbox';
 
 /** Correlation only — enriches, never gates. Routing NEVER reads ctx. */
-export interface TopicCtx {
+export interface FlowEventCtx {
   /** Who caused it, in target form: `user:<id>`, `agentic_process:<id>`, `system`, `hub`. */
   actor?: string;
   /** Containment chain, innermost-first, entries in target form. */
@@ -23,8 +23,13 @@ export interface TopicCtx {
   origin: TopicOrigin;
 }
 
-/** The envelope. `topic` is the only field routing ever reads. */
-export interface TopicEvent {
+/**
+ * The envelope — `FlowEvent` is THE consolidating name for a standard event
+ * anywhere in the system (docs/flow-events.md). Python twin:
+ * flow_sdk/topics/envelope.py; pinned by tests/fixtures/flow_event_contract.json.
+ * `topic` is the only field routing ever reads.
+ */
+export interface FlowEvent {
   id: string;
   timestamp: string;
   /** Free dot-separated ontological string — the bus never interprets it. */
@@ -32,10 +37,10 @@ export interface TopicEvent {
   /** What the event is about: `type:id` form, or a named topic (wiki word). */
   target: string;
   data: Record<string, unknown>;
-  ctx: TopicCtx;
+  ctx: FlowEventCtx;
 }
 
-export type TopicHandler = (event: TopicEvent) => void;
+export type FlowEventHandler = (event: FlowEvent) => void;
 
 export interface TopicFilters {
   /** Exact target, or a `type:*` glob (single trailing `*` after the first colon). */
@@ -48,7 +53,7 @@ interface Subscription {
   pattern: string;
   /** Pattern split once at subscribe time — emit is the hot path, not on(). */
   segments: string[];
-  handler: TopicHandler;
+  handler: FlowEventHandler;
   filters?: TopicFilters;
 }
 
@@ -86,13 +91,13 @@ export class TopicEventBus {
    * Fire-and-forget. Fills `id`/`timestamp`, defaults `ctx.origin` to `app`.
    * Synchronous fan-out; a throwing handler never blocks emit or its peers.
    */
-  emit(topic: string, target: string, data?: Record<string, unknown>, ctx?: Partial<TopicCtx>): TopicEvent | null {
+  emit(topic: string, target: string, data?: Record<string, unknown>, ctx?: Partial<FlowEventCtx>): FlowEvent | null {
     // Adapters re-emit hot streams (every entity data_op) — with no subscribers
     // at all, skip even the envelope allocation.
     if (this.subs.size === 0) return null;
 
     const topicSegments = topic.split('.');
-    let event: TopicEvent | null = null; // built lazily on the first match
+    let event: FlowEvent | null = null; // built lazily on the first match
     for (const sub of this.subs.values()) {
       if (sub.pattern !== '*' && !segmentsMatch(sub.segments, topicSegments)) continue;
       if (sub.filters?.target !== undefined && !targetMatches(sub.filters.target, target)) continue;
@@ -115,10 +120,29 @@ export class TopicEventBus {
   }
 
   /** Subscribe. Returns the unsubscriber — subscription lifetime is the caller's job. */
-  on(pattern: string, handler: TopicHandler, filters?: TopicFilters): () => void {
+  on(pattern: string, handler: FlowEventHandler, filters?: TopicFilters): () => void {
     const key = Symbol();
     this.subs.set(key, { pattern, segments: pattern.split('.'), handler, filters });
     return () => void this.subs.delete(key);
+  }
+
+  /**
+   * Dispatch a PRE-BUILT envelope — the RELAY entry (WS bridge, future hub
+   * bridge). id/timestamp/actor are never rewritten on relay; the sender
+   * stamped `origin` for the arriving hop.
+   */
+  deliver(event: FlowEvent): void {
+    const topicSegments = event.topic.split('.');
+    for (const sub of this.subs.values()) {
+      if (sub.pattern !== '*' && !segmentsMatch(sub.segments, topicSegments)) continue;
+      if (sub.filters?.target !== undefined && !targetMatches(sub.filters.target, event.target)) continue;
+      if (sub.filters?.scope?.length && !sub.filters.scope.some((s) => event.ctx.scope?.includes(s))) continue;
+      try {
+        sub.handler(event);
+      } catch (e) {
+        console.error('[EventBus] handler failed', { topic: event.topic, target: event.target }, e);
+      }
+    }
   }
 
   /** Test/teardown helper — drops every subscription. */
@@ -140,11 +164,11 @@ export function emitAppTopic(
   subtopic: string,
   target: string,
   data?: Record<string, unknown>,
-  ctx?: Partial<TopicCtx>,
-): TopicEvent | null {
+  ctx?: Partial<FlowEventCtx>,
+): FlowEvent | null {
   return EventBus.emit(APP_TOPIC_PREFIX + subtopic, target, data, ctx);
 }
 
-export function onAppTopic(pattern: string, handler: TopicHandler, filters?: TopicFilters): () => void {
+export function onAppTopic(pattern: string, handler: FlowEventHandler, filters?: TopicFilters): () => void {
   return EventBus.on(APP_TOPIC_PREFIX + pattern, handler, filters);
 }

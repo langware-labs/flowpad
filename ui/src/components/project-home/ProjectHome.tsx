@@ -3,14 +3,15 @@ import { MiniDesktop, QuickCreatePanel, TileSection, useQuickCreatePick } from '
 import type { PanelHandlers } from '@src/components/quick-create';
 import { SecretsCard } from './SecretsCard';
 import { HomeCustomizationCard } from './HomeCustomizationCard';
-import { VibeAgentsCard } from './VibeAgentsCard';
+import { VIBE_AGENTS_TOPIC, VibeAgentsCard } from './VibeAgentsCard';
+import { useHighlight } from '@src/components/wiki-tip/highlight';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@src/components/ui/tabs';
 import { useContext as useDataContext } from '@src/hooks/useContext';
 import { WorkerToolbar } from '@src/components/workers/WorkerToolbar';
 import { useTerminalStripController } from '@src/tabs/useTerminalStripController';
 import { projectScope } from '@src/lib/scope-filter';
 import { Project, TypeId } from '@sdk';
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Trans } from '@lingui/react/macro';
 
 interface ProjectHomeProps {
@@ -70,6 +71,12 @@ const CreateTab: React.FC<{
   </div>
 );
 
+/** Which tab hosts which topic word — see the `?highlight=` effect below.
+ *  Add an entry whenever a card on a non-default tab takes a `topicTag`. */
+const TAB_FOR_TOPIC: Record<string, string> = {
+  [VIBE_AGENTS_TOPIC]: 'customize',
+};
+
 /**
  * ProjectHome — the project's landing surface, shown wherever a project has no
  * open content: the terminal body's empty state (no terminal sessions) and the
@@ -103,6 +110,16 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, create
 
   const createTab = <CreateTab projectId={projectId} spawnProjectId={spawnProjectId} panelProps={panelProps} />;
 
+  // A `?highlight=` target that lives on a tab we aren't showing would never
+  // mount, so the generic TopicHighlightObserver would find nothing — open the
+  // owning tab instead. Each tab declares the topic words it hosts.
+  const [tab, setTab] = useState('create');
+  const highlight = useHighlight();
+  useEffect(() => {
+    const owner = highlight ? TAB_FOR_TOPIC[highlight] : undefined;
+    if (owner) setTab(owner);
+  }, [highlight]);
+
   return (
     <div className="flex h-full flex-col">
       {/* Members — project-level roster + invite (role-gated inside the stack). */}
@@ -123,7 +140,7 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, create
           {createOnly ? (
             createTab
           ) : (
-            <Tabs defaultValue="create" data-testid="project-home-tabs">
+            <Tabs value={tab} onValueChange={setTab} data-testid="project-home-tabs">
               <TabsList>
                 <TabsTrigger value="create" data-testid="project-home-tab-create">
                   <Trans>Create</Trans>

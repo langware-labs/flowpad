@@ -6,6 +6,8 @@
  * byte-identical whether or not a language is registered here.
  */
 
+import type { FenceHostServices } from './host-services';
+
 export type FenceTheme = 'light' | 'dark';
 
 export interface FenceRenderContext {
@@ -28,6 +30,11 @@ export interface FenceRenderContext {
    * to the user.
    */
   editable: boolean;
+  /**
+   * App capabilities a renderer may need — opening a file, locating a project.
+   * Handed in because a NodeView has no React context to reach them through.
+   */
+  host: FenceHostServices;
   /**
    * Replace the fence's source text with `nextSource`.
    *

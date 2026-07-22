@@ -42,43 +42,13 @@ class AgenticFlow(Entity):
 
     def materialize_folder(self) -> Path:
         """Create the folder + stub files for a fresh flow (idempotent)."""
-        from flow_sdk.flow_manager.flow_doc import empty_flow_doc
+        from flow_sdk.builtin.flow_folder import scaffold_flow_folder
 
-        slug = (
-            "".join(c if c.isalnum() or c in "-_" else "-" for c in (self.name or "flow")).strip("-")
-            or "flow"
-        )
-        folder = Path(self.asset_ref) if self.asset_ref else flows_home_dir() / slug
-        folder.mkdir(parents=True, exist_ok=True)
-        (folder / "scripts").mkdir(exist_ok=True)
-        (folder / "runs").mkdir(exist_ok=True)
-        graph = folder / "graph.json"
-        if not graph.exists():
-            graph.write_text(empty_flow_doc(self.id or "", self.name), encoding="utf-8")
-        display = folder / "display.json"
-        if not display.exists():
-            display.write_text('{"version": 1, "nodes": {}}\n', encoding="utf-8")
-        # Pin the entity id in the capsule so the indexer adopts it.
-        if self.id:
-            capsule = folder / ".flow"
-            capsule.mkdir(exist_ok=True)
-            id_file = capsule / "id"
-            if not id_file.exists():
-                id_file.write_text(self.id, encoding="utf-8")
-        self.asset_ref = str(folder)
-        return folder
+        return scaffold_flow_folder(self, flows_home_dir(), "flow", scripts=True)
 
     async def save(self, *args, **kwargs):  # type: ignore[override]
         result = await super().save(*args, **kwargs)
-        try:
-            prev_ref = self.asset_ref
-            self.materialize_folder()
-            # Second write only when the scaffold just minted the folder path
-            # (fresh flow) — steady-state saves stay a single DB write.
-            if self.asset_ref != prev_ref:
-                await self.update()
-        except Exception:
-            import logging
+        from flow_sdk.builtin.flow_folder import rescaffold_after_save
 
-            logging.getLogger(__name__).exception("AgenticFlow: folder scaffold failed")
+        await rescaffold_after_save(self, "AgenticFlow")
         return result

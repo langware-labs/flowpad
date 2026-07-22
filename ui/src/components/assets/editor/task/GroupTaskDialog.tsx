@@ -11,6 +11,7 @@ import {
 import { groupActionRef } from '@src/components/contact-picker/computed-groups';
 import { useContactsGroups } from '@src/components/contact-picker/use-contacts-groups';
 import { WikiLabel } from '@src/components/wiki-tip';
+import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
 import { useTaskAssignmentMessage } from '@src/hooks/use-task-assignment-message';
 import { cn } from '@src/lib/utils';
 import { notify } from '@src/notifications';
@@ -44,12 +45,23 @@ export function GroupTaskDialog({ task, open, onOpenChange }: GroupTaskDialogPro
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
+  const [localError, setLocalError] = useState<string | null>(null);
   const { sendAssignment } = useTaskAssignmentMessage(task);
+  const ensureCloudLogin = useCloudLoginGate();
 
   const selected = groups.find((g) => g.id === selectedId) ?? null;
 
   const create = async () => {
     if (!selected || !task.id || busy) return;
+    setLocalError(null);
+    // `create-group-task` creates the member tasks ON THE HUB — without cloud
+    // login it 403s. Open the login flow first and resume on the same click,
+    // exactly like the share dialog's send.
+    const gate = await ensureCloudLogin();
+    if (!gate.ok) {
+      setLocalError(gate.error);
+      return;
+    }
     setBusy(true);
     try {
       // callAction reads the POST body from the ActionInfo itself — a second
@@ -158,6 +170,12 @@ export function GroupTaskDialog({ task, open, onOpenChange }: GroupTaskDialogPro
             data-testid="group-task-message"
             className="w-full resize-none rounded-md border bg-transparent px-2 py-1.5 text-sm outline-none placeholder:text-muted-foreground focus:ring-1 focus:ring-ring"
           />
+        )}
+
+        {localError && (
+          <p className="text-xs text-destructive" data-testid="group-task-error">
+            {localError}
+          </p>
         )}
 
         <DialogFooter>

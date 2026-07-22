@@ -4,6 +4,14 @@ import type { GitOrigin } from './GitOrigin';
 export interface FSOrigin {
   kind: string;
   rel_path: string;
+  /**
+   * Optional project this origin resolves inside — mirrors the backend
+   * `FSOrigin.project_id`. When set it is the most direct way back to a local
+   * path (`project.cwd` + `rel_path`), with no need to infer a checkout from
+   * repo coordinates. Absent on every origin persisted before the field
+   * existed, so treat it as a hint, never a requirement.
+   */
+  project_id?: string;
 }
 
 /** A path already present on this machine; it is not transportable. */
