@@ -130,7 +130,8 @@ export function buildWizardPrompt(
   const shape = request.wizardData?.resultShape;
   const closeExample = shape
     ? `flow wizard ${processId} close '${JSON.stringify({ status: 'done', data: shape })}'
-Replace every <…> placeholder above with your actual result — do not close with an empty or unedited \`data\`.`
+Replace every <…> placeholder above with your actual result — do not close with an empty or unedited \`data\`.
+Write any path with forward slashes (C:/Users/… not C:\\Users\\…) — a backslash is a JSON escape and corrupts the value.`
     : `flow wizard ${processId} close '{"status":"done"}'
 If your instructions define a result payload, add it as \`"data": {…}\`.`;
   return `${prompt}${payload}

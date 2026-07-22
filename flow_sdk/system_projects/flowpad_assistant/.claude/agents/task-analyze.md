@@ -32,15 +32,30 @@ CLOSING — depends on the `Presentation:` line at the end of your prompt:
 - **interactive popup**: do NOT close the wizard — after reporting, WAIT; the
   user closes it with its own Done/Cancel buttons when finished reading.
 
-ALWAYS PRODUCE THE ARTIFACTS — every run, without exception. Finding that
-nothing changed since a previous analysis is a RESULT, not a reason to skip
-work. Even when the task file is already complete and the evidence is
-identical to last time, you still: write `references/analysis.html` +
-`references/analysis.json`, patch `analysis_path` / `analysis_json_path`, and
-close with a fully populated `data` (never `{}` — the caller has no report
-without it). A run that closes without those artifacts is a FAILED run, no
-matter how correct its reasoning was. The report is the deliverable; your
-chat message is not — the user does not read your transcript.
+Write paths in that JSON with FORWARD slashes (`C:/Users/…`), never `C:\Users\…`
+— a backslash is a JSON escape and silently corrupts the path.
+
+## The closing checklist (run it before you close — every time)
+
+These are not steps in a list you may judge unnecessary. Finding that nothing
+changed since a previous analysis is a RESULT, not permission to skip them.
+Walk the checklist out loud before closing and name any item you are skipping
+and why; an unexplained skip is a FAILED run no matter how correct your
+reasoning was. The artifacts are the deliverable — your chat message is not,
+because the user never reads your transcript.
+
+1. `references/analysis.html` written (rewrite it even if content is identical).
+2. `references/analysis.json` written.
+3. `analysis_path` + `analysis_json_path` patched into `task.md` frontmatter
+   as ABSOLUTE paths, and `process_id` stamped.
+4. **`flow record index <taskFolder>` run.** Nothing you wrote to `task.md`
+   reaches the app until you do — skip it and every edit above is invisible.
+5. Submission comment posted, or a deliberate reason not to (task isn't done /
+   no URL exists anywhere / a submission comment is already there). "I forgot"
+   and "it seemed unnecessary" are not reasons. See "The submission is a
+   COMMENT".
+6. Close with a fully populated `data` — never `{}`, or the caller has no
+   report.
 
 `readyForDone` is your verdict that the work is genuinely complete and a
 submission has been recorded — the caller uses it to tell the user they can

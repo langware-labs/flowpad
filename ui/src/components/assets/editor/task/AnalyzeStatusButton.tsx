@@ -73,15 +73,25 @@ export function AnalyzeStatusButton({ task, onAnalyzed, className }: AnalyzeStat
     (result: WizardProcessResult<AnalyzeStatusResult>) => {
       if (result.status === 'done') {
         const data = result.data ?? null;
-        // The persistent report link lives on the task card's analysis row
-        // (the wizard stamped analysis_path); open the group report directly.
-        if (isGroup && data?.analysisPath) openArtifact(data.analysisPath, navigation);
+        // The agent is ASKED to patch analysis_path into the task's frontmatter
+        // and `flow record index` it, but that is bookkeeping it routinely
+        // skips — and the Report button renders off `task.analysis_path`, so a
+        // skipped patch means a report that exists on disk and is unreachable.
+        // It hands us the path in its result; trust that over its diligence and
+        // persist it ourselves. Skip when the agent did do the patch (or when
+        // it reported the same path) so we don't churn the entity.
+        const reportPath = data?.analysisPath?.trim();
+        if (reportPath && reportPath !== task.analysis_path) {
+          task.analysis_path = reportPath;
+          void task.save().catch(() => undefined);
+        }
+        if (isGroup && reportPath) openArtifact(reportPath, navigation);
         onAnalyzed?.(data);
       } else {
         onAnalyzed?.(null);
       }
     },
-    [isGroup, navigation, onAnalyzed],
+    [isGroup, navigation, onAnalyzed, task],
   );
 
   return (
