@@ -412,10 +412,61 @@ traceable:
 
 ## Phase 8 — Strangle the WS dialect  ☐  ⚠ the only wire-changing phase
 
-Migrate the 31 `api/messages.py` classes one at a time: dual-publish the topic
+Migrate the legacy WS dialect one class at a time: dual-publish the topic
 twin → move that class's frontend consumers from `cm.on('on_<type>_msg')` to
-bus subscriptions → delete the class. Finishes with deleting the journey await
-machinery. The class count is the burn-down metric; no big-bang cutover.
+bus subscriptions → delete the class. No big-bang cutover.
+
+**Detail (analyzed 2026-07-22 — full two-sided rescan):** the "31 classes"
+framing was wrong. Reality: 38 `WSMessageType` members / 21 frontend-dispatched
+types, of which only ~14 are EVENT-shaped. Phase 8 strangles the EVENT
+dialect; streams and RPC stay off the bus BY DESIGN (they are not events).
+
+*Tier A — free wins (delete, no migration):* `transcript_msg`→`on_stream_msg`
+(zero subscribers), the `on_bin_msg` ArrayBuffer path (zero subscribers),
+`entity_msg` (explicit no-op), plus the backend classes with no constructor
+anywhere (Echo, Compute*, CommandStatus, ClientReady, PtyOutputMessage as a
+CLASS — audit each, then delete).
+
+*Tier B — the flow pair (flagship migration):* `flow_run_event_msg` +
+`flow_node_status_msg`. Consumers today are DISJOINT from the bus (AgenticFlows
+store + proc-watch ride the legacy pair; only journeys ride topics). Needs:
+emit `flow.node.status` + full run-event twins (REVISES the phase-2 position —
+"run-internal stays off the bus" was about routing, but the WS mirror already
+ships every node status to the app, so topic form adds no traffic), move
+`agentic-flows/store.ts` + `proc-watch.ts` to `useOnTopic`/EventBus, delete
+the two classes AND the agenticFlows EventEmitter re-emit layer (the last
+journey-era machinery).
+
+*Tier C — singleton status pushes (the burn-down bulk, ~9 classes, each ONE
+emitter + ONE consumer):* `toplog_state`→`system.toplog`, `privacy_mode`→
+`system.privacy`, `cloud_login_status`→`auth.login`, `cloud_connection_status`
+(node.* twin already exists from phase 6 — consumer moves, class dies),
+`auth_expired`→`auth.expired`, `hub_client_error`→`hub.error`, `llm_config`→
+`auth.oauth`, `recovered_msg`→`agent.recovered`, `broadcast('tabs_changed')`→
+`entity`-driven or `tabs.changed`. Mechanical recipe per class: twin emit →
+allowlist pattern → move consumer → delete TS interface + CM case + backend
+class + enum member.
+
+*Tier D — the two whales, SPLIT OUT as phase 8b:* `data_op_msg` (THE entity
+invalidation channel, 6+ consumers incl. the FlowSync store) and
+`flow_data_msg` (watcher-scoped per-entity streams). Blocker: both are
+WATCHER-SCOPED per client today; the bus forward is pattern-level to ALL
+clients — strangling them requires **per-connection topic subscriptions**
+(client declares patterns/targets over the WS; backend forwards matching
+frames to that client only — law 6 applied per-connection). That machinery
+overlaps phase 9's scope-authorization and should land WITH it. Until then,
+`entity.*` stays off the allowlist exactly as phase 3 decided.
+
+*Keep off the bus permanently:* `rest_api_msg`/`response_msg` (RPC pair),
+`pty_output_msg` (high-frequency ordered stream with seq replay),
+`control_msg`/`oauth_msg`/`ui_command` (session control), ping/pong/hangup
+(protocol). Transport lifecycle (`on_open`/`on_reconnected`…) is
+ConnectionManager's own domain — not messages.
+
+*Order:* A (deletes) → C one class at a time (lowest risk, fastest burn-down)
+→ B (flagship, needs the flows-UI validation drills) → 8b deferred to ride
+with phase 9. Burn-down metric: EVENT-dialect classes remaining (start ~14;
+after 8a target: 2 — the whales).
 
 ### Log
 
