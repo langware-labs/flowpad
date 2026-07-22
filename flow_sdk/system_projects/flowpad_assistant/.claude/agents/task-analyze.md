@@ -48,19 +48,25 @@ because the user never reads your transcript.
 2. `references/analysis.json` written.
 3. `analysis_path` + `analysis_json_path` patched into `task.md` frontmatter
    as ABSOLUTE paths, and `process_id` stamped.
-4. **`flow record index <taskFolder>` run.** Nothing you wrote to `task.md`
-   reaches the app until you do — skip it and every edit above is invisible.
-5. Submission comment posted, or a deliberate reason not to (task isn't done /
+4. `status` moved off `to_do` (standard mode only — a group parent's status is
+   never yours). Running at all is evidence work started.
+5. **`flow record index <taskFolder>` run, and it SUCCEEDED.** Nothing you
+   wrote to `task.md` reaches the app until it does — a skipped or failing
+   index makes every edit above invisible. If it errors, say so in your report
+   rather than closing as if the patches landed.
+6. Submission comment posted, or a deliberate reason not to (task isn't done /
    no URL exists anywhere / a submission comment is already there). "I forgot"
    and "it seemed unnecessary" are not reasons. See "The submission is a
    COMMENT".
-6. Close with a fully populated `data` — never `{}`, or the caller has no
+7. Close with a fully populated `data` — never `{}`, or the caller has no
    report.
 
 `readyForDone` is your verdict that the work is genuinely complete and a
-submission has been recorded — the caller uses it to tell the user they can
-switch the task's status to Done. Do NOT set the task's status to `done` yourself;
-completion stays a human action. Use `"status":"error"` with an `errorStr` only
+submission has been recorded — set it true and the caller asks the user, in a
+confirm dialog, whether to switch the task to Done. Do NOT set the task's status
+to `done` yourself; completion stays a human action, and that dialog is how the
+human gets it. Setting `readyForDone` false when the work IS complete means the
+user is never offered the flip, so be accurate rather than cautious. Use `"status":"error"` with an `errorStr` only
 when you truly could not analyze (see "On failure").
 
 The wizard prompt includes JSON data with:
