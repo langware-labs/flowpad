@@ -9,6 +9,7 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { useTriggers } from '@src/hooks/useTriggers';
+import { useAgents } from '@src/hooks/useAgents';
 import {
   agenticFlows,
   functionRuntime,
@@ -32,6 +33,7 @@ export function NodeInspector({ node }: { node: FlowDocNode }) {
   const selectNode = useStudio((s) => s.selectNode);
   const live = useStudio((s) => s.nodeStatus[node.id]);
   const { triggers } = useTriggers();
+  const { agents } = useAgents();
 
   const patch = useCallback(
     (fn: (n: FlowDocNode) => void) => {
@@ -77,6 +79,25 @@ export function NodeInspector({ node }: { node: FlowDocNode }) {
 
       {node.node_type === 'agent' && (
         <>
+          <Field label="agent (definition)">
+            <select
+              value={asStr(nd.typeid)}
+              onChange={(e) => setData('typeid', e.target.value)}
+            >
+              <option value="">— inline (ad-hoc) —</option>
+              {agents.map((a) => (
+                <option key={a.id} value={`agent-${a.id}`} title={a.description ?? undefined}>
+                  {a.name || a.id}
+                </option>
+              ))}
+            </select>
+          </Field>
+          {asStr(nd.typeid) !== '' && (
+            <p className="afl-note">
+              The Agent definition's model + system prompt lead; the fields below are
+              per-node overrides / task addendum.
+            </p>
+          )}
           <Field label="program kind">
             <select value={asStr(nd.program_kind) || 'instruction'} onChange={(e) => setData('program_kind', e.target.value)}>
               <option value="instruction">instruction (agent prompt)</option>

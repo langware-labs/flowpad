@@ -91,6 +91,12 @@ def load_agent(name: str, project_dir: str | Path | None = None) -> FSRecord | N
     return load_system_agent(name)
 
 
+# Flowpad-only spec fields that must NOT reach the Claude ``--agents`` CLI JSON
+# (they're routing/metadata, not part of Claude's agent schema). They still
+# round-trip through frontmatter via ``render_agent_markdown``.
+_CLI_EXCLUDED_FIELDS = frozenset({"kind"})
+
+
 def agent_to_cli_json(rec: FSRecord) -> dict[str, dict[str, Any]]:
     """Build ``{name: {prompt, description, ...}}`` dict for the ``--agents``
     CLI flag. Replaces ``AgentRecord.to_agents_cli_json``.
@@ -105,6 +111,8 @@ def agent_to_cli_json(rec: FSRecord) -> dict[str, dict[str, Any]]:
     if prompt:
         entry["prompt"] = prompt
     for key in AGENTS_SPEC_FIELDS:
+        if key in _CLI_EXCLUDED_FIELDS:
+            continue
         val = rec.data.get(key)
         if val is not None:
             json_key = KEY_TO_JSON.get(key, key)

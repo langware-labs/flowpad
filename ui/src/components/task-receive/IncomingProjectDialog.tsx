@@ -111,7 +111,7 @@ export function IncomingProjectDialog({ open, gitOrigin, projectName, senderName
               </DialogTitle>
               <DialogDescription>
                 <Trans>
-                  Set up <em>{projectName}</em> in this workspace. We'll clone the template and index it so it's ready to use.
+                  Set up <em>{projectName}</em> in this workspace. We'll clone the repo and index it so it's ready to use.
                 </Trans>
               </DialogDescription>
             </DialogHeader>
@@ -142,7 +142,7 @@ export function IncomingProjectDialog({ open, gitOrigin, projectName, senderName
             <DialogHeader>
               <DialogTitle><Trans>Setting up your project…</Trans></DialogTitle>
               <DialogDescription>
-                <Trans>Cloning the template and indexing it.</Trans>
+                <Trans>Cloning the repo and indexing it.</Trans>
               </DialogDescription>
             </DialogHeader>
             <div className="flex items-center justify-center py-8">

@@ -9,7 +9,25 @@ import { Trans, useLingui } from '@lingui/react/macro';
 import { showInputPrompt } from '@src/components/ui/input-prompt-modal';
 import { useFavorites } from '@src/hooks/use-favorites';
 import { QuickCreateModal } from './QuickCreateModal';
-import { useQuickCreatePick } from './QuickCreatePanel';
+import { useQuickCreatePick, type PanelHandlers } from './QuickCreatePanel';
+
+/**
+ * The "+" modal when no host offers its own quick-create instance — it mounts
+ * the hook (and therefore the whole dialog set) itself. Split into a component
+ * so a host-supplied `panelProps` skips this subtree entirely: the dialogs are
+ * not free (BindSecretDialog resolves secret origins on mount), so two
+ * instances on one surface would double that work and open post-login dialogs
+ * twice.
+ */
+function SelfHostedQuickCreateModal({ open, onOpenChange }: { open: boolean; onOpenChange: (o: boolean) => void }) {
+  const { panelProps, dialogs } = useQuickCreatePick();
+  return (
+    <>
+      <QuickCreateModal open={open} onOpenChange={onOpenChange} panelProps={panelProps} />
+      {dialogs}
+    </>
+  );
+}
 
 /**
  * DesktopSurface — the favorites desktop as one reusable unit: a
@@ -23,6 +41,7 @@ export function DesktopSurface({
   className,
   filter,
   selectedKey,
+  panelProps,
 }: {
   size?: 'default' | 'large';
   className?: string;
@@ -30,12 +49,15 @@ export function DesktopSurface({
   filter?: (b: Bookmark) => boolean;
   /** Highlight a favorite by its bookmark id (id-based selection). */
   selectedKey?: string;
+  /** A host's own `useQuickCreatePick()` instance. Pass it when this surface is
+   *  embedded in a page that already hosts the quick-create dialogs, so only
+   *  one instance mounts; omit it and this surface hosts its own. */
+  panelProps?: PanelHandlers;
 }) {
   const { t } = useLingui();
   const { currentDock } = useDockNavigation();
   const [modalOpen, setModalOpen] = useState(false);
   const { roots, onDropToBackground, onReorderRoot } = useFavoritesRoots({ filter });
-  const { panelProps, dialogs } = useQuickCreatePick();
   const { createFolder } = useFavorites();
 
   // Creating a bookmark folder belongs to the desktop that holds the folders,
@@ -87,8 +109,11 @@ export function DesktopSurface({
         className={className}
       />
 
-      <QuickCreateModal open={modalOpen} onOpenChange={setModalOpen} panelProps={panelProps} />
-      {dialogs}
+      {panelProps ? (
+        <QuickCreateModal open={modalOpen} onOpenChange={setModalOpen} panelProps={panelProps} />
+      ) : (
+        <SelfHostedQuickCreateModal open={modalOpen} onOpenChange={setModalOpen} />
+      )}
     </>
   );
 }

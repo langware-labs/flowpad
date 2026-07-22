@@ -15,7 +15,7 @@ import {
 } from '@sdk';
 import { NavigateFunction } from 'react-router';
 import type { ViewMode } from '@src/contexts/view-mode-context';
-import { DockPointer, HIGHLIGHT_PARAM } from './DockPointer';
+import { DockPointer, HIGHLIGHT_PARAM, JOURNEY_PARAM } from './DockPointer';
 import { dockPointerForFile } from './local-file-pointer';
 import { FileOptions, TabOptions } from './types';
 import { preserveWindowLayout, stripDockPortion } from './url-builder';
@@ -150,6 +150,59 @@ export class NavigationActions {
     this.commitBrowserNavigation(url, url);
   }
 
+  /**
+   * The journey shown by the live URL, or null — the single reader used by both
+   * the carry-forward and close. Parses the raw URL rather than `currentDock` so
+   * it also sees a journey shown on the home root (which has no DockPointer).
+   */
+  private static currentJourneyId(): string | null {
+    const query = NavigationActions.getCurrentBrowserUrl().split('?')[1];
+    return query ? new URLSearchParams(query).get(JOURNEY_PARAM) : null;
+  }
+
+  /**
+   * Show a user journey on the CURRENT surface — sets `?journeyId=` on the
+   * current dock pointer (or the home root when not on a dock URL). The journey
+   * then rides every subsequent navigation via openDock's carry-forward, so it
+   * stays topmost until {@link closeJourney}. URL-carried ⇒ reload-safe.
+   */
+  showJourney(journeyId: string): void {
+    if (this.currentDock) {
+      this.openDock(this.currentDock.withJourney(journeyId));
+      return;
+    }
+    NavigationActions.clearCommittedPendingNavigation();
+    const url = `/?${JOURNEY_PARAM}=${encodeURIComponent(journeyId)}`;
+    if (NavigationActions.getCurrentBrowserUrl() === url) return;
+    this.commitBrowserNavigation(url, url);
+  }
+
+  /**
+   * Explicitly close the journey — the ONLY thing that clears `journeyId`.
+   * Commits the stripped URL directly instead of going through `openDock`,
+   * whose carry-forward would immediately put the param back.
+   */
+  closeJourney(): void {
+    if (!NavigationActions.currentJourneyId()) return;
+    const dock = this.currentDock;
+    if (!dock?.journeyId) {
+      // Home root (or any non-dock URL) carrying the param: drop just that key.
+      const current = NavigationActions.getCurrentBrowserUrl();
+      NavigationActions.clearCommittedPendingNavigation();
+      const [path, query] = current.split('?');
+      const params = new URLSearchParams(query ?? '');
+      params.delete(JOURNEY_PARAM);
+      const rest = params.toString();
+      const url = rest ? `${path}?${rest}` : path || '/';
+      this.commitBrowserNavigation(url, url);
+      return;
+    }
+    NavigationActions.clearCommittedPendingNavigation();
+    const url = dock.withJourney(null).toUrl();
+    if (NavigationActions.getCurrentBrowserUrl() === url) return;
+    this.commitBrowserNavigation(url, url);
+  }
+
   // ========== Core Navigation ==========
 
   /**
@@ -195,6 +248,17 @@ export class NavigationActions {
       extraOptions && Object.keys(extraOptions).length > 0
         ? new DockPointer(base.viewType, base.pointer, { ...base.options, ...extraOptions }, base.layout, base.page)
         : base;
+
+    // A shown journey is TOPMOST: carry `journeyId` onto any target that doesn't
+    // set one, so the guided tray survives navigation until explicitly closed.
+    // Read from the live URL, not `currentDock` — the home root `/` is not a dock
+    // URL (currentDock is null there) yet can absolutely be showing a journey.
+    // No-op when none is shown; `closeJourney()` bypasses openDock so the param
+    // can actually be cleared.
+    const activeJourneyId = NavigationActions.currentJourneyId();
+    if (activeJourneyId && !dock.journeyId) {
+      dock = dock.withJourney(activeJourneyId);
+    }
 
     // URL-first default scope for scope-aware surfaces (assets, triggers, file
     // explorer): a dock opened WITHOUT an explicit scope (no `scope-*` keys →
