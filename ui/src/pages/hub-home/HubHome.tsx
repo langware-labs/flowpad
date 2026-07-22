@@ -1,11 +1,12 @@
-import { dataContext, ExecutionEnvironmentStatus, gitOriginFromUrl, gitOriginRepoFullName, PageId, ViewType, WorldViewProjection } from '@sdk';
-import type { GitOrigin } from '@sdk';
+import { dataContext, ExecutionEnvironmentStatus, PageId, ViewType, WorldViewProjection } from '@sdk';
 import { useAuth } from '@sdk/react/hooks';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { DockPointer } from '@src/navigation/DockPointer';
+import { useContext } from '@src/hooks/useContext';
 import { useProjects } from '@src/hooks/use-projects';
-import { useDesktops, type Step, type DesktopDetails, type TemplateLaunch } from '@src/hooks/use-desktops';
-import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
+import { useDesktops, nextDesktopName, type Step, type DesktopDetails } from '@src/hooks/use-desktops';
+import { NewDesktopDialog } from './NewDesktopDialog';
 import {
   Building2,
   CheckCircle,
@@ -103,6 +104,9 @@ export function HubHome() {
   const { t } = useLingui();
   const { currentUser } = useAuth();
   const { navigation } = useDockNavigation();
+  // Current project is the same source the footer's StatusBar reads
+  // (dataContext.project), so the highlighted card and the footer always agree.
+  const { project: currentProject } = useContext();
   const { projects } = useProjects();
   const {
     desktops,
@@ -131,26 +135,19 @@ export function HubHome() {
     return () => clearInterval(id);
   }, []);
 
-  // "Launch a template" deep link: /dock/hub/home?template=<git-url>[&title=&sender=].
-  // Show a generic "Would you like to launch X?" confirm, then launch a desktop
-  // that self-provisions the template (clone + index) on the box.
-  const [pendingTemplate, setPendingTemplate] = useState<TemplateLaunch | null>(null);
+  // New-desktop modal (name + optional git). Opened by the New Desktop card, or
+  // pre-filled from a `?setup_git=<git-url>` deep link.
+  // One state: null = closed. Open sites can't disagree about the prefill.
+  const [newDesktop, setNewDesktop] = useState<{ gitUrl?: string } | null>(null);
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const templateUrl = params.get('template');
-    if (!templateUrl) return;
-    const branch = params.get('branch') || '';
-    const gitOrigin: GitOrigin | null = gitOriginFromUrl(templateUrl, branch);
-    // Clean the URL so a refresh doesn't re-prompt.
+    const gitUrl = params.get('setup_git');
+    if (!gitUrl) return;
+    // Clean the URL so a refresh doesn't re-open.
     const url = new URL(window.location.href);
-    for (const k of ['template', 'branch', 'title', 'sender']) url.searchParams.delete(k);
+    url.searchParams.delete('setup_git');
     window.history.replaceState(null, '', url.toString());
-    if (!gitOrigin) return;
-    setPendingTemplate({
-      gitOrigin,
-      title: params.get('title') || gitOriginRepoFullName(gitOrigin) || 'Template',
-      senderName: params.get('sender') || 'Someone',
-    });
+    setNewDesktop({ gitUrl });
   }, []);
 
   const firstName = currentUser?.name?.split(' ')[0] || 'there';
@@ -216,14 +213,29 @@ export function HubHome() {
               <Trans>Projects</Trans>
             </h2>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {projects.map((p) => (
-                <div key={p.id} className="flex items-center gap-3 rounded-lg border border-border bg-card px-4 py-3">
-                  <FolderGit2 className="h-4 w-4 shrink-0 text-muted-foreground" />
-                  <span className="truncate text-sm" title={p.name ?? undefined}>
-                    {p.name || t`Untitled project`}
-                  </span>
-                </div>
-              ))}
+              {projects.map((p) => {
+                const isCurrent = currentProject?.id === p.id;
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    aria-pressed={isCurrent}
+                    // Clicking opens the project dock, which sets CurrentProject
+                    // context — the same navigation the footer's name button uses,
+                    // so the footer follows the click. URL-first: only openDock.
+                    onClick={() => navigation.openDock(DockPointer.forProject(p.id))}
+                    className={`flex items-center gap-3 rounded-lg border px-4 py-3 text-left transition-colors hover:bg-accent ${
+                      isCurrent ? 'border-primary bg-primary/5' : 'border-border bg-card'
+                    }`}
+                    title={p.displayName}
+                  >
+                    <FolderGit2 className={`h-4 w-4 shrink-0 ${isCurrent ? 'text-primary' : 'text-muted-foreground'}`} />
+                    <span className="truncate text-sm">
+                      {p.displayName || t`Untitled project`}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           </div>
         )}
@@ -234,6 +246,18 @@ export function HubHome() {
             <Trans>Desktops</Trans>
           </h2>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {/* New desktop — always first, high-contrast + theme-aware. */}
+            <button
+              type="button"
+              onClick={() => setNewDesktop({})}
+              disabled={launching}
+              data-testid="new-desktop-button"
+              className="flex items-center justify-center gap-2 rounded-lg border border-primary/50 bg-primary/10 px-4 py-3 text-sm font-medium text-primary transition-colors hover:bg-primary/20 disabled:opacity-60"
+            >
+              {launching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+              {launching ? <Trans>Launching…</Trans> : <Trans>New Desktop</Trans>}
+            </button>
+
             {desktops.map((d) => (
               <div
                 key={d.id}
@@ -359,21 +383,14 @@ export function HubHome() {
         </div>
       </div>
 
-      {/* "Launch a template" confirm — from a ?template=<git-url> deep link. */}
-      {pendingTemplate && (
-        <ConfirmDialog
-          open={!!pendingTemplate}
-          onOpenChange={(o) => { if (!o) setPendingTemplate(null); }}
-          title={t`Launch ${pendingTemplate.title}?`}
-          description={t`This opens a new FlowPad desktop and sets up the template project (clone + index) so it's ready to use.`}
-          confirmLabel={t`Launch`}
-          onConfirm={() => {
-            const template = pendingTemplate;
-            setPendingTemplate(null);
-            void launch({ template });
-          }}
-        />
-      )}
+      {/* New-desktop modal: name + optional git repo (with the connect-GitHub gate). */}
+      <NewDesktopDialog
+        open={!!newDesktop}
+        onOpenChange={(o) => { if (!o) setNewDesktop(null); }}
+        defaultName={nextDesktopName(desktops)}
+        initialGitUrl={newDesktop?.gitUrl}
+        onLaunch={(opts) => void launch(opts)}
+      />
     </div>
   );
 }

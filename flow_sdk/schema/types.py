@@ -183,6 +183,12 @@ class EntityType(StrEnum):
     # One execution of an AgenticFlow — row is start/end bookkeeping; the full
     # trace lives in the flow folder's runs/<id>.jsonl.
     AGENTIC_FLOW_RUN = "agentic_flow_run"
+    # A folder-backed guided-onboarding document (graph.json of guided_step
+    # nodes + child *.html pages). Runs on the FlowManager engine like an
+    # AgenticFlow, but typed separately so it stays out of the Flows list.
+    JOURNEY = "journey"
+    # A user's private progress through a Journey (DB-only, one per user+journey).
+    JOURNEY_JOURNAL = "journey_journal"
     # A received, staged bundle attachment awaiting explicit install
     # (DB-only entity — no TypeInfo/RecordType; see builtin/message_attachment.py).
     MESSAGE_ATTACHMENT = "message_attachment"

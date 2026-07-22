@@ -24,6 +24,8 @@ import { usePresenceReporter } from '@src/hooks/use-presence-reporter';
 import { useUiCommandListener } from '@src/hooks/use-ui-command-listener';
 import { useSyncOsBadge } from '@src/hooks/useInboxManager';
 import { Spotlight, useSpotlightHotkey } from '@src/components/spotlight';
+import { JourneyController } from '@src/journey/JourneyController';
+import { UiTopicEmitter } from '@src/topics/ui.onTopic';
 import { useDockViewModeOverrideSync } from '@src/contexts/view-mode-context';
 import { isHubOnly } from '@src/navigation/hub-runtime';
 
@@ -110,6 +112,8 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
         <InputPromptModal />
         <ImageAnnotatorRoot />
         <Spotlight />
+        <UiTopicEmitter />
+        <JourneyController />
         <ActivityProgressModalRoot />
         <WikiModalRoot />
         <GlobalEvents />

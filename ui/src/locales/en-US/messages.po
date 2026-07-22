@@ -1585,6 +1585,10 @@ msgstr "Backend server is not responding. Please try again later."
 msgid "Backend URL not configured"
 msgstr "Backend URL not configured"
 
+#: src/components/project-home/HomeCustomizationCard.tsx
+msgid "Background image"
+msgstr "Background image"
+
 #: src/components/account/database-section.tsx
 msgid "Backing up..."
 msgstr "Backing up..."
@@ -1678,6 +1682,11 @@ msgstr "Branch"
 #: src/components/GitHubConnectionDialog.tsx
 msgid "Branch:"
 msgstr "Branch:"
+
+#. placeholder {0}: HOME_STRINGS_PATH.replace('/string.json', '')
+#: src/components/project-home/HomeCustomizationCard.tsx
+msgid "Brand this project's home ({0}). Applies on every home surface when this is the active project."
+msgstr "Brand this project's home ({0}). Applies on every home surface when this is the active project."
 
 #: src/components/ui/breadcrumb.tsx
 msgid "breadcrumb"
@@ -4936,6 +4945,10 @@ msgstr "Failed to open logs folder"
 msgid "Failed to open project"
 msgstr "Failed to open project"
 
+#: src/components/project-home/HomeCustomizationCard.tsx
+msgid "Failed to remove image"
+msgstr "Failed to remove image"
+
 #: src/components/workflows-view/WorkflowsNavigator.tsx
 #~ msgid "Failed to rename workflow"
 #~ msgstr "Failed to rename workflow"
@@ -4967,6 +4980,10 @@ msgstr "Failed to save secret"
 #: src/tabs/useTerminalStripController.tsx
 msgid "Failed to save the context snapshot."
 msgstr "Failed to save the context snapshot."
+
+#: src/components/project-home/HomeCustomizationCard.tsx
+msgid "Failed to save title"
+msgstr "Failed to save title"
 
 #: src/components/conversation/MessageComposer.tsx
 msgid "Failed to send draft"
@@ -5051,6 +5068,10 @@ msgstr "Failed to update hook"
 #: src/components/hooks-manager/index.tsx
 msgid "Failed to update trigger"
 msgstr "Failed to update trigger"
+
+#: src/components/project-home/HomeCustomizationCard.tsx
+msgid "Failed to upload image"
+msgstr "Failed to upload image"
 
 #: src/components/chat-input.tsx
 #~ msgid "Failed to upload the zip file. Please try again."
@@ -5834,9 +5855,30 @@ msgstr "Highlight changes since the last stamp"
 
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
+#: src/components/project-home/HomeCustomizationCard.tsx
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "Home"
 msgstr "Home"
+
+#: src/components/project-home/HomeCustomizationCard.tsx
+msgid "Home background"
+msgstr "Home background"
+
+#: src/components/project-home/HomeCustomizationCard.tsx
+msgid "Home background removed"
+msgstr "Home background removed"
+
+#: src/components/project-home/HomeCustomizationCard.tsx
+msgid "Home background updated"
+msgstr "Home background updated"
+
+#: src/components/project-home/HomeCustomizationCard.tsx
+msgid "Home title"
+msgstr "Home title"
+
+#: src/components/project-home/HomeCustomizationCard.tsx
+msgid "Home title saved"
+msgstr "Home title saved"
 
 #: src/components/lens-viewer/shared/transcript-features/TranscriptEntryItem.tsx
 msgid "hook"
@@ -6454,6 +6496,10 @@ msgstr "Keep"
 #: src/components/image-annotator/ImageAnnotator.tsx
 msgid "Keep editing"
 msgstr "Keep editing"
+
+#: src/components/project-home/HomeCustomizationCard.tsx
+msgid "Keep the default greeting…"
+msgstr "Keep the default greeting…"
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 #~ msgid "Keep Waiting"
@@ -10485,6 +10531,10 @@ msgstr "Reload the MarkdownIndex list."
 #~ msgid "Remind in {count} {0}"
 #~ msgstr "Remind in {count} {0}"
 
+#: src/components/project-home/HomeCustomizationCard.tsx
+msgid "Remove"
+msgstr "Remove"
+
 #: src/components/conversation/MessageComposer.tsx
 msgid "Remove attachment"
 msgstr "Remove attachment"
@@ -10593,6 +10643,10 @@ msgstr "Rename favorite"
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "Reopen"
 msgstr "Reopen"
+
+#: src/components/project-home/HomeCustomizationCard.tsx
+msgid "Replace"
+msgstr "Replace"
 
 #: src/components/terminal/interactive-terminal/pty-events-viewer/PTYEventsViewer.tsx
 #: src/components/terminal/interactive-terminal/pty-events-viewer/PTYEventsViewer.tsx
@@ -11096,6 +11150,7 @@ msgstr "Sandbox Metrics"
 #: src/components/hooks-manager/TriggerForm.tsx
 #: src/components/hooks-view/HookEditor.tsx
 #: src/components/image-annotator/AnnotatorToolbar.tsx
+#: src/components/project-home/HomeCustomizationCard.tsx
 #: src/components/project-home/SecretsCard.tsx
 #: src/components/prompt-library/PromptEditDialog.tsx
 #: src/components/spec-editor/SpecEditor.tsx
@@ -13680,6 +13735,10 @@ msgstr "Upgrade to v{0}"
 #: src/components/version-popover/version-popover.tsx
 msgid "Upgrading…"
 msgstr "Upgrading…"
+
+#: src/components/project-home/HomeCustomizationCard.tsx
+msgid "Upload"
+msgstr "Upload"
 
 #: src/components/simple-file-manager/SimpleFileManager.tsx
 msgid "Upload files"

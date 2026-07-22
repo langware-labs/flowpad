@@ -79,3 +79,4 @@ export * from './team';
 export * from './members';
 export * from './git-workdir';
 export * from './inbox-manager';
+export * from './journey';

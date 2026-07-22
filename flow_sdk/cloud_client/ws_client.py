@@ -24,6 +24,7 @@ from flow_sdk.cli.auth.credentials import UserHubCredentials, load_credentials
 from flow_sdk.cloud_client.auth_state import invalidate_hub_login, set_connection_status
 from flow_sdk.cloud_client.auth_status import HubConnectionStatus
 from flow_sdk.cloud_client.client import ApiConfig
+from flow_sdk.cloud_client.client_hooks import attach_machine_id
 from flow_sdk.cloud_client.constants import EXPIRY_LEEWAY_SECONDS
 
 InboundHandler = Callable[[dict], Awaitable[None]]
@@ -152,6 +153,9 @@ async def connect_hub_websocket(
     api_base_url = (config or ApiConfig.from_env()).api_base_url
     url = build_hub_ws_url(api_base_url, connection_id)
     headers = {"Authorization": f"Bearer {creds.api_key}"}
+    # Workspace sandboxes carry a machine-bound login key; the hub's WS auth
+    # requires the same X-Machine-ID header as HTTP (fails closed without it).
+    attach_machine_id(headers)
     # wss:// must verify against certifi (see _hub_ssl_context); ws:// (local
     # dev) carries no TLS, so leave ssl unset.
     ssl_context = _hub_ssl_context() if url.startswith("wss://") else None
