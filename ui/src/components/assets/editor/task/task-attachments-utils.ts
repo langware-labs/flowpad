@@ -16,13 +16,18 @@ export interface Attachment {
   label: string;
   git_origin?: GitOrigin;
   rel?: string;
+  /** Filename inside the TASK's own entity storage. The machine-independent
+   *  identity for a file attachment: the bytes live on the task, so every
+   *  member resolves it locally (filling from the hub on a first miss) instead
+   *  of chasing the sender's `path`, which means nothing on their disk. */
+  vfs?: string;
 }
 
 /** Machine-independent key for an entry: the git identity for a git attachment
  *  (so the sender's path never leaks into keys/dedup/install-tracking), else the
  *  local path. */
 export function attachmentKey(a: Attachment): string {
-  return (a.git_origin && gitOriginKey(a.git_origin)) || a.path || a.label;
+  return (a.git_origin && gitOriginKey(a.git_origin)) || a.vfs || a.path || a.label;
 }
 
 /** task.artifacts entries are `string | {path?, label, git_origin?, rel?}` —
@@ -38,9 +43,11 @@ export function normalizeAttachments(artifacts: unknown): Attachment[] {
     } else if (a && typeof a === 'object') {
       const git = (a.git_origin as GitOrigin | undefined) || undefined;
       const path = typeof a.path === 'string' ? a.path : undefined;
-      if (!path && !git) continue; // an entry needs at least one identity
+      const vfs = typeof a.vfs === 'string' && a.vfs ? a.vfs : undefined;
+      if (!path && !git && !vfs) continue; // an entry needs at least one identity
       const label =
         a.label ||
+        vfs ||
         (path ? path.split('/').pop() : undefined) ||
         (git ? gitOriginRepoFullName(git) : undefined) ||
         'attachment';
@@ -49,6 +56,8 @@ export function normalizeAttachments(artifacts: unknown): Attachment[] {
         // Drop the sender-local path for git entries (identity is git_origin).
         ...(git ? { git_origin: git } : path ? { path } : {}),
         ...(git && typeof a.rel === 'string' ? { rel: a.rel } : {}),
+        // Bytes stored on the task itself — resolves on every member's machine.
+        ...(!git && typeof a.vfs === 'string' && a.vfs ? { vfs: a.vfs } : {}),
       });
     }
   }
