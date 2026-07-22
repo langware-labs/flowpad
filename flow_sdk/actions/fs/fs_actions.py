@@ -173,7 +173,8 @@ async def push_entity_files_to_hub(entity) -> int:
 
         et = BuiltinEntityType(entity.get_type())
         storage = get_entity_storage(entity.typeid)
-        items = await storage.list_dir(VFSPath.from_entity_path(entity.typeid, "").abs_vfspath)
+        root = VFSPath.from_entity_path(entity.typeid, "").abs_vfspath.strip("/")
+        items = await storage.list_dir(root)
     except Exception as e:  # noqa: BLE001
         logger.debug(f"share: no files to push for {entity.typeid}: {e}")
         return 0
@@ -184,7 +185,13 @@ async def push_entity_files_to_hub(entity) -> int:
         if getattr(item, "is_dir", False) or not name:
             continue
         try:
-            content = Path(storage.get_storage_path(item.vfs_abs_path)).read_bytes()
+            # ``get_storage_path`` prepends the entity's own folder, so it wants
+            # the ENTITY-RELATIVE path — ``vfs_abs_path`` already carries the
+            # ``<type>-<id>/`` prefix and would nest it twice.
+            rel = item.vfs_abs_path.strip("/")
+            if root and rel.startswith(root + "/"):
+                rel = rel[len(root) + 1 :]
+            content = Path(storage.get_storage_path(rel)).read_bytes()
             await hub_upload_entity_file(et, entity.id, name, content)
         except Exception as e:  # noqa: BLE001
             logger.warning(f"share: file push failed for {entity.typeid}/{name}: {e}")
