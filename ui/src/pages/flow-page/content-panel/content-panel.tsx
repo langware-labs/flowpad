@@ -61,14 +61,25 @@ import { ViewType, VIEWER_REGISTRY } from '@src/types/ViewType';
 import { useIsVibe } from '@src/components/view-mode';
 import { AlertTriangle, LogIn } from 'lucide-react';
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { isWebglAvailable, WebglUnavailableView } from '@src/components/graph-view/webglSupport';
 
 // Lazy-loaded: GraphView pulls in sigma.js + @sigma/node-image, which run
 // WebGL init (gl.getParameter) at module load. Importing it eagerly crashes
 // the entire app in any WebGL-less context (headless browsers, GPU-disabled
 // CI, software-render fallbacks). Loading it only when the graph tab opens
-// keeps app bootstrap independent of WebGL availability.
-const GraphView = lazy(() => import('@src/components/graph-view/GraphView').then((m) => ({ default: m.GraphView })));
-const WorldView = lazy(() => import('@src/components/graph-view/GraphView').then((m) => ({ default: m.WorldView })));
+// keeps app bootstrap independent of WebGL availability, and the
+// isWebglAvailable gate keeps the sigma chunk from ever being evaluated when
+// WebGL is missing — the tab shows WebglUnavailableView instead of crashing.
+const GraphView = lazy(() =>
+  isWebglAvailable()
+    ? import('@src/components/graph-view/GraphView').then((m) => ({ default: m.GraphView }))
+    : Promise.resolve({ default: WebglUnavailableView }),
+);
+const WorldView = lazy(() =>
+  isWebglAvailable()
+    ? import('@src/components/graph-view/GraphView').then((m) => ({ default: m.WorldView }))
+    : Promise.resolve({ default: WebglUnavailableView }),
+);
 // Lazy like GRAPH — keeps @xyflow/react out of app bootstrap.
 const AgenticFlowsView = lazy(() =>
   import('@src/components/agentic-flows/AgenticFlowsView').then((m) => ({ default: m.AgenticFlowsView })),

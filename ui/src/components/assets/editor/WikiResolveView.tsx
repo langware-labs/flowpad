@@ -14,6 +14,8 @@ import { useDocTranslations } from './translations/useDocTranslations';
 import { useWikiModalStore } from '@src/components/wiki-tip/wiki-modal';
 import { useEntityByPath } from '@src/hooks/use-entity-by-path';
 import { entityReloadKey } from '@src/utils/entity-reload-key';
+import { isHubOnly } from '@src/navigation/hub-runtime';
+import { MarkdownView } from '@src/components/markdown-view';
 import { Trans, useLingui } from '@lingui/react/macro';
 
 interface WikiResolveViewProps {
@@ -35,6 +37,9 @@ interface ResolveResult {
   type: string;
   id: string;
   asset_ref: string;
+  /** Hub-only: the markdown body inlined in the resolve response. The hub has
+   *  no compute-node FS API, so its resolver ships the content directly. */
+  content?: string | null;
 }
 
 type CreateAsType = 'markdown' | 'whiteboard';
@@ -109,7 +114,9 @@ export function WikiResolveView({ name, space = '@local', fragment, variant = 'f
     }
   }, [createAs, name, navigation, queryClient]);
 
-  if (!computeNode?.typeId) {
+  // Hub mode has no compute node at all — its resolver inlines the page
+  // content instead, so only the desk FS-read path below needs the node.
+  if (!computeNode?.typeId && !isHubOnly()) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
         <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> <Trans>Connecting…</Trans>
@@ -133,6 +140,18 @@ export function WikiResolveView({ name, space = '@local', fragment, variant = 'f
     );
   }
 
+  // Content inlined in the resolve response (hub): render it read-only —
+  // the editor/translations stack below all rides on the compute-node FS.
+  if (data?.content != null) {
+    return (
+      <div className="h-full overflow-y-auto">
+        <div className="mx-auto max-w-3xl px-6 py-6">
+          <MarkdownView value={data.content} />
+        </div>
+      </div>
+    );
+  }
+
   if (!data?.asset_ref) {
     return (
       <div className="flex h-full items-center justify-center px-6">
@@ -147,31 +166,36 @@ export function WikiResolveView({ name, space = '@local', fragment, variant = 'f
               <Trans>No page exists with this name yet.</Trans>
             </div>
           </div>
-          <RadioGroup
-            value={createAs}
-            onValueChange={(v) => setCreateAs(v as CreateAsType)}
-            className="flex flex-col items-start gap-2"
-            data-testid="wiki-create-as"
-          >
-            <div className="flex items-center gap-2">
-              <RadioGroupItem value="markdown" id="wiki-create-markdown" />
-              <Label htmlFor="wiki-create-markdown"><Trans>Create as Markdown</Trans></Label>
-            </div>
-            <div className="flex items-center gap-2">
-              <RadioGroupItem value="whiteboard" id="wiki-create-whiteboard" />
-              <Label htmlFor="wiki-create-whiteboard"><Trans>Create as Whiteboard</Trans></Label>
-            </div>
-          </RadioGroup>
-          <Button onClick={() => void handleCreate()} disabled={creating}>
-            {creating ? (
-              <>
-                <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
-                <Trans>Creating…</Trans>
-              </>
-            ) : (
-              <><Trans>Create it</Trans></>
-            )}
-          </Button>
+          {/* Creating wiki assets is a desk capability (project + local FS). */}
+          {!isHubOnly() && (
+            <>
+              <RadioGroup
+                value={createAs}
+                onValueChange={(v) => setCreateAs(v as CreateAsType)}
+                className="flex flex-col items-start gap-2"
+                data-testid="wiki-create-as"
+              >
+                <div className="flex items-center gap-2">
+                  <RadioGroupItem value="markdown" id="wiki-create-markdown" />
+                  <Label htmlFor="wiki-create-markdown"><Trans>Create as Markdown</Trans></Label>
+                </div>
+                <div className="flex items-center gap-2">
+                  <RadioGroupItem value="whiteboard" id="wiki-create-whiteboard" />
+                  <Label htmlFor="wiki-create-whiteboard"><Trans>Create as Whiteboard</Trans></Label>
+                </div>
+              </RadioGroup>
+              <Button onClick={() => void handleCreate()} disabled={creating}>
+                {creating ? (
+                  <>
+                    <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                    <Trans>Creating…</Trans>
+                  </>
+                ) : (
+                  <><Trans>Create it</Trans></>
+                )}
+              </Button>
+            </>
+          )}
         </div>
       </div>
     );
@@ -183,6 +207,16 @@ export function WikiResolveView({ name, space = '@local', fragment, variant = 'f
     return (
       <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
         <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> <Trans>Opening [[{name}]]…</Trans>
+      </div>
+    );
+  }
+
+  // Editor path below reads through the compute-node FS — a hub hit without
+  // inlined content (shouldn't happen) lands here and just keeps waiting.
+  if (!computeNode?.typeId) {
+    return (
+      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+        <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> <Trans>Connecting…</Trans>
       </div>
     );
   }
