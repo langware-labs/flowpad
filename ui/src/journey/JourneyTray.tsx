@@ -1,10 +1,10 @@
 import { Check, Circle, CircleDot, Play, RotateCcw, X } from 'lucide-react';
-import { useState } from 'react';
+import { useMemo } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { Button } from '@src/components/ui/button';
 import { cn } from '@src/lib/utils';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import type { UseJourneyResult } from './use-journey';
+import { useBusyRun, type UseJourneyResult } from './use-journey';
 
 const INDIGO = '#5b5bf0';
 const AMBER = '#f6a723';
@@ -21,22 +21,16 @@ export function JourneyTray({ state }: { state: UseJourneyResult }) {
   const { t } = useLingui();
   const { journey, journal, steps, currentStep, cursorIndex, refresh } = state;
   const { navigation } = useDockNavigation();
-  const [busy, setBusy] = useState(false);
+  const { busy, run } = useBusyRun(refresh);
+  const doneIds = useMemo(
+    () => new Set((journal?.entries ?? []).map((e) => e.node_id)),
+    [journal?.entries],
+  );
 
   if (!journey) return null;
 
   const complete = journal?.status === 'complete';
   const stepsLeft = journal?.steps_left ?? steps.length;
-  const doneIds = new Set((journal?.entries ?? []).map((e) => e.node_id));
-
-  const run = (op: () => Promise<unknown>) => {
-    if (busy) return;
-    setBusy(true);
-    op()
-      .then(() => refresh())
-      .catch((e: unknown) => console.error('[Journey] action failed', e))
-      .finally(() => setBusy(false));
-  };
 
   return (
     <div

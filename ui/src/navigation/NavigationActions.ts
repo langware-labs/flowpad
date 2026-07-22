@@ -52,6 +52,11 @@ export const SCOPE_SEEDED_VIEWS: ReadonlySet<ViewType> = new Set([
   ViewType.SHELL,
 ]);
 
+// URL options that are STICKY across navigation: openDock carries each from the
+// live URL onto any target that doesn't set it. A param here means "topmost
+// until explicitly closed" — clearing it must bypass openDock (see closeJourney).
+export const STICKY_OPTION_PARAMS: readonly string[] = [JOURNEY_PARAM];
+
 /**
  * NavigationActions - Navigation actions implementation
  *
@@ -151,13 +156,18 @@ export class NavigationActions {
   }
 
   /**
-   * The journey shown by the live URL, or null — the single reader used by both
-   * the carry-forward and close. Parses the raw URL rather than `currentDock` so
-   * it also sees a journey shown on the home root (which has no DockPointer).
+   * A URL option read from the LIVE URL, or null. Parses the raw URL rather
+   * than `currentDock` so it also sees params carried on the home root (which
+   * has no DockPointer). The reader behind sticky-param carry-forward.
    */
-  private static currentJourneyId(): string | null {
+  private static currentUrlOption(key: string): string | null {
     const query = NavigationActions.getCurrentBrowserUrl().split('?')[1];
-    return query ? new URLSearchParams(query).get(JOURNEY_PARAM) : null;
+    return query ? new URLSearchParams(query).get(key) : null;
+  }
+
+  /** The journey shown by the live URL, or null. */
+  private static currentJourneyId(): string | null {
+    return NavigationActions.currentUrlOption(JOURNEY_PARAM);
   }
 
   /**
@@ -249,15 +259,16 @@ export class NavigationActions {
         ? new DockPointer(base.viewType, base.pointer, { ...base.options, ...extraOptions }, base.layout, base.page)
         : base;
 
-    // A shown journey is TOPMOST: carry `journeyId` onto any target that doesn't
-    // set one, so the guided tray survives navigation until explicitly closed.
-    // Read from the live URL, not `currentDock` — the home root `/` is not a dock
-    // URL (currentDock is null there) yet can absolutely be showing a journey.
-    // No-op when none is shown; `closeJourney()` bypasses openDock so the param
-    // can actually be cleared.
-    const activeJourneyId = NavigationActions.currentJourneyId();
-    if (activeJourneyId && !dock.journeyId) {
-      dock = dock.withJourney(activeJourneyId);
+    // STICKY URL options: each listed param rides onto any target that doesn't
+    // set it, read from the LIVE URL (the home root `/` is not a dock URL yet
+    // can carry them). `journeyId` is the first — a shown journey is TOPMOST
+    // until `closeJourney()` (which bypasses openDock so the param can clear).
+    // New sticky params are one table entry, not another bespoke block.
+    for (const key of STICKY_OPTION_PARAMS) {
+      const live = NavigationActions.currentUrlOption(key);
+      if (live && !dock.options?.[key]) {
+        dock = dock.withOption(key, live);
+      }
     }
 
     // URL-first default scope for scope-aware surfaces (assets, triggers, file

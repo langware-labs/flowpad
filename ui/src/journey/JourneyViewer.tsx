@@ -1,12 +1,12 @@
 import { Journey, JourneyJournal } from '@sdk';
 import { Check, Circle, Clock, Compass, History, Loader2, Play, RotateCcw } from 'lucide-react';
-import { useCallback, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { Button } from '@src/components/ui/button';
 import { useIsAdvanced } from '@src/contexts/view-mode-context';
 import { cn } from '@src/lib/utils';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { useActiveJournal, useJourneySteps } from './use-journey';
+import { useActiveJournal, useBusyRun, useJourneySteps } from './use-journey';
 
 const STATUS_LABEL: Record<string, string> = {
   new: 'Not started',
@@ -28,28 +28,19 @@ export function JourneyViewer({ journey }: { journey: Journey }) {
   const isAdvanced = useIsAdvanced();
   const { steps, loading } = useJourneySteps(journey);
   const { journal: activeJournal, refresh } = useActiveJournal();
-  const [busy, setBusy] = useState(false);
+  const { busy, run } = useBusyRun(refresh);
   const [history, setHistory] = useState<JourneyJournal[] | null>(null);
 
   const journal = activeJournal?.journey_id === journey.id ? activeJournal : null;
-  const cursorIndex = journal?.cursor ? steps.findIndex((s) => s.node_id === journal.cursor) : -1;
-  const doneIds = new Set((journal?.entries ?? []).map((e) => e.node_id));
-  const complete = journal?.status === 'complete';
-
-  const run = useCallback(
-    (op: () => Promise<unknown>, then?: () => void) => {
-      if (busy) return;
-      setBusy(true);
-      op()
-        .then(() => {
-          refresh();
-          then?.();
-        })
-        .catch((e: unknown) => console.error('[Journey] action failed', e))
-        .finally(() => setBusy(false));
-    },
-    [busy, refresh],
+  const cursorIndex = useMemo(
+    () => (journal?.cursor ? steps.findIndex((s) => s.node_id === journal.cursor) : -1),
+    [journal?.cursor, steps],
   );
+  const doneIds = useMemo(
+    () => new Set((journal?.entries ?? []).map((e) => e.node_id)),
+    [journal?.entries],
+  );
+  const complete = journal?.status === 'complete';
 
   const show = () => navigation.showJourney(journey.id);
 

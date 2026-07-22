@@ -224,19 +224,31 @@ def _delivery_identity(event: FlowEvent) -> str:
     return f"{event.event}|{json.dumps(event.data, sort_keys=True, default=str)}"
 
 
-async def _resolve_flow_entity(flow_id: str) -> Any:
-    """The flow's backing entity: an AgenticFlow, or a Journey (same folder-doc
-    shape — asset_ref/enabled/graph.json — driven by the same engine). Journeys
-    are typed separately so they stay out of the Flows list, but they run here."""
-    entity = await AgenticFlow.get_by_id(flow_id)
-    if entity is not None:
-        return entity
-    try:
-        from flow_sdk.builtin.journey import Journey
+# Entity types that back a flow doc — the same folder shape (asset_ref /
+# enabled / graph.json) driven by this engine. AgenticFlow is the native type;
+# any other folder-doc type (e.g. Journey, typed separately so it stays out of
+# the Flows list) REGISTERS its loader on import instead of being special-cased
+# here — membership is data, not an if/else chain.
+_FLOW_ENTITY_LOADERS: list[Any] = [AgenticFlow.get_by_id]
 
-        return await Journey.get_by_id(flow_id)
-    except Exception:
-        return None
+
+def register_flow_entity_loader(loader: Any) -> None:
+    """Register an async ``flow_id -> entity | None`` loader for a folder-doc
+    entity type that runs on FlowManager."""
+    if loader not in _FLOW_ENTITY_LOADERS:
+        _FLOW_ENTITY_LOADERS.append(loader)
+
+
+async def _resolve_flow_entity(flow_id: str) -> Any:
+    """The flow's backing entity, resolved through the registered loaders."""
+    for loader in _FLOW_ENTITY_LOADERS:
+        try:
+            entity = await loader(flow_id)
+        except Exception:
+            entity = None
+        if entity is not None:
+            return entity
+    return None
 
 
 class FlowManager:

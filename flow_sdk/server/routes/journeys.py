@@ -52,14 +52,8 @@ async def auto_launch():
     a load-time REDIRECT to `?journeyId=` rather than a post-render hijack."""
     from flow_sdk.builtin.journey import Journey
 
-    user_id = await _acting_user_id()
-    journey = await Journey.auto_launch_for(user_id)
-    if journey is None:
-        return ApiSuccessResponse(data={"journey_id": None})
-    # Auto-LAUNCH, not merely auto-show: ensure the journal exists (idempotent)
-    # so the redirect lands the user on their current step, not a Start button.
-    await journey.launch(user_id)
-    return ApiSuccessResponse(data={"journey_id": journey.id})
+    journal = await Journey.auto_launch_for(await _acting_user_id())
+    return ApiSuccessResponse(data={"journey_id": journal.journey_id if journal else None})
 
 
 @router.post("/resume")

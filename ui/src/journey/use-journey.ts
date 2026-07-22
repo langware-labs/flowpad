@@ -1,7 +1,39 @@
 import { dataContext, FSRef, Journey, JourneyJournal, QueryRequest } from '@sdk';
 import { useEntitiesQuery } from '@sdk/react/hooks';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useActiveJourneyId } from './use-active-journey-id';
+
+/**
+ * The shared busy-guarded mutation wrapper for journey UI (Tray/Viewer):
+ * one op at a time, always `refresh()` on success (the mutation→refresh
+ * contract — WS journal updates only reach watching tabs), errors logged.
+ */
+export function useBusyRun(refresh: () => void): {
+  busy: boolean;
+  run: (op: () => Promise<unknown>, then?: () => void) => void;
+} {
+  const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
+  const run = useCallback(
+    (op: () => Promise<unknown>, then?: () => void) => {
+      if (busyRef.current) return;
+      busyRef.current = true;
+      setBusy(true);
+      op()
+        .then(() => {
+          refresh();
+          then?.();
+        })
+        .catch((e: unknown) => console.error('[Journey] action failed', e))
+        .finally(() => {
+          busyRef.current = false;
+          setBusy(false);
+        });
+    },
+    [refresh],
+  );
+  return { busy, run };
+}
 
 /** Where a step points the user — a standard dock pointer descriptor. */
 export interface JourneyPresentDock {
