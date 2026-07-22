@@ -748,3 +748,158 @@ async def test_entry_reserve_survives_concurrent_finalize_sweep(tmp_path):
     kinds = [e["kind"] for e in entries]
     # Ordering restored: the run must END after its entry event, never before.
     assert kinds.index("run_end") > kinds.index("event")
+
+
+# ── phase 5: graph-level bus subscriptions ────────────────────────────────────
+
+
+@async_context
+async def test_flow_subscription_starts_run_with_mapped_entry(tmp_path):
+    from flow_sdk.topics import emit_topic, target_of
+
+    seen: list[dict] = []
+
+    @flow_functions.register("v2_sub_probe")
+    def _probe(event_name, data, ctx):
+        seen.append({"event": event_name, "data": data})
+        return {}
+
+    flow = await _make_flow(tmp_path, "subflow", [_fn("a", "v2_sub_probe")], [],
+        config=None)
+    import json as _json
+    doc = _json.loads((tmp_path / "subflow" / "graph.json").read_text())
+    doc["subscriptions"] = [{"id": "s1", "pattern": "drill.sub.*",
+                             "target": "usage_report:*", "node": "a"}]
+    (tmp_path / "subflow" / "graph.json").write_text(_json.dumps(doc))
+
+    fm = FlowManager()
+    assert (await fm.load_flow(flow.id)) is not None  # load arms
+    emit_topic("drill.sub.ping", target_of("usage_report", "r-9"), {"k": 7})
+    emit_topic("drill.sub.ping", target_of("task", "t-1"))  # target-filtered out
+    await _until(lambda: len(seen) == 1, "subscription entry delivered")
+    assert seen[0]["event"] == "drill.sub.ping"  # default entry name = topic
+    assert seen[0]["data"] == {"topic": "drill.sub.ping",
+                               "target": "usage_report:r-9", "data": {"k": 7}}
+    await _until(lambda: not fm.live_run_ids(), "run finalized")
+
+
+@async_context
+async def test_flow_subscription_dedups_envelope_ids(tmp_path):
+    from flow_sdk.topics import FlowEvent, event_bus
+
+    seen: list[str] = []
+
+    @flow_functions.register("v2_sub_dedup")
+    def _probe(event_name, data, ctx):
+        seen.append(event_name)
+        return {}
+
+    flow = await _make_flow(tmp_path, "dedupflow", [_fn("a", "v2_sub_dedup")], [])
+    import json as _json
+    doc = _json.loads((tmp_path / "dedupflow" / "graph.json").read_text())
+    doc["subscriptions"] = [{"pattern": "dedup.*", "node": "a"}]
+    (tmp_path / "dedupflow" / "graph.json").write_text(_json.dumps(doc))
+    fm = FlowManager()
+    await fm.load_flow(flow.id)
+
+    env = FlowEvent(topic="dedup.hit", target="x:1", ctx={"origin": "local_server"})
+    event_bus.deliver(env)
+    event_bus.deliver(env)  # at-least-once redelivery of the SAME envelope
+    await _until(lambda: len(seen) >= 1, "first delivery")
+    await asyncio.sleep(0.05)
+    assert seen == ["dedup.hit"]  # exactly one run entry
+
+
+@async_context
+async def test_flow_subscription_self_loop_brake_allows_chaining(tmp_path):
+    """Flow A's boundary events must never re-enter A; flow B chains off A."""
+    entered: list[str] = []
+
+    @flow_functions.register("v2_chain_a")
+    def _a(event_name, data, ctx):
+        return {"from_a": True}
+
+    @flow_functions.register("v2_chain_b")
+    def _b(event_name, data, ctx):
+        entered.append(event_name)
+        return {}
+
+    import json as _json
+    flow_a = await _make_flow(tmp_path, "chain-a", [_fn("n", "v2_chain_a")],
+        [_edge("e1", EXTERNAL_SOURCE, "go", "n")])
+    doc_a = _json.loads((tmp_path / "chain-a" / "graph.json").read_text())
+    # A subscribes to its OWN flow.done — the self-brake must refuse it.
+    doc_a["subscriptions"] = [{"pattern": "flow.done",
+                               "target": f"agentic_flow:{flow_a.id}", "node": "n"}]
+    (tmp_path / "chain-a" / "graph.json").write_text(_json.dumps(doc_a))
+
+    flow_b = await _make_flow(tmp_path, "chain-b", [_fn("m", "v2_chain_b")], [])
+    doc_b = _json.loads((tmp_path / "chain-b" / "graph.json").read_text())
+    doc_b["subscriptions"] = [{"pattern": "flow.done",
+                               "target": f"agentic_flow:{flow_a.id}", "node": "m"}]
+    (tmp_path / "chain-b" / "graph.json").write_text(_json.dumps(doc_b))
+
+    fm = FlowManager()
+    await fm.load_flow(flow_a.id)
+    await fm.load_flow(flow_b.id)
+    await fm.inject(flow_a.id, "go")
+    # B enters exactly once (from A's flow.done); A never re-enters itself.
+    await _until(lambda: entered == ["flow.done"], "B chained off A")
+    await asyncio.sleep(0.1)
+    assert entered == ["flow.done"]
+    await _until(lambda: not fm.live_run_ids(), "all runs finalized")
+
+
+def test_flow_doc_subscription_validation():
+    doc = parse_flow_doc(_doc([_fn("a", "x")], []))
+    doc.subscriptions = []
+    import json as _json
+    parsed = parse_flow_doc(_json.dumps({
+        "version": 1, "nodes": [{"id": "a", "node_type": "function",
+                                 "node_data": {"function": "x"}}],
+        "edges": [],
+        "subscriptions": [{"pattern": "*"},
+                          {"pattern": "ok.*", "node": "ghost"}],
+    }))
+    problems = "\n".join(parsed.validate_graph())
+    assert "EVERY event" in problems
+    assert "unknown node ghost" in problems
+
+
+@async_context
+async def test_flow_subscription_ping_pong_capped(tmp_path):
+    """Two flows mutually subscribed (fresh envelopes per hop defeat dedup and
+    the self-brake) — the per-flow entry cap bounds the loop, never silent."""
+    import json as _json
+
+    a_entries: list[int] = []
+
+    @flow_functions.register("v2_pp_a")
+    def _a(event_name, data, ctx):
+        a_entries.append(1)
+        return {}
+
+    @flow_functions.register("v2_pp_b")
+    def _b(event_name, data, ctx):
+        return {}
+
+    flow_a = await _make_flow(tmp_path, "pp-a", [_fn("n", "v2_pp_a")],
+        [_edge("e1", EXTERNAL_SOURCE, "go", "n")],
+        config={"max_entries_per_minute": 3})
+    flow_b = await _make_flow(tmp_path, "pp-b", [_fn("m", "v2_pp_b")], [],
+        config={"max_entries_per_minute": 3})
+    for name, fid, other, node in (("pp-a", flow_a.id, flow_b.id, "n"),
+                                   ("pp-b", flow_b.id, flow_a.id, "m")):
+        doc = _json.loads((tmp_path / name / "graph.json").read_text())
+        doc["subscriptions"] = [{"pattern": "flow.done",
+                                 "target": f"agentic_flow:{other}", "node": node}]
+        (tmp_path / name / "graph.json").write_text(_json.dumps(doc))
+
+    fm = FlowManager()
+    await fm.load_flow(flow_a.id)
+    await fm.load_flow(flow_b.id)
+    await fm.inject(flow_a.id, "go")
+    await asyncio.sleep(0.5)  # let the ping-pong run into the cap
+    # A entered once externally + at most cap(3) subscription entries.
+    assert len(a_entries) <= 4
+    await _until(lambda: not fm.live_run_ids(), "loop drained after cap")
