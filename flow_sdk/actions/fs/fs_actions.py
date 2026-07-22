@@ -149,29 +149,45 @@ async def browse(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResp
         return ApiFailResponse(message=f"Failed to browse directory: {str(e)}")
 
 
-async def _fetch_remote_flow_message_file(
-    fm_id: str, vfs_path: str, storage: "LocalStorageDriver",
-) -> bool:
-    """Pull a missing FILE/PROMPT-file from the hub for a hub-mirrored FlowMessage.
+async def fetch_remote_entity_file(typeid, vfs_path: str, storage: "LocalStorageDriver") -> bool:
+    """Pull a missing VFS file from the hub for ANY hub-mirrored (``remote``) entity.
 
-    Returns True when bytes landed on local disk. Best-effort: returns False
-    on any error so the caller can 404 the way it would have anyway.
+    The read side of the write-through cache: the hub holds the authoritative
+    copy of a shared entity's files, and this machine's storage is a cache that
+    fills on first miss. Caching locally (rather than streaming straight
+    through) is required — the headless agent reads attachments by LOCAL PATH,
+    so the bytes must exist on disk, not merely in the response.
+
+    Was FlowMessage-only, which made it dead code: the only thing ever uploaded
+    for a message is the packed ``body.flowmsg`` bundle, never the individual
+    files this asks for. It becomes live now that ``_hub_reflect`` mirrors real
+    per-file uploads to the hub.
+
+    Best-effort: any failure returns False so the caller 404s exactly as before.
     """
+    if typeid is None or not getattr(typeid, "id", None) or not getattr(typeid, "type", None):
+        return False
     try:
-        from flow_sdk.builtin.flow_message import FlowMessage
-        from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
-        from flow_sdk.utils.hub import hub_base_url, hub_get
         from pathlib import Path
+
+        from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry
+        from flow_sdk.utils.hub import hub_base_url, hub_get
     except Exception:
         return False
     if not hub_base_url():
         return False
-    fm = await FlowMessage.get_one({"id": fm_id})
-    if not fm or not getattr(fm, "remote", False):
+    try:
+        # A type the hub doesn't host has no endpoint to fall back to.
+        et = BuiltinEntityType(str(typeid.type))
+        entity_cls = SchemaRegistry.get_entity_cls(str(typeid.type))
+        entity = await entity_cls.get_one({"id": str(typeid.id)}) if entity_cls else None
+    except Exception as e:  # noqa: BLE001
+        logger.debug(f"hub fallback: cannot resolve {typeid}: {e}")
         return False
-    bytes_ = await hub_get(
-        BuiltinEntityType.FLOW_MESSAGE, fm_id, "fs", f"download/{vfs_path}", raw=True,
-    )
+    if entity is None or not getattr(entity, "remote", False):
+        return False
+    bytes_ = await hub_get(et, str(typeid.id), "fs", f"download/{vfs_path}", raw=True)
     if not bytes_:
         return False
     target = Path(storage.get_storage_path(vfs_path))
@@ -202,16 +218,16 @@ async def download(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> Strea
         # on the hub, not the local FS — fall back to a hub fetch and cache
         # locally so future hits + the headless agent (which reads via the
         # local path) both find the file.
+        # Cache miss on a shared entity: the hub holds the authoritative copy,
+        # so fill the local cache from it and stream. Gated on the entity's
+        # ``remote`` flag rather than its type — a task's attachment and a
+        # flow_message's file are the same problem.
         if not await storage.exists(fs_info.vpath.abs_vfspath):
-            tid = fs_info.vpath.typeid
-            if tid and getattr(tid, "type", None) == "flow_message":
-                if await _fetch_remote_flow_message_file(
-                    str(tid.id), fs_info.vpath.entity_sub_path, storage,
-                ):
-                    pass  # bytes landed; fall through to stream
-                else:
-                    return ApiFailResponse(message="File not found", status_code=404)
-            else:
+            if not await fetch_remote_entity_file(
+                fs_info.vpath.typeid,
+                fs_info.vpath.entity_sub_path,
+                storage,
+            ):
                 return ApiFailResponse(message="File not found", status_code=404)
 
         # Stream file
@@ -438,9 +454,7 @@ async def write(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiRespo
         # and gated to frontmatter-bearing files — never blocks the save.
         from flow_sdk.actions.fs.asset_versioning import autoversion_commit_local  # noqa: PLC0415
 
-        await autoversion_commit_local(
-            storage, fs_info.vpath.abs_vfspath, content if isinstance(content, str) else ""
-        )
+        await autoversion_commit_local(storage, fs_info.vpath.abs_vfspath, content if isinstance(content, str) else "")
 
         # Return FSItem
         fs_item = FSItem(

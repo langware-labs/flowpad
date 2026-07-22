@@ -26,7 +26,7 @@ from flow_sdk.utils.hub import HubError, hub_delete, hub_get, hub_post, hub_put
 logger = logging.getLogger(__name__)
 
 
-def should_reflect_to_hub(entity: Entity | None, hub_reflect: bool) -> bool:
+def should_reflect_to_hub(entity: Entity | None, hub_reflect: bool, action_name: str | None = None) -> bool:
     """True iff this action call should be forwarded to the hub instead of run locally.
 
     Reflection is **opt-in per call** via ``hub_reflect`` (the ``Hub-Reflect`` header,
@@ -35,9 +35,18 @@ def should_reflect_to_hub(entity: Entity | None, hub_reflect: bool) -> bool:
     are unchanged: the entity must have a hub counterpart and the user must be logged
     in. (Type eligibility is enforced downstream by ``reflect_to_hub`` →
     ``_entity_type_enum`` → ``HubError`` → quiet local fallback.)
+
+    ``fs`` is the one action that reflects on ``remote`` ALONE, without the opt-in.
+    Entity FILES must be on the hub by the time any other member asks for them —
+    the writer may be offline by then, and unlike a field there is no other copy
+    to fall back to. Making it a per-caller courtesy would mean a caller that
+    forgets the header (the TS ``fsService`` does not set it, nor do agents or
+    the CLI) silently strands the bytes on one machine. Entity FIELD writes stay
+    opt-in and already get it automatically — ``FlowSync/store.ts`` sends the
+    header whenever ``entity.remote``.
     """
     return (
-        bool(hub_reflect)
+        (bool(hub_reflect) or action_name == "fs")
         and entity is not None
         and getattr(entity, "remote", False) is True
         and is_logged_in()
@@ -55,6 +64,62 @@ def _entity_type_enum(entity: Entity) -> BuiltinEntityType | None:
         return BuiltinEntityType(entity.type)
     except ValueError:
         return None
+
+
+# Sentinel: the hub side is done, but the LOCAL handler must STILL run. Every
+# other action reflects as a *replacement* (the hub's response is the answer);
+# entity files are the write-through case — the bytes go to the hub AND stay in
+# local storage, which is the cache the headless agent reads by local path.
+REFLECT_CONTINUE_LOCAL = object()
+
+
+async def _reflect_fs_to_hub(et, hub_id: str, sub_path: str | None) -> Any:
+    """Mirror an entity-VFS upload to the hub, then let the local write proceed.
+
+    Files on a shared entity are hub-authoritative; this machine's storage is a
+    cache. Only ``upload`` needs mirroring — reads are served locally and fill
+    from the hub on a miss (``fs_actions.fetch_remote_entity_file``), so browse
+    / download / delete pass straight through untouched.
+    """
+    if not (sub_path or "").lower().startswith("upload"):
+        return REFLECT_CONTINUE_LOCAL
+
+    from starlette.datastructures import UploadFile  # noqa: PLC0415
+
+    from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
+
+    request_info = get_current_request_info()
+    if request_info is None:
+        return REFLECT_CONTINUE_LOCAL
+    try:
+        post_data = await request_info.get_post_data()
+    except Exception:  # noqa: BLE001
+        return REFLECT_CONTINUE_LOCAL
+
+    files: list[UploadFile] = []
+    if isinstance(post_data, dict):
+        for value in post_data.values():
+            if isinstance(value, UploadFile):
+                files.append(value)
+            elif isinstance(value, list):
+                files.extend(v for v in value if isinstance(v, UploadFile))
+
+    for f in files:
+        if not f.filename:
+            continue
+        content = await f.read()
+        # The local handler reads these same objects afterwards — rewind, or it
+        # writes an empty file into the cache.
+        await f.seek(0)
+        await hub_post(
+            et,
+            {},
+            hub_id,
+            "fs",
+            sub_path,
+            files={"uploaded_file": (f.filename, content, f.content_type or "application/octet-stream")},
+        )
+    return REFLECT_CONTINUE_LOCAL
 
 
 async def reflect_to_hub(
@@ -92,6 +157,10 @@ async def reflect_to_hub(
 
     hub_id = entity.id
     verb = (method or "").lower()
+    # Entity files ride the same reflection as entity fields, but write-through
+    # rather than replace — see ``_reflect_fs_to_hub``.
+    if a.action_name == "fs":
+        return await _reflect_fs_to_hub(et, hub_id, sub_path)
     # Roster-shaped handling applies to the bare ``members`` action only — a
     # sub-path (``members/link``) is a different hub endpoint with its own shape.
     is_roster = a.action_name == "members" and not sub_path
