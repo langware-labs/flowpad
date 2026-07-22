@@ -47,7 +47,28 @@
       "name": "Write the instructions",
       "node_data": {
         "group": "Create your vibe agent",
-        "status_line": "Write: \"You are shopping master, find the best deal, always show product name and price\" \u2014 then click the Use agent button.",
+        "status_line": "Click \"Fill text\" to write the instructions, then Next.",
+        "present": {
+          "highlight": "AgentInstructions"
+        },
+        "await": {
+          "topic": "app.journey.act.done",
+          "target": "fill:AgentInstructions",
+          "manual": true
+        },
+        "act": {
+          "kind": "fill",
+          "target": "AgentInstructions",
+          "text": "You are shopping master, find the best deal, always show product name and price"
+        }
+      }
+    },
+    {
+      "id": "step3b",
+      "node_type": "guided_step",
+      "name": "Use the agent",
+      "node_data": {
+        "status_line": "Now click the highlighted Use agent button.",
         "present": {
           "highlight": "UseAgent"
         },
@@ -138,7 +159,7 @@
         "event": "done"
       },
       "to": {
-        "node": "step4"
+        "node": "step3b"
       }
     },
     {
@@ -159,6 +180,16 @@
       },
       "to": {
         "node": "congrats"
+      }
+    },
+    {
+      "id": "e3b",
+      "from": {
+        "node": "step3b",
+        "event": "done"
+      },
+      "to": {
+        "node": "step4"
       }
     }
   ],

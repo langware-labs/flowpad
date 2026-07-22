@@ -37,7 +37,8 @@ export function useBusyRun(refresh: () => void): {
 
 /** Where a step points the user — a standard dock pointer descriptor. */
 export interface JourneyPresentDock {
-  kind?: 'asset_editor' | 'home' | 'wiki' | 'asset_list';
+  /** `root` = the app home `/` (not a dock URL) — the typical journey start. */
+  kind?: 'asset_editor' | 'home' | 'wiki' | 'asset_list' | 'root';
   vfs?: string;
   name?: string;
 }
@@ -77,6 +78,24 @@ export interface JourneyAwaitSpec {
    *  must not auto-pass because old agents exist). The event must arrive; the
    *  confirm still gates it. Reload mid-step falls back to the tray's Continue. */
   fresh?: boolean;
+  /** Don't advance on the signal — ARM the tray's Next and let the user click
+   *  it. For steps where the user should see what happened before moving on
+   *  (an `act` that filled a field for them). */
+  manual?: boolean;
+}
+
+/**
+ * Something the journey does FOR the user, offered as a highlighted button on
+ * the step (`fill` → "Fill text") rather than performed behind their back. It
+ * aims at the same `data-topic` anchor `present.highlight` uses, and announces
+ * itself on the bus (`app.journey.act.done`) so the step's `await` gates on it
+ * like any other event.
+ */
+export interface JourneyActSpec {
+  kind: 'fill';
+  /** Topic word of the target surface — `[data-topic="…"]`. */
+  target: string;
+  text?: string;
 }
 
 /** One guided step, read from the journey folder's `graph.json`. */
@@ -89,6 +108,7 @@ export interface JourneyStep {
    *  cursor/entries machinery is flat and unchanged. */
   group?: string;
   present: { dock?: JourneyPresentDock; highlight?: string };
+  act?: JourneyActSpec;
   await: JourneyAwaitSpec;
 }
 
@@ -117,6 +137,8 @@ export interface UseJourneyResult {
   /** The caller's journal for it (active, else most recent). */
   journal: JourneyJournal | null;
   steps: JourneyStep[];
+  /** Journey-level start dock (graph.json `start`) — where a fresh run begins. */
+  start: JourneyPresentDock | null;
   currentStep: JourneyStep | null;
   cursorIndex: number;
   loading: boolean;
@@ -128,8 +150,21 @@ export interface UseJourneyResult {
   refresh: () => void;
 }
 
-function parseSteps(graphText: string): JourneyStep[] {
-  const doc = JSON.parse(graphText) as { nodes?: Array<Record<string, never>> };
+/** The parsed authoring surface of a journey's `graph.json`. */
+export interface JourneyGraph {
+  steps: JourneyStep[];
+  /** Journey-level START dock — where the journey begins (presented once, on a
+   *  fresh journal, before the entry step's own present). `{kind:"root"}` = the
+   *  app home. */
+  start: JourneyPresentDock | null;
+}
+
+export function parseJourneyGraph(graphText: string): JourneyGraph {
+  const doc = JSON.parse(graphText) as { start?: JourneyPresentDock; nodes?: Array<Record<string, never>> };
+  return { steps: parseSteps(doc), start: doc.start ?? null };
+}
+
+function parseSteps(doc: { nodes?: Array<Record<string, never>> }): JourneyStep[] {
   return (doc.nodes ?? [])
     .filter((n) => (n as { node_type?: string }).node_type === 'guided_step')
     .map((n) => {
@@ -141,6 +176,7 @@ function parseSteps(graphText: string): JourneyStep[] {
         status_line: (data.status_line as string) ?? '',
         group: (data.group as string | undefined) || undefined,
         present: (data.present as JourneyStep['present']) ?? {},
+        act: (data.act as JourneyStep['act']) ?? undefined,
         await: (data.await as JourneyStep['await']) ?? {},
       };
     });
@@ -179,9 +215,15 @@ export function useActiveJournal(): {
   return { journal, journeyId: journal?.journey_id ?? null, refresh: () => void refetch() };
 }
 
-/** The journey's guided steps, read from its `graph.json` (disk is truth). */
-export function useJourneySteps(journey: Journey | null): { steps: JourneyStep[]; loading: boolean } {
-  const [steps, setSteps] = useState<JourneyStep[]>([]);
+const EMPTY_GRAPH: JourneyGraph = { steps: [], start: null };
+
+/** The journey's guided steps + start dock, read from `graph.json` (disk is truth). */
+export function useJourneySteps(journey: Journey | null): {
+  steps: JourneyStep[];
+  start: JourneyPresentDock | null;
+  loading: boolean;
+} {
+  const [graph, setGraph] = useState<JourneyGraph>(EMPTY_GRAPH);
   const [loading, setLoading] = useState(false);
   const assetRef = journey?.asset_ref ?? null;
   const nodeKey = dataContext.computeNodeTypeId?.toString() ?? null;
@@ -189,7 +231,7 @@ export function useJourneySteps(journey: Journey | null): { steps: JourneyStep[]
   useEffect(() => {
     const computeNodeTypeId = dataContext.computeNodeTypeId;
     if (!assetRef || !computeNodeTypeId) {
-      setSteps([]);
+      setGraph(EMPTY_GRAPH);
       return;
     }
     let cancelled = false;
@@ -197,11 +239,11 @@ export function useJourneySteps(journey: Journey | null): { steps: JourneyStep[]
     new FSRef(`${assetRef.replace(/^\/+/, '')}/graph.json`, computeNodeTypeId)
       .read()
       .then((text) => {
-        if (!cancelled) setSteps(parseSteps(text));
+        if (!cancelled) setGraph(parseJourneyGraph(text));
       })
       .catch((e: unknown) => {
         console.error('[Journey] graph.json read failed', e);
-        if (!cancelled) setSteps([]);
+        if (!cancelled) setGraph(EMPTY_GRAPH);
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -211,7 +253,7 @@ export function useJourneySteps(journey: Journey | null): { steps: JourneyStep[]
     };
   }, [assetRef, nodeKey]);
 
-  return { steps, loading };
+  return { steps: graph.steps, start: graph.start, loading };
 }
 
 /**
@@ -246,7 +288,7 @@ export function useShownJourney(): UseJourneyResult {
     return mine.find((j) => j.isActive) ?? byRecency[0] ?? null;
   }, [journals, shownId]);
 
-  const { steps, loading: stepsLoading } = useJourneySteps(journey);
+  const { steps, start, loading: stepsLoading } = useJourneySteps(journey);
 
   const cursorIndex = useMemo(
     () => (journal?.cursor ? steps.findIndex((s) => s.node_id === journal.cursor) : -1),
@@ -258,6 +300,7 @@ export function useShownJourney(): UseJourneyResult {
     journey,
     journal,
     steps,
+    start,
     currentStep,
     cursorIndex,
     loading: journeysLoading || journalsLoading || stepsLoading,

@@ -1,6 +1,6 @@
 import { dataContext, dataManager, Journey, Project, QueryFilter, QueryRequest, targetOf, TypeId } from '@sdk';
 import { useOnTopic, useProject } from '@sdk/react/hooks';
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AssetEditor } from '@src/navigation/asset-doc-types';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -8,6 +8,17 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { projectScope } from '@src/lib/scope-filter';
 import { dockTarget } from '@src/topics/dock-target';
 import type { JourneyPresentDock, JourneyStep, UseJourneyResult } from './use-journey';
+import { runAct } from './act';
+
+/** What the tray needs from the manager to render the step's own buttons. */
+export interface JourneyManagerView {
+  /** The current step's act has not run yet — offer its button ("Fill text"). */
+  actPending: boolean;
+  /** Run it (and announce it on the bus, which arms the await). */
+  doAct: () => void;
+  /** A `manual` await is satisfied: light Next, wait for the click. */
+  armed: boolean;
+}
 
 function joinVfs(assetRef: string, vfs: string): string {
   return `${assetRef.replace(/\/+$/, '')}/${vfs.replace(/^\/+/, '')}`;
@@ -56,8 +67,8 @@ function pointerForDock(
  *
  * Runs only while a journey is shown — clearing the param stops all of it.
  */
-export function useJourneyManager(state: UseJourneyResult): void {
-  const { journey, journal, currentStep, refresh } = state;
+export function useJourneyManager(state: UseJourneyResult): JourneyManagerView {
+  const { journey, journal, currentStep, start, refresh } = state;
   const { navigation, currentDock } = useDockNavigation();
   const { project } = useProject();
 
@@ -106,7 +117,18 @@ export function useJourneyManager(state: UseJourneyResult): void {
     presentedRef.current = key;
 
     const present = currentStep.present ?? {};
-    const pointer = pointerForDock(present.dock, assetRef, computeNodeTypeId, projectId);
+    // A FRESH run begins at the journey's START dock (graph.json `start`): the
+    // entry step inherits it as its surface when it doesn't name its own.
+    const fresh = (journal?.entries?.length ?? 0) === 0;
+    const dock = present.dock ?? (fresh ? (start ?? undefined) : undefined);
+
+    if (dock?.kind === 'root') {
+      // The app home `/` is not a dock URL — navigate there directly, carrying
+      // the sticky journey param (openHomeRoot does both).
+      navigation.openHomeRoot(present.highlight);
+      return;
+    }
+    const pointer = pointerForDock(dock, assetRef, computeNodeTypeId, projectId);
     if (pointer) {
       navigation.openDock(present.highlight ? pointer.withHighlight(present.highlight) : pointer);
     } else if (present.highlight) {
@@ -133,6 +155,23 @@ export function useJourneyManager(state: UseJourneyResult): void {
     }
     return undefined;
   }, [stepAwait, assetRef, computeNodeTypeId]);
+
+  // ── the step's own act ("Fill text") + the manual arm state ──
+  // Both are per-step: a cursor move clears them so the next step starts with
+  // its own button offered and Next dark again.
+  const [actRan, setActRan] = useState(false);
+  const [armed, setArmed] = useState(false);
+  useEffect(() => {
+    setActRan(false);
+    setArmed(false);
+  }, [journeyId, cursor]);
+
+  const act = currentStep?.act;
+  const doAct = useCallback(() => {
+    if (!act) return;
+    setActRan(true);
+    runAct(act);
+  }, [act]);
 
   // ── await: confirm predicate (the proof) ──
   const busyRef = useRef(false);
@@ -163,7 +202,10 @@ export function useJourneyManager(state: UseJourneyResult): void {
         if (confirm.local && filter) rows = rows.filter((r) => filter.validate(r));
         if (rows.length < (confirm.min ?? 1)) return;
       }
-      doAdvance(currentStep.node_id);
+      // `manual`: the signal ARMS the step — the user clicks Next to move on,
+      // so they can see what just happened (e.g. the text an act filled in).
+      if (currentStep.await?.manual) setArmed(true);
+      else doAdvance(currentStep.node_id);
     } catch (e) {
       console.error('[Journey] confirm query failed', e);
     } finally {
@@ -192,6 +234,8 @@ export function useJourneyManager(state: UseJourneyResult): void {
   useEffect(() => {
     if (cursor && advancedRef.current && advancedRef.current !== cursor) advancedRef.current = null;
   }, [cursor]);
+
+  return { actPending: !!act && !actRan, doAct, armed };
 }
 
 export type { JourneyStep };
