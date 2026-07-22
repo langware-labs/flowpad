@@ -1,10 +1,11 @@
 import { ActionInfo, dataManager, Task, TaskKind, type WizardData, type WizardProcessResult } from '@sdk';
-import { openArtifact } from '@src/components/task-bar/task-utils';
+import { openArtifact, TaskStatus } from '@src/components/task-bar/task-utils';
+import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { WizardButton } from '@src/components/wizard/WizardButton';
 import { useAdoptAnalyzeProcess } from '@src/hooks/use-adopt-analyze-process';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { ScanSearch } from 'lucide-react';
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 
 interface AnalyzeStatusResult {
   summary?: string;
@@ -29,9 +30,13 @@ interface AnalyzeStatusButtonProps {
  * member rows (offline → analyze what we have). The wizard agent stamps
  * `process_id` / `analysis_path` on the task itself, which lights the
  * AnalysisProgressRow; those outcomes persist even if the user navigates away.
+ *
+ * The task's fields are the agent's to write, not ours — this button only opens
+ * the group report and offers the Done flip the agent may not make itself.
  */
 export function AnalyzeStatusButton({ task, onAnalyzed, className }: AnalyzeStatusButtonProps) {
   const { navigation } = useDockNavigation();
+  const [confirmDone, setConfirmDone] = useState(false);
   const isGroup = task.kind === TaskKind.GROUP;
   // If an analyze run for this task is still going, reconnect to it (spinner +
   // live tool count) instead of showing a fresh button.
@@ -54,6 +59,15 @@ export function AnalyzeStatusButton({ task, onAnalyzed, className }: AnalyzeStat
         projectId: task.project_id ?? null,
         taskFolder: task.asset_ref ?? null,
       },
+      // Mirrors AnalyzeStatusResult — the prompt renders these as the close
+      // command's `data`, so the agent fills them in instead of pasting `{}`
+      // and leaving us with a "success" that carries no report.
+      resultShape: {
+        readyForDone: '<true|false>',
+        missing: ['<field>'],
+        analysisPath: '<absolute path to references/analysis.html>',
+        summary: '<one short line>',
+      },
       prompt: isGroup
         ? 'Analyze the status of this group task across all its member tasks and produce the owner summary.'
         : 'Analyze the current status of this task, fill in missing fields where you can, and report progress.',
@@ -62,39 +76,73 @@ export function AnalyzeStatusButton({ task, onAnalyzed, className }: AnalyzeStat
 
   const handleResult = useCallback(
     (result: WizardProcessResult<AnalyzeStatusResult>) => {
-      if (result.status === 'done') {
-        const data = result.data ?? null;
-        // The persistent report link lives on the task card's analysis row
-        // (the wizard stamped analysis_path); open the group report directly.
-        if (isGroup && data?.analysisPath) openArtifact(data.analysisPath, navigation);
-        onAnalyzed?.(data);
-      } else {
+      if (result.status !== 'done') {
         onAnalyzed?.(null);
+        return;
       }
+      const data = result.data ?? null;
+      const reportPath = data?.analysisPath?.trim();
+
+      // The task's own fields are the AGENT's to write: it patches `task.md`
+      // (status, process_id, analysis paths) and indexes it. We do not write
+      // them from here — a second writer holding a pre-run snapshot re-renders
+      // task.md from stale fields and wipes what the agent just patched.
+      if (data?.readyForDone) {
+        void (async () => {
+          // Completion stays a human action: the agent reports readyForDone and
+          // never sets `done` itself, so offer the flip. Read the status FRESH —
+          // ours predates the run, and an already-done task must not be asked about.
+          const fresh = (await dataManager.refreshByTypeId(task.typeId).catch(() => null)) as Task | null;
+          if ((fresh ?? task).status !== TaskStatus.DONE) setConfirmDone(true);
+        })();
+      }
+
+      if (isGroup && reportPath) openArtifact(reportPath, navigation);
+      onAnalyzed?.(data);
     },
-    [isGroup, navigation, onAnalyzed],
+    [isGroup, navigation, onAnalyzed, task],
   );
 
+  const markDone = useCallback(() => {
+    void (async () => {
+      const fresh = (await dataManager.refreshByTypeId(task.typeId).catch(() => null)) as Task | null;
+      const target = fresh ?? task;
+      target.status = TaskStatus.DONE;
+      await target.save().catch(() => undefined);
+    })();
+  }, [task]);
+
   return (
-    <WizardButton<AnalyzeStatusResult>
-      wizardName="task-analyze"
-      buildRequest={buildRequest}
-      successMessage={(data) => {
-        if (isGroup) return 'Your group status report is ready';
-        if (data?.readyForDone) return 'This task looks done — you can switch its status to Done';
-        return 'Your status report is ready';
-      }}
-      errorTitle="Analyze Status failed"
-      onResult={handleResult}
-      adopt={adopt}
-      runningLabel="Analyzing"
-      className={className}
-      disabled={!task.id}
-      testId="task-analyze-status"
-      title="Let an agent assess progress and fill in missing fields"
-    >
-      <ScanSearch className="h-3.5 w-3.5" />
-      Analyze Status
-    </WizardButton>
+    <>
+      <WizardButton<AnalyzeStatusResult>
+        wizardName="task-analyze"
+        buildRequest={buildRequest}
+        successMessage={(data) => {
+          if (isGroup) return 'Your group status report is ready';
+          if (data?.readyForDone) return 'This task looks done — you can switch its status to Done';
+          return 'Your status report is ready';
+        }}
+        errorTitle="Analyze Status failed"
+        onResult={handleResult}
+        adopt={adopt}
+        runningLabel="Analyzing"
+        className={className}
+        disabled={!task.id}
+        testId="task-analyze-status"
+        title="Let an agent assess progress and fill in missing fields"
+      >
+        <ScanSearch className="h-3.5 w-3.5" />
+        Analyze Status
+      </WizardButton>
+      <ConfirmDialog
+        open={confirmDone}
+        onOpenChange={setConfirmDone}
+        title="Mark this task as Done?"
+        description="The analysis found every requirement satisfied and a submission recorded. Setting the status is yours to confirm."
+        confirmLabel="Mark Done"
+        cancelLabel="Not yet"
+        onConfirm={markDone}
+      />
+    </>
   );
 }

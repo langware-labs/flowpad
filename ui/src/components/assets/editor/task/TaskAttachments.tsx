@@ -232,6 +232,44 @@ export function TaskAttachments({ task, save, readOnly = false, heading }: TaskA
     [attachments, persist, task.typeId, resolveGitOrigin, gitDirFor],
   );
 
+  /**
+   * OS drop (desktop or browser): the drop hands over real ``File`` objects, so
+   * the bytes are already in hand — no read step, just the copy onto the task.
+   * ``File.path`` is still consulted for git detection, since a dropped git
+   * folder must stay a reference like everywhere else.
+   */
+  const addFromOsFiles = useCallback(
+    async (files: File[]) => {
+      const existingKeys = new Set(attachments.map(attachmentKey));
+      const added: Attachment[] = [];
+      for (const file of files) {
+        const machinePath = (file as unknown as { path?: string }).path;
+        const gitOrigin = machinePath ? await resolveGitOrigin(machinePath) : undefined;
+        if (gitOrigin && machinePath) {
+          const entry = makeAttachmentEntry(machinePath, gitOrigin, gitDirFor(machinePath)?.path ?? null);
+          if (existingKeys.has(attachmentKey(entry))) continue;
+          existingKeys.add(attachmentKey(entry));
+          added.push(entry);
+          continue;
+        }
+        if (!file.name || existingKeys.has(file.name)) continue;
+        try {
+          await fsManager.uploadFile(task.typeId, '/', file);
+        } catch (e) {
+          notify.error({
+            title: `Could not attach ${file.name}`,
+            message: e instanceof Error ? e.message : 'Copy failed.',
+          });
+          continue;
+        }
+        existingKeys.add(file.name);
+        added.push({ vfs: file.name, label: file.name });
+      }
+      if (added.length) persist([...attachments, ...added]);
+    },
+    [attachments, persist, task.typeId, resolveGitOrigin, gitDirFor],
+  );
+
   const removeEntry = useCallback(
     (key: string) => persist(attachments.filter((a) => attachmentKey(a) !== key)),
     [attachments, persist],
@@ -320,9 +358,20 @@ export function TaskAttachments({ task, save, readOnly = false, heading }: TaskA
       const computeNode = dataContext.computeNode;
       if (!computeNode) return;
       const picked = await computeNode.openPathDialog(undefined, mode);
-      if (picked) await addPaths([picked]);
+      if (!picked) return;
+      // The picker yields a bare machine path. THIS machine's filesystem is
+      // itself an entity (the compute node), so a picked file is just another
+      // entity-VFS source — the same copy path as an in-app tree drag, with no
+      // separate import mechanism. Without a compute-node typeid there is
+      // nothing to read through, so fall back to a path reference.
+      const cn = computeNode.typeId;
+      if (!cn) {
+        await addPaths([picked]);
+        return;
+      }
+      await addFromEntityVfs(cn, [VFSPath.fromMachinePath(picked, cn).entitySubPath]);
     },
-    [addPaths],
+    [addPaths, addFromEntityVfs],
   );
 
   const onDrop = useCallback(
@@ -344,20 +393,14 @@ export function TaskAttachments({ task, save, readOnly = false, heading }: TaskA
         return;
       }
 
-      // OS drops: the desktop app exposes absolute paths on File objects; the
-      // plain browser doesn't, so point the user at the + button there.
+      // OS drop: the File objects already carry the bytes, so they're copied
+      // onto the task directly — no path round-trip, and it works in a plain
+      // browser too. Only git detection needs `File.path`, which is
+      // desktop-only.
       const files = Array.from(e.dataTransfer.files ?? []);
-      const withPaths = files.map((f) => (f as any).path as string | undefined).filter((p): p is string => !!p);
-      if (withPaths.length) {
-        void addPaths(withPaths);
-      } else if (files.length) {
-        notify.warning({
-          title: 'Could not read the dropped path',
-          message: 'Dropping from Finder needs the desktop app — use the + button instead.',
-        });
-      }
+      if (files.length) void addFromOsFiles(files);
     },
-    [addPaths],
+    [addFromEntityVfs, addFromOsFiles],
   );
 
   const droppable = (e: React.DragEvent) => hasBrowseableDrag(e) || hasExternalFilesDrag(e);
