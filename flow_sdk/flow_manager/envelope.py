@@ -1,4 +1,8 @@
-"""FlowEvent — the envelope FlowManager routes within ONE flow.
+"""RunEvent — the envelope FlowManager routes within ONE run.
+
+NOT the bus envelope: the standard system-wide event is `FlowEvent`
+(flow_sdk/topics/envelope.py). RunEvents are engine wiring — local names,
+hop counters — and never ride the bus.
 
 Events are local to their flow. ``execution_id`` is the run id — it stamps
 every event, delivery, and spawned process of one activation, from trigger/
@@ -17,7 +21,7 @@ from flow_sdk.core.capabilities.models import now_iso
 EXTERNAL_SOURCE = "$external"
 
 
-class FlowEvent(BaseModel):
+class RunEvent(BaseModel):
     event: str
     data: dict[str, Any] = Field(default_factory=dict)
     flow_id: str

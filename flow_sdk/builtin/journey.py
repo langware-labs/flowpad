@@ -121,6 +121,18 @@ class Journey(Entity):
 
         return read_auto_launch(Path(self.asset_ref)) if self.asset_ref else False
 
+    def is_system(self) -> bool:
+        """True when this journey ships inside an SDK system project.
+
+        Systemness is a property of the LOCATION (see
+        ``config.is_system_project_path``); a journey sits a few levels below
+        the project dir (``<project>/.claude/journeys/<name>``), so walk up."""
+        from flow_sdk.config import is_system_project_path
+
+        if not self.asset_ref:
+            return False
+        return any(is_system_project_path(p) for p in Path(self.asset_ref).parents)
+
     @staticmethod
     async def auto_launch_for(user_id: str) -> Optional["JourneyJournal"]:
         """The JOURNAL to enter on project load, or None — launched if needed.
@@ -128,10 +140,17 @@ class Journey(Entity):
         Auto-LAUNCH, not merely auto-show: an existing active journal is
         returned as-is (its `progress` fetch is the only journal query), else a
         fresh one is started. A journey the user already completed is never
-        re-entered."""
+        re-entered.
+
+        A user's OWN project's journey always beats a shipped system one: a
+        repo that carries an onboarding journey must not lose the race to
+        ``flowpad_assistant``'s getting-started just because of DB row order.
+        The system journey stays the fallback for projects with none."""
         from flow_sdk.builtin.journey_journal import JourneyStatus
 
-        for journey in await Journey.get_all({}):
+        # Stable sort → project journeys first, original order kept within each group.
+        candidates = sorted(await Journey.get_all({}), key=lambda j: j.is_system())
+        for journey in candidates:
             if not journey.enabled or not journey.auto_launch_enabled():
                 continue
             current = await journey.progress(user_id)

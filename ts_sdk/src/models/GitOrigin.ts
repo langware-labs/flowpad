@@ -20,6 +20,13 @@ export interface GitOrigin {
   head_commit?: string | null;
   /** Asset ROOT's path relative to the repo root — a folder or a file. */
   rel_path: string;
+  /**
+   * Optional project this origin resolves inside. Declared here as well as on
+   * `FSOrigin` because this interface predates that base and does not extend it
+   * (extending would make the two modules import each other). Same meaning and
+   * same backend field — keep them in step.
+   */
+  project_id?: string;
 }
 
 const HOST_PROVIDERS: Record<string, string> = {

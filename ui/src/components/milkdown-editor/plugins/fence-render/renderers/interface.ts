@@ -17,6 +17,7 @@
 import { registerFenceRenderer, type FenceRenderContext, type FenceRenderer } from '../registry';
 import { applyInterfaceEdit, type InterfaceEdit } from './interface-edit';
 import { parseInterfaceBlock, type InterfaceParam, type InterfaceSpec } from './interface-schema';
+import { formatSourceLabel, resolveSourceLocation } from './source-location';
 
 function el<K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -142,9 +143,49 @@ function paramRow(
   return row;
 }
 
+/**
+ * The provenance row: where this contract is grounded, and a way to go there.
+ *
+ * The button is deliberately NOT gated on `canEdit`. Every other control here
+ * hides when the host is read-only because it mutates the document; navigating
+ * does not, and a read-only surface (the vibe display, a `view`-mode asset) is
+ * exactly where following a contract to its source is most useful.
+ */
+function sourceRow(spec: InterfaceSpec, ctx: FenceRenderContext): HTMLElement | null {
+  if (!spec.source) return null;
+
+  const row = el('div', 'interface-card-source');
+  row.setAttribute('data-testid', 'interface-source');
+  row.appendChild(el('span', 'interface-card-source-label', formatSourceLabel(spec.source)));
+
+  const location = resolveSourceLocation(spec.source, {
+    documentProjectRoot: ctx.host.documentProjectRoot(),
+    projectRootById: (id) => ctx.host.projectRootById(id),
+  });
+
+  const button = el('button', 'interface-card-open', 'Open in editor');
+  button.type = 'button';
+  button.setAttribute('data-testid', 'interface-source-open');
+  if (location.ok) {
+    button.title = `Open ${location.path}`;
+    button.addEventListener('click', () => {
+      ctx.host.openFile(location.path, { line: location.line });
+    });
+  } else {
+    // A dead button that says nothing is worse than no button — carry the
+    // reason the resolver gave us.
+    button.disabled = true;
+    button.title = location.reason;
+    button.setAttribute('data-reason', location.reason);
+  }
+  row.appendChild(button);
+  return row;
+}
+
 function buildCard(
   spec: InterfaceSpec,
   canEdit: boolean,
+  ctx: FenceRenderContext,
   edit: (change: InterfaceEdit) => void,
 ): HTMLElement {
   const card = el('div', 'interface-card');
@@ -202,6 +243,9 @@ function buildCard(
     card.appendChild(section);
   }
 
+  const source = sourceRow(spec, ctx);
+  if (source) card.appendChild(source);
+
   return card;
 }
 
@@ -223,7 +267,7 @@ function draw(source: string, host: HTMLElement, ctx: FenceRenderContext): void 
     ctx.commit(next);
     draw(next, host, ctx);
   };
-  host.replaceChildren(buildCard(parseInterfaceBlock(source), ctx.editable, edit));
+  host.replaceChildren(buildCard(parseInterfaceBlock(source), ctx.editable, ctx, edit));
 }
 
 /** @internal — exported for tests, which need the card without a NodeView. */
