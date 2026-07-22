@@ -108,7 +108,7 @@ describe('parseInterfaceBlock errors', () => {
 describe('interface renderer', () => {
   it('renders a signature card into the host', async () => {
     const host = document.createElement('div');
-    await interfaceRenderer.render(VALID, host, { theme: 'dark', blockId: 'b1', editable: true, host: { openFile: () => {}, documentProjectRoot: () => null, projectRootById: () => null }, commit: () => {} });
+    await interfaceRenderer.render(VALID, host, { theme: 'dark', blockId: 'b1', editable: true, host: { openFile: () => {}, previewFile: () => {}, documentProjectRoot: () => null, projectRootById: () => null }, commit: () => {} });
 
     const card = host.querySelector('[data-testid="interface-card"]');
     expect(card).not.toBeNull();
@@ -126,7 +126,7 @@ describe('interface renderer', () => {
 
   it('omits sections that the spec does not declare', async () => {
     const host = document.createElement('div');
-    await interfaceRenderer.render('name: ping', host, { theme: 'light', blockId: 'b1', editable: true, host: { openFile: () => {}, documentProjectRoot: () => null, projectRootById: () => null }, commit: () => {} });
+    await interfaceRenderer.render('name: ping', host, { theme: 'light', blockId: 'b1', editable: true, host: { openFile: () => {}, previewFile: () => {}, documentProjectRoot: () => null, projectRootById: () => null }, commit: () => {} });
 
     const card = host.querySelector('[data-testid="interface-card"]')!;
     expect(card.querySelector('.interface-card-description')).toBeNull();
@@ -141,7 +141,7 @@ describe('interface renderer', () => {
    */
   it('throws rather than rendering a partial card on bad input', () => {
     const host = document.createElement('div');
-    expect(() => interfaceRenderer.render('returns: Task', host, { theme: 'dark', blockId: 'b1', editable: true, host: { openFile: () => {}, documentProjectRoot: () => null, projectRootById: () => null }, commit: () => {} }))
+    expect(() => interfaceRenderer.render('returns: Task', host, { theme: 'dark', blockId: 'b1', editable: true, host: { openFile: () => {}, previewFile: () => {}, documentProjectRoot: () => null, projectRootById: () => null }, commit: () => {} }))
       .toThrow(/^name:/);
     expect(host.children).toHaveLength(0);
   });

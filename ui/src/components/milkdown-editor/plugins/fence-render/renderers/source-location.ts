@@ -11,7 +11,7 @@
  * project lookups, so the whole resolution matrix is unit-testable.
  */
 
-import { formatGitOrigin, isLocalOrigin, isSafeRelPath, type FSOriginField } from '@sdk';
+import { formatFSOrigin, isLocalOrigin, isSafeRelPath, type FSOriginField } from '@sdk';
 import { normalizePath } from '@src/components/asset-manager/asset-row-helpers';
 import type { InterfaceSource } from './interface-schema';
 
@@ -82,8 +82,6 @@ export function resolveSourceLocation(
  */
 export function formatSourceLabel(source: InterfaceSource): string {
   const { origin, line } = source;
-  const label = isLocalOrigin(origin)
-    ? [origin.base, origin.rel_path].filter(Boolean).join('/')
-    : formatGitOrigin(origin);
+  const label = formatFSOrigin(origin);
   return line ? `${label}:${line}` : label;
 }

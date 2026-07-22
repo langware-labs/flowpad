@@ -14,10 +14,27 @@
  * ProseMirror NodeView, is a lifecycle hazard for a card this static.
  */
 
+import { FileCode } from 'lucide-react';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+
 import { registerFenceRenderer, type FenceRenderContext, type FenceRenderer } from '../registry';
 import { applyInterfaceEdit, type InterfaceEdit } from './interface-edit';
 import { parseInterfaceBlock, type InterfaceParam, type InterfaceSpec } from './interface-schema';
 import { formatSourceLabel, resolveSourceLocation } from './source-location';
+
+/**
+ * The chip's glyph, rendered to markup rather than transcribed.
+ *
+ * This renderer builds plain DOM and cannot mount a React icon, but hand-copying
+ * lucide's path data drifts — the first version of this constant was already a
+ * stale revision of `file-code`. `renderToStaticMarkup` is the same escape hatch
+ * `graph-view/icons/iconToDataUri.ts` uses to get a lucide icon outside a React
+ * tree; computed once at module load.
+ */
+const SOURCE_ICON = renderToStaticMarkup(
+  createElement(FileCode, { width: 12, height: 12, 'aria-hidden': true }),
+);
 
 function el<K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -144,41 +161,45 @@ function paramRow(
 }
 
 /**
- * The provenance row: where this contract is grounded, and a way to go there.
+ * The provenance chip: where this contract is grounded, and a peek at it.
  *
- * The button is deliberately NOT gated on `canEdit`. Every other control here
- * hides when the host is read-only because it mutates the document; navigating
- * does not, and a read-only surface (the vibe display, a `view`-mode asset) is
- * exactly where following a contract to its source is most useful.
+ * Deliberately NOT gated on `canEdit`. Every other control here hides when the
+ * host is read-only because it mutates the document; previewing does not, and a
+ * read-only surface (the vibe display, a `view`-mode asset) is exactly where
+ * following a contract to its source matters most.
  */
 function sourceRow(spec: InterfaceSpec, ctx: FenceRenderContext): HTMLElement | null {
   if (!spec.source) return null;
-
-  const row = el('div', 'interface-card-source');
-  row.setAttribute('data-testid', 'interface-source');
-  row.appendChild(el('span', 'interface-card-source-label', formatSourceLabel(spec.source)));
 
   const location = resolveSourceLocation(spec.source, {
     documentProjectRoot: ctx.host.documentProjectRoot(),
     projectRootById: (id) => ctx.host.projectRootById(id),
   });
 
-  const button = el('button', 'interface-card-open', 'Open in editor');
-  button.type = 'button';
-  button.setAttribute('data-testid', 'interface-source-open');
+  // One chip, like a message attachment: icon + label, click to peek. Opening
+  // the file for real is the deliberate step inside the preview, not a second
+  // control competing for the same glance.
+  const chip = el('button', 'interface-card-source-chip');
+  chip.type = 'button';
+  chip.setAttribute('data-testid', 'interface-source');
+  chip.innerHTML = SOURCE_ICON;
+  chip.appendChild(el('span', 'interface-card-source-label', formatSourceLabel(spec.source)));
+
   if (location.ok) {
-    button.title = `Open ${location.path}`;
-    button.addEventListener('click', () => {
-      ctx.host.openFile(location.path, { line: location.line });
+    chip.title = `Preview ${location.path}`;
+    chip.addEventListener('click', () => {
+      ctx.host.previewFile(location.path, { line: location.line });
     });
   } else {
-    // A dead button that says nothing is worse than no button — carry the
-    // reason the resolver gave us.
-    button.disabled = true;
-    button.title = location.reason;
-    button.setAttribute('data-reason', location.reason);
+    // A dead chip that says nothing is worse than none — carry the reason the
+    // resolver gave us.
+    chip.disabled = true;
+    chip.title = location.reason;
+    chip.setAttribute('data-reason', location.reason);
   }
-  row.appendChild(button);
+
+  const row = el('div', 'interface-card-source');
+  row.appendChild(chip);
   return row;
 }
 

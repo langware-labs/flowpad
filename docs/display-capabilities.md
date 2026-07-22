@@ -37,7 +37,10 @@ The extension→viewer rule is ONE registry — `EXT_TO_EDITOR` +
 `editorForPath` in `ts_sdk/src/models/asset-editor.ts` — and every raw-file
 surface routes through it: `dockPointerForFile` (openFile / explorer / chat
 attachments), the vibe display's `vfsEditorEl`, and `assetPointerForTarget`
-(display history). File viewers are file-only `AssetEditor` values (like CODE:
+(display history). `dockPointerForFile` also carries a requested line across the
+branch: CODE keeps it as the `line` option, and the asset editors receive it as
+their `initialLine` option, so "open this file at line N" survives whichever
+viewer the extension selects. File viewers are file-only `AssetEditor` values (like CODE:
 no backing record type, `EDITOR_TYPES[e] === []`, `isFileOnlyEditor`), rendered
 by CODE-style early returns in `AssetEditorRouter`. The same file renders the
 same way on every surface.
@@ -50,7 +53,7 @@ same way on every surface.
 | png jpg jpeg gif webp svg avif bmp ico | IMAGE | `MediaViewer` (`<img>` via fs `download` URL) |
 | mp4 webm mov | VIDEO | `MediaViewer` (`<video>`) |
 | mp3 wav m4a ogg | AUDIO | `MediaViewer` (`<audio>`) |
-| everything else | CODE | `CodeEditor` (keeps line/column options) |
+| everything else | CODE | `CodeEditor` (honours the `line`/`column` options — reveals the line centred and marks it with `.flowpad-deep-link-line` until the next deep link) |
 
 Media bytes are served by the fs `download` action (`flow_sdk/actions/fs/
 fs_actions.py` — MIME from guess_type, inline disposition for image/video/

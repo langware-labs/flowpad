@@ -108,7 +108,7 @@ export function BacklinksTab({ target }: BacklinksTabProps) {
       <div className="flex items-center justify-between px-1 pb-1 text-[10px] uppercase text-muted-foreground">
         <span>{links.length} backlink{links.length === 1 ? '' : 's'}</span>
         <button
-          onClick={refresh}
+          onClick={() => void refresh()}
           className="rounded px-1 hover:bg-muted"
           title={t`Refresh`}
           data-testid="md-backlinks-refresh"
