@@ -1,0 +1,159 @@
+{
+  "version": 1,
+  "id": "5eaa7e57-1111-4222-8333-444455556666",
+  "name": "Getting started",
+  "description": "A quick guided tour: click through two pages, create your first vibe agent, use it, and celebrate.",
+  "enabled": true,
+  "auto_launch": true,
+  "config": {
+    "deadline_s": 2592000,
+    "retention_runs": 3
+  },
+  "nodes": [
+    {
+      "id": "step1",
+      "node_type": "guided_step",
+      "name": "Click here",
+      "node_data": {
+        "status_line": "Open the first page and click the button.",
+        "present": {
+          "dock": {
+            "kind": "asset_editor",
+            "vfs": "page1.html"
+          }
+        },
+        "await": {
+          "topic": "app.page.signal",
+          "target": "next"
+        }
+      }
+    },
+    {
+      "id": "step2",
+      "node_type": "guided_step",
+      "name": "And now here",
+      "node_data": {
+        "status_line": "Nice \u2014 now click through the second page.",
+        "present": {
+          "dock": {
+            "kind": "asset_editor",
+            "vfs": "page2.html"
+          }
+        },
+        "await": {
+          "topic": "app.page.signal",
+          "target": "next"
+        }
+      }
+    },
+    {
+      "id": "step3",
+      "node_type": "guided_step",
+      "name": "Create a vibe agent",
+      "node_data": {
+        "status_line": "Create your first vibe agent from your project home.",
+        "present": {
+          "dock": {
+            "kind": "home"
+          },
+          "highlight": "VibeAgents"
+        },
+        "await": {
+          "topic": "app.entity.created",
+          "target": "agent:*",
+          "confirm": {
+            "type": "agent",
+            "match": {
+              "kind": "vibe"
+            },
+            "min": 1,
+            "scope": "all"
+          }
+        }
+      }
+    },
+    {
+      "id": "step4",
+      "node_type": "guided_step",
+      "name": "Use your vibe agent",
+      "node_data": {
+        "status_line": "Open the vibe workspace and put your agent to work.",
+        "present": {
+          "dock": {
+            "kind": "home"
+          },
+          "highlight": "VibeAgents"
+        },
+        "await": {
+          "topic": "app.entity.created",
+          "target": "artifact:*",
+          "confirm": {
+            "type": "artifact",
+            "scope": "project",
+            "min": 1
+          }
+        }
+      }
+    },
+    {
+      "id": "congrats",
+      "node_type": "guided_step",
+      "name": "You're all set",
+      "node_data": {
+        "status_line": "That's it \u2014 you're ready to go! \ud83c\udf89",
+        "present": {
+          "dock": {
+            "kind": "asset_editor",
+            "vfs": "congrats.html"
+          }
+        },
+        "await": {
+          "topic": "app.page.signal",
+          "target": "finish"
+        }
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "from": {
+        "node": "step1",
+        "event": "done"
+      },
+      "to": {
+        "node": "step2"
+      }
+    },
+    {
+      "id": "e2",
+      "from": {
+        "node": "step2",
+        "event": "done"
+      },
+      "to": {
+        "node": "step3"
+      }
+    },
+    {
+      "id": "e3",
+      "from": {
+        "node": "step3",
+        "event": "done"
+      },
+      "to": {
+        "node": "step4"
+      }
+    },
+    {
+      "id": "e4",
+      "from": {
+        "node": "step4",
+        "event": "done"
+      },
+      "to": {
+        "node": "congrats"
+      }
+    }
+  ]
+}

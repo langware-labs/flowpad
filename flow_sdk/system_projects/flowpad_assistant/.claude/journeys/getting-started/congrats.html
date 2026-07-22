@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Congrats</title>
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; overflow: hidden; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    display: flex; align-items: center; justify-content: center;
+    background: radial-gradient(120% 90% at 50% -10%, #fff0d6, #f6f7fb 60%);
+    color: #1c2030;
+  }
+  @media (prefers-color-scheme: dark) {
+    body { background: radial-gradient(120% 90% at 50% -10%, #3a2b0c, #0d0f18 60%); color: #eef0f8; }
+  }
+  .card { text-align: center; max-width: 32rem; padding: 2rem; position: relative; z-index: 1; }
+  .badge { font-size: 3.5rem; line-height: 1; margin-bottom: .5rem; }
+  h1 { font-size: 2.2rem; margin: .25rem 0 .75rem; letter-spacing: -.02em; }
+  p { color: #4a5069; font-size: 1.05rem; line-height: 1.55; margin: 0 0 2rem; }
+  @media (prefers-color-scheme: dark) { p { color: #b3b8cc; } }
+  button {
+    font: inherit; font-weight: 700; font-size: 1rem; cursor: pointer; color: #201400;
+    background: linear-gradient(180deg, #ffc964, #f6a723); border: none;
+    border-radius: 14px; padding: .9rem 1.8rem;
+  }
+  button:hover { filter: brightness(1.05); }
+  button:active { transform: translateY(1px); }
+  canvas { position: fixed; inset: 0; pointer-events: none; z-index: 0; }
+</style>
+</head>
+<body>
+  <canvas id="confetti"></canvas>
+  <div class="card">
+    <div class="badge">🎉</div>
+    <h1>You did it!</h1>
+    <p>You clicked through the journey, created a vibe agent, and put it to work. You're all set — go build something great.</p>
+    <button id="finish" type="button">Finish</button>
+  </div>
+  <script>
+    document.getElementById('finish').addEventListener('click', function () {
+      parent.postMessage({ source: 'flow-journey', event: 'finish', page: 'congrats' }, '*');
+    });
+    // Lightweight confetti burst (respect reduced motion).
+    if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      var c = document.getElementById('confetti'), x = c.getContext('2d');
+      var W = c.width = innerWidth, H = c.height = innerHeight;
+      var colors = ['#f6a723', '#5b5bf0', '#22a06b', '#e0873a', '#7c6cff'];
+      var bits = Array.from({ length: 140 }, function () {
+        return { x: Math.random() * W, y: -20 - Math.random() * H, r: 4 + Math.random() * 5,
+                 vy: 1.5 + Math.random() * 3, vx: -1 + Math.random() * 2,
+                 col: colors[(Math.random() * colors.length) | 0], a: Math.random() * 6 };
+      });
+      (function tick() {
+        x.clearRect(0, 0, W, H);
+        bits.forEach(function (b) {
+          b.y += b.vy; b.x += b.vx; b.a += 0.1;
+          if (b.y > H + 20) { b.y = -20; b.x = Math.random() * W; }
+          x.save(); x.translate(b.x, b.y); x.rotate(b.a);
+          x.fillStyle = b.col; x.fillRect(-b.r / 2, -b.r / 2, b.r, b.r * 0.5); x.restore();
+        });
+        requestAnimationFrame(tick);
+      })();
+    }
+  </script>
+</body>
+</html>
