@@ -7,7 +7,6 @@ from contextvars import ContextVar
 
 DEFAULT_BROWSE_LIMIT = 20
 import types
-import functools
 from typing import (
     Any,
     ClassVar,
@@ -35,7 +34,7 @@ except ImportError:
             return decorator
 
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -50,18 +49,18 @@ from pydantic import (
     model_serializer,
 )
 
-from flow_sdk.config import StorageProvider
-from flow_sdk.flowpad_types.enums import AuthRole, ExpansionType
-from flow_sdk.api.api_types.api_field import APIField, Persist
-from flow_sdk.db.drivers.db_base_record import BuiltinEntityType, TypeId
-from flow_sdk.db.drivers.query import ExpressionNode, OrderType, QueryFilter, QueryOp
-from flow_sdk.fs_store.schema_registry import SchemaRegistry
-
 import flow_sdk.service_log as service_log
+from flow_sdk.api.api_types.api_field import APIField, Persist
+from flow_sdk.config import StorageProvider
 from flow_sdk.db import DBEntity
 from flow_sdk.db.db_entity import EntityExpansion
+from flow_sdk.db.drivers.db_base_record import BuiltinEntityType, TypeId
 from flow_sdk.db.drivers.db_driver import RelationshipDirection
+from flow_sdk.db.drivers.query import ExpressionNode, OrderType, QueryFilter, QueryOp
+from flow_sdk.flowpad_types.enums import AuthRole, ExpansionType
 from flow_sdk.fs_store.asset_occurrences import AssetOccurrence, asset_occurrence_dicts
+from flow_sdk.fs_store.schema_registry import SchemaRegistry
+
 from .blob_index_entity_model import BLOB_INDEX_VFS_PATH, BlobIndexEntity
 from .entity_env.env_types import EntityEnvVars, EnvVar, EnvVarType
 
@@ -755,6 +754,7 @@ class Entity(DBEntity):
         Project uses fs_storage_mount_path).
         """
         import uuid as _uuid
+
         from flow_sdk.fs_store.identifier import is_valid_entity_id, mint_uuid
 
         rid = data.get("id") or ""
@@ -1221,6 +1221,7 @@ class Entity(DBEntity):
         parent is missing/not-yet-placed, or the parent is a (leaf) file asset.
         """
         from pathlib import Path  # noqa: PLC0415
+
         from flow_sdk.fs_store.placement import AssetClass  # noqa: PLC0415
 
         if getattr(info, "asset_class", None) != AssetClass.REPO:
@@ -1816,6 +1817,13 @@ class Entity(DBEntity):
         # can branch on it. Subclasses without the field stay unchanged.
         if "remote" in type(self).model_fields:
             self.remote = True
+            # The POST above carried every FIELD, but it is JSON — files can't
+            # ride in it, and ``fs/upload`` needs the id that POST just created.
+            # So files already in this entity's storage get their own pass, next
+            # to their download counterpart in the fs layer.
+            from flow_sdk.actions.fs.fs_actions import push_entity_files_to_hub  # noqa: PLC0415
+
+            await push_entity_files_to_hub(self)
         if recursive:
             await self._share_children()
         return self
@@ -2958,8 +2966,8 @@ class Entity(DBEntity):
         Returns:
             List of Trigger entities connected to this entity (typed as Entity to avoid circular imports)
         """
-        from flow_sdk.flowpad_types.enums import BuiltInRelationshipTypes
         from flow_sdk.builtin.trigger import Trigger
+        from flow_sdk.flowpad_types.enums import BuiltInRelationshipTypes
 
         relationships = await self.get_outgoing_relationships(
             relationships_filter=QueryFilter(type=BuiltInRelationshipTypes.ConnectedTo)
@@ -3064,8 +3072,8 @@ _action_registry.register(
 
 
 async def _http_favorite(self: Entity):
-    from flow_sdk.responses.response import ApiSuccessResponse  # noqa: PLC0415
     from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
+    from flow_sdk.responses.response import ApiSuccessResponse  # noqa: PLC0415
 
     request_info = get_current_request_info()
     body = await request_info.get_post_data() if request_info is not None else {}
@@ -3096,8 +3104,8 @@ async def _http_setup(self: Entity):
     directly (no setup skill) or spawns a headless Vibe setup session and returns
     ITS target. Project/workdir default to the entity's own binding; the caller may
     override ``project_id`` (e.g. the conversation-mapped project)."""
-    from flow_sdk.responses.response import ApiSuccessResponse  # noqa: PLC0415
     from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
+    from flow_sdk.responses.response import ApiSuccessResponse  # noqa: PLC0415
 
     request_info = get_current_request_info()
     body = await request_info.get_post_data() if request_info is not None else {}
@@ -3137,9 +3145,9 @@ async def _http_set_group(self: Entity):
     cycles, namespace immutability) live in ``Group.validate_membership`` —
     this handler only parses the body and delegates (docs/entities-groups.md).
     """
-    from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
-    from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
     from flow_sdk.builtin.group import Group  # noqa: PLC0415
+    from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
+    from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
 
     request_info = get_current_request_info()
     body = await request_info.get_post_data() if request_info is not None else {}
@@ -3176,8 +3184,8 @@ async def _http_semantic_waive(self: Entity):
     the CURRENT content, stamp validated_by=user / status=ok, and resolve the
     open lock_break annotations. Body: ``{"relationship_id": ...}`` — must
     reference a dependson row touching this entity."""
-    from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
     from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
+    from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
     from flow_sdk.semantic_lock.runner import waive_relationship  # noqa: PLC0415
 
     request_info = get_current_request_info()

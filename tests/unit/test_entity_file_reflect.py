@@ -123,20 +123,19 @@ async def test_upload_is_mirrored_to_hub_and_continues_locally(monkeypatch):
 
     sent = []
 
-    async def _fake_hub_post(et, payload, entity_id=None, action=None, sub_path=None, **kw):
-        sent.append({"et": et, "id": entity_id, "action": action, "sub_path": sub_path, "files": kw.get("files")})
-        return {}
+    async def _fake_upload(et, entity_id, filename, content, sub_path="upload"):
+        sent.append({"et": et, "id": entity_id, "name": filename, "content": content, "sub_path": sub_path})
 
-    monkeypatch.setattr(mod, "hub_post", _fake_hub_post)
+    monkeypatch.setattr(mod, "hub_upload_entity_file", _fake_upload)
     _patch_request_files(monkeypatch, {"uploaded_file": _upload_file("a.txt", b"hello")})
 
     result = await mod._reflect_fs_to_hub(BuiltinEntityType.TASK, "task-1", "upload")
 
     # The bytes reached the hub …
     assert len(sent) == 1
-    assert sent[0]["action"] == "fs" and sent[0]["sub_path"] == "upload"
-    assert sent[0]["files"]["uploaded_file"][0] == "a.txt"
-    assert sent[0]["files"]["uploaded_file"][1] == b"hello"
+    assert sent[0]["id"] == "task-1" and sent[0]["sub_path"] == "upload"
+    assert sent[0]["name"] == "a.txt"
+    assert sent[0]["content"] == b"hello"
     # … and the LOCAL write must still happen (the cache).
     assert result is mod.REFLECT_CONTINUE_LOCAL
 
@@ -152,10 +151,10 @@ async def test_upload_stream_is_rewound_for_the_local_handler(monkeypatch):
     import flow_sdk.server.routes._hub_reflect as mod
     from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 
-    async def _fake_hub_post(*a, **kw):
-        return {}
+    async def _fake_upload(*a, **kw):
+        return None
 
-    monkeypatch.setattr(mod, "hub_post", _fake_hub_post)
+    monkeypatch.setattr(mod, "hub_upload_entity_file", _fake_upload)
     up = _upload_file("a.txt", b"hello")
     _patch_request_files(monkeypatch, {"uploaded_file": up})
 
@@ -174,7 +173,7 @@ async def test_non_upload_fs_actions_are_not_mirrored(monkeypatch):
     async def _boom(*a, **kw):  # pragma: no cover - must never run
         raise AssertionError("non-upload fs action must not hit the hub")
 
-    monkeypatch.setattr(mod, "hub_post", _boom)
+    monkeypatch.setattr(mod, "hub_upload_entity_file", _boom)
 
     for sub_path in ("download/a.txt", "browse", "delete/a.txt", None):
         assert await mod._reflect_fs_to_hub(BuiltinEntityType.TASK, "t", sub_path) is mod.REFLECT_CONTINUE_LOCAL
