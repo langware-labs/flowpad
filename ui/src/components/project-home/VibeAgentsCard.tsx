@@ -13,6 +13,10 @@ interface VibeAgentsCardProps {
   project: Project | null | undefined;
 }
 
+/** The topic word this card answers to (`?highlight=`, click observability).
+ *  Exported so the tab that hosts the card can open itself for it. */
+export const VIBE_AGENTS_TOPIC = 'VibeAgents';
+
 /**
  * Project "Vibe agents" — the agents layered on top of the standard vibe agent
  * on vibe process start (all `kind==vibe`, embedded in created-date order after
@@ -63,7 +67,7 @@ export const VibeAgentsCard: React.FC<VibeAgentsCardProps> = ({ project }) => {
     // TopicHighlightObserver applies the ring/beacon when a journey (or any
     // ?highlight=VibeAgents URL) points here. No component-local wiring.
     <div
-      {...topicTag('VibeAgents', 'button')}
+      {...topicTag(VIBE_AGENTS_TOPIC, 'button')}
       className="relative rounded-lg border border-border p-4 transition-all duration-500"
       data-testid="vibe-agents-card"
     >

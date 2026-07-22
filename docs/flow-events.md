@@ -54,6 +54,9 @@ vocabulary — zero behavior, zero wire change.
 no `TopicEvent` in ts_sdk/ui; all existing tests green.
 
 ### Log
+- 2026-07-19 — shipped with phase 1 (one commit). Run-local envelope is
+  `RunEvent`; standard `FlowEvent`/`FlowEventCtx` in `flow_sdk/topics/envelope.py`
+  + TS rename. Both grep gates pass; flow suites green unchanged.
 
 ## Phase 1 — Bus core, both sides  ✅
 
@@ -79,6 +82,13 @@ emit on the backend arrives at an app-bus subscriber with the SAME event id
 and `origin: "local_server"`.
 
 ### Log
+- 2026-07-19 — shipped. Python bus (`topics/bus.py`) + `TopicMessage` frame +
+  `ws_forward` (allowlist `["flow.*"]`) armed at startup; TS `deliver()` +
+  `ws-bridge` wired via `UiTopicEmitter`. Contract fixture
+  `tests/fixtures/flow_event_contract.json` parsed by BOTH suites (py 16,
+  ts 17 tests). Live drill on flow-5: backend-minted id `bcff6c26…` observed
+  verbatim on the app bus with `origin: local_server`. Scope cut as planned:
+  app→backend forwarding deferred. Mini-analyzer regression complete.
 
 ## Phase 2 — Flow-boundary emitter  ☐
 
@@ -88,6 +98,51 @@ legacy `FlowRunEventMessage`/`FlowNodeStatusMessage`; terminal run outputs emit
 `flow.output` instead of existing only as files. **Acceptance:**
 `useJourneyManager` subscribes to the topics and deletes its post-advance REST
 `refresh()` — the standing journal-WS-watch-gap symptom closes.
+
+**Detail (planned 2026-07-22):**
+
+*Emissions — explicit calls at the four lifecycle boundaries (NOT inside the
+WS mirror helpers; boundary semantics ≠ status mirroring), via one helper
+`_emit_flow_topic(run, subtopic, data)` in `flow_manager/manager.py` that fills
+`target = f"agentic_flow:{run.flow.flow_id}"` and
+`ctx.scope = [f"agentic_flow_run:{run.id}", f"agentic_flow:{run.flow.flow_id}"]`
+(innermost-first). `ctx.actor` stays None until phase 7 threads attribution.*
+
+| site | topic | data |
+|---|---|---|
+| `_start_run` | `flow.started` | `{run_id}` |
+| `_enter_guided_step` | `flow.waiting` | `{run_id, node_id, seq, status_line, present, await}` |
+| guided release in `inject` (suspended branch) | `flow.step.done` | `{run_id, node_id, event}` |
+| `_record_run_event(direction="output")` | `flow.output` | `{run_id, event, payload}` |
+| `_finalize` | `flow.done` (complete) / `flow.failed` (tripped) | `{run_id, status, events, executions, error}` |
+
+*Run-internal node statuses stay on the legacy `FlowNodeStatusMessage` — they
+are engine mirroring, not boundaries; they migrate in phase 8 if at all.
+Import the bus lazily inside the helper (manager must not import-cycle);
+emission is best-effort try/except like the broadcasts. `ws_forward`'s
+`flow.*` allowlist already covers every row above — zero forwarding changes.*
+
+*Consumer — `ui/src/journey/useJourneyManager.ts`: replace the post-advance
+`.then(() => refresh())` chain with ONE standing bus subscription
+`EventBus.on('flow.step.done', h, {target: 'agentic_flow:' + journeyId})`
+whose handler calls `refresh()` — law 5 kept honest: the event says *check
+now*, the journal fetch stays the proof. Because the event reaches EVERY tab
+via `topic_msg` (not just watch-holders), the journal-WS-watch gap closes for
+cross-tab journey progress too — the bug the workaround note in that file
+documents.*
+
+*Tests — extend `tests/unit/test_flow_manager.py` with a bus-capture fixture
+(`event_bus.on('flow.*', collect)` + clear in teardown): a run emits
+started→output→done with correct target/scope ordering; a guided park emits
+`flow.waiting` and its release emits `flow.step.done`; a tripped run emits
+`flow.failed`. UI: extend the journey vitest (or add one) faking a
+`flow.step.done` deliver → `refresh` called once; advance no longer chains
+refresh.*
+
+*Live drill — flow-5: walk one step of the getting-started journey; observe
+`[topics] delivered flow.step.done …` in the console and the tray advancing
+WITHOUT the REST refresh chain; second browser tab advances in sync (the gap
+closure made visible).*
 
 ### Log
 
