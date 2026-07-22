@@ -48,11 +48,6 @@ export function normalizeTopic(value: string): TopicStr {
   return normalized as TopicStr;
 }
 
-/** Throwing brand cast — alias of {@link normalizeTopic} with intent-revealing name. */
-export function asTopic(value: string): TopicStr {
-  return normalizeTopic(value);
-}
-
 /** Null-returning brand cast for untrusted input. */
 export function tryTopic(value: unknown): TopicStr | null {
   if (typeof value !== 'string') return null;

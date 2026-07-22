@@ -57,12 +57,9 @@ class Topic(Entity):
     # even display-spoof it.
 
     def __init__(self, **data: Any) -> None:
-        raw_name = data.get("name")
-        if isinstance(raw_name, str):
-            # Normalize BEFORE minting so the id derives from the canonical
-            # form (the field validator below re-normalizes idempotently and
-            # also covers the model_validate path, which bypasses __init__).
-            data["name"] = normalize_topic(raw_name)
+        # allocate_id normalizes the name it mints from; the field validator
+        # canonicalizes the stored field on every path (incl. model_validate,
+        # which bypasses this __init__). No third normalize needed here.
         data["id"] = self.allocate_id(data)
         super().__init__(**data)
 
