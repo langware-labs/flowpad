@@ -19,28 +19,27 @@ const RING_CLASSES = [
 /**
  * The generic topic-highlight observer — the highlight half of "one tag, three
  * powers". Mounted once beside {@link UiTopicEmitter}: whenever the URL asks to
- * highlight a word (`?highlight=`), the element tagged `data-topic="<word>"`
- * gets the standard ring + beacon + scroll-into-view with the standard
- * enter→linger→fade lifecycle — no per-component highlight wiring. Components
- * only declare `topicTag(...)`; a journey lights them with `present.highlight`.
+ * highlight a word (`?highlight=`), EVERY element tagged `data-topic="<word>"`
+ * gets the standard ring + beacon with the entry pulse — several surfaces may
+ * carry the same topic (the footer project name AND the rail's project icon),
+ * and each is a valid way to act, so each lights. No per-component wiring;
+ * components only declare `topicTag(...)`.
  *
- * Late mounts are covered: if the tagged element isn't in the DOM yet (the
- * journey often navigates and highlights in one step), a MutationObserver waits
- * for it.
+ * The URL is the state: the ring PERSISTS while `?highlight=` names the topic
+ * (a journey step's param stands until the step advances). A timed fade raced
+ * cold boots — the whole window burned during app loading. The set of live
+ * elements is tracked continuously (MutationObserver + a slow re-sync), so
+ * late mounts and re-rendered replacements keep their highlight.
  */
 export function TopicHighlightObserver() {
   const word = useHighlight();
-  const [el, setEl] = useState<HTMLElement | null>(null);
+  const [els, setEls] = useState<HTMLElement[]>([]);
   const [phase, setPhase] = useState<HighlightPhase>('idle');
 
-  // Track the LIVE tagged element for the whole highlight window. The observer
-  // never stops while the word is set: on a cold load the target is often found
-  // early and then REPLACED when its surface re-renders (the footer once
-  // project context loads) — holding the first node would orphan the highlight,
-  // so re-resolve whenever the held node leaves the DOM.
+  // Track the LIVE set of tagged elements for the whole highlight window.
   useEffect(() => {
     if (!word) {
-      setEl(null);
+      setEls([]);
       return;
     }
     // CSS.escape is absent in some DOM environments (jsdom) — quote-escape fallback.
@@ -48,15 +47,21 @@ export function TopicHighlightObserver() {
       typeof CSS !== 'undefined' && typeof CSS.escape === 'function'
         ? CSS.escape(word)
         : word.replace(/["\\]/g, '\\$&');
-    const find = () => document.querySelector<HTMLElement>(`[data-topic="${esc}"]`);
-    const sync = () => setEl((prev) => (prev && prev.isConnected ? prev : find()));
+    const findAll = () =>
+      Array.from(document.querySelectorAll<HTMLElement>(`[data-topic="${esc}"]`));
+    const sync = () =>
+      setEls((prev) => {
+        const next = findAll();
+        // Keep the previous array identity when the set is unchanged, so the
+        // effects below don't churn on every mutation/tick.
+        if (prev.length === next.length && prev.every((el, i) => el === next[i])) return prev;
+        return next;
+      });
     sync();
-    // Two wake-ups, belt and braces: MutationObserver for the common case, and
-    // a slow interval that catches anything it misses during cold-boot render
-    // churn (the interval only exists while a highlight is requested — one
-    // querySelector per tick, nothing on the steady state).
     const observer = new MutationObserver(sync);
     observer.observe(document.body, { childList: true, subtree: true });
+    // Belt and braces: a slow re-sync catches anything the observer misses
+    // during cold-boot render churn. Exists only while a highlight is requested.
     const interval = window.setInterval(sync, 500);
     return () => {
       observer.disconnect();
@@ -64,39 +69,39 @@ export function TopicHighlightObserver() {
     };
   }, [word]);
 
-  // Lifecycle: enter (brief attention pulse) → linger — and STAY there. The
-  // URL is the state: while `?highlight=` names this topic the ring persists
-  // (for a journey step the param stands until the step advances). A timed
-  // fade here raced cold boots — the whole 5.6s window burned during app
-  // loading, so the user never saw it. The wiki feed's component-local
-  // useLingeringHighlight keeps its own fade; this generic observer does not.
+  // Lifecycle: enter (brief attention pulse) → linger — and STAY until the
+  // word clears or the element set changes (which replays the entry pulse).
   useEffect(() => {
-    if (!word || !el) {
+    if (!word || els.length === 0) {
       setPhase('idle');
       return;
     }
     setPhase('enter');
     const toLinger = window.setTimeout(() => setPhase('linger'), HIGHLIGHT_ENTER_MS);
     return () => window.clearTimeout(toLinger);
-  }, [word, el]);
+  }, [word, els]);
 
-  // Decorate the live element; cleanup restores it exactly.
+  // Decorate every live element; cleanup restores each exactly.
   useEffect(() => {
-    if (!el || phase === 'idle') return;
-    const madeRelative = getComputedStyle(el).position === 'static';
-    if (madeRelative) el.classList.add('relative');
-    el.classList.add(...RING_CLASSES);
-    if (phase === 'enter') {
-      el.classList.add('animate-pulse');
-      el.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
-    }
-    el.setAttribute('data-highlighted', 'true');
+    if (els.length === 0 || phase === 'idle') return;
+    const undo = els.map((el) => {
+      const madeRelative = getComputedStyle(el).position === 'static';
+      if (madeRelative) el.classList.add('relative');
+      el.classList.add(...RING_CLASSES);
+      if (phase === 'enter') el.classList.add('animate-pulse');
+      el.setAttribute('data-highlighted', 'true');
+      return { el, madeRelative };
+    });
+    if (phase === 'enter') els[0]?.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
     return () => {
-      el.classList.remove(...RING_CLASSES, 'animate-pulse');
-      if (madeRelative) el.classList.remove('relative');
-      el.removeAttribute('data-highlighted');
+      for (const { el, madeRelative } of undo) {
+        el.classList.remove(...RING_CLASSES, 'animate-pulse');
+        if (madeRelative) el.classList.remove('relative');
+        el.removeAttribute('data-highlighted');
+      }
     };
-  }, [el, phase]);
+  }, [els, phase]);
 
-  return el && phase !== 'idle' ? createPortal(<HighlightBeacon />, el) : null;
+  if (phase === 'idle') return null;
+  return <>{els.map((el, i) => createPortal(<HighlightBeacon key={i} />, el))}</>;
 }

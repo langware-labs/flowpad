@@ -47,6 +47,21 @@ describe('TopicHighlightObserver — generic highlight from the topic tag alone'
     late.remove();
   });
 
+  it('MULTIPLE elements carrying the same topic all light', async () => {
+    mount('/?highlight=MultiTopic');
+    const a = document.createElement('div');
+    a.setAttribute('data-topic', 'MultiTopic');
+    const b = document.createElement('div');
+    b.setAttribute('data-topic', 'MultiTopic');
+    document.body.append(a, b);
+    await waitFor(() => {
+      expect(a.getAttribute('data-highlighted')).toBe('true');
+      expect(b.getAttribute('data-highlighted')).toBe('true');
+    });
+    a.remove();
+    b.remove();
+  });
+
   it('a REPLACED tagged element re-lights (cold-load re-render path)', async () => {
     // The real-world failure: the footer button is found early, then the footer
     // re-renders when project context loads, swapping the DOM node — the
