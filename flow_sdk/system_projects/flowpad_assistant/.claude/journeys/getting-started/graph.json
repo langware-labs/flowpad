@@ -95,24 +95,6 @@
           }
         }
       }
-    },
-    {
-      "id": "congrats",
-      "node_type": "guided_step",
-      "name": "You're all set",
-      "node_data": {
-        "status_line": "That's it \u2014 you're ready to go! \ud83c\udf89",
-        "present": {
-          "dock": {
-            "kind": "asset_editor",
-            "vfs": "congrats.html"
-          }
-        },
-        "await": {
-          "topic": "app.page.signal",
-          "target": "finish"
-        }
-      }
     }
   ],
   "edges": [
@@ -144,16 +126,6 @@
       },
       "to": {
         "node": "step3b"
-      }
-    },
-    {
-      "id": "e5",
-      "from": {
-        "node": "step5",
-        "event": "done"
-      },
-      "to": {
-        "node": "congrats"
       }
     },
     {
