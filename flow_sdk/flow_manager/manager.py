@@ -345,6 +345,7 @@ class FlowManager:
         if source_node in run.suspended_nodes:
             run.suspended_nodes.discard(source_node)
             run.suspended = max(0, run.suspended - 1)
+            self._emit_flow_topic(run, "step.done", {"node_id": source_node, "event": event})
         if target_node:
             node = flow.doc.node(target_node)
             if node is None:
@@ -378,7 +379,27 @@ class FlowManager:
         except Exception:
             logger.debug("FlowManager: run row start-upsert failed", exc_info=True)
         await self._broadcast_run_event(run, "run_start", {})
+        self._emit_flow_topic(run, "started", {})
         return run
+
+    # ── unified-bus boundary emissions (docs/flow-events.md phase 2) ──────────
+
+    def _emit_flow_topic(self, run: _Run, subtopic: str, data: dict[str, Any]) -> None:
+        """Dual-publish a run BOUNDARY onto the unified bus (flow.<subtopic>).
+        Run-internal node statuses stay on the legacy WS mirror — boundaries
+        only. Best-effort: the engine never fails on bus trouble."""
+        try:
+            from flow_sdk.topics import emit_topic
+
+            emit_topic(
+                f"flow.{subtopic}",
+                f"agentic_flow:{run.flow.flow_id}",
+                {"run_id": run.id, **data},
+                ctx={"scope": [f"agentic_flow_run:{run.id}",
+                               f"agentic_flow:{run.flow.flow_id}"]},
+            )
+        except Exception:
+            logger.debug("FlowManager: flow.%s emission failed", subtopic, exc_info=True)
 
     # ── standardized I/O records ──────────────────────────────────────────────
 
@@ -401,6 +422,8 @@ class FlowManager:
             _write_json(run.record_dir / "execution" / direction / f"event-{n}.json", payload)
         except OSError:
             logger.debug("FlowManager: run %s record failed", direction, exc_info=True)
+        if direction == "output":
+            self._emit_flow_topic(run, "output", {"event": fe.event, "payload": fe.data})
 
     def _stamp_example(self, exec_dir: Path, run: _Run, node_id: str, seq: int,
                        fe: RunEvent | None, process_id: str | None = None,
@@ -549,6 +572,7 @@ class FlowManager:
         run.suspended_nodes.add(node.id)
         self._finish_execution(run, rt)
         await self._broadcast_node_status(run, node, "waiting", detail)
+        self._emit_flow_topic(run, "waiting", {"node_id": node.id, "seq": seq, **detail})
 
     # ── FlowFunction execution (inline + subprocess) ──────────────────────────
 
@@ -1012,6 +1036,10 @@ class FlowManager:
         except Exception:
             logger.debug("FlowManager: run row end-upsert failed", exc_info=True)
         await self._broadcast_run_event(run, "run_end", {"status": status})
+        self._emit_flow_topic(
+            run, "done" if status == RunStatus.COMPLETE.value else "failed",
+            {"status": status, "events": run.events, "executions": run.executions,
+             "error": run.error})
         self._runs.pop(run.id, None)
         try:
             await self._prune_runs(run.flow)

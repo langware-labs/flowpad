@@ -90,7 +90,7 @@ and `origin: "local_server"`.
   verbatim on the app bus with `origin: local_server`. Scope cut as planned:
   app→backend forwarding deferred. Mini-analyzer regression complete.
 
-## Phase 2 — Flow-boundary emitter  ☐
+## Phase 2 — Flow-boundary emitter  ✅
 
 `FlowManager` dual-publishes `flow.started / flow.waiting / flow.done /
 flow.failed` (target = the flow entity, run/node detail in `data`) beside the
@@ -145,6 +145,14 @@ WITHOUT the REST refresh chain; second browser tab advances in sync (the gap
 closure made visible).*
 
 ### Log
+- 2026-07-22 — shipped as planned. `_emit_flow_topic` + five boundary sites in
+  `flow_manager/manager.py`; `useJourneyManager` post-advance `.then(refresh)`
+  chain replaced by ONE `flow.step.done` subscription (target-filtered to the
+  journey). 3 bus-capture tests added (44/44 with the topic suites). Live
+  drill: clicked step 1 of getting-started → tray advanced event-driven;
+  step 2 advanced via REST from OUTSIDE the browser and the tab still updated
+  (console: `[topics] delivered flow.step.done` + the next `flow.waiting`) —
+  the journal-WS-watch gap is closed, cross-tab included. No deviations.
 
 ## Phase 3 — Entity emitter  ☐
 

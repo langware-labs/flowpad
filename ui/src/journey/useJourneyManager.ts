@@ -1,4 +1,4 @@
-import { dataContext, dataManager, Journey, Project, QueryFilter, QueryRequest, TypeId } from '@sdk';
+import { dataContext, dataManager, EventBus, Journey, Project, QueryFilter, QueryRequest, TypeId } from '@sdk';
 import { useOnTopic, useProject } from '@sdk/react/hooks';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { AssetEditor } from '@src/navigation/asset-doc-types';
@@ -74,19 +74,31 @@ export function useJourneyManager(state: UseJourneyResult): void {
     (nodeId: string, event: 'done' | 'skipped' = 'done') => {
       if (!journey || advancedRef.current === nodeId) return;
       advancedRef.current = nodeId;
-      journey
-        .advance(nodeId, event)
-        // The mutation→refresh contract (same as Tray/Viewer): the WS journal
-        // update only reaches tabs holding a watch on the row, so the cursor
-        // re-derivation must not depend on it — refetch after every advance.
-        .then(() => refresh())
-        .catch((e: unknown) => {
-          console.error('[Journey] advance failed', e);
-          advancedRef.current = null; // let the signal retry
-        });
+      // Refresh is EVENT-driven (the flow.step.done subscription below) — the
+      // backend's boundary emission reaches every tab via topic_msg, so the
+      // cursor re-derivation no longer needs a post-advance refetch chain.
+      journey.advance(nodeId, event).catch((e: unknown) => {
+        console.error('[Journey] advance failed', e);
+        advancedRef.current = null; // let the signal retry
+      });
     },
-    [journey, refresh],
+    [journey],
   );
+
+  // ── journal invalidation: the flow.step.done boundary event ──
+  // The engine emits `flow.step.done` (target = this journey's flow entity)
+  // whenever a parked guided step releases — in ANY tab. Event ≠ proof: the
+  // handler only wakes the journal refetch; the store stays the truth. This
+  // replaces the old post-advance `.then(refresh)` chain and closes the
+  // journal-WS-watch gap (updates only reached watch-holding tabs).
+  useEffect(() => {
+    if (!journeyId) return;
+    return EventBus.on(
+      'flow.step.done',
+      () => void refresh(),
+      { target: `agentic_flow:${journeyId}` },
+    );
+  }, [journeyId, refresh]);
 
   // ── present the current step (once per cursor) ──
   const presentedRef = useRef<string | null>(null);

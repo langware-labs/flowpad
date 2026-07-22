@@ -611,3 +611,98 @@ def test_agent_node_without_definition_fails_validation():
     ok = parse_flow_doc(_doc(
         [{"id": "a", "node_type": "agent", "node_data": {"prompt": "hi"}}], []))
     assert ok.validate_graph() == []
+
+
+# ── phase 2: unified-bus boundary emissions (docs/flow-events.md) ────────────
+
+
+@async_context
+async def test_run_boundaries_emit_flow_topics(tmp_path):
+    """A run dual-publishes its boundaries onto the bus: started → output →
+    done, with the flow entity as target and run-innermost scope."""
+    from flow_sdk.topics import event_bus
+
+    @flow_functions.register("v2_bus_probe")
+    def _probe(event_name, data, ctx):
+        return {"ok": 1}
+
+    flow = await _make_flow(tmp_path, "busflow",
+        [_fn("a", "v2_bus_probe")],
+        [_edge("e1", EXTERNAL_SOURCE, "go", "a")])
+    got: list = []
+    unsub = event_bus.on("flow.*", got.append)
+    try:
+        fm = FlowManager()
+        fe = await fm.inject(flow.id, "go", {"x": 1})
+        await _until(lambda: not fm.live_run_ids(), "run finalized")
+        await _until(lambda: any(e.topic == "flow.done" for e in got), "done emitted")
+    finally:
+        unsub()
+
+    topics = [e.topic for e in got]
+    assert topics[0] == "flow.started"
+    assert "flow.output" in topics and topics[-1] == "flow.done"
+    for e in got:
+        assert e.target == f"agentic_flow:{flow.id}"
+        assert e.ctx.scope == [f"agentic_flow_run:{fe.execution_id}",
+                               f"agentic_flow:{flow.id}"]
+        assert e.data["run_id"] == fe.execution_id
+    out = next(e for e in got if e.topic == "flow.output")
+    assert out.data["event"] == "done" and out.data["payload"] == {"ok": 1}
+    done = next(e for e in got if e.topic == "flow.done")
+    assert done.data["status"] == "complete" and done.data["executions"] == 1
+
+
+@async_context
+async def test_guided_step_emits_waiting_and_step_done(tmp_path):
+    from flow_sdk.topics import event_bus
+
+    flow = await _make_flow(tmp_path, "busguided",
+        [{"id": "g", "node_type": "guided_step",
+          "node_data": {"status_line": "do the thing",
+                        "present": {"dock": {"home": True}},
+                        "await": {"topic": "manual"}}}],
+        [_edge("e1", EXTERNAL_SOURCE, "begin", "g")])
+    got: list = []
+    unsub = event_bus.on("flow.*", got.append)
+    try:
+        fm = FlowManager()
+        fe = await fm.inject(flow.id, "begin", target_node="g")
+        await _until(lambda: any(e.topic == "flow.waiting" for e in got), "parked")
+        waiting = next(e for e in got if e.topic == "flow.waiting")
+        assert waiting.data["node_id"] == "g"
+        assert waiting.data["status_line"] == "do the thing"
+
+        # Frontend releases the park: inject the node's done.
+        await fm.inject(flow.id, "done", execution_id=fe.execution_id, source_node="g")
+        await _until(lambda: any(e.topic == "flow.step.done" for e in got), "released")
+        step = next(e for e in got if e.topic == "flow.step.done")
+        assert step.data["node_id"] == "g" and step.data["event"] == "done"
+        await _until(lambda: not fm.live_run_ids(), "run finalized")
+    finally:
+        unsub()
+
+
+@async_context
+async def test_tripped_run_emits_flow_failed(tmp_path):
+    from flow_sdk.topics import event_bus
+
+    @flow_functions.register("v2_bus_cycle")
+    def _cyc(event_name, data, ctx):
+        return {}
+
+    flow = await _make_flow(tmp_path, "busfail",
+        [_fn("a", "v2_bus_cycle")],
+        [_edge("e1", EXTERNAL_SOURCE, "go", "a"), _edge("e2", "a", "done", "a")],
+        config={"max_hops": 3})
+    got: list = []
+    unsub = event_bus.on("flow.failed", got.append)
+    try:
+        fm = FlowManager()
+        await fm.inject(flow.id, "go")
+        await _until(lambda: not fm.live_run_ids(), "run finalized")
+        await _until(lambda: bool(got), "failed emitted")
+    finally:
+        unsub()
+    assert got[0].data["status"] == "tripped"
+    assert "exceeds max" in (got[0].data["error"] or "")
