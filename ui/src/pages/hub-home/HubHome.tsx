@@ -247,16 +247,28 @@ export function HubHome() {
           </h2>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {/* New desktop — always first, high-contrast + theme-aware. */}
-            <button
-              type="button"
-              onClick={() => setNewDesktop({})}
-              disabled={launching}
-              data-testid="new-desktop-button"
-              className="flex items-center justify-center gap-2 rounded-lg border border-primary/50 bg-primary/10 px-4 py-3 text-sm font-medium text-primary transition-colors hover:bg-primary/20 disabled:opacity-60"
-            >
-              {launching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-              {launching ? <Trans>Launching…</Trans> : <Trans>New Desktop</Trans>}
-            </button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                {/* span keeps the tooltip working while the button is disabled */}
+                <span className="flex" tabIndex={desktopsEnabled ? -1 : 0}>
+                  <button
+                    type="button"
+                    onClick={() => setNewDesktop({})}
+                    disabled={launching || !desktopsEnabled}
+                    data-testid="new-desktop-button"
+                    className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-primary/20 bg-primary/10 px-4 py-3 text-sm font-semibold text-primary transition-colors hover:bg-primary/20 disabled:pointer-events-none disabled:border-primary/20 disabled:bg-primary/5"
+                  >
+                    {launching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                    {launching ? <Trans>Launching…</Trans> : <Trans>New Desktop</Trans>}
+                  </button>
+                </span>
+              </TooltipTrigger>
+              {!desktopsEnabled && (
+                <TooltipContent>
+                  <Trans>Sandbox unavailable</Trans>
+                </TooltipContent>
+              )}
+            </Tooltip>
 
             {desktops.map((d) => (
               <div
@@ -265,7 +277,7 @@ export function HubHome() {
                 data-node-id={d.id}
                 data-provider-id={d.node_provider_id}
                 data-status={details[d.id]?.status}
-                title={desktopsEnabled ? undefined : t`Desktops are unavailable: no E2B API key is configured on this hub.`}
+                title={desktopsEnabled ? undefined : t`Sandbox unavailable`}
                 className={`group flex flex-col gap-1.5 rounded-lg border bg-card px-4 py-3 transition-colors ${statusCardClass(
                   details[d.id]?.status,
                 )} ${desktopsEnabled ? '' : 'opacity-60'}`}
@@ -295,6 +307,7 @@ export function HubHome() {
                         setDraftName(d.name || '');
                         setEditingId(d.id);
                       }}
+                      disabled={!desktopsEnabled}
                       className="min-w-0 flex-1 truncate text-left text-sm hover:underline disabled:pointer-events-none"
                       title={desktopsEnabled ? t`Click to rename` : undefined}
                       data-testid="desktop-name"
@@ -305,6 +318,7 @@ export function HubHome() {
                   <button
                     type="button"
                     onClick={() => void openDesktop(d)}
+                    disabled={!desktopsEnabled}
                     aria-label={t`Open desktop`}
                     data-testid="desktop-open"
                     className="text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100 disabled:pointer-events-none disabled:opacity-50"
@@ -314,7 +328,7 @@ export function HubHome() {
                   <button
                     type="button"
                     onClick={() => void deleteDesktop(d)}
-                    disabled={deletingId === d.id}
+                    disabled={deletingId === d.id || !desktopsEnabled}
                     aria-label={t`Delete desktop`}
                     data-testid="desktop-delete"
                     className="text-muted-foreground opacity-0 transition-opacity hover:text-destructive disabled:pointer-events-none disabled:opacity-50 group-hover:opacity-100"
@@ -325,31 +339,6 @@ export function HubHome() {
                 <DesktopStatus info={details[d.id]} now={now} />
               </div>
             ))}
-
-            {/* Launch a new desktop. Disabled (with an explaining tooltip) when
-                the hub has no e2b API key — the launch would just 4xx. */}
-            <Tooltip>
-              <TooltipTrigger asChild>
-                {/* span keeps the tooltip working while the button is disabled */}
-                <span className="flex" tabIndex={desktopsEnabled ? -1 : 0}>
-                  <button
-                    type="button"
-                    onClick={() => void launch()}
-                    disabled={launching || !desktopsEnabled}
-                    data-testid="new-desktop-button"
-                    className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-dashed border-border bg-card px-4 py-3 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-60"
-                  >
-                    {launching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-                    {launching ? <Trans>Launching…</Trans> : <Trans>New Desktop</Trans>}
-                  </button>
-                </span>
-              </TooltipTrigger>
-              {!desktopsEnabled && (
-                <TooltipContent>
-                  <Trans>Sandboxes are unavailable.</Trans>
-                </TooltipContent>
-              )}
-            </Tooltip>
           </div>
 
           {/* Live launch progress */}
