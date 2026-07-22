@@ -1,0 +1,240 @@
+/*
+ * Chrome for renderable code fences (Render | Code tabs).
+ *
+ * Scoped under `.milkdown-editor-wrapper` to match the rest of `milkdown.css`,
+ * and built from the app's semantic tokens so light/dark come for free.
+ */
+
+.milkdown-editor-wrapper .ProseMirror .fence-render-block {
+  margin: 0.75rem 0;
+  border: 1px solid hsl(var(--border));
+  border-radius: 0.5rem;
+  overflow: hidden;
+  background-color: hsl(var(--muted) / 0.4);
+}
+
+/* ── tab strip ───────────────────────────────────────────────────────────── */
+
+.milkdown-editor-wrapper .fence-render-tabs {
+  display: flex;
+  align-items: center;
+  gap: 0.125rem;
+  padding: 0.25rem 0.375rem;
+  border-bottom: 1px solid hsl(var(--border) / 0.6);
+  /* The strip is chrome, not prose — never inherit the document's direction. */
+  direction: ltr;
+  user-select: none;
+}
+
+.milkdown-editor-wrapper .fence-render-tab {
+  padding: 0.125rem 0.5rem;
+  border-radius: 0.25rem;
+  font-size: 11px;
+  line-height: 1.5rem;
+  font-weight: 500;
+  color: hsl(var(--muted-foreground));
+  background: transparent;
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.milkdown-editor-wrapper .fence-render-tab:hover {
+  color: hsl(var(--foreground));
+  background-color: hsl(var(--muted));
+}
+
+.milkdown-editor-wrapper .fence-render-tab[aria-selected='true'] {
+  color: hsl(var(--foreground));
+  background-color: hsl(var(--background));
+  box-shadow: inset 0 0 0 1px hsl(var(--border));
+}
+
+/* ── panes ───────────────────────────────────────────────────────────────── */
+
+.milkdown-editor-wrapper .fence-render-preview {
+  padding: 1rem;
+  overflow-x: auto;
+}
+
+/* Layout is declared by the renderer (`FenceRenderer.layout`), never inferred
+   from its internal class names. Diagrams are centred and scale down to the
+   block width; they never force the document to scroll horizontally. */
+.milkdown-editor-wrapper .fence-render-output[data-layout='centered'] {
+  display: flex;
+  justify-content: center;
+}
+
+/* Document-width content: cards, tables. */
+.milkdown-editor-wrapper .fence-render-output[data-layout='block'] {
+  display: block;
+}
+
+.milkdown-editor-wrapper .fence-render-output svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* ── interface signature card ────────────────────────────────────────────── */
+
+.milkdown-editor-wrapper .interface-card {
+  /* Chrome, not prose: a signature is always read left-to-right. */
+  direction: ltr;
+  text-align: start;
+  font-size: 13px;
+  width: 100%;
+}
+
+.milkdown-editor-wrapper .interface-card-header {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid hsl(var(--border) / 0.6);
+}
+
+.milkdown-editor-wrapper .interface-card-name {
+  font-family: monospace;
+  font-size: 14px;
+  font-weight: 600;
+  color: hsl(var(--foreground));
+}
+
+.milkdown-editor-wrapper .interface-card-description {
+  margin: 0.5rem 0 0;
+  color: hsl(var(--muted-foreground));
+}
+
+.milkdown-editor-wrapper .interface-card-section {
+  margin-top: 0.75rem;
+}
+
+.milkdown-editor-wrapper .interface-card-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: hsl(var(--muted-foreground));
+  margin-bottom: 0.25rem;
+}
+
+.milkdown-editor-wrapper .interface-card-param {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.125rem 0;
+}
+
+.milkdown-editor-wrapper .interface-card-param-name {
+  font-family: monospace;
+  color: hsl(var(--foreground));
+  min-width: 7rem;
+}
+
+.milkdown-editor-wrapper .interface-card-param-type {
+  font-family: monospace;
+  color: hsl(var(--primary));
+}
+
+.milkdown-editor-wrapper .interface-card-param-desc {
+  color: hsl(var(--muted-foreground));
+}
+
+.milkdown-editor-wrapper .interface-card-badge {
+  padding: 0 0.375rem;
+  border-radius: 999px;
+  border: 1px solid hsl(var(--border));
+  font-size: 10px;
+  line-height: 1.25rem;
+  color: hsl(var(--muted-foreground));
+  background: transparent;
+  cursor: pointer;
+}
+
+/* Required params still show the badge, dimmed — it is the toggle's "off"
+   state, so hiding it would leave nothing to click to make a param optional. */
+.milkdown-editor-wrapper .interface-card-badge.is-off {
+  opacity: 0.35;
+  border-style: dashed;
+}
+
+.milkdown-editor-wrapper .interface-card-badge:hover {
+  opacity: 1;
+  color: hsl(var(--foreground));
+  border-color: hsl(var(--foreground) / 0.4);
+}
+
+/* ── inline-editable values ──────────────────────────────────────────────── */
+
+.milkdown-editor-wrapper .interface-card-editable {
+  border-radius: 0.1875rem;
+  padding: 0 0.125rem;
+  margin: 0 -0.125rem;
+  outline: none;
+  cursor: text;
+  /* Hint the affordance without drawing a box around every value. */
+  box-shadow: inset 0 -1px 0 0 transparent;
+  transition: background-color 120ms ease, box-shadow 120ms ease;
+}
+
+.milkdown-editor-wrapper .interface-card-editable:hover {
+  box-shadow: inset 0 -1px 0 0 hsl(var(--border));
+}
+
+.milkdown-editor-wrapper .interface-card-editable:focus {
+  background-color: hsl(var(--muted));
+  box-shadow: inset 0 0 0 1px hsl(var(--primary) / 0.5);
+}
+
+.milkdown-editor-wrapper .interface-card-returns {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid hsl(var(--border) / 0.6);
+}
+
+.milkdown-editor-wrapper .interface-card-arrow {
+  color: hsl(var(--muted-foreground));
+}
+
+.milkdown-editor-wrapper .interface-card-errors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.milkdown-editor-wrapper .interface-card-chip {
+  padding: 0 0.5rem;
+  border-radius: 0.25rem;
+  background-color: hsl(var(--muted));
+  font-family: monospace;
+  font-size: 11px;
+  line-height: 1.375rem;
+  color: hsl(var(--muted-foreground));
+}
+
+.milkdown-editor-wrapper .fence-render-error {
+  margin-top: 0.5rem;
+  padding: 0.375rem 0.625rem;
+  border-radius: 0.375rem;
+  border: 1px solid hsl(var(--destructive) / 0.4);
+  background-color: hsl(var(--destructive) / 0.1);
+  color: hsl(var(--destructive));
+  font-family: monospace;
+  font-size: 11px;
+  white-space: pre-wrap;
+}
+
+/* The source pane keeps the plain-fence look, minus the outer chrome the
+   wrapper now provides. */
+.milkdown-editor-wrapper .ProseMirror .fence-render-block pre.fence-render-source {
+  margin: 0;
+  border-radius: 0;
+  background-color: transparent;
+}
+
+.milkdown-editor-wrapper .fence-render-source[hidden],
+.milkdown-editor-wrapper .fence-render-preview[hidden] {
+  display: none;
+}

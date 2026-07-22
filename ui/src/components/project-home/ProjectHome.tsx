@@ -1,125 +1,88 @@
-import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
 import { MembersAvatarStack } from '@src/components/conversation/MembersAvatarStack';
-import { QuickCreatePanel, useQuickCreatePick } from '@src/components/quick-create/QuickCreatePanel';
+import { MiniDesktop, QuickCreatePanel, TileSection, useQuickCreatePick } from '@src/components/quick-create';
+import type { PanelHandlers } from '@src/components/quick-create';
 import { SecretsCard } from './SecretsCard';
-import { Button } from '@src/components/ui/button';
+import { HomeCustomizationCard } from './HomeCustomizationCard';
+import { VibeAgentsCard } from './VibeAgentsCard';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@src/components/ui/tabs';
 import { useContext as useDataContext } from '@src/hooks/useContext';
 import { WorkerToolbar } from '@src/components/workers/WorkerToolbar';
 import { useTerminalStripController } from '@src/tabs/useTerminalStripController';
+import { projectScope } from '@src/lib/scope-filter';
 import { Project, TypeId } from '@sdk';
-import { History, Loader2, SquareTerminal } from 'lucide-react';
 import React, { useMemo } from 'react';
 import { Trans } from '@lingui/react/macro';
 
 interface ProjectHomeProps {
   /** Pin spawned shells/processes to this project; otherwise the active project. */
   spawnProjectId?: string | null;
-  /** Show the "start a session" openers (Claude Code / Terminal / history).
-   *  On for the terminal body's empty state (its whole point is to start one);
-   *  off for the project-home landing, which is a browse surface. */
-  showSessionStarters?: boolean;
+  /** Render only the "Create" body with no tab bar — the terminal empty state,
+   *  whose whole point is to start something. The landing shows all three tabs. */
+  createOnly?: boolean;
 }
 
 /**
- * SessionStarters — the spawn openers (Claude Code / Terminal / Open from
- * history) + their modals. Encapsulates `useTerminalStripController` so only
- * one controller instance (this one, or StartSessionWorkers' — they render
- * mutually exclusively) runs per ProjectHome.
+ * HarnessLauncher — the single worker-launch affordance on the project home:
+ * the shared `WorkerToolbar` (claude / codex / copilot) plus the controller's
+ * own `terminal` opener. Replaces the old duplicated launchers (the "No
+ * terminal sessions" pills and the QuickCreatePanel "New session" tiles).
+ * Encapsulates `useTerminalStripController` so its controller + modals run
+ * once, here.
+ *
+ * Terminal rides in as an `OpenerDescriptor` rather than a bespoke prop: it
+ * isn't a coding-agent vendor, so it must stay out of `LAUNCHABLE_WORKERS`
+ * (which every other surface renders), and the descriptor already carries its
+ * label, glyph and in-flight state.
  */
-const SessionStarters: React.FC<{ spawnProjectId?: string | null }> = ({ spawnProjectId }) => {
-  const {
-    modals,
-    isTabCreationPending,
-    isClaudeCreationPending,
-    isTerminalCreationPending,
-    handleStartClaude,
-    handleStartTerminal,
-    handleOpenHistory,
-  } = useTerminalStripController({ spawnProjectId });
+const HarnessLauncher: React.FC<{ spawnProjectId?: string | null }> = ({ spawnProjectId }) => {
+  const { modals, isTabCreationPending, startWorker, openers } = useTerminalStripController({ spawnProjectId });
+
+  const terminalOpener = useMemo(() => openers.filter((o) => o.id === 'terminal'), [openers]);
 
   return (
-    <div className="flex flex-col items-center gap-4 py-2 text-muted-foreground">
-      <p className="text-sm"><Trans>No terminal sessions</Trans></p>
-      <div className="flex gap-2">
-        <Button
-          variant="outline"
-          size="sm"
-          className="gap-2"
-          onClick={() => void handleStartClaude()}
-          disabled={isTabCreationPending}
-          data-testid="start-claude-button"
-        >
-          {isClaudeCreationPending ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <ClaudeIcon className="h-4 w-4 text-orange-500" />
-          )}
-          <Trans>Claude Code</Trans>
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          className="gap-2"
-          onClick={() => void handleStartTerminal()}
-          disabled={isTabCreationPending}
-        >
-          {isTerminalCreationPending ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <SquareTerminal className="h-4 w-4" />
-          )}
-          <Trans>Terminal</Trans>
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          className="gap-2"
-          onClick={handleOpenHistory}
-          disabled={isTabCreationPending}
-          data-testid="open-history-button"
-        >
-          <History className="h-4 w-4" />
-          <Trans>Open from history</Trans>
-        </Button>
-      </div>
+    <div data-testid="project-home-start-session">
+      <TileSection title={<Trans>New session</Trans>}>
+        <WorkerToolbar
+          onLaunch={startWorker}
+          starting={isTabCreationPending}
+          extraOpeners={terminalOpener}
+          mode="all"
+          testIdPrefix="project-home-worker"
+        />
+      </TileSection>
       {modals}
     </div>
   );
 };
 
-/**
- * StartSessionWorkers — the per-vendor launch buttons for the "Start new
- * session" row on the project-home landing. Encapsulates
- * `useTerminalStripController` (like SessionStarters) so the controller +
- * its modals only run where the row renders.
- */
-const StartSessionWorkers: React.FC<{ spawnProjectId?: string | null }> = ({ spawnProjectId }) => {
-  const { modals, isTabCreationPending, startWorker } = useTerminalStripController({ spawnProjectId });
-
-  return (
-    <>
-      <WorkerToolbar
-        onLaunch={startWorker}
-        starting={isTabCreationPending}
-        mode="all"
-        testIdPrefix="project-home-worker"
-      />
-      {modals}
-    </>
-  );
-};
+/** The "Create" body — the harness launcher, the favorites mini-desktop, and
+ *  the New asset / New folder tiles. Its own component so the tabbed landing
+ *  and the terminal empty state share one definition. */
+const CreateTab: React.FC<{
+  projectId: string | null;
+  spawnProjectId?: string | null;
+  panelProps: PanelHandlers;
+}> = ({ projectId, spawnProjectId, panelProps }) => (
+  <div className="flex flex-col gap-6">
+    {projectId && <HarnessLauncher spawnProjectId={spawnProjectId} />}
+    <MiniDesktop scope={projectId ? projectScope(projectId) : undefined} panelProps={panelProps} />
+    <QuickCreatePanel {...panelProps} sections={['asset', 'folder']} />
+  </div>
+);
 
 /**
  * ProjectHome — the project's landing surface, shown wherever a project has no
  * open content: the terminal body's empty state (no terminal sessions) and the
  * project-home content slot (no asset/item selected). The one surface that is
- * unambiguously "the project itself" rather than content inside it, so it hosts,
- * top-to-bottom: the project-level Members roster, the session launchers, and —
- * as the body — the create-new surface (`QuickCreatePanel`) spread out plainly
- * rather than hidden behind the desktop "+" tile's modal. The terminal empty
- * state also shows the spawn openers via `showSessionStarters`.
+ * unambiguously "the project itself" rather than content inside it.
+ *
+ * Organized into three tabs:
+ *   - **Create**    — the harness launcher (workers + terminal), the mini
+ *                     desktop of favorites, and the New asset / New folder tiles.
+ *   - **Customize** — home title/background + the vibe agents layered on.
+ *   - **Secrets**   — value-free secret references + setup wizard.
  */
-export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, showSessionStarters = false }) => {
+export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, createOnly = false }) => {
   const dataCtx = useDataContext();
 
   // Resolve the target project (explicit spawn pin, else the active project).
@@ -130,8 +93,15 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, showSe
   );
 
   // The dialogs the create tiles defer to. Hosted here rather than in the panel
-  // so they outlive whatever the tile click dismisses.
+  // so they outlive whatever the tile click dismisses — and threaded into
+  // MiniDesktop so this surface mounts exactly one instance of them.
   const { panelProps, dialogs } = useQuickCreatePick();
+
+  // Customize/Secrets cards are project-entity bound — only when the resolved
+  // project is the active one (they read/write live Project state).
+  const project = dataCtx.project?.id === projectId ? dataCtx.project : null;
+
+  const createTab = <CreateTab projectId={projectId} spawnProjectId={spawnProjectId} panelProps={panelProps} />;
 
   return (
     <div className="flex h-full flex-col">
@@ -148,30 +118,37 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, showSe
         </div>
       )}
 
-      {/* Start new session — worker launch row, right below Members. Hidden on
-          the terminal empty state, which shows the full SessionStarters instead
-          (avoids two controller instances / duplicate modals). */}
-      {projectTypeId && !showSessionStarters && (
-        <div
-          className="flex items-center justify-between border-b border-border/50 px-4 py-2"
-          data-testid="project-home-start-session"
-        >
-          <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-            <Trans>Start new session</Trans>
-          </span>
-          <StartSessionWorkers spawnProjectId={spawnProjectId} />
-        </div>
-      )}
-
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex w-full flex-col gap-6 px-4 py-6">
-          {showSessionStarters && <SessionStarters spawnProjectId={spawnProjectId} />}
+          {createOnly ? (
+            createTab
+          ) : (
+            <Tabs defaultValue="create" data-testid="project-home-tabs">
+              <TabsList>
+                <TabsTrigger value="create" data-testid="project-home-tab-create">
+                  <Trans>Create</Trans>
+                </TabsTrigger>
+                <TabsTrigger value="customize" data-testid="project-home-tab-customize">
+                  <Trans>Customize</Trans>
+                </TabsTrigger>
+                <TabsTrigger value="secrets" data-testid="project-home-tab-secrets">
+                  <Trans>Secrets</Trans>
+                </TabsTrigger>
+              </TabsList>
 
-          <QuickCreatePanel {...panelProps} />
+              <TabsContent value="create">{createTab}</TabsContent>
 
-          {/* Project secrets — value-free references + setup wizard. */}
-          {dataCtx.project?.id === projectId && dataCtx.project && (
-            <SecretsCard project={dataCtx.project as unknown as Project} />
+              <TabsContent value="customize" className="flex flex-col gap-6">
+                {project && (
+                  <>
+                    <HomeCustomizationCard project={project} />
+                    <VibeAgentsCard project={project} />
+                  </>
+                )}
+              </TabsContent>
+
+              <TabsContent value="secrets">{project && <SecretsCard project={project} />}</TabsContent>
+            </Tabs>
           )}
         </div>
       </div>

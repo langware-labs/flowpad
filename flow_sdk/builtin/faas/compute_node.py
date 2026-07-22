@@ -53,6 +53,28 @@ _LOCAL_UNAME = "local"
 TERMINAL_TAB_TYPES = frozenset({"shell", "agentic_process"})
 
 
+def build_dir_zip(local_path: str) -> BytesIO:
+    """Zip a local directory tree in memory, entries relative to its root.
+
+    Symlinks are skipped deliberately: following them can pull in files from
+    outside the tree (and, for a link to a directory, recurse). Sorted for a
+    deterministic archive. Sync + CPU-bound — call it via ``asyncio.to_thread``.
+    """
+    import zipfile  # noqa: PLC0415
+
+    root = Path(local_path)
+    if not root.is_dir():
+        raise ValueError(f"copy_folder: not a directory: {local_path}")
+
+    buf = BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for p in sorted(root.rglob("*"), key=str):
+            if p.is_file() and not p.is_symlink():
+                zf.write(p, p.relative_to(root).as_posix())
+    buf.seek(0)
+    return buf
+
+
 class ComputeNode(PtyActionsMixin, FsRecordsActionsMixin, OpsActionsMixin, ScanActionsMixin, AnalyticsActionsMixin, DesktopActionsMixin, Entity):
     _api_visible = True
     type: str = APIField(default=BuiltinEntityType.COMPUTE_NODE.value)
@@ -344,6 +366,40 @@ class ComputeNode(PtyActionsMixin, FsRecordsActionsMixin, OpsActionsMixin, ScanA
 
     async def delete_files(self, remote_paths: str | list[str]) -> None:
         return await self.compute_provider.delete_files(self.verified_node_provider_id, remote_paths)
+
+    async def extract_zip(self, zip_path: str, dest_dir: str) -> None:
+        """Extract a zip already present on this node; raise on a non-zero exit.
+
+        The command shape (and its quoting) belongs to the provider — never
+        interpolate these values into a command by hand.
+        """
+        await self.create_folders(dest_dir)
+        cmd = await self.run_command(self.compute_provider.extract_archive_command(zip_path, dest_dir))
+        await cmd.wait()
+        if cmd.exit_code != 0:
+            raise RuntimeError(
+                f"extract_zip failed (exit {cmd.exit_code}) extracting {zip_path} into {dest_dir}: {cmd.all_stderr}"
+            )
+
+    async def copy_folder(self, local_path: str, remote_path: str) -> None:
+        """Copy a local directory tree INTO this compute node at ``remote_path``.
+
+        The canonical dir transfer: zip the tree, write the archive into the node,
+        extract it, drop the archive. The zip is built off the event loop — for a
+        repo-sized tree the walk + DEFLATE would otherwise stall every other
+        request on this worker.
+        """
+        buf = await asyncio.to_thread(build_dir_zip, local_path)
+        provider = self.compute_provider
+        remote_zip = provider.path_join(provider.get_temp_folder(), f"flowpad-copy-{uuid.uuid4().hex}.zip")
+        await self.write_files([SendFileEntry(remote_path=remote_zip, data=buf)])
+        try:
+            await self.extract_zip(remote_zip, remote_path)
+        finally:
+            try:
+                await self.delete_files([remote_zip])
+            except Exception:
+                logging.debug("copy_folder: failed to clean up %s", remote_zip, exc_info=True)
 
     async def set_env(self, name: str, value: str | None) -> None:
         """Set or remove an environment variable on the compute node.
@@ -894,16 +950,11 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
 
         target_dir = os.path.join(AGENT_MOUNT_FOLDER, leaf)
         if os.path.exists(target_dir):
-            # If caller explicitly chose this name, refuse — they need to pick another.
-            # Otherwise propose the next-free `<leaf>-N` so the dialog can offer it.
-            suggested = leaf
-            n = 2
-            while os.path.exists(os.path.join(AGENT_MOUNT_FOLDER, f"{leaf}-{n}")):
-                n += 1
-            suggested = f"{leaf}-{n}"
+            # If caller explicitly chose this name, refuse — they need to pick
+            # another; offer the next-free `<leaf>-N` so the dialog can suggest it.
             return ApiFailResponse(
                 message=f"'{leaf}' already exists in workspace",
-                data={"suggested_name": suggested, "attempted_name": leaf},
+                data={"suggested_name": self._next_free_leaf(leaf), "attempted_name": leaf},
                 status_code=409,
             )
 
@@ -911,22 +962,76 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         if not ok:
             return ApiFailResponse(message=msg, status_code=400)
 
+        project = await self._materialize_project(target_dir)
+        return ApiSuccessResponse(data={"project": project.model_dump(mode="json")})
+
+    @staticmethod
+    def _next_free_leaf(leaf: str) -> str:
+        """``leaf``, or the next free ``leaf-N``, under AGENT_MOUNT_FOLDER.
+
+        Single owner of the workspace placement/collision policy shared by
+        create-project-from-git (which reports it as a 409 suggestion) and
+        materialize-project (which just takes the free name).
+        """
+        from flow_sdk.config import AGENT_MOUNT_FOLDER  # noqa: PLC0415
+
+        if not os.path.exists(os.path.join(AGENT_MOUNT_FOLDER, leaf)):
+            return leaf
+        n = 2
+        while os.path.exists(os.path.join(AGENT_MOUNT_FOLDER, f"{leaf}-{n}")):
+            n += 1
+        return f"{leaf}-{n}"
+
+    @staticmethod
+    async def _materialize_project(target_dir: str) -> "Project":
+        """Turn an already-populated directory into a desktop Project.
+
+        Independent of HOW ``target_dir`` got its files (git clone here, or a
+        hub-side clone → copy_folder transfer for the setup-git flow): mint the
+        Project, wire it to the desktop, and run one explicit index scan so the
+        tree is fully searchable the moment the caller lands in it (save() only
+        stamps an empty index sentinel). User-initiated → the sanctioned
+        one-shot index, not a banned auto-walk (same call add_context_dir makes).
+        """
+        from flow_sdk.builtin.agentic_process.agentic_process import _index_additional_dir  # noqa: PLC0415
+        from flow_sdk.builtin.project import Project  # noqa: PLC0415
+
         project = Project(name=target_dir)
         await project.save()
         await project.setup_for_desktop()
-
-        # Explicit one-shot scan of the freshly cloned tree so the project is
-        # fully indexed (skills/agents/assets discoverable) the moment the caller
-        # lands in it — save()/setup_for_desktop() only stamp an empty index
-        # sentinel. This is user-initiated (an explicit clone request), so it's
-        # the sanctioned one-shot index, not a banned auto-walk — the same call
-        # Project.add_context_dir makes on a new context folder.
-        from flow_sdk.builtin.agentic_process.agentic_process import (
-            _index_additional_dir,
-        )
-
         await _index_additional_dir(target_dir)
+        return project
 
+    @action.post(action_name="materialize-project")
+    async def _materialize_project_action(self) -> ApiResponse:
+        """Materialize a Project from a directory delivered into this node (e.g.
+        by the hub's setup-git via ``copy_folder`` into a staging path).
+
+        Body: ``{ "staging_path": "<abs source dir>", "name": "<optional>" }``.
+        Moves the staged tree under ``AGENT_MOUNT_FOLDER/<leaf>``, then mints +
+        indexes the Project. Keeps ``AGENT_MOUNT_FOLDER`` placement on the box
+        side so the hub never needs the box's home path. A name clash
+        auto-suffixes (``<leaf>-N``) rather than 409-ing: the launch path has
+        already committed to a desktop, so failing it over a folder name would
+        strand the user.
+        """
+        import shutil  # noqa: PLC0415
+
+        from flow_sdk.config import AGENT_MOUNT_FOLDER  # noqa: PLC0415
+
+        request_info = get_current_request_info()
+        body = await request_info.get_post_data() if request_info else {}
+        staging_path = (body or {}).get("staging_path")
+        if not staging_path or not os.path.isdir(staging_path):
+            return ApiFailResponse(message="staging_path is required and must be an existing directory", status_code=400)
+        leaf = (str((body or {}).get("name") or os.path.basename(staging_path.rstrip("/")))).strip()
+        if not leaf:
+            return ApiFailResponse(message="could not derive a project name", status_code=400)
+
+        target_dir = os.path.join(AGENT_MOUNT_FOLDER, self._next_free_leaf(leaf))
+        os.makedirs(AGENT_MOUNT_FOLDER, exist_ok=True)
+        shutil.move(staging_path, target_dir)
+        project = await self._materialize_project(target_dir)
         return ApiSuccessResponse(data={"project": project.model_dump(mode="json")})
 
     @action.post(action_name="find-local-repo")

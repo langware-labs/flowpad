@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 import re
 import subprocess
 from dataclasses import dataclass
@@ -10,6 +11,32 @@ from typing import Optional, Tuple
 from .file_system import ROOT_FOLDER
 
 logger = logging.getLogger(__name__)
+
+# Env var name the inline git credential helper reads the token from. The helper
+# script (below) references only this NAME; the token value lives solely in the
+# child process env — never in argv (ps-visible) nor in the clone URL on disk.
+_GIT_TOKEN_ENV = "FLOWPAD_GIT_TOKEN"
+# `!f() { … }; f` is executed by git via /bin/sh, so `$FLOWPAD_GIT_TOKEN` resolves
+# from the child env. GitHub accepts any username with a token (use x-access-token).
+_GIT_TOKEN_CREDENTIAL_HELPER = (
+    f'!f() {{ echo username=x-access-token; echo "password=${_GIT_TOKEN_ENV}"; }}; f'
+)
+
+
+def _git_token_auth(token: Optional[str]) -> Tuple[list[str], Optional[dict]]:
+    """Auth for one git invocation: `(extra argv, child env)`.
+
+    The argv installs an inline `credential.helper` that names the env var; the
+    env carries the token itself (never argv, never the on-disk URL) plus
+    GIT_TERMINAL_PROMPT=0 so a bad/absent token fails fast instead of hanging.
+    `([], None)` when there's no token — a plain public clone.
+    """
+    if not token:
+        return [], None
+    return (
+        ["-c", f"credential.helper={_GIT_TOKEN_CREDENTIAL_HELPER}"],
+        {**os.environ, _GIT_TOKEN_ENV: token, "GIT_TERMINAL_PROMPT": "0"},
+    )
 
 
 @dataclass
@@ -188,18 +215,25 @@ async def git_pull(repo_path: str, branch: Optional[str] = None) -> Tuple[bool, 
         return False, f"Git pull error: {e}"
 
 
-async def git_clone(clone_url: str, target_dir: str, branch: Optional[str] = None) -> Tuple[bool, str]:
+async def git_clone(
+    clone_url: str, target_dir: str, branch: Optional[str] = None, token: Optional[str] = None
+) -> Tuple[bool, str]:
     """Clone clone_url into target_dir, optionally checking out branch.
+
+    When ``token`` is given (a GitHub access token), the clone authenticates via
+    an inline credential helper that reads the token from the child env — so
+    private repos work and the token never touches argv or the on-disk URL.
 
     Returns (success, message).
     """
     try:
-        cmd = ["git", "clone", clone_url, target_dir]
+        auth_args, env = _git_token_auth(token)
+        cmd = ["git", *auth_args, "clone", clone_url, target_dir]
         if branch:
             cmd += ["--branch", branch]
 
         def _run(args):
-            return subprocess.run(args, capture_output=True, text=True, timeout=120)
+            return subprocess.run(args, capture_output=True, text=True, timeout=120, env=env)
 
         result = await asyncio.to_thread(_run, cmd)
         if result.returncode == 0:
