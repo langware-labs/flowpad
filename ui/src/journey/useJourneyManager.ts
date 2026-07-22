@@ -108,11 +108,15 @@ export function useJourneyManager(state: UseJourneyResult): JourneyManagerView {
     if (journeyId) void refresh();
   }, { target: journeyId ? targetOf('agentic_flow', journeyId) : 'agentic_flow:none' });
 
-  // ── present the current step (once per cursor) ──
+  // ── present the current step (once per cursor PER RUN) ──
+  // The key includes the JOURNAL id: a restart mints a fresh journal whose
+  // cursor is the same entry node — without the journal in the key, the entry
+  // step would count as "already presented" and Restart would leave the user
+  // wherever they were instead of re-opening the journey's START dock.
   const presentedRef = useRef<string | null>(null);
   useEffect(() => {
     if (!journeyId || !currentStep) return;
-    const key = `${journeyId}:${currentStep.node_id}`;
+    const key = `${journeyId}:${journal?.id ?? 'nojournal'}:${currentStep.node_id}`;
     if (presentedRef.current === key) return;
     presentedRef.current = key;
 
@@ -139,7 +143,7 @@ export function useJourneyManager(state: UseJourneyResult): JourneyManagerView {
       else navigation.highlight(present.highlight);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [journeyId, currentStep?.node_id, assetRef, computeNodeTypeId, projectId]);
+  }, [journeyId, journal?.id, currentStep?.node_id, assetRef, computeNodeTypeId, projectId]);
 
   // ── await: the step's bus target filter ──
   // Route awaits may be authored as a journey-relative `vfs` (or `home: true`)
