@@ -38,8 +38,7 @@ export interface DockLoaderContext {
  * Best-effort — a missing project must not fail a browse landing.
  */
 async function adoptScopeProject(dock: DockPointer): Promise<void> {
-  const scope = dock.scopeFilter;
-  const projectId = scope?.mode === 'project' ? (scope.activeProjectId ?? null) : null;
+  const projectId = dock.scopeProjectId;
   if (!projectId || dataContext.project?.id === projectId) return;
   await loadProject(new TypeId(Project.type, projectId)).catch(() => {});
 }
