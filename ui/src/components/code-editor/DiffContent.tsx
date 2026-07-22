@@ -20,7 +20,9 @@ interface DiffContentProps {
 
 export const DiffContent: React.FC<DiffContentProps> = ({ diffString, sideBySide = true }) => {
   const { resolvedTheme } = useTheme();
-  const monacoRef = useRef<Monaco | null>(null);
+  // `Monaco` is already `any` in @monaco-editor/react's types, so `| null`
+  // added nothing to the union.
+  const monacoRef = useRef<Monaco>(null);
   const editorInstancesRef = useRef<Map<string, editor.IStandaloneDiffEditor>>(new Map());
 
   useEffect(() => {

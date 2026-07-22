@@ -163,50 +163,60 @@
   border-color: hsl(var(--foreground) / 0.4);
 }
 
-/* ── source provenance row ───────────────────────────────────────────────── */
+/* ── source provenance chip ──────────────────────────────────────────────── */
 
 .milkdown-editor-wrapper .interface-card-source {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  flex-wrap: wrap;
   margin-top: 0.75rem;
   padding-top: 0.5rem;
   border-top: 1px solid hsl(var(--border) / 0.6);
 }
 
-.milkdown-editor-wrapper .interface-card-source-label {
-  font-family: monospace;
-  font-size: 11px;
-  color: hsl(var(--muted-foreground));
-  overflow-wrap: anywhere;
-}
-
-.milkdown-editor-wrapper .interface-card-open {
-  flex-shrink: 0;
-  padding: 0 0.625rem;
-  border-radius: 0.25rem;
+/* A tiny pill, inline with the card's own rhythm — the same shape a message
+   attachment chip has. Left-aligned: the provenance and the control that acts
+   on it are one thing, so they sit together rather than at opposite edges. */
+.milkdown-editor-wrapper .interface-card-source-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  max-width: 100%;
+  padding: 0.125rem 0.5rem 0.125rem 0.375rem;
+  border-radius: 999px;
   border: 1px solid hsl(var(--border));
   background: transparent;
-  font-size: 11px;
-  line-height: 1.5rem;
-  font-weight: 500;
-  color: hsl(var(--foreground));
+  color: hsl(var(--muted-foreground));
   cursor: pointer;
-  transition: background-color 120ms ease, border-color 120ms ease;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
 }
 
-.milkdown-editor-wrapper .interface-card-open:hover:not(:disabled) {
+.milkdown-editor-wrapper .interface-card-source-chip:hover:not(:disabled) {
   background-color: hsl(var(--muted));
   border-color: hsl(var(--foreground) / 0.4);
+  color: hsl(var(--foreground));
 }
 
-/* Unresolvable pointer. Still rendered, so the contract shows it *has* a
-   source; the tooltip carries the reason it can't be opened. */
-.milkdown-editor-wrapper .interface-card-open:disabled {
-  opacity: 0.4;
+.milkdown-editor-wrapper .interface-card-source-chip svg {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+}
+
+/* Unresolvable pointer. Still rendered, so the contract shows it HAS a source;
+   the tooltip carries the reason it can't be opened. */
+.milkdown-editor-wrapper .interface-card-source-chip:disabled {
+  opacity: 0.45;
   cursor: not-allowed;
+}
+
+.milkdown-editor-wrapper .interface-card-source-label {
+  min-width: 0;
+  font-family: monospace;
+  font-size: 11px;
+  line-height: 1.375rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ── inline-editable values ──────────────────────────────────────────────── */
