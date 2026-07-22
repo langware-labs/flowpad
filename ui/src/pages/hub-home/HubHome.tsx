@@ -1,6 +1,7 @@
-import { ExecutionEnvironmentStatus, gitOriginFromUrl, gitOriginRepoFullName, PageId, ViewType, WorldViewProjection } from '@sdk';
+import { dataContext, ExecutionEnvironmentStatus, gitOriginFromUrl, gitOriginRepoFullName, PageId, ViewType, WorldViewProjection } from '@sdk';
 import type { GitOrigin } from '@sdk';
 import { useAuth } from '@sdk/react/hooks';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useProjects } from '@src/hooks/use-projects';
 import { useDesktops, type Step, type DesktopDetails, type TemplateLaunch } from '@src/hooks/use-desktops';
@@ -116,6 +117,8 @@ export function HubHome() {
     details,
   } = useDesktops();
   const launchStarted = steps.some((s) => s.status !== 'idle');
+  // Absent on older hubs that don't advertise the flag yet — treat as enabled.
+  const desktopsEnabled = dataContext.bootstrapInfo?.desktops_enabled !== false;
 
   // Inline rename: single-click a desktop name to edit it.
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -238,9 +241,10 @@ export function HubHome() {
                 data-node-id={d.id}
                 data-provider-id={d.node_provider_id}
                 data-status={details[d.id]?.status}
+                title={desktopsEnabled ? undefined : t`Desktops are unavailable: no E2B API key is configured on this hub.`}
                 className={`group flex flex-col gap-1.5 rounded-lg border bg-card px-4 py-3 transition-colors ${statusCardClass(
                   details[d.id]?.status,
-                )}`}
+                )} ${desktopsEnabled ? '' : 'opacity-60'}`}
               >
                 <div className="flex items-center gap-3">
                   <Monitor className="h-4 w-4 shrink-0 text-muted-foreground" />
@@ -267,8 +271,8 @@ export function HubHome() {
                         setDraftName(d.name || '');
                         setEditingId(d.id);
                       }}
-                      className="min-w-0 flex-1 truncate text-left text-sm hover:underline"
-                      title={t`Click to rename`}
+                      className="min-w-0 flex-1 truncate text-left text-sm hover:underline disabled:pointer-events-none"
+                      title={desktopsEnabled ? t`Click to rename` : undefined}
                       data-testid="desktop-name"
                     >
                       {d.name || t`Desktop`}
@@ -279,7 +283,7 @@ export function HubHome() {
                     onClick={() => void openDesktop(d)}
                     aria-label={t`Open desktop`}
                     data-testid="desktop-open"
-                    className="text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100"
+                    className="text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100 disabled:pointer-events-none disabled:opacity-50"
                   >
                     <ExternalLink className="h-4 w-4" />
                   </button>
@@ -289,7 +293,7 @@ export function HubHome() {
                     disabled={deletingId === d.id}
                     aria-label={t`Delete desktop`}
                     data-testid="desktop-delete"
-                    className="text-muted-foreground opacity-0 transition-opacity hover:text-destructive disabled:opacity-50 group-hover:opacity-100"
+                    className="text-muted-foreground opacity-0 transition-opacity hover:text-destructive disabled:pointer-events-none disabled:opacity-50 group-hover:opacity-100"
                   >
                     {deletingId === d.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
                   </button>
@@ -298,17 +302,30 @@ export function HubHome() {
               </div>
             ))}
 
-            {/* Launch a new desktop */}
-            <button
-              type="button"
-              onClick={() => void launch()}
-              disabled={launching}
-              data-testid="new-desktop-button"
-              className="flex items-center justify-center gap-2 rounded-lg border border-dashed border-border bg-card px-4 py-3 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-60"
-            >
-              {launching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-              {launching ? <Trans>Launching…</Trans> : <Trans>New Desktop</Trans>}
-            </button>
+            {/* Launch a new desktop. Disabled (with an explaining tooltip) when
+                the hub has no e2b API key — the launch would just 4xx. */}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                {/* span keeps the tooltip working while the button is disabled */}
+                <span className="flex" tabIndex={desktopsEnabled ? -1 : 0}>
+                  <button
+                    type="button"
+                    onClick={() => void launch()}
+                    disabled={launching || !desktopsEnabled}
+                    data-testid="new-desktop-button"
+                    className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-dashed border-border bg-card px-4 py-3 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:pointer-events-none disabled:opacity-60"
+                  >
+                    {launching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                    {launching ? <Trans>Launching…</Trans> : <Trans>New Desktop</Trans>}
+                  </button>
+                </span>
+              </TooltipTrigger>
+              {!desktopsEnabled && (
+                <TooltipContent>
+                  <Trans>Sandboxes are unavailable.</Trans>
+                </TooltipContent>
+              )}
+            </Tooltip>
           </div>
 
           {/* Live launch progress */}
