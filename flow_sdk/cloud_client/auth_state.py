@@ -88,22 +88,10 @@ async def set_connection_status(
     except Exception:
         pass
     # Unified-bus dual-publish (docs/flow-events.md phase 6): node liveness —
-    # target is THE local compute node (get_local SSOT); topic maps the
-    # transition (connected/disconnected/…).
-    try:
-        from flow_sdk.builtin.compute_node import ComputeNode
-        from flow_sdk.topics import emit_topic
-        from flow_sdk.topics.envelope import target_of
+    # deterministic local-node target, zero DB work (see node_on_topic.py).
+    from flow_sdk.cloud_client.node_on_topic import emit_node_transition
 
-        local = await ComputeNode.get_local()
-        if local is not None:
-            emit_topic(
-                f"node.{str(status.value if hasattr(status, 'value') else status).lower()}",
-                target_of("compute_node", local.id),
-                {"error": error} if error else {},
-            )
-    except Exception:
-        pass
+    emit_node_transition(status.value, error)
 
 
 async def invalidate_hub_login(reason: str) -> None:

@@ -11,18 +11,18 @@ async def test_node_liveness_emits_on_connection_transition(tmp_path):
     from flow_sdk.cloud_client.auth_state import set_connection_status
     from flow_sdk.cloud_client.auth_status import HubConnectionStatus
 
-    local = await ComputeNode.get_local()
     got: list = []
     unsub = event_bus.on("node.*", got.append)
     try:
         await set_connection_status(HubConnectionStatus.CONNECTED)
         await set_connection_status(HubConnectionStatus.DISCONNECTED, error="link lost")
-        await asyncio.sleep(0.02)
     finally:
         unsub()
     topics = [e.topic for e in got]
     assert topics == ["node.connected", "node.disconnected"]
-    assert all(e.target == f"compute_node:{local.id}" for e in got)
+    # Deterministic local-node id — the emitter does NO DB work (and can never
+    # mint a ComputeNode as a liveness side-effect).
+    assert all(e.target == f"compute_node:{ComputeNode._local_id()}" for e in got)
     assert got[1].data == {"error": "link lost"}
 
 
