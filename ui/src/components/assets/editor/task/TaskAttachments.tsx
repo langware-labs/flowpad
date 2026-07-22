@@ -2,6 +2,7 @@ import {
   dataContext,
   Folder,
   formatGitOrigin,
+  fsManager,
   gitOriginCloneUrl,
   launchWizard,
   Project,
@@ -64,15 +65,6 @@ function writeInstalledGitPaths(taskId: string, paths: ReadonlySet<string>): voi
 
 /** Heuristic: an attachment label with no file extension is a folder. */
 const looksLikeFolder = (label: string) => !/\.[A-Za-z0-9]{1,8}$/.test(label);
-
-/** Machine path of an in-app tree drag (`fs-file:<typeid>:<rel>` rows). */
-function machinePathFromDrag(typeIdStr: string, relPath: string): string | null {
-  try {
-    return VFSPath.fromTypeId(new TypeId(typeIdStr), relPath).machinePath || null;
-  } catch {
-    return null;
-  }
-}
 
 /**
  * The task's Attachments section (replaces the old Plan/spec.md block): the
@@ -183,6 +175,39 @@ export function TaskAttachments({ task, save, readOnly = false, heading }: TaskA
     [attachments, persist, resolveGitOrigin, gitDirFor],
   );
 
+  /**
+   * In-app tree drag: the row names its SOURCE entity + relative path, so copy
+   * the BYTES into this task's own storage (download → upload, both existing fs
+   * calls — no new endpoint). That copy is what makes the file reachable by
+   * everyone: an upload on a shared task reflects to the hub automatically, and
+   * a member fills their local cache from there on first open. The sender's
+   * machine path never travels, because it means nothing on another disk.
+   */
+  const addFromEntityVfs = useCallback(
+    async (sourceTypeId: TypeId, relPaths: string[]) => {
+      const existingKeys = new Set(attachments.map(attachmentKey));
+      const added: Attachment[] = [];
+      for (const rel of relPaths) {
+        const name = rel.split('/').pop() || rel;
+        if (!name || existingKeys.has(name)) continue;
+        try {
+          const blob = await fsManager.download(sourceTypeId, rel, { asBlob: true });
+          await fsManager.uploadFromBlob(task.typeId, '/', blob as Blob, name);
+        } catch (e) {
+          notify.error({
+            title: `Could not attach ${name}`,
+            message: e instanceof Error ? e.message : 'Copy failed.',
+          });
+          continue;
+        }
+        existingKeys.add(name);
+        added.push({ vfs: name, label: name });
+      }
+      if (added.length) persist([...attachments, ...added]);
+    },
+    [attachments, persist, task.typeId],
+  );
+
   const removeEntry = useCallback(
     (key: string) => persist(attachments.filter((a) => attachmentKey(a) !== key)),
     [attachments, persist],
@@ -236,11 +261,24 @@ export function TaskAttachments({ task, save, readOnly = false, heading }: TaskA
         await pullGitFolder(a);
         return;
       }
-      // Non-git entry: open its content by the (local) path. A folder browses;
-      // otherwise fall back to the label heuristic.
+      // Bytes stored ON the task: touch the file first so a member's machine
+      // fills its cache from the hub (the local download falls back there on a
+      // miss), then open the resolved local path.
+      if (a.vfs) {
+        try {
+          await fsManager.download(task.typeId, a.vfs, { asBlob: true });
+        } catch {
+          notify.error({ title: `Could not open ${a.label}`, message: 'File is not available yet.' });
+          return;
+        }
+        const local = VFSPath.fromTypeId(task.typeId, a.vfs).machinePath;
+        if (local) openPathContent(local, false);
+        return;
+      }
+      // Legacy entry (a bare machine path): open in place on this machine only.
       if (a.path) openPathContent(absolutePath(a.path), looksLikeFolder(a.label));
     },
-    [installedGitPaths, absolutePath, openPathContent, task.id, gitDirs, navigation, pullGitFolder],
+    [installedGitPaths, absolutePath, openPathContent, task.id, task.typeId, gitDirs, navigation, pullGitFolder],
   );
 
   const pickAndAdd = useCallback(
@@ -267,10 +305,9 @@ export function TaskAttachments({ task, save, readOnly = false, heading }: TaskA
         const parts = dragData.id.split(':');
         const typeIdStr = parts.length >= 3 ? parts[1] : null;
         const entries = dragData.items?.length ? dragData.items.map((it) => it.relPath) : [dragData.relPath];
-        const paths = typeIdStr
-          ? entries.map((rel) => machinePathFromDrag(typeIdStr, rel)).filter((p): p is string => !!p)
-          : [];
-        if (paths.length) void addPaths(paths);
+        // Copy the bytes onto the task rather than recording the sender's path —
+        // see addFromEntityVfs.
+        if (typeIdStr && entries.length) void addFromEntityVfs(new TypeId(typeIdStr), entries);
         return;
       }
 
