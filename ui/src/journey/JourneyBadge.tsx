@@ -2,6 +2,7 @@ import { Compass } from 'lucide-react';
 import { useLingui } from '@lingui/react/macro';
 import { cn } from '@src/lib/utils';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { clearJourneyDismissed, markJourneyDismissed } from './journey-dismissed';
 import { useActiveJourneyId } from './use-active-journey-id';
 import { useActiveJournal } from './use-journey';
 
@@ -30,11 +31,22 @@ export function JourneyBadge() {
   return (
     <button
       type="button"
-      onClick={() => (shown ? navigation.closeJourney() : navigation.showJourney(journeyId))}
+      onClick={() => {
+        // Dismissed bookkeeping lives HERE (journey layer), not in the nav
+        // core: the flag's one consumer is the journey auto-launch redirect.
+        if (shown) {
+          markJourneyDismissed();
+          navigation.closeJourney();
+        } else {
+          clearJourneyDismissed();
+          navigation.showJourney(journeyId);
+        }
+      }}
       title={label}
       aria-label={label}
       aria-pressed={shown}
       data-testid="journey-badge"
+      data-minimize-anchor="journey-badge"
       className={cn(
         'relative flex h-8 w-8 items-center justify-center rounded-full',
         'text-white ring-1 transition-transform hover:scale-105',
