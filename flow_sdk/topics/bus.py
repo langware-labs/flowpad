@@ -81,29 +81,41 @@ def _log_task_exception(task: "asyncio.Task[Any]") -> None:
 
 
 class TopicEventBus:
-    def __init__(self) -> None:
+    """``tier`` is the origin this bus stamps on emits (the tier default lives
+    at the bus seam, never on the envelope model)."""
+
+    def __init__(self, tier: str = "local_server") -> None:
+        self._tier = tier
         self._subs: dict[object, _Subscription] = {}
+
+    @staticmethod
+    def _sub_matches(sub: _Subscription, topic_segments: list[str], target: str) -> bool:
+        """The shared per-subscription predicate (pattern + target filter);
+        the scope filter needs the built envelope, so it stays at the caller."""
+        if sub.pattern != "*" and not _segments_match(sub.segments, topic_segments):
+            return False
+        if sub.target is not None and not target_matches(sub.target, target):
+            return False
+        return True
 
     def emit(self, topic: str, target: str, data: dict | None = None,
              ctx: dict | None = None) -> Optional[FlowEvent]:
-        """Fire-and-forget. Mints id/timestamp, defaults ``ctx.origin`` to
-        ``local_server`` (this is the backend tier). Returns the envelope when
+        """Fire-and-forget. Mints id/timestamp and stamps this bus's TIER as
+        ``ctx.origin`` unless the caller sets one. Returns the envelope when
         at least one subscriber matched, else None."""
         if not self._subs:
             return None
         event: Optional[FlowEvent] = None  # built lazily on the first match
         topic_segments = topic.split(".")
         for sub in list(self._subs.values()):
-            if sub.pattern != "*" and not _segments_match(sub.segments, topic_segments):
-                continue
-            if sub.target is not None and not target_matches(sub.target, target):
+            if not self._sub_matches(sub, topic_segments, target):
                 continue
             if event is None:
                 event = FlowEvent(topic=topic, target=target, data=data or {},
-                                  ctx=FlowEventCtx(**(ctx or {})))
+                                  ctx=FlowEventCtx(**{"origin": self._tier, **(ctx or {})}))
             if sub.scope and not any(s in event.ctx.scope for s in sub.scope):
                 continue
-            self._dispatch(sub, event, topic, target)
+            self._dispatch(sub, event)
         return event
 
     def deliver(self, event: FlowEvent) -> None:
@@ -111,16 +123,13 @@ class TopicEventBus:
         never rewritten; the caller stamps ``origin`` per the arriving hop)."""
         topic_segments = event.topic.split(".")
         for sub in list(self._subs.values()):
-            if sub.pattern != "*" and not _segments_match(sub.segments, topic_segments):
-                continue
-            if sub.target is not None and not target_matches(sub.target, event.target):
+            if not self._sub_matches(sub, topic_segments, event.target):
                 continue
             if sub.scope and not any(s in event.ctx.scope for s in sub.scope):
                 continue
-            self._dispatch(sub, event, event.topic, event.target)
+            self._dispatch(sub, event)
 
-    def _dispatch(self, sub: _Subscription, event: FlowEvent,
-                  topic: str, target: str) -> None:
+    def _dispatch(self, sub: _Subscription, event: FlowEvent) -> None:
         try:
             result = sub.handler(event)
             if inspect.iscoroutine(result):
@@ -128,7 +137,8 @@ class TopicEventBus:
                 # loop tasks whose failures are logged, never raised here.
                 asyncio.ensure_future(result).add_done_callback(_log_task_exception)
         except Exception:
-            logger.exception("[EventBus] handler failed topic=%s target=%s", topic, target)
+            logger.exception("[EventBus] handler failed topic=%s target=%s",
+                             event.topic, event.target)
 
     def on(self, pattern: str, handler: FlowEventHandler, *,
            target: Optional[str] = None,

@@ -390,13 +390,14 @@ class FlowManager:
         only. Best-effort: the engine never fails on bus trouble."""
         try:
             from flow_sdk.topics import emit_topic
+            from flow_sdk.topics.envelope import target_of
 
             emit_topic(
                 f"flow.{subtopic}",
-                f"agentic_flow:{run.flow.flow_id}",
+                target_of("agentic_flow", run.flow.flow_id),
                 {"run_id": run.id, **data},
-                ctx={"scope": [f"agentic_flow_run:{run.id}",
-                               f"agentic_flow:{run.flow.flow_id}"]},
+                ctx={"scope": [target_of("agentic_flow_run", run.id),
+                               target_of("agentic_flow", run.flow.flow_id)]},
             )
         except Exception:
             logger.debug("FlowManager: flow.%s emission failed", subtopic, exc_info=True)

@@ -13,5 +13,15 @@ export function useOnTopic(pattern: string, handler: FlowEventHandler, filters?:
   handlerRef.current = handler;
 
   const target = filters?.target;
-  useEffect(() => EventBus.on(pattern, (event) => handlerRef.current(event), target !== undefined ? { target } : undefined), [pattern, target]);
+  // Scope re-keys on VALUE (joined), not array identity — callers pass fresh
+  // literals every render and must not churn the subscription.
+  const scopeKey = filters?.scope?.join('\u0000');
+  useEffect(
+    () =>
+      EventBus.on(pattern, (event) => handlerRef.current(event), {
+        ...(target !== undefined ? { target } : {}),
+        ...(scopeKey !== undefined ? { scope: scopeKey.split('\u0000') } : {}),
+      }),
+    [pattern, target, scopeKey],
+  );
 }

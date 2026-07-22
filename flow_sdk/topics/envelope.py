@@ -20,6 +20,16 @@ from flow_sdk.fs_store.identifier import mint_uuid
 TopicOrigin = Literal["app", "local_server", "hub", "sandbox"]
 
 
+def target_of(entity_type: str, entity_id: str) -> str:
+    """THE owner of the normative colon target form (``type:id``).
+
+    Deliberately NOT ``TypeId`` serialization — TypeId renders with a DASH
+    (``type-id``); the bus grammar is colon-separated (docs/topics.md). Every
+    emitter builds targets/scope entries through here so the two forms can
+    never silently drift."""
+    return f"{entity_type}:{entity_id}"
+
+
 class FlowEventCtx(BaseModel):
     """Correlation only — enriches, never gates. Routing NEVER reads ctx
     (except the optional scope delivery filter)."""
@@ -29,8 +39,11 @@ class FlowEventCtx(BaseModel):
     actor: Optional[str] = None
     # Containment chain, innermost-first, entries in target form.
     scope: list[str] = Field(default_factory=list)
-    # Which tier emitted — required; emit() fills the tier default.
-    origin: TopicOrigin = "local_server"
+    # Which tier emitted — REQUIRED on the wire (mirror of the TS contract:
+    # no model default). The BUS stamps its tier default at emit() — the
+    # envelope model stays tier-agnostic (a worker/sandbox flow_sdk must not
+    # silently self-label local_server).
+    origin: TopicOrigin
 
 
 class FlowEvent(BaseModel):
