@@ -290,13 +290,22 @@ export function TaskAttachments({ task, save, readOnly = false, heading }: TaskA
       // miss), then open the resolved local path.
       if (a.vfs) {
         try {
+          // Touch it first so a member's machine fills its cache from the hub,
+          // then ask the SERVER where the bytes actually are — only it can
+          // resolve an entity's storage root (embedded storage lives under a
+          // temp dir), so `local_path` is the one trustworthy answer. Same
+          // contract as a message attachment's `local_path`.
           await fsManager.download(task.typeId, a.vfs, { asBlob: true });
-        } catch {
-          notify.error({ title: `Could not open ${a.label}`, message: 'File is not available yet.' });
-          return;
+          const { items } = await fsManager.listDirectory(task.typeId, '/');
+          const local = items.find((i) => i.display_name === a.vfs)?.local_path;
+          if (!local) throw new Error('file not on local disk');
+          openPathContent(local, false);
+        } catch (e) {
+          notify.error({
+            title: `Could not open ${a.label}`,
+            message: e instanceof Error ? e.message : 'File is not available yet.',
+          });
         }
-        const local = VFSPath.fromTypeId(task.typeId, a.vfs).machinePath;
-        if (local) openPathContent(local, false);
         return;
       }
       // Legacy entry (a bare machine path): open in place on this machine only.
