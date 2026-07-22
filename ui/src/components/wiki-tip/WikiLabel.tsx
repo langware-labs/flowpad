@@ -5,6 +5,7 @@ import { Button } from '@src/components/ui/button';
 import { Layout } from '@sdk';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
+import { isHubOnly } from '@src/navigation/hub-runtime';
 import { openWikiModal } from './wiki-modal';
 
 interface WikiLabelProps {
@@ -27,13 +28,18 @@ interface WikiLabelProps {
  */
 export function WikiLabel({ wikiword, label, fragment }: WikiLabelProps) {
   const { navigation } = useDockNavigation();
-  const openWiki = useCallback(
-    () => navigation.openDock(DockPointer.forWiki(wikiword, Layout.DOCK, undefined, fragment)),
-    [navigation, wikiword, fragment],
-  );
   const previewWiki = useCallback(
     () => openWikiModal(wikiword, undefined, fragment),
     [wikiword, fragment],
+  );
+  // The hub page has no /dock/assets/wiki route (it redirects home), so hub
+  // mode opens every wiki surface in the modal instead.
+  const openWiki = useCallback(
+    () =>
+      isHubOnly()
+        ? openWikiModal(wikiword, undefined, fragment)
+        : navigation.openDock(DockPointer.forWiki(wikiword, Layout.DOCK, undefined, fragment)),
+    [navigation, wikiword, fragment],
   );
 
   return (
