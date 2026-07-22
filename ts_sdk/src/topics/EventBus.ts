@@ -1,4 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
+// Matching lives in the shared dot-taxonomy grammar (./grammar.ts), which the
+// SDK barrel also re-exports (`topicMatches` et al. keep their import paths).
+import { segmentsMatch } from './grammar';
 
 /**
  * The unified event bus ("topics" system) — see docs/topics.md for the agreed
@@ -57,25 +60,6 @@ interface Subscription {
   filters?: TopicFilters;
 }
 
-/** Segment-wise match against a pre-split pattern (see {@link topicMatches}). */
-function segmentsMatch(p: string[], t: string[]): boolean {
-  for (let i = 0; i < p.length; i++) {
-    if (p[i] === '*' && i === p.length - 1) return t.length >= i + 1;
-    if (i >= t.length) return false;
-    if (p[i] !== '*' && p[i] !== t[i]) return false;
-  }
-  return t.length === p.length;
-}
-
-/**
- * Segment-wise glob over the dot path. `*` matches exactly one segment; a
- * TRAILING `*` matches any remaining suffix (so `app.*` matches
- * `app.route.loaded`). No partial-segment matching — `app.rou*` is not a thing.
- */
-export function topicMatches(pattern: string, topic: string): boolean {
-  if (pattern === '*') return true;
-  return segmentsMatch(pattern.split('.'), topic.split('.'));
-}
 
 /**
  * THE owner of the normative colon target form (`type:id`). Deliberately NOT

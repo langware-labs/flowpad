@@ -15,8 +15,10 @@ import { type ScopeFilter } from '@src/lib/scope-filter';
 import type { AssetFilter } from '@src/components/assets/assetFilter';
 import type { Browseable, BrowseableRoot, ToolbarAction } from '@src/components/browseable-tree/types';
 import { showDeleteAssetModal } from '@src/components/assets/delete-asset-modal';
+import { CountChip } from '@src/components/browseable-tree/CountChip';
 import { refreshNode } from '@src/components/browseable-tree/refresh-store';
 import { skillCreateActions, skillFolderListChildren } from './skillFolder';
+import { topicListChildren } from './topicRoot';
 import { config } from '@sdk';
 
 export interface AssetTypeRootDeps {
@@ -282,11 +284,7 @@ export const AssetTypeCountsContext = React.createContext<Map<string, number> | 
 export function AssetTypeCountBadge({ typeName }: { typeName: string }) {
   const total = React.useContext(AssetTypeCountsContext)?.get(typeName) ?? 0;
   if (total === 0) return null;
-  return (
-    <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-      {total > 999 ? '999+' : total}
-    </span>
-  );
+  return <CountChip count={total} />;
 }
 
 /**
@@ -345,6 +343,11 @@ export function assetTypeRoot(type: AssetTypeInfo, deps: AssetTypeRootDeps): Bro
     deps.onDeleteComplete?.(type.type_name);
   };
   const listChildren = async (): Promise<Browseable[]> => {
+    // Topics are row-only (never in the search index): the gardening adapter
+    // merges blessed Topic entities with bus-observed anonymous names instead.
+    if (type.type_name === 'topic') {
+      return topicListChildren(rootId);
+    }
     const results = await fetchAssetsOfType(type.type_name, filter, limit);
     // Tasks nest: a group/parent task's member (child) tasks render indented
     // under it (children first, then the parent's folder files). See buildTaskTree.

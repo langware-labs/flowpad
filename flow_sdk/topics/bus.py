@@ -20,45 +20,28 @@ from __future__ import annotations
 import asyncio
 import inspect
 import logging
+import time
+from datetime import datetime, timezone
 from typing import Any, Callable, Optional
 
 from flow_sdk.topics.envelope import FlowEvent, FlowEventCtx
+from flow_sdk.topics.grammar import (
+    segments_match as _segments_match,
+    topic_matches,
+    topic_pattern_problem,
+)
 
 logger = logging.getLogger(__name__)
 
 FlowEventHandler = Callable[[FlowEvent], Any]
 
 
-def _segments_match(p: list[str], t: list[str]) -> bool:
-    for i, seg in enumerate(p):
-        if seg == "*" and i == len(p) - 1:
-            return len(t) >= i + 1
-        if i >= len(t):
-            return False
-        if seg != "*" and seg != t[i]:
-            return False
-    return len(t) == len(p)
-
-
-def topic_matches(pattern: str, topic: str) -> bool:
-    """Segment-wise glob over the dot path. ``*`` matches exactly one segment;
-    a TRAILING ``*`` matches any remaining suffix (``app.*`` matches
-    ``app.route.loaded``). No partial-segment matching."""
-    if pattern == "*":
-        return True
-    return _segments_match(pattern.split("."), topic.split("."))
-
-
 def validate_bus_pattern(pattern: "str | None") -> Optional[str]:
     """THE bus-pattern grammar gate (shared by TOPIC triggers and flow
-    subscriptions): a pointed problem string, or None when valid."""
-    stripped = (pattern or "").strip()
-    if not stripped:
-        return "a non-empty topic pattern is required"
-    if stripped == "*":
-        return ('pattern "*" would fire on EVERY event in the system — '
-                'subscribe to a family (e.g. "entity.*", "flow.*") instead')
-    return None
+    subscriptions): a pointed problem string, or None when valid. Delegates to
+    the shared grammar (``topics/grammar.py``), which also enforces per-segment
+    validity — matching (``topic_matches``) itself never gates."""
+    return topic_pattern_problem(pattern)
 
 
 class FixedWindowStormGuard:
@@ -123,6 +106,12 @@ def _log_task_exception(task: "asyncio.Task[Any]") -> None:
         logger.error("[EventBus] async handler failed", exc_info=exc)
 
 
+# Observed-topics ring cap. Small and in-memory only: observation is a debug/
+# gardening aid (the blessed-vs-anonymous diff), never a catalog — entities
+# are minted deliberately, NEVER from observation.
+_OBSERVED_CAP = 512
+
+
 class TopicEventBus:
     """``tier`` is the origin this bus stamps on emits (the tier default lives
     at the bus seam, never on the envelope model)."""
@@ -130,6 +119,38 @@ class TopicEventBus:
     def __init__(self, tier: str = "local_server") -> None:
         self._tier = tier
         self._subs: dict[object, _Subscription] = {}
+        # name → {count, first_ts, last_ts, last_target}; insertion-ordered,
+        # drop-oldest at the cap. Dict pokes only — nothing else on the hot
+        # path (no locks, no logging, no persistence).
+        self._observed: "dict[str, dict[str, Any]]" = {}
+
+    def _observe(self, topic: str, target: str) -> None:
+        # Hot path: dict pokes + one time.time() C call only. Timestamps stay
+        # epoch floats here; ISO formatting is deferred to observed_topics(),
+        # which only the debug endpoint reads.
+        stat = self._observed.get(topic)
+        now = time.time()
+        if stat is None:
+            if len(self._observed) >= _OBSERVED_CAP:
+                self._observed.pop(next(iter(self._observed)))
+            self._observed[topic] = {
+                "count": 1, "first_ts": now, "last_ts": now, "last_target": target,
+            }
+            return
+        stat["count"] += 1
+        stat["last_ts"] = now
+        stat["last_target"] = target
+
+    def observed_topics(self) -> dict[str, dict[str, Any]]:
+        """Snapshot of topics seen on this bus since boot (bounded, in-memory).
+        Formats the stored epoch floats to ISO-8601 here — the rare read path."""
+        def _iso(epoch: float) -> str:
+            return datetime.fromtimestamp(epoch, tz=timezone.utc).isoformat()
+
+        return {
+            name: {**stat, "first_ts": _iso(stat["first_ts"]), "last_ts": _iso(stat["last_ts"])}
+            for name, stat in self._observed.items()
+        }
 
     @staticmethod
     def _sub_matches(sub: _Subscription, topic_segments: list[str], target: str) -> bool:
@@ -146,6 +167,9 @@ class TopicEventBus:
         """Fire-and-forget. Mints id/timestamp and stamps this bus's TIER as
         ``ctx.origin`` unless the caller sets one. Returns the envelope when
         at least one subscriber matched, else None."""
+        # Observation happens even with zero subscribers — seeing topics nobody
+        # listens to yet is the whole point of the observed map.
+        self._observe(topic, target)
         if not self._subs:
             return None
         event: Optional[FlowEvent] = None  # built lazily on the first match
