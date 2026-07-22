@@ -20,6 +20,7 @@ import { dockPointerForFile } from './local-file-pointer';
 import { FileOptions, TabOptions } from './types';
 import { preserveWindowLayout, stripDockPortion } from './url-builder';
 import { allScope, projectScope } from '@src/lib/scope-filter';
+import { clearJourneyDismissed, markJourneyDismissed } from '@src/journey/journey-dismissed';
 
 // Always returns a record (possibly empty) so consumers can read keys without
 // optional-chaining. An earlier version returned `undefined` for empty input,
@@ -177,6 +178,7 @@ export class NavigationActions {
    * stays topmost until {@link closeJourney}. URL-carried ⇒ reload-safe.
    */
   showJourney(journeyId: string): void {
+    clearJourneyDismissed();
     if (this.currentDock) {
       this.openDock(this.currentDock.withJourney(journeyId));
       return;
@@ -194,6 +196,10 @@ export class NavigationActions {
    */
   closeJourney(): void {
     if (!NavigationActions.currentJourneyId()) return;
+    // Remember the explicit close for this browser session, or the auto-launch
+    // load-redirect re-enters the journey on the very next home load — making
+    // the X look like it did nothing. Reopening (showJourney) clears it.
+    markJourneyDismissed();
     const dock = this.currentDock;
     if (!dock?.journeyId) {
       // Home root (or any non-dock URL) carrying the param: drop just that key.

@@ -1,6 +1,7 @@
 import apiClient from '@sdk/client';
 import { redirect } from 'react-router';
 import { JOURNEY_PARAM } from '@src/navigation/DockPointer';
+import { isJourneyDismissed } from './journey-dismissed';
 import { registerLoadRedirect } from '@src/routes/loaders/load-redirects';
 
 /**
@@ -14,6 +15,7 @@ import { registerLoadRedirect } from '@src/routes/loaders/load-redirects';
 async function autoLaunchRedirect(request: Request): Promise<Response | null> {
   const url = new URL(request.url);
   if (url.searchParams.get(JOURNEY_PARAM)) return null; // already showing one
+  if (isJourneyDismissed()) return null; // user closed it this session — badge is the way back
 
   const { journey_id: journeyId } = await apiClient.get<{ journey_id: string | null }>(
     '/api/v1/journeys/auto-launch',
