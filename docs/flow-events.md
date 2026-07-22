@@ -161,6 +161,39 @@ One chokepoint edit in `DBEntity.save`/`notify_updated`/`delete`: emit
 `from_entity` — dual-published; the legacy `data_op_msg` invalidation is
 untouched. Biggest coverage per line changed; what phases 4–5 subscribe to.
 
+**Detail (planned 2026-07-22):**
+
+*The chokepoints are already narrow: every entity write mints a
+`DataOpMessage` that flows through exactly two funnels —
+`DBEntity._notify_observers` (db_entity.py:140 — CREATE/UPDATE from `save`,
+line 421/429) and `DBEntity.add_entity_op_notification` (line 434 — the
+DELETE paths, 445/874). One adapter hooks both.*
+
+- *Adapter `flow_sdk/db/entity.on_topic.py`* (the naming rule's deletable
+  bridge): `emit_entity_topic(msg: DataOpMessage)` maps
+  `OperationType.CREATE/UPDATE/DELETE` → `entity.created/updated/deleted`,
+  `target` = colon form of `msg.to_entity`, `ctx.scope = [from_entity]` when
+  set. **Lean data on purpose**: `data = {"entity_type", "id"}` only — never
+  the serialized row (hot path; law 5 says subscribers fetch what they need;
+  no payload values leak into the recorder later). Wired with one guarded
+  call in each funnel (`try/except`, never fails a save).
+- *Backend-side only*: `entity.*` is deliberately NOT added to
+  `FORWARDED_TOPIC_PATTERNS` — forwarding every entity write would storm the
+  WS; the app keeps `data_op_msg` until a frontend consumer wants the topic
+  form (phase 8). The bus's zero-subscriber fast path makes the emission
+  ~free until phase 4 subscribes.
+- *Cycle note (documented on the adapter)*: a subscriber that writes entities
+  re-triggers `entity.updated` — subscribers must be idempotent and never
+  unconditionally write their own trigger entity; the real storm guard is
+  phase 4's trigger machinery.
+- *Tests (`tests/unit/test_entity_topics.py`)*: save → `entity.created` with
+  colon target; second save/update → `entity.updated`; delete →
+  `entity.deleted`; `save(owner)` → scope carries the owner typeid; data is
+  lean (no row fields). Regression: existing data_op WS behavior untouched.
+- *Acceptance*: a backend bus subscription observes `entity.created` for a
+  `UsageReport.save()` — the exact scenario phase 4's TOPIC trigger will
+  subscribe to.
+
 ### Log
 
 ## Phase 4 — Triggers become subscriptions  ☐
