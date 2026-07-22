@@ -24,6 +24,7 @@ import { usePresenceReporter } from '@src/hooks/use-presence-reporter';
 import { useUiCommandListener } from '@src/hooks/use-ui-command-listener';
 import { Spotlight, useSpotlightHotkey } from '@src/components/spotlight';
 import { JourneyController } from '@src/journey/JourneyController';
+import { IncomingDeepLink } from '@src/components/task-receive/IncomingDeepLink';
 import { UiTopicEmitter } from '@src/topics/ui.onTopic';
 import { TopicHighlightObserver } from '@src/topics/highlight.onTopic';
 import { useDockViewModeOverrideSync } from '@src/contexts/view-mode-context';
@@ -112,6 +113,9 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
         <UiTopicEmitter />
         <TopicHighlightObserver />
         <JourneyController />
+        {/* `?action=open&…` — must be app-level: the app has several homes and a
+            box opens on whichever the view mode picks. */}
+        <IncomingDeepLink />
         <ActivityProgressModalRoot />
         <WikiModalRoot />
         <GlobalEvents />
