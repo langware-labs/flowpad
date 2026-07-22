@@ -17,7 +17,6 @@ import {
   OAuthMessage,
   PtyOutputMessage,
   RestApiMessage,
-  TranscriptMessage,
 } from '../websocket';
 import { FlowData, FlowDataSource } from '../flow_processing';
 import { getUtmParams } from './auth';
