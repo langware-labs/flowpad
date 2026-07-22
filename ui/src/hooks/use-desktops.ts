@@ -156,6 +156,37 @@ export interface GitSetup {
   name: string;
 }
 
+/**
+ * The box-side alternative to {@link GitSetup}: instead of the hub cloning and
+ * copying the tree in, we open the desktop ON its own clone landing
+ * (`?action=open&setup_git=1&git_origin=…`) and let the box run
+ * `create-project-from-git` itself.
+ *
+ * Why both: the hub path is the only one that can reach a PRIVATE repo (the
+ * GitHub token lives hub-side), but it needs `materialize-project` in the box —
+ * an action newer than the current E2B workspace image. The box path needs
+ * nothing new on either side and works today, for public repos.
+ */
+function withGitSetupLanding(url: string, git: GitSetup): string {
+  const landing = new URLSearchParams({
+    action: 'open',
+    setup_git: '1',
+    git_origin: JSON.stringify(git.gitOrigin),
+    title: git.name,
+    sender_name: 'FlowPad',
+  });
+  const u = new URL(url);
+  // A gated node's URL is the cookie-gate EXCHANGE, not the app: its own query
+  // is consumed by the gate, which then 302s to `next`. So the landing has to
+  // ride `next` — a single-slash path (all `_safe_next` allows), query included.
+  if (u.searchParams.has('next')) {
+    u.searchParams.set('next', `/?${landing.toString()}`);
+    return u.toString();
+  }
+  landing.forEach((v, k) => u.searchParams.set(k, v));
+  return u.toString();
+}
+
 export function useDesktops() {
   const { user } = useAuth();
 
@@ -207,9 +238,10 @@ export function useDesktops() {
     setSteps((prev) => prev.map((s) => (s.id === id ? { ...s, ...next } : s)));
   }, []);
 
-  const launch = useCallback(async (opts?: { name?: string; gitSetup?: GitSetup }) => {
+  const launch = useCallback(async (opts?: { name?: string; gitSetup?: GitSetup; gitLanding?: GitSetup }) => {
     if (launchingRef.current) return;
     const gitSetup = opts?.gitSetup;
+    const gitLanding = opts?.gitLanding;
     // Prefer the workspace scope (hub does workspace.add_child); fall back to
     // owner scope ([]) when hub mode exposes no workspace — the node is still
     // owned by the caller and listed by the role-scoped query.
@@ -291,7 +323,12 @@ export function useDesktops() {
         });
       }
 
-      const url = await run('open', () => resolveHostUrl(node.id));
+      const url = await run('open', async () => {
+        const host = await resolveHostUrl(node.id);
+        // The box clones the repo itself on its landing (public repos) — the
+        // deep link rides the URL we were opening anyway.
+        return gitLanding ? withGitSetupLanding(host, gitLanding) : host;
+      });
 
       // The just-launched sandbox is up — seed its status so the list effect
       // doesn't re-probe it.
