@@ -1,0 +1,172 @@
+{
+  "version": 1,
+  "id": "5eaa7e57-1111-4222-8333-444455556666",
+  "name": "Getting started",
+  "description": "Build your first vibe agent: a shopping master that finds the best deals \u2014 created, instructed, and put to work, step by step.",
+  "enabled": true,
+  "auto_launch": true,
+  "config": {
+    "deadline_s": 2592000,
+    "retention_runs": 3
+  },
+  "nodes": [
+    {
+      "id": "step1",
+      "node_type": "guided_step",
+      "name": "Open your project home",
+      "node_data": {
+        "status_line": "Click the highlighted Project home entry.",
+        "present": {
+          "dock": {
+            "kind": "asset_list",
+            "name": "agent"
+          },
+          "highlight": "ProjectHome"
+        },
+        "await": {
+          "topic": "app.route.loaded",
+          "target": "dock:assets/project-home"
+        }
+      }
+    },
+    {
+      "id": "step2",
+      "node_type": "guided_step",
+      "name": "Create a sub agent",
+      "node_data": {
+        "group": "Create your vibe agent",
+        "status_line": "Click the highlighted Sub agent tile and name it \"shopping-master\".",
+        "present": {
+          "dock": {
+            "kind": "home"
+          },
+          "highlight": "Sub agents"
+        },
+        "await": {
+          "topic": "app.ui.button.clicked",
+          "target": "Sub agents"
+        }
+      }
+    },
+    {
+      "id": "step3",
+      "node_type": "guided_step",
+      "name": "Write the instructions",
+      "node_data": {
+        "group": "Create your vibe agent",
+        "status_line": "Write: \"You are shopping master, find the best deal, always show product name and price\" \u2014 then click the Use agent button.",
+        "present": {
+          "highlight": "UseAgent"
+        },
+        "await": {
+          "topic": "app.ui.button.clicked",
+          "target": "UseAgent"
+        }
+      }
+    },
+    {
+      "id": "step4",
+      "node_type": "guided_step",
+      "name": "Use your agent",
+      "node_data": {
+        "group": "Use your vibe agent",
+        "status_line": "Your agent is loading into a live vibe process\u2026",
+        "present": {},
+        "await": {
+          "topic": "app.entity.created",
+          "target": "agentic_process:*",
+          "matchEvent": {
+            "process_type": "chat"
+          }
+        }
+      }
+    },
+    {
+      "id": "step5",
+      "node_type": "guided_step",
+      "name": "Ask it to find a smartphone",
+      "node_data": {
+        "group": "Use your vibe agent",
+        "status_line": "Ask your shopping master to search for a smartphone.",
+        "present": {},
+        "await": {
+          "topic": "app.entity.updated",
+          "target": "agentic_process:*",
+          "matchEvent": {
+            "status": "running"
+          }
+        }
+      }
+    },
+    {
+      "id": "congrats",
+      "node_type": "guided_step",
+      "name": "You're all set",
+      "node_data": {
+        "status_line": "That's it \u2014 you're ready to go! \ud83c\udf89",
+        "present": {
+          "dock": {
+            "kind": "asset_editor",
+            "vfs": "congrats.html"
+          }
+        },
+        "await": {
+          "topic": "app.page.signal",
+          "target": "finish"
+        }
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "from": {
+        "node": "step1",
+        "event": "done"
+      },
+      "to": {
+        "node": "step2"
+      }
+    },
+    {
+      "id": "e2",
+      "from": {
+        "node": "step2",
+        "event": "done"
+      },
+      "to": {
+        "node": "step3"
+      }
+    },
+    {
+      "id": "e3",
+      "from": {
+        "node": "step3",
+        "event": "done"
+      },
+      "to": {
+        "node": "step4"
+      }
+    },
+    {
+      "id": "e4",
+      "from": {
+        "node": "step4",
+        "event": "done"
+      },
+      "to": {
+        "node": "step5"
+      }
+    },
+    {
+      "id": "e5",
+      "from": {
+        "node": "step5",
+        "event": "done"
+      },
+      "to": {
+        "node": "congrats"
+      }
+    }
+  ]
+}

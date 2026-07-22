@@ -4329,7 +4329,21 @@ class AgenticProcess(Entity):
             return agents
         from flow_sdk.fs_store.operations.agent import agent_to_cli_json, extract_agent_from_path  # noqa: PLC0415
 
-        for md in sorted(agents_dir.glob("*.md")):
+        # Emit agents in EMBED order, not filename order. Each agent is
+        # materialized by a sequential `load_asset` write, so file mtime tracks
+        # embed order: the standard vibe agent is embedded first (earliest
+        # mtime), then the kind==vibe agents in the created-date order the
+        # frontend embedded them. Insertion order into `agents` is the render
+        # order (see _render_agents_instruction_block), so mtime-sort pins the
+        # vibe agent first and lays the vibe agents after it. (name is the
+        # tiebreaker for same-tick writes.)
+        def _sort_key(p: "Path") -> tuple:
+            try:
+                return (p.stat().st_mtime_ns, p.name)
+            except OSError:
+                return (0, p.name)
+
+        for md in sorted(agents_dir.glob("*.md"), key=_sort_key):
             try:
                 rec = extract_agent_from_path(md)
                 if rec is None:

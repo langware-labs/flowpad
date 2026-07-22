@@ -177,6 +177,9 @@ EXPECTED = {
     # bus (rows left inert); AGENTIC_FLOW_RUN added by the v2 run model.
     "AGENTIC_FLOW": "agentic_flow", "FLOW_NODE": "flow_node",
     "AGENTIC_FLOW_RUN": "agentic_flow_run",
+    # Journeys (0.2.105): folder-backed guided-onboarding doc + per-user
+    # DB-only journal — additive members, no existing value changed.
+    "JOURNEY": "journey", "JOURNEY_JOURNAL": "journey_journal",
 }
 
 

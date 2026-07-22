@@ -78,6 +78,7 @@ from .routes import (
     testing_router,
     toplog_router,
     agentic_flows_router,
+    journeys_router,
     transcripts_router,
     ui_router,
     version_router,
@@ -195,6 +196,15 @@ async def _on_server_startup():
         print("  Cron scheduler: started")
     except Exception as e:
         print(f"  Cron scheduler: failed to start ({e})")
+
+    # Arm backend→app topic forwarding (unified event bus — docs/flow-events.md).
+    try:
+        from flow_sdk.topics.ws_forward import start_topic_forwarding
+
+        start_topic_forwarding()
+        print("  Topic forwarding: armed")
+    except Exception as _e:  # noqa: BLE001
+        print(f"  Topic forwarding: failed to arm ({_e})")
 
     # Warm schema cache in background so first bootstrap call is fast
     import asyncio as _asyncio
@@ -518,6 +528,7 @@ server.add_router(semantic_checker_router)
 server.add_router(capabilities_router)
 server.add_router(toplog_router)
 server.add_router(agentic_flows_router)
+server.add_router(journeys_router)
 server.add_router(worldview_router)
 
 server.on_startup(_on_server_startup)

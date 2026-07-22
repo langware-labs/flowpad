@@ -1,6 +1,7 @@
 """Abstract base class for compute providers."""
 
 import os
+import shlex
 from abc import ABC, abstractmethod
 from io import BytesIO
 from typing import Any, AsyncIterator, Callable, Literal, Optional, overload
@@ -119,6 +120,16 @@ class ComputeProvider(ABC):
         if os.sep != self.path_sep:
             path = path.replace(os.sep, self.path_sep)
         return path
+
+    def extract_archive_command(self, zip_path: str, dest_dir: str) -> str:
+        """Shell command that extracts ``zip_path`` into an existing ``dest_dir``.
+
+        The command shape is the provider's decision (shell + available tools),
+        so override where it differs. The default uses python's stdlib zipfile —
+        every image that runs flowpad has python3, whereas the ``unzip`` binary
+        is frequently absent.
+        """
+        return f"cd {shlex.quote(dest_dir)} && python3 -m zipfile -e {shlex.quote(zip_path)} ."
 
     @abstractmethod
     async def create_node(self, name: str, runtime: RuntimeEnvironment, node_size=None) -> str:
