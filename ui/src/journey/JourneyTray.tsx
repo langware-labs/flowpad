@@ -12,33 +12,21 @@ import { JourneyStepLive } from './JourneyStepLive';
 import { groupSteps, useBusyRun, type JourneyStep, type UseJourneyResult } from './use-journey';
 import type { JourneyManagerView } from './useJourneyManager';
 
+/** Per-act-kind button face; unknown kinds fall back to `fill`. */
+const ACT_FACES: Record<string, { Icon: typeof Type; label: React.ReactNode }> = {
+  setup_capability: { Icon: Wrench, label: <Trans>Set up</Trans> },
+  oauth_connect: { Icon: Link2, label: <Trans>Connect</Trans> },
+  device_login: { Icon: KeyRound, label: <Trans>Log in</Trans> },
+  fill: { Icon: Type, label: <Trans>Fill text</Trans> },
+};
+
 /** One lit act button per step — label/icon follow the act kind. */
 function ActButtonContent({ kind }: { kind: string }) {
-  if (kind === 'setup_capability')
-    return (
-      <>
-        <Wrench className="h-3 w-3" />
-        <Trans>Set up</Trans>
-      </>
-    );
-  if (kind === 'oauth_connect')
-    return (
-      <>
-        <Link2 className="h-3 w-3" />
-        <Trans>Connect</Trans>
-      </>
-    );
-  if (kind === 'device_login')
-    return (
-      <>
-        <KeyRound className="h-3 w-3" />
-        <Trans>Log in</Trans>
-      </>
-    );
+  const { Icon, label } = ACT_FACES[kind] ?? ACT_FACES.fill;
   return (
     <>
-      <Type className="h-3 w-3" />
-      <Trans>Fill text</Trans>
+      <Icon className="h-3 w-3" />
+      {label}
     </>
   );
 }
@@ -48,6 +36,11 @@ const AMBER = '#f6a723';
 
 const POSITION_KEY = 'flowpad.journey.tray.position';
 const MARGIN = 8;
+/** Fallback tray box for pre-measure math (celebration center, size clamp). */
+const DEFAULT_TRAY_SIZE = { w: 320, h: 200 };
+/** Hard ceiling on the celebration overlay — onConfettiComplete usually
+ *  unmounts it earlier, the moment the last piece falls out. */
+const CONFETTI_MAX_MS = 8000;
 
 interface TrayPos {
   x: number;
@@ -81,7 +74,7 @@ function clampToViewport(p: TrayPos, size: { w: number; h: number }): TrayPos {
 }
 
 function elementSize(el: HTMLElement | null): { w: number; h: number } {
-  return { w: el?.offsetWidth ?? 320, h: el?.offsetHeight ?? 200 };
+  return { w: el?.offsetWidth ?? DEFAULT_TRAY_SIZE.w, h: el?.offsetHeight ?? DEFAULT_TRAY_SIZE.h };
 }
 
 /**
@@ -187,9 +180,13 @@ export function JourneyTray({ state, view }: { state: UseJourneyResult; view?: J
     setCelebration(
       rect
         ? { x: rect.x, y: rect.y, w: rect.width, h: rect.height }
-        : { x: window.innerWidth / 2 - 160, y: window.innerHeight / 2 - 100, w: 320, h: 200 },
+        : {
+            x: window.innerWidth / 2 - DEFAULT_TRAY_SIZE.w / 2,
+            y: window.innerHeight / 2 - DEFAULT_TRAY_SIZE.h / 2,
+            ...DEFAULT_TRAY_SIZE,
+          },
     );
-    const timer = window.setTimeout(() => setCelebration(null), 6000);
+    const timer = window.setTimeout(() => setCelebration(null), CONFETTI_MAX_MS);
     return () => window.clearTimeout(timer);
   }, [journal?.id, journal?.status]);
 
@@ -214,6 +211,9 @@ export function JourneyTray({ state, view }: { state: UseJourneyResult; view?: J
           gravity={0.25}
           initialVelocityY={14}
           confettiSource={{ x: celebration.x, y: celebration.y, w: celebration.w, h: celebration.h }}
+          // Unmount the canvas + its rAF loop the moment the last piece exits —
+          // the CONFETTI_MAX_MS timer is only the safety ceiling.
+          onConfettiComplete={() => setCelebration(null)}
         />
       </div>
     )}

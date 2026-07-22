@@ -1,4 +1,9 @@
 import { emitAppTopic, EventBus, startTopicBridge } from '@sdk';
+
+/** Envelope attribution for direct user interactions (clicks, page signals):
+ *  the local user caused it. Stamped at the emitter, read by consumers that
+ *  need "did the user themselves do this" (journey transparency). */
+export const USER_ACTOR = 'user:local';
 import { useEffect } from 'react';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { dockTarget } from './dock-target';
@@ -31,7 +36,10 @@ export function UiTopicEmitter() {
       const el = (e.target as HTMLElement | null)?.closest?.<HTMLElement>('[data-topic]');
       const target = el?.dataset.topic;
       if (!target) return;
-      emitAppTopic(`ui.${el.dataset.topicKind ?? 'label'}.clicked`, target);
+      // `actor` is stamped HERE, at the interaction source: "the user did
+      // this" is envelope attribution (ctx.actor), not something consumers
+      // should re-derive by sniffing topic prefixes.
+      emitAppTopic(`ui.${el.dataset.topicKind ?? 'label'}.clicked`, target, {}, { actor: USER_ACTOR });
     };
     document.addEventListener('click', onClick, { capture: true, passive: true });
     return () => document.removeEventListener('click', onClick, { capture: true });
@@ -55,7 +63,7 @@ export function UiTopicEmitter() {
     const onMessage = (e: MessageEvent) => {
       const d = e.data as { source?: string; event?: string } | null;
       if (d?.source !== 'flow-journey' || typeof d.event !== 'string') return;
-      EventBus.emit('app.page.signal', d.event, {}, { origin: 'sandbox' });
+      EventBus.emit('app.page.signal', d.event, {}, { origin: 'sandbox', actor: USER_ACTOR });
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
