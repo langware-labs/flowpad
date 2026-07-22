@@ -154,7 +154,7 @@ closure made visible).*
   (console: `[topics] delivered flow.step.done` + the next `flow.waiting`) —
   the journal-WS-watch gap is closed, cross-tab included. No deviations.
 
-## Phase 3 — Entity emitter  ☐
+## Phase 3 — Entity emitter  ✅
 
 One chokepoint edit in `DBEntity.save`/`notify_updated`/`delete`: emit
 `entity.created/updated/deleted`, target = `to_entity`, scope gains
@@ -195,6 +195,13 @@ DELETE paths, 445/874). One adapter hooks both.*
   subscribe to.
 
 ### Log
+- 2026-07-22 — shipped, one deviation FOR the better: both planned funnels
+  converge (every DataOpMessage site calls `add_entity_op_notification`), so
+  the adapter hooks ONE funnel, zero double-emission. Adapter =
+  `flow_sdk/db/entity_on_topic.py`; `save()` now stamps `from_entity = owner`
+  on the notification so scope rides. Acceptance test green
+  (UsageReport lifecycle → created/updated/deleted, lean data, owner scope);
+  fs_store regression 599/599.
 
 ## Phase 4 — Triggers become subscriptions  ☐
 
