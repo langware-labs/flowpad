@@ -6,6 +6,7 @@ import { Button } from '@src/components/ui/button';
 import { useIsAdvanced } from '@src/contexts/view-mode-context';
 import { cn } from '@src/lib/utils';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { clearJourneyDismissed } from './journey-dismissed';
 import { groupSteps, useActiveJournal, useBusyRun, useJourneySteps, type JourneyStep } from './use-journey';
 
 const STATUS_LABEL: Record<string, string> = {
@@ -42,7 +43,10 @@ export function JourneyViewer({ journey }: { journey: Journey }) {
   );
   const complete = journal?.status === 'complete';
 
-  const show = () => navigation.showJourney(journey.id);
+  const show = () => {
+    clearJourneyDismissed();
+    navigation.showJourney(journey.id);
+  };
 
   if (loading && steps.length === 0) {
     return (

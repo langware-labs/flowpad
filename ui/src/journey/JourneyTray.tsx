@@ -1,9 +1,12 @@
 import { Check, Circle, CircleDot, Play, RotateCcw, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { Button } from '@src/components/ui/button';
 import { cn } from '@src/lib/utils';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { animateMinimizeToElement } from '@src/lib/minimize-to-element';
+import { markJourneyDismissed } from './journey-dismissed';
 import { groupSteps, useBusyRun, type JourneyStep, type UseJourneyResult } from './use-journey';
 
 const INDIGO = '#5b5bf0';
@@ -28,21 +31,23 @@ function loadPosition(): TrayPos | null {
   }
 }
 
-function clampToViewport(p: TrayPos, el: HTMLElement | null): TrayPos {
-  if (typeof window === 'undefined') return p;
-  const w = el?.offsetWidth ?? 320;
-  const h = el?.offsetHeight ?? 200;
+function savePosition(p: TrayPos): void {
+  try {
+    localStorage.setItem(POSITION_KEY, JSON.stringify(p));
+  } catch {
+    // ignore quota / private mode
+  }
+}
+
+function clampToViewport(p: TrayPos, size: { w: number; h: number }): TrayPos {
   return {
-    x: Math.max(MARGIN, Math.min(p.x, window.innerWidth - w - MARGIN)),
-    y: Math.max(MARGIN, Math.min(p.y, window.innerHeight - h - MARGIN)),
+    x: Math.max(MARGIN, Math.min(p.x, window.innerWidth - size.w - MARGIN)),
+    y: Math.max(MARGIN, Math.min(p.y, window.innerHeight - size.h - MARGIN)),
   };
 }
 
-/** The journey badge's on-screen rect — the minimize target. */
-function badgeRect(): DOMRect | null {
-  return (
-    document.querySelector('[data-testid="journey-badge"]')?.getBoundingClientRect() ?? null
-  );
+function elementSize(el: HTMLElement | null): { w: number; h: number } {
+  return { w: el?.offsetWidth ?? 320, h: el?.offsetHeight ?? 200 };
 }
 
 /**
@@ -71,66 +76,75 @@ export function JourneyTray({ state }: { state: UseJourneyResult }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [pos, setPos] = useState<TrayPos | null>(() => loadPosition());
   useEffect(() => {
-    if (!pos) return;
-    try {
-      localStorage.setItem(POSITION_KEY, JSON.stringify(pos));
-    } catch {
-      // ignore quota / private mode
-    }
-  }, [pos]);
-  useEffect(() => {
-    const onResize = () => setPos((p) => (p ? clampToViewport(p, containerRef.current) : p));
+    const onResize = () =>
+      setPos((p) => (p ? clampToViewport(p, elementSize(containerRef.current)) : p));
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
   }, []);
 
   // ── drag by the header (pointer capture, FloatingChatWindow pattern) ──
-  const dragRef = useRef<{ pointerId: number; offX: number; offY: number } | null>(null);
+  // Size is measured ONCE at drag start (it doesn't change mid-drag) so the
+  // move handler never reads layout — a read there would force a reflow per
+  // tick against the style write it just made. Persist on settle, not per move.
+  const dragRef = useRef<{ pointerId: number; offX: number; offY: number; w: number; h: number } | null>(null);
   const onHeaderPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     if (e.button !== 0) return;
-    const rect = containerRef.current?.getBoundingClientRect();
-    if (!rect) return;
+    const el = containerRef.current;
+    const rect = el?.getBoundingClientRect();
+    if (!el || !rect) return;
     e.currentTarget.setPointerCapture(e.pointerId);
-    dragRef.current = { pointerId: e.pointerId, offX: e.clientX - rect.x, offY: e.clientY - rect.y };
+    dragRef.current = {
+      pointerId: e.pointerId,
+      offX: e.clientX - rect.x,
+      offY: e.clientY - rect.y,
+      w: rect.width,
+      h: rect.height,
+    };
   }, []);
   const onHeaderPointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     const drag = dragRef.current;
     if (!drag || drag.pointerId !== e.pointerId) return;
-    setPos(clampToViewport({ x: e.clientX - drag.offX, y: e.clientY - drag.offY }, containerRef.current));
+    setPos(clampToViewport({ x: e.clientX - drag.offX, y: e.clientY - drag.offY }, drag));
   }, []);
   const onHeaderPointerUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     const drag = dragRef.current;
     if (!drag || drag.pointerId !== e.pointerId) return;
     dragRef.current = null;
-    e.currentTarget.releasePointerCapture(e.pointerId);
+    // Persist BEFORE releasing capture — release can throw on an already-gone
+    // pointer, and the settle write must not be lost to that.
+    setPos((p) => {
+      if (p) savePosition(p);
+      return p;
+    });
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {
+      // pointer already released — nothing to undo
+    }
   }, []);
 
-  // ── minimize: scale into the badge, then clear the URL param ──
-  const [minimizeTransform, setMinimizeTransform] = useState<string | null>(null);
+  // ── minimize: fly into the badge (shared genie helper), then clear the URL ──
   const minimize = useCallback(() => {
-    const el = containerRef.current;
-    const badge = badgeRect();
-    if (!el || !badge) {
-      navigation.closeJourney();
-      return;
-    }
-    const win = el.getBoundingClientRect();
-    const dx = badge.x + badge.width / 2 - (win.x + win.width / 2);
-    const dy = badge.y + badge.height / 2 - (win.y + win.height / 2);
-    const s = Math.max(0.05, Math.min(badge.width / win.width, badge.height / win.height));
-    setMinimizeTransform(`translate(${dx}px, ${dy}px) scale(${s})`);
-    window.setTimeout(() => {
-      setMinimizeTransform(null);
-      navigation.closeJourney();
-    }, 220);
+    animateMinimizeToElement(
+      containerRef.current,
+      document.querySelector<HTMLElement>('[data-minimize-anchor="journey-badge"]'),
+    );
+    // The explicit close is journey-domain state: without it the auto-launch
+    // load-redirect re-enters the journey on the very next home load.
+    markJourneyDismissed();
+    navigation.closeJourney();
   }, [navigation]);
 
-  if (!journey) return null;
+  if (!journey || typeof document === 'undefined') return null;
 
   const complete = journal?.status === 'complete';
   const stepsLeft = journal?.steps_left ?? steps.length;
 
-  return (
+  // Portal to document.body (the FloatingChatWindow pattern): the left rail is
+  // also z-50, and inside the app tree the rail comes later in the DOM — a tie
+  // the rail wins, so a tray dragged near it slid UNDERNEATH and its header
+  // stopped receiving pointer events ("it's not moving, it's covered").
+  return createPortal(
     <div
       ref={containerRef}
       role="dialog"
@@ -145,9 +159,6 @@ export function JourneyTray({ state }: { state: UseJourneyResult }) {
         borderTopColor: INDIGO,
         borderTopWidth: 2,
         ...(pos ? { left: pos.x, top: pos.y } : {}),
-        ...(minimizeTransform
-          ? { transform: minimizeTransform, opacity: 0.2, transition: 'transform 200ms ease-in, opacity 200ms ease-in' }
-          : {}),
       }}
     >
       <div
@@ -308,6 +319,7 @@ export function JourneyTray({ state }: { state: UseJourneyResult }) {
           </Button>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
