@@ -165,15 +165,14 @@ export function useGraphUrlState(
     (next: Partial<GraphUrlState>) => {
       const merged: GraphUrlState = { ...state, ...next };
       if (surface === 'subgraph' && codec) {
-        // Preserve options this layer does not own (a surface's own data-shape
-        // keys, e.g. the topic graph's `view=tree`) so they survive refocus.
-        // The owned list lives with the writer — see DockPointer.
-        const owned = new Set(DockPointer.SUBGRAPH_OPTION_KEYS);
-        const carryOptions: Record<string, string> = {};
+        // Hand over the whole current option bag; the pointer factory drops
+        // the keys it owns and keeps the rest (e.g. `view=tree`), so there is
+        // no second list here to drift out of sync.
         const activeOptions =
           currentDock?.viewType === codec.viewType ? (currentDock?.options ?? {}) : {};
+        const carryOptions: Record<string, string> = {};
         for (const [key, value] of Object.entries(activeOptions)) {
-          if (!owned.has(key) && typeof value === 'string') carryOptions[key] = value;
+          if (typeof value === 'string') carryOptions[key] = value;
         }
         navigation.openDock(
           codec.makePointer(

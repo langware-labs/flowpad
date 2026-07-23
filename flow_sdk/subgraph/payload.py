@@ -75,3 +75,39 @@ def payload(
         "edges": edges,
         "counts": {"nodes": len(nodes), "edges": len(edges)},
     }
+
+
+def validate_payload(data: dict[str, Any]) -> list[str]:
+    """Structural problems in a built payload, as human-readable strings.
+
+    Leniency about node identity (ghosts carry natural-key ids) cost us the
+    integrity checks the strict worldview model performs, so they live here
+    instead: unique node keys, no dangling edge endpoints, honest counts.
+    Builders are trusted at runtime; tests assert this is empty.
+    """
+    problems: list[str] = []
+    nodes = data.get("nodes") or []
+    edges = data.get("edges") or []
+
+    keys: set[str] = set()
+    for item in nodes:
+        key = node_key(item["type"], item["id"])
+        if key in keys:
+            problems.append(f"duplicate node key: {key}")
+        keys.add(key)
+
+    for item in edges:
+        for side in ("from", "to"):
+            endpoint = item[side]
+            key = node_key(endpoint["type"], endpoint["id"])
+            if key not in keys:
+                problems.append(f"edge {side} endpoint has no node: {key}")
+
+    counts = data.get("counts") or {}
+    if counts.get("nodes") != len(nodes) or counts.get("edges") != len(edges):
+        problems.append("counts do not match the node/edge lists")
+
+    root = data.get("root")
+    if root is not None and root not in keys:
+        problems.append(f"root is not a node in the payload: {root}")
+    return problems

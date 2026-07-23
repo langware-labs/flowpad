@@ -22,17 +22,12 @@ from typing import Any, Optional
 
 from flow_sdk.subgraph import register_projection
 from flow_sdk.subgraph.payload import edge, node, node_key, payload
-from flow_sdk.topics.grammar import is_valid_topic, topic_ancestors, topic_is_within, topic_tree
-
-
-def _within(name: str, root: Optional[str]) -> bool:
-    return root is None or topic_is_within(name, root) or topic_is_within(root, name)
+from flow_sdk.topics.grammar import is_valid_topic, topic_is_within, topic_tree
 
 
 async def build_topic_graph(
     root: Optional[str] = None,
     *,
-    assets: bool = True,
     code_root: "str | Path | None" = None,
     tree_only: bool = False,
     mentions: bool = False,
@@ -42,7 +37,7 @@ async def build_topic_graph(
     from flow_sdk.topics import event_bus  # noqa: PLC0415
     from flow_sdk.topics.bindings import all_entity_bindings, scan_code_capsules  # noqa: PLC0415
 
-    include_assets = assets and not tree_only
+    include_assets = not tree_only
 
     # ── collect the full name universe first, then emit ────────────────────
     # One entity scan feeds all three carriers (see all_entity_bindings).
@@ -64,25 +59,19 @@ async def build_topic_graph(
         if code_dir.is_dir():
             code_bindings = scan_code_capsules(code_dir, root)
 
-    names: set[str] = set()
-    for name in (*blessed, *observed):
-        if _within(name, root):
-            names.add(name)
-    for binding in doc_bindings + skill_bindings:
+    names = {
+        name for name in (*blessed, *observed)
+        if root is None or topic_is_within(name, root)
+    }
+    for binding in (*doc_bindings, *skill_bindings, *code_bindings):
         names.update(binding["topics"])
-    for site in code_bindings:
-        names.update(site["topics"])
     if root is not None and is_valid_topic(root):
         names.add(root)
-        names.update(topic_ancestors(root))
 
-    # topic_tree adds implied intermediate names as parents.
+    # topic_tree emits every ancestor prefix as a child, so its child values
+    # ARE the closed name set — implied intermediates included.
     tree = topic_tree(sorted(names))
-    all_names = set(names)
-    for parent, children in tree.items():
-        if parent:
-            all_names.add(parent)
-        all_names.update(children)
+    all_names = {child for children in tree.values() for child in children}
     ordered_names = sorted(all_names)
 
     # ── nodes ───────────────────────────────────────────────────────────────
@@ -149,17 +138,13 @@ async def build_topic_graph(
 
     # ── edges: wiki mentions (weak, blessed only, best-effort) ──────────────
     if mentions and not tree_only:
-        from flow_sdk.wiki.indexer import backlinks  # noqa: PLC0415
+        from flow_sdk.topics.bindings import topic_mentions  # noqa: PLC0415
 
         node_keys = {node_key(n["type"], n["id"]) for n in nodes}
         for name, row in sorted(blessed.items()):
             if name not in all_names:
                 continue
-            try:
-                links = await backlinks("topic", row["id"])
-            except Exception:  # noqa: BLE001
-                continue
-            for link in links:
+            for link in await topic_mentions(row["id"]):
                 if node_key(link.src_type, link.src_id) in node_keys:
                     edges.append(edge(link.src_type, link.src_id, "topic", name,
                                       kind="mentions", topology="association"))
@@ -172,8 +157,7 @@ async def build_topic_graph(
 
 async def _builder(params: dict[str, str]) -> dict[str, Any]:
     """Query-param adapter for the subgraph route. Params: ``root`` (topic
-    name), ``assets`` (1|0), ``code_root`` (abs dir), ``view`` (tree|full),
-    ``mentions`` (1|0)."""
+    name), ``code_root`` (abs dir), ``view`` (tree|full), ``mentions`` (1|0)."""
     from flow_sdk.topics.grammar import normalize_topic  # noqa: PLC0415
 
     raw_root = (params.get("root") or "").strip()
@@ -182,7 +166,6 @@ async def _builder(params: dict[str, str]) -> dict[str, Any]:
         root = normalize_topic(raw_root)  # invalid → ValueError → 500-guard below
     return await build_topic_graph(
         root,
-        assets=params.get("assets", "1") != "0",
         code_root=params.get("code_root") or None,
         tree_only=params.get("view") == "tree",
         mentions=params.get("mentions") == "1",
