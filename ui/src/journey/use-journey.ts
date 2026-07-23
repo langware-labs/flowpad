@@ -121,7 +121,9 @@ export interface JourneyActSpec {
   command?: string;
   /** `fs_check`: project-relative file that must exist. */
   path?: string;
-  /** `fs_check`: optional substring the file must contain. */
+  /** The assertion: for `fs_check` the file must contain it; for `run` the
+   *  command's OUTPUT must contain it (and the command must exit 0) — without
+   *  it, `run` only proves the keystrokes reached the terminal. */
   contains?: string;
   /** `git_check`: the repo predicate that must hold. */
   expect?: 'repo' | 'staged' | 'clean' | 'branch' | 'dirty';

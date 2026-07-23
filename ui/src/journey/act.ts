@@ -97,7 +97,7 @@ async function runSetupAct(act: JourneyActSpec): Promise<boolean> {
   try {
     if (act.kind === 'setup_capability') {
       if (!act.capability) return announce(act, false);
-      await capabilityManager.install(act.capability);
+      await capabilityManager.setup(act.capability);
       return announce(act, true);
     }
     if (act.kind === 'oauth_connect') {
@@ -184,6 +184,21 @@ function shellIdFromUrl(): string | null {
   return m ? decodeURIComponent(m[1]).replace(/^shell-/, '') : null;
 }
 
+/**
+ * Type a command into the terminal and — when the step asserts something —
+ * WATCH WHAT IT PRINTS.
+ *
+ * `sendInput` is fire-and-forget: it proves bytes reached the PTY, never that
+ * the command worked. A step with `contains` therefore appends a sentinel
+ * (`; echo "<marker>_$?"`), collects the ANSI-stripped line stream via
+ * `Shell.onLine`, and decides only once the sentinel line arrives — that is
+ * the one moment we know the command FINISHED. `ls` printing "No such file"
+ * now fails the step instead of going green.
+ *
+ * Deliberately unbounded: no timer races the user's command. A command that
+ * never finishes leaves the step pending (Skip is still there) rather than
+ * being declared failed by a clock.
+ */
 async function runShellCommand(act: JourneyActSpec, ctx: ActContext): Promise<boolean> {
   try {
     // The terminal on screen IS the target — read it from the live URL (the
@@ -194,8 +209,32 @@ async function runShellCommand(act: JourneyActSpec, ctx: ActContext): Promise<bo
     const { Shell } = await import('@sdk');
     const shell = await Shell.getById(shellId);
     if (!shell) return announce(act, false);
-    await shell.sendInput(`${act.command}\r`);
-    return announce(act, true);
+
+    if (!act.contains) {
+      await shell.sendInput(`${act.command}\r`);
+      return announce(act, true);
+    }
+
+    // Assert on output: capture lines until the sentinel reports the exit code.
+    const marker = `__journey_${Math.random().toString(36).slice(2, 10)}`;
+    const output: string[] = [];
+    const settled = new Promise<boolean>((resolve) => {
+      const offLine = shell.onLine((line: string) => output.push(line));
+      const offTrigger = shell.addTrigger({
+        label: 'journey step',
+        pattern: new RegExp(`${marker}_(\\d+)`),
+        onMatch: (_line: string, m: RegExpMatchArray) => {
+          offTrigger();
+          offLine?.();
+          // The sentinel's own echo carries the marker — drop those lines so a
+          // step can never "pass" by matching the command it just typed.
+          const body = output.filter((l) => !l.includes(marker)).join('\n');
+          resolve(m[1] === '0' && body.includes(act.contains ?? ''));
+        },
+      });
+    });
+    await shell.sendInput(`${act.command}; echo "${marker}_$?"\r`);
+    return announce(act, await settled);
   } catch {
     return announce(act, false);
   }
