@@ -33,14 +33,14 @@
       "node_type": "guided_step",
       "name": "Open a terminal",
       "node_data": {
-        "status_line": "Click a highlighted session button (e.g. Claude Code) to open a live terminal.",
+        "status_line": "Click any highlighted session button (Terminal or a coding agent) to open a live terminal.",
         "present": {
           "dock": { "kind": "home" },
           "highlight": "NewSession"
         },
         "await": {
-          "topic": "app.entity.created",
-          "target": "agentic_process:*"
+          "topic": "app.route.loaded",
+          "target": "dock:shell/*"
         }
       }
     },

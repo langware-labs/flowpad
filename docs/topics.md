@@ -72,7 +72,8 @@ EventBus.on(topic_pattern, handler, {target?, scope?}) → unsub
 - **Topic patterns**: segment-wise glob over the dot path — `entity.updated`,
   `entity.*`, `flow.step.*`, `*`.
 - **Target / scope** are optional delivery filters, not part of the topic match —
-  `target: "agent:1234"` (this one), `target: "agent:*"` (any of the type),
+  `target: "agent:1234"` (this one), or a trailing-`*` prefix glob: `agent:*`
+  (any of the type), `dock:shell/*` (any pointer under the view);
   `scope: [project:X]`.
 - **Sugar** (string/filter builders over the core, nothing more):
   - instance: `entity.on_topic("entity.updated", h)` → subscribe with `target = self`
