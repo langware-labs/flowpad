@@ -5,6 +5,7 @@ import Confetti from 'react-confetti';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { Button } from '@src/components/ui/button';
 import { cn } from '@src/lib/utils';
+import { topmost } from '@src/lib/topmost';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { animateMinimizeToElement } from '@src/lib/minimize-to-element';
 import { markJourneyDismissed } from './journey-dismissed';
@@ -222,16 +223,8 @@ export function JourneyTray({ state, view }: { state: UseJourneyResult; view?: J
       role="dialog"
       aria-label={journey.name}
       data-testid="journey-tray"
-      className={cn(
-        'fixed z-50 flex w-80 max-w-[calc(100vw-5rem)] flex-col',
-        'rounded-lg border border-border bg-popover text-popover-foreground shadow-xl',
-        !pos && 'bottom-4 left-16',
-      )}
-      style={{
-        borderTopColor: INDIGO,
-        borderTopWidth: 2,
-        ...(pos ? { left: pos.x, top: pos.y } : {}),
-      }}
+      className={cn(topmost, 'w-80 max-w-[calc(100vw-5rem)]', !pos && 'bottom-4 left-16')}
+      style={pos ? { left: pos.x, top: pos.y } : undefined}
     >
       <div
         className="flex cursor-grab select-none items-start justify-between gap-2 border-b border-border px-3 py-2.5 active:cursor-grabbing"
