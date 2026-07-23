@@ -31,7 +31,7 @@ import type { EditorView } from '@milkdown/prose/view';
 import { dataContext, VFSPath, type TypeId } from '@sdk';
 import { LOCAL_COMPUTE_NODE } from '@src/navigation/asset-doc-types';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { FilePreviewSheet, type FilePreviewTarget } from '@src/components/file-preview/FilePreviewSheet';
+import { openFilePreview } from '@src/components/file-preview/file-preview';
 import {
   Bold, Italic, Code, Heading1, Heading2, Heading3,
   List, ListOrdered, SquareCode, Pilcrow, ExternalLink,
@@ -773,14 +773,13 @@ function SelectionToolbar({
 function MilkdownEditorInner({ content, onChange, editorMode, plugins, onActiveStateChange, onSelectionRectChange, onCursorLineChange, initialLine, direction, editorRef }: MilkdownEditorProps & { onActiveStateChange?: (s: ActiveState) => void; onSelectionRectChange?: (r: SelectionRect | null) => void; editorRef?: React.MutableRefObject<Editor | null> }) {
   const isReadOnly = editorMode === 'view' || editorMode === 'review';
   const { navigation, currentDock } = useDockNavigation();
-  const [previewTarget, setPreviewTarget] = useState<FilePreviewTarget | null>(null);
 
   /** The entity files are addressed through — the document's own compute node. */
   const docEntityTypeId = (): TypeId =>
     VFSPath.parse(currentDock?.pointer ?? '').typeId ?? LOCAL_COMPUTE_NODE;
 
   const openMachinePath = (path: string, options?: { line?: number }) => {
-    navigation.openFile(VFSPath.fromMachinePath(path, docEntityTypeId()).rawPath, options);
+    navigation.openMachinePath(path, docEntityTypeId(), options);
   };
 
   /*
@@ -811,7 +810,7 @@ function MilkdownEditorInner({ content, onChange, editorMode, plugins, onActiveS
     // uname, which the code editor does not resolve to a filesystem).
     openFile: (path, options) => openMachinePath(path, options),
     previewFile: (path, options) =>
-      setPreviewTarget({ path, line: options?.line, typeId: docEntityTypeId() }),
+      openFilePreview({ path, line: options?.line, typeId: docEntityTypeId() }),
     documentProjectRoot: () => projectRootOf(dataContext.project),
     projectRootById: (projectId) =>
       dataContext.project?.id === projectId ? projectRootOf(dataContext.project) : null,
@@ -1070,19 +1069,6 @@ function MilkdownEditorInner({ content, onChange, editorMode, plugins, onActiveS
   return (
     <div className="milkdown-editor-wrapper h-full" dir={direction}>
       <Milkdown />
-      {/*
-        Rendered by the editor, not the renderer: a fence NodeView is plain DOM
-        with no React tree to mount a sheet into, so it asks the host via
-        `previewFile` and the host owns the surface.
-      */}
-      <FilePreviewSheet
-        target={previewTarget}
-        onClose={() => setPreviewTarget(null)}
-        onOpen={(target) => {
-          setPreviewTarget(null);
-          openMachinePath(target.path, { line: target.line });
-        }}
-      />
     </div>
   );
 }

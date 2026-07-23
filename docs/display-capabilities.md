@@ -59,6 +59,16 @@ Media bytes are served by the fs `download` action (`flow_sdk/actions/fs/
 fs_actions.py` — MIME from guess_type, inline disposition for image/video/
 audio, streaming). Text viewers read via FSRef.
 
+A file can also be **peeked without being opened**: `FilePreviewSheet`
+(`ui/src/components/file-preview/`) mounts the same read-only `EditorPane` in a
+sheet, addressed by absolute machine path + optional line, with "Open in editor"
+handing the same target to the dock. Because it reuses the pane, content
+loading, scroll-to-line and the deep-link marker are the surface's own — not a
+second rendering path. Opened with `openFilePreview(target)` and hosted by a
+single `FilePreviewRoot` in `App.tsx` — the same store-driven global-overlay
+convention as `openWikiModal` (see [wikitip.md](wikitip.md)), so a peek is an
+overlay rather than navigation and no caller mounts its own.
+
 Notes: `.jsonl` transcripts are never opened by extension — they route through
 the Lens (`/dock/lens/<worker>/transcript/<ref>` → `TranscriptViewer`).
 Whiteboards have **no** `.excalidraw` extension handling — they are
