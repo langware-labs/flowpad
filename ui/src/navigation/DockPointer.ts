@@ -33,6 +33,10 @@ import {
 import { dockOptionsToSideWindows, withSideWindowsOptions, type SideWindowsState } from '@src/lib/side-windows';
 import type { ViewMode } from '@src/contexts/view-mode-context';
 import { DEFAULT_WORLDVIEW_COLOR_MODE, type WorldViewColorMode } from '@src/types/WorldViewColorMode';
+import {
+  DEFAULT_GRAPH_PRESENTATION,
+  type GraphPresentation,
+} from '@src/types/GraphPresentation';
 
 /**
  * URL query-param key carrying the "highlight this thing" intent across the
@@ -1038,6 +1042,8 @@ export class DockPointer implements IDockPointer {
       depth?: number;
       selected?: string;
       signal?: WorldViewColorMode;
+      /** Renderer choice — serialized as `?render=` (see GraphPresentation). */
+      render?: GraphPresentation;
       hidden?: readonly string[];
       query?: string;
     },
@@ -1056,6 +1062,7 @@ export class DockPointer implements IDockPointer {
     ) {
       queryOptions.signal = options.signal;
     }
+    if (options?.render && options.render !== DEFAULT_GRAPH_PRESENTATION) queryOptions.render = options.render;
     const hidden = [...new Set(options?.hidden ?? [])].filter(Boolean).sort();
     if (hidden.length) queryOptions.hide = hidden.join(',');
     if (options?.query) queryOptions.q = options.query;
@@ -1066,6 +1073,108 @@ export class DockPointer implements IDockPointer {
       layout,
       page,
     );
+  }
+
+  /** Shared query-option assembly for the subgraph-surface pointers. */
+  private static subgraphOptions(options?: {
+    depth?: number;
+    selected?: string;
+    render?: GraphPresentation;
+    hidden?: readonly string[];
+    query?: string;
+    carry?: Record<string, string>;
+  }): Record<string, string> | undefined {
+    const queryOptions: Record<string, string> = { ...(options?.carry ?? {}) };
+    if (options?.render && options.render !== DEFAULT_GRAPH_PRESENTATION) queryOptions.render = options.render;
+    if (options?.depth) queryOptions.depth = String(options.depth);
+    if (options?.selected) queryOptions.selected = options.selected;
+    const hidden = [...new Set(options?.hidden ?? [])].filter(Boolean).sort();
+    if (hidden.length) queryOptions.hide = hidden.join(',');
+    if (options?.query) queryOptions.q = options.query;
+    return Object.keys(queryOptions).length ? queryOptions : undefined;
+  }
+
+  /**
+   * Topic graph/tree at `/dock/topic/graph[/<name>]` — <name> is a dot-path
+   * TOPIC NAME (not a typeid; ghost topics are first-class). Focus lives in
+   * the pointer (dependency pattern); `view=tree` and friends ride options.
+   */
+  static forTopicGraph(
+    topic?: string | null,
+    options?: {
+      /** Data shape owned by this surface (`?view=tree` = ontology tree). */
+      view?: 'tree';
+      depth?: number;
+      selected?: string;
+      render?: GraphPresentation;
+      hidden?: readonly string[];
+      query?: string;
+      carry?: Record<string, string>;
+    },
+    layout: Layout = Layout.DOCK,
+  ): DockPointer {
+    const pointer = topic ? `graph/${encodeURIComponent(topic)}` : 'graph';
+    const carry = { ...(options?.carry ?? {}) };
+    if (options?.view) carry.view = options.view;
+    return new DockPointer(
+      ViewType.TOPIC,
+      pointer,
+      DockPointer.subgraphOptions({ ...options, carry }),
+      layout,
+    );
+  }
+
+  /** Split a TOPIC pointer: `graph[/<name>]` → `{ sub: 'graph', topic }`. */
+  static parseTopicPointer(pointer: string | undefined): { sub: string; topic: string | null } | null {
+    if (!pointer) return null;
+    const idx = pointer.indexOf('/');
+    const sub = idx < 0 ? pointer : pointer.slice(0, idx);
+    if (sub !== 'graph') return null;
+    const topic = idx < 0 ? null : pointer.slice(idx + 1);
+    return { sub, topic: topic ? DockPointer.tryDecode(topic) : null };
+  }
+
+  /** Best-effort decode for pointer segments encoded by the `for*` factories. */
+  private static tryDecode(segment: string): string {
+    try {
+      return decodeURIComponent(segment);
+    } catch {
+      return segment;
+    }
+  }
+
+  /**
+   * Generic entity-subgraph at `/dock/subgraph/<projection>[/<focusKey>]` —
+   * layer 2's zero-new-frontend-code path. The focus segment is a node key.
+   */
+  static forSubgraph(
+    projection: string,
+    focusKey?: string | null,
+    options?: {
+      depth?: number;
+      selected?: string;
+      render?: GraphPresentation;
+      hidden?: readonly string[];
+      query?: string;
+      carry?: Record<string, string>;
+    },
+    layout: Layout = Layout.DOCK,
+  ): DockPointer {
+    const pointer = focusKey ? `${projection}/${encodeURIComponent(focusKey)}` : projection;
+    return new DockPointer(ViewType.SUBGRAPH, pointer, DockPointer.subgraphOptions(options), layout);
+  }
+
+  /** Split a SUBGRAPH pointer into `{ projection, focus }`. */
+  static parseSubgraphPointer(
+    pointer: string | undefined,
+  ): { projection: string; focus: string | null } | null {
+    if (!pointer) return null;
+    const idx = pointer.indexOf('/');
+    if (idx < 0) return { projection: pointer, focus: null };
+    const projection = pointer.slice(0, idx);
+    if (!projection) return null;
+    const focus = pointer.slice(idx + 1);
+    return { projection, focus: focus ? DockPointer.tryDecode(focus) : null };
   }
 
   /**
