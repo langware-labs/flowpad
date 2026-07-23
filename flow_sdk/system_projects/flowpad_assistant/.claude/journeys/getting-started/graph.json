@@ -4,7 +4,7 @@
   "name": "Getting started",
   "description": "Build your first vibe agent: a shopping master that finds the best deals \u2014 created, instructed, and put to work, step by step.",
   "enabled": true,
-  "auto_launch": true,
+  "auto_launch": false,
   "config": {
     "deadline_s": 2592000,
     "retention_runs": 3
