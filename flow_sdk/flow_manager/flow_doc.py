@@ -54,7 +54,7 @@ FunctionRuntime = Literal["inline", "subprocess"]
 # that the frontend orchestrator observes; when satisfied the orchestrator injects
 # this node's `done`, routed onward by the ordinary edge machinery. No new viewer,
 # no DOM interception — pure guidance/orchestration over standard surfaces.
-GUIDED_PRESENT_KINDS = {"asset_editor", "wiki", "home", "asset_list", "root", "shell"}
+GUIDED_PRESENT_KINDS = {"asset_editor", "wiki", "home", "asset_list", "root"}
 # What a guided step can do FOR the user, offered as a button on the step.
 # `run` types a command into the step's terminal; `fs_check` proves a file
 # landed. The frontend owns each kind's semantics — this is the vocabulary.

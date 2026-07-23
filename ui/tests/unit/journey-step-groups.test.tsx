@@ -55,10 +55,16 @@ describe('JourneyTray — grouped rendering', () => {
       refresh: () => {},
     };
     render(<JourneyTray state={state} />);
+    // The tray opens COLLAPSED (current step only); the group header stays.
     expect(screen.getByText('Create your vibe agent')).toBeTruthy();
+    const collapsed = document.querySelector('[data-group="Create your vibe agent"]')!;
+    expect(collapsed.querySelectorAll('li').length).toBe(1);
+    expect(document.querySelector('[data-current]')?.textContent).toContain('s2');
+
+    // Expanded, the whole group renders as indented sub-steps.
+    fireEvent.click(screen.getByTestId('journey-tray-expand'));
     const grouped = document.querySelector('[data-group="Create your vibe agent"]')!;
     expect(grouped.querySelectorAll('li').length).toBe(2);
-    expect(document.querySelector('[data-current]')?.textContent).toContain('s2');
   });
 });
 
