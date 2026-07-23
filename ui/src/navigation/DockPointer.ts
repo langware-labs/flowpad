@@ -1075,13 +1075,6 @@ export class DockPointer implements IDockPointer {
     );
   }
 
-  /** Query-option keys the subgraph-surface pointers own. `url-state` carries
-   *  everything NOT in this set through untouched (a surface's own data-shape
-   *  keys, e.g. the topic graph's `view=tree`). */
-  static readonly SUBGRAPH_OPTION_KEYS: readonly string[] = [
-    'focus', 'selected', 'depth', 'hide', 'q', 'signal', 'color', 'render',
-  ];
-
   /** Shared query-option assembly for the subgraph-surface pointers. */
   private static subgraphOptions(options?: {
     depth?: number;

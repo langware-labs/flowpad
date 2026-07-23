@@ -184,3 +184,15 @@ def scan_code_capsules(root: Path, name: Optional[str] = None) -> list[dict[str,
             out.append({"path": rel, "line": marker_line, "topics": matched})
     out.sort(key=lambda item: item["path"])
     return out
+
+
+async def topic_mentions(topic_id: str) -> list[Any]:
+    """Wiki backlinks pointing at a blessed topic. Best-effort: mentions are
+    garnish, never load-bearing, so an indexing hiccup returns nothing rather
+    than failing the caller."""
+    from flow_sdk.wiki.indexer import backlinks  # noqa: PLC0415
+
+    try:
+        return await backlinks("topic", topic_id)
+    except Exception:  # noqa: BLE001
+        return []

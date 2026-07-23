@@ -10,7 +10,13 @@ import pytest
 from flow_sdk.builtin.topic import Topic
 from flow_sdk.capsules import AssetCapsule
 from flow_sdk.capsules.data import CapsuleData
+# Registers the entity CLASSES (not just TypeInfo): without this the markdown
+# row materializes as a generic Entity and its `topics` never reach the DB, so
+# the bound-doc assertions would only pass when co-run with a test that imports
+# them. Keep this file standalone-correct.
+import flow_sdk.models.entities  # noqa: F401
 from flow_sdk.schema.type_info import register_all
+from flow_sdk.subgraph import validate_payload
 from flow_sdk.topics.graph import build_topic_graph
 
 register_all()
@@ -88,6 +94,19 @@ async def test_code_capsule_ghost_and_tree_only(tmp_path):
     tree = await build_topic_graph(root="--tg--.code", code_root=tmp_path, tree_only=True)
     assert all(n["type"] == "topic" for n in tree["nodes"])
     assert all(e["topology"] == "hierarchy" for e in tree["edges"])
+
+
+@pytest.mark.asyncio
+async def test_payload_is_structurally_sound():
+    """Leniency about ids is deliberate; structural sloppiness is not — every
+    edge endpoint must exist, keys must be unique, counts must be honest."""
+    await Topic(name="--tg--.sound.leaf").save()
+    for graph in (
+        await build_topic_graph(),
+        await build_topic_graph(root="--tg--"),
+        await build_topic_graph(root="--tg--", tree_only=True),
+    ):
+        assert validate_payload(graph) == []
 
 
 @pytest.mark.asyncio

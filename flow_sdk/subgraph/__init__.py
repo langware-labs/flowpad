@@ -14,7 +14,7 @@ rejects by design.
 """
 
 from .builtins import register_builtin_projections
-from .payload import edge, node
+from .payload import edge, node, validate_payload
 from .registry import get_projection, known_projections, register_projection
 
 __all__ = [
@@ -24,4 +24,5 @@ __all__ = [
     "node",
     "register_builtin_projections",
     "register_projection",
+    "validate_payload",
 ]
