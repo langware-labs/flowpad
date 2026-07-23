@@ -54,9 +54,12 @@ FunctionRuntime = Literal["inline", "subprocess"]
 # that the frontend orchestrator observes; when satisfied the orchestrator injects
 # this node's `done`, routed onward by the ordinary edge machinery. No new viewer,
 # no DOM interception — pure guidance/orchestration over standard surfaces.
-GUIDED_PRESENT_KINDS = {"asset_editor", "wiki", "home", "asset_list", "root"}
+GUIDED_PRESENT_KINDS = {"asset_editor", "wiki", "home", "asset_list", "root", "shell"}
 # What a guided step can do FOR the user, offered as a button on the step.
-GUIDED_ACT_KINDS = {"fill"}
+# `run` types a command into the step's terminal; `fs_check` proves a file
+# landed. The frontend owns each kind's semantics — this is the vocabulary.
+GUIDED_ACT_KINDS = {"fill", "open_terminal", "run", "fs_check", "setup_capability",
+                    "oauth_connect", "device_login", "git_check"}
 # The await side is a unified-bus subscription (docs/topics.md): `topic` names
 # the awaited event (`app.page.signal`, `app.route.loaded`, `app.entity.created`,
 # or `manual` for Continue-only), `target`/`vfs`/`home` filter it, and an

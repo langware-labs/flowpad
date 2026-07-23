@@ -1,4 +1,4 @@
-import { Check, Circle, CircleDot, GitBranch, KeyRound, Link2, Play, RotateCcw, Type, Wrench, X } from 'lucide-react';
+import { Check, Circle, CircleDot, FileCheck2, GitBranch, KeyRound, Link2, Play, RotateCcw, Terminal, Type, Wrench, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import Confetti from 'react-confetti';
@@ -20,6 +20,9 @@ const ACT_FACES: Record<string, { Icon: typeof Type; label: React.ReactNode }> =
   device_login: { Icon: KeyRound, label: <Trans>Log in</Trans> },
   fill: { Icon: Type, label: <Trans>Fill text</Trans> },
   git_check: { Icon: GitBranch, label: <Trans>Check</Trans> },
+  open_terminal: { Icon: Terminal, label: <Trans>Open terminal</Trans> },
+  run: { Icon: Terminal, label: <Trans>Run it</Trans> },
+  fs_check: { Icon: FileCheck2, label: <Trans>Verify</Trans> },
 };
 
 /** One lit act button per step — label/icon follow the act kind. */
@@ -40,9 +43,11 @@ const POSITION_KEY = 'flowpad.journey.tray.position';
 const MARGIN = 8;
 /** Fallback tray box for pre-measure math (celebration center, size clamp). */
 const DEFAULT_TRAY_SIZE = { w: 320, h: 200 };
-/** Hard ceiling on the celebration overlay — onConfettiComplete usually
- *  unmounts it earlier, the moment the last piece falls out. */
-const CONFETTI_MAX_MS = 8000;
+/** One SPLASH, not a fountain: pieces spawn only for the emit window, then
+ *  the existing ones fall; the overlay is gone at the ceiling regardless. */
+const CONFETTI_PIECES = 140;
+const CONFETTI_EMIT_MS = 250;
+const CONFETTI_MAX_MS = 2000;
 
 interface TrayPos {
   x: number;
@@ -168,6 +173,9 @@ export function JourneyTray({ state, view }: { state: UseJourneyResult; view?: J
   // `complete` and the celebration happens right here — confetti bursting from
   // the steps panel on whatever screen the user is on, never a page swap.
   const [celebration, setCelebration] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  // react-confetti keeps SPAWNING while numberOfPieces > 0 (the "fountain").
+  // A splash = spawn for CONFETTI_EMIT_MS, then 0 so the burst just falls.
+  const [confettiPieces, setConfettiPieces] = useState(0);
   // Track (journal, status) pairs: the burst fires when THE journal being
   // watched transitions into `complete` — status alone misses a fresh run
   // completing while an older complete journal was the last thing displayed.
@@ -188,8 +196,13 @@ export function JourneyTray({ state, view }: { state: UseJourneyResult; view?: J
             ...DEFAULT_TRAY_SIZE,
           },
     );
+    setConfettiPieces(CONFETTI_PIECES);
+    const stopEmit = window.setTimeout(() => setConfettiPieces(0), CONFETTI_EMIT_MS);
     const timer = window.setTimeout(() => setCelebration(null), CONFETTI_MAX_MS);
-    return () => window.clearTimeout(timer);
+    return () => {
+      window.clearTimeout(stopEmit);
+      window.clearTimeout(timer);
+    };
   }, [journal?.id, journal?.status]);
 
   if (!journey || typeof document === 'undefined') return null;
@@ -209,9 +222,9 @@ export function JourneyTray({ state, view }: { state: UseJourneyResult; view?: J
           width={window.innerWidth}
           height={window.innerHeight}
           recycle={false}
-          numberOfPieces={420}
-          gravity={0.25}
-          initialVelocityY={14}
+          numberOfPieces={confettiPieces}
+          gravity={0.45}
+          initialVelocityY={16}
           confettiSource={{ x: celebration.x, y: celebration.y, w: celebration.w, h: celebration.h }}
           // Unmount the canvas + its rAF loop the moment the last piece exits —
           // the CONFETTI_MAX_MS timer is only the safety ceiling.
