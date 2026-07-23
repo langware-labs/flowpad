@@ -76,10 +76,12 @@ class FixedWindowStormGuard:
 
 
 def target_matches(pattern: str, target: str) -> bool:
-    """Exact match, or ``type:*`` — pattern up to the first colon, then ``*``."""
+    """Exact match, or trailing ``*`` = prefix glob — ``agent:*`` (any of the
+    type), ``dock:shell/*`` (any pointer under the view). Same grammar as the
+    topic trailing-``*``."""
     if pattern == target or pattern == "*":
         return True
-    if pattern.endswith(":*"):
+    if pattern.endswith("*"):
         return target.startswith(pattern[:-1])
     return False
 

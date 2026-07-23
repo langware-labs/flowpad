@@ -73,7 +73,9 @@ export function targetOf(entityType: string, entityId: string): string {
 /** Exact match, or `type:*` — pattern up to the first colon, then `*` for the rest. */
 export function targetMatches(pattern: string, target: string): boolean {
   if (pattern === target || pattern === '*') return true;
-  if (pattern.endsWith(':*')) return target.startsWith(pattern.slice(0, -1));
+  // Trailing `*` = prefix glob — `agent:*` (any of the type), `dock:shell/*`
+  // (any pointer under the view). Same grammar as topic trailing-`*`.
+  if (pattern.endsWith('*')) return target.startsWith(pattern.slice(0, -1));
   return false;
 }
 

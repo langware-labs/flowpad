@@ -34,7 +34,7 @@ describe('topicMatches — segment-wise glob over the dot path', () => {
   });
 });
 
-describe('targetMatches — exact or type:* glob', () => {
+describe('targetMatches — exact or trailing-* prefix glob', () => {
   it('exact and wildcard forms', () => {
     expect(targetMatches('agent:1234', 'agent:1234')).toBe(true);
     expect(targetMatches('agent:*', 'agent:1234')).toBe(true);
@@ -42,6 +42,12 @@ describe('targetMatches — exact or type:* glob', () => {
     expect(targetMatches('next', 'next')).toBe(true);
     expect(targetMatches('next', 'finish')).toBe(false);
     expect(targetMatches('*', 'anything')).toBe(true);
+  });
+
+  it('trailing * is a prefix glob below the type level too', () => {
+    expect(targetMatches('dock:shell/*', 'dock:shell/shell-2')).toBe(true);
+    expect(targetMatches('dock:shell/*', 'dock:assets/project-home')).toBe(false);
+    expect(targetMatches('dock:shell', 'dock:shell/shell-2')).toBe(false);
   });
 });
 

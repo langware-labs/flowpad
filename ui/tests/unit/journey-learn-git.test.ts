@@ -57,7 +57,9 @@ describe('learn-git journey graph', () => {
     expect(raw.auto_launch).toBe(false);
     const { steps } = parseJourneyGraph(graphText);
     expect(steps[0].await).toEqual({ topic: 'app.page.signal', target: 'next' });
-    expect(steps[1].await).toEqual({ topic: 'app.entity.created', target: 'agentic_process:*' });
+    // the shell ROUTE, not agentic_process creation: a plain Terminal mints a
+    // shell (no process), and every opener ends on a `dock:shell/…` navigation
+    expect(steps[1].await).toEqual({ topic: 'app.route.loaded', target: 'dock:shell/*' });
   });
 });
 
