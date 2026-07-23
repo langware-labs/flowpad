@@ -1,4 +1,4 @@
-import { Check, Circle, CircleDot, FileCheck2, GitBranch, KeyRound, Link2, Play, RotateCcw, Terminal, Type, Wrench, X } from 'lucide-react';
+import { Check, ChevronDown, ChevronUp, Circle, CircleDot, FileCheck2, GitBranch, KeyRound, Link2, Play, RotateCcw, Terminal, Type, Wrench, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import Confetti from 'react-confetti';
@@ -109,6 +109,10 @@ export function JourneyTray({ state, view }: { state: UseJourneyResult; view?: J
   // ── position: default bottom-left; user-dragged position persists ──
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [pos, setPos] = useState<TrayPos | null>(() => loadPosition());
+  // Collapsed by default: the tray is a companion, not a table of contents —
+  // it shows the step you're ON plus its buttons, and the chevron reveals the
+  // whole plan when you want your bearings.
+  const [expanded, setExpanded] = useState(false);
   useEffect(() => {
     const onResize = () =>
       setPos((p) => (p ? clampToViewport(p, elementSize(containerRef.current)) : p));
@@ -257,6 +261,17 @@ export function JourneyTray({ state, view }: { state: UseJourneyResult; view?: J
         </div>
         <button
           type="button"
+          aria-label={expanded ? t`Show only the current step` : t`Show all steps`}
+          title={expanded ? t`Show only the current step` : t`Show all steps`}
+          onClick={() => setExpanded((v) => !v)}
+          onPointerDown={(e) => e.stopPropagation()}
+          className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+          data-testid="journey-tray-expand"
+        >
+          {expanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+        </button>
+        <button
+          type="button"
           aria-label={t`Minimize to the journey icon`}
           title={t`Minimize to the journey icon`}
           onClick={minimize}
@@ -269,7 +284,9 @@ export function JourneyTray({ state, view }: { state: UseJourneyResult; view?: J
       </div>
 
       <ul className="flex max-h-64 flex-col gap-0.5 overflow-y-auto overscroll-contain p-2">
-        {groupSteps(steps).map((section) => {
+        {groupSteps(steps)
+          .filter((section) => expanded || section.indices.includes(cursorIndex))
+          .map((section) => {
           const isDone = (i: number) =>
             complete || doneIds.has(steps[i].node_id) || (cursorIndex >= 0 && i < cursorIndex);
           const renderStep = (step: JourneyStep, i: number, indent: boolean) => {
@@ -312,8 +329,11 @@ export function JourneyTray({ state, view }: { state: UseJourneyResult; view?: J
             );
           };
 
+          // Collapsed: one row — the step you're on. Its group header stays,
+          // so you still know which part of the tour you're in.
+          const rows = expanded ? section.indices : section.indices.filter((i) => i === cursorIndex);
           if (section.group === null) {
-            return section.indices.map((i) => renderStep(steps[i], i, false));
+            return rows.map((i) => renderStep(steps[i], i, false));
           }
           const groupDone = section.indices.every(isDone);
           const groupCurrent = !complete && section.indices.includes(cursorIndex);
@@ -334,7 +354,7 @@ export function JourneyTray({ state, view }: { state: UseJourneyResult; view?: J
                 <span className={groupCurrent ? 'text-foreground' : 'text-muted-foreground'}>{section.group}</span>
               </div>
               <ul className="flex flex-col gap-0.5">
-                {section.indices.map((i) => renderStep(steps[i], i, true))}
+                {rows.map((i) => renderStep(steps[i], i, true))}
               </ul>
             </li>
           );
