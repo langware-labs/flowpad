@@ -249,11 +249,11 @@ function CapabilityAccessRow({
   const Icon = capabilityIcon(access.icon);
 
   const runAction = useCallback(
-    async (action: 'check' | 'install') => {
+    async (action: 'test' | 'setup') => {
       setBusy(true);
       try {
-        if (action === 'check') await capabilityManager.check(access.kind);
-        else await capabilityManager.install(access.kind);
+        if (action === 'test') await capabilityManager.test(access.kind);
+        else await capabilityManager.setup(access.kind);
         await onRefresh();
       } finally {
         setBusy(false);
@@ -315,7 +315,7 @@ function CapabilityAccessRow({
           <div className="flex justify-end gap-1">
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-7 w-7" disabled={busy} onClick={() => void runAction('check')}>
+                <Button variant="ghost" size="icon" className="h-7 w-7" disabled={busy} onClick={() => void runAction('test')}>
                   <RefreshCw className={cn('h-3.5 w-3.5', busy && 'animate-spin')} />
                 </Button>
               </TooltipTrigger>
@@ -324,7 +324,7 @@ function CapabilityAccessRow({
             {access.installable && (
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon" className="h-7 w-7" disabled={busy} onClick={() => void runAction('install')}>
+                  <Button variant="ghost" size="icon" className="h-7 w-7" disabled={busy} onClick={() => void runAction('setup')}>
                     <Download className="h-3.5 w-3.5" />
                   </Button>
                 </TooltipTrigger>
@@ -438,7 +438,7 @@ function IntentInstaller({ onLaunched }: { onLaunched: () => Promise<unknown> })
     if (!value || busy) return;
     setBusy(true);
     try {
-      await capabilityManager.installIntent(value);
+      await capabilityManager.setupIntent(value);
       setText('');
       await onLaunched();
     } finally {

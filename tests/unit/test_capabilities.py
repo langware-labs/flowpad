@@ -54,10 +54,18 @@ def test_harness_capability_specs_include_install_homepages():
 
 
 @pytest.mark.asyncio
-async def test_cli_capability_check_uses_discovered_value():
-    _seed_cli_value(CapabilityKind.CLAUDE_CLI.value, "/usr/bin")
+async def test_cli_capability_test_uses_discovered_value(monkeypatch):
+    import flow_sdk.core.capabilities.registry as registry_mod
 
-    result = await get_capability_registry().check(CapabilityKind.CLAUDE_CLI.value)
+    _seed_cli_value(CapabilityKind.CLAUDE_CLI.value, "/usr/bin")
+    monkeypatch.setattr(registry_mod.shutil, "which", lambda executable, path=None: f"/usr/bin/{executable}")
+    monkeypatch.setattr(
+        registry_mod.subprocess,
+        "run",
+        lambda *args, **kwargs: type("Completed", (), {"returncode": 0, "stdout": "ok", "stderr": ""})(),
+    )
+
+    result = await get_capability_registry().test(CapabilityKind.CLAUDE_CLI.value)
 
     assert result.result.available is True
     assert result.result.ok is True
@@ -65,8 +73,8 @@ async def test_cli_capability_check_uses_discovered_value():
 
 
 @pytest.mark.asyncio
-async def test_cli_capability_check_unavailable_without_discovered_value():
-    result = await get_capability_registry().check(CapabilityKind.CODEX_CLI.value)
+async def test_cli_capability_test_unavailable_without_discovered_value():
+    result = await get_capability_registry().test(CapabilityKind.CODEX_CLI.value)
 
     assert result.result.available is False
     assert "not found" in result.result.message
@@ -90,7 +98,7 @@ async def test_cli_capability_install_starts_agentic_process(monkeypatch):
 
     monkeypatch.setattr(registry_mod, "run_capability_install_process", fake_install_process)
 
-    result = await get_capability_registry().install(CapabilityKind.CODEX_CLI.value)
+    result = await get_capability_registry().setup(CapabilityKind.CODEX_CLI.value)
 
     assert result.result.available is False
     assert result.result.process_id == "install-process-id"
@@ -160,7 +168,7 @@ async def test_cli_capability_install_failure_is_returned(monkeypatch):
 
     monkeypatch.setattr(registry_mod, "run_capability_install_process", fake_install_process)
 
-    result = await get_capability_registry().install(CapabilityKind.CODEX_CLI.value)
+    result = await get_capability_registry().setup(CapabilityKind.CODEX_CLI.value)
 
     assert result.result.ok is False
     assert "failed" in result.result.message
@@ -227,6 +235,12 @@ async def test_chrome_probe_runner_result_is_returned_when_dependency_passes(mon
         )
 
     _seed_cli_value(CapabilityKind.CLAUDE_CLI.value, "/bin")
+    monkeypatch.setattr(registry_mod.shutil, "which", lambda executable, path=None: f"/bin/{executable}")
+    monkeypatch.setattr(
+        registry_mod.subprocess,
+        "run",
+        lambda *args, **kwargs: type("Completed", (), {"returncode": 0, "stdout": "ok", "stderr": ""})(),
+    )
     monkeypatch.setattr(registry_mod, "run_chrome_authenticated_probe", fake_probe)
 
     result = await get_capability_registry().test(CapabilityKind.CHROME_AUTHENTICATED.value)
@@ -238,7 +252,15 @@ async def test_chrome_probe_runner_result_is_returned_when_dependency_passes(mon
 
 @pytest.mark.asyncio
 async def test_harness_reference_delegates_to_target_and_stamps_reference(monkeypatch):
+    import flow_sdk.core.capabilities.registry as registry_mod
+
     _seed_cli_value(CapabilityKind.CLAUDE_CLI.value, "/usr/bin")
+    monkeypatch.setattr(registry_mod.shutil, "which", lambda executable, path=None: f"/usr/bin/{executable}")
+    monkeypatch.setattr(
+        registry_mod.subprocess,
+        "run",
+        lambda *args, **kwargs: type("Completed", (), {"returncode": 0, "stdout": "ok", "stderr": ""})(),
+    )
     runner = get_capability_registry().get(CapabilityKind.HARNESS.value)
 
     async def fake_resolve():
@@ -246,7 +268,7 @@ async def test_harness_reference_delegates_to_target_and_stamps_reference(monkey
 
     monkeypatch.setattr(runner, "_resolve_reference_kind", fake_resolve)
 
-    result = await get_capability_registry().check(CapabilityKind.HARNESS.value)
+    result = await get_capability_registry().test(CapabilityKind.HARNESS.value)
 
     assert result.result.available is True
     assert result.result.details["reference_kind"] == CapabilityKind.CLAUDE_CLI.value
@@ -262,7 +284,7 @@ async def test_harness_reference_rejects_target_outside_allowed_query(monkeypatc
 
     monkeypatch.setattr(runner, "_resolve_reference_kind", fake_resolve)
 
-    result = await get_capability_registry().check(CapabilityKind.HARNESS.value)
+    result = await get_capability_registry().test(CapabilityKind.HARNESS.value)
 
     assert result.result.available is False
     assert "must be a harness" in result.result.message
@@ -277,7 +299,7 @@ async def test_harness_reference_rejects_unregistered_target(monkeypatch):
 
     monkeypatch.setattr(runner, "_resolve_reference_kind", fake_resolve)
 
-    result = await get_capability_registry().check(CapabilityKind.HARNESS.value)
+    result = await get_capability_registry().test(CapabilityKind.HARNESS.value)
 
     assert result.result.available is False
     assert "not registered" in result.result.message
@@ -289,6 +311,7 @@ async def test_harness_reference_rejects_unregistered_target(monkeypatch):
 @pytest.mark.asyncio
 async def test_run_discovery_populates_dict_and_mirrors_rows(monkeypatch, tmp_path):
     import flow_sdk.builtin.capability as capability_mod
+    import flow_sdk.core.capabilities.registry as registry_mod
 
     bin_dir = tmp_path / "nvm-bin"
     bin_dir.mkdir()
@@ -300,6 +323,12 @@ async def test_run_discovery_populates_dict_and_mirrors_rows(monkeypatch, tmp_pa
         }
 
     monkeypatch.setattr(discovery_mod, "_run_env_probe", fake_probe)
+    monkeypatch.setattr(registry_mod.shutil, "which", lambda executable, path=None: f"/bin/{executable}")
+    monkeypatch.setattr(
+        registry_mod.subprocess,
+        "run",
+        lambda *args, **kwargs: type("Completed", (), {"returncode": 0, "stdout": "ok", "stderr": ""})(),
+    )
 
     saved_rows: list[tuple[str, dict | None, str | None]] = []
 
@@ -313,7 +342,7 @@ async def test_run_discovery_populates_dict_and_mirrors_rows(monkeypatch, tmp_pa
             self.value_type = None
             self.last_check = None
             self.state = "none"
-            self.last_install = None
+            self.last_setup = None
 
         # Real derive_state semantics over the fake's fields.
         def derive_state(self, result, *, attempted=False):
@@ -404,6 +433,7 @@ async def test_ensure_discovered_runs_one_full_sweep(monkeypatch):
 @pytest.mark.asyncio
 async def test_compute_harness_state_reports_default_and_installed(monkeypatch):
     import flow_sdk.core.capabilities.harness_state as harness_state_mod
+    import flow_sdk.core.capabilities.registry as registry_mod
 
     async def fake_ensure_discovered():
         return True
@@ -414,6 +444,12 @@ async def test_compute_harness_state_reports_default_and_installed(monkeypatch):
         return CapabilityKind.CODEX_CLI.value
 
     monkeypatch.setattr(harness_state_mod, "ensure_discovered", fake_ensure_discovered)
+    monkeypatch.setattr(registry_mod.shutil, "which", lambda executable, path=None: f"/bin/{executable}")
+    monkeypatch.setattr(
+        registry_mod.subprocess,
+        "run",
+        lambda *args, **kwargs: type("Completed", (), {"returncode": 0, "stdout": "ok", "stderr": ""})(),
+    )
     monkeypatch.setattr(runner, "_resolve_reference_kind", fake_reference)
     _seed_cli_value(CapabilityKind.CODEX_CLI.value, "/bin")
 

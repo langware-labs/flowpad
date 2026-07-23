@@ -16,21 +16,22 @@ from flow_sdk.db.drivers.query import QueryFilter
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
 
 
-def capability_id_for_kind(kind: str) -> str:
-    return mint_uuid(f"flow-sdk:capability:{kind}")
+def capability_id_for_kind(kind: str, scope_type: str | None = None, scope_id: str | None = None) -> str:
+    scope = f":{scope_type or ''}:{scope_id or ''}"
+    return mint_uuid(f"flow-sdk:capability:{kind}{scope}")
 
 
 async def restamp_capability_state(kind: str, *, attempted: bool = True) -> None:
     """Re-check a capability and persist its four-state verdict.
 
     For out-of-band credential changes the discovery sweep can't see coming —
-    e.g. GitHub OAuth connect/disconnect flips source_control.github without
+    e.g. GitHub OAuth connect/disconnect flips source_control.git.github without
     any CLI changing on disk. Best-effort: never raises."""
     try:
         row = await Capability.get_by_kind(kind)
         if row is None:
             return
-        check = await get_capability_registry().check(kind)
+        check = await get_capability_registry().test(kind)
         row.last_check = check.result.model_dump(mode="json")
         row.state = row.derive_state(check.result, attempted=attempted)
         await row.save(notify=True)
@@ -47,6 +48,8 @@ class Capability(Entity):
     type: str = APIField(default="capability")
     name: str = APIField(default="")
     kind: str = APIField(default="")
+    scope_type: str | None = APIField(default=None)
+    scope_id: str | None = APIField(default=None)
     description: str = APIField(default="")
     icon: str = APIField(default="BadgeCheck")
     homepage_url: str | None = APIField(default=None)
@@ -76,7 +79,7 @@ class Capability(Entity):
     # install monitor.
     state: str = APIField(default=CapabilityState.NONE.value)
     last_check: dict[str, Any] | None = APIField(default=None)
-    last_install: dict[str, Any] | None = APIField(default=None)
+    last_setup: dict[str, Any] | None = APIField(default=None)
     last_test: dict[str, Any] | None = APIField(default=None)
     # Device-login session state — runtime-only, broadcast but never persisted
     # (same shape as AgenticProcess.connection_id / Tab.status). Mirrors the
@@ -166,9 +169,21 @@ class Capability(Entity):
         return seeded
 
     @classmethod
-    async def get_by_kind(cls, kind: str) -> "Capability | None":
+    async def get_by_kind(cls, kind: str, scope_type: str | None = None, scope_id: str | None = None) -> "Capability | None":
         await cls.ensure_seeded()
-        return await cls._db.get_by_id(capability_id_for_kind(kind), cls.get_type())
+        return await cls._db.get_by_id(capability_id_for_kind(kind, scope_type, scope_id), cls.get_type())
+
+    @classmethod
+    async def get_or_create_scoped(cls, kind: str, scope_type: str, scope_id: str) -> "Capability":
+        existing = await cls.get_by_kind(kind, scope_type, scope_id)
+        if existing is not None:
+            return existing
+        spec = next(spec for spec in get_default_capability_specs() if spec.kind == kind)
+        row = cls.from_spec(spec)
+        row.id = capability_id_for_kind(kind, scope_type, scope_id)
+        row.scope_type = scope_type
+        row.scope_id = scope_id
+        return await row.save(notify=False)
 
     @classmethod
     async def get_by_id(cls, eid: str) -> "Capability | None":
@@ -200,7 +215,7 @@ class Capability(Entity):
             return CapabilityState.ERROR.value
         if result.available:
             return CapabilityState.AVAILABLE.value
-        engaged = attempted or self.state != CapabilityState.NONE or self.last_install is not None
+        engaged = attempted or self.state != CapabilityState.NONE or self.last_setup is not None
         return CapabilityState.NOT_AVAILABLE.value if engaged else CapabilityState.NONE.value
 
     async def _record_result(
@@ -219,8 +234,8 @@ class Capability(Entity):
             self.state = self.derive_state(result, attempted=attempted)
         await self.save(notify=True)
 
-    @action.post(action_name="check")
-    async def check_action(self) -> ApiSuccessResponse:
+    @action.post(action_name="test")
+    async def test_action(self) -> ApiSuccessResponse:
         # Check = refresh: re-run discovery from scratch for this kind (the
         # capability window's Check/Refresh button). ``run_discovery`` already
         # mirrors value + last_check onto the row and broadcasts the update, so
@@ -236,7 +251,7 @@ class Capability(Entity):
 
             await reconcile_mcp_capabilities()
         await run_discovery([self.kind])
-        result = await get_capability_registry().check(self.kind)
+        result = await get_capability_registry().test(self.kind)
         # An explicit Check is user engagement: it may promote NONE →
         # NOT_AVAILABLE (unlike the passive discovery mirror above).
         new_state = self.derive_state(result.result, attempted=True)
@@ -245,18 +260,12 @@ class Capability(Entity):
             await self.save(notify=True)
         return ApiSuccessResponse(data=result.model_dump(mode="json"))
 
-    @action.post(action_name="install")
-    async def install_action(self) -> ApiSuccessResponse:
-        result = await get_capability_registry().install(self.kind)
+    @action.post(action_name="setup")
+    async def setup_action(self) -> ApiSuccessResponse:
+        result = await get_capability_registry().setup(self.kind)
         await self._record_result(
-            "last_install", result.result, attempted=True, stamp_state=result.result.process_id is None
+            "last_setup", result.result, attempted=True, stamp_state=result.result.process_id is None
         )
-        return ApiSuccessResponse(data=result.model_dump(mode="json"))
-
-    @action.post(action_name="test")
-    async def test_action(self) -> ApiSuccessResponse:
-        result = await get_capability_registry().test(self.kind)
-        await self._record_result("last_test", result.result, attempted=True)
         return ApiSuccessResponse(data=result.model_dump(mode="json"))
 
     # ── Device login (harness CLIs) ─────────────────────────────────────────

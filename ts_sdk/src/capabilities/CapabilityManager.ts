@@ -202,9 +202,9 @@ export class CapabilityManager extends EventEmitter {
    * email"). Returns the spawned process id; refreshes the summary so the
    * row's running state surfaces.
    */
-  async installIntent(text: string): Promise<{ process_id?: string | null; message?: string }> {
+  async setupIntent(text: string): Promise<{ process_id?: string | null; message?: string }> {
     const result = await apiClient.post<{ process_id?: string | null; message?: string }>(
-      '/graph/capabilities/install-intent',
+      '/graph/capabilities/setup-intent',
       { text },
     );
     void this.getSummary(true);
@@ -262,7 +262,7 @@ export class CapabilityManager extends EventEmitter {
 
       for (const capability of snapshot.capabilities) {
         if (this.getResult(capability) !== null) continue;
-        const check = await this.runActionForCapability(capability, 'check');
+        const check = await this.runActionForCapability(capability, 'test');
         if (check.result.available) break;
       }
 
@@ -296,7 +296,7 @@ export class CapabilityManager extends EventEmitter {
    * resolves true ⇔ the capability is available afterwards.
    *
    * When install spawns an agentic process, resolution waits for the install
-   * monitor's terminal row write (`last_install.details.install_finalized`,
+   * monitor's terminal row write (`last_setup.details.install_finalized`,
    * arriving over the entity WS channel) — the monitor always terminates and
    * persists a verdict, so no client-side timeout is layered on top.
    */
@@ -315,15 +315,15 @@ export class CapabilityManager extends EventEmitter {
       'app.entity.updated',
       (event) => {
         const entity = (event.data?.entity ?? null) as ICapability | null;
-        const install = entity?.last_install;
-        if (!install?.details?.install_finalized) return;
-        if (expectedProcessId && install.process_id !== expectedProcessId) return;
+        const setup = entity?.last_setup;
+        if (!setup?.details?.install_finalized) return;
+        if (expectedProcessId && setup.process_id !== expectedProcessId) return;
         resolveTerminal();
       },
       { target: `capability:${row.id}` },
     );
     try {
-      const check = await row.install();
+      const check = await row.setup();
       expectedProcessId = check.result.process_id ?? null;
       if (expectedProcessId) await terminal;
     } finally {
@@ -333,12 +333,12 @@ export class CapabilityManager extends EventEmitter {
     return (await this.checkCapability(query)) === true;
   }
 
-  async check(queryKind: string): Promise<CapabilitySnapshot> {
-    return this.runAction(queryKind, 'check');
+  async test(queryKind: string): Promise<CapabilitySnapshot> {
+    return this.runAction(queryKind, 'test');
   }
 
-  async install(queryKind: string): Promise<CapabilitySnapshot> {
-    return this.runAction(queryKind, 'install');
+  async setup(queryKind: string): Promise<CapabilitySnapshot> {
+    return this.runAction(queryKind, 'setup');
   }
 
   async test(queryKind: string): Promise<CapabilitySnapshot> {
@@ -362,7 +362,7 @@ export class CapabilityManager extends EventEmitter {
     await capability.save();
     this.actionResults.delete(query);
     await this.load(true);
-    return this.check(query);
+    return this.test(query);
   }
 
   async setReferenceKind(queryKind: string, referenceKind: string): Promise<CapabilitySnapshot> {
@@ -411,7 +411,7 @@ export class CapabilityManager extends EventEmitter {
 
     for (const capability of capabilities) {
       const result = await this.runActionForCapability(capability, actionName);
-      if (actionName !== 'check' || result.result.available) break;
+      if (actionName !== 'test' || result.result.available) break;
     }
 
     return this.getSnapshot(query);
@@ -443,8 +443,7 @@ export class CapabilityManager extends EventEmitter {
   private getResult(capability: Capability): CapabilityResult | null {
     return (
       this.actionResults.get(capability.kind)?.result ??
-      capability.last_install ??
-      capability.last_check ??
+      capability.last_setup ??
       capability.last_test ??
       null
     );
@@ -454,9 +453,8 @@ export class CapabilityManager extends EventEmitter {
     if (!capability) return null;
     return (
       this.actionResults.get(capability.kind)?.result.process_id ??
-      capability.last_install?.process_id ??
+      capability.last_setup?.process_id ??
       capability.last_test?.process_id ??
-      capability.last_check?.process_id ??
       null
     );
   }

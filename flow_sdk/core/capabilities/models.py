@@ -41,8 +41,8 @@ class CapabilityKind(StrEnum):
     CHROME_AUTHENTICATED = "browsing.chrome.authenticated"
     # Source control: parent = "a GitHub connection FlowPad can use" (OAuth
     # token OR gh); child = the gh CLI specifically (installed + authenticated).
-    GITHUB = "source_control.github"
-    GITHUB_GH = "source_control.github.gh"
+    GITHUB = "source_control.git.github"
+    GITHUB_GH = "source_control.git.github.gh"
 
 
 class CapabilityState(StrEnum):
@@ -123,6 +123,13 @@ class CapabilityResult(BaseModel):
     # the persisted row state is derived via ``Capability.derive_state`` so
     # NONE ("never tried") survives passive discovery.
     state: str = CapabilityState.NONE.value
+
+
+class CapabilityScope(BaseModel):
+    """Optional entity scope for a capability test/setup."""
+
+    scope_type: str | None = None
+    scope_id: str | None = None
 
 
 class CapabilityCheck(BaseModel):

@@ -89,7 +89,7 @@ def _worker_type_for(kind: str) -> str | None:
 def _last_process_id(row) -> str | None:
     if row is None:
         return None
-    for field in ("last_install", "last_test", "last_check"):
+    for field in ("last_setup", "last_test"):
         result = getattr(row, field, None)
         if isinstance(result, dict) and result.get("process_id"):
             return result["process_id"]
@@ -122,7 +122,11 @@ async def compute_capabilities_summary(wait_for_discovery: bool = True) -> Capab
             logger.exception("compute_capabilities_summary: discovery failed")
 
     registry = get_capability_registry()
-    rows = {row.kind: row for row in await Capability.get_all()}
+    rows = {
+        row.kind: row
+        for row in await Capability.get_all()
+        if row.scope_type is None and row.scope_id is None
+    }
 
     accesses: list[CapabilityAccess] = []
     for kind in registry.kinds():
@@ -130,15 +134,16 @@ async def compute_capabilities_summary(wait_for_discovery: bool = True) -> Capab
         row = rows.get(kind)
         intent = kind.split(".")[0]
 
-        try:
-            check = await registry.check(kind)
-        except Exception:
-            logger.exception("compute_capabilities_summary: check failed for %s", kind)
-            continue
-
+        latest = (
+            row.last_test if row is not None else None
+        ) or (row.last_setup if row is not None else None) or (row.last_check if row is not None else None)
         deps = [
-            CapabilityDependency(kind=dep_kind, available=result.available)
-            for dep_kind, result in check.dependencies.items()
+            CapabilityDependency(
+                kind=dep_kind,
+                available=rows.get(dep_kind) is not None
+                and rows[dep_kind].state == "available",
+            )
+            for dep_kind in spec.dependent_capability_kinds
         ]
         value = get_capability_value(kind)
         reference_kind = (
@@ -160,18 +165,15 @@ async def compute_capabilities_summary(wait_for_discovery: bool = True) -> Capab
                 name=spec.name,
                 description=spec.description,
                 icon=spec.icon,
-                available=check.result.available,
-                # The summary always runs check() for every kind, so a result is
-                # always a determination — an unavailable CLI reads "Unavailable",
-                # not "Not checked".
-                checked=True,
+                available=row is not None and row.state == "available",
+                checked=row is not None and row.state != "none",
                 # Row state is authoritative (it encodes "never tried"); fall
                 # back to deriving from this fresh check for rows not yet
                 # stamped (derive without a row can't promote to NOT_AVAILABLE).
                 state=(
                     row.state
                     if row is not None
-                    else ("available" if check.result.available else "none")
+                    else "none"
                 ),
                 runnable=spec.runnable,
                 installable=installable,
@@ -182,7 +184,7 @@ async def compute_capabilities_summary(wait_for_discovery: bool = True) -> Capab
                 value=value.value if value is not None else None,
                 value_type=spec.value_type,
                 last_process_id=_last_process_id(row),
-                message=check.result.message,
+                message=(latest.get("message", "") if isinstance(latest, dict) else ""),
             )
         )
 

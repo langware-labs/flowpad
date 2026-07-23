@@ -28,7 +28,7 @@ def _journey_dir(tmp_path, gate=None):
 
 
 def test_read_gate(tmp_path):
-    gate = {"requires_capabilities": ["source_control.github"]}
+    gate = {"requires_capabilities": ["source_control.git.github"]}
     assert read_gate(_journey_dir(tmp_path, gate)) == gate
     assert read_gate(tmp_path / "missing") is None  # no graph.json → None
 
@@ -40,7 +40,7 @@ async def test_gate_open_semantics(tmp_path, monkeypatch):
     async def fake_check(kind):
         return states[kind]
 
-    monkeypatch.setattr(caps_mod, "check_capability", fake_check)
+    monkeypatch.setattr(caps_mod, "capability_available", fake_check)
 
     gate = {"requires_capabilities": ["a.b", "a.b.c"]}
     journey = Journey(asset_ref=str(_journey_dir(tmp_path, gate)))

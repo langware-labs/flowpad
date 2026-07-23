@@ -4,6 +4,7 @@ from .models import (
     CapabilityResult,
     CapabilitySpec,
     CapabilityState,
+    CapabilityScope,
     capability_kind_matches,
 )
 from .registry import (
@@ -19,7 +20,7 @@ from .summary import (
 )
 
 
-async def check_capability(kind: str) -> bool | None:
+async def capability_available(kind: str) -> bool | None:
     """Tri-state readiness: True = available, False = not available,
     None = unknown (never tried, or the last probe errored — both retryable
     via :func:`setup_capability`). Reads the persisted row state; does NOT
@@ -46,14 +47,14 @@ async def setup_capability(kind: str) -> bool:
 
     from flow_sdk.core.capabilities.registry import _INSTALL_MONITOR_TASKS
 
-    check = await get_capability_registry().install(kind)
+    check = await get_capability_registry().setup(kind)
     if check.result.process_id:
         # The install monitor task awaits the process, re-discovers, and
         # persists the terminal state — wait for the monitors to drain.
         monitors = [t for t in _INSTALL_MONITOR_TASKS if not t.done()]
         if monitors:
             await asyncio.wait(monitors)
-    return (await check_capability(kind)) is True
+    return (await capability_available(kind)) is True
 
 
 __all__ = [
@@ -66,8 +67,9 @@ __all__ = [
     "CapabilitySpec",
     "CapabilityResult",
     "CapabilityState",
+    "CapabilityScope",
     "capability_kind_matches",
-    "check_capability",
+    "capability_available",
     "compute_capabilities_summary",
     "get_capability_registry",
     "get_default_capability_specs",

@@ -4,7 +4,7 @@ import { ActionInfo } from '../models/ActionInfo';
 import { HttpMethod } from '../models/ApiUrl';
 import { kindMatches } from '../models/Kind';
 
-export type CapabilityActionName = 'check' | 'install' | 'test';
+export type CapabilityActionName = 'test' | 'setup';
 
 /** Four-state readiness (mirror of the backend CapabilityState enum).
  *  available = ready to use; not_available = probed/attempted and
@@ -23,6 +23,8 @@ export interface CapabilityResult {
 
 export interface CapabilityCheck {
   kind: string;
+  scope_type?: string | null;
+  scope_id?: string | null;
   result: CapabilityResult;
   dependencies?: Record<string, CapabilityResult>;
 }
@@ -70,7 +72,7 @@ export interface ICapability extends IEntity {
   /** Persisted four-state readiness (see CapabilityState). */
   state?: CapabilityState;
   last_check?: CapabilityResult | null;
-  last_install?: CapabilityResult | null;
+  last_setup?: CapabilityResult | null;
   last_test?: CapabilityResult | null;
   /** Device-login runtime state — broadcast-only, never persisted. */
   login_state?: DeviceLoginState | null;
@@ -95,6 +97,8 @@ export class Capability extends APIEntity<Capability> implements ICapability {
 
   name: string = '';
   kind: string = '';
+  scope_type: string | null = null;
+  scope_id: string | null = null;
   description: string = '';
   homepage_url: string | null = null;
   dependent_capability_kinds: string[] = [];
@@ -104,7 +108,7 @@ export class Capability extends APIEntity<Capability> implements ICapability {
   value_type: string | null = null;
   state: CapabilityState = 'none';
   last_check: CapabilityResult | null = null;
-  last_install: CapabilityResult | null = null;
+  last_setup: CapabilityResult | null = null;
   last_test: CapabilityResult | null = null;
   login_state: DeviceLoginState | null = null;
   login_url: string | null = null;
@@ -143,6 +147,8 @@ export class Capability extends APIEntity<Capability> implements ICapability {
     });
     this.name = entity.name ?? this.name;
     this.kind = entity.kind ?? this.kind;
+    this.scope_type = entity.scope_type ?? this.scope_type;
+    this.scope_id = entity.scope_id ?? this.scope_id;
     this.description = entity.description ?? this.description;
     this.icon = entity.icon ?? this.icon;
     this.homepage_url = entity.homepage_url ?? this.homepage_url;
@@ -153,7 +159,7 @@ export class Capability extends APIEntity<Capability> implements ICapability {
     this.value_type = entity.value_type ?? this.value_type;
     this.state = entity.state ?? this.state;
     this.last_check = entity.last_check ?? this.last_check;
-    this.last_install = entity.last_install ?? this.last_install;
+    this.last_setup = entity.last_setup ?? this.last_setup;
     this.last_test = entity.last_test ?? this.last_test;
     this.login_state = entity.login_state ?? this.login_state;
     this.login_url = entity.login_url ?? this.login_url;
@@ -175,18 +181,14 @@ export class Capability extends APIEntity<Capability> implements ICapability {
     }
     const action = new ActionInfo(actionName, Capability.type, this.id, 'POST' as HttpMethod);
     const response = await dataManager.callAction<undefined, CapabilityCheck>(action);
-    if (actionName === 'check') this.last_check = response.result;
-    if (actionName === 'install') this.last_install = response.result;
+    if (actionName === 'test') this.last_test = response.result;
+    if (actionName === 'setup') this.last_setup = response.result;
     if (actionName === 'test') this.last_test = response.result;
     return response;
   }
 
-  async check(): Promise<CapabilityCheck> {
-    return this.callCapabilityAction('check');
-  }
-
-  async install(): Promise<CapabilityCheck> {
-    return this.callCapabilityAction('install');
+  async setup(): Promise<CapabilityCheck> {
+    return this.callCapabilityAction('setup');
   }
 
   async test(): Promise<CapabilityCheck> {

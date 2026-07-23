@@ -1,4 +1,4 @@
-"""CapabilityState four-state model + tri-state check_capability + gh/github kinds.
+"""CapabilityState four-state model + persisted availability + gh/github kinds.
 
 Pure/seam-injected — no subprocess, no network, no live DB beyond the isolated
 driver the entity fixtures provide.
@@ -70,7 +70,7 @@ def test_derive_state_error_passthrough():
 
 
 def test_derive_state_prior_install_counts_as_engaged():
-    row = Capability(kind="x", state="none", last_install={"ok": False})
+    row = Capability(kind="x", state="none", last_setup={"ok": False})
     assert row.derive_state(_result(available=False)) == "not_available"
 
 
@@ -90,21 +90,21 @@ def test_github_kinds_registered_with_specs():
     assert gh.spec.install_prompt and "auth login" in gh.spec.install_prompt
 
 
-# ── tri-state check_capability ───────────────────────────────────────────────
+# ── tri-state capability_available ───────────────────────────────────────────
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("state", "expected"),
     [("available", True), ("not_available", False), ("none", None), ("error", None)],
 )
-async def test_check_capability_mapping(monkeypatch, state, expected):
+async def test_capability_available_mapping(monkeypatch, state, expected):
     from flow_sdk.core import capabilities as caps
 
     async def fake_get_by_kind(kind):
         return Capability(kind=kind, state=state)
 
     monkeypatch.setattr(Capability, "get_by_kind", fake_get_by_kind)
-    assert await caps.check_capability("source_control.github.gh") is expected
+    assert await caps.capability_available("source_control.git.github.gh") is expected
 
 
 # ── gh runner ────────────────────────────────────────────────────────────────
@@ -112,7 +112,7 @@ async def test_check_capability_mapping(monkeypatch, state, expected):
 @pytest.mark.asyncio
 async def test_gh_check_not_installed():
     runner = get_capability_registry().get(CapabilityKind.GITHUB_GH.value)
-    result = await runner.check()
+    result = await runner.test()
     assert result.available is False
     assert result.details.get("installed") is False
 
@@ -133,7 +133,7 @@ async def test_gh_check_installed_auth_seam(monkeypatch):
         return True
 
     monkeypatch.setattr(runner, "_is_authenticated", authed)
-    result = await runner.check()
+    result = await runner.test()
     assert result.available is True
     assert result.details == {
         "executable": "gh",
@@ -155,12 +155,12 @@ async def test_github_parent_aggregation(monkeypatch):
 
     # OAuth wins
     monkeypatch.setattr(runner, "_oauth_token", token_present)
-    result = await runner.check()
+    result = await runner.test()
     assert result.available is True and result.details["method"] == "oauth"
 
     # no OAuth, gh unavailable (nothing discovered) → not available
     monkeypatch.setattr(runner, "_oauth_token", token_absent)
-    result = await runner.check()
+    result = await runner.test()
     assert result.available is False
 
     # no OAuth, gh available → available via gh
@@ -169,8 +169,8 @@ async def test_github_parent_aggregation(monkeypatch):
     async def gh_ok():
         return CapabilityResult(ok=True, available=True, message="")
 
-    monkeypatch.setattr(gh, "check", gh_ok)
-    result = await runner.check()
+    monkeypatch.setattr(gh, "test", gh_ok)
+    result = await runner.test()
     assert result.available is True and result.details["method"] == "gh"
 
 
@@ -194,20 +194,20 @@ def test_gh_device_login_spec_scrapes_canned_output():
     assert answer is not None and answer[1] == "\r"
 
 
-# ── registry check() traps probe crashes as ERROR ────────────────────────────
+# ── registry test() traps probe crashes as ERROR ─────────────────────────────
 
 @pytest.mark.asyncio
-async def test_registry_check_traps_probe_exception(monkeypatch):
+async def test_registry_test_traps_probe_exception(monkeypatch):
     registry = get_capability_registry()
     runner = registry.get(CapabilityKind.GITHUB_GH.value)
 
     async def boom():
         raise RuntimeError("probe exploded")
 
-    monkeypatch.setattr(runner, "check", boom)
-    check = await registry.check(CapabilityKind.GITHUB_GH.value)
+    monkeypatch.setattr(runner, "test", boom)
+    check = await registry.test(CapabilityKind.GITHUB_GH.value)
     assert check.result.available is False
     assert check.result.state == CapabilityState.ERROR.value
 
     with pytest.raises(KeyError):
-        await registry.check("no.such.kind")
+        await registry.test("no.such.kind")
