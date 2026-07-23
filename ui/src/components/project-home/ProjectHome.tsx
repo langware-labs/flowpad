@@ -11,8 +11,12 @@ import { WorkerToolbar } from '@src/components/workers/WorkerToolbar';
 import { useTerminalStripController } from '@src/tabs/useTerminalStripController';
 import { projectScope } from '@src/lib/scope-filter';
 import { Project, TypeId } from '@sdk';
+import { topicTag } from '@src/topics/topic-tag';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Trans } from '@lingui/react/macro';
+
+/** Journey anchor for the session launcher (`?highlight=NewSession`). */
+const NEW_SESSION_TOPIC = 'NewSession';
 
 interface ProjectHomeProps {
   /** Pin spawned shells/processes to this project; otherwise the active project. */
@@ -41,7 +45,7 @@ const HarnessLauncher: React.FC<{ spawnProjectId?: string | null }> = ({ spawnPr
   const terminalOpener = useMemo(() => openers.filter((o) => o.id === 'terminal'), [openers]);
 
   return (
-    <div data-testid="project-home-start-session">
+    <div data-testid="project-home-start-session" {...topicTag(NEW_SESSION_TOPIC, 'button')}>
       <TileSection title={<Trans>New session</Trans>}>
         <WorkerToolbar
           onLaunch={startWorker}

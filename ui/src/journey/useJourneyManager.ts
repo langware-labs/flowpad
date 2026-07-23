@@ -90,15 +90,19 @@ export function useJourneyManager(state: UseJourneyResult): JourneyManagerView {
     (nodeId: string, event: 'done' | 'skipped' = 'done') => {
       if (!journey || advancedRef.current === nodeId) return;
       advancedRef.current = nodeId;
-      // Refresh is EVENT-driven (the flow.step.done subscription below) — the
-      // backend's boundary emission reaches every tab via topic_msg, so the
-      // cursor re-derivation no longer needs a post-advance refetch chain.
-      journey.advance(nodeId, event).catch((e: unknown) => {
-        console.error('[Journey] advance failed', e);
-        advancedRef.current = null; // let the signal retry
-      });
+      // Other tabs refresh off the flow.step.done boundary event; the CALLING
+      // tab refreshes on the response it already has. The event alone is not
+      // enough here: when the journey's parked run has died, the backend
+      // advance still lands (and re-parks a fresh run) but emits nothing.
+      journey
+        .advance(nodeId, event)
+        .then(() => refresh())
+        .catch((e: unknown) => {
+          console.error('[Journey] advance failed', e);
+          advancedRef.current = null; // let the signal retry
+        });
     },
-    [journey],
+    [journey, refresh],
   );
 
   // ── journal invalidation: the flow.step.done boundary event ──
