@@ -3,7 +3,8 @@
 // WorldView URL shape:
 //   /dock[/hub]/worldview/<projection>
 //     ?focus=<type-id>&selected=<type-id>&depth=1..12
-//     &signal=type|footprint|cost|activity&hide=<sorted,types>&q=<query>
+//     &signal=type|footprint|cost|activity&view=sigma|atlas
+//     &hide=<sorted,types>&q=<query>
 
 import {
   PageId,
@@ -19,15 +20,21 @@ import {
   isWorldViewColorMode,
   type WorldViewColorMode,
 } from '@src/types/WorldViewColorMode';
+import {
+  DEFAULT_GRAPH_PRESENTATION,
+  isGraphPresentation,
+  type GraphPresentation,
+} from '@src/types/GraphPresentation';
+import { SURFACE, type GraphSurface } from './surfaces';
 import { useCallback, useMemo } from 'react';
 
-const DEFAULT_DEPTH: Record<GraphSurface, number> = {
-  dependency: 1,
-  worldview: 4,
-};
+export type { GraphSurface } from './surfaces';
 
 export interface GraphUrlState {
   projection: WorldViewProjectionName | null;
+  /** How the canvas draws (`?render=`) — a capability of the surface, not a
+   *  property of any single view (see surfaces.ts). */
+  presentation: GraphPresentation;
   /** Focused local root key (for example `deployment-<uuid>`). */
   focus: string | null;
   selected: string | null;
@@ -37,7 +44,34 @@ export interface GraphUrlState {
   query: string;
 }
 
-export type GraphSurface = 'dependency' | 'worldview';
+/**
+ * Pointer grammar injection for the generic `subgraph` surface — layer 2 of
+ * the graph stack. A thin view type (topic graph, any future subgraph view)
+ * supplies a codec instead of this file growing a hardcoded branch per view.
+ * Focus lives IN the pointer (dependency pattern); everything else rides the
+ * standard query options. `makePointer` must carry through options it does
+ * not own (e.g. `view=tree`) so surface toggles survive refocus.
+ */
+export interface SubgraphCodec {
+  /** The dock viewType whose URLs this codec owns. */
+  viewType: ViewType;
+  /** Pointer → focused node key (null = no focus / whole graph). */
+  parseFocus(pointer: string | undefined): string | null;
+  /** Rebuild the DockPointer for a state change, preserving foreign options. */
+  makePointer(
+    state: {
+      focus: string | null;
+      depth: number;
+      defaultDepth: number;
+      selected: string | null;
+      render: GraphPresentation;
+      hidden: readonly string[];
+      query: string;
+    },
+    carryOptions: Record<string, string>,
+    layout?: string,
+  ): DockPointer;
+}
 
 function dependencyFocus(pointer: string | undefined): string | null {
   const parsed = DockPointer.parseGraphPointer(pointer);
@@ -56,9 +90,9 @@ function typeIdFromNodeKey(key: string | null): TypeId | null {
 }
 
 function parseDepth(raw: string | undefined, surface: GraphSurface): number {
+  const spec = SURFACE[surface];
   const depth = Number(raw);
-  const maximum = surface === 'worldview' ? 12 : 3;
-  return Number.isInteger(depth) && depth >= 1 && depth <= maximum ? depth : DEFAULT_DEPTH[surface];
+  return Number.isInteger(depth) && depth >= 1 && depth <= spec.maxDepth ? depth : spec.defaultDepth;
 }
 
 function parseSignal(
@@ -66,9 +100,15 @@ function parseSignal(
   surface: GraphSurface,
   projection: WorldViewProjectionName | null,
 ): WorldViewColorMode {
-  return surface === 'worldview' && projection === WorldViewProjection.DEPLOYMENT && isWorldViewColorMode(raw)
+  // Signals are worldview-heat specific: the capability plus the one
+  // projection whose payload actually carries cost/size/activity.
+  return SURFACE[surface].signals && projection === WorldViewProjection.DEPLOYMENT && isWorldViewColorMode(raw)
     ? raw
     : DEFAULT_WORLDVIEW_COLOR_MODE;
+}
+
+function parsePresentation(raw: string | undefined, surface: GraphSurface): GraphPresentation {
+  return SURFACE[surface].presentation && isGraphPresentation(raw) ? raw : DEFAULT_GRAPH_PRESENTATION;
 }
 
 function parseHidden(raw: string | undefined): ReadonlySet<string> {
@@ -80,23 +120,37 @@ function parseHidden(raw: string | undefined): ReadonlySet<string> {
   );
 }
 
-export function useGraphUrlState(surface: GraphSurface = 'dependency'): {
+export function useGraphUrlState(
+  surface: GraphSurface = 'dependency',
+  codec?: SubgraphCodec,
+): {
   state: GraphUrlState;
   setState: (next: Partial<GraphUrlState>) => void;
 } {
   const { currentDock, navigation } = useDockNavigation();
 
   const state = useMemo<GraphUrlState>(() => {
-    const expectedView = surface === 'worldview' ? ViewType.WORLDVIEW : ViewType.GRAPH;
+    const expectedView =
+      surface === 'subgraph' && codec
+        ? codec.viewType
+        : surface === 'worldview'
+          ? ViewType.WORLDVIEW
+          : ViewType.GRAPH;
     const activeDock = currentDock?.viewType === expectedView ? currentDock : null;
     const projection =
       surface === 'worldview'
         ? (DockPointer.parseWorldViewProjection(activeDock?.pointer) ??
           (activeDock?.page === PageId.HUB ? WorldViewProjection.WORLD : WorldViewProjection.DEPLOYMENT))
         : null;
-    const focus = surface === 'worldview' ? (activeDock?.options?.focus ?? null) : dependencyFocus(activeDock?.pointer);
+    const focus =
+      surface === 'subgraph' && codec
+        ? codec.parseFocus(activeDock?.pointer)
+        : surface === 'worldview'
+          ? (activeDock?.options?.focus ?? null)
+          : dependencyFocus(activeDock?.pointer);
     return {
       projection,
+      presentation: parsePresentation(activeDock?.options?.render, surface),
       focus,
       selected: activeDock?.options?.selected ?? null,
       depth: parseDepth(activeDock?.options?.depth, surface),
@@ -104,20 +158,48 @@ export function useGraphUrlState(surface: GraphSurface = 'dependency'): {
       hidden: parseHidden(activeDock?.options?.hide),
       query: activeDock?.options?.q ?? '',
     };
-  }, [currentDock, surface]);
+  }, [codec, currentDock, surface]);
 
   const setState = useCallback(
     (next: Partial<GraphUrlState>) => {
       const merged: GraphUrlState = { ...state, ...next };
+      if (surface === 'subgraph' && codec) {
+        // Preserve options this layer does not own (a surface's own data-shape
+        // keys, e.g. the topic graph's `view=tree`) so they survive refocus.
+        const owned = new Set(['focus', 'selected', 'depth', 'hide', 'q', 'signal', 'color', 'render']);
+        const carryOptions: Record<string, string> = {};
+        const activeOptions =
+          currentDock?.viewType === codec.viewType ? (currentDock?.options ?? {}) : {};
+        for (const [key, value] of Object.entries(activeOptions)) {
+          if (!owned.has(key) && typeof value === 'string') carryOptions[key] = value;
+        }
+        navigation.openDock(
+          codec.makePointer(
+            {
+              focus: merged.focus,
+              depth: merged.depth,
+              defaultDepth: SURFACE.subgraph.defaultDepth,
+              selected: merged.selected,
+              render: merged.presentation,
+              hidden: [...merged.hidden],
+              query: merged.query,
+            },
+            carryOptions,
+            currentDock?.layout,
+          ),
+        );
+        return;
+      }
       if (surface === 'worldview') {
         navigation.openDock(
           DockPointer.forWorldView(
             merged.projection ?? WorldViewProjection.DEPLOYMENT,
             {
               focus: merged.focus,
-              depth: merged.focus && merged.depth !== DEFAULT_DEPTH.worldview ? merged.depth : undefined,
+              depth: merged.focus && merged.depth !== SURFACE.worldview.defaultDepth ? merged.depth : undefined,
               selected: merged.selected ?? undefined,
               signal: merged.signal,
+              render: merged.presentation,
               hidden: [...merged.hidden],
               query: merged.query,
             },
@@ -132,7 +214,7 @@ export function useGraphUrlState(surface: GraphSurface = 'dependency'): {
         DockPointer.forGraph(
           typeIdFromNodeKey(merged.focus),
           {
-            depth: merged.depth !== DEFAULT_DEPTH.dependency ? merged.depth : undefined,
+            depth: merged.depth !== SURFACE.dependency.defaultDepth ? merged.depth : undefined,
             selected: merged.selected ?? undefined,
             hidden: [...merged.hidden],
             query: merged.query,
@@ -141,7 +223,7 @@ export function useGraphUrlState(surface: GraphSurface = 'dependency'): {
         ),
       );
     },
-    [currentDock?.layout, currentDock?.page, navigation, state, surface],
+    [codec, currentDock?.layout, currentDock?.options, currentDock?.page, currentDock?.viewType, navigation, state, surface],
   );
 
   return { state, setState };
