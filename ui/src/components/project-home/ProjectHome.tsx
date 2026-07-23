@@ -1,5 +1,5 @@
 import { MembersAvatarStack } from '@src/components/conversation/MembersAvatarStack';
-import { MiniDesktop, QuickCreatePanel, TileSection, useQuickCreatePick } from '@src/components/quick-create';
+import { MiniDesktop, QuickCreatePanel, useQuickCreatePick } from '@src/components/quick-create';
 import type { PanelHandlers } from '@src/components/quick-create';
 import { SecretsCard } from './SecretsCard';
 import { HomeCustomizationCard } from './HomeCustomizationCard';
@@ -7,13 +7,12 @@ import { VIBE_AGENTS_TOPIC, VibeAgentsCard } from './VibeAgentsCard';
 import { useHighlight } from '@src/components/wiki-tip/highlight';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@src/components/ui/tabs';
 import { useContext as useDataContext } from '@src/hooks/useContext';
-import { WorkerToolbar } from '@src/components/workers/WorkerToolbar';
 import { useTerminalStripController } from '@src/tabs/useTerminalStripController';
 import { projectScope } from '@src/lib/scope-filter';
 import { Project, TypeId } from '@sdk';
 import { topicTag } from '@src/topics/topic-tag';
 import React, { useEffect, useMemo, useState } from 'react';
-import { Trans } from '@lingui/react/macro';
+import { Trans, useLingui } from '@lingui/react/macro';
 
 /** Journey anchor for the session launcher (`?highlight=NewSession`). */
 const NEW_SESSION_TOPIC = 'NewSession';
@@ -27,34 +26,37 @@ interface ProjectHomeProps {
 }
 
 /**
- * HarnessLauncher — the single worker-launch affordance on the project home:
- * the shared `WorkerToolbar` (claude / codex / copilot) plus the controller's
- * own `terminal` opener. Replaces the old duplicated launchers (the "No
- * terminal sessions" pills and the QuickCreatePanel "New session" tiles).
- * Encapsulates `useTerminalStripController` so its controller + modals run
- * once, here.
- *
- * Terminal rides in as an `OpenerDescriptor` rather than a bespoke prop: it
- * isn't a coding-agent vendor, so it must stay out of `LAUNCHABLE_WORKERS`
- * (which every other surface renders), and the descriptor already carries its
- * label, glyph and in-flight state.
+ * SessionTiles — the single worker-launch affordance on the project home: the
+ * QuickCreatePanel `session` group (the big vendor tiles — Claude / Codex /
+ * Copilot in their brand colors) plus a Terminal tile appended via
+ * `extraSessionTiles`. Terminal's creation path (and its modals) live on the
+ * terminal strip controller, which this host encapsulates so the controller +
+ * modals run once, here — the vendor tiles launch through the panel's own
+ * `openNewClaudeProcess` path and need none of it.
  */
-const HarnessLauncher: React.FC<{ spawnProjectId?: string | null }> = ({ spawnProjectId }) => {
-  const { modals, isTabCreationPending, startWorker, openers } = useTerminalStripController({ spawnProjectId });
+const SessionTiles: React.FC<{ spawnProjectId?: string | null; panelProps: PanelHandlers }> = ({
+  spawnProjectId,
+  panelProps,
+}) => {
+  const { t } = useLingui();
+  const { modals, isTabCreationPending, openers } = useTerminalStripController({ spawnProjectId });
 
-  const terminalOpener = useMemo(() => openers.filter((o) => o.id === 'terminal'), [openers]);
+  const terminalTile = useMemo(() => {
+    const opener = openers.find((o) => o.id === 'terminal');
+    if (!opener) return [];
+    return [{
+      key: 'terminal',
+      Icon: opener.Icon,
+      label: t`Terminal`,
+      wikiword: 'Terminal sessions',
+      disabled: isTabCreationPending,
+      onClick: () => opener.onActivate(),
+    }];
+  }, [openers, isTabCreationPending, t]);
 
   return (
     <div data-testid="project-home-start-session" {...topicTag(NEW_SESSION_TOPIC, 'button')}>
-      <TileSection title={<Trans>New session</Trans>}>
-        <WorkerToolbar
-          onLaunch={startWorker}
-          starting={isTabCreationPending}
-          extraOpeners={terminalOpener}
-          mode="all"
-          testIdPrefix="project-home-worker"
-        />
-      </TileSection>
+      <QuickCreatePanel {...panelProps} sections={['session']} extraSessionTiles={terminalTile} />
       {modals}
     </div>
   );
@@ -69,7 +71,7 @@ const CreateTab: React.FC<{
   panelProps: PanelHandlers;
 }> = ({ projectId, spawnProjectId, panelProps }) => (
   <div className="flex flex-col gap-6">
-    {projectId && <HarnessLauncher spawnProjectId={spawnProjectId} />}
+    {projectId && <SessionTiles spawnProjectId={spawnProjectId} panelProps={panelProps} />}
     <MiniDesktop scope={projectId ? projectScope(projectId) : undefined} panelProps={panelProps} />
     <QuickCreatePanel {...panelProps} sections={['asset', 'folder']} />
   </div>

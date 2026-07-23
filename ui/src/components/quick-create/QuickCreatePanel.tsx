@@ -215,7 +215,7 @@ export function useQuickCreatePick() {
 
 /** What the panel needs from its host — everything but the host's own dismiss
  *  and the display-only `sections` filter. */
-export type PanelHandlers = Omit<QuickCreatePanelProps, 'onDone' | 'sections'>;
+export type PanelHandlers = Omit<QuickCreatePanelProps, 'onDone' | 'sections' | 'extraSessionTiles'>;
 
 /** The tile groups this panel can render, in order. */
 export type QuickCreateSection = 'session' | 'message' | 'asset' | 'folder';
@@ -234,11 +234,27 @@ export interface QuickCreatePanelProps {
   onDone?: () => void;
   /**
    * Which tile groups to render, in this order. Defaults to all four (the "+"
-   * modal). The tabbed ProjectHome passes a subset — its "Create" tab renders
-   * only `asset` + `folder` because the harness launcher replaces `session` and
-   * the mini-desktop "+" tile still hosts the full set (incl. `message`).
+   * modal). The tabbed ProjectHome splits: `session` renders under its own
+   * topic-tagged wrapper, `asset` + `folder` below the mini-desktop.
    */
   sections?: QuickCreateSection[];
+  /**
+   * Host-supplied tiles appended to the `session` group — e.g. ProjectHome's
+   * Terminal opener, whose creation path (and modals) live on the terminal
+   * strip controller rather than in this panel.
+   */
+  extraSessionTiles?: SessionTileDef[];
+}
+
+/** The session-tile shape hosts use for {@link QuickCreatePanelProps.extraSessionTiles}. */
+export interface SessionTileDef {
+  key: string;
+  Icon: TileIcon;
+  label: string;
+  wikiword: string;
+  iconClassName?: string;
+  disabled?: boolean;
+  onClick: () => void;
 }
 
 /**
@@ -256,6 +272,7 @@ export function QuickCreatePanel({
   onBindSecret,
   onAddFolder,
   onNewMessage,
+  extraSessionTiles = [],
   onDone,
   sections = ALL_SECTIONS,
 }: QuickCreatePanelProps) {
@@ -362,13 +379,14 @@ export function QuickCreatePanel({
   const bySection: Record<QuickCreateSection, ReactNode> = {
     session: (
       <TileSection title={<Trans>New session</Trans>}>
-        {sessionTiles.map((tile) => (
+        {[...sessionTiles, ...extraSessionTiles].map((tile) => (
           <TippedTile
             key={tile.key}
             wikiword={tile.wikiword}
             label={tile.label}
             Icon={tile.Icon}
             iconClassName={tile.iconClassName}
+            disabled={tile.disabled}
             onClick={tile.onClick}
           />
         ))}
