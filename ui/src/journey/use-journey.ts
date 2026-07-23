@@ -38,14 +38,9 @@ export function useBusyRun(refresh: () => void): {
 /** Where a step points the user — a standard dock pointer descriptor. */
 export interface JourneyPresentDock {
   /** `root` = the app home `/` (not a dock URL) — the typical journey start. */
-  kind?: 'asset_editor' | 'home' | 'wiki' | 'asset_list' | 'root' | 'shell';
+  kind?: 'asset_editor' | 'home' | 'wiki' | 'asset_list' | 'root';
   vfs?: string;
   name?: string;
-  /** `shell`: the terminal session id to open — a `run` act targets the SAME
-   *  id, so its command lands in the terminal the step just opened. */
-  session?: string;
-  /** `shell`: working directory to start in. */
-  cwd?: string;
 }
 
 /** The proof side of an await: a store query that must hold (event ≠ proof). */

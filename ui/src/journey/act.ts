@@ -1,5 +1,6 @@
-import { Capability, capabilityManager, dataContext, EventBus, FSRef, GitWorkdir, oauthService, TypeId } from '@sdk';
+import { Capability, capabilityManager, dataContext, EventBus, FSRef, GitWorkdir, oauthService, Shell } from '@sdk';
 
+import { LOCAL_COMPUTE_NODE } from '@src/navigation/asset-doc-types';
 import type { JourneyActSpec } from './use-journey';
 
 /** A step's act landed / could not land. The step's `await` listens for these
@@ -118,12 +119,12 @@ async function runSetupAct(act: JourneyActSpec): Promise<boolean> {
   }
 }
 
-/** The repo a `git_check` act inspects: the current project's working tree
- *  (the same base the footer git pill uses), plus the act's `dir` subfolder. */
-function gitCheckWorkdir(dir: string | undefined): string | null {
+/** A path inside the journey's project — the same base the footer git pill
+ *  uses. `rel` is optional: no `rel` is the project root itself. */
+function projectPath(rel?: string): string | null {
   const base = dataContext.project?.fs_storage_mount_path ?? dataContext.workdir;
   if (!base) return null;
-  return dir ? `${base.replace(/\/+$/, '')}/${dir.replace(/^\/+/, '')}` : base;
+  return rel ? `${base.replace(/\/+$/, '')}/${rel.replace(/^\/+/, '')}` : base;
 }
 
 /**
@@ -134,7 +135,7 @@ function gitCheckWorkdir(dir: string | undefined): string | null {
  */
 async function runGitCheck(act: JourneyActSpec): Promise<boolean> {
   try {
-    const workdir = gitCheckWorkdir(act.dir);
+    const workdir = projectPath(act.dir);
     if (!workdir) return announce(act, false);
     const git = new GitWorkdir(workdir, dataContext.computeNodeTypeId?.id ?? '@local');
     switch (act.expect) {
@@ -168,20 +169,9 @@ export interface ActContext {
   openTerminal?: () => Promise<string | null>;
   /** The shell the current dock is showing, if any — where `run` types. */
   shellId?: string | null;
-}
-
-/**
- * Type a command into the step's terminal and press Enter — the journey does
- * the typing so a tutorial can DEMONSTRATE, not dictate. `target` is the shell
- * session the step's `present.dock` opened, so the command always lands in the
- * terminal the user is looking at.
- *
- * `\r` (not `\n`) is what a real Return key sends over a PTY.
- */
-/** The shell the URL is showing: `/dock/shell/<shell-uuid>` → the bare uuid. */
-function shellIdFromUrl(): string | null {
-  const m = /\/(?:dock|win)\/shell\/([^/?#]+)/.exec(window.location.pathname);
-  return m ? decodeURIComponent(m[1]).replace(/^shell-/, '') : null;
+  /** Aborted when the step changes or the tray unmounts, so a watcher waiting
+   *  on output lets go instead of outliving the step that started it. */
+  signal?: AbortSignal;
 }
 
 /**
@@ -201,40 +191,54 @@ function shellIdFromUrl(): string | null {
  */
 async function runShellCommand(act: JourneyActSpec, ctx: ActContext): Promise<boolean> {
   try {
-    // The terminal on screen IS the target — read it from the live URL (the
-    // single source of truth for "what am I looking at"), so the command can
-    // never land in some other session or a shell that no longer exists.
-    const shellId = ctx.shellId ?? shellIdFromUrl();
-    if (!shellId || !act.command) return announce(act, false);
-    const { Shell } = await import('@sdk');
-    const shell = await Shell.getById(shellId);
+    // The terminal on screen IS the target, and the navigation layer owns
+    // "what am I looking at" — never re-parse the address bar here.
+    if (!ctx.shellId || !act.command) return announce(act, false);
+    const shell = await Shell.getById(ctx.shellId);
     if (!shell) return announce(act, false);
 
-    if (!act.contains) {
+    const needle = act.contains;
+    if (!needle) {
       await shell.sendInput(`${act.command}\r`);
       return announce(act, true);
     }
 
-    // Assert on output: capture lines until the sentinel reports the exit code.
+    // Assert on output: watch the line stream until the sentinel reports the
+    // exit code. Only the verdict is kept — never a growing transcript.
     const marker = `__journey_${Math.random().toString(36).slice(2, 10)}`;
-    const output: string[] = [];
-    const settled = new Promise<boolean>((resolve) => {
-      const offLine = shell.onLine((line: string) => output.push(line));
+    let seen = false;
+    const settled = await new Promise<boolean>((resolve) => {
+      let stop = () => {};
+      // The sentinel's own echo carries the marker — ignore those lines so a
+      // step can never "pass" by matching the command it just typed.
+      const offLine = shell.onLine((line: string) => {
+        if (!line.includes(marker) && line.includes(needle)) seen = true;
+      });
       const offTrigger = shell.addTrigger({
         label: 'journey step',
         pattern: new RegExp(`${marker}_(\\d+)`),
         onMatch: (_line: string, m: RegExpMatchArray) => {
-          offTrigger();
-          offLine?.();
-          // The sentinel's own echo carries the marker — drop those lines so a
-          // step can never "pass" by matching the command it just typed.
-          const body = output.filter((l) => !l.includes(marker)).join('\n');
-          resolve(m[1] === '0' && body.includes(act.contains ?? ''));
+          stop();
+          resolve(m[1] === '0' && seen);
         },
       });
+      // ONE teardown, reached by both endings: the sentinel, and the step
+      // being abandoned. Without the abort path a hung command would leave
+      // these listeners (and this promise) on the PtyConnection for its life.
+      stop = () => {
+        offTrigger();
+        offLine?.();
+        ctx.signal?.removeEventListener('abort', onAbort);
+      };
+      function onAbort() {
+        stop();
+        resolve(false);
+      }
+      if (ctx.signal?.aborted) onAbort();
+      else ctx.signal?.addEventListener('abort', onAbort);
     });
     await shell.sendInput(`${act.command}; echo "${marker}_$?"\r`);
-    return announce(act, await settled);
+    return announce(act, settled);
   } catch {
     return announce(act, false);
   }
@@ -250,12 +254,10 @@ async function runOpenTerminal(act: JourneyActSpec, ctx: ActContext): Promise<bo
   }
 }
 
-/** The project-relative path an `fs_check` act probes. */
+/** The project-relative file an `fs_check` act probes. */
 function projectFile(path: string): FSRef | null {
-  const base = dataContext.project?.fs_storage_mount_path ?? dataContext.workdir;
-  if (!base) return null;
-  const full = `${base.replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}`;
-  return new FSRef(full, dataContext.computeNodeTypeId ?? new TypeId('compute_node', '@local'));
+  const full = projectPath(path);
+  return full ? new FSRef(full, dataContext.computeNodeTypeId ?? LOCAL_COMPUTE_NODE) : null;
 }
 
 /**
@@ -277,20 +279,18 @@ async function runFsCheck(act: JourneyActSpec): Promise<boolean> {
 
 /** Run a step's act and announce the outcome on the bus. */
 export function runAct(act: JourneyActSpec, ctx: ActContext = {}): boolean | Promise<boolean> {
-  if (act.kind === 'fill') {
-    return announce(act, performFill(act.target, act.text ?? ''));
+  switch (act.kind) {
+    case 'fill':
+      return announce(act, performFill(act.target, act.text ?? ''));
+    case 'open_terminal':
+      return runOpenTerminal(act, ctx);
+    case 'run':
+      return runShellCommand(act, ctx);
+    case 'fs_check':
+      return runFsCheck(act);
+    case 'git_check':
+      return runGitCheck(act);
+    default:
+      return runSetupAct(act);
   }
-  if (act.kind === 'open_terminal') {
-    return runOpenTerminal(act, ctx);
-  }
-  if (act.kind === 'run') {
-    return runShellCommand(act, ctx);
-  }
-  if (act.kind === 'fs_check') {
-    return runFsCheck(act);
-  }
-  if (act.kind === 'git_check') {
-    return runGitCheck(act);
-  }
-  return runSetupAct(act);
 }

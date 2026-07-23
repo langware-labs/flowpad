@@ -284,9 +284,7 @@ export function JourneyTray({ state, view }: { state: UseJourneyResult; view?: J
       </div>
 
       <ul className="flex max-h-64 flex-col gap-0.5 overflow-y-auto overscroll-contain p-2">
-        {groupSteps(steps)
-          .filter((section) => expanded || section.indices.includes(cursorIndex))
-          .map((section) => {
+        {groupSteps(steps).map((section) => {
           const isDone = (i: number) =>
             complete || doneIds.has(steps[i].node_id) || (cursorIndex >= 0 && i < cursorIndex);
           const renderStep = (step: JourneyStep, i: number, indent: boolean) => {
@@ -330,8 +328,10 @@ export function JourneyTray({ state, view }: { state: UseJourneyResult; view?: J
           };
 
           // Collapsed: one row — the step you're on. Its group header stays,
-          // so you still know which part of the tour you're in.
+          // so you still know which part of the tour you're in; a section with
+          // nothing to show drops out entirely.
           const rows = expanded ? section.indices : section.indices.filter((i) => i === cursorIndex);
+          if (!rows.length) return null;
           if (section.group === null) {
             return rows.map((i) => renderStep(steps[i], i, false));
           }

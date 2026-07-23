@@ -1,8 +1,7 @@
-import { capabilityManager, dataContext, dataManager, Journey, Project, QueryFilter, QueryRequest, targetOf, TypeId } from '@sdk';
+import { capabilityManager, dataContext, dataManager, Journey, Project, QueryFilter, QueryRequest, Shell, targetOf, TypeId, ViewType } from '@sdk';
 import { useOnTopic, useProject } from '@sdk/react/hooks';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AssetEditor } from '@src/navigation/asset-doc-types';
-import { ViewType } from '@sdk';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -50,11 +49,6 @@ function pointerForDock(
       return DockPointer.forWiki(dock.name ?? '');
     case 'asset_list':
       return DockPointer.forAssetList(dock.name ?? '');
-    case 'shell':
-      // A fixed session id is the contract with the step's `run` act: it sends
-      // its command to this same shell, so the command lands in the terminal
-      // the user is watching.
-      return DockPointer.forShell(dock.session, dock.cwd ? { cwd: dock.cwd } : undefined);
     default:
       return null;
   }
@@ -187,32 +181,42 @@ export function useJourneyManager(state: UseJourneyResult): JourneyManagerView {
   // its own button offered and Next dark again.
   const [actRan, setActRan] = useState(false);
   const [armed, setArmed] = useState(false);
+  // Acts that watch for something (a command's output) must not outlive the
+  // step that started them — this aborts on every cursor move and on unmount.
+  const actAbortRef = useRef<AbortController | null>(null);
   useEffect(() => {
     setActRan(false);
     setArmed(false);
+    return () => {
+      actAbortRef.current?.abort();
+      actAbortRef.current = null;
+    };
   }, [journeyId, cursor]);
 
   const act = currentStep?.act;
-  // The terminal the user is looking at: `run` acts type into THIS shell, and
-  // `open_terminal` creates one the same way the Terminal tile does.
-  // The shell dock's id segment is the tab key (`shell-<uuid>`); the entity id
-  // is the bare uuid — strip the prefix or Shell.getById never resolves.
-  const shellId =
-    currentDock?.viewType === ViewType.SHELL
-      ? (currentDock.id?.replace(/^shell-/, '') ?? null)
+  // The terminal the user is looking at — `run` acts type into THIS shell.
+  // DockPointer owns the shell-pointer grammar (`shell-<id>` / bare / an
+  // agentic process); never re-derive it from the raw path.
+  const shellTypeId =
+    currentDock?.viewType === ViewType.SHELL && currentDock.pointer
+      ? DockPointer.terminalTargetTypeIdForShellPointer(currentDock.pointer)
       : null;
+  const shellId = shellTypeId?.type === Shell.type ? shellTypeId.id : undefined;
+
   const openTerminal = useCallback(async () => {
-    const result = await navigation.openNewShell({ skipNavigate: true });
-    if (!result?.shellId) return null;
-    await navigation.openShell(result.shellId);
-    return result.shellId;
+    // openNewShell already navigates to the new shell when we don't opt out.
+    const result = await navigation.openNewShell();
+    return result?.shellId ?? null;
   }, [navigation]);
 
   const doAct = useCallback(() => {
     if (!act) return;
     setActRan(true);
+    actAbortRef.current?.abort();
+    const controller = new AbortController();
+    actAbortRef.current = controller;
     // Async acts announce their own outcome on the bus; nothing to await here.
-    void runAct(act, { shellId: shellId ?? undefined, openTerminal });
+    void runAct(act, { shellId, openTerminal, signal: controller.signal });
   }, [act, shellId, openTerminal]);
 
   // A failed act re-offers its button — a `git_check` is MEANT to be retried
