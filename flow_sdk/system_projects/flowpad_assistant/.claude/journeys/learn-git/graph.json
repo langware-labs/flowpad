@@ -33,10 +33,10 @@
       "node_type": "guided_step",
       "name": "Open a terminal",
       "node_data": {
-        "status_line": "Click the highlighted Claude Code tile to open a live session.",
+        "status_line": "Click a highlighted session button (e.g. Claude Code) to open a live terminal.",
         "present": {
           "dock": { "kind": "home" },
-          "highlight": "Claude Code sessions"
+          "highlight": "NewSession"
         },
         "await": {
           "topic": "app.entity.created",
