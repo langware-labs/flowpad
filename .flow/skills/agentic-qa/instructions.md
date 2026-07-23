@@ -25,6 +25,11 @@
 
 ## Learnings
 
+### 2026-07-23 — Project Git-coupled invite browser validation
+
+- Dedicated Chromium validation against the local backend and Vite frontend passed the project-home invite-control scenario. The existing Assistants & keys dialog was persisted open and had to be closed before interaction; this is test-environment state, not an invite-flow failure.
+- The local project was not cloud-shared, so the member popover exposed Local-mode messaging and did not expose email/link mutation controls. Full email/link gate execution requires an authenticated shared project; the backend scoped GitHub path is covered separately by the capability tests.
+
 ### 2026-07-20 — Asset identity collision browser coverage
 
 - Backend-owned shrinking arrays must replace the SDK cache value. `deepAssign` merges arrays by index, so a `3 → 2` `asset_occurrences` WebSocket update otherwise retains the deleted trailing path even while `duplicate_count` updates correctly.

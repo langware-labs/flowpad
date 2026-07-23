@@ -7,7 +7,7 @@
 #   1. gh is absent in the container.
 #   2. Both source_control capabilities report state "none" (never tried).
 #   3. checkCapability semantics: unknown → journey gate OPEN → /launch yields a journal.
-#   4. After installing gh in-container (unauthenticated), an explicit check flips
+#   4. After installing gh in-container (unauthenticated), an explicit test flips
 #      the row to installed/not-authenticated and state "not_available".
 #   5. Journey advance s1→s2→s3 keeps working against the live journal.
 #
@@ -27,7 +27,7 @@ pass "container has no gh"
 
 # 2. summary shows both kinds at state none
 summary=$(curl -fsS "$BASE/graph/capabilities/summary")
-for kind in source_control.github source_control.github.gh; do
+for kind in source_control.git.github source_control.git.github.gh; do
   state=$(echo "$summary" | python3 -c "
 import json,sys
 d=json.load(sys.stdin)  # summary route returns the bare model (no envelope)
@@ -48,8 +48,8 @@ docker exec "$C" bash -lc "apt-get update -qq && apt-get install -y -qq gh >/dev
 cap_id=$(curl -fsS "$BASE/graph/capability?include_system=true" | python3 -c "
 import json,sys
 rows=json.load(sys.stdin)['data']
-print(next(r['id'] for r in rows if r.get('kind')=='source_control.github.gh'))")
-check=$(curl -fsS -X POST "$BASE/graph/capability/$cap_id/check")
+print(next(r['id'] for r in rows if r.get('kind')=='source_control.git.github.gh'))")
+check=$(curl -fsS -X POST "$BASE/graph/capability/$cap_id/test")
 echo "$check" | python3 -c "
 import json,sys
 r=json.load(sys.stdin)['data']['result']
@@ -60,9 +60,9 @@ assert r['available'] is False, r
 state=$(curl -fsS "$BASE/graph/capability?include_system=true" | python3 -c "
 import json,sys
 rows=json.load(sys.stdin)['data']
-print(next(r['state'] for r in rows if r.get('kind')=='source_control.github.gh'))")
+print(next(r['state'] for r in rows if r.get('kind')=='source_control.git.github.gh'))")
 [ "$state" = "not_available" ] || fail "gh state=$state (expected not_available after explicit check)"
-pass "gh installed → explicit check → installed/not-authenticated, state=not_available"
+pass "gh installed → explicit test → installed/not-authenticated, state=not_available"
 
 # 5. journal advances (simulating the frontend's step completion calls)
 for node in s1-connect s2-install-gh; do

@@ -137,10 +137,10 @@ class Journey(Entity):
         kinds = (gate or {}).get("requires_capabilities") or []
         if not kinds:
             return True
-        from flow_sdk.core.capabilities import check_capability
+        from flow_sdk.core.capabilities import capability_available
 
         for kind in kinds:
-            if await check_capability(kind) is not True:
+            if await capability_available(kind) is not True:
                 return True
         return False
 

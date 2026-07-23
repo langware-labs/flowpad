@@ -203,7 +203,7 @@ async def _mirror_to_rows(discovered: dict[str, CapabilityValue]) -> None:
             row = await Capability.get_by_kind(kind)
             if row is None:
                 continue
-            check = await registry.check(kind)
+            check = await registry.test(kind)
             last_check = check.result.model_dump(mode="json")
             # Passive sweep (attempted=False): may flip a row to AVAILABLE or
             # back off a stale AVAILABLE, but never promotes NONE ("never

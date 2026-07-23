@@ -38,10 +38,10 @@ class CapabilityRunner(ABC):
         )
 
     @abstractmethod
-    async def check(self) -> CapabilityResult:
+    async def test(self, scope=None) -> CapabilityResult:
         ...
 
-    async def install(self) -> CapabilityResult:
+    async def setup(self, scope=None) -> CapabilityResult:
         """Default install: start the capability's install agentic process.
 
         The browser needs the process id while the worker is still running, so
@@ -49,11 +49,6 @@ class CapabilityRunner(ABC):
         refreshes the capability row after the worker reaches a terminal state.
         """
         return await run_capability_install_process(self.spec)
-
-    @abstractmethod
-    async def test(self) -> CapabilityResult:
-        ...
-
 
 class CliCapabilityRunner(CapabilityRunner):
     def __init__(
@@ -124,18 +119,7 @@ class CliCapabilityRunner(CapabilityRunner):
             details={"executable": self.executable},
         )
 
-    async def check(self) -> CapabilityResult:
-        path = self._resolve()
-        if not path:
-            return self._not_found_result()
-        return CapabilityResult(
-            ok=True,
-            available=True,
-            message=f"{self.executable} CLI is available.",
-            details={"executable": self.executable, "path": path},
-        )
-
-    async def test(self) -> CapabilityResult:
+    async def test(self, scope=None) -> CapabilityResult:
         # Disk-verified resolution (PATHEXT-aware on Windows) — test actually
         # executes the binary, so a stale discovered folder must surface here.
         folder = self._discovered_folder()
@@ -291,50 +275,27 @@ class CapabilityReferenceRunner(CapabilityRunner):
             )
         return None
 
-    async def _delegate(self, action: str) -> CapabilityResult:
+    async def _delegate(self, action: str, scope=None) -> CapabilityResult:
         reference = await self._resolve_reference_kind()
         failure = self._target_failure(reference)
         if failure is not None:
             return failure
-        check: CapabilityCheck = await getattr(get_capability_registry(), action)(reference)
+        check: CapabilityCheck = await getattr(get_capability_registry(), action)(reference, scope=scope)
         result = check.result
         return result.model_copy(update={"details": {**result.details, "reference_kind": reference}})
 
-    async def check(self) -> CapabilityResult:
-        return await self._delegate("check")
+    async def test(self, scope=None) -> CapabilityResult:
+        return await self._delegate("test", scope)
 
-    async def install(self) -> CapabilityResult:
-        return await self._delegate("install")
-
-    async def test(self) -> CapabilityResult:
-        return await self._delegate("test")
+    async def setup(self, scope=None) -> CapabilityResult:
+        return await self._delegate("setup", scope)
 
 
 class ChromeAuthenticatedBrowsingRunner(CapabilityRunner):
     def __init__(self, spec: CapabilitySpec) -> None:
         self.spec = spec
 
-    async def check(self) -> CapabilityResult:
-        from flow_sdk.builtin.capability import Capability
-
-        capability = await Capability.get_by_kind(self.spec.kind)
-        latest = capability.last_test if capability else None
-        if isinstance(latest, dict) and latest.get("ok") and latest.get("available"):
-            return CapabilityResult(
-                ok=True,
-                available=True,
-                message="Authenticated Chrome browsing probe has passed.",
-                details={"last_test": latest},
-                process_id=latest.get("process_id"),
-            )
-        return CapabilityResult(
-            ok=False,
-            available=False,
-            message="Run the authenticated Chrome browsing test to validate this capability.",
-            details={},
-        )
-
-    async def test(self) -> CapabilityResult:
+    async def test(self, scope=None) -> CapabilityResult:
         return await run_chrome_authenticated_probe()
 
 
@@ -347,7 +308,7 @@ class GhCliCapabilityRunner(CliCapabilityRunner):
     that's a real, usable credential).
     """
 
-    async def check(self) -> CapabilityResult:
+    async def test(self, scope=None) -> CapabilityResult:
         path = self._resolve()
         if not path:
             result = self._not_found_result()
@@ -489,7 +450,27 @@ class GithubAccountRunner(CapabilityRunner):
         except Exception:
             return None
 
-    async def check(self) -> CapabilityResult:
+    async def test(self, scope=None) -> CapabilityResult:
+        if scope is not None and getattr(scope, "scope_type", None) == "project":
+            from flow_sdk.builtin.git_origin import GitOrigin
+            from flow_sdk.builtin.project import Project
+            from flow_sdk.utils.git import git_remote_access
+
+            project = await Project.get_by_id(scope.scope_id)
+            root = project.fs_storage_mount_path if project else None
+            if not root:
+                return CapabilityResult(False, False, "Project has no local Git workspace.", {"reason": "no-workspace"})
+            origin = await asyncio.to_thread(GitOrigin.for_asset_path, root)
+            if origin is None:
+                return CapabilityResult(False, False, "Project has no Git repository and remote.", {"reason": "no-git-remote"})
+            token = await self._oauth_token()
+            accessible, branch = await git_remote_access(origin.clone_url(), token=token)
+            return CapabilityResult(
+                ok=True,
+                available=accessible,
+                message=("Project GitHub remote is accessible." if accessible else "Project GitHub remote is not accessible."),
+                details={"scope_type": "project", "scope_id": scope.scope_id, "clone_url": origin.clone_url(), "default_branch": branch, "authenticated": bool(token)},
+            )
         if await self._oauth_token():
             return CapabilityResult(
                 ok=True,
@@ -497,7 +478,7 @@ class GithubAccountRunner(CapabilityRunner):
                 message="GitHub account is connected (OAuth).",
                 details={"method": "oauth"},
             )
-        gh_check = await get_capability_registry().check(CapabilityKind.GITHUB_GH.value)
+        gh_check = await get_capability_registry().test(CapabilityKind.GITHUB_GH.value)
         if gh_check.result.available:
             return CapabilityResult(
                 ok=True,
@@ -512,17 +493,13 @@ class GithubAccountRunner(CapabilityRunner):
             details={"method": None},
         )
 
-    async def install(self) -> CapabilityResult:
+    async def setup(self, scope=None) -> CapabilityResult:
         return CapabilityResult(
             ok=False,
             available=False,
             message="GitHub connects via OAuth or gh login — use the GitHub setup journey.",
             details={},
         )
-
-    async def test(self) -> CapabilityResult:
-        return await self.check()
-
 
 GH_INSTALL_PROMPT = (
     "Install the GitHub CLI (`gh`) on this machine using the appropriate "
@@ -548,7 +525,7 @@ _INSTALL_MONITOR_TASKS: set[asyncio.Task] = set()
 
 async def resolve_default_harness_kind() -> str:
     """Resolve the user-selected default harness capability to a concrete leaf."""
-    check = await get_capability_registry().check(CapabilityKind.HARNESS.value)
+    check = await get_capability_registry().test(CapabilityKind.HARNESS.value)
     reference = check.result.details.get("reference_kind")
     if not check.result.available or not isinstance(reference, str):
         raise RuntimeError(f"Default harness is not available: {check.result.message}")
@@ -584,9 +561,9 @@ def _schedule_install_monitor(process_id: str, kind: str) -> None:
     task.add_done_callback(_INSTALL_MONITOR_TASKS.discard)
 
 
-def _last_install_parts(capability: Any) -> tuple[dict, dict]:
-    """The persisted install-start result and its details dict, tolerating absence."""
-    started = capability.last_install if isinstance(capability.last_install, dict) else {}
+def _last_setup_parts(capability: Any) -> tuple[dict, dict]:
+    """The persisted setup-start result and its details dict, tolerating absence."""
+    started = capability.last_setup if isinstance(capability.last_setup, dict) else {}
     details = started.get("details") if isinstance(started.get("details"), dict) else {}
     return started, details
 
@@ -608,10 +585,10 @@ async def _monitor_capability_install_process(process_id: str, kind: str) -> Non
         from flow_sdk.core.capabilities.discovery import run_discovery
 
         await run_discovery([kind])
-        check = await get_capability_registry().check(kind)
+        check = await get_capability_registry().test(kind)
         capability.last_check = check.result.model_dump(mode="json")
-        started, started_details = _last_install_parts(capability)
-        capability.last_install = CapabilityResult(
+        started, started_details = _last_setup_parts(capability)
+        capability.last_setup = CapabilityResult(
             ok=bool(started.get("ok", True)) and check.result.ok,
             available=check.result.available,
             message=f"{started.get('message') or 'Install process completed.'} {check.result.message}",
@@ -623,8 +600,8 @@ async def _monitor_capability_install_process(process_id: str, kind: str) -> Non
         capability.state = capability.derive_state(check.result, attempted=True)
         await capability.save(notify=True)
     except Exception as exc:
-        _, started_details = _last_install_parts(capability)
-        capability.last_install = CapabilityResult(
+        _, started_details = _last_setup_parts(capability)
+        capability.last_setup = CapabilityResult(
             ok=False,
             available=False,
             message=f"Install process failed: {exc}",
@@ -891,12 +868,12 @@ class CapabilityRegistry:
     def matching_specs(self, query_kind: str) -> list[CapabilitySpec]:
         return [runner.spec for runner in self._runners.values() if runner.spec.matches(query_kind)]
 
-    async def check(self, kind: str, *, include_dependencies: bool = True) -> CapabilityCheck:
+    async def test(self, kind: str, *, include_dependencies: bool = True, scope=None) -> CapabilityCheck:
         runner = self.get(kind)
         dependencies: dict[str, CapabilityResult] = {}
         if include_dependencies:
             for dep_kind in runner.spec.dependent_capability_kinds:
-                dependencies[dep_kind] = (await self.check(dep_kind, include_dependencies=True)).result
+                dependencies[dep_kind] = (await self.test(dep_kind, include_dependencies=True, scope=scope)).result
         blocked = [k for k, result in dependencies.items() if not result.available]
         if blocked:
             return CapabilityCheck(
@@ -910,32 +887,24 @@ class CapabilityRegistry:
                 dependencies=dependencies,
             )
         try:
-            result = await runner.check()
+            result = await runner.test(scope) if scope is not None else await runner.test()
         except Exception as exc:
             # A crashed probe is ERROR (retryable) — distinct from a clean
             # "not available" verdict. Unknown kinds still raise (KeyError
             # from self.get above, before we ever get here).
-            logger.warning("capability check for %s crashed: %s", kind, exc)
+            logger.warning("capability test for %s crashed: %s", kind, exc)
             result = CapabilityResult(
                 ok=False,
                 available=False,
-                message=f"Capability check failed: {exc}",
+                message=f"Capability test failed: {exc}",
                 details={"error": str(exc)},
                 state=CapabilityState.ERROR.value,
             )
         return CapabilityCheck(kind=kind, result=result, dependencies=dependencies)
 
-    async def install(self, kind: str) -> CapabilityCheck:
+    async def setup(self, kind: str, *, scope=None) -> CapabilityCheck:
         runner = self.get(kind)
-        return CapabilityCheck(kind=kind, result=await runner.install())
-
-    async def test(self, kind: str) -> CapabilityCheck:
-        dependency_check = await self.check(kind, include_dependencies=True)
-        if not dependency_check.result.available and dependency_check.result.details.get("missing_dependencies"):
-            return dependency_check
-        runner = self.get(kind)
-        return CapabilityCheck(kind=kind, result=await runner.test(), dependencies=dependency_check.dependencies)
-
+        return CapabilityCheck(kind=kind, result=await runner.setup(scope))
 
 def _build_default_registry() -> CapabilityRegistry:
     registry = CapabilityRegistry()
