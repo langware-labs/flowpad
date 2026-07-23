@@ -1,5 +1,5 @@
 import { MembersAvatarStack } from '@src/components/conversation/MembersAvatarStack';
-import { MiniDesktop, QuickCreatePanel, useQuickCreatePick } from '@src/components/quick-create';
+import { QuickCreatePanel, useQuickCreatePick } from '@src/components/quick-create';
 import type { PanelHandlers } from '@src/components/quick-create';
 import { SecretsCard } from './SecretsCard';
 import { HomeCustomizationCard } from './HomeCustomizationCard';
@@ -8,7 +8,6 @@ import { useHighlight } from '@src/components/wiki-tip/highlight';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@src/components/ui/tabs';
 import { useContext as useDataContext } from '@src/hooks/useContext';
 import { useTerminalStripController } from '@src/tabs/useTerminalStripController';
-import { projectScope } from '@src/lib/scope-filter';
 import { Project, TypeId } from '@sdk';
 import { topicTag } from '@src/topics/topic-tag';
 import React, { useEffect, useMemo, useState } from 'react';
@@ -62,9 +61,11 @@ const SessionTiles: React.FC<{ spawnProjectId?: string | null; panelProps: Panel
   );
 };
 
-/** The "Create" body — the harness launcher, the favorites mini-desktop, and
- *  the New asset / New folder tiles. Its own component so the tabbed landing
- *  and the terminal empty state share one definition. */
+/** The "Create" body — the session tiles and the New asset / New folder tiles.
+ *  Its own component so the tabbed landing and the terminal empty state share
+ *  one definition. Favorites are NOT repeated here: the desktop (rail flyout /
+ *  full desktop page) already owns them, and the "+" tile they carried
+ *  duplicated the very asset grid below. */
 const CreateTab: React.FC<{
   projectId: string | null;
   spawnProjectId?: string | null;
@@ -72,7 +73,6 @@ const CreateTab: React.FC<{
 }> = ({ projectId, spawnProjectId, panelProps }) => (
   <div className="flex flex-col gap-6">
     {projectId && <SessionTiles spawnProjectId={spawnProjectId} panelProps={panelProps} />}
-    <MiniDesktop scope={projectId ? projectScope(projectId) : undefined} panelProps={panelProps} />
     <QuickCreatePanel {...panelProps} sections={['asset', 'folder']} />
   </div>
 );
@@ -90,8 +90,8 @@ const TAB_FOR_TOPIC: Record<string, string> = {
  * unambiguously "the project itself" rather than content inside it.
  *
  * Organized into three tabs:
- *   - **Create**    — the harness launcher (workers + terminal), the mini
- *                     desktop of favorites, and the New asset / New folder tiles.
+ *   - **Create**    — the session tiles (workers + terminal) and the New asset /
+ *                     New folder tiles.
  *   - **Customize** — home title/background + the vibe agents layered on.
  *   - **Secrets**   — value-free secret references + setup wizard.
  */
@@ -106,8 +106,7 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, create
   );
 
   // The dialogs the create tiles defer to. Hosted here rather than in the panel
-  // so they outlive whatever the tile click dismisses — and threaded into
-  // MiniDesktop so this surface mounts exactly one instance of them.
+  // so they outlive whatever the tile click dismisses.
   const { panelProps, dialogs } = useQuickCreatePick();
 
   // Customize/Secrets cards are project-entity bound — only when the resolved
@@ -137,7 +136,7 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, create
           <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
             <Trans>Members</Trans>
           </span>
-          <MembersAvatarStack typeId={projectTypeId} allowInviteLink />
+          <MembersAvatarStack typeId={projectTypeId} allowInviteLink showInviteButton />
         </div>
       )}
 
