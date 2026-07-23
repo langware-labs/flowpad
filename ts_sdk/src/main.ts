@@ -154,6 +154,9 @@ export async function initSdk(params?: { agentId?: string; setupWorkspace?: bool
         await snifferManager.attach(snifferHook);
       }
       dataContext.setSnifferEnabled(!!bootstrapInfo.sniffer_hook);
+      // The settings file is the truth about whether hooks actually fire —
+      // another instance may have installed them without an entity here.
+      dataContext.setSnifferInstalled(!!bootstrapInfo.sniffer_installed);
 
       await authManager.init(user);
       await dataContext.initContext({ setupWorkspace: params?.setupWorkspace, setupProject: true });
