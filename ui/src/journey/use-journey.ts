@@ -99,15 +99,25 @@ export interface JourneyActSpec {
    * `device_login` starts the capability's device-login session (surfaced by
    * the harness login modal). Their completion is NOT the act — the step's
    * `await` gates on the capability row reaching the wanted state.
+   * `git_check` verifies the project's working tree against real git state
+   * (via the compute node's `git-ops` action) — the "Check" button of a
+   * try-it-yourself step: done only when the repo actually satisfies `expect`.
    */
-  kind: 'fill' | 'setup_capability' | 'oauth_connect' | 'device_login';
-  /** Topic word of the target surface — `[data-topic="…"]`. */
+  kind: 'fill' | 'setup_capability' | 'oauth_connect' | 'device_login' | 'git_check';
+  /** Topic word of the target surface — `[data-topic="…"]`. For `git_check`
+   *  it is just the act's bus identity (`git_check:<target>`), no DOM anchor. */
   target: string;
   text?: string;
   /** Capability kind for `setup_capability` / `device_login`. */
   capability?: string;
   /** OAuth provider for `oauth_connect` (default "github"). */
   provider?: string;
+  /** `git_check`: the repo predicate that must hold. */
+  expect?: 'repo' | 'staged' | 'clean' | 'branch' | 'dirty';
+  /** `git_check` + `expect:"branch"`: the branch name that must be current. */
+  branch?: string;
+  /** `git_check`: subfolder of the project working tree holding the repo. */
+  dir?: string;
 }
 
 /** One guided step, read from the journey folder's `graph.json`. */

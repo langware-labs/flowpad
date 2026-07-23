@@ -7,6 +7,7 @@ from .exit_plan_mode import ExitPlanModeEntry
 from .file_edit import FileEditEntry
 from .file_read import FileReadEntry
 from .file_write import FileWriteEntry
+from .flow_command import FlowCommandEntry
 from .meta import MetaEntry
 from .search import SearchEntry
 from .shell_command import ShellCommandEntry
@@ -29,6 +30,7 @@ __all__ = [
     "FileEditEntry",
     "FileReadEntry",
     "FileWriteEntry",
+    "FlowCommandEntry",
     "MetaEntry",
     "SearchEntry",
     "ShellCommandEntry",

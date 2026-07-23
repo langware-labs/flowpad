@@ -8,7 +8,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { projectScope } from '@src/lib/scope-filter';
 import { dockTarget } from '@src/topics/dock-target';
 import type { JourneyPresentDock, JourneyStep, UseJourneyResult } from './use-journey';
-import { runAct } from './act';
+import { ACT_FAILED_TOPIC, actTarget, runAct } from './act';
 
 /** What the tray needs from the manager to render the step's own buttons. */
 export interface JourneyManagerView {
@@ -190,9 +190,17 @@ export function useJourneyManager(state: UseJourneyResult): JourneyManagerView {
     void runAct(act);
   }, [act]);
 
+  // A failed act re-offers its button — a `git_check` is MEANT to be retried
+  // until the repo actually satisfies it ("not yet — try the command").
+  useOnTopic(
+    ACT_FAILED_TOPIC,
+    () => setActRan(false),
+    act ? { target: actTarget(act.kind, act.target) } : undefined,
+  );
+
   // ── await: confirm predicate (the proof) ──
   const busyRef = useRef(false);
-  const tryComplete = useCallback(async (event?: { ctx?: { actor?: string }; data?: Record<string, unknown> }) => {
+  const tryComplete = useCallback(async (event?: { ctx?: { actor?: string; origin?: string }; data?: Record<string, unknown> }) => {
     if (!currentStep || busyRef.current || advancedRef.current === currentStep.node_id) return;
     // matchEvent: the row that JUST changed must itself satisfy the match —
     // "you just did X", immune to ambient churn on other rows of the type.
@@ -237,8 +245,11 @@ export function useJourneyManager(state: UseJourneyResult): JourneyManagerView {
         // somewhere of their own choosing — the next step stays transparent.
         // Read the envelope's ATTRIBUTION (ctx.actor, stamped by the emitter),
         // not a topic-prefix guess: any user-caused event qualifies, whatever
-        // its topic is named.
-        suppressNextDockRef.current = (event?.ctx?.actor ?? '').startsWith('user:');
+        // its topic is named. EXCEPT sandbox origin: a sandboxed page (a slide's
+        // Next button) cannot navigate the app, so there is no destination to
+        // protect — the next step's present must still fire.
+        suppressNextDockRef.current =
+          (event?.ctx?.actor ?? '').startsWith('user:') && event?.ctx?.origin !== 'sandbox';
         doAdvance(currentStep.node_id);
       }
     } catch (e) {

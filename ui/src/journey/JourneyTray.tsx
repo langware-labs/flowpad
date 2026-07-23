@@ -1,4 +1,4 @@
-import { Check, Circle, CircleDot, KeyRound, Link2, Play, RotateCcw, Type, Wrench, X } from 'lucide-react';
+import { Check, Circle, CircleDot, GitBranch, KeyRound, Link2, Play, RotateCcw, Type, Wrench, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import Confetti from 'react-confetti';
@@ -19,6 +19,7 @@ const ACT_FACES: Record<string, { Icon: typeof Type; label: React.ReactNode }> =
   oauth_connect: { Icon: Link2, label: <Trans>Connect</Trans> },
   device_login: { Icon: KeyRound, label: <Trans>Log in</Trans> },
   fill: { Icon: Type, label: <Trans>Fill text</Trans> },
+  git_check: { Icon: GitBranch, label: <Trans>Check</Trans> },
 };
 
 /** One lit act button per step — label/icon follow the act kind. */

@@ -1,0 +1,167 @@
+{
+  "version": 1,
+  "id": "7b3d9f42-6c1e-4b8a-a5d2-91f04e8c7a35",
+  "name": "Learn Git",
+  "description": "Hands-on git basics in a real terminal: init a repository, stage, commit, branch and inspect changes — every step verified against the actual repo.",
+  "enabled": true,
+  "auto_launch": false,
+  "config": {
+    "deadline_s": 2592000,
+    "retention_runs": 3
+  },
+  "start": {
+    "kind": "home"
+  },
+  "nodes": [
+    {
+      "id": "intro",
+      "node_type": "guided_step",
+      "name": "What is Git?",
+      "node_data": {
+        "status_line": "Read the intro slide, then click Next on it.",
+        "present": {
+          "dock": { "kind": "asset_editor", "vfs": "intro.html" }
+        },
+        "await": {
+          "topic": "app.page.signal",
+          "target": "next"
+        }
+      }
+    },
+    {
+      "id": "terminal",
+      "node_type": "guided_step",
+      "name": "Open a terminal",
+      "node_data": {
+        "status_line": "Click the highlighted Claude Code tile to open a live session.",
+        "present": {
+          "dock": { "kind": "home" },
+          "highlight": "Claude Code sessions"
+        },
+        "await": {
+          "topic": "app.entity.created",
+          "target": "agentic_process:*"
+        }
+      }
+    },
+    {
+      "id": "init",
+      "node_type": "guided_step",
+      "name": "Initialize a repository",
+      "node_data": {
+        "group": "First repository",
+        "status_line": "In your terminal: !mkdir -p git-playground && cd git-playground && git init — then click Check.",
+        "present": {
+          "dock": { "kind": "asset_editor", "vfs": "init.html" }
+        },
+        "act": {
+          "kind": "git_check",
+          "target": "Init",
+          "expect": "repo",
+          "dir": "git-playground"
+        },
+        "await": {
+          "topic": "app.journey.act.done",
+          "target": "git_check:Init"
+        }
+      }
+    },
+    {
+      "id": "stage",
+      "node_type": "guided_step",
+      "name": "Stage a file",
+      "node_data": {
+        "group": "Core git ops",
+        "status_line": "Create notes.txt and git add it, then click Check.",
+        "present": {
+          "dock": { "kind": "asset_editor", "vfs": "add.html" }
+        },
+        "act": {
+          "kind": "git_check",
+          "target": "Stage",
+          "expect": "staged",
+          "dir": "git-playground"
+        },
+        "await": {
+          "topic": "app.journey.act.done",
+          "target": "git_check:Stage"
+        }
+      }
+    },
+    {
+      "id": "commit",
+      "node_type": "guided_step",
+      "name": "Commit your change",
+      "node_data": {
+        "group": "Core git ops",
+        "status_line": "git commit the staged file, then click Check.",
+        "present": {
+          "dock": { "kind": "asset_editor", "vfs": "commit.html" }
+        },
+        "act": {
+          "kind": "git_check",
+          "target": "Commit",
+          "expect": "clean",
+          "dir": "git-playground"
+        },
+        "await": {
+          "topic": "app.journey.act.done",
+          "target": "git_check:Commit"
+        }
+      }
+    },
+    {
+      "id": "branch",
+      "node_type": "guided_step",
+      "name": "Create a branch",
+      "node_data": {
+        "group": "Core git ops",
+        "status_line": "Create and switch to a branch named practice, then click Check.",
+        "present": {
+          "dock": { "kind": "asset_editor", "vfs": "branch.html" }
+        },
+        "act": {
+          "kind": "git_check",
+          "target": "Branch",
+          "expect": "branch",
+          "branch": "practice",
+          "dir": "git-playground"
+        },
+        "await": {
+          "topic": "app.journey.act.done",
+          "target": "git_check:Branch"
+        }
+      }
+    },
+    {
+      "id": "change",
+      "node_type": "guided_step",
+      "name": "Make a change and inspect it",
+      "node_data": {
+        "group": "Core git ops",
+        "status_line": "Append a line to notes.txt and run git status, then click Check.",
+        "present": {
+          "dock": { "kind": "asset_editor", "vfs": "change.html" }
+        },
+        "act": {
+          "kind": "git_check",
+          "target": "Change",
+          "expect": "dirty",
+          "dir": "git-playground"
+        },
+        "await": {
+          "topic": "app.journey.act.done",
+          "target": "git_check:Change"
+        }
+      }
+    }
+  ],
+  "edges": [
+    { "id": "e0", "from": { "node": "intro", "event": "done" }, "to": { "node": "terminal" } },
+    { "id": "e1", "from": { "node": "terminal", "event": "done" }, "to": { "node": "init" } },
+    { "id": "e2", "from": { "node": "init", "event": "done" }, "to": { "node": "stage" } },
+    { "id": "e3", "from": { "node": "stage", "event": "done" }, "to": { "node": "commit" } },
+    { "id": "e4", "from": { "node": "commit", "event": "done" }, "to": { "node": "branch" } },
+    { "id": "e5", "from": { "node": "branch", "event": "done" }, "to": { "node": "change" } }
+  ]
+}

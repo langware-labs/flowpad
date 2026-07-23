@@ -14,7 +14,18 @@ import { useMemo, useRef } from 'react';
  */
 
 export type TurnGroup =
-  | { kind: 'message'; flowData: FlowData; index: number }
+  | {
+      kind: 'message';
+      flowData: FlowData;
+      index: number;
+      /**
+       * Set on the framework-injected (`is-meta`) message that follows a
+       * dropped `Skill` tool call: the skill's name, lifted off that call's
+       * structured payload. The chip prefers it over regexing the injected
+       * body — see `MetaMessageChip`.
+       */
+      skillName?: string;
+    }
   | { kind: 'dense'; events: FlowData[]; index: number };
 
 const MESSAGE_TYPES = new Set<string>([
@@ -86,11 +97,14 @@ export function createTurnGrouper(): TurnGrouper {
   /** Trailing dense run, not yet sealed — rebuilt with fresh identity per call. */
   let tail: FlowData[] = [];
   let skillCallIds = new Set<string>();
+  /** Name from the most recent dropped Skill call, awaiting its meta message. */
+  let pendingSkillName: string | null = null;
 
   const reset = () => {
     committed = [];
     tail = [];
     skillCallIds = new Set<string>();
+    pendingSkillName = null;
   };
 
   const consume = (item: FlowData) => {
@@ -100,14 +114,21 @@ export function createTurnGrouper(): TurnGrouper {
         committed.push({ kind: 'dense', events: tail, index: committed.length });
         tail = [];
       }
-      committed.push({ kind: 'message', flowData: item, index: committed.length });
+      const isMeta = item.attributes['is-meta'] === 'true';
+      const skillName = isMeta && pendingSkillName ? pendingSkillName : undefined;
+      if (isMeta) pendingSkillName = null;
+      committed.push({ kind: 'message', flowData: item, index: committed.length, skillName });
     } else if (DENSE_TYPES.has(t)) {
       // A `Skill` tool use is already represented in the chat by the skill's
       // meta-injection chip (MetaMessageChip, "Using skill: <name>") — the
       // injected body arrives as an isMeta USER_MESSAGE right after the call.
       // Keeping the TOOL_CALL/TOOL_RESULT in the dense stream too rendered
       // duplicate "Using Skill" chips around that one, so drop the pair here.
-      if (isSkillToolEvent(item, skillCallIds)) return;
+      if (isSkillToolEvent(item, skillCallIds)) {
+        const name = skillNameOf(item);
+        if (name) pendingSkillName = name;
+        return;
+      }
       tail.push(item);
     }
     // Anything else (END, RESULT, CHECKPOINT, …) is intentionally dropped from
@@ -173,6 +194,20 @@ function isSkillToolEvent(item: FlowData, skillCallIds: Set<string>): boolean {
     return !!id && skillCallIds.has(id);
   }
   return false;
+}
+
+/**
+ * The skill a `Skill` TOOL_CALL loaded, from the backend's structured payload.
+ * Both the live stream and a replay carry it (`skill-name` attribute /
+ * `skill_name` in the flow value), so the chip never has to parse prose.
+ */
+function skillNameOf(item: FlowData): string | null {
+  const attr = item.attributes['skill-name'];
+  if (attr) return attr;
+  const data = item.data as { skill_name?: unknown; args?: { skill?: unknown } } | undefined;
+  if (data && typeof data.skill_name === 'string' && data.skill_name) return data.skill_name;
+  const skill = data?.args?.skill;
+  return typeof skill === 'string' && skill ? skill : null;
 }
 
 /**

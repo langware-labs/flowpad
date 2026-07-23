@@ -1148,7 +1148,7 @@ integration cost.
 
 ### Tool-name dispatch in parser
 - **Need:** Parser routes a `tool_use` block to a typed entry purely by the `name` string; unrecognized names fall through to generic `ToolUseEntry` without dropping fields.
-- **Claude:** `_build_semantic_tool_entry` switch on `tool_name` (transcript_analyzer/parsers/claude.py:281-400); fallback at transcript_analyzer/parsers/claude.py:400
+- **Claude:** `build_semantic_tool_entry` switch on `tool_name` (transcript_analyzer/parsers/claude.py, module-level — shared by the JSONL parser and the live stream-json converter); generic `ToolUseEntry` fallback at the end of that switch
 - **Codex:** not supported (codex parser dispatches on its own event types)
 - **Required:** Required
 - **Vendor must expose:** a stable, documented tool-name string per semantic operation so the driver can extend the dispatch table
