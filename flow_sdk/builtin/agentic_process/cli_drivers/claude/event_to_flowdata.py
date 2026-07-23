@@ -23,13 +23,16 @@ from flow_sdk.external_apis.llm.llm_drivers.flow_data import (
     FlowElementType,
 )
 from flow_sdk.transcript_analyzer._helpers import flatten_tool_result
+from flow_sdk.transcript_analyzer.derive import derive_entry
 from flow_sdk.transcript_analyzer.entries import (
     AssistantMessageEntry,
     ToolResultEntry,
-    ToolUseEntry,
     UserMessageEntry,
 )
-from flow_sdk.transcript_analyzer.parsers.claude import ClaudeParser
+from flow_sdk.transcript_analyzer.parsers.claude import (
+    ClaudeParser,
+    build_semantic_tool_entry,
+)
 from flow_sdk.transcript_analyzer.process_entry import ProcessEntry
 
 from .session_history import entry_to_flowdata
@@ -186,28 +189,18 @@ def _convert_assistant_event(event: dict[str, Any], line_index: int) -> list[Flo
             tool_name = str(block.get("name") or "")
             tool_use_id = str(block.get("id") or "")
             tool_input = block.get("input") if isinstance(block.get("input"), dict) else {}
-            entry = ToolUseEntry(
+            # Route through the SAME semantic mapping the JSONL parser uses,
+            # then the SAME converter the history path uses, so a live frame is
+            # identical to the one a reload replays — including the semantic
+            # subtype (file_write / skill_call / flow_command …) the chips read.
+            entry = derive_entry(build_semantic_tool_entry(
                 tool_name=tool_name,
                 tool_use_id=tool_use_id,
                 tool_input=tool_input,
-                **_base_for_event(event, line_index, block_index, tool_use_id),
-            )
-            out.append(_with_process_entry(FlowData(
-                flow_value={
-                    "tool_name": tool_name,
-                    "tool_call_id": tool_use_id,
-                    "tool_use_id": tool_use_id,
-                    "args": tool_input,
-                    "input": tool_input,
-                },
-                created_time=entry.timestamp,
-                attributes={
-                    "element-type": FlowElementType.TOOL_CALL,
-                    "data-type": FlowDataType.OBJECT,
-                    "tool-name": tool_name,
-                    "tool-use-id": tool_use_id,
-                },
-            ), entry))
+                envelope={},
+                base=_base_for_event(event, line_index, block_index, tool_use_id),
+            ))
+            out.append(entry_to_flowdata(entry, observation_kind="live"))
     return out
 
 

@@ -8,6 +8,7 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Iterator
 
+from .derive import derive_entries
 from .entries import (
     AssistantMessageEntry,
     FileReadEntry,
@@ -170,7 +171,9 @@ class AgentTranscriptFile:
         stays pristine across delta boundaries) into ``self.entries``."""
         snapshot = [copy.copy(e) for e in self._unfolded]
         folded = self._fold_assistant_messages(snapshot)
-        self.entries = self._fold_tool_results(folded)
+        # Derivation runs LAST, after tool results have been folded in, so a
+        # derived entry (e.g. FlowCommandEntry) inherits exit_code/stdout.
+        self.entries = derive_entries(self._fold_tool_results(folded))
         return self.entries
 
     def _read_whole_document(self) -> list[TranscriptEntry]:

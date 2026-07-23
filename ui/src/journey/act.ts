@@ -1,4 +1,4 @@
-import { Capability, capabilityManager, EventBus, oauthService } from '@sdk';
+import { Capability, capabilityManager, dataContext, EventBus, GitWorkdir, oauthService } from '@sdk';
 
 import type { JourneyActSpec } from './use-journey';
 
@@ -118,10 +118,54 @@ async function runSetupAct(act: JourneyActSpec): Promise<boolean> {
   }
 }
 
+/** The repo a `git_check` act inspects: the current project's working tree
+ *  (the same base the footer git pill uses), plus the act's `dir` subfolder. */
+function gitCheckWorkdir(dir: string | undefined): string | null {
+  const base = dataContext.project?.fs_storage_mount_path ?? dataContext.workdir;
+  if (!base) return null;
+  return dir ? `${base.replace(/\/+$/, '')}/${dir.replace(/^\/+/, '')}` : base;
+}
+
+/**
+ * Verify the working tree against REAL git state — the step is done only when
+ * the repo says so (event ≠ proof: the user's terminal commands are invisible
+ * to the bus; the repo is the truth). All probes go through the compute node's
+ * `git-ops` action, the same backend the footer git pill reads.
+ */
+async function runGitCheck(act: JourneyActSpec): Promise<boolean> {
+  try {
+    const workdir = gitCheckWorkdir(act.dir);
+    if (!workdir) return announce(act, false);
+    const git = new GitWorkdir(workdir, dataContext.computeNodeTypeId?.id ?? '@local');
+    switch (act.expect) {
+      case 'repo':
+        return announce(act, await git.isInit());
+      case 'branch':
+        return announce(act, !!act.branch && (await git.getBranch()) === act.branch);
+      case 'staged':
+      case 'clean':
+      case 'dirty': {
+        const status = await git.getStatus();
+        if (status.error) return announce(act, false);
+        if (act.expect === 'staged') return announce(act, status.files.some((f) => f.staged));
+        if (act.expect === 'dirty') return announce(act, status.files.length > 0);
+        return announce(act, status.files.length === 0 && (await git.hasCommit()));
+      }
+      default:
+        return announce(act, false);
+    }
+  } catch {
+    return announce(act, false);
+  }
+}
+
 /** Run a step's act and announce the outcome on the bus. */
 export function runAct(act: JourneyActSpec): boolean | Promise<boolean> {
   if (act.kind === 'fill') {
     return announce(act, performFill(act.target, act.text ?? ''));
+  }
+  if (act.kind === 'git_check') {
+    return runGitCheck(act);
   }
   return runSetupAct(act);
 }

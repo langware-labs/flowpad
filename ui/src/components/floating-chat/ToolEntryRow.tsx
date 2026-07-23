@@ -1,7 +1,3 @@
-import {
-  describeToolInput,
-  describeToolName,
-} from '@src/components/flowdata-renderer/ToolCallMessageComponent';
 import { cn } from '@src/lib/utils';
 import { FlowData, FlowElementTypes } from '@sdk';
 import {
@@ -12,8 +8,11 @@ import {
   Sparkles,
   Wrench,
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { pairToolEvents, type ToolPair } from './groupTurnEvents';
+import { describeEvent } from './toolEventDescriptor';
+import { useChipTarget } from './useChipTarget';
 
 interface ToolEntryRowProps {
   events: FlowData[];
@@ -21,6 +20,8 @@ interface ToolEntryRowProps {
 
 interface OneLiner {
   icon: 'tool' | 'reasoning' | 'status' | 'error';
+  /** Per-operation glyph from the semantic descriptor, when the event has one. */
+  lucide?: LucideIcon;
   label: string;
   detail: string;
   inFlight: boolean;
@@ -71,8 +72,12 @@ export function ToolEntryRow({ events }: ToolEntryRowProps) {
           'transition-colors',
         ].join(' ')}
       >
-        <OneLinerIcon kind={latest?.icon ?? 'tool'} inFlight={latest?.inFlight ?? false} />
-        {latest && <span className="font-medium">{latest.label}</span>}
+        <OneLinerIcon
+          kind={latest?.icon ?? 'tool'}
+          lucide={latest?.lucide}
+          inFlight={latest?.inFlight ?? false}
+        />
+        {latest && <span className="whitespace-nowrap font-medium">{latest.label}</span>}
         {headlineDetail && (
           <span className="max-w-[260px] truncate font-mono text-[12px] text-muted-foreground/80">
             {headlineDetail}
@@ -118,11 +123,23 @@ export function TurnEventList({ events }: { events: FlowData[] }) {
   );
 }
 
-function OneLinerIcon({ kind, inFlight }: { kind: OneLiner['icon']; inFlight: boolean }) {
+function OneLinerIcon({
+  kind,
+  lucide,
+  inFlight,
+}: {
+  kind: OneLiner['icon'];
+  lucide?: LucideIcon;
+  inFlight: boolean;
+}) {
   const cls = 'h-3.5 w-3.5 flex-shrink-0';
   // In-flight = a TOOL_CALL has no matching TOOL_RESULT yet. Use the same
-  // tool icon as the resting state and animate a soft pulse rather than a
-  // spinning loader so the row feels like activity, not "busy/loading".
+  // icon as the resting state and animate a soft pulse rather than a spinning
+  // loader so the row feels like activity, not "busy/loading".
+  const Semantic = lucide;
+  if (Semantic) {
+    return <Semantic className={`${cls} ${inFlight ? 'animate-pulse text-foreground' : 'text-muted-foreground'}`} />;
+  }
   if (inFlight) return <Wrench className={`${cls} animate-pulse text-foreground`} />;
   if (kind === 'reasoning') return <Sparkles className={`${cls} text-muted-foreground`} />;
   if (kind === 'error') return <AlertTriangle className={`${cls} text-destructive`} />;
@@ -137,33 +154,43 @@ function OneLinerIcon({ kind, inFlight }: { kind: OneLiner['icon']; inFlight: bo
 function ExpandableRow({
   children,
   payload,
+  trailing,
 }: {
   children: React.ReactNode;
   payload: React.ReactNode;
+  /**
+   * Rendered beside the toggle, NOT inside it — a chip's "open the thing I
+   * touched" link is its own affordance and must not nest inside the
+   * expander's button.
+   */
+  trailing?: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-1.5 px-1.5 py-1 text-left"
-      >
-        {open ? (
-          <ChevronDown className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
-        ) : (
-          <ChevronRight className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
-        )}
-        {children}
-      </button>
+      <div className="flex w-full items-center gap-1.5 px-1.5 py-1">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="flex min-w-0 items-center gap-1.5 text-left"
+        >
+          {open ? (
+            <ChevronDown className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
+          ) : (
+            <ChevronRight className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
+          )}
+          {children}
+        </button>
+        {trailing}
+      </div>
       {open && <div className="px-2 pb-1 pt-0.5">{payload}</div>}
     </>
   );
 }
 
 function ToolPairItem({ pair }: { pair: ToolPair }) {
-  const toolName = pair.call.attributes['tool-name'] || 'Tool';
-  const summary = describeToolInput(pair.call.data);
+  const desc = useMemo(() => describeEvent(pair.call), [pair.call]);
+  const openTarget = useChipTarget(desc.target);
   // Replay emits durable semantic operations (file_write, file_edit,
   // skill_call, etc.) as TOOL_CALL-shaped rows. They describe work that has
   // already happened and do not have a separate TOOL_RESULT to pair with.
@@ -189,14 +216,31 @@ function ToolPairItem({ pair }: { pair: ToolPair }) {
             <PayloadBlock label={inFlight ? 'output (running…)' : 'output'} value={resultOutput} />
           </>
         }
+        trailing={
+          desc.detail && openTarget ? (
+            <button
+              type="button"
+              data-testid="tool-entry-target"
+              title={desc.detail}
+              onClick={openTarget}
+              className="min-w-0 flex-1 truncate text-left font-mono text-[12px] text-blue-600 underline-offset-2 hover:underline dark:text-blue-400"
+            >
+              {desc.detail}
+            </button>
+          ) : undefined
+        }
       >
         {isError ? (
           <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0 text-destructive" />
         ) : (
-          <Wrench className={`h-3.5 w-3.5 flex-shrink-0 text-muted-foreground${inFlight ? ' animate-pulse' : ''}`} />
+          <desc.icon
+            className={`h-3.5 w-3.5 flex-shrink-0 text-muted-foreground${inFlight ? ' animate-pulse' : ''}`}
+          />
         )}
-        <span className="font-medium text-foreground">{describeToolName(toolName)}</span>
-        {summary && <span className="truncate font-mono text-[12px] text-muted-foreground">{summary}</span>}
+        <span className="flex-shrink-0 whitespace-nowrap font-medium text-foreground">{desc.label}</span>
+        {desc.detail && !openTarget && (
+          <span className="truncate font-mono text-[12px] text-muted-foreground">{desc.detail}</span>
+        )}
       </ExpandableRow>
     </li>
   );
@@ -291,11 +335,14 @@ function describeLatest(events: FlowData[], pairs: ToolPair[]): OneLiner | null 
       return pid && pid === id;
     });
     const inFlight = !!matchingPair && matchingPair.result === null;
-    const toolName = evt.attributes['tool-name'] || 'Tool';
+    // Same descriptor the expanded rows use, so the collapsed headline names
+    // the operation the same way ("Read · path", not "Using Read").
+    const desc = describeEvent(evt);
     return {
       icon: 'tool',
-      label: describeToolName(toolName),
-      detail: describeToolInput(evt.data),
+      lucide: desc.icon,
+      label: desc.label,
+      detail: desc.detail,
       inFlight,
     };
   }

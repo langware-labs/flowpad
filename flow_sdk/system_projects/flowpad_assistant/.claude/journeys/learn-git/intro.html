@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  body { margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center;
+         background:#0f1117; color:#e6e8ee; font-family:-apple-system,'Segoe UI',sans-serif; }
+  .card { max-width:560px; padding:48px; }
+  h1 { font-size:28px; margin:0 0 8px; }
+  .accent { color:#f6a723; }
+  p { line-height:1.6; color:#aab0be; margin:12px 0; }
+  code { background:#1b1f2a; color:#7ee0a3; padding:2px 6px; border-radius:4px; font-size:13px; }
+  button { margin-top:24px; padding:10px 28px; font-size:15px; border:0; border-radius:8px;
+           background:#5b5bf0; color:#fff; cursor:pointer; }
+  button:hover { background:#6d6df5; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>What is <span class="accent">Git</span>?</h1>
+  <p>Git is a <b>version control system</b>: it remembers every version of your files, so you can
+     experiment freely, undo anything, and see exactly what changed and when.</p>
+  <p>You work in a normal folder — a <b>repository</b>. You save snapshots called <b>commits</b>,
+     and try ideas on parallel lines of work called <b>branches</b>.</p>
+  <p>In this journey you'll run real git commands in a live terminal. In the terminal, prefix shell
+     commands with <code>!</code> — for example <code>!git status</code>. After each operation, the
+     journey checks the <b>actual repository</b> to confirm it worked.</p>
+  <button onclick="parent.postMessage({source:'flow-journey',event:'next'},'*')">Next</button>
+</div>
+</body>
+</html>
