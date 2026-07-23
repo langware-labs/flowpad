@@ -46,7 +46,8 @@ export interface FlowEvent {
 export type FlowEventHandler = (event: FlowEvent) => void;
 
 export interface TopicFilters {
-  /** Exact target, or a `type:*` glob (single trailing `*` after the first colon). */
+  /** Exact target, or a trailing-`*` prefix glob — `agent:*` (any of the type),
+   *  `dock:shell/*` (any pointer under the view). See `targetMatches`. */
   target?: string;
   /** Delivery filter over ctx.scope — reserved; matched only when provided AND the event carries scope. */
   scope?: string[];

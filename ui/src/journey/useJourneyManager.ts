@@ -274,11 +274,12 @@ export function useJourneyManager(state: UseJourneyResult): JourneyManagerView {
         // somewhere of their own choosing — the next step stays transparent.
         // Read the envelope's ATTRIBUTION (ctx.actor, stamped by the emitter),
         // not a topic-prefix guess: any user-caused event qualifies, whatever
-        // its topic is named. EXCEPT sandbox origin: a sandboxed page (a slide's
-        // Next button) cannot navigate the app, so there is no destination to
-        // protect — the next step's present must still fire.
+        // its topic is named. Origin must be `app` — only THIS tab's own DOM
+        // can have started a navigation worth protecting; a relayed origin
+        // (sandbox slide button, hub, local_server) never did, so its next step
+        // must still present.
         suppressNextDockRef.current =
-          (event?.ctx?.actor ?? '').startsWith('user:') && event?.ctx?.origin !== 'sandbox';
+          (event?.ctx?.actor ?? '').startsWith('user:') && event?.ctx?.origin === 'app';
         doAdvance(currentStep.node_id);
       }
     } catch (e) {

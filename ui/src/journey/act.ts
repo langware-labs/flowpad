@@ -1,5 +1,6 @@
 import { Capability, capabilityManager, dataContext, EventBus, FSRef, GitWorkdir, oauthService, Shell } from '@sdk';
 
+import { getGitStatus } from '@src/lib/git-status-cache';
 import { LOCAL_COMPUTE_NODE } from '@src/navigation/asset-doc-types';
 import type { JourneyActSpec } from './use-journey';
 
@@ -132,12 +133,19 @@ function projectPath(rel?: string): string | null {
  * the repo says so (event ≠ proof: the user's terminal commands are invisible
  * to the bus; the repo is the truth). All probes go through the compute node's
  * `git-ops` action, the same backend the footer git pill reads.
+ *
+ * The status probe goes through the SHARED `getGitStatus` cache the footer pill
+ * uses, always `force`d: a Check is an explicit "did my command land?", so it
+ * must never answer from the TTL — but it still single-flights against a
+ * concurrent pill fetch, and refreshing the shared entry means the footer count
+ * agrees with what the journey just verified.
  */
 async function runGitCheck(act: JourneyActSpec): Promise<boolean> {
   try {
     const workdir = projectPath(act.dir);
     if (!workdir) return announce(act, false);
-    const git = new GitWorkdir(workdir, dataContext.computeNodeTypeId?.id ?? '@local');
+    const computeNodeId = dataContext.computeNodeTypeId?.id ?? LOCAL_COMPUTE_NODE.id;
+    const git = new GitWorkdir(workdir, computeNodeId);
     switch (act.expect) {
       case 'repo':
         return announce(act, await git.isInit());
@@ -146,8 +154,8 @@ async function runGitCheck(act: JourneyActSpec): Promise<boolean> {
       case 'staged':
       case 'clean':
       case 'dirty': {
-        const status = await git.getStatus();
-        if (status.error) return announce(act, false);
+        const status = await getGitStatus(computeNodeId, workdir, { force: true });
+        if (!status || status.error) return announce(act, false);
         if (act.expect === 'staged') return announce(act, status.files.some((f) => f.staged));
         if (act.expect === 'dirty') return announce(act, status.files.length > 0);
         return announce(act, status.files.length === 0 && (await git.hasCommit()));
