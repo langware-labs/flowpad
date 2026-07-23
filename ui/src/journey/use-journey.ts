@@ -38,9 +38,14 @@ export function useBusyRun(refresh: () => void): {
 /** Where a step points the user — a standard dock pointer descriptor. */
 export interface JourneyPresentDock {
   /** `root` = the app home `/` (not a dock URL) — the typical journey start. */
-  kind?: 'asset_editor' | 'home' | 'wiki' | 'asset_list' | 'root';
+  kind?: 'asset_editor' | 'home' | 'wiki' | 'asset_list' | 'root' | 'shell';
   vfs?: string;
   name?: string;
+  /** `shell`: the terminal session id to open — a `run` act targets the SAME
+   *  id, so its command lands in the terminal the step just opened. */
+  session?: string;
+  /** `shell`: working directory to start in. */
+  cwd?: string;
 }
 
 /** The proof side of an await: a store query that must hold (event ≠ proof). */
@@ -103,7 +108,7 @@ export interface JourneyActSpec {
    * (via the compute node's `git-ops` action) — the "Check" button of a
    * try-it-yourself step: done only when the repo actually satisfies `expect`.
    */
-  kind: 'fill' | 'setup_capability' | 'oauth_connect' | 'device_login' | 'git_check';
+  kind: 'fill' | 'open_terminal' | 'run' | 'fs_check' | 'setup_capability' | 'oauth_connect' | 'device_login' | 'git_check';
   /** Topic word of the target surface — `[data-topic="…"]`. For `git_check`
    *  it is just the act's bus identity (`git_check:<target>`), no DOM anchor. */
   target: string;
@@ -112,6 +117,12 @@ export interface JourneyActSpec {
   capability?: string;
   /** OAuth provider for `oauth_connect` (default "github"). */
   provider?: string;
+  /** `run`: the shell command to type + Enter into the step's terminal. */
+  command?: string;
+  /** `fs_check`: project-relative file that must exist. */
+  path?: string;
+  /** `fs_check`: optional substring the file must contain. */
+  contains?: string;
   /** `git_check`: the repo predicate that must hold. */
   expect?: 'repo' | 'staged' | 'clean' | 'branch' | 'dirty';
   /** `git_check` + `expect:"branch"`: the branch name that must be current. */

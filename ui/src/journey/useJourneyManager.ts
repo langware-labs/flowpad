@@ -2,6 +2,7 @@ import { capabilityManager, dataContext, dataManager, Journey, Project, QueryFil
 import { useOnTopic, useProject } from '@sdk/react/hooks';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AssetEditor } from '@src/navigation/asset-doc-types';
+import { ViewType } from '@sdk';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -49,6 +50,11 @@ function pointerForDock(
       return DockPointer.forWiki(dock.name ?? '');
     case 'asset_list':
       return DockPointer.forAssetList(dock.name ?? '');
+    case 'shell':
+      // A fixed session id is the contract with the step's `run` act: it sends
+      // its command to this same shell, so the command lands in the terminal
+      // the user is watching.
+      return DockPointer.forShell(dock.session, dock.cwd ? { cwd: dock.cwd } : undefined);
     default:
       return null;
   }
@@ -69,7 +75,7 @@ function pointerForDock(
  */
 export function useJourneyManager(state: UseJourneyResult): JourneyManagerView {
   const { journey, journal, currentStep, start, refresh } = state;
-  const { navigation } = useDockNavigation();
+  const { navigation, currentDock } = useDockNavigation();
   const { project } = useProject();
 
   const journeyId = journey?.id ?? null;
@@ -187,12 +193,27 @@ export function useJourneyManager(state: UseJourneyResult): JourneyManagerView {
   }, [journeyId, cursor]);
 
   const act = currentStep?.act;
+  // The terminal the user is looking at: `run` acts type into THIS shell, and
+  // `open_terminal` creates one the same way the Terminal tile does.
+  // The shell dock's id segment is the tab key (`shell-<uuid>`); the entity id
+  // is the bare uuid — strip the prefix or Shell.getById never resolves.
+  const shellId =
+    currentDock?.viewType === ViewType.SHELL
+      ? (currentDock.id?.replace(/^shell-/, '') ?? null)
+      : null;
+  const openTerminal = useCallback(async () => {
+    const result = await navigation.openNewShell({ skipNavigate: true });
+    if (!result?.shellId) return null;
+    await navigation.openShell(result.shellId);
+    return result.shellId;
+  }, [navigation]);
+
   const doAct = useCallback(() => {
     if (!act) return;
     setActRan(true);
     // Async acts announce their own outcome on the bus; nothing to await here.
-    void runAct(act);
-  }, [act]);
+    void runAct(act, { shellId: shellId ?? undefined, openTerminal });
+  }, [act, shellId, openTerminal]);
 
   // A failed act re-offers its button — a `git_check` is MEANT to be retried
   // until the repo actually satisfies it ("not yet — try the command").

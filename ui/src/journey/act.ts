@@ -1,4 +1,4 @@
-import { Capability, capabilityManager, dataContext, EventBus, GitWorkdir, oauthService } from '@sdk';
+import { Capability, capabilityManager, dataContext, EventBus, FSRef, GitWorkdir, oauthService, TypeId } from '@sdk';
 
 import type { JourneyActSpec } from './use-journey';
 
@@ -159,10 +159,96 @@ async function runGitCheck(act: JourneyActSpec): Promise<boolean> {
   }
 }
 
+/**
+ * What the manager lends an act that needs app powers it cannot reach from a
+ * pure module: opening a terminal, and the id of the one currently on screen.
+ */
+export interface ActContext {
+  /** Create + open a terminal in the current project; resolves its shell id. */
+  openTerminal?: () => Promise<string | null>;
+  /** The shell the current dock is showing, if any — where `run` types. */
+  shellId?: string | null;
+}
+
+/**
+ * Type a command into the step's terminal and press Enter — the journey does
+ * the typing so a tutorial can DEMONSTRATE, not dictate. `target` is the shell
+ * session the step's `present.dock` opened, so the command always lands in the
+ * terminal the user is looking at.
+ *
+ * `\r` (not `\n`) is what a real Return key sends over a PTY.
+ */
+/** The shell the URL is showing: `/dock/shell/<shell-uuid>` → the bare uuid. */
+function shellIdFromUrl(): string | null {
+  const m = /\/(?:dock|win)\/shell\/([^/?#]+)/.exec(window.location.pathname);
+  return m ? decodeURIComponent(m[1]).replace(/^shell-/, '') : null;
+}
+
+async function runShellCommand(act: JourneyActSpec, ctx: ActContext): Promise<boolean> {
+  try {
+    // The terminal on screen IS the target — read it from the live URL (the
+    // single source of truth for "what am I looking at"), so the command can
+    // never land in some other session or a shell that no longer exists.
+    const shellId = ctx.shellId ?? shellIdFromUrl();
+    if (!shellId || !act.command) return announce(act, false);
+    const { Shell } = await import('@sdk');
+    const shell = await Shell.getById(shellId);
+    if (!shell) return announce(act, false);
+    await shell.sendInput(`${act.command}\r`);
+    return announce(act, true);
+  } catch {
+    return announce(act, false);
+  }
+}
+
+/** Open a real terminal in this project — the same path the Terminal tile takes. */
+async function runOpenTerminal(act: JourneyActSpec, ctx: ActContext): Promise<boolean> {
+  try {
+    const shellId = ctx.openTerminal ? await ctx.openTerminal() : null;
+    return announce(act, !!shellId);
+  } catch {
+    return announce(act, false);
+  }
+}
+
+/** The project-relative path an `fs_check` act probes. */
+function projectFile(path: string): FSRef | null {
+  const base = dataContext.project?.fs_storage_mount_path ?? dataContext.workdir;
+  if (!base) return null;
+  const full = `${base.replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}`;
+  return new FSRef(full, dataContext.computeNodeTypeId ?? new TypeId('compute_node', '@local'));
+}
+
+/**
+ * Prove a file is really there (and optionally that it carries `contains`) —
+ * the filesystem is the truth. The user's terminal commands never reach the
+ * bus, so "they said they ran it" is not evidence; this reads the file back.
+ */
+async function runFsCheck(act: JourneyActSpec): Promise<boolean> {
+  try {
+    const ref = projectFile(act.path ?? '');
+    if (!ref || !act.path) return announce(act, false);
+    if (!act.contains) return announce(act, await ref.exists());
+    const body = await ref.read().catch(() => null);
+    return announce(act, !!body && body.includes(act.contains));
+  } catch {
+    return announce(act, false);
+  }
+}
+
 /** Run a step's act and announce the outcome on the bus. */
-export function runAct(act: JourneyActSpec): boolean | Promise<boolean> {
+export function runAct(act: JourneyActSpec, ctx: ActContext = {}): boolean | Promise<boolean> {
   if (act.kind === 'fill') {
     return announce(act, performFill(act.target, act.text ?? ''));
+  }
+  if (act.kind === 'open_terminal') {
+    return runOpenTerminal(act, ctx);
+  }
+  if (act.kind === 'run') {
+    return runShellCommand(act, ctx);
+  }
+  if (act.kind === 'fs_check') {
+    return runFsCheck(act);
   }
   if (act.kind === 'git_check') {
     return runGitCheck(act);
