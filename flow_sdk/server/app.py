@@ -61,6 +61,7 @@ from .routes import (
     cloud_router,
     compute_register_router,
     debug_router,
+    subgraph_router,
     topics_router,
     dep_graph_router,
     detection_router,
@@ -537,6 +538,7 @@ server.add_router(project_router, prefix="/api/v1")
 server.add_router(compute_register_router)
 server.add_router(debug_router)
 server.add_router(topics_router)
+server.add_router(subgraph_router)
 server.add_router(navigate_router)
 server.add_router(agent_records_router)
 server.add_router(transcripts_router)

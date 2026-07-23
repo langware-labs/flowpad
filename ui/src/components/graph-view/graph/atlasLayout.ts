@@ -134,6 +134,7 @@ export function buildAtlasLayout(graph: Graph): AtlasLayout {
   hierarchyChildren.forEach((kids, ancestor) => {
     for (const kid of kids) if (!hierarchyParentOf.has(kid)) hierarchyParentOf.set(kid, ancestor);
   });
+  const orderedNodes = sorted(graph, nodes);
   const hierarchyRoots = sorted(
     graph,
     nodes.filter((key) => !hierarchyParentOf.has(key) && (hierarchyChildren.get(key)?.length ?? 0) > 0),
@@ -145,8 +146,10 @@ export function buildAtlasLayout(graph: Graph): AtlasLayout {
 
   const depth = new Map<string, number>();
   const parent = new Map<string, string>();
+  // BFS seeds: every hierarchy root, with the primary root first so it takes
+  // row 0. A graph with no hierarchy at all still seeds from its primary root.
   const seeds = hierarchyRoots.length ? [...hierarchyRoots] : root ? [root] : [];
-  if (root && !depth.has(root) && !seeds.includes(root)) seeds.unshift(root);
+  if (root && !seeds.includes(root)) seeds.unshift(root);
   const queue = [...seeds];
   for (const seed of seeds) depth.set(seed, 0);
   while (queue.length) {
@@ -162,7 +165,7 @@ export function buildAtlasLayout(graph: Graph): AtlasLayout {
   // Nodes carried only by association edges (a doc bound to a topic, an
   // artifact linked to a deployment) hang off their deepest known neighbor
   // rather than all piling onto the root.
-  for (const key of sorted(graph, nodes)) {
+  for (const key of orderedNodes) {
     if (depth.has(key)) continue;
     let anchor: string | null = null;
     let anchorDepth = -1;
@@ -212,7 +215,7 @@ export function buildAtlasLayout(graph: Graph): AtlasLayout {
     for (const child of sorted(graph, children.get(key) ?? [])) walk(child);
   };
   for (const seed of seeds) walk(seed);
-  for (const key of sorted(graph, nodes)) walk(key); // detached stragglers
+  for (const key of orderedNodes) walk(key); // detached stragglers
   for (const node of atlasNodes) {
     tree.set(node.id, { x: node.depth * 330, y: (rowOf.get(node.id) ?? 0) * 104 });
   }

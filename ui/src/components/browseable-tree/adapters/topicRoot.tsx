@@ -1,11 +1,20 @@
 import React from 'react';
-import { Hash, Sparkles, Trash2 } from 'lucide-react';
+import { GitFork, Sparkles, Trash2 } from 'lucide-react';
 import apiClient from '@sdk/client';
 import { Topic, RESERVED_TOPIC_ROOTS, config } from '@sdk';
+import { DockPointer } from '@src/navigation/DockPointer';
+import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import type { Browseable, ToolbarAction } from '@src/components/browseable-tree/types';
 import { CountChip } from '@src/components/browseable-tree/CountChip';
 import { refreshNode } from '@src/components/browseable-tree/refresh-store';
 import { showDeleteAssetModal } from '@src/components/assets/delete-asset-modal';
+
+/** Topic's glyph, resolved from the backend type registry (never hardcoded —
+ *  see the type-icon law in CLAUDE.md). */
+const TopicIcon = () => {
+  const Icon = iconForType('topic');
+  return <Icon className="h-3.5 w-3.5 flex-shrink-0" />;
+};
 
 /**
  * Topics gardening view — the `topic` type root's children in the Assets tree
@@ -137,7 +146,7 @@ function topicRow(row: TopicRow, rootId: string): Browseable {
     id: `topic:${name}`,
     kind: 'asset',
     label: name,
-    icon: <Hash className="h-3.5 w-3.5 flex-shrink-0" />,
+    icon: <TopicIcon />,
     badge,
     // Anonymous (observed-only) rows are the dimmed half of the gardening
     // diff; blessing brightens them by giving them an entity row.
@@ -150,8 +159,8 @@ function topicRow(row: TopicRow, rootId: string): Browseable {
     // Dogfooding: every row is itself topic-tagged, so clicks land on the bus.
     topic: name,
     hasChildren: false,
-    // Row-only entity with no editor surface yet — header-only row.
-    pointer: null,
+    // URL-first: clicking a topic opens the topic graph focused on it.
+    pointer: DockPointer.forTopicGraph(name),
     toolbar: toolbar.length > 0 ? toolbar : undefined,
   };
 }
@@ -160,14 +169,22 @@ function topicRow(row: TopicRow, rootId: string): Browseable {
 export async function topicListChildren(rootId: string): Promise<Browseable[]> {
   const [blessed, observed] = await Promise.all([fetchBlessed(), fetchObserved()]);
   const byRoot = mergeTopicRows(blessed, observed);
-  return [...byRoot.entries()].map(([root, rows]) => ({
+  const graphRow: Browseable = {
+    id: 'topic-graph-entry',
+    kind: 'asset',
+    label: 'Topic graph',
+    icon: <GitFork className="h-3.5 w-3.5 flex-shrink-0" />,
+    hasChildren: false,
+    pointer: DockPointer.forTopicGraph(),
+  };
+  return [graphRow, ...[...byRoot.entries()].map(([root, rows]) => ({
     id: `topic-family:${root}`,
     kind: 'folder',
     label: root,
-    icon: <Hash className="h-4 w-4 flex-shrink-0 text-muted-foreground" />,
+    icon: <TopicIcon />,
     badge: <CountChip count={rows.length} />,
     hasChildren: true,
     pointer: null,
     listChildren: () => Promise.resolve(rows.map((row) => topicRow(row, rootId))),
-  }));
+  }))];
 }

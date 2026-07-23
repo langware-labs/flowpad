@@ -69,6 +69,12 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react
 // keeps app bootstrap independent of WebGL availability.
 const GraphView = lazy(() => import('@src/components/graph-view/GraphView').then((m) => ({ default: m.GraphView })));
 const WorldView = lazy(() => import('@src/components/graph-view/GraphView').then((m) => ({ default: m.WorldView })));
+const TopicGraphView = lazy(() =>
+  import('@src/components/graph-view/TopicGraphView').then((m) => ({ default: m.TopicGraphView })),
+);
+const GenericSubgraphView = lazy(() =>
+  import('@src/components/graph-view/SubgraphView').then((m) => ({ default: m.GenericSubgraphView })),
+);
 // Lazy like GRAPH — keeps @xyflow/react out of app bootstrap.
 const AgenticFlowsView = lazy(() =>
   import('@src/components/agentic-flows/AgenticFlowsView').then((m) => ({ default: m.AgenticFlowsView })),
@@ -390,6 +396,18 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
         return (
           <Suspense fallback={null}>
             <WorldView />
+          </Suspense>
+        );
+      case ViewType.TOPIC:
+        return (
+          <Suspense fallback={null}>
+            <TopicGraphView />
+          </Suspense>
+        );
+      case ViewType.SUBGRAPH:
+        return (
+          <Suspense fallback={null}>
+            <GenericSubgraphView />
           </Suspense>
         );
       case ViewType.AGENTIC_FLOWS:

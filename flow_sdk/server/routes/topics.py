@@ -16,7 +16,6 @@ Anonymous topics degrade gracefully: no header entity, docs/code still work.
 """
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any, Optional
 
@@ -27,44 +26,14 @@ from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
 router = APIRouter()
 
 _MODES = ("line", "block", "full")
-_CAPSULE_MARKER = "flowpad:capsule topic"
-_MAX_SCAN_FILE_BYTES = 2_000_000
 
 
 async def _bound_docs(name: str) -> list[dict[str, Any]]:
     """Markdown entities whose ``topics`` list contains ``name`` or a
-    descendant. LIKE prefilter on the JSON, exact filter in Python."""
-    from sqlalchemy import select as sa_select, text  # noqa: PLC0415
+    descendant (shared reader — see flow_sdk/topics/bindings.py)."""
+    from flow_sdk.topics.bindings import all_doc_bindings  # noqa: PLC0415
 
-    from flow_sdk.db import session as _session  # noqa: PLC0415
-    from flow_sdk.db.drivers.sqlite.connection import EntitySchema  # noqa: PLC0415
-    from flow_sdk.topics.grammar import topic_is_within  # noqa: PLC0415
-
-    out: list[dict[str, Any]] = []
-    async with _session(write=False) as s:
-        result = await s.execute(
-            sa_select(EntitySchema.id, EntitySchema.data).where(
-                EntitySchema.type == "markdown",
-                text("data LIKE '%\"topics\"%'"),
-            )
-        )
-        for row_id, raw in result.all():
-            try:
-                data = raw if isinstance(raw, dict) else json.loads(raw or "{}")
-            except (TypeError, ValueError):
-                continue
-            topics = [t for t in (data.get("topics") or []) if isinstance(t, str)]
-            matched = sorted(t for t in topics if topic_is_within(t, name))
-            if matched:
-                out.append({
-                    "id": row_id,
-                    "title": data.get("title") or data.get("name") or "",
-                    "asset_ref": data.get("asset_ref") or "",
-                    "topics": matched,
-                    "body": data.get("body"),
-                })
-    out.sort(key=lambda d: (d["title"], d["id"]))
-    return out
+    return await all_doc_bindings(name)
 
 
 def _doc_body(doc: dict[str, Any]) -> str:
@@ -79,48 +48,10 @@ def _doc_body(doc: dict[str, Any]) -> str:
 
 def _scan_code_capsules(root: Path, name: str) -> list[dict[str, Any]]:
     """Source files under ``root`` carrying a ``topic`` capsule naming this
-    topic (or a descendant). Cheap marker check before the full parse."""
-    from flow_sdk.capsules.line_comment import COMMENT_LEADERS, LineCommentCapsule  # noqa: PLC0415
-    from flow_sdk.fs_store.indexer.walk import gitignore_walk  # noqa: PLC0415
-    from flow_sdk.topics.grammar import topic_is_within  # noqa: PLC0415
+    topic or a descendant (shared reader — see flow_sdk/topics/bindings.py)."""
+    from flow_sdk.topics.bindings import scan_code_capsules  # noqa: PLC0415
 
-    out: list[dict[str, Any]] = []
-    for _dir, _subdirs, files in gitignore_walk(root):
-        for path in files:
-            if path.suffix.casefold() not in COMMENT_LEADERS:
-                continue
-            try:
-                if path.stat().st_size > _MAX_SCAN_FILE_BYTES:
-                    continue
-                text_content = path.read_text(encoding="utf-8")
-            except (OSError, UnicodeDecodeError):
-                continue
-            if _CAPSULE_MARKER not in text_content:
-                continue
-            try:
-                capsule = LineCommentCapsule(path).read("topic")
-            except Exception:  # noqa: BLE001 — a malformed capsule never breaks get
-                continue
-            if capsule is None:
-                continue
-            bindings = capsule.data.get("topics")
-            if not isinstance(bindings, dict):
-                continue
-            matched = {
-                t: line for t, line in sorted(bindings.items())
-                if isinstance(t, str) and topic_is_within(t, name)
-            }
-            if not matched:
-                continue
-            marker_line = next(
-                (i + 1 for i, l in enumerate(text_content.splitlines()) if _CAPSULE_MARKER in l), 1)
-            try:
-                rel = str(path.relative_to(root))
-            except ValueError:
-                rel = str(path)
-            out.append({"path": rel, "line": marker_line, "topics": matched})
-    out.sort(key=lambda item: item["path"])
-    return out
+    return scan_code_capsules(root, name)
 
 
 async def _header(name: str) -> dict[str, Any]:

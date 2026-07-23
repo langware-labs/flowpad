@@ -29,6 +29,64 @@ topic := dot-separated path, optionally prefixed with an ontology name
   `fs.` families below) live in the ontology as documentation — evolvable without
   touching the bus.
 
+The string grammar itself has one owner: `flow_sdk/topics/grammar.py` and its byte-parallel
+twin `ts_sdk/src/topics/grammar.ts`, pinned by the `grammar` section of
+`tests/fixtures/flow_event_contract.json`. It serves every dot-separated vocabulary —
+bus topics, subscription patterns, and the Artifact/Deployment `kind` ontology
+(`worldview/ontology.py` and `models/Kind.ts` are compat shims over it). Two match
+semantics live there and are never merged: `topic_matches` (subscription glob, `*`
+segments, trailing `*` = suffix) and `topic_is_within` (hierarchy prefix — `workload`
+contains `workload.service.http`).
+
+## Taxonomy layer — describes, never routes
+
+A topic name can also be *blessed*: given a `Topic` entity (`flow_sdk/builtin/topic.py`)
+carrying a title, description, and namespace ownership. This is enrichment, not
+registration — **the system works entirely with anonymous topics**, and law 1 holds
+unchanged: the bus never consults an entity to route.
+
+- **Identity is the name.** `id = mint_uuid("topic:<canonical name>")` (uuid5), so
+  blessing the same name on any instance — or long after it was first emitted
+  anonymously — converges on the same entity, and hub sync dedupes for free.
+- **Resolution is wiki-link-shaped**: `resolve_topic(name) → Topic | None`. `None` is a
+  supported state, and resolution **never mints** — an event storm must not become an
+  entity storm. Blessing is deliberate (a seeder, an author, the gardening UI).
+- **The hierarchy is derived, never stored.** `grammar.topic_tree` reconstructs
+  parent/child from the dot-path, including implied intermediate names. There is no
+  topic-edge table.
+- **System vocabulary** ships as `SYSTEM_TOPIC_SEED` and is upserted at server startup;
+  `RESERVED_ROOTS` (derived from that seed) blocks non-system creation under a system
+  family. The gate is entity save-validation keyed on in-process seeding provenance —
+  never a client-writable field, and never the bus.
+- **User worlds** take a `--<namespace>--` first segment (`--acme--.orders.created`).
+  The marker is legal only as segment 0; global uniqueness is a hub concern, not a local
+  one.
+
+## Binding things to topics — the carriers ARE the store
+
+Docs, code, and skills point *at* topics; nothing points back. The join is derived at
+query time, so a moved file or renamed doc can't leave a dangling edge.
+
+| Carrier | Where | Binds |
+|---------|-------|-------|
+| markdown frontmatter `topics: [...]` | the doc | a document to its subjects |
+| `topic` capsule (line-comment block) | a source file | code to the subjects it implements |
+| `topics:` in SKILL.md frontmatter | rides `skill.metadata` generically | a skill to its subjects |
+| `[[dot.topic.name]]` | any wiki body | a mention (blessed topics resolve by uname) |
+
+`flow topic <name> get [--mode line|block|full]` assembles that join for an agent:
+blessed header plus ancestors, bound docs, capsule-carrying code sites, and wiki
+mentions. The three modes are LLMIndex's summary tiers (`flow_sdk/llm_index/sizes.py`),
+resolved without an LLM call. The `topic-context` skill teaches agents the trigger (a
+capsule or `topics:` in a file you are about to change) and the line → block → full
+escalation. Asking for a topic includes its descendants (`topic_is_within`).
+
+The same derivation renders as a graph: the `topic` subgraph projection
+(`flow_sdk/topics/graph.py`) emits taxonomy `child` edges (hierarchy) plus `bound` edges
+(association, with a `via` property naming the carrier), with anonymous topics and code
+files as ghost nodes. It is served through the generic entity-subgraph route
+(`/api/v1/subgraph/{projection}`) and viewed at `/dock/topic/graph[/<name>]`.
+
 ## Target — what the event is about
 
 - `target` = the **type:id of the event's entity**. Its own envelope field, separate
