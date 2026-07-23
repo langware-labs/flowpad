@@ -2,6 +2,7 @@
 // graphEngine import) so loaders and tests can use them without WebGL.
 import { ViewType } from '@src/types/ViewType';
 import { DockPointer } from '@src/navigation/DockPointer';
+import { Layout } from '@sdk';
 import type { SubgraphCodec } from './url-state';
 
 export const TOPIC_KEY_PREFIX = 'topic-';
@@ -20,14 +21,15 @@ export const topicGraphCodec: SubgraphCodec = {
     return DockPointer.forTopicGraph(
       focusTopic,
       {
-        depth: state.focus && state.depth !== state.defaultDepth ? state.depth : undefined,
+        depth: state.focus ? state.depth : undefined,
+        defaultDepth: state.defaultDepth,
         selected: state.selected ?? undefined,
         render: state.render,
         hidden: state.hidden,
         query: state.query,
         carry: carryOptions,
       },
-      layout as never,
+      layout,
     );
   },
 };
@@ -48,14 +50,15 @@ export function genericSubgraphCodec(projection: string): SubgraphCodec {
         projection,
         state.focus,
         {
-          depth: state.focus && state.depth !== state.defaultDepth ? state.depth : undefined,
+          depth: state.focus ? state.depth : undefined,
+          defaultDepth: state.defaultDepth,
           selected: state.selected ?? undefined,
           render: state.render,
           hidden: state.hidden,
           query: state.query,
           carry: carryOptions,
         },
-        layout as never,
+        layout,
       );
     },
   };

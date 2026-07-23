@@ -1075,9 +1075,19 @@ export class DockPointer implements IDockPointer {
     );
   }
 
+  /** Query-option keys the subgraph-surface pointers own. `url-state` carries
+   *  everything NOT in this set through untouched (a surface's own data-shape
+   *  keys, e.g. the topic graph's `view=tree`). */
+  static readonly SUBGRAPH_OPTION_KEYS: readonly string[] = [
+    'focus', 'selected', 'depth', 'hide', 'q', 'signal', 'color', 'render',
+  ];
+
   /** Shared query-option assembly for the subgraph-surface pointers. */
   private static subgraphOptions(options?: {
     depth?: number;
+    /** Omit `depth` when it equals this (URL hygiene, one rule for every
+     *  subgraph-surface pointer). */
+    defaultDepth?: number;
     selected?: string;
     render?: GraphPresentation;
     hidden?: readonly string[];
@@ -1086,7 +1096,7 @@ export class DockPointer implements IDockPointer {
   }): Record<string, string> | undefined {
     const queryOptions: Record<string, string> = { ...(options?.carry ?? {}) };
     if (options?.render && options.render !== DEFAULT_GRAPH_PRESENTATION) queryOptions.render = options.render;
-    if (options?.depth) queryOptions.depth = String(options.depth);
+    if (options?.depth && options.depth !== options.defaultDepth) queryOptions.depth = String(options.depth);
     if (options?.selected) queryOptions.selected = options.selected;
     const hidden = [...new Set(options?.hidden ?? [])].filter(Boolean).sort();
     if (hidden.length) queryOptions.hide = hidden.join(',');

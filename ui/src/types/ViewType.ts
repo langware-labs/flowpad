@@ -279,6 +279,22 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     tabLocation: 'dedicated',
     canAddAsTab: true,
   },
+  [ViewType.TOPIC]: {
+    title: 'Topic Graph',
+    iconName: 'Hash',
+    tabLocation: 'dedicated',
+    canAddAsTab: false,
+    // <topic> in the pointer is in-view focus navigation — every focused
+    // topic folds into one tab chip (PREFERENCES precedent).
+    foldsPointer: true,
+  },
+  [ViewType.SUBGRAPH]: {
+    title: 'Subgraph',
+    iconName: 'Workflow',
+    tabLocation: 'dedicated',
+    canAddAsTab: false,
+    foldsPointer: true,
+  },
   [ViewType.K_BROWSER]: {
     title: 'Knowledge Browser',
     iconName: 'Brain',

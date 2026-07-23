@@ -61,8 +61,8 @@ no `TopicEvent` in ts_sdk/ui; all existing tests green.
 ## Phase 1 — Bus core, both sides  ✅
 
 Python `TopicEventBus` (`flow_sdk/topics/bus.py`) — faithful port of the TS
-core: `emit` (sync fire-and-forget, lazy envelope, zero-subscriber fast path,
-default `origin='local_server'`), `on(pattern, handler, target?, scope?)`,
+core: `emit` (sync fire-and-forget, lazy envelope, zero-subscriber fast path
+behind a bounded observation poke, default `origin='local_server'`), `on(pattern, handler, target?, scope?)`,
 `deliver(event)` (relay entry — no re-mint), handler isolation for sync AND
 async handlers. The `topic_msg` WS frame (`api/messages.py TopicMessage`) with
 backend→app forwarding for a declared allowlist
@@ -180,8 +180,13 @@ DELETE paths, 445/874). One adapter hooks both.*
 - *Backend-side only*: `entity.*` is deliberately NOT added to
   `FORWARDED_TOPIC_PATTERNS` — forwarding every entity write would storm the
   WS; the app keeps `data_op_msg` until a frontend consumer wants the topic
-  form (phase 8). The bus's zero-subscriber fast path makes the emission
-  ~free until phase 4 subscribes.
+  form (phase 8). The bus's zero-subscriber fast path keeps the emission
+  ~free until phase 4 subscribes — it costs one dict poke, because `emit`
+  records every topic name in a bounded observed map (cap 512, drop-oldest)
+  before the fast path returns. Seeing names nobody subscribes to yet is the
+  point: it feeds `/api/v1/debug/observed_topics` and the blessed-vs-anonymous
+  diff in the topics gardening view. Timestamps are stored as epoch floats and
+  only formatted on that read.
 - *Cycle note (documented on the adapter)*: a subscriber that writes entities
   re-triggers `entity.updated` — subscribers must be idempotent and never
   unconditionally write their own trigger entity; the real storm guard is

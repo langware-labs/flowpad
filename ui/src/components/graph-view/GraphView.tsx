@@ -348,7 +348,7 @@ export function GraphView({
               <div className="graph-controls-cluster">
                 {surfaceControls}
                 {spec.presentation && (
-              <div className="worldview-presentation-toggle" role="group" aria-label={t`Graph presentation`}>
+              <div className="graph-segmented-toggle" role="group" aria-label={t`Graph presentation`}>
                 <button
                   type="button"
                   data-testid="worldview-view-sigma"
@@ -408,7 +408,7 @@ export function GraphView({
           <PropertyPanel
             node={selected}
             localRootKey={urlState.focus}
-            showWorldViewProperties={isWorldView}
+            showWorldViewProperties={spec.signals}
             onNeighborClick={(key) => navigateSelection(key)}
             onFocus={navigateFocus}
           />

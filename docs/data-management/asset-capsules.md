@@ -6,8 +6,9 @@ id: 5b8388fe-f701-5e08-b082-e02306680955
 
 `flow_sdk/capsules/` stores named, JSON-compatible metadata in filesystem
 assets without knowing about entity types, UUIDs, the indexer, or the DB.
-`AssetCapsule.from_path(path)` returns the folder or Markdown implementation;
-both expose `read`, `write`, `write_if_absent`, `remove`, and `names`.
+`AssetCapsule.from_path(path)` dispatches on the path — folder, Markdown, or
+source file — and every carrier exposes `read`, `write`, `write_if_absent`,
+`remove`, and `names`.
 
 `CapsuleData` has the same logical shape in both carriers:
 
@@ -26,12 +27,31 @@ data:
 flowpad:endcapsule identity -->
 ```
 
+Source files use the same grammar with each line behind the language's comment
+leader (`COMMENT_LEADERS` maps the suffix: `#` for `.py`, `//` for
+`.ts/.tsx/.js/.jsx`). The leader plus one space is stripped before parsing, so a
+bare leader line is an empty YAML line:
+
+```python
+# flowpad:capsule topic
+# version: 1
+# data:
+#   topics:
+#     flow.runs: "Run budgets are enforced here"
+# flowpad:endcapsule topic
+```
+
 Only absence returns `None`. Invalid names, malformed data, duplicate blocks,
 unsupported versions, and unsupported file formats raise typed capsule errors.
 Mutations are lock-protected and atomically replaced; same-value writes preserve
 bytes and mtime. Markdown snapshot/restore helpers let an owned domain renderer
 replace content without deleting or interpreting capsule blocks. Parsers and
 FTS remove capsule blocks before treating the remaining text as document body.
+
+A capsule name is a flat slug (`[a-z][a-z0-9_-]{0,63}`) and one file carries at
+most one block per name — dotted vocabularies therefore live in the payload, not
+the name. `identity` is the canonical kind; `topic` binds a source file to the
+subjects it implements (see `docs/topics.md`).
 
 ## Identity integration
 

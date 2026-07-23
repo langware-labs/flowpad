@@ -7,6 +7,7 @@
 //     &hide=<sorted,types>&q=<query>
 
 import {
+  Layout,
   PageId,
   TypeId,
   ViewType,
@@ -69,7 +70,7 @@ export interface SubgraphCodec {
       query: string;
     },
     carryOptions: Record<string, string>,
-    layout?: string,
+    layout?: Layout,
   ): DockPointer;
 }
 
@@ -166,7 +167,8 @@ export function useGraphUrlState(
       if (surface === 'subgraph' && codec) {
         // Preserve options this layer does not own (a surface's own data-shape
         // keys, e.g. the topic graph's `view=tree`) so they survive refocus.
-        const owned = new Set(['focus', 'selected', 'depth', 'hide', 'q', 'signal', 'color', 'render']);
+        // The owned list lives with the writer — see DockPointer.
+        const owned = new Set(DockPointer.SUBGRAPH_OPTION_KEYS);
         const carryOptions: Record<string, string> = {};
         const activeOptions =
           currentDock?.viewType === codec.viewType ? (currentDock?.options ?? {}) : {};
