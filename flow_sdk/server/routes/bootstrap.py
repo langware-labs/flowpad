@@ -1810,9 +1810,11 @@ async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
         from flow_sdk.app.actions.hooks_sniffer import (  # noqa: PLC0415
             _create_or_update_sniffer_hook,
             _get_sniffer_hook,
+            sniffer_installed,
         )
         from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
         sniffer_hook = None
+        sniffer_is_installed = False
         try:
             sniffer_hook = await _get_sniffer_hook()
             _t.time("get_sniffer_hook")
@@ -1823,6 +1825,10 @@ async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
                 _t.time("create_or_update_sniffer_hook")
                 await sniffer_hook.apply()
                 _t.time("sniffer_hook.apply")
+            # What settings.json actually carries — the UI warns on this, not on
+            # the DB entity, so a sniffer installed by another instance shows up.
+            sniffer_is_installed = sniffer_installed()
+            _t.time("sniffer_installed")
         except Exception as e:
             logging.warning(f"Failed to auto-enable sniffer hook: {e}")
 
@@ -1855,6 +1861,7 @@ async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
             capabilities_summary=capabilities_summary.model_dump(mode="json"),
             scan_info=scan_info,
             sniffer_hook=entity_to_dict(sniffer_hook) if sniffer_hook else None,
+            sniffer_installed=sniffer_is_installed,
             records_root=str(get_instance_settings().records_root),
             supported_locales=get_supported_locales(),
             translation_targets=get_translation_targets(),

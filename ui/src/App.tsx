@@ -17,6 +17,7 @@ import { useEffect, useRef } from 'react';
 import { GitHubDeviceFlowModal } from '@src/components/oauth/GitHubDeviceFlowModal';
 import { HarnessLoginModalRoot } from '@src/components/harness-login/HarnessLoginModal';
 import MigrateLegacyKeychain from '@src/components/migrate-legacy-keychain';
+import { SnifferActiveNotice } from '@src/components/hooks/SnifferActiveNotice';
 import { initNotificationListener } from '@src/store/use-notification-store';
 import { SnifferProvider } from '@src/contexts/SnifferContext';
 import { FloatingChatProvider } from '@src/components/floating-chat';
@@ -124,6 +125,7 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
             it has no place in hub mode. */}
         {!isHubOnly() && <HarnessLoginModalRoot />}
         <MigrateLegacyKeychain />
+        <SnifferActiveNotice />
         <HarnessCapabilitiesProvider>
           <SnifferProvider>
             <FloatingChatProvider>

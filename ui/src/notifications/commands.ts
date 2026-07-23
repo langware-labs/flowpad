@@ -1,5 +1,5 @@
 import { toast as sonnerToast } from 'sonner';
-import { oauthService, OAUTH_PROVIDERS, copyToClipboard, AgenticProcess } from '@sdk';
+import { oauthService, OAUTH_PROVIDERS, copyToClipboard, AgenticProcess, snifferManager } from '@sdk';
 import { gitResolvePrompt } from '@src/components/status-bar/gitResolvePrompt';
 import { closeTerminalTab } from '@src/tabs/useTabs';
 import { useBadgeStore } from './store';
@@ -63,6 +63,21 @@ registerCommand('git.resolve-conflict', (args) => {
   void AgenticProcess.openTab('claude_code', gitResolvePrompt(branch)).catch((e: unknown) => {
     notify.error({ title: 'Could not start resolver', message: String(e) });
   });
+});
+
+// `Disable` on the startup "hook sniffer is on" toast: clear the harness hooks
+// (whichever instance installed them) and record the opt-out so a boot doesn't
+// silently put them back.
+registerCommand('sniffer.disable', (_args, ctx) => {
+  void snifferManager
+    .disable()
+    .then(() => {
+      sonnerToast.dismiss(ctx.id);
+      notify.success({ title: 'Hook sniffer disabled', message: 'Claude Code hooks were removed from your settings.' });
+    })
+    .catch((e: unknown) => {
+      notify.error({ title: 'Could not disable the sniffer', message: String(e) });
+    });
 });
 
 registerCommand('notification.dismiss', (_args, ctx) => {
