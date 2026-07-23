@@ -128,3 +128,35 @@ describe('groupTurnEvents — the skill name comes off the structured call', () 
     expect(second.skillName).toBeUndefined();
   });
 });
+
+describe('groupTurnEvents — accounting frames stay out of the dense stream', () => {
+  const statusFrame = (subtype: string, i: number) =>
+    new FlowData(FlowElementTypes.STATUS, JSON.stringify({}), {
+      i: String(i),
+      t: ts(i),
+      'data-type': 'object',
+      subtype,
+    });
+
+  it.each(['token_usage', 'meta', 'summary'])('drops %s frames but keeps real operations', (subtype) => {
+    const groups = groupTurnEvents([
+      statusFrame(subtype, 0),
+      toolCall('Bash', 'tu-bash', 1),
+      toolResult('tu-bash', 2),
+    ]);
+
+    expect(groups).toHaveLength(1);
+    const dense = groups[0];
+    if (dense.kind !== 'dense') throw new Error('expected dense group');
+    expect(dense.events).toHaveLength(2);
+    expect(dense.events.every((e) => e.attributes['subtype'] !== subtype)).toBe(true);
+  });
+
+  it('keeps live lifecycle status frames — they describe the run', () => {
+    const groups = groupTurnEvents([statusFrame('init', 0), statusFrame('task_started', 1)]);
+
+    const dense = groups[0];
+    if (dense.kind !== 'dense') throw new Error('expected dense group');
+    expect(dense.events).toHaveLength(2);
+  });
+});

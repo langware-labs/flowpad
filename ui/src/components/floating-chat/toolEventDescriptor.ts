@@ -1,4 +1,4 @@
-import { FlowData, isTypeId } from '@sdk';
+import { FlowData, isTypeId, type ReceiveShowTarget, TypeId } from '@sdk';
 import {
   describeToolInput,
   describeToolName,
@@ -19,13 +19,16 @@ import {
 } from 'lucide-react';
 
 /**
- * What a chip does when clicked. `none` keeps the row a plain expander (the
- * raw payload is still one chevron away).
+ * What a chip opens when clicked, or null when it opens nothing (the row stays
+ * a plain expander; the raw payload is still one chevron away).
+ *
+ * Deliberately the backend's own `ReceiveShowTarget` shape rather than a
+ * chip-local type: `flow show file` / `flow show entity` post exactly this, and
+ * `openDisplayTarget` already knows how to route every variant of it.
  */
-export type ChipTarget =
-  | { kind: 'file'; path: string; line?: number }
-  | { kind: 'entity'; typeId: string }
-  | { kind: 'none' };
+export type ChipTarget = ReceiveShowTarget | null;
+
+const filePath = (path: string): ChipTarget => (path ? { kind: 'vfs', path } : null);
 
 export interface EventDescriptor {
   /** Semantic entry kind ('file_read', 'flow_command', …) or 'tool_use'. */
@@ -75,7 +78,7 @@ export function describeEvent(fd: FlowData): EventDescriptor {
   if (fileOp) {
     const path = str(entry?.path) || describeToolInput(fd.data);
     const [icon, label] = fileOp;
-    return { kind, icon, label, detail: path, target: path ? { kind: 'file', path } : { kind: 'none' } };
+    return { kind, icon, label, detail: path, target: filePath(path) };
   }
 
   switch (kind) {
@@ -100,7 +103,7 @@ export function describeEvent(fd: FlowData): EventDescriptor {
         detail: name,
         // Display-only here: the clickable skill affordance is the top-level
         // meta chip (which has the skill's folder path to resolve with).
-        target: { kind: 'none' },
+        target: null,
       };
     }
     case 'shell_command':
@@ -109,7 +112,7 @@ export function describeEvent(fd: FlowData): EventDescriptor {
         icon: Terminal,
         label: 'Run',
         detail: str(entry?.command) || describeToolInput(fd.data),
-        target: { kind: 'none' },
+        target: null,
       };
     case 'search':
       return {
@@ -117,7 +120,7 @@ export function describeEvent(fd: FlowData): EventDescriptor {
         icon: Search,
         label: str(entry?.search_kind) || 'Search',
         detail: str(entry?.query) || describeToolInput(fd.data),
-        target: { kind: 'none' },
+        target: null,
       };
     case 'web_fetch':
       return {
@@ -125,17 +128,17 @@ export function describeEvent(fd: FlowData): EventDescriptor {
         icon: Globe,
         label: 'Fetch',
         detail: str(entry?.url) || str(entry?.query) || describeToolInput(fd.data),
-        target: { kind: 'none' },
+        target: null,
       };
     case 'todo_update':
-      return { kind, icon: ListTodo, label: 'Todos', detail: '', target: { kind: 'none' } };
+      return { kind, icon: ListTodo, label: 'Todos', detail: '', target: null };
     case 'agent_spawn':
       return {
         kind,
         icon: Bot,
         label: 'Agent',
         detail: str(entry?.agent_type) || str(entry?.description),
-        target: { kind: 'none' },
+        target: null,
       };
     default:
       // Pre-consolidation frames, MCP tools, and anything the backend maps to
@@ -145,7 +148,7 @@ export function describeEvent(fd: FlowData): EventDescriptor {
         icon: Wrench,
         label: describeToolName(toolName),
         detail: describeToolInput(fd.data),
-        target: { kind: 'none' },
+        target: null,
       };
   }
 }
@@ -156,10 +159,12 @@ export function describeEvent(fd: FlowData): EventDescriptor {
  * a payload popover rather than guessing a destination.
  */
 function flowTarget(subverb: string, target: string): ChipTarget {
-  if (!target) return { kind: 'none' };
+  if (!target) return null;
   // `isTypeId`, never a local regex: a stricter copy here rejects the uname and
   // key forms TypeId accepts (`project-@local`), silently dropping the chip.
-  if (subverb === 'entity' && isTypeId(target)) return { kind: 'entity', typeId: target };
-  if (subverb === 'file') return { kind: 'file', path: target };
-  return { kind: 'none' };
+  if (subverb === 'entity' && isTypeId(target)) {
+    return { kind: 'entity', typeid: target, type: new TypeId(target).type };
+  }
+  if (subverb === 'file') return filePath(target);
+  return null;
 }

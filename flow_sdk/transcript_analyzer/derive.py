@@ -119,17 +119,17 @@ def parse_flow_invocation(command: str) -> dict[str, Any] | None:
 
 
 def _envelope(entry: TranscriptEntry) -> dict[str, Any]:
-    return {
-        "id": entry.id,
-        "session_id": entry.session_id,
-        "timestamp": entry.timestamp,
-        "worker": entry.worker,
-        "parent_id": entry.parent_id,
-        "is_sidechain": entry.is_sidechain,
-        "entry_id": entry.entry_id,
-        "model": entry.model,
-        "attribution_skill": entry.attribution_skill,
-    }
+    """The base-class fields, as ``TranscriptEntry.__init__`` kwargs.
+
+    Read off ``TranscriptEntry.to_dict`` **unbound** — it already serializes
+    exactly the envelope, so a new envelope field is carried through here for
+    free instead of needing a third hand-maintained copy of the field list.
+    Calling it unbound matters: the subclass override would add its own fields
+    (``command``, ``exit_code``, …), which the refined entry sets separately.
+    """
+    fields = TranscriptEntry.to_dict(entry)
+    fields.pop("kind", None)  # class attribute, not a constructor kwarg
+    return fields
 
 
 def _derive_flow_command(entry: TranscriptEntry) -> FlowCommandEntry | None:
