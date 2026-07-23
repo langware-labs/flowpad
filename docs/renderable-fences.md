@@ -118,3 +118,9 @@ which mounts the real editor read-only, so scroll-to-line and the deep-link
 marker are the same code the full editor runs. The chip is deliberately **not**
 gated on `ctx.editable` — navigating is a read action, and a read-only surface
 is where following a contract to its source matters most.
+
+<!-- flowpad:capsule identity
+version: 1
+data:
+  id: 64a4f7de-c410-456c-a76a-55f67fd8ae43
+flowpad:endcapsule identity -->
