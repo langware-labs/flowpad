@@ -165,6 +165,8 @@ export class Project extends APIEntity<Project> {
    *  local presence `presence` overlay below. The project's own (uuid4) id is the
    *  shared hub identity — no separate cloud id. */
   members: ConversationParticipant[] = [];
+  /** Portable repository identity received with a shared project. */
+  git_origin: GitOrigin | null = null;
   /** Last UI view mode used in this project (vibe|standard|advanced|dev);
    *  applied on project load so the mode is remembered per project. */
   last_mode: string | null = null;
@@ -287,6 +289,13 @@ export class Project extends APIEntity<Project> {
     const computeNode = await this.getComputeNode();
     if (!computeNode) return null;
     return new GitWorkdir(this.fs_storage_mount_path, computeNode.id);
+  }
+
+  /** Clone/materialize the shared project's portable GitOrigin locally. */
+  async setupFromGitOrigin(): Promise<Project> {
+    const action = new ActionInfo('setup-from-git', Project.type, this.id, 'POST');
+    const response = await dataManager.callAction<void, Project>(action);
+    return dataManager.updateEntityFromJson<Project>(response as unknown as Record<string, unknown>);
   }
 
   /** Adopt the server-computed `include_dirs` off a context-dir action

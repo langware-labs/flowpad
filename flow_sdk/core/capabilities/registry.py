@@ -459,17 +459,37 @@ class GithubAccountRunner(CapabilityRunner):
             project = await Project.get_by_id(scope.scope_id)
             root = project.fs_storage_mount_path if project else None
             if not root:
-                return CapabilityResult(False, False, "Project has no local Git workspace.", {"reason": "no-workspace"})
+                return CapabilityResult(
+                    ok=False,
+                    available=False,
+                    message="Project has no local Git workspace.",
+                    details={"reason": "no-workspace"},
+                )
             origin = await asyncio.to_thread(GitOrigin.for_asset_path, root)
             if origin is None:
-                return CapabilityResult(False, False, "Project has no Git repository and remote.", {"reason": "no-git-remote"})
+                return CapabilityResult(
+                    ok=False,
+                    available=False,
+                    message="Project has no Git repository and remote.",
+                    details={"reason": "no-git-remote"},
+                )
             token = await self._oauth_token()
             accessible, branch = await git_remote_access(origin.clone_url(), token=token)
             return CapabilityResult(
                 ok=True,
                 available=accessible,
-                message=("Project GitHub remote is accessible." if accessible else "Project GitHub remote is not accessible."),
-                details={"scope_type": "project", "scope_id": scope.scope_id, "clone_url": origin.clone_url(), "default_branch": branch, "authenticated": bool(token)},
+                message=(
+                    "Project GitHub remote is accessible."
+                    if accessible
+                    else "Project GitHub remote is not accessible."
+                ),
+                details={
+                    "scope_type": "project",
+                    "scope_id": scope.scope_id,
+                    "clone_url": origin.clone_url(),
+                    "default_branch": branch,
+                    "authenticated": bool(token),
+                },
             )
         if await self._oauth_token():
             return CapabilityResult(

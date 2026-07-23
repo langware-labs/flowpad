@@ -1439,7 +1439,6 @@ msgstr ""
 #: src/components/assets/AssetsNavigator.tsx
 #: src/components/assets/AssetsPage.tsx
 #: src/components/assets/AssetsPage.tsx
-#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 msgid "Assets"
 msgstr "נכסים"
 
@@ -1463,6 +1462,14 @@ msgstr "עוזרים ומפתחות"
 #: src/components/skills-viewer/amd-editor/components/blocks/UiBlock.tsx
 #~ msgid "async"
 #~ msgstr "אסינכרוני"
+
+#: src/components/graph-view/GraphView.tsx
+msgid "Atlas controls"
+msgstr ""
+
+#: src/components/graph-view/GraphView.tsx
+msgid "Atlas map view"
+msgstr ""
 
 #: src/components/image-annotator/AnnotatorToolbar.tsx
 msgid "Attach"
@@ -1504,6 +1511,10 @@ msgstr "העלאת הקובץ המצורף נכשלה"
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 msgid "Attachments"
 msgstr "קבצים מצורפים"
+
+#: src/journey/JourneyStepLive.tsx
+msgid "Authenticated ✓"
+msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 #~ msgid "authentication required"
@@ -2018,6 +2029,10 @@ msgstr "כלי צ'אט"
 msgid "Chats"
 msgstr "שיחות"
 
+#: src/journey/JourneyTray.tsx
+msgid "Check"
+msgstr ""
+
 #: src/components/version-popover/version-popover.tsx
 #: src/components/version-popover/version-popover.tsx
 msgid "Check again"
@@ -2410,6 +2425,10 @@ msgstr "סגור הכל חוץ מזה"
 msgid "Close bookmark"
 msgstr "סגור סימנייה"
 
+#: src/components/graph-view/GraphView.tsx
+msgid "Close details"
+msgstr ""
+
 #: src/components/navigator-panel/NavigatorSearch.tsx
 #: src/components/navigator-panel/NavigatorSearch.tsx
 msgid "Close search"
@@ -2700,6 +2719,7 @@ msgstr "אישור"
 
 #: src/components/connections-manager.tsx
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
+#: src/journey/JourneyTray.tsx
 #: src/pages/hub-home/NewDesktopDialog.tsx
 msgid "Connect"
 msgstr "חבר"
@@ -2711,6 +2731,10 @@ msgstr "חבר"
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
 msgid "Connect GitHub"
 msgstr "חבר את GitHub"
+
+#: src/components/capabilities-view/CapabilitiesView.tsx
+msgid "Connect GitHub and the gh CLI with a guided setup."
+msgstr ""
 
 #: src/components/InputSection.tsx
 #~ msgid "Connect to {0} to continue"
@@ -3065,7 +3089,7 @@ msgstr "לא ניתן ליצור קישור"
 msgid "Could not load source: {error}"
 msgstr "לא ניתן לטעון מקור: {error}"
 
-#: src/components/entity-execution-panel/MetaMessageChip.tsx
+#: src/components/entity-execution-panel/useOpenSkill.ts
 msgid "Could not open skill"
 msgstr "לא הצליח לפתוח כישור"
 
@@ -4202,6 +4226,10 @@ msgstr "תיקיות הפרויקטים הנבחרים מתווספות כתיק
 msgid "edges"
 msgstr "קשתות"
 
+#: src/components/graph-view/GraphView.tsx
+msgid "Edges"
+msgstr ""
+
 #: src/components/graph-view/ui/PropertyPanel.tsx
 msgid "Edges by kind"
 msgstr "קצוות לפי סוג"
@@ -4437,6 +4465,10 @@ msgstr "הזן שם hook"
 #: src/components/skills-viewer/amd-editor/components/blocks/DoBlock.tsx
 #~ msgid "Enter instructions..."
 #~ msgstr "הזן הוראות..."
+
+#: src/journey/JourneyStepLive.tsx
+msgid "Enter the code here"
+msgstr ""
 
 #: src/components/hooks-manager/TriggerForm.tsx
 msgid "Enter trigger description"
@@ -5347,6 +5379,10 @@ msgstr "הפעלות: {0}"
 msgid "Fit (f)"
 msgstr "התאמה (f)"
 
+#: src/components/graph-view/GraphView.tsx
+msgid "Fit Atlas"
+msgstr ""
+
 #: src/components/workflow-runner/learning/PastAttemptsPane.tsx
 #~ msgid "Fix"
 #~ msgstr "תיקון"
@@ -5463,6 +5499,7 @@ msgstr "זרימות"
 #~ msgid "Flows:"
 #~ msgstr "זרימות:"
 
+#: src/components/graph-view/GraphView.tsx
 #: src/components/graph-view/ui/PropertyPanel.tsx
 msgid "Focus local graph"
 msgstr "המקד את הגרף המקומי"
@@ -5471,6 +5508,7 @@ msgstr "המקד את הגרף המקומי"
 msgid "Focus local graph here"
 msgstr "המקד את הגרף המקומי כאן"
 
+#: src/components/graph-view/GraphView.tsx
 #: src/components/graph-view/ui/PropertyPanel.tsx
 msgid "Focused"
 msgstr "במיקוד"
@@ -5762,6 +5800,10 @@ msgstr "עלה כיוון למעלה"
 msgid "Got a relative-looking ref with multiple segments: <0>{ref}</0>"
 msgstr "קיבלנו ref שנראה יחסי עם מקטעים מרובים: <0>{ref}</0>"
 
+#: src/components/graph-view/TopicGraphView.tsx
+msgid "Graph"
+msgstr ""
+
 #: src/components/graph-context/GraphContextViewer.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
 msgid "Graph view"
@@ -5779,6 +5821,10 @@ msgstr "שם הקבוצה"
 #: src/components/conversation/ConversationContextPanel.tsx
 msgid "Group Task"
 msgstr "משימת אב"
+
+#: src/components/project-selector/NewProjectFromGitDialog.tsx
+msgid "Guided setup"
+msgstr ""
 
 #: src/components/terminal/openers/AskInstallOneOfDialog.tsx
 msgid "Harness is required"
@@ -6148,6 +6194,7 @@ msgstr "IDE"
 msgid "IDE Connections (VS Code, Cursor, etc.)"
 msgstr "חיבורי IDE (VS Code, Cursor, וכו')"
 
+#: src/components/graph-view/GraphView.tsx
 #: src/components/graph-view/ui/PropertyPanel.tsx
 msgid "Identity"
 msgstr "זהות"
@@ -6487,6 +6534,7 @@ msgid "Invitations — dismiss"
 msgstr "הזמנות — בטל"
 
 #: src/components/account/organization-panel.tsx
+#: src/components/conversation/MembersAvatarStack.tsx
 msgid "Invite"
 msgstr "הזמן"
 
@@ -6501,6 +6549,10 @@ msgstr "הזמנה לפי שם או אימייל…"
 #: src/components/account/organization-panel.tsx
 msgid "Invite failed"
 msgstr "ההזמנה נכשלה"
+
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "Invite members"
+msgstr ""
 
 #: src/components/account/organization-panel.tsx
 msgid "Invited {trimmed}."
@@ -7227,6 +7279,10 @@ msgstr "מיקום"
 msgid "locked after first message"
 msgstr "נעול לאחר ההודעה הראשונה"
 
+#: src/journey/JourneyTray.tsx
+msgid "Log in"
+msgstr ""
+
 #: src/components/triggers-view/TriggerListItem.tsx
 msgid "Log mode"
 msgstr "מצב רישום"
@@ -7240,6 +7296,10 @@ msgstr "כניסה"
 #: src/pages/keychain-approval.tsx
 msgid "Login canceled"
 msgstr "ההתחברות בוטלה"
+
+#: src/journey/JourneyStepLive.tsx
+msgid "Login failed — try again."
+msgstr ""
 
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "Login is required to search Flowpad database"
@@ -7686,6 +7746,10 @@ msgstr "שם ישות זו"
 msgid "Name:"
 msgstr "שם:"
 
+#: src/components/graph-view/GraphView.tsx
+msgid "Neighbors"
+msgstr ""
+
 #. placeholder {0}: node.neighbors.length
 #: src/components/graph-view/ui/PropertyPanel.tsx
 msgid "Neighbors (<0>{0}</0>)"
@@ -7872,7 +7936,6 @@ msgstr "עירוב לוח זמנים חדש"
 msgid "New Schedule Trigger"
 msgstr "טריגר לוח זמנים חדש"
 
-#: src/components/project-home/ProjectHome.tsx
 #: src/components/quick-create/QuickCreateMenu.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
 msgid "New session"
@@ -8064,7 +8127,6 @@ msgstr "אין כרטיסי קהילה"
 #: src/components/open-project-component/use-open-project.ts
 #: src/components/quick-create/QuickCreateDialog.tsx
 #: src/components/quick-create/QuickCreateMenu.tsx
-#: src/pages/flow-page/vibe-new-chat.tsx
 msgid "No compute node available"
 msgstr "אין צומת חישוב זמין"
 
@@ -10372,6 +10434,10 @@ msgstr "הודעות בתור"
 msgid "Quick create"
 msgstr "יצירה מהירה"
 
+#: src/components/graph-view/GraphView.tsx
+msgid "Radial layout"
+msgstr ""
+
 #: src/components/machine-overview/machine-overview.tsx
 msgid "RAM (MB)"
 msgstr "RAM (MB)"
@@ -11828,6 +11894,10 @@ msgstr "בחר את כל ההתאמות"
 #~ msgid "Select an artifact type above to get type-specific metadata fields."
 #~ msgstr "בחר סוג אמנות למעלה כדי קבלת שדות מטא-דטה ספציפיים לסוג."
 
+#: src/components/graph-view/GraphView.tsx
+msgid "Select an Atlas card to inspect it."
+msgstr ""
+
 #: src/components/terminal/openers/AskInstallOneOfDialog.tsx
 msgid "Select an available harness, or install one from its homepage and re-check it."
 msgstr "בחר ב-Harness זמין, או התקן אחד מעמוד הבית שלו ובדוק שוב."
@@ -12083,6 +12153,8 @@ msgstr "הגדר פרויקט"
 
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/components/project-home/SecretsCard.tsx
+#: src/journey/JourneyTray.tsx
+#: src/journey/SetupJourneyButton.tsx
 msgid "Set up"
 msgstr "הגדר"
 
@@ -12112,6 +12184,10 @@ msgstr "הגדירו מאגר git קיים כתיקיית ההקשר"
 
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "Set up as this name"
+msgstr ""
+
+#: src/components/capabilities-view/CapabilitiesView.tsx
+msgid "Set up GitHub"
 msgstr ""
 
 #: src/components/task-receive/IncomingProjectDialog.tsx
@@ -12389,6 +12465,10 @@ msgstr "סרגל צדדי"
 msgid "sidechain"
 msgstr "שרשרת צדדית"
 
+#: src/components/graph-view/GraphView.tsx
+msgid "Sigma graph view"
+msgstr ""
+
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 msgid "Sign in"
 msgstr ""
@@ -12470,7 +12550,7 @@ msgstr "כישורון נוצר"
 msgid "Skill name…"
 msgstr "שם הכישור…"
 
-#: src/components/entity-execution-panel/MetaMessageChip.tsx
+#: src/components/entity-execution-panel/useOpenSkill.ts
 msgid "Skill not found"
 msgstr "כישור לא נמצא"
 
@@ -12776,6 +12856,10 @@ msgstr "התחיל"
 msgid "Started"
 msgstr "החל"
 
+#: src/journey/JourneyStepLive.tsx
+msgid "Starting login…"
+msgstr ""
+
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Starting scan…"
 msgstr "מתחיל סריקה…"
@@ -12975,9 +13059,17 @@ msgstr "עבור לתצוגת הצ'אט"
 msgid "Switch to dark mode"
 msgstr "עבור למצב אפל"
 
+#: src/components/graph-view/TopicGraphView.tsx
+msgid "Switch to graph view"
+msgstr ""
+
 #: src/components/theme-toggle/theme-toggle.tsx
 msgid "Switch to light mode"
 msgstr "עבור למצב אור"
+
+#: src/components/graph-view/TopicGraphView.tsx
+msgid "Switch to ontology tree"
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/TerminalBottomRibbon.tsx
 msgid "Switch to terminal view"
@@ -13103,8 +13195,8 @@ msgid "Template:"
 msgstr "תבנית:"
 
 #: src/components/project-home/ProjectHome.tsx
-#~ msgid "Terminal"
-#~ msgstr "טרמינל"
+msgid "Terminal"
+msgstr "טרמינל"
 
 #: src/components/sessions-view/sessions-view.tsx
 msgid "Terminal Sessions"
@@ -13624,6 +13716,14 @@ msgstr "כישורים מובילים"
 msgid "Top tools"
 msgstr "כלים מובילים"
 
+#: src/components/graph-view/TopicGraphView.tsx
+msgid "Topic Graph"
+msgstr ""
+
+#: src/components/graph-view/TopicGraphView.tsx
+msgid "Topic Tree"
+msgstr ""
+
 #: src/components/assets/editor/agent-trace/AgentTraceView.tsx
 msgid "total"
 msgstr "סה״כ"
@@ -13680,6 +13780,14 @@ msgstr "תמלילים"
 #: src/components/assets/context-folder-sources.tsx
 #~ msgid "Travels with the project when shared"
 #~ msgstr ""
+
+#: src/components/graph-view/TopicGraphView.tsx
+msgid "Tree"
+msgstr ""
+
+#: src/components/graph-view/GraphView.tsx
+msgid "Tree layout"
+msgstr ""
 
 #: src/pages/discover-page/discover-page.tsx
 #~ msgid "Trending"
@@ -14515,6 +14623,10 @@ msgstr "בתהליך…"
 msgid "Worktree"
 msgstr "Worktree"
 
+#: src/components/graph-view/GraphView.tsx
+msgid "WorldView presentation"
+msgstr ""
+
 #: src/pages/entry/LaunchLanding.tsx
 msgid "Would you like to launch a sandbox for this repository?"
 msgstr ""
@@ -14653,12 +14765,14 @@ msgstr "קבצי ZIP יתווספו כחיבורי קוד בסיס"
 
 #: src/components/graph-context/ContextGraphCanvas.tsx
 #: src/components/graph-context/ContextGraphCanvas.tsx
+#: src/components/graph-view/GraphView.tsx
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Zoom in"
 msgstr "הגדל"
 
 #: src/components/graph-context/ContextGraphCanvas.tsx
 #: src/components/graph-context/ContextGraphCanvas.tsx
+#: src/components/graph-view/GraphView.tsx
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Zoom out"
 msgstr "הקטן"

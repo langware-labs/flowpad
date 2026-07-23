@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 import random
@@ -14,6 +15,7 @@ from flow_sdk._compat import StrEnum  # 3.10-safe StrEnum (project pins py3.10)
 from flow_sdk.api.api_types.api_field import APIField, Persist
 from flow_sdk.api.type_id import TypeId
 from flow_sdk.builtin.faas.compute_node import ComputeNode
+from flow_sdk.builtin.git_origin import GitOrigin
 from flow_sdk.builtin.worker_sessions import get_worker_sessions
 from flow_sdk.config import AGENT_MOUNT_FOLDER, PLATFORM_WIN32, StorageProvider
 from flow_sdk.core import Entity, action
@@ -28,6 +30,7 @@ from flow_sdk.request_context.methods import (
     get_current_request_info,
 )
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
+from flow_sdk.utils.git import find_local_repo_for_url, git_clone
 
 log = logging.getLogger(__name__)
 
@@ -102,6 +105,13 @@ class Project(Entity):
     )
     fs_storage_provider: StorageProvider | None = StorageProvider.SANDBOX
     fs_storage_mount_path: str | None = APIField(default=None, description="Full path to the project folder")
+    # Portable repository identity for a project shared through the hub. This
+    # is never the sender's local worktree path; the recipient uses it to
+    # clone/materialize its own checkout.
+    git_origin: GitOrigin | None = APIField(
+        default=None,
+        description="Portable Git repository origin used to materialize a shared project.",
+    )
     # Legacy stash for the removed stored ``include_dirs`` field. Context
     # folders are now Folder entities linked via the base-Entity context
     # buckets (see the computed ``include_dirs`` property); any raw
@@ -693,6 +703,11 @@ class Project(Entity):
         if parent_tid is not None:
             self.add_shared_context_entities(parent_tid)
         body = self._hub_body()
+        if self.fs_storage_mount_path:
+            origin = await asyncio.to_thread(GitOrigin.for_asset_path, self.fs_storage_mount_path)
+            if origin is not None:
+                self.git_origin = origin
+                body["git_origin"] = origin.model_dump(mode="json")
         shared_context_origins = await self._shared_context_origin_payload()
         invalid_shared_folders = [
             str(tid)
@@ -730,6 +745,53 @@ class Project(Entity):
                     },
                 )
         return self
+
+    async def setup_from_git_origin(self) -> "Project":
+        """Materialize this shared project into a local Git worktree.
+
+        The hub carries only ``GitOrigin``. This method owns the recipient-side
+        placement: reuse a matching local checkout when present, otherwise clone
+        into the workspace slot ``GitOrigin.next_clone_target`` picks, then bind
+        the existing shared Project id to that checkout and index it.
+        """
+        origin = self.git_origin
+        if origin is None:
+            raise RuntimeError("Shared project has no Git origin")
+
+        from flow_sdk.app.actions.oauth_action import _get_github_token_for_current_user  # noqa: PLC0415
+        from flow_sdk.builtin.agentic_process.agentic_process import _index_additional_dir  # noqa: PLC0415
+
+        existing = await asyncio.to_thread(find_local_repo_for_url, origin.clone_url())
+        if existing and origin.matches_checkout(existing, require_branch=bool(origin.branch)):
+            target_dir = existing
+        else:
+            target_dir = str(await asyncio.to_thread(origin.next_clone_target))
+            token, _ = await _get_github_token_for_current_user()
+            ok, message = await git_clone(
+                origin.clone_url(),
+                target_dir,
+                branch=origin.branch or None,
+                token=token,
+            )
+            if not ok:
+                raise RuntimeError(message)
+
+        self.fs_storage_mount_path = canonical_posix_path(target_dir)
+        self.name = os.path.basename(target_dir.rstrip(os.sep))
+        self.remote = True
+        await self.save()
+        await self.setup_for_desktop()
+        await _index_additional_dir(target_dir)
+        return self
+
+    @action.post(action_name="setup-from-git")
+    async def setup_from_git(self) -> ApiResponse:
+        """Materialize a remote project's transmitted GitOrigin locally."""
+        try:
+            project = await self.setup_from_git_origin()
+            return ApiSuccessResponse(data=project)
+        except Exception as exc:  # noqa: BLE001
+            return ApiFailResponse(message=str(exc), status_code=400)
 
     @property
     def main_ref(self):

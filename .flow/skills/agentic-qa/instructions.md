@@ -25,6 +25,12 @@
 
 ## Learnings
 
+### 2026-07-23 — Two-Docker project invitation E2E
+
+- A focused sender/recipient run through the local hub proved the project membership path: the recipient's pending invitation was materialized, acceptance returned success, and the recipient received a `remote=True` Project mirror with the sender's project id and name.
+- The scoped `source_control.git.github` test endpoint is currently not runnable in Docker: `GithubAccountRunner.test()` constructs `CapabilityResult` positionally, but it is a Pydantic model and raises `BaseModel.__init__() takes 1 positional argument but 5 were given` for both sender and recipient project scopes.
+- Accepted remote Projects intentionally have no local `fs_storage_mount_path`. `ProjectHome`'s current Git setup callback returns before `launchWizard()` when that path is absent, so accepting a project cannot yet launch a recipient-side clone/setup wizard. A full invite→accept→Git setup E2E therefore remains blocked at these two product seams.
+
 ### 2026-07-23 — Project Git-coupled invite browser validation
 
 - Dedicated Chromium validation against the local backend and Vite frontend passed the project-home invite-control scenario. The existing Assistants & keys dialog was persisted open and had to be closed before interaction; this is test-environment state, not an invite-flow failure.
