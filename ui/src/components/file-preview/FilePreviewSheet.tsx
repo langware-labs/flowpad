@@ -9,26 +9,20 @@
  * scroll-to-line and the deep-link line marker are all the same code path the
  * full editor uses.
  *
- * Generic on purpose (`components/file-preview/`, not under any one feature):
- * anything holding an absolute path and an optional line can open it.
+ * Presentation only — the sheet takes its target as a prop. `FilePreviewRoot`
+ * is the global host that reads the store and mounts this once, per the
+ * overlay convention in docs/wikitip.md; callers open it with
+ * `openFilePreview()` and never mount it themselves.
  */
 
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useEffect, useMemo } from 'react';
-import { detectLanguage, VFSPath, type TypeId } from '@sdk';
+import { detectLanguage, VFSPath } from '@sdk';
 import { useFS } from '@sdk/react/hooks';
 import { EditorPane, type EditorFileData } from '@src/components/code-editor/EditorPane';
 import { Button } from '@src/components/ui/button';
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@src/components/ui/sheet';
-
-export interface FilePreviewTarget {
-  /** Absolute machine path of the file to peek at. */
-  path: string;
-  /** 1-indexed line to reveal and mark, if the caller named one. */
-  line?: number;
-  /** Entity the file is read through — normally the caller's compute node. */
-  typeId: TypeId;
-}
+import type { FilePreviewTarget } from './file-preview';
 
 export function FilePreviewSheet({
   target,

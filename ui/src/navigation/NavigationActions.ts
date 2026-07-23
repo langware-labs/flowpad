@@ -535,6 +535,18 @@ export class NavigationActions {
   }
 
   /**
+   * Open a FILE addressed by ABSOLUTE MACHINE path, on a given entity.
+   *
+   * Dock pointers address files as VFS paths (`compute_node-<id>/abs/path`), so
+   * every caller holding a real filesystem path has to convert first — and each
+   * one that did it inline was a chance for the two forms to drift. Same job as
+   * `openFolder` does for directories; `openFile` remains the VFS-path entry.
+   */
+  openMachinePath(machinePath: string, typeId: TypeId, options?: FileOptions): void {
+    this.openFile(VFSPath.fromMachinePath(machinePath, typeId).rawPath, options);
+  }
+
+  /**
    * Open a FOLDER in the Assets fs browser — the folder counterpart of
    * `openFile`. `openFile` would render a directory path as an empty file, so
    * any surface that has a directory (file browsers, task artifacts) routes it
