@@ -189,3 +189,27 @@ def test_to_flow_data_carries_flow_attributes_and_still_pairs(make):
 
 def test_parse_flow_invocation_returns_none_on_unbalanced_quotes():
     assert parse_flow_invocation("flow show file 'unterminated") is None
+
+
+# ── drift guard ───────────────────────────────────────────────────────────────
+
+
+def test_flow_verbs_match_the_real_cli_registry():
+    """``_FLOW_VERBS`` must stay in sync with the commands ``flow`` actually has.
+
+    The set is a static copy so the transcript analyzer never imports the CLI
+    (typer + its dependency tree) on a per-entry parse path. That copy is only
+    safe if drift is caught here: adding a verb to ``flow_cli.py`` without
+    listing it makes its chip silently degrade to a generic shell row — a UI
+    regression with no error anywhere.
+    """
+    from flow_sdk.cli.flow_cli import app
+
+    from flow_sdk.transcript_analyzer.derive import _FLOW_VERBS
+
+    registered = {
+        cmd.name or cmd.callback.__name__.replace("_", "-")
+        for cmd in app.registered_commands
+    } | {group.name for group in app.registered_groups}
+
+    assert registered <= _FLOW_VERBS, f"new `flow` verbs are missing from _FLOW_VERBS: {sorted(registered - _FLOW_VERBS)}"

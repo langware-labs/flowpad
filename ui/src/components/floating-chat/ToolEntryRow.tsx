@@ -19,9 +19,9 @@ interface ToolEntryRowProps {
 }
 
 interface OneLiner {
-  icon: 'tool' | 'reasoning' | 'status' | 'error';
-  /** Per-operation glyph from the semantic descriptor, when the event has one. */
-  lucide?: LucideIcon;
+  icon: LucideIcon;
+  /** Errors render in the destructive colour; everything else is muted. */
+  isError?: boolean;
   label: string;
   detail: string;
   inFlight: boolean;
@@ -73,8 +73,8 @@ export function ToolEntryRow({ events }: ToolEntryRowProps) {
         ].join(' ')}
       >
         <OneLinerIcon
-          kind={latest?.icon ?? 'tool'}
-          lucide={latest?.lucide}
+          icon={latest?.icon ?? Wrench}
+          isError={latest?.isError}
           inFlight={latest?.inFlight ?? false}
         />
         {latest && <span className="whitespace-nowrap font-medium">{latest.label}</span>}
@@ -123,28 +123,12 @@ export function TurnEventList({ events }: { events: FlowData[] }) {
   );
 }
 
-function OneLinerIcon({
-  kind,
-  lucide,
-  inFlight,
-}: {
-  kind: OneLiner['icon'];
-  lucide?: LucideIcon;
-  inFlight: boolean;
-}) {
-  const cls = 'h-3.5 w-3.5 flex-shrink-0';
-  // In-flight = a TOOL_CALL has no matching TOOL_RESULT yet. Use the same
-  // icon as the resting state and animate a soft pulse rather than a spinning
-  // loader so the row feels like activity, not "busy/loading".
-  const Semantic = lucide;
-  if (Semantic) {
-    return <Semantic className={`${cls} ${inFlight ? 'animate-pulse text-foreground' : 'text-muted-foreground'}`} />;
-  }
-  if (inFlight) return <Wrench className={`${cls} animate-pulse text-foreground`} />;
-  if (kind === 'reasoning') return <Sparkles className={`${cls} text-muted-foreground`} />;
-  if (kind === 'error') return <AlertTriangle className={`${cls} text-destructive`} />;
-  if (kind === 'status') return <Activity className={`${cls} text-muted-foreground`} />;
-  return <Wrench className={`${cls} text-muted-foreground`} />;
+function OneLinerIcon({ icon: Icon, isError, inFlight }: Omit<OneLiner, 'label' | 'detail'>) {
+  // In-flight = a TOOL_CALL has no matching TOOL_RESULT yet. Pulse the SAME
+  // icon as the resting state rather than swapping in a spinner, so the row
+  // reads as activity, not "busy/loading".
+  const tone = isError ? 'text-destructive' : inFlight ? 'animate-pulse text-foreground' : 'text-muted-foreground';
+  return <Icon className={`h-3.5 w-3.5 flex-shrink-0 ${tone}`} />;
 }
 
 /**
@@ -230,13 +214,7 @@ function ToolPairItem({ pair }: { pair: ToolPair }) {
           ) : undefined
         }
       >
-        {isError ? (
-          <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0 text-destructive" />
-        ) : (
-          <desc.icon
-            className={`h-3.5 w-3.5 flex-shrink-0 text-muted-foreground${inFlight ? ' animate-pulse' : ''}`}
-          />
-        )}
+        <OneLinerIcon icon={isError ? AlertTriangle : desc.icon} isError={isError} inFlight={inFlight} />
         <span className="flex-shrink-0 whitespace-nowrap font-medium text-foreground">{desc.label}</span>
         {desc.detail && !openTarget && (
           <span className="truncate font-mono text-[12px] text-muted-foreground">{desc.detail}</span>
@@ -247,7 +225,7 @@ function ToolPairItem({ pair }: { pair: ToolPair }) {
 }
 
 function OtherEventItem({ event }: { event: FlowData }) {
-  const { icon, label } = describeOther(event);
+  const { icon, label, isError } = describeOther(event);
   const detail = extractText(event);
 
   return (
@@ -266,7 +244,7 @@ function OtherEventItem({ event }: { event: FlowData }) {
           </>
         }
       >
-        <OneLinerIcon kind={icon} inFlight={false} />
+        <OneLinerIcon icon={icon} isError={isError} inFlight={false} />
         <span className="font-medium text-foreground">{label}</span>
         {detail && <span className="truncate font-mono text-[12px] text-muted-foreground">{detail}</span>}
       </ExpandableRow>
@@ -338,13 +316,7 @@ function describeLatest(events: FlowData[], pairs: ToolPair[]): OneLiner | null 
     // Same descriptor the expanded rows use, so the collapsed headline names
     // the operation the same way ("Read · path", not "Using Read").
     const desc = describeEvent(evt);
-    return {
-      icon: 'tool',
-      lucide: desc.icon,
-      label: desc.label,
-      detail: desc.detail,
-      inFlight,
-    };
+    return { icon: desc.icon, label: desc.label, detail: desc.detail, inFlight };
   }
   // No tool calls in the bucket — fall back to the latest reasoning /
   // status / error entry. The label alone is the chip detail; we never
@@ -352,8 +324,8 @@ function describeLatest(events: FlowData[], pairs: ToolPair[]): OneLiner | null 
   for (let i = events.length - 1; i >= 0; i--) {
     const evt = events[i];
     if (DENSE_OTHER.has(evt.elementType)) {
-      const { icon, label } = describeOther(evt);
-      return { icon, label, detail: label, inFlight: false };
+      const other = describeOther(evt);
+      return { ...other, detail: other.label, inFlight: false };
     }
   }
   return null;
@@ -365,12 +337,12 @@ const DENSE_OTHER = new Set<string>([
   FlowElementTypes.ERROR,
 ]);
 
-function describeOther(event: FlowData): { icon: OneLiner['icon']; label: string } {
-  if (event.elementType === FlowElementTypes.REASONING) return { icon: 'reasoning', label: 'thinking' };
-  if (event.elementType === FlowElementTypes.ERROR) return { icon: 'error', label: 'error' };
+function describeOther(event: FlowData): { icon: LucideIcon; label: string; isError?: boolean } {
+  if (event.elementType === FlowElementTypes.REASONING) return { icon: Sparkles, label: 'thinking' };
+  if (event.elementType === FlowElementTypes.ERROR) return { icon: AlertTriangle, label: 'error', isError: true };
   // STATUS — surface the subtype if present (e.g. "PreToolUse")
   const subtype = event.attributes['subtype'];
-  return { icon: 'status', label: subtype || 'status' };
+  return { icon: Activity, label: subtype || 'status' };
 }
 
 function extractText(event: FlowData): string {

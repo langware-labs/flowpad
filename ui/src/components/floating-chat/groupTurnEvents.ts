@@ -42,6 +42,16 @@ const DENSE_TYPES = new Set<string>([
   FlowElementTypes.ERROR,
 ]);
 
+/**
+ * Transcript bookkeeping that is NOT "something the agent did": per-snapshot
+ * token accounting and Claude's session-envelope lines (file-history snapshots,
+ * queue operations, titles). A replayed transcript carries dozens of them, and
+ * they buried the real operations under a wall of empty `{}` rows. Live
+ * lifecycle STATUS frames (`init`, `task_started`, `rate-limit`) are NOT here —
+ * those describe the run and stay visible.
+ */
+const NON_ACTIVITY_SUBTYPES = new Set<string>(['token_usage', 'meta', 'summary']);
+
 const NO_LIVE_EVENTS: FlowData[] = [];
 
 /**
@@ -124,6 +134,7 @@ export function createTurnGrouper(): TurnGrouper {
       // injected body arrives as an isMeta USER_MESSAGE right after the call.
       // Keeping the TOOL_CALL/TOOL_RESULT in the dense stream too rendered
       // duplicate "Using Skill" chips around that one, so drop the pair here.
+      if (NON_ACTIVITY_SUBTYPES.has(item.attributes['subtype'])) return;
       if (isSkillToolEvent(item, skillCallIds)) {
         const name = skillNameOf(item);
         if (name) pendingSkillName = name;
