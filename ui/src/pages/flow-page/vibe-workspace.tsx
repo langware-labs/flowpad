@@ -34,6 +34,7 @@ import { setActiveTabParent } from '@src/tabs/tab-parent-context';
 import { setupTabAndAdopt } from '@src/tabs/setup-tab-and-adopt';
 import { notify } from '@src/notifications/notify';
 import { WorkspaceChildStrip } from './workspace-child-strip';
+import { VibeAssignTaskButton } from './VibeAssignTaskButton';
 import { VibeCollaborateButton } from './VibeCollaborateButton';
 import { ContentPanel } from './content-panel/content-panel';
 import { createVibeProcessForProject, embedVibeAgent, launchVibeSessionForProject } from './use-start-vibe-session';
@@ -577,10 +578,16 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
           historyOnLeft
           showProcessNameBar
           afterHistorySlot={
-            <VibeCollaborateButton
-              projectId={project?.id ?? null}
-              sessionTypeId={activeProcess?.typeId ?? null}
-            />
+            <>
+              <VibeAssignTaskButton
+                projectId={project?.id ?? null}
+                sessionTypeId={activeProcess?.typeId ?? null}
+              />
+              <VibeCollaborateButton
+                projectId={project?.id ?? null}
+                sessionTypeId={activeProcess?.typeId ?? null}
+              />
+            </>
           }
           pastSessionsLabel={t`Past builds`}
           noPastSessionsLabel={t`No past builds`}

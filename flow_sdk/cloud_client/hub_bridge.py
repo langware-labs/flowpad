@@ -343,6 +343,8 @@ class HubWsBridge:
                 await self._handle_conversation_op(op, eid, data)
             elif etype == "invitation":
                 await self._handle_invitation_op(op, eid, data)
+            elif etype == "task":
+                await self._handle_task_op(op, eid, data)
             else:
                 logger.debug("hub_bridge: no handler for data_op_msg type=%s op=%s", etype, op)
         except Exception:
@@ -805,6 +807,44 @@ class HubWsBridge:
         if local_user is None:
             return
         await handle_invitation_sync(local_user.typeid)
+
+    async def _handle_task_op(self, op: str, task_id: str, data: dict) -> None:
+        """A task was handed to this user — materialize it locally.
+
+        Assignment is not an offer: once the hub grants the assignee their role
+        it pushes the task here, and it must simply BE on their machine, the way
+        an assigned issue appears on a board. The frame is treated as a nudge
+        rather than the source of truth — ``materialize_accepted_task_invitation``
+        pulls the pair the local surfaces need (a member task's parent carries
+        the body and every display field, and its ``asset_ref`` anchors the
+        child's deduped folder), which the single-entity payload can't supply.
+
+        Its ``save(notify=True)`` emits the ordinary local op, so the task list
+        updates without a refresh. Deletes are left to the owner's own sweep.
+        """
+        if op == "delete":
+            return
+        from flow_sdk.app.actions.group_task_action import (
+            materialize_accepted_task_invitation,
+            materialize_remote_task,
+        )
+        from flow_sdk.builtin.task import Task
+        from flow_sdk.builtin.user import User
+
+        local_user = await User.get_local()
+        if local_user is None:
+            return
+
+        # Only a task we've never seen needs the full pull (parent + child, two
+        # hub GETs): the parent supplies the body and the asset_ref that anchors
+        # the child's folder. Once it's local, an update is just this row — the
+        # parent almost never changes, and re-pulling it on every status flip
+        # would double the hub traffic and re-notify a parent nobody touched.
+        if await Task.get_one({"id": task_id}) is None:
+            task = await materialize_accepted_task_invitation(task_id, local_user.typeid)
+        else:
+            task = await materialize_remote_task({**data, "id": task_id}, local_user.typeid)
+        logger.info("[bridge] task op %s materialized %s", op, getattr(task, "id", None))
 
     # ------------------------------------------------------------------
     # Outbound helpers — thin wrappers around send_request for callers that

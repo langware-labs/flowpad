@@ -1,19 +1,24 @@
 /**
- * Task assignment across TWO instances via the real hub — the delivery chain
- * the vibe "ask for assistance" flow rides:
+ * Task assignment across TWO instances — JIRA-like, and nothing else.
  *
- *   alice: create task (title + body) → assign to bob (group-of-one)
- *   bob:   the INVITATION lands in his local store in real time — the hub WS
- *          frame nudges `handle_invitation_sync` (hub_bridge._handle_invitation_op);
- *          the test never calls fetchConversations / conversation-sync, so the
- *          row appearing IS the push proof
- *   bob:   accept → his member task + the parent mirror (title AND body)
- *          materialize
- *   bob:   status change → alice's `sync-group` pulls it back onto her mirror
+ *   alice: create a task (title + body) in her project
+ *   alice: assign it to bob
+ *   bob:   the task IS on his machine — assigned to him, with the body
+ *   bob:   he moves it to in_progress; alice sees that
  *
- * What this deliberately does NOT claim: the task row itself appearing on bob
- * with zero action — task freshness is pull-based by design (group_task_action
- * docstring); the real-time surface is the invitation.
+ * The point of this file is what it REFUSES to do. Bob never accepts an
+ * invitation, never opens a conversation, never installs an attachment, and
+ * never calls a sync/fetch helper to go looking. Assignment alone must put the
+ * task on his board — the same way assigning a JIRA issue does. Any test step
+ * that "helps" the task arrive would defeat the whole purpose, so the only
+ * thing bob does before asserting is wait.
+ *
+ * This is a SPEC, not a regression guard: at the time of writing the only
+ * delivery channels are invitation→accept and conversation-chip→install, and
+ * the group-task module states plainly that "there is no hub→local push for
+ * plain tasks". The arrival assertion is therefore expected to fail until a
+ * direct assign→deliver path exists. It is written to fail at exactly that
+ * line, with everything before it green, so the failure names the gap.
  *
  * Requires the local hub + dev-1/dev-2 launched via
  *   scripts/instance_ctl.sh launch dev-1 && … dev-2
@@ -42,19 +47,21 @@ const token = `ta-${randomUUID()}`;
 const TITLE = `assign me ${token.slice(-8)}`;
 const BODY = `Please look into the login flow.\n\n${token}`;
 
-// Cross-step state — the its run sequentially (singleThread) and each later
-// step is meaningless without the earlier one, so failures cascade on purpose.
-let parentId = '';
-let childId = '';
-let invitationId = '';
+let taskId = '';
 
 const getApi = (apiUrl: string, p: string) => fetch(`${apiUrl}/api/v1${p}`).then((r) => r.json());
 
-/** Bob's LOCAL invitation rows (cache-invalidated). No fetchConversations, no
- *  invitation-sync — nothing here asks the hub; only the backend's own WS-nudged
- *  mirror can make the row appear. */
-async function bobLocalInvitations(): Promise<any[]> {
-  return ((await (bob.sdk.Invitation as any).query({ query: {} }, true).catch(() => [])) ?? []) as any[];
+/**
+ * Every task row bob's own backend holds, read past the realm query cache.
+ * Deliberately the ONLY thing this test does on bob's side: no
+ * fetchConversations, no conversation/invitation sync, no accept, no install.
+ * If a row shows up here, delivery did it.
+ */
+async function bobTasks(): Promise<any[]> {
+  return ((await bob.sdk.Task.query(
+    new bob.sdk.QueryRequest({ type: 'task', query: {}, name: 'bob tasks (assign spec)' }),
+    true,
+  ).catch(() => [])) ?? []) as any[];
 }
 
 beforeAll(async () => {
@@ -71,95 +78,77 @@ beforeEach((context: any) => {
   if (skipReason) context.skip();
 });
 
-describe('task assignment — alice → bob across two instances', () => {
-  it('alice creates a task with title + body and assigns it to bob', async () => {
+describe('task assignment — alice assigns, it lands on bob', () => {
+  it('alice creates a task with a title and a body', async () => {
     const task = trackForCleanup(new alice.sdk.Task({ title: TITLE, description: BODY }));
     await task.save();
-    parentId = task.id;
+    taskId = task.id;
 
-    // Group-of-one: the delivery model with real ownership + status sync-back.
-    const created = await postApi(alice.apiUrl, `/graph/task/${parentId}/create-group-task`, {
+    const mine = await getApi(alice.apiUrl, `/graph/task/${taskId}?expand=blobs`);
+    expect(mine?.data?.title).toBe(TITLE);
+    expect(mine?.data?.description).toContain(token);
+  });
+
+  it('alice assigns it to bob', async () => {
+    const assigned = await postApi(alice.apiUrl, `/graph/task/${taskId}/create-group-task`, {
       members: [{ email: bob.email, name: 'Bob' }],
     });
-    expect(created.status, JSON.stringify(created)).toBe('SUCCESS');
-    expect(created.data.created, 'bob is a fresh member').toContain(bob.email);
-    expect(created.data.children, JSON.stringify(created.data)).toHaveLength(1);
-    childId = String(created.data.children[0]).split('-').slice(1).join('-');
+    expect(assigned.status, JSON.stringify(assigned)).toBe('SUCCESS');
+    expect(assigned.data.created, 'bob is the assignee').toContain(bob.email);
   });
 
-  it('the invitation reaches bob in real time — no client refresh', async () => {
-    const invitation = await pollUntil(
-      async () => {
-        const all = await bobLocalInvitations();
-        return (
-          all.find(
-            (inv) =>
-              !inv.accepted &&
-              ((inv.target_url_path || '').includes(childId) ||
-                (inv.target_url_path || '').includes(parentId) ||
-                inv.target_id === childId ||
-                inv.target_id === parentId),
-          ) ?? null
-        );
-      },
-      25_000,
-      'assignment invitation mirrored on bob without any refresh call',
-    );
-    invitationId = invitation.id;
-    expect(invitation.recipient_email).toBe(bob.email);
-  });
-
-  it('bob accepts and the task materializes — member task + parent title AND body', async () => {
-    await bob.sdk.acceptInvitation({ invitation_id: invitationId });
-
-    const memberTask = await pollUntil(
-      async () => {
-        const rows = (await bob.sdk.Task.query(
-          new bob.sdk.QueryRequest({
-            type: 'task',
-            query: { parent_id: parentId },
-            name: 'member task (assign test)',
-          }),
-          true,
-        ).catch(() => [])) as any[];
-        return rows.find((r) => r.id === childId) ?? null;
-      },
+  it('the task is on bob — no accept, no conversation, no install', async () => {
+    // His task is the one assigned to HIM: the member task under the assigned
+    // parent. The parent rides along as the read-only context (it carries the
+    // body and every display field) but is not the row he owns.
+    const landed = await pollUntil(
+      async () => (await bobTasks()).find((t) => t.parent_id === taskId) ?? null,
       20_000,
-      'member task materialized on bob',
+      'assigned task delivered to bob without him doing anything',
     );
-    expect(memberTask.assignee).toBe(bob.email);
-    expect(memberTask.title, 'title-only clone').toBe(TITLE);
-    expect(memberTask.status).toBe('to_do');
 
-    // The body lives on the PARENT mirror (children never store display fields).
-    const parent = await pollUntil(
+    expect(landed.assignee, 'it is assigned to him').toBe(bob.email);
+    expect(landed.title).toBe(TITLE);
+    expect(landed.status, 'a freshly assigned task is open').toBe('to_do');
+
+    // Nothing was asked of bob to get here: assert the mechanisms this feature
+    // must NOT depend on left no trace on his side.
+    const invitations: any[] = await (bob.sdk.Invitation as any)
+      .query({ query: {} }, true)
+      .catch(() => []);
+    const gating = invitations.filter(
+      (inv) => !inv.accepted && (inv.target_id === taskId || (inv.target_url_path || '').includes(taskId)),
+    );
+    expect(gating, 'delivery must not be gated behind an invitation').toHaveLength(0);
+  });
+
+  it('bob can read the body alice wrote', async () => {
+    const withBody = await pollUntil(
       async () => {
-        const p = await getApi(bob.apiUrl, `/graph/task/${parentId}?expand=blobs`);
-        return p?.data?.description ? p.data : null;
+        const t = await getApi(bob.apiUrl, `/graph/task/${taskId}?expand=blobs`);
+        return t?.data?.description ? t.data : null;
       },
       15_000,
-      "parent mirror carries the body on bob's side",
+      'the task body is readable on bob',
     );
-    expect(parent.title).toBe(TITLE);
-    expect(parent.description, 'the body reached bob').toContain(token);
+    expect(withBody.description).toContain(token);
   });
 
-  it("bob's status change syncs back to alice", async () => {
-    const memberTask = (await bob.sdk.Task.getById(childId)) as any;
-    memberTask.status = 'in_progress';
-    await memberTask.save(); // client save hub-reflects the member-owned field
+  it("bob moves it to in_progress and alice sees it", async () => {
+    const mine = (await bobTasks()).find((t) => t.parent_id === taskId);
+    expect(mine, 'precondition: bob holds the task').toBeTruthy();
+    mine.status = 'in_progress';
+    await mine.save();
 
-    // Pull-based freshness by design: alice's UI fires sync-group on open.
-    const mirrored = await pollUntil(
+    const seen = await pollUntil(
       async () => {
-        const sync = await postApi(alice.apiUrl, `/graph/task/${parentId}/sync-group`, {});
-        if (sync.status !== 'SUCCESS') return null;
-        const child = await getApi(alice.apiUrl, `/graph/task/${childId}`);
-        return child?.data?.status === 'in_progress' ? child.data : null;
+        await postApi(alice.apiUrl, `/graph/task/${taskId}/sync-group`, {});
+        const rows = (await getApi(alice.apiUrl, `/graph/task/${mine.id}`))?.data;
+        return rows?.status === 'in_progress' ? rows : null;
       },
       20_000,
-      "alice's member-task mirror shows bob's in_progress",
+      "alice sees bob's progress",
     );
-    expect(mirrored.assignee).toBe(bob.email);
+    expect(seen.assignee).toBe(bob.email);
   });
 });
