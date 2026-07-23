@@ -3855,6 +3855,25 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
                 someone_typeid,
             )
             if ent is not None:
+                if (
+                    membership_target.target_type == BuiltinEntityType.PROJECT.value
+                    and getattr(ent, "git_origin", None) is not None
+                ):
+                    try:
+                        await ent.setup_from_git_origin()
+                    except Exception as setup_err:  # noqa: BLE001
+                        logger.warning(
+                            "[invitation-accept] project Git setup failed: %s",
+                            setup_err,
+                            exc_info=True,
+                        )
+                        return ApiFailResponse(
+                            message=(
+                                "Invitation accepted, but the project could not be set up locally: "
+                                f"{str(setup_err)[:240]}"
+                            ),
+                            status_code=400,
+                        )
                 await ent.notify_updated()
         except Exception as e:  # noqa: BLE001
             logger.warning("[invitation-accept] membership target materialize failed: %s", e)

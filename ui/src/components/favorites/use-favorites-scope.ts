@@ -3,6 +3,7 @@ import { ScopeFilterIconBar } from '@src/components/scope-filter/ScopeFilterIcon
 import { useDefaultScopeFilter } from '@src/hooks/use-default-scope-filter';
 import { useProject } from '@src/hooks/useProject';
 import { bookmarkInScope } from '@src/lib/bookmark-scope';
+import { scopeFilterKey } from '@src/lib/scope-filter';
 import { createElement, useCallback, type ReactNode } from 'react';
 
 /**
@@ -17,6 +18,7 @@ import { createElement, useCallback, type ReactNode } from 'react';
  */
 export function useFavoritesScope(): {
   filter: (b: Bookmark) => boolean;
+  scopeKey: string;
   scopeBar: ReactNode;
 } {
   const { project } = useProject();
@@ -34,5 +36,5 @@ export function useFavoritesScope(): {
     onScopeChange: setScope,
   });
 
-  return { filter, scopeBar };
+  return { filter, scopeKey: scopeFilterKey(scope), scopeBar };
 }

@@ -1439,7 +1439,6 @@ msgstr "assets"
 #: src/components/assets/AssetsNavigator.tsx
 #: src/components/assets/AssetsPage.tsx
 #: src/components/assets/AssetsPage.tsx
-#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 msgid "Assets"
 msgstr "Assets"
 
@@ -1463,6 +1462,14 @@ msgstr "Assistants & keys"
 #: src/components/skills-viewer/amd-editor/components/blocks/UiBlock.tsx
 #~ msgid "async"
 #~ msgstr "async"
+
+#: src/components/graph-view/GraphView.tsx
+msgid "Atlas controls"
+msgstr "Atlas controls"
+
+#: src/components/graph-view/GraphView.tsx
+msgid "Atlas map view"
+msgstr "Atlas map view"
 
 #: src/components/image-annotator/AnnotatorToolbar.tsx
 msgid "Attach"
@@ -1504,6 +1511,10 @@ msgstr "Attachment upload failed"
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 msgid "Attachments"
 msgstr "Attachments"
+
+#: src/journey/JourneyStepLive.tsx
+msgid "Authenticated ✓"
+msgstr "Authenticated ✓"
 
 #: src/components/harness-login/HarnessLoginModal.tsx
 #~ msgid "authentication required"
@@ -2018,6 +2029,10 @@ msgstr "Chat tools"
 msgid "Chats"
 msgstr "Chats"
 
+#: src/journey/JourneyTray.tsx
+msgid "Check"
+msgstr "Check"
+
 #: src/components/version-popover/version-popover.tsx
 #: src/components/version-popover/version-popover.tsx
 msgid "Check again"
@@ -2410,6 +2425,10 @@ msgstr "Close All But This"
 msgid "Close bookmark"
 msgstr "Close bookmark"
 
+#: src/components/graph-view/GraphView.tsx
+msgid "Close details"
+msgstr "Close details"
+
 #: src/components/navigator-panel/NavigatorSearch.tsx
 #: src/components/navigator-panel/NavigatorSearch.tsx
 msgid "Close search"
@@ -2700,6 +2719,7 @@ msgstr "Confirm"
 
 #: src/components/connections-manager.tsx
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
+#: src/journey/JourneyTray.tsx
 #: src/pages/hub-home/NewDesktopDialog.tsx
 msgid "Connect"
 msgstr "Connect"
@@ -2711,6 +2731,10 @@ msgstr "Connect"
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
 msgid "Connect GitHub"
 msgstr "Connect GitHub"
+
+#: src/components/capabilities-view/CapabilitiesView.tsx
+msgid "Connect GitHub and the gh CLI with a guided setup."
+msgstr "Connect GitHub and the gh CLI with a guided setup."
 
 #: src/components/InputSection.tsx
 #~ msgid "Connect to {0} to continue"
@@ -3065,7 +3089,7 @@ msgstr "Could not generate a link"
 msgid "Could not load source: {error}"
 msgstr "Could not load source: {error}"
 
-#: src/components/entity-execution-panel/MetaMessageChip.tsx
+#: src/components/entity-execution-panel/useOpenSkill.ts
 msgid "Could not open skill"
 msgstr "Could not open skill"
 
@@ -4202,6 +4226,10 @@ msgstr "Each selected project's folder is added as a context folder."
 msgid "edges"
 msgstr "edges"
 
+#: src/components/graph-view/GraphView.tsx
+msgid "Edges"
+msgstr "Edges"
+
 #: src/components/graph-view/ui/PropertyPanel.tsx
 msgid "Edges by kind"
 msgstr "Edges by kind"
@@ -4437,6 +4465,10 @@ msgstr "Enter hook name"
 #: src/components/skills-viewer/amd-editor/components/blocks/DoBlock.tsx
 #~ msgid "Enter instructions..."
 #~ msgstr "Enter instructions..."
+
+#: src/journey/JourneyStepLive.tsx
+msgid "Enter the code here"
+msgstr "Enter the code here"
 
 #: src/components/hooks-manager/TriggerForm.tsx
 msgid "Enter trigger description"
@@ -5347,6 +5379,10 @@ msgstr "fires: {0}"
 msgid "Fit (f)"
 msgstr "Fit (f)"
 
+#: src/components/graph-view/GraphView.tsx
+msgid "Fit Atlas"
+msgstr "Fit Atlas"
+
 #: src/components/workflow-runner/learning/PastAttemptsPane.tsx
 #~ msgid "Fix"
 #~ msgstr "Fix"
@@ -5463,6 +5499,7 @@ msgstr "Flows"
 #~ msgid "Flows:"
 #~ msgstr "Flows:"
 
+#: src/components/graph-view/GraphView.tsx
 #: src/components/graph-view/ui/PropertyPanel.tsx
 msgid "Focus local graph"
 msgstr "Focus local graph"
@@ -5471,6 +5508,7 @@ msgstr "Focus local graph"
 msgid "Focus local graph here"
 msgstr "Focus local graph here"
 
+#: src/components/graph-view/GraphView.tsx
 #: src/components/graph-view/ui/PropertyPanel.tsx
 msgid "Focused"
 msgstr "Focused"
@@ -5762,6 +5800,10 @@ msgstr "Go up"
 msgid "Got a relative-looking ref with multiple segments: <0>{ref}</0>"
 msgstr "Got a relative-looking ref with multiple segments: <0>{ref}</0>"
 
+#: src/components/graph-view/TopicGraphView.tsx
+msgid "Graph"
+msgstr "Graph"
+
 #: src/components/graph-context/GraphContextViewer.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
 msgid "Graph view"
@@ -5779,6 +5821,10 @@ msgstr "Group name"
 #: src/components/conversation/ConversationContextPanel.tsx
 msgid "Group Task"
 msgstr "Group Task"
+
+#: src/components/project-selector/NewProjectFromGitDialog.tsx
+msgid "Guided setup"
+msgstr "Guided setup"
 
 #: src/components/terminal/openers/AskInstallOneOfDialog.tsx
 msgid "Harness is required"
@@ -6148,6 +6194,7 @@ msgstr "IDE"
 msgid "IDE Connections (VS Code, Cursor, etc.)"
 msgstr "IDE Connections (VS Code, Cursor, etc.)"
 
+#: src/components/graph-view/GraphView.tsx
 #: src/components/graph-view/ui/PropertyPanel.tsx
 msgid "Identity"
 msgstr "Identity"
@@ -6487,6 +6534,7 @@ msgid "Invitations — dismiss"
 msgstr "Invitations — dismiss"
 
 #: src/components/account/organization-panel.tsx
+#: src/components/conversation/MembersAvatarStack.tsx
 msgid "Invite"
 msgstr "Invite"
 
@@ -6501,6 +6549,10 @@ msgstr "Invite by name or email…"
 #: src/components/account/organization-panel.tsx
 msgid "Invite failed"
 msgstr "Invite failed"
+
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "Invite members"
+msgstr "Invite members"
 
 #: src/components/account/organization-panel.tsx
 msgid "Invited {trimmed}."
@@ -7227,6 +7279,10 @@ msgstr "Location"
 msgid "locked after first message"
 msgstr "locked after first message"
 
+#: src/journey/JourneyTray.tsx
+msgid "Log in"
+msgstr "Log in"
+
 #: src/components/triggers-view/TriggerListItem.tsx
 msgid "Log mode"
 msgstr "Log mode"
@@ -7240,6 +7296,10 @@ msgstr "Login"
 #: src/pages/keychain-approval.tsx
 msgid "Login canceled"
 msgstr "Login canceled"
+
+#: src/journey/JourneyStepLive.tsx
+msgid "Login failed — try again."
+msgstr "Login failed — try again."
 
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "Login is required to search Flowpad database"
@@ -7686,6 +7746,10 @@ msgstr "Name this entity"
 msgid "Name:"
 msgstr "Name:"
 
+#: src/components/graph-view/GraphView.tsx
+msgid "Neighbors"
+msgstr "Neighbors"
+
 #. placeholder {0}: node.neighbors.length
 #: src/components/graph-view/ui/PropertyPanel.tsx
 msgid "Neighbors (<0>{0}</0>)"
@@ -7872,7 +7936,6 @@ msgstr "New schedule trigger"
 msgid "New Schedule Trigger"
 msgstr "New Schedule Trigger"
 
-#: src/components/project-home/ProjectHome.tsx
 #: src/components/quick-create/QuickCreateMenu.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
 msgid "New session"
@@ -8064,7 +8127,6 @@ msgstr "No community tickets"
 #: src/components/open-project-component/use-open-project.ts
 #: src/components/quick-create/QuickCreateDialog.tsx
 #: src/components/quick-create/QuickCreateMenu.tsx
-#: src/pages/flow-page/vibe-new-chat.tsx
 msgid "No compute node available"
 msgstr "No compute node available"
 
@@ -10372,6 +10434,10 @@ msgstr "Queued messages"
 msgid "Quick create"
 msgstr "Quick create"
 
+#: src/components/graph-view/GraphView.tsx
+msgid "Radial layout"
+msgstr "Radial layout"
+
 #: src/components/machine-overview/machine-overview.tsx
 msgid "RAM (MB)"
 msgstr "RAM (MB)"
@@ -11828,6 +11894,10 @@ msgstr "Select all matches"
 #~ msgid "Select an artifact type above to get type-specific metadata fields."
 #~ msgstr "Select an artifact type above to get type-specific metadata fields."
 
+#: src/components/graph-view/GraphView.tsx
+msgid "Select an Atlas card to inspect it."
+msgstr "Select an Atlas card to inspect it."
+
 #: src/components/terminal/openers/AskInstallOneOfDialog.tsx
 msgid "Select an available harness, or install one from its homepage and re-check it."
 msgstr "Select an available harness, or install one from its homepage and re-check it."
@@ -12083,6 +12153,8 @@ msgstr "Set project"
 
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/components/project-home/SecretsCard.tsx
+#: src/journey/JourneyTray.tsx
+#: src/journey/SetupJourneyButton.tsx
 msgid "Set up"
 msgstr "Set up"
 
@@ -12113,6 +12185,10 @@ msgstr "Set up an existing git repository as the context folder"
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "Set up as this name"
 msgstr "Set up as this name"
+
+#: src/components/capabilities-view/CapabilitiesView.tsx
+msgid "Set up GitHub"
+msgstr "Set up GitHub"
 
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "Set up project"
@@ -12389,6 +12465,10 @@ msgstr "Sidebar"
 msgid "sidechain"
 msgstr "sidechain"
 
+#: src/components/graph-view/GraphView.tsx
+msgid "Sigma graph view"
+msgstr "Sigma graph view"
+
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
 msgid "Sign in"
 msgstr "Sign in"
@@ -12470,7 +12550,7 @@ msgstr "Skill created"
 msgid "Skill name…"
 msgstr "Skill name…"
 
-#: src/components/entity-execution-panel/MetaMessageChip.tsx
+#: src/components/entity-execution-panel/useOpenSkill.ts
 msgid "Skill not found"
 msgstr "Skill not found"
 
@@ -12776,6 +12856,10 @@ msgstr "started"
 msgid "Started"
 msgstr "Started"
 
+#: src/journey/JourneyStepLive.tsx
+msgid "Starting login…"
+msgstr "Starting login…"
+
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Starting scan…"
 msgstr "Starting scan…"
@@ -12975,9 +13059,17 @@ msgstr "Switch to chat view"
 msgid "Switch to dark mode"
 msgstr "Switch to dark mode"
 
+#: src/components/graph-view/TopicGraphView.tsx
+msgid "Switch to graph view"
+msgstr "Switch to graph view"
+
 #: src/components/theme-toggle/theme-toggle.tsx
 msgid "Switch to light mode"
 msgstr "Switch to light mode"
+
+#: src/components/graph-view/TopicGraphView.tsx
+msgid "Switch to ontology tree"
+msgstr "Switch to ontology tree"
 
 #: src/components/terminal/interactive-terminal/TerminalBottomRibbon.tsx
 msgid "Switch to terminal view"
@@ -13103,8 +13195,8 @@ msgid "Template:"
 msgstr "Template:"
 
 #: src/components/project-home/ProjectHome.tsx
-#~ msgid "Terminal"
-#~ msgstr "Terminal"
+msgid "Terminal"
+msgstr "Terminal"
 
 #: src/components/sessions-view/sessions-view.tsx
 msgid "Terminal Sessions"
@@ -13624,6 +13716,14 @@ msgstr "Top skills"
 msgid "Top tools"
 msgstr "Top tools"
 
+#: src/components/graph-view/TopicGraphView.tsx
+msgid "Topic Graph"
+msgstr "Topic Graph"
+
+#: src/components/graph-view/TopicGraphView.tsx
+msgid "Topic Tree"
+msgstr "Topic Tree"
+
 #: src/components/assets/editor/agent-trace/AgentTraceView.tsx
 msgid "total"
 msgstr "total"
@@ -13680,6 +13780,14 @@ msgstr "Transcripts"
 #: src/components/assets/context-folder-sources.tsx
 #~ msgid "Travels with the project when shared"
 #~ msgstr "Travels with the project when shared"
+
+#: src/components/graph-view/TopicGraphView.tsx
+msgid "Tree"
+msgstr "Tree"
+
+#: src/components/graph-view/GraphView.tsx
+msgid "Tree layout"
+msgstr "Tree layout"
 
 #: src/pages/discover-page/discover-page.tsx
 #~ msgid "Trending"
@@ -14515,6 +14623,10 @@ msgstr "Working…"
 msgid "Worktree"
 msgstr "Worktree"
 
+#: src/components/graph-view/GraphView.tsx
+msgid "WorldView presentation"
+msgstr "WorldView presentation"
+
 #: src/pages/entry/LaunchLanding.tsx
 msgid "Would you like to launch a sandbox for this repository?"
 msgstr "Would you like to launch a sandbox for this repository?"
@@ -14653,12 +14765,14 @@ msgstr "ZIP files will be added as codebase connections"
 
 #: src/components/graph-context/ContextGraphCanvas.tsx
 #: src/components/graph-context/ContextGraphCanvas.tsx
+#: src/components/graph-view/GraphView.tsx
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Zoom in"
 msgstr "Zoom in"
 
 #: src/components/graph-context/ContextGraphCanvas.tsx
 #: src/components/graph-context/ContextGraphCanvas.tsx
+#: src/components/graph-view/GraphView.tsx
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Zoom out"
 msgstr "Zoom out"

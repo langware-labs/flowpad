@@ -634,7 +634,10 @@ async def test_run_boundaries_emit_flow_topics(tmp_path):
         [_fn("a", "v2_bus_probe")],
         [_edge("e1", EXTERNAL_SOURCE, "go", "a")])
     got: list = []
-    unsub = event_bus.on("flow.*", got.append)
+    # Filter to THIS flow: the bus is a process-wide singleton, so a run still
+    # finalizing from an earlier test would otherwise land its `flow.done` in
+    # `got` before this run's `flow.started` and fail the ordering assert.
+    unsub = event_bus.on("flow.*", got.append, target=f"agentic_flow:{flow.id}")
     try:
         fm = FlowManager()
         fe = await fm.inject(flow.id, "go", {"x": 1})

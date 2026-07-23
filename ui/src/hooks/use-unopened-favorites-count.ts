@@ -1,8 +1,9 @@
-import { Bookmark, QueryRequest, dataContext } from '@sdk';
+import { Bookmark, QueryRequest } from '@sdk';
 import { useEntitiesQuery } from '@sdk/react/hooks';
 import { isHubOnly } from '@src/navigation/hub-runtime';
 import { defaultScopeFilter } from '@src/lib/scope-filter';
 import { bookmarkInScope } from '@src/lib/bookmark-scope';
+import { useContext } from './useContext';
 import { isFavoriteBookmark, isUnopened } from './use-favorites';
 import { useMemo } from 'react';
 
@@ -40,7 +41,10 @@ export function useUnopenedFavoritesCount(): number {
   // Hub mode: `bookmark` is a local-only entity (422 on the hub) — skip the fetch.
   const { data: bookmarks = [] } = useEntitiesQuery<Bookmark>(queryRequest, { enabled: !isHubOnly() });
 
-  const currentProjectId = dataContext.project?.id ?? null;
+  // Keep the badge reactive when the user switches projects without a bookmark
+  // update. Reading dataContext directly would leave the old count on screen.
+  const { project } = useContext();
+  const currentProjectId = project?.id ?? null;
   const scope = useMemo(() => defaultScopeFilter(currentProjectId), [currentProjectId]);
 
   return useMemo(
