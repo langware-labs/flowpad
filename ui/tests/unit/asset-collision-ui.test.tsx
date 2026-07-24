@@ -102,14 +102,15 @@ describe('asset collision frontend projection', () => {
   });
 
   it('labels the backend-ranked primary first and preserves duplicate order', () => {
-    render(<AssetCollisionPanel entity={entity()} />);
-    expect(screen.getByTestId('asset-collision-row-primary').textContent).toContain('/repo/primary.md');
-    const duplicates = screen.getAllByTestId('asset-collision-row-duplicate');
+    const view = render(<AssetCollisionPanel entity={entity()} />);
+    const panel = within(view.container);
+    expect(panel.getByTestId('asset-collision-row-primary').textContent).toContain('/repo/primary.md');
+    const duplicates = panel.getAllByTestId('asset-collision-row-duplicate');
     expect(duplicates.map((row) => row.textContent)).toEqual([
       'Duplicate/repo/copy-b.md',
       'Duplicate/repo/copy-a.md',
     ]);
-    expect(screen.queryByRole('button')).toBeNull();
+    expect(panel.queryByRole('button')).toBeNull();
   });
 
   it('registers an always-visible Markdown tab with the entity-scoped id', () => {

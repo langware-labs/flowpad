@@ -452,6 +452,26 @@ export async function createTaskBundle(params: CreateTaskBundleParams): Promise<
   return res!;
 }
 
+/** URL for downloading a local FlowMessage as a `.flowmsg` bundle. */
+export function localFlowMessageBundleUrl(flowMessageId: string): string {
+  return new ActionInfo(
+    'create-and-download-local-flowmsg',
+    FlowMessage.type,
+    flowMessageId,
+    'GET',
+  ).fullActionUrl;
+}
+
+/** URL for streaming one file from a FlowMessage's embedded VFS storage. */
+export function flowMessageAttachmentDownloadUrl(
+  flowMessageId: string,
+  vfsPath: string,
+): string {
+  const action = new ActionInfo('fs', FlowMessage.type, flowMessageId, 'GET');
+  action.subpath = `download/${vfsPath}`;
+  return action.fullActionUrl;
+}
+
 export interface MarkResult {
   updated?: string[];
   skipped?: Array<{ id: string; reason: string; current?: string }>;

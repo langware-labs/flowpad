@@ -5150,8 +5150,8 @@ msgid "Failed to set project"
 msgstr "ההגדרה של הפרויקט נכשלה"
 
 #: src/components/machine-overview/machine-overview.tsx
-msgid "Failed to setup LM proxy"
-msgstr "הגדרת LM proxy נכשלה"
+#~ msgid "Failed to setup LM proxy"
+#~ msgstr "הגדרת LM proxy נכשלה"
 
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 msgid "Failed to start GitHub connection"
@@ -9781,6 +9781,10 @@ msgstr "הדביקו מפתח API"
 #: src/components/harness-login/HarnessLoginModal.tsx
 msgid "Paste code from browser"
 msgstr "יש להדביק כאן את הקוד מהדפדפן"
+
+#: src/components/assets/editor/whiteboard/WhiteboardAssetEditor.tsx
+msgid "Paste Mermaid syntax to replace the current board."
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/side-windows/InputFilesPanel.tsx
 msgid "Paste or drag files here"

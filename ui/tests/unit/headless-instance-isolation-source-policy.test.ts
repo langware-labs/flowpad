@@ -21,7 +21,6 @@ const TEST_SOURCES = [
   headlessSource('full-analysis-flow.test.tsx'),
   headlessSource('full_app_smoke.test.tsx'),
   headlessSource('skill_edit_roundtrip.test.tsx'),
-  headlessSource('vibe_project_url_workspace.test.tsx'),
 ];
 
 describe('headless launched-instance isolation source policy', () => {

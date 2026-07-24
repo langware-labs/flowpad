@@ -9,6 +9,7 @@
  */
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const gitMocks = vi.hoisted(() => ({
@@ -40,7 +41,15 @@ vi.mock('@src/components/git/InvitationsStrip', () => ({ InvitationsStrip: () =>
 
 import { NewProjectFromGitDialog } from '@src/components/project-selector/NewProjectFromGitDialog';
 
-const REPO_URL ='https://github.com/owner/repo.git';
+const REPO_URL = 'https://github.com/owner/repo.git';
+
+function renderDialog(onCreate: (url: string, branch?: string, name?: string) => unknown) {
+  return render(
+    <MemoryRouter>
+      <NewProjectFromGitDialog open onOpenChange={() => {}} onCreate={onCreate} />
+    </MemoryRouter>,
+  );
+}
 
 async function typeUrlAndSubmit(user: ReturnType<typeof userEvent.setup>) {
   await user.type(screen.getByRole('textbox'), REPO_URL);
@@ -62,7 +71,7 @@ describe('NewProjectFromGitDialog access gate', () => {
     const onCreate = vi.fn();
     const user = userEvent.setup();
 
-    render(<NewProjectFromGitDialog open onOpenChange={() => {}} onCreate={onCreate} />);
+    renderDialog(onCreate);
     await typeUrlAndSubmit(user);
 
     await waitFor(() => expect(screen.getByTestId('git-access-error')).toBeTruthy());
@@ -75,7 +84,7 @@ describe('NewProjectFromGitDialog access gate', () => {
     const onCreate = vi.fn(() => Promise.resolve({ ok: true } as const));
     const user = userEvent.setup();
 
-    render(<NewProjectFromGitDialog open onOpenChange={() => {}} onCreate={onCreate} />);
+    renderDialog(onCreate);
     await typeUrlAndSubmit(user);
 
     await waitFor(() => expect(onCreate).toHaveBeenCalledWith(REPO_URL, undefined, undefined));

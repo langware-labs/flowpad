@@ -15,7 +15,6 @@ const REALM_CONSUMERS = [
   'headless/full-analysis-flow.test.tsx',
   'headless/full_app_smoke.test.tsx',
   'headless/skill_edit_roundtrip.test.tsx',
-  'headless/vibe_project_url_workspace.test.tsx',
   'hub/_instances.ts',
 ] as const;
 
