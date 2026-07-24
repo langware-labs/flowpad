@@ -5,7 +5,7 @@
  *   alice: assign it to bob
  *   bob:   the task IS on his machine — assigned to him, with the body
  *   bob:   he moves it to in_progress; alice sees that
- *   alice: comments on the task; bob sees it live; bob replies; alice sees it live
+ *   both:  comment on the assigned task, live both ways — no sync, no watch setup
  *
  * The point of this file is what it REFUSES to do. Bob never accepts an
  * invitation, never opens a conversation, never installs an attachment, and
@@ -53,6 +53,29 @@ const getApi = (apiUrl: string, p: string) => fetch(`${apiUrl}/api/v1${p}`).then
 async function commentById(inst: ResolvedInstance, id: string): Promise<any> {
   const r = await getApi(inst.apiUrl, `/graph/comment/${id}?expand=blobs`);
   return r?.status === 'SUCCESS' && r?.data?.id === id ? r.data : null;
+}
+
+/**
+ * Assert a comment reached `inst` purely from the live op — with NO sync call —
+ * at both levels the receiver contract cares about:
+ *   - by id: the comment row materialized in the receiver's store;
+ *   - scoped: it's visible through the task→comment `is_child` role-walk query
+ *     the UI actually runs (a bare-row copy passes by-id yet returns [] here).
+ * Applied to BOTH directions so the reply is verified as rigorously as the open.
+ */
+async function expectLiveComment(inst: ResolvedInstance, parentTaskId: string, id: string, text: string) {
+  const byId = await pollUntil(async () => commentById(inst, id), 15_000, `comment ${id} in ${inst.name}'s store (no sync)`);
+  expect(byId.raw_content).toBe(text);
+
+  const scoped = await pollUntil(
+    async () => {
+      const r = await getApi(inst.apiUrl, `/graph/task/${parentTaskId}/comment?expand=blobs`);
+      return ((r?.data ?? []) as any[]).find((c) => c?.id === id) ?? null;
+    },
+    15_000,
+    `comment ${id} scope-visible on ${inst.name}`,
+  );
+  expect(scoped.raw_content).toBe(text);
 }
 
 /**
@@ -160,58 +183,33 @@ describe('task assignment — alice assigns, it lands on bob', () => {
     expect(seen.assignee).toBe(bob.email);
   });
 
-  // ── Live comment thread on the delivered task ──────────────────────────────
-  // The generic children-sync path (independent of sync-group): a comment is an
-  // is_child of the task; the hub emits a `child_created` op addressed to the
-  // task, and under auto-watch it fans out to every user who holds a role on the
-  // task and has a live connection — so both alice (owner) and bob (editor) get
-  // it with no watch set up. Each peer materializes it locally with notify. The
-  // receiving side calls NO sync: the comment appears purely from the live op.
+  // ── Live comment thread on the assigned task ───────────────────────────────
+  // The thread hangs on bob's MEMBER task (childId) — the row both hold with a
+  // mutating role (alice owner-via-cascade, bob editor); the parent overview
+  // stays read-only context. The generic children-sync path (independent of
+  // sync-group): a comment is an is_child of that task; the hub emits a
+  // `child_created` op addressed to the task, and under auto-watch it fans out
+  // to every role-holder with a live connection — so it reaches the peer with
+  // no watch set up. Each peer materializes it with notify; the receiver calls
+  // NO sync, so the comment appears purely from the live op.
 
-  it('alice comments on the task — bob sees it live, no sync call', async () => {
+  it('alice comments on the assigned task — bob sees it live, no sync call', async () => {
     const text = `alice-comment-${token.slice(-6)}`;
     const a = await postApi(alice.apiUrl, `/graph/task/${childId}/comment`, {
       raw_content: text,
       data: { line: 1 },
     });
     expect(a.status, JSON.stringify(a)).toBe('SUCCESS');
-    const aId = a.data.id as string;
-
-    const seen = await pollUntil(
-      async () => commentById(bob, aId),
-      15_000,
-      'alice comment materialized on bob via the live op (no sync)',
-    );
-    expect(seen.raw_content).toBe(text);
-
-    // Edge-backed scoped view too (the UI's role-walk query), body included.
-    const scoped = await pollUntil(
-      async () => {
-        const r = await getApi(bob.apiUrl, `/graph/task/${childId}/comment?expand=blobs`);
-        return ((r?.data ?? []) as any[]).find((c) => c?.id === aId) ?? null;
-      },
-      10_000,
-      'alice comment scope-visible on bob',
-    );
-    expect(scoped.raw_content).toBe(text);
+    await expectLiveComment(bob, childId, a.data.id as string, text);
   }, 30_000); // do not increase timeout without approval
 
-  it('bob replies — alice sees it live, no sync call', async () => {
-    // No watch to set up: alice holds the owner role on the task, so auto-watch
-    // delivers bob's reply to her live connection the same way.
+  it('bob replies on the assigned task — alice sees it live, no sync call', async () => {
     const text = `bob-reply-${token.slice(-6)}`;
     const b = await postApi(bob.apiUrl, `/graph/task/${childId}/comment`, {
       raw_content: text,
       data: { line: 2 },
     });
     expect(b.status, JSON.stringify(b)).toBe('SUCCESS');
-    const bId = b.data.id as string;
-
-    const seen = await pollUntil(
-      async () => commentById(alice, bId),
-      15_000,
-      'bob reply materialized on alice via the live op (no sync)',
-    );
-    expect(seen.raw_content).toBe(text);
+    await expectLiveComment(alice, childId, b.data.id as string, text);
   }, 30_000); // do not increase timeout without approval
 });

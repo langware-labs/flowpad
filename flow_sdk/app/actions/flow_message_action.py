@@ -3001,8 +3001,8 @@ async def _upsert_hub_conversation_metadata(
     entirely to have this function load the row itself.
 
     Copies the user-visible metadata (``title``, ``participants``,
-    ``remote_project_id`` / ``remote_project_name``, ``message_status_visible``)
-    onto the local row and marks ``remote=True``. **Does not touch**
+    ``remote_project_id`` / ``remote_project_name``) onto the local row and
+    marks ``remote=True``. **Does not touch**
     ``message_ids`` / ``message_count`` — those are projection-guarded on the
     local side and only legitimately written by
     ``ConversationRecord._project_pointers_to_entity`` as bundles are unpacked.
@@ -3064,8 +3064,6 @@ async def _upsert_hub_conversation_metadata(
         # the participant roster's ``owner`` role.
         if hub_conv.get("initiated_by") is not None:
             payload["created_by"] = hub_conv["initiated_by"]
-        if hub_conv.get("message_status_visible") is not None:
-            payload["message_status_visible"] = bool(hub_conv["message_status_visible"])
         if hub_conv.get("git_sharing_enabled") is not None:
             payload["git_sharing_enabled"] = bool(hub_conv["git_sharing_enabled"])
         # Carry the hub's updated_date so the local row records the hub
@@ -3119,11 +3117,6 @@ async def _upsert_hub_conversation_metadata(
     hub_owner = hub_conv.get("initiated_by")
     if hub_owner is not None and getattr(existing, "created_by", None) != hub_owner:
         existing.created_by = hub_owner
-        changed = True
-    if hub_conv.get("message_status_visible") is not None and existing.message_status_visible != bool(
-        hub_conv["message_status_visible"]
-    ):
-        existing.message_status_visible = bool(hub_conv["message_status_visible"])
         changed = True
     if hub_conv.get("git_sharing_enabled") is not None and existing.git_sharing_enabled != bool(
         hub_conv["git_sharing_enabled"]

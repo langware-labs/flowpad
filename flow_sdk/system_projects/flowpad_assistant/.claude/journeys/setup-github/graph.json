@@ -6,7 +6,7 @@
   "enabled": true,
   "auto_launch": false,
   "gate": {
-    "requires_capabilities": ["source_control.github", "source_control.github.gh"]
+    "requires_capabilities": ["source_control.git.github", "source_control.git.github.gh"]
   },
   "config": {
     "deadline_s": 2592000,
@@ -32,7 +32,7 @@
           "confirm": {
             "type": "capability",
             "match": {
-              "kind": "source_control.github",
+              "kind": "source_control.git.github",
               "state": "available"
             }
           }
@@ -50,7 +50,7 @@
         "act": {
           "kind": "setup_capability",
           "target": "GhInstall",
-          "capability": "source_control.github.gh"
+          "capability": "source_control.git.github.gh"
         },
         "await": {
           "tag": "app.entity.updated",
@@ -60,7 +60,7 @@
             "match": {
               "op": "$AND",
               "operands": [
-                { "op": "$EQ", "operands": ["kind", "source_control.github.gh"] },
+                { "op": "$EQ", "operands": ["kind", "source_control.git.github.gh"] },
                 { "op": "$IS_NOT_NULL", "operands": ["value"] }
               ]
             }
@@ -79,7 +79,7 @@
         "act": {
           "kind": "device_login",
           "target": "GhLogin",
-          "capability": "source_control.github.gh"
+          "capability": "source_control.git.github.gh"
         },
         "await": {
           "tag": "app.entity.updated",
@@ -87,7 +87,7 @@
           "confirm": {
             "type": "capability",
             "match": {
-              "kind": "source_control.github.gh",
+              "kind": "source_control.git.github.gh",
               "state": "available"
             }
           }

@@ -318,7 +318,6 @@ export function ConversationView({
           onSelect={onSelectMessage ? () => onSelectMessage(id) : undefined}
           isConversationOwner={isConversationOwner}
           onDeleteMessage={handleDeleteMessage}
-          conversationStatusVisible={conversationStatusVisible}
           isCommunity={isCommunityConversation}
           attachmentProjectId={attachmentProjectId}
           messageAttachments={attachmentsByMessage.get(id)}
@@ -343,7 +342,6 @@ export function ConversationView({
         onDraftSent={() => void refetch()}
         isSelected={!!id && (selectedMessageIds ?? []).includes(id)}
         onSelect={onSelectMessage && id ? () => onSelectMessage(id) : undefined}
-        conversationStatusVisible={conversationStatusVisible}
         attachmentProjectId={attachmentProjectId}
       />
     );
@@ -424,7 +422,6 @@ export function ConversationView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pointers.map((p) => p.id).join(',')]);
 
-  const conversationStatusVisible = conversation?.message_status_visible !== false;
   // Community (support-center) ticket: replies are masked to a single brand
   // identity, and the real responder's sender_id is intentionally absent from
   // the guest's (redacted) roster — so the bubble must not flag it as an

@@ -13,7 +13,6 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from flow_sdk import toplog
 from flow_sdk.flow_manager import flow_functions
 
 logger = logging.getLogger(__name__)
@@ -22,7 +21,6 @@ logger = logging.getLogger(__name__)
 @flow_functions.register("flow_echo", meaning="flow demo: log the delivered event")
 def flow_echo(event_name: str, data: dict, flow_ctx: Any) -> dict:
     logger.info("[flow_echo] %s data=%s run=%s", event_name, data, flow_ctx.execution_id)
-    toplog.log("flow", "flow_echo %s data=%s", event_name, data)
     return dict(data)
 
 

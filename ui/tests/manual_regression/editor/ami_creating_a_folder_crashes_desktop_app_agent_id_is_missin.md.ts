@@ -37,9 +37,7 @@ test.describe('Creating content in skills view + nav home does not crash (FLOWPA
     await expect(page.locator('[data-testid="recent-conversations-strip"]')).toBeVisible({ timeout: 10_000 });
 
     // The scenario's last step is specifically about CRASH-related errors
-    // (missing agent_id, unhandled exceptions). Transient background-poll
-    // failures (e.g. "Failed to list Claude projects: Failed to fetch") are
-    // environmental noise, not the crash under test, so they are not asserted.
+    // (missing agent_id, unhandled exceptions).
     const crash = errors.filter((e) =>
       /agent_id|agentId|is missing|Cannot read|undefined is not|Uncaught|Unhandled|crash/i.test(e),
     );

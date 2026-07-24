@@ -286,7 +286,12 @@ async def test_register_webapp_artifact_attaches_to_project_and_shows(bootstrapp
     artifact = data["artifact"]
     deployment = data["deployment"]
     assert artifact["kind"] == "application.web"
-    assert artifact["origin"] == {"kind": "local", "base": str(tmp_path), "rel_path": "frontend"}
+    assert artifact["origin"] == {
+        "kind": "local",
+        "base": str(tmp_path),
+        "rel_path": "frontend",
+        "project_id": "",
+    }
     assert deployment["kind"] == "local.runtime.web"
     assert deployment["artifact_id"] == artifact["id"]
     assert deployment["provider_labels"]["flowpad.runtime.port"] == "3300"

@@ -1190,13 +1190,15 @@ export class DataManager<T extends Manageable> extends EventEmitter {
 
     const endpoint = actionInfo.actionUrl;
 
-    let requestConfig: any = undefined;
+    let requestConfig: any = actionInfo.abortSignal
+      ? { signal: actionInfo.abortSignal }
+      : undefined;
     if (actionInfo.isRawResponse) {
       requestConfig = {
+        ...(requestConfig ?? {}),
         transformResponse: (data: any) => {
           return { data };
         },
-        signal: actionInfo.abortSignal || undefined,
         responseType: actionInfo.responseType || undefined,
       };
     }
