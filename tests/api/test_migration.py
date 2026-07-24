@@ -2,6 +2,7 @@
 
 Tests for:
 - _migrate_vfs_record_to_data_ref(): DB migration of vfs_record -> record_data_ref
+- _remove_retired_message_status_visibility(): retired entity metadata cleanup
 """
 
 import json
@@ -9,19 +10,18 @@ import uuid
 
 import pytest
 import pytest_asyncio
-
 from sqlalchemy import text
+
 from flow_sdk.db.drivers.sqlite.sqlite_driver import (
     _migrate_vfs_record_to_data_ref,
-    _parse_vfs_uri_to_ref,
-    SafeJSONEncoder,
+    _remove_retired_message_status_visibility,
 )
 
 
 @pytest_asyncio.fixture
 async def db_engine():
     """Create a temporary in-memory SQLite DB with entities table."""
-    from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+    from sqlalchemy.ext.asyncio import create_async_engine
 
     engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
 
@@ -214,3 +214,33 @@ async def test_migration_idempotent(db_engine):
     data = json.loads(row[0])
     assert "vfs_record" not in data
     assert row[1] == "shell_session/s1"
+
+
+@pytest.mark.asyncio
+async def test_retired_message_status_visibility_is_removed_idempotently(db_engine):
+    entity_id = "8f9f7d35-9528-4f1c-9d8d-23d4919f20e7"
+    data_blob = json.dumps(
+        {
+            "title": "Preserved",
+            "message_status_visible": False,
+            "nested": {"message_status_visible": "unrelated nested value"},
+        }
+    )
+    async with db_engine.begin() as conn:
+        await conn.execute(
+            text("INSERT INTO entities (id, type, data) VALUES (:id, :type, :data)"),
+            {"id": entity_id, "type": "conversation", "data": data_blob},
+        )
+        await _remove_retired_message_status_visibility(conn)
+        await _remove_retired_message_status_visibility(conn)
+
+    async with db_engine.begin() as conn:
+        result = await conn.execute(
+            text("SELECT data FROM entities WHERE id = :id"),
+            {"id": entity_id},
+        )
+        cleaned = json.loads(result.scalar_one())
+
+    assert "message_status_visible" not in cleaned
+    assert cleaned["title"] == "Preserved"
+    assert cleaned["nested"] == {"message_status_visible": "unrelated nested value"}

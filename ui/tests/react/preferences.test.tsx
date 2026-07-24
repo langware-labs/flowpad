@@ -190,6 +190,14 @@ describe('preferences store + registry', () => {
     expect(PREF_CATEGORIES).not.toContain('indexing');
   });
 
+  it('surfaces message-status sharing in notifications and defaults it on', () => {
+    const info = PREF_REGISTRY[PrefKey.SHARE_MESSAGE_STATUS];
+    expect(info.surfaced).toBe(true);
+    expect(info.category).toBe('notifications');
+    expect(info.dataType).toBe(PrefDataType.BOOL);
+    expect(info.defaultValue).toBe(true);
+  });
+
   // ===== boot keys: localStorage write-through mirror =====
 
   it('mirrors a boot key to localStorage on set (raw string encoding)', () => {

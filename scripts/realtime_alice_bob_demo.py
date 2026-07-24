@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """Phase 2 demo: realtime alice ↔ bob conversation via authenticated hub WebSocket.
 
-Drives the three-state delivery receipts (created → delivered → received) and
-the per-Conversation `message_status_visible` privacy gate end-to-end against
-a real hub. Two actors connect directly to the hub WS with Bearer auth and
+Drives the three-state delivery receipts (created → delivered → received)
+end-to-end against a real hub. Two actors connect directly to the hub WS with Bearer auth and
 exchange text-only FlowMessages — proves Phase 1 hub work is correct without
 needing the local server in the loop. Local-server bridge integration is
 exercised in Phase 3 (UI sends route through HubWsBridge).
@@ -295,7 +294,7 @@ async def _run_demo() -> int:
             },
             timeout=5.0,
         )
-        recv_update = await _drain_until(
+        await _drain_until(
             alice_ws,
             lambda o: _is_data_op("update", "flow_message", fm_id)(o)
             and (o.get("data") or {}).get("delivery_status") == "received",
@@ -305,7 +304,7 @@ async def _run_demo() -> int:
 
         # ---------- (e) symmetric reply: bob -> alice ----------
         t = time.monotonic()
-        reply_resp = await _ws_send_request(
+        await _ws_send_request(
             bob_ws,
             {
                 "message_type": "rest_api_msg",
@@ -323,61 +322,6 @@ async def _run_demo() -> int:
         if not bob_reply_fm_id:
             raise RuntimeError("symmetric reply: alice did not see bob's flow_message create")
         log("e/symmetric reply (bob -> alice) -> alice sees create", t)
-
-        # ---------- (f) privacy gate: message_status_visible=False ----------
-        t = time.monotonic()
-        priv_resp = await _ws_send_request(
-            alice_ws,
-            {
-                "message_type": "rest_api_msg",
-                "method": "POST",
-                "scope": [],
-                "target_typeid": {"type": "project", "id": project_id},
-                "action": "start_guest_conversation",
-                "body": {
-                    "text": "private",
-                    "receiver_address": bob_id,
-                    "receiver_address_type": "id",
-                    "message_status_visible": False,
-                },
-            },
-            timeout=5.0,
-        )
-        priv_conv = _unwrap_response_data(priv_resp)
-        priv_conv_id = priv_conv.get("id")
-        if not priv_conv_id:
-            raise RuntimeError(f"private start_guest_conversation: no id in {priv_resp}")
-
-        priv_create = await _drain_until(bob_ws, _is_data_op("create", "flow_message"), timeout=5.0)
-        priv_fm_id = _extract_to_entity_id(priv_create)
-        if not priv_fm_id:
-            raise RuntimeError("private flow_message create not seen by bob")
-
-        # bob acks delivered; alice MUST NOT receive the UPDATE frame within 2s.
-        await _ws_send_request(
-            bob_ws,
-            {
-                "message_type": "rest_api_msg",
-                "method": "POST",
-                "scope": [],
-                "direct_resource_type": "flow_message",
-                "action": "mark_delivered",
-                "body": {"flow_message_ids": [priv_fm_id]},
-            },
-            timeout=5.0,
-        )
-        try:
-            leaked = await _drain_until(
-                alice_ws,
-                _is_data_op("update", "flow_message", priv_fm_id),
-                timeout=2.0,
-            )
-            raise RuntimeError(
-                f"privacy gate VIOLATED: alice received status update for private fm {priv_fm_id}: {leaked}"
-            )
-        except asyncio.TimeoutError:
-            pass  # expected — alice should be silent
-        log("f/privacy gate (alice silent on update)", t)
 
     finally:
         await alice_ws.close()

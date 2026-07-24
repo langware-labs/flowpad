@@ -60,6 +60,7 @@ from flow_sdk.external_apis.llm.llm_drivers.definitions import LLMProvider
 from flow_sdk.flowpad_types.runtime_environment import OSType, RuntimeEnvironment
 from flow_sdk.models import AppPaths, BootstrapInfo, EnvInfo, LmInfo
 from flow_sdk.models.responses import ApiSuccessResponse
+from flow_sdk.preferences import SHARE_MESSAGE_STATUS_PREF
 
 router = APIRouter()
 
@@ -1504,6 +1505,7 @@ def setup_desktop_filesystem() -> None:
         "preferences.terminal.buffer_sync_updates": False,
         "preferences.notifications.sound_enabled": False,
         "preferences.notifications.sound_key": "supershort-ping",
+        SHARE_MESSAGE_STATUS_PREF: True,
         "preferences.advanced.scrollback_lines": 1000,
         "preferences.advanced.experimental_flags": {},
         # Indexer engine: "python" (FSIndexer) | "rust" (external RSIndexer via

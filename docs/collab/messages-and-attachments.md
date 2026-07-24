@@ -283,6 +283,11 @@ sender's UI from ✓ to ✓✓. The read receipt goes through the `mark_received
 action (`flow_sdk/cloud_client/hub_bridge.py:829`); the hub fans the resulting
 UPDATE to every participant so all copies tick to ✓✓ blue.
 
+Both recipient acknowledgements are gated by the reporting installation's
+`preferences.notifications.share_message_status` preference. Disabling it
+does not hide receipt data other participants already shared and does not
+affect the sender's initial `SENT` acknowledgement.
+
 ### Inbound monotonicity guard
 
 The hub propagates status changes as `update` ops. The bridge's update handler

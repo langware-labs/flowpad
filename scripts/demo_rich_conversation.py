@@ -159,16 +159,15 @@ own.
 ## Surface
 - Hub stamps `delivery_status: 'created' | 'delivered' | 'received'`
 - Sender bubble renders the receipt glyph next to the timestamp.
-- Per-conversation privacy: `message_status_visible=false` mutes the
-  fanout to the sender for sensitive threads.
+- Each installation can disable delivered/read acknowledgement emission through
+  its Notifications preferences.
 """
 
 ARCHITECTURE_SPEC = """# Architecture: read-receipt fanout
 
 ## Hub side
 - `FlowMessage.delivery_status` field, monotonic guard in `_bump_delivery_status`.
-- `Conversation._fanout_status_update()` mirrors `_fanout_message` but gates on
-  `message_status_visible`.
+- Auto-watch routes status updates to role-accessible live connections.
 
 ## Bridge
 - Receiver auto-fires `mark_delivered` on WS create. UI flips to "received"
@@ -182,16 +181,16 @@ ARCHITECTURE_SPEC = """# Architecture: read-receipt fanout
 REVIEW_CHECKLIST = """# Code review checklist — read-receipts PR
 
 - [ ] Hub: monotonic guard on `delivery_status` update path
-- [ ] Hub: privacy gate on `_fanout_status_update`
+- [ ] OSS: sharing preference suppresses delivered/read acknowledgements
 - [ ] Bridge: `mark_delivered` is fire-and-forget (no await blocking inbound)
 - [ ] UI: DeliveryReceipt does not re-render on every state tick
-- [ ] Tests: 4-state matrix (alice→bob, bob→alice, private mode, group)
+- [ ] Tests: alice→bob, bob→alice, sharing disabled, and group
 - [ ] Telemetry: receipt-roundtrip histogram added
 """
 
 TEST_PLAN = """# Test plan
 
-1. `test_two_client_loop.py` — extend to assert monotonicity AND privacy gate.
+1. `test_two_client_loop.py` — extend to assert monotonicity and sharing preference.
 2. Vitest mirror in `ui/tests/hub/` — same 4 cells.
 3. Manual: long-press a bubble on iOS/Android, confirm tap targets.
 """

@@ -139,9 +139,8 @@ export interface IFlowMessage extends IEntity {
   is_read?: boolean;
   is_archived?: boolean;
   /** Receipt state — orthogonal to the local-only `is_read` flag. Set only
-   *  by the hub via mark_delivered / mark_received actions; flows back to
-   *  the sender as a data_op_msg(update) frame, subject to the parent
-   *  conversation's `message_status_visible` gate. */
+   *  by the hub via mark_delivered / mark_received actions and shared according
+   *  to the reporting user's local preference. */
   delivery_status?: DeliveryStatus;
   delivered_at?: string | null;
   received_at?: string | null;
@@ -485,7 +484,7 @@ export async function forwardMessage(
  * Batch read-ack: tells the local server (which forwards to the hub) that
  * the listed FlowMessages have been seen by the current user. Hub flips
  * their `delivery_status` to "received" and fans an UPDATE frame back to
- * the sender (subject to the parent conversation's `message_status_visible`).
+ * the sender when this installation shares message status.
  */
 export async function markFlowMessagesReceived(flow_message_ids: string[]): Promise<MarkResult | null> {
   if (flow_message_ids.length === 0) return null;

@@ -259,6 +259,22 @@ async def _migrate_vfs_record_to_data_ref(conn) -> None:
         )
 
 
+async def _remove_retired_message_status_visibility(conn) -> None:
+    """Remove the retired message-status visibility key from entity JSON."""
+    await conn.execute(
+        text(
+            """
+            UPDATE entities
+            SET data = CASE
+                WHEN json_valid(data) THEN json_remove(data, '$.message_status_visible')
+                ELSE data
+            END
+            WHERE instr(data, '"message_status_visible"') > 0
+            """
+        )
+    )
+
+
 class SQLiteDBDriver(DBDriver):
     """SQLAlchemy/SQLite database driver for testing."""
 
@@ -422,6 +438,7 @@ class SQLiteDBDriver(DBDriver):
 
         # Migrate vfs_record -> record_data_ref
         await _migrate_vfs_record_to_data_ref(conn)
+        await _remove_retired_message_status_visibility(conn)
 
         # Partial expression index powering per-(project, type) asset counts.
         # Indexes only the project/system-scoped rows (mirrors the project

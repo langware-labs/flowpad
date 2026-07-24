@@ -13,6 +13,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
+SHARE_MESSAGE_STATUS_PREF = "preferences.notifications.share_message_status"
+
 
 def read_instance_pref(key: str, default: Any) -> Any:
     """Read one dotted PrefKey from the instance preferences.json.
@@ -32,6 +34,11 @@ def read_instance_pref(key: str, default: Any) -> Any:
     if not isinstance(prefs, dict) or key not in prefs:
         return default
     return prefs[key]
+
+
+def message_status_sharing_enabled() -> bool:
+    """Whether this installation may report delivered/read acknowledgements."""
+    return read_instance_pref(SHARE_MESSAGE_STATUS_PREF, True) is not False
 
 
 def write_instance_pref(key: str, value: Any) -> bool:

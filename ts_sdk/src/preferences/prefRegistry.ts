@@ -30,6 +30,7 @@ export enum PrefKey {
   BUFFER_SYNC_UPDATES = 'preferences.terminal.buffer_sync_updates',
   SOUND_ENABLED = 'preferences.notifications.sound_enabled',
   SOUND_KEY = 'preferences.notifications.sound_key',
+  SHARE_MESSAGE_STATUS = 'preferences.notifications.share_message_status',
   SCROLLBACK_LINES = 'preferences.advanced.scrollback_lines',
   EXPERIMENTAL_FLAGS = 'preferences.advanced.experimental_flags',
   INDEXER_BACKEND = 'preferences.advanced.indexer_backend',
@@ -204,6 +205,15 @@ export const PREF_REGISTRY: Record<PrefKey, PrefInfo> = {
     dataType: PrefDataType.STRING,
     defaultValue: DEFAULT_SOUND_KEY,
     optionsSource: 'notification_sounds',
+  },
+  [PrefKey.SHARE_MESSAGE_STATUS]: {
+    key: PrefKey.SHARE_MESSAGE_STATUS,
+    surfaced: true,
+    category: 'notifications',
+    label: 'Share message status',
+    description: 'Let other participants see when messages are delivered or read.',
+    dataType: PrefDataType.BOOL,
+    defaultValue: true,
   },
   [PrefKey.SCROLLBACK_LINES]: {
     key: PrefKey.SCROLLBACK_LINES,

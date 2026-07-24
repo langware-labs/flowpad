@@ -7,6 +7,7 @@ import {
   fetchConversations,
   FlowMessage,
   pickupConversation,
+  PrefKey,
   QueryFilter,
   QueryRequest,
   RemoteWorkerSession,
@@ -40,6 +41,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useProcessesForTarget } from '@src/components/entity-execution-panel/hooks/useProcessesForTarget';
 import { mostRecentProcess } from '@src/utils/process-recency';
 import { useRemoteWorkerSessionForConversation } from '@src/hooks/useRemoteWorkerSessionForConversation';
+import { usePreference } from '@src/hooks/use-preference';
 
 // Cap the initial messages window so long conversations don't fetch + watch
 // every FlowMessage they've ever held. Newest-first so the visible window is
@@ -318,7 +320,6 @@ export function ConversationView({
           onSelect={onSelectMessage ? () => onSelectMessage(id) : undefined}
           isConversationOwner={isConversationOwner}
           onDeleteMessage={handleDeleteMessage}
-          conversationStatusVisible={conversationStatusVisible}
           isCommunity={isCommunityConversation}
           attachmentProjectId={attachmentProjectId}
           messageAttachments={attachmentsByMessage.get(id)}
@@ -343,7 +344,6 @@ export function ConversationView({
         onDraftSent={() => void refetch()}
         isSelected={!!id && (selectedMessageIds ?? []).includes(id)}
         onSelect={onSelectMessage && id ? () => onSelectMessage(id) : undefined}
-        conversationStatusVisible={conversationStatusVisible}
         attachmentProjectId={attachmentProjectId}
       />
     );
@@ -408,8 +408,9 @@ export function ConversationView({
   // server-side, so re-acking already-received or own-sent messages is a
   // cheap no-op. Debounced 250ms to coalesce bursts (e.g. catch-up).
   const ackedRef = useRef<Set<string>>(new Set());
+  const [shareMessageStatus] = usePreference<boolean>(PrefKey.SHARE_MESSAGE_STATUS);
   useEffect(() => {
-    if (pointers.length === 0) return;
+    if (!shareMessageStatus || pointers.length === 0) return;
     const candidates = pointers.map((p) => p.id).filter((id) => id && !ackedRef.current.has(id));
     if (candidates.length === 0) return;
     const handle = setTimeout(() => {
@@ -422,9 +423,8 @@ export function ConversationView({
     }, 250);
     return () => clearTimeout(handle);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pointers.map((p) => p.id).join(',')]);
+  }, [shareMessageStatus, pointers.map((p) => p.id).join(',')]);
 
-  const conversationStatusVisible = conversation?.message_status_visible !== false;
   // Community (support-center) ticket: replies are masked to a single brand
   // identity, and the real responder's sender_id is intentionally absent from
   // the guest's (redacted) roster — so the bubble must not flag it as an

@@ -59,12 +59,6 @@ interface MessageBubbleProps {
   isSelected?: boolean;
   /** Click on the bubble fires this so the parent can mark it selected. */
   onSelect?: () => void;
-  /**
-   * Parent conversation's `message_status_visible` flag. When false, the
-   * receipt indicator is hidden on the sender side regardless of the
-   * underlying ``delivery_status``. Defaults to true.
-   */
-  conversationStatusVisible?: boolean;
 }
 
 /**
@@ -73,8 +67,7 @@ interface MessageBubbleProps {
  *   delivered → ✓✓       double check, muted
  *   received  → ✓✓ blue  double check, accent color
  *
- * Renders nothing for incoming messages or when the parent conversation's
- * `message_status_visible` flag is false.
+ * Renders nothing for incoming messages.
  */
 function DeliveryReceipt({ status }: { status: DeliveryStatus | undefined }) {
   const { t } = useLingui();
@@ -184,7 +177,6 @@ export function MessageBubble({
   footer,
   isSelected,
   onSelect,
-  conversationStatusVisible = true,
 }: MessageBubbleProps) {
   const { t } = useLingui();
   const [editing, setEditing] = useState(false);
@@ -194,7 +186,7 @@ export function MessageBubble({
 
   const isFromOther = !!(flowMessage?.sender_id && localUser?.id && flowMessage.sender_id !== localUser.id);
   const isOutgoing = !!(flowMessage?.sender_id && localUser?.id && flowMessage.sender_id === localUser.id);
-  const showReceipt = isOutgoing && conversationStatusVisible && !flowMessage?.is_draft;
+  const showReceipt = isOutgoing && !flowMessage?.is_draft;
 
   // Attachment-action pairs: every CTA (Approve & Execute, View/Implement
   // Plan, …) comes from the registry — the bubble only assembles the context.

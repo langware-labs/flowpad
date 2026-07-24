@@ -35,6 +35,18 @@ _ASSET_TYPEID_TYPES: frozenset[str] = frozenset({
 })
 
 
+def _should_report_delivery(local_user_id: str | None, sender_id: str | None) -> bool:
+    """Whether this installation should acknowledge an inbound delivery."""
+    from flow_sdk.preferences import message_status_sharing_enabled  # noqa: PLC0415
+
+    return bool(
+        message_status_sharing_enabled()
+        and local_user_id
+        and sender_id
+        and sender_id != local_user_id
+    )
+
+
 def _has_asset_typeid_attachment(attachments: Any) -> bool:
     """True iff ``attachments`` includes a TYPE_ID attachment for a file-backed
     asset entity (skill / agent / markdown / spec / whiteboard).
@@ -585,11 +597,12 @@ class HubWsBridge:
                     body_status=payload.get("body_status"),
                 ))
 
-            # Auto-ack delivery — receiver-side acks are the only signal that
-            # makes the sender's UI tick from ✓ to ✓✓. Skip if the local user
-            # IS the sender (hub ignores caller_is_sender anyway, but skipping
-            # avoids the round-trip).
-            if local_user and payload.get("sender_id") and payload["sender_id"] != local_user.id:
+            # The reporting user's installation controls whether peers learn
+            # that this message was delivered.
+            if _should_report_delivery(
+                getattr(local_user, "id", None),
+                payload.get("sender_id"),
+            ):
                 self.manager.send({
                     "message_type": "rest_api_msg",
                     "message_id": str(uuid.uuid4()),
@@ -707,8 +720,8 @@ class HubWsBridge:
             return
 
     async def _handle_conversation_op(self, op: str, conv_id: str, data: dict) -> None:
-        """Passive upsert of Conversation lifecycle changes (title, status,
-        participants, message_status_visible) so the local entity stays in sync.
+        """Passive upsert of Conversation lifecycle changes so the local entity
+        stays in sync.
 
         ``title`` is included so a peer's rename (sent over HTTP or WS and reflected
         to the hub) fans out and lands on the local row here — otherwise a renamed
@@ -726,7 +739,7 @@ class HubWsBridge:
         _PROJECTED = {"message_count", "message_ids"}
         _LOCAL_FIELDS = {
             "id", "type", "title", "remote_project_id", "remote_project_name",
-            "participants", "message_status_visible", "git_sharing_enabled",
+            "participants", "git_sharing_enabled",
             "shared_context_entities",
         }
         clean = {k: v for k, v in data.items() if k in _LOCAL_FIELDS and k not in _PROJECTED}
@@ -764,7 +777,7 @@ class HubWsBridge:
             await Conversation.delete_by_id(conv_id)
             return
 
-        for field in ("title", "message_status_visible", "git_sharing_enabled", "members",
+        for field in ("title", "git_sharing_enabled", "members",
                       "remote_project_id", "remote_project_name", "shared_context_entities"):
             if field in clean:
                 setattr(existing, field, clean[field])
@@ -810,15 +823,12 @@ class HubWsBridge:
         project_id: str,
         text: str,
         receiver_id: Optional[str] = None,
-        message_status_visible: bool = True,
         timeout: float = 10.0,
     ) -> dict:
         body: dict = {"text": text}
         if receiver_id:
             body["receiver_address"] = receiver_id
             body["receiver_address_type"] = "id"
-        if not message_status_visible:
-            body["message_status_visible"] = False
         return await self.manager.send_request(
             {
                 "message_type": "rest_api_msg",
