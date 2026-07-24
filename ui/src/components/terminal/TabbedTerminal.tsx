@@ -130,7 +130,7 @@ const TerminalPanel: React.FC<{
     const clean = cleanTitle(title);
     if (!allowRename(clean) || source.name === clean) return;
     // A restarting worker re-announces itself (title `claude` / the exe path)
-    // before any topic title exists — never let that clobber the stored name.
+    // before any tag title exists — never let that clobber the stored name.
     if (isProgramIdentityTitle(clean, isProcess ? process : null)) return;
     source.name = clean;
     void source.save().catch(() => {});

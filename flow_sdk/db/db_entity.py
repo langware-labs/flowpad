@@ -440,9 +440,9 @@ class DBEntity(DBBaseRecord):
         # Unified-bus dual-publish (docs/flow-events.md phase 3): every entity
         # write becomes entity.created/updated/deleted. This is the ONE funnel
         # all DataOpMessage sites flow through; legacy invalidation untouched.
-        from flow_sdk.db.entity_on_topic import emit_entity_topic
+        from flow_sdk.db.entity_on_tag import emit_entity_tag
 
-        emit_entity_topic(op_message)
+        emit_entity_tag(op_message)
         await handle_entity_op(op_message)
 
     async def update(self: DBEntityType) -> DBEntityType:

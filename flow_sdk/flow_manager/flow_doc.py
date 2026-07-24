@@ -60,11 +60,11 @@ GUIDED_PRESENT_KINDS = {"asset_editor", "wiki", "home", "asset_list", "root"}
 # landed. The frontend owns each kind's semantics — this is the vocabulary.
 GUIDED_ACT_KINDS = {"fill", "open_terminal", "run", "fs_check", "setup_capability",
                     "oauth_connect", "device_login", "git_check"}
-# The await side is a unified-bus subscription (docs/topics.md): `topic` names
+# The await side is a unified-bus subscription (docs/tags.md): `tag` names
 # the awaited event (`app.page.signal`, `app.route.loaded`, `app.entity.created`,
 # or `manual` for Continue-only), `target`/`vfs`/`home` filter it, and an
 # optional `confirm` store-query proves it (event ≠ proof). The engine only
-# requires the topic — the frontend JourneyManager owns the semantics.
+# requires the tag — the frontend JourneyManager owns the semantics.
 
 # Retired spellings → the pointed message users get instead of a pydantic enum error.
 _RETIRED_NODE_TYPES = {
@@ -130,14 +130,14 @@ class FlowNodeDef(BaseModel):
 class FlowSubscriptionDef(BaseModel):
     """A graph-level unified-bus subscription (docs/flow-events.md phase 5):
     a matching FlowEvent starts a FRESH run — entry event ``event`` (default:
-    the bus topic string), ``data = {topic, target, data}``, delivered to
+    the bus tag string), ``data = {tag, target, data}``, delivered to
     ``node`` directly when set, else edge-routed from ``$external``."""
 
     id: str = ""
     pattern: str
     target: Optional[str] = None
     scope: list[str] = Field(default_factory=list)
-    # Entry event name inside the flow; defaults to the bus topic.
+    # Entry event name inside the flow; defaults to the bus tag.
     event: Optional[str] = None
     # Direct-delivery node (bypasses edge routing), like inject's target_node.
     node: Optional[str] = None
@@ -237,9 +237,9 @@ class FlowDoc(BaseModel):
             if target is not None and target.node_type == "trigger":
                 problems.append(f"edge {e.id}: trigger nodes accept no inputs")
         for sub in self.subscriptions:
-            # The topics-owned bus-pattern grammar gate (same rule as TOPIC
+            # The tags-owned bus-pattern grammar gate (same rule as TAG
             # triggers — one owner, right dependency direction).
-            from flow_sdk.topics import validate_bus_pattern
+            from flow_sdk.tags import validate_bus_pattern
 
             problem = validate_bus_pattern(sub.pattern)
             if problem:
@@ -269,14 +269,14 @@ class FlowDoc(BaseModel):
                         f"in {sorted(GUIDED_PRESENT_KINDS)}"
                     )
                 await_spec = nd.get("await") or {}
-                topic = await_spec.get("topic")
-                if not isinstance(topic, str) or not topic:
+                tag = await_spec.get("tag")
+                if not isinstance(tag, str) or not tag:
                     problems.append(
-                        f"node {n.id}: guided_step needs node_data.await.topic "
-                        "(a non-empty bus topic string, e.g. 'app.page.signal', or 'manual')"
+                        f"node {n.id}: guided_step needs node_data.await.tag "
+                        "(a non-empty bus tag string, e.g. 'app.page.signal', or 'manual')"
                     )
                 # `act` — what the journey OFFERS to do for the user (a step
-                # button, not an automatic side effect). It aims at a topic word
+                # button, not an automatic side effect). It aims at a tag word
                 # like `present.highlight` does, so a missing target is dead.
                 act = nd.get("act")
                 if act is not None:
@@ -286,7 +286,7 @@ class FlowDoc(BaseModel):
                         )
                     if not (act.get("target") or "").strip():
                         problems.append(
-                            f"node {n.id}: guided_step act needs a target (a topic word, "
+                            f"node {n.id}: guided_step act needs a target (a tag word, "
                             "e.g. 'AgentInstructions')"
                         )
                 continue

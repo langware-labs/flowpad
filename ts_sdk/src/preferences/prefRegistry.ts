@@ -1,7 +1,7 @@
 /**
  * Preference registry — single source of truth for user-editable UI preferences.
  *
- * Mirrors the backend TypeInfo pattern: every preference ("topic") is enumed in
+ * Mirrors the backend TypeInfo pattern: every preference ("tag") is enumed in
  * {@link PrefKey} and declared once as a {@link PrefInfo} in {@link PREF_REGISTRY}.
  * A preference is identified by the dotted string key `preferences.<category>.<name>`;
  * its {@link PrefInfo.dataType} drives how the stored value ("data") is rendered into a
@@ -20,7 +20,7 @@ export enum PrefDataType {
 }
 
 /**
- * Every preference topic. The value IS the persisted key:
+ * Every preference tag. The value IS the persisted key:
  * `preferences.<category>.<name>`. Keep this enum in sync with {@link PREF_REGISTRY}
  * (the registry-integrity test enforces a 1:1 mapping).
  */

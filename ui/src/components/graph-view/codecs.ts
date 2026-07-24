@@ -5,21 +5,21 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { Layout } from '@sdk';
 import type { SubgraphCodec } from './url-state';
 
-export const TOPIC_KEY_PREFIX = 'topic-';
+export const TAG_KEY_PREFIX = 'tag-';
 
-/** Pointer `graph[/<name>]` ↔ node key `topic-<name>` (names ARE node ids). */
-export const topicGraphCodec: SubgraphCodec = {
-  viewType: ViewType.TOPIC,
+/** Pointer `graph[/<name>]` ↔ node key `tag-<name>` (names ARE node ids). */
+export const tagGraphCodec: SubgraphCodec = {
+  viewType: ViewType.TAG,
   parseFocus(pointer) {
-    const parsed = DockPointer.parseTopicPointer(pointer);
-    return parsed?.topic ? `${TOPIC_KEY_PREFIX}${parsed.topic}` : null;
+    const parsed = DockPointer.parseTagPointer(pointer);
+    return parsed?.tag ? `${TAG_KEY_PREFIX}${parsed.tag}` : null;
   },
   makePointer(state, carryOptions, layout) {
-    const focusTopic = state.focus?.startsWith(TOPIC_KEY_PREFIX)
-      ? state.focus.slice(TOPIC_KEY_PREFIX.length)
+    const focusTag = state.focus?.startsWith(TAG_KEY_PREFIX)
+      ? state.focus.slice(TAG_KEY_PREFIX.length)
       : null;
-    return DockPointer.forTopicGraph(
-      focusTopic,
+    return DockPointer.forTagGraph(
+      focusTag,
       {
         depth: state.focus ? state.depth : undefined,
         defaultDepth: state.defaultDepth,

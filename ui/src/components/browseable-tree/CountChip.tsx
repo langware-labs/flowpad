@@ -3,7 +3,7 @@ import React from 'react';
 /**
  * The tree-row count pill (`999+`-capped). One presentational chip shared by
  * every badge in the browseable tree (type counts, markdown folder counts,
- * topic observation counts) — previously copy-pasted per adapter.
+ * tag observation counts) — previously copy-pasted per adapter.
  */
 export function CountChip({ count, title }: { count: number; title?: string }) {
   return (

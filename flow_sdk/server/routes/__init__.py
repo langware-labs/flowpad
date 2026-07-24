@@ -22,7 +22,7 @@ from .project import router as project_router
 from .compute_register import compute_register_router
 from .debug import router as debug_router
 from .subgraph import router as subgraph_router
-from .topics import router as topics_router
+from .tags import router as tags_router
 from .navigate import router as navigate_router
 from .agent_records import router as agent_records_router
 from .transcripts import router as transcripts_router
@@ -64,7 +64,7 @@ __all__ = [
     "compute_register_router",
     "debug_router",
     "subgraph_router",
-    "topics_router",
+    "tags_router",
     "navigate_router",
     "agent_records_router",
     "transcripts_router",

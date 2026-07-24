@@ -1,7 +1,7 @@
 import {
   AgenticProcess,
   dataContext,
-  isValidTopic,
+  isValidTag,
   Plan,
   Project,
   QueryRequest,
@@ -169,20 +169,20 @@ export async function loadGraphIdentityRoute(dock: DockPointer, surface: 'graph'
   }
 }
 
-/** `/dock/topic/graph[/<name>]` — shape check only (loaders stay near-empty). */
-function loadTopicRoute(dock: DockPointer): void {
-  const parsed = DockPointer.parseTopicPointer(dock.pointer);
-  const topicName = parsed?.topic;
-  if (!parsed || (topicName !== null && !isValidTopic(topicName))) {
+/** `/dock/tag/graph[/<name>]` — shape check only (loaders stay near-empty). */
+function loadTagRoute(dock: DockPointer): void {
+  const parsed = DockPointer.parseTagPointer(dock.pointer);
+  const tagName = parsed?.tag;
+  if (!parsed || (tagName !== null && !isValidTag(tagName))) {
     throw new DockLoadError(
-      'malformed_topic_pointer',
+      'malformed_tag_pointer',
       'hard',
       {
         action: 'render_error',
-        title: 'Topic view not found',
-        message: 'Expected /dock/topic/graph or /dock/topic/graph/<dot.topic.name>.',
+        title: 'Tag view not found',
+        message: 'Expected /dock/tag/graph or /dock/tag/graph/<dot.tag.name>.',
       },
-      'topic',
+      'tag',
     );
   }
 }
@@ -245,10 +245,10 @@ export async function loadDockPointer(dock: DockPointer, context: DockLoaderCont
       case ViewType.WORLDVIEW:
         await loadGraphIdentityRoute(dock, 'worldview');
         break;
-      case ViewType.TOPIC:
+      case ViewType.TAG:
         // URL-first + near-empty: validate shape only. NO entity resolution —
-        // anonymous (ghost) topics are first-class in the topic graph.
-        loadTopicRoute(dock);
+        // anonymous (ghost) tags are first-class in the tag graph.
+        loadTagRoute(dock);
         break;
       case ViewType.SUBGRAPH:
         loadSubgraphRoute(dock);

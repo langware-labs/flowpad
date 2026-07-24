@@ -5,7 +5,7 @@ import { graphFromPayload, type GraphLayout, type GraphPayload } from './loadDep
 /**
  * Fetch a named entity-subgraph projection (layer 2 — see
  * flow_sdk/server/routes/subgraph.py) and build the shared Graphology model.
- * `dropOrphans: false` — subgraphs like the topic taxonomy must show unbound
+ * `dropOrphans: false` — subgraphs like the tag taxonomy must show unbound
  * leaf nodes.
  */
 export async function loadSubgraph(

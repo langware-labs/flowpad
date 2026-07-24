@@ -287,7 +287,7 @@ async def handle_create_entity(request: Request):
     if not someone_typeid:
         raise HTTPException(status_code=400, detail="invalid auth result")
 
-    # Entity-level save validation (a `save()` raising ValueError, e.g. Topic's
+    # Entity-level save validation (a `save()` raising ValueError, e.g. Tag's
     # reserved-root gate) is a client error, not a server fault — mapped once
     # around the whole branch dispatch so every create path agrees.
     try:

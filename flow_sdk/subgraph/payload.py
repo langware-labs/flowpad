@@ -11,7 +11,7 @@ The wire contract is what ``ui/src/components/graph-view/graph/loadDepGraph.ts``
 CONTRACT NOTE: edge endpoints resolve to node keys as ``<type>-<id>``
 (``endpointKey``) — the optional node ``key`` override is NOT addressable by
 edges. Therefore every node a subgraph wants edges on MUST be identified by
-its (type, id) pair; ghosts use a stable natural id there (a topic name, a
+its (type, id) pair; ghosts use a stable natural id there (a tag name, a
 relative path), never a custom key. ``root`` is a node key (``<type>-<id>``).
 """
 from __future__ import annotations

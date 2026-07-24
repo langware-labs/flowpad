@@ -15,4 +15,4 @@ def register_builtin_projections() -> None:
     if _loaded:
         return
     _loaded = True
-    import flow_sdk.topics.graph  # noqa: F401, PLC0415 — registers "topic"
+    import flow_sdk.tags.graph  # noqa: F401, PLC0415 — registers "tag"

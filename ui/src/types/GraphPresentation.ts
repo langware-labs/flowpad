@@ -5,7 +5,7 @@
 // not of any one surface (see graph-view/surfaces.ts `presentation`).
 //
 // URL: `?render=sigma|atlas`. Deliberately NOT `?view=` — that key belongs to
-// a surface's own data shape (e.g. the topic graph's `?view=tree`).
+// a surface's own data shape (e.g. the tag graph's `?view=tree`).
 export const GRAPH_PRESENTATIONS = ['sigma', 'atlas'] as const;
 
 export type GraphPresentation = (typeof GRAPH_PRESENTATIONS)[number];

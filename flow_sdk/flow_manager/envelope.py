@@ -1,7 +1,7 @@
 """RunEvent — the envelope FlowManager routes within ONE run.
 
 NOT the bus envelope: the standard system-wide event is `FlowEvent`
-(flow_sdk/topics/envelope.py). RunEvents are engine wiring — local names,
+(flow_sdk/tags/envelope.py). RunEvents are engine wiring — local names,
 hop counters — and never ride the bus.
 
 Events are local to their flow. ``execution_id`` is the run id — it stamps

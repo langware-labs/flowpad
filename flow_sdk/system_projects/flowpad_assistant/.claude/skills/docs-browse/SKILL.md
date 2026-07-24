@@ -2,7 +2,7 @@
 id: 72621c37-45ba-5d74-a639-70bb5ccf9054
 name: docs-browse
 description: Use this skill to do fast and efficient browsing in the project documents.
-  Whenever you need to find information, answer a question, or locate a topic inside
+  Whenever you need to find information, answer a question, or locate a tag inside
   a project's docs/markdown tree, use this skill FIRST — it navigates the pre-built
   `index.md` chain instead of grepping or reading files blindly.
 tags:

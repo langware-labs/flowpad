@@ -33,7 +33,7 @@ import { useLastVibeChat } from '@src/pages/flow-page/use-last-vibe-chat';
 import { isTaskActive } from '@src/components/task-bar/constants';
 import { useSpotlightStore } from '@src/store/use-spotlight-store';
 import { JourneyBadge } from '@src/journey/JourneyBadge';
-import { topicTag } from '@src/topics/topic-tag';
+import { tagAttrs } from '@src/tags/tag-attrs';
 import { BookmarksSlider } from '@src/components/bookmarks-slider/BookmarksSlider';
 import { useUnopenedFavoritesCount } from '@src/hooks/use-unopened-favorites-count';
 import { useHoverIntent } from '@src/hooks/use-hover-intent';
@@ -341,11 +341,11 @@ export function CollapsedSidebar() {
       /* side="right": the rail's regular tooltips open to the right; the
          WikiTip default (top) would pop the card above the button instead. */
       <WikiTip wikiword="Flowpad project" label={t`What is project?`} side="right">
-        {/* Same topic as the footer's project name: a journey highlighting
+        {/* Same tag as the footer's project name: a journey highlighting
             `ProjectPage` lights BOTH ways into the project, and a click on
             either emits the same bus target. */}
         <SidebarMenuButton
-          {...topicTag('ProjectPage', 'button')}
+          {...tagAttrs('ProjectPage', 'button')}
           data-rail-item="project"
           isActive={isActiveId('project')}
           onClick={() => handleRailClick('project')}

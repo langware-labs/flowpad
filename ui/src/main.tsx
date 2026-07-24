@@ -74,8 +74,8 @@ async function init() {
   bindMouseNavButtons();
   bindNavigationTrace();
   await initDesktopBackend(sdkConfig);
-  // Seed toplog state + subscribe to live topic toggles. Without this the
-  // frontend `toplog.log(...)` calls (incl. the `navigation` topic) are no-ops
+  // Seed toplog state + subscribe to live tag toggles. Without this the
+  // frontend `toplog.log(...)` calls (incl. the `navigation` tag) are no-ops
   // because the in-memory state never mirrors the backend. Idempotent; the GET
   // runs after the backend URL is resolved by initDesktopBackend above.
   void toplog.bootstrap();

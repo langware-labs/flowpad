@@ -39,19 +39,19 @@ describe('toplog (frontend)', () => {
     expect(logSpy).not.toHaveBeenCalled();
   });
 
-  it('log emits to console when the topic is active', () => {
+  it('log emits to console when the tag is active', () => {
     setState({ enabled: true, filter: { pty: true } });
     toplog.log('pty', 'hello');
     expect(logSpy).toHaveBeenCalledWith('[toplog:pty]', 'hello');
   });
 
-  it('OR semantics — emits if any listed topic is on, prefixing only active ones', () => {
+  it('OR semantics — emits if any listed tag is on, prefixing only active ones', () => {
     setState({ enabled: true, filter: { sync: true } });
     toplog.log(['pty', 'sync'], 'multi');
     expect(logSpy).toHaveBeenCalledWith('[toplog:sync]', 'multi');
   });
 
-  it('OR semantics — no-op when none of the listed topics are on', () => {
+  it('OR semantics — no-op when none of the listed tags are on', () => {
     setState({ enabled: true, filter: { other: true } });
     toplog.log(['pty', 'sync'], 'multi');
     expect(logSpy).not.toHaveBeenCalled();
@@ -67,14 +67,14 @@ describe('toplog (frontend)', () => {
   it('on() posts to /toplog/on and mirrors the returned state', async () => {
     mockPost.mockResolvedValueOnce({ enabled: true, filter: { pty: true } });
     await toplog.on('pty');
-    expect(mockPost).toHaveBeenCalledWith('/toplog/on', { topics: ['pty'] });
+    expect(mockPost).toHaveBeenCalledWith('/toplog/on', { tags: ['pty'] });
     expect(toplog.isOn('pty')).toBe(true);
   });
 
-  it('off() posts to /toplog/off with the topics', async () => {
+  it('off() posts to /toplog/off with the tags', async () => {
     mockPost.mockResolvedValueOnce({ enabled: true, filter: {} });
     await toplog.off('pty');
-    expect(mockPost).toHaveBeenCalledWith('/toplog/off', { topics: ['pty'] });
+    expect(mockPost).toHaveBeenCalledWith('/toplog/off', { tags: ['pty'] });
     expect(toplog.isOn('pty')).toBe(false);
   });
 
@@ -90,7 +90,7 @@ describe('toplog (frontend)', () => {
     expect(toplog.enabled).toBe(false);
   });
 
-  it('state() reflects the active topics', () => {
+  it('state() reflects the active tags', () => {
     setState({ enabled: true, filter: { a: true, b: true } });
     expect(toplog.state()).toEqual({ enabled: true, filter: { a: true, b: true } });
   });

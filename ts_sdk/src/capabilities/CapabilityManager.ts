@@ -11,7 +11,7 @@ import {
   ICapability,
 } from '../entities/capability';
 import { normalizeKind } from '../models/Kind';
-import { EventBus } from '../topics/EventBus';
+import { EventBus } from '../tags/EventBus';
 import { defineGlobal } from '../utils/globals';
 import { isHubOnly } from '../utils/hub-runtime';
 

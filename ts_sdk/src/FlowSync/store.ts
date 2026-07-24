@@ -20,7 +20,7 @@ import {
 } from '../websocket';
 import { FlowData, FlowDataSource } from '../flow_processing';
 import { getUtmParams } from './auth';
-import { emitEntityTopic } from './entity.onTopic';
+import { emitEntityTag } from './entity.onTag';
 import { ExpansionType } from './expand';
 import { EntityFactory } from '../schema/factory';
 import { SubscriptionMap, TypeIdMap, WatchMap, WatchQueryMap } from './map';
@@ -381,7 +381,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     }
     // Bus wake-up BEFORE the branchy cache handling below: several branches
     // early-return (uncached update, in-flight buffer) and must still emit.
-    emitEntityTopic(typeId, op, data ?? null);
+    emitEntityTag(typeId, op, data ?? null);
     // Handle delete operation by removing from all query results
     if (op === 'delete') {
       this.watchedQueries.removeEntityFromResults(typeId.type, typeId);

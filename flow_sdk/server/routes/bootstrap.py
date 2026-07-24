@@ -1491,7 +1491,7 @@ def setup_desktop_filesystem() -> None:
 
     # Per-instance UI preferences. Defaults must stay in sync with the
     # PREF_REGISTRY in ts_sdk/src/preferences/prefRegistry.ts. Keys are the dotted
-    # topic ids `preferences.<category>.<name>`; the frontend store migrates any
+    # tag ids `preferences.<category>.<name>`; the frontend store migrates any
     # legacy flat-keyed preferences.json on load.
     # Legacy location: <workspace>/.flow/settings.json — migrated below.
     prefs_path = _preferences_path()

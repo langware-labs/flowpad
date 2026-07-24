@@ -5,11 +5,11 @@ import { LOCAL_COMPUTE_NODE } from '@src/navigation/asset-doc-types';
 import type { JourneyActSpec } from './use-journey';
 
 /** A step's act landed / could not land. The step's `await` listens for these
- *  like any other bus event — gating stays ONE mechanism (see docs/topics.md). */
-export const ACT_DONE_TOPIC = 'app.journey.act.done';
-export const ACT_FAILED_TOPIC = 'app.journey.act.failed';
+ *  like any other bus event — gating stays ONE mechanism (see docs/tags.md). */
+export const ACT_DONE_TAG = 'app.journey.act.done';
+export const ACT_FAILED_TAG = 'app.journey.act.failed';
 
-/** Bus target for an act: `<kind>:<topic word>` — e.g. `fill:AgentInstructions`. */
+/** Bus target for an act: `<kind>:<tag word>` — e.g. `fill:AgentInstructions`. */
 export function actTarget(kind: string, target: string): string {
   return `${kind}:${target}`;
 }
@@ -30,7 +30,7 @@ function editableWithin(host: HTMLElement): HTMLElement | null {
 }
 
 /**
- * Type `text` into a `data-topic`-tagged surface, as a user would.
+ * Type `text` into a `data-tag`-tagged surface, as a user would.
  *
  * Inputs/textareas are set through the NATIVE value setter + an `input` event,
  * because React installs its own value property on the instance and a plain
@@ -45,7 +45,7 @@ function editableWithin(host: HTMLElement): HTMLElement | null {
  * user to type it themselves.
  */
 export function performFill(target: string, text: string): boolean {
-  const host = document.querySelector<HTMLElement>(`[data-topic="${CSS.escape(target)}"]`);
+  const host = document.querySelector<HTMLElement>(`[data-tag="${CSS.escape(target)}"]`);
   const el = host ? editableWithin(host) : null;
   if (!el) return false;
 
@@ -74,7 +74,7 @@ export function performFill(target: string, text: string): boolean {
 
 function announce(act: { kind: string; target: string }, ok: boolean): boolean {
   EventBus.emit(
-    ok ? ACT_DONE_TOPIC : ACT_FAILED_TOPIC,
+    ok ? ACT_DONE_TAG : ACT_FAILED_TAG,
     actTarget(act.kind, act.target),
     { act },
     { origin: 'app' },

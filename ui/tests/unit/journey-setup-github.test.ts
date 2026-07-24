@@ -23,7 +23,7 @@ describe('setup-github journey graph', () => {
     expect(steps[1].act?.capability).toBe('source_control.git.github.gh');
     expect(steps[2].act?.capability).toBe('source_control.git.github.gh');
     for (const step of steps) {
-      expect(step.await?.topic).toBe('app.entity.updated');
+      expect(step.await?.tag).toBe('app.entity.updated');
       expect(step.await?.confirm?.type).toBe('capability');
     }
   });

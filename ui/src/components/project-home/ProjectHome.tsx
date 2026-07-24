@@ -7,18 +7,18 @@ import { QuickCreatePanel, useQuickCreatePick } from '@src/components/quick-crea
 import type { PanelHandlers } from '@src/components/quick-create';
 import { SecretsCard } from './SecretsCard';
 import { HomeCustomizationCard } from './HomeCustomizationCard';
-import { VIBE_AGENTS_TOPIC, VibeAgentsCard } from './VibeAgentsCard';
+import { VIBE_AGENTS_TAG, VibeAgentsCard } from './VibeAgentsCard';
 import { useHighlight } from '@src/components/wiki-tip/highlight';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@src/components/ui/tabs';
 import { useContext as useDataContext } from '@src/hooks/useContext';
 import { useTerminalStripController } from '@src/tabs/useTerminalStripController';
 import { Project, TypeId } from '@sdk';
-import { topicTag } from '@src/topics/topic-tag';
+import { tagAttrs } from '@src/tags/tag-attrs';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 
 /** Journey anchor for the session launcher (`?highlight=NewSession`). */
-const NEW_SESSION_TOPIC = 'NewSession';
+const NEW_SESSION_TAG = 'NewSession';
 
 interface ProjectHomeProps {
   /** Pin spawned shells/processes to this project; otherwise the active project. */
@@ -58,7 +58,7 @@ const SessionTiles: React.FC<{ spawnProjectId?: string | null; panelProps: Panel
   }, [openers, isTabCreationPending, t]);
 
   return (
-    <div data-testid="project-home-start-session" {...topicTag(NEW_SESSION_TOPIC, 'button')}>
+    <div data-testid="project-home-start-session" {...tagAttrs(NEW_SESSION_TAG, 'button')}>
       <QuickCreatePanel {...panelProps} sections={['session']} extraSessionTiles={terminalTile} />
       {modals}
     </div>
@@ -81,10 +81,10 @@ const CreateTab: React.FC<{
   </div>
 );
 
-/** Which tab hosts which topic word — see the `?highlight=` effect below.
- *  Add an entry whenever a card on a non-default tab takes a `topicTag`. */
-const TAB_FOR_TOPIC: Record<string, string> = {
-  [VIBE_AGENTS_TOPIC]: 'customize',
+/** Which tab hosts which tag word — see the `?highlight=` effect below.
+ *  Add an entry whenever a card on a non-default tab takes `tagAttrs`. */
+const TAB_FOR_TAG: Record<string, string> = {
+  [VIBE_AGENTS_TAG]: 'customize',
 };
 
 /**
@@ -155,12 +155,12 @@ export const ProjectHome: React.FC<ProjectHomeProps> = ({ spawnProjectId, create
   const createTab = <CreateTab projectId={projectId} spawnProjectId={spawnProjectId} panelProps={panelProps} />;
 
   // A `?highlight=` target that lives on a tab we aren't showing would never
-  // mount, so the generic TopicHighlightObserver would find nothing — open the
-  // owning tab instead. Each tab declares the topic words it hosts.
+  // mount, so the generic TagHighlightObserver would find nothing — open the
+  // owning tab instead. Each tab declares the tag words it hosts.
   const [tab, setTab] = useState('create');
   const highlight = useHighlight();
   useEffect(() => {
-    const owner = highlight ? TAB_FOR_TOPIC[highlight] : undefined;
+    const owner = highlight ? TAB_FOR_TAG[highlight] : undefined;
     if (owner) setTab(owner);
   }, [highlight]);
 

@@ -47,7 +47,7 @@ export interface GraphUrlState {
 
 /**
  * Pointer grammar injection for the generic `subgraph` surface — layer 2 of
- * the graph stack. A thin view type (topic graph, any future subgraph view)
+ * the graph stack. A thin view type (tag graph, any future subgraph view)
  * supplies a codec instead of this file growing a hardcoded branch per view.
  * Focus lives IN the pointer (dependency pattern); everything else rides the
  * standard query options. `makePointer` must carry through options it does

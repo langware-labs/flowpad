@@ -20,7 +20,7 @@
           "highlight": "ProjectPage"
         },
         "await": {
-          "topic": "app.ui.button.clicked",
+          "tag": "app.ui.button.clicked",
           "target": "ProjectPage"
         }
       }
@@ -36,7 +36,7 @@
           "highlight": "Sub agents"
         },
         "await": {
-          "topic": "app.ui.button.clicked",
+          "tag": "app.ui.button.clicked",
           "target": "Sub agents"
         }
       }
@@ -52,7 +52,7 @@
           "highlight": "AgentInstructions"
         },
         "await": {
-          "topic": "app.journey.act.done",
+          "tag": "app.journey.act.done",
           "target": "fill:AgentInstructions",
           "manual": true
         },
@@ -73,7 +73,7 @@
           "highlight": "UseAgent"
         },
         "await": {
-          "topic": "app.ui.button.clicked",
+          "tag": "app.ui.button.clicked",
           "target": "UseAgent"
         },
         "group": "Use your vibe agent"
@@ -88,7 +88,7 @@
         "status_line": "Ask your shopping master to search for a smartphone.",
         "present": {},
         "await": {
-          "topic": "app.entity.updated",
+          "tag": "app.entity.updated",
           "target": "agentic_process:*",
           "matchEvent": {
             "status": "running"

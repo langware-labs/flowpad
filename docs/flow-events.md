@@ -1,7 +1,7 @@
 # FlowEvents — the unified event bus (delivery worklog)
 
 > **This document is the delivery ledger.** The language rationale and the full
-> design discussion live in [topics.md](topics.md); this file tracks WHAT is
+> design discussion live in [tags.md](tags.md); this file tracks WHAT is
 > built, phase by phase, with a dated Log entry appended as each phase lands.
 > Statuses: `☐ planned · ▶ in progress · ✅ done`.
 
@@ -12,32 +12,32 @@ systems all become emitters/subscribers of it.
 
 ## The envelope — `FlowEvent` (normative)
 
-One shape, both SDKs — Python `flow_sdk/topics/envelope.py`, TS
-`ts_sdk/src/topics/EventBus.ts` — pinned by the shared contract fixture
+One shape, both SDKs — Python `flow_sdk/tags/envelope.py`, TS
+`ts_sdk/src/tags/EventBus.ts` — pinned by the shared contract fixture
 `tests/fixtures/flow_event_contract.json`.
 
 | Field       | Type          | Rule |
 |-------------|---------------|------|
 | `id`        | uuid4         | minted at emit (standard minter); **never rewritten on relay** |
 | `timestamp` | ISO-8601 UTC  | stamped by the emitter; ordering hint, not a guarantee |
-| `topic`     | string        | free dot-separated ontological string — the bus never interprets it |
+| `tag`     | string        | free dot-separated ontological string — the bus never interprets it |
 | `target`    | `type:id`     | what the event is about (colon form; non-entity subjects allowed) |
 | `data`      | object        | payload; UI-originated events never carry user-entered values |
 | `ctx.actor?`| target form   | who caused it (`user:<id>`, `agentic_process:<id>`, `system`, `hub`) |
 | `ctx.scope` | list of targets | containment chain, innermost-first; delivery-authorization input |
 | `ctx.origin`| `app · local_server · hub · sandbox` | which tier emitted — required; trust policy per tier |
 
-**Laws** (unchanged from topics.md): (1) the bus matches topic + optional
+**Laws** (unchanged from tags.md): (1) the bus matches tag + optional
 target/scope filters, never meaning; (2) at-least-once, unordered across
-topics, handlers idempotent; (3) handler isolation — emit never awaits
+tags, handlers idempotent; (3) handler isolation — emit never awaits
 consumers; (4) no durability in the bus — persistence is a subscriber's job;
 (5) event ≠ proof — gating consumers confirm against the store; (6) cross-tier
 forwarding is by declared subscription only, never ambient.
 
 **Naming:** `FlowEvent` = the standard envelope. `RunEvent` = the flow
 *engine's* run-local envelope (renamed from the old `FlowEvent`) — engine
-wiring, never on the bus. Module homes stay `flow_sdk/topics/` /
-`ts_sdk/src/topics/` (the grep-able "anything named topic is the unified
+wiring, never on the bus. Module homes stay `flow_sdk/tags/` /
+`ts_sdk/src/tags/` (the grep-able "anything named tag is the unified
 system" rule stands). Anything still named `event`/`message`/`op` outside the
 engine is legacy, scheduled for phase 8/10.
 
@@ -46,32 +46,32 @@ engine is legacy, scheduled for phase 8/10.
 ## Phase 0 — Claim the name  ✅
 
 Rename the run-local envelope (`flow_manager/envelope.py`) `FlowEvent` →
-`RunEvent`; define the standard `FlowEvent` in `flow_sdk/topics/envelope.py`;
-rename TS `TopicEvent` → `FlowEvent` (+ `TopicCtx` → `FlowEventCtx`). Pure
+`RunEvent`; define the standard `FlowEvent` in `flow_sdk/tags/envelope.py`;
+rename TS `TagEvent` → `FlowEvent` (+ `TagCtx` → `FlowEventCtx`). Pure
 vocabulary — zero behavior, zero wire change.
 
 **Acceptance:** grep gates — no `FlowEvent` under `flow_sdk/flow_manager/`,
-no `TopicEvent` in ts_sdk/ui; all existing tests green.
+no `TagEvent` in ts_sdk/ui; all existing tests green.
 
 ### Log
 - 2026-07-19 — shipped with phase 1 (one commit). Run-local envelope is
-  `RunEvent`; standard `FlowEvent`/`FlowEventCtx` in `flow_sdk/topics/envelope.py`
+  `RunEvent`; standard `FlowEvent`/`FlowEventCtx` in `flow_sdk/tags/envelope.py`
   + TS rename. Both grep gates pass; flow suites green unchanged.
 
 ## Phase 1 — Bus core, both sides  ✅
 
-Python `TopicEventBus` (`flow_sdk/topics/bus.py`) — faithful port of the TS
+Python `TagEventBus` (`flow_sdk/tags/bus.py`) — faithful port of the TS
 core: `emit` (sync fire-and-forget, lazy envelope, zero-subscriber fast path
 behind a bounded observation poke, default `origin='local_server'`), `on(pattern, handler, target?, scope?)`,
 `deliver(event)` (relay entry — no re-mint), handler isolation for sync AND
-async handlers. The `topic_msg` WS frame (`api/messages.py TopicMessage`) with
+async handlers. The `tag_msg` WS frame (`api/messages.py TagMessage`) with
 backend→app forwarding for a declared allowlist
-(`topics/ws_forward.py FORWARDED_TOPIC_PATTERNS`, starts `["flow.*"]`);
-TS receiving bridge (`ts_sdk/src/topics/ws-bridge.ts`) feeds arriving frames
+(`tags/ws_forward.py FORWARDED_TAG_PATTERNS`, starts `["flow.*"]`);
+TS receiving bridge (`ts_sdk/src/tags/ws-bridge.ts`) feeds arriving frames
 into the app bus via `EventBus.deliver` — same envelope, same id, origin
 preserved. Contract tests pin matching semantics + the envelope JSON across
 both languages via the shared golden fixture. Dev-only
-`POST /api/v1/debug/emit_topic` proves the pipe end-to-end.
+`POST /api/v1/debug/emit_tag` proves the pipe end-to-end.
 
 **Scope cut (deliberate):** app→backend forwarding is deferred — nothing needs
 it yet (journeys write via REST); it lands with the first real app→backend
@@ -82,9 +82,9 @@ emit on the backend arrives at an app-bus subscriber with the SAME event id
 and `origin: "local_server"`.
 
 ### Log
-- 2026-07-19 — shipped. Python bus (`topics/bus.py`) + `TopicMessage` frame +
+- 2026-07-19 — shipped. Python bus (`tags/bus.py`) + `TagMessage` frame +
   `ws_forward` (allowlist `["flow.*"]`) armed at startup; TS `deliver()` +
-  `ws-bridge` wired via `UiTopicEmitter`. Contract fixture
+  `ws-bridge` wired via `UiTagEmitter`. Contract fixture
   `tests/fixtures/flow_event_contract.json` parsed by BOTH suites (py 16,
   ts 17 tests). Live drill on flow-5: backend-minted id `bcff6c26…` observed
   verbatim on the app bus with `origin: local_server`. Scope cut as planned:
@@ -96,19 +96,19 @@ and `origin: "local_server"`.
 flow.failed` (target = the flow entity, run/node detail in `data`) beside the
 legacy `FlowRunEventMessage`/`FlowNodeStatusMessage`; terminal run outputs emit
 `flow.output` instead of existing only as files. **Acceptance:**
-`useJourneyManager` subscribes to the topics and deletes its post-advance REST
+`useJourneyManager` subscribes to the tags and deletes its post-advance REST
 `refresh()` — the standing journal-WS-watch-gap symptom closes.
 
 **Detail (planned 2026-07-22):**
 
 *Emissions — explicit calls at the four lifecycle boundaries (NOT inside the
 WS mirror helpers; boundary semantics ≠ status mirroring), via one helper
-`_emit_flow_topic(run, subtopic, data)` in `flow_manager/manager.py` that fills
+`_emit_flow_tag(run, subtag, data)` in `flow_manager/manager.py` that fills
 `target = f"agentic_flow:{run.flow.flow_id}"` and
 `ctx.scope = [f"agentic_flow_run:{run.id}", f"agentic_flow:{run.flow.flow_id}"]`
 (innermost-first). `ctx.actor` stays None until phase 7 threads attribution.*
 
-| site | topic | data |
+| site | tag | data |
 |---|---|---|
 | `_start_run` | `flow.started` | `{run_id}` |
 | `_enter_guided_step` | `flow.waiting` | `{run_id, node_id, seq, status_line, present, await}` |
@@ -127,7 +127,7 @@ emission is best-effort try/except like the broadcasts. `ws_forward`'s
 `EventBus.on('flow.step.done', h, {target: 'agentic_flow:' + journeyId})`
 whose handler calls `refresh()` — law 5 kept honest: the event says *check
 now*, the journal fetch stays the proof. Because the event reaches EVERY tab
-via `topic_msg` (not just watch-holders), the journal-WS-watch gap closes for
+via `tag_msg` (not just watch-holders), the journal-WS-watch gap closes for
 cross-tab journey progress too — the bug the workaround note in that file
 documents.*
 
@@ -140,18 +140,18 @@ started→output→done with correct target/scope ordering; a guided park emits
 refresh.*
 
 *Live drill — flow-5: walk one step of the getting-started journey; observe
-`[topics] delivered flow.step.done …` in the console and the tray advancing
+`[tags] delivered flow.step.done …` in the console and the tray advancing
 WITHOUT the REST refresh chain; second browser tab advances in sync (the gap
 closure made visible).*
 
 ### Log
-- 2026-07-22 — shipped as planned. `_emit_flow_topic` + five boundary sites in
+- 2026-07-22 — shipped as planned. `_emit_flow_tag` + five boundary sites in
   `flow_manager/manager.py`; `useJourneyManager` post-advance `.then(refresh)`
   chain replaced by ONE `flow.step.done` subscription (target-filtered to the
-  journey). 3 bus-capture tests added (44/44 with the topic suites). Live
+  journey). 3 bus-capture tests added (44/44 with the tag suites). Live
   drill: clicked step 1 of getting-started → tray advanced event-driven;
   step 2 advanced via REST from OUTSIDE the browser and the tab still updated
-  (console: `[topics] delivered flow.step.done` + the next `flow.waiting`) —
+  (console: `[tags] delivered flow.step.done` + the next `flow.waiting`) —
   the journal-WS-watch gap is closed, cross-tab included. No deviations.
 
 ## Phase 3 — Entity emitter  ✅
@@ -169,8 +169,8 @@ untouched. Biggest coverage per line changed; what phases 4–5 subscribe to.
 line 421/429) and `DBEntity.add_entity_op_notification` (line 434 — the
 DELETE paths, 445/874). One adapter hooks both.*
 
-- *Adapter `flow_sdk/db/entity.on_topic.py`* (the naming rule's deletable
-  bridge): `emit_entity_topic(msg: DataOpMessage)` maps
+- *Adapter `flow_sdk/db/entity.on_tag.py`* (the naming rule's deletable
+  bridge): `emit_entity_tag(msg: DataOpMessage)` maps
   `OperationType.CREATE/UPDATE/DELETE` → `entity.created/updated/deleted`,
   `target` = colon form of `msg.to_entity`, `ctx.scope = [from_entity]` when
   set. **Lean data on purpose**: `data = {"entity_type", "id"}` only — never
@@ -178,39 +178,39 @@ DELETE paths, 445/874). One adapter hooks both.*
   no payload values leak into the recorder later). Wired with one guarded
   call in each funnel (`try/except`, never fails a save).
 - *Backend-side only*: `entity.*` is deliberately NOT added to
-  `FORWARDED_TOPIC_PATTERNS` — forwarding every entity write would storm the
-  WS; the app keeps `data_op_msg` until a frontend consumer wants the topic
+  `FORWARDED_TAG_PATTERNS` — forwarding every entity write would storm the
+  WS; the app keeps `data_op_msg` until a frontend consumer wants the tag
   form (phase 8). The bus's zero-subscriber fast path keeps the emission
   ~free until phase 4 subscribes — it costs one dict poke, because `emit`
-  records every topic name in a bounded observed map (cap 512, drop-oldest)
+  records every tag name in a bounded observed map (cap 512, drop-oldest)
   before the fast path returns. Seeing names nobody subscribes to yet is the
-  point: it feeds `/api/v1/debug/observed_topics` and the blessed-vs-anonymous
-  diff in the topics gardening view. Timestamps are stored as epoch floats and
+  point: it feeds `/api/v1/debug/observed_tags` and the blessed-vs-anonymous
+  diff in the tags gardening view. Timestamps are stored as epoch floats and
   only formatted on that read.
 - *Cycle note (documented on the adapter)*: a subscriber that writes entities
   re-triggers `entity.updated` — subscribers must be idempotent and never
   unconditionally write their own trigger entity; the real storm guard is
   phase 4's trigger machinery.
-- *Tests (`tests/unit/test_entity_topics.py`)*: save → `entity.created` with
+- *Tests (`tests/unit/test_entity_tags.py`)*: save → `entity.created` with
   colon target; second save/update → `entity.updated`; delete →
   `entity.deleted`; `save(owner)` → scope carries the owner typeid; data is
   lean (no row fields). Regression: existing data_op WS behavior untouched.
 - *Acceptance*: a backend bus subscription observes `entity.created` for a
-  `UsageReport.save()` — the exact scenario phase 4's TOPIC trigger will
+  `UsageReport.save()` — the exact scenario phase 4's TAG trigger will
   subscribe to.
 
 ### Log
 - 2026-07-22 — shipped, one deviation FOR the better: both planned funnels
   converge (every DataOpMessage site calls `add_entity_op_notification`), so
   the adapter hooks ONE funnel, zero double-emission. Adapter =
-  `flow_sdk/db/entity_on_topic.py`; `save()` now stamps `from_entity = owner`
+  `flow_sdk/db/entity_on_tag.py`; `save()` now stamps `from_entity = owner`
   on the notification so scope rides. Acceptance test green
   (UsageReport lifecycle → created/updated/deleted, lean data, owner scope);
   fs_store regression 599/599.
 
 ## Phase 4 — Triggers become subscriptions  ✅
 
-`TriggerType.TOPIC {pattern, target?, scope?}` on the Trigger entity, firing
+`TriggerType.TAG {pattern, target?, scope?}` on the Trigger entity, firing
 the existing action machinery + `on_trigger_fired` flow entry. Rides with a
 confirm-against-store hook (law 5, generalized from journey `confirm`) and an
 emit-storm guard. fsop/schedule/hook keep working; conceptually they demote to
@@ -219,22 +219,22 @@ emitters (`fs.*`, `time.*`, `hook.*`) behind the same subscription front.
 **Detail (planned 2026-07-22):**
 
 *Entity + registration (`flow_sdk/builtin/trigger.py`):*
-- `TriggerType.TOPIC = "topic"` + three fields: `topic_pattern: str`,
-  `topic_target: str|None`, `topic_scope: list[str]` (names prefixed to avoid
+- `TriggerType.TAG = "tag"` + three fields: `tag_pattern: str`,
+  `tag_target: str|None`, `tag_scope: list[str]` (names prefixed to avoid
   colliding with the entity's own scope field). Validation on save: pattern
   non-empty, no bare `"*"` for enabled triggers (a firehose trigger is always
   a mistake — pointed error).
-- Registration follows the schedule/fsop precedent: `_register_topic_subscription()`
+- Registration follows the schedule/fsop precedent: `_register_tag_subscription()`
   called from the same post-save seam (`_register_post_save` in
   `server/builtin_triggers.py` + trigger.py:499's create path) — subscribes
   `event_bus.on(pattern, handler, target=..., scope=...)`; unsubscribers held
   in a module registry keyed by trigger id so disable/delete/re-register
   replaces cleanly (the APScheduler `replace_existing` idiom). Boot: a
-  startup sweep arms every enabled TOPIC trigger (same place fsop arms
+  startup sweep arms every enabled TAG trigger (same place fsop arms
   watchers).
 
 *Fire path — reuse `_fire_schedule_job`'s shape, not a new pipeline:*
-- New `_fire_topic_trigger(trigger_id, event: FlowEvent)`: counter/last_run
+- New `_fire_tag_trigger(trigger_id, event: FlowEvent)`: counter/last_run
   update → **confirm hook** → flow activation (`on_trigger_fired`) → action
   dispatch via `get_action_handler` with `changes=[]` and the ENVELOPE riding
   a new optional `event=` kwarg (handlers that don't know it ignore it) →
@@ -246,22 +246,22 @@ emitters (`fs.*`, `time.*`, `hook.*`) behind the same subscription front.
 - **Storm guard (the bus has no budgets)**: per-trigger token bucket —
   `max_fires_per_minute` (default 30) tracked in-memory on the subscription;
   exceeding it drops fires and writes ONE `storm_suppressed` trigger-log
-  entry per window (never silent). Also the structural cycle brake: a TOPIC
+  entry per window (never silent). Also the structural cycle brake: a TAG
   trigger's own action emissions carry `ctx` untouched — a trigger whose
   actions re-emit its own pattern hits the bucket, not infinity.
 
 *Flow entry:* nothing new — `on_trigger_fired(trigger_id)` already enters
-every flow whose trigger node references the Trigger entity; a TOPIC trigger
+every flow whose trigger node references the Trigger entity; a TAG trigger
 is just a new fire source for the same id.
 
-*Tests (`tests/unit/test_topic_triggers.py`):* register → emit matching topic
+*Tests (`tests/unit/test_tag_triggers.py`):* register → emit matching tag
 → actions dispatch + counter bumps; target/scope filters gate; disable →
 no fire; re-register replaces (no double-fire); storm guard trips at the cap
 and logs once; confirm-gated trigger fires only when the store query matches;
-`entity.created` on UsageReport fires a TOPIC trigger end-to-end (the phase-3
+`entity.created` on UsageReport fires a TAG trigger end-to-end (the phase-3
 acceptance scenario completed).
 
-*Live drill (flow-5):* create a TOPIC trigger `{pattern: "entity.created",
+*Live drill (flow-5):* create a TAG trigger `{pattern: "entity.created",
 target: "usage_report:*"}` wired to a flow's trigger node; run the
 daily-analysis backfill; the new flow starts from the report's creation event
 — a flow triggered by another flow's output, with zero hand wiring.
@@ -271,8 +271,8 @@ conceptual (they keep working as-is); their `fs.*`/`time.*`/`hook.*` emission
 adapters land in phase 6 with the other emitters.
 
 ### Log
-- 2026-07-22 — shipped. `builtin/topic_triggers.py` (registry + fire path +
-  storm guard + confirm), TriggerType.TOPIC + 5 fields, full create/update/
+- 2026-07-22 — shipped. `builtin/tag_triggers.py` (registry + fire path +
+  storm guard + confirm), TriggerType.TAG + 5 fields, full create/update/
   delete lifecycle + boot sweep. Deviations: (a) fires for one trigger are
   SERIALIZED (per-trigger asyncio.Lock) — concurrent fires lost counter
   updates; (b) handlers do NOT yet receive the envelope kwarg (fixed
@@ -282,7 +282,7 @@ adapters land in phase 6 with the other emitters.
   entry event routed (journal showed run_end BEFORE the entry event). Fixed
   at the invariant: runs are BORN RESERVED (`_Run.pending = 1`, released by
   the entry path) + a regression test simulating the sweep at the worst
-  window. Live drill green: daily-analysis report `entity.created` → TOPIC
+  window. Live drill green: daily-analysis report `entity.created` → TAG
   trigger → palette-drill run, complete with correct journal ordering — a
   flow chained off another flow's output, zero hand wiring. 53/53 + suites.
 
@@ -297,17 +297,17 @@ can't double-start a run. Removes the one-Trigger-entity-per-source indirection.
 
 *Document (`flow_doc.py`)*: `FlowDoc.subscriptions: list[FlowSubscriptionDef]`
 — `{id, pattern, target?, scope?, event?, node?}`. On a matching FlowEvent the
-flow gets a FRESH run whose entry event is `event` (default: the bus topic
-string), `data = {topic, target, data}` (the envelope's payload nested — a
+flow gets a FRESH run whose entry event is `event` (default: the bus tag
+string), `data = {tag, target, data}` (the envelope's payload nested — a
 function reads the full context), delivered to `node` directly when set, else
 edge-routed from `$external`. `validate_graph`: non-empty/non-`*` pattern
-(same pointed message as TOPIC triggers — reuse `validate_topic_trigger`),
+(same pointed message as TAG triggers — reuse `validate_tag_trigger`),
 `node` must exist.
 
 *Manager*: per-flow arming — `_arm_subscriptions(loaded)` diffs on doc load
 (`_flow_subs: dict[flow_id, list[unsub]]`; disabled flow → disarmed). Two
 arming paths: a BOOT SWEEP (`arm_all_flow_subscriptions()`, called beside
-`start_topic_triggers`) because flows load lazily, and a bus-dogfooding
+`start_tag_triggers`) because flows load lazily, and a bus-dogfooding
 re-arm — the manager itself subscribes `entity.updated` target
 `agentic_flow:*` and reloads/re-arms that flow (graph edits arm without a
 restart).
@@ -320,7 +320,7 @@ restart).
   never enters the same flow — a flow subscribing to its own boundary events
   would otherwise spawn runs forever. Cross-flow chaining stays legal.
 - Run budgets (hops/processes/deadline) apply as-is; a per-subscription rate
-  cap is DEFERRED (TOPIC triggers already offer capped subscription→flow).
+  cap is DEFERRED (TAG triggers already offer capped subscription→flow).
 
 *Tests*: subscription entry (pattern+target → run with mapped event/data);
 direct-`node` delivery; dedup (same envelope delivered twice → one run);
@@ -341,12 +341,12 @@ support later).
   self-brake), so the deferred rate cap landed NOW —
   `config.max_entries_per_minute` (default 30) per flow, one warning per
   window, with a ping-pong regression test. Everything else as planned:
-  FlowSubscriptionDef (+ validation reusing validate_topic_trigger), arming
+  FlowSubscriptionDef (+ validation reusing validate_tag_trigger), arming
   on doc load + boot sweep + entity.updated re-arm (bus dogfooding),
   envelope-id LRU dedup, self-loop brake via ctx.scope. Live drill:
   palette-drill dropped its Trigger indirection for
   `subscriptions: [{pattern: entity.created, target: usage_report:*}]` —
-  backfill report creation started the run with the mapped {topic, target,
+  backfill report creation started the run with the mapped {tag, target,
   data} entry. 34/34 flow suite.
 
 ## Phase 6 — Remaining emitters  ✅
@@ -354,7 +354,7 @@ support later).
 Worker status tick → `agent.status` (target = the AgenticProcess); hub bridge
 `_dispatch_event` re-emits with `origin: hub` + preserved `actor`; compute-node
 liveness → `node.*`; UI completes tag + `openDock` chokepoint coverage. Each an
-adapter file per the naming rule (`<family>_on_topic.py`).
+adapter file per the naming rule (`<family>_on_tag.py`).
 
 **Detail (planned 2026-07-22):**
 - `agent.status` — emitted from the change-gated seam in
@@ -363,7 +363,7 @@ adapter file per the naming rule (`<family>_on_topic.py`).
   the full report keeps riding its legacy watcher-scoped channel.
 - Hub relay — `hub_bridge._dispatch_event` re-emits as **`hub.entity.<op>`**
   (NOT `entity.*`): until phase-9 scope authorization, hub-origin events stay
-  in their own family so no TOPIC trigger / flow subscription treats them as
+  in their own family so no TAG trigger / flow subscription treats them as
   local writes by accident; `origin: "hub"`, target = colon form. Documented
   deviation from the original table.
 - `node.connected/disconnected/…` — emitted from `auth_state.
@@ -371,14 +371,14 @@ adapter file per the naming rule (`<family>_on_topic.py`).
   already flows through), target = the local ComputeNode; the wider
   three-mechanism liveness unification stays future work.
 - UI coverage — already at need (clicks / route-loaded / sandbox signals via
-  `UiTopicEmitter`); broader `data-topic` tagging is CONTENT work, deferred.
+  `UiTagEmitter`); broader `data-tag` tagging is CONTENT work, deferred.
 
 ### Log
 - 2026-07-22 — shipped as planned: agent.status (change-gated seam, lean
   data), hub.entity.<op> relay (own family + origin:hub + actor when
   carried), node.<transition> from the set_connection_status funnel
   (target = get_local ComputeNode). Live drill was three phases dogfooding:
-  a TOPIC trigger `{pattern: agent.status}` fired 4× during a palette-drill
+  a TAG trigger `{pattern: agent.status}` fired 4× during a palette-drill
   agent turn — worker ticks → bus → phase-4 trigger, end to end. 2 unit
   tests (node transitions, hub relay); agent.status covered by the drill.
 
@@ -394,7 +394,7 @@ run-internal RunEvents are engine wiring, not bus envelopes, so they don't
 grow scope/origin; they gain the two identity fields that make records
 traceable:
 - `RunEvent.id` (minted) + `RunEvent.actor` — and when a run is ENTERED from
-  a bus envelope (subscription entry / topic-trigger fire), the envelope's
+  a bus envelope (subscription entry / tag-trigger fire), the envelope's
   `id` and `ctx.actor` are PRESERVED onto the entry RunEvent (never
   re-minted — the relay law at the flow door). `inject` gains
   `envelope: FlowEvent | None`.
@@ -419,12 +419,12 @@ traceable:
 
 > Parked indefinitely — phases 0-7 are self-contained without it; dual-publish
 > means the legacy dialect keeps working untouched. **Standing rule while
-> parked: NEW push-style events go on the bus (a topic + allowlist entry),
+> parked: NEW push-style events go on the bus (a tag + allowlist entry),
 > never as a new WSMessageType** — the legacy dialect is frozen, not growing.
 > Tier D (per-connection subscriptions) still rides with phase 9 whenever
 > that lands.
 
-Migrate the legacy WS dialect one class at a time: dual-publish the topic
+Migrate the legacy WS dialect one class at a time: dual-publish the tag
 twin → move that class's frontend consumers from `cm.on('on_<type>_msg')` to
 bus subscriptions → delete the class. No big-bang cutover.
 
@@ -441,11 +441,11 @@ CLASS — audit each, then delete).
 
 *Tier B — the flow pair (flagship migration):* `flow_run_event_msg` +
 `flow_node_status_msg`. Consumers today are DISJOINT from the bus (AgenticFlows
-store + proc-watch ride the legacy pair; only journeys ride topics). Needs:
+store + proc-watch ride the legacy pair; only journeys ride tags). Needs:
 emit `flow.node.status` + full run-event twins (REVISES the phase-2 position —
 "run-internal stays off the bus" was about routing, but the WS mirror already
-ships every node status to the app, so topic form adds no traffic), move
-`agentic-flows/store.ts` + `proc-watch.ts` to `useOnTopic`/EventBus, delete
+ships every node status to the app, so tag form adds no traffic), move
+`agentic-flows/store.ts` + `proc-watch.ts` to `useOnTag`/EventBus, delete
 the two classes AND the agenticFlows EventEmitter re-emit layer (the last
 journey-era machinery).
 
@@ -463,7 +463,7 @@ class + enum member.
 invalidation channel, 6+ consumers incl. the FlowSync store) and
 `flow_data_msg` (watcher-scoped per-entity streams). Blocker: both are
 WATCHER-SCOPED per client today; the bus forward is pattern-level to ALL
-clients — strangling them requires **per-connection topic subscriptions**
+clients — strangling them requires **per-connection tag subscriptions**
 (client declares patterns/targets over the WS; backend forwards matching
 frames to that client only — law 6 applied per-connection). That machinery
 overlaps phase 9's scope-authorization and should land WITH it. Until then,
@@ -493,7 +493,7 @@ precondition for hub-origin events entering flows.
 
 ## Phase 10 — Vocabulary cleanup  ☐
 
-Resolve the `toplog` collision (it uses "topics" for logging filters); enforce
+Resolve the `toplog` collision (it uses "tags" for logging filters); enforce
 the naming rule — anything still named `event`/`message`/`op` outside engine
 internals is renamed or scheduled. End state: one word, one bus, emitters and
 subscribers all the way down.

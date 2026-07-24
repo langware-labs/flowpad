@@ -1,7 +1,7 @@
 """Phase 6 — remaining emitters: agent.status, hub relay, node liveness."""
 import asyncio
 
-from flow_sdk.topics import event_bus
+from flow_sdk.tags import event_bus
 from tests.conftest import async_context
 
 
@@ -18,8 +18,8 @@ async def test_node_liveness_emits_on_connection_transition(tmp_path):
         await set_connection_status(HubConnectionStatus.DISCONNECTED, error="link lost")
     finally:
         unsub()
-    topics = [e.topic for e in got]
-    assert topics == ["node.connected", "node.disconnected"]
+    tags = [e.tag for e in got]
+    assert tags == ["node.connected", "node.disconnected"]
     # Deterministic local-node id — the emitter does NO DB work (and can never
     # mint a ComputeNode as a liveness side-effect).
     assert all(e.target == f"compute_node:{ComputeNode._local_id()}" for e in got)
@@ -42,7 +42,7 @@ async def test_hub_relay_emits_own_family_with_hub_origin(tmp_path):
         unsub()
     assert len(got) == 1
     e = got[0]
-    assert e.topic == "hub.entity.update"          # own family — never entity.*
+    assert e.tag == "hub.entity.update"          # own family — never entity.*
     assert e.target == "conversation:c-1"
     assert e.ctx.origin == "hub"
     assert e.ctx.actor == "user:u-9"

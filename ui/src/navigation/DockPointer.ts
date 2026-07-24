@@ -1098,12 +1098,12 @@ export class DockPointer implements IDockPointer {
   }
 
   /**
-   * Topic graph/tree at `/dock/topic/graph[/<name>]` — <name> is a dot-path
-   * TOPIC NAME (not a typeid; ghost topics are first-class). Focus lives in
+   * Tag graph/tree at `/dock/tag/graph[/<name>]` — <name> is a dot-path
+   * TAG NAME (not a typeid; ghost tags are first-class). Focus lives in
    * the pointer (dependency pattern); `view=tree` and friends ride options.
    */
-  static forTopicGraph(
-    topic?: string | null,
+  static forTagGraph(
+    tag?: string | null,
     options?: {
       /** Data shape owned by this surface (`?view=tree` = ontology tree). */
       view?: 'tree';
@@ -1116,25 +1116,25 @@ export class DockPointer implements IDockPointer {
     },
     layout: Layout = Layout.DOCK,
   ): DockPointer {
-    const pointer = topic ? `graph/${encodeURIComponent(topic)}` : 'graph';
+    const pointer = tag ? `graph/${encodeURIComponent(tag)}` : 'graph';
     const carry = { ...(options?.carry ?? {}) };
     if (options?.view) carry.view = options.view;
     return new DockPointer(
-      ViewType.TOPIC,
+      ViewType.TAG,
       pointer,
       DockPointer.subgraphOptions({ ...options, carry }),
       layout,
     );
   }
 
-  /** Split a TOPIC pointer: `graph[/<name>]` → `{ sub: 'graph', topic }`. */
-  static parseTopicPointer(pointer: string | undefined): { sub: string; topic: string | null } | null {
+  /** Split a TAG pointer: `graph[/<name>]` → `{ sub: 'graph', tag }`. */
+  static parseTagPointer(pointer: string | undefined): { sub: string; tag: string | null } | null {
     if (!pointer) return null;
     const idx = pointer.indexOf('/');
     const sub = idx < 0 ? pointer : pointer.slice(0, idx);
     if (sub !== 'graph') return null;
-    const topic = idx < 0 ? null : pointer.slice(idx + 1);
-    return { sub, topic: topic ? DockPointer.tryDecode(topic) : null };
+    const tag = idx < 0 ? null : pointer.slice(idx + 1);
+    return { sub, tag: tag ? DockPointer.tryDecode(tag) : null };
   }
 
   /** Best-effort decode for pointer segments encoded by the `for*` factories. */

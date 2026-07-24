@@ -4,12 +4,12 @@ Same capsule grammar and ``{version, data}`` payload as the Markdown carrier
 (``code_comment.py``), with every line of the block prefixed by the language's
 line-comment leader::
 
-    # flowpad:capsule topic
+    # flowpad:capsule tag
     # version: 1
     # data:
-    #   topics:
+    #   tags:
     #     flow.runs: "Budget accounting entry points"
-    # flowpad:endcapsule topic
+    # flowpad:endcapsule tag
 
 The leader + one space is stripped per line before parsing (a bare leader line
 denotes an empty YAML line). ``COMMENT_LEADERS`` maps file suffixes to their

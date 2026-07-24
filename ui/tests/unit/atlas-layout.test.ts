@@ -22,11 +22,11 @@ describe('Atlas layout', () => {
   });
 
   it('lays out a FOREST — every family root keeps its own subtree', () => {
-    // A topic taxonomy has many roots. The old layout picked one and parented
+    // A tag taxonomy has many roots. The old layout picked one and parented
     // everything else to it at depth 1, collapsing the graph into one column.
     const graph = new Graph({ type: 'directed' });
     for (const key of ['flow', 'flow.done', 'flow.step', 'app', 'app.route', 'entity']) {
-      graph.addNode(key, { label: key, entityType: 'topic' });
+      graph.addNode(key, { label: key, entityType: 'tag' });
     }
     graph.addEdge('flow', 'flow.done', { topology: 'hierarchy', kind: 'child' });
     graph.addEdge('flow', 'flow.step', { topology: 'hierarchy', kind: 'child' });
@@ -52,14 +52,14 @@ describe('Atlas layout', () => {
 
   it('association-only nodes hang off their deepest neighbor, not the root', () => {
     const graph = new Graph({ type: 'directed' });
-    graph.addNode('flow', { label: 'flow', entityType: 'topic' });
-    graph.addNode('flow.runs', { label: 'flow.runs', entityType: 'topic' });
+    graph.addNode('flow', { label: 'flow', entityType: 'tag' });
+    graph.addNode('flow.runs', { label: 'flow.runs', entityType: 'tag' });
     graph.addNode('doc', { label: 'Runs doc', entityType: 'markdown' });
     graph.addEdge('flow', 'flow.runs', { topology: 'hierarchy', kind: 'child' });
     graph.addEdge('doc', 'flow.runs', { topology: 'association', kind: 'bound' });
 
     const layout = buildAtlasLayout(graph);
-    // Bound one level deeper than the topic it documents (depth 1 → 2).
+    // Bound one level deeper than the tag it documents (depth 1 → 2).
     expect(layout.nodes.find((node) => node.id === 'doc')?.depth).toBe(2);
   });
 });

@@ -18,7 +18,7 @@ import { showDeleteAssetModal } from '@src/components/assets/delete-asset-modal'
 import { CountChip } from '@src/components/browseable-tree/CountChip';
 import { refreshNode } from '@src/components/browseable-tree/refresh-store';
 import { skillCreateActions, skillFolderListChildren } from './skillFolder';
-import { topicListChildren } from './topicRoot';
+import { tagListChildren } from './tagRoot';
 import { config } from '@sdk';
 
 export interface AssetTypeRootDeps {
@@ -343,10 +343,10 @@ export function assetTypeRoot(type: AssetTypeInfo, deps: AssetTypeRootDeps): Bro
     deps.onDeleteComplete?.(type.type_name);
   };
   const listChildren = async (): Promise<Browseable[]> => {
-    // Topics are row-only (never in the search index): the gardening adapter
-    // merges blessed Topic entities with bus-observed anonymous names instead.
-    if (type.type_name === 'topic') {
-      return topicListChildren(rootId);
+    // Tags are row-only (never in the search index): the gardening adapter
+    // merges blessed Tag entities with bus-observed anonymous names instead.
+    if (type.type_name === 'tag') {
+      return tagListChildren(rootId);
     }
     const results = await fetchAssetsOfType(type.type_name, filter, limit);
     // Tasks nest: a group/parent task's member (child) tasks render indented

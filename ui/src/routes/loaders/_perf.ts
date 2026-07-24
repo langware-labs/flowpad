@@ -2,7 +2,7 @@
 // Each `navigateToSession` click stamps `__shellNavT0` on window; downstream
 // loader steps log relative timings. Gated to dev builds.
 //
-// The same steps also emit under the `process_load` toplog topic (runtime
+// The same steps also emit under the `process_load` toplog tag (runtime
 // toggleable, no T0 stamp needed) so a slow tab-switch can be traced in any
 // session — `toplog.on('process_load')` — without pre-instrumenting the click.
 
@@ -23,15 +23,15 @@ export function perfLog(label: string): void {
 }
 
 export async function perfTime<T>(label: string, fn: () => Promise<T>): Promise<T> {
-  const topicOn = toplog.isOn('process_load');
-  if (!import.meta.env.DEV && !topicOn) return fn(); // zero-cost when nothing listens
+  const tagOn = toplog.isOn('process_load');
+  if (!import.meta.env.DEV && !tagOn) return fn(); // zero-cost when nothing listens
   const t0 = readT0();
   const start = performance.now();
   try {
     return await fn();
   } finally {
     const dur = performance.now() - start;
-    if (topicOn) toplog.log('process_load', `${label} took ${dur.toFixed(1)}ms`);
+    if (tagOn) toplog.log('process_load', `${label} took ${dur.toFixed(1)}ms`);
     if (import.meta.env.DEV && t0 !== undefined) {
       console.log(`[PERF] +${(performance.now() - t0).toFixed(0)}ms ${label} took ${dur.toFixed(1)}ms`);
     }

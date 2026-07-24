@@ -33,12 +33,12 @@ leader (`COMMENT_LEADERS` maps the suffix: `#` for `.py`, `//` for
 bare leader line is an empty YAML line:
 
 ```python
-# flowpad:capsule topic
+# flowpad:capsule tag
 # version: 1
 # data:
-#   topics:
+#   tags:
 #     flow.runs: "Run budgets are enforced here"
-# flowpad:endcapsule topic
+# flowpad:endcapsule tag
 ```
 
 Only absence returns `None`. Invalid names, malformed data, duplicate blocks,
@@ -50,8 +50,8 @@ FTS remove capsule blocks before treating the remaining text as document body.
 
 A capsule name is a flat slug (`[a-z][a-z0-9_-]{0,63}`) and one file carries at
 most one block per name — dotted vocabularies therefore live in the payload, not
-the name. `identity` is the canonical kind; `topic` binds a source file to the
-subjects it implements (see `docs/topics.md`).
+the name. `identity` is the canonical kind; `tag` binds a source file to the
+subjects it implements (see `docs/tags.md`).
 
 ## Identity integration
 

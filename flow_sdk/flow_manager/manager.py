@@ -128,7 +128,7 @@ class _Run:
         # _start_run awaits (row save/attach/broadcast) while the run is already
         # registered; without the reserve a concurrent drain's finalize sweep
         # latches `finalized` before the entry event ever routes (seen live:
-        # a TOPIC trigger firing from another run's entity write). The entry
+        # a TAG trigger firing from another run's entity write). The entry
         # path (on_trigger_fired / inject) releases it after first routing.
         self.pending = 1
         self.active = 0       # executions in flight
@@ -274,8 +274,8 @@ class FlowManager:
         # concrete at the door, per flow).
         self._seen_entry_ids: "OrderedDict[tuple[str, str], None]" = OrderedDict()
         # Per-flow subscription-entry storm cap (config.max_entries_per_minute)
-        # — the shared topics-owned guard shape.
-        self._entry_guard = None  # built lazily (topics import)
+        # — the shared tags-owned guard shape.
+        self._entry_guard = None  # built lazily (tags import)
         self._rearm_unsub = None  # the entity.updated re-arm subscription
 
     # ── flow loading (disk is truth; mtime-validated cache) ───────────────────
@@ -319,7 +319,7 @@ class FlowManager:
     def _arm_subscriptions(self, loaded: _LoadedFlow) -> None:
         """(Re-)arm the flow's ``subscriptions:`` block — replace semantics on
         every doc (re)load; a disabled flow disarms."""
-        from flow_sdk.topics import event_bus
+        from flow_sdk.tags import event_bus
 
         for unsub in self._flow_subs.pop(loaded.flow_id, []):
             unsub()
@@ -340,7 +340,7 @@ class FlowManager:
                     loaded.flow_id[:8], len(unsubs))
 
     def _subscription_handler(self, flow_id: str, sub):
-        from flow_sdk.topics.envelope import FlowEvent, target_of
+        from flow_sdk.tags.envelope import FlowEvent, target_of
 
         async def _on_event(event: "FlowEvent") -> None:
             # SELF-LOOP BRAKE: every flow.* boundary emission carries its own
@@ -362,8 +362,8 @@ class FlowManager:
             try:
                 await self.inject(
                     flow_id,
-                    sub.event or event.topic,
-                    {"topic": event.topic, "target": event.target, "data": event.data},
+                    sub.event or event.tag,
+                    {"tag": event.tag, "target": event.target, "data": event.data},
                     target_node=sub.node or None,
                     envelope=event,
                 )
@@ -376,9 +376,9 @@ class FlowManager:
     def _entry_storm_allows(self, flow_id: str) -> bool:
         """Cap subscription entries per flow per minute — bounds cross-flow
         ping-pong (fresh envelopes per hop defeat id-dedup and the self-brake).
-        One warning per window, never silent. Shared guard shape from topics/."""
+        One warning per window, never silent. Shared guard shape from tags/."""
         if self._entry_guard is None:
-            from flow_sdk.topics import FixedWindowStormGuard
+            from flow_sdk.tags import FixedWindowStormGuard
 
             self._entry_guard = FixedWindowStormGuard()
         loaded = self._flows.get(flow_id)
@@ -396,7 +396,7 @@ class FlowManager:
         """Boot sweep — flows load lazily, so subscription-only flows must be
         loaded (and thereby armed) once at startup. After boot, graph edits
         re-arm through the entity.updated re-arm subscription below."""
-        from flow_sdk.topics import event_bus
+        from flow_sdk.tags import event_bus
 
         # Conscious no-unscoped-get_all exception: a boot-time SYSTEM sweep
         # (same class as flows_referencing_trigger above) — flows must be
@@ -431,7 +431,7 @@ class FlowManager:
     async def on_trigger_fired(self, trigger_id: str, envelope: Any = None) -> list[str]:
         """Trigger fire → start a run in every active flow referencing it.
         Returns started run ids. Called from the trigger fire paths.
-        ``envelope`` (topic-trigger fires) preserves the triggering
+        ``envelope`` (tag-trigger fires) preserves the triggering
         FlowEvent's id/actor onto the entry RunEvent — the relay law at this
         door too, matching the subscription path."""
         run_ids: list[str] = []
@@ -502,7 +502,7 @@ class FlowManager:
             if source_node in run.suspended_nodes:
                 run.suspended_nodes.discard(source_node)
                 run.suspended = max(0, run.suspended - 1)
-                self._emit_flow_topic(run, "step.done", {"node_id": source_node, "event": event})
+                self._emit_flow_tag(run, "step.done", {"node_id": source_node, "event": event})
             if target_node:
                 node = flow.doc.node(target_node)
                 if node is None:
@@ -540,28 +540,28 @@ class FlowManager:
         except Exception:
             logger.debug("FlowManager: run row start-upsert failed", exc_info=True)
         await self._broadcast_run_event(run, "run_start", {})
-        self._emit_flow_topic(run, "started", {})
+        self._emit_flow_tag(run, "started", {})
         return run
 
     # ── unified-bus boundary emissions (docs/flow-events.md phase 2) ──────────
 
-    def _emit_flow_topic(self, run: _Run, subtopic: str, data: dict[str, Any]) -> None:
-        """Dual-publish a run BOUNDARY onto the unified bus (flow.<subtopic>).
+    def _emit_flow_tag(self, run: _Run, subtag: str, data: dict[str, Any]) -> None:
+        """Dual-publish a run BOUNDARY onto the unified bus (flow.<subtag>).
         Run-internal node statuses stay on the legacy WS mirror — boundaries
         only. Best-effort: the engine never fails on bus trouble."""
         try:
-            from flow_sdk.topics import emit_topic
-            from flow_sdk.topics.envelope import target_of
+            from flow_sdk.tags import emit_tag
+            from flow_sdk.tags.envelope import target_of
 
-            emit_topic(
-                f"flow.{subtopic}",
+            emit_tag(
+                f"flow.{subtag}",
                 target_of("agentic_flow", run.flow.flow_id),
                 {"run_id": run.id, **data},
                 ctx={"scope": [target_of("agentic_flow_run", run.id),
                                target_of("agentic_flow", run.flow.flow_id)]},
             )
         except Exception:
-            logger.debug("FlowManager: flow.%s emission failed", subtopic, exc_info=True)
+            logger.debug("FlowManager: flow.%s emission failed", subtag, exc_info=True)
 
     # ── standardized I/O records ──────────────────────────────────────────────
 
@@ -585,7 +585,7 @@ class FlowManager:
         except OSError:
             logger.debug("FlowManager: run %s record failed", direction, exc_info=True)
         if direction == "output":
-            self._emit_flow_topic(run, "output", {"event": fe.event, "payload": fe.data})
+            self._emit_flow_tag(run, "output", {"event": fe.event, "payload": fe.data})
 
     def _stamp_example(self, exec_dir: Path, run: _Run, node_id: str, seq: int,
                        fe: RunEvent | None, process_id: str | None = None,
@@ -737,7 +737,7 @@ class FlowManager:
         run.suspended_nodes.add(node.id)
         self._finish_execution(run, rt)
         await self._broadcast_node_status(run, node, "waiting", detail)
-        self._emit_flow_topic(run, "waiting", {"node_id": node.id, "seq": seq, **detail})
+        self._emit_flow_tag(run, "waiting", {"node_id": node.id, "seq": seq, **detail})
 
     # ── FlowFunction execution (inline + subprocess) ──────────────────────────
 
@@ -1201,7 +1201,7 @@ class FlowManager:
         except Exception:
             logger.debug("FlowManager: run row end-upsert failed", exc_info=True)
         await self._broadcast_run_event(run, "run_end", {"status": status})
-        self._emit_flow_topic(
+        self._emit_flow_tag(
             run, "done" if status == RunStatus.COMPLETE.value else "failed",
             {"status": status, "events": run.events, "executions": run.executions,
              "error": run.error})
