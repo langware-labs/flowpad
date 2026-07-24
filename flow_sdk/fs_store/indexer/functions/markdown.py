@@ -217,24 +217,6 @@ def parse_markdown_text(text: str, path: Path | None = None) -> dict[str, Any]:
     if isinstance(tags, str):
         tags = [t.strip() for t in tags.split(",") if t.strip()]
 
-    # Dot-taxonomy subject bindings (`topics:` list). LENIENT adoption:
-    # normalize each name via the shared grammar, drop invalid entries with a
-    # warning — indexing must never hard-fail on a frontmatter typo.
-    raw_topics = fields.get("topics") or []
-    if isinstance(raw_topics, str):
-        raw_topics = [t.strip() for t in raw_topics.split(",") if t.strip()]
-    topics: list[str] = []
-    if isinstance(raw_topics, list):
-        from flow_sdk.topics.grammar import normalize_topic  # noqa: PLC0415
-
-        for raw_topic in raw_topics:
-            try:
-                topics.append(normalize_topic(str(raw_topic)))
-            except (TypeError, ValueError):
-                from flow_sdk import service_log  # noqa: PLC0415
-
-                service_log.warn(f"[markdown] dropping invalid topic {raw_topic!r} in {path}")
-
     links = _extract_wiki_links(body) if body else []
     links.extend(fields.get("links") or [])
 
@@ -254,7 +236,6 @@ def parse_markdown_text(text: str, path: Path | None = None) -> dict[str, Any]:
         "asset_type": asset_type,
         "title": title,
         "tags": tags,
-        "topics": topics,
         "links": links,
         "body": body,
     }

@@ -56,13 +56,13 @@ export interface JourneyConfirmSpec {
 }
 
 /**
- * What satisfies a step — a unified-bus subscription (docs/topics.md):
- * `topic` names the event, `target` filters it (or `vfs`/`home` resolve a
+ * What satisfies a step — a unified-bus subscription (docs/tags.md):
+ * `tag` names the event, `target` filters it (or `vfs`/`home` resolve a
  * route target via dockTarget), and `confirm` optionally proves it against
  * the store before the step advances.
  */
 export interface JourneyAwaitSpec {
-  topic?: string;
+  tag?: string;
   target?: string;
   vfs?: string;
   home?: boolean;
@@ -87,13 +87,13 @@ export interface JourneyAwaitSpec {
 /**
  * Something the journey does FOR the user, offered as a highlighted button on
  * the step (`fill` → "Fill text") rather than performed behind their back. It
- * aims at the same `data-topic` anchor `present.highlight` uses, and announces
+ * aims at the same `data-tag` anchor `present.highlight` uses, and announces
  * itself on the bus (`app.journey.act.done`) so the step's `await` gates on it
  * like any other event.
  */
 export interface JourneyActSpec {
   /**
-   * `fill` types text into a `data-topic` surface. The setup kinds drive the
+   * `fill` types text into a `data-tag` surface. The setup kinds drive the
    * capability system through its existing verbs: `setup_capability` fires the
    * install agentic process, `oauth_connect` opens the provider's OAuth flow,
    * `device_login` starts the capability's device-login session (surfaced by
@@ -104,7 +104,7 @@ export interface JourneyActSpec {
    * try-it-yourself step: done only when the repo actually satisfies `expect`.
    */
   kind: 'fill' | 'open_terminal' | 'run' | 'fs_check' | 'setup_capability' | 'oauth_connect' | 'device_login' | 'git_check';
-  /** Topic word of the target surface — `[data-topic="…"]`. For `git_check`
+  /** Tag word of the target surface — `[data-tag="…"]`. For `git_check`
    *  it is just the act's bus identity (`git_check:<target>`), no DOM anchor. */
   target: string;
   text?: string;

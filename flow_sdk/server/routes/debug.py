@@ -84,12 +84,12 @@ async def debug_trigger_callbacks():
     return ApiSuccessResponse(data={"callbacks": items, "count": len(items)})
 
 
-@router.post("/api/v1/debug/emit_topic")
-async def emit_topic_route(request: Request):
+@router.post("/api/v1/debug/emit_tag")
+async def emit_tag_route(request: Request):
     """Dev/QA: emit a FlowEvent on the backend bus — proves the
-    backend→topic_msg→app-bus pipe end-to-end (docs/flow-events.md phase 1).
+    backend→tag_msg→app-bus pipe end-to-end (docs/flow-events.md phase 1).
 
-    Validates the topic against the shared grammar by default; pass
+    Validates the tag against the shared grammar by default; pass
     ``force: true`` to exercise the permissive-bus path with a malformed name
     (the bus itself never gates — this gate is only a typo guard for humans).
     """
@@ -97,39 +97,39 @@ async def emit_topic_route(request: Request):
         body = await request.json()
     except Exception:
         body = {}
-    topic = str((body or {}).get("topic") or "")
+    tag = str((body or {}).get("tag") or "")
     target = str((body or {}).get("target") or "")
-    if not topic or not target:
-        return ApiFailResponse(message="topic and target are required")
+    if not tag or not target:
+        return ApiFailResponse(message="tag and target are required")
     if not (body or {}).get("force"):
-        from flow_sdk.topics.grammar import is_valid_topic
+        from flow_sdk.tags.grammar import is_valid_tag
 
-        if not is_valid_topic(topic):
+        if not is_valid_tag(tag):
             return ApiFailResponse(
-                message=f"invalid topic {topic!r} (dot-separated lowercase; pass force:true to emit anyway)"
+                message=f"invalid tag {tag!r} (dot-separated lowercase; pass force:true to emit anyway)"
             )
-    from flow_sdk.topics import emit_topic
+    from flow_sdk.tags import emit_tag
 
-    event = emit_topic(topic, target, (body or {}).get("data") or {})
+    event = emit_tag(tag, target, (body or {}).get("data") or {})
     return ApiSuccessResponse(data=event.model_dump() if event else None)
 
 
-@router.get("/api/v1/debug/observed_topics")
-async def observed_topics_route():
-    """Topics seen on the backend bus since boot (bounded in-memory map) —
-    the anonymous half of the taxonomy gardening view. Blessed topics are
-    ordinary entities (``GET /api/v1/graph/topic``); the browse surface merges
+@router.get("/api/v1/debug/observed_tags")
+async def observed_tags_route():
+    """Tags seen on the backend bus since boot (bounded in-memory map) —
+    the anonymous half of the taxonomy gardening view. Blessed tags are
+    ordinary entities (``GET /api/v1/graph/tag``); the browse surface merges
     the two and dims names that appear here but have no entity row.
 
     Standard ``ApiResponse`` envelope::
 
         { "status": "SUCCESS", "data": {
-            "observed": {"<topic>": {"count": 3, "first_ts": "...",
+            "observed": {"<tag>": {"count": 3, "first_ts": "...",
                                       "last_ts": "...", "last_target": "..."}},
             "count": <int>
         } }
     """
-    from flow_sdk.topics import event_bus
+    from flow_sdk.tags import event_bus
 
-    observed = event_bus.observed_topics()
+    observed = event_bus.observed_tags()
     return ApiSuccessResponse(data={"observed": observed, "count": len(observed)})

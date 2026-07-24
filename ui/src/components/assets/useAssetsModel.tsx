@@ -616,7 +616,7 @@ export function useAssetsModel() {
           {
             id: `project-home:${scopeProjectId}`,
             label: 'Project home',
-            topic: 'ProjectHome',
+            tag: 'ProjectHome',
             icon: <Home className="h-4 w-4 flex-shrink-0 text-muted-foreground" />,
             pointer: isProjectView
               ? DockPointer.forProject(scopeProjectId)

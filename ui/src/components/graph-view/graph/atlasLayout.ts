@@ -126,7 +126,7 @@ export function buildAtlasLayout(graph: Graph): AtlasLayout {
     }
   });
 
-  // A hierarchy is a FOREST, not a single tree: a topic taxonomy has one root
+  // A hierarchy is a FOREST, not a single tree: a tag taxonomy has one root
   // per family, and a docs atlas has one. Seeding the walk with every root
   // keeps each family its own subtree — collapsing them under one arbitrary
   // root is what produced the degenerate single column.
@@ -162,7 +162,7 @@ export function buildAtlasLayout(graph: Graph): AtlasLayout {
       queue.push(child);
     }
   }
-  // Nodes carried only by association edges (a doc bound to a topic, an
+  // Nodes carried only by association edges (a doc bound to a tag, an
   // artifact linked to a deployment) hang off their deepest known neighbor
   // rather than all piling onto the root.
   for (const key of orderedNodes) {

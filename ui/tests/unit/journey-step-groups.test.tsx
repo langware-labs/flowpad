@@ -21,7 +21,7 @@ const step = (node_id: string, group?: string): JourneyStep => ({
   status_line: '',
   group,
   present: {},
-  await: { topic: 'manual' },
+  await: { tag: 'manual' },
 });
 
 describe('groupSteps — consecutive-group sections', () => {

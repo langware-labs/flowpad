@@ -27,7 +27,7 @@
           "provider": "github"
         },
         "await": {
-          "topic": "app.entity.updated",
+          "tag": "app.entity.updated",
           "target": "capability:*",
           "confirm": {
             "type": "capability",
@@ -53,7 +53,7 @@
           "capability": "source_control.github.gh"
         },
         "await": {
-          "topic": "app.entity.updated",
+          "tag": "app.entity.updated",
           "target": "capability:*",
           "confirm": {
             "type": "capability",
@@ -82,7 +82,7 @@
           "capability": "source_control.github.gh"
         },
         "await": {
-          "topic": "app.entity.updated",
+          "tag": "app.entity.updated",
           "target": "capability:*",
           "confirm": {
             "type": "capability",

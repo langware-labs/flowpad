@@ -69,8 +69,8 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react
 // keeps app bootstrap independent of WebGL availability.
 const GraphView = lazy(() => import('@src/components/graph-view/GraphView').then((m) => ({ default: m.GraphView })));
 const WorldView = lazy(() => import('@src/components/graph-view/GraphView').then((m) => ({ default: m.WorldView })));
-const TopicGraphView = lazy(() =>
-  import('@src/components/graph-view/TopicGraphView').then((m) => ({ default: m.TopicGraphView })),
+const TagGraphView = lazy(() =>
+  import('@src/components/graph-view/TagGraphView').then((m) => ({ default: m.TagGraphView })),
 );
 const GenericSubgraphView = lazy(() =>
   import('@src/components/graph-view/SubgraphView').then((m) => ({ default: m.GenericSubgraphView })),
@@ -398,10 +398,10 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
             <WorldView />
           </Suspense>
         );
-      case ViewType.TOPIC:
+      case ViewType.TAG:
         return (
           <Suspense fallback={null}>
-            <TopicGraphView />
+            <TagGraphView />
           </Suspense>
         );
       case ViewType.SUBGRAPH:

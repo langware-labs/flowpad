@@ -27,8 +27,8 @@ import { useUiCommandListener } from '@src/hooks/use-ui-command-listener';
 import { Spotlight, useSpotlightHotkey } from '@src/components/spotlight';
 import { JourneyController } from '@src/journey/JourneyController';
 import { IncomingDeepLink } from '@src/components/task-receive/IncomingDeepLink';
-import { UiTopicEmitter } from '@src/topics/ui.onTopic';
-import { TopicHighlightObserver } from '@src/topics/highlight.onTopic';
+import { UiTagEmitter } from '@src/tags/ui.onTag';
+import { TagHighlightObserver } from '@src/tags/highlight.onTag';
 import { useDockViewModeOverrideSync } from '@src/contexts/view-mode-context';
 import { isHubOnly } from '@src/navigation/hub-runtime';
 
@@ -112,8 +112,8 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
         <InputPromptModal />
         <ImageAnnotatorRoot />
         <Spotlight />
-        <UiTopicEmitter />
-        <TopicHighlightObserver />
+        <UiTagEmitter />
+        <TagHighlightObserver />
         <JourneyController />
         {/* `?action=open&…` — must be app-level: the app has several homes and a
             box opens on whichever the view mode picks. */}

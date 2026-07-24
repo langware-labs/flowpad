@@ -6,6 +6,7 @@
 
 ## Testing Environment
 
+- Focused run (2026-07-24, tag browser surfaces): dedicated `tagqa-17` backend `http://localhost:6017` and frontend `http://localhost:5017`, headless Chromium/Playwright on macOS. The isolated instance was the sole writer and was killed after the run. In this execution harness, launcher children were reaped when launch ran in a separate command session, so the stability run kept launch + Playwright + teardown in one continuous session.
 - Focused run (2026-07-20, asset identity collisions): dedicated `collision-15` backend `http://localhost:6015` and frontend `http://localhost:5015`, Chromium/Playwright on macOS. Both file-backed lifecycle and folder-backed Git precedence scenarios passed; the named instance was killed and its generated env file removed after the run. In this execution harness, detached launcher children were reaped when launch ran in a separate command session, so launch + test + teardown were kept in one session. The API client used the instance's explicit IPv4 address because Node resolved `localhost` to `::1` while uvicorn listened on IPv4.
 
 - Focused run (2026-07-12, Browserbase local Live View): dedicated `browserbase-14` backend `http://localhost:6014`; current-source production bundle served through Caddy at `http://localhost:5114`; one ngrok origin carried both frontend and `/api`/WebSocket proxy traffic. Browserbase Chromium navigated the public app to `/dock/search`; local Google Chrome 150 embedded Browserbase `debuggerFullscreenUrl`. All experiment daemons and public ports were closed after evidence capture. Result: `ui/tests/manual_regression/_results/2026-07-12T12-37-14/`.
@@ -24,6 +25,12 @@
 - Last cycle (2026-05-30, record-removal branch): backend 9008 + frontend 4098 both reachable (HTTP 200) throughout. Phases 1-4 green (1522 / 441 / 51 / 907). 1 real fix (bootstrap `types` shape, 4 tests). No port conflicts this run.
 
 ## Learnings
+
+### 2026-07-24 — Tag browser surfaces
+
+- The dedicated tag browser suite covers the full tag graph canvas, the Assets taxonomy list/tree, blessed and observed Tag entities, browser-side blessing with deterministic UUID v5 identity, URL-first focused navigation/highlighting, invalid tag routes, and UI/backend WebSocket journey delivery.
+- The initial suite did not exercise the graph canvas's Graph/Tree shape toggle. The browser scenario now clicks Tree, verifies `view=tree` in the URL and request, asserts the title changes to `Tag Tree`, and confirms the tree payload contains only Tag nodes (no bound Markdown asset).
+- Baseline verdict: 2/2 passed. After the coverage addition, the required `--repeat-each=3` stability gate passed 6/6 with no retries, skips, or failures.
 
 ### 2026-07-23 — Two-Docker project invitation E2E
 

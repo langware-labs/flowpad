@@ -5,11 +5,11 @@ A *projection* is a named builder that derives a GraphPayload (nodes + edges in
 the shape ``ui``'s ``graphFromPayload`` consumes) from the entity world at
 query time. Features register one builder and get a rendered, navigable graph
 for free at ``/dock/subgraph/<name>`` (or their own thin view type on the same
-surface — see the topic view).
+surface — see the tag view).
 
 The payload contract is deliberately LENIENT dicts, not the strict worldview
 pydantic models: subgraphs may contain ghost nodes with non-uuid ids and
-custom keys (anonymous topics, code files), which the worldview validator
+custom keys (anonymous tags, code files), which the worldview validator
 rejects by design.
 """
 

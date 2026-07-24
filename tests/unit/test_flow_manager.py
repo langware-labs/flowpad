@@ -621,10 +621,10 @@ def test_agent_node_without_definition_fails_validation():
 
 
 @async_context
-async def test_run_boundaries_emit_flow_topics(tmp_path):
+async def test_run_boundaries_emit_flow_tags(tmp_path):
     """A run dual-publishes its boundaries onto the bus: started → output →
     done, with the flow entity as target and run-innermost scope."""
-    from flow_sdk.topics import event_bus
+    from flow_sdk.tags import event_bus
 
     @flow_functions.register("v2_bus_probe")
     def _probe(event_name, data, ctx):
@@ -642,48 +642,48 @@ async def test_run_boundaries_emit_flow_topics(tmp_path):
         fm = FlowManager()
         fe = await fm.inject(flow.id, "go", {"x": 1})
         await _until(lambda: not fm.live_run_ids(), "run finalized")
-        await _until(lambda: any(e.topic == "flow.done" for e in got), "done emitted")
+        await _until(lambda: any(e.tag == "flow.done" for e in got), "done emitted")
     finally:
         unsub()
 
-    topics = [e.topic for e in got]
-    assert topics[0] == "flow.started"
-    assert "flow.output" in topics and topics[-1] == "flow.done"
+    tags = [e.tag for e in got]
+    assert tags[0] == "flow.started"
+    assert "flow.output" in tags and tags[-1] == "flow.done"
     for e in got:
         assert e.target == f"agentic_flow:{flow.id}"
         assert e.ctx.scope == [f"agentic_flow_run:{fe.execution_id}",
                                f"agentic_flow:{flow.id}"]
         assert e.data["run_id"] == fe.execution_id
-    out = next(e for e in got if e.topic == "flow.output")
+    out = next(e for e in got if e.tag == "flow.output")
     assert out.data["event"] == "done" and out.data["payload"] == {"ok": 1}
-    done = next(e for e in got if e.topic == "flow.done")
+    done = next(e for e in got if e.tag == "flow.done")
     assert done.data["status"] == "complete" and done.data["executions"] == 1
 
 
 @async_context
 async def test_guided_step_emits_waiting_and_step_done(tmp_path):
-    from flow_sdk.topics import event_bus
+    from flow_sdk.tags import event_bus
 
     flow = await _make_flow(tmp_path, "busguided",
         [{"id": "g", "node_type": "guided_step",
           "node_data": {"status_line": "do the thing",
                         "present": {"dock": {"home": True}},
-                        "await": {"topic": "manual"}}}],
+                        "await": {"tag": "manual"}}}],
         [_edge("e1", EXTERNAL_SOURCE, "begin", "g")])
     got: list = []
     unsub = event_bus.on("flow.*", got.append)
     try:
         fm = FlowManager()
         fe = await fm.inject(flow.id, "begin", target_node="g")
-        await _until(lambda: any(e.topic == "flow.waiting" for e in got), "parked")
-        waiting = next(e for e in got if e.topic == "flow.waiting")
+        await _until(lambda: any(e.tag == "flow.waiting" for e in got), "parked")
+        waiting = next(e for e in got if e.tag == "flow.waiting")
         assert waiting.data["node_id"] == "g"
         assert waiting.data["status_line"] == "do the thing"
 
         # Frontend releases the park: inject the node's done.
         await fm.inject(flow.id, "done", execution_id=fe.execution_id, source_node="g")
-        await _until(lambda: any(e.topic == "flow.step.done" for e in got), "released")
-        step = next(e for e in got if e.topic == "flow.step.done")
+        await _until(lambda: any(e.tag == "flow.step.done" for e in got), "released")
+        step = next(e for e in got if e.tag == "flow.step.done")
         assert step.data["node_id"] == "g" and step.data["event"] == "done"
         await _until(lambda: not fm.live_run_ids(), "run finalized")
     finally:
@@ -692,7 +692,7 @@ async def test_guided_step_emits_waiting_and_step_done(tmp_path):
 
 @async_context
 async def test_tripped_run_emits_flow_failed(tmp_path):
-    from flow_sdk.topics import event_bus
+    from flow_sdk.tags import event_bus
 
     @flow_functions.register("v2_bus_cycle")
     def _cyc(event_name, data, ctx):
@@ -762,7 +762,7 @@ async def test_entry_reserve_survives_concurrent_finalize_sweep(tmp_path):
 
 @async_context
 async def test_flow_subscription_starts_run_with_mapped_entry(tmp_path):
-    from flow_sdk.topics import emit_topic, target_of
+    from flow_sdk.tags import emit_tag, target_of
 
     seen: list[dict] = []
 
@@ -780,18 +780,18 @@ async def test_flow_subscription_starts_run_with_mapped_entry(tmp_path):
 
     fm = FlowManager()
     assert (await fm.load_flow(flow.id)) is not None  # load arms
-    emit_topic("drill.sub.ping", target_of("usage_report", "r-9"), {"k": 7})
-    emit_topic("drill.sub.ping", target_of("task", "t-1"))  # target-filtered out
+    emit_tag("drill.sub.ping", target_of("usage_report", "r-9"), {"k": 7})
+    emit_tag("drill.sub.ping", target_of("task", "t-1"))  # target-filtered out
     await _until(lambda: len(seen) == 1, "subscription entry delivered")
-    assert seen[0]["event"] == "drill.sub.ping"  # default entry name = topic
-    assert seen[0]["data"] == {"topic": "drill.sub.ping",
+    assert seen[0]["event"] == "drill.sub.ping"  # default entry name = tag
+    assert seen[0]["data"] == {"tag": "drill.sub.ping",
                                "target": "usage_report:r-9", "data": {"k": 7}}
     await _until(lambda: not fm.live_run_ids(), "run finalized")
 
 
 @async_context
 async def test_flow_subscription_dedups_envelope_ids(tmp_path):
-    from flow_sdk.topics import FlowEvent, event_bus
+    from flow_sdk.tags import FlowEvent, event_bus
 
     seen: list[str] = []
 
@@ -808,7 +808,7 @@ async def test_flow_subscription_dedups_envelope_ids(tmp_path):
     fm = FlowManager()
     await fm.load_flow(flow.id)
 
-    env = FlowEvent(topic="dedup.hit", target="x:1", ctx={"origin": "local_server"})
+    env = FlowEvent(tag="dedup.hit", target="x:1", ctx={"origin": "local_server"})
     event_bus.deliver(env)
     event_bus.deliver(env)  # at-least-once redelivery of the SAME envelope
     await _until(lambda: len(seen) >= 1, "first delivery")
@@ -915,7 +915,7 @@ async def test_flow_subscription_fanout_enters_every_subscribed_flow(tmp_path):
     dedup is per (flow, envelope), never global (regression: a global id set
     let the first flow consume the envelope for everyone)."""
     import json as _json
-    from flow_sdk.topics import emit_topic
+    from flow_sdk.tags import emit_tag
 
     entered: list[str] = []
 
@@ -937,7 +937,7 @@ async def test_flow_subscription_fanout_enters_every_subscribed_flow(tmp_path):
         (tmp_path / name / "graph.json").write_text(_json.dumps(doc))
         await fm.load_flow(flow.id)
 
-    emit_topic("fan.out", "x:1")  # ONE envelope, two subscribers
+    emit_tag("fan.out", "x:1")  # ONE envelope, two subscribers
     await _until(lambda: sorted(entered) == ["x", "y"], "both flows entered")
     await _until(lambda: not fm.live_run_ids(), "runs finalized")
 
@@ -947,7 +947,7 @@ async def test_entry_envelope_id_and_actor_preserved(tmp_path):
     """Phase 7: a run entered from a bus envelope preserves its id + actor —
     into the journal event row AND the example provenance."""
     import json as _json
-    from flow_sdk.topics import FlowEvent, event_bus
+    from flow_sdk.tags import FlowEvent, event_bus
 
     @flow_functions.register("v2_prov")
     def _p(event_name, data, ctx):
@@ -960,7 +960,7 @@ async def test_entry_envelope_id_and_actor_preserved(tmp_path):
     fm = FlowManager()
     await fm.load_flow(flow.id)
 
-    env = FlowEvent(topic="prov.go", target="x:1",
+    env = FlowEvent(tag="prov.go", target="x:1",
                     ctx={"origin": "local_server", "actor": "user:u-42"})
     event_bus.deliver(env)
     await _until(lambda: fm.live_run_ids() or None, "run started")

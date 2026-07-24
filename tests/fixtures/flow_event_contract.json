@@ -1,9 +1,9 @@
 {
-  "comment": "Cross-language FlowEvent contract \u2014 parsed by tests/unit/test_topic_bus.py (Python) and ui/tests/unit/event-bus.test.ts (TS). Both buses must accept this envelope verbatim and agree on every matching case.",
+  "comment": "Cross-language FlowEvent contract \u2014 parsed by tests/unit/test_tag_bus.py (Python) and ui/tests/unit/event-bus.test.ts (TS). Both buses must accept this envelope verbatim and agree on every matching case.",
   "envelope": {
     "id": "7f3f0c7e-2c65-4a4f-9d3e-1b2a3c4d5e6f",
     "timestamp": "2026-07-19T12:00:00.000000Z",
-    "topic": "flow.step.done",
+    "tag": "flow.step.done",
     "target": "agentic_flow:63e6a325-97be-46f4-a1a5-a9750d4c1d8d",
     "data": {
       "run_id": "r-1",
@@ -18,55 +18,55 @@
       "origin": "local_server"
     }
   },
-  "topic_cases": [
+  "tag_cases": [
     {
       "pattern": "*",
-      "topic": "anything.at.all",
+      "tag": "anything.at.all",
       "matches": true
     },
     {
       "pattern": "flow.step.done",
-      "topic": "flow.step.done",
+      "tag": "flow.step.done",
       "matches": true
     },
     {
       "pattern": "flow.step.done",
-      "topic": "flow.step.failed",
+      "tag": "flow.step.failed",
       "matches": false
     },
     {
       "pattern": "flow.*",
-      "topic": "flow.step.done",
+      "tag": "flow.step.done",
       "matches": true
     },
     {
       "pattern": "flow.*",
-      "topic": "flow.done",
+      "tag": "flow.done",
       "matches": true
     },
     {
       "pattern": "flow.*",
-      "topic": "flow",
+      "tag": "flow",
       "matches": false
     },
     {
       "pattern": "flow.*.done",
-      "topic": "flow.step.done",
+      "tag": "flow.step.done",
       "matches": true
     },
     {
       "pattern": "flow.*.done",
-      "topic": "flow.step.extra.done",
+      "tag": "flow.step.extra.done",
       "matches": false
     },
     {
       "pattern": "app.rou*",
-      "topic": "app.route.loaded",
+      "tag": "app.route.loaded",
       "matches": false
     },
     {
       "pattern": "entity.updated",
-      "topic": "entity.updated.deep",
+      "tag": "entity.updated.deep",
       "matches": false
     }
   ],
@@ -118,7 +118,7 @@
     }
   ],
   "grammar": {
-    "comment": "Shared dot-taxonomy grammar (flow_sdk/topics/grammar.py <-> ts_sdk/src/topics/grammar.ts). normalize cases map raw -> canonical (null = rejected); pattern cases map pattern -> valid; within cases pin the lenient hierarchy-prefix semantics.",
+    "comment": "Shared dot-taxonomy grammar (flow_sdk/tags/grammar.py <-> ts_sdk/src/tags/grammar.ts). normalize cases map raw -> canonical (null = rejected); pattern cases map pattern -> valid; within cases pin the lenient hierarchy-prefix semantics.",
     "normalize_cases": [
       {
         "raw": "flow.step.done",
@@ -205,49 +205,49 @@
     ],
     "within_cases": [
       {
-        "topic": "workload.service.http",
+        "tag": "workload.service.http",
         "prefix": "workload",
         "within": true
       },
       {
-        "topic": "workload.service.http",
+        "tag": "workload.service.http",
         "prefix": "workload.service",
         "within": true
       },
       {
-        "topic": "workload.service.http",
+        "tag": "workload.service.http",
         "prefix": "workload.service.http",
         "within": true
       },
       {
-        "topic": "workloads.other",
+        "tag": "workloads.other",
         "prefix": "workload",
         "within": false
       },
       {
-        "topic": "workload",
+        "tag": "workload",
         "prefix": "workload.service",
         "within": false
       },
       {
-        "topic": " Harness.Claude.CLI ",
+        "tag": " Harness.Claude.CLI ",
         "prefix": "harness",
         "within": true
       }
     ],
     "namespace_cases": [
       {
-        "topic": "--acme--.orders.created",
+        "tag": "--acme--.orders.created",
         "namespace": "acme",
         "rest": "orders.created"
       },
       {
-        "topic": "flow.step.done",
+        "tag": "flow.step.done",
         "namespace": null,
         "rest": "flow.step.done"
       },
       {
-        "topic": "--acme--",
+        "tag": "--acme--",
         "namespace": "acme",
         "rest": ""
       }

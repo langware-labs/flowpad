@@ -1,7 +1,7 @@
 # Test Index
 
-> Last updated: 2026-07-20T21:25:10Z
-> Scope: .md scenarios + .md.ts playwright files under ui/tests/manual_regression
+> Last updated: 2026-07-24T12:41:34Z
+> Scope: .md scenarios + .md.ts Playwright files + standalone browser specs under ui/tests/manual_regression
 
 ## agentic-process (md=14, md.ts=15)
   orphan .md (no .md.ts): 3
@@ -11,7 +11,7 @@
 
 ## assets (md=4, md.ts=4)
 
-## chat (md=21, md.ts=16)
+## chat (md=19, md.ts=14)
   orphan .md (no .md.ts): 5
     - 401_unauthorized_when_closing_a_chat
     - first_chat_message_is_slow
@@ -24,6 +24,13 @@
 ## collaboration (md=7, md.ts=8)
 
 ## conversation (md=2, md.ts=2)
+
+## docs (md=4, md.ts=0)
+  orphan .md (no .md.ts): 4
+    - LLM_comfigure
+    - coding_agent_cli
+    - environment_tab
+    - shell_tab
 
 ## editor (md=13, md.ts=13)
 
@@ -49,6 +56,10 @@
 
 ## tab_management (md=0, md.ts=2)
 
+## tags (md=0, md.ts=0, spec.ts=1)
+  standalone browser spec:
+    - tag-vocabulary.spec.ts (2 tests)
+
 ## terminal (md=29, md.ts=37)
   orphan .md (no .md.ts): 3
     - session_persistence_on_refresh
@@ -69,4 +80,4 @@
     - wiki_link_layer
 
 ---
-TOTAL: md=133, md.ts=140, orphan .md (Phase 12 scope)=16
+TOTAL: md=135, md.ts=139, spec.ts=1, orphan .md (Phase 12 scope)=22

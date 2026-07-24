@@ -38,6 +38,6 @@ async def get_subgraph(projection: str, request: Request):
     try:
         return ApiSuccessResponse(data=await builder(dict(request.query_params)))
     except (TypeError, ValueError) as exc:
-        # Builder param validation (e.g. a malformed topic name) is a client
+        # Builder param validation (e.g. a malformed tag name) is a client
         # error, not a server fault.
         return ApiFailResponse(message=f"invalid subgraph params: {exc}")

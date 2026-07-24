@@ -2,7 +2,7 @@
 
 LLMIndex has always had three SEMANTIC tiers — the one-line ``FileRef.summary``,
 the ≤60-word ``self_summary``, and the full document — but the numbers lived in
-comments. This module is their single home; consumers (``flow topic get``,
+comments. This module is their single home; consumers (``flow tag get``,
 future context bundlers) import these instead of inventing budgets.
 
 ``resolve_doc_summaries`` maps a markdown document onto the line/block tiers

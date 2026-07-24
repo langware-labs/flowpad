@@ -2,11 +2,11 @@
 id: 2aa28fd4-4cb7-59c8-b554-dbd96bb5acdb
 ---
 
-# Test coverage — the agentic-process stack, per topic × per front
+# Test coverage — the agentic-process stack, per area × per front
 
 Audited 2026-07-02 against the interface surfaces in this folder. Each cell was
 confirmed by opening the test, not by grep alone. **2026-07-02 expansion**: a
-coverage push added the Phase-1 pinning tests (A1–A7) and six topic suites
+coverage push added the Phase-1 pinning tests (A1–A7) and six interface suites
 (B1–B6); cells they now cover are flipped below and the new file names are
 named. See the [2026-07-02 expansion note](#2026-07-02-expansion) at the end for
 what remains deliberately uncovered.
@@ -179,7 +179,7 @@ is directly asserted.
 
 ---
 
-## Cross-topic findings
+## Cross-area findings
 
 Most of the formerly high-risk holes are closed as of 2026-07-02. Remaining/updated:
 

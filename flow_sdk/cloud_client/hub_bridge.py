@@ -274,8 +274,8 @@ class HubWsBridge:
         from flow_sdk.cloud_client.events import EntityEvent  # noqa: PLC0415
 
         # Unified-bus dual-publish (docs/flow-events.md phase 6): hub-origin
-        # events relay under their OWN family — see hub_on_topic.py.
-        from flow_sdk.cloud_client.hub_on_topic import emit_hub_entity
+        # events relay under their OWN family — see hub_on_tag.py.
+        from flow_sdk.cloud_client.hub_on_tag import emit_hub_entity
 
         emit_hub_entity(op, entity_type, entity_id, parent_type, parent_id,
                         str(data.get("actor")) if isinstance(data, dict) and data.get("actor") else None)

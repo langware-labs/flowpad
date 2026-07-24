@@ -1,21 +1,21 @@
 /**
  * Open dot-kind ontology shared by entities that need hierarchical kinds.
  *
- * COMPAT SHIM — the grammar now lives in `topics/grammar.ts` (one
- * dot-taxonomy for kinds, bus topics, and capabilities). These names keep
+ * COMPAT SHIM — the grammar now lives in `tags/grammar.ts` (one
+ * dot-taxonomy for kinds, bus tags, and capabilities). These names keep
  * their exact historical behavior (normalize throws on invalid input); new
- * code should import from `topics/grammar` directly. Kept until the Phase-5
+ * code should import from `tags/grammar` directly. Kept until the Phase-5
  * importer migration retires this module.
  */
 import {
-  TOPIC_PATTERN,
-  normalizeTopic,
-  topicAncestors,
-  topicIsWithin,
-  tryTopic,
-} from '../topics/grammar';
+  TAG_PATTERN,
+  normalizeTag,
+  tagAncestors,
+  tagIsWithin,
+  tryTag,
+} from '../tags/grammar';
 
-export const KIND_PATTERN = TOPIC_PATTERN;
+export const KIND_PATTERN = TAG_PATTERN;
 
 /** A small starter vocabulary, not a closed set of allowed Artifact kinds. */
 export const ARTIFACT_KINDS = {
@@ -37,7 +37,7 @@ export function normalizeKind(value: string): string {
     throw new Error('kind must be a string');
   }
   try {
-    return normalizeTopic(value);
+    return normalizeTag(value);
   } catch {
     throw new Error(`Invalid kind: ${value}`);
   }
@@ -45,12 +45,12 @@ export function normalizeKind(value: string): string {
 
 /** True when a value can be normalized into a valid dot kind. */
 export function isValidKind(value: unknown): value is string {
-  return tryTopic(value) !== null;
+  return tryTag(value) !== null;
 }
 
 /** Exact-or-descendant match; `workload` matches `workload.service.http`. */
 export function kindMatches(queryKind: string, candidateKind: string): boolean {
-  return topicIsWithin(normalizeKind(candidateKind), normalizeKind(queryKind));
+  return tagIsWithin(normalizeKind(candidateKind), normalizeKind(queryKind));
 }
 
 /**
@@ -58,5 +58,5 @@ export function kindMatches(queryKind: string, candidateKind: string): boolean {
  * the normalized kind itself. Mirrors Python `kind_ancestors` exactly.
  */
 export function kindAncestors(kind: string, includeSelf = false): string[] {
-  return topicAncestors(normalizeKind(kind), includeSelf);
+  return tagAncestors(normalizeKind(kind), includeSelf);
 }

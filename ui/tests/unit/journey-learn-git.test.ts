@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EventBus, GitWorkdir, TypeId } from '@sdk';
-import { ACT_DONE_TOPIC, ACT_FAILED_TOPIC, runAct } from '@src/journey/act';
+import { ACT_DONE_TAG, ACT_FAILED_TAG, runAct } from '@src/journey/act';
 
 // dataContext.project/computeNodeTypeId are non-configurable MobX computeds —
 // swap the whole singleton for a mutable stub (GitWorkdir stays the real class
@@ -46,7 +46,7 @@ describe('learn-git journey graph', () => {
       expect(step.act?.kind).toBe('git_check');
       expect(step.act?.dir).toBe('git-playground');
       // the await gates on THIS act's bus identity — unique per step
-      expect(step.await?.topic).toBe('app.journey.act.done');
+      expect(step.await?.tag).toBe('app.journey.act.done');
       expect(step.await?.target).toBe(`git_check:${step.act?.target}`);
     }
     expect(gitSteps.find((s) => s.act?.expect === 'branch')?.act?.branch).toBe('practice');
@@ -56,10 +56,10 @@ describe('learn-git journey graph', () => {
     const raw = JSON.parse(graphText) as { auto_launch?: boolean };
     expect(raw.auto_launch).toBe(false);
     const { steps } = parseJourneyGraph(graphText);
-    expect(steps[0].await).toEqual({ topic: 'app.page.signal', target: 'next' });
+    expect(steps[0].await).toEqual({ tag: 'app.page.signal', target: 'next' });
     // the shell ROUTE, not agentic_process creation: a plain Terminal mints a
     // shell (no process), and every opener ends on a `dock:shell/…` navigation
-    expect(steps[1].await).toEqual({ topic: 'app.route.loaded', target: 'dock:shell/*' });
+    expect(steps[1].await).toEqual({ tag: 'app.route.loaded', target: 'dock:shell/*' });
   });
 });
 
@@ -68,16 +68,16 @@ describe('git_check act runner', () => {
     kind: 'git_check', target: 'T', dir: 'git-playground', ...over,
   });
 
-  let outcomes: Array<{ topic: string; target: string }>;
+  let outcomes: Array<{ tag: string; target: string }>;
   let unsubs: Array<() => void>;
 
   beforeEach(() => {
     outcomes = [];
-    const record = (topic: string) => (e: { target: string }) =>
-      outcomes.push({ topic, target: e.target });
+    const record = (tag: string) => (e: { target: string }) =>
+      outcomes.push({ tag, target: e.target });
     unsubs = [
-      EventBus.on(ACT_DONE_TOPIC, record(ACT_DONE_TOPIC)),
-      EventBus.on(ACT_FAILED_TOPIC, record(ACT_FAILED_TOPIC)),
+      EventBus.on(ACT_DONE_TAG, record(ACT_DONE_TAG)),
+      EventBus.on(ACT_FAILED_TAG, record(ACT_FAILED_TAG)),
     ];
     ctx.project = { fs_storage_mount_path: '/ws/proj' };
     ctx.workdir = null;
@@ -95,14 +95,14 @@ describe('git_check act runner', () => {
   it('repo: done iff the workdir is a git repository, probed under the project dir', async () => {
     const isInit = vi.spyOn(GitWorkdir.prototype, 'isInit').mockResolvedValue(true);
     expect(await runAct(act({ expect: 'repo' }))).toBe(true);
-    expect(outcomes).toEqual([{ topic: ACT_DONE_TOPIC, target: 'git_check:T' }]);
+    expect(outcomes).toEqual([{ tag: ACT_DONE_TAG, target: 'git_check:T' }]);
     const git = isInit.mock.instances[0] as unknown as GitWorkdir;
     expect(git.workDir).toBe('/ws/proj/git-playground');
     expect(git.computeNodeId).toBe('node-1');
 
     isInit.mockResolvedValue(false);
     expect(await runAct(act({ expect: 'repo' }))).toBe(false);
-    expect(outcomes[1]).toEqual({ topic: ACT_FAILED_TOPIC, target: 'git_check:T' });
+    expect(outcomes[1]).toEqual({ tag: ACT_FAILED_TAG, target: 'git_check:T' });
   });
 
   it('staged / dirty / clean read the real status', async () => {
@@ -141,6 +141,6 @@ describe('git_check act runner', () => {
     ctx.project = null;
     ctx.workdir = null;
     expect(await runAct(act({ expect: 'repo' }))).toBe(false);
-    expect(outcomes.every((o) => o.topic === ACT_FAILED_TOPIC)).toBe(true);
+    expect(outcomes.every((o) => o.tag === ACT_FAILED_TAG)).toBe(true);
   });
 });

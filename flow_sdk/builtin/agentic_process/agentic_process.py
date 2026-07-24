@@ -6791,7 +6791,7 @@ class AgenticProcess(Entity):
                 )
             # Unified-bus dual-publish AFTER the persist (a law-5 subscriber
             # fetching on receipt reads the post-write row).
-            from flow_sdk.builtin.agentic_process.agent_on_topic import emit_agent_status
+            from flow_sdk.builtin.agentic_process.agent_on_tag import emit_agent_status
 
             emit_agent_status(self.id,
                               current.value if current is not None else "",

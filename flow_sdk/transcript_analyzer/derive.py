@@ -38,7 +38,7 @@ _FLOW_VERBS = frozenset({
     "app", "auth", "compute", "config", "context", "conversation", "diagnose",
     "hooks", "instance", "log", "migrate", "navigate", "ping", "process",
     "prompt", "record", "schema", "setup", "show", "start", "status", "stop",
-    "topic", "trace", "upgrade", "uninstall", "wizard",
+    "tag", "trace", "upgrade", "uninstall", "wizard",
 })
 
 # Sub-commands whose first positional argument is the thing being addressed —

@@ -1,14 +1,14 @@
 import { capabilityManager, dataContext, dataManager, Journey, Project, QueryFilter, QueryRequest, Shell, targetOf, TypeId, ViewType } from '@sdk';
-import { useOnTopic, useProject } from '@sdk/react/hooks';
+import { useOnTag, useProject } from '@sdk/react/hooks';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AssetEditor } from '@src/navigation/asset-doc-types';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { projectScope } from '@src/lib/scope-filter';
-import { dockTarget } from '@src/topics/dock-target';
+import { dockTarget } from '@src/tags/dock-target';
 import type { JourneyPresentDock, JourneyStep, UseJourneyResult } from './use-journey';
-import { ACT_FAILED_TOPIC, actTarget, runAct } from './act';
+import { ACT_FAILED_TAG, actTarget, runAct } from './act';
 
 /** What the tray needs from the manager to render the step's own buttons. */
 export interface JourneyManagerView {
@@ -111,9 +111,9 @@ export function useJourneyManager(state: UseJourneyResult): JourneyManagerView {
   // handler only wakes the journal refetch; the store stays the truth. This
   // replaces the old post-advance `.then(refresh)` chain and closes the
   // journal-WS-watch gap (updates only reached watch-holding tabs).
-  // useOnTopic rides the handler on a ref, so refresh's unstable identity
+  // useOnTag rides the handler on a ref, so refresh's unstable identity
   // cannot churn the subscription (it resubscribes only on target change).
-  useOnTopic('flow.step.done', () => {
+  useOnTag('flow.step.done', () => {
     if (journeyId) void refresh();
   }, { target: journeyId ? targetOf('agentic_flow', journeyId) : 'agentic_flow:none' });
 
@@ -153,7 +153,7 @@ export function useJourneyManager(state: UseJourneyResult): JourneyManagerView {
     if (pointer) {
       navigation.openDock(present.highlight ? pointer.withHighlight(present.highlight) : pointer);
     } else if (present.highlight) {
-      // Highlight-only step: light the topic IN PLACE — a pure param update on
+      // Highlight-only step: light the tag IN PLACE — a pure param update on
       // the live URL. Rebuilding from `currentDock` would race an in-flight
       // navigation (the user's own click) and yank them backwards.
       navigation.applyHighlightInPlace(present.highlight);
@@ -221,8 +221,8 @@ export function useJourneyManager(state: UseJourneyResult): JourneyManagerView {
 
   // A failed act re-offers its button — a `git_check` is MEANT to be retried
   // until the repo actually satisfies it ("not yet — try the command").
-  useOnTopic(
-    ACT_FAILED_TOPIC,
+  useOnTag(
+    ACT_FAILED_TAG,
     () => setActRan(false),
     act ? { target: actTarget(act.kind, act.target) } : undefined,
   );
@@ -273,8 +273,8 @@ export function useJourneyManager(state: UseJourneyResult): JourneyManagerView {
         // A user-interaction advance means the user is already navigating
         // somewhere of their own choosing — the next step stays transparent.
         // Read the envelope's ATTRIBUTION (ctx.actor, stamped by the emitter),
-        // not a topic-prefix guess: any user-caused event qualifies, whatever
-        // its topic is named. Origin must be `app` — only THIS tab's own DOM
+        // not a tag-prefix guess: any user-caused event qualifies, whatever
+        // its tag is named. Origin must be `app` — only THIS tab's own DOM
         // can have started a navigation worth protecting; a relayed origin
         // (sandbox slide button, hub, local_server) never did, so its next step
         // must still present.
@@ -290,8 +290,8 @@ export function useJourneyManager(state: UseJourneyResult): JourneyManagerView {
   }, [currentStep, journeyId, projectId, doAdvance]);
 
   // ── await: ONE live subscription — the current step's ──
-  useOnTopic(
-    stepAwait?.topic || 'journey.idle',
+  useOnTag(
+    stepAwait?.tag || 'journey.idle',
     (event) => void tryComplete(event),
     filterTarget !== undefined ? { target: filterTarget } : undefined,
   );

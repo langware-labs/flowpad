@@ -6,7 +6,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from flow_sdk._compat import StrEnum
-from flow_sdk.topics.grammar import topic_is_within
+from flow_sdk.tags.grammar import tag_is_within
 
 
 def now_iso() -> str:
@@ -67,7 +67,7 @@ class CapabilityState(StrEnum):
 def capability_kind_matches(query_kind: str, capability_kind: str) -> bool:
     # Delegates to the shared dot-taxonomy grammar (lenient prefix semantics —
     # never raises, matching this function's historical contract).
-    return topic_is_within(capability_kind, query_kind)
+    return tag_is_within(capability_kind, query_kind)
 
 
 # Infix segment for MCP-server capabilities: ``<service>.mcp.<worker_type>``

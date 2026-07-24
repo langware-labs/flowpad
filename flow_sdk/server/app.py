@@ -62,7 +62,7 @@ from .routes import (
     compute_register_router,
     debug_router,
     subgraph_router,
-    topics_router,
+    tags_router,
     dep_graph_router,
     detection_router,
     directory_router,
@@ -139,16 +139,16 @@ async def _on_server_startup():
     except Exception as _e:  # noqa: BLE001
         print(f"  Capability seed: failed ({_e})")
 
-    # Seed the shipped topic vocabulary as system Topic entities (the taxonomy
+    # Seed the shipped tag vocabulary as system Tag entities (the taxonomy
     # catalog IS the entities — no separate registry). Idempotent: uuid5 ids
-    # converge on re-runs; user topics are never touched.
+    # converge on re-runs; user tags are never touched.
     try:
-        from flow_sdk.builtin.topic import seed_system_topics
+        from flow_sdk.builtin.tag import seed_system_tags
 
-        _topic_rows = await seed_system_topics()
-        print(f"  Topic seed: {_topic_rows} row(s) written")
+        _tag_rows = await seed_system_tags()
+        print(f"  Tag seed: {_tag_rows} row(s) written")
     except Exception as _e:  # noqa: BLE001
-        print(f"  Topic seed: failed ({_e})")
+        print(f"  Tag seed: failed ({_e})")
 
     # Discover capability values in the background (every restart). The env
     # probe runs in a separate subprocess with a hard cap — nothing blocks
@@ -211,14 +211,14 @@ async def _on_server_startup():
     except Exception as e:
         print(f"  Cron scheduler: failed to start ({e})")
 
-    # Arm backend→app topic forwarding (unified event bus — docs/flow-events.md).
+    # Arm backend→app tag forwarding (unified event bus — docs/flow-events.md).
     try:
-        from flow_sdk.topics.ws_forward import start_topic_forwarding
+        from flow_sdk.tags.ws_forward import start_tag_forwarding
 
-        start_topic_forwarding()
-        print("  Topic forwarding: armed")
+        start_tag_forwarding()
+        print("  Tag forwarding: armed")
     except Exception as _e:  # noqa: BLE001
-        print(f"  Topic forwarding: failed to arm ({_e})")
+        print(f"  Tag forwarding: failed to arm ({_e})")
 
     # Warm schema cache in background so first bootstrap call is fast
     import asyncio as _asyncio
@@ -293,10 +293,10 @@ async def _start_fsop_watcher() -> None:
         from flow_sdk.server.fsop_watcher import fsop_watcher
 
         await fsop_watcher.start()
-        # Arm TOPIC triggers (unified-bus subscriptions — flow-events phase 4).
-        from flow_sdk.builtin.topic_triggers import start_topic_triggers
+        # Arm TAG triggers (unified-bus subscriptions — flow-events phase 4).
+        from flow_sdk.builtin.tag_triggers import start_tag_triggers
 
-        await start_topic_triggers()
+        await start_tag_triggers()
         # Arm graph-level flow subscriptions (flow-events phase 5).
         from flow_sdk.flow_manager import get_flow_manager
 
@@ -537,7 +537,7 @@ server.add_router(assets_router)
 server.add_router(project_router, prefix="/api/v1")
 server.add_router(compute_register_router)
 server.add_router(debug_router)
-server.add_router(topics_router)
+server.add_router(tags_router)
 server.add_router(subgraph_router)
 server.add_router(navigate_router)
 server.add_router(agent_records_router)

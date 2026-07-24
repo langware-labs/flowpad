@@ -36,7 +36,7 @@ export type GraphViewProps = {
    *  itself (surfaces own cross-view navigation; this canvas only owns its own
    *  URL state). Default (undefined) keeps the standard focus behavior. */
   onNodeDoubleClickIntent?: (node: NodeData) => 'focus' | 'handled';
-  /** Controls owned by the surface (e.g. the topic graph's shape toggle).
+  /** Controls owned by the surface (e.g. the tag graph's shape toggle).
    *  Rendered in the SAME cluster as the renderer toggle so surfaces never
    *  grow their own competing absolutely-positioned buttons. */
   surfaceControls?: ReactNode;

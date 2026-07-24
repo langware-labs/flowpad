@@ -5,45 +5,45 @@ import pytest
 pytestmark = pytest.mark.asyncio
 
 
-async def test_topic_projection_served(client):
-    # Bless one topic through the API (the test client doesn't run the server
+async def test_tag_projection_served(client):
+    # Bless one tag through the API (the test client doesn't run the server
     # startup hook, so the system seed is not present here).
     created = await client.post(
-        "/api/v1/graph/topic", json={"name": "--sg--.served.check"})
+        "/api/v1/graph/tag", json={"name": "--sg--.served.check"})
     assert created.status_code == 200, created.text
 
-    resp = await client.get("/api/v1/subgraph/topic")
+    resp = await client.get("/api/v1/subgraph/tag")
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["status"] == "SUCCESS"
     data = body["data"]
-    assert data["projection"] == "topic"
+    assert data["projection"] == "tag"
     assert isinstance(data["nodes"], list) and isinstance(data["edges"], list)
     assert data["counts"] == {"nodes": len(data["nodes"]), "edges": len(data["edges"])}
-    names = {n["id"] for n in data["nodes"] if n["type"] == "topic"}
+    names = {n["id"] for n in data["nodes"] if n["type"] == "tag"}
     assert "--sg--.served.check" in names and "--sg--" in names  # + implied ancestor
 
 
 async def test_root_param_scopes_and_tree_mode(client):
-    await client.post("/api/v1/graph/topic", json={"name": "--sg--.scoped.leaf"})
-    await client.post("/api/v1/graph/topic", json={"name": "--sgother--.stray"})
+    await client.post("/api/v1/graph/tag", json={"name": "--sg--.scoped.leaf"})
+    await client.post("/api/v1/graph/tag", json={"name": "--sgother--.stray"})
 
-    resp = await client.get("/api/v1/subgraph/topic?root=--sg--.scoped&view=tree")
+    resp = await client.get("/api/v1/subgraph/tag?root=--sg--.scoped&view=tree")
     data = resp.json()["data"]
-    assert all(n["type"] == "topic" for n in data["nodes"])
+    assert all(n["type"] == "tag" for n in data["nodes"])
     names = {n["id"] for n in data["nodes"]}
     assert "--sg--.scoped.leaf" in names and "--sgother--.stray" not in names
     assert all(e["topology"] == "hierarchy" for e in data["edges"])
-    assert data["root"] == "topic---sg--.scoped"
+    assert data["root"] == "tag---sg--.scoped"
 
 
 async def test_unknown_projection_and_bad_params(client):
     resp = await client.get("/api/v1/subgraph/nope")
     body = resp.json()
     assert body["status"] == "FAIL"
-    assert "topic" in (body.get("data") or {}).get("known", [])
+    assert "tag" in (body.get("data") or {}).get("known", [])
 
-    bad = await client.get("/api/v1/subgraph/topic?root=Not%20A%20Topic!")
+    bad = await client.get("/api/v1/subgraph/tag?root=Not%20A%20Tag!")
     assert bad.json()["status"] == "FAIL"
 
 

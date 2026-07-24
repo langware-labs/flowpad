@@ -63,13 +63,13 @@ for extra attention; after the linger it fades via `transition-all duration-500`
 The `?highlight=` param stays in the URL (shareable / back-safe); only the visual
 auto-settles.
 
-**Generic (`TopicHighlightObserver`, `ui/src/topics/highlight.onTopic.tsx`)** —
-the topic-tag path. EVERY element carrying `data-topic="<word>"` (see
-`topicTag()`) gets the same ring + beacon treatment with the entry pulse, but
+**Generic (`TagHighlightObserver`, `ui/src/tags/highlight.onTag.tsx`)** —
+the generic Tag annotation path. EVERY element carrying `data-tag="<word>"` (see
+`tagTag()`) gets the same ring + beacon treatment with the entry pulse, but
 the ring **persists while the param names the word** — no timed fade. The URL is
 the state: a journey step's highlight stands until the step advances and the
 param changes, so it can't be burned by a slow cold boot. Several surfaces may
-carry one topic (the footer project name and the rail's project icon both tag
+carry one tag (the footer project name and the rail's project icon both tag
 `ProjectPage`); all of them light, and the first scrolls into view.
 
 ## The two utilities

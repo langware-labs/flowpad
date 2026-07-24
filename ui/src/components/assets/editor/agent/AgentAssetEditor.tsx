@@ -11,7 +11,7 @@ import { Loader2, Play } from 'lucide-react';
 import { Button } from '@src/components/ui/button';
 import { createVibeProcessForProject } from '@src/pages/flow-page/use-start-vibe-session';
 import { notify } from '@src/notifications';
-import { topicTag } from '@src/topics/topic-tag';
+import { tagAttrs } from '@src/tags/tag-attrs';
 
 interface AgentAssetEditorProps {
   /** FSRef to the agent .md file. */
@@ -67,7 +67,7 @@ export function AgentAssetEditor({ fsRef, agent: providedAgent }: AgentAssetEdit
 
   // "Use agent": mark it a vibe agent (the vibe layer embeds every kind==vibe
   // agent on process start) and open the vibe workspace — the agent is live in
-  // a process, ready to be asked. Topic-tagged, so journeys can highlight it
+  // a process, ready to be asked. Tag-tagged, so journeys can highlight it
   // and observe the click through the standard bus wiring.
   const [launching, setLaunching] = useState(false);
   const startUsingAgent = useCallback(async () => {
@@ -94,7 +94,7 @@ export function AgentAssetEditor({ fsRef, agent: providedAgent }: AgentAssetEdit
             onClick={() => void startUsingAgent()}
             className="h-7 gap-1.5 px-3 text-xs"
             data-testid="agent-use"
-            {...topicTag('UseAgent', 'button')}
+            {...tagAttrs('UseAgent', 'button')}
           >
             {launching ? <Loader2 className="h-3 w-3 animate-spin" /> : <Play className="h-3 w-3" />}
             <Trans>Use agent</Trans>
@@ -105,7 +105,7 @@ export function AgentAssetEditor({ fsRef, agent: providedAgent }: AgentAssetEdit
           fill it via `act:{kind:'fill', target:'AgentInstructions'}`. The tag
           goes on the CONTAINER; the act resolves the editable inside it, which
           the rich editor owns and may re-create. */}
-      <div className="min-h-0 flex-1" {...topicTag('AgentInstructions', 'input')}>
+      <div className="min-h-0 flex-1" {...tagAttrs('AgentInstructions', 'input')}>
         <MarkdownEditor
           fsRef={editorRef}
           chatTarget={chatTarget}
