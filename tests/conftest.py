@@ -9,8 +9,10 @@ Merged from:
 
 import os
 import asyncio
+import atexit
 import functools
 import logging
+import shutil
 
 import pytest
 
@@ -121,18 +123,25 @@ for _inherited in ("FLOWPAD_DESKTOP", "SOD_ENC_KEY", "DEPLOY_ENV"):
 
 from flow_sdk.config import FLOWPAD_TEMP_DIR
 
-# Ensure tests use a separate DB path (prevents conflicts with a running dev server)
+# Every pytest process gets its own filesystem root. A shared ``basetemp`` lets
+# concurrent test runs race while pytest removes/recreates that directory,
+# causing FileExistsError or cross-run fixture deletion.
+_TEST_RUN_ROOT = _Path(tempfile.mkdtemp(prefix="pytest-", dir=FLOWPAD_TEMP_DIR))
+atexit.register(shutil.rmtree, _TEST_RUN_ROOT, ignore_errors=True)
+
+# Ensure tests use a separate DB path (prevents conflicts with a running dev
+# server or another pytest process).
 if not os.environ.get("SQLITE_DATABASE_PATH"):
-    os.environ["SQLITE_DATABASE_PATH"] = str(os.path.join(FLOWPAD_TEMP_DIR, "flowpad_test.db"))
+    os.environ["SQLITE_DATABASE_PATH"] = str(_TEST_RUN_ROOT / "flowpad_test.db")
 # Isolate filesystem records from dev/prod data
 if not os.environ.get("FS_RECORD_PATH"):
-    os.environ["FS_RECORD_PATH"] = str(os.path.join(FLOWPAD_TEMP_DIR, "flowpad_test_records"))
+    os.environ["FS_RECORD_PATH"] = str(_TEST_RUN_ROOT / "flowpad_test_records")
 
 
 def pytest_configure(config):
     """Root all tmp_path fixtures under FLOWPAD_TEMP_DIR."""
     if not getattr(config.option, "basetemp", None):
-        config.option.basetemp = FLOWPAD_TEMP_DIR
+        config.option.basetemp = str(_TEST_RUN_ROOT / "tmp")
 
 from pytest_asyncio import is_async_test
 

@@ -1,7 +1,9 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useEntity } from '@sdk/react/hooks';
-import { createTaskBundle } from '@sdk/entities/flow-message';
-import { ActionInfo } from '@sdk/models/ActionInfo';
+import {
+  createTaskBundle,
+  localFlowMessageBundleUrl,
+} from '@sdk/entities/flow-message';
 import { AgenticProcess, TypeId } from '@sdk';
 import { useDockNavigation } from '@src/navigation';
 
@@ -84,12 +86,7 @@ export function useEntityShare(typeId: TypeId | null): UseEntityShareResult {
           message: (opts.message ?? '').trim() || null,
           team_space_id: null,
         });
-        const downloadUrl = new ActionInfo(
-          'file-download',
-          'flow_message',
-          result.flow_message_id,
-          'GET',
-        ).fullActionUrl;
+        const downloadUrl = localFlowMessageBundleUrl(result.flow_message_id);
         return { flowMessageId: result.flow_message_id, downloadUrl };
       } finally {
         setIsSharing(false);
