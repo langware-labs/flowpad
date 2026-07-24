@@ -123,7 +123,7 @@ async def test_repo_list_page1_returns_summaries(bootstrapped_client, github_use
         "html_url": "https://github.com/langware-labs/flowpad",
         "description": "Flowpad",
         "fork": False,
-        "git_origin": _git_origin(),
+        "git_origin": {**_git_origin(), "project_id": ""},
     }
     # role mapping: admin=False, push=True → "write"
     assert data["repos"][1]["role"] == "write"

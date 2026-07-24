@@ -71,12 +71,6 @@ export interface IConversation extends IEntity {
    *  shipped through the bundle on cross-user send. */
   title?: string | null;
   /**
-   * Per-conversation read-receipt visibility. When false, the hub suppresses
-   * `delivered` / `received` UPDATE frames to the original sender (co-recipients
-   * still see them). Mirrors the hub-side flag added in Phase 1.
-   */
-  message_status_visible?: boolean;
-  /**
    * Conversation-scoped default transfer mode for asset shares. When true, asset
    * shares into this conversation ride as Git-origin metadata (the receiver
    * clones/pulls on an explicit Download) instead of copied bytes. Hub-synced and
@@ -104,7 +98,6 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
   message_ids?: string | null;
   // ``members`` (the hub role roster) is inherited from the Entity base.
   title?: string | null;
-  message_status_visible?: boolean;
   git_sharing_enabled?: boolean;
   dismissed_at?: string | Date | null;
   archived_at?: string | Date | null;
@@ -119,7 +112,6 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
     this.message_count = entity.message_count;
     this.message_ids = entity.message_ids;
     this.title = entity.title;
-    this.message_status_visible = entity.message_status_visible ?? true;
     this.git_sharing_enabled = entity.git_sharing_enabled ?? false;
     this.dismissed_at = entity.dismissed_at ?? null;
     this.archived_at = entity.archived_at ?? null;

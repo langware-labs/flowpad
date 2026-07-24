@@ -246,19 +246,10 @@ describe('chat⇄terminal switch stress in the browser — one session, 10 itera
     );
   }
 
-  /** Console errors attributable to the SWITCH (the thing under test), with one
-   *  KNOWN, PRE-EXISTING exclusion called out honestly: PTY spawn/teardown does
-   *  blocking work on the single-process backend's event loop, so an in-flight
-   *  project-list `fetch()` from the navigator can reject ("Failed to list
-   *  projects: Failed to fetch"). That is a real backend loop-stall (same family
-   *  as the createprocess/indexer loop-pinning issues), NOT introduced by the
-   *  switch and NOT what this test validates — fixing it means moving PTY
-   *  spawn off the loop, a separate change. Excluded here (not in the shared
-   *  filter, which stays strict) so this suite asserts switch correctness; a real
-   *  switch bug still surfaces as a React/render/uncaught error. */
+  /** Console errors attributable to the switch, excluding generic transport noise. */
   function switchErrors(): string[] {
     return realConsoleErrors(page!.consoleErrors).filter(
-      (e) => !e.includes('Failed to fetch') && !e.includes('Failed to list projects'),
+      (e) => !e.includes('Failed to fetch'),
     );
   }
 

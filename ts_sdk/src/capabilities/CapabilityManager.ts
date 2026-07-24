@@ -341,10 +341,6 @@ export class CapabilityManager extends EventEmitter {
     return this.runAction(queryKind, 'setup');
   }
 
-  async test(queryKind: string): Promise<CapabilitySnapshot> {
-    return this.runAction(queryKind, 'test');
-  }
-
   /** Mutate one capability entity's persisted fields, save, then invalidate the
    *  cached action result and re-check. The shared write path behind
    *  setReferenceKind / setAuthMode. */

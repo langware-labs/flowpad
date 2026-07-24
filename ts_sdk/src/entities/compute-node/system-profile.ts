@@ -6,6 +6,7 @@
 import { ActionInfo } from '../../models/ActionInfo';
 import { IResource } from '../../IResource';
 import type { ClaudeSessionRecordData } from '../../resource_management/fs_records/claude/claude-session';
+import { dataManager } from '../../APIEntity';
 
 // ═══════════════════════════════════════════════════════════════
 // ENUMS
@@ -859,14 +860,18 @@ export interface ScanProjectResponse {
  * Indexer-backed project enumeration.
  * Use this for the project list sidebar.
  */
-export async function listProjectsFromComputeNode(computeNodeId: string): Promise<ListProjectsResponse> {
+export async function listProjectsFromComputeNode(
+  computeNodeId: string,
+  signal?: AbortSignal,
+): Promise<ListProjectsResponse> {
   const actionInfo = new ActionInfo('list-projects', 'compute_node', computeNodeId, 'GET');
-  const response = await fetch(actionInfo.fullActionUrl, { credentials: 'include' });
-  const result = await response.json();
-  if (result.status !== 'SUCCESS') {
-    throw new Error(result.message || 'Failed to list projects');
-  }
-  return result.data || { projects: [], total_count: 0 };
+  actionInfo.abortSignal = signal ?? null;
+  return (
+    (await dataManager.callAction<undefined, ListProjectsResponse>(actionInfo)) || {
+      projects: [],
+      total_count: 0,
+    }
+  );
 }
 
 /**
@@ -918,18 +923,17 @@ export async function scanProjectFromComputeNode(
   projectEncodedName: string,
   limit: number = 100,
   includeSessions: boolean = true,
+  signal?: AbortSignal,
 ): Promise<ScanProjectResponse> {
   const actionInfo = new ActionInfo('scan-project', 'compute_node', computeNodeId, 'GET');
-  const url =
-    `${actionInfo.fullActionUrl}?project=${encodeURIComponent(projectEncodedName)}` +
-    `&limit=${limit}&include_sessions=${includeSessions ? 'true' : 'false'}`;
-  const response = await fetch(url, { credentials: 'include' });
-  const result = await response.json();
-  if (result.status !== 'SUCCESS') {
-    throw new Error(result.message || 'Failed to scan project');
-  }
+  actionInfo.queryParameters = {
+    project: projectEncodedName,
+    limit,
+    include_sessions: includeSessions,
+  };
+  actionInfo.abortSignal = signal ?? null;
   return (
-    result.data || {
+    (await dataManager.callAction<undefined, ScanProjectResponse>(actionInfo)) || {
       project_cwd: null,
       scanned_at: new Date().toISOString(),
       sessions: [],

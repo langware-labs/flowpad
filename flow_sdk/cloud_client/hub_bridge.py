@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Optional
 
 from flow_sdk.cloud_client.ws_client import HubWebSocketManager, hub_ws_manager
+from flow_sdk.preferences import message_status_sharing_enabled
 
 logger = logging.getLogger(__name__)
 
@@ -594,11 +595,15 @@ class HubWsBridge:
                     body_status=payload.get("body_status"),
                 ))
 
-            # Auto-ack delivery — receiver-side acks are the only signal that
-            # makes the sender's UI tick from ✓ to ✓✓. Skip if the local user
-            # IS the sender (hub ignores caller_is_sender anyway, but skipping
-            # avoids the round-trip).
-            if local_user and payload.get("sender_id") and payload["sender_id"] != local_user.id:
+            # Auto-ack delivery only when this user chose to share message
+            # status. The preference belongs to the reporting user, not to the
+            # message or conversation.
+            if (
+                message_status_sharing_enabled()
+                and local_user
+                and payload.get("sender_id")
+                and payload["sender_id"] != local_user.id
+            ):
                 self.manager.send({
                     "message_type": "rest_api_msg",
                     "message_id": str(uuid.uuid4()),
@@ -716,8 +721,8 @@ class HubWsBridge:
             return
 
     async def _handle_conversation_op(self, op: str, conv_id: str, data: dict) -> None:
-        """Passive upsert of Conversation lifecycle changes (title, status,
-        participants, message_status_visible) so the local entity stays in sync.
+        """Passive upsert of Conversation lifecycle changes so the local entity
+        stays in sync.
 
         ``title`` is included so a peer's rename (sent over HTTP or WS and reflected
         to the hub) fans out and lands on the local row here — otherwise a renamed
@@ -735,7 +740,7 @@ class HubWsBridge:
         _PROJECTED = {"message_count", "message_ids"}
         _LOCAL_FIELDS = {
             "id", "type", "title", "remote_project_id", "remote_project_name",
-            "participants", "message_status_visible", "git_sharing_enabled",
+            "participants", "git_sharing_enabled",
             "shared_context_entities",
         }
         clean = {k: v for k, v in data.items() if k in _LOCAL_FIELDS and k not in _PROJECTED}
@@ -773,7 +778,7 @@ class HubWsBridge:
             await Conversation.delete_by_id(conv_id)
             return
 
-        for field in ("title", "message_status_visible", "git_sharing_enabled", "members",
+        for field in ("title", "git_sharing_enabled", "members",
                       "remote_project_id", "remote_project_name", "shared_context_entities"):
             if field in clean:
                 setattr(existing, field, clean[field])
@@ -857,15 +862,12 @@ class HubWsBridge:
         project_id: str,
         text: str,
         receiver_id: Optional[str] = None,
-        message_status_visible: bool = True,
         timeout: float = 10.0,
     ) -> dict:
         body: dict = {"text": text}
         if receiver_id:
             body["receiver_address"] = receiver_id
             body["receiver_address_type"] = "id"
-        if not message_status_visible:
-            body["message_status_visible"] = False
         return await self.manager.send_request(
             {
                 "message_type": "rest_api_msg",
@@ -925,6 +927,16 @@ class HubWsBridge:
         return None
 
     async def mark_received(self, *, flow_message_ids: list[str], timeout: float = 5.0) -> dict:
+        if not message_status_sharing_enabled():
+            return {
+                "data": {
+                    "updated": [],
+                    "skipped": [
+                        {"id": message_id, "reason": "message_status_sharing_disabled"}
+                        for message_id in flow_message_ids
+                    ],
+                }
+            }
         return await self.manager.send_request(
             {
                 "message_type": "rest_api_msg",

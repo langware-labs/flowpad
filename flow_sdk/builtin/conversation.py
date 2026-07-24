@@ -133,10 +133,6 @@ class Conversation(Entity):
     # The hub sends/receives the conversation roster on the WIRE as ``participants``
     # (its field + fanout key); that key is adapted to ``members`` at ingest
     # (hub_bridge._handle_conversation_op, flow_message_action metadata upsert).
-    # When False, hub suppresses delivery_status fan-out to the original
-    # sender (delivered/received UPDATE frames are filtered by hub-side
-    # Conversation._fanout_status_update). Co-recipients still see them.
-    message_status_visible: bool = APIField(default=True)
     # Conversation-scoped default transfer mode for asset shares. When True,
     # asset shares into this conversation ride as Git-origin metadata (the
     # receiver clones/pulls on an explicit Download) instead of copied bytes.
