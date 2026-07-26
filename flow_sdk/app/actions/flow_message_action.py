@@ -2170,7 +2170,11 @@ def _membership_cls(target_type: str | None):
 
 
 async def _materialize_membership_invitation(
-    hub_inv: dict, target: dict, someone_typeid: str
+    hub_inv: dict,
+    target: dict,
+    someone_typeid: str,
+    *,
+    notify: bool = True,
 ) -> Optional["Invitation"]:
     """Upsert a hub entity-share Invitation locally (``remote=True``).
 
@@ -2225,11 +2229,19 @@ async def _materialize_membership_invitation(
     if existing_inv:
         for k, v in fields.items():
             setattr(existing_inv, k, v)
-        return await existing_inv.save(someone_typeid)
-    return await LocalInvitation.model_validate({"id": inv_id, **fields}).save(someone_typeid)
+        return await existing_inv.save(someone_typeid, notify=notify)
+    return await LocalInvitation.model_validate({"id": inv_id, **fields}).save(
+        someone_typeid,
+        notify=notify,
+    )
 
 
-async def _materialize_invitation(hub_inv: dict, someone_typeid: str) -> tuple[Optional["Invitation"], Optional[str]]:
+async def _materialize_invitation(
+    hub_inv: dict,
+    someone_typeid: str,
+    *,
+    notify: bool = True,
+) -> tuple[Optional["Invitation"], Optional[str]]:
     """Upsert a hub-side Invitation locally — and the Conversation + preview
     FlowMessage that the hub now ships embedded in the ``pending`` response.
 
@@ -2264,7 +2276,15 @@ async def _materialize_invitation(hub_inv: dict, someone_typeid: str) -> tuple[O
     _conv = hub_inv.get("conversation")
     has_conversation = isinstance(_conv, dict) and bool(_conv.get("id"))
     if isinstance(target, dict) and target.get("type") and target.get("id") and not has_conversation:
-        return await _materialize_membership_invitation(hub_inv, target, someone_typeid), None
+        return (
+            await _materialize_membership_invitation(
+                hub_inv,
+                target,
+                someone_typeid,
+                notify=notify,
+            ),
+            None,
+        )
 
     existing_inv = await LocalInvitation.get_one({"id": inv_id})
     # Persist the invitation→conversation linkage. The hub stamps
@@ -2291,9 +2311,12 @@ async def _materialize_invitation(hub_inv: dict, someone_typeid: str) -> tuple[O
         if _target_path:
             existing_inv.target_url_path = _target_path
         existing_inv.remote = True
-        local_inv = await existing_inv.save(someone_typeid)
+        local_inv = await existing_inv.save(someone_typeid, notify=notify)
     else:
-        local_inv = await LocalInvitation.model_validate(inv_fields).save(someone_typeid)
+        local_inv = await LocalInvitation.model_validate(inv_fields).save(
+            someone_typeid,
+            notify=notify,
+        )
 
     if local_inv.accepted:
         return local_inv, None
@@ -2419,17 +2442,30 @@ async def _materialize_invitation(hub_inv: dict, someone_typeid: str) -> tuple[O
     # now already carries its kind='invitation' pointer, so the strip/inbox
     # render it as a gated invitation row on the very first paint (no
     # navigable window before the Accept gate appears).
-    try:
-        from flow_sdk.api.messages import DataOpMessage, OperationType  # noqa: PLC0415
-        from flow_sdk.core.network.resource_tracker import handle_entity_op  # noqa: PLC0415
+    if notify:
+        try:
+            from flow_sdk.api.messages import DataOpMessage, OperationType  # noqa: PLC0415
+            from flow_sdk.core.network.resource_tracker import handle_entity_op  # noqa: PLC0415
 
-        if inv_fm is not None:
-            await handle_entity_op(DataOpMessage(data=inv_fm, op=OperationType.CREATE, to_entity=inv_fm.typeid))
-        conv_fresh = await Conversation.get_one({"id": conv_id})
-        if conv_fresh is not None:
-            await handle_entity_op(DataOpMessage(data=conv_fresh, op=OperationType.CREATE, to_entity=conv_fresh.typeid))
-    except Exception as e:  # noqa: BLE001
-        logger.warning("[inv-materialize] invitation announce failed: %s", e)
+            if inv_fm is not None:
+                await handle_entity_op(
+                    DataOpMessage(
+                        data=inv_fm,
+                        op=OperationType.CREATE,
+                        to_entity=inv_fm.typeid,
+                    )
+                )
+            conv_fresh = await Conversation.get_one({"id": conv_id})
+            if conv_fresh is not None:
+                await handle_entity_op(
+                    DataOpMessage(
+                        data=conv_fresh,
+                        op=OperationType.CREATE,
+                        to_entity=conv_fresh.typeid,
+                    )
+                )
+        except Exception as e:  # noqa: BLE001
+            logger.warning("[inv-materialize] invitation announce failed: %s", e)
 
     return local_inv, conv_id
 
@@ -2449,6 +2485,11 @@ async def _materialize_invitation(hub_inv: dict, someone_typeid: str) -> tuple[O
 # Keyed by conversation id. Prevents rapid Refresh clicks from piling up
 # duplicate bundle downloads for the same conversation.
 _conv_fetch_locks: dict[str, asyncio.Lock] = {}
+# Conversations already claimed by a detached batch. Unlike ``Lock.locked()``,
+# membership can be checked and claimed without an intervening await, so two
+# drains dispatched in the same event-loop turn cannot both queue the same id
+# behind the semaphore and then run it serially.
+_conv_fetch_inflight: set[str] = set()
 
 
 # Max parallel hub message-fetches per catch-up batch. Firing every drifted
@@ -2463,19 +2504,22 @@ async def _drain_conversation_message_fetches(conv_ids: list[str], someone_typei
 
     Runs as ONE detached task OFF the request path, so the list handler returns
     before any fetch starts (no event-loop contention with the foreground
-    reconcile). Per-conv single-flight is preserved by the in-task lock.
+    reconcile). The process-local claim set preserves per-conversation
+    single-flight across overlapping batches.
     """
     sem = asyncio.Semaphore(_BG_FETCH_CONCURRENCY)
 
     async def _one(cid: str) -> None:
-        existing = _conv_fetch_locks.get(cid)
-        if existing is not None and existing.locked():
-            return  # a fetch for this conv is already in flight
-        async with sem:
-            try:
+        if cid in _conv_fetch_inflight:
+            return
+        _conv_fetch_inflight.add(cid)
+        try:
+            async with sem:
                 await _fetch_conversation_messages(cid, someone_typeid)
-            except Exception as e:  # noqa: BLE001
-                logger.warning("[conv-msg-drain] %s failed: %s", cid[:8], e)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("[conv-msg-drain] %s failed: %s", cid[:8], e)
+        finally:
+            _conv_fetch_inflight.discard(cid)
 
     await asyncio.gather(*[_one(c) for c in conv_ids], return_exceptions=True)
 
@@ -2916,7 +2960,12 @@ async def _ensure_local_conversation_synced(conv_id: str, someone_typeid: str) -
     await _sync_conversation_messages(conv_id, someone_typeid)
 
 
-async def _sync_conversation_messages(conv_id: str, someone_typeid: str) -> None:
+async def _sync_conversation_messages(
+    conv_id: str,
+    someone_typeid: str,
+    *,
+    download_bundles: bool = True,
+) -> None:
     """Materialize every hub-side message of a conversation into the local store.
 
     Uses the standard scoped query ``GET /graph/conversation/<id>/flow_message``
@@ -2928,12 +2977,9 @@ async def _sync_conversation_messages(conv_id: str, someone_typeid: str) -> None
 
     Called after an invitation accept: the hub WS only fanouts messages from
     join-time forward, so the inviter's pre-accept messages (notably the
-    first one) need this explicit pull. After materializing each FM's row,
-    if the hub payload advertises a body bundle (``attachment_filename``)
-    the bundle is pulled and unpacked here so embedded TYPE_ID attachments
-    (Task / Spec / etc.) materialize on the recipient — without this step
-    the recipient would see only the FM text and miss any shared entities
-    the sender attached.
+    first one) need this explicit pull. Callers that request bundle downloads
+    also unpack attachment-bearing messages; invitation acceptance disables
+    that part because the message UI owns the explicit Download/staging step.
     """
     from flow_sdk.app.actions.materialize_flow_message import (  # noqa: PLC0415
         materialize_flow_message,
@@ -2964,6 +3010,8 @@ async def _sync_conversation_messages(conv_id: str, someone_typeid: str) -> None
                 raw_fm.get("id"),
                 fm_err,
             )
+            continue
+        if not download_bundles:
             continue
         attachment_filename = (raw_fm.get("attachment_filename") or "").strip()
         if not attachment_filename:
@@ -3282,6 +3330,18 @@ async def handle_conversation_list(someone_typeid) -> ApiResponse:
         conv_id = (hub_conv.get("id") or "").strip()
         if not conv_id:
             continue
+        # Owner-deleted conversations remain on the hub as audit rows. They
+        # are not live sync inputs: deciding message drift before checking
+        # deleted_at queued a detached child fetch which recreated the bare
+        # local Conversation immediately after this loop deleted it.
+        if hub_conv.get("deleted_at"):
+            existing = local_index.get(conv_id)
+            if existing is not None:
+                try:
+                    await _hard_delete_local_conversation(existing)
+                except Exception as e:  # noqa: BLE001
+                    logger.warning("[conv-list] deleted audit cleanup %s failed: %s", conv_id[:8], e)
+            continue
         # ``existing`` is the PRE-upsert local copy from the bulk cache — the
         # correct comparison baseline. Capture the fetch decision BEFORE the
         # upsert mutates ``existing.updated_date``.
@@ -3318,7 +3378,16 @@ async def handle_conversation_list(someone_typeid) -> ApiResponse:
     invitation_conv_ids: set[str] = set()
     for inv in hub_invs:
         try:
-            _local_inv, conv_id = await _materialize_invitation(inv, someone_typeid)
+            # The HTTP response is followed by one local query refetch in the
+            # UI. Suppress per-entity broadcasts while reconciling the batch:
+            # emitting every historical invitation one by one continuously
+            # reorders Inbox rows and can make an otherwise enabled action
+            # physically unclickable until the catch-up finishes.
+            _local_inv, conv_id = await _materialize_invitation(
+                inv,
+                someone_typeid,
+                notify=False,
+            )
             if conv_id:
                 invitation_conv_ids.add(conv_id)
         except Exception as e:  # noqa: BLE001
@@ -3332,7 +3401,11 @@ async def handle_conversation_list(someone_typeid) -> ApiResponse:
     # render reflects reality.
     pruned_ids: list[str] = []
     if hub_reachable:
-        seen_ids = {c.get("id") for c in hub_convs if c.get("id")}
+        seen_ids = {
+            c.get("id")
+            for c in hub_convs
+            if c.get("id") and not c.get("deleted_at")
+        }
         seen_ids.update(invitation_conv_ids)
         # Re-read local state because the upsert + invitation steps may have
         # added rows that didn't exist when we snapshotted earlier.
@@ -3729,6 +3802,7 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
     # the hub and save it locally so the UI's conversation view has something
     # to render the moment ``invitation-accept`` returns — without racing the
     # bridge's async ``_handle_conversation_op`` materialization.
+    conversation_synced = False
     if linked_conv_id:
         try:
             from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
@@ -3764,7 +3838,16 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
                 # Pull the inviter's pre-accept messages — the hub WS only
                 # fanouts from join-time forward, so without this the first
                 # message stays invisible until a manual refresh.
-                await _sync_conversation_messages(linked_conv_id, someone_typeid)
+                # Accept is the membership + metadata boundary. Bundle bytes
+                # stay on the explicit Download/staging rail in the message UI;
+                # pulling and unpacking them here made the Accept request block
+                # on filesystem work before the user asked to download.
+                await _sync_conversation_messages(
+                    linked_conv_id,
+                    someone_typeid,
+                    download_bundles=False,
+                )
+                conversation_synced = True
         except Exception as e:
             logger.warning("[invitation-accept] hub join+materialize failed: %s", e, exc_info=True)
 
@@ -3877,11 +3960,12 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
     # in the conversation (it IS the preview); subsequent bundle downloads
     # append after it.
 
-    # Targeted bundle download — exactly one FM materialized (the one just
-    # unlocked by the accept). Avoids the cursor-less inbox fetch that would
-    # redownload every accessible bundle and add ~10s of latency.
+    # A resolved parent conversation was synchronized above, and its bundle
+    # bytes deliberately remain on the explicit user-owned Download rail.
+    # Retain the targeted fallback only for a FlowMessage target that had no
+    # resolvable parent conversation.
     bundle_unpacked = False
-    if linked_fm_id:
+    if linked_fm_id and not conversation_synced:
         try:
             hub_fm = await hub_get(BuiltinEntityType.FLOW_MESSAGE, linked_fm_id)
             attachment_filename = ((hub_fm or {}).get("attachment_filename") or "").strip()

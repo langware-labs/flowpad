@@ -104,6 +104,61 @@
   color: hsl(var(--muted-foreground));
 }
 
+/* ── class member tabs ───────────────────────────────────────────────────── */
+
+.milkdown-editor-wrapper .interface-card-members {
+  margin-top: 0.75rem;
+}
+
+.milkdown-editor-wrapper .interface-card-member-tabs {
+  display: flex;
+  gap: 0.25rem;
+  border-bottom: 1px solid hsl(var(--border) / 0.6);
+}
+
+.milkdown-editor-wrapper .interface-card-member-tab {
+  appearance: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0.25rem 0.25rem 0 0;
+  margin-bottom: -1px;
+  padding: 0.25rem 0.625rem;
+  background: transparent;
+  color: hsl(var(--muted-foreground));
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.milkdown-editor-wrapper .interface-card-member-tab:hover {
+  color: hsl(var(--foreground));
+  background-color: hsl(var(--muted) / 0.5);
+}
+
+.milkdown-editor-wrapper .interface-card-member-tab:focus-visible {
+  outline: 2px solid hsl(var(--primary) / 0.6);
+  outline-offset: -2px;
+}
+
+.milkdown-editor-wrapper .interface-card-member-tab[aria-selected='true'] {
+  color: hsl(var(--foreground));
+  border-bottom-color: hsl(var(--primary));
+}
+
+.milkdown-editor-wrapper .interface-card-member-panel {
+  padding-top: 0.5rem;
+}
+
+.milkdown-editor-wrapper .interface-card-member-panel[hidden] {
+  display: none;
+}
+
+.milkdown-editor-wrapper .interface-card-member-empty {
+  padding: 0.25rem 0;
+  color: hsl(var(--muted-foreground));
+  font-style: italic;
+}
+
 .milkdown-editor-wrapper .interface-card-section {
   margin-top: 0.75rem;
 }
@@ -133,6 +188,7 @@
 .milkdown-editor-wrapper .interface-card-param-type {
   font-family: monospace;
   color: hsl(var(--primary));
+  overflow-wrap: anywhere;
 }
 
 .milkdown-editor-wrapper .interface-card-param-desc {

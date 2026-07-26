@@ -48,6 +48,7 @@ from flow_sdk.fs_store.indexer.index_function import (
     IndexResult,
     OrphanAction,
     PerTypeIndexResult,
+    _normalize_output_types,
 )
 from flow_sdk.fs_store.indexer.progress_table import IndexProgressTable, TypeProgressRow
 from flow_sdk.fs_store.record_types import RecordType
@@ -155,12 +156,14 @@ class RSIndexerAdapter:
     def __init__(self, bin_path: Path) -> None:
         self._bin = bin_path
         self._roots: list[FSRef] = []
-        # (input_type, fn, output_type) — recorded for parity/debugging only.
+        # (input_type, fn, output_types) — recorded for parity/debugging only.
         self._functions: list[tuple[Any, Any, Any]] = []
 
     # ── interface parity no-ops ───────────────────────────────────────────
     def add_function(self, record_type, fn, output_type=None) -> None:
-        self._functions.append((record_type, fn, output_type))
+        self._functions.append(
+            (record_type, fn, _normalize_output_types(output_type))
+        )
 
     def add_root(self, node: FSRef) -> None:
         self._roots.append(node)

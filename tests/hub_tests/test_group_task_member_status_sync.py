@@ -135,11 +135,17 @@ def _wait_task(c: httpx.Client, be: str, cid: str) -> dict | None:
 
 
 def _accept(c: httpx.Client, hub: str, member_be: str, hub_hdr: dict, child_id: str) -> bool:
-    """Member discovers their invitation on the hub (its targets carry their own
-    member-task id) and accepts through their OWN backend, materializing the
-    ``remote=True`` member task locally."""
+    """Observe an auto-accepted assignment or accept its pending invitation.
+
+    Current hubs auto-accept task-only invitations between users who share an
+    organization, so the member task can already be materialized locally before
+    the pending-invitation endpoint is queried. Older hubs retain the explicit
+    acceptance path exercised below.
+    """
     end = time.monotonic() + CONVERGE
     while time.monotonic() < end:
+        if _task(c, member_be, child_id) is not None:
+            return True
         pending = (c.get(f"{hub}/api/v1/graph/invitation/pending", headers=hub_hdr).json().get("data")) or []
         inv = [i for i in pending if child_id in str(i) and not i.get("accepted")]
         if inv:

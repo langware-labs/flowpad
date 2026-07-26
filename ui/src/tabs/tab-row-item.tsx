@@ -134,7 +134,10 @@ export function useTabStripItems(tabs: Tab[]): TabStripItem[] {
   // at creation and can't track the asset you're viewing. For the ACTIVE Assets
   // tab we overlay the focused asset live from the current dock — its own name +
   // type icon — leaving inactive assets tabs on their stored scope title.
-  const focusTypeId = currentDock?.viewType === 'assets' ? currentDock.targetTypeId ?? null : null;
+  const focusVfsFilename =
+    currentDock?.viewType === ViewType.ASSETS ? currentDock.vfsPath?.filename || null : null;
+  const focusTypeId =
+    currentDock?.viewType === ViewType.ASSETS ? currentDock.targetTypeId ?? null : null;
   const focusType = focusTypeId?.type;
   const focusEditable = !!(focusType && editorForType(focusType));
   const focusEntity = focusTypeId
@@ -157,16 +160,19 @@ export function useTabStripItems(tabs: Tab[]): TabStripItem[] {
   // The displayed name comes from the focused entity, except an agent_trace
   // shows its analyzed process's name instead (resolved reactively above).
   const titleSource = focusType === 'agent_trace' ? focusProcess : focusEntity;
-  const activeAssetTitle = focusEditable ? (titleSource?.displayName?.trim() ?? null) : null;
+  const activeAssetTitle =
+    focusVfsFilename ?? (focusEditable ? (titleSource?.displayName?.trim() ?? null) : null);
 
   return useMemo(
     () =>
       tabs.map((t) => {
         const key = t.dockPointer?.tabHash ?? t.id;
         const item = tabItem(t, lifecycles.get(key) ?? null);
+        if (key === currentDock?.tabHash && activeAssetTitle) {
+          item.title = activeAssetTitle;
+        }
         // `focusType` is only set on an assets dock, so it implies viewType==='assets'.
         if (key === currentDock?.tabHash && focusType && focusEditable) {
-          if (activeAssetTitle) item.title = activeAssetTitle;
           const Icon = iconForType(focusType);
           item.icon = (
             <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-label={`${focusType} tab`} />

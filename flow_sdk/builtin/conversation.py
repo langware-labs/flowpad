@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from typing import ClassVar, List, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar, List, Optional
 
 from flow_sdk._compat import StrEnum  # 3.10-safe StrEnum (project pins py3.10)
 from flow_sdk.api.api_types.api_field import APIField
@@ -215,44 +215,44 @@ class Conversation(Entity):
         from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient  # noqa: PLC0415
 
         await super().share()
-        # Link each shared-context doc to this conversation locally (the hub
-        # doesn't host doc types). This makes the doc effective-remote so a
-        # comment on it auto-shares under the conversation (the hub parent).
-        await self._link_context_to_conversation()
         if not recipients:
+            # Link each shared-context doc to this conversation locally (the hub
+            # doesn't host doc types). This makes the doc effective-remote so a
+            # comment on it auto-shares under the conversation (the hub parent).
+            await self._link_context_to_conversation()
             return self
         creds = load_credentials()
         if not creds or not creds.api_key:
             raise RuntimeError("Cloud login required")
 
-        # Deliver any messages composed while this conversation was still local
-        # (the conversation just became remote via super().share() above). A
-        # normal conversation is remote before its first message, so every
-        # message reaches the hub at send time; a conversation composed offline
-        # — the flow-diagnose support artifact — wrote its messages locally
-        # while remote=False and they were never pushed. Flush them through the
-        # same send pipeline a normal reply uses, BEFORE inviting, so the
-        # invitation's callback_override and the recipient's first fetch resolve.
-        await self._deliver_pending_messages()
-
-        # Post-accept landing: point at the conversation's first FlowMessage on
-        # the hub — that URL renders MessageLanding, which hosts the "Open in
-        # Flowpad" button. Computed once per share; same value for every
-        # recipient. Falls back to None (hub default = entity URL) when the
-        # conversation has no messages yet.
-        callback_override = self._first_message_landing_path()
-
-        # Push hub-shareable assets (skill/agent) to the hub so each becomes a
-        # first-class node owned by the sharer, and collect one ``reader`` target
-        # per asset. These ride the SAME invitation as the conversation
-        # ``member`` grant: on accept the recipient gets a direct, durable role
-        # edge on the asset itself, so access survives the conversation being
-        # left or deleted (the conversation is the channel, not the access).
-        asset_targets = await self._share_hostable_assets()
-
         async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:
-            # Caller joins so the creator enters ``participants``.
+            # Join IMMEDIATELY after create. The hub stamps ``initiated_by`` on
+            # this call; until then even the creator cannot owner-delete the
+            # row. Local context linking, pending-message delivery, and asset
+            # sharing can all block or fail, so none may sit in this ownership
+            # gap and leave an undeletable conversation behind.
             await client.post(f"/graph/conversation/{self.id}/join", {})
+
+            # Link each shared-context doc to this conversation locally (the hub
+            # doesn't host doc types). This makes the doc effective-remote so a
+            # comment on it auto-shares under the conversation (the hub parent).
+            await self._link_context_to_conversation()
+
+            # Deliver any messages composed while this conversation was still
+            # local. Flush them through the same send pipeline a normal reply
+            # uses, BEFORE inviting, so the invitation's callback_override and
+            # the recipient's first fetch resolve.
+            await self._deliver_pending_messages()
+
+            # Post-accept landing: point at the conversation's first FlowMessage
+            # on the hub. Falls back to None (hub default = entity URL) when the
+            # conversation has no messages yet.
+            callback_override = self._first_message_landing_path()
+
+            # Push hub-shareable assets to the hub and carry their reader grants
+            # on the same invitation as the conversation member grant.
+            asset_targets = await self._share_hostable_assets()
+
             # One invitation per recipient.
             for email in recipients:
                 if not email or not isinstance(email, str):

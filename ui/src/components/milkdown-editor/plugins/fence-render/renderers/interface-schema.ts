@@ -32,6 +32,18 @@ const paramValueSchema = z.union([
   }),
 ]);
 
+/** A property uses the same compact type notation as a callable parameter. */
+const propertyValueSchema = paramValueSchema;
+
+/** A method may be a bare signature or a described signature. */
+const methodValueSchema = z.union([
+  z.string(),
+  z.object({
+    signature: z.string(),
+    description: z.string().optional(),
+  }),
+]);
+
 /**
  * Where the contract is grounded in code.
  *
@@ -50,6 +62,8 @@ export const interfaceSpecSchema = z.object({
   name: z.string().min(1, 'name must not be empty'),
   description: z.string().optional(),
   params: z.record(z.string(), paramValueSchema).optional(),
+  properties: z.record(z.string(), propertyValueSchema).optional(),
+  methods: z.record(z.string(), methodValueSchema).optional(),
   returns: z.string().optional(),
   errors: z.array(z.string()).optional(),
   source: sourceSchema.optional(),
@@ -64,6 +78,14 @@ export interface InterfaceParam {
   description?: string;
 }
 
+export type InterfaceProperty = InterfaceParam;
+
+export interface InterfaceMethod {
+  name: string;
+  signature: string;
+  description?: string;
+}
+
 /** A contract's grounding in source: where the code lives, and which line. */
 export interface InterfaceSource {
   origin: FSOriginField;
@@ -75,6 +97,8 @@ export interface InterfaceSpec {
   name: string;
   description?: string;
   params: InterfaceParam[];
+  properties: InterfaceProperty[];
+  methods: InterfaceMethod[];
   returns?: string;
   errors: string[];
   source?: InterfaceSource;
@@ -135,11 +159,28 @@ export function parseInterfaceBlock(source: string): InterfaceSpec {
       description: typeof value === 'string' ? undefined : value.description,
     };
   });
+  const properties: InterfaceProperty[] = Object.entries(spec.properties ?? {}).map(([name, value]) => {
+    const rawType = typeof value === 'string' ? value : value.type;
+    const { type, optional } = splitOptional(rawType);
+    return {
+      name,
+      type,
+      optional,
+      description: typeof value === 'string' ? undefined : value.description,
+    };
+  });
+  const methods: InterfaceMethod[] = Object.entries(spec.methods ?? {}).map(([name, value]) => ({
+    name,
+    signature: typeof value === 'string' ? value : value.signature,
+    description: typeof value === 'string' ? undefined : value.description,
+  }));
 
   return {
     name: spec.name,
     description: spec.description,
     params,
+    properties,
+    methods,
     returns: spec.returns,
     errors: spec.errors ?? [],
     source: spec.source ? normalizeSource(spec.source) : undefined,

@@ -592,6 +592,209 @@ class FsRecordsActionsMixin:
         data = await reconcile_mcp_servers(scoped_roots, use_cli=use_cli)
         return ApiSuccessResponse(data=data)
 
+    def _project_fs_records_scan(
+        self,
+        *,
+        nodes,
+        filter_type: str,
+        types_filter,
+        trigger: str,
+        scan_ms: float,
+        scope_explicit: bool,
+    ) -> ApiResponse:
+        """Project a completed walk into scan stats and persist its scan log."""
+        from flow_sdk.fs_store.fs_record import FSRecord  # noqa: PLC0415
+        from flow_sdk.fs_store.indexer import INDEXABLE_TYPES  # noqa: PLC0415
+        from flow_sdk.fs_store.indexer.index_function import FSIndexer  # noqa: PLC0415
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+        terminal_names = (
+            {str(record_type) for record_type in types_filter}
+            if types_filter is not None
+            else None
+        )
+        all_indexable_names = {
+            str(record_type) for record_type in INDEXABLE_TYPES
+        }
+
+        # Bucket only requested terminal types. The walk may also contain
+        # scaffolds needed to reach them, but those are traversal details.
+        by_type: dict[str, dict] = {}
+        for node in nodes:
+            if node.record_type is None:
+                continue
+            key = str(node.record_type)
+            if terminal_names is not None and key not in terminal_names:
+                continue
+            bucket = by_type.setdefault(key, {
+                "type": key, "count": 0, "total_bytes": 0, "_records": [],
+            })
+            bucket["count"] += 1
+            try:
+                stat = node._path.stat()
+                bucket["total_bytes"] += stat.st_size
+                if filter_type:
+                    record_id = self._ref_id(node) or str(node._path)
+                    bucket["_records"].append({
+                        "id": record_id,
+                        "name": node._path.stem,
+                        "size_bytes": stat.st_size,
+                        "modified_at": stat.st_mtime,
+                    })
+            except OSError:
+                pass
+
+        for bucket in by_type.values():
+            bucket["avg_bytes"] = (
+                bucket["total_bytes"] // bucket["count"] if bucket["count"] else 0
+            )
+            bucket["scan_ms"] = 0.0
+
+        # A full-coverage walk can classify freshness and orphans on disk.
+        do_diff = not scope_explicit
+        if do_diff:
+            indexable_names = (
+                terminal_names & all_indexable_names
+                if terminal_names is not None
+                else all_indexable_names
+            )
+            seen_ids: dict[str, set[str]] = {
+                type_name: set() for type_name in indexable_names
+            }
+            diff: dict[str, dict[str, int]] = {
+                type_name: {
+                    "new": 0,
+                    "stale": 0,
+                    "mis_scoped": 0,
+                    "fresh": 0,
+                }
+                for type_name in indexable_names
+            }
+            for ref in nodes:
+                record_type = ref.record_type
+                if record_type is None:
+                    continue
+                type_name = str(record_type)
+                if type_name not in indexable_names:
+                    continue
+                record_id = self._ref_id(ref)
+                if not record_id:
+                    continue
+                seen_ids[type_name].add(record_id)
+                probe = FSRecord(type=type_name, id=record_id, asset_ref=ref)
+                indexed_hash = probe.indexed_hash
+                if indexed_hash is None:
+                    diff[type_name]["new"] += 1
+                elif probe.record_hash != indexed_hash:
+                    diff[type_name]["stale"] += 1
+                else:
+                    diff[type_name]["fresh"] += 1
+
+            disk_ids = FSIndexer._discover_records_dir_ids(indexable_names)
+            for type_name in indexable_names:
+                home_ids = disk_ids.get(type_name, set())
+                diff[type_name]["orphan"] = len(home_ids - seen_ids[type_name])
+                diff[type_name]["in_index"] = len(home_ids)
+                diff[type_name]["pending"] = (
+                    diff[type_name]["new"]
+                    + diff[type_name]["stale"]
+                    + diff[type_name]["mis_scoped"]
+                )
+
+            for type_name, type_diff in diff.items():
+                if not any(type_diff.values()):
+                    continue
+                bucket = by_type.get(type_name)
+                if bucket is None:
+                    bucket = by_type.setdefault(type_name, {
+                        "type": type_name,
+                        "count": 0,
+                        "total_bytes": 0,
+                        "avg_bytes": 0,
+                        "scan_ms": 0.0,
+                        "_records": [],
+                    })
+                bucket.update(type_diff)
+
+            for bucket in by_type.values():
+                for key in (
+                    "new",
+                    "stale",
+                    "mis_scoped",
+                    "fresh",
+                    "orphan",
+                    "in_index",
+                    "pending",
+                ):
+                    bucket.setdefault(key, 0)
+
+        per_type = list(by_type.values())
+        grand_total = sum(bucket["count"] for bucket in per_type)
+        grand_bytes = sum(bucket["total_bytes"] for bucket in per_type)
+        grand_pending = (
+            sum(bucket.get("pending", 0) for bucket in per_type) if do_diff else 0
+        )
+        grand_orphan = (
+            sum(bucket.get("orphan", 0) for bucket in per_type) if do_diff else 0
+        )
+        types_for_log = [
+            {key: value for key, value in bucket.items() if key != "_records"}
+            for bucket in per_type
+        ]
+
+        last_scan_at = SchemaRegistry.append_scan(
+            trigger=trigger,
+            duration_ms=scan_ms,
+            total_records=grand_total,
+            total_bytes=grand_bytes,
+            types=types_for_log if not filter_type else [],
+            type_name=filter_type or None,
+        )
+
+        if filter_type:
+            bucket = by_type.get(filter_type)
+            if bucket is None:
+                return ApiSuccessResponse(data={
+                    "type": filter_type,
+                    "count": 0,
+                    "total_bytes": 0,
+                    "avg_bytes": 0,
+                    "scan_ms": scan_ms,
+                    "records": [],
+                    "min_bytes": 0,
+                    "max_bytes": 0,
+                    "last_scan_at": last_scan_at,
+                })
+            records = bucket["_records"]
+            sizes = [record["size_bytes"] for record in records] if records else [0]
+            return ApiSuccessResponse(data={
+                "type": filter_type,
+                "count": bucket["count"],
+                "total_bytes": bucket["total_bytes"],
+                "avg_bytes": bucket["avg_bytes"],
+                "scan_ms": scan_ms,
+                "records": records,
+                "min_bytes": min(sizes),
+                "max_bytes": max(sizes),
+                "last_scan_at": last_scan_at,
+                "new": bucket.get("new", 0),
+                "stale": bucket.get("stale", 0),
+                "mis_scoped": bucket.get("mis_scoped", 0),
+                "orphan": bucket.get("orphan", 0),
+                "fresh": bucket.get("fresh", 0),
+                "in_index": bucket.get("in_index", 0),
+                "pending": bucket.get("pending", 0),
+            })
+
+        return ApiSuccessResponse(data={
+            "types": types_for_log,
+            "grand_total": grand_total,
+            "scan_ms": scan_ms,
+            "grand_pending": grand_pending,
+            "grand_orphan": grand_orphan,
+            "diff_included": do_diff,
+        })
+
     async def _handle_fs_records_scan(self, request_info) -> ApiResponse:
         """Scan fs_records for stats.
 
@@ -607,12 +810,12 @@ class FsRecordsActionsMixin:
         from flow_sdk.core.network.resource_tracker import broadcast_progress  # noqa: PLC0415
         from flow_sdk.fs_store.indexer import (  # noqa: PLC0415
             INDEXABLE_TYPES,
+            PROGRESS_TEXT_COMPLETE,
             IndexerOptions,
             IndexProgressTable,
             get_shared_indexer,
         )
         from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
-        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
         qp = request_info.request.query_params
         filter_type = qp.get("type", "").strip()
@@ -663,12 +866,21 @@ class FsRecordsActionsMixin:
         except RuntimeError as e:
             return ApiFailResponse(message=str(e), status_code=409)
 
-        async def emit(table: IndexProgressTable) -> None:
+        terminal_table: IndexProgressTable | None = None
+
+        async def publish(table: IndexProgressTable) -> None:
             activity.latest_table = table
             await broadcast_progress(
                 to_entity=str(self.typeid),
                 flow_data=activity.make_flow_data(),
             )
+
+        async def emit(table: IndexProgressTable) -> None:
+            nonlocal terminal_table
+            if table.text == PROGRESS_TEXT_COMPLETE:
+                terminal_table = table
+                return
+            await publish(table)
 
         try:
             t0 = time.perf_counter()
@@ -680,184 +892,19 @@ class FsRecordsActionsMixin:
                 roots=scoped_roots,
             ))
             scan_ms = round((time.perf_counter() - t0) * 1000, 1)
+            response = self._project_fs_records_scan(
+                nodes=nodes,
+                filter_type=filter_type,
+                types_filter=types_filter,
+                trigger=trigger,
+                scan_ms=scan_ms,
+                scope_explicit=scope_explicit,
+            )
+            if terminal_table is not None:
+                await publish(terminal_table)
+            return response
         finally:
             self._complete_activity("scan")
-
-        # Bucket FSRefs by record_type; compute count / total_bytes per type.
-        # For single-type calls, also collect a per-record list.
-        by_type: dict[str, dict] = {}
-        for n in nodes:
-            if n.record_type is None:
-                continue
-            key = str(n.record_type)
-            b = by_type.setdefault(key, {
-                "type": key, "count": 0, "total_bytes": 0, "_records": [],
-            })
-            b["count"] += 1
-            try:
-                st = n._path.stat()
-                b["total_bytes"] += st.st_size
-                if filter_type:
-                    rec_id = self._ref_id(n) or str(n._path)
-                    b["_records"].append({
-                        "id": rec_id,
-                        "name": n._path.stem,
-                        "size_bytes": st.st_size,
-                        "modified_at": st.st_mtime,
-                    })
-            except OSError:
-                pass
-
-        for b in by_type.values():
-            b["avg_bytes"] = b["total_bytes"] // b["count"] if b["count"] else 0
-            # Per-type scan_ms is not tracked — the unified walk shares work across
-            # types. Total scan_ms (below) is the meaningful number.
-            b["scan_ms"] = 0.0
-
-        # ----- Diff classification (cheap; identity-only writes for new assets) -----
-        # For every indexable type, compare each FSRef against the DB state map
-        # to bucket as new / stale / mis_scoped / fresh, then derive orphans via
-        # (db_ids ∪ shadow_dir_ids) − seen_ids. Skipped when scope-filtered
-        # because seen_ids is incomplete for a partial walk. ~16% overhead on
-        # top of scan() — measured at ~360 ms on a 7660-FSRef tree.
-        from flow_sdk.fs_store.fs_record import FSRecord as _FSRecord  # noqa: PLC0415
-        from flow_sdk.fs_store.indexer.index_function import (  # noqa: PLC0415
-            FSIndexer as _FSIndexer,
-        )
-
-        # Diff classification needs ``seen_ids`` to cover every relevant root,
-        # so it only runs on a full-coverage scan. Pre-fix, that was signalled
-        # by ``scope_filter is None`` (the "no scope = walk default_roots()"
-        # branch). After the route now resolves the no-scope case to an
-        # explicit ``get_all_scope_filter()``, the predicate is "the caller
-        # did not pass an explicit scope param" (``not scope_explicit``).
-        # Classification is entirely on-disk now: each record's own ``.hash``
-        # sentinel decides new / stale / fresh — no DB read.
-        do_diff = not scope_explicit
-        if do_diff:
-            _indexable_names = {str(t) for t in INDEXABLE_TYPES}
-
-            _seen_ids: dict[str, set[str]] = {tn: set() for tn in _indexable_names}
-            # ``mis_scoped`` retained as a zero key for response-shape stability;
-            # under the on-disk model a scope change just re-stamps on the next
-            # index, so it folds into ``stale``.
-            _diff: dict[str, dict[str, int]] = {
-                tn: {"new": 0, "stale": 0, "mis_scoped": 0, "fresh": 0}
-                for tn in _indexable_names
-            }
-            for ref in nodes:
-                rt = ref.record_type
-                if rt is None:
-                    continue
-                rt_name = str(rt)
-                if rt_name not in _indexable_names:
-                    continue
-                ref_id = self._ref_id(ref)
-                if not ref_id:
-                    continue
-                _seen_ids[rt_name].add(ref_id)
-                # Pure on-disk freshness via the record's own ``.hash`` sentinel.
-                # Read the sentinel once (one glob) and compare to the live hash;
-                # `index_required` would re-glob, so inline the comparison here.
-                _probe = _FSRecord(type=rt_name, id=ref_id, asset_ref=ref)
-                _indexed = _probe.indexed_hash
-                if _indexed is None:
-                    _diff[rt_name]["new"] += 1
-                elif _probe.record_hash != _indexed:
-                    _diff[rt_name]["stale"] += 1
-                else:
-                    _diff[rt_name]["fresh"] += 1
-
-            _disk_ids = _FSIndexer._discover_records_dir_ids(_indexable_names)
-            for _tn in _indexable_names:
-                _home_ids = _disk_ids.get(_tn, set())
-                # Orphan = a record home whose source wasn't seen this walk.
-                _diff[_tn]["orphan"] = len(_home_ids - _seen_ids[_tn])
-                _diff[_tn]["in_index"] = len(_home_ids)
-                _diff[_tn]["pending"] = (
-                    _diff[_tn]["new"] + _diff[_tn]["stale"] + _diff[_tn]["mis_scoped"]
-                )
-
-            # Merge diff fields into existing per-type buckets; create empty
-            # buckets for types that have no on-disk refs but DO have orphans
-            # or in_index rows (otherwise the UI loses visibility of them).
-            for _tn, _d in _diff.items():
-                if not any(_d.values()):
-                    continue
-                _b = by_type.get(_tn)
-                if _b is None:
-                    _b = by_type.setdefault(_tn, {
-                        "type": _tn, "count": 0, "total_bytes": 0,
-                        "avg_bytes": 0, "scan_ms": 0.0, "_records": [],
-                    })
-                _b.update(_d)
-
-            # Ensure every bucket has the diff keys (zero-fill non-indexable
-            # types so the response shape is uniform).
-            for _b in by_type.values():
-                for _k in ("new", "stale", "mis_scoped", "fresh", "orphan", "in_index", "pending"):
-                    _b.setdefault(_k, 0)
-
-        per_type = list(by_type.values())
-        grand_total = sum(b["count"] for b in per_type)
-        grand_bytes = sum(b["total_bytes"] for b in per_type)
-        grand_pending = sum(b.get("pending", 0) for b in per_type) if do_diff else 0
-        grand_orphan = sum(b.get("orphan", 0) for b in per_type) if do_diff else 0
-
-        # Strip internal _records key from aggregate response
-        types_for_log = [
-            {k: v for k, v in b.items() if k != "_records"} for b in per_type
-        ]
-
-        last_scan_at = SchemaRegistry.append_scan(
-            trigger=trigger,
-            duration_ms=scan_ms,
-            total_records=grand_total,
-            total_bytes=grand_bytes,
-            types=types_for_log if not filter_type else [],
-            type_name=filter_type or None,
-        )
-
-        if filter_type:
-            # Pull the exact bucket for the filtered type — DFS walker visits
-            # scaffold types first (USER_HOME_FOLDER, etc.), so `per_type[0]`
-            # is typically the wrong bucket.
-            b = by_type.get(filter_type)
-            if b is None:
-                return ApiSuccessResponse(data={
-                    "type": filter_type, "count": 0, "total_bytes": 0,
-                    "avg_bytes": 0, "scan_ms": scan_ms, "records": [],
-                    "min_bytes": 0, "max_bytes": 0, "last_scan_at": last_scan_at,
-                })
-            records = b["_records"]
-            sizes = [r["size_bytes"] for r in records] if records else [0]
-            return ApiSuccessResponse(data={
-                "type": filter_type,
-                "count": b["count"],
-                "total_bytes": b["total_bytes"],
-                "avg_bytes": b["avg_bytes"],
-                "scan_ms": scan_ms,
-                "records": records,
-                "min_bytes": min(sizes),
-                "max_bytes": max(sizes),
-                "last_scan_at": last_scan_at,
-                "new": b.get("new", 0),
-                "stale": b.get("stale", 0),
-                "mis_scoped": b.get("mis_scoped", 0),
-                "orphan": b.get("orphan", 0),
-                "fresh": b.get("fresh", 0),
-                "in_index": b.get("in_index", 0),
-                "pending": b.get("pending", 0),
-            })
-
-        return ApiSuccessResponse(data={
-            "types": types_for_log,
-            "grand_total": grand_total,
-            "scan_ms": scan_ms,
-            "grand_pending": grand_pending,
-            "grand_orphan": grand_orphan,
-            "diff_included": do_diff,
-        })
 
     @staticmethod
     async def _scope_filter_from_query(request_info):
@@ -932,7 +979,11 @@ class FsRecordsActionsMixin:
 
         from flow_sdk.core.network.resource_tracker import broadcast_progress  # noqa: PLC0415
         from flow_sdk.db import get_db_driver  # noqa: PLC0415
-        from flow_sdk.fs_store.indexer import PROGRESS_TEXT_COMPLETE, IndexProgressTable, TypeProgressRow  # noqa: PLC0415
+        from flow_sdk.fs_store.indexer import (  # noqa: PLC0415
+            PROGRESS_TEXT_COMPLETE,
+            IndexProgressTable,
+            TypeProgressRow,
+        )
         from flow_sdk.fs_store.operations.record_error import clear_all as _clear_all_errors  # noqa: PLC0415
         from flow_sdk.fs_store.operations.record_error import clear_for_type as _clear_errors_for_type
         from flow_sdk.fs_store.schema_registry import (  # noqa: PLC0415
@@ -1100,8 +1151,24 @@ class FsRecordsActionsMixin:
         # so the agent never gets a TypeId to navigate to. An explicit path is
         # explicit intent, so it also overrides the temp-path skip below.
         index_path = qp.get("path", "").strip()
-        # Unified ScopeFilter from canonical wire format `?user=…&projects=A,B`.
-        from flow_sdk.server.search_filters import ScopeFilter, resolve_project_scope  # noqa: PLC0415
+
+        # Validate the type and resolve the explicit path before considering
+        # the bounded single-file shortcut.
+        types_filter: list[RecordType] | None = None
+        if filter_type:
+            try:
+                types_filter = [RecordType(filter_type)]
+            except ValueError:
+                return ApiFailResponse(
+                    message=f"Unknown record type '{filter_type}'",
+                    status_code=400,
+                )
+        elif limit_types is not None:
+            types_filter = list(INDEXABLE_TYPES)[:limit_types]
+
+        from pathlib import Path as _Path  # noqa: PLC0415
+        _p = _Path(index_path).expanduser().resolve() if index_path else None
+
         # Surface stale callers still using the legacy `?project_id=<id>` shim
         # — it now silently triggers a full-tree walk (scope_filter=None).
         # Logging the hit lets us debug runaway scans without re-introducing
@@ -1113,19 +1180,6 @@ class FsRecordsActionsMixin:
                 "Callers must use canonical ?user=&projects= ScopeFilter format.",
                 legacy_project_id,
             )
-        from flow_sdk.fs_store.operations.all_projects import get_all_scope_filter  # noqa: PLC0415
-        scope_filter = (
-            await resolve_project_scope(ScopeFilter.from_query_params(qp), create_missing=True)
-            if (qp.get("user") is not None or qp.get("projects") is not None)
-            else await get_all_scope_filter(create_missing=True)
-        )
-        # Single-project narrowing — derived from the ScopeFilter, used below
-        # to short-circuit non-project indexer work paths.
-        project_id = (
-            scope_filter.projects[0]
-            if (scope_filter and len(scope_filter.projects) == 1)
-            else None
-        )
         orphan_action_raw = qp.get("orphan_action", "").strip().lower()
         try:
             orphan_action = (
@@ -1140,69 +1194,11 @@ class FsRecordsActionsMixin:
                 status_code=400,
             )
 
-        # Resolve ScopeFilter → indexer roots.
-        #
-        # Orphan-aware runs (orphan_action != INDEX) walk the FULL all-projects
-        # root set even when a narrower scope is selected: orphan-ness is
-        # defined globally (a record is orphan iff its source is missing
-        # anywhere), so ``seen_ids`` must cover all references. The scope
-        # filter is re-applied inside the indexer to narrow which orphans get
-        # reported and acted on. Without the global walk, a record physically
-        # inside project A but referenced from project B — or any project not
-        # in the selected scope — would be falsely flagged as orphan.
-        # Path-scoped run: a single explicit path short-circuits all root
-        # resolution — walk just that file's directory. Cheap and bounded.
-        if index_path:
-            from pathlib import Path as _Path  # noqa: PLC0415
-
-            from flow_sdk.builtin.project import Project  # noqa: PLC0415
-            from flow_sdk.fs_store.fs_ref import FSRef  # noqa: PLC0415
-            from flow_sdk.fs_store.scope import Scope  # noqa: PLC0415
-
-            _p = _Path(index_path).expanduser().resolve()
-            _root_dir = _p.parent if _p.is_file() else _p
-            custom_roots = (
-                FSRef(
-                    _root_dir,
-                    record_type=RecordType.CWD_ROOT,
-                    scope=Scope.PROJECT.value,
-                    project_id=Project.derive_id_for_path(_root_dir),
-                ),
-            )
-        else:
-            # Orphan-aware runs (orphan_action != INDEX) must walk EVERY source
-            # so ``seen_ids`` is global — a record is orphan iff its source is
-            # missing *anywhere*. ``default_roots()`` (the old
-            # ``custom_roots = None``) only covers USER_HOME's targeted
-            # expanders + the backend CWD + system; it does NOT descend the
-            # registered project file trees, so every project record went
-            # unseen and was mass-deleted as a false orphan. Resolve the FULL
-            # all-projects root set for orphan runs; INDEX runs use the
-            # requested scope. Either way ``scope_filter`` is still passed to
-            # the indexer (opts.scope_filter) to narrow which orphans are acted on.
-            roots_scope = (
-                await get_all_scope_filter(create_missing=False)
-                if orphan_action != OrphanAction.INDEX
-                else scope_filter
-            )
-            custom_roots = await self._resolve_scoped_roots(roots_scope)
-            if isinstance(custom_roots, ApiFailResponse):
-                return custom_roots
-
-        # Type filter + validation
-        types_filter: list[RecordType] | None = None
-        if filter_type:
-            try:
-                types_filter = [RecordType(filter_type)]
-            except ValueError:
-                return ApiFailResponse(
-                    message=f"Unknown record type '{filter_type}'",
-                    status_code=400,
-                )
-        elif limit_types is not None:
-            types_filter = list(INDEXABLE_TYPES)[:limit_types]
-
-        if index_path and filter_type and _p.is_file() and not rebuild and not force:
+        # Direct non-force file lookup: resolve exactly the requested asset
+        # before any global scope/project inventory or custom-root work.
+        # ``discover_record_by_path`` still stamps an already-known owning
+        # project through its targeted project-mount lookup.
+        if _p is not None and filter_type and _p.is_file() and not rebuild and not force:
             try:
                 found = await discover_record_by_path(filter_type, str(_p))
             except Exception as e:
@@ -1245,6 +1241,68 @@ class FsRecordsActionsMixin:
                     "total_errors": 0,
                 }
             )
+
+        # Unified ScopeFilter from canonical wire format `?user=…&projects=A,B`.
+        from flow_sdk.fs_store.operations.all_projects import get_all_scope_filter  # noqa: PLC0415
+        from flow_sdk.server.search_filters import ScopeFilter, resolve_project_scope  # noqa: PLC0415
+        scope_filter = (
+            await resolve_project_scope(ScopeFilter.from_query_params(qp), create_missing=True)
+            if (qp.get("user") is not None or qp.get("projects") is not None)
+            else await get_all_scope_filter(create_missing=True)
+        )
+        # Single-project narrowing — derived from the ScopeFilter, used below
+        # to short-circuit non-project indexer work paths.
+        project_id = (
+            scope_filter.projects[0]
+            if (scope_filter and len(scope_filter.projects) == 1)
+            else None
+        )
+
+        # Resolve ScopeFilter → indexer roots.
+        #
+        # Orphan-aware runs (orphan_action != INDEX) walk the FULL all-projects
+        # root set even when a narrower scope is selected: orphan-ness is
+        # defined globally (a record is orphan iff its source is missing
+        # anywhere), so ``seen_ids`` must cover all references. The scope
+        # filter is re-applied inside the indexer to narrow which orphans get
+        # reported and acted on. Without the global walk, a record physically
+        # inside project A but referenced from project B — or any project not
+        # in the selected scope — would be falsely flagged as orphan.
+        # Path-scoped run: a single explicit path short-circuits all root
+        # resolution — walk just that file's directory. Cheap and bounded.
+        if _p is not None:
+            from flow_sdk.builtin.project import Project  # noqa: PLC0415
+            from flow_sdk.fs_store.fs_ref import FSRef  # noqa: PLC0415
+            from flow_sdk.fs_store.scope import Scope  # noqa: PLC0415
+
+            _root_dir = _p.parent if _p.is_file() else _p
+            custom_roots = (
+                FSRef(
+                    _root_dir,
+                    record_type=RecordType.CWD_ROOT,
+                    scope=Scope.PROJECT.value,
+                    project_id=Project.derive_id_for_path(_root_dir),
+                ),
+            )
+        else:
+            # Orphan-aware runs (orphan_action != INDEX) must walk EVERY source
+            # so ``seen_ids`` is global — a record is orphan iff its source is
+            # missing *anywhere*. ``default_roots()`` (the old
+            # ``custom_roots = None``) only covers USER_HOME's targeted
+            # expanders + the backend CWD + system; it does NOT descend the
+            # registered project file trees, so every project record went
+            # unseen and was mass-deleted as a false orphan. Resolve the FULL
+            # all-projects root set for orphan runs; INDEX runs use the
+            # requested scope. Either way ``scope_filter`` is still passed to
+            # the indexer (opts.scope_filter) to narrow which orphans are acted on.
+            roots_scope = (
+                await get_all_scope_filter(create_missing=False)
+                if orphan_action != OrphanAction.INDEX
+                else scope_filter
+            )
+            custom_roots = await self._resolve_scoped_roots(roots_scope)
+            if isinstance(custom_roots, ApiFailResponse):
+                return custom_roots
 
         driver = get_db_driver()
 
@@ -1423,9 +1481,9 @@ class FsRecordsActionsMixin:
         narrow Codex/Copilot — those surface in the list via the UI's own
         project filter.
         """
-        import flow_sdk.fs_store.indexer.registrations  # noqa: F401 — auto-register
         from pathlib import Path  # noqa: PLC0415
 
+        import flow_sdk.fs_store.indexer.registrations  # noqa: F401 — auto-register
         from flow_sdk.core.network.resource_tracker import broadcast_progress  # noqa: PLC0415
         from flow_sdk.fs_store.fs_ref import FSRef  # noqa: PLC0415
         from flow_sdk.fs_store.indexer import (  # noqa: PLC0415
@@ -2343,7 +2401,12 @@ async def discover_record_by_path(
                 _stored = {}
                 if hasattr(_driver, "list_entity_sources_by_type"):
                     _sources = await _driver.list_entity_sources_by_type(record_type)
-                    _stored = stored_asset_occurrences(record_type, _sources)
+                    _target_sources = {
+                        entity_id: source
+                        for entity_id, source in _sources.items()
+                        if str(entity_id) == str(resolved_id)
+                    }
+                    _stored = stored_asset_occurrences(record_type, _target_sources)
 
                 def _resolve_target():
                     def _identity(candidate):

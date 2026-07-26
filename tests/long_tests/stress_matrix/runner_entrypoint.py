@@ -23,7 +23,6 @@ import sys
 import traceback
 from pathlib import Path
 
-
 SENTINEL_NAME = "_runner_complete.json"
 
 
@@ -56,7 +55,7 @@ async def _drive(prompt: str, workdir: str) -> dict:
     # Stress cells can opt out of the pre-save to exercise the
     # exist_in_db gate at agentic_process.py:1088 (B1 / "no AP record").
     if os.environ.get("STRESS_NO_AP_SAVE") != "1":
-        await ap.save([])
+        await ap.save()
 
     response = await ap.prompt(prompt)
     response_status = (

@@ -2,7 +2,7 @@ import {
   parseInterfaceBlock,
 } from '@src/components/milkdown-editor/plugins/fence-render/renderers/interface-schema';
 import { interfaceRenderer } from '@src/components/milkdown-editor/plugins/fence-render/renderers/interface';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 const VALID = `
 name: createTask
@@ -23,6 +23,8 @@ describe('parseInterfaceBlock', () => {
         { name: 'title', type: 'string', optional: false, description: undefined },
         { name: 'due', type: 'date', optional: true, description: undefined },
       ],
+      properties: [],
+      methods: [],
       returns: 'Task',
       errors: ['NotFound', 'Forbidden'],
     });
@@ -34,9 +36,46 @@ describe('parseInterfaceBlock', () => {
       name: 'ping',
       description: undefined,
       params: [],
+      properties: [],
+      methods: [],
       returns: undefined,
       errors: [],
     });
+  });
+
+  it('parses class properties and methods without conflating their value shapes', () => {
+    const spec = parseInterfaceBlock(`name: Agent
+properties:
+  status:
+    type: ProcessStatus?
+    description: Current lifecycle state.
+methods:
+  start: "async (prompt?: string) -> ApiResponse"
+  close:
+    signature: async () -> void
+    description: Permanently tear down the process.
+`);
+
+    expect(spec.properties).toEqual([
+      {
+        name: 'status',
+        type: 'ProcessStatus',
+        optional: true,
+        description: 'Current lifecycle state.',
+      },
+    ]);
+    expect(spec.methods).toEqual([
+      {
+        name: 'start',
+        signature: 'async (prompt?: string) -> ApiResponse',
+        description: undefined,
+      },
+      {
+        name: 'close',
+        signature: 'async () -> void',
+        description: 'Permanently tear down the process.',
+      },
+    ]);
   });
 
   /*
@@ -133,6 +172,49 @@ describe('interface renderer', () => {
     expect(card.querySelector('.interface-card-returns')).toBeNull();
     expect(card.querySelectorAll('.interface-card-param')).toHaveLength(0);
     expect(card.querySelectorAll('.interface-card-chip')).toHaveLength(0);
+    expect(card.querySelector('.interface-card-member-tabs')).toBeNull();
+  });
+
+  it('switches between Methods and Properties without changing the source', async () => {
+    const host = document.createElement('div');
+    const commit = vi.fn();
+    await interfaceRenderer.render(
+      'name: Agent\nproperties:\n  status: ProcessStatus\nmethods:\n  start: "async () -> void"\n',
+      host,
+      { theme: 'light', blockId: 'b-tabs', editable: true, host: { openFile: () => {}, previewFile: () => {}, documentProjectRoot: () => null, projectRootById: () => null }, commit },
+    );
+
+    const methods = host.querySelector<HTMLButtonElement>('[data-testid="interface-subtab-methods"]')!;
+    const properties = host.querySelector<HTMLButtonElement>('[data-testid="interface-subtab-properties"]')!;
+    const methodsPanel = host.querySelector<HTMLElement>('[data-testid="interface-panel-methods"]')!;
+    const propertiesPanel = host.querySelector<HTMLElement>('[data-testid="interface-panel-properties"]')!;
+
+    expect(methods.getAttribute('aria-selected')).toBe('true');
+    expect(methodsPanel.hidden).toBe(false);
+    expect(propertiesPanel.hidden).toBe(true);
+    expect(methodsPanel.textContent).toContain('start');
+
+    properties.click();
+    expect(properties.getAttribute('aria-selected')).toBe('true');
+    expect(methodsPanel.hidden).toBe(true);
+    expect(propertiesPanel.hidden).toBe(false);
+    expect(propertiesPanel.textContent).toContain('status');
+    expect(commit).not.toHaveBeenCalled();
+  });
+
+  it('keeps both tabs available when one member collection is empty', async () => {
+    const host = document.createElement('div');
+    await interfaceRenderer.render(
+      'name: Agent\nproperties:\n  status: ProcessStatus\n',
+      host,
+      { theme: 'light', blockId: 'b-empty', editable: false, host: { openFile: () => {}, previewFile: () => {}, documentProjectRoot: () => null, projectRootById: () => null }, commit: () => {} },
+    );
+
+    const methods = host.querySelector<HTMLButtonElement>('[data-testid="interface-subtab-methods"]')!;
+    const properties = host.querySelector<HTMLButtonElement>('[data-testid="interface-subtab-properties"]')!;
+    expect(properties.getAttribute('aria-selected')).toBe('true');
+    methods.click();
+    expect(host.querySelector('[data-testid="interface-panel-methods"]')?.textContent).toContain('No methods.');
   });
 
   /*

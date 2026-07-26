@@ -131,6 +131,95 @@ async def test_index_handler_unknown_type_400(captured_progress):
     assert resp.status_code == 400
 
 
+@pytest.mark.asyncio
+async def test_direct_file_skips_global_scope_and_preserves_known_project(
+    clean_target_types, monkeypatch, tmp_path,
+):
+    from flow_sdk.builtin.claude_memory_entities import Markdown
+    from flow_sdk.builtin.project import Project
+    from flow_sdk.responses.response import ApiSuccessResponse
+
+    project_root = tmp_path / "known-project"
+    project_root.mkdir()
+    project = Project(
+        id=Project.derive_id_for_path(project_root),
+        name="known-project",
+        fs_storage_mount_path=str(project_root),
+    )
+    await project.save()
+    path = project_root / "direct.md"
+    path.write_text("# direct\n", encoding="utf-8")
+
+    async def forbidden(*args, **kwargs):
+        pytest.fail("direct-file branch invoked global scope/root resolution")
+
+    monkeypatch.setattr(
+        "flow_sdk.fs_store.operations.all_projects.get_all_scope_filter", forbidden,
+    )
+    monkeypatch.setattr(
+        "flow_sdk.server.search_filters.resolve_project_scope", forbidden,
+    )
+    monkeypatch.setattr("flow_sdk.fs_store.indexer.get_shared_indexer", forbidden)
+    handler = _Handler()
+    monkeypatch.setattr(handler, "_resolve_scoped_roots", forbidden)
+
+    resp = await handler._handle_fs_records_index(
+        FakeRequestInfo({"type": "markdown", "path": str(path)})
+    )
+
+    assert isinstance(resp, ApiSuccessResponse)
+    entity_id = resp.data["typeid"].removeprefix("markdown-")
+    assert resp.data == {
+        "type": "markdown",
+        "indexed": 1,
+        "errors": 0,
+        "orphans_found": 0,
+        "orphans_db_removed": 0,
+        "orphans_disk_removed": 0,
+        "typeid": f"markdown-{entity_id}",
+        "typeids": [f"markdown-{entity_id}"],
+        "types": [{
+            "type": "markdown",
+            "indexed": 1,
+            "new": 1,
+            "skipped": 0,
+            "errors": 0,
+            "duration_ms": 0.0,
+            "orphans_found": 0,
+            "orphans_db_removed": 0,
+            "orphans_disk_removed": 0,
+        }],
+        "total_indexed": 1,
+        "total_errors": 0,
+    }
+    stored = await Markdown.get_by_id(entity_id)
+    assert stored is not None
+    assert stored.project_id == project.id
+
+
+@pytest.mark.asyncio
+async def test_direct_file_still_validates_orphan_action_before_shortcut(
+    monkeypatch, tmp_path,
+):
+    path = tmp_path / "direct.md"
+    path.write_text("# direct\n", encoding="utf-8")
+
+    async def forbidden(*args, **kwargs):
+        pytest.fail("invalid direct-file request invoked global scope resolution")
+
+    monkeypatch.setattr(
+        "flow_sdk.fs_store.operations.all_projects.get_all_scope_filter", forbidden,
+    )
+    resp = await _Handler()._handle_fs_records_index(FakeRequestInfo({
+        "type": "markdown",
+        "path": str(path),
+        "orphan_action": "not-valid",
+    }))
+
+    assert resp.status_code == 400
+    assert "Invalid orphan_action" in resp.message
+
+
 # do not increase timeout without approval
 @pytest.mark.timeout(30)
 @pytest.mark.asyncio

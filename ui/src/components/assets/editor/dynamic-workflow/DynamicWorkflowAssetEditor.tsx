@@ -1,8 +1,11 @@
-import { useEffect, useState } from 'react';
-import { DynamicWorkflow, FSRef, ProcessKind } from '@sdk';
+import { useEffect, useMemo, useState } from 'react';
+import { DynamicWorkflow, FSRef, ProcessKind, TypeId } from '@sdk';
 import { AssetEditorHeader } from '@src/components/assets/editor/AssetEditorHeader';
 import { EntityExecutionPanel } from '@src/components/entity-execution-panel/EntityExecutionPanel';
+import { ShareButton } from '@src/components/entity-actions/ShareButton';
+import { ShareToConversationDialog } from '@src/components/share-to-conversation/ShareToConversationDialog';
 import { Button } from '@src/components/ui/button';
+import { genericEntityShareSource } from '@src/hooks/share-sources';
 import { notify } from '@src/notifications';
 import { Boxes, Play, Save, Zap } from 'lucide-react';
 
@@ -23,9 +26,18 @@ export function DynamicWorkflowAssetEditor({ fsRef, workflow }: DynamicWorkflowA
   const [script, setScript] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
 
   const fileName = fsRef.path.split('/').pop() ?? 'workflow.js';
   const dirPath = fsRef.path.slice(0, -fileName.length - 1);
+  const shareSource = useMemo(
+    () =>
+      genericEntityShareSource(
+        new TypeId(workflow.type, workflow.id),
+        { label: workflow.name || fileName },
+      ),
+    [workflow.id, workflow.name, workflow.type, fileName],
+  );
 
   useEffect(() => {
     let alive = true;
@@ -40,7 +52,7 @@ export function DynamicWorkflowAssetEditor({ fsRef, workflow }: DynamicWorkflowA
     return () => {
       alive = false;
     };
-  }, [fsRef.path]);
+  }, [fsRef]);
 
   const save = async () => {
     if (script === null) return;
@@ -77,15 +89,39 @@ export function DynamicWorkflowAssetEditor({ fsRef, workflow }: DynamicWorkflowA
         dirty={dirty}
         actions={
           <div className="flex items-center gap-2">
-            <Button size="sm" variant="outline" disabled={busy || !dirty} onClick={save} data-testid="dw-save">
+            <ShareButton
+              variant="compact"
+              onClick={() => setShareOpen(true)}
+              tooltip="Share to a conversation"
+              testId="dynamic-workflow-editor-share"
+            />
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={busy || !dirty}
+              onClick={() => void save()}
+              data-testid="dw-save"
+            >
               <Save className="mr-1 h-4 w-4" />
               Save
             </Button>
-            <Button size="sm" variant="default" disabled={busy} onClick={() => run(true)} data-testid="dw-run">
+            <Button
+              size="sm"
+              variant="default"
+              disabled={busy}
+              onClick={() => void run(true)}
+              data-testid="dw-run"
+            >
               <Play className="mr-1 h-4 w-4" />
               Run
             </Button>
-            <Button size="sm" variant="outline" disabled={busy} onClick={() => run(false)} data-testid="dw-run-headless">
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={busy}
+              onClick={() => void run(false)}
+              data-testid="dw-run-headless"
+            >
               <Zap className="mr-1 h-4 w-4" />
               Run headless
             </Button>
@@ -124,6 +160,13 @@ export function DynamicWorkflowAssetEditor({ fsRef, workflow }: DynamicWorkflowA
           className="h-full"
         />
       </div>
+      {shareOpen && (
+        <ShareToConversationDialog
+          open={shareOpen}
+          onClose={() => setShareOpen(false)}
+          source={shareSource}
+        />
+      )}
     </div>
   );
 }

@@ -54,7 +54,10 @@ const post = (apiUrl: string, p: string, body?: unknown) =>
 // Bob's skill: the 4 pasted steps + two flowpad-native nudges so the run is
 // deterministic (ask via MCP-UI, present via `flow show`). Frontmatter `name`
 // drives `run the skill find-me-a-product`.
-const SKILL_NAME = 'find-me-a-product';
+// The receiver installs into a long-lived cycle project. A fixed folder name
+// collides with an earlier run's installed copy even though this run minted a
+// fresh entity id, so make the on-disk skill name cycle-unique.
+const SKILL_NAME = testEntityName('find-me-a-product');
 // The skill body (Bob's 4 steps + two flowpad-native nudges so the run is
 // deterministic). Frontmatter `id` is stamped from the created entity so the
 // on-disk SKILL.md stays the same entity the share bundle carries.
@@ -158,12 +161,13 @@ describe('run a received skill in a Vibe MCP-UI session', () => {
     });
     step('alice opened conversation');
     const download = page.getByTestId('download-attachments-button');
-    if (await download.isVisible({ timeout: 30_000 }).catch(() => false)) {
-      await download.click({ force: true }).catch(() => undefined);
-      step('clicked download');
-    } else {
-      step('no download button (already staged?)');
-    }
+    // Accept deliberately materializes only the message header; the user-owned
+    // Download action is what pulls + stages the bundle. Locator.isVisible's
+    // timeout option is ignored by Playwright, so probing it here races the
+    // first conversation render and can incorrectly skip this required step.
+    // A locator click uses Playwright's existing actionability wait.
+    await download.click({ force: true });
+    step('clicked download');
 
     // 3. The run icon appears on the staged skill chip → click it.
     const runIcon = page.getByTestId('skill-run-icon').first();

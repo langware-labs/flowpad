@@ -12,17 +12,18 @@ from pathlib import Path
 import pytest
 
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.indexer import (
     FSIndexer,
     IndexerOptions,
 )
+from flow_sdk.fs_store.indexer.builtin import build_default_indexer
 from flow_sdk.fs_store.indexer.functions.claude_projects import (
     claude_projects_fn,
 )
 from flow_sdk.fs_store.indexer.functions.claude_sessions import (
     claude_sessions_fn,
 )
+from flow_sdk.fs_store.record_types import RecordType
 
 
 @pytest.mark.asyncio
@@ -85,3 +86,60 @@ async def test_basic_indexer_dfs_discovers_projects_and_sessions(
         str(project_b.resolve()),
         str(sess_b1.resolve()),
     ]
+
+
+def test_skill_type_closure_keeps_only_required_scaffolds() -> None:
+    closure = build_default_indexer()._compute_needed_output_types(
+        (RecordType.SKILL,)
+    )
+
+    assert closure is not None
+    assert RecordType.SKILL in closure
+    assert RecordType.FOLDER in closure
+    assert RecordType.CLAUDE_SESSION not in closure
+    assert RecordType.CODEX_SESSION not in closure
+    assert RecordType.COPILOT_SESSION not in closure
+
+
+@pytest.mark.asyncio
+async def test_multi_output_registration_runs_only_for_intersecting_types(
+    tmp_path: Path,
+) -> None:
+    root = FSRef(tmp_path, record_type=RecordType.CWD_ROOT)
+    calls = {"repo": 0, "session": 0}
+
+    def repo_walker(nodes, _opts):
+        calls["repo"] += 1
+        return []
+
+    def session_walker(nodes, _opts):
+        calls["session"] += 1
+        return []
+
+    indexer = FSIndexer(roots=[root])
+    indexer.add_function(
+        RecordType.CWD_ROOT,
+        repo_walker,
+        {RecordType.SPEC, RecordType.TASK},
+    )
+    indexer.add_function(
+        RecordType.CWD_ROOT,
+        session_walker,
+        RecordType.CLAUDE_SESSION,
+    )
+
+    await indexer.scan(IndexerOptions(types=[RecordType.SPEC]))
+    assert calls == {"repo": 1, "session": 0}
+
+    calls.update(repo=0, session=0)
+    await indexer.scan(IndexerOptions(types=[RecordType.SKILL]))
+    assert calls == {"repo": 0, "session": 0}
+
+
+def test_unknown_output_registration_disables_type_pruning(tmp_path: Path) -> None:
+    indexer = FSIndexer(
+        roots=[FSRef(tmp_path, record_type=RecordType.CWD_ROOT)]
+    )
+    indexer.add_function(RecordType.CWD_ROOT, lambda nodes, opts: [])
+
+    assert indexer._compute_needed_output_types((RecordType.SKILL,)) is None

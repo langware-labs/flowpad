@@ -254,3 +254,37 @@ describe('editable field wiring', () => {
     expect(bare.querySelector('[data-testid="interface-returns"]')).toBeNull();
   });
 });
+
+describe('class member inline editing', () => {
+  it('commits member edits and preserves the selected sub-tab across redraws', () => {
+    const classHost = document.createElement('div');
+    const classCommit = vi.fn();
+    renderInterfaceCard(
+      'name: Agent\nproperties:\n  status: ProcessStatus\nmethods:\n  start: "async () -> void"\n',
+      classHost,
+      {
+        theme: 'dark',
+        blockId: 'members',
+        editable: true,
+        host: { openFile: () => {}, previewFile: () => {}, documentProjectRoot: () => null, projectRootById: () => null },
+        commit: classCommit,
+      },
+    );
+
+    classHost.querySelector<HTMLButtonElement>('[data-testid="interface-subtab-properties"]')!.click();
+    const propertyType = classHost.querySelector<HTMLElement>(
+      '[data-testid="interface-property-type-status"]',
+    )!;
+    propertyType.textContent = 'WorkerStatus';
+    propertyType.dispatchEvent(new FocusEvent('blur'));
+
+    expect(parseInterfaceBlock(classCommit.mock.calls.at(-1)![0]).properties[0]).toMatchObject({
+      type: 'WorkerStatus',
+    });
+    expect(
+      classHost
+        .querySelector('[data-testid="interface-subtab-properties"]')
+        ?.getAttribute('aria-selected'),
+    ).toBe('true');
+  });
+});
