@@ -237,7 +237,7 @@ async def test_settings_instruction_is_obeyed_pty(
         cli_config=_small_cli_config(worker_type),
     )
     process.instructions = system_prompt
-    await process.save([])
+    await process.save()
 
     try:
         turn_started = time.time()

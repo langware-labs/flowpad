@@ -53,6 +53,7 @@ def _raw_capture(name: str) -> bytes:
 
 
 CLAUDE_COMPOSER_CAPTURE = _raw_capture("claude_pty_composer_2_1_207.b64")
+CLAUDE_RESUME_COMPOSER_CAPTURE = _raw_capture("claude_pty_resume_composer_2_1_220.b64")
 COPILOT_TRUST_CAPTURE = _raw_capture("copilot_pty_trust_1_0_70.b64")
 COPILOT_COMPOSER_CAPTURE = _raw_capture("copilot_pty_composer_1_0_70.b64")
 
@@ -102,6 +103,19 @@ def test_claude_pattern_rejects_precomposer_and_matches_real_raw_frame():
     assert ClaudeDriver.pty_composer_ready_pattern.search(
         strip_pty_controls(CLAUDE_COMPOSER_CAPTURE)
     )
+
+
+def test_claude_pattern_matches_real_resumed_blank_composer_frame():
+    text = strip_pty_controls(CLAUDE_RESUME_COMPOSER_CAPTURE)
+    assert text.startswith("❯\u00a0")
+    assert "─" * 3 in text
+    assert ClaudeDriver.pty_composer_ready_pattern.search(text)
+
+
+def test_claude_pattern_rejects_generic_prompt_glyph_and_echoed_user_turn():
+    pattern = ClaudeDriver.pty_composer_ready_pattern
+    assert not pattern.search("❯\u00a0")
+    assert not pattern.search("❯ Reply with ONLY this exact token")
 
 
 def test_copilot_composer_pattern_rejects_trust_and_matches_composer():

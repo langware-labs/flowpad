@@ -19,7 +19,6 @@ from flow_sdk.builtin.agentic_process import AgenticProcess
 from flow_sdk.builtin.project import Project
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
 
-
 # ---------------------------------------------------------------------------
 # Project.recover_by_path
 # ---------------------------------------------------------------------------
@@ -29,6 +28,30 @@ from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
 async def test_recover_by_path_returns_none_for_empty(bootstrapped_client):
     """Empty path → None (nothing to recover)."""
     assert await Project.recover_by_path("") is None
+
+
+@pytest.mark.asyncio
+async def test_project_model_and_recovery_refuse_exact_user_home(
+    bootstrapped_client,
+):
+    from flow_sdk.fs_store.indexer.roots import resolve_project_id_for_cwd
+    from flow_sdk.instance_settings import get_instance_settings
+
+    home = get_instance_settings().user_home
+    project = Project(name=str(home), fs_storage_mount_path=str(home))
+
+    assert project.fs_storage_mount_path == str(home)
+    assert project.protected_path
+    assert Project.derive_id_for_path(str(home)) is None
+    assert resolve_project_id_for_cwd(str(home)) is None
+    assert await Project.recover_by_path(str(home)) is None
+
+    class LegacyHomeRecord:
+        @staticmethod
+        def meta_dict():
+            return {"type": "project", "cwd": str(home), "name": str(home)}
+
+    assert await Project.from_record(LegacyHomeRecord(), notify=False) is None
 
 
 @pytest.mark.asyncio
@@ -95,38 +118,106 @@ async def test_recover_by_path_refuses_agent_mount_root(bootstrapped_client, tmp
 
 
 @pytest.mark.asyncio
-async def test_reap_agent_mount_root_projects(bootstrapped_client, tmp_path, monkeypatch):
-    """The bootstrap self-heal deletes a stale Project entity minted for the
-    agent mount ROOT (before the guard existed), and leaves real subfolder
-    projects untouched."""
+async def test_reap_protected_path_projects(bootstrapped_client, tmp_path, monkeypatch):
+    """Startup cleanup removes only unsafe rows/shadows, never source content
+    or normal relationship targets."""
     import flow_sdk.config as cfg
+    import flow_sdk.fs_store.indexer.roots as roots
+    import flow_sdk.fs_store.operations.all_projects as all_projects
+    from flow_sdk.core.cache.entity_cache import entity_cache, uname_cache
+    from flow_sdk.fs_store.fs_record import FSRecord
     from flow_sdk.fs_store.path_utils import canonical_posix_path
-    from flow_sdk.server.routes.bootstrap import _reap_agent_mount_root_projects
+    from flow_sdk.instance_settings import get_instance_settings
+    from flow_sdk.server.routes.bootstrap import _reap_protected_path_projects
 
     mount_root = tmp_path / "Flowpad workspace"
     mount_root.mkdir()
+    (mount_root / "source.txt").write_text("keep")
     canonical = canonical_posix_path(mount_root)
     monkeypatch.setattr(cfg, "AGENT_MOUNT_FOLDER", canonical)
     monkeypatch.setattr(cfg, "agent_workspace_root", lambda: mount_root)
 
-    # Stale mount-root project (bypasses the mint guard by constructing directly).
-    stale = Project(name="Flowpad workspace", fs_storage_mount_path=canonical)
+    # Stale mount-root project: construct safely, then bypass the new validator
+    # to reproduce raw legacy DB + shadow metadata.
+    stale = Project(
+        name="Flowpad workspace",
+        uname="legacy-protected-root",
+        fs_storage_mount_path=str(tmp_path / "safe-seed"),
+    )
+    object.__setattr__(stale, "fs_storage_mount_path", canonical)
     stale.id = Project.allocate_id(stale.model_dump())
     await stale.save()
+    stale_shadow = FSRecord(
+        type="project",
+        id=stale.id,
+        fs_storage_mount_path=canonical,
+        name=stale.name,
+    )
+    stale_shadow.save()
+
     # A real subfolder project that must survive the reap.
-    sub_path = canonical_posix_path(mount_root / "real-project")
+    sub = mount_root / "real-project"
+    sub.mkdir()
+    sub_path = canonical_posix_path(sub)
     keep = Project(name="real-project", fs_storage_mount_path=sub_path)
     keep.id = Project.allocate_id(keep.model_dump())
     await keep.save()
+    await stale.add_child(keep)
+    # A stale unsafe shadow must not condemn an independently safe DB row.
+    keep_shadow = FSRecord(
+        type="project",
+        id=keep.id,
+        fs_storage_mount_path=str(get_instance_settings().user_home),
+        name=keep.name,
+    )
+    keep_shadow.save()
 
-    await _reap_agent_mount_root_projects()
+    # Exact HOME is independently unsafe; cleanup must preserve the directory
+    # and its contents just like the agent workspace source.
+    home = get_instance_settings().user_home
+    home_sentinel = home / "reaper-preserves-home.txt"
+    home_sentinel.write_text("keep home")
+    stale_home = Project(
+        name="legacy-home",
+        fs_storage_mount_path=str(tmp_path / "safe-home-seed"),
+    )
+    object.__setattr__(stale_home, "fs_storage_mount_path", str(home))
+    stale_home.id = Project.allocate_id(stale_home.model_dump())
+    await stale_home.save()
+    home_shadow = FSRecord(
+        type="project",
+        id=stale_home.id,
+        fs_storage_mount_path=str(home),
+        name=stale_home.name,
+    )
+    home_shadow.save()
+
+    await all_projects.get_cached_projects(force=True)
+    roots._CWD_PID_CACHE["unsafe"] = stale.id
+    entity_cache.set(str(stale.typeid), stale)
+    uname_cache.set_id("project", stale.uname, stale.id)
+
+    await _reap_protected_path_projects()
 
     assert await Project.find_by_cwd(canonical) is None, "stale mount-root project not reaped"
-    assert await Project.find_by_cwd(sub_path) is not None, "subfolder project must survive"
+    assert await Project.get_by_id(stale.id) is None
+    assert await Project.get_by_id(stale_home.id) is None
+    assert not stale_shadow.shadow_dir.exists()
+    assert not home_shadow.shadow_dir.exists()
+    assert not keep_shadow.shadow_dir.exists()
+    assert (mount_root / "source.txt").read_text() == "keep"
+    assert home_sentinel.read_text() == "keep home"
+    assert await Project.get_by_id(keep.id) is not None, "relationship target must survive"
+    assert await Project.find_by_cwd(sub_path) is not None, "subproject must survive"
+    assert all_projects._PROJECTS_CACHE is None
+    assert roots._CWD_PID_CACHE == {}
+    assert entity_cache.get(str(stale.typeid)) is None
+    assert uname_cache.get_id("project", stale.uname) is None
 
     # Idempotent: a second run is a clean no-op.
-    await _reap_agent_mount_root_projects()
+    await _reap_protected_path_projects()
     assert await Project.find_by_cwd(sub_path) is not None
+    home_sentinel.unlink()
 
 
 # ---------------------------------------------------------------------------

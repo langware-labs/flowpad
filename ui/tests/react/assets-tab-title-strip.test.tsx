@@ -8,7 +8,7 @@
  * current dock; here the router sits at "/" so no assets tab is active.)
  */
 import { render, screen } from '@testing-library/react';
-import { MemoryRouter } from 'react-router';
+import { MemoryRouter, Route, Routes } from 'react-router';
 import { describe, expect, it } from 'vitest';
 import { dataManager, Tab } from '@sdk';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -29,11 +29,14 @@ function StripInner({ tabs }: { tabs: Tab[] }) {
 }
 
 // `useTabStripItems` reads the current dock (useDockNavigation → react-router),
-// so the strip must render under a Router. "/" → no active assets tab.
-function Strip({ tabs }: { tabs: Tab[] }) {
+// so the strip must render under a real dock route. "/" → no active assets tab.
+function Strip({ tabs, initialEntry = '/' }: { tabs: Tab[]; initialEntry?: string }) {
   return (
-    <MemoryRouter>
-      <StripInner tabs={tabs} />
+    <MemoryRouter initialEntries={[initialEntry]}>
+      <Routes>
+        <Route path="/dock/:viewType/*" element={<StripInner tabs={tabs} />} />
+        <Route path="*" element={<StripInner tabs={tabs} />} />
+      </Routes>
     </MemoryRouter>
   );
 }
@@ -68,5 +71,19 @@ describe('assets tab chip title follows scope', () => {
   it('global scope → "Assets" (registry fallback)', () => {
     render(<Strip tabs={[tabFor(ALL_SCOPE_FILTER)]} />);
     expect(screen.getByText('Assets')).toBeInTheDocument();
+  });
+
+  it('active VFS editor route → filename', () => {
+    const dock = DockPointer.forAssetEditor(
+      'markdown',
+      '/Users/test/project/docs/agent/interface.md',
+    ).withScopeFilter(ALL_SCOPE_FILTER);
+    const tab = tabFor(ALL_SCOPE_FILTER);
+
+    expect(dock.tabHash).toBe(tab.dockPointer?.tabHash);
+    render(<Strip tabs={[tab]} initialEntry={dock.toUrl()} />);
+
+    expect(screen.getByText('interface.md')).toBeInTheDocument();
+    expect(screen.queryByText('Assets')).not.toBeInTheDocument();
   });
 });

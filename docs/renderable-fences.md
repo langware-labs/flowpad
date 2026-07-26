@@ -83,6 +83,31 @@ editing: values are click-to-edit and the optional badge is a toggle. Edits
 rewrite the block through `yaml`'s Document API rather than regenerating it, so
 comments, key order and quoting survive.
 
+An interface may describe either a callable (`params`, `returns`, `errors`) or a
+class-like surface with `methods` and `properties`. Class-like cards gain two
+sub-tabs inside the Interface pane; switching them is view state and never
+writes to the document. Both collections accept a compact scalar, while
+described properties use `{type, description}` and described methods use
+`{signature, description}`:
+
+```yaml
+name: AgenticProcess
+properties:
+  status:
+    type: ProcessStatus
+    description: Current lifecycle state.
+methods:
+  start: "async (prompt?: string) -> ApiResponse"
+  close:
+    signature: "async () -> void"
+    description: Permanently tear down the process.
+```
+
+If either class-member collection is present, both tabs are available. The
+renderer opens Methods when methods exist, otherwise Properties; selecting an
+empty sibling tab shows a short empty state. Callable-only fences retain their
+existing layout with no member tabs.
+
 ## Source grounding
 
 An `interface` block may carry a `source` pointer — where the contract is

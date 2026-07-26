@@ -63,8 +63,8 @@ import { hubAvailable } from './_hub';
 import { trackTypeId } from '../_cleanup';
 
 const COUNT_TARGET = 10;
-// Per-step budgets are the real guards (NOT the it() envelope). A "say the
-// token" turn on the small model must be fast; a slow turn is a regression.
+// Per-step budgets are the real guards (NOT the it() envelope). A correlation-ID
+// acknowledgement on the small model must be fast; a slow turn is a regression.
 const BOOT_BUDGET_MS = 60_000; // PTY spawn/teardown + worker reaches awaiting-input
 const TURN_BUDGET_MS = 10_000; // counter budget: token must land in 10s
 const SWITCH_BUDGET_MS = 30_000; // toggle disabled (switching/mid-turn) → re-enabled
@@ -119,7 +119,8 @@ describe('chat⇄terminal switch stress in the browser — one session, 10 itera
         pty_mode: true,
         visible: true,
         watchProcess: true,
-        launchPrompt: 'You are a counter. When asked, reply with ONLY the exact token you are given.',
+        launchPrompt:
+          'Help validate a software chat transport. For each diagnostic request, acknowledge its correlation ID in your response.',
       },
     );
     expect(proc?.id, 'process created').toBeTruthy();
@@ -130,13 +131,30 @@ describe('chat⇄terminal switch stress in the browser — one session, 10 itera
     // Open the dock through the PRODUCTION nav path. A raw `goto` to the dock URL
     // redirects to the active-project scope (the projectless test process isn't
     // shown there) — `openShellProcess` resolves the process + opens its tab
-    // correctly, which is also what a real click does.
+    // correctly, which is also what a real click does. Pin Advanced explicitly:
+    // long-lived cycle instances retain the user's last view mode, and Vibe
+    // intentionally renders a different process surface without this toggle.
     page = await openInstancePage(browser!, INSTANCE);
     await page.page.evaluate(
-      (id) => (window as any).navigation.openShellProcess(id),
+      (id) => (window as any).navigation.openShellProcess(id, { viewMode: 'advanced' }),
       proc.id as string,
     );
-    await page.page.getByTestId('terminal-chat-toggle').waitFor({ state: 'visible', timeout: 20_000 });
+    try {
+      await page.page.getByTestId('terminal-chat-toggle').waitFor({ state: 'visible', timeout: 20_000 });
+    } catch (error) {
+      const diagnostics = await page.page.evaluate(() => ({
+        url: window.location.href,
+        testIds: Array.from(document.querySelectorAll<HTMLElement>('[data-testid]'))
+          .map((el) => el.dataset.testid)
+          .filter(Boolean),
+        text: document.body.innerText.replace(/\s+/g, ' ').slice(0, 800),
+      }));
+      throw new Error(
+        `terminal toggle did not render: ${JSON.stringify(diagnostics)}; ` +
+          `console=${JSON.stringify(realConsoleErrors(page.consoleErrors))}`,
+        { cause: error },
+      );
+    }
     await waitToggleEnabled(); // worker idle after the seeded turn
     resetConsoleErrors(page); // drop boot/navigation noise before the measured loop
   }, 120_000);
@@ -356,7 +374,9 @@ describe('chat⇄terminal switch stress in the browser — one session, 10 itera
         //    so the tight TURN_BUDGET still governs "the token must land fast" — a
         //    slow turn is a regression, never waited out.
         const token = tokenFor(count);
-        const promptText = `Reply with ONLY this exact token and nothing else: ${token}`;
+        const promptText =
+          `This is an end-to-end software transport diagnostic. ` +
+          `Briefly confirm receipt of correlation ID ${token}.`;
         const turnPromise = (onPty ? proc.prompt(promptText) : proc.submit(promptText)).catch(
           () => undefined,
         );

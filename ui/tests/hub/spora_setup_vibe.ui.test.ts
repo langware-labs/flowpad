@@ -41,8 +41,8 @@ import {
   type ResolvedInstance,
 } from './_instances';
 import {
+  acceptInvitationInUI,
   launchBrowser,
-  openConversation,
   openInstancePage,
   realConsoleErrors,
   resetConsoleErrors,
@@ -188,38 +188,6 @@ async function flowCliAsync(inst: ResolvedInstance, args: string[], cwd: string)
   });
 }
 
-async function acceptConversationInvitationInUI(inst: InstancePage, conversationId: string): Promise<void> {
-  const { page } = inst;
-  const rowSelector = `[data-testid="inbox-conversation-row"][data-conversation-id="${conversationId}"]`;
-  const deadline = Date.now() + 35_000;
-  for (;;) {
-    await fetch(`${inst.apiUrl}/api/v1/graph/conversation-list`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: '{}',
-    }).catch(() => undefined);
-    await page.goto(`${inst.feUrl}/dock/inbox?viewMode=advanced`, { waitUntil: 'domcontentloaded' });
-    const row = page.locator(rowSelector).first();
-    if (await row.isVisible({ timeout: 2_000 }).catch(() => false)) {
-      const kind = await row.getAttribute('data-kind').catch(() => null);
-      if (kind !== 'invitation') return;
-      const accept = row.getByTestId('inbox-accept-invitation-button');
-      if (await accept.isVisible({ timeout: 2_000 }).catch(() => false)) {
-        await accept.click({ timeout: 5_000 });
-        await pollUntil(async () => {
-          const invitations = await fetch(`${inst.apiUrl}/api/v1/graph/invitation`).then((x) => x.json()).catch(() => null);
-          const rows = (invitations?.data ?? []) as any[];
-          const inv = rows.find((i) => i?.target_url_path === `/conversation/${conversationId}`);
-          return inv?.accepted === true ? true : null;
-        }, 20_000, `conversation ${conversationId} invitation accepted`);
-        return;
-      }
-    }
-    if (Date.now() > deadline) throw new Error(`invitation row not accept-ready for ${conversationId}`);
-    await page.waitForTimeout(1_000);
-  }
-}
-
 beforeAll(async () => {
   const hub = await hubAvailable();
   if (!hub.ok) return void (skipReason = hub.reason ?? 'hub unreachable');
@@ -250,12 +218,12 @@ describe('spora copy-share → Vibe setup', () => {
     const created = await post(alice.apiUrl, '/graph/artifact', {
       id: artifactId,
       name: artifactName,
-      ref_type: 'FOLDER',
-      path: fixture.appDir,
-      artifact_type: 'WEBAPP',
-      port: String(appPort),
-      start_cmd: `python3 -m http.server ${appPort}`,
-      health: '/',
+      kind: 'application.web',
+      origin: {
+        kind: 'local',
+        base: path.dirname(fixture.appDir),
+        rel_path: path.basename(fixture.appDir),
+      },
     });
     expect(created.status, JSON.stringify(created.body)).toBeLessThan(400);
 
@@ -286,7 +254,7 @@ describe('spora copy-share → Vibe setup', () => {
       browser = await launchBrowser();
       bobPage = await openInstancePage(browser, INST_2);
 
-      await acceptConversationInvitationInUI(bobPage, conv.id!);
+      await acceptInvitationInUI(bobPage, conv.id!);
       const bobFmId = await findReadyMessage(conv.id!);
       const download = await post(bob.apiUrl, `/graph/flow_message/${bobFmId}/download_body`, {});
       expect(download.status, JSON.stringify(download.body)).toBeLessThan(400);
@@ -303,9 +271,12 @@ describe('spora copy-share → Vibe setup', () => {
       });
       expect(install.status, JSON.stringify(install.body)).toBeLessThan(400);
 
-      // Install materialized the artifact row pointing at the copied served folder.
+      // Install materialized the artifact row with a receiver-local origin
+      // pointing at the copied served folder.
       const row = await pollUntil(() => backendGet(bob, 'artifact', artifactId), 10_000, 'spora artifact materialized');
-      expect(String(row.path)).toContain(path.join(project.dir, 'webapps'));
+      expect(row.origin?.kind).toBe('local');
+      const served = path.join(String(row.origin.base), String(row.origin.rel_path));
+      expect(served).toContain(path.join(project.dir, 'webapps'));
 
       // …and returned a DisplayTarget for the spawned Vibe setup process.
       const show = install.body?.data?.show;
@@ -317,7 +288,6 @@ describe('spora copy-share → Vibe setup', () => {
 
       // Serve + show the app on the setup process (deterministic stand-in for the
       // seeded artifact-setup agent run), then assert it renders in the Vibe pane.
-      const served = path.join(row.path);
       const appOpen = JSON.parse(await flowCliAsync(
         bob,
         ['app', 'open', artifactName, '--root', served, '--process', `agentic_process-${vibeProcId}`, '--port', String(appPort), '--timeout', '25'],

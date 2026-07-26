@@ -1,14 +1,23 @@
 import asyncio
 import logging
+import ntpath
 import os
 import random
 import string
 import sys
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, List, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, computed_field, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    TypeAdapter,
+    computed_field,
+    model_validator,
+)
 from pydantic.alias_generators import to_camel
 
 from flow_sdk._compat import StrEnum  # 3.10-safe StrEnum (project pins py3.10)
@@ -25,7 +34,11 @@ from flow_sdk.core.flow.mcp_server import MCPConnector, mcp_connector_pool
 from flow_sdk.core.flow.models.execution.env_context import get_env_vars_context
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.fs_store.identifier import mint_uuid
-from flow_sdk.fs_store.path_utils import canonical_posix_path
+from flow_sdk.fs_store.path_utils import (
+    canonical_posix_path,
+    is_protected_path,
+    is_valid_project_cwd,
+)
 from flow_sdk.request_context.methods import (
     get_current_request_info,
 )
@@ -170,6 +183,14 @@ class Project(Entity):
         description="ISO timestamp of the most recent session activity at this project's cwd, "
         "denormalized from the matching ProjectFsRecord. Null if no sessions yet.",
     )
+
+    @property
+    def protected_path(self) -> bool:
+        """Whether this project's source path is forbidden as a delete target."""
+        return bool(
+            self.fs_storage_mount_path
+            and is_protected_path(self.fs_storage_mount_path)
+        )
 
     @model_validator(mode="before")
     @classmethod
@@ -346,7 +367,7 @@ class Project(Entity):
 
     @model_validator(mode="after")
     def set_fs_storage_mount_path(self):
-        """Set the storage mount path based on project name and create the folder if needed."""
+        """Resolve a safe mount path and create its folder when needed."""
         # A remote mirror (a project shared TO this instance) has no local
         # working directory — it lives under the sharer's cwd on their machine,
         # not ours. Never derive a mount path from its display name or mkdir a
@@ -355,10 +376,10 @@ class Project(Entity):
         if self.remote and not self.fs_storage_mount_path:
             return self
         if self.name and not self.fs_storage_mount_path:
-            if os.path.isabs(self.name):
+            if os.path.isabs(self.name) or ntpath.isabs(self.name):
                 # Name is an absolute path - use it directly as mount path
                 self.fs_storage_mount_path = self.name
-                self.name = os.path.basename(self.name)
+                self.name = ntpath.basename(self.name.rstrip("/\\"))
             elif "/" in self.name or "\\" in self.name:
                 # Name is a VFS-relative path - convert to absolute OS path
                 # VFS root maps to OS root ("/" on Unix, "C:\" on Windows)
@@ -367,16 +388,21 @@ class Project(Entity):
                     os_root = drive + os.sep
                 else:
                     os_root = os.sep
-                self.fs_storage_mount_path = os.path.normpath(os.path.join(os_root, self.name))
+                relative_name = self.name.lstrip("/\\")
+                self.fs_storage_mount_path = os.path.normpath(
+                    os.path.join(os_root, relative_name)
+                )
                 self.name = os.path.basename(self.fs_storage_mount_path)
             else:
                 # Simple name like "my_first_project"
-                self.fs_storage_mount_path = os.path.join(AGENT_MOUNT_FOLDER, self.name)
+                leaf = os.path.basename(self.name)
+                self.fs_storage_mount_path = os.path.join(AGENT_MOUNT_FOLDER, leaf)
 
-        # Prevent project mount path from being the user's home directory.
-        home_dir = os.path.expanduser("~").rstrip(os.sep)
-        if self.fs_storage_mount_path and self.fs_storage_mount_path.rstrip(os.sep) == home_dir:
-            self.fs_storage_mount_path = os.path.join(AGENT_MOUNT_FOLDER, self.name or "home")
+        # Retain protected legacy paths so the model carries one truthful source
+        # value. They remain readable for cleanup/migration, but must never be
+        # created, canonicalized, recovered, or recursively deleted.
+        if self.fs_storage_mount_path and self.protected_path:
+            return self
 
         # Create the project folder if it doesn't exist.
         if self.fs_storage_mount_path and not os.path.exists(self.fs_storage_mount_path):
@@ -403,6 +429,8 @@ class Project(Entity):
         given.
         """
         if not path:
+            return None
+        if not is_valid_project_cwd(path, include_temp=True):
             return None
         return mint_uuid(
             f"project:{canonical_posix_path(path)}",
@@ -450,11 +478,17 @@ class Project(Entity):
         """
         if not cwd:
             return None
+        if not is_valid_project_cwd(cwd, include_temp=True):
+            return None
         canonical = canonical_posix_path(cwd)
         existing = await cls.get_all()
         for proj in existing:
             mp = proj.fs_storage_mount_path
-            if mp and canonical_posix_path(mp) == canonical:
+            if (
+                mp
+                and is_valid_project_cwd(mp, include_temp=True)
+                and canonical_posix_path(mp) == canonical
+            ):
                 return proj
         return None
 
@@ -478,15 +512,9 @@ class Project(Entity):
         if not path:
             return None
 
-        canonical = canonical_posix_path(path)
-
-        # The agent mount ROOT (~/Flowpad workspace) is infrastructure, not a
-        # project — refuse to resolve OR mint one for it so ``get_project`` falls
-        # back to the ``@local`` project. Real work subfolders under it are
-        # unaffected. See ``is_agent_mount_root``.
-        from flow_sdk.config import is_agent_mount_root  # noqa: PLC0415 — avoid import cycle
-        if is_agent_mount_root(canonical):
+        if not is_valid_project_cwd(path, include_temp=True):
             return None
+        canonical = canonical_posix_path(path)
 
         # Phase 1: existing project at this canonical cwd.
         existing = await cls.find_by_cwd(canonical)
@@ -530,9 +558,14 @@ class Project(Entity):
         mount_path = data.get("fs_storage_mount_path") or data.get("cwd") or data.get("real_path")
         if not mount_path:
             name = data.get("name", "")
-            if name and os.path.isabs(name):
+            if name and (os.path.isabs(name) or ntpath.isabs(name)):
                 mount_path = name
 
+        if mount_path and not is_valid_project_cwd(
+            mount_path,
+            include_temp=True,
+        ):
+            return None
         canonical_mp = canonical_posix_path(mount_path) if mount_path else None
         existing: Project | None = None
         if canonical_mp:
@@ -1586,7 +1619,8 @@ class Project(Entity):
           * the on-disk record shadow under ``records/<type>/<type>-@<id>/``,
           * the ``records_data`` bundle (both the canonical ``<type>-@<id>``
             and the legacy ``<id>``-only shape used by index types),
-        and finally the project's own source folder on disk
+        and finally the project's own source folder on disk when its dynamic
+        ``protected_path`` policy permits that destructive operation
         (``fs_storage_mount_path`` — the user's real files).
 
         Cross-type enumeration walks the shadow store on disk: ``Entity.get_all``
@@ -1656,15 +1690,18 @@ class Project(Entity):
         for meta in targets:
             await _destroy(meta)
 
-        # 3. Delete the project's own source folder on disk (the user's files).
+        # 3. Delete the project's own source folder on disk (the user's files),
+        #    unless the dynamic path policy marks it as protected.
         mount = self.fs_storage_mount_path
-        if mount:
+        if mount and not self.protected_path:
             try:
                 shutil.rmtree(mount)  # idempotent — FileNotFoundError when absent
             except FileNotFoundError:
                 pass
             except OSError as exc:
                 log.warning("[project-delete] source folder rmtree failed %s: %s", mount, exc)
+        elif mount:
+            log.warning("[project-delete] preserved protected source path %s", mount)
 
         # 4. Sever the shared @local compute node before deleting the project
         #    record. Destroying the project record cascades down `is_child` edges

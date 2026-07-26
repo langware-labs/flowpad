@@ -138,10 +138,15 @@ describe('hub: sharing a skill keeps it a skill folder', () => {
       ).toBe(false);
 
       // Wire contract #2: inside the bundle the skill is a FOLDER subtree
-      // (attachment/skill-@<id>/.claude/skills/<name>/SKILL.md), not a flat file.
+      // (attachment/skill-<id>/.claude/skills/<name>/SKILL.md), not a flat file.
       const entries = await listBundleEntries(fm.id!);
       if (entries) {
-        expect(entries.some((e) => /skill-@.*\/\.claude\/skills\/.+\/SKILL\.md$/.test(e))).toBe(true);
+        expect(
+          entries.some((e) =>
+            /^attachment\/skill-[^/]+\/\.claude\/skills\/[^/]+\/SKILL\.md$/.test(e),
+          ),
+          JSON.stringify(entries),
+        ).toBe(true);
         expect(entries.some((e) => /^(data|attachment\/files)\/SKILL\.md$/.test(e))).toBe(false);
       }
     },

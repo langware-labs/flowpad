@@ -1,6 +1,6 @@
 # Test Index
 
-> Last updated: 2026-07-24T12:41:34Z
+> Last updated: 2026-07-24T21:51:41Z
 > Scope: .md scenarios + .md.ts Playwright files + standalone browser specs under ui/tests/manual_regression
 
 ## agentic-process (md=14, md.ts=15)
