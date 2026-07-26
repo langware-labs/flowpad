@@ -21,7 +21,6 @@ const REALM_CONSUMERS = [
 const LOG_HANDLE_OWNERS = [
   'api/project_context_dir.test.ts',
   'api/project_fetch_fast.test.ts',
-  'long_tests/_backend_lifecycle.ts',
   'long_tests/context_folder_real_worker.test.ts',
   'long_tests/decker_generate_deck_real_worker.test.ts',
   'long_tests/reindex_flow_real_worker.test.ts',
@@ -42,6 +41,7 @@ describe('disposable SDK realm lifecycle source policy', () => {
     expect(helper).toContain('else delete globals[key];');
     expect(helper).toContain('sdk.connectionManager.dispose();');
     expect(helper).toContain('ownedRealms.delete(realm);');
+    expect(helper).toContain('vi.resetModules();');
   });
 
   it.each(LOG_HANDLE_OWNERS)('%s closes the spawned-backend log FileHandle', (file) => {

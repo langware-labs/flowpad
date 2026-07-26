@@ -55,33 +55,33 @@ from flow_sdk.server import FlowServer
 
 from .routes import (
     agent_records_router,
+    agentic_flows_router,
     assets_router,
     auth_router,
+    capabilities_router,
     chat_router,
     cloud_router,
     compute_register_router,
     debug_router,
-    subgraph_router,
-    tags_router,
     dep_graph_router,
     detection_router,
     directory_router,
     docs_graph_router,
     favorites_router,
+    git_router,
     hooks_router,
+    journeys_router,
     markdown_index_router,
-    capabilities_router,
     navigate_router,
-    project_router,
     privacy_router,
+    project_router,
     pty_stream_router,
     search_router,
     semantic_checker_router,
+    subgraph_router,
+    tags_router,
     testing_router,
     toplog_router,
-    agentic_flows_router,
-    journeys_router,
-    git_router,
     transcripts_router,
     ui_router,
     version_router,
@@ -94,11 +94,13 @@ from .routes import (
 
 async def _on_server_startup():
     """Write server.json for discovery by hooks/CLI and start cron scheduler."""
+    from flow_sdk.builtin.process_lifecycle import clear_backend_restart_request
     from flow_sdk.config import set_server_info
     from flow_sdk.db.drivers.sqlite.connection import get_database_path
     from flow_sdk.instance_settings import get_instance_settings
 
     settings = get_instance_settings()
+    clear_backend_restart_request()
     print(f"  Database path: {get_database_path()}")
 
     # Development: mirror all logs to a file on disk in addition to the
@@ -281,7 +283,7 @@ async def _seed_service_triggers() -> None:
 
             await set_service_flows()
         except Exception:
-            service_log.exception("set_service_flows failed")
+            logging.getLogger(__name__).exception("set_service_flows failed")
         print("  System triggers: upserted")
     except Exception:
         logging.getLogger(__name__).exception("System triggers: failed to seed")

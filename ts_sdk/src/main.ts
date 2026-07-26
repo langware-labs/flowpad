@@ -138,7 +138,12 @@ export async function initSdk(params?: { agentId?: string; setupWorkspace?: bool
         user = new User(bootstrapInfo.user);
         user.markAsExpanded();
         await dataContext.setContextEntityTypeId(ContextEntitiesEnum.LocalUserTypeId, user.typeId);
-        void ConnectionManager.getInstance().connect();
+        // Startup does not block rendering on the WebSocket handshake, but the
+        // background promise still needs an owner. In particular, disposing an
+        // isolated SDK realm can intentionally close a still-CONNECTING socket;
+        // observing that rejection prevents it from escaping as an unhandled
+        // promise while the connection manager handles reconnect/reporting.
+        void ConnectionManager.getInstance().connect().catch(() => undefined);
       }
 
       // Set default workspace in context if present (after user is set)
