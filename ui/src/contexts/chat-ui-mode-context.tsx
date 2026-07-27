@@ -11,11 +11,11 @@ import { useEffect, useSyncExternalStore } from 'react';
  *  - `'chat'`   → force the chat UI regardless of View mode.
  *  - `'terminal'` → force the xterm terminal regardless of View mode.
  *
- * Owned by prefMan (`preferences.ui.chat_ui_mode`, a boot key). Stored as a string
- * where the empty string means "no override" (≡ null); the user flips it from the
- * terminal header's mode switch (`TerminalModeSwitch`) and it takes priority over the
- * View-mode default until cleared. NOTE it is instance-global, not per-session: a
- * per-session skin would need a PrefKey keyed by process id.
+ * Owned by prefMan (`preferences.ui.chat_ui_mode`, a boot key). Stored as
+ * `'auto' | 'chat' | 'terminal'`; the historical `''` is still read as auto. An
+ * override takes priority over the View-mode default until cleared. NOTE it is
+ * instance-global, not per-session: a per-session skin would need a PrefKey
+ * keyed by process id.
  *
  * The mode is also BROWSABLE: a dock URL can carry `?chatMode=chat|terminal`
  * (`DockPointer.withChatMode`), which `useDockChatModeOverrideSync` pins for the
@@ -37,17 +37,13 @@ const LEGACY_BOOL_KEY = 'chatUiMode';
 
 /** Stored sentinel for "no override, follow View mode". The Preferences select
  *  cannot render an empty-string option, so the absent state is explicit; the
- *  historical '' is still read as auto. */
-export const CHAT_MODE_AUTO = 'auto';
-
-function isAuto(v: unknown): boolean {
-  return v === CHAT_MODE_AUTO || v === '' || v == null;
-}
+ *  historical '' is still read as auto (see `toOverride`). */
+const CHAT_MODE_AUTO = 'auto';
 
 // One-time migration of the legacy boolean flag (true meant "force chat").
 if (
   typeof localStorage !== 'undefined' &&
-  isAuto(instancePreferences.get(PrefKey.CHAT_UI_MODE)) &&
+  !getChatUiOverride() &&
   localStorage.getItem(LEGACY_BOOL_KEY) === 'true'
 ) {
   instancePreferences.set(PrefKey.CHAT_UI_MODE, 'chat');
@@ -122,7 +118,7 @@ export function useDockChatModeOverrideSync(): void {
  * terminal). `InteractiveTerminal` renders by it and new sessions launch by it,
  * so what the user picks in the switch is what the next session opens as.
  */
-export function resolveChatMode(override: ChatUiOverride, advanced: boolean): ChatMode {
+function resolveChatMode(override: ChatUiOverride, advanced: boolean): ChatMode {
   return override ?? (advanced ? 'terminal' : 'chat');
 }
 
@@ -134,7 +130,7 @@ export function useEffectiveChatMode(): ChatMode {
 /** Imperative form for non-React callers (the launch path). Reads the persisted
  *  view mode; a URL `?viewMode` is adopted into that pref on load, so the two
  *  agree everywhere a session is launched from. */
-export function effectiveChatMode(): ChatMode {
+function effectiveChatMode(): ChatMode {
   return resolveChatMode(getChatUiOverride(), isAdvancedMode(getViewMode()));
 }
 

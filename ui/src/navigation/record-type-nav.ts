@@ -1,6 +1,7 @@
 import type { LucideIcon } from 'lucide-react';
 import type { SearchResult } from '@src/hooks/use-record-search';
 import { DockPointer } from './DockPointer';
+import { chatModeLaunchArgs } from '@src/contexts/chat-ui-mode-context';
 import { ViewType } from '@src/types/ViewType';
 import { CheckSquare, Search, GitBranch, FileText } from 'lucide-react';
 import { AgenticProcess, Artifact, dataContext, dataManager, isTypeId, RecordType, TypeId } from '@sdk';
@@ -291,9 +292,12 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
           const cwd = record?.cwd ?? undefined;
           const computeNode = dataContext.computeNode;
           if (!computeNode) throw new Error('[Fork] No compute node');
+          // Fork is a user-facing session launch, so it opens in the preferred
+          // session mode like the +-tab and quick-create do.
+          const launch = chatModeLaunchArgs();
           const p = await computeNode.createProcess(
-            cwd ? { workdir: cwd } : {},
-            { visible: true, watchProcess: false },
+            { ...(cwd ? { workdir: cwd } : {}), ...launch.context },
+            { watchProcess: false, ...launch.options },
           );
           void navigation.openShellProcess(p.id);
         },

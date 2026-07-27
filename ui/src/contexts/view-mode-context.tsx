@@ -179,7 +179,26 @@ export function applyProjectViewMode(project: Project): void {
   }
 }
 
+// The last mode that wasn't Vibe. Entering Vibe ADOPTS it as the persisted
+// preference (useDockViewModeOverrideSync), which overwrites whatever the user
+// had — so without this latch, an Advanced user who visits Vibe and leaves is
+// silently and unrecoverably dropped to Standard (ViewToggle only renders modes
+// at or below the current rank, so the Advanced button isn't even on screen).
+// Module-scope, session-lived, deliberately not persisted.
+let lastNonVibeViewMode: ViewMode | null = null;
+
+function recordNonVibe(val: ViewMode): void {
+  if (val !== ViewMode.Vibe) lastNonVibeViewMode = val;
+}
+recordNonVibe(getViewMode());
+
+/** Where an "exit vibe" affordance should land: the mode in use before Vibe. */
+export function previousNonVibeViewMode(): ViewMode {
+  return lastNonVibeViewMode ?? ViewMode.Standard;
+}
+
 export function setViewMode(val: ViewMode): void {
+  recordNonVibe(val);
   instancePreferences.set(PrefKey.VIEW_MODE, val);
   applyAttribute(getEffectiveViewMode());
   stampProjectViewMode(dataContext.project, val);

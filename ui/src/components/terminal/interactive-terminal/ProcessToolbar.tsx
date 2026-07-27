@@ -208,14 +208,7 @@ export function ProcessToolbar({
   // detached window has no business swapping itself for a full-page workspace
   // (the reason AssetDiscussButton excludes windowMode too).
   const modeSwitchSlot = modeSwitch ? (
-    <TerminalModeSwitch
-      current={chatActive ? 'chat' : 'terminal'}
-      transport={modeSwitch.transport}
-      switching={modeSwitch.switching}
-      enabled={modeSwitch.awaitingUserInput}
-      showVibe={!windowMode}
-      onSelect={modeSwitch.select}
-    />
+    <TerminalModeSwitch current={chatActive ? 'chat' : 'terminal'} showVibe={!windowMode} modeSwitch={modeSwitch} />
   ) : null;
 
   const debugSlot = (
