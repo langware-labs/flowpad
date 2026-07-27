@@ -32,6 +32,11 @@ export interface DisplayShowTarget {
   id?: string;
   path?: string;
   port?: number | string;
+  /** kind: 'app' — the Artifact is the address; runtime is derived, not pinned. */
+  artifact_id?: string;
+  runtime?: 'dev' | 'served' | 'unbuilt';
+  micro_app_id?: string;
+  name?: string;
 }
 
 function slug(value: string): string {
@@ -79,8 +84,9 @@ export function displayAnnotationContextForShown(
   host?: string | null,
   port?: string | number | null,
 ): DisplayAnnotationContext {
-  if (shown.kind === 'webapp') {
-    return displayAnnotationContextForWebapp(host, shown.port ?? port);
+  if (shown.kind === 'webapp' || shown.kind === 'app') {
+    const context = displayAnnotationContextForWebapp(host, shown.port ?? port);
+    return shown.name ? { ...context, title: shown.name } : context;
   }
 
   if (shown.path) {

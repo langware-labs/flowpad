@@ -64,6 +64,7 @@ def open_app(
     process: Annotated[Optional[str], typer.Option("--process", "-p", help=_PROCESS_HELP)] = None,
     port: Annotated[Optional[int], typer.Option("--port", help="Override the app port.")] = None,
     no_start: Annotated[bool, typer.Option("--no-start", help="Register/show only; do not launch a server.")] = False,
+    dist: Annotated[Optional[str], typer.Option("--dist", help="Build-output dir (relative to the app) to serve as the app's delivery.")] = None,
     install: Annotated[bool, typer.Option("--install/--no-install", help="Install JS dependencies if node_modules is missing.")] = True,
     timeout: Annotated[float, typer.Option("--timeout", help="Seconds to wait for the port after starting.")] = 75.0,
     max_depth: Annotated[int, typer.Option("--max-depth", help="Maximum directory depth to scan.")] = 6,
@@ -96,6 +97,7 @@ def open_app(
         candidate,
         process_id=process_id,
         request=request,
+        dist=dist,
         port_override=port,
         no_start=no_start,
         install=install,
@@ -198,6 +200,7 @@ def _open_candidate(
     *,
     process_id: str,
     request: str,
+    dist: str | None = None,
     port_override: int | None,
     no_start: bool,
     install: bool,
@@ -238,6 +241,10 @@ def _open_candidate(
             "start_cmd": start_cmd,
             "health": candidate.health,
             "description": f"{candidate.kind} web app at {app_dir}",
+            # Names the built output the backend should serve as this app's
+            # delivery. Omitted, the backend looks for a conventional build dir
+            # and falls back to the app folder itself when it is already static.
+            "dist": dist,
             "metadata": {
                 "app_kind": candidate.kind,
                 "evidence": candidate.evidence,

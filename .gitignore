@@ -205,6 +205,8 @@ dist/
 dist-*/
 build/
 minihub/static/
+# ts_sdk library bundle, built by build_ui.py into flow_sdk/server/static/sdk/
+ui/sdk-dist/
 
 # Pre-bundled/generated assets (syntax highlighters, language definitions, etc.)
 **/public/assets/

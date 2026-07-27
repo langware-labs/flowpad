@@ -51,6 +51,22 @@ class Deployment(Entity):
         data["id"] = self.allocate_id(data)
         super().__init__(**data)
 
+    @property
+    def runtime_port(self) -> int | None:
+        """The local dev-server port this placement runs on, if any.
+
+        Callers kept re-deriving this from the raw label — parse, swallow
+        ValueError, sometimes range-check, sometimes not. Owning it here means a
+        junk label reads as "no port" everywhere instead of only where someone
+        remembered to guard.
+        """
+        raw = (self.provider_labels or {}).get("flowpad.runtime.port")
+        try:
+            port = int(str(raw))
+        except (TypeError, ValueError):
+            return None
+        return port if 0 < port <= 65535 else None
+
     @field_validator("kind", mode="before")
     @classmethod
     def _valid_kind(cls, value: Any) -> str:

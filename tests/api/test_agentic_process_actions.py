@@ -295,7 +295,19 @@ async def test_register_webapp_artifact_attaches_to_project_and_shows(bootstrapp
     assert deployment["kind"] == "local.runtime.web"
     assert deployment["artifact_id"] == artifact["id"]
     assert deployment["provider_labels"]["flowpad.runtime.port"] == "3300"
-    assert data["shown"] == {"kind": "webapp", "port": 3300}
+    # The pin is the APP, not the port: a port is one of two ways to reach it
+    # and changes between runs, while the artifact id stays true. Runtime is
+    # derived from the companions — dev here, since there is no build output.
+    assert data["shown"] == {
+        "kind": "app",
+        "artifact_id": artifact["id"],
+        "typeid": f"artifact-{artifact['id']}",
+        "name": "Frontend",
+        "runtime": "dev",
+        "port": 3300,
+    }
+    # No dist/ in this app yet, so it has no delivery companion.
+    assert data["micro_app"] is None
 
     row = await get_agentic_process(bootstrapped_client, pid)
     assert row["context_data"]["last_shown"] == data["shown"]
@@ -333,6 +345,105 @@ async def test_register_webapp_artifact_attaches_to_project_and_shows(bootstrapp
     assert updated["id"] == artifact["id"]
     assert updated_data["deployment"]["id"] == deployment["id"]
     assert updated_data["deployment"]["provider_labels"]["flowpad.runtime.port"] == "3301"
+
+
+@pytest.mark.asyncio
+async def test_register_webapp_artifact_mints_delivery_micro_app(bootstrapped_client, user, tmp_path):
+    """Built output gets a MicroApp — the delivery companion of the same Artifact.
+
+    Artifact (source) → Deployment (runtime) → MicroApp (delivery) is one app in
+    three planes, so the delivery row must hang off the SAME artifact id and be
+    updated, never forked, when the app is re-registered.
+    """
+    from flow_sdk.builtin.faas.micro_app import AppLocationType, MicroApp
+
+    project = Project(name="served-proj", fs_storage_mount_path=str(tmp_path))
+    await project.save()
+    app_dir = tmp_path / "todo"
+    (app_dir / "dist").mkdir(parents=True)
+    (app_dir / "dist" / "index.html").write_text("<html><body>todo</body></html>")
+    pid = await create_agentic_process(
+        bootstrapped_client,
+        visible=False,
+        pty_mode=False,
+        workdir=str(tmp_path),
+        project_id=project.id,
+    )
+    base = f"/api/v1/graph/agentic_process/{pid}"
+
+    resp = await bootstrapped_client.post(
+        f"{base}/register-webapp-artifact",
+        json={"name": "Todo", "path": str(app_dir), "port": "3400", "show": True},
+    )
+    assert resp.status_code == 200, resp.text
+    data = ApiResponse(**resp.json()).data
+    artifact, micro_app = data["artifact"], data["micro_app"]
+
+    # dist/ was discovered without being named in the request.
+    assert micro_app is not None
+    assert micro_app["artifact_id"] == artifact["id"]
+    assert micro_app["location_type"] == AppLocationType.Artifact.value
+    assert micro_app["location_root"] == str(app_dir / "dist")
+    assert micro_app["project_id"] == project.id
+
+    # Both runtimes exist; a live port wins for display purposes.
+    assert data["shown"]["runtime"] == "dev"
+    assert data["shown"]["micro_app_id"] == micro_app["id"]
+
+    # Re-registering updates the same delivery row rather than forking one.
+    again = await bootstrapped_client.post(
+        f"{base}/register-webapp-artifact",
+        json={"name": "Todo", "path": str(app_dir), "port": "3401", "dist": "dist", "show": False},
+    )
+    again_app = ApiResponse(**again.json()).data["micro_app"]
+    assert again_app["id"] == micro_app["id"]
+
+    rows = await MicroApp.get_all({"artifact_id": artifact["id"]})
+    assert len(rows) == 1
+
+    # An app named the same as another must still save: name is a label, not an
+    # identity, and per-type global uniqueness would 409 the second one.
+    other_dir = tmp_path / "todo-two"
+    (other_dir / "dist").mkdir(parents=True)
+    (other_dir / "dist" / "index.html").write_text("<html><body>two</body></html>")
+    twin = await bootstrapped_client.post(
+        f"{base}/register-webapp-artifact",
+        json={"name": "Todo", "path": str(other_dir), "port": "3402", "show": False},
+    )
+    assert twin.status_code == 200, twin.text
+    twin_app = ApiResponse(**twin.json()).data["micro_app"]
+    assert twin_app is not None and twin_app["id"] != micro_app["id"]
+
+
+@pytest.mark.asyncio
+async def test_static_app_folder_is_its_own_build_output(bootstrapped_client, user, tmp_path):
+    """A static app has no build step: the registered folder IS the deliverable.
+
+    `flow app open` discovers static apps by finding index.html and registers
+    that directory, so requiring a nested dist/ would deny a delivery companion
+    to exactly the apps that need no work to serve.
+    """
+    project = Project(name="static-proj", fs_storage_mount_path=str(tmp_path))
+    await project.save()
+    app_dir = tmp_path / "static-todo"
+    app_dir.mkdir()
+    (app_dir / "index.html").write_text("<html><body>static todo</body></html>")
+    pid = await create_agentic_process(
+        bootstrapped_client,
+        visible=False,
+        pty_mode=False,
+        workdir=str(tmp_path),
+        project_id=project.id,
+    )
+
+    resp = await bootstrapped_client.post(
+        f"/api/v1/graph/agentic_process/{pid}/register-webapp-artifact",
+        json={"name": "Static Todo", "path": str(app_dir), "port": "8123", "show": False},
+    )
+    assert resp.status_code == 200, resp.text
+    micro_app = ApiResponse(**resp.json()).data["micro_app"]
+    assert micro_app is not None
+    assert micro_app["location_root"] == str(app_dir)
 
 
 @pytest.mark.asyncio

@@ -2,6 +2,7 @@ import react from '@vitejs/plugin-react-swc';
 import { lingui } from '@lingui/vite-plugin';
 import path from 'path';
 import { defineConfig, loadEnv } from 'vite';
+import { SHARED_DEDUPE, sharedAliases } from './vite.shared';
 
 const envDir = path.resolve(__dirname, '..');
 
@@ -121,8 +122,7 @@ export default defineConfig(({ mode }) => {
     resolve: {
       preserveSymlinks: true,
       alias: {
-        '@src': path.resolve(__dirname, './src'),
-        '@sdk': path.resolve(__dirname, '../ts_sdk/src'),
+        ...sharedAliases(__dirname),
         // @xterm/headless 6.0.0 declares module:"lib/xterm.mjs" but ships
         // lib-headless/xterm-headless.mjs — Node resolves via main, Vite via
         // module and fails. Point straight at the shipped ESM build.
@@ -131,25 +131,7 @@ export default defineConfig(({ mode }) => {
           'node_modules/@xterm/headless/lib-headless/xterm-headless.mjs',
         ),
       },
-      dedupe: [
-        'react',
-        'react-dom',
-        'react-router',
-        '@tanstack/react-query',
-        'zustand',
-        'axios',
-        'mobx',
-        'immer',
-        '@msgpack/msgpack',
-        'uuid',
-        'events',
-        'eventsource-parser',
-        'http-status-codes',
-        'cytoscape',
-        'best-effort-json-parser',
-        'mobx-utils',
-        'yaml',
-      ],
+      dedupe: SHARED_DEDUPE,
     },
   };
 });
