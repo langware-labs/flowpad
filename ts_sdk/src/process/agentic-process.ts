@@ -1264,6 +1264,12 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     return out;
   }
 
+  /** Fetch deterministic extractive context for continuing with another worker. */
+  async continuationPrompt(): Promise<string> {
+    const actionInfo = new ActionInfo('continuation-prompt', AgenticProcess.type, this.id, 'GET');
+    const response = await dataManager.callAction<unknown, { prompt: string }>(actionInfo);
+    return response.prompt;
+  }
 
   /**
    * Fetch the parsed worker transcript from the process-specific transcript source.

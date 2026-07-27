@@ -6,6 +6,12 @@
 
 ## Testing Environment
 
+- Focused run (2026-07-27, document-to-worker handoff): isolated `assetvibe-24`
+  backend `http://127.0.0.1:6024` and production-preview frontend
+  `http://127.0.0.1:5122`, local Playwright Chromium on macOS. One tester held
+  the instance writer lock. The final audited run passed 7/7 checkpoints and
+  removed every temporary entity/root after evidence capture.
+
 - Focused run (2026-07-24, tag browser surfaces): dedicated `tagqa-17` backend `http://localhost:6017` and frontend `http://localhost:5017`, headless Chromium/Playwright on macOS. The isolated instance was the sole writer and was killed after the run. In this execution harness, launcher children were reaped when launch ran in a separate command session, so the stability run kept launch + Playwright + teardown in one continuous session.
 - Focused run (2026-07-20, asset identity collisions): dedicated `collision-15` backend `http://localhost:6015` and frontend `http://localhost:5015`, Chromium/Playwright on macOS. Both file-backed lifecycle and folder-backed Git precedence scenarios passed; the named instance was killed and its generated env file removed after the run. In this execution harness, detached launcher children were reaped when launch ran in a separate command session, so launch + test + teardown were kept in one session. The API client used the instance's explicit IPv4 address because Node resolved `localhost` to `::1` while uvicorn listened on IPv4.
 
@@ -25,6 +31,22 @@
 - Last cycle (2026-05-30, record-removal branch): backend 9008 + frontend 4098 both reachable (HTTP 200) throughout. Phases 1-4 green (1522 / 441 / 51 / 907). 1 real fix (bootstrap `types` shape, 4 tests). No port conflicts this run.
 
 ## Learnings
+
+### 2026-07-27 — Document Discuss to alternative-worker continuation
+
+- A target-specific process backed by an existing quota transcript makes the
+  full fallback path deterministic without spending the unavailable worker:
+  open a fresh Markdown asset in Standard, click its header Discuss control,
+  replay the structured worker-unavailable entry, then launch the real
+  alternative worker.
+- Raw graph CRUD receives the entity body directly; Playwright's `{ data:
+  entity }` is a request-option wrapper, not an API envelope. Codex assistant
+  prose replays as canonical FlowData `chat`, and macOS temporary workdirs must
+  be compared through `realpath` because `/var` and `/private/var` are aliases.
+- A complete handoff oracle checks more than the new URL: explicit
+  `worker_type`, unchanged target/project/workdir, first persisted user prompt,
+  source-process retention, the source quota entry, and an alternative-worker
+  response grounded in inherited text.
 
 ### 2026-07-24 — Tag browser surfaces
 

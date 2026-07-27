@@ -5367,6 +5367,38 @@ class AgenticProcess(Entity):
             }
         )
 
+    @action.get(action_name="continuation-prompt")
+    async def continuation_prompt_action(
+        self,
+    ) -> "ApiSuccessResponse | ApiFailResponse":
+        """Return deterministic extractive context for a different worker."""
+        from flow_sdk.transcript_analyzer import worker_continuation_prompt
+
+        try:
+            descriptor = self.driver.transcript_descriptor(self)
+            if descriptor is None:
+                return ApiFailResponse(
+                    message="No readable transcript available for continuation",
+                    status_code=404,
+                )
+            prompt = worker_continuation_prompt(
+                descriptor.path,
+                self.driver.name,
+                self.driver.name.capitalize(),
+                transcript_format=descriptor.format,
+            )
+            return ApiSuccessResponse(data={"prompt": prompt})
+        except Exception:
+            logger.debug(
+                "AgenticProcess %s continuation prompt unavailable",
+                self.id,
+                exc_info=True,
+            )
+            return ApiFailResponse(
+                message="No readable transcript available for continuation",
+                status_code=404,
+            )
+
     @staticmethod
     def _diff_snapshot_fields(
         loaded: dict[str, Any] | None,

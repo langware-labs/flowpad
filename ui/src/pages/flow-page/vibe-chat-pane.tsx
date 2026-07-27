@@ -1,19 +1,34 @@
 import { EntityExecutionPanel } from '@src/components/entity-execution-panel';
 import { VibeAssignTaskButton } from './VibeAssignTaskButton';
 import { VibeCollaborateButton } from './VibeCollaborateButton';
-import { embedVibeAgent } from './use-start-vibe-session';
+import {
+  continueVibeSessionForProject,
+  createVibeProcessForProject,
+  embedVibeAgent,
+} from './use-start-vibe-session';
 import { ViewMode } from '@src/contexts/view-mode-context';
 import { useAgentContext } from '@src/contexts/agent-context';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { normalizeVibeModelTier, VIBE_MODEL_DEFAULT, VibeModelSelect } from './vibe-model-select';
+import { notify } from '@src/notifications/notify';
+import {
+  normalizeVibeModelTier,
+  VIBE_MODEL_DEFAULT,
+  VibeModelSelect,
+  type VibeModelTier,
+} from './vibe-model-select';
 import { VibeWorkerSelect } from './vibe-worker-select';
-import { normalizeWorkerType } from '@src/components/workers/worker-types';
+import { normalizeWorkerType, type WorkerType } from '@src/components/workers/worker-types';
 import { useDefaultWorkerType } from '@src/contexts/HarnessCapabilitiesContext';
 import { AgenticProcess, ProcessKind } from '@sdk';
 import { Plus } from 'lucide-react';
+import { useCallback, useState } from 'react';
 import { useLingui } from '@lingui/react/macro';
 import type { AssetWorkContext } from './asset-work-context';
 import { useKeyedAssetPromptContext } from './asset-work-context';
+import {
+  VibeWorkerSwitchDialog,
+  type VibeWorkerSwitchIntent,
+} from './VibeWorkerSwitchDialog';
 
 interface VibeChatPaneProps {
   process: AgenticProcess | null;
@@ -27,9 +42,79 @@ export function VibeChatPane({ process, workContext = null }: VibeChatPaneProps)
   const { navigation } = useDockNavigation();
   const defaultWorkerType = useDefaultWorkerType();
   const { promptContext, consume } = useKeyedAssetPromptContext(workContext);
+  const [pendingWorkerSwitch, setPendingWorkerSwitch] = useState<{
+    workerType: WorkerType;
+    model: VibeModelTier;
+    sourceProcess: AgenticProcess;
+    projectId: string | null;
+    workdir: string | null | undefined;
+  } | null>(null);
+  const [workerSwitchIntent, setWorkerSwitchIntent] =
+    useState<VibeWorkerSwitchIntent | null>(null);
+
+  const handleActiveWorkerChange = useCallback(
+    ({
+      workerType,
+      activeProcess,
+      model,
+      projectId,
+      workdir,
+    }: {
+      workerType: WorkerType;
+      activeProcess: AgenticProcess;
+      model: string | null;
+      projectId: string | null;
+      workdir: string | null | undefined;
+    }) => {
+      setPendingWorkerSwitch({
+        workerType,
+        model: normalizeVibeModelTier(model),
+        sourceProcess: activeProcess,
+        projectId,
+        workdir,
+      });
+    },
+    [],
+  );
+
+  const runWorkerSwitch = useCallback(async (intent: VibeWorkerSwitchIntent) => {
+    const pending = pendingWorkerSwitch;
+    if (!pending || !pending.projectId || workerSwitchIntent) return;
+    setWorkerSwitchIntent(intent);
+    const options = {
+      projectId: pending.projectId,
+      workdir: pending.workdir ?? undefined,
+      navigation,
+      model: pending.model,
+      workerType: pending.workerType,
+      targetVfsPath: pending.sourceProcess.target_typeid_str ?? undefined,
+    };
+    try {
+      if (intent === 'continue') {
+        await continueVibeSessionForProject({
+          ...options,
+          sourceProcess: pending.sourceProcess,
+        });
+      } else {
+        await createVibeProcessForProject(options);
+      }
+      setPendingWorkerSwitch(null);
+    } catch (error) {
+      console.error('[Vibe] Failed to switch worker:', error);
+      notify.error({ title: t`Could not start`, message: t`Failed to start the build session.` });
+    } finally {
+      setWorkerSwitchIntent(null);
+    }
+  }, [
+    navigation,
+    pendingWorkerSwitch,
+    t,
+    workerSwitchIntent,
+  ]);
 
   return (
-    <EntityExecutionPanel
+    <>
+      <EntityExecutionPanel
         target={process?.target_typeid_str ?? null}
         processType={ProcessKind.Chat}
         className="h-full border-r border-border"
@@ -84,6 +169,7 @@ export function VibeChatPane({ process, workContext = null }: VibeChatPaneProps)
             disabled={disabled || !project?.id}
           />
         )}
+        onActiveWorkerChange={handleActiveWorkerChange}
         initialProcessId={process?.id ?? null}
         promptContext={
           promptContext
@@ -101,6 +187,17 @@ export function VibeChatPane({ process, workContext = null }: VibeChatPaneProps)
           await embedVibeAgent(newProcess);
           void navigation.openShellProcess(newProcess.id, { viewMode: ViewMode.Vibe });
         }}
-    />
+      />
+      <VibeWorkerSwitchDialog
+        open={!!pendingWorkerSwitch}
+        workerType={pendingWorkerSwitch?.workerType ?? defaultWorkerType}
+        inFlight={workerSwitchIntent}
+        onStartNew={() => void runWorkerSwitch('new')}
+        onContinue={() => void runWorkerSwitch('continue')}
+        onCancel={() => {
+          if (!workerSwitchIntent) setPendingWorkerSwitch(null);
+        }}
+      />
+    </>
   );
 }

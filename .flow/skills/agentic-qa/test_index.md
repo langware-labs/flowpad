@@ -1,6 +1,6 @@
 # Test Index
 
-> Last updated: 2026-07-24T21:51:41Z
+> Last updated: 2026-07-27T11:35:38Z
 > Scope: .md scenarios + .md.ts Playwright files + standalone browser specs under ui/tests/manual_regression
 
 ## agentic-process (md=14, md.ts=15)
@@ -68,10 +68,9 @@
 
 ## triggers (md=1, md.ts=5)
 
-## vibe (md=2, md.ts=0)
-  orphan .md (no .md.ts): 2
-    - vibe_bugs
-    - vibe_workspace_matrix
+## vibe (md=2, md.ts=2)
+  - vibe_bugs — `ui/tests/manual_regression/vibe/vibe_bugs.md.ts`
+  - vibe_workspace_matrix — `ui/tests/manual_regression/vibe/vibe_workspace_matrix.md.ts`
 
 ## whiteboard (md=8, md.ts=8)
 

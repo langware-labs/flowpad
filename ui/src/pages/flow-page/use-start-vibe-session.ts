@@ -184,6 +184,43 @@ export async function launchVibeSessionForProject(opts: {
 }
 
 /**
+ * Continue a Vibe conversation with an explicitly selected worker.
+ *
+ * Transcript extraction and prompt composition belong to AgenticProcess; this
+ * application service only forwards that durable handoff prompt through the
+ * existing create/embed/open/first-prompt path.
+ */
+export async function continueVibeSessionForProject(opts: {
+  sourceProcess: AgenticProcess;
+  projectId: string;
+  workdir?: string;
+  targetVfsPath?: string;
+  navigation: OpenShell;
+  model: VibeModelTier;
+  workerType: WorkerType;
+}): Promise<string> {
+  const {
+    sourceProcess,
+    projectId,
+    workdir,
+    targetVfsPath,
+    navigation,
+    model,
+    workerType,
+  } = opts;
+  const message = await sourceProcess.continuationPrompt();
+  return launchVibeSessionForProject({
+    projectId,
+    workdir,
+    targetVfsPath,
+    navigation,
+    model,
+    workerType,
+    message,
+  });
+}
+
+/**
  * Start a fresh Vibe build session for the ACTIVE project. Thin wrapper over
  * {@link launchVibeSessionForProject} that resolves the active project + its
  * workdir and surfaces errors as toasts.

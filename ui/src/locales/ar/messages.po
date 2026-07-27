@@ -214,6 +214,11 @@ msgstr ""
 msgid "{0} icon"
 msgstr ""
 
+#. placeholder {0}: workerLabel(unavailableWorker)
+#: src/components/entity-execution-panel/WorkerUnavailableNotice.tsx
+msgid "{0} is unavailable"
+msgstr ""
+
 #. placeholder {0}: frame.issue_count
 #: src/components/assets/editor/agent-trace/TraceDetailPanel.tsx
 msgid "{0} issues"
@@ -1942,6 +1947,7 @@ msgstr ""
 #: src/components/wizard/WizardHost.tsx
 #: src/pages/entry/LaunchLanding.tsx
 #: src/pages/flow-page/VibeAssignTaskDialog.tsx
+#: src/pages/flow-page/VibeWorkerSwitchDialog.tsx
 #: src/pages/home-landing/feed/HomeFeedColumn.tsx
 #: src/pages/hub-home/NewDesktopDialog.tsx
 #: src/pages/live-status/LiveStatus.tsx
@@ -2032,7 +2038,7 @@ msgstr ""
 #~ msgid "Changes saved successfully"
 #~ msgstr ""
 
-#: src/pages/flow-page/vibe-workspace.tsx
+#: src/pages/flow-page/vibe-chat-pane.tsx
 #~ msgid "Changing worker requires a new chat. The current chat stays in history."
 #~ msgstr ""
 
@@ -2128,6 +2134,10 @@ msgstr ""
 
 #: src/components/assistance-viewer/AssistanceViewer.tsx
 msgid "Choose a task from the sidebar to view details"
+msgstr ""
+
+#: src/components/entity-execution-panel/WorkerUnavailableNotice.tsx
+msgid "Choose another worker"
 msgstr ""
 
 #: src/components/quick-create/ScopeSelection.tsx
@@ -2882,6 +2892,10 @@ msgstr ""
 
 #: src/journey/JourneyViewer.tsx
 msgid "Continue journey"
+msgstr ""
+
+#: src/pages/flow-page/VibeWorkerSwitchDialog.tsx
+msgid "Continue this conversation"
 msgstr ""
 
 #: src/components/login-required-dialog.tsx
@@ -12872,7 +12886,11 @@ msgstr ""
 msgid "Start live session"
 msgstr ""
 
-#: src/pages/flow-page/vibe-workspace.tsx
+#: src/pages/flow-page/VibeWorkerSwitchDialog.tsx
+msgid "Start new"
+msgstr ""
+
+#: src/pages/flow-page/vibe-chat-pane.tsx
 #~ msgid "Start new {0} chat?"
 #~ msgstr ""
 
@@ -12880,7 +12898,7 @@ msgstr ""
 msgid "Start new chat"
 msgstr ""
 
-#: src/pages/flow-page/vibe-workspace.tsx
+#: src/pages/flow-page/vibe-chat-pane.tsx
 #~ msgid "Start new chat?"
 #~ msgstr ""
 
@@ -12908,6 +12926,10 @@ msgstr ""
 #: src/components/machine-overview/service-status-led.tsx
 #~ msgid "Start services"
 #~ msgstr ""
+
+#: src/pages/flow-page/VibeWorkerSwitchDialog.tsx
+msgid "Start with an empty chat or carry this conversation into the new worker. The current chat stays in Recent."
+msgstr ""
 
 #: src/components/collaboration/RoomHeader.tsx
 msgid "started"
@@ -13114,6 +13136,11 @@ msgstr ""
 #: src/components/open-project-component/open-project-component.tsx
 #: src/components/status-bar.tsx
 msgid "Switch Project"
+msgstr ""
+
+#. placeholder {0}: workerLabel(workerType)
+#: src/pages/flow-page/VibeWorkerSwitchDialog.tsx
+msgid "Switch to {0}?"
 msgstr ""
 
 #: src/components/terminal/interactive-terminal/TerminalBottomRibbon.tsx
@@ -13614,6 +13641,10 @@ msgstr ""
 
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "This will delete all debug logs from <0>~/.claude/debug/</0> and all parsed error records."
+msgstr ""
+
+#: src/components/entity-execution-panel/WorkerUnavailableNotice.tsx
+msgid "This worker cannot continue the chat right now."
 msgstr ""
 
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
@@ -14644,8 +14675,8 @@ msgid "Work on the other participant's machine"
 msgstr ""
 
 #: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
-#: src/pages/flow-page/vibe-worker-select.tsx
-#: src/pages/flow-page/vibe-worker-select.tsx
+#: src/components/workers/WorkerTypeSelect.tsx
+#: src/components/workers/WorkerTypeSelect.tsx
 msgid "Worker"
 msgstr ""
 
