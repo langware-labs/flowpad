@@ -52,6 +52,7 @@ TASK_FRONTMATTER_FIELDS = (
     "due_at",
     "start_date",
     "completed_at",
+    "archived_at",
     "spec_type",
     "shared_by_id",
     "shared_process_id",
@@ -301,9 +302,13 @@ def _extract_from_manifest(ref: FSRef, manifest: Path, task_dir: Path, resolved_
         "title": name,
         "status": status,
     }
-    # Only the historically-indexed fields — legacy manifests may carry
-    # sender-local keys (my_process_id/project_root); do NOT adopt those.
-    for key in ("description", "objective", "task_type", "priority", "spec_type"):
+    # Same canonical field set as ``task.md`` (plus the two manifest-only keys),
+    # so the legacy path can't drift from it. Sender-local keys
+    # (my_process_id/project_root) are excluded BY CONSTRUCTION: the constant is
+    # a whitelist that omits them. A second hand-written list here is what let
+    # ``archived_at`` go missing, silently resurrecting archived tasks as active
+    # ``to_do`` rows on every reindex.
+    for key in (*TASK_FRONTMATTER_FIELDS, "description", "objective"):
         if data.get(key) is not None:
             kwargs[key] = data[key]
     rec = FSRecord(**kwargs)
