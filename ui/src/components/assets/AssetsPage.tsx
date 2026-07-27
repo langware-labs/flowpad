@@ -682,7 +682,7 @@ export function AssetsPage() {
             <EntityActionsToolbar
               typeId={resolvedHeaderEntityTypeId}
               favoriteTitle={editorHeaderTitle ?? resolvedHeaderEntityTypeId.toString()}
-              variant="prominent"
+              variant="compact"
               trailing={<AssetDiscussButton />}
             />
           ) : isEditorMode ? (
