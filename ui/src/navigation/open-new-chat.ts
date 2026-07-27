@@ -1,6 +1,5 @@
 import { AgenticProcess, dataContext, type ComputeNode } from '@sdk';
-import { chatModePtyMode, getChatMode, type ChatMode } from '@src/contexts/chat-ui-mode-context';
-import { ViewMode } from '@src/contexts/view-mode-context';
+import { chatModeNavOptions, chatModePtyMode, getChatMode } from '@src/contexts/chat-ui-mode-context';
 import type { NavigationActions } from './NavigationActions';
 
 export interface OpenNewChatOptions {
@@ -8,11 +7,6 @@ export interface OpenNewChatOptions {
   projectId?: string;
   /** Working directory; defaults to the active project's mount path. */
   cwd?: string;
-  /** Seeded first prompt — enqueued server-side before the worker boots. */
-  prompt?: string;
-  /** Force a mode instead of the user's preference (rare; e.g. the vibe hero,
-   *  which is already inside the vibe workspace). */
-  mode?: ChatMode;
 }
 
 /**
@@ -41,14 +35,14 @@ export async function openNewChat(
     console.error('[openNewChat] No compute node');
     return null;
   }
-  const mode = options.mode ?? getChatMode();
+  const mode = getChatMode();
   const ptyMode = chatModePtyMode(mode);
   const project = dataContext.project;
 
   const process = await computeNode.createProcess(
     {
       workdir: options.cwd || project?.fs_storage_mount_path,
-      projectId: options.projectId ?? project?.id,
+      ...(options.projectId ?? project?.id ? { projectId: options.projectId ?? project?.id } : {}),
       ...(options.workerType ? { workerType: options.workerType } : {}),
       // Headless modes stream the transcript as JSON; a PTY has no such stream.
       ...(ptyMode ? {} : { outputFormat: 'stream-json' as const }),
@@ -57,13 +51,9 @@ export async function openNewChat(
       watchProcess: false,
       visible: ptyMode,
       pty_mode: ptyMode,
-      ...(options.prompt ? { launchPrompt: options.prompt } : {}),
     },
   );
 
-  await navigation.openShellProcess(
-    process.id,
-    mode === 'vibe' ? { viewMode: ViewMode.Vibe, chatMode: mode } : { chatMode: mode },
-  );
+  await navigation.openShellProcess(process.id, chatModeNavOptions(mode));
   return process;
 }

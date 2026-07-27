@@ -7,7 +7,7 @@ import {
   SEGMENTED_IDLE,
 } from '@src/components/ui/segmented';
 import type { ProcessModeSwitch } from './use-process-mode-switch';
-import type { ChatMode } from '@src/contexts/chat-ui-mode-context';
+import { chatModePtyMode, type ChatMode } from '@src/contexts/chat-ui-mode-context';
 
 interface TerminalModeSwitchProps {
   /** The mode the session is CURRENTLY shown in — the selected segment. */
@@ -16,8 +16,9 @@ interface TerminalModeSwitchProps {
   showVibe: boolean;
   /** The shared switch: live transport, readiness gate, in-flight flag, and the
    *  one `select`. Taken whole rather than re-spelled as four props, so adding a
-   *  field to the hook doesn't ripple through both mounts. */
-  modeSwitch: ProcessModeSwitch;
+   *  field to the hook doesn't ripple through both mounts. `live` is the hook's
+   *  entity passthrough for other consumers — nothing here reads it. */
+  modeSwitch: Omit<ProcessModeSwitch, 'live'>;
 }
 
 const ICONS: Record<ChatMode, LucideIcon> = {
@@ -64,7 +65,7 @@ export function TerminalModeSwitch({ current, showVibe, modeSwitch }: TerminalMo
       {modes.map((mode) => {
         const active = mode === current;
         // Vibe only navigates; so does a pick already matching the transport.
-        const free = mode === 'vibe' || (mode === 'terminal') === ptyMode;
+        const free = mode === 'vibe' || chatModePtyMode(mode) === ptyMode;
         const disabled = !free && (switching || !enabled);
         // The spinner marks the segment whose TRANSPORT is moving. Deliberately
         // not `&& !active`: navigation lands first, so the destination is already

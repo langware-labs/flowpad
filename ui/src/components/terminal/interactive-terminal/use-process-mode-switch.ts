@@ -1,8 +1,8 @@
 import { useCallback, useState } from 'react';
 import { isReadyForInput, WorkerMode, type AgenticProcess } from '@sdk';
 import { useEntity } from '@src/hooks/entity-hooks';
-import { previousNonVibeViewMode, useIsVibe, ViewMode } from '@src/contexts/view-mode-context';
-import { chatModePtyMode, type ChatMode } from '@src/contexts/chat-ui-mode-context';
+import { useIsVibe } from '@src/contexts/view-mode-context';
+import { chatModeNavOptions, chatModePtyMode, type ChatMode } from '@src/contexts/chat-ui-mode-context';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications/notify';
 
@@ -36,9 +36,8 @@ export interface ProcessModeSwitch {
  * **Every pick navigates:** `?chatMode=<mode>` for the two renderers,
  * `?viewMode=vibe` for vibe. The mounted URL pins the mode for as long as it is
  * mounted (`useDockChatModeOverrideSync` / `useDockViewModeOverrideSync`), which
- * keeps the arrangement browsable. The preference is written here, before the
- * navigation, so the remembered mode does not depend on the navigation landing
- * — a mode-less process URL opened later reads the mode the user last picked.
+ * keeps the arrangement browsable, and the URL load is what adopts the mode as
+ * the preference — so nothing here writes a pref from the click path.
  *
  * The one thing navigation cannot do is move the TRANSPORT, because that is a
  * worker lifecycle action, not a view: chat = headless print-mode (no PTY),
@@ -68,14 +67,6 @@ export function useProcessModeSwitch({ process, getDims }: UseProcessModeSwitchO
     (mode: ChatMode) => {
       if (!process) return;
 
-      // Persist the pick BEFORE navigating. The URL is still the renderer's
-      // authority while a `?chatMode` dock is mounted, but it is not the only
-      // one: a mode-less process URL (a reopened tab, a pasted link) falls back
-      // to this preference, and a load that resolves the dock before the pref
-      // hydrates reads the default. Writing here means "last used mode" is
-      // already true by the time anything reads it, instead of only becoming
-      // true once the navigation lands.
-
       // Address the PROCESS, never the ambient dock. This hook is mounted in the
       // vibe display strip too, where `currentDock` is often a CHILD tab (an
       // asset editor opened from inside the workspace) — stamping the mode onto
@@ -87,12 +78,7 @@ export function useProcessModeSwitch({ process, getDims }: UseProcessModeSwitchO
       // down. Leaving vibe restores the mode in use before it — entering vibe
       // overwrote the persisted preference, so inheriting would pin the user in
       // vibe and hardcoding Standard would quietly demote an Advanced user.
-      void navigation.openShellProcess(
-        process.id,
-        mode === 'vibe'
-          ? { chatMode: mode, viewMode: ViewMode.Vibe }
-          : { chatMode: mode, ...(isVibe ? { viewMode: previousNonVibeViewMode() } : {}) },
-      );
+      void navigation.openShellProcess(process.id, chatModeNavOptions(mode, isVibe));
 
       // …and the part the URL can't express: move the worker when the pick
       // disagrees with the live transport. Keyed on `pty_mode` (held stable by

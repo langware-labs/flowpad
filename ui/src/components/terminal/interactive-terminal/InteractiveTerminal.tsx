@@ -165,18 +165,18 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   const process = propProcess ?? contextProcess ?? undefined;
   const { navigation } = useDockNavigation();
   const { resolvedTheme } = useTheme();
-  // Skin layer: by default Standard users get the friendly SimpleChatPane (chat
-  // instead of the raw xterm) and Advanced/Dev keep the terminal. The bottom-
-  // ribbon toggle overrides that per the user's saved choice (chatUiOverride):
-  // once set it takes priority over View mode. The xterm stays mounted underneath
-  // the chat overlay (same session, same PTY — see SimpleChatPane), so toggling
-  // is instant and never resets the terminal. Embedded terminals (chat side
-  // panel) and shell-only tabs (no AgenticProcess) always keep the xterm.
+  // Skin layer: the chat mode (the header switch's saved pick) decides which
+  // surface shows. The xterm stays mounted underneath the chat overlay (same
+  // session, same PTY — see SimpleChatPane), so toggling is instant and never
+  // resets the terminal. Embedded terminals (chat side panel) and shell-only
+  // tabs (no AgenticProcess) always keep the xterm.
   const isAdvanced = useIsAdvanced();
-  // The chat mode decides the surface: only `terminal` shows the xterm. (`vibe`
-  // renders VibeWorkspace instead of this component, so reaching here with vibe
-  // means a non-vibe View mode — the chat pane is the right fallback.)
-  const wantChat = useChatMode() !== 'terminal';
+  // Only `chat` forces the pane. `vibe` renders VibeWorkspace, not this
+  // component, so reaching here in vibe means the surfaces disagree (a popped-out
+  // window, a mode-less process URL) — fall through to the process's own
+  // transport via `isHeadless` below rather than pinning the pane, which would
+  // put a chat over the live PTY of any task-runner process.
+  const wantChat = useChatMode() === 'chat';
   // Headless (`pty_mode === false`): there is no PTY/xterm to skin — the chat
   // pane is the ONLY view. Force it on regardless of the chat/terminal skin
   // override, and (in the render) skip mounting the xterm container entirely so

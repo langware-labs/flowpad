@@ -15,7 +15,6 @@ import {
 } from '@sdk';
 import { NavigateFunction } from 'react-router';
 import type { ViewMode } from '@src/contexts/view-mode-context';
-import { openNewChat } from './open-new-chat';
 import { DockPointer, HIGHLIGHT_PARAM, JOURNEY_PARAM } from './DockPointer';
 import { dockPointerForFile } from './local-file-pointer';
 import { FileOptions, TabOptions } from './types';
@@ -654,36 +653,6 @@ export class NavigationActions {
       await this.openShellProcess(linkedProcess.id);
     } else {
       await this.openShell(shellId, options);
-    }
-  }
-
-  async openNewClaudeProcess(options?: {
-    cwd?: string;
-    projectId?: string;
-    workerType?: 'claude_code' | 'codex' | 'copilot';
-  }): Promise<{ processId: string; shellId: string | null; dockPointer: IDockPointer } | null> {
-    try {
-      const computeNode = dataContext.computeNode;
-      if (!computeNode) {
-        console.error('[NavigationActions] No compute node');
-        return null;
-      }
-      // One chain for every front-face "open a chat" action — it owns the
-      // chat-mode read and the transport/surface that follow from it.
-      const agenticProcess = await openNewChat(this, {
-        ...(options?.cwd ? { cwd: options.cwd } : {}),
-        ...(options?.projectId ? { projectId: options.projectId } : {}),
-        ...(options?.workerType ? { workerType: options.workerType } : {}),
-      });
-      if (!agenticProcess) return null;
-      return {
-        processId: agenticProcess.id,
-        shellId: agenticProcess.shell_id ?? null,
-        dockPointer: agenticProcess.dockPointer,
-      };
-    } catch (error) {
-      console.error('[NavigationActions] Error creating AgenticProcess:', error);
-      return null;
     }
   }
 

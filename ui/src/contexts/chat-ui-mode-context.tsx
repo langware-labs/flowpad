@@ -1,5 +1,6 @@
 import { instancePreferences, PrefKey } from '@sdk';
 import { usePreference } from '@src/hooks/use-preference';
+import { previousNonVibeViewMode, ViewMode } from '@src/contexts/view-mode-context';
 import { useCurrentDock } from '@src/navigation/useDockNavigation';
 import { defineGlobal } from '@sdk/utils';
 import { useEffect, useSyncExternalStore } from 'react';
@@ -29,26 +30,16 @@ import { useEffect, useSyncExternalStore } from 'react';
  */
 export type ChatMode = 'chat' | 'terminal' | 'vibe';
 
-export const CHAT_MODE_DEFAULT: ChatMode = 'vibe';
+// Mirrors PREF_REGISTRY[CHAT_UI_MODE].defaultValue, which is the owner — this
+// only catches a stored legacy value ('auto'/'') that is no longer in the domain.
+const CHAT_MODE_DEFAULT: ChatMode = 'vibe';
 
 declare global {
   interface Window {
-    setChatUi: (val: ChatMode | boolean) => void;
+    setChatUi: (val: ChatMode) => void;
     getChatUi: () => ChatMode;
   }
 }
-
-const LEGACY_BOOL_KEY = 'chatUiMode';
-
-// One-time migration of the legacy boolean flag (true meant "force chat").
-if (
-  typeof localStorage !== 'undefined' &&
-  !toChatMode(instancePreferences.get(PrefKey.CHAT_UI_MODE)) &&
-  localStorage.getItem(LEGACY_BOOL_KEY) === 'true'
-) {
-  instancePreferences.set(PrefKey.CHAT_UI_MODE, 'chat');
-}
-if (typeof localStorage !== 'undefined') localStorage.removeItem(LEGACY_BOOL_KEY);
 
 function toChatMode(v: unknown): ChatMode | null {
   return v === 'chat' || v === 'terminal' || v === 'vibe' ? v : null;
@@ -64,13 +55,22 @@ export function setChatMode(val: ChatMode): void {
 }
 
 /** Transport for a mode: only `terminal` runs an interactive PTY. */
-export function chatModePtyMode(mode: ChatMode = getChatMode()): boolean {
+export function chatModePtyMode(mode: ChatMode): boolean {
   return mode === 'terminal';
 }
 
-defineGlobal('setChatUi', (val: ChatMode | boolean) => {
-  setChatMode(val === true ? 'chat' : val === false ? 'terminal' : val);
-});
+/**
+ * The URL options that put a dock into `mode` — the ONE place the ChatMode and
+ * ViewMode enums touch. `vibe` is a chat mode AND a view mode (two separate
+ * enums that share a name, to be unified later), so selecting it has to carry
+ * both; leaving it has to restore the view mode in use before vibe.
+ */
+export function chatModeNavOptions(mode: ChatMode, leavingVibe = false): { chatMode: ChatMode; viewMode?: ViewMode } {
+  if (mode === 'vibe') return { chatMode: mode, viewMode: ViewMode.Vibe };
+  return { chatMode: mode, ...(leavingVibe ? { viewMode: previousNonVibeViewMode() } : {}) };
+}
+
+defineGlobal('setChatUi', setChatMode);
 defineGlobal('getChatUi', getChatMode);
 
 // --- URL-carried override (mirrors the dock viewMode override) -------------
