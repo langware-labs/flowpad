@@ -2,310 +2,160 @@
 id: 5302e32d-a229-5a98-af31-939662265ef6
 ---
 
-# Wiki Link Graph Primitives — flowpad-oss
+# Wiki Link Graph — flowpad-oss
 
-## Context
+> **This document used to be a design plan** that described the wiki link graph as something to be built ("a graph primitives layer that does not yet exist"). That plan has shipped. The layer now exists as the `flow_sdk/wiki/` package, is wired into every record sync, and is exercised end-to-end by the editor. This document describes the system as it actually stands in code.
 
-Today flowpad-oss has markdown records with a naive wikilink extractor (`r'\[\[([^\]]+)\]\]'`) that produces raw strings joined into FTS `content`. There is **no link resolver, no edge table, no backlinks, no cross-type link resolution, no file watcher on doc dirs**. Every gap analysis downstream (Obsidian graph view, Karpathy ingest/lint/query, typed edges, frontend navigation) depends on a graph primitives layer that does not yet exist.
+The wiki layer turns `[[...]]`-style references inside markdown-backed records into a queryable edge graph. Every time a record syncs to the DB, its body is re-parsed, each reference is resolved to a concrete `(type, id)` entity, and the resulting edges replace that record's prior edges in a `links` table. Outgoing links and backlinks are then queryable by `(type, id)`, and a resolve-by-name HTTP endpoint powers `[[wikilink]]` navigation in the UI.
 
-This plan builds that primitives layer — and nothing else. Scope is deliberately narrow: after this lands, `[[foo]]` resolves to a concrete record across all markdown-backed types, backlinks are queryable, edges survive file moves, and the index stays fresh on out-of-band edits. LLM ops (ingest/lint/query), graph UI, and typed edges are explicit non-goals for this phase.
+The public API is deliberately **type/id-only** — it never imports `FSRecord` or `Entity`, so either layer can call it. See the package docstring at `flow_sdk/wiki/__init__.py`.
 
-**Decisions locked in with user:**
-- Scope: blocking primitives only.
-- Rename strategy: path-based + aliases (no UUID permalinks).
+Source files:
 
-## Non-goals (explicit)
+| File | Purpose |
+|---|---|
+| `flow_sdk/wiki/__init__.py` | Public API: `outgoing`, `backlinks`, `index`, `delete_for_id` + the `WikiLink` type |
+| `flow_sdk/wiki/indexer.py` | Orchestrates parse → resolve → store for `index()`; thin pass-throughs for reads and delete |
+| `flow_sdk/wiki/parser.py` | `parse_links(body)` — extracts wiki/embed/markdown-link occurrences from a body |
+| `flow_sdk/wiki/resolver.py` | `resolve_link(link, ...)` — maps a parsed `WikiLink` to a concrete `(target_type, target_id)` |
+| `flow_sdk/wiki/store.py` | `AsyncLinkStore` — async CRUD on the `links` table over the shared SQLAlchemy engine |
+| `flow_sdk/wiki/types.py` | `WikiLink` frozen dataclass |
+| `flow_sdk/db/drivers/sqlite/connection.py` | `LinksSchema` — the `links` table ORM definition |
+| `flow_sdk/server/routes/wiki.py` | `GET /api/v1/wiki/resolve` resolve-by-name endpoint |
 
-- Karpathy ingest/lint/query ops, `index.md` / `log.md` conventions.
-- Frontend wikilink rendering, backlinks panel, graph view — APIs only.
-- Typed edges (`uses`, `depends_on`, `contradicts`), confidence/provenance fields.
-- Projecting DB-only records (tasks, sessions, projects) as graph nodes.
-- FTS column restructuring (see Migration note).
-- Typed tag attributes, tag aliases, tag hierarchies beyond `/`-nesting (Obsidian doesn't have these; we don't either).
+---
 
-## Files to modify / create
+## What a wiki link is
 
-### New files
-- `flow_sdk/fs_records/wikilink_parser.py` — standalone extractor, unit-testable.
-- `flow_sdk/fs_records/link_resolver.py` — cross-type resolver, registry-injected.
-- `flow_sdk/server/routes/links.py` — `/api/v1/links/*` endpoints.
-- `flow_sdk/db/migrations/<next>_links_table.py` (or equivalent path for this repo's migration convention — verify at impl time).
-- `tests/fs_records/test_wikilink_parser.py`, `tests/fs_records/test_link_resolver.py`, `tests/server/test_links_routes.py`.
+A wiki link is any of the reference forms the parser recognizes in a record's body. The parser (`flow_sdk/wiki/parser.py`) accepts:
 
-### Modified files
-- `flow_sdk/fs_records/markdown_record.py` — replace `_extract_wiki_links` (line 103-105), call parser module, emit structured `ParsedLink` list alongside existing string list (keep string list for FTS back-compat this phase).
-- `flow_sdk/fs_records/asset_record.py` — same, drop local regex (line 32-34), call parser module.
-- `flow_sdk/fs_records/_frontmatter.py` — no code change (dict-based parser accepts `aliases` naturally); document the field in a module docstring.
-- `flow_sdk/fs_store/record.py` — in `sync_to_db` (line 1993), after existing FTS upsert, enqueue a `re-extract-edges` job for this record's `source_path`.
-- `flow_sdk/fs_store/schema_registry.py` — add `canonical_filename: str | None` to `TypeInfo` (or equivalent struct — verify at impl time), populate for skill/agent/workflow types.
-- `flow_sdk/db/drivers/sqlite/sqlite_driver.py` — add `links` table CREATE near the `entities_fts` block (line 348).
-- `flow_sdk/server/routes/watch.py` — extend watcher (pattern at line 37) to cover doc dirs returned by `_doc_search_dirs()` in `markdown_record.py:56`.
-- `flow_sdk/server/app.py` (or wherever routers are registered) — mount `links.router`.
+| Form | Meaning |
+|---|---|
+| `[[name]]` | wikilink |
+| `[[name\|alias]]` | wikilink with display text |
+| `[[name#heading]]` | wikilink with a heading anchor |
+| `[[name^block]]` | wikilink with a block anchor |
+| `![[name]]` | embed / transclusion |
+| `[text](./path.md)` | internal markdown link — relative, ends in `.md` (optionally with a `#fragment`); `http(s)://` targets are excluded |
+| `[text](/dock/assets/wiki/<name>)` | wiki dock-route link, emitted by the editor's "Add entity link" toolbar; the `<name>` segment is URL-decoded into `raw` |
 
-## Design
+Two regexes drive wiki/embed matching and internal-markdown matching, plus a third for the dock-route form (`_WIKILINK_RE`, `_MD_LINK_RE`, `_WIKI_URL_RE` in `parser.py`). Before any of them run, `_mask_code_regions` replaces fenced code blocks (```` ``` ```` / `~~~`) and inline code spans with equal-length runs of spaces, so links inside code are never matched while line and column offsets are preserved.
 
-### 1. `wikilink_parser.py` (standalone module)
+The parser stores minimally: `WikiLink.raw` holds the **full inner text** — everything between `[[` and `]]` for wiki forms, or the path / decoded name for markdown forms. Alias, heading, block, and sub-path are **not** stored as separate fields; they are derived from `raw` on demand by callers that need them. This keeps the storage to a single `TEXT` column (`target_raw`) while preserving all information. `parse_links` returns `WikiLink` objects with only `raw` and `line` populated — `src_*` is filled by the indexer and `target_*` by the resolver.
 
-```python
-@dataclass(frozen=True)
-class ParsedLink:
-    raw: str                        # exactly what was in the source
-    target: str                     # filename/name portion
-    alias: str | None               # from [[target|alias]]
-    heading: str | None             # from [[target#heading]]
-    block: str | None               # from [[target^block]]
-    scope_type: str | None          # from [[skill:target]] — explicit type override
-    kind: Literal["wikilink", "embed", "markdown_link"]
-    line: int
-    col: int
+The `WikiLink` dataclass (`flow_sdk/wiki/types.py`) is frozen and carries: `raw`, `line`, `src_type`, `src_id`, `target_type`, `target_id`, and `id` (the DB row id, `None` until persisted). `target_type` / `target_id` are `None` when the link is unresolved.
 
-def parse(body: str) -> list[ParsedLink]: ...
-```
+---
 
-**Rules:**
-- Skip fenced code blocks (``` / ~~~) and inline code (`` ` ``) before regex passes.
-- Wikilinks: `[[...]]` — parse `|`, `#`, `^`, and leading `type:` scope marker.
-- Embeds: `![[...]]` — same grammar, `kind="embed"`.
-- Markdown links: `[text](path)` — only count as internal if the target matches `^(\./|\.\./)?[^:]+\.md(#.*)?$` (relative, ends in `.md`); emit with `kind="markdown_link"`.
-- Track `line`, `col` for every match so the frontend can one day highlight.
+## Edge extraction on every sync
 
-**Callers:** `MarkdownRecord.from_markdown` (replaces current inline regex), `AssetRecord.from_markdown`, future lint CLI, future frontend preview via the resolve endpoint. Base-class helpers stay as thin wrappers calling `wikilink_parser.parse(body)`.
+Edge extraction is not a separate pass or a background job — it runs inline as **step 4 of `FSRecord.sync_to_db`** (`flow_sdk/fs_store/fs_record.py`). The full pipeline there is:
 
-### 2. `links` table (native SQLite, not FTS)
+1. Entity row via `Entity.from_record(self)`
+2. Mirror DB state back to `metadata.json` via `sync_from_entity`
+3. FTS upsert
+4. **Wiki edge re-extraction** via `await wiki.index(self.type, self.id, self.wiki_body())`
+5. Type-specific `TypeInfo.post_sync_fn`
 
-```sql
-CREATE TABLE IF NOT EXISTS links (
-    id                      INTEGER PRIMARY KEY,
-    src_type                TEXT NOT NULL,
-    src_id                  TEXT NOT NULL,
-    src_path                TEXT NOT NULL,         -- denormalized cache
-    target_raw              TEXT NOT NULL,
-    target_resolved_type    TEXT,                  -- NULL if unresolved
-    target_resolved_id      TEXT,                  -- NULL if unresolved; authoritative on reads
-    target_resolved_path    TEXT,                  -- denormalized cache
-    kind                    TEXT NOT NULL,         -- wikilink | embed | markdown_link
-    heading                 TEXT,
-    block                   TEXT,
-    line                    INTEGER NOT NULL,
-    col                     INTEGER NOT NULL,
-    ambiguous               INTEGER NOT NULL DEFAULT 0
-);
+The whole pipeline runs inside a **single shared DB session**, so the wiki write commits or rolls back together with the entity and FTS writes. The `wiki.index` call is wrapped in a try/except that logs a warning on failure rather than aborting the sync — a bad body never blocks a record from indexing.
 
-CREATE INDEX idx_links_src_id              ON links(src_type, src_id);
-CREATE INDEX idx_links_target_resolved_id  ON links(target_resolved_type, target_resolved_id);
-CREATE INDEX idx_links_target_raw          ON links(target_raw)
-    WHERE target_resolved_id IS NULL;             -- partial, for unresolved sweeps
-CREATE INDEX idx_links_target_path         ON links(target_resolved_path);
-```
+The body handed to the wiki layer is `FSRecord.wiki_body()`, which returns the record's `body` attr, falling back to `content` (`fs_record.py`). Records with neither return `None`, and `wiki.index` treats `body is None` as a no-op (the record is simply not a wiki source). An **empty** body is different: it deletes all existing edges for that source and inserts none — i.e. clearing a document's links is honored.
 
-**Rationale** (from design review): FTS5 is wrong shape for graph joins — no secondary indexes on columns, no equality lookup. Backlinks = `WHERE target_resolved_id = ?`; 1-hop neighbors = join on `src_id` / `target_resolved_id`. Partial index on unresolved rows keeps "new record — who was pointing here?" cheap.
+Inside `wiki.index` (`flow_sdk/wiki/indexer.py`) the sequence is: `parse_links(body)` → `resolve_link(...)` for each parsed link → `AsyncLinkStore.replace_for_source(type, id, resolved)`.
 
-**Key insight from review (item 9):** `target_resolved_id` is authoritative; paths are denormalized cache. On rename, one `UPDATE links SET src_path=? WHERE src_id=?` + `UPDATE links SET target_resolved_path=? WHERE target_resolved_id=?` keeps the graph correct without re-extraction.
+---
 
-### 3. `link_resolver.py`
+## Resolution
 
-```python
-def resolve(
-    raw: str,
-    *,
-    scope_type: str | None,          # from [[type:name]] override
-    src_path: Path,
-    src_type: str,
-    schema_registry=SchemaRegistry,
-) -> ResolvedLink | None: ...
-```
+`resolve_link` (`flow_sdk/wiki/resolver.py`) maps a parsed `WikiLink` to a concrete target entity. The current implementation resolves on the record **name** as written to disk:
 
-**Resolution order:**
-1. If `scope_type` present → restrict to that type only.
-2. Exact alias match in any markdown-backed record's `aliases[]`.
-3. Path fallthrough for target `foo`:
-   - `foo.md` (flat, same dir as src first, then all doc dirs)
-   - `foo/foo.md` (folder-same-name)
-   - `foo/<canonical>.md` — canonical file per type from `TypeInfo.canonical_filename` (`SKILL.md`, etc.)
-   - `foo/index.md`
-   - `foo/README.md`
-4. Title match (case-insensitive) across all markdown-backed records.
-5. Shortest-path disambiguation when multiple candidates: precedence = same-folder-and-type > same-type-any-folder > docs > skills > agents > rest, alphabetical within tier. Set `ambiguous=True` when >1 candidate tied at the chosen tier.
+1. **Derive the name candidate** from `raw` via `_record_name_from_raw`: strip the alias (`|...`), heading (`#...`), and block (`^...`) decorations, drop a trailing `.md`, discard `.`/`..` path segments, and take the **first** remaining path segment. So `[[foo/bar#sec|Alias]]` resolves on `foo`.
+2. **Query candidates** by that name via `AsyncLinkStore.find_entities_by_uname_or_name`: it first matches the indexed `uname` column on the `entities` table, and only if that returns nothing falls back to a `json_extract(data, '$.name')` match. Both run on the shared SQLAlchemy engine.
+3. **Pick deterministically** via `_pick_candidate`: sort candidates by `(type, id)`; if the source record's own `src_type` appears among them, prefer that type (so a same-type target wins ties); otherwise take the alphabetically-first candidate.
 
-**Circular imports:** never import concrete record classes at module top. Use `SchemaRegistry.get_all_types()` filtered by `"is_markdown_backed"` attribute on `TypeInfo`; lazy-import `MarkdownRecord` inside the function if needed. Query the existing `entities` table for name/alias/title matches rather than loading records.
+If no name can be derived, or no candidate matches, the returned `WikiLink` keeps `target_type` / `target_id` at `None` — it is stored as an **unresolved** edge. The resolver deliberately does not yet implement folder-as-doc fallthrough, sub-paths beyond the first segment, or heading/block/alias resolution; because `raw` is preserved verbatim in the stored column, those can be re-derived later without re-walking any files.
 
-### 4. Aliases frontmatter
+---
 
-New standard frontmatter field:
-```yaml
-aliases: [old-name, other-alias]
-```
+## The edge store
 
-`_frontmatter.py` already returns `dict[str, Any]` — no parser change needed. Add reading/normalization in `MarkdownRecord.from_markdown` (and the equivalent asset path); store on the entity row as a new column `aliases TEXT` (JSON-encoded list). On rename, the UI layer (future) will append the old filename stem to `aliases[]` — this phase only adds the field, the reading, and the alias path in the resolver. No migration: existing records default to `[]`.
+`AsyncLinkStore` (`flow_sdk/wiki/store.py`) is a stateless async CRUD wrapper over the `links` table, using the same async SQLAlchemy engine as everything else via `flow_sdk.db.session()`.
 
-### 5. Edge upsert — single-writer queue
+### Table schema
 
-**New component:** `flow_sdk/fs_store/link_indexer.py`
+The `links` table is a native SQLite table (`LinksSchema` in `flow_sdk/db/drivers/sqlite/connection.py`) — one row per `[[...]]` occurrence in a source record's body:
 
-```python
-_queue: asyncio.Queue[tuple[str, Path]]   # (src_type, src_path)
+| Column | Type | Notes |
+|---|---|---|
+| `id` | INTEGER PK | autoincrement row id |
+| `src_type` | TEXT | source record type |
+| `src_id` | TEXT | source record id |
+| `target_raw` | TEXT | the full inner text of the reference (see [What a wiki link is](#what-a-wiki-link-is)) |
+| `target_resolved_type` | TEXT, nullable | resolved target type; `NULL` when unresolved |
+| `target_resolved_id` | TEXT, nullable | resolved target id; `NULL` when unresolved |
+| `line` | INTEGER | 1-indexed line of the occurrence in the source body |
 
-async def run_worker():
-    while True:
-        src_type, src_path = await _queue.get()
-        await _reextract_and_upsert(src_type, src_path)
+Three indexes back the query shapes: `idx_links_src` on `(src_type, src_id)` for outgoing lookups, `idx_links_target` on `(target_resolved_type, target_resolved_id)` for backlinks, and a **partial** index `idx_links_unresolved_raw` on `target_raw WHERE target_resolved_id IS NULL` for cheap "who was pointing at this name?" sweeps.
 
-async def enqueue(src_type: str, src_path: Path): ...
+### Transaction sharing with the request session
 
-async def _reextract_and_upsert(src_type, src_path):
-    # 1. parse body → list[ParsedLink]
-    # 2. resolve each → ResolvedLink | None
-    # 3. single txn: DELETE FROM links WHERE src_path=?;  INSERT rows
-    # 4. for any newly-created record: UPDATE unresolved edges with matching target_raw
-```
+Every `AsyncLinkStore` method opens a session via `flow_sdk.db.session()`. That helper yields the **request session** when called inside an HTTP request, and a fresh auto-committing session outside one. The consequence is that wiki writes inside a request **share the request transaction** with the rest of the request's work — so, e.g., `Entity.delete()` + `wiki.delete_for_id()` either both commit or both roll back (see the docstrings on `flow_sdk/wiki/indexer.py` and `store.py`). Read methods pass `write=False` to get reader semantics (no `BEGIN IMMEDIATE`, WAL snapshot reads), so backlink lookups don't queue on the writer lock.
 
-**Both paths feed the queue:**
-- `sync_to_db` (`fs_store/record.py:1993`) — after FTS upsert, `await link_indexer.enqueue(...)`.
-- Watcher (`server/routes/watch.py`) — on file change event, `enqueue`.
+### Write and read methods
 
-**Rationale:** SQLite serializes writes anyway; the queue makes interleaving explicit, collapses rapid save+filewatch duplicates via `(src_path, timestamp)` dedup on enqueue, and gives backpressure. Per-path 500ms debounce in the enqueue layer.
+| Method | Behavior |
+|---|---|
+| `replace_for_source(src_type, src_id, links)` | Atomic `DELETE` of all rows for `(src_type, src_id)` then `INSERT` of the new rows. Idempotent — this is what `index()` calls. |
+| `delete_for_id(type, id)` | Deletes every row mentioning `(type, id)` on **either** side (as `src` or as `target_resolved`). |
+| `outgoing_from(src_type, src_id)` | Rows where the pair is the source, ordered by line. |
+| `backlinks_of(target_type, target_id)` | Rows where the pair is the resolved target, ordered by source then line. |
+| `find_unresolved(target_raw)` | Unresolved rows whose `target_raw` matches — the hook for promoting links when a new record appears. |
+| `find_entities_by_uname_or_name(name)` | The resolver's candidate query (uname first, `data.name` fallback). |
 
-### 6. File watcher extension
+---
 
-`flow_sdk/server/routes/watch.py` currently watches `.claude/projects/<dir>` for transcripts (line 37, `.jsonl` filter). Extend with a **second** watcher task that:
-- Watches every path from `markdown_record._doc_search_dirs()` (line 56).
-- Filters `.md` only.
-- On create/modify/delete → `link_indexer.enqueue(...)` (single queue, single writer, as above).
-- Uses `debounce=200` on `awatch` like the existing usage.
-- Single task over all dirs (not per-dir) — matches review recommendation.
+## Reads: outgoing links and backlinks
 
-### 7. API routes — `flow_sdk/server/routes/links.py`
+The public read API is on `flow_sdk/wiki/__init__.py` and mirrored as methods on `FSRecord`:
+
+- `wiki.outgoing(type, id)` / `FSRecord.get_links()` — edges going **out** of the record.
+- `wiki.backlinks(type, id)` / `FSRecord.get_backlinks()` — edges pointing **at** the record.
+
+Both return `list[WikiLink]`. `FSRecord.get_links` / `get_backlinks` are thin async wrappers that lazy-import `flow_sdk.wiki` and delegate (`fs_record.py`).
+
+---
+
+## Cleanup paths
+
+Wiki edges must not outlive the records they connect. Two paths keep the table consistent:
+
+**Record delete.** `FSRecord.unindex()` (which `destroy()` / `delete()` call) removes the Entity row, the FTS entry, **and** the wiki edges, calling `wiki.delete_for_id(self.type, str(self.id))` (`fs_record.py`). Like `wiki.index`, it is wrapped in a warning-on-failure try/except so a wiki hiccup never blocks the unindex.
+
+**Orphan sweep.** When the indexer sweeps records whose source file has vanished, `_apply_orphan_action` in `flow_sdk/fs_store/indexer/index_function.py` issues a **best-effort** `wiki.delete_for_id(type_name, eid)` for **every** orphan id — regardless of whether a DB row currently exists — before the type-scoped driver delete. This is deliberate: wiki edges can outlive an entity row that was previously deleted without proper cleanup, so the sweep re-runs the idempotent delete to catch stale backlinks. Failures are swallowed per-id so one bad row doesn't abort the sweep.
+
+Because `delete_for_id` clears edges on **either** side of the graph, deleting a record removes both its outgoing links and the backlinks other records had into it.
+
+---
+
+## HTTP / API surface
+
+The one server route is `GET /api/v1/wiki/resolve` (`flow_sdk/server/routes/wiki.py`, registered as `wiki_router` in `flow_sdk/server/routes/__init__.py`):
 
 ```
-GET  /api/v1/links/backlinks?target_path=...&target_id=...
-     → [{src_type, src_id, src_path, line, col, kind}]
-
-GET  /api/v1/links/neighbors?path=...&depth=1
-     → {nodes: [...], edges: [...]} — BFS via recursive CTE
-
-GET  /api/v1/links/resolve?raw=foo&from_path=...&scope_type=...
-     → ResolvedLink | {candidates: [...], ambiguous: true}
-
-GET  /api/v1/links/broken
-     → links with target_resolved_id IS NULL (paginated)
-
-POST /api/v1/links/reindex
-POST /api/v1/links/reindex/{record_type}
-     → re-walk all files of that type, rebuild their edges
+GET /api/v1/wiki/resolve?name=<n>&prefer_type=<t>&space=<space>
 ```
 
-Follow the router conventions already in `flow_sdk/server/routes/search.py:16` (plain `APIRouter()`, explicit paths in decorators).
+It resolves a wikilink target by name and returns `{ type, id, asset_ref } | null`. It reuses the store's `find_entities_by_uname_or_name` for candidates and the resolver's `_pick_candidate` for tie-breaking (honoring `prefer_type`), then reads `asset_ref` from the entity row. A **miss returns JSON `null` with HTTP 200** — the frontend treats that as the "Create it" trigger, so a 404 would be a regression. `space` defaults to `@local`; non-local spaces are accepted for URL stability but currently resolved locally with a warning.
 
-### 8. Unresolved → resolved transitions
+Note this is a **resolve-by-name** endpoint, not a full backlinks/neighbors REST surface — the graph-read functions (`outgoing`, `backlinks`) are consumed in-process by `FSRecord`, not exposed as their own HTTP routes.
 
-After `INSERT` of a new record's edges, do one targeted sweep:
+---
 
-```sql
-SELECT id FROM links
-WHERE target_resolved_id IS NULL
-  AND target_raw IN (:stem, :title, :alias1, :alias2, :folder_name);
-```
+## Frontend surface
 
-For each hit, re-run resolver; if now resolves → `UPDATE`. Cheap per-create. Full unresolved sweep only on startup and explicit `/reindex`.
+Wiki links are a first-class routing method in the asset-doc URL grammar (`ui/src/navigation/asset-doc-types.ts`, `WIKI = 'wiki'`). The pointer form is `/dock/assets/wiki/<space>/<name>`.
 
-### 9. Tags (reference: Obsidian)
+- **Insertion.** The editor's "Add entity link" toolbar (`ui/src/components/wiki-toolbar/WikiLinkInsertDialog.tsx`) lets the user search any entity and insert either a `[[wikilink]]` or, in WYSIWYG mode, a clickable `[text](/dock/assets/wiki/<name>)` link — the exact form the parser's `_WIKI_URL_RE` recognizes.
+- **Resolution / navigation.** `WikiResolveView` (`ui/src/components/assets/editor/WikiResolveView.tsx`) and the `wikiResolve` helper in the asset loader (`ui/src/routes/loaders/load-asset.ts`) call `/wiki/resolve` (via `apiClient`, path-only) to turn a name into a record. Markdown hits render **inline** so the URL bar stays at `/dock/assets/wiki/<name>` and survives renames; other types (e.g. whiteboard) redirect to their dedicated editor via `openDock`. A miss shows a "Create as Markdown / Create as Whiteboard" picker that mints the record and re-navigates.
 
-**Reference behavior — Obsidian defines the spec.** No divergence; no separate "labels" concept surfaced to users.
-
-**What counts as a tag:**
-- **Inline in body:** `#project`, `#status/in-progress`, `#area/research`. Nesting via `/`.
-- **YAML frontmatter:** `tags: [project, status/in-progress]` or block-list form.
-- Both feed a single tag index. Frontmatter form does **not** require the leading `#`.
-
-**Parser rules** (extend `wikilink_parser.py`):
-- `#tag` regex: `(?<![\w/#])#([A-Za-z][\w/-]*)` — must be preceded by whitespace / start / punctuation (not `##heading`, not `part#of#word`), at least one letter leading, allows `/` for nesting, `-` and `_` inside.
-- Skip fenced code, inline code, and link/URL contexts (already part of the extractor's code-fence pass).
-- Emit as `ParsedTag(tag: str, source: "body" | "frontmatter", line: int, col: int)` — sibling to `ParsedLink`, not merged.
-- Nested-tag normalization: store both the full tag (`project/alpha`) and its parent chain (`project`) at query time via prefix match — no separate rows per ancestor.
-
-**Storage — `tag_refs` table (separate from `links`):**
-
-```sql
-CREATE TABLE IF NOT EXISTS tag_refs (
-    id        INTEGER PRIMARY KEY,
-    src_type  TEXT NOT NULL,
-    src_id    TEXT NOT NULL,
-    src_path  TEXT NOT NULL,
-    tag       TEXT NOT NULL,           -- canonical form, no leading '#'
-    source    TEXT NOT NULL,           -- 'body' | 'frontmatter'
-    line      INTEGER,                 -- NULL for frontmatter-sourced
-    col       INTEGER
-);
-
-CREATE INDEX idx_tag_refs_tag      ON tag_refs(tag);
-CREATE INDEX idx_tag_refs_src      ON tag_refs(src_type, src_id);
-CREATE INDEX idx_tag_refs_prefix   ON tag_refs(tag COLLATE NOCASE);  -- for prefix queries
-```
-
-**Why a separate table (not `links` with `kind='tag'`):**
-- Tags have no `target_resolved_id` — they're a namespace, not a record. Forcing them into `links` adds nullable columns and complicates the resolver.
-- Query shapes differ: "records with tag X and Y" is a two-join on `tag_refs`; "backlinks to note X" stays on `links`. Keeping them separate keeps each query simple.
-- The graph-neighbors endpoint unions both at read time (see API below) — users see one graph.
-
-**Entity exposure (aligned with `docs/CLAUDE.md` rule 6):**
-- Override `meta_dict()` on `MarkdownRecord` / `AssetRecord` to include a sorted deduped `tags` list merging body-extracted + frontmatter.
-- Tags land in the Entity row via existing indexing pipeline — no new column needed; the `labels`/`tags` field already exists on `DBEntity`.
-- Upsert into `tag_refs` happens on the same single-writer queue as `links` (one transaction per record re-extract): `DELETE FROM tag_refs WHERE src_path=?; INSERT ...`.
-
-**API — extend `routes/links.py`:**
-
-```
-GET  /api/v1/tags                             → [{tag, count}], optionally filter by prefix
-GET  /api/v1/tags/{tag}/records               → records carrying tag (exact or prefix via ?prefix=true)
-GET  /api/v1/links/neighbors?path=...&depth=1 → now unions links + tag_refs; tags appear as pseudo-nodes
-```
-
-**Tags vs `DBEntity.labels`:**
-- `labels` is internal (used by the DB index layer). It stays internal.
-- User-facing wiki tags are the `tags` field — single concept, Obsidian-compatible.
-- If anything currently writes into both, unify at the `meta_dict()` override rather than in the frontend.
-
-**Non-goals (tags-specific):**
-- Tag renames / bulk-edit — deferred.
-- Tag aliases — Obsidian doesn't support them; skip.
-- Confidence / typed tag attributes — belongs with typed edges in a later phase.
-
-## Things to reuse (do not rebuild)
-
-- `MarkdownRecord._external_source_iter` / `discover` (`record.py:1180-1208`) — already enumerates markdown-backed records.
-- `_doc_search_dirs()` (`markdown_record.py:56`) — source of truth for directories to watch.
-- `SchemaRegistry.get_all_types()` (`schema_registry.py:375`) — registry enumeration.
-- `watchfiles.awatch` pattern (`server/routes/watch.py:37`) — mirror with different path list + filter.
-- `Entity.search()` FTS layer — untouched this phase.
-- Existing `sync_to_db` hook — add enqueue at end, no refactor.
-- `_frontmatter.py` — no change; frontmatter dict already open-ended.
-
-## Migration & back-compat
-
-- **FTS content column unchanged:** current `search_content` in `markdown_record.py:230-244` keeps appending `" ".join(links)`. Users searching by link text keep their current results. Separating links out of FTS content is a follow-up PR, deliberately.
-- **New `links` table** is additive; no change to `entities_fts` schema.
-- **New `aliases` column** on `entities` table defaults to `[]`; existing rows unaffected until next `sync_to_db`.
-- **First-run reindex** required to populate `links` table: server boot checks `SELECT COUNT(*) FROM links`; if zero, runs full reindex in background (log a warning).
-
-## Verification
-
-Unit:
-- `tests/fs_records/test_wikilink_parser.py` — table-driven: all six link forms, code-fence skips, embedded pipe/hash/block combos, scoped `type:name`, markdown links to `.md`, false positives inside ``` blocks.
-- `tests/fs_records/test_link_resolver.py` — fixture vault with: two records same filename different types, alias match, folder-as-doc, per-type canonical file (SKILL.md, agent `.md`), ambiguous case, scoped override.
-- `tests/fs_store/test_link_indexer.py` — enqueue dedup, single-writer serialization, unresolved sweep on new record.
-
-Integration:
-- `tests/server/test_links_routes.py` — seed fixture vault, hit `/backlinks`, `/neighbors`, `/resolve`, `/broken`.
-- Manual: start backend (`uv run -m flow_sdk.server.run`), create two docs under `docs/` linking to each other, confirm `/api/v1/links/backlinks` returns the inbound edge within ~1s of file save (watcher debounce + worker).
-- Rename manual: rename `docs/foo.md` → `docs/bar.md` on disk. Watcher fires; `/backlinks` should still resolve inbound links as long as caller added `foo` to `bar.md`'s `aliases:`. Without alias, broken link should appear in `/api/v1/links/broken`.
-
-Regression:
-- Existing `GET /api/v1/search` should return same results for a corpus before and after the migration (links still in FTS `content` this phase).
-- Existing `/api/v1/search/reindex` unaffected.
-
-## Risks / open items
-
-- **Watcher churn during LLM ingest** — if a future ingest flow writes 15 docs in a burst, queue depth matters. Debounce + dedup should handle it; measure on first real ingest.
-- **Doc-dir set is dynamic** — `_doc_search_dirs()` re-reads env + filesystem each call. The watcher caches at start; changes to `FLOWPAD_DOC_DIRS` mid-session are not picked up. Acceptable for this phase; add a `/links/rescan-roots` endpoint if it bites.
-- **`src_id` for hybrid records** — skill/agent/workflow store both YAML and markdown. Confirm at impl time that `source_path` + `id` resolve to the single canonical row (cite: `agent_record.py:107-115`, `skill_record.py:47-60`). If not, the edge table key story needs adjustment.
-- **Concurrent writes to `entities` and `links`** — both happen inside `sync_to_db`; ensure they're in the same transaction or the link worker will occasionally see a stale entity row. Single-queue worker naturally resolves this.
+There is a manual-regression spec at `ui/src/test/manual_regression/wiki/wiki_link_layer.md` covering this end to end.

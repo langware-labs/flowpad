@@ -25,6 +25,7 @@ const MENU_BUILDERS: Array<[string, () => DockPointer]> = [
   ['type list', () => DockPointer.forAssetList('agent')],
   ['folder', () => DockPointer.forAssetFolder('markdown', 'compute_node-@local', 'x')],
   ['editor', () => DockPointer.forAssetEditor('skill', '/p/s.md')],
+  ['project home', () => DockPointer.forAssetProjectHome()],
 ];
 
 describe('navigateAsset scope contract', () => {

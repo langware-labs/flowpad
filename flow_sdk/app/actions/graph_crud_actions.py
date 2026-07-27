@@ -31,6 +31,7 @@ async def handle_query_resource(request: Request):
         )
     filter_params = request_info.request_parameters.get("filter", {})
     entities_filter = QueryFilter.parse(filter_params, entity_model.get_type())
+    _apply_top_level_paging(request_info, entities_filter)
     source_entity = request_info.target_entity_typeid
     if source_entity is None:  # TODO, We need to validate parent access
         source_entity = request_info.user
@@ -47,6 +48,30 @@ async def handle_query_resource(request: Request):
     if not include_system:
         _all = [e for e in _all if not getattr(e, "system", False)]
     return ApiSuccessResponse[list[Entity]](data=_all)
+
+
+def _apply_top_level_paging(request_info, entities_filter) -> None:
+    """Honor ?limit= / ?offset= query params on graph list requests.
+
+    Historically only ``limit``/``offset`` INSIDE the ``filter`` JSON were
+    honored; a top-level ``?limit=5000`` was silently dropped, turning
+    intended-bounded list calls into full-corpus dumps. Filter-JSON values
+    win when both are set; malformed values are ignored.
+    """
+    params = request_info.request_parameters
+    for field in ("limit", "offset"):
+        if getattr(entities_filter, field, None) is not None:
+            continue
+        raw = params.get(field)
+        if raw is None:
+            continue
+        try:
+            value = int(raw)
+        except (TypeError, ValueError):
+            service_log.debug(f"[graph read] ignoring malformed ?{field}={raw!r}")
+            continue
+        if value >= 0:
+            setattr(entities_filter, field, value)
 
 
 def _request_wants_system(request_info, filter_params) -> bool:
@@ -112,6 +137,25 @@ async def handle_delete_by_id():
             status_code=400,
             detail=f"Delete error: Unknown entity type: {target_typeid.type}",
         )
+
+    # Auto-propagate removal — symmetric with ``handle_create_entity``'s auto-share.
+    # Create makes a ``remote`` child a hub ``is_child`` (the hub fans
+    # ``child_created`` to the parent's watchers); delete must do the inverse:
+    # remove the hub row so the hub fans ``child_deleted`` (remove_child) carried
+    # on the parent. Without this the deletion never leaves the deleter's instance.
+    # Server-owned, so the FE just calls delete (no ``Hub-Reflect`` opt-in). Non-fatal.
+    # Scoped to ``is_child`` entities (a ``parent_type_id`` is set) — the mirror of
+    # create's child-only auto-share; a top-level shared entity (no parent) keeps
+    # its explicit ``unshare`` semantics and is not auto-removed from the hub here.
+    entity = await entity_model.get_one({"id": target_typeid.id})
+    if entity is not None and getattr(entity, "remote", False) and getattr(entity, "parent_type_id", None):
+        try:
+            await entity.unshare(recursive=False)
+        except Exception as e:  # noqa: BLE001
+            service_log.warn(
+                f"[delete] auto-unshare {target_typeid} failed (non-fatal): {e}"
+            )
+
     is_deleted = await entity_model.delete_by_id(target_typeid.id)
     if not is_deleted:
         raise HTTPException(
@@ -243,6 +287,22 @@ async def handle_create_entity(request: Request):
     if not someone_typeid:
         raise HTTPException(status_code=400, detail="invalid auth result")
 
+    # Entity-level save validation (a `save()` raising ValueError, e.g. Tag's
+    # reserved-root gate) is a client error, not a server fault — mapped once
+    # around the whole branch dispatch so every create path agrees.
+    try:
+        entity = await _dispatch_create_save(entity, request_info, someone_typeid)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    # TODO Turn off expand_permissions upon entity creation
+    await entity.expand_permissions()
+
+    return ApiSuccessResponse[Entity](data=entity)
+
+
+async def _dispatch_create_save(entity: Entity, request_info, someone_typeid) -> Entity:
+    """The three create arms (standalone / visitor / parented), extracted so
+    handle_create_entity can wrap them under one ValueError→400 mapping."""
     if not request_info.target_entity_typeid or request_info.target_entity_typeid.type == User.get_type():
         entity = await entity.save(someone_typeid)
     elif request_info.target_entity_typeid.type == Visitor.get_type():
@@ -281,7 +341,4 @@ async def handle_create_entity(request: Request):
             service_log.warn(
                 f"[create] auto-share child {entity.typeid} under {target_entity.typeid} failed (non-fatal): {e}"
             )
-    # TODO Turn off expand_permissions upon entity creation
-    await entity.expand_permissions()
-
-    return ApiSuccessResponse[Entity](data=entity)
+    return entity

@@ -185,6 +185,45 @@ async def test_git_ops_missing_workdir(bootstrapped_client):
 
 
 @pytest.mark.asyncio
+async def test_git_ops_init_seeds_gitignore(bootstrapped_client, tmp_path):
+    """Real init on a fresh dir creates the repo and seeds a standard .gitignore."""
+    bootstrap = await bootstrapped_client.get("/api/v1/graph/bootstrap")
+    cn_id = _get_compute_node_id(bootstrap.json())
+
+    r = await bootstrapped_client.post(
+        f"/api/v1/graph/compute_node/{cn_id}/git-ops/init",
+        json={"workdir": str(tmp_path)},
+    )
+    assert r.status_code == 200
+    assert r.json()["data"]["ok"] is True
+
+    assert (tmp_path / ".git").is_dir()
+    gitignore = tmp_path / ".gitignore"
+    assert gitignore.is_file()
+    body = gitignore.read_text()
+    assert "node_modules/" in body
+    assert "__pycache__/" in body
+    assert ".DS_Store" in body
+
+
+@pytest.mark.asyncio
+async def test_git_ops_init_preserves_existing_gitignore(bootstrapped_client, tmp_path):
+    """Init never clobbers a user's existing .gitignore."""
+    bootstrap = await bootstrapped_client.get("/api/v1/graph/bootstrap")
+    cn_id = _get_compute_node_id(bootstrap.json())
+
+    (tmp_path / ".gitignore").write_text("my-custom-ignore\n")
+
+    r = await bootstrapped_client.post(
+        f"/api/v1/graph/compute_node/{cn_id}/git-ops/init",
+        json={"workdir": str(tmp_path)},
+    )
+    assert r.status_code == 200
+    assert r.json()["data"]["ok"] is True
+    assert (tmp_path / ".gitignore").read_text() == "my-custom-ignore\n"
+
+
+@pytest.mark.asyncio
 async def test_git_ops_unknown_subpath(bootstrapped_client, git_repo):
     bootstrap = await bootstrapped_client.get("/api/v1/graph/bootstrap")
     cn_id = _get_compute_node_id(bootstrap.json())

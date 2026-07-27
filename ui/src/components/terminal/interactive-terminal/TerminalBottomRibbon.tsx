@@ -109,6 +109,10 @@ export const TerminalBottomRibbon: React.FC<TerminalBottomRibbonProps> = ({
                     onClick={onToggleView}
                     disabled={switching || !toggleEnabled}
                     aria-label={toggleLabel}
+                    data-testid="terminal-chat-toggle"
+                    data-switching={switching}
+                    data-toggle-enabled={toggleEnabled}
+                    data-chat-active={chatActive}
                     className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
                   >
                     {switching ? (

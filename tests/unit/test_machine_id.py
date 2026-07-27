@@ -9,13 +9,10 @@ The function under test has three concerns kept tested independently:
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 import threading
 from pathlib import Path
 from unittest.mock import patch
-
-import pytest
 
 from flow_sdk.utils import machine_id as mid_mod
 from flow_sdk.utils.machine_id import (
@@ -27,10 +24,10 @@ from flow_sdk.utils.machine_id import (
     get_machine_id,
 )
 
-
 # ----------------------------------------------------------------------
 # get_machine_id — cache-first contract
 # ----------------------------------------------------------------------
+
 
 def test_first_call_derives_and_caches(tmp_path):
     cache_path = tmp_path / "global" / CACHE_FILENAME
@@ -49,7 +46,8 @@ def test_subsequent_call_returns_cached_value(tmp_path, monkeypatch):
     first = get_machine_id(flow_home=tmp_path)
     # Sabotage derivation — if cache works, this never runs.
     monkeypatch.setattr(
-        mid_mod, "_derive_machine_id",
+        mid_mod,
+        "_derive_machine_id",
         lambda: (_ for _ in ()).throw(AssertionError("must not derive on cache hit")),
     )
     second = get_machine_id(flow_home=tmp_path)
@@ -63,7 +61,8 @@ def test_cache_survives_os_id_disappearing(tmp_path, monkeypatch):
     first = get_machine_id(flow_home=tmp_path)
     # Pretend /etc/machine-id (or equivalent) is gone.
     monkeypatch.setattr(
-        mid_mod, "_derive_machine_id",
+        mid_mod,
+        "_derive_machine_id",
         lambda: (_ for _ in ()).throw(AssertionError("cache should win")),
     )
     assert get_machine_id(flow_home=tmp_path) == first
@@ -100,6 +99,7 @@ def test_cache_empty_value_recomputes(tmp_path):
 # ----------------------------------------------------------------------
 # _derive_machine_id — OS-specific branches
 # ----------------------------------------------------------------------
+
 
 def test_derive_linux_reads_etc_machine_id(monkeypatch, tmp_path):
     fake_machine_id = "a1b2c3d4e5f6"
@@ -157,7 +157,8 @@ def test_derive_darwin_parses_ioreg(monkeypatch):
         '    | |   "platform-name" = <"foo">\n'
     )
     monkeypatch.setattr(
-        subprocess, "check_output",
+        subprocess,
+        "check_output",
         lambda *a, **kw: ioreg_out,
     )
     val, prov = _derive_machine_id()
@@ -190,6 +191,7 @@ def test_derive_handles_subprocess_failure(monkeypatch):
 # Cache writes — atomicity + filelock
 # ----------------------------------------------------------------------
 
+
 def test_write_creates_global_dir(tmp_path):
     assert not (tmp_path / "global").exists()
     _write_cache(tmp_path / "global" / CACHE_FILENAME, "abc", "test:fake")
@@ -214,7 +216,6 @@ def test_second_write_loses_to_first(tmp_path):
 def test_concurrent_first_writes_converge(tmp_path):
     """N threads racing to be the first writer must converge on a
     single value (whichever got the lock first)."""
-    cache_path = tmp_path / "global" / CACHE_FILENAME
     barrier = threading.Barrier(10)
     results: list[str] = []
     lock = threading.Lock()
@@ -226,8 +227,10 @@ def test_concurrent_first_writes_converge(tmp_path):
             results.append(val)
 
     threads = [threading.Thread(target=worker, args=(i,)) for i in range(10)]
-    for t in threads: t.start()
-    for t in threads: t.join(timeout=15)
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=15)
 
     assert len(results) == 10
     assert len(set(results)) == 1, f"diverged: {set(results)}"
@@ -246,3 +249,61 @@ def test_read_cache_returns_none_for_non_dict(tmp_path):
     p = tmp_path / "x.json"
     p.write_text(json.dumps(["not", "a", "dict"]))
     assert _read_cache(p) is None
+
+
+# ----------------------------------------------------------------------
+# desktop_instance_id — the hub key-slot identity
+# ----------------------------------------------------------------------
+
+
+def _settings_named(instance_name: str):
+    class _S:
+        pass
+
+    s = _S()
+    s.instance_name = instance_name
+    return s
+
+
+def test_desktop_instance_id_is_deterministic(tmp_path):
+    from flow_sdk.utils.machine_id import desktop_instance_id
+
+    with patch("flow_sdk.instance_settings.get_instance_settings", return_value=_settings_named("Bob_dev")):
+        first = desktop_instance_id(flow_home=tmp_path)
+        second = desktop_instance_id(flow_home=tmp_path)
+    assert first == second
+
+
+def test_desktop_instance_id_is_a_v5_uuid(tmp_path):
+    import uuid as _uuid
+
+    from flow_sdk.utils.machine_id import desktop_instance_id
+
+    with patch("flow_sdk.instance_settings.get_instance_settings", return_value=_settings_named("Bob_dev")):
+        instance_id = desktop_instance_id(flow_home=tmp_path)
+    assert _uuid.UUID(instance_id).version == 5
+
+
+def test_desktop_instance_id_varies_by_instance_name(tmp_path):
+    from flow_sdk.utils.machine_id import desktop_instance_id
+
+    with patch("flow_sdk.instance_settings.get_instance_settings", return_value=_settings_named("prod")):
+        prod_id = desktop_instance_id(flow_home=tmp_path)
+    with patch("flow_sdk.instance_settings.get_instance_settings", return_value=_settings_named("Bob_dev")):
+        dev_id = desktop_instance_id(flow_home=tmp_path)
+    assert prod_id != dev_id
+
+
+def test_desktop_instance_id_varies_by_machine(tmp_path):
+    """Two machines (different cached machine ids) with the SAME instance name
+    derive different slots — the property host:port could never provide."""
+    from flow_sdk.utils.machine_id import desktop_instance_id
+
+    machine_a = tmp_path / "a"
+    machine_b = tmp_path / "b"
+    for home, mid in ((machine_a, "machine-a-id"), (machine_b, "machine-b-id")):
+        _write_cache(home / "global" / CACHE_FILENAME, mid, "test")
+    with patch("flow_sdk.instance_settings.get_instance_settings", return_value=_settings_named("Bob_dev")):
+        id_a = desktop_instance_id(flow_home=machine_a)
+        id_b = desktop_instance_id(flow_home=machine_b)
+    assert id_a != id_b

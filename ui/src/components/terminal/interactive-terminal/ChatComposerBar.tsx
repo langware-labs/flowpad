@@ -1,20 +1,19 @@
 import {
   AgenticProcess,
-  isWorkerRunning,
-  type StatusBearingProcess,
+  isBusy,
   TypeId,
-  WorkerStatus,
 } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { ProcessStatusIndicator, getStatusLabel } from '@src/components/agentic-progress/shared/status-indicator';
 import { CompactExecutionInput } from '@src/components/entity-execution-panel/CompactExecutionInput';
-import { useDerivedWorkerStatus } from '@src/components/entity-execution-panel/hooks/useDerivedWorkerStatus';
 import { cn } from '@src/lib/utils';
 import { notify } from '@src/notifications/notify';
 import { ScrollText } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { useChatPlanMode } from './chat-plan-mode-context';
+import { ChatToolsMenu } from './ChatToolsMenu';
+import { COMPOSER_PILL_CLASS } from './composer-pill';
 
 interface ChatComposerBarProps {
   /** The interactive tab's live PTY AgenticProcess. */
@@ -72,15 +71,13 @@ export function ChatComposerBar({ process, onPasteImages }: ChatComposerBarProps
   const { data: liveProcess } = useEntity<AgenticProcess>(processTypeId, { watch: true });
   const reflected = liveProcess ?? process;
 
-  const derivedWorkerStatus = useDerivedWorkerStatus(process);
-  const indicatorProcess: StatusBearingProcess = {
-    status: reflected.status,
-    workerStatus: derivedWorkerStatus ?? reflected.workerStatus,
-    session_id: reflected.session_id,
-  };
-  // Only an actively mid-turn worker blocks the composer — a dead PTY is
-  // relaunched by prompt(), so no status==RUNNING gate here.
-  const busy = isWorkerRunning(indicatorProcess.workerStatus as WorkerStatus);
+  // Headless and PTY turns both broadcast status live now, so the reactive
+  // entity is the single source. One boolean gates the composer: the backend's
+  // turn-in-flight `busy` boolean (serialized alongside `status`; read via
+  // `isBusy`). A dead PTY reads ¬busy and is relaunched by prompt(), so it stays
+  // sendable.
+  const indicatorProcess = reflected;
+  const busy = isBusy(indicatorProcess);
 
   return (
     <CompactExecutionInput
@@ -93,24 +90,27 @@ export function ChatComposerBar({ process, onPasteImages }: ChatComposerBarProps
       placeholder={plan.planPending ? t`Plan mode — describe what to plan…` : t`Message the agent…`}
       onShiftTab={plan.enabled ? plan.togglePlan : undefined}
       leadingSlot={
-        plan.enabled ? (
-          <button
-            type="button"
-            onClick={plan.togglePlan}
-            title={t`Toggle plan mode (Shift+Tab)`}
-            data-testid="plan-mode-pill"
-            aria-pressed={plan.planPending}
-            className={cn(
-              'mb-1 inline-flex flex-shrink-0 items-center gap-1 rounded-full border px-2.5 py-1 text-[12px] transition-colors',
-              plan.planPending
-                ? 'border-blue-400 bg-blue-400/15 text-blue-300'
-                : 'border-border/60 text-muted-foreground hover:border-blue-400/50 hover:text-foreground',
-            )}
-          >
-            <ScrollText className="h-3.5 w-3.5" />
-            <Trans>Plan</Trans>
-          </button>
-        ) : undefined
+        <div className="flex items-center gap-2">
+          <ChatToolsMenu />
+          {plan.enabled ? (
+            <button
+              type="button"
+              onClick={plan.togglePlan}
+              title={t`Toggle plan mode (Shift+Tab)`}
+              data-testid="plan-mode-pill"
+              aria-pressed={plan.planPending}
+              className={cn(
+                COMPOSER_PILL_CLASS,
+                plan.planPending
+                  ? 'border-blue-400 bg-blue-400/15 text-blue-300'
+                  : 'border-border/60 text-muted-foreground hover:border-blue-400/50 hover:text-foreground',
+              )}
+            >
+              <ScrollText className="h-3.5 w-3.5" />
+              <Trans>Plan</Trans>
+            </button>
+          ) : null}
+        </div>
       }
       statusSlot={
         <span

@@ -20,10 +20,13 @@ lines are easy to filter independently of the Claude CLI lines.
 
 from __future__ import annotations
 
+import json
 import logging
+from pathlib import Path
 from typing import Any
 
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import WorkerCLIOptions
+from flow_sdk.builtin.agentic_process.model_tiers import CODEX_MODEL_TIERS
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +38,9 @@ class CodexCliOptions(WorkerCLIOptions):
     property on AgenticProcess returns something inspectable for codex too
     (the ``test_agentic_process_clock_agent`` test asserts on ``cmd_line``).
     """
+
+    # sm/md/lg → gpt-5.4-mini/gpt-5.4/gpt-5.5, applied when emitting command.
+    MODEL_TIERS = CODEX_MODEL_TIERS
 
     def __init__(
         self,
@@ -61,78 +67,120 @@ class CodexCliOptions(WorkerCLIOptions):
         self.add_dirs: list[str] = list(add_dirs or [])
         self.json_stream = json_stream
         self.ephemeral = ephemeral
+        self.developer_instructions: str | None = None
+        # `-c key=val` overrides for API-key auth (the OpenRouter provider block).
+        # Derived per-spawn from the harness Capability — excluded from to_json /
+        # the restart hash, same as fork/resume.
+        self.extra_config_overrides: list[tuple[str, str]] = []
 
-    # Default reasoning effort overridden in ``_build_worker_args`` so user's
-    # global ``model_reasoning_effort = "xhigh"`` from ~/.codex/config.toml
-    # doesn't make every flowpad turn 60+ seconds. Tests run within a 30s
-    # global timeout — keep this in sync if that limit is relaxed.
+    # Overridden per-process in ``_reasoning_effort_flags`` (see there for why).
+    # Chosen to stay under the 30s test timeout — keep in sync if that's relaxed.
     DEFAULT_REASONING_EFFORT = "low"
 
-    def _build_worker_args(self) -> list[str]:
-        """Shell-quoted argv mirroring ``to_spawn_args``.
+    EXECUTABLE = "codex"
+    PROMPT_CHANNEL = "stdin"  # codex reads the prompt from stdin (the `-` sentinel)
+    SYSTEM_PROMPT_FLAG = None  # no flag — a system-prompt addition prepends into stdin
 
-        ``cmd_line`` (``to_shell_string`` → this method) and ``to_spawn_args``
-        used to drift in PTY mode (``json_stream=False``): the spawn argv was
-        bare ``codex`` (interactive TUI) but ``cmd_line`` showed ``codex exec
-        --json …``. Deriving from ``to_spawn_args`` keeps both paths in sync.
-        """
-        import shlex
-
-        argv, _env = self.to_spawn_args()
-        args: list[str] = [shlex.quote(a) for a in argv]
-        # Skills are surfaced as a comment-style suffix so callers asserting on
-        # ``cmd_line`` containing the agent name still find it. They are NOT
-        # actually passed to codex on the command line — codex discovers skills
-        # from ~/.codex/skills/.
-        for sk in self.skill_names:
-            args.append(f"# skill={shlex.quote(sk)}")
-        return args
-
-    def to_spawn_args(self, instruction: str | None = None) -> tuple[list[str], dict[str, str]]:
-        """Build argv list + env dict for ``asyncio.create_subprocess_exec()``.
-
-        Two shapes:
-          * ``json_stream=True`` (default) → ``codex exec --json -`` — headless,
-            reads the prompt from stdin. Used by ``CodexCLIStreamWorker``.
-          * ``json_stream=False`` → bare ``codex`` — the interactive TUI Codex
-            ships when no subcommand is given. Used when launching codex as
-            the PTY process for a visible AgenticProcess tab.
-        """
-        if not self.json_stream:
-            # Interactive TUI (PTY-attached) — flags forward to ``codex`` per
-            # ``codex --help`` ("If no subcommand is specified, options will
-            # be forwarded to the interactive CLI.").
-            argv: list[str] = ["codex"]
-            if self.permission_mode == "bypassPermissions":
-                argv.append("--dangerously-bypass-approvals-and-sandbox")
-            if self.workdir:
-                argv.extend(["-C", self.workdir])
-            if self.model:
-                argv.extend(["-m", self.model])
-            for d in self.add_dirs:
-                argv.extend(["--add-dir", d])
-            if self.resume and self.session_id:
-                argv.extend(["resume", self.session_id])
-            return argv, dict(self.env_vars)
-
-        argv = ["codex", "exec", "--skip-git-repo-check"]
-        if self.permission_mode == "bypassPermissions":
-            argv.append("--dangerously-bypass-approvals-and-sandbox")
-        if self.ephemeral:
-            argv.append("--ephemeral")
-        argv.append("--json")
-        argv.extend(["-c", f"model_reasoning_effort={self.DEFAULT_REASONING_EFFORT}"])
+    def _common_tail(self) -> list[str]:
+        """Flags shared by both transports: cwd, model, add-dirs, resume."""
+        tail: list[str] = []
         if self.workdir:
-            argv.extend(["-C", self.workdir])
-        if self.model:
-            argv.extend(["-m", self.model])
+            tail.extend(["-C", self.workdir])
+        if self.resolved_model:
+            tail.extend(["-m", self.resolved_model])
         for d in self.add_dirs:
-            argv.extend(["--add-dir", d])
+            tail.extend(["--add-dir", d])
         if self.resume and self.session_id:
-            argv.extend(["resume", self.session_id])
-        # Tell codex to read the prompt from stdin.
-        argv.append("-")
-        return argv, dict(self.env_vars)
+            tail.extend(["resume", self.session_id])  # positional subcommand, not a flag
+        return tail
+
+    def _developer_instruction_flags(self) -> list[str]:
+        if not self.developer_instructions:
+            return []
+        return ["-c", f"developer_instructions={json.dumps(self.developer_instructions)}"]
+
+    def _interactive_trust_flags(self) -> list[str]:
+        """Trust the injected-input target only when full access was requested."""
+        if self.permission_mode != "bypassPermissions" or not self.workdir:
+            return []
+
+        # The interactive directory-trust prompt consumes Flowpad's first
+        # programmatic submission. Keep this override process-local and aligned
+        # with the caller's explicit full-access permission choice. Codex
+        # splits ``-c`` keys literally on dots, so a path cannot safely be a
+        # dotted key segment. Supply the exact project path as TOML data in an
+        # inline table instead. Match Codex's own lookup by canonicalizing an
+        # existing workdir, while retaining the original path if that fails.
+        try:
+            workdir = str(Path(self.workdir).resolve(strict=True))
+        except OSError:
+            workdir = self.workdir
+        # JSON and TOML basic strings share the escapes used here. JSON leaves
+        # DEL (U+007F) raw, though TOML forbids it, so escape that one extra
+        # codepoint while preserving non-BMP Unicode as real UTF-8.
+        project = json.dumps(workdir, ensure_ascii=False).replace("\x7f", "\\u007f")
+        trusted = json.dumps("trusted")
+        return ["-c", f"projects={{{project}={{trust_level={trusted}}}}}"]
+
+    def _interactive_update_flags(self) -> list[str]:
+        """Keep Codex's startup updater out of automation-owned PTYs.
+
+        A pending update otherwise replaces the composer with an interactive
+        install/skip screen. Flowpad must never submit a user turn into that
+        interstitial, and a process-local ``-c`` override avoids mutating the
+        user's global Codex configuration.
+        """
+        return ["-c", "check_for_update_on_startup=false"]
+
+    def _reasoning_effort_flags(self) -> list[str]:
+        """Process-local reasoning-effort override — required on BOTH transports.
+
+        Without it the turn inherits ``model_reasoning_effort`` from the user's
+        global ~/.codex/config.toml. That is not merely slow: codex maps some
+        values to an effort the API rejects outright (``ultra`` → ``max`` →
+        HTTP 400 ``Invalid value: 'max'``), which fails the turn with no
+        assistant message. A ``-c`` override is process-local, so the user's
+        global config is never mutated (same technique as
+        :meth:`_interactive_update_flags`).
+        """
+        return ["-c", f"model_reasoning_effort={self.DEFAULT_REASONING_EFFORT}"]
+
+    def _extra_config_override_flags(self) -> list[str]:
+        """API-key auth provider block: process-local ``-c key=val`` overrides
+        (e.g. the OpenRouter model_providers config). TOML-quoted like the other
+        ``-c`` helpers; empty in device mode."""
+        flags: list[str] = []
+        for key, value in self.extra_config_overrides:
+            flags.extend(["-c", f"{key}={json.dumps(value)}"])
+        return flags
+
+    def _emit_flags(self) -> list[str]:
+        """argv after ``codex``. Two shapes keyed on ``json_stream``:
+          * True (default) → ``exec … --json … -`` headless, prompt over stdin;
+          * False → bare interactive TUI flags (PTY-attached visible tab).
+        Both end with the shared :meth:`_common_tail`.
+        """
+        bypass = ["--dangerously-bypass-approvals-and-sandbox"] if self.permission_mode == "bypassPermissions" else []
+        dev_flags = self._developer_instruction_flags()
+        extra_cfg = self._extra_config_override_flags()
+        if not self.json_stream:
+            return (
+                bypass
+                + self._interactive_update_flags()
+                + self._interactive_trust_flags()
+                + self._reasoning_effort_flags()
+                + extra_cfg
+                + dev_flags
+                + self._common_tail()
+            )
+
+        head = ["exec", "--skip-git-repo-check", *bypass]
+        if self.ephemeral:
+            head.append("--ephemeral")
+        head.append("--json")
+        head.extend(self._reasoning_effort_flags())
+        head.extend(extra_cfg)
+        return head + dev_flags + self._common_tail() + ["-"]  # trailing "-" → codex reads prompt from stdin
 
     def to_json(self) -> dict[str, Any]:
         d = super().to_json()

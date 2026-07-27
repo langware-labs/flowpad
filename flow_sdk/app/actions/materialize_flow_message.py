@@ -20,7 +20,7 @@ from typing import Optional
 
 from flow_sdk._compat import UTC
 from flow_sdk.builtin.conversation import Conversation
-from flow_sdk.builtin.flow_message import FlowMessage
+from flow_sdk.builtin.flow_message import FlowMessage, derive_session_fields
 from flow_sdk.core.entity.entity_model import remote_reflection
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.discovery.notify import send_resource_sync
@@ -96,7 +96,7 @@ async def ensure_conversation_entity(
         if remote_project_name:
             payload["remote_project_name"] = remote_project_name
         if participants:
-            payload["participants"] = list(participants)
+            payload["members"] = list(participants)  # roster cache field (wire key is ``participants``)
         if title_clean:
             payload["title"] = title_clean
         if parent_typeid is not None:
@@ -108,10 +108,10 @@ async def ensure_conversation_entity(
             conv = await conv.save(someone_typeid, notify=False)
     else:
         dirty = False
-        if participants and not (conv.participants or []):
-            # Backfill participants from the bundle so the reply-recipient
+        if participants and not (conv.members or []):
+            # Backfill the roster from the bundle so the reply-recipient
             # resolver can find the other party's email.
-            conv.participants = list(participants)
+            conv.members = list(participants)
             dirty = True
         if title_clean and not (conv.title or "").strip():
             # Backfill title on first receive — keep an existing local override.
@@ -207,6 +207,9 @@ async def materialize_flow_message(
             merged = FlowMessage.merge_hub_payload(existing, payload)
             merged["remote"] = True
             fm = FlowMessage.model_validate(merged)
+            # Refill live-session fields the hub may have stripped (unknown-
+            # field drop) from the authoritative attachment carrier.
+            derive_session_fields(fm)
             # Pure reflection: preserve the hub's created_by/updated_by/dates
             # verbatim, never the local sync user.
             with remote_reflection():
@@ -229,6 +232,10 @@ async def materialize_flow_message(
         fm = FlowMessage.model_validate(payload)
         if not payload.get("id"):
             fm.id = FlowMessage.allocate_id(payload)
+        # Refill live-session fields the hub may have stripped (unknown-field
+        # drop) from the authoritative attachment carrier. Covers every arrival
+        # path — hub WS, bundle unpack, catch-up sync — in this one chokepoint.
+        derive_session_fields(fm)
         # Save with notify=False — the CREATE is emitted explicitly below. Remote
         # rows reflect (preserve hub attribution); local rows stamp normally.
         with (remote_reflection() if remote else nullcontext()):

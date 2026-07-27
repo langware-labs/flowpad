@@ -3,20 +3,24 @@
 Used by ComputeNode action handlers (git-ops catch-all).  Not a DB entity;
 instantiated per-request.
 """
+
 from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import re
 import shlex
+import subprocess
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.faas.compute_node import ComputeNode
+    from flow_sdk.responses.response import ApiResponse
 
 logger = logging.getLogger(__name__)
 
@@ -26,14 +30,19 @@ logger = logging.getLogger(__name__)
 # as process.py / project.py).
 # ---------------------------------------------------------------------------
 
+
 class _CamelModel(BaseModel):
     """Base for git response models — serializes to camelCase via alias_generator."""
+
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
 
 class GitStatusFile(_CamelModel):
     status: str
     path: str
+    # True when the change is in the index (porcelain X column) — the UI's
+    # stage/unstage toggle reads this instead of inferring from the status char.
+    staged: bool = False
     insertions: int | None = None
     deletions: int | None = None
 
@@ -46,7 +55,7 @@ class GitStatus(_CamelModel):
     files: list[GitStatusFile] = []
 
 
-class GitBranchData(_CamelModel):
+class GitCurrentBranchData(_CamelModel):
     branch: str | None
 
 
@@ -70,6 +79,11 @@ class GitFileContent(_CamelModel):
     content: str
 
 
+class GitAssetDiff(_CamelModel):
+    diff: str
+    files: list[GitStatusFile] = []
+
+
 class GitRevision(_CamelModel):
     hash: str
     version: int | None = None
@@ -84,28 +98,126 @@ class GitRevisionList(_CamelModel):
     unpushed: int = 0  # commits to this file ahead of @{u} (0 when no upstream)
 
 
+class GitUnpushedFiles(_CamelModel):
+    # Repo-relative paths changed in commits ahead of @{u} (empty when no
+    # upstream or no commits).
+    files: list[str] = []
+
+
 class GitRestoreResult(_CamelModel):
     ok: bool
     message: str
+
+
+# Typed publish outcome — mirrored by ``PushKind`` in ts_sdk git-workdir.ts.
+PushKind = Literal[
+    "pushed",
+    "nothing",
+    "conflict",
+    "permission",
+    "no_remote",
+    "network",
+    "no_repo",
+    "generic",
+]
+
+
+class GitPushResult(_CamelModel):
+    ok: bool
+    conflict: bool
+    nothing: bool
+    kind: PushKind
+    branch: str | None
+    message: str
+
+
+# Config a fresh Flowpad repo gets at init time. Single source shared by
+# GitRepo.init() and ComputeSourceControl._init_git_repository so the two init
+# surfaces can never drift.
+GIT_INIT_CONFIG: tuple[tuple[str, str], ...] = (
+    ("user.name", "Flowpad"),
+    ("user.email", "git@example.com"),
+    ("push.autoSetupRemote", "true"),
+)
+
+
+# Standard .gitignore seeded into a freshly-initialized Flowpad repo. Only
+# written when the workdir had no .gitignore of its own (never clobbers a user's
+# file). Covers the common noise so local revisions/commits stay clean.
+DEFAULT_GITIGNORE = """\
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.idea/
+.vscode/
+*.swp
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+
+# Node
+node_modules/
+npm-debug.log*
+
+# Build output
+dist/
+build/
+*.log
+
+# Flowpad
+.mcp_servers
+"""
 
 
 # ---------------------------------------------------------------------------
 # GitRepo
 # ---------------------------------------------------------------------------
 
+
 class GitRepo:
     """Run git operations for a specific working directory via a ComputeNode."""
 
     def __init__(self, work_dir: str, compute_node: "ComputeNode") -> None:
+        # Compute-node paths arrive POSIX-style ('/C:/Users/...') from the UI;
+        # git on Windows rejects the leading slash, so strip it back to a
+        # drive-rooted path.
+        if re.match(r"^/[A-Za-z]:([/\\]|$)", work_dir):
+            work_dir = work_dir[1:]
         self.work_dir = work_dir
         self._compute_node = compute_node
+        # Commands are sent as ONE shell string; the shell that parses it lives
+        # on the compute node (cmd.exe on a Windows desktop node, /bin/sh on
+        # docker/e2b — those providers pin path_sep to '/'), so quoting must
+        # follow the node's shell, not this server's.
+        provider = getattr(compute_node, "compute_provider", None)
+        self._windows_shell = getattr(provider, "path_sep", os.sep) == "\\"
 
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
 
+    def _quote(self, arg: str) -> str:
+        """Quote one argument for the compute node's shell.
+
+        cmd.exe has no single-quote semantics — POSIX quoting reaches git as
+        literal quote characters and splits paths on spaces — so Windows nodes
+        get MSVCRT-style double quoting instead.
+        """
+        if self._windows_shell:
+            return subprocess.list2cmdline([arg])
+        return shlex.quote(arg)
+
     async def _run_git_io(self, *args: str) -> tuple[str, str, int]:
         """Run a git sub-command inside self.work_dir via the compute node.
+
+        Every argument is quoted here for the node's shell — call sites pass
+        raw values (paths, branch names, commit messages), never pre-quoted.
 
         Returns (stdout_stripped, stderr_stripped, returncode). Git writes most
         progress/error text (push rejections, rebase failures) to stderr, so the
@@ -115,7 +227,7 @@ class GitRepo:
         """
         try:
             cmd = await self._compute_node.run_command(
-                f"git -C '{self.work_dir}' " + " ".join(args),
+                " ".join(["git", "-C", self._quote(self.work_dir), *(self._quote(a) for a in args)]),
                 background=False,
             )
             return (cmd.all_stdout or "").rstrip("\n"), (cmd.all_stderr or "").rstrip("\n"), cmd.exit_code or 0
@@ -153,6 +265,39 @@ class GitRepo:
         _, rc = await self._run_git("rev-parse", "HEAD")
         return rc == 0
 
+    async def init(self) -> GitRestoreResult:
+        """Initialize a git repository in work_dir (idempotent).
+
+        Mirrors ``ComputeSourceControl._init_git_repository`` but workdir-scoped:
+        ``git init --initial-branch=main`` plus the identity/push config a fresh
+        Flowpad repo needs. Config failures are non-fatal (same as the source-
+        control path) — the repo is usable either way.
+        """
+        if await self.is_init():
+            return GitRestoreResult(ok=True, message="Already a git repository")
+        _, err, rc = await self._run_git_io("init", "--initial-branch=main")
+        if rc != 0:
+            return GitRestoreResult(ok=False, message=(err or "git init failed").strip())
+        for key, value in GIT_INIT_CONFIG:
+            await self._run_git("config", key, value)
+        await self._seed_gitignore()
+        return GitRestoreResult(ok=True, message="Initialized git repository")
+
+    async def _seed_gitignore(self) -> None:
+        """Write DEFAULT_GITIGNORE at the repo root, but only if absent.
+
+        Non-fatal: a fresh repo is usable without it, so any read/write failure
+        is logged and swallowed (same policy as the init config loop above).
+        Never overwrites a user's existing .gitignore.
+        """
+        gitignore_path = os.path.join(self.work_dir, ".gitignore")
+        try:
+            if await self._compute_node.exists(gitignore_path):
+                return
+            await self._compute_node.write_files(gitignore_path, DEFAULT_GITIGNORE)
+        except Exception:
+            logger.debug("failed to seed .gitignore in %s", self.work_dir, exc_info=True)
+
     async def get_branch(self) -> str | None:
         """Return the current branch name, or None if detached / not a repo."""
         branch, rc = await self._run_git("branch", "--show-current")
@@ -179,12 +324,12 @@ class GitRepo:
             for part in m.group(1).split(","):
                 part = part.strip()
                 if part.startswith("ahead "):
-                    ahead = int(part[len("ahead "):] or 0)
+                    ahead = int(part[len("ahead ") :] or 0)
                 elif part.startswith("behind "):
-                    behind = int(part[len("behind "):] or 0)
+                    behind = int(part[len("behind ") :] or 0)
             body = body[: m.start()].strip()
         if body.startswith("No commits yet on "):
-            return (body[len("No commits yet on "):].strip() or None, ahead, behind)
+            return (body[len("No commits yet on ") :].strip() or None, ahead, behind)
         if body.startswith("HEAD "):  # "HEAD (no branch)" — detached
             return (None, ahead, behind)
         return (body.split("...", 1)[0].strip() or None, ahead, behind)
@@ -207,9 +352,7 @@ class GitRepo:
         # ``## <branch>...<upstream> [ahead N, behind M]`` header line; the
         # remaining lines are the same porcelain v1 file entries parsed below.
         # rc != 0 ⇒ not a git repository (replaces the separate is_init probe).
-        status_out, status_rc = await self._run_git(
-            "status", "--porcelain=v1", "--branch", "--untracked-files=all"
-        )
+        status_out, status_rc = await self._run_git("status", "--porcelain=v1", "--branch", "--untracked-files=all")
         if status_rc != 0:
             return GitStatus(error="not a git repository")
 
@@ -248,8 +391,8 @@ class GitRepo:
                 continue
             if len(line) < 4:
                 continue
-            x = line[0]   # staged status char
-            y = line[1]   # unstaged status char
+            x = line[0]  # staged status char
+            y = line[1]  # unstaged status char
             path_part = line[3:]
 
             # Handle renames: "old -> new"
@@ -274,12 +417,15 @@ class GitRepo:
                 status = (x if x != " " else y) or "?"
                 ins, dels = None, None
 
-            files.append(GitStatusFile(
-                status=status,
-                path=display_path,
-                insertions=ins,
-                deletions=dels,
-            ))
+            files.append(
+                GitStatusFile(
+                    status=status,
+                    path=display_path,
+                    staged=x not in (" ", "?"),
+                    insertions=ins,
+                    deletions=dels,
+                )
+            )
 
         return GitStatus(
             error=None,
@@ -297,10 +443,22 @@ class GitRepo:
         the working tree (covers both staged and unstaged changes).
         """
         if status == "?":
-            diff, _ = await self._run_git("diff", "--no-index", "/dev/null", f"'{file_path}'")
+            diff, _ = await self._run_git("diff", "--no-index", "/dev/null", file_path)
         else:
-            diff, _ = await self._run_git("diff", "HEAD", "--", f"'{file_path}'")
+            diff, _ = await self._run_git("diff", "HEAD", "--", file_path)
         return GitFileDiff(diff=diff)
+
+    async def get_working_file(self, file_path: str) -> GitFileContent:
+        """Full file content from the working tree, relative to ``work_dir``."""
+        try:
+            root = os.path.realpath(self.work_dir)
+            full = os.path.realpath(os.path.join(root, file_path))
+            if full != root and not full.startswith(root + os.sep):
+                return GitFileContent(content="")
+            with open(full, "r", encoding="utf-8", errors="replace") as f:
+                return GitFileContent(content=f.read())
+        except OSError:
+            return GitFileContent(content="")
 
     # ------------------------------------------------------------------
     # Per-file revision history (scoped to a single asset file)
@@ -323,10 +481,93 @@ class GitRepo:
             from flow_sdk.actions.fs.asset_scope import is_folder_asset_dir
 
             if is_folder_asset_dir(self.work_dir):
-                return "'.'", False
+                return ".", False
         except Exception:  # noqa: BLE001 — scope resolution must never break the route
             logger.debug("scope-pathspec resolve failed; file-scoped", exc_info=True)
-        return f"'{file_path}'", True
+        return file_path, True
+
+    @staticmethod
+    def _status_lookup_path(path: str) -> str:
+        """Path used for scope matching, taking the new side of a rename."""
+        if " → " in path:
+            return path.split(" → ", 1)[1]
+        if " -> " in path:
+            return path.split(" -> ", 1)[1]
+        return path
+
+    async def _workdir_prefix(self) -> str:
+        """Repo-root-relative prefix for ``work_dir`` with a trailing slash."""
+        prefix, rc = await self._run_git("rev-parse", "--show-prefix")
+        if rc != 0:
+            return ""
+        return prefix.strip().replace("\\", "/")
+
+    @staticmethod
+    def _strip_prefix(path: str, prefix: str) -> str | None:
+        """Strip a repo-root prefix from a status path. None means outside scope."""
+        if not prefix:
+            return path
+        if path == prefix.rstrip("/"):
+            return ""
+        if path.startswith(prefix):
+            return path[len(prefix) :]
+        return None
+
+    @classmethod
+    def _status_file_relative_to_workdir(cls, file: GitStatusFile, prefix: str) -> GitStatusFile | None:
+        """Convert a porcelain status path from repo-root to workdir-relative."""
+        if " → " in file.path:
+            old, new = file.path.split(" → ", 1)
+            old_rel = cls._strip_prefix(old, prefix)
+            new_rel = cls._strip_prefix(new, prefix)
+            if old_rel is None and new_rel is None:
+                return None
+            display = f"{old_rel if old_rel is not None else old} → {new_rel if new_rel is not None else new}"
+        else:
+            rel = cls._strip_prefix(file.path, prefix)
+            if rel is None:
+                return None
+            display = rel
+        return GitStatusFile(
+            status=file.status,
+            path=display,
+            staged=file.staged,
+            insertions=file.insertions,
+            deletions=file.deletions,
+        )
+
+    async def get_asset_diff(self, file_path: str) -> GitAssetDiff:
+        """Unified working-tree diff for an asset.
+
+        Single-file assets diff just that file. Folder-backed assets diff the
+        whole asset folder and include every changed file in that folder.
+        """
+        pathspec, _ = self._scope_pathspec(file_path)
+        status = await self.get_status()
+        prefix = await self._workdir_prefix()
+        files = [rel for f in status.files if (rel := self._status_file_relative_to_workdir(f, prefix)) is not None]
+        if pathspec != ".":
+            files = [f for f in files if self._status_lookup_path(f.path).strip("./") == file_path.strip("./")]
+
+        if await self.has_commit():
+            diff, _ = await self._run_git("diff", "HEAD", "--", pathspec)
+        else:
+            diff = ""
+
+        # ``git diff HEAD`` omits untracked files. Append a no-index diff for
+        # each one so the asset-level diff is complete.
+        additions: list[str] = []
+        for f in files:
+            if f.status != "?":
+                continue
+            rel = self._status_lookup_path(f.path)
+            d, _ = await self._run_git("diff", "--no-index", "/dev/null", rel)
+            if d:
+                additions.append(d)
+        if additions:
+            diff = "\n".join(part for part in [diff, *additions] if part)
+
+        return GitAssetDiff(diff=diff, files=files)
 
     async def get_file_revisions(self, file_path: str) -> GitRevisionList:
         """Commit history for an asset, newest first — a single file, or the whole
@@ -362,9 +603,7 @@ class GitRepo:
         # there's no upstream — treat that (and any parse miss) as 0, so no extra
         # `rev-parse @{u}` probe is needed.
         unpushed = 0
-        cnt_out, cnt_rc = await self._run_git(
-            "rev-list", "--count", "@{u}..HEAD", "--", pathspec
-        )
+        cnt_out, cnt_rc = await self._run_git("rev-list", "--count", "@{u}..HEAD", "--", pathspec)
         if cnt_rc == 0:
             try:
                 unpushed = int(cnt_out.strip() or "0")
@@ -372,14 +611,24 @@ class GitRepo:
                 unpushed = 0
         return GitRevisionList(revisions=revisions, version=current, unpushed=unpushed)
 
+    async def get_unpushed_files(self) -> GitUnpushedFiles:
+        """Repo-relative paths touched by commits ahead of the upstream.
+
+        `git diff @{u}..HEAD` exits non-zero when there is no upstream or no
+        HEAD — treat that as "nothing unpushed" rather than an error, matching
+        the tolerant `rev-list @{u}..HEAD` probe in `get_file_revisions`.
+        """
+        out, rc = await self._run_git("diff", "--name-only", "@{u}..HEAD")
+        if rc != 0:
+            return GitUnpushedFiles(files=[])
+        return GitUnpushedFiles(files=[line.strip() for line in out.splitlines() if line.strip()])
+
     async def compare_file_revision(self, file_path: str, commit_hash: str) -> GitFileDiff:
         """Unified diff of an asset between a past revision and the working tree —
         a single file, or the whole folder for a folder-backed asset (skill), so
         internal-file changes are shown."""
         pathspec, _ = self._scope_pathspec(file_path)
-        diff, _ = await self._run_git(
-            "diff", shlex.quote(commit_hash), "HEAD", "--", pathspec
-        )
+        diff, _ = await self._run_git("diff", commit_hash, "HEAD", "--", pathspec)
         return GitFileDiff(diff=diff)
 
     async def get_file_at(self, file_path: str, commit_hash: str) -> GitFileContent:
@@ -397,7 +646,7 @@ class GitRepo:
         shows it as all-new — acceptable; rename-aware history is out of scope).
         """
         rel = file_path[2:] if file_path.startswith("./") else file_path
-        content, _ = await self._run_git("show", shlex.quote(f"{commit_hash}:./{rel}"))
+        content, _ = await self._run_git("show", f"{commit_hash}:./{rel}")
         return GitFileContent(content=content)
 
     async def restore_file(self, file_path: str, commit_hash: str) -> GitRestoreResult:
@@ -409,9 +658,7 @@ class GitRepo:
         content change, so the next save re-versions it as a fresh revision.
         """
         pathspec, _ = self._scope_pathspec(file_path)
-        _, err, rc = await self._run_git_io(
-            "checkout", shlex.quote(commit_hash), "--", pathspec
-        )
+        _, err, rc = await self._run_git_io("checkout", commit_hash, "--", pathspec)
         if rc != 0:
             return GitRestoreResult(ok=False, message=(err or "Restore failed").strip())
         return GitRestoreResult(ok=True, message=f"Restored to {commit_hash[:8]}")
@@ -435,12 +682,10 @@ class GitRepo:
         linger as a separate deletion until the next refresh.
         """
         if status == "?":
-            _, err, rc = await self._run_git_io("clean", "-f", "--", f"'{file_path}'")
+            _, err, rc = await self._run_git_io("clean", "-f", "--", file_path)
             verb = "Deleted"
         else:
-            _, err, rc = await self._run_git_io(
-                "restore", "--staged", "--worktree", "--", f"'{file_path}'"
-            )
+            _, err, rc = await self._run_git_io("restore", "--staged", "--worktree", "--", file_path)
             verb = "Discarded changes to"
         if rc != 0:
             return GitRestoreResult(ok=False, message=(err or "Discard failed").strip())
@@ -448,14 +693,14 @@ class GitRepo:
 
     async def stage_file(self, file_path: str) -> GitRestoreResult:
         """Stage just this file (``git add -- <file>``)."""
-        _, err, rc = await self._run_git_io("add", "--", f"'{file_path}'")
+        _, err, rc = await self._run_git_io("add", "--", file_path)
         if rc != 0:
             return GitRestoreResult(ok=False, message=(err or "Stage failed").strip())
         return GitRestoreResult(ok=True, message=f"Staged {file_path}")
 
     async def unstage_file(self, file_path: str) -> GitRestoreResult:
         """Unstage just this file (``git restore --staged -- <file>``)."""
-        _, err, rc = await self._run_git_io("restore", "--staged", "--", f"'{file_path}'")
+        _, err, rc = await self._run_git_io("restore", "--staged", "--", file_path)
         if rc != 0:
             return GitRestoreResult(ok=False, message=(err or "Unstage failed").strip())
         return GitRestoreResult(ok=True, message=f"Unstaged {file_path}")
@@ -483,40 +728,70 @@ class GitRepo:
     # for the existing Resolve-agent path; the rest let the UI give state-specific,
     # plain-language guidance instead of one generic "Push failed".
     @staticmethod
-    def _classify_push_error(stderr: str) -> str:
+    def _classify_push_error(stderr: str) -> PushKind:
         """Map raw git/transport stderr to a publish failure kind.
 
         One of: ``permission | no_remote | network | conflict | generic``.
         """
         s = (stderr or "").lower()
-        if any(k in s for k in (
-            "permission denied", "denied", "403", "forbidden", "authentication failed",
-            "access rights", "not authorized", "could not read from remote repository",
-        )):
+        if any(
+            k in s
+            for k in (
+                "permission denied",
+                "denied",
+                "403",
+                "forbidden",
+                "authentication failed",
+                "access rights",
+                "not authorized",
+                "could not read from remote repository",
+            )
+        ):
             return "permission"
-        if any(k in s for k in (
-            "does not appear to be a git repository", "no configured push destination",
-            "no such remote", "'origin' does not", "no upstream",
-        )):
+        if any(
+            k in s
+            for k in (
+                "does not appear to be a git repository",
+                "no configured push destination",
+                "no such remote",
+                "'origin' does not",
+                "no upstream",
+            )
+        ):
             return "no_remote"
-        if any(k in s for k in (
-            "could not resolve host", "connection refused", "connection timed out",
-            "timed out", "network is unreachable", "failed to connect", "ssl",
-        )):
+        if any(
+            k in s
+            for k in (
+                "could not resolve host",
+                "connection refused",
+                "connection timed out",
+                "timed out",
+                "network is unreachable",
+                "failed to connect",
+                "ssl",
+            )
+        ):
             return "network"
         if any(k in s for k in ("non-fast-forward", "rejected", "fetch first", "behind", "unmerged")):
             return "conflict"
         return "generic"
 
     @staticmethod
-    def _push_result(branch: str | None, message: str, *, ok: bool = False,
-                     conflict: bool = False, nothing: bool = False, kind: str | None = None) -> dict:
-        """Build the dict the publish UI consumes.
+    def _push_result(
+        branch: str | None,
+        message: str,
+        *,
+        ok: bool = False,
+        conflict: bool = False,
+        nothing: bool = False,
+        kind: PushKind | None = None,
+    ) -> GitPushResult:
+        """Build the ``GitPushResult`` the publish UI consumes.
 
         ``kind`` is the typed outcome (``pushed|nothing|conflict|permission|
-        no_remote|network|generic``). When omitted it's derived from the flags so
-        existing call sites stay correct; the back-compat ``ok/conflict/nothing``
-        keys are kept for the footer button.
+        no_remote|network|no_repo|generic``). When omitted it's derived from the
+        flags so existing call sites stay correct; the back-compat
+        ``ok/conflict/nothing`` flags are kept for the footer button.
         """
         if kind is None:
             if nothing:
@@ -527,15 +802,13 @@ class GitRepo:
                 kind = "pushed"
             else:
                 kind = "generic"
-        return {"ok": ok, "conflict": conflict, "nothing": nothing, "kind": kind, "branch": branch, "message": message}
+        return GitPushResult(ok=ok, conflict=conflict, nothing=nothing, kind=kind, branch=branch, message=message)
 
-    async def push(self) -> dict:
+    async def push(self) -> GitPushResult:
         """Stage everything, auto-commit, sync with remote, and push.
 
-        Returns a camelCase-ish dict the footer button consumes::
-
-            { ok: bool, conflict: bool, nothing: bool,
-              branch: str | None, message: str }
+        Returns a ``GitPushResult`` (serialized camelCase for the footer button):
+        ``{ ok, conflict, nothing, kind, branch, message }``.
 
         ``conflict=True`` means a rebase conflict is in progress (left in place
         so the resolve agent can finish it) — never auto-aborted here.
@@ -574,15 +847,15 @@ class GitRepo:
             n = len([ln for ln in names_out.splitlines() if ln.strip()])
             stamp = datetime.now().strftime("%Y-%m-%d %H:%M")
             msg = f"Flowpad: save changes ({n} file{'s' if n != 1 else ''}) — {stamp}"
-            c_out, c_err, c_rc = await self._run_git_io("commit", "-m", shlex.quote(msg))
+            c_out, c_err, c_rc = await self._run_git_io("commit", "-m", msg)
             if c_rc != 0:
                 return self._push_result(branch, (c_err or c_out or "Commit failed").strip())
 
         # 5. Sync with remote first (rebase) so the push is fast-forward.
         if has_upstream:
-            p_out, p_err, p_rc = await self._run_git_io("pull", "--rebase", "origin", shlex.quote(branch))
+            p_out, p_err, p_rc = await self._run_git_io("pull", "--rebase", "origin", branch)
             if p_rc != 0:
-                combined = (p_err or p_out or "")
+                combined = p_err or p_out or ""
                 if "couldn't find remote ref" not in combined:
                     unmerged, _ = await self._run_git("ls-files", "--unmerged")
                     if unmerged.strip():
@@ -599,61 +872,20 @@ class GitRepo:
                     )
 
         # 6. Push (set upstream when the branch is new on the remote).
-        push_args = ["push", "origin", shlex.quote(branch)] if has_upstream else ["push", "-u", "origin", shlex.quote(branch)]
+        push_args = ["push", "origin", branch] if has_upstream else ["push", "-u", "origin", branch]
         ps_out, ps_err, ps_rc = await self._run_git_io(*push_args)
         if ps_rc != 0:
             combined = (ps_err or ps_out or "").strip()
             unmerged, _ = await self._run_git("ls-files", "--unmerged")
             kind = "conflict" if unmerged.strip() else self._classify_push_error(combined)
             return self._push_result(
-                branch, combined or "Push failed", conflict=(kind == "conflict"), kind=kind,
+                branch,
+                combined or "Push failed",
+                conflict=(kind == "conflict"),
+                kind=kind,
             )
 
         return self._push_result(branch, "Pushed", ok=True)
-
-    # ------------------------------------------------------------------
-    # Share — mint a point-in-time GitBranch snapshot of this workdir
-    # ------------------------------------------------------------------
-
-    async def branch_snapshot(self) -> dict:
-        """Mint a ``GitBranch`` snapshot for this workdir's ``origin`` remote.
-
-        Reads the origin URL + current branch + HEAD, ensures the deterministic
-        ``GitRemote`` registry row, and persists a fresh ``GitBranch`` (uuid4)
-        parented to it — the wire vehicle for sharing a repo into a
-        conversation. Returns the GitBranch json, or ``{"error": ...}`` when
-        there is no usable ``origin`` remote to share.
-        """
-        import asyncio  # noqa: PLC0415
-
-        from flow_sdk.builtin.git_branch import GitBranch  # noqa: PLC0415
-        from flow_sdk.builtin.git_remote import GitRemote  # noqa: PLC0415
-        from flow_sdk.utils.git_identity import parse_git_remote_url  # noqa: PLC0415
-
-        # The three reads are independent — run them together (the share button
-        # only shows on a real repo, so a separate is_init() probe is redundant:
-        # a missing origin already surfaces below).
-        (url, url_rc), branch, (head, head_rc) = await asyncio.gather(
-            self._run_git("remote", "get-url", "origin"),
-            self.get_branch(),
-            self._run_git("rev-parse", "HEAD"),
-        )
-        parsed = parse_git_remote_url(url.strip()) if url_rc == 0 else None
-        if not parsed:
-            return {"error": "no git remote to share — add an 'origin' remote first"}
-        provider, owner, name = parsed
-        remote = await GitRemote.ensure(provider, owner, name)
-        snapshot = GitBranch(
-            branch=branch or "",
-            head_commit=(head.strip() or None) if head_rc == 0 else None,
-            taken_at=datetime.now().isoformat(),
-            provider=provider,
-            owner=owner,
-            name=name,
-            parent_type_id=str(remote.typeid),
-        )
-        await snapshot.save()
-        return snapshot.model_dump(mode="json")
 
     # ------------------------------------------------------------------
     # Dispatch — routes git-ops sub-paths to the appropriate operation
@@ -664,48 +896,62 @@ class GitRepo:
 
         Sub-paths:
             status              → get_status()           → GitStatus (camelCase)
+            unpushed-files      → get_unpushed_files()   → {files} (repo-rel, ahead of @{u})
             diff?filepath=...   → get_diff(filepath)     → GitDiffData
             branch              → get_branch()           → {branch}
             is-init             → is_init()              → {isInit}
             is-linked-worktree  → is_linked_worktree()   → {isLinkedWorktree}
             has-commit          → has_commit()           → {hasCommit}
             diff                → get_file_diff()        → {diff}  (requires ?file=&status=)
-            push  (POST)        → push()                 → {ok, conflict, nothing, branch, message}
+            push  (POST)        → push()                 → GitPushResult {ok, conflict, nothing, kind, branch, message}
+            init  (POST)        → init()                 → {ok, message}  (idempotent)
             discard-file (POST) → discard_file()         → {ok, message}  (requires ?file=&status=)
             stage-file   (POST) → stage_file()           → {ok, message}  (requires ?file=)
             unstage-file (POST) → unstage_file()         → {ok, message}  (requires ?file=)
         """
-        from flow_sdk.responses.response import ApiSuccessResponse, ApiFailResponse  # noqa: PLC0415
+        from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
 
         params = query_params or {}
 
         if sub == "push":
             if method.upper() != "POST":
                 return ApiFailResponse(message="git-ops/push requires POST", status_code=405)
-            return ApiSuccessResponse(data=await self.push())
-        if sub == "branch-snapshot":
+            return ApiSuccessResponse(data=(await self.push()).model_dump(by_alias=True))
+        if sub == "init":
             if method.upper() != "POST":
-                return ApiFailResponse(message="git-ops/branch-snapshot requires POST", status_code=405)
-            result = await self.branch_snapshot()
-            if "error" in result:
-                return ApiFailResponse(message=result["error"], status_code=400)
-            return ApiSuccessResponse(data=result)
+                return ApiFailResponse(message="git-ops/init requires POST", status_code=405)
+            return ApiSuccessResponse(data=(await self.init()).model_dump(by_alias=True))
         if sub == "status":
             return ApiSuccessResponse(data=(await self.get_status()).model_dump(by_alias=True))
+        if sub == "unpushed-files":
+            return ApiSuccessResponse(data=(await self.get_unpushed_files()).model_dump(by_alias=True))
         if sub == "branch":
-            return ApiSuccessResponse(data=GitBranchData(branch=await self.get_branch()).model_dump(by_alias=True))
+            return ApiSuccessResponse(
+                data=GitCurrentBranchData(branch=await self.get_branch()).model_dump(by_alias=True)
+            )
         if sub == "is-init":
             return ApiSuccessResponse(data=GitIsInitData(is_init=await self.is_init()).model_dump(by_alias=True))
         if sub == "is-linked-worktree":
-            return ApiSuccessResponse(data=GitIsLinkedWorktreeData(is_linked_worktree=await self.is_linked_worktree()).model_dump(by_alias=True))
+            return ApiSuccessResponse(
+                data=GitIsLinkedWorktreeData(is_linked_worktree=await self.is_linked_worktree()).model_dump(
+                    by_alias=True
+                )
+            )
         if sub == "has-commit":
-            return ApiSuccessResponse(data=GitHasCommitData(has_commit=await self.has_commit()).model_dump(by_alias=True))
+            return ApiSuccessResponse(
+                data=GitHasCommitData(has_commit=await self.has_commit()).model_dump(by_alias=True)
+            )
         if sub == "diff":
             file_path = params.get("file", "")
             status = params.get("status", "M")
             if not file_path:
                 return ApiFailResponse(message="Missing required query parameter: file", status_code=400)
             return ApiSuccessResponse(data=(await self.get_file_diff(file_path, status)).model_dump(by_alias=True))
+        if sub == "asset-diff":
+            file_path = params.get("file", "")
+            if not file_path:
+                return ApiFailResponse(message="Missing required query parameter: file", status_code=400)
+            return ApiSuccessResponse(data=(await self.get_asset_diff(file_path)).model_dump(by_alias=True))
         if sub == "file-revisions":
             file_path = params.get("file", "")
             if not file_path:
@@ -716,13 +962,20 @@ class GitRepo:
             commit_hash = params.get("hash", "")
             if not file_path or not commit_hash:
                 return ApiFailResponse(message="Missing required query parameter: file and hash", status_code=400)
-            return ApiSuccessResponse(data=(await self.compare_file_revision(file_path, commit_hash)).model_dump(by_alias=True))
+            return ApiSuccessResponse(
+                data=(await self.compare_file_revision(file_path, commit_hash)).model_dump(by_alias=True)
+            )
         if sub == "show":
             file_path = params.get("file", "")
             commit_hash = params.get("hash", "")
             if not file_path or not commit_hash:
                 return ApiFailResponse(message="Missing required query parameter: file and hash", status_code=400)
             return ApiSuccessResponse(data=(await self.get_file_at(file_path, commit_hash)).model_dump(by_alias=True))
+        if sub == "working-file":
+            file_path = params.get("file", "")
+            if not file_path:
+                return ApiFailResponse(message="Missing required query parameter: file", status_code=400)
+            return ApiSuccessResponse(data=(await self.get_working_file(file_path)).model_dump(by_alias=True))
         if sub == "restore-file":
             if method.upper() != "POST":
                 return ApiFailResponse(message="git-ops/restore-file requires POST", status_code=405)
@@ -747,5 +1000,3 @@ class GitRepo:
                 return ApiFailResponse(message="Missing required parameter: file", status_code=400)
             return ApiSuccessResponse(data=(await post_file_ops[sub](file_path)).model_dump(by_alias=True))
         return ApiFailResponse(message=f"Unknown git-ops sub-path: '{sub}'", status_code=404)
-
-

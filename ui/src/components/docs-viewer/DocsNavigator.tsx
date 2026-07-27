@@ -61,6 +61,7 @@ export function DocsNavigator() {
       id: 'docs',
       roots,
       isLoading,
+      search: { recordTypes: ['markdown'], placeholder: 'Search docs…' },
       header: {
         title: 'Documentation',
         toolbar: [

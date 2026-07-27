@@ -9,6 +9,7 @@ network is touched.
 """
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
@@ -40,13 +41,16 @@ async def test_upload_body_happy_path(tmp_path: Path) -> None:
     fm = _fm_with_file_attachment()
     fake_zip = tmp_path / "body.flowmsg"
     fake_zip.write_bytes(b"PK\x03\x04 pretend zip")
+    to_file = AsyncMock(return_value=fake_zip)
 
     with (
-        patch("flow_sdk.builtin.flow_message.FlowMessage.to_file", AsyncMock(return_value=fake_zip)),
+        patch("flow_sdk.builtin.flow_message.FlowMessage.to_file", to_file),
         patch("flow_sdk.utils.hub.hub_put", AsyncMock(return_value={})) as mock_put,
         patch("flow_sdk.utils.hub.hub_post", AsyncMock(return_value={})) as mock_post,
     ):
-        await fm.upload_body()
+        await fm.upload_body(transfer_mode="git")
+
+    to_file.assert_awaited_once_with(transfer_mode="git", create_bookmark=False)
 
     # No PUT: the hub auto-stamps body_status=UPLOADING server-side
     # (_attachments_require_body during message-header creation), so the
@@ -126,6 +130,131 @@ async def test_upload_body_upload_failure_leaves_uploading(tmp_path: Path) -> No
     assert fm.body_status != BodyStatus.READY
     # Temp zip is still cleaned up in finally.
     assert not fake_zip.exists()
+
+
+@pytest.mark.asyncio
+async def test_concurrent_upload_body_fires_single_fs_upload(tmp_path: Path) -> None:
+    """Two callers racing upload_body() for the SAME FM must coalesce into ONE
+    fs/upload POST — not two concurrent, blob-clobbering sessions to one hub
+    VFSPath (RCA debug_log.md #11: the double fs/upload race lost the blob and
+    404'd every downstream download).
+
+    Mirrors production: the auto background upload and the explicit upload_body
+    action hold two distinct FlowMessage instances for the same fm.id. Both must
+    end READY, but the real upload (to_file + fs/upload) runs exactly once; the
+    second caller awaits the first's in-flight task.
+    """
+    fm_id = "aaaaaaaa-0000-0000-0000-000000000042"
+
+    def _fm() -> FlowMessage:
+        fm = _fm_with_file_attachment()
+        fm.id = fm_id
+        return fm
+
+    fm_auto, fm_explicit = _fm(), _fm()
+
+    fake_zip = tmp_path / "body.flowmsg"
+    fake_zip.write_bytes(b"PK\x03\x04 pretend zip")
+
+    # to_file yields a fresh temp path per real invocation (each is unlink'd in
+    # the finally); count calls to prove packing runs once under coalescing.
+    to_file_calls = 0
+
+    async def _fake_to_file(*_a, **_k) -> Path:
+        nonlocal to_file_calls
+        to_file_calls += 1
+        p = tmp_path / f"body-{to_file_calls}.flowmsg"
+        p.write_bytes(fake_zip.read_bytes())
+        return p
+
+    async def _fake_post(*_a, **kwargs):
+        # Yield control so the owner's task is genuinely in-flight when the
+        # second caller checks the guard — proves coalescing, not luck.
+        await asyncio.sleep(0)
+        return {}
+
+    with (
+        patch("flow_sdk.builtin.flow_message.FlowMessage.to_file", _fake_to_file),
+        patch("flow_sdk.utils.hub.hub_put", AsyncMock(return_value={})),
+        patch("flow_sdk.utils.hub.hub_post", AsyncMock(side_effect=_fake_post)) as mock_post,
+    ):
+        await asyncio.gather(fm_auto.upload_body(), fm_explicit.upload_body())
+
+    # Exactly one real upload path ran: one packing, one fs/upload POST, one
+    # set_body_status POST (2 total). The second caller fired neither.
+    assert to_file_calls == 1
+    fs_upload_posts = [c for c in mock_post.await_args_list if "files" in c.kwargs]
+    set_status_posts = [
+        c for c in mock_post.await_args_list if c.kwargs.get("action") == "set_body_status"
+    ]
+    assert len(fs_upload_posts) == 1, "double fs/upload race not coalesced"
+    assert len(set_status_posts) == 1
+
+    # Both callers observe READY on their own instance.
+    assert fm_auto.body_status == BodyStatus.READY
+    assert fm_auto.attachment_filename == BODY_FILENAME
+    assert fm_explicit.body_status == BodyStatus.READY
+    assert fm_explicit.attachment_filename == BODY_FILENAME
+
+
+@pytest.mark.asyncio
+async def test_sequential_upload_body_reuploads(tmp_path: Path) -> None:
+    """Coalescing is in-flight only: once an upload completes and the guard is
+    cleared, a later sequential call re-uploads (retry semantics preserved)."""
+    fm = _fm_with_file_attachment()
+    fake_zip = tmp_path / "body.flowmsg"
+
+    async def _fake_to_file(*_a, **_k) -> Path:
+        fake_zip.write_bytes(b"PK\x03\x04")
+        return fake_zip
+
+    with (
+        patch("flow_sdk.builtin.flow_message.FlowMessage.to_file", _fake_to_file),
+        patch("flow_sdk.utils.hub.hub_put", AsyncMock(return_value={})),
+        patch("flow_sdk.utils.hub.hub_post", AsyncMock(return_value={})) as mock_post,
+    ):
+        await fm.upload_body()
+        await fm.upload_body()
+
+    # Two sequential calls → two fs/upload POSTs (one each), guard cleared between.
+    fs_upload_posts = [c for c in mock_post.await_args_list if "files" in c.kwargs]
+    assert len(fs_upload_posts) == 2
+
+
+@pytest.mark.asyncio
+async def test_concurrent_upload_body_failure_propagates_to_both(tmp_path: Path) -> None:
+    """If the single in-flight upload fails, BOTH the owner and the coalesced
+    waiter observe the exception and neither instance flips READY."""
+    fm_id = "aaaaaaaa-0000-0000-0000-000000000043"
+
+    def _fm() -> FlowMessage:
+        fm = _fm_with_file_attachment()
+        fm.id = fm_id
+        return fm
+
+    fm_a, fm_b = _fm(), _fm()
+
+    async def _fake_to_file(*_a, **_k) -> Path:
+        p = tmp_path / "body.flowmsg"
+        p.write_bytes(b"PK\x03\x04")
+        return p
+
+    async def _boom(*_a, **_k):
+        await asyncio.sleep(0)
+        raise RuntimeError("upload boom")
+
+    with (
+        patch("flow_sdk.builtin.flow_message.FlowMessage.to_file", _fake_to_file),
+        patch("flow_sdk.utils.hub.hub_put", AsyncMock(return_value={})),
+        patch("flow_sdk.utils.hub.hub_post", AsyncMock(side_effect=_boom)),
+    ):
+        results = await asyncio.gather(
+            fm_a.upload_body(), fm_b.upload_body(), return_exceptions=True
+        )
+
+    assert all(isinstance(r, RuntimeError) for r in results)
+    assert fm_a.body_status != BodyStatus.READY
+    assert fm_b.body_status != BodyStatus.READY
 
 
 @pytest.mark.asyncio

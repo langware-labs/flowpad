@@ -20,7 +20,6 @@ const inputSel = '[data-testid="conversation-title-input"]';
 async function openConversation(page: Page, convId: string) {
   await page.addInitScript(() => {
     localStorage.setItem('llm-setup-modal-seen', 'true');
-    localStorage.setItem('flowpad-index-approved', '1');
   });
   await page.goto(`/dock/conversation/${convId}`);
   const skip = page.getByRole('button', { name: /Skip( for now)?/ });

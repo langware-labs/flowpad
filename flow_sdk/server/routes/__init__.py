@@ -21,6 +21,8 @@ from .assets import router as assets_router
 from .project import router as project_router
 from .compute_register import compute_register_router
 from .debug import router as debug_router
+from .subgraph import router as subgraph_router
+from .tags import router as tags_router
 from .navigate import router as navigate_router
 from .agent_records import router as agent_records_router
 from .transcripts import router as transcripts_router
@@ -34,6 +36,10 @@ from .semantic_checker import router as semantic_checker_router
 from .pty_stream import router as pty_stream_router
 from .capabilities import router as capabilities_router
 from .toplog import router as toplog_router
+from .agentic_flows import router as agentic_flows_router
+from .journeys import router as journeys_router
+from .git import router as git_router
+from .worldview import router as worldview_router
 
 __all__ = [
     "bootstrap_router",
@@ -57,6 +63,8 @@ __all__ = [
     "project_router",
     "compute_register_router",
     "debug_router",
+    "subgraph_router",
+    "tags_router",
     "navigate_router",
     "agent_records_router",
     "transcripts_router",
@@ -70,4 +78,8 @@ __all__ = [
     "pty_stream_router",
     "capabilities_router",
     "toplog_router",
+    "agentic_flows_router",
+    "journeys_router",
+    "git_router",
+    "worldview_router",
 ]

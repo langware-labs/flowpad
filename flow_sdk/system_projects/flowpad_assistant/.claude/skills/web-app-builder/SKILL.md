@@ -9,7 +9,9 @@ description: Build and develop full-stack web applications from a tested, copy-a
   or anything with a UI plus a database/auth — even if they don't literally say
   "web app", and even (especially) when they phrase it as "build me a website
   using flowpad assistant" — website building belongs to THIS skill, not to the
-  flowpad-assistance skill. Also use it when adding pages, components, API
+  flowpad-assistance skill. Slide decks / presentations / pitch decks are NOT
+  web apps — those belong to the `decker` skill, not this one. Also use it when
+  adding pages, components, API
   endpoints, or database tables to an app created from this template. Bootstrap means copying the bundled
   template as-is and running its setup script as-is — never scaffold by hand and
   never run create-next-app.
@@ -51,15 +53,25 @@ to Vercel + Supabase without restructuring.
 The skill ships a complete, tested template in `template/` next to this file.
 Bootstrapping a new app is a *copy*, not a *generation*:
 
-**Target directory = the session's current working directory**, unless the
-user explicitly names another location. Do not relocate the app to a Flowpad
-workspace project or any path from `flow context` — the process workdir IS the
-project the user asked to build in.
+**Target directory = `<project root>/assets/apps/<app name>`**, where
+`<project root>` is the session's current working directory and `<app name>` is
+a short kebab-case name derived from what the user asked to build (or the name
+they provided). The user may explicitly name another location, which overrides
+this default. Do not relocate the app to a Flowpad workspace project or any path
+from `flow context` — the process workdir IS the project the user asked to build
+in; the app nests under `assets/apps/` within it, and multiple apps can coexist
+there. In this skill's `references/` guides and the template's own docs,
+"project root" and relative paths like `cd frontend` mean the app directory
+(`assets/apps/<app name>`), not the enclosing project.
 
-1. **Copy the template verbatim** into the target project directory:
+If `<project root>/assets/apps/<app name>` already contains an app made from
+this template (`frontend/package.json` + `backend/main.py` present), skip
+bootstrap and go straight to the development guides.
+
+1. **Copy the template verbatim** into the target app directory:
 
    ```bash
-   cp -R "<this skill's directory>/template/." "<target>/"
+   cp -R "<this skill's directory>/template/." "<project root>/assets/apps/<app name>/"
    ```
 
    Do NOT scaffold by hand, do NOT run `create-next-app`, `npx shadcn init`, or
@@ -81,16 +93,22 @@ project the user asked to build in.
    fix the environment (missing node, docker down, …), then re-run; it is
    idempotent.
 
-3. **Only after** the app boots do you customize: rename the app, edit pages,
+3. **Update the enclosing project's documentation** — if `README.md`,
+   `CLAUDE.md`, or `AGENTS.md` exist at `<project root>`, add a brief note
+   recording that the web app is at `assets/apps/<app name>`, built from the
+   web-app-builder template, plus the start commands from "Start the app" below
+   prefixed with the app path (`cd assets/apps/<app name>/backend && …`). If a
+   note for a previous app is already present, extend it rather than adding a
+   duplicate. Never create these root files; only edit existing ones. The
+   template's own `CLAUDE.md` and `AGENTS.md` in the app directory are separate
+   and unchanged.
+
+4. **Only after** the app boots do you customize: rename the app, edit pages,
    add tables/endpoints. Customization guides live in `references/`.
 
 The template ships `CLAUDE.md` + `AGENTS.md` declaring the project as managed
 by this skill — keep them in the copied app (they make every future agent
 session route operations back through this skill and its contracts).
-
-If the target directory already contains an app made from this template
-(`frontend/package.json` + `backend/main.py` present), skip bootstrap and go
-straight to the development guides.
 
 ## Ports
 
@@ -136,21 +154,30 @@ Read the matching reference before making that kind of change:
 - **Deploying to Vercel + Supabase, Claude Code GitHub Action** →
   [references/deploy.md](references/deploy.md)
 
-## IMPORTANT: report running services to the user
+## IMPORTANT: show the running app to the user
 
-When running inside FlowPad / a flow workflow, you MUST report the services
-with `flow-result` tags after they are up — otherwise the user cannot see or
-control the app from the FlowPad interface:
+When running inside FlowPad, as soon as the frontend dev server is up, present
+it — this is what renders the live preview in the FlowPad display:
+
+```bash
+flow show webapp --port 3000
+```
+
+Run it exactly once (exit 0 = done). See the `flowpad-navigation` skill for the
+full show/navigate contract. Optionally, ALSO register the services as results
+(the results list / restart controls — not the display driver):
 
 ```
-Your web application is ready!
-
-<flow-result name="Web App" port="3000" ref_type="FOLDER" path="frontend" type="webapp" start-cmd="cd frontend && npm run dev" health="/" description="Next.js 16 frontend with Tailwind v4 + shadcn/ui" focus="web-app"/>
+<flow-result name="Web App" port="3000" ref_type="FOLDER" path="frontend" type="webapp" start-cmd="cd frontend && npm run dev" health="/" description="Next.js 16 frontend with Tailwind v4 + shadcn/ui"/>
 <flow-result name="API Server" port="8080" path="backend/main.py" type="app_service" start-cmd="cd backend && .venv/bin/uvicorn main:app --reload --port 8080" health="/api/health" description="FastAPI backend service"/>
-
-- Frontend: http://localhost:3000
-- Backend API: http://localhost:8080
 ```
 
-Attributes: `start-cmd` (restart command), `health` (health-check path),
-`port`. Outside FlowPad, just print the URLs.
+Outside FlowPad, just print the URLs (http://localhost:3000, :8080).
+
+## Testing the app — use the `web-tester` skill
+
+When the user asks to **test / QA / validate / smoke-test / check** the app in a
+browser, don't hand-roll Playwright here — route to the **web-tester** skill. With
+the dev server running, it sweeps the app's routes headlessly (console/JS errors,
+failed requests, screenshots, broken links, basic a11y) and reports pass/fail,
+keeping all debug artifacts in an isolated temp folder (never in this project).

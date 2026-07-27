@@ -237,7 +237,7 @@ The entity class is resolved via `SchemaRegistry.get_entity_cls(record_type)` (n
 
 ### FTS Index Gap
 
-`_reflect_entity` calls `entity.save()` but does **not** call `Record.sync_to_db()` or `driver.fts_upsert()`. This means entities created or updated via the listen webhook are persisted to the SQLite `entities` table and broadcast to the frontend via `DataOpMessage`, but they are **not** added to the FTS5 full-text search index. To make webhook-created entities searchable, a manual reindex is required (`POST /api/v1/search/reindex`).
+`_reflect_entity` calls `entity.save()` but does **not** call `Record.sync_to_db()` or `driver.fts_upsert()`. This means entities created or updated via the listen webhook are persisted to the SQLite `entities` table and broadcast to the frontend via `DataOpMessage`, but they are **not** added to the FTS5 full-text search index. To make webhook-created entities searchable, a manual reindex is required (the compute-node action `POST /fs-records/index` — the old `POST /api/v1/search/reindex` route no longer exists).
 
 This is one of three parallel entity creation paths in the system:
 1. **`Record.sync_to_db()`** (fs_store layer): creates Entity + FTS entry. Used by `_broadcast_fs_record_op()` after filesystem CRUD.
@@ -498,6 +498,16 @@ onDataOpMessage(data: DataOpMessage) {
 `parseTypeId` handles both the `"type-id"` hyphen format (current) and the legacy `"type:id"` colon format, returning a structured `TypeId` (or `null`). The `on_data_op` event then carries the **string** form (`typeId.toString()`), so every listener receives a `"type-id"` string as the first argument.
 
 Reconnection: on unexpected close, `ConnectionManager` reconnects with exponential backoff (base 500ms, capped at 10s) **indefinitely — there is no hard attempt cap** (`reconnect()` comment: "Retries indefinitely — no hard cap").
+
+`CloudManager` consumes this connection differently by runtime mode. On the
+desktop it seeds from `bootstrap.desktop_info`, listens for
+`cloud_login_status_msg` / `cloud_connection_status_msg`, and resynchronizes
+through `/cloud/status`. In Hub-only mode, `bootstrap.user` is already the
+authoritative cloud identity, so those desktop bridge channels are not used;
+`CloudManager` projects the existing `ConnectionManager.connectionSlot` and
+its `connection_status_changed` event instead. This is a projection of the
+same `/api/v1/connect/ws/{uuid}` connection, not a second Hub-specific socket
+or protocol.
 
 ### FlowSyncStore.onDataOp
 

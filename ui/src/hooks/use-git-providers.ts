@@ -1,5 +1,6 @@
 import {
   type BranchSummary,
+  type GitOrigin,
   getBranches,
   getInvitations,
   getRepos,
@@ -24,10 +25,16 @@ export function useGitRepos(provider: GitProvider, enabled: boolean = true) {
 }
 
 export function useGitBranches(
-  repo: { provider: GitProvider; owner: string; name: string } | null,
+  repo: { git_origin: GitOrigin } | null,
 ) {
   return useQuery<BranchSummary[]>({
-    queryKey: ['git-branches', repo?.provider, repo?.owner, repo?.name],
+    queryKey: [
+      'git-branches',
+      repo?.git_origin.provider,
+      repo?.git_origin.owner,
+      repo?.git_origin.name,
+      repo?.git_origin.branch,
+    ],
     queryFn: () => getBranches(repo!),
     staleTime: REPO_STALE_MS,
     enabled: !!repo,

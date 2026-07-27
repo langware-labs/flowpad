@@ -1,7 +1,6 @@
 import { useState, type MouseEvent, type ReactNode } from 'react';
 import { Pencil, Check, CheckCheck, Clock, Forward, Trash2 } from 'lucide-react';
-import type { FlowMessage, TypeId } from '@sdk';
-import { SharedRepoDialog } from './SharedRepoDialog';
+import type { FlowMessage } from '@sdk';
 import type { ConversationMessage } from '@sdk/entities/conversation';
 import type { DeliveryStatus } from '@sdk/entities/flow-message';
 import type { ITask } from '@sdk/entities/task';
@@ -49,18 +48,17 @@ interface MessageBubbleProps {
    *  Implement Plan / Open Session state — View Plan always renders when the
    *  bubble has a spec and the local user is the recipient. */
   onViewPlan?: (specId: string) => void;
+  /** Whether the conversation already has a worker session — flips the Execute
+   *  chip from "Run" to "<Host>'s session · new run". */
+  workerSessionExists?: boolean;
+  workerSessionLabel?: string | null;
+  workerSessionInFlight?: boolean;
   /** Optional content rendered below the message body (e.g. attachment chips). */
   footer?: ReactNode;
   /** Visual selection — drives the Context tab. */
   isSelected?: boolean;
   /** Click on the bubble fires this so the parent can mark it selected. */
   onSelect?: () => void;
-  /**
-   * Parent conversation's `message_status_visible` flag. When false, the
-   * receipt indicator is hidden on the sender side regardless of the
-   * underlying ``delivery_status``. Defaults to true.
-   */
-  conversationStatusVisible?: boolean;
 }
 
 /**
@@ -69,8 +67,7 @@ interface MessageBubbleProps {
  *   delivered → ✓✓       double check, muted
  *   received  → ✓✓ blue  double check, accent color
  *
- * Renders nothing for incoming messages or when the parent conversation's
- * `message_status_visible` flag is false.
+ * Renders nothing for incoming messages.
  */
 function DeliveryReceipt({ status }: { status: DeliveryStatus | undefined }) {
   const { t } = useLingui();
@@ -174,22 +171,22 @@ export function MessageBubble({
   onImplementPlan,
   onOpenPlanSession,
   onViewPlan,
+  workerSessionExists = false,
+  workerSessionLabel = null,
+  workerSessionInFlight = false,
   footer,
   isSelected,
   onSelect,
-  conversationStatusVisible = true,
 }: MessageBubbleProps) {
   const { t } = useLingui();
   const [editing, setEditing] = useState(false);
   const [editValue, setEditValue] = useState('');
   const [confirmingDelete, setConfirmingDelete] = useState(false);
-  // Set to the shared GitBranch TypeId while the open-shared-repo dialog is up.
-  const [sharedRepoTypeId, setSharedRepoTypeId] = useState<TypeId | null>(null);
   const { localUser } = useLocalUser();
 
   const isFromOther = !!(flowMessage?.sender_id && localUser?.id && flowMessage.sender_id !== localUser.id);
   const isOutgoing = !!(flowMessage?.sender_id && localUser?.id && flowMessage.sender_id === localUser.id);
-  const showReceipt = isOutgoing && conversationStatusVisible && !flowMessage?.is_draft;
+  const showReceipt = isOutgoing && !flowMessage?.is_draft;
 
   // Attachment-action pairs: every CTA (Approve & Execute, View/Implement
   // Plan, …) comes from the registry — the bubble only assembles the context.
@@ -202,12 +199,14 @@ export function MessageBubble({
     messageId: flowMessageId,
     isFromOther,
     hasPlanSession: !!onOpenPlanSession,
+    workerSessionExists,
+    workerSessionLabel,
+    workerSessionInFlight,
     handlers: {
       approveAndExecute: onApproveAndExecute,
       implementPlan: onImplementPlan,
       openPlanSession: onOpenPlanSession,
       viewPlan: onViewPlan,
-      openSharedRepo: setSharedRepoTypeId,
     },
   });
   const showPromptRow = promptAttachments.length > 0 || actions.length > 0;
@@ -353,12 +352,6 @@ export function MessageBubble({
           confirmLabel={t`Delete`}
           variant="destructive"
           onConfirm={onDeleteMessage}
-        />
-      )}
-      {sharedRepoTypeId && (
-        <SharedRepoDialog
-          gitBranchTypeId={sharedRepoTypeId}
-          onClose={() => setSharedRepoTypeId(null)}
         />
       )}
     </div>

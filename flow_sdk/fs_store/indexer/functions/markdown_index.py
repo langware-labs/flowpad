@@ -8,9 +8,7 @@ AgenticProcess.  This module:
      ``TypeInfo.parser_fn`` so the indexer can (re-)parse an index.md that
      already exists on disk (e.g. after a restart).
 
-  2. Provides ``markdown_index_id`` / ``markdown_index_gen_id`` — id helpers
-     using the same uuid5(NAMESPACE_URL, resolved_path) formula as the base
-     Record default, kept here for explicitness and documentation.
+  2. Provides the deterministic path key declared by its ``TypeInfo``.
 
   3. Calls ``SchemaRegistry.register`` with the same metadata that
      ``MarkdownIndexRecord.__init_subclass__`` used to emit automatically.
@@ -23,7 +21,6 @@ The rebuild AgenticProcess is the only writer; callers use
 
 from __future__ import annotations
 
-import uuid
 from pathlib import Path
 
 from flow_sdk.fs_store.fs_record import FSRecord
@@ -38,19 +35,15 @@ def markdown_index_id(ref: FSRef) -> str:
     ``Record.getId`` default.  Exposed here for tests + explicitness.
     """
     from flow_sdk.fs_store.identifier import mint_uuid  # noqa: PLC0415
-    return mint_uuid(str(ref._path.resolve()))
+    path = getattr(ref, "_path", ref)
+    return mint_uuid(str(Path(path).resolve()))
 
-def markdown_index_gen_id(ref: FSRef) -> str:
-    """Id mint for MARKDOWN_INDEX — same formula as getId (no frontmatter write).
-
-    The rebuild agent always writes the id into frontmatter itself; this
-    function just returns the deterministic uuid5 without mutating the file.
-    """
-    return markdown_index_id(ref)
+def markdown_index_identity_key(ref: FSRef | Path) -> str:
+    return str(Path(getattr(ref, "_path", ref)).resolve())
 
 # ── Extractor ─────────────────────────────────────────────────────────────────
 
-def extract_markdown_index(ref: FSRef) -> list[FSRecord]:
+def extract_markdown_index(ref: FSRef, resolved_id: str) -> list[FSRecord]:
     """Parse an ``index.md`` file into a MARKDOWN_INDEX Record.
 
     Delegates to ``from_markdown`` in the operations module so the parse
@@ -63,4 +56,5 @@ def extract_markdown_index(ref: FSRef) -> list[FSRecord]:
         return []
     from flow_sdk.fs_store.operations.markdown_index import from_markdown  # noqa: PLC0415
     rec = from_markdown(text, path=path)
+    rec.id = resolved_id
     return [rec]

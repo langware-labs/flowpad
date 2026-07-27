@@ -49,7 +49,7 @@ def _make_trigger_with_data(record_root: Path, trigger_id: str = "abc-123") -> T
 
 async def test_trigger_has_data_dir_property(records_data_root):
     t = _make_trigger_with_data(records_data_root)
-    expected = records_data_root / "trigger" / "trigger-@abc-123"
+    expected = records_data_root / "trigger" / "abc-123"
     assert t.data_dir == expected
 
 

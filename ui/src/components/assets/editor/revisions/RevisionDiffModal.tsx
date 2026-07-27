@@ -1,4 +1,4 @@
-import { ActionInfo, dataManager } from '@sdk';
+import { GitWorkdir } from '@sdk';
 import { extractBody } from '@sdk/fs/FrontMatterFsRef';
 import { AssetDiffTabs } from './AssetDiffTabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
@@ -46,17 +46,11 @@ export const RevisionDiffModal: React.FC<RevisionDiffModalProps> = ({
     setDiff(null);
     setError(null);
 
-    const get = (subpath: string, params: Record<string, string>) => {
-      const action = new ActionInfo('git-ops', 'compute_node', computeNodeId, 'GET');
-      action.subpath = subpath;
-      action.queryParameters = { workdir, file: filepath, ...params };
-      return action;
-    };
-
+    const git = new GitWorkdir(workdir, computeNodeId);
     Promise.all([
-      dataManager.callAction<null, { content: string }>(get('show', { hash })),
-      dataManager.callAction<null, { content: string }>(get('show', { hash: 'HEAD' })),
-      dataManager.callAction<null, { diff: string }>(get('revision-diff', { hash })),
+      git.show(filepath, hash),
+      git.show(filepath, 'HEAD'),
+      git.revisionDiff(filepath, hash),
     ])
       .then(([oldRes, newRes, diffRes]) => {
         setOldContent(oldRes?.content ?? '');

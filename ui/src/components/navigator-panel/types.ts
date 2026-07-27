@@ -1,6 +1,55 @@
 import type { ReactNode } from 'react';
 import type { DockPointer } from '@src/navigation/DockPointer';
-import type { BrowseableRoot, ToolbarAction } from '@src/components/browseable-tree/types';
+import type { Browseable, BrowseableRoot, ToolbarAction } from '@src/components/browseable-tree/types';
+import type { ScopeFilter } from '@src/lib/scope-filter';
+
+/**
+ * Context handed to a `MultiSelectAction.run`: the scope root the selection
+ * belongs to (for refresh) and a `clearSelection` to reset after the action.
+ */
+export interface MultiSelectActionContext {
+  scopeRootId: string | null;
+  clearSelection: () => void;
+}
+
+/**
+ * A bulk action shown in the navigator's selection bar. Resolved per-selection
+ * by `NavigatorDescriptor.bulkActions`, so the toolbar adjusts to what's
+ * selected (e.g. entity types offer Share; folder files don't).
+ */
+export interface MultiSelectAction {
+  id: string;
+  icon: ReactNode;
+  label: string;
+  /** `destructive` styles the button and makes it the Delete-key target. */
+  variant?: 'default' | 'destructive';
+  /** Disable (don't hide) the button when it can't apply to this selection. */
+  enabledWhen?: (selected: Browseable[]) => boolean;
+  run: (selected: Browseable[], ctx: MultiSelectActionContext) => void | Promise<void>;
+}
+
+/**
+ * Context-aware search for a navigator. When present, `NavigatorPanel` shows a
+ * search icon in the header; activating it morphs the title row into a realtime
+ * search input (with a settings popover + close) and renders backend FTS results
+ * — of the menu's own entity types — in place of the list. The navigator only
+ * declares *what* to search; the panel owns the entire search UX.
+ */
+export interface NavigatorSearchConfig {
+  /** Entity/record types this menu lists — the search's context. Used both as
+   *  the default type filter and as the multi-type fan-out set (e.g.
+   *  `['claude_session','codex_session','copilot_session']` for Chats,
+   *  `['markdown']` for Docs, `['workflow']` for Workflows). */
+  recordTypes: string[];
+  /** Scope filter to seed the search with (the navigator's current scope).
+   *  Omitted → the panel uses the default project-derived scope. */
+  scope?: ScopeFilter | null;
+  /** Route a session result click through the live terminal dock (Chats).
+   *  Mirrors `SpotlightProfile.routeViaTerminal`. */
+  routeViaTerminal?: boolean;
+  /** Input placeholder, e.g. "Search chats…". */
+  placeholder?: string;
+}
 
 /**
  * NavigatorDescriptor — what a view contributes to the shared left-menu slot
@@ -9,9 +58,11 @@ import type { BrowseableRoot, ToolbarAction } from '@src/components/browseable-t
  * (`BrowseableTree`).
  *
  * Invariants (mirrors BrowseableTree + CLAUDE.md URL-first rule):
- * - Selection is URL-first: a row click calls `onNavigate` (→ openDock) only;
+ * - Navigation is URL-first: a row click calls `onNavigate` (→ openDock) only;
  *   the active row derives from `activePointer`/`activeKey` (from currentDock).
- * - There is exactly one active item. Multi-select is intentionally unsupported.
+ *   There is exactly one *active* (open) item.
+ * - Multi-select is a separate, ephemeral cursor (opt-in via `bulkActions`),
+ *   orthogonal to the URL-first active item — never persisted or in the URL.
  */
 export interface NavigatorHeader {
   title?: string;
@@ -48,6 +99,10 @@ export interface NavigatorDescriptor {
   /** Optional header (title, count, filter bar, actions). */
   header?: NavigatorHeader;
 
+  /** Optional context-aware search. When set, the panel renders a search icon
+   *  in the header and owns the inline search experience. */
+  search?: NavigatorSearchConfig;
+
   /** Active pointer (from currentDock/URL) — drives selection + auto-expand. */
   activePointer?: DockPointer | null;
 
@@ -60,6 +115,11 @@ export interface NavigatorDescriptor {
 
   /** Inject a context provider around the tree (e.g. AssetTypeCountsContext). */
   wrapTree?: (tree: ReactNode) => ReactNode;
+
+  /** Opt into multi-select. Resolves the selection toolbar from the currently
+   *  selected rows, so different selected types surface different actions. When
+   *  omitted, the navigator has no multi-select and behaves exactly as before. */
+  bulkActions?: (selected: Browseable[]) => MultiSelectAction[];
 
   /** Escape hatch: render this instead of the BrowseableTree row engine, for
    *  lists too rich/irregular for the row model (e.g. the Triggers list with

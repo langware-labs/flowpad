@@ -1,8 +1,11 @@
-import { Tab } from '@sdk';
+import { Tab, toplog } from '@sdk';
 import { useSyncExternalStore } from 'react';
+import { isHubOnly } from '@src/navigation/hub-runtime';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { editorForType } from '@src/navigation/asset-doc-types';
 import { ViewType } from '@src/types/ViewType';
+import { getActiveTabParent } from './tab-parent-context';
+import { resolveColdOpenParent } from './vibe-parent';
 
 export enum TabLifecycleState {
   Opening = 'opening',
@@ -112,6 +115,9 @@ function findTabForDock(tabs: Tab[], dock: DockPointer): Tab | null {
 }
 
 function shouldMaterializeDock(dock: DockPointer): boolean {
+  // Hub mode runs ephemeral: the hub backend has no `tab` entity, so never
+  // materialize a persisted dock. Views render directly from the DockPointer.
+  if (isHubOnly()) return false;
   if (!dock.tabHash) return false;
   if (dock.viewType === ViewType.AGENTIC_PROCESS) return false;
   return !(dock.viewType === ViewType.SHELL && dock.pointer === 'new_terminal');
@@ -132,26 +138,79 @@ function dockAddressesAsset(dock: DockPointer): boolean {
 }
 
 async function materializeTab(dock: DockPointer): Promise<{ tab: Tab | null; tabs: Tab[] }> {
+  const t0 = performance.now();
   const existing = await Tab.listAll();
+  toplog.log(
+    'process_load',
+    `materializeTab Tab.listAll took ${(performance.now() - t0).toFixed(1)}ms (${existing.length} tabs) dock=${dock.tabHash}`,
+  );
   const existingTab = findTabForDock(existing, dock);
-  // Reuse an existing tab verbatim EXCEPT a project-less content tab: a content
-  // tab materialized before its asset was resolvable is persisted with
-  // project_id == null, and the backend's tab heal only re-derives a tab's
-  // project when its target ENTITY MOVES projects — so a tab born project-less
-  // whose asset never moves is never healed there. Fall through to
-  // `getFromDockPointer` for it (re-resolves project_id from the asset and
-  // self-heals the row) so it adopts its project on this load.
-  if (existingTab && (existingTab.project_id || !dockAddressesAsset(dock))) {
+  // A workspace surface (the vibe workspace) may have registered its process
+  // tab as the parent for tabs materialized right now. Only a CONTENT-ASSET
+  // dock is adoptable — a process/project/assets-list dock is a navigation
+  // *away* from the workspace (its loader runs before the workspace unmounts
+  // and clears the slot), and adopting those was how nested-workspace /
+  // process-under-process corruption arose. This is the ONLY grouping seam;
+  // no navigation call site knows about children, and the backend enforces the
+  // same invariant (`_PARENT_FORBIDDEN_TARGET_TYPES`) as the second belt.
+  // A content-asset tab adopts a parent: the workspace's registered parent while
+  // it's mounted, else a COLD-open resolver (direct link / reload with nothing
+  // mounted) — today that's the vibe invariant "an asset opened in vibe renders
+  // inside a vibe workspace", resolved mode-agnostically in `resolveColdOpenParent`.
+  const addressesAsset = dockAddressesAsset(dock);
+  const parentTabId = addressesAsset
+    ? (getActiveTabParent() ?? (await resolveColdOpenParent(dock, existingTab?.project_id ?? null)))
+    : null;
+  // Mirror the backend's self-parent guard: a tab can never adopt itself, and
+  // would otherwise re-resolve on every return navigation forever.
+  const needsReparent =
+    !!parentTabId && !!existingTab && existingTab.id !== parentTabId && existingTab.parent_tab_id !== parentTabId;
+  // Inverse of the adopt guard: a NON-adoptable dock must never CARRY a parent
+  // either. A stale edge persisted onto e.g. an assets-list row (written under
+  // the retired display-tab model, before the adoptable allow-list) resurrects
+  // a vibe workspace around a top-level surface on every reuse — the rail's
+  // project button re-opened the last process (RCA 2026-07-16). Falls through
+  // to the mint below, where the backend (`ensure_tab`'s adoptable-pointer
+  // guard) null-heals the row — same self-heal seam as its stale siblings.
+  const staleParentEdge = !!existingTab?.parent_tab_id && !addressesAsset;
+  // A lens dock can't trust the row's denormalized project_id: the loader
+  // activates the TARGET entity's project on every load, and the indexer may
+  // re-stamp that target through the disk→DB path (`sync_to_db`), which skips
+  // the backend tab reconcile — so a reused snapshot goes stale and the strip
+  // (which filters tabs by `project_id === activeProject`) hides the very tab
+  // being shown ("no selected tab", RCA 2026-07-14). Re-check the row against
+  // the SAME resolution `getFromDockPointer` persists (one cache-first target
+  // GET, which also pre-warms the lens loader's own fetch): on agreement reuse
+  // as usual; on drift fall through to the full mint, which re-derives and
+  // self-heals the row.
+  const lensProjectStale =
+    dock.viewType === ViewType.LENS &&
+    !!existingTab &&
+    (await Tab.resolveDockTarget(dock)).projectId !== (existingTab.project_id ?? null);
+  // Reuse an existing tab verbatim EXCEPT a project-less content tab (see the
+  // project self-heal below), a stale lens tab (above), one that needs
+  // re-parenting into the active workspace, or one carrying a stale parent
+  // edge. All four fall through to `getFromDockPointer`, which re-derives
+  // project_id from the asset and adopts (or sheds) the parent, self-healing
+  // the row.
+  if (
+    existingTab &&
+    !lensProjectStale &&
+    (existingTab.project_id || !addressesAsset) &&
+    !needsReparent &&
+    !staleParentEdge
+  ) {
     return { tab: existingTab, tabs: existing };
   }
 
+  toplog.log('process_load', `materializeTab cache-miss → new_tab round trip dock=${dock.tabHash}`);
   // Create-or-resolve the dock's tab. `getFromDockPointer` → `new_tab` returns
   // the PROJECT-SCOPED list ({that project} + projectless), which must NEVER be
   // adopted into the GLOBAL all-tabs store (the caller applies `tabs` via
   // `applyAllTabs`): doing so erases every other project's tabs, collapsing the
   // footer projects-chip to a single project. Use the scoped list only to find
   // the materialized tab, then re-read the UNSCOPED global list for adoption.
-  const scoped = await Tab.getFromDockPointer(dock);
+  const scoped = await Tab.getFromDockPointer(dock, { parentTabId });
   const scopedTab = findTabForDock(scoped, dock);
 
   const all = await Tab.listAll();
@@ -204,6 +263,12 @@ export async function setupTab(dock: DockPointer, options: SetupTabOptions = {})
         throw new Error('Tab could not be materialized for this URL.');
       }
       setEntry(key, TabLifecycleState.Opening, { tabId: tab.id });
+      // Stamp recency on EVERY tab landing, not just terminals: `last_active_at`
+      // is what scope-entry (project switching) reads as "the last tab open in
+      // this project", so browse/content tabs (project, assets, plan, …) must
+      // record selection too — the shell/process loaders' own stamp covers only
+      // their tabs. Fire-and-forget: loaders stay fast.
+      void Tab.activateById(tab.id).catch(() => {});
       options.onMaterialized?.(tabs);
       await adapter.setupTab(dock);
       setEntry(key, TabLifecycleState.Opened, { tabId: tab.id });
@@ -236,21 +301,41 @@ export async function cleanupTab(dock: DockPointer, tab: Tab): Promise<void> {
   }
 }
 
+/**
+ * Close a tab through its lifecycle: `Closing` is set synchronously (the strip
+ * filters it out on the same tick), then adapter cleanup + backend close run.
+ * Failure is fully conveyed through the `CloseFailed` lifecycle entry — the
+ * promise never rejects (callers need no catch), resolving `[]` on failure.
+ */
 export async function closeTabWithLifecycle(tab: Tab): Promise<Tab[]> {
   const dockData = tab.dockPointer;
   const dock = dockData ? new DockPointer(dockData) : null;
   const key = tabKey(tab);
-  if (dock) {
-    await cleanupTab(dock, tab);
-  } else {
-    setEntry(key, TabLifecycleState.Closing, { tabId: tab.id });
-  }
   try {
+    if (dock) {
+      await cleanupTab(dock, tab);
+    } else {
+      setEntry(key, TabLifecycleState.Closing, { tabId: tab.id });
+    }
     return await Tab.closeById(tab.id);
   } catch (error) {
     setEntry(key, TabLifecycleState.CloseFailed, { tabId: tab.id, error });
-    throw error;
+    return [];
   }
+}
+
+/**
+ * Drop tabs whose lifecycle state is `Closing` — the strip's optimistic close:
+ * the chip vanishes on the click tick while the backend close/teardown runs.
+ * Only `Closing` is filtered, so a failed close (`CloseFailed`) resurfaces the
+ * chip with its error state, and the entry is GC'd by `syncTabLifecycleWithTabs`
+ * once the refreshed list drops the row for real.
+ */
+export function excludeClosingTabs(tabs: Tab[], lifecycles: ReadonlyMap<string, TabLifecycleEntry>): Tab[] {
+  const open = tabs.filter((tab) => lifecycles.get(tabKey(tab))?.state !== TabLifecycleState.Closing);
+  // Preserve input identity when nothing is closing (the common case) so
+  // downstream memos short-circuit on lifecycle traffic unrelated to closes.
+  return open.length === tabs.length ? tabs : open;
 }
 
 export function syncTabLifecycleWithTabs(tabs: Tab[]): void {

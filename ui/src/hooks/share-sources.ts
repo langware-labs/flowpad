@@ -15,9 +15,11 @@
  */
 import {
   AgenticProcess,
+  Artifact,
   dataManager,
   fsManager,
   TypeId,
+  type ConversationSendPayload,
 } from '@sdk';
 import { loadOptionalTranscript } from '@src/components/conversation/transcript-attachment';
 
@@ -29,6 +31,8 @@ export interface SharePrepPayload {
   sharedContextEntities: string[];
   /** Optional files (e.g. a session transcript) to ride the body bundle. */
   files?: File[];
+  /** Body transfer policy for this share. Defaults to copy. */
+  shareConfig?: ConversationSendPayload['shareConfig'];
 }
 
 export interface SharePrepOptions {
@@ -59,6 +63,19 @@ export interface ShareSource {
   supportsFiles?: boolean;
   /** Offer the transcript-attach toggle (AgenticProcess only). */
   isProcess?: boolean;
+  /** Static body transfer policy for this source. */
+  shareConfig?: ConversationSendPayload['shareConfig'];
+  /** Offer the "Create bookmark" checkbox — the shared thing is a navigable
+   *  entity the receiver could favorite (assets/artifacts, not raw files or
+   *  message forwards). */
+  bookmarkable?: boolean;
+  /** The asset TypeId to preflight for Git-sharing eligibility. Presence gates
+   *  the Share dialog's Git toggle (only asset/artifact sources set it — never
+   *  sessions, forwards, collaboration invites, or raw files). The backend
+   *  ``git_share_preflight`` action resolves whether this asset lives in a clean,
+   *  pushed Git worktree with a usable origin; the toggle enables only when it
+   *  does, and packing revalidates (never silently falls back to copy). */
+  gitPreflightRef?: TypeId;
   prepare(opts: SharePrepOptions): Promise<SharePrepPayload>;
 }
 
@@ -87,6 +104,68 @@ export function genericEntityShareSource(
     label: opts.label ?? ref,
     typeLabel: opts.typeLabel ?? typeId.type,
     defaultTitle: opts.label,
+    bookmarkable: true,
+    // File-backed assets may be shared by their Git origin — the dialog's Git
+    // toggle preflights this ref; eligibility is decided backend-side.
+    gitPreflightRef: typeId,
+    prepare: resolveOnce(() =>
+      Promise.resolve({
+        assetReferences: [ref],
+        sharedContextEntities: [ref],
+      }),
+    ),
+  };
+}
+
+/**
+ * Context-folder share. A folder ALWAYS travels as a Git origin the receiver
+ * clones — never as copied bytes — so Git here is the POLICY, not a per-share
+ * option: `shareConfig.transferMode` is pinned and `gitPreflightRef` is
+ * deliberately omitted, which is what keeps the dialog's Git toggle from
+ * rendering (`gitCapable` reads that ref) and keeps the conversation's
+ * `git_sharing_enabled` preference out of it — mandatory isn't a preference.
+ *
+ * Eligibility is NOT skipped: the gate in front of the dialog preflights this
+ * folder and remediates (set up git / commit + push) before the dialog ever
+ * opens, and packing revalidates and fails closed.
+ */
+export function folderShareSource(folderTypeId: TypeId, opts: { label: string }): ShareSource {
+  const ref = folderTypeId.toString();
+  return {
+    label: opts.label,
+    typeLabel: 'FOLDER',
+    defaultTitle: opts.label,
+    bookmarkable: true,
+    shareConfig: { transferMode: 'git' },
+    prepare: resolveOnce(() =>
+      Promise.resolve({
+        assetReferences: [ref],
+        sharedContextEntities: [ref],
+      }),
+    ),
+  };
+}
+
+/**
+ * Artifact share. When the sender opts into Git mode (the dialog's Git toggle),
+ * a Git-backed artifact rides as a metadata declaration plus GitOrigin and the
+ * receiver resolves the checkout from git on Download; otherwise it copies.
+ * Git mode is opt-in per conversation — never auto-forced from the artifact's
+ * origin — so artifacts and generic assets share one path.
+ */
+export function artifactShareSource(
+  artifact: Artifact,
+  opts: { label?: string; typeLabel?: string } = {},
+): ShareSource {
+  const ref = artifact.typeId.toString();
+  return {
+    label: opts.label ?? artifact.displayName ?? ref,
+    typeLabel: opts.typeLabel ?? artifact.kind ?? Artifact.type,
+    defaultTitle: opts.label ?? artifact.displayName,
+    bookmarkable: true,
+    // Eligibility (clean + pushed worktree with a usable origin) is resolved by
+    // the backend preflight against this ref, not the artifact's cached origin.
+    gitPreflightRef: artifact.typeId,
     prepare: resolveOnce(() =>
       Promise.resolve({
         assetReferences: [ref],
@@ -115,30 +194,86 @@ export function agenticProcessShareSource(
     defaultTitle: opts.defaultTitle ?? opts.label,
     supportsFiles: true,
     isProcess: true,
-    prepare: resolveOnce(async (o) => {
-      const proc = await dataManager
-        .getByTypeId<AgenticProcess>(new TypeId(AgenticProcess.type, typeId.id))
-        .catch(() => null);
-      const projectPath = (proc as { workdir?: string } | null)?.workdir ?? undefined;
+    prepare: resolveOnce((o) => prepareProcessTranscript(typeId, o)),
+  };
+}
 
-      let files = o.files ?? [];
-      const transcript = await loadOptionalTranscript(files, {
-        attach: o.attachTranscript !== false,
-        proc: proc ?? undefined,
-        projectPath,
-      });
-      files = transcript.files;
+/**
+ * Read a vibe/agentic session's transcript: resolve the process, then load the
+ * raw jsonl through the shared attach rules (own session, else the fork parent
+ * trimmed to the fork point). The single owner of "which session, which bytes"
+ * — every surface that offers an attach-transcript toggle goes through here, so
+ * the chip id and the file can't drift apart.
+ *
+ * `files` seeds the list so a caller with its own attachments keeps them.
+ * Never throws: a missing transcript comes back as `attached: false` with a
+ * reason the caller can surface.
+ */
+export async function loadSessionTranscript(
+  typeId: TypeId,
+  { attach = true, files = [] }: { attach?: boolean; files?: File[] } = {},
+): Promise<{ files: File[]; sessionId?: string; attached: boolean; failureReason?: string }> {
+  const proc = await dataManager
+    .getByTypeId<AgenticProcess>(new TypeId(AgenticProcess.type, typeId.id))
+    .catch(() => null);
+  const result = await loadOptionalTranscript(files, {
+    attach,
+    proc: proc ?? undefined,
+    projectPath: (proc as { workdir?: string } | null)?.workdir ?? undefined,
+  });
+  return {
+    files: result.files,
+    sessionId: proc?.session_id ?? undefined,
+    attached: result.attached,
+    failureReason: result.failureReason,
+  };
+}
 
-      const sessionId = proc?.session_id ?? null;
-      const transcriptRef = sessionId ? `claude_session-${sessionId}` : null;
-      const processRef = `${AgenticProcess.type}-${typeId.id}`;
-      return {
-        // The chip: the transcript when a session exists, else the process.
-        assetReferences: [transcriptRef ?? processRef],
-        sharedContextEntities: transcriptRef ? [transcriptRef, processRef] : [processRef],
-        files: files.length > 0 ? files : undefined,
-      };
-    }),
+/** Shared transcript prep for the AgenticProcess (session) shares: resolves the
+ *  process, optionally attaches the raw jsonl, and rides the ClaudeTranscript
+ *  (`claude_session-<id>`) as the chip + shared context. */
+async function prepareProcessTranscript(
+  typeId: TypeId,
+  o: SharePrepOptions,
+): Promise<SharePrepPayload> {
+  const { files, sessionId } = await loadSessionTranscript(typeId, {
+    attach: o.attachTranscript !== false,
+    files: o.files ?? [],
+  });
+
+  const transcriptRef = sessionId ? `claude_session-${sessionId}` : null;
+  const processRef = `${AgenticProcess.type}-${typeId.id}`;
+  return {
+    // The chip: the transcript when a session exists, else the process.
+    assetReferences: [transcriptRef ?? processRef],
+    sharedContextEntities: transcriptRef ? [transcriptRef, processRef] : [processRef],
+    files: files.length > 0 ? files : undefined,
+  };
+}
+
+/**
+ * Collaborate on the current vibe workspace: like {@link agenticProcessShareSource}
+ * (attaches the session transcript, offers the transcript checkbox) but framed as
+ * a collaboration — the user names what they want to collaborate on (`requiresTitle`).
+ * When no session process is active yet (`typeId` is null), falls back to a
+ * title-only invite with nothing attached, so the modal still works.
+ */
+export function collaborateShareSource(
+  typeId: TypeId | null,
+  opts: { label?: string } = {},
+): ShareSource {
+  return {
+    label: opts.label ?? 'Collaborate',
+    typeLabel: 'COLLABORATE',
+    requiresTitle: true,
+    // A process gives us a transcript to attach (+ the checkbox); without one
+    // the invite is title-only.
+    ...(typeId ? { supportsFiles: true, isProcess: true } : {}),
+    prepare: resolveOnce((o) =>
+      typeId
+        ? prepareProcessTranscript(typeId, o)
+        : Promise.resolve({ assetReferences: [], sharedContextEntities: [] }),
+    ),
   };
 }
 
@@ -195,4 +330,3 @@ function noAssetShareSource(label: string, typeLabel: string): ShareSource {
 export function messageForwardShareSource(args: { label: string }): ShareSource {
   return noAssetShareSource(args.label, 'MESSAGE');
 }
-

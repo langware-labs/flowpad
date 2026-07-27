@@ -20,6 +20,10 @@ export interface WorkerHistoryEntry {
   git_branch: string | null;
   message_count: number | null;
   agentic_process_id: string | null;
+  /** Epoch-ms open-recency stamp of the backing AgenticProcess (the `activate`
+   *  action fired on every open). `last_active_time` is transcript recency
+   *  only; "last active OR last opened" consumers take the max of the two. */
+  last_active_at?: number | null;
 }
 
 export function useWorkerHistory(
@@ -52,5 +56,10 @@ export function useWorkerHistory(
     return data;
   }, [data]);
 
+  // `worker-history` is fetched ONCE on load (a plain `useAction` query keyed by
+  // compute node + limit + project scope). It intentionally does NOT auto-refetch
+  // on AgenticProcess data_ops — a running agent emits a stream of status/
+  // transcript update ops, and refetching per op turned into a request storm.
+  // Callers that need a fresh list drive it explicitly via the returned `refetch`.
   return { entries, isLoading, refetch };
 }

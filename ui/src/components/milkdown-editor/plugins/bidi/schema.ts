@@ -33,7 +33,12 @@ function buildBidiDomAttrs(node: PMNode): Record<string, string> {
   const out: Record<string, string> = {};
   const dir = normalizeDir(node.attrs.dir);
   const align = normalizeAlign(node.attrs.align);
-  if (dir) out.dir = dir;
+  // No explicit override ⇒ dir="auto": base direction follows the paragraph's
+  // first strong character instead of the app UI locale, so RTL content
+  // renders RTL in an LTR-locale app. Render-time only — `normalizeDir`
+  // rejects "auto", so parseDOM reads it back as null and `hasBidiOverride`
+  // stays false (markdown output remains unwrapped CommonMark).
+  out.dir = dir ?? 'auto';
   if (align) out.style = `text-align: ${align}`;
   return out;
 }
@@ -67,9 +72,7 @@ export const bidiParagraphSchema = paragraphSchema.extendSchema((prev) => (ctx) 
       ...rule,
       getAttrs: (dom: unknown) => {
         const prevAttrs =
-          typeof rule.getAttrs === 'function'
-            ? rule.getAttrs(dom as HTMLElement) || {}
-            : { ...(rule.attrs ?? {}) };
+          typeof rule.getAttrs === 'function' ? rule.getAttrs(dom as HTMLElement) || {} : { ...(rule.attrs ?? {}) };
         if (!(dom instanceof HTMLElement)) return prevAttrs as Record<string, unknown>;
         return {
           ...prevAttrs,
@@ -86,9 +89,7 @@ export const bidiParagraphSchema = paragraphSchema.extendSchema((prev) => (ctx) 
       match: (mdNode) => mdNode.type === 'paragraph',
       runner: (state, mdNode, type) => {
         const bidi = (mdNode as { data?: { bidi?: { dir?: BidiDir; align?: BidiAlign } } }).data?.bidi;
-        const attrs = bidi
-          ? { dir: normalizeDir(bidi.dir), align: normalizeAlign(bidi.align) }
-          : {};
+        const attrs = bidi ? { dir: normalizeDir(bidi.dir), align: normalizeAlign(bidi.align) } : {};
         state.openNode(type, attrs);
         if (mdNode.children) state.next(mdNode.children);
         else if (typeof mdNode.value === 'string') state.addText(mdNode.value);
@@ -146,6 +147,4 @@ export const bidiParagraphSchema = paragraphSchema.extendSchema((prev) => (ctx) 
  * Heading override is omitted — see file header for the Milkdown bug that
  * forces this workaround.
  */
-export const bidiSchemaPlugins: MilkdownPlugin[] = [
-  ...bidiParagraphSchema,
-];
+export const bidiSchemaPlugins: MilkdownPlugin[] = [...bidiParagraphSchema];

@@ -84,8 +84,29 @@ class BootstrapInfo(BaseModel):
     # Capabilities view paints without a second round-trip.
     capabilities_summary: Optional[Dict[str, Any]] = None
     sniffer_hook: Optional[Dict[str, Any]] = None
+    # True when ~/.claude/settings.json actually carries sniffer hook commands.
+    # Independent of `sniffer_hook`: another instance on this machine may have
+    # installed them, and the UI must still surface (and be able to clear) that.
+    sniffer_installed: bool = False
     scan_info: Optional[Dict[str, Any]] = None
     records_root: Optional[str] = None
+    # Locales the app ships translations for (single source of truth:
+    # flow_sdk/i18n/supported_locales.py). Each is a {code, englishName,
+    # nativeName, dir, flag} descriptor. The UI derives its picker from this —
+    # it no longer hardcodes its own list.
+    supported_locales: List[Dict[str, Any]] = []
+    # Target languages for *document* translation (single source of truth:
+    # flow_sdk/i18n/translation_targets.py). DISTINCT from supported_locales —
+    # this is the broad set the translator worker can render a doc into, not the
+    # UI-catalog set. Each is a {code, englishName, nativeName, dir} descriptor
+    # feeding the Translations side-panel language picker.
+    translation_targets: List[Dict[str, Any]] = []
+    # SPA-surfaces ("pages") this server serves, as PageId strings (see the dock
+    # URL grammar / DockPointer.page). The local desktop server serves only
+    # "desk"; a hub backend reports its own set. The UI redirects navigation to
+    # any page not in this list back to the first supported page's home. Default
+    # is desk-only so the field is safe even if assembly omits it.
+    supported_pages: List[str] = ["desk"]
     # Data-privacy mode for this instance: "local" (no cloud access — login,
     # sharing, and outbound hub HTTP disabled) or "connected" (default). Seeds
     # the frontend privacy manager so the footer control + guards paint without

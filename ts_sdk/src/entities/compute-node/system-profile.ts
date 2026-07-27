@@ -6,6 +6,7 @@
 import { ActionInfo } from '../../models/ActionInfo';
 import { IResource } from '../../IResource';
 import type { ClaudeSessionRecordData } from '../../resource_management/fs_records/claude/claude-session';
+import { dataManager } from '../../APIEntity';
 
 // ═══════════════════════════════════════════════════════════════
 // ENUMS
@@ -720,60 +721,19 @@ export const SystemProfileUtils = {
 // ═══════════════════════════════════════════════════════════════
 
 /**
- * Fetch full system profile from a flow's compute node.
- */
-export async function fetchSystemProfile(processId: string): Promise<SystemProfile> {
-  const actionInfo = new ActionInfo('get-system-profile', 'flow', processId, 'GET');
-  const response = await fetch(actionInfo.fullActionUrl, { credentials: 'include' });
-  const result = await response.json();
-  return result.data || SystemProfileUtils.createEmpty();
-}
-
-/**
  * Fetch full system profile directly from a compute node (no flow required).
  */
 export async function fetchSystemProfileFromComputeNode(computeNodeId: string): Promise<SystemProfile> {
   const actionInfo = new ActionInfo('get-system-profile', 'compute_node', computeNodeId, 'GET');
-  const response = await fetch(actionInfo.fullActionUrl, { credentials: 'include' });
-  const result = await response.json();
-  return result.data || SystemProfileUtils.createEmpty();
+  return (
+    (await dataManager.callAction<undefined, SystemProfile>(actionInfo)) ||
+    SystemProfileUtils.createEmpty()
+  );
 }
 
-/**
- * Refresh a single item by type and id (targeted scan).
- */
-export async function refreshSystemProfileItem(
-  processId: string,
-  itemType: ItemType | string,
-  resourceId: string,
-): Promise<SystemProfileItem | null> {
-  const actionInfo = new ActionInfo('refresh-system-profile-item', 'flow', processId, 'GET');
-  const url = `${actionInfo.fullActionUrl}?type=${itemType}&id=${encodeURIComponent(resourceId)}`;
-  const response = await fetch(url, { credentials: 'include' });
-  const result = await response.json();
-  return result.data || null;
-}
-
-/**
- * Open a file or directory in the system's default application.
- * This is useful for opening files like settings.json, CLAUDE.md, or commands
- * in the user's preferred editor directly from the FlowPad UI.
- */
-export async function openExternal(processId: string, path: string): Promise<{ opened: string } | null> {
-  const actionInfo = new ActionInfo('open-external', 'flow', processId, 'POST');
-  const response = await fetch(actionInfo.fullActionUrl, {
-    method: 'POST',
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ path }),
-  });
-  const result = await response.json();
-  return result.data || null;
-}
 
 /**
  * Open a file or directory in the system's default application via compute node.
- * Preferred over openExternal when you have a compute node ID.
  *
  * Pass `{select: true}` to reveal a file in the OS file manager (Finder/Explorer)
  * with the file selected, instead of opening it in its default app. Folders ignore
@@ -787,14 +747,10 @@ export async function openExternalFromComputeNode(
   const actionInfo = new ActionInfo('open-external', 'compute_node', computeNodeId, 'POST');
   const body: Record<string, unknown> = { path };
   if (options?.select) body.select = true;
-  const response = await fetch(actionInfo.fullActionUrl, {
-    method: 'POST',
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  const result = await response.json();
-  return result.data || null;
+  actionInfo.bodyParameters = body;
+  return dataManager.callAction<Record<string, unknown>, { opened: string; selected?: boolean } | null>(
+    actionInfo,
+  );
 }
 
 /**
@@ -807,30 +763,11 @@ export async function openTerminalFromComputeNode(
   cwd?: string,
 ): Promise<{ command: string; cwd: string | null } | null> {
   const actionInfo = new ActionInfo('open-terminal', 'compute_node', computeNodeId, 'POST');
-  const response = await fetch(actionInfo.fullActionUrl, {
-    method: 'POST',
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ command, cwd }),
-  });
-  const result = await response.json();
-  return result.data || null;
-}
-
-/**
- * Open a system profile item in the system's default application.
- * Uses the item's path or source_file field.
- */
-export async function openResourceExternal(
-  processId: string,
-  item: SystemProfileItem,
-): Promise<{ opened: string } | null> {
-  const pathToOpen = item.path || item.source_file;
-  if (!pathToOpen) {
-    console.warn('[openResourceExternal] Item has no path or source_file:', item.id);
-    return null;
-  }
-  return openExternal(processId, pathToOpen);
+  actionInfo.bodyParameters = { command, cwd };
+  return dataManager.callAction<
+    { command: string; cwd?: string },
+    { command: string; cwd: string | null } | null
+  >(actionInfo);
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -858,6 +795,13 @@ export interface ProjectListItem {
   codex_session_count?: number;
   copilot_session_count?: number;
   modified_at: string | null;
+  /**
+   * Epoch-ms of the last time the user OPENED this project (or one of its
+   * assets) in the UI — the Project entity's `last_active_at`, stamped by the
+   * generic `activate` action. Wins the recency sort; `modified_at`
+   * (session-file mtimes) is the fallback.
+   */
+  last_active_at?: number | null;
   claude?: boolean;
   codex?: boolean;
   copilot?: boolean;
@@ -910,14 +854,18 @@ export interface ScanProjectResponse {
  * Indexer-backed project enumeration.
  * Use this for the project list sidebar.
  */
-export async function listProjectsFromComputeNode(computeNodeId: string): Promise<ListProjectsResponse> {
+export async function listProjectsFromComputeNode(
+  computeNodeId: string,
+  signal?: AbortSignal,
+): Promise<ListProjectsResponse> {
   const actionInfo = new ActionInfo('list-projects', 'compute_node', computeNodeId, 'GET');
-  const response = await fetch(actionInfo.fullActionUrl, { credentials: 'include' });
-  const result = await response.json();
-  if (result.status !== 'SUCCESS') {
-    throw new Error(result.message || 'Failed to list projects');
-  }
-  return result.data || { projects: [], total_count: 0 };
+  actionInfo.abortSignal = signal ?? null;
+  return (
+    (await dataManager.callAction<undefined, ListProjectsResponse>(actionInfo)) || {
+      projects: [],
+      total_count: 0,
+    }
+  );
 }
 
 /**
@@ -929,14 +877,9 @@ export async function fetchCostOverviewFromComputeNode(
   sessionLimit: number = 100,
 ): Promise<CostOverview> {
   const actionInfo = new ActionInfo('get-cost-overview', 'compute_node', computeNodeId, 'GET');
-  const url = `${actionInfo.fullActionUrl}?limit=${sessionLimit}`;
-  const response = await fetch(url, { credentials: 'include' });
-  const result = await response.json();
-  if (result.status !== 'SUCCESS') {
-    throw new Error(result.message || 'Failed to fetch cost overview');
-  }
+  actionInfo.queryParameters = { limit: sessionLimit };
   return (
-    result.data || {
+    (await dataManager.callAction<undefined, CostOverview>(actionInfo)) || {
       generated_at: new Date().toISOString(),
       session_count: 0,
       totals: {
@@ -969,18 +912,17 @@ export async function scanProjectFromComputeNode(
   projectEncodedName: string,
   limit: number = 100,
   includeSessions: boolean = true,
+  signal?: AbortSignal,
 ): Promise<ScanProjectResponse> {
   const actionInfo = new ActionInfo('scan-project', 'compute_node', computeNodeId, 'GET');
-  const url =
-    `${actionInfo.fullActionUrl}?project=${encodeURIComponent(projectEncodedName)}` +
-    `&limit=${limit}&include_sessions=${includeSessions ? 'true' : 'false'}`;
-  const response = await fetch(url, { credentials: 'include' });
-  const result = await response.json();
-  if (result.status !== 'SUCCESS') {
-    throw new Error(result.message || 'Failed to scan project');
-  }
+  actionInfo.queryParameters = {
+    project: projectEncodedName,
+    limit,
+    include_sessions: includeSessions,
+  };
+  actionInfo.abortSignal = signal ?? null;
   return (
-    result.data || {
+    (await dataManager.callAction<undefined, ScanProjectResponse>(actionInfo)) || {
       project_cwd: null,
       scanned_at: new Date().toISOString(),
       sessions: [],
@@ -1012,13 +954,8 @@ export async function scanProjectFromComputeNode(
  */
 export async function fetchAllSkillsFromComputeNode(computeNodeId: string): Promise<SkillItem[]> {
   const actionInfo = new ActionInfo('scan-item', 'compute_node', computeNodeId, 'GET');
-  const url = `${actionInfo.fullActionUrl}?type=skills`;
-  const response = await fetch(url, { credentials: 'include' });
-  const result = await response.json();
-  if (result.status !== 'SUCCESS') {
-    throw new Error(result.message || 'Failed to fetch skills');
-  }
-  return (result.data as SkillItem[]) || [];
+  actionInfo.queryParameters = { type: 'skills' };
+  return (await dataManager.callAction<undefined, SkillItem[]>(actionInfo)) || [];
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1091,13 +1028,10 @@ export async function fetchClaudeContextFromComputeNode(
 ): Promise<ClaudeContextData | null> {
   try {
     const actionInfo = new ActionInfo('get-claude-context', 'compute_node', computeNodeId, 'GET');
-    const params = new URLSearchParams();
-    if (sessionId) params.set('session_id', sessionId);
-    const url = `${actionInfo.fullActionUrl}?${params.toString()}`;
-    const response = await fetch(url, { credentials: 'include' });
-    const result = await response.json();
-    if (result.status !== 'SUCCESS') return null;
-    const d = result.data as Partial<ClaudeContextData> | null;
+    if (sessionId) actionInfo.queryParameters = { session_id: sessionId };
+    const d = await dataManager.callAction<undefined, Partial<ClaudeContextData> | null>(
+      actionInfo,
+    );
     if (!d || !d.model) return null;
     return {
       model: d.model ?? 'unknown',
@@ -1125,10 +1059,6 @@ export async function fetchClaudeContextFromComputeNode(
  */
 export async function clearAllSkillUsage(computeNodeId: string): Promise<number> {
   const actionInfo = new ActionInfo('clear-skill-usage', 'compute_node', computeNodeId, 'GET');
-  const response = await fetch(actionInfo.fullActionUrl, { credentials: 'include' });
-  const result = await response.json();
-  if (result.status !== 'SUCCESS') {
-    throw new Error(result.message || 'Failed to clear skill usage');
-  }
-  return result.data?.cleared ?? 0;
+  const result = await dataManager.callAction<undefined, { cleared?: number } | null>(actionInfo);
+  return result?.cleared ?? 0;
 }

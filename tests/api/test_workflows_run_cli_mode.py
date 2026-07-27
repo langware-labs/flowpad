@@ -42,12 +42,16 @@ async def test_workflow_run_created_in_cli_mode(bootstrapped_client, user):
         name="workflow-run-cli-mode",
         cli_config=cli_opts.to_json(),
         visible=False,
+        # Transport intent: headless CLI. WorkerMode/ExecutionMode key on
+        # ``pty_mode`` (not ``visible``), so a headless run must pin it False.
+        pty_mode=False,
     )
     await process.save(user.typeid)
 
     try:
         # The entity's own state:
         assert process.visible is False
+        assert process.pty_mode is False
         assert get_worker_mode(process) is WorkerMode.CLI
 
         # Round-trip via the API — the serialized shape the UI sees.
@@ -56,6 +60,7 @@ async def test_workflow_run_created_in_cli_mode(bootstrapped_client, user):
         data = resp.json().get("data")
         assert isinstance(data, dict)
         assert data["visible"] is False
+        assert data["pty_mode"] is False
         assert data["status"] == ProcessStatus.NEW.value
         # cli_config round-trips output_format="stream-json".
         cli_config = data.get("cli_config") or {}
@@ -79,12 +84,14 @@ async def test_open_action_flips_visible_true(bootstrapped_client, user):
         name="workflow-run-mode-switch",
         cli_config=cli_opts.to_json(),
         visible=False,
+        pty_mode=False,
     )
     await process.save(user.typeid)
 
     try:
-        # Sanity: starts hidden.
+        # Sanity: starts hidden + headless transport.
         assert process.visible is False
+        assert process.pty_mode is False
 
         # The terminal dock loader invokes /open with {visible: true} — mirror that call.
         resp = await client.post(

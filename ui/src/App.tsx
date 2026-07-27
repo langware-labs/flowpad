@@ -9,19 +9,29 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { NotificationOutlet, NotificationCommandBridge, DiagnoseErrorModal, initNotificationIngest } from '@src/notifications';
 import { ActivityProgressModalRoot } from '@src/components/search-index/ActivityProgressModalRoot';
 import { WikiModalRoot } from '@src/components/wiki-tip/WikiModalRoot';
+import { FilePreviewRoot } from '@src/components/file-preview/FilePreviewRoot';
 import { CleanupModal } from '@src/components/recovery/cleanup-modal';
 import { DeleteAssetModal } from '@src/components/assets/delete-asset-modal';
 import { InputPromptModal } from '@src/components/ui/input-prompt-modal';
 import { ImageAnnotatorRoot } from '@src/components/image-annotator/image-annotator-store';
 import { useEffect, useRef } from 'react';
 import { GitHubDeviceFlowModal } from '@src/components/oauth/GitHubDeviceFlowModal';
+import { HarnessLoginModalRoot } from '@src/components/harness-login/HarnessLoginModal';
 import MigrateLegacyKeychain from '@src/components/migrate-legacy-keychain';
+import { SnifferActiveNotice } from '@src/components/hooks/SnifferActiveNotice';
 import { initNotificationListener } from '@src/store/use-notification-store';
 import { SnifferProvider } from '@src/contexts/SnifferContext';
 import { FloatingChatProvider } from '@src/components/floating-chat';
 import { usePresenceReporter } from '@src/hooks/use-presence-reporter';
 import { useUiCommandListener } from '@src/hooks/use-ui-command-listener';
+import { useSyncOsBadge } from '@src/hooks/useInboxManager';
 import { Spotlight, useSpotlightHotkey } from '@src/components/spotlight';
+import { JourneyController } from '@src/journey/JourneyController';
+import { IncomingDeepLink } from '@src/components/task-receive/IncomingDeepLink';
+import { UiTagEmitter } from '@src/tags/ui.onTag';
+import { TagHighlightObserver } from '@src/tags/highlight.onTag';
+import { useDockViewModeOverrideSync } from '@src/contexts/view-mode-context';
+import { isHubOnly } from '@src/navigation/hub-runtime';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -52,6 +62,10 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
     void useGlobalEvents();
     usePresenceReporter();
     useUiCommandListener();
+    // OS dock/launcher badge = the backend-owned InboxManager.unread (state,
+    // not a notification event) — mounted once, next to the WS listeners.
+    useSyncOsBadge();
+    useDockViewModeOverrideSync();
     useSpotlightHotkey();
     // Re-report browser_context (incl. the current URL) on every navigation.
     // The reporter's mobx autorun only fires on context-slot changes, so a
@@ -102,11 +116,22 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
         <InputPromptModal />
         <ImageAnnotatorRoot />
         <Spotlight />
+        <UiTagEmitter />
+        <TagHighlightObserver />
+        <JourneyController />
+        {/* `?action=open&…` — must be app-level: the app has several homes and a
+            box opens on whichever the view mode picks. */}
+        <IncomingDeepLink />
         <ActivityProgressModalRoot />
         <WikiModalRoot />
+        <FilePreviewRoot />
         <GlobalEvents />
         <GitHubDeviceFlowModal />
+        {/* Harness/LLM-keys setup is a desktop-only concern (local coding CLIs);
+            it has no place in hub mode. */}
+        {!isHubOnly() && <HarnessLoginModalRoot />}
         <MigrateLegacyKeychain />
+        <SnifferActiveNotice />
         <HarnessCapabilitiesProvider>
           <SnifferProvider>
             <FloatingChatProvider>

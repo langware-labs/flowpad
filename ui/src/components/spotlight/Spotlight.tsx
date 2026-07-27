@@ -1,44 +1,23 @@
-import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
-import { CodexIcon } from '@src/components/icons/CodexIcon';
-import { CopilotIcon } from '@src/components/icons/CopilotIcon';
 import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from '@src/components/ui/command';
 import { Dialog, DialogContent, DialogTitle } from '@src/components/ui/dialog';
 import { useRecordSearch } from '@src/hooks/use-record-search';
 import { useDefaultScopeFilter } from '@src/hooks/use-default-scope-filter';
-import { TYPE_COLORS, TYPE_DISPLAY_NAMES } from '@src/components/record-search-bar/RecordSearchBar';
-import { cn } from '@src/lib/utils';
 import { navigateToResult } from '@src/navigation/record-type-nav';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useSpotlightStore } from '@src/store/use-spotlight-store';
-import { FileText, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { EntityTypePopover } from './EntityTypePopover';
 import { ScopeFilterPopover } from './ScopeFilterPopover';
-import { searchResultToRow, searchResultToTerminalRow, timeAgo } from './adapters';
+import { searchResultToRow, searchResultToTerminalRow } from './adapters';
+import { SpotlightResultRowContent } from './SpotlightResultRow';
 import { resolveProfile } from './profiles';
 import type { SpotlightInitialInfo, SpotlightProfile, SpotlightRow } from './types';
 import { useMultiTypeSearch } from './useMultiTypeSearch';
 import { useTerminalInitialRows } from './useTerminalInitialRows';
 
 const EMPTY_INITIAL: SpotlightInitialInfo = { rows: [], isLoading: false };
-
-function RowIcon({ recordType }: { recordType: string }) {
-  if (recordType === 'claude_session') return <ClaudeIcon className="h-3.5 w-3.5 shrink-0 text-orange-500" />;
-  if (recordType === 'codex_session') return <CodexIcon className="h-3.5 w-3.5 shrink-0 text-emerald-500" />;
-  if (recordType === 'copilot_session') return <CopilotIcon className="h-3.5 w-3.5 shrink-0 text-sky-500" />;
-  const color = TYPE_COLORS[recordType];
-  return (
-    <span
-      className={cn(
-        'inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded',
-        color ?? 'bg-muted text-muted-foreground',
-      )}
-    >
-      <FileText className="h-2.5 w-2.5" />
-    </span>
-  );
-}
 
 export function Spotlight() {
   const { t } = useLingui();
@@ -185,20 +164,7 @@ export function Spotlight() {
                   data-testid="spotlight-result"
                   data-record-type={row.recordType}
                 >
-                  <RowIcon recordType={row.recordType} />
-                  <span className="flex min-w-0 flex-1 flex-col overflow-hidden">
-                    <span className="truncate text-sm">{row.title}</span>
-                    {row.subtitle && (
-                      <span className="truncate text-[10px] text-muted-foreground/70">{row.subtitle}</span>
-                    )}
-                  </span>
-                  {opening === row.key ? (
-                    <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground" />
-                  ) : (
-                    row.timestamp && (
-                      <span className="shrink-0 text-xs text-muted-foreground">{timeAgo(row.timestamp)}</span>
-                    )
-                  )}
+                  <SpotlightResultRowContent row={row} opening={opening === row.key} />
                 </CommandItem>
               ))
             )}

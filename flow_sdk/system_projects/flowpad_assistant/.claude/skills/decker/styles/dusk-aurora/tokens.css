@@ -1,0 +1,35 @@
+/* dusk-aurora — dark done softly. Aurora fields, humanist display, coral. */
+:root {
+  --bg: #14101f;
+  --surface: rgba(255, 255, 255, 0.055);
+  --text: #ece9f5;
+  --text-secondary: #9a93b5;
+  --accent: #ff7a6b;
+  --accent-contrast: #14101f;
+  --border: rgba(255, 255, 255, 0.11);
+
+  --fs-hero: 80px;
+  --fs-title: 46px;
+  --fs-subtitle: 26px;
+  --fs-body: 22px;
+  --fs-caption: 14px;
+
+  /* Optima/Avenir (macOS) -> Candara (Windows) -> Gill Sans MT -> Trebuchet
+   * -> sans-serif. All humanist. */
+  --font-display: Optima, "Avenir Next", Candara, "Gill Sans", "Gill Sans MT", "Trebuchet MS", sans-serif;
+  --font-sans: "Avenir Next", Avenir, Candara, "Helvetica Neue", "Segoe UI", sans-serif;
+  --font-mono: "SF Mono", Menlo, Consolas, monospace;
+
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-bold: 600;
+  --lh-tight: 1.08;
+  --lh-body: 1.6;
+  --tracking-kicker: 0.16em;
+
+  --sp-1: 4px;  --sp-2: 8px;  --sp-3: 12px; --sp-4: 16px;
+  --sp-5: 24px; --sp-6: 32px; --sp-7: 48px; --sp-8: 64px;
+
+  --radius-sm: 8px; --radius-md: 18px; --radius-lg: 28px;
+  --safe-area: 80px;
+}

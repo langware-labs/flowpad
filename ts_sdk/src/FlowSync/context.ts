@@ -16,12 +16,9 @@ import {
 import { AgenticProcess } from '../process/agentic-process';
 import { APIEntity, dataManager } from '../APIEntity';
 import { ComputeNode } from '../entities/compute_node';
-import { Flow } from '../entities/flow';
-import { IChatOptionsValues } from '../entities/flow/flow-types';
 import { Project } from '../entities/project';
 import { User } from '../entities/user';
 import type { Shell } from '../entities/shell';
-import { Workflow } from '../entities/workflow';
 import { Workspace } from '../entities/workspace';
 import { TypeId } from '../models/TypeId';
 import { UserWarning } from '../models/UserWarning';
@@ -44,27 +41,6 @@ import {
 } from './context-local-storage';
 import { EntityFactory } from './factory';
 import { EntityTypes } from '../schema/types';
-
-export class FlowNotFoundError extends Error {
-  constructor(message: string = 'Flow not found') {
-    super(message);
-    this.name = 'FlowNotFoundError';
-  }
-}
-
-export class FlowAuthenticationError extends Error {
-  constructor(message: string = 'Authentication required') {
-    super(message);
-    this.name = 'FlowAuthenticationError';
-  }
-}
-
-export class FlowAccessDeniedError extends Error {
-  constructor(message: string = 'Access denied') {
-    super(message);
-    this.name = 'FlowAccessDeniedError';
-  }
-}
 
 export enum ContextEventType {
   CONTEXT_CHANGED = 'context_changed',
@@ -92,7 +68,6 @@ export interface PluginEntry {
 
 export enum ContextEntitiesEnum {
   CurrentWorkspaceTypeId = 'CurrentWorkspaceTypeId',
-  CurrentFlowTypeId = 'CurrentFlowTypeId',
   CurrentProjectTypeId = 'CurrentProjectTypeId',
   CurrentComputeNodeTypeId = 'CurrentComputeNodeTypeId',
   // Two distinct user identities — desktop (local bootstrap, HTTP-cookie auth)
@@ -105,16 +80,9 @@ export enum ContextEntitiesEnum {
   CurrentDomainTypeId = 'CurrentDomainTypeId',
   CurrentVisitorTypeId = 'CurrentVisitorTypeId',
   CurrentAgentTypeId = 'CurrentAgentTypeId',
-  CurrentWorkflowTypeId = 'CurrentWorkflowTypeId',
   CurrentProcessTypeId = 'CurrentProcessTypeId',
 }
 
-export interface CreateFlowOptions {
-  /** Whether to set the flow in context (default: true) */
-  setContext?: boolean;
-  /** Initial chat options for the flow */
-  chatOptions?: IChatOptionsValues;
-}
 
 /**
  * Soft-runtime-failure descriptor for the currently-rendered terminal.
@@ -159,7 +127,6 @@ class DataContext extends EventEmitter {
 
   private _contextEntitiesMap = observable.map<ContextEntitiesEnum, TypeId | null | undefined>([
     [ContextEntitiesEnum.CurrentWorkspaceTypeId, null],
-    [ContextEntitiesEnum.CurrentFlowTypeId, null],
     [ContextEntitiesEnum.CurrentProjectTypeId, null],
     [ContextEntitiesEnum.CurrentComputeNodeTypeId, null],
     [ContextEntitiesEnum.LocalUserTypeId, null],
@@ -168,7 +135,6 @@ class DataContext extends EventEmitter {
     [ContextEntitiesEnum.CurrentDomainTypeId, null],
     [ContextEntitiesEnum.CurrentVisitorTypeId, null],
     [ContextEntitiesEnum.CurrentAgentTypeId, null],
-    [ContextEntitiesEnum.CurrentWorkflowTypeId, null],
     [ContextEntitiesEnum.CurrentProcessTypeId, null],
   ]);
 
@@ -333,6 +299,16 @@ class DataContext extends EventEmitter {
     this.emit(ContextEventType.CONTEXT_CHANGED);
   }
 
+  /** Whether the harness settings file actually carries sniffer hooks. This —
+   *  not `snifferEnabled` — is what "the sniffer is on" means to the user, so
+   *  it stays true for a sniffer another instance installed. */
+  setSnifferInstalled(value: boolean): void {
+    runInAction(() => {
+      this.snifferInstalled = value;
+    });
+    this.emit(ContextEventType.CONTEXT_CHANGED);
+  }
+
   /**
    * Set the active shell session ID and notify subscribers
    */
@@ -454,6 +430,7 @@ class DataContext extends EventEmitter {
   plugins: Plugin[] = [];
   snifferHook: SnifferHook | null = null;
   snifferEnabled: boolean = false;
+  snifferInstalled: boolean = false;
 
   constructor() {
     super();
@@ -481,19 +458,15 @@ class DataContext extends EventEmitter {
       localUserTypeId: computed,
       cloudUserTypeId: computed,
       currentUserTypeId: computed,
-      flowTypeId: computed,
       projectTypeId: computed,
       computeNodeTypeId: computed,
       domainTypeId: computed,
       visitorTypeId: computed,
-      flow: computed,
       project: computed,
       computeNode: computed,
       domain: computed,
       visitor: computed,
       someone: computed,
-      workflowTypeId: computed,
-      workflow: computed,
       agenticProcessTypeId: computed,
       agenticProcess: computed,
       activeShell: computed,
@@ -516,6 +489,7 @@ class DataContext extends EventEmitter {
       warnings: computed,
       snifferHook: observable,
       snifferEnabled: observable,
+      snifferInstalled: observable,
     });
     this.setupAuthListeners();
     this.setupConnectionListeners();
@@ -586,6 +560,17 @@ class DataContext extends EventEmitter {
 
   private setupConnectionListeners() {
     const connectionManager = ConnectionManager.getInstance();
+
+    // Keep the context mirror on the manager's synchronous event channel.
+    // The manager used to dynamically import this module on every lifecycle
+    // edge, creating an async back-reference that could outlive a reset SDK
+    // realm and reject after teardown.  Initial adoption also covers a context
+    // constructed after the socket has already begun connecting.
+    this.setLocalConnectionStatus(connectionManager.connectionStatus);
+    connectionManager.on(
+      'connection_status_changed',
+      (slot: { status: LocalConnectionStatus }) => this.setLocalConnectionStatus(slot.status),
+    );
 
     connectionManager.on('on_open', () => {
       runInAction(() => {
@@ -691,16 +676,12 @@ class DataContext extends EventEmitter {
         return ContextEntitiesEnum.LocalUserTypeId;
       case Workspace.type:
         return ContextEntitiesEnum.CurrentWorkspaceTypeId;
-      case Flow.type:
-        return ContextEntitiesEnum.CurrentFlowTypeId;
       case Project.type:
         return ContextEntitiesEnum.CurrentProjectTypeId;
       case ComputeNode.type:
         return ContextEntitiesEnum.CurrentComputeNodeTypeId;
       case Agent.type:
         return ContextEntitiesEnum.CurrentAgentTypeId;
-      case Workflow.type:
-        return ContextEntitiesEnum.CurrentWorkflowTypeId;
       case AgenticProcess.type:
         return ContextEntitiesEnum.CurrentProcessTypeId;
       default:
@@ -782,9 +763,6 @@ class DataContext extends EventEmitter {
         stamp(`_onAddedToContext(${_entityKey}) loadContextEntity (re-expand)`, s2);
       }
     }
-    if (_entityKey === ContextEntitiesEnum.CurrentFlowTypeId && entity) {
-      defineGlobal('flow', entity);
-    }
     if (_entityKey === ContextEntitiesEnum.CurrentWorkspaceTypeId && entity) {
       defineGlobal('workspace', entity);
     }
@@ -841,6 +819,14 @@ class DataContext extends EventEmitter {
     // Load compute node when project is set
     if (entityKey === ContextEntitiesEnum.CurrentProjectTypeId && newTypeId) {
       void this.refreshProject();
+      // Open-recency stamp: `Project.last_active_at` (server clock, epoch-ms)
+      // via the generic `activate` action — the project pickers' primary sort
+      // key. This is the single choke point every "user is now in this
+      // project" path funnels through (loaders, pickers, quick-create,
+      // startup restore), and the equality guard above means it fires only on
+      // an actual project switch — never on same-project re-navigation.
+      // Fire-and-forget: context writes must stay fast.
+      void Project.activateById(newTypeId.id).catch(() => {});
     }
 
     // Emit CONTEXT_CHANGED event AFTER observable update so components get the updated values
@@ -878,10 +864,6 @@ class DataContext extends EventEmitter {
     return this.getContextEntityTypeId(ContextEntitiesEnum.CurrentWorkspaceTypeId) ?? null;
   }
 
-  get flowTypeId(): TypeId | null {
-    return this.getContextEntityTypeId(ContextEntitiesEnum.CurrentFlowTypeId) ?? null;
-  }
-
   get projectTypeId(): TypeId | null {
     return this.getContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId) ?? null;
   }
@@ -892,10 +874,6 @@ class DataContext extends EventEmitter {
 
   get agentTypeId(): TypeId | null {
     return this.getContextEntityTypeId(ContextEntitiesEnum.CurrentAgentTypeId) ?? null;
-  }
-
-  get flow(): Flow | null {
-    return this.getContextEntity(ContextEntitiesEnum.CurrentFlowTypeId) as Flow | null;
   }
 
   get project(): Project | null {
@@ -947,14 +925,6 @@ class DataContext extends EventEmitter {
 
   get visitor(): APIEntity<Visitor> | null {
     return this.getContextEntity(ContextEntitiesEnum.CurrentVisitorTypeId);
-  }
-
-  get workflowTypeId(): TypeId | null {
-    return this.getContextEntityTypeId(ContextEntitiesEnum.CurrentWorkflowTypeId) ?? null;
-  }
-
-  get workflow(): Workflow | null {
-    return this.getContextEntity(ContextEntitiesEnum.CurrentWorkflowTypeId) as Workflow | null;
   }
 
   get agenticProcessTypeId(): TypeId | null {
@@ -1128,44 +1098,6 @@ class DataContext extends EventEmitter {
     const fetchEntity = await dataManager.getByTypeId(typeId, query);
     return fetchEntity ?? null;
   }
-  async loadFlow(typeId: TypeId): Promise<Flow> {
-    const query = new ExpansionRequest({ expand: ['permissions', 'auth_scopes'] });
-    const flow: Flow | null = await dataManager.getByTypeId<Flow>(typeId, query);
-
-    if (!flow) {
-      throw new FlowNotFoundError('Flow not found');
-    }
-
-    try {
-      //await flow.load();
-      await this.setContextEntityTypeId(ContextEntitiesEnum.CurrentFlowTypeId, flow.typeId);
-      if (flow.workspace_id) {
-        await this.setContextEntityTypeId(
-          ContextEntitiesEnum.CurrentWorkspaceTypeId,
-          new TypeId(Workspace.type, flow.workspace_id),
-        );
-      }
-      if (flow.projectTypeId) {
-        await this.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, flow.projectTypeId);
-        await this.refreshProject();
-      }
-      return flow;
-    } catch (error) {
-      if (error && typeof error === 'object' && 'status' in error && error.status === 401) {
-        const errorMessage = (error as { response?: { data?: { message?: string } } }).response?.data?.message || '';
-        const isEntityNotFound = errorMessage.includes('Target entity not found');
-
-        if (isEntityNotFound) {
-          throw new FlowAccessDeniedError('Flow not found or access denied');
-        }
-
-        throw new FlowAuthenticationError('Authentication required');
-      }
-
-      throw error;
-    }
-  }
-
   async setActiveEntityTypeId(activeEntityTypeId: TypeId | null) {
     // Validate non-null TypeId has both type and id
     if (activeEntityTypeId !== null && (!activeEntityTypeId.type || !activeEntityTypeId.id)) {
@@ -1177,64 +1109,6 @@ class DataContext extends EventEmitter {
       await this.setContextEntityTypeId(contextEnum, activeEntityTypeId);
     }
     await this.setContextEntityTypeId(ContextEntitiesEnum.CurrentActiveEntityTypeId, activeEntityTypeId);
-  }
-
-  /**
-   * Creates a new Flow and optionally sets it as the current flow in context.
-   * The flow is NOT saved to the backend - it will be saved on first message.
-   * @param workspaceId - Optional workspace ID. If not provided, uses current workspace (best effort).
-   * @param options - Optional settings for flow creation.
-   * @param options.setContext - Whether to set the flow in context (default: true).
-   * @returns The created Flow.
-   */
-  createFlow(workspaceId?: string, options?: CreateFlowOptions): Flow {
-    const { setContext = true } = options ?? {};
-    const wsId = workspaceId ?? this.workspace?.id;
-    const newFlow = new Flow({ workspace_id: wsId });
-    if (setContext) {
-      void this.setContextEntityTypeId(ContextEntitiesEnum.CurrentFlowTypeId, newFlow.typeId);
-    }
-    return newFlow;
-  }
-
-  async createProjectAndFlow(options?: CreateFlowOptions): Promise<{ processId: string; projectId: string }> {
-    if (!this.someone) {
-      throw new Error('No one is logged in');
-    }
-    if (!this.agentTypeId?.id) {
-      throw new Error('No agent in context');
-    }
-    const { setContext = true, chatOptions } = options ?? {};
-    const newProjectId = uuidv4();
-    const newProject = new Project({ id: newProjectId });
-    await newProject.save([this.someone]);
-
-    // Use Project.createFlow method
-    const flowTypeId = await newProject.createFlow(this.agentTypeId.id);
-
-    const project = dataManager.getByTypeIdFromCache<Project>(new TypeId(Project.type, newProjectId));
-    if (!project) {
-      throw new Error('Project not found');
-    }
-    const flow = dataManager.getByTypeIdFromCache<Flow>(flowTypeId);
-    if (!flow) {
-      throw new Error('Flow not found');
-    }
-
-    flow.markAsExpanded();
-    flow._isLoaded = true;
-
-    // Apply chat options to flow if provided
-    if (chatOptions) {
-      flow.options.applyValues(chatOptions);
-    }
-
-    if (setContext) {
-      void this.setContextEntityTypeId(ContextEntitiesEnum.CurrentFlowTypeId, flow.typeId);
-      void this.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, project.typeId);
-      void this.refreshProject();
-    }
-    return { processId: flowTypeId.id, projectId: newProjectId };
   }
 
   async refreshOntology() {

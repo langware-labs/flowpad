@@ -7,7 +7,6 @@ from pathlib import Path
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.indexer.functions.skill import extract_skill, parse_skill_yaml_from_dir
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.record_paths import get_default_records_root, record_stem
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.instance_settings import get_instance_settings
 
@@ -68,12 +67,9 @@ def copy_skill_to_project(rec, project_dir: str | Path) -> Path:
 
 def get_skill(uid: str) -> FSRecord | None:
     """O(1) lookup of a SKILL record by id."""
-    records_root = get_default_records_root()
-    stem = record_stem(RecordType.SKILL, uid)
-    folder = records_root / RecordType.SKILL / stem
-    if not folder.is_dir():
-        return None
-    if (folder / _META_JSON).exists():
+    from flow_sdk.fs_store.record_paths import is_record_dir, shadow_dir_for  # noqa: PLC0415
+    folder = shadow_dir_for(RecordType.SKILL, uid)
+    if is_record_dir(folder):
         try:
             return load_skill_record(folder)
         except OSError:

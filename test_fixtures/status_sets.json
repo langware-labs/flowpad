@@ -1,11 +1,18 @@
 {
-  "_note": "Canonical source of truth for the WorkerStatus running/terminal set literals. Python (_RUNNING_STATUSES in flow_sdk/fs_records/agent_status.py, WORKER_RUNNING_STATUSES in ts_sdk/src/process/agentic-types.ts) must equal these byte-for-byte. Contract tests on both sides load this file and assert set equality; editing one side without the other breaks both.",
+  "_note": "Canonical source of truth for the status set literals shared by Python and TS. Python (flow_sdk/builtin/worker_status.py + flow_sdk/builtin/agentic_process/status_predicates.py + flow_sdk/builtin/process_lifecycle.py) and TS (ts_sdk/src/process/agentic-types.ts) must equal these byte-for-byte. Contract tests on both sides load this file and assert set equality; editing one side without the other breaks both.",
   "worker_running": [
-    "waiting",
+    "working",
     "thinking",
     "tool_call",
     "tool_running",
     "api_error"
+  ],
+  "worker_busy": [
+    "initializing",
+    "working",
+    "thinking",
+    "tool_call",
+    "tool_running"
   ],
   "worker_terminal": [
     "complete",
@@ -14,17 +21,18 @@
     "inactive",
     "api_timeout"
   ],
-  "worker_ready_for_input": [
-    "idle",
-    "complete",
-    "interrupted"
-  ],
   "worker_execution_error": [
     "error",
     "api_timeout",
     "inactive"
   ],
-  "process_running": [
+  "process_stored_running": [
+    "starting",
+    "running",
+    "stopping"
+  ],
+  "_note_process_running_wire": "Since busy/ready are no longer projected into status, the wire live-set equals the stored live-set: `running` is emitted verbatim and turn-in-flight is the separate `busy` boolean.",
+  "process_running_wire": [
     "starting",
     "running",
     "stopping"
@@ -33,5 +41,21 @@
     "new",
     "stopped",
     "failed"
+  ],
+  "_note_ready_for_input": "Cross-language truth table for the ready-for-input projection: Python is_ready_from_busy(status, busy, pty_mode=..., session_id=...) and TS isReadyForInput({status, busy, pty_mode, session_id}) must both produce `expected` for every row. Covers the RUNNING baseline, the fresh-headless branch (NEW + CLI transport), and the headless-idle branch (STOPPED + CLI transport + session).",
+  "ready_for_input_cases": [
+    {"status": "running", "busy": false, "pty_mode": true, "session_id": null, "expected": true, "label": "RUNNING PTY, no turn in flight -> ready"},
+    {"status": "running", "busy": true, "pty_mode": true, "session_id": null, "expected": false, "label": "RUNNING but busy -> not ready"},
+    {"status": "running", "busy": false, "pty_mode": false, "session_id": "sess-abc", "expected": true, "label": "RUNNING CLI -> ready"},
+    {"status": "new", "busy": false, "pty_mode": false, "session_id": null, "expected": true, "label": "fresh headless NEW -> ready"},
+    {"status": "new", "busy": true, "pty_mode": false, "session_id": null, "expected": false, "label": "fresh headless NEW but busy -> not ready"},
+    {"status": "new", "busy": false, "pty_mode": true, "session_id": null, "expected": false, "label": "fresh PTY NEW -> not ready"},
+    {"status": "stopped", "busy": false, "pty_mode": false, "session_id": "sess-abc", "expected": true, "label": "headless-idle STOPPED + session -> ready"},
+    {"status": "stopped", "busy": false, "pty_mode": false, "session_id": null, "expected": false, "label": "headless STOPPED, never prompted -> not ready"},
+    {"status": "stopped", "busy": false, "pty_mode": true, "session_id": "sess-abc", "expected": false, "label": "PTY STOPPED + session -> not ready"},
+    {"status": "stopped", "busy": true, "pty_mode": false, "session_id": "sess-abc", "expected": false, "label": "headless-idle signature but busy -> not ready"},
+    {"status": "starting", "busy": false, "pty_mode": false, "session_id": "sess-abc", "expected": false, "label": "STARTING is never ready"},
+    {"status": "stopping", "busy": false, "pty_mode": false, "session_id": "sess-abc", "expected": false, "label": "STOPPING is never ready"},
+    {"status": "failed", "busy": false, "pty_mode": false, "session_id": "sess-abc", "expected": false, "label": "FAILED is never ready"}
   ]
 }

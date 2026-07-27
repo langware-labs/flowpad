@@ -1,4 +1,5 @@
 import { ActionInfo, dataContext, dataManager } from '../index';
+import type { GitOrigin } from '../models';
 
 /**
  * Provider abstraction for git-hosting platforms. v1 implements only `github`;
@@ -11,6 +12,7 @@ export interface RepoSummary {
   provider: GitProvider;
   owner: string;
   name: string;
+  git_origin: GitOrigin;
   full_name: string;
   private: boolean;
   default_branch: string;
@@ -107,15 +109,11 @@ function _isBranchSummary(x: unknown): x is BranchSummary {
   return typeof o.name === 'string';
 }
 
-export async function getBranches(repo: {
-  provider: GitProvider;
-  owner: string;
-  name: string;
-}): Promise<BranchSummary[]> {
+export async function getBranches(repo: { git_origin: GitOrigin }): Promise<BranchSummary[]> {
   const user = _userInfo();
   const info = new ActionInfo('repo', user.type, user.id, 'POST');
   info.subpath = 'branches';
-  info.bodyParameters = { provider: repo.provider, owner: repo.owner, name: repo.name };
+  info.bodyParameters = { git_origin: repo.git_origin };
   // Backend returns ApiSuccessResponse(data=[{name, protected}, …]); the
   // dataManager unwraps `.data` once so we get the bare array here. Validate
   // the shape so a future schema drift doesn't silently feed garbage into the

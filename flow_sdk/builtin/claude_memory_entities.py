@@ -9,7 +9,9 @@ Hierarchy:
     └── ClaudeMd      — CLAUDE.md files (type="claude_md")
 """
 
-from typing import ClassVar, List, Type
+from typing import ClassVar, List, Optional, Type
+
+from pydantic import BaseModel
 
 from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.core import Entity
@@ -18,6 +20,30 @@ from flow_sdk.core.entity.context_data_schemas import (
     MarkdownContextData,
     PlanContextData,
 )
+from flow_sdk.fs_store.fs_ref.base import FSRef
+
+
+class Translation(BaseModel):
+    """One translated copy of a markdown asset's primary doc.
+
+    A translation is NOT a separate entity — it is an alternate body file of the
+    same asset, living under the asset's record-data folder at
+    ``translations/<lang>.md`` (see ``flow_sdk/fs_store/operations/translation.py``).
+    The UI selects it inline via the ``?lang=<code>`` dock prop (same tab,
+    ``DockPointer.options`` are excluded from tab identity).
+
+    Fields:
+      * ``lang``       — BCP-47-ish target code (``es``, ``he``, ``fr-CA`` …); the
+                         ``?lang=`` dock-prop value and the ``<lang>.md`` filename.
+      * ``ref``        — FSRef to the translated file, so the frontend never
+                         computes a records_data path (it reads the ref directly).
+      * ``process_id`` — the launching translator worker; status ("translating"
+                         vs "ready") is DERIVED from this process, not stored.
+    """
+
+    lang: str
+    ref: FSRef
+    process_id: Optional[str] = None
 
 
 class Markdown(Entity):
@@ -36,6 +62,11 @@ class Markdown(Entity):
     # These power the Obsidian-style Wiki folder tree in the UI.
     parent_path: str = APIField(default="")
     vault_root: str = APIField(default="")
+    # Translated copies of this doc's primary body. Each entry points at a
+    # ``translations/<lang>.md`` file under the record-data folder; the UI lists
+    # them in the Translations side panel and swaps the editor body inline via
+    # the ``?lang=`` dock prop. Appended by the ``add_translation`` action.
+    translations: List[Translation] = APIField(default_factory=list)
     _api_visible: ClassVar[bool] = True
     # Sidecar shape when another entity puts a `markdown-<id>` /
     # `claude_memory-<id>` / `claude_rules-<id>` / `docs-<id>` reference in
@@ -47,6 +78,9 @@ class Markdown(Entity):
 class Docs(Markdown):
     type: str = APIField(default="markdown")
     title: str = APIField(default="")
+    # OKF-compatible metadata. Values are preserved as authored for
+    # storage/search; the tag binding readers independently select and
+    # normalize the grammar-valid dot paths used by the taxonomy.
     tags: List[str] = APIField(default_factory=list)
     links: List[str] = APIField(default_factory=list)
 

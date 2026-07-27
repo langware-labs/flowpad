@@ -23,6 +23,9 @@ export interface ExplorerComputeNode {
   projectId: string | null;
   /** Current project display name (root label / tooltip), or null. */
   projectName: string | null;
+  /** Project context folders (absolute canonical posix paths) — the source for
+   *  the Explorer's `context_folders` grouping root. Empty when none. */
+  contextDirs: string[];
 }
 
 /**
@@ -122,6 +125,11 @@ export function useExplorerComputeNode(): ExplorerComputeNode {
     [homePath, projectAvailable, projectRootPath],
   );
 
+  const contextDirs = useMemo<string[]>(
+    () => (project?.include_dirs ?? []).filter((d): d is string => !!d),
+    [project?.include_dirs],
+  );
+
   return {
     typeId,
     anchorForScope,
@@ -129,5 +137,6 @@ export function useExplorerComputeNode(): ExplorerComputeNode {
     projectAvailable,
     projectId: project?.id ?? null,
     projectName: project?.displayName ?? project?.name ?? null,
+    contextDirs,
   };
 }

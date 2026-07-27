@@ -16,7 +16,6 @@ import { useEntity } from '@sdk/react/hooks';
 
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { ProcessStatusIndicator, getStatusLabel } from '@src/components/agentic-progress/shared/status-indicator';
-import { useDerivedWorkerStatus } from '@src/components/entity-execution-panel/hooks/useDerivedWorkerStatus';
 import { notify } from '@src/notifications';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useTranscript, type WorkerType } from '@src/hooks/use-transcript';
@@ -111,14 +110,9 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
     statusProcessId ? new TypeId(AgenticProcess.type, statusProcessId) : null,
     { watch: true, enabled: !!statusProcessId },
   );
-  const derivedWorkerStatus = useDerivedWorkerStatus(statusProcess ?? null);
-  const indicatorProcess: StatusBearingProcess | null = statusProcess
-    ? {
-        status: statusProcess.status,
-        workerStatus: derivedWorkerStatus ?? statusProcess.workerStatus,
-        session_id: statusProcess.session_id,
-      }
-    : null;
+  // The reactive entity carries live status for both transports now, so read it
+  // directly (no flowDataStream derivation).
+  const indicatorProcess: StatusBearingProcess | null = statusProcess ?? null;
 
   // Mirror the resolved generic worker-session name onto this transcript's Tab
   // label (self-heals nameless/legacy tabs; works for codex/copilot too).

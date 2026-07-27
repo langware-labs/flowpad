@@ -12,8 +12,16 @@ import { dismissSetupModal } from './helpers';
 import { gotoShell, addTerminalTab } from '../terminal/helpers';
 
 async function tabNames(page: import('@playwright/test').Page): Promise<string[]> {
+  // The tab is a <div> whose FIRST <span> is a decorative active-indicator bar
+  // (empty text); the label lives in a later <span>. Read the first span that
+  // actually has text rather than `querySelector('span')` (which grabs the
+  // empty indicator and gets filtered out, yielding an empty list).
   return page.locator('[data-testid^="tab-shell|"]').evaluateAll((els) =>
-    els.map((e) => (e.querySelector('span')?.textContent || '').trim()).filter(Boolean),
+    els
+      .map((e) =>
+        [...e.querySelectorAll('span')].map((s) => (s.textContent || '').trim()).find(Boolean) || '',
+      )
+      .filter(Boolean),
   );
 }
 

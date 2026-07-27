@@ -8,7 +8,7 @@ parent_ref: ''
 vault_root: /Users/alice/Documents/dev/flowpad-oss/docs
 generated_at: '2026-05-24T19:22:27.484827'
 latest_process_ref: agentic_process-synthetic
-file_count: '30'
+file_count: '31'
 subfolder_count: '2'
 ---
 
@@ -22,7 +22,6 @@ subfolder_count: '2'
 
 * [Claude](CLAUDE.md) — Synthetic placeholder summary for CLAUDE.md (7653 bytes).
 
-* [Agent Management Spec](agent-management-spec.md) — Synthetic placeholder summary for agent-management-spec.md (8673 bytes).
 
 * [Agentic Process](agentic-process.md) — Synthetic placeholder summary for agentic-process.md (7138 bytes).
 
@@ -30,7 +29,7 @@ subfolder_count: '2'
 
 * [Api Routing](api-routing.md) — Synthetic placeholder summary for api-routing.md (19321 bytes).
 
-* [Claude Session Manager](claude-session-manager.md) — Synthetic placeholder summary for claude-session-manager.md (6026 bytes).
+* [Claude Process Lifecycle & Restart Contract](agent-management/claude-session-manager.md) — AgenticProcess lifecycle, CLI-options model, restart-required contract.
 
 * [Contributing](contributing.md) — Synthetic placeholder summary for contributing.md (3490 bytes).
 
@@ -56,13 +55,13 @@ subfolder_count: '2'
 
 * [Llm Wiki](llm_wiki.md) — Synthetic placeholder summary for llm\_wiki.md (18562 bytes).
 
+* [MCP UI](mcp-ui.md) — Architecture for rendering `.mcp.html` MCP Apps in the Vibe display, including dock URL vs resource URI vs sandbox URL boundaries.
+
 * [Playwright Usage](playwright-usage.md) — Synthetic placeholder summary for playwright-usage.md (1184 bytes).
 
 * [Pty Sync](pty-sync.md) — Synthetic placeholder summary for pty-sync.md (18850 bytes).
 
 * [Pty Terminal Spec](pty-terminal-spec.md) — Synthetic placeholder summary for pty-terminal-spec.md (30569 bytes).
-
-* [Pypi Deploy](pypi-deploy.md) — Synthetic placeholder summary for pypi-deploy.md (2585 bytes).
 
 * [Record Entity Sync](record-entity-sync.md) — Synthetic placeholder summary for record-entity-sync.md (5716 bytes).
 
@@ -82,6 +81,10 @@ subfolder_count: '2'
 
 ## Subfolders
 
+* [collab/](collab/index.md) — Collaboration subsystem: conversations, messages, attachments, sharing, invites, participants, sender identity, and hub fan-out.
+
 * [agent-management/](agent-management/index.md) — Subtree under agent-management/ — see drilled-down index for details.
+
+* [interface/](interface/README.md) — Complete interface reference for the agentic-process stack: Python objects & APIs, backend actions → Python mapping, TS objects, rules & invariants, test-derived flows.
 
 * [data-management/](data-management/index.md) — Subtree under data-management/ — see drilled-down index for details.

@@ -18,6 +18,18 @@ export const PRIORITY_CONFIG: Record<string, { color: string; label: string }> =
   low: { color: 'bg-green-500', label: 'Low' },
 };
 
+/** Display labels for the stored task status values (values never change —
+ *  every task.md frontmatter carries them). `to_do` reads as "New". */
+export const STATUS_LABELS: Record<string, string> = {
+  to_do: 'New',
+  in_progress: 'In progress',
+  done: 'Done',
+};
+
+export function statusLabel(s?: string): string {
+  return STATUS_LABELS[s ?? ''] ?? (s || 'New');
+}
+
 export function getPriorityColor(priority?: string): string {
   return PRIORITY_CONFIG[priority || 'low']?.color || 'bg-muted-foreground';
 }

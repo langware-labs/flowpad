@@ -154,6 +154,7 @@ export async function loadConversationRoute(pointer: string | undefined): Promis
             action: 'render_error',
             title: 'Conversation not found',
             message: 'This conversation no longer exists or is unavailable.',
+            link: { label: 'Go to inbox', pointer: DockPointer.forInbox() },
           },
           'conversation',
           e,

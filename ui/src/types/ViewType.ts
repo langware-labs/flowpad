@@ -71,7 +71,7 @@ export interface ViewerMeta {
     | 'GitGraph'
     | 'BrainCircuit'
     | 'Users'
-    | 'Inbox'
+    | 'Mail'
     | 'Stethoscope';
   /** Where this viewer renders: 'overview' tab or dedicated tab */
   tabLocation: 'overview' | 'dedicated';
@@ -84,6 +84,21 @@ export interface ViewerMeta {
    * "is the strip shown?" bit, separate from `DockPointer.tabHash` ("is this a chip?").
    */
   chrome?: 'fullbleed' | 'workspace';
+  /**
+   * When true, every sub-pointer of this viewType folds into ONE tab — the
+   * pointer is dropped from tab identity (`DockPointer.tabHash`/`toJSON`). Use for
+   * views whose pointer is in-view sub-navigation (category/field) rather than a
+   * distinct entity, e.g. Preferences' category tabs. (Scope-keyed views fold
+   * too, but into one tab PER SCOPE — see `scopeKeyed`.)
+   */
+  foldsPointer?: boolean;
+  /**
+   * When true, tab identity is the SCOPE FILTER (one tab per project/user/global
+   * scope), not the sub-pointer: `tabHash` becomes `<viewType>|<scopeKey>` and
+   * `toJSON` persists the scope options so reopen restores it. Use for scoped
+   * browsers (Assets, Explorer) where in-tab navigation must stay in one chip.
+   */
+  scopeKeyed?: boolean;
 }
 
 export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
@@ -93,6 +108,21 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     tabLocation: 'dedicated',
     canAddAsTab: true,
     chrome: 'fullbleed',
+  },
+  // Hub entity list by type (page=hub). Standard workspace chrome; the pointer
+  // (the OSS entity type) selects which list, so it stays part of tab identity.
+  [ViewType.HUB_RECORDS]: {
+    title: 'Records',
+    iconName: 'ListChecks',
+    tabLocation: 'dedicated',
+    canAddAsTab: true,
+  },
+  // Hub single-entity viewer (page=hub). Pointer = `<type>/<id>`.
+  [ViewType.HUB_ENTITY]: {
+    title: 'Entity',
+    iconName: 'FileText',
+    tabLocation: 'dedicated',
+    canAddAsTab: true,
   },
   [ViewType.SYSTEM_PROFILE]: {
     title: 'System Profile',
@@ -213,6 +243,7 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     iconName: 'FolderOpen',
     tabLocation: 'dedicated',
     canAddAsTab: true,
+    scopeKeyed: true,
   },
   // ViewType.SKILLS removed — Skills folded into the Assets browser
   // (/dock/assets/list/skill). The enum value is retained in the SDK for
@@ -221,12 +252,6 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
   [ViewType.AI_CONFIG]: {
     title: 'AI Configuration',
     iconName: 'Settings',
-    tabLocation: 'dedicated',
-    canAddAsTab: true,
-  },
-  [ViewType.EXECUTE_FLOW]: {
-    title: 'Execute Flow',
-    iconName: 'PlaySquare',
     tabLocation: 'dedicated',
     canAddAsTab: true,
   },
@@ -247,6 +272,28 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     iconName: 'Workflow',
     tabLocation: 'dedicated',
     canAddAsTab: true,
+  },
+  [ViewType.WORLDVIEW]: {
+    title: 'WorldView',
+    iconName: 'GitGraph',
+    tabLocation: 'dedicated',
+    canAddAsTab: true,
+  },
+  [ViewType.TAG]: {
+    title: 'Tag Graph',
+    iconName: 'Hash',
+    tabLocation: 'dedicated',
+    canAddAsTab: false,
+    // <tag> in the pointer is in-view focus navigation — every focused
+    // tag folds into one tab chip (PREFERENCES precedent).
+    foldsPointer: true,
+  },
+  [ViewType.SUBGRAPH]: {
+    title: 'Subgraph',
+    iconName: 'Workflow',
+    tabLocation: 'dedicated',
+    canAddAsTab: false,
+    foldsPointer: true,
   },
   [ViewType.K_BROWSER]: {
     title: 'Knowledge Browser',
@@ -274,9 +321,22 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     tabLocation: 'dedicated',
     canAddAsTab: false,
   },
+  [ViewType.PREFERENCES]: {
+    title: 'Preferences',
+    iconName: 'Settings',
+    tabLocation: 'dedicated',
+    canAddAsTab: false,
+    foldsPointer: true,
+  },
   [ViewType.AGENTIC_PROCESS]: {
     title: 'Process',
     iconName: 'Monitor',
+    tabLocation: 'dedicated',
+    canAddAsTab: false,
+  },
+  [ViewType.LIVE_SESSION]: {
+    title: 'Live Session',
+    iconName: 'Activity',
     tabLocation: 'dedicated',
     canAddAsTab: false,
   },
@@ -298,6 +358,12 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     tabLocation: 'dedicated',
     canAddAsTab: true,
   },
+  [ViewType.AGENTIC_FLOWS]: {
+    title: 'Agentic Flows',
+    iconName: 'Workflow',
+    tabLocation: 'dedicated',
+    canAddAsTab: true,
+  },
   [ViewType.PLAN]: {
     title: 'Plan',
     iconName: 'FileText',
@@ -310,17 +376,12 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     tabLocation: 'dedicated',
     canAddAsTab: false, // Only accessible via direct URL /dock/cron
   },
-  [ViewType.WORKFLOWS]: {
-    title: 'Workflows',
-    iconName: 'Workflow',
-    tabLocation: 'dedicated',
-    canAddAsTab: true,
-  },
   [ViewType.ASSETS]: {
     title: 'Assets',
     iconName: 'BookOpen',
     tabLocation: 'dedicated',
     canAddAsTab: true,
+    scopeKeyed: true,
   },
   [ViewType.PROJECT]: {
     title: 'Collaboration',
@@ -330,7 +391,7 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
   },
   [ViewType.INBOX]: {
     title: 'Inbox',
-    iconName: 'Inbox',
+    iconName: 'Mail',
     tabLocation: 'dedicated',
     canAddAsTab: false,
   },
@@ -357,5 +418,15 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     iconName: 'Stethoscope',
     tabLocation: 'dedicated',
     canAddAsTab: false,
+  },
+  [ViewType.DESKTOP]: {
+    title: 'Desktop',
+    iconName: 'LayoutGrid',
+    tabLocation: 'dedicated',
+    canAddAsTab: true,
+    // One Desktop tab per scope: the global desktop (`desktop|all`) and a
+    // project-scoped one (`desktop|project:<id>`) are distinct chips, and the
+    // scope persists on the stored pointer so reopen restores the filter.
+    scopeKeyed: true,
   },
 };

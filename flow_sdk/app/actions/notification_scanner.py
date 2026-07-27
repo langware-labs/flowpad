@@ -120,7 +120,6 @@ async def _process_manifest(
     task_title = data.get("title") or "Shared task"
     conversation_id = data.get("conversation_id")
     manifest_branch = data.get("branch") or ""
-    manifest_repo_id = data.get("repo_id") or ""
     remote_project_id = data.get("project_id") or ""
     remote_project_name = data.get("project_name") or ""
     spec_type_meta = data.get("spec_type") or ""
@@ -141,9 +140,11 @@ async def _process_manifest(
             except Exception as spec_err:
                 logger.warning(f"notification_scanner: spec creation failed (non-fatal), task will still be imported: {spec_err}")
 
-    # --- Resolve project_url from git remote ---
+    # --- Resolve GitOrigin from git remote ---
+    from flow_sdk.builtin.git_origin import GitOrigin
     from flow_sdk.utils.git import git_remote_url
-    project_url = git_remote_url(str(project_root))
+    clone_url = git_remote_url(str(project_root))
+    git_origin = GitOrigin.from_url(clone_url, branch=manifest_branch, rel_path=".") if clone_url else None
 
     # Conversation.project_id (the *local* mapped project) is intentionally
     # left null on receive — the picker stamps it when the user maps. The
@@ -167,9 +168,7 @@ async def _process_manifest(
         "shared_by_id": sender_id,
         "conversation_id": conv.id if conv else None,
         "project_root": str(project_root),
-        "project_url": project_url,
-        "repo_id": manifest_repo_id,
-        "branch": manifest_branch,
+        "git_origin": git_origin.model_dump(mode="json") if git_origin else None,
         "sender_name": sender_name,
         "sender_email": data.get("sender_email") or "",
         "spec_type": spec_type_meta,
@@ -192,7 +191,11 @@ async def _process_manifest(
             "title": notif_title,
             "content": "",
             "status": BookmarkStatus.OPEN,
-            "data": {"navigation_path": nav_path, "task_id": task_id, "project_url": project_url},
+            "data": {
+                "navigation_path": nav_path,
+                "task_id": task_id,
+                "git_origin": git_origin.model_dump(mode="json") if git_origin else None,
+            },
         })
         bookmark.id = Bookmark.allocate_id(bookmark.model_dump())
         await bookmark.save(owner_typeid)
@@ -210,9 +213,7 @@ async def _process_manifest(
                     "spec_id": spec_id,
                     "spec_type": data.get("spec_type", "plan"),
                     "sender_name": sender_name,
-                    "project_url": project_url,
-                    "repo_id": manifest_repo_id,
-                    "branch": manifest_branch,
+                    "git_origin": git_origin.model_dump(mode="json") if git_origin else None,
                 }
             },
         )

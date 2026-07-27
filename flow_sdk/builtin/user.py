@@ -10,6 +10,7 @@ if TYPE_CHECKING:
     from flow_sdk.builtin.api_key import ApiKey
 
 from fastapi import HTTPException
+from pydantic import field_validator
 
 from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.api.type_id import TypeId
@@ -18,6 +19,18 @@ from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.core.entity.entity_model import Entity
 
 char_set = string.ascii_lowercase + string.digits
+
+
+def normalize_email(email: str | None) -> str | None:
+    """Canonical form for any email we adopt, store, compare, or send.
+
+    Emails are case-insensitive in practice; a mixed-case copy that leaks into
+    storage or a hub payload breaks exact-match lookups downstream (e.g. an
+    invitation addressed to ``Tzahi@…`` never shows up for ``tzahi@…``). Every
+    email entering the system goes through here: strip + lowercase, empty → None.
+    """
+    normalized = (email or "").strip().lower()
+    return normalized or None
 
 
 def hash_password(salt: str, password: str) -> str:
@@ -36,6 +49,13 @@ class User(Entity):
     name: str | None = APIField(None)
     picture: str | None = APIField(None)
     email: str | None = APIField(None)
+    # Foreign hub/cloud identity of a contact, distinct from the local entity
+    # ``id``. A hub ``user_id`` is often NOT a UUID v4/v5 (e.g. "alice-id"), so
+    # per the entity-id policy it can never be adopted as ``User.id`` — the local
+    # id stays a minted UUID, the hub id lives here. Lets a contact exist with a
+    # user_id but no email (a participant we've only ever seen by hub id). The
+    # local desktop user leaves this None (its own ``id`` is authoritative).
+    user_id: str | None = APIField(None)
     last_login: datetime | None = APIField(None)
     onboarded: bool = APIField(default=False)
     # Optional cloud organization the user belongs to (one org, hub-authoritative).
@@ -47,6 +67,18 @@ class User(Entity):
     salt_: str | None = None
     hashed_password_: str | None = None
     _unique: ClassVar[list[str]] = ["email"]
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def _normalize_email(cls, v):
+        # The canonical chokepoint: email is the ``_unique`` identity key, so
+        # storing it lowercase-by-construction makes every write path (signup,
+        # upsert, hub materialization, cloud-login mirror) dedup case-variants
+        # for free. Hashing is salt-based (email not in the hash), so this is
+        # safe. Non-str passes through untouched for pydantic to type-error.
+        if v is None or isinstance(v, str):
+            return normalize_email(v)
+        return v
 
     def __init__(self, **data):
         super().__init__(**data)
@@ -69,7 +101,7 @@ class User(Entity):
         return {
             "user_id": self.id or "",
             "name": name,
-            "email": self.email or "",
+            "email": normalize_email(self.email) or "",
         }
 
     @classmethod
@@ -82,7 +114,7 @@ class User(Entity):
             if is_logged_in():
                 cloud_user = get_user()
                 if isinstance(cloud_user, dict) and cloud_user.get("id"):
-                    email = str(cloud_user.get("email") or "")
+                    email = normalize_email(str(cloud_user.get("email") or "")) or ""
                     return {
                         "user_id": str(cloud_user.get("id") or ""),
                         "name": override or str(cloud_user.get("name") or email),
@@ -97,8 +129,33 @@ class User(Entity):
         return {"user_id": "", "name": override, "email": ""}
 
     @classmethod
+    async def self_ids(cls) -> set[str]:
+        """Every id the local user may be stamped with as a ``sender_id``.
+
+        Send paths stamp either the cloud user id
+        (``current_sender_participant`` when cloud-logged-in) or the local
+        desktop user id (``local_sender_identity``, logged-out sends) — so any
+        "is this message self-sent" check must accept both.
+        """
+        ids: set[str] = set()
+        local_user = await cls.get_local()
+        if local_user and local_user.id:
+            ids.add(local_user.id)
+        try:
+            from flow_sdk.cli.app_config import get_user
+            from flow_sdk.cli.auth.hub_login import is_logged_in
+
+            if is_logged_in():
+                cloud_user = get_user()
+                if isinstance(cloud_user, dict) and cloud_user.get("id"):
+                    ids.add(str(cloud_user["id"]))
+        except Exception:
+            pass
+        return ids
+
+    @classmethod
     async def get_user_by_email(cls, email: str) -> "User | None":
-        return await cls.get_one({"email": email})
+        return await cls.get_one({"email": normalize_email(email)})
 
     @classmethod
     async def get_local(cls) -> "User | None":
@@ -132,17 +189,113 @@ class User(Entity):
             return participant.get("user_id") or None, participant.get("name") or ""
         return None, ""
 
+    def identity_tokens(self) -> set[str]:
+        """The lowercased identity tokens a participant may match this contact
+        by: email, the local entity id, and the foreign hub ``user_id``. The
+        single place the "which strings identify this contact" rule lives —
+        reused by the address-book scan's participant matcher."""
+        tokens: set[str] = set()
+        for raw in (self.email, self.id, self.user_id):
+            if isinstance(raw, str) and raw.strip():
+                tokens.add(raw.strip().lower())
+        return tokens
+
     @classmethod
-    async def get_or_create_by_email(cls, email: str, name: str | None = None) -> "User":
-        existing = await cls.get_one({"email": email})
-        if existing:
-            if name and not existing.name:
+    async def get_by_identity(
+        cls, user_id: str | None = None, email: str | None = None
+    ) -> "User | None":
+        """Resolve an existing contact by any identity axis.
+
+        Match order mirrors the frontend ``participantKey`` precedence:
+        email (the ``_unique`` key) first, then ``user_id`` — where ``user_id``
+        may be either the foreign hub id we stored on ``User.user_id`` OR (for
+        local-origin participants) the local entity ``id``. Returns the first
+        match, or None.
+        """
+        email = normalize_email(email)
+        user_id = (user_id or "").strip() or None
+        if email:
+            existing = await cls.get_one({"email": email})
+            if existing:
+                return existing
+        if user_id:
+            existing = await cls.get_one({"user_id": user_id})
+            if existing:
+                return existing
+            existing = await cls.get_one({"id": user_id})
+            if existing:
+                return existing
+        return None
+
+    @classmethod
+    async def upsert_contact(
+        cls,
+        *,
+        user_id: str | None = None,
+        email: str | None = None,
+        name: str | None = None,
+        picture: str | None = None,
+        remote: bool = False,
+    ) -> "User | None":
+        """The single writer into the address book.
+
+        Match by email or user_id (:meth:`get_by_identity`); backfill any
+        missing-or-changed field (email, user_id, name, picture) and save only
+        when something changed (idempotent). No match → create a contact whose
+        local ``id`` is deterministically minted from the natural key so a
+        re-scan of the same participant never duplicates. Returns the contact,
+        or None when there is no usable identity at all.
+        """
+        email = normalize_email(email)
+        user_id = (user_id or "").strip() or None
+        name = (name or "").strip() or None
+        picture = (picture or "").strip() or None
+        if not email and not user_id:
+            return None
+
+        existing = await cls.get_by_identity(user_id=user_id, email=email)
+        if existing is not None:
+            changed = False
+            # Backfill only what's missing/newly-known — never clobber an
+            # existing value with an empty one; email/user_id are stable keys so
+            # only set them when absent.
+            if email and not existing.email:
+                existing.email = email
+                changed = True
+            if user_id and not existing.user_id and existing.id != user_id:
+                existing.user_id = user_id
+                changed = True
+            if name and existing.name != name:
                 existing.name = name
+                changed = True
+            if picture and existing.picture != picture:
+                existing.picture = picture
+                changed = True
+            if changed:
                 return await existing.save()
             return existing
-        user = cls(email=email, name=name)
-        await user.save()
-        return user
+
+        from flow_sdk.fs_store.identifier import mint_uuid  # noqa: PLC0415
+
+        contact = cls(
+            id=mint_uuid(key=f"contact:{user_id or email}"),
+            email=email,
+            user_id=user_id,
+            name=name,
+            picture=picture,
+            remote=remote,
+        )
+        await contact.save()
+        return contact
+
+    @classmethod
+    async def get_or_create_by_email(cls, email: str, name: str | None = None) -> "User":
+        """Back-compat thin wrapper over :meth:`upsert_contact` (email-keyed)."""
+        contact = await cls.upsert_contact(email=email, name=name)
+        # upsert_contact only returns None when neither email nor user_id is
+        # given; callers here always pass an email, so this is non-None.
+        assert contact is not None
+        return contact
 
     async def migrate_visitor_to_user(self, visitor_typeid: TypeId):
         try:

@@ -4,9 +4,12 @@ A type's ``browseable_by`` says the *minimum* view mode at which it appears in
 the Assets browser. Visibility is **cumulative**: a higher mode sees everything
 a lower mode sees (``Standard ⊂ Advanced ⊂ Dev``). ``None`` ⇒ never browseable.
 
-The string values MUST stay byte-identical to the frontend enum in
-``ui/src/contexts/view-mode-context.tsx`` — they ride the bootstrap payload and
-are compared directly on the client.
+This enumerates the *browseable tiers* a type can require — deliberately NOT the
+full set of view modes the client can be in (the frontend enum in
+``ui/src/contexts/view-mode-context.tsx`` also has ``vibe``, which is only ever a
+current mode, never a ``browseable_by`` floor, and is ranked client-side). The
+string values of the tiers below MUST stay byte-identical to their frontend
+counterparts — they ride the bootstrap payload and are compared on the client.
 """
 from __future__ import annotations
 

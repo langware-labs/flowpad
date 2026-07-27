@@ -34,12 +34,17 @@ export async function loadLensRoute(pointer: string | undefined): Promise<void> 
   const session = await ClaudeSession.getById<ClaudeSession>(sessionId).catch(() => null);
   if (!session) return;
   // Project phase — identical to the shell/process loaders: prefer the stored
-  // project_id, fall back to a workdir match on cwd.
+  // project_id; on none (or a dangling one) fall through to the shared
+  // resolution — cwd match, else the parent_type_id chain (a RECEIVED session
+  // scopes to the conversation it was shared into), else Global. Save-less
+  // shape — the loader must never persist a recovered session.
   if (session.project_id) {
-    await loadProject(new TypeId(Project.type, session.project_id)).catch(() =>
-      systemTools.resolveProjectContext(session.cwd ?? undefined),
-    );
-  } else if (session.cwd) {
-    await systemTools.resolveProjectContext(session.cwd);
+    try {
+      await loadProject(new TypeId(Project.type, session.project_id));
+      return;
+    } catch {
+      // dangling project_id — fall through
+    }
   }
+  await systemTools.resolveProjectContext(session.cwd ?? undefined, { parent_type_id: session.parent_type_id });
 }

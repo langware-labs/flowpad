@@ -15,7 +15,7 @@
  * `response.data.data`, which is undefined for this flat route).
  */
 
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { ConnectionManager, Project, TypeId } from '@sdk';
 import apiClient from '@sdk/client';
 import axios, { type AxiosInstance } from 'axios';
@@ -26,6 +26,7 @@ import { apiTestSetup, getTestSignupInfo } from '../utils/test-utils';
 describe('navigate entity with explicit connection_id', () => {
   let connectionManager: ConnectionManager;
   let testProject: Project;
+  let testProjectCreated = false;
   // Raw client (no envelope unwrap) — the agent route returns a flat body.
   let raw: AxiosInstance;
 
@@ -49,18 +50,20 @@ describe('navigate entity with explicit connection_id', () => {
     // Create a test project for navigation. id must be a valid identifier
     // (UUID); uname is stored WITHOUT a leading '@' — the `identifier` getter
     // adds it (a '@nav-test' uname would derive a '@@nav-test' typeId).
+    const projectId = uuidv4();
     testProject = new Project({
-      id: uuidv4(),
+      id: projectId,
       name: 'Navigation Test Project',
-      uname: 'nav-test',
+      uname: `nav-test-${projectId}`,
       visitor_role: 'owner',
     });
 
-    try {
-      await testProject.save();
-    } catch (e) {
-      // Project might already exist; continue
-    }
+    await testProject.save();
+    testProjectCreated = true;
+  });
+
+  afterAll(async () => {
+    if (testProjectCreated) await testProject.delete();
   });
 
   it('should route navigation to the specified connection_id', async () => {

@@ -12,12 +12,18 @@ import {
   HoverCardTrigger,
 } from '@src/components/ui/hover-card';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
+import { FavoritesEditDialog } from '@src/components/favorites/FavoritesEditDialog';
 import { useFavorites, type FavoriteRef } from '@src/hooks/use-favorites';
 import { cn } from '@src/lib/utils';
 import { formatTimeAgo } from '@src/utils/format-time-ago';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { Check, Pencil, Star, X } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
+
+/** After a favorite is CREATED, the star morphs to an edit affordance for this
+ *  long; a click within the window opens the edit dialog instead of removing.
+ *  A product spec — keep it a named constant, don't widen it to mask anything. */
+const FAVORITE_EDIT_WINDOW_MS = 5000;
 
 interface FavoriteStarProps extends FavoriteRef {
   className?: string;
@@ -53,6 +59,43 @@ export function FavoriteStar({
   const [cardOpen, setCardOpen] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Post-creation "edit window": for FAVORITE_EDIT_WINDOW_MS after a favorite is
+  // created, the star shows an edit glyph and a click opens the edit dialog
+  // (pre-selecting the new favorite) instead of un-favoriting.
+  const [editWindowActive, setEditWindowActive] = useState(false);
+  const [newFavId, setNewFavId] = useState<string | null>(null);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const editTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearEditWindow = useCallback(() => {
+    if (editTimerRef.current) {
+      clearTimeout(editTimerRef.current);
+      editTimerRef.current = null;
+    }
+    setEditWindowActive(false);
+  }, []);
+
+  // Open the post-creation edit window on `id` and arm the auto-expiry timer.
+  const armEditWindow = useCallback(
+    (id: string) => {
+      clearEditWindow();
+      setNewFavId(id);
+      setEditWindowActive(true);
+      editTimerRef.current = setTimeout(() => {
+        editTimerRef.current = null;
+        setEditWindowActive(false);
+      }, FAVORITE_EDIT_WINDOW_MS);
+    },
+    [clearEditWindow],
+  );
+
+  useEffect(
+    () => () => {
+      if (editTimerRef.current) clearTimeout(editTimerRef.current);
+    },
+    [],
+  );
+
   useEffect(() => {
     if (editing) {
       setDraft(displayName);
@@ -64,12 +107,26 @@ export function FavoriteStar({
   }, [editing, displayName]);
 
   const handleClick = useCallback(
-    (e: React.MouseEvent) => {
+    async (e: React.MouseEvent) => {
       e.stopPropagation();
       e.preventDefault();
+      // In the post-creation edit window, a click opens the edit dialog instead
+      // of un-favoriting.
+      if (editWindowActive) {
+        clearEditWindow();
+        setEditDialogOpen(true);
+        return;
+      }
+      // Creating a new favorite → open the 5s edit window on the just-created id.
+      if (!favorited) {
+        const created = await toggleFavorite({ entityType, entityId, title, icon, nav });
+        if (created?.id) armEditWindow(created.id);
+        return;
+      }
+      // Already favorited (no active window) → remove, as before.
       void toggleFavorite({ entityType, entityId, title, icon, nav });
     },
-    [toggleFavorite, entityType, entityId, title, icon, nav],
+    [editWindowActive, favorited, clearEditWindow, armEditWindow, toggleFavorite, entityType, entityId, title, icon, nav],
   );
 
   const startEditing = useCallback(() => {
@@ -94,30 +151,41 @@ export function FavoriteStar({
   const starButton = (
     <button
       type="button"
-      aria-label={favorited ? t`Favorited: ${displayName}` : t`Add to favorites`}
-      onClick={handleClick}
+      aria-label={
+        editWindowActive ? t`Edit favorite` : favorited ? t`Favorited: ${displayName}` : t`Add to favorites`
+      }
+      onClick={(e) => void handleClick(e)}
       className={cn(
         'inline-flex items-center justify-center rounded p-1 text-muted-foreground transition-colors hover:text-amber-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',
         favorited && 'text-amber-500',
         className,
       )}
     >
-      <Star width={size} height={size} className={cn(favorited && 'fill-amber-500')} />
+      {editWindowActive ? (
+        <Pencil width={size} height={size} />
+      ) : (
+        <Star width={size} height={size} className={cn(favorited && 'fill-amber-500')} />
+      )}
     </button>
   );
 
-  // Unfavorited: keep the original lightweight tooltip — nothing to rename.
-  if (!favorited) {
-    return (
-      <Tooltip>
-        <TooltipTrigger asChild>{starButton}</TooltipTrigger>
-        <TooltipContent side="bottom"><Trans>Add to favorites</Trans></TooltipContent>
-      </Tooltip>
-    );
-  }
+  const editDialog = (
+    <FavoritesEditDialog
+      open={editDialogOpen}
+      onOpenChange={setEditDialogOpen}
+      selectedFavoriteId={newFavId}
+    />
+  );
 
-  // Favorited: interactive HoverCard with inline rename, plus right-click menu.
-  return (
+  // Unfavorited: lightweight tooltip — nothing to rename. Favorited: interactive
+  // HoverCard with inline rename plus right-click menu. The edit dialog is shared
+  // by both and only mounted while open.
+  const content = !favorited ? (
+    <Tooltip>
+      <TooltipTrigger asChild>{starButton}</TooltipTrigger>
+      <TooltipContent side="bottom"><Trans>Add to favorites</Trans></TooltipContent>
+    </Tooltip>
+  ) : (
     <ContextMenu>
       <HoverCard
         open={cardOpen || editing}
@@ -213,5 +281,12 @@ export function FavoriteStar({
         </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>
+  );
+
+  return (
+    <>
+      {content}
+      {editDialogOpen && editDialog}
+    </>
   );
 }

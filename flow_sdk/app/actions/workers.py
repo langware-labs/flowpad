@@ -53,8 +53,9 @@ class WorkerSnapshot(BaseModel):
 async def _managed_workers() -> list[WorkerInfo]:
     """Snapshot the managed AgenticProcesses using cheap stored fields only.
 
-    Classifies via ``visible`` + ``status`` (``worker_status`` intentionally
-    omitted — see module docstring). Non-live processes are dropped.
+    Classifies via the transport ``pty_mode`` + ``status`` (``worker_status``
+    intentionally omitted — see module docstring). Non-live processes are dropped.
+    ``visible`` is still surfaced on ``WorkerInfo`` as display metadata.
     """
     from flow_sdk.builtin.agentic_process import AgenticProcess
 
@@ -63,10 +64,11 @@ async def _managed_workers() -> list[WorkerInfo]:
         status = getattr(proc, "status", None)
         status_str = str(status) if status is not None else None
         visible = bool(getattr(proc, "visible", False))
+        pty_mode = bool(getattr(proc, "pty_mode", True))
         mode = classify_execution_mode(
             status=status_str,
             worker_status=None,  # cheap snapshot — never parse the transcript here
-            visible=visible,
+            pty_mode=pty_mode,
         )
         if mode is None:
             continue  # not live → not listed

@@ -1,8 +1,9 @@
-import { ActionInfo, AgenticProcess, dataContext, dataManager, Task } from '@sdk';
+import { ActionInfo, AgenticProcess, dataContext, dataManager, PrefKey, Task } from '@sdk';
 import { useProject } from '@sdk/react/hooks';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo } from 'react';
 import { v5 as uuidv5 } from 'uuid';
 import { useAction } from './use-action';
+import { usePreference } from './use-preference';
 import { useContext } from './useContext';
 
 // ─── Constants & Types ───────────────────────────────────────────────────────
@@ -21,7 +22,7 @@ export const ErrorCategory = {
 } as const;
 export type ErrorCategory = (typeof ErrorCategory)[keyof typeof ErrorCategory];
 
-// ─── Filter state (shared via localStorage) ─────────────────────────────────
+// ─── Filter state (shared via prefMan registry) ─────────────────────────────
 
 export type ErrorTimeSpan = '1m' | '1h' | '24h' | '1w' | 'all';
 
@@ -32,42 +33,6 @@ export const ERROR_TIME_SPANS: { value: ErrorTimeSpan; ms: number; label: string
   { value: '1w', ms: 604_800_000, label: '1w', tooltip: 'Last 1 week' },
   { value: 'all', ms: Infinity, label: 'All', tooltip: 'All time' },
 ];
-
-const STORAGE_KEYS = {
-  timeSpan: 'flowpad-error-timespan',
-  statusFilter: 'flowpad-error-status',
-  deduplicate: 'flowpad-error-dedup',
-} as const;
-
-function loadStoredTimeSpan(): ErrorTimeSpan {
-  try {
-    const v = localStorage.getItem(STORAGE_KEYS.timeSpan);
-    if (v && ERROR_TIME_SPANS.some((t) => t.value === v)) return v as ErrorTimeSpan;
-  } catch {
-    /* ignore */
-  }
-  return '24h';
-}
-
-function loadStoredStatusFilter(): ErrorStatus | 'all' {
-  try {
-    const v = localStorage.getItem(STORAGE_KEYS.statusFilter);
-    if (v === 'all' || Object.values(ErrorStatus).includes(v as ErrorStatus)) return v as ErrorStatus | 'all';
-  } catch {
-    /* ignore */
-  }
-  return ErrorStatus.OPEN;
-}
-
-function loadStoredDeduplicate(): boolean {
-  try {
-    const v = localStorage.getItem(STORAGE_KEYS.deduplicate);
-    if (v !== null) return v !== 'false';
-  } catch {
-    /* ignore */
-  }
-  return true;
-}
 
 /** Result from the Flowpad cloud known-issues search. */
 export interface CloudSearchResult {
@@ -154,38 +119,11 @@ export function useClaudeErrorRecords() {
     return [...byFp.values()].sort((a, b) => b.last_seen.localeCompare(a.last_seen));
   }, [data]);
 
-  // ─── Shared filter state (persisted to localStorage) ──────────────────
+  // ─── Shared filter state (persisted via prefMan registry) ─────────────
 
-  const [timeSpan, _setTimeSpan] = useState<ErrorTimeSpan>(loadStoredTimeSpan);
-  const [statusFilter, _setStatusFilter] = useState<ErrorStatus | 'all'>(loadStoredStatusFilter);
-  const [deduplicate, _setDeduplicate] = useState<boolean>(loadStoredDeduplicate);
-
-  const setTimeSpan = useCallback((v: ErrorTimeSpan) => {
-    _setTimeSpan(v);
-    try {
-      localStorage.setItem(STORAGE_KEYS.timeSpan, v);
-    } catch {
-      /* ignore */
-    }
-  }, []);
-
-  const setStatusFilter = useCallback((v: ErrorStatus | 'all') => {
-    _setStatusFilter(v);
-    try {
-      localStorage.setItem(STORAGE_KEYS.statusFilter, v);
-    } catch {
-      /* ignore */
-    }
-  }, []);
-
-  const setDeduplicate = useCallback((v: boolean) => {
-    _setDeduplicate(v);
-    try {
-      localStorage.setItem(STORAGE_KEYS.deduplicate, String(v));
-    } catch {
-      /* ignore */
-    }
-  }, []);
+  const [timeSpan, setTimeSpan] = usePreference<ErrorTimeSpan>(PrefKey.ERROR_TIME_SPAN);
+  const [statusFilter, setStatusFilter] = usePreference<ErrorStatus | 'all'>(PrefKey.ERROR_STATUS_FILTER);
+  const [deduplicate, setDeduplicate] = usePreference<boolean>(PrefKey.ERROR_DEDUPLICATE);
 
   // ─── Derived counts ─────────────────────────────────────────────────
 

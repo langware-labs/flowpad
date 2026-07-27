@@ -41,14 +41,13 @@ import { hubAvailable } from './_hub';
 import { pollUntil } from './_matrix';
 import { testEntityName, trackForCleanup } from '../_cleanup';
 import {
+  HUB_INST_1 as INST_1,
+  HUB_INST_2 as INST_2,
   findPendingInvitation,
   getInstance,
   instanceAvailable,
   type ResolvedInstance,
 } from './_instances';
-
-const INST_1 = process.env.SHARE_INST_1 || 'dev-1';
-const INST_2 = process.env.SHARE_INST_2 || 'dev-2';
 
 let skipReason: string | null = null;
 let alice: ResolvedInstance;
@@ -59,7 +58,7 @@ const createdProjects: Array<{ apiUrl: string; id: string; dir: string }> = [];
 beforeAll(async () => {
   const hub = await hubAvailable();
   if (!hub.ok) return void (skipReason = hub.reason ?? 'hub unreachable');
-  if (!(await instanceAvailable(INST_1)) || !(await instanceAvailable(INST_2))) {
+  if (!instanceAvailable(INST_1) || !instanceAvailable(INST_2)) {
     return void (skipReason = `launch ${INST_1} + ${INST_2} via scripts/instance_ctl.sh`);
   }
   alice = await getInstance(INST_1);
@@ -173,12 +172,26 @@ async function acceptAndFindMessage(convId: string): Promise<{ fmId: string }> {
     return ptrs.some((p: any) => p.type === 'flow_message') ? c : null;
   }, 20_000, 'message pointer on receiver');
   trackForCleanup(received);
-  const fmPtr = received.conversationMessageIds.find((p: any) => p.type === 'flow_message');
-  await pollUntil(async () => {
-    const full = await bob.sdk.FlowMessage.getById(fmPtr!.id).catch(() => null);
-    return full && full.body_status === 'ready' ? full : null;
+  // Two flow_message pointers land on the receiver: the shared ASSET message
+  // (rides a body bundle → body_status READY) AND a kind='invitation'
+  // placeholder ("You've been invited…", no body, stays body_status=na). Both
+  // are typed 'flow_message'; the placeholder is materialized synchronously on
+  // accept and wins the race against the slower catch-up asset message. Don't
+  // pin to the FIRST pointer — poll ALL of them (re-fetching) and select the one
+  // that carries the uploaded bundle (body_status READY). The placeholder never
+  // becomes READY.
+  const fm = await pollUntil(async () => {
+    await bob.sdk.fetchConversations();
+    const c = await bob.sdk.Conversation.getById(convId).catch(() => null);
+    const ptrs = c?.conversationMessageIds ?? [];
+    for (const p of ptrs as any[]) {
+      if (p.type !== 'flow_message') continue;
+      const full = await bob.sdk.FlowMessage.getById(p.id).catch(() => null);
+      if (full && full.body_status === 'ready') return full;
+    }
+    return null;
   }, 20_000, 'shared message READY');
-  return { fmId: fmPtr!.id };
+  return { fmId: fm.id };
 }
 
 describe('plan share → receiver classification (Alice → Bob)', () => {
@@ -189,8 +202,23 @@ describe('plan share → receiver classification (Alice → Bob)', () => {
 
     const projectRoot = await createAndMapProject(bob, convId);
 
+    // Staged reception: download stages a MessageAttachment (scope=null);
+    // the explicit install action lands + indexes it in the project.
     const dl = await post(bob.apiUrl, `/graph/flow_message/${fmId}/download_body`, {});
     expect(dl.status, `download ok (got ${JSON.stringify(dl.body?.message)})`).toBeLessThan(400);
+    const staged = await pollUntil(async () => {
+      const r = await fetch(`${bob.apiUrl}/api/v1/graph/message_attachment`).then((x) => x.json());
+      return ((r?.data ?? []) as any[]).find(
+        (m) => m.flow_message_id === fmId && m.asset_id === planId,
+      ) ?? null;
+    }, 10_000, 'staged plan MessageAttachment on Bob');
+    expect(staged.asset_type, 'staged row is a plan').toBe('plan');
+    const createdProject = createdProjects[createdProjects.length - 1];
+    const install = await post(bob.apiUrl, `/graph/message_attachment/${staged.id}/install`, {
+      scope: 'project',
+      project_id: createdProject.id,
+    });
+    expect(install.status, `install ok (got ${JSON.stringify(install.body?.message)})`).toBeLessThan(400);
 
     // (a) Bob resolves it by the SENDER's id as type `plan` (id-pin round-trips).
     const asPlan = await pollUntil(

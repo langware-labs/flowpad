@@ -442,9 +442,11 @@ Goal: prove FlowPad context can be delivered to the worker.
 - [ ] Determine whether vendor discovers mounted directories.
 - [ ] Determine whether process `add_dirs` are visible in headless mode.
 - [ ] Determine whether process `add_dirs` are visible in interactive mode.
-- [ ] Decide whether embedded agent specs must be inlined into prompt.
-- [ ] Confirm prompt composition preserves original user instruction.
-- [ ] Confirm large embedded agent specs do not break prompt input limits.
+- [ ] Confirm generated process instruction assets are created under `<record_dir>/execution/assets`.
+- [ ] Confirm the worker consumes `CLAUDE.md` / `AGENTS.md` / `.agents` / custom-instruction files as expected.
+- [ ] Confirm embedded agent specs are delivered through instruction assets, not prompt inlining.
+- [ ] Confirm prompt composition preserves the original user instruction unchanged.
+- [ ] Confirm large embedded agent specs fit the worker's instruction sink.
 - [ ] Confirm process-local assets are accessible.
 - [ ] Confirm environment variables are visible to tools.
 - [ ] Confirm project/workspace metadata can be injected safely.

@@ -25,10 +25,9 @@ import {
 } from '../../flow_processing';
 import { IEntity } from '../../IEntity';
 import { ActionInfo } from '../../models';
-import type { Artifact } from '../artifact';
 import { ComputeProviderType, RuntimeEnvironment } from './compute-node-types';
 import type { MachineStatus, ProcessInfo } from './machine-status';
-import { ServiceControlError } from './service-control';
+import { ServiceControlError, type ServiceRuntimeDescriptor } from './service-control';
 import { Shell } from '../shell';
 import { PtyConnection } from '../../services/shell/ptyConnection';
 import { GitWorkdir } from '../git-workdir';
@@ -610,16 +609,15 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
   }
 
   /**
-   * Get the process info for an artifact's service.
-   * @param artifact - Artifact with port field
+   * Get the process info for an ephemeral local service descriptor.
    * @returns ProcessInfo if service is running, null otherwise
    */
-  async getArtifactProcess(artifact: Artifact): Promise<ProcessInfo | null> {
-    if (!artifact.port) {
-      throw new ServiceControlError('Artifact has no port defined', artifact.id || '', 'get');
+  async getArtifactProcess(service: ServiceRuntimeDescriptor): Promise<ProcessInfo | null> {
+    if (!service.port) {
+      throw new ServiceControlError('Service has no port defined', service.id || '', 'get');
     }
 
-    const port = parseInt(artifact.port, 10);
+    const port = parseInt(service.port, 10);
     const status = await this.getMachineStatus();
 
     // Find network connection by port
@@ -634,15 +632,14 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
   }
 
   /**
-   * Stop the process running an artifact's service.
-   * @param artifact - Artifact with port field
+   * Stop the process running an ephemeral local service.
    * @returns ProcessInfo of the killed process
    * @throws ServiceControlError if service is not running or kill fails
    */
-  async stopArtifactProcess(artifact: Artifact): Promise<ProcessInfo> {
-    const process = await this.getArtifactProcess(artifact);
+  async stopArtifactProcess(service: ServiceRuntimeDescriptor): Promise<ProcessInfo> {
+    const process = await this.getArtifactProcess(service);
     if (!process) {
-      throw new ServiceControlError(`Service on port ${artifact.port} is not running`, artifact.id || '', 'stop');
+      throw new ServiceControlError(`Service on port ${service.port} is not running`, service.id || '', 'stop');
     }
 
     // Kill the process
@@ -650,7 +647,7 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
     if (killResult.includes('No such process')) {
       throw new ServiceControlError(
         `Failed to kill process ${process.pid}: No such process`,
-        artifact.id || '',
+        service.id || '',
         'stop',
       );
     }
@@ -659,54 +656,52 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
   }
 
   /**
-   * Start an artifact's service using its start_cmd.
-   * @param artifact - Artifact with port and start_cmd fields
+   * Start an ephemeral local service using its start command.
    * @param maxWaitMs - Maximum time to wait for service to start (default: 30000)
    * @param pollIntervalMs - Interval between status checks (default: 1000)
    * @returns ProcessInfo of the started process
    * @throws ServiceControlError if start_cmd is missing or service fails to start
    */
   async startArtifactProcess(
-    artifact: Artifact,
+    service: ServiceRuntimeDescriptor,
     maxWaitMs: number = 30000,
     pollIntervalMs: number = 1000,
   ): Promise<ProcessInfo> {
-    if (!artifact.start_cmd) {
-      throw new ServiceControlError('Artifact has no start_cmd defined', artifact.id || '', 'start');
+    if (!service.start_cmd) {
+      throw new ServiceControlError('Service has no start command defined', service.id || '', 'start');
     }
 
-    if (!artifact.port) {
-      throw new ServiceControlError('Artifact has no port defined', artifact.id || '', 'start');
+    if (!service.port) {
+      throw new ServiceControlError('Service has no port defined', service.id || '', 'start');
     }
 
     // Run start command in background (nohup + &)
-    const startCmd = `nohup ${artifact.start_cmd} > /dev/null 2>&1 &`;
+    const startCmd = `nohup ${service.start_cmd} > /dev/null 2>&1 &`;
     await this.runShell(startCmd);
 
     // Poll until service is running or timeout
     const startTime = Date.now();
     while (Date.now() - startTime < maxWaitMs) {
-      const process = await this.getArtifactProcess(artifact);
+      const process = await this.getArtifactProcess(service);
       if (process) {
         return process;
       }
       await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
     }
 
-    throw new ServiceControlError(`Service failed to start within ${maxWaitMs}ms`, artifact.id || '', 'start');
+    throw new ServiceControlError(`Service failed to start within ${maxWaitMs}ms`, service.id || '', 'start');
   }
 
   /**
-   * Restart an artifact's service (stop then start).
-   * @param artifact - Artifact with port and start_cmd fields
+   * Restart an ephemeral local service (stop then start).
    * @param maxWaitMs - Maximum time to wait for service to start (default: 30000)
    * @returns ProcessInfo of the new process
    * @throws ServiceControlError if stop or start fails
    */
-  async restartArtifactProcess(artifact: Artifact, maxWaitMs: number = 30000): Promise<ProcessInfo> {
+  async restartArtifactProcess(service: ServiceRuntimeDescriptor, maxWaitMs: number = 30000): Promise<ProcessInfo> {
     // Stop if running (ignore error if not running)
     try {
-      await this.stopArtifactProcess(artifact);
+      await this.stopArtifactProcess(service);
       // Wait a moment for port to be released
       await new Promise((resolve) => setTimeout(resolve, 500));
     } catch (error) {
@@ -719,7 +714,7 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
     }
 
     // Start the service
-    return this.startArtifactProcess(artifact, maxWaitMs);
+    return this.startArtifactProcess(service, maxWaitMs);
   }
 
   // ============================================================
@@ -777,9 +772,9 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
    * Open a native OS folder-picker dialog and return the selected path.
    * Returns null if the user cancelled.
    */
-  async openPathDialog(initialDir?: string): Promise<string | null> {
+  async openPathDialog(initialDir?: string, mode: 'folder' | 'file' = 'folder'): Promise<string | null> {
     const action = new ActionInfo('pick-folder', ComputeNode.type, this.id, 'POST');
-    if (initialDir) action.bodyParameters = { initial_dir: initialDir };
+    action.bodyParameters = { ...(initialDir ? { initial_dir: initialDir } : {}), mode };
     const response = await dataManager.callAction<void, { path: string | null }>(action);
     return (response as any)?.path ?? null;
   }

@@ -1,0 +1,41 @@
+/* cinematic-noir — personality layer */
+html, body, .reveal-viewport { background: #060507; }
+.reveal .slides section {
+  background:
+    radial-gradient(120% 90% at 12% 0%, rgba(207,163,86,0.13) 0%, transparent 55%),
+    radial-gradient(90% 80% at 100% 100%, rgba(120,90,200,0.10) 0%, transparent 60%),
+    linear-gradient(180deg, #12101a 0%, #0b0a0d 60%, #060507 100%);
+}
+.reveal h1, .reveal h2, .reveal h3 {
+  font-family: var(--font-display);
+  font-weight: var(--fw-medium);
+  letter-spacing: 0.005em;
+}
+.reveal h1 { text-transform: uppercase; letter-spacing: 0.04em; }
+.kicker { font-family: var(--font-display); font-size: 13px; }
+.accent-rule { width: 84px; height: 1px; background: var(--accent); margin: 0 0 var(--sp-6) 0; }
+.card {
+  background: var(--surface); border: 0;
+  border-top: 1px solid var(--border);
+  border-radius: 0; padding: var(--sp-5) var(--sp-4) var(--sp-5) 0;
+}
+.metric-value {
+  font-family: var(--font-display); font-weight: var(--fw-regular);
+  font-size: 72px; color: var(--accent); letter-spacing: -0.01em;
+}
+.metric-label { color: var(--text); font-size: 13px; letter-spacing: 0.22em; }
+.metric-delta { color: var(--text-secondary); font-size: 15px; letter-spacing: 0.04em; }
+
+.layout-agenda-list li { border-bottom: 1px solid rgba(255,255,255,0.08); padding: var(--sp-5) 0; }
+.layout-agenda-list li::before {
+  font-family: var(--font-display); color: var(--accent);
+  font-weight: var(--fw-regular); font-size: 24px; letter-spacing: 0.1em;
+}
+.layout-agenda-list .agenda-label { font-weight: var(--fw-regular); letter-spacing: 0.02em; }
+.subtitle { letter-spacing: 0.02em; max-width: 46ch; }
+/* The uppercase hero is visually heavy; the subtitle needs air under it and a
+ * wide enough measure not to wrap into a cramped stack. (30ch wrapped to three
+ * lines hard against the hero.) */
+.layout-cover-centered .subtitle { margin-top: var(--sp-5); }
+.layout-cover-centered .cover-meta { letter-spacing: 0.2em; text-transform: uppercase; }
+.layout-closing-centered .closing-contact { letter-spacing: 0.14em; }

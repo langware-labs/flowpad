@@ -21,7 +21,7 @@
  * Assumes the backend + frontend are already running (see playwright.config.ts).
  */
 import { test, expect, type Page } from '@playwright/test';
-import { dismissSetupModal, activePanel, startClaudeSession } from './helpers';
+import { dismissSetupModal, activePanel, ensureAdvancedView, skipIfPtyExhausted, startClaudeSession } from './helpers';
 
 let cachedAgenticUrl: string | null = null;
 
@@ -48,15 +48,23 @@ async function gotoAgenticProcess(page: Page): Promise<string> {
   await page.goto('/dock/shell/new_terminal');
   const skip = page.getByRole('button', { name: 'Skip' });
   if (await skip.isVisible({ timeout: 2_000 }).catch(() => false)) await skip.click();
-  await page.waitForURL(/\/dock\/shell\/(shell-|agentic_process-)/, { timeout: 60_000 });
+  try {
+    await page.waitForURL(/\/dock\/shell\/(shell-|agentic_process-)/, { timeout: 60_000 });
 
-  if (!page.url().includes('agentic_process-')) {
-    await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 60_000 });
-    await startClaudeSession(page);
-    await page.waitForURL(/\/dock\/shell\/agentic_process-(?!new)/, { timeout: 60_000 });
+    if (!page.url().includes('agentic_process-')) {
+      await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 60_000 });
+      await startClaudeSession(page);
+      await page.waitForURL(/\/dock\/shell\/agentic_process-(?!new)/, { timeout: 60_000 });
+    }
+
+    // The Dir side window is a ribbon panel — Advanced-view only; the backend
+    // pref now wins over the localStorage seed, so flip to Advanced at runtime.
+    await ensureAdvancedView(page);
+    await expect(activePanel(page).locator('.border-t .ml-auto')).toBeVisible({ timeout: 60_000 });
+  } catch (e) {
+    await skipIfPtyExhausted(page);
+    throw e;
   }
-
-  await expect(activePanel(page).locator('.border-t .ml-auto')).toBeVisible({ timeout: 60_000 });
   await page.waitForTimeout(3_000);
   cachedAgenticUrl = page.url().split('?')[0];
   return cachedAgenticUrl;
@@ -70,10 +78,22 @@ test.describe('Dir side window scrolling', () => {
   test('dir panel scrolls (not clipped) when the directory overflows the viewport', async ({ page }) => {
     test.setTimeout(90_000);
 
-    const base = await gotoAgenticProcess(page);
+    await gotoAgenticProcess(page);
 
-    // Open the Dir side window exactly as the bug repro does: via the URL param.
-    await page.goto(`${base}?sideWindows=dir`);
+    // Open the Dir side window the way a user does — click its ribbon button —
+    // NOT via a ?sideWindows=dir deep-link. The cold-nav scope-align redirect in
+    // load-shell.ts (`reconcileProcessScope`) deliberately drops the incoming
+    // URL's query options (documented there: `requestPath` is pathname-only and
+    // the redirect seeds options=undefined; carrying deep-link options through it
+    // is a cross-cutting loader-contract change tracked separately), so a
+    // ?sideWindows deep-link never reaches the mounted view. The ribbon toggle is
+    // the canonical, supported path and opens the exact same panel. The button is
+    // Advanced-only; gotoAgenticProcess already flipped to Advanced. Select it by
+    // its FolderTree icon (index-independent — the ribbon gains/loses buttons).
+    await ensureAdvancedView(page);
+    const dirButton = activePanel(page).locator('.border-t .ml-auto button:has(svg.lucide-folder-tree)');
+    await expect(dirButton).toBeVisible({ timeout: 15_000 });
+    await dirButton.click();
 
     // Wait for the dir tree to mount and load its rows.
     const filter = activePanel(page).locator('[data-testid="dir-tree-filter"]');

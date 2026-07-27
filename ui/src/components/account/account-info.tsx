@@ -2,7 +2,6 @@ import { dataContext, User } from '@sdk';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@src/components/ui/tabs';
 import { DatabaseSection } from './database-section';
 import { LogsSection } from './logs-section';
-import { NotificationsSection } from './notifications-section';
 import { SecretsSection } from './secrets-section';
 import { SettingsSection } from './settings-section';
 import { UserInfo } from './user-info';
@@ -30,9 +29,6 @@ export function AccountInfo({ user }: AccountInfoProps) {
         <TabsTrigger value="secrets" className="flex-1">
           Secrets
         </TabsTrigger>
-        <TabsTrigger value="notifications" className="flex-1">
-          Notifications
-        </TabsTrigger>
       </TabsList>
 
       <TabsContent value="organization" className="min-h-0 flex-1 overflow-y-auto">
@@ -56,12 +52,6 @@ export function AccountInfo({ user }: AccountInfoProps) {
       <TabsContent value="secrets" className="min-h-0 flex-1 overflow-y-auto">
         <div className="flex flex-col gap-4 p-4">
           <SecretsSection />
-        </div>
-      </TabsContent>
-
-      <TabsContent value="notifications" className="min-h-0 flex-1 overflow-y-auto">
-        <div className="flex flex-col gap-4 p-4">
-          <NotificationsSection />
         </div>
       </TabsContent>
     </Tabs>

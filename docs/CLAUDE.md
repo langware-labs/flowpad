@@ -6,81 +6,52 @@ id: "e54d4265-bef1-5abb-8f25-d8204141caed"
 
 1. Disk is the source of truth. Records are scanned from disk; Entities are a DB index for fast query only. The entire Entity/DB layer can be deleted and rebuilt from disk without any data loss.
 
-2. `FSRef` (`flow_sdk/fs_store/fs_ref.py`) is a lightweight declarative file/folder reference — wraps a path with read/write/child/stat methods. `JSONFsRef(FSRef)` is a write-through JSON ref: attribute writes go directly to the file; `_json_data: dict` is the in-memory cache. `TextFsRef(FSRef)` wraps plain-text files. All exported from `flow_sdk/fs_store/__init__.py`.
+2. `FSRef` (`flow_sdk/fs_store/fs_ref/base.py`) is a lightweight declarative file/folder reference — wraps a path with read/write/child/stat methods plus `record_type`, `scope`, `project_id`, and `json_path` tags used by the indexer walk. Subclasses live beside it in `flow_sdk/fs_store/fs_ref/`: `JSONFsRef` (write-through JSON), `TextFsRef` (plain text), `FrontmatterRef`, `BinaryRef`. All exported from `flow_sdk/fs_store/__init__.py`.
 
    * Use FSRef (or subclasses) for all file-pointing inside records — never hardcode `record_dir / "filename"` strings.
 
-   * Named child refs are computed properties on the record class.
+   * `FSRef.to_dict(type_id)` serializes to `{path, ref_type, read_only, type_id}`. TypeScript: `FSRef.fromJson(json)` reconstructs from the dict (`ts_sdk/src/fs/FSRef.ts`).
 
-   * `record.self_ref` → record folder FSRef; `record.asset_ref` → primary external content FSRef (Python-side); `record.main_ref` → primary content ref exposed to frontend (default: `data/_data.json` as `JSONFsRef`; subclasses override, e.g. `SkillRecord.main_ref` → `TextFsRef(SKILL.md)`).
+   * See `docs/fs-ref.md` for the full FSRef doctrine.
 
-   * `FSRef.to_dict(type_id)` serializes to `{path, ref_type, read_only, type_id}`. TypeScript: `FSRef.fromJson(json)` reconstructs from the dict. `entity.record()` calls `GET /record/refs` and returns a `Record` with `selfRef` + `mainRef`.
+3. `FSRecord` (`flow_sdk/fs_store/fs_record.py`) is the **single concrete record class** — there are no Record subclasses. Per-type behavior lives in the registered `TypeInfo` slots (`from_disk_fn`, `capsules`, `identity_backend`, `id_stable_key_fn`, `id_namespace`, `asset_hash_fn`, `post_sync_fn`, `meta_model`, `default_body_fn`, `owns_main_ref`, `main_subdir`/`main_layout`/`main_ext`), authored in `flow_sdk/schema/type_info/<type>_*info.py` and registered via `register_all()`. `TypeInfo.extract_id()` observes and validates identity; `TypeInfo.mint_id()` is the single filesystem minting seam. Parsers receive the resolved id as `from_disk_fn(ref, resolved_id)` and never resolve it themselves. FSRecord itself knows nothing about types.
 
-3. A Record folder contains: `metadata.json` (`JSONFsRef`, identity fields: id, type, name), `state.json` (`JSONFsRef`, discovery/property cache), zero-size `<hash>.<timestamp>.hash` sentinel files, and a `data/` subfolder (subclass-owned namespace).
+   * The following were **deliberately removed** with the old `Record` class and must not be reintroduced: `state.json` / `RecordState` / `PropertyRecord` caching, `raw_json` + dict-like item access, auto-save on attribute mutation, `parent_ref`/`children_refs`/`origin_ref` on the record (the Entity DB owns edges), and polymorphic legacy load fallbacks.
 
-   * `_data` is the single in-memory dict — never read `metadata.json` directly; use record property accessors.
+4. A Record's shadow folder is always `<records_root>/<type>/<type>-@<id>/` and contains `metadata.json` plus at most one zero-byte `.hash` index sentinel. There is no other layout.
 
-4. A Record is always a folder at `~/.flow/records/<type>/<type>-@<uid>/`. There is no other layout.
+   * `records_root` is **per-instance** (`InstanceSettings.records_root`). Resolve it via `get_default_records_root()` / redirect in tests via `set_default_records_root()` — both in `flow_sdk/fs_store/record_paths.py`; always restore in teardown.
 
-   * `record.self_ref` points to the record folder; `record.asset_ref` points to the primary content file.
+5. `metadata.json` is the record's only persisted state — a flat JSON dict of identity + meta fields. `FSRecord.save_metadata(patch)` is the **single DB→disk writer**: partial-merge (unmentioned keys preserved, `None` values skipped so a stale field never clobbers a fresh on-disk one), with `type`/`id` always anchored from the record identity.
 
-   * Use `get_default_records_root()` / `set_default_records_root()` (both in `flow_sdk/fs_store/record.py`) to redirect in tests — always restore in teardown.
+6. `meta_dict()` returns the flat dict used to build the Entity DB row: `type`, `id`, `asset_ref` (path string), and every non-system, non-`None` instance attribute. Meta fields live directly on `__dict__`; `record.meta` returns them as a `TypeInfo.meta_model` Pydantic instance when one is registered.
 
-5. `state.json` is a `JSONFsRef` in the record folder — stores discovery timestamps and cached `PropertyRecord` values. Writes are direct JSON updates; no batch API.
+7. Read-only is FSRef-level: `FSRef.read_only` is inherited from the parent ref — marking a parent read-only blocks writes on all its children. External and read-only are independent axes.
 
-   * Fields: `fields` (dict of cached PropertyRecord values, keyed by property name).
+8. Entity ids are UUID v4/v5 only, minted through `mint_uuid(key=None, *, namespace=...)` (`flow_sdk/fs_store/identifier.py`): `uuid5(namespace, key)` for a stable key, else `uuid4`. Filesystem assets resolve identity through `TypeInfo.extract_id()` followed by `TypeInfo.mint_id()` only when extraction finds no adoptable id. Portable identity is the named `identity` capsule: Markdown uses a YAML HTML-comment block; folder assets use `.flow/capsules/identity.json`. Legacy frontmatter and `.flow/id` are read-only fallbacks with no backfill. Foreign/non-conforming ids (e.g. v7) produce a stable v5 without rewriting invalid bytes. See `docs/data-management/asset-capsules.md`.
 
-6. `metadata.json` is a `JSONFsRef` — holds identity fields (`id`, `type`, `name`). `meta_dict()` reads from it and returns a structured dict for the Entity DB row.
+9. `FSRecord.fingerprint` is the deterministic identity key: `uuid5(NAMESPACE_URL, f"{type}:{asset_ref.path or name}")`. When no explicit `id` is given, `save()` mints the id from `fingerprint`. Constructor-provided `id` always wins.
 
-   * Override `meta_dict()` in subclasses to add extra entity columns. Use `self.id`, `self.name`, etc. — never read `_data` directly inside `meta_dict()`.
+10. `record.asset_ref` is an `FSRef` pointing to the record's primary content file — may be anywhere on the filesystem. `record.main_ref` is an **alias for `asset_ref`**. Only the `asset_ref` path is persisted in `metadata.json`; the shadow folder (`shadow_dir` / `record_folder_ref`) is computed at runtime from `(type, id)`.
 
-7. The `data/` subfolder (`record_data_dir`) is a subclass-owned namespace. Subclasses declare named `JSONFsRef` children as computed properties (e.g. `JSONFsRef(self.record_data_dir / "name.json")`). The base class writes nothing to `data/`.
+11. Parent/child/origin relationships are Entity-side (DB relationships), not record fields. Do not add edge fields to `metadata.json`.
 
-8. Write protection is FSRef-level: `_is_read_only()` checks whether `asset_ref` or `self_ref` carries `read_only=True`. Read-only is inherited from parent FSRef — marking a parent read-only blocks writes on all its children. External and read-only are independent axes.
+12. `EntityType` (`flow_sdk/schema/types.py`) is the single consolidated type-name enum. `RecordType` (`flow_sdk/fs_store/record_types.py`) is a backward-compat **alias** of it — import `EntityType` directly in new code. Add new types to `EntityType` first, then author the type's `TypeInfo` in `flow_sdk/schema/type_info/`.
 
-9. `Record.fingerprint` is an overridable hook returning a unique content string. When no explicit `id` is given at construction and `fingerprint` returns a non-empty value, the record id is `uuid5(NAMESPACE_DNS, fingerprint)`. No fingerprint → random `uuid4`. Constructor-provided `id` always wins.
+13. `record.id` is the sole stable identity — used for both the shadow path and the Entity DB row. There is no separate `uuid` property.
 
-   * Subclasses override `fingerprint` to use mtime+size of external files, content hashes, or any stable unique string.
+14. Freshness tokens: `FSRef.fingerprint` is a lightweight mtime+size content token; a type may override the token via `TypeInfo.asset_hash_fn` (e.g. folder types combine inner-file mtimes). `FSRecord.get_hash()` digests the token (blake2b, 8 bytes) into the filename-safe hash used by the sentinel.
 
-10. `record.asset_ref` is an `FSRef` pointing to the record's primary content file — may be inside the record folder or anywhere on the filesystem. `record.self_ref` points to the record's own metadata folder. Only `asset_ref` path is persisted in `metadata.json`; `self_ref` is computed at runtime. Neither lives in `_data`.
+15. The index sentinel is a single empty file in the shadow folder named `<int_epoch>_<contenthash>_<pathdigest>.hash` (legacy 2-part form without the path digest still reconciles). It is written by `record.write_hash()` — stamped **by the indexer after the DB batch commits** (write-ahead ordering: a crash before commit leaves no sentinel, so the record re-indexes next run). `sync_to_db()` itself does NOT stamp it; the GET-time refresh (`Entity.check_and_refresh_record()`) stamps it after its own re-sync.
 
-11. Parent, child, and origin refs are plain TypeId strings.
+16. `FSRecord.index_required` is True when the source content hash differs from the sentinel's captured hash (or no sentinel exists), **or** when the source relocated (path digest drift — mtime+size survives `cp -p`/wheel installs, so location is checked separately). To force re-index: `clear_hash()` (or `clear_hashes_for_type()`); the indexer's skip-fresh additionally requires a live Entity DB row, so a stale sentinel can't mask a cleared DB. TTL-based staleness does not exist at the record layer.
 
-    * `record.parent_ref` → `str | None`; `record.children_refs` → `list[str]`; `record.origin_ref` → `str | None`.
+17. `Entity.store()` syncs entity fields DOWN to disk: partial-merges `metadata_payload()` into `metadata.json` via `save_metadata`, upserts the main body via `upsert_main_ref` (writes `default_body_fn` output iff the file doesn't exist — or on every save for `owns_main_ref` types), then FTS-upserts. Errors are logged as `RecordError` and never propagated — `store()` returns `None` on failure.
 
-    * `record.add_child(child)` accepts a `Record` or TypeId string. Dedup applied by id.
+18. TypeScript: `asset.assetRefFor(fsTypeId)` returns `FSRef | undefined` with `.read()` and `.write()` async methods. Use this instead of direct `fsManager.download()` / `fsManager.writeFile()` calls. Never call `fsManager` methods directly from asset editor components; `BaseAssetEditor` already uses this pattern.
 
-12. Record has `type`, set from `_record_type: ClassVar[str]` which subclasses declare; registers the type in `SchemaRegistry` via `__init_subclass__`.
+19. `type` and `id` are the universal identity pair across the entire system. A `TypeId` (`type:id`) uniquely identifies any object — Record, Entity, or API resource. `SchemaRegistry` (`flow_sdk/fs_store/schema_registry.py`) is the single source of truth for types: every type name must be registered there; no type string should be defined or looked up outside of it.
 
-    * Every concrete `Record` subclass must declare `_record_type: ClassVar[str] = RecordType.XYZ`.
+20. Entity–Record ID sync: `Entity.allocate_id(data)` keeps a conforming (v4/v5) provided id, normalizes a non-conforming one to `uuid5(type:id)`, and mints `uuid4` otherwise. `Project` deliberately does NOT derive its id from the path anymore — project ids are opaque uuid4 like every other entity (so a project can be shared under its own id); dedup on re-index is `Project.find_by_cwd` (the canonical `fs_storage_mount_path` natural key) inside `Project.from_record`, and `derive_id_for_path` survives only as a record-match alias, never the entity id.
 
-    * `RecordType` constants live in `flow_sdk/fs_store/record_types.py`. Add new types there first.
-
-13. `record.id` is the sole stable identity — used for both filesystem paths and the Entity DB row. Either constructor-provided or derived from `fingerprint` (see rule 9). There is no separate `uuid` property.
-
-14. `JSONFsRef` has a `hash` property — SHA256 of the file content. `FSRef` has a `fingerprint` property — lightweight mtime+size-based content token. `Record.fingerprint` overrides this with a subclass-specific string for deterministic id derivation.
-
-15. The index staleness sentinel is an empty file named `<record.fingerprint>.<timestamp>.hash` stored in the record folder. Written by `record.write_hash_file()`, called automatically by `sync_from_entity()` after a successful entity sync.
-
-    * Old sentinel files are deleted when a new one is written. Multiple `.hash` files indicate an interrupted write — the newest wins.
-
-16. `Record.index_required` returns `True` when the hash sentinel file is absent — the record has not been indexed since last write. Does NOT check fingerprint match or TTL.
-
-    * TTL-based staleness is `record.record_update_required(ttl=30.0)` — use this for live-refresh decisions.
-
-    * `sync_from_entity()` writes the sentinel, making `index_required` return `False` immediately.
-
-    * To force re-index: delete the `.hash` sentinel files. `SchemaRegistry` incremental indexing uses `index_required` to decide which records to process.
-
-17. `Entity.store()` syncs entity fields down to `metadata.json` via `record.sync_from_entity(self)`. The record is loaded once (or initialised on first call if it doesn't exist). Subsequent `store()` calls write updated fields directly.
-
-    * Errors are logged as `RecordError` and never propagated — `store()` returns `None` on failure.
-
-18. TypeScript: `asset.assetRefFor(fsTypeId)` returns `FSRef | undefined` with `.read()` and `.write()` async methods. Use this instead of direct `fsManager.download()` / `fsManager.writeFile()` calls.
-
-    * `FSRef` is defined in `ts_sdk/src/fs/FSRef.ts`. Never call `fsManager` methods directly from asset editor components. `BaseAssetEditor` already uses this pattern.
-
-19. `type` and `id` are the universal identity pair across the entire system. A `TypeId` (`type:id`) uniquely identifies any object — Record, Entity, or API resource. `SchemaRegistry` is the single source of truth for types: every type name must be registered there; no type string should be defined or looked up outside of it.
-
-20. Entity–Record ID sync is achieved by deriving the same `uuid5` from the same natural key field on both sides. `Entity.allocate_id(data)` returns `uuid4` by default. Entity subclasses with a stable filesystem identity (e.g. `Project` with `fs_storage_mount_path`) override `allocate_id` to return `uuid5(NAMESPACE_DNS, f"{type}:{key_value}")`. The corresponding `Record` subclass sets the same value as its `fingerprint` (rule 9), producing the same uuid5. This guarantees that indexing an existing entity's record never creates a duplicate — `Entity.from_record()` finds the entity by its deterministic id.
-
+21. Indexing pipeline and freshness/orphan semantics are documented in `docs/data-management/` — start at `docs/data-management/scan-and-discovery.md` (walker, triggers) and `docs/data-management/entity-index-sync.md` (`sync_to_db` pipeline, FTS, wiki edges). The end-to-end `file change → re-index → entity change → UI refresh` invalidation loop (the `/fs-records/invalidate` push endpoint, the agentic turn-end re-index, the `updated_date` change token, and the frontend `useFSRefContent` `reloadKey` body re-read) is in `docs/data-management/invalidation.md`.

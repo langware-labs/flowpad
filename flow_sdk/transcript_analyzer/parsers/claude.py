@@ -73,6 +73,22 @@ _META_TYPES = frozenset({
 _ATTACHMENT_TYPE_PLAN_MODE_EXIT = "plan_mode_exit"
 
 
+def _is_flowpad_prompt_envelope(text: str) -> bool:
+    """True for Flowpad-composed embedded-agent prompt wrappers.
+
+    Headless Claude receives embedded agents by flattening their instructions
+    into the user prompt, then appending the real user text under
+    ``# User message``. Claude writes that full wrapper to its JSONL as a user
+    message, but it is framework context rather than a human chat turn.
+    """
+    if "\n# User message\n" not in text:
+        return False
+    return (
+        text.startswith("# You are the '")
+        or text.startswith("# Embedded agent specs")
+    )
+
+
 def _resolve_id(raw: dict) -> str:
     """Pick the most stable id for this raw line, with type-specific fallback."""
     uid = raw.get("uuid")
@@ -187,7 +203,7 @@ class ClaudeParser:
             tool_name = str(tool_block.get("name") or "")
             tool_use_id = str(tool_block.get("id") or "")
             tool_input = tool_block.get("input") or {}
-            main = self._build_semantic_tool_entry(
+            main = build_semantic_tool_entry(
                 tool_name=tool_name,
                 tool_use_id=tool_use_id,
                 tool_input=tool_input,
@@ -302,133 +318,6 @@ class ClaudeParser:
             self._usage_entries_by_msg_id[msg_id] = out
         return out
 
-    def _build_semantic_tool_entry(
-        self,
-        *,
-        tool_name: str,
-        tool_use_id: str,
-        tool_input: dict,
-        envelope: dict,
-        base: dict,
-    ) -> TranscriptEntry:
-        """Map a Claude ``tool_use`` block onto a semantic entry kind.
-
-        Falls through to :class:`ToolUseEntry` for any tool not in the
-        recognized set — this keeps MCP tools (``mcp__*``) and unknown
-        bespoke tools rendering as the generic catch-all rather than
-        silently dropping fields.
-        """
-        common: dict[str, Any] = {
-            "tool_name": tool_name,
-            "tool_use_id": tool_use_id,
-            **envelope,
-            **base,
-        }
-        ti = tool_input if isinstance(tool_input, dict) else {}
-
-        if tool_name == "Skill":
-            return SkillCallEntry(
-                skill_name=str(ti.get("skill") or ti.get("name") or ti.get("command") or ""),
-                tool_input=ti,
-                **common,
-            )
-        if tool_name == "ExitPlanMode":
-            return ExitPlanModeEntry(tool_input=ti, **common)
-        if tool_name == "Write":
-            full_content = ti.get("content")
-            full_str = str(full_content) if full_content is not None else None
-            line_count = full_str.count("\n") + 1 if full_str else None
-            bytes_count = len(full_str.encode("utf-8")) if full_str else None
-            return FileWriteEntry(
-                path=str(ti.get("file_path") or ""),
-                content=truncate_file_content(full_str),
-                bytes_count=bytes_count,
-                line_count=line_count,
-                is_new=True,
-                **common,
-            )
-        if tool_name in ("Edit", "MultiEdit"):
-            hunks: list[dict] = []
-            if tool_name == "Edit":
-                if ti.get("old_string") is not None or ti.get("new_string") is not None:
-                    hunks.append({
-                        "old": str(ti.get("old_string") or ""),
-                        "new": str(ti.get("new_string") or ""),
-                        "replace_all": bool(ti.get("replace_all", False)),
-                    })
-            else:
-                edits = ti.get("edits") or []
-                if isinstance(edits, list):
-                    for ed in edits:
-                        if isinstance(ed, dict):
-                            hunks.append({
-                                "old": str(ed.get("old_string") or ""),
-                                "new": str(ed.get("new_string") or ""),
-                                "replace_all": bool(ed.get("replace_all", False)),
-                            })
-            return FileEditEntry(
-                path=str(ti.get("file_path") or ""),
-                hunks=hunks,
-                **common,
-            )
-        if tool_name == "NotebookEdit":
-            return FileEditEntry(
-                path=str(ti.get("notebook_path") or ti.get("file_path") or ""),
-                hunks=[],
-                change_summary=str(ti.get("new_source") or "") or None,
-                **common,
-            )
-        if tool_name in ("Read", "NotebookRead"):
-            offset = ti.get("offset")
-            limit = ti.get("limit")
-            start_line = int(offset) if isinstance(offset, (int, float)) else None
-            end_line: int | None = None
-            if start_line is not None and isinstance(limit, (int, float)):
-                end_line = start_line + int(limit)
-            return FileReadEntry(
-                path=str(ti.get("file_path") or ti.get("notebook_path") or ""),
-                start_line=start_line,
-                end_line=end_line,
-                **common,
-            )
-        if tool_name == "Bash":
-            timeout_raw = ti.get("timeout")
-            timeout_val = int(timeout_raw) if isinstance(timeout_raw, (int, float)) else None
-            return ShellCommandEntry(
-                command=str(ti.get("command") or ""),
-                timeout=timeout_val,
-                **common,
-            )
-        if tool_name in ("Glob", "Grep"):
-            return SearchEntry(
-                search_kind=tool_name.lower(),
-                query=str(ti.get("pattern") or ""),
-                path=str(ti.get("path") or "") or None,
-                **common,
-            )
-        if tool_name in ("WebFetch", "WebSearch"):
-            return WebFetchEntry(
-                url=str(ti.get("url") or "") or None,
-                query=str(ti.get("query") or "") or None,
-                prompt=str(ti.get("prompt") or "") or None,
-                **common,
-            )
-        if tool_name == "TodoWrite":
-            todos_raw = ti.get("todos")
-            items = todos_raw if isinstance(todos_raw, list) else []
-            return TodoUpdateEntry(
-                items=items,
-                **common,
-            )
-        if tool_name in ("Task", "Agent"):
-            return AgentSpawnEntry(
-                agent_type=str(ti.get("subagent_type") or ti.get("agent_type") or ""),
-                prompt=str(ti.get("prompt") or "") or None,
-                description=str(ti.get("description") or "") or None,
-                **common,
-            )
-        return ToolUseEntry(tool_input=ti, **common)
-
     def _parse_user(self, raw: dict, base: dict) -> TranscriptEntry:
         message = raw.get("message") or {}
         content = message.get("content") or []
@@ -460,8 +349,140 @@ class ClaudeParser:
                 exit_code=exit_code,
                 **base,
             )
+        text = extract_text(content)
         return UserMessageEntry(
-            text=extract_text(content),
-            is_meta=bool(raw.get("isMeta", False)),
+            text=text,
+            is_meta=bool(raw.get("isMeta", False)) or _is_flowpad_prompt_envelope(text),
             **base,
         )
+
+
+def build_semantic_tool_entry(
+    *,
+    tool_name: str,
+    tool_use_id: str,
+    tool_input: dict,
+    envelope: dict,
+    base: dict,
+) -> TranscriptEntry:
+    """Map a Claude ``tool_use`` block onto a semantic entry kind.
+
+    Module-level because BOTH paths need it: the JSONL parser (history) and
+    ``cli_drivers/claude/event_to_flowdata`` (live stream-json). A live frame
+    that skipped this mapping rendered as a nameless generic tool while the
+    same block rendered semantically after a reload.
+
+    Falls through to :class:`ToolUseEntry` for any tool not in the recognized
+    set — this keeps MCP tools (``mcp__*``) and unknown bespoke tools
+    rendering as the generic catch-all rather than silently dropping fields.
+    """
+    common: dict[str, Any] = {
+        "tool_name": tool_name,
+        "tool_use_id": tool_use_id,
+        **envelope,
+        **base,
+    }
+    ti = tool_input if isinstance(tool_input, dict) else {}
+
+    if tool_name == "Skill":
+        return SkillCallEntry(
+            skill_name=str(ti.get("skill") or ti.get("name") or ti.get("command") or ""),
+            tool_input=ti,
+            **common,
+        )
+    if tool_name == "ExitPlanMode":
+        return ExitPlanModeEntry(tool_input=ti, **common)
+    if tool_name == "Write":
+        full_content = ti.get("content")
+        full_str = str(full_content) if full_content is not None else None
+        line_count = full_str.count("\n") + 1 if full_str else None
+        bytes_count = len(full_str.encode("utf-8")) if full_str else None
+        return FileWriteEntry(
+            path=str(ti.get("file_path") or ""),
+            content=truncate_file_content(full_str),
+            bytes_count=bytes_count,
+            line_count=line_count,
+            is_new=True,
+            **common,
+        )
+    if tool_name in ("Edit", "MultiEdit"):
+        hunks: list[dict] = []
+        if tool_name == "Edit":
+            if ti.get("old_string") is not None or ti.get("new_string") is not None:
+                hunks.append({
+                    "old": str(ti.get("old_string") or ""),
+                    "new": str(ti.get("new_string") or ""),
+                    "replace_all": bool(ti.get("replace_all", False)),
+                })
+        else:
+            edits = ti.get("edits") or []
+            if isinstance(edits, list):
+                for ed in edits:
+                    if isinstance(ed, dict):
+                        hunks.append({
+                            "old": str(ed.get("old_string") or ""),
+                            "new": str(ed.get("new_string") or ""),
+                            "replace_all": bool(ed.get("replace_all", False)),
+                        })
+        return FileEditEntry(
+            path=str(ti.get("file_path") or ""),
+            hunks=hunks,
+            **common,
+        )
+    if tool_name == "NotebookEdit":
+        return FileEditEntry(
+            path=str(ti.get("notebook_path") or ti.get("file_path") or ""),
+            hunks=[],
+            change_summary=str(ti.get("new_source") or "") or None,
+            **common,
+        )
+    if tool_name in ("Read", "NotebookRead"):
+        offset = ti.get("offset")
+        limit = ti.get("limit")
+        start_line = int(offset) if isinstance(offset, (int, float)) else None
+        end_line: int | None = None
+        if start_line is not None and isinstance(limit, (int, float)):
+            end_line = start_line + int(limit)
+        return FileReadEntry(
+            path=str(ti.get("file_path") or ti.get("notebook_path") or ""),
+            start_line=start_line,
+            end_line=end_line,
+            **common,
+        )
+    if tool_name == "Bash":
+        timeout_raw = ti.get("timeout")
+        timeout_val = int(timeout_raw) if isinstance(timeout_raw, (int, float)) else None
+        return ShellCommandEntry(
+            command=str(ti.get("command") or ""),
+            timeout=timeout_val,
+            **common,
+        )
+    if tool_name in ("Glob", "Grep"):
+        return SearchEntry(
+            search_kind=tool_name.lower(),
+            query=str(ti.get("pattern") or ""),
+            path=str(ti.get("path") or "") or None,
+            **common,
+        )
+    if tool_name in ("WebFetch", "WebSearch"):
+        return WebFetchEntry(
+            url=str(ti.get("url") or "") or None,
+            query=str(ti.get("query") or "") or None,
+            prompt=str(ti.get("prompt") or "") or None,
+            **common,
+        )
+    if tool_name == "TodoWrite":
+        todos_raw = ti.get("todos")
+        items = todos_raw if isinstance(todos_raw, list) else []
+        return TodoUpdateEntry(
+            items=items,
+            **common,
+        )
+    if tool_name in ("Task", "Agent"):
+        return AgentSpawnEntry(
+            agent_type=str(ti.get("subagent_type") or ti.get("agent_type") or ""),
+            prompt=str(ti.get("prompt") or "") or None,
+            description=str(ti.get("description") or "") or None,
+            **common,
+        )
+    return ToolUseEntry(tool_input=ti, **common)

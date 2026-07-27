@@ -1,42 +1,56 @@
 /**
  * Shared status and UI types for AgenticProcess.
  *
- * ## Two-axis status model
+ * ## Status model (all logic backend-side; the frontend is read-only)
  *
- * ``ProcessStatus`` — **app/user-level lifecycle** of the process container.
- * Backend-owned FSM. Stored. Transitions are explicit (writers in
- * ``flow_sdk/builtin/agentic_process/agentic_process.py``):
- *     NEW → STARTING → RUNNING → STOPPING → STOPPED,  any → FAILED.
+ * ``ProcessStatus`` — the **lifecycle "what it means"** status, shared identically
+ * across every worker vendor. A small FSM
+ * (NEW → STARTING → RUNNING → STOPPING → STOPPED, any → FAILED), emitted verbatim
+ * on the wire (``RUNNING`` and all — no projection). The wire carries NEW /
+ * STARTING / RUNNING / STOPPING / STOPPED / FAILED.
  *
- * ``WorkerStatus`` — **expert-level state of the worker** running inside the
- * process (Claude Code session). Derived from the JSONL transcript on every
- * serialize via ``_tail_status`` in ``flow_sdk/fs_records/agent_status.py``;
- * never stored. Only meaningful when ``ProcessStatus ∈ {RUNNING, STOPPING,
- * STOPPED}`` — in any other lifecycle state, treat as undefined.
+ * ``busy`` — the **separate, orthogonal** "is a turn in flight?" boolean, derived
+ * backend-side (``status_predicates.is_turn_busy``) and serialized as its own
+ * field. This is the single value the UI gates input and the pty-mode
+ * (xterm ⇄ chat) switch on — see ``isBusy``. It is NOT folded into ``status``.
+ *
+ * ``WorkerStatus`` — the raw **"what we found"** state of the worker, in worker
+ * lingo. Derived from the vendor transcript tail on every serialize; never
+ * stored; nullable on the wire when nothing was found. Only meaningful when the
+ * process is live. Used for the fine-grained activity indicator, never to gate
+ * input (that is ``busy``'s job).
  *
  * ## Invariants
  *
- * - ``_RUNNING_STATUSES`` (Python) and ``WORKER_RUNNING_STATUSES`` (here) are
- *   byte-for-byte identical, verified by a contract test against
+ * - ``WORKER_RUNNING_STATUSES`` / ``WORKER_BUSY_STATUSES`` (here) are byte-for-byte
+ *   identical to their Python counterparts, verified by a contract test against
  *   ``test_fixtures/status_sets.json``.
- * - ``isReadyForInput(process)`` is the single canonical "can the user send now?"
- *   predicate. There is no stored ``waiting_for_prompt`` or ``is_active`` field.
+ * - ``isBusy(process)`` ⇔ ``process.busy`` is the single canonical "the user must
+ *   wait" predicate. ``isReadyForInput`` combines ``!busy`` with the lifecycle
+ *   states that can accept a prompt or transport switch (RUNNING, fresh headless,
+ *   or headless-idle). The two are disjoint by construction. There is no
+ *   worker-status-derived gating in the frontend.
  */
 
 /**
- * App/user-level lifecycle of the AgenticProcess container.
- *
- * Backend-owned. Stored. Transitions are explicit (no derivation).
+ * Lifecycle "what it means" status of the AgenticProcess. Backend-owned, emitted
+ * verbatim on the wire (RUNNING included — no ready/busy projection). "Is a turn
+ * in flight?" is the separate ``busy`` boolean (see ``isBusy``).
  */
 export enum ProcessStatus {
   NEW = 'new',
   STARTING = 'starting',
+  /** Live container. Turn-in-flight is the orthogonal ``busy`` boolean. */
   RUNNING = 'running',
   STOPPING = 'stopping',
   STOPPED = 'stopped',
   FAILED = 'failed',
 }
 
+/**
+ * Live process states on the wire — the stored/emitted RUNNING plus the
+ * STARTING/STOPPING bookends.
+ */
 const RUNNING_PROCESS_STATUSES = new Set<ProcessStatus>([
   ProcessStatus.STARTING,
   ProcessStatus.RUNNING,
@@ -49,7 +63,7 @@ const STARTABLE_PROCESS_STATUSES = new Set<ProcessStatus>([
   ProcessStatus.FAILED,
 ]);
 
-/** True while the process container is running (STARTING/RUNNING/STOPPING). */
+/** True while the process container is live (STARTING/RUNNING/STOPPING). */
 export function isProcessRunning(status: ProcessStatus): boolean {
   return RUNNING_PROCESS_STATUSES.has(status);
 }
@@ -95,7 +109,7 @@ export enum WorkerStatus {
    */
   PENDING_USER = 'pending_user',
   /** Active — user message received; Claude hasn't responded yet. */
-  WAITING      = 'waiting',
+  WORKING      = 'working',
   /** Active — assistant generating. */
   THINKING     = 'thinking',
   /** Active — Claude dispatched tool(s). */
@@ -104,18 +118,35 @@ export enum WorkerStatus {
   TOOL_RUNNING = 'tool_running',
   /** Active — Anthropic API error, Claude is retrying mid-turn. */
   API_ERROR    = 'api_error',
-  /** Terminal — JSONL stalled in WAITING, needs intervention. */
+  /** Terminal — JSONL stalled in WORKING, needs intervention. */
   API_TIMEOUT  = 'api_timeout',
   /** Parse fallback — last JSONL entry did not match any known pattern. Replaces the former RUNNING catchall. */
   UNKNOWN      = 'unknown',
 }
 
 const WORKER_RUNNING_STATUSES = new Set<WorkerStatus>([
-  WorkerStatus.WAITING,
+  WorkerStatus.WORKING,
   WorkerStatus.THINKING,
   WorkerStatus.TOOL_CALL,
   WorkerStatus.TOOL_RUNNING,
   WorkerStatus.API_ERROR,
+]);
+
+/**
+ * Raw worker statuses that mean "the worker is mid-turn and the user must wait".
+ * Byte-for-byte equal to the Python ``_BUSY_WORKER_STATUSES`` in
+ * ``status_predicates.py`` via ``status_sets.json`` (key ``worker_busy``).
+ * NOTE api_error is NOT here — an API error is re-promptable, so the backend maps
+ * it to ¬busy; while a turn genuinely retries the prompt lock keeps the process
+ * busy. This set is the backend's; the frontend gates on the derived ``busy``
+ * boolean (``isBusy``), never on this set directly.
+ */
+export const WORKER_BUSY_STATUSES = new Set<WorkerStatus>([
+  WorkerStatus.INITIALIZING,
+  WorkerStatus.WORKING,
+  WorkerStatus.THINKING,
+  WorkerStatus.TOOL_CALL,
+  WorkerStatus.TOOL_RUNNING,
 ]);
 
 const WORKER_TERMINAL_STATUSES = new Set<WorkerStatus>([
@@ -126,36 +157,7 @@ const WORKER_TERMINAL_STATUSES = new Set<WorkerStatus>([
   WorkerStatus.API_TIMEOUT,
 ]);
 
-const READY_WORKER_STATUSES = new Set<WorkerStatus>([
-  WorkerStatus.IDLE,
-  WorkerStatus.COMPLETE,
-  WorkerStatus.INTERRUPTED,
-]);
-
-/**
- * Statuses in which the worker has yielded the floor and is waiting for the
- * user's next message — i.e. "your turn". Superset of READY_WORKER_STATUSES
- * with PENDING_USER (the explicit "turn ended, waiting for next user message"
- * state, surfaced to the user as "Waiting for you").
- *
- * This is the gate for the chat⇄terminal view toggle: switching mode is only
- * sensible (and only accepted by the backend — a mid-turn switchMode is 409'd)
- * when no turn is in flight. The set is deliberately a strict complement of the
- * mid-turn states, so enabling the toggle on this set never triggers a 409.
- */
-const AWAITING_USER_INPUT_STATUSES = new Set<WorkerStatus>([
-  WorkerStatus.IDLE,
-  WorkerStatus.COMPLETE,
-  WorkerStatus.INTERRUPTED,
-  WorkerStatus.PENDING_USER,
-]);
-
-/** True when the worker is idle between turns, waiting for the user's input. */
-export function isAwaitingUserInput(status: WorkerStatus | undefined): boolean {
-  return status !== undefined && AWAITING_USER_INPUT_STATUSES.has(status);
-}
-
-/** True while the worker is mid-turn (WAITING/THINKING/TOOL_CALL/TOOL_RUNNING/API_ERROR). */
+/** True while the worker is mid-turn (WORKING/THINKING/TOOL_CALL/TOOL_RUNNING/API_ERROR). */
 export function isWorkerRunning(status: WorkerStatus): boolean {
   return WORKER_RUNNING_STATUSES.has(status);
 }
@@ -180,28 +182,54 @@ export function hasWorkerStarted(status: WorkerStatus): boolean {
  */
 export interface StatusBearingProcess {
   status?: ProcessStatus | string;
+  /** Turn-in-flight — the orthogonal boolean the input/toggle gates read. */
+  busy?: boolean;
   workerStatus?: WorkerStatus | string;
   worker_status?: WorkerStatus | string;
   session_id?: string | null;
-  /** Router for ``WorkerMode`` — true when the process has an attached PTY. */
+  /** Tab visibility only — NOT the transport router (see ``pty_mode``). */
   visible?: boolean;
+  /**
+   * Transport intent and the routing key for ``WorkerMode`` /
+   * ``ExecutionMode``: ``true`` = PTY worker, ``false`` = headless CLI. A hidden
+   * live PTY carries ``pty_mode=true`` with ``visible=false``. When absent, the
+   * classifiers fall back to ``visible`` (``visible=true ⟹ pty_mode=true``).
+   */
+  pty_mode?: boolean;
+  ptyMode?: boolean;
 }
 
 /**
  * Which mode the worker is currently running in.
  *
- * Derived from ``visible``; not stored as its own field. The routing is:
- * - ``visible === true``  → ``Interactive`` (PTY worker, xterm in the dock)
- * - ``visible === false`` → ``CLI`` (headless ``claude -p`` subprocess per turn)
+ * Derived from the *transport* ``pty_mode`` (NOT tab ``visible``):
+ * - ``pty_mode === true``  → ``Interactive`` (PTY worker, xterm in the dock)
+ * - ``pty_mode === false`` → ``CLI`` (headless ``claude -p`` subprocess per turn)
  *
+ * A hidden live PTY (``visible=false`` but ``pty_mode=true``) is Interactive.
  * ``session_id`` survives both directions — both modes write the same
- * ``~/.claude/projects/<encoded-cwd>/<sid>.jsonl``. Switching is therefore
- * two-way: opening a shell tab flips ``visible=true`` (via ``/open``);
- * closing the tab flips it back (via ``/close``).
+ * ``~/.claude/projects/<encoded-cwd>/<sid>.jsonl``. Switching is two-way via the
+ * ``switch-mode`` action.
  */
 export enum WorkerMode {
   Interactive = 'interactive',
   CLI         = 'cli',
+}
+
+/**
+ * Portable model **tier** (size) — set as `context.model` instead of a vendor
+ * model name. The backend driver maps the tier to its own model family at launch
+ * (for example, claude: sm→haiku, md→sonnet, lg→opus)
+ * — see `flow_sdk/builtin/agentic_process/model_tiers.py`, the single source of
+ * truth. A concrete model string (e.g. `'sonnet'`) may still be passed directly.
+ *
+ * Values are the wire form sent to the backend, so this enum must stay in lockstep
+ * with the Python `ModelTier`.
+ */
+export enum WorkerModelTier {
+  SM = 'sm',
+  MD = 'md',
+  LG = 'lg',
 }
 
 /**
@@ -225,9 +253,19 @@ export type ProcessIconKey =
   | 'generic'
   | 'generic-restore';
 
-/** Derive the worker mode from the process' ``visible`` field. */
+/**
+ * True when the process runs on the PTY transport. Keys on ``pty_mode`` (the
+ * transport axis); falls back to ``visible`` when ``pty_mode`` isn't carried on
+ * the payload (``visible=true ⟹ pty_mode=true``, so the fallback is safe — it can
+ * only miss the hidden-live-PTY case, which then reads as non-PTY as before).
+ */
+function isPtyTransport(p: StatusBearingProcess): boolean {
+  return (p.pty_mode ?? p.ptyMode ?? p.visible) === true;
+}
+
+/** Derive the worker mode from the process' transport intent (``pty_mode``). */
 export function getWorkerMode(p: StatusBearingProcess): WorkerMode {
-  return p.visible ? WorkerMode.Interactive : WorkerMode.CLI;
+  return isPtyTransport(p) ? WorkerMode.Interactive : WorkerMode.CLI;
 }
 
 /**
@@ -291,27 +329,31 @@ export function supportedExecutionModes(isAdvanced: boolean): readonly Execution
  * listed. ``External`` is never returned here; external workers come only from
  * the ``/workers`` backend snapshot.
  *
- * Truth table (first match wins):
- *   1. worker_status ∈ ERROR_WORKER_STATUSES        → Error
- *   2. visible===true && pidAlive===false (dead PTY) → Error
- *   3. visible===true                                → Interactive
- *   4. visible===false                               → Background
+ * Keyed on the *transport* ``pty_mode`` (NOT tab ``visible``). Truth table
+ * (first match wins):
+ *   1. worker_status ∈ ERROR_WORKER_STATUSES         → Error
+ *   2. pty (transport) && pidAlive===false (dead PTY) → Error
+ *   3. pty (transport)                                → Interactive
+ *   4. headless (no PTY transport)                    → Background
  *
- * ``pidAlive`` is only meaningful for PTY (``visible===true``); CLI workers have
- * no PID, so dead-PID→error never applies to them — CLI error relies solely on
- * rule 1. When ``pidAlive`` is undefined (the live WS payload has no PID
- * liveness) rule 2 never fires; dead-PTY→error is then authoritative only via
- * ``/workers``.
+ * A hidden live PTY (``visible=false`` but ``pty_mode=true``) is Interactive.
+ * ``pidAlive`` is only meaningful for PTY; CLI workers have no PID, so
+ * dead-PID→error never applies to them — CLI error relies solely on rule 1. When
+ * ``pidAlive`` is undefined (the live WS payload has no PID liveness) rule 2 never
+ * fires; dead-PTY→error is then authoritative only via ``/workers``.
  */
 export function classifyExecutionMode(
   p: StatusBearingProcess & { pidAlive?: boolean },
 ): ExecutionMode | null {
   const status = resolveStatus(p);
-  if (status !== ProcessStatus.RUNNING && status !== ProcessStatus.STARTING) return null;
+  // Live for execution-mode = running EXCEPT the terminal-bound STOPPING (a
+  // stopping worker is not "executing"). Reuses isProcessRunning's wire set.
+  if (status === undefined || !isProcessRunning(status) || status === ProcessStatus.STOPPING) return null;
   const worker = resolveWorkerStatus(p);
   if (worker !== undefined && ERROR_WORKER_STATUSES.has(worker)) return ExecutionMode.Error;
-  if (p.visible === true && p.pidAlive === false) return ExecutionMode.Error;
-  return p.visible === true ? ExecutionMode.Interactive : ExecutionMode.Background;
+  const isPty = isPtyTransport(p);
+  if (isPty && p.pidAlive === false) return ExecutionMode.Error;
+  return isPty ? ExecutionMode.Interactive : ExecutionMode.Background;
 }
 
 function resolveStatus(p: StatusBearingProcess): ProcessStatus | undefined {
@@ -324,33 +366,48 @@ function resolveWorkerStatus(p: StatusBearingProcess): WorkerStatus | undefined 
 }
 
 /**
- * Single canonical "can the caller send a new user prompt?" predicate.
+ * The single canonical "the user must wait" predicate — the ONE boolean the UI
+ * gates input and the pty-mode (xterm ⇄ chat) switch on. All the logic is
+ * backend-side: ``busy`` is the separate serialized boolean the backend derived
+ * from the prompt lock + ``_turn_in_flight`` + worker activity in
+ * ``status_predicates.is_turn_busy``. The frontend just reads ``p.busy``.
  *
- * Contract (mirrored by the Python ``is_ready_for_input`` in
- * ``flow_sdk/builtin/agentic_process/status_predicates.py``):
- *
- *     status == RUNNING  AND  workerStatus ∈ {IDLE, COMPLETE, INTERRUPTED}
- *
- * Special case: if ``workerStatus`` is missing and ``session_id`` is falsy,
- * treat as ready (process is live but never been prompted).
+ * A non-live process (NEW / STOPPED / FAILED …) is never ``busy`` (the backend
+ * only sets it while RUNNING), so callers that need "can send now" should use
+ * ``isReadyForInput``, and callers gating a spinner / the switch toggle on "a
+ * turn is running" should use ``isBusy``.
  */
-export function isReadyForInput(p: StatusBearingProcess): boolean {
-  if (resolveStatus(p) !== ProcessStatus.RUNNING) return false;
-  const worker = resolveWorkerStatus(p);
-  if (worker === undefined) return !p.session_id;
-  return READY_WORKER_STATUSES.has(worker);
+export function isBusy(p: StatusBearingProcess): boolean {
+  return p.busy === true;
 }
 
 /**
- * UX-level "cannot accept input right now" flag — the negation of
- * ``isReadyForInput``. Surfaces that need a single boolean to gate input
- * fields, show a busy spinner, or drive a shortcut condition should use this.
+ * "Can the caller send a new user prompt / switch transport now?" — ⇔ no turn is
+ * in flight (``!busy``) AND the worker is either fully up (``status === RUNNING``),
+ * a fresh headless process, OR a **headless-idle** session. Mirror of the Python
+ * ``is_ready_from_busy`` / ``is_ready_for_input``.
  *
- * Covers every non-ready state: worker mid-turn (THINKING / TOOL_* / …),
- * process not yet RUNNING (NEW / STARTING), STOPPING, terminal, or errored.
+ * A fresh headless process (CLI transport at ``status === NEW``) has no persistent
+ * worker or session yet, but its first prompt and an interactive-mode switch are
+ * both accepted immediately. Treating it as not ready disabled the chat/terminal
+ * toggle before the first turn even though the backend switch guard accepted it.
+ *
+ * Headless-idle readiness (CLI transport — ``!isPtyTransport`` — with a live
+ * ``session_id`` at ``status === STOPPED``): the CLI transport runs a fresh
+ * ``claude -p`` worker per turn, so between turns a headless session sits at
+ * STOPPED with its ``session_id`` preserved, yet is ready for the next prompt and
+ * to toggle chat⇄terminal back. Without this the toggle wedged permanently off
+ * once a session went headless-idle (RCA #12a: switch→cli ``exit()`` → STOPPED).
+ *
+ * "ready" and "busy" stay disjoint (``!busy`` gates first), so enabling the
+ * toggle on ready can never hit the backend's busy 409.
  */
-export function isBusy(p: StatusBearingProcess): boolean {
-  return !isReadyForInput(p);
+export function isReadyForInput(p: StatusBearingProcess): boolean {
+  if (isBusy(p)) return false;
+  const status = resolveStatus(p);
+  if (status === ProcessStatus.RUNNING) return true;
+  if (status === ProcessStatus.NEW && !isPtyTransport(p)) return true;
+  return status === ProcessStatus.STOPPED && !isPtyTransport(p) && !!p.session_id;
 }
 
 /**
@@ -364,10 +421,12 @@ export function isBusy(p: StatusBearingProcess): boolean {
 export function getDisplayStatus(p: StatusBearingProcess): ProcessStatus | WorkerStatus | undefined {
   const status = resolveStatus(p);
   if (status === undefined) return undefined;
+  const worker = resolveWorkerStatus(p);
+  if (worker !== undefined && worker !== WorkerStatus.UNKNOWN && ERROR_WORKER_STATUSES.has(worker)) {
+    return worker;
+  }
   if (isProcessRunning(status)) {
-    const worker = resolveWorkerStatus(p);
     if (worker !== undefined && worker !== WorkerStatus.UNKNOWN) return worker;
-    return status;
   }
   return status;
 }

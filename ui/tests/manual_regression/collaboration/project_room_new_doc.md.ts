@@ -15,7 +15,6 @@ test.describe('Project doc creation — entity API', () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => {
       localStorage.setItem('llm-setup-modal-seen', 'true');
-      localStorage.setItem('flowpad-index-approved', 'true');
     });
   });
 
@@ -26,8 +25,10 @@ test.describe('Project doc creation — entity API', () => {
 
     await page.goto('/dock/project/@flowpad_assistant');
     await page.waitForLoadState('networkidle', { timeout: 25_000 }).catch(() => {});
-    await expect(page.getByText('Assets', { exact: true }).first()).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByText(/Project:/).first()).toBeVisible({ timeout: 15_000 });
+    // Project view header renders "Project assets"; the project scope indicator
+    // is the project-name chip (data-testid="project-name-chip"), not a "Project:" label.
+    await expect(page.getByText('Project assets').first()).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId('project-name-chip').first()).toBeVisible({ timeout: 15_000 });
     await expect(page.locator('body')).not.toContainText('No editor for type: project');
 
     const offending = errors.filter((e) => !/ResizeObserver|favicon/.test(e) && !/user-/.test(e) && !/agent_hook/.test(e) && !/\b404\b/.test(e));

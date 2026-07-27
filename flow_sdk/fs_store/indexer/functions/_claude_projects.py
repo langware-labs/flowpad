@@ -8,6 +8,7 @@ decodes incorrectly to /Users/foo/my/app).
 The reliable fix: read the 'cwd' field from a session JSONL file inside the
 project directory, which stores the original unencoded path.
 """
+
 from __future__ import annotations
 
 import json
@@ -16,25 +17,15 @@ import sys
 from pathlib import Path
 from typing import Iterator
 
-
 _IS_WINDOWS = sys.platform == "win32"
 
 
 def _claude_projects_dir() -> Path:
     """Per-instance ~/.claude/projects (call-time, via InstanceSettings)."""
     from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
     return get_instance_settings().claude_projects_dir
 
-
-def _invalid_project_roots() -> set[Path]:
-    """Paths that MUST never be yielded as a "project" — walking them would
-    enumerate the entire machine. Resolved per-call so test-mode isolation
-    correctly excludes the sandbox user_home."""
-    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
-    return {
-        Path("/").resolve(),
-        get_instance_settings().user_home.resolve(),
-    }
 
 # Match Windows encoded project names: starts with drive letter, e.g. "C-Users-<user-name>-project"
 _WIN_ENCODED_RE = re.compile(r"^([A-Za-z])-(.*)")
@@ -109,9 +100,8 @@ def iter_claude_project_paths(include_temp: bool = False) -> Iterator[Path]:
     if not projects_dir.is_dir():
         return
 
-    from flow_sdk.utils.file_system import is_temp_path  # noqa: PLC0415
+    from flow_sdk.fs_store.path_utils import is_valid_project_cwd  # noqa: PLC0415
 
-    invalid_roots = _invalid_project_roots()
     seen: set[Path] = set()
     for project_dir in sorted(projects_dir.iterdir()):
         if not project_dir.is_dir():
@@ -122,15 +112,12 @@ def iter_claude_project_paths(include_temp: bool = False) -> Iterator[Path]:
             # Windows-only: encoded name lacked a drive letter — undecodable.
             continue
 
-        if not include_temp and is_temp_path(real):
+        if not is_valid_project_cwd(real, include_temp=include_temp):
             continue
 
         try:
             rp = real.resolve()
         except OSError:
-            continue
-        if rp in invalid_roots:
-            # Stale cwd pointing at / or $HOME — ignore, not a real project.
             continue
         if rp in seen:
             continue

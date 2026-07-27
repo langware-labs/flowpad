@@ -1,5 +1,6 @@
 import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { resetOpenerPrefs } from '../utils/opener-prefs';
 import { ProjectsCounterChip } from '@src/components/terminal/ProjectsCounterChip';
 import { useTabProjectBuckets, type TabProjectBucket } from '@src/tabs/useTabs';
 import { useAllProjects } from '@src/hooks/use-all-projects';
@@ -21,6 +22,16 @@ vi.mock('@src/tabs/useTabs', () => ({
 
 vi.mock('@src/hooks/use-all-projects', () => ({
   useAllProjects: vi.fn(),
+}));
+
+const entryMocks = vi.hoisted(() => ({
+  dockForProjectEntry: vi.fn(async () => ({ __dock: 'project' })),
+  dockForGlobalEntry: vi.fn(async () => ({ __dock: 'global' })),
+}));
+
+vi.mock('@src/tabs/project-entry', () => ({
+  dockForProjectEntry: entryMocks.dockForProjectEntry,
+  dockForGlobalEntry: entryMocks.dockForGlobalEntry,
 }));
 
 const mockUseTabProjectBuckets = vi.mocked(useTabProjectBuckets);
@@ -48,13 +59,17 @@ function makeBucket(id: string, displayName: string, tabCount: number): TabProje
 describe('ProjectsCounterChip', () => {
   beforeEach(() => {
     navMocks.openDock.mockReset();
+    entryMocks.dockForProjectEntry.mockClear();
+    entryMocks.dockForGlobalEntry.mockClear();
     mockUseTabProjectBuckets.mockReset();
     mockUseAllProjects.mockReset();
     mockUseAllProjects.mockReturnValue({ projects: [], isLoading: false });
-    // WorkerToolbar persists the last-launched worker (rememberWorker) and reads
-    // the view mode from localStorage. Clear it so every test starts in the
-    // standard `lastOpened` mode with `claude_code` as the primary worker —
-    // otherwise a test that launches codex would make codex primary in the next.
+    // WorkerToolbar persists the last-launched worker (rememberWorker) via the
+    // registry-driven preference store (PrefKey.LAST_OPENER) — NOT localStorage
+    // anymore. Reset it so every test starts with `claude_code` as the primary
+    // worker; otherwise a test that launches codex leaks codex-primary into the
+    // next test (the instancePreferences singleton persists across tests).
+    resetOpenerPrefs();
     localStorage.clear();
   });
 
@@ -62,11 +77,12 @@ describe('ProjectsCounterChip', () => {
     cleanup();
   });
 
-  function seedBuckets() {
+  function seedBuckets(globalTabCount = 0) {
     const projectA = '11111111-1111-4111-8111-111111111111';
     const projectB = '22222222-2222-4222-8222-222222222222';
     mockUseTabProjectBuckets.mockReturnValue({
       buckets: [makeBucket(projectA, '11111111', 2), makeBucket(projectB, '22222222', 1)],
+      globalTabCount,
     });
     return { projectA, projectB };
   }
@@ -80,7 +96,7 @@ describe('ProjectsCounterChip', () => {
     expect(chip.textContent).toContain('2');
     // The chip labels the current project as a prefix segment (added 5937eaa4):
     // `<projectName> — <count summary>`.
-    expect(chip.getAttribute('aria-label')).toBe('11111111 — 2 active projects with 3 open tabs');
+    expect(chip.getAttribute('aria-label')).toBe('11111111 — 2 open projects, 3 open tabs');
   });
 
   it('keeps per-project tab counts in the popover list', async () => {
@@ -200,6 +216,7 @@ describe('ProjectsCounterChip', () => {
     const idAlpha = '44444444-4444-4444-8444-444444444444';
     mockUseTabProjectBuckets.mockReturnValue({
       buckets: [makeBucket(idZebra, 'zebra', 1), makeBucket(idAlpha, 'alpha', 1)],
+      globalTabCount: 0,
     });
 
     // zebra is current — it must stay in alphabetical position, only highlighted.
@@ -220,10 +237,65 @@ describe('ProjectsCounterChip', () => {
     // A strip whose only tabs are global has no project tab to count, so the
     // chip stays hidden rather than advertising "0 / 0" — even when a launch
     // callback is provided (the strip's own openers handle the empty case).
-    mockUseTabProjectBuckets.mockReturnValue({ buckets: [] });
+    mockUseTabProjectBuckets.mockReturnValue({ buckets: [], globalTabCount: 0 });
     const onLaunchProjectPath = vi.fn();
 
     render(<ProjectsCounterChip onLaunchProjectPath={onLaunchProjectPath} />);
+
+    expect(screen.queryByTestId('projects-counter-chip')).toBeNull();
+  });
+
+  // ─── Global scope ─────────────────────────────────────────────────────────
+
+  it('shows the violet "Global" chip when no project is selected and global tabs exist', () => {
+    seedBuckets(3);
+
+    // No currentProjectId ⇒ Global scope.
+    render(<ProjectsCounterChip currentProjectId={null} />);
+
+    const chip = screen.getByTestId('projects-counter-chip');
+    expect(chip.textContent).toContain('Global');
+    expect(chip.getAttribute('aria-label')).toBe('Global — 2 open projects, 3 open tabs');
+  });
+
+  it('lists a current-marked Global row (with its count) above the projects', async () => {
+    seedBuckets(3);
+
+    render(<ProjectsCounterChip currentProjectId={null} />);
+    await userEvent.click(screen.getByTestId('projects-counter-chip'));
+
+    const globalRow = screen.getByTestId('projects-counter-global');
+    expect(globalRow.getAttribute('aria-current')).toBe('true');
+    expect(globalRow.textContent).toContain('Global');
+    expect(globalRow.textContent).toContain('3');
+  });
+
+  it('navigates to the Global scope when the Global row is clicked', async () => {
+    seedBuckets(3);
+
+    render(<ProjectsCounterChip currentProjectId={null} />);
+    await userEvent.click(screen.getByTestId('projects-counter-chip'));
+    await userEvent.click(screen.getByTestId('projects-counter-global'));
+
+    expect(entryMocks.dockForGlobalEntry).toHaveBeenCalledTimes(1);
+    expect(navMocks.openDock).toHaveBeenCalledWith({ __dock: 'global' });
+  });
+
+  it('does NOT show Global while a project is selected (strictly current-only)', async () => {
+    const { projectA } = seedBuckets(3);
+
+    render(<ProjectsCounterChip currentProjectId={projectA} />);
+    const chip = screen.getByTestId('projects-counter-chip');
+    // Trigger reads the project, not Global.
+    expect(chip.textContent).not.toContain('Global');
+    await userEvent.click(chip);
+    expect(screen.queryByTestId('projects-counter-global')).toBeNull();
+  });
+
+  it('hides the chip when in Global scope but there are no global tabs and no projects', () => {
+    mockUseTabProjectBuckets.mockReturnValue({ buckets: [], globalTabCount: 0 });
+
+    render(<ProjectsCounterChip currentProjectId={null} />);
 
     expect(screen.queryByTestId('projects-counter-chip')).toBeNull();
   });

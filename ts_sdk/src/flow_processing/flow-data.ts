@@ -63,6 +63,7 @@ export interface IFlowData<T = any> {
   data: T;
   attributes: Record<string, string>;
   rawData?: any; // Original unparsed data
+  processEntry?: Record<string, unknown> | null;
   source: FlowDataSource; // Origin of this FlowData
 }
 
@@ -72,6 +73,7 @@ export class FlowData<T = any> extends EventEmitter implements IFlowData<T> {
   public isSelfClosing: boolean = false;
   public readonly attributes: Record<string, string>;
   public rawData?: any; // Store original data before parsing
+  public processEntry: Record<string, unknown> | null = null;
   public readonly index: number; // Instance index from backend
   public readonly timestamp: string; // ISO 8601 timestamp from backend
   public readonly focus: ViewType | null; // Focus recommendation from backend
@@ -573,7 +575,14 @@ export class FlowData<T = any> extends EventEmitter implements IFlowData<T> {
   static fromJSON(data: Record<string, unknown>): FlowData {
     const attributes = (data.attributes as Record<string, string>) || {};
     const elementType = attributes['element-type'] || (data.element_type as string) || 'unknown';
-    const content = (data.flow_value as string) || (data.content as string) || '';
+    // fromJSON is the history/JSONL ingestion path only (get-history replay +
+    // FlowDataStreamReader) — live frames arrive via the XML stream parser.
+    // Backend history rows carry non-string flow_value for object rows (e.g.
+    // TOOL_CALL dicts from transcript_analyzer), so serialize them instead of
+    // passing a raw object where every consumer (parseObject, `content`,
+    // reconcile fallback keys, previews) expects a string.
+    const value = data.flow_value ?? data.content ?? '';
+    const content = typeof value === 'string' ? value : JSON.stringify(value);
 
     // Build attributes from JSON data
     const finalAttributes: Record<string, string> = {
@@ -608,6 +617,10 @@ export class FlowData<T = any> extends EventEmitter implements IFlowData<T> {
     }
 
     const flowData = new FlowData(elementType, content, finalAttributes);
+    const processEntry = data.process_entry ?? data.processEntry;
+    if (processEntry && typeof processEntry === 'object' && !Array.isArray(processEntry)) {
+      flowData.processEntry = processEntry as Record<string, unknown>;
+    }
 
     // Keep FlowData in non-ready state to allow consolidation via parseChunk
     // markReady() will be called when consolidation is complete

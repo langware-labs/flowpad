@@ -19,8 +19,6 @@ import pytest
 from flow_sdk.builtin.flow_message import Attachment, AttachmentType, FlowMessage
 from flow_sdk.builtin.flow_message_bundle import (
     FlowMessageExistsError,
-    FlowMessageNoProjectError,
-    _resolve_project_root_for_conv,
     pack_bundle,
     unpack_bundle,
 )
@@ -30,10 +28,10 @@ from flow_sdk.builtin.flow_message_bundle import (
 # Helpers
 # ---------------------------------------------------------------------------
 
-_TASK_UUID    = "a1a1a1a1-0000-0000-0000-000000000001"
-_CONV_UUID    = "b2b2b2b2-0000-0000-0000-000000000002"
-_SPEC_UUID    = "c3c3c3c3-0000-0000-0000-000000000003"
-_TASK2_UUID   = "d4d4d4d4-0000-0000-0000-000000000004"
+_TASK_UUID = "a1a1a1a1-0000-4000-8000-000000000001"
+_CONV_UUID = "b2b2b2b2-0000-4000-8000-000000000002"
+_SPEC_UUID = "c3c3c3c3-0000-4000-8000-000000000003"
+_TASK2_UUID = "d4d4d4d4-0000-4000-8000-000000000004"
 
 
 def _make_flow_message(fm_id: str = "aaaa1111-0000-0000-0000-000000000001") -> FlowMessage:
@@ -48,6 +46,13 @@ def _make_flow_message(fm_id: str = "aaaa1111-0000-0000-0000-000000000001") -> F
     )
     fm.id = fm_id
     return fm
+
+
+@pytest.fixture(autouse=True)
+def _isolated_records_root(tmp_records_root):
+    """Every unpack now persists its bundle + staging tree under the
+    records-data root — keep that off the developer's real instance dir."""
+    return tmp_records_root
 
 
 def _write_flowmsg_zip(tmp_path: Path, fm_data: dict, attachments: dict[str, bytes] | None = None) -> Path:
@@ -77,14 +82,14 @@ class TestPackBundle:
         assert zip_path.suffix == ".flowmsg"
         with zipfile.ZipFile(zip_path, "r") as zf:
             names = zf.namelist()
-            assert "header.json" in names
-            data = json.loads(zf.read("header.json"))
+            assert "flow_message.json" in names
+            data = json.loads(zf.read("flow_message.json"))
             assert data["text"] == "Hello, world!"
             assert data["id"] == fm.id
 
     @pytest.mark.asyncio
     async def test_pack_with_flow_message_attachment(self, tmp_path):
-        """pack_bundle includes attachment/flow_message-@<id>/header.json for flow_message entries."""
+        """pack_bundle includes attachment/flow_message-<id>/header.json for flow_message entries."""
         fm = _make_flow_message()
         inner_id = "bbbb2222-0000-0000-0000-000000000002"
         fm.attachment = [Attachment(attachment_type=AttachmentType.TYPE_ID, data=f"flow_message-{inner_id}")]
@@ -97,7 +102,7 @@ class TestPackBundle:
 
         with zipfile.ZipFile(zip_path, "r") as zf:
             names = zf.namelist()
-            expected = f"attachment/flow_message-@{inner_id}/header.json"
+            expected = f"attachment/flow_message-{inner_id}/header.json"
             assert expected in names
 
     @pytest.mark.asyncio
@@ -117,10 +122,10 @@ class TestPackBundle:
 
         with zipfile.ZipFile(zip_path, "r") as zf:
             names = zf.namelist()
-            # New unified layout: attachment/<type>-@<id>/<main_subdir>/<leaf>.
+            # New unified layout: attachment/<type>-<id>/<main_subdir>/<leaf>.
             # Spec is folder-layout (specs/<name>/spec.md); the DB-backed mock
             # (no on-disk asset_ref) renders via default_body_fn.
-            expected = f"attachment/spec-@{spec_id}/specs/My_Spec/spec.md"
+            expected = f"attachment/spec-{spec_id}/agentic-assets/spec/My_Spec/spec.md"
             assert expected in names
             content = zf.read(expected).decode("utf-8")
             assert "My Spec" in content
@@ -128,14 +133,20 @@ class TestPackBundle:
 
     @pytest.mark.asyncio
     async def test_pack_with_task_attachment(self, tmp_path):
-        """pack_bundle writes header.json for task attachments."""
+        """pack_bundle writes task.md via the generic folder-asset packer.
+
+        Task is now a folder asset (``main_subdir="tasks"``) — no bespoke
+        header.json packer. Same layout as spec: the DB-backed mock (no on-disk
+        asset_ref) renders ``task.md`` via ``default_body_fn``. Sender-local
+        fields never appear in the shipped file (the whitelist in
+        ``_task_default_body``)."""
         from flow_sdk.builtin.task import Task
 
         fm = _make_flow_message()
         task_id = _TASK2_UUID
         fm.attachment = [Attachment(attachment_type=AttachmentType.TYPE_ID, data=f"task-{task_id}")]
 
-        mock_task = Task(title="My Task")
+        mock_task = Task(title="My Task", status="in_progress", my_process_id="LEAK-PROC")
         mock_task.id = task_id
 
         with patch.object(Task, "get_one", new=AsyncMock(return_value=mock_task)):
@@ -143,10 +154,21 @@ class TestPackBundle:
 
         with zipfile.ZipFile(zip_path, "r") as zf:
             names = zf.namelist()
-            expected = f"attachment/task-@{task_id}/header.json"
+            expected = f"attachment/task-{task_id}/agentic-assets/task/My_Task/task.md"
             assert expected in names
-            data = json.loads(zf.read(expected))
-            assert data["title"] == "My Task"
+            content = zf.read(expected).decode("utf-8")
+            assert "My Task" in content
+            capsule = json.loads(
+                zf.read(
+                    f"attachment/task-{task_id}/agentic-assets/task/My_Task/"
+                    ".flow/capsules/identity.json"
+                )
+            )
+            assert capsule == {"version": 1, "data": {"id": task_id}}
+            assert "in_progress" in content
+            # Sender-local fields must never ride along in the shared file.
+            assert "my_process_id" not in content
+            assert "LEAK-PROC" not in content
 
     @pytest.mark.asyncio
     async def test_pack_copies_native_file_attachment_bytes_into_files_dir(self, tmp_path):
@@ -169,7 +191,7 @@ class TestPackBundle:
         with zipfile.ZipFile(zip_path, "r") as zf:
             assert "attachment/files/report.pdf" in zf.namelist()
             assert zf.read("attachment/files/report.pdf") == b"PDFBYTES"
-            header = json.loads(zf.read("header.json"))
+            header = json.loads(zf.read("flow_message.json"))
             assert header["attachment"][0]["data"] == "attachment/files/report.pdf"
 
         # --- (b) inline-text PROMPT (no backing file) → not copied ---
@@ -180,7 +202,7 @@ class TestPackBundle:
         zip_path2 = await pack_bundle(fm2, dest_dir=tmp_path)
         with zipfile.ZipFile(zip_path2, "r") as zf:
             assert not any(n.startswith("attachment/files/") for n in zf.namelist())
-            header2 = json.loads(zf.read("header.json"))
+            header2 = json.loads(zf.read("flow_message.json"))
             # No VFS prefix → header data passes through unchanged.
             assert header2["attachment"][0]["data"] == "Just inline prompt text, no file."
 
@@ -197,13 +219,14 @@ class TestPackBundle:
         """A real on-disk spec-style asset (asset_ref = inner spec.md,
         main_file_is_asset_ref=True) ships its PARENT folder verbatim — both the
         main file and its siblings — using the real on-disk body (not
-        default_body_fn), with the sender's id pinned into spec.md."""
+        default_body_fn). Existing-source bundles are copied byte-for-byte and
+        do not retrofit an identity that was absent on the source."""
         from flow_sdk.builtin.spec import Spec
 
         spec_id = _SPEC_UUID
-        folder = tmp_path / "specs" / "hello"
+        folder = tmp_path / "agentic-assets" / "spec" / "hello"
         folder.mkdir(parents=True)
-        # spec.md authored WITHOUT an id in frontmatter → pack must pin it.
+        # spec.md authored WITHOUT identity → pack must preserve it as-is.
         sentinel = "REAL-ON-DISK-SENTINEL-BODY"
         (folder / "spec.md").write_text(
             f"---\ntitle: Hello Spec\nspec_type: plan\n---\n\n{sentinel}\n", encoding="utf-8",
@@ -223,8 +246,8 @@ class TestPackBundle:
 
         with zipfile.ZipFile(zip_path, "r") as zf:
             names = zf.namelist()
-            main_arc = f"attachment/spec-@{spec_id}/specs/hello/spec.md"
-            notes_arc = f"attachment/spec-@{spec_id}/specs/hello/notes.md"
+            main_arc = f"attachment/spec-{spec_id}/agentic-assets/spec/hello/spec.md"
+            notes_arc = f"attachment/spec-{spec_id}/agentic-assets/spec/hello/notes.md"
             # Parent folder shipped verbatim — sibling rode along too.
             assert main_arc in names
             assert notes_arc in names
@@ -232,8 +255,8 @@ class TestPackBundle:
             # Real on-disk body, NOT a default_body_fn re-render.
             assert sentinel in main_text
             assert zf.read(notes_arc).decode("utf-8").strip() == sibling
-            # id pinned into the folder's main doc.
-            assert f"id: {spec_id}" in main_text
+            assert "flowpad:capsule identity" not in main_text
+            assert f"id: {spec_id}" not in main_text
 
 
 # ---------------------------------------------------------------------------
@@ -319,7 +342,7 @@ class TestUnpackBundle:
         # message.json, so the nested branch was dead and this test proved
         # nothing about it. Corrected to header.json so the branch actually runs.
         attachments = {
-            f"attachment/flow_message-@{inner_id}/header.json": json.dumps(inner_fm_data).encode(),
+            f"attachment/flow_message-{inner_id}/header.json": json.dumps(inner_fm_data).encode(),
         }
         zip_path = _write_flowmsg_zip(tmp_path, fm_data, attachments)
 
@@ -386,7 +409,7 @@ class TestUnpackBundle:
         inner_data = {"id": inner_id, "type": "flow_message", "text": "inner"}
         zip_path = _write_flowmsg_zip(
             tmp_path, fm_data,
-            {f"attachment/flow_message-@{entry_dir_id}/header.json": json.dumps(inner_data).encode()},
+            {f"attachment/flow_message-{entry_dir_id}/header.json": json.dumps(inner_data).encode()},
         )
         with _patched(AsyncMock(return_value=None)):
             await unpack_bundle(zip_path, "local-user-id")
@@ -402,7 +425,7 @@ class TestUnpackBundle:
                      "shared_context_entities": [], "attachment": []}
         zip_path_b = _write_flowmsg_zip(
             tmp_path, fm_data_b,
-            {f"attachment/flow_message-@{fallback_dir_id}/header.json": json.dumps(inner_noid).encode()},
+            {f"attachment/flow_message-{fallback_dir_id}/header.json": json.dumps(inner_noid).encode()},
         )
         with _patched(AsyncMock(return_value=None)):
             await unpack_bundle(zip_path_b, "local-user-id")
@@ -417,7 +440,7 @@ class TestUnpackBundle:
                      "shared_context_entities": [], "attachment": []}
         zip_path_c = _write_flowmsg_zip(
             tmp_path, fm_data_c,
-            {f"attachment/flow_message-@{inner_id_c}/header.json": json.dumps(inner_data_c).encode()},
+            {f"attachment/flow_message-{inner_id_c}/header.json": json.dumps(inner_data_c).encode()},
         )
         existing_inner = FlowMessage(text="already here")
         existing_inner.id = inner_id_c
@@ -514,7 +537,7 @@ class TestPromptAttachmentRoundtrip:
 
         with zipfile.ZipFile(zip_path, "r") as zf:
             # New unified layout: prompts/<name>.md (file-layout, prompts subdir).
-            expected = f"attachment/prompt-@{_PROMPT_UUID}/prompts/Fix_the_bug.md"
+            expected = f"attachment/prompt-{_PROMPT_UUID}/prompts/Fix_the_bug.md"
             assert expected in zf.namelist()
             content = zf.read(expected).decode("utf-8")
             assert "Fix the bug in auth." in content
@@ -522,12 +545,16 @@ class TestPromptAttachmentRoundtrip:
             assert "use_count: 2" in content
 
     @pytest.mark.asyncio
-    async def test_unpack_parks_file_backed_asset_without_project(self, tmp_path):
-        """A file-backed asset (prompt) with no project mapped is PARKED — not
-        copied/indexed — and the FlowMessage still materializes. (The
-        copy-into-project happy path is covered by the hub integration matrix.)"""
+    async def test_unpack_stages_file_backed_asset_without_project(self, tmp_path):
+        """A file-backed asset (prompt) is STAGED — bundle persisted under the
+        message's record-data dir, MessageAttachment row upserted with
+        scope=None — and the FlowMessage still materializes. No project mapping
+        is needed to download anymore. (The install-into-project path is
+        exercised by test_message_attachment_install.py.)"""
         from flow_sdk.builtin.conversation import Conversation
+        from flow_sdk.builtin.message_attachment import MessageAttachment
         from flow_sdk.builtin.user import User
+        from flow_sdk.fs_store.operations import flow_message as fm_data_ops
 
         fm_id = "abab8888-0000-4000-8000-000000000008"
         prompt_md = (
@@ -546,32 +573,52 @@ class TestPromptAttachmentRoundtrip:
         }
         zip_path = _write_flowmsg_zip(
             tmp_path, fm_data,
-            {f"attachment/prompt-@{_PROMPT_UUID}/prompts/Fix_the_bug.md": prompt_md.encode("utf-8")},
+            {f"attachment/prompt-{_PROMPT_UUID}/prompts/Fix_the_bug.md": prompt_md.encode("utf-8")},
         )
 
         saved_fm = FlowMessage(text="carrier")
         saved_fm.id = fm_id
+
+        staged_saves: list[MessageAttachment] = []
+
+        async def _ma_save(self, *args, **kwargs):  # noqa: ANN001
+            staged_saves.append(self)
+            return self
 
         with (
             patch.object(User, "get_one", new=AsyncMock(return_value=None)),
             patch.object(FlowMessage, "get_one", new=AsyncMock(return_value=None)),
             patch.object(FlowMessage, "save", new=AsyncMock(return_value=saved_fm)),
             patch.object(Conversation, "get_one", new=AsyncMock(return_value=None)),
+            patch.object(MessageAttachment, "get_one", new=AsyncMock(return_value=None)),
+            patch.object(MessageAttachment, "save", new=_ma_save),
+            patch.object(MessageAttachment, "add_entity_op_notification", new=AsyncMock()),
             patch("flow_sdk.discovery.notify.send_resource_sync", return_value=True),
         ):
-            # No conversation/project → asset parked; raise_on_no_project defaults
-            # False so unpack returns the FM rather than raising.
             result = await unpack_bundle(zip_path, "local-user-id")
 
         assert result is not None
         assert result.id == fm_id
+        # Bundle persisted into the message's staging area.
+        assert fm_data_ops.is_downloaded(fm_id), "raw bundle missing from download/"
+        assert fm_data_ops.is_unpacked(fm_id), "extracted tree missing from unpacked/"
+        assert fm_data_ops.staged_entry_dir(fm_id, f"prompt-{_PROMPT_UUID}").is_dir()
+        # Exactly one staged MessageAttachment, deterministic id, scope=None.
+        assert len(staged_saves) == 1
+        ma = staged_saves[0]
+        assert ma.id == MessageAttachment.allocate_deterministic_id(fm_id, f"prompt-{_PROMPT_UUID}")
+        assert ma.asset_type == "prompt"
+        assert ma.asset_id == _PROMPT_UUID
+        assert ma.scope is None
+        assert ma.unpacked_path == f"unpacked/attachment/prompt-{_PROMPT_UUID}"
+        assert ma.name == "Fix the bug"
 
     @pytest.mark.asyncio
-    async def test_unpack_raises_no_project_when_requested(self, tmp_path):
-        """The explicit download path (raise_on_no_project=True) surfaces
-        FlowMessageNoProjectError when a file-backed asset can't be placed."""
+    async def test_unpack_never_copies_file_backed_asset_into_project(self, tmp_path):
+        """Even with a conversation that HAS a mapped project, unpack must not
+        copy or index the file-backed asset anymore — install is explicit."""
         from flow_sdk.builtin.conversation import Conversation
-        from flow_sdk.builtin.flow_message_bundle import FlowMessageNoProjectError
+        from flow_sdk.builtin.message_attachment import MessageAttachment
         from flow_sdk.builtin.user import User
 
         fm_id = "cdcd9999-0000-4000-8000-000000000009"
@@ -585,99 +632,38 @@ class TestPromptAttachmentRoundtrip:
         }
         zip_path = _write_flowmsg_zip(
             tmp_path, fm_data,
-            {f"attachment/prompt-@{_PROMPT_UUID}/prompts/x.md": b"---\nname: x\n---\n\nx\n"},
+            {f"attachment/prompt-{_PROMPT_UUID}/prompts/x.md": b"---\nname: x\n---\n\nx\n"},
         )
 
-        # Conversation exists but has no project_id → no project root.
         mock_conv = Conversation(shared_context_entities=[])
         mock_conv.id = _CONV_UUID
         saved_fm = FlowMessage.model_validate(fm_data)
+        restore_spy = MagicMock(return_value=True)
 
         with (
             patch.object(User, "get_one", new=AsyncMock(return_value=None)),
             patch.object(FlowMessage, "get_one", new=AsyncMock(return_value=None)),
             patch.object(FlowMessage, "save", new=AsyncMock(return_value=saved_fm)),
             patch.object(Conversation, "get_one", new=AsyncMock(return_value=mock_conv)),
+            patch.object(MessageAttachment, "get_one", new=AsyncMock(return_value=None)),
+            patch.object(MessageAttachment, "save", new=AsyncMock()),
+            patch.object(MessageAttachment, "add_entity_op_notification", new=AsyncMock()),
+            patch("flow_sdk.builtin.flow_message_bundle._restore_file_backed_entry", new=restore_spy),
             patch("flow_sdk.discovery.notify.send_resource_sync", return_value=True),
         ):
-            with pytest.raises(FlowMessageNoProjectError):
-                await unpack_bundle(zip_path, "local-user-id", raise_on_no_project=True)
+            result = await unpack_bundle(zip_path, "local-user-id")
 
-
-# ---------------------------------------------------------------------------
-# _resolve_project_root_for_conv precedence (pure-unit, patched get_one)
-# ---------------------------------------------------------------------------
+        assert result is not None
+        restore_spy.assert_not_called()
 
 
 @pytest.mark.asyncio
-async def test_resolve_project_root_prefers_task_then_project():
-    """_resolve_project_root_for_conv precedence:
-    (a) a context Task's project_root wins;
-    (b) a blank Task project_root falls through to the Project mount;
-    (c) no task → the Project mount path;
-    (d) conversation missing → None;
-    (e) empty conv_id → None (no lookups)."""
+async def test_unpack_stages_before_fm_materializes_and_notifies_after(tmp_path):
+    """Order contract: the MessageAttachment CREATE data-ops fire AFTER the
+    top-level FlowMessage was materialized (saved) — the message bubble must
+    exist before its chips flip from Download to staged."""
     from flow_sdk.builtin.conversation import Conversation
-    from flow_sdk.builtin.project import Project
-    from flow_sdk.builtin.task import Task
-
-    task_id = _TASK_UUID
-    proj_id = "9f9f9f9f-0000-4000-8000-000000000099"
-
-    # --- (a) task.project_root set → returned ---
-    conv_a = Conversation(shared_context_entities=[f"task-{task_id}"])
-    conv_a.id = _CONV_UUID
-    task_a = Task(title="T")
-    task_a.id = task_id
-    task_a.project_root = "/sender/work/proj-a"
-    with (
-        patch.object(Conversation, "get_one", new=AsyncMock(return_value=conv_a)),
-        patch.object(Task, "get_one", new=AsyncMock(return_value=task_a)),
-    ):
-        assert await _resolve_project_root_for_conv(_CONV_UUID) == Path("/sender/work/proj-a")
-
-    # --- (b) task present but blank project_root → Project mount ---
-    conv_b = Conversation(shared_context_entities=[f"task-{task_id}"], project_id=proj_id)
-    conv_b.id = _CONV_UUID
-    task_b = Task(title="T")
-    task_b.id = task_id
-    task_b.project_root = "   "  # blank/whitespace
-    proj_b = Project(name="P", fs_storage_mount_path="/local/projects/p")
-    proj_b.id = proj_id
-    with (
-        patch.object(Conversation, "get_one", new=AsyncMock(return_value=conv_b)),
-        patch.object(Task, "get_one", new=AsyncMock(return_value=task_b)),
-        patch.object(Project, "get_one", new=AsyncMock(return_value=proj_b)),
-    ):
-        assert await _resolve_project_root_for_conv(_CONV_UUID) == Path("/local/projects/p")
-
-    # --- (c) no task context, project mount set → project mount ---
-    conv_c = Conversation(shared_context_entities=[], project_id=proj_id)
-    conv_c.id = _CONV_UUID
-    proj_c = Project(name="P", fs_storage_mount_path="/local/projects/c")
-    proj_c.id = proj_id
-    with (
-        patch.object(Conversation, "get_one", new=AsyncMock(return_value=conv_c)),
-        patch.object(Project, "get_one", new=AsyncMock(return_value=proj_c)),
-    ):
-        assert await _resolve_project_root_for_conv(_CONV_UUID) == Path("/local/projects/c")
-
-    # --- (d) conversation missing → None ---
-    with patch.object(Conversation, "get_one", new=AsyncMock(return_value=None)):
-        assert await _resolve_project_root_for_conv(_CONV_UUID) is None
-
-    # --- (e) empty conv_id → None (short-circuits before any lookup) ---
-    assert await _resolve_project_root_for_conv("") is None
-
-
-@pytest.mark.asyncio
-async def test_unpack_raises_no_project_carries_pending_types_after_fm_materializes(tmp_path):
-    """unpack with raise_on_no_project=True, a file-backed asset, and a
-    conversation that maps to NO project: the gate raises
-    FlowMessageNoProjectError whose ``pending_types`` lists the packed type, but
-    only AFTER the top-level FlowMessage was materialized (saved). The asset is
-    PARKED — _restore_file_backed_entry is never invoked (nowhere to copy)."""
-    from flow_sdk.builtin.conversation import Conversation
+    from flow_sdk.builtin.message_attachment import MessageAttachment
     from flow_sdk.builtin.user import User
 
     fm_id = "abcd0001-0000-4000-8000-000000000001"
@@ -691,38 +677,163 @@ async def test_unpack_raises_no_project_carries_pending_types_after_fm_materiali
     }
     zip_path = _write_flowmsg_zip(
         tmp_path, fm_data,
-        {f"attachment/prompt-@{_PROMPT_UUID}/prompts/x.md": b"---\nname: x\n---\n\nx\n"},
+        {f"attachment/prompt-{_PROMPT_UUID}/prompts/x.md": b"---\nname: x\n---\n\nx\n"},
     )
 
-    # Conversation exists but has no project mapped → project_root None.
     mock_conv = Conversation(shared_context_entities=[])
     mock_conv.id = _CONV_UUID
 
-    materialize_calls: list[str] = []
+    order: list[str] = []
 
-    async def _save_shim(self, *args, **kwargs):  # noqa: ANN001
-        materialize_calls.append(self.id)
+    async def _fm_save_shim(self, *args, **kwargs):  # noqa: ANN001
+        order.append(f"fm:{self.id}")
         return self
 
-    restore_spy = MagicMock(return_value=True)
+    async def _ma_notify_shim(self, *args, **kwargs):  # noqa: ANN001
+        order.append(f"ma-create:{self.asset_type}")
 
     with (
         patch.object(User, "get_one", new=AsyncMock(return_value=None)),
         patch.object(FlowMessage, "get_one", new=AsyncMock(return_value=None)),
-        patch.object(FlowMessage, "save", new=_save_shim),
+        patch.object(FlowMessage, "save", new=_fm_save_shim),
         patch.object(Conversation, "get_one", new=AsyncMock(return_value=mock_conv)),
-        patch("flow_sdk.builtin.flow_message_bundle._restore_file_backed_entry", new=restore_spy),
+        patch.object(MessageAttachment, "get_one", new=AsyncMock(return_value=None)),
+        patch.object(MessageAttachment, "save", new=AsyncMock()),
+        patch.object(MessageAttachment, "add_entity_op_notification", new=_ma_notify_shim),
         patch("flow_sdk.discovery.notify.send_resource_sync", return_value=True),
     ):
-        with pytest.raises(FlowMessageNoProjectError) as exc_info:
-            await unpack_bundle(zip_path, "local-user-id", raise_on_no_project=True)
+        await unpack_bundle(zip_path, "local-user-id")
 
-    # The packed type is reported as pending.
-    assert "prompt" in exc_info.value.pending_types
-    # The top-level FlowMessage was materialized BEFORE the gate raised.
-    assert fm_id in materialize_calls
-    # The asset was parked, not copied into any project dir.
-    restore_spy.assert_not_called()
+    assert f"fm:{fm_id}" in order
+    assert "ma-create:prompt" in order
+    assert order.index(f"fm:{fm_id}") < order.index("ma-create:prompt"), (
+        f"MA CREATE fired before the FM materialized: {order}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Raw FILE attachment staging (the File-picker lane, not the Asset lane)
+# ---------------------------------------------------------------------------
+
+
+class TestRawFileAttachmentStaging:
+    """A raw FILE attachment (attachment/files/<name>, attachment_type=file)
+    must join the staged reception flow like asset entries: unpack synthesizes
+    a per-file ``file-<id>`` entry dir and upserts a MessageAttachment row so
+    the UI can render a dashed chip → review → install. Regression for the
+    SAPAK-DEMO-SPEC.md case: files sent via the OS-file-picker lane previously
+    staged nothing and could never surface in a projectless conversation."""
+
+    @pytest.mark.asyncio
+    async def test_unpack_stages_raw_file_attachment(self, tmp_path):
+        from flow_sdk.api.api_types.identifier import mint_uuid
+        from flow_sdk.builtin.conversation import Conversation
+        from flow_sdk.builtin.message_attachment import MessageAttachment
+        from flow_sdk.builtin.user import User
+        from flow_sdk.fs_store.operations import flow_message as fm_data_ops
+
+        fm_id = "fefe0001-0000-4000-8000-00000000000f"
+        fname = "SAPAK-DEMO-SPEC.md"
+        fm_data = {
+            "id": fm_id,
+            "type": "flow_message",
+            "text": "Please see the Spec attached.",
+            "shared_context_entities": [],
+            "attachment": [{
+                "attachment_type": "file",
+                "data": f"attachment/files/{fname}",
+            }],
+        }
+        zip_path = _write_flowmsg_zip(
+            tmp_path, fm_data,
+            {f"attachment/files/{fname}": b"# SAPAK Demo Spec\n\nbody\n"},
+        )
+
+        saved_fm = FlowMessage(text="carrier")
+        saved_fm.id = fm_id
+        staged_saves: list[MessageAttachment] = []
+
+        async def _ma_save(self, *args, **kwargs):  # noqa: ANN001
+            staged_saves.append(self)
+            return self
+
+        with (
+            patch.object(User, "get_one", new=AsyncMock(return_value=None)),
+            patch.object(FlowMessage, "get_one", new=AsyncMock(return_value=None)),
+            patch.object(FlowMessage, "save", new=AsyncMock(return_value=saved_fm)),
+            patch.object(Conversation, "get_one", new=AsyncMock(return_value=None)),
+            patch.object(MessageAttachment, "get_one", new=AsyncMock(return_value=None)),
+            patch.object(MessageAttachment, "save", new=_ma_save),
+            patch.object(MessageAttachment, "add_entity_op_notification", new=AsyncMock()),
+            patch("flow_sdk.discovery.notify.send_resource_sync", return_value=True),
+        ):
+            result = await unpack_bundle(zip_path, "local-user-id")
+
+        assert result is not None
+        # Exactly one staged row for the raw file, deterministic identity.
+        assert len(staged_saves) == 1, (
+            f"raw FILE attachment staged {len(staged_saves)} MessageAttachment rows (expected 1)"
+        )
+        ma = staged_saves[0]
+        asset_id = mint_uuid(f"flow_message_file:{fm_id}:{fname}")
+        entry_key = f"file-{asset_id}"
+        assert ma.id == MessageAttachment.allocate_deterministic_id(fm_id, entry_key)
+        assert ma.asset_type == "file"
+        assert ma.asset_id == asset_id
+        assert not ma.scope  # staged, not installed
+        assert ma.name == fname
+        assert ma.user_scope_allowed is True
+        assert ma.unpacked_path == f"unpacked/attachment/{entry_key}"
+        # Synthesized entry dir: .md files use the .claude/docs/ layout so
+        # install mirrors to <root>/.claude/docs/<name> (indexed as MARKDOWN on
+        # both project and user scopes).
+        entry_dir = fm_data_ops.staged_entry_dir(fm_id, entry_key)
+        assert (entry_dir / ".claude" / "docs" / fname).is_file()
+
+    @pytest.mark.asyncio
+    async def test_unpack_does_not_stage_image_file_attachment(self, tmp_path):
+        """Images render inline right after download — no staged row for them."""
+        from flow_sdk.builtin.conversation import Conversation
+        from flow_sdk.builtin.message_attachment import MessageAttachment
+        from flow_sdk.builtin.user import User
+
+        fm_id = "fefe0002-0000-4000-8000-00000000000f"
+        fm_data = {
+            "id": fm_id,
+            "type": "flow_message",
+            "text": "screenshot",
+            "shared_context_entities": [],
+            "attachment": [{
+                "attachment_type": "file",
+                "data": "attachment/files/shot.png",
+            }],
+        }
+        zip_path = _write_flowmsg_zip(
+            tmp_path, fm_data, {"attachment/files/shot.png": b"\x89PNG fake"},
+        )
+
+        saved_fm = FlowMessage(text="carrier")
+        saved_fm.id = fm_id
+        staged_saves: list[MessageAttachment] = []
+
+        async def _ma_save(self, *args, **kwargs):  # noqa: ANN001
+            staged_saves.append(self)
+            return self
+
+        with (
+            patch.object(User, "get_one", new=AsyncMock(return_value=None)),
+            patch.object(FlowMessage, "get_one", new=AsyncMock(return_value=None)),
+            patch.object(FlowMessage, "save", new=AsyncMock(return_value=saved_fm)),
+            patch.object(Conversation, "get_one", new=AsyncMock(return_value=None)),
+            patch.object(MessageAttachment, "get_one", new=AsyncMock(return_value=None)),
+            patch.object(MessageAttachment, "save", new=_ma_save),
+            patch.object(MessageAttachment, "add_entity_op_notification", new=AsyncMock()),
+            patch("flow_sdk.discovery.notify.send_resource_sync", return_value=True),
+        ):
+            result = await unpack_bundle(zip_path, "local-user-id")
+
+        assert result is not None
+        assert staged_saves == []
 
 
 # ---------------------------------------------------------------------------
@@ -754,7 +865,7 @@ async def test_pack_with_conversation_attachment(tmp_path, monkeypatch):
     fm.attachment = [Attachment(attachment_type=AttachmentType.TYPE_ID, data=f"conversation-{conv_id}")]
 
     # Pre-create the canonical jsonl with a PRIOR pointer line — pack copies it
-    # verbatim but must NOT re-ship prior messages as flow_message-@ entries.
+    # verbatim but must NOT re-ship prior messages as flow_message- entries.
     canonical = default_jsonl_path(conv_id)
     canonical.parent.mkdir(parents=True, exist_ok=True)
     jsonl_body = json.dumps({"typeid": f"flow_message-{prior_fm_id}", "ts": "2020-01-01T00:00:00Z"}) + "\n"
@@ -764,7 +875,7 @@ async def test_pack_with_conversation_attachment(tmp_path, monkeypatch):
     mock_conv = Conversation(
         shared_context_entities=[],
         project_id=proj_id,
-        participants=[{"user_id": "u1", "email": "a@x.com", "name": "A", "role": "owner"}],
+        members=[{"user_id": "u1", "email": "a@x.com", "name": "A", "role": "owner"}],
         title="My Conversation Title",
     )
     mock_conv.id = conv_id
@@ -780,8 +891,8 @@ async def test_pack_with_conversation_attachment(tmp_path, monkeypatch):
 
     with zipfile.ZipFile(zip_path, "r") as zf:
         names = zf.namelist()
-        jsonl_arc = f"attachment/conversation-@{conv_id}/conversation.jsonl"
-        header_arc = f"attachment/conversation-@{conv_id}/header.json"
+        jsonl_arc = f"attachment/conversation-{conv_id}/conversation.jsonl"
+        header_arc = f"attachment/conversation-{conv_id}/header.json"
         assert jsonl_arc in names
         assert zf.read(jsonl_arc).decode("utf-8") == jsonl_body  # copied verbatim
         header = json.loads(zf.read(header_arc))
@@ -791,9 +902,9 @@ async def test_pack_with_conversation_attachment(tmp_path, monkeypatch):
             {"user_id": "u1", "email": "a@x.com", "name": "A", "role": "owner"}
         ]
         # The current FM is co-packed.
-        assert f"attachment/flow_message-@{fm.id}/header.json" in names
+        assert f"attachment/flow_message-{fm.id}/header.json" in names
         # PRIOR messages are NOT re-shipped as their own entries.
-        assert f"attachment/flow_message-@{prior_fm_id}/header.json" not in names
+        assert f"attachment/flow_message-{prior_fm_id}/header.json" not in names
 
     # --- null project_name (conversation has no project) → no crash ---
     mock_conv_np = Conversation(shared_context_entities=[], title=None)
@@ -804,17 +915,17 @@ async def test_pack_with_conversation_attachment(tmp_path, monkeypatch):
     ):
         zip_path2 = await pack_bundle(fm, dest_dir=tmp_path)
     with zipfile.ZipFile(zip_path2, "r") as zf:
-        header2 = json.loads(zf.read(f"attachment/conversation-@{conv_id}/header.json"))
+        header2 = json.loads(zf.read(f"attachment/conversation-{conv_id}/header.json"))
         assert header2["project_name"] is None
         assert header2["project_id"] is None
 
 
 @pytest.mark.asyncio
 async def test_pack_task_attachment_excludes_sender_local_fields(tmp_path):
-    """_pack_task_attachment strips sender-local fields: a Task that actually
-    populates ``project_root`` and ``my_process_id`` must NOT leak them into
-    header.json, while whitelisted fields (title/status) survive. Pins the
-    _TASK_FIELDS whitelist against regressions."""
+    """A Task that populates ``project_root`` / ``my_process_id`` must NOT leak
+    them into the shared ``task.md``, while whitelisted fields (title/status)
+    survive. Pins the ``_task_default_body`` frontmatter whitelist — which is now
+    the single home of the sender-local strip — against regressions."""
     from flow_sdk.builtin.task import Task
 
     fm = _make_flow_message(fm_id="f0f00002-0000-4000-8000-000000000002")
@@ -830,21 +941,23 @@ async def test_pack_task_attachment_excludes_sender_local_fields(tmp_path):
         zip_path = await pack_bundle(fm, dest_dir=tmp_path)
 
     with zipfile.ZipFile(zip_path, "r") as zf:
-        data = json.loads(zf.read(f"attachment/task-@{task_id}/header.json"))
-    # Sender-local fields stripped.
-    assert "project_root" not in data
-    assert "my_process_id" not in data
+        content = zf.read(f"attachment/task-{task_id}/agentic-assets/task/Shared_Task/task.md").decode("utf-8")
+    # Sender-local fields stripped (never written to task.md).
+    assert "project_root" not in content
+    assert "/sender/local/path" not in content
+    assert "my_process_id" not in content
+    assert "agentic-proc-sender-123" not in content
     # Whitelisted fields survive.
-    assert data["title"] == "Shared Task"
-    assert data["status"] == "in_progress"
+    assert "Shared Task" in content
+    assert "in_progress" in content
 
 
 @pytest.mark.asyncio
-async def test_pack_dbonly_spec_pins_id_and_sanitizes_hostile_name(tmp_path):
+async def test_pack_dbonly_spec_capsules_id_and_sanitizes_hostile_name(tmp_path):
     """A DB-only file-backed asset (no on-disk asset_ref → rendered from
     default_body_fn) with a HOSTILE name: the leaf folder name is path-safe (no
-    ``/ : *`` and no traversal escape), the sender id is pinned into the rendered
-    folder main doc, and when default_body_fn is None the branch early-returns
+    ``/ : *`` and no traversal escape), the sender id is written through the
+    folder identity capsule, and when default_body_fn is None the branch early-returns
     writing nothing."""
     from flow_sdk.builtin.spec import Spec
     from flow_sdk.fs_store.schema_registry import SchemaRegistry
@@ -864,7 +977,7 @@ async def test_pack_dbonly_spec_pins_id_and_sanitizes_hostile_name(tmp_path):
 
     with zipfile.ZipFile(zip_path, "r") as zf:
         names = zf.namelist()
-        prefix = f"attachment/spec-@{spec_id}/specs/"
+        prefix = f"attachment/spec-{spec_id}/agentic-assets/spec/"
         spec_members = [n for n in names if n.startswith(prefix)]
         assert spec_members, f"expected a rendered spec doc, got {names}"
         main_arc = spec_members[0]
@@ -876,8 +989,11 @@ async def test_pack_dbonly_spec_pins_id_and_sanitizes_hostile_name(tmp_path):
         bundle_root = (tmp_path / "_resolve_check").resolve()
         resolved = (bundle_root / main_arc).resolve()
         assert str(resolved).startswith(str(bundle_root))
-        # id pinned into the rendered folder main doc.
+        # Identity is outside frontmatter, in the file's comment capsule.
         body = zf.read(main_arc).decode("utf-8")
+        frontmatter = body.split("---", 2)[1]
+        assert f"id: {spec_id}" not in frontmatter
+        assert "<!-- flowpad:capsule identity" in body
         assert f"id: {spec_id}" in body
 
     # --- default_body_fn None → early return, nothing shipped ---
@@ -890,4 +1006,4 @@ async def test_pack_dbonly_spec_pins_id_and_sanitizes_hostile_name(tmp_path):
     ):
         zip_path2 = await pack_bundle(fm2, dest_dir=tmp_path)
     with zipfile.ZipFile(zip_path2, "r") as zf:
-        assert not any(n.startswith(f"attachment/spec-@{spec_id}/") for n in zf.namelist())
+        assert not any(n.startswith(f"attachment/spec-{spec_id}/") for n in zf.namelist())

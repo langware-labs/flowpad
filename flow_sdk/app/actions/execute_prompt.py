@@ -26,8 +26,10 @@ from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccess
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.agentic_process import AgenticProcess
+    from flow_sdk.builtin.collaboration_room import CollaborationRoom
     from flow_sdk.builtin.conversation import Conversation
     from flow_sdk.builtin.flow_message import FlowMessage
+    from flow_sdk.builtin.remote_worker_session import RemoteWorkerSession
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +58,7 @@ def _context_entity_lines(typeids) -> list[str]:
         if not t or not i or t == "flow_message":
             continue
         label = t[:1].upper() + t[1:].replace("_", " ")
-        out.append(f"- {label}: {t}/{i}, read: {root}/{t}/{record_stem(t, i)}")
+        out.append(f"- {label}: {t}/{i}, read: {root}/{t}/{i}")
     return out
 
 
@@ -157,14 +159,300 @@ async def _reuse_or_spawn_headless(target_typeid_str: str, workdir: str) -> "Age
                 await ap.exit()
             except Exception:
                 pass
-        if ap.visible is not False:
+        # Force headless transport: prompt() routes on pty_mode (NOT visible), and
+        # pty_mode defaults True — without this the run takes the PTY path and spawns
+        # an interactive `claude -- "<prompt>"` that never auto-submits, so the
+        # transcript never appears and the turn hangs.
+        if ap.visible is not False or ap.pty_mode is not False:
             ap.visible = False
+            ap.pty_mode = False
             await ap.save()
         return ap
 
-    ap = AgenticProcess(workdir=workdir, target_typeid_str=target_typeid_str, visible=False)
+    ap = AgenticProcess(
+        workdir=workdir, target_typeid_str=target_typeid_str, visible=False, pty_mode=False
+    )
     await ap.save()
     return ap
+
+
+# ── live-session lifecycle events (SESSION_EVENT system lines) ──────────────
+
+_SESSION_EVENT_TEXTS = {
+    "approved": "{actor} approved the live session",
+    "declined": "{actor} declined the live session",
+    "paused": "{actor} paused the live session",
+    "resumed": "{actor} resumed the live session",
+    "ended": "{actor} ended the live session",
+    "prompt_bounced": "Live session is paused — prompt not run",
+}
+
+
+def _session_context_block(conversation_id: str, session_id: str) -> str:
+    """Per-turn preamble telling the worker WHERE it runs and HOW to send
+    files back to the requester.
+
+    The delivery machinery (``flow conversation attach`` → add_message →
+    FILE attachment → body bundle → hub → receiver's staged file chips) is
+    fully wired; the one thing the worker lacks is its own coordinates —
+    ``build_merged_prompt`` never includes the conversation/session ids, so
+    without this block a "bring me file.ext" request has no way to comply.
+    ``--session`` groups the message into the live-session exchange and makes
+    the receiver eager-pull the bundle (files clickable on arrival)."""
+    return (
+        "\n\n---\n"
+        f"Live-session context: you are answering inside live session {session_id} "
+        f"of conversation {conversation_id}, running on the host's machine.\n"
+        "If the request asks you to send back / bring / attach files (logs, "
+        "reports, any artifact), return each one with:\n"
+        f"  flow conversation attach {conversation_id} <absolute-file-path> "
+        f"\"<one-line note>\" --session {session_id}\n"
+        "Run it once per file, then summarize in your reply what you attached. "
+        "Only attach files the request asks for; zip or trim very large files "
+        "first (uploads are capped at 100MB). If no files were requested, do "
+        "not attach anything."
+    )
+
+
+async def emit_session_event(
+    session: "RemoteWorkerSession", event: str, someone_typeid: str,
+    *, text: Optional[str] = None,
+) -> None:
+    """Send a live-session lifecycle line into the bound conversation.
+
+    The message is a visible, messenger-style system line
+    (``kind=SESSION_EVENT``) that doubles as the snapshot carrier: its
+    ``remote_worker_session-<id>`` TYPE_ID attachment gets the session row
+    serialized into the body bundle at upload time, so the other side's mirror
+    refreshes with this event (hub-optional — the marker in ``prompt_preview``
+    survives the hub's unknown-field drop). No-op when the session has no
+    bound conversation yet (guest DRAFT)."""
+    import json as _json  # noqa: PLC0415
+    from flow_sdk.app.actions.notification_action import handle_add_message  # noqa: PLC0415
+    from flow_sdk.builtin.flow_message import (  # noqa: PLC0415
+        LIVE_SESSION_EVENT_MARKER_KEY,
+        AttachmentType,
+        FlowMessageKind,
+    )
+
+    if not session.conversation_id:
+        return
+    actor = session.host_name or "The host"
+    message = text or _SESSION_EVENT_TEXTS.get(event, "Live session: {actor} · " + event).format(actor=actor)
+    await handle_add_message(
+        {
+            "conversation_id": session.conversation_id,
+            "message": message,
+            "kind": FlowMessageKind.SESSION_EVENT.value,
+            "remote_worker_session_id": session.id,
+            "attachment": [{
+                "attachment_type": AttachmentType.TYPE_ID.value,
+                "data": f"remote_worker_session-{session.id}",
+                "prompt_preview": _json.dumps({LIVE_SESSION_EVENT_MARKER_KEY: event}),
+            }],
+        },
+        someone_typeid,
+    )
+
+
+async def redrive_session_prompts(session: "RemoteWorkerSession") -> None:
+    """Run the prompts that queued while the session awaited approval.
+
+    Scans the bound conversation for this session's messages that carry an
+    un-handled prompt from the other side and runs them in arrival order.
+    The ``prompt_auto_handled``-before-run marker inside
+    ``execute_prompt_from_message`` keeps this idempotent against a
+    concurrently arriving prompt."""
+    from flow_sdk.app.actions.notification_action import _is_prompt_attachment  # noqa: PLC0415
+    from flow_sdk.builtin.conversation import Conversation  # noqa: PLC0415
+    from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
+    from flow_sdk.builtin.user import User  # noqa: PLC0415
+
+    if not session.conversation_id:
+        return
+    conv = await Conversation.get_one({"id": session.conversation_id})
+    if not conv:
+        return
+    local_user = await User.get_one({"uname": "local"})
+    local_id = local_user.id if local_user else None
+
+    # Filter to this session's rows in the query; the remaining per-row gates
+    # (draft / own-send / already-handled) stay in Python.
+    fms = await FlowMessage.get_all({
+        "conversation_id": session.conversation_id,
+        "remote_worker_session_id": session.id,
+    })
+    queued = [
+        fm for fm in fms
+        if not getattr(fm, "prompt_auto_handled", False)
+        and not fm.is_draft
+        and (not local_id or fm.sender_id != local_id)
+        and any(_is_prompt_attachment(a) for a in (fm.attachment or []))
+    ]
+    queued.sort(key=lambda m: str(getattr(m, "created_date", "") or ""))
+    someone_typeid = str(TypeId(type="user", id=local_id)) if local_id else ""
+    for fm in queued:
+        await execute_prompt_from_message(
+            fm, conv,
+            auto_reply=True,  # live session implies auto-reply
+            approver_id=local_id,
+            someone_typeid=someone_typeid,
+        )
+
+
+# ── RemoteWorkerSession binding + PromptResult emission ─────────────────────
+
+def _first_prompt_id(fm: "FlowMessage") -> Optional[str]:
+    """Id of the first entity-backed (``prompt-<id>``) prompt attachment, if any.
+    Gated on the shared ``_is_prompt_attachment`` predicate so the prompt-attachment
+    contract stays single-sourced."""
+    from flow_sdk.app.actions.notification_action import _is_prompt_attachment
+    from flow_sdk.builtin.flow_message import AttachmentType
+
+    for a in getattr(fm, "attachment", None) or []:
+        if _is_prompt_attachment(a) and getattr(a, "attachment_type", None) == AttachmentType.TYPE_ID:
+            try:
+                return TypeId(a.data).id
+            except Exception:
+                pass
+    return None
+
+
+async def _reuse_or_bind_session(
+    *, conversation_id: str, host_user_id: Optional[str], guest_user_id: Optional[str],
+    host_process_id: str, project_id: Optional[str], status: str,
+    collaboration_room_id: Optional[str] = None,
+    host_name: Optional[str] = None, guest_name: Optional[str] = None,
+    session_id: Optional[str] = None,
+) -> "RemoteWorkerSession":
+    """One RemoteWorkerSession per (conversation, host) — the session the host's
+    reused worker drives, living inside the conversation's CollaborationRoom.
+    Reuse the existing one (refresh its host_process_id + status), else mint a
+    fresh one bound to the conversation + room. Denormalized host/guest names are
+    stamped so viewers render them without cross-roster id resolution.
+
+    ``session_id``: guest-minted live-session id riding the prompt message. The
+    host ADOPTS it (get-or-mint the row under that exact id) so both sides hold
+    one identity from the first prompt. Must pass ``is_valid_entity_id`` (the
+    guest mints via uuid4); an invalid id falls back to the legacy per-
+    (conversation, host) reuse."""
+    from flow_sdk.api.api_types.identifier import is_valid_entity_id
+    from flow_sdk.builtin.remote_worker_session import RemoteWorkerSession, can_transition
+
+    rws = None
+    if session_id and is_valid_entity_id(session_id):
+        rws = await RemoteWorkerSession.get_one({"id": session_id})
+        if rws is None:
+            rws = RemoteWorkerSession(
+                id=session_id,
+                conversation_id=conversation_id,
+                collaboration_room_id=collaboration_room_id,
+                host_user_id=host_user_id,
+                guest_user_id=guest_user_id,
+                host_name=host_name,
+                guest_name=guest_name,
+                host_process_id=host_process_id,
+                project_id=project_id,
+            )
+    if rws is None:
+        existing = await RemoteWorkerSession.get_all({"conversation_id": conversation_id})
+        rws = next((s for s in existing if getattr(s, "host_user_id", None) == host_user_id), None)
+    if rws is None:
+        rws = RemoteWorkerSession(
+            conversation_id=conversation_id,
+            collaboration_room_id=collaboration_room_id,
+            host_user_id=host_user_id,
+            guest_user_id=guest_user_id,
+            host_name=host_name,
+            guest_name=guest_name,
+            host_process_id=host_process_id,
+            project_id=project_id,
+        )
+    else:
+        rws.host_process_id = host_process_id
+        rws.host_user_id = rws.host_user_id or host_user_id
+        rws.guest_user_id = rws.guest_user_id or guest_user_id
+        rws.project_id = rws.project_id or project_id
+        rws.collaboration_room_id = rws.collaboration_room_id or collaboration_room_id
+        rws.host_name = rws.host_name or host_name
+        rws.guest_name = rws.guest_name or guest_name
+        rws.conversation_id = rws.conversation_id or conversation_id
+    # FSM-guarded status stamp: an adopted row may sit at PENDING (→ RUNNING is
+    # the pre-granted fast path); never force an illegal move (e.g. onto a
+    # terminal row — the gate blocks those upstream, this is the backstop).
+    if can_transition(rws.status, status):
+        rws.mark_activity(status)
+    else:
+        rws.mark_activity()
+    await rws.save()
+    return rws
+
+
+async def _reuse_or_create_room(
+    *, conversation_id: str, project_id: Optional[str], ap: "AgenticProcess",
+    host_user_id: Optional[str],
+) -> Optional["CollaborationRoom"]:
+    """Ensure ONE CollaborationRoom per executed conversation and link the run to
+    it — the backend port of the FE ``AgenticProcess.createCollaborationRoom``.
+
+    Reuse the room the reused headless AP already points at (so re-executing a
+    conversation shares one room, matching the one-process/one-session-per-
+    conversation invariant), else mint a fresh room on the conversation's
+    project. Sets ``ap.collaboration_room_id`` and appends the process to the
+    room so the run surfaces the room chip and the room lists its processes.
+    Best-effort: a room failure must never fail the execution.
+    """
+    from flow_sdk.builtin.collaboration_room import CollaborationRoom
+    try:
+        room: Optional[CollaborationRoom] = None
+        if ap.collaboration_room_id:
+            room = await CollaborationRoom.get_one({"id": ap.collaboration_room_id})
+        if room is None:
+            host_name = None
+            if host_user_id:
+                from flow_sdk.builtin.user import User
+                host = await User.get_one({"id": host_user_id})
+                host_name = getattr(host, "name", None) if host else None
+            room = CollaborationRoom(
+                project_id=project_id,
+                host_name=host_name,
+                host_member_id=host_user_id,
+            )
+            await room.save()
+        if ap.collaboration_room_id != room.id:
+            ap.collaboration_room_id = room.id
+            await ap.save()
+        await room.add_process(ap.id)
+        return room
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[execute_prompt] room link failed: %s", e)
+        return None
+
+
+async def _emit_prompt_result(
+    reply: str, *, prompt_id: Optional[str], session_id: str, host_process_id: str,
+    source_session_id: Optional[str],
+) -> dict:
+    """Mint a PromptResult entity for this turn and return the TYPE_ID attachment
+    dict (``prompt_result-<id>`` + inline ``result_preview``) to ride the reply."""
+    from flow_sdk.builtin.flow_message import AttachmentType
+    from flow_sdk.builtin.prompt_result import PromptResult
+    from flow_sdk.schema.types import EntityType
+
+    pr = PromptResult(
+        prompt_id=prompt_id,
+        remote_worker_session_id=session_id,
+        text=reply,
+        result_preview=reply,
+        host_process_id=host_process_id,
+        source_session_id=source_session_id,
+    )
+    await pr.save()
+    return {
+        "attachment_type": AttachmentType.TYPE_ID.value,
+        "data": str(TypeId(type=EntityType.PROMPT_RESULT.value, id=pr.id)),
+        "prompt_preview": reply,
+    }
 
 
 def _is_user_turn_boundary(msg: dict) -> bool:
@@ -203,17 +491,20 @@ async def _capture_assistant_reply(ap: "AgenticProcess") -> str:
 
     ``stream_transcript`` replays the whole JSONL from the top, and a resumed
     Claude session re-emits every prior turn — so a fixed line offset can't
-    isolate the new turn (it leaks every earlier reply). Instead we drop the
-    collected text every time a genuine user prompt appears, so only the
-    assistant text following the LAST user prompt (this turn's reply) survives.
+    isolate the new turn. We drop the collected text every time a genuine user
+    prompt appears, so only the assistant text following the LAST user prompt
+    (this turn's reply) survives. ``stream_transcript`` itself is resume-aware
+    (it won't end on the prior turn's terminal marker while this turn's worker
+    is live), so by the time it returns the transcript holds THIS turn and the
+    turn-slicing yields the correct reply — no baseline bookkeeping needed.
 
     Claude can also write an assistant message more than once (streaming +
     finalized snapshot share ``message.id``); we key on the id with last-write-
     wins so a repeated snapshot can't duplicate the text within a turn.
     """
-    from collections import OrderedDict
-
-    turn: "OrderedDict[str, str]" = OrderedDict()
+    # dict preserves insertion order (py3.7+); last-write-wins keying dedups a
+    # repeated streaming/finalized snapshot that shares message.id.
+    turn: "dict[str, str]" = {}
     noid = 0
     async for entry in ap.stream_transcript():
         msg = entry.get("message") if isinstance(entry, dict) else None
@@ -253,6 +544,39 @@ def _conversation_is_open(conversation_id: str) -> bool:
         return f"/conversation/{conversation_id}" in pathname
     except Exception:
         return False
+
+
+async def _post_session_approval_feed_entry(
+    session: "RemoteWorkerSession", conversation_id: str, fm_id: str,
+) -> Optional[str]:
+    """Surface a Home-Feed card asking the host to approve a PENDING live
+    session. Same MessageSuggest+FeedEntry pattern as the draft-waiting card,
+    with ``kind="live_session_approval"``. Deduped per prompt message so a
+    re-delivered op can't stack cards. Best-effort — never fails the gate."""
+    try:
+        from flow_sdk.builtin.feed_entry import FeedEntry, FeedStatus
+        from flow_sdk.builtin.message_suggest import MessageSuggest
+        from flow_sdk.server.routes.bootstrap import get_or_create_local_user
+
+        existing = await MessageSuggest.get_all({"flow_message_id": fm_id})
+        if any(getattr(s, "kind", None) == "live_session_approval" for s in existing):
+            return None
+        user = await get_or_create_local_user()
+        guest = session.guest_name or "A contact"
+        suggest = MessageSuggest(
+            text=f"{guest} wants to start a live session on this machine:",
+            message_text=f"Approve to run their prompts here. Session: {session.id}",
+            conversation_id=conversation_id,
+            flow_message_id=fm_id,
+            kind="live_session_approval",
+        )
+        suggest = await suggest.save(user.typeid)
+        feed = FeedEntry(feed_status=FeedStatus.NEW.value, data={"type_id": str(suggest.typeid)})
+        feed = await feed.save(user.typeid)
+        return feed.id
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[execute_prompt] session-approval feed entry failed: %s", e)
+        return None
 
 
 async def _post_draft_waiting_feed_entry(
@@ -326,19 +650,89 @@ async def execute_prompt_from_message(
         target = str(TypeId(type="conversation", id=conversation.id))
         ap = await _reuse_or_spawn_headless(target, workdir)
 
+        # Ensure a CollaborationRoom for this conversation and link the run to it
+        # BEFORE the (long, possibly-failing) agent run so the room + room chip
+        # exist even if the claude turn errors — "the shared session" the execute
+        # dialog promises is a real, openable room.
+        room = await _reuse_or_create_room(
+            conversation_id=conversation.id, project_id=project_id, ap=ap,
+            host_user_id=approver_id,
+        )
+
+        # Bind the RemoteWorkerSession this run drives (host = the local executor,
+        # guest = the prompt's sender). Marked RUNNING for the turn. When the
+        # message carries a guest-minted live-session id, ADOPT it — both sides
+        # hold one session identity from the first prompt.
+        from flow_sdk.builtin.remote_worker_session import (
+            RemoteWorkerSession,
+            RemoteWorkerSessionStatus,
+        )
+        sid = getattr(fm, "remote_worker_session_id", None) or None
+        prior = await RemoteWorkerSession.resolve_state(sid) if sid else None
+        prior_status = getattr(prior, "status", None)
+        rws = await _reuse_or_bind_session(
+            conversation_id=conversation.id,
+            host_user_id=approver_id,
+            guest_user_id=getattr(fm, "sender_id", None),
+            host_process_id=ap.id,
+            project_id=project_id,
+            status=RemoteWorkerSessionStatus.RUNNING,
+            collaboration_room_id=(room.id if room else None),
+            host_name=(room.host_name if room else None),
+            guest_name=getattr(fm, "sender_name", None),
+            session_id=sid,
+        )
+        # First approved run of a guest-initiated session (adopted fresh, or
+        # sitting at PENDING/DRAFT): announce it with a SESSION_EVENT line so
+        # the guest's mirror flips to active. Best-effort.
+        if sid and prior_status in (None, RemoteWorkerSessionStatus.PENDING, RemoteWorkerSessionStatus.DRAFT):
+            try:
+                await emit_session_event(rws, "approved", someone_typeid)
+            except Exception as e:  # noqa: BLE001
+                logger.warning("[execute_prompt] approved event emit failed: %s", e)
+
+        # Live-session file-return contract: appended AFTER build_merged_prompt
+        # (the merged prompt is the user's request; this is runtime context) and
+        # after the session bind so rws.id is the adopted, shared identity.
+        prompt_text += _session_context_block(conversation.id, rws.id)
+
+        # stream_transcript is resume-aware (waits out the live turn worker), so
+        # the capture yields THIS turn's reply even on a resumed multi-turn
+        # session — no pre-prompt snapshot needed here.
         await ap.prompt(prompt_text)
         reply = await _capture_assistant_reply(ap)
 
-        if not reply:
-            return ApiSuccessResponse(data={"executed": True, "reply": None, "process_id": ap.id})
+        rws.mark_activity(RemoteWorkerSessionStatus.IDLE)
+        await rws.save()
 
+        if not reply:
+            return ApiSuccessResponse(data={"executed": True, "reply": None, "process_id": ap.id, "session_id": rws.id, "collaboration_room_id": (room.id if room else None)})
+
+        # The reply carries a structured PromptResult attachment (text + preview,
+        # extensible to produced files/assets) — the turn-grained result the
+        # RemoteWorkerSession viewer reconstructs. The wrapped-quote text stays as
+        # the human-readable body. A prompt_result attachment never re-triggers a
+        # run (the inbound gate matches only `prompt-<id>`), so no Claude↔Claude loop.
         from flow_sdk.app.actions.flow_message_action import _wrap_as_claude_quote
         from flow_sdk.app.actions.notification_action import handle_add_message
+        result_att = await _emit_prompt_result(
+            reply,
+            prompt_id=_first_prompt_id(fm),
+            session_id=rws.id,
+            host_process_id=ap.id,
+            source_session_id=getattr(ap, "session_id", None),
+        )
         result = await handle_add_message(
             {
                 "conversation_id": conversation.id,
                 "message": _wrap_as_claude_quote(reply),
                 "is_draft": "true" if not auto_reply else "",
+                "attachment": [result_att],
+                # Live-session turn: stamp the grouping key — handle_add_message
+                # auto-appends the snapshot carrier, so every reply ships the
+                # session's fresh state (the per-turn piggyback). Legacy
+                # no-session prompts stay unstamped (backward compat).
+                **({"remote_worker_session_id": rws.id} if sid else {}),
             },
             someone_typeid,
         )
@@ -354,6 +748,8 @@ async def execute_prompt_from_message(
             "executed": True,
             "auto_reply": auto_reply,
             "process_id": ap.id,
+            "session_id": rws.id,
+            "collaboration_room_id": (room.id if room else None),
             "send_result": getattr(result, "data", None),
             "feed_entry_id": feed_entry_id,
         })
@@ -436,9 +832,50 @@ async def process_inbound_message(fm_id: str, conversation_id: str) -> None:
         if not conv or not getattr(conv, "project_id", None):
             return  # no project mapped → skip (don't queue); manual Execute still works
 
+        someone_typeid = str(TypeId(type="user", id=local_id)) if local_id else ""
+
+        # ── Live-session gate ──────────────────────────────────────────────
+        # A message carrying a session id is governed by the SESSION's state
+        # (the host's one-time approval), not per-message permission:
+        #   terminal (ENDED/DECLINED) → ignore; PAUSED → bounce with a system
+        #   line; ACTIVE (IDLE/RUNNING) → run, auto-reply implied;
+        #   unknown/PENDING/DRAFT → fall through to ContactPermission (a
+        #   standing grant auto-approves the session start; otherwise the
+        #   session materializes at PENDING and an approval card is surfaced).
+        from flow_sdk.builtin.remote_worker_session import (
+            RemoteWorkerSession,
+            RemoteWorkerSessionStatus,
+            is_active,
+            is_terminal,
+        )
+        sid = getattr(fm, "remote_worker_session_id", None) or None
+        session = await RemoteWorkerSession.resolve_state(sid) if sid else None
+        if session is not None:
+            if is_terminal(session.status):
+                logger.info("[execute_prompt] prompt for %s session %s ignored", session.status, sid)
+                return
+            if session.status == RemoteWorkerSessionStatus.PAUSED:
+                # Bounce (decision: no queueing while paused). Mark handled so a
+                # re-sync doesn't re-bounce; the guest sees the system line.
+                fm.prompt_auto_handled = True
+                await fm.save(someone_typeid)
+                try:
+                    await emit_session_event(session, "prompt_bounced", someone_typeid)
+                except Exception as e:  # noqa: BLE001
+                    logger.warning("[execute_prompt] bounce event emit failed: %s", e)
+                return
+            if is_active(session.status):
+                await execute_prompt_from_message(
+                    fm, conv,
+                    auto_reply=True,  # live session implies auto-reply
+                    approver_id=session.host_user_id or local_id,
+                    someone_typeid=someone_typeid,
+                )
+                return
+
         # Resolve the contact identity for the permission lookup.
         contact_email = None
-        for p in (conv.participants or []):
+        for p in (conv.members or []):
             if p.get("user_id") == fm.sender_id:
                 contact_email = p.get("email")
                 break
@@ -452,9 +889,28 @@ async def process_inbound_message(fm_id: str, conversation_id: str) -> None:
             project_id=conv.project_id,
         )
         if not _grants(rows, action=PermissionAction.EXECUTE_PROMPT.value, **grant_kw):
+            if sid:
+                # No standing grant: park the session at PENDING (adopt the
+                # guest-minted id) and ask the host. The prompt itself stays
+                # un-handled so an approve re-drives it.
+                # Park at PENDING. The snapshot's status seeds a FRESH row
+                # (the entity default is IDLE, so it must be explicit); an
+                # EXISTING host row ignores snapshot status (apply_snapshot host
+                # branch), so advance a lingering DRAFT via the fixup below.
+                pending = RemoteWorkerSession.apply_snapshot(session, {
+                    "id": sid,
+                    "conversation_id": conversation_id,
+                    "guest_user_id": fm.sender_id,
+                    "guest_name": getattr(fm, "sender_name", None),
+                    "status": RemoteWorkerSessionStatus.PENDING.value,
+                }, local_is_host=True)
+                if pending.status == RemoteWorkerSessionStatus.DRAFT:
+                    pending.status = RemoteWorkerSessionStatus.PENDING
+                await pending.save(someone_typeid)
+                await _post_session_approval_feed_entry(pending, conversation_id, fm.id)
             return
-        auto_reply = _grants(rows, action=PermissionAction.AUTO_REPLY.value, **grant_kw)
-        someone_typeid = str(TypeId(type="user", id=local_id)) if local_id else ""
+        # Session prompts imply auto-reply; legacy prompts keep the AUTO_REPLY grant.
+        auto_reply = bool(sid) or _grants(rows, action=PermissionAction.AUTO_REPLY.value, **grant_kw)
         await execute_prompt_from_message(
             fm, conv,
             auto_reply=auto_reply,

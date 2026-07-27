@@ -1,4 +1,30 @@
+import { VFSPath } from '@sdk';
+import apiClient from '@sdk/client';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+
+/** Force-reindex the paths a client just changed — see `_handle_fs_records_invalidate`. */
+const INVALIDATE_PATH = '/graph/compute_node/@local/fs-records/invalidate';
+
+/**
+ * Re-parse `path` into its backing entity after a write.
+ *
+ * `/fs/write` touches the file and commits a version, but never re-indexes, so
+ * the entity's fields keep serving pre-edit content until an agent turn ends.
+ * For an `owns_main_ref` type that gap is data loss rather than mere staleness:
+ * the entity is the file's authoritative source, so the next `entity.save()`
+ * re-renders the file from those stale fields and reverts the user's edit.
+ *
+ * Fire-and-forget — a failed reindex must never fail the save that succeeded.
+ */
+export function reindexAfterWrite(path: string): void {
+  // `machinePath` is the form stored as `asset_ref`, which is what the indexer
+  // string-matches on (and it handles the Windows drive-letter case).
+  const machinePath = VFSPath.parse(path).machinePath;
+  if (!machinePath) return;
+  void apiClient.post(INVALIDATE_PATH, { paths: [machinePath] }).catch((err) => {
+    console.warn('[useFSRefContent] Reindex after save failed:', err);
+  });
+}
 
 /** Default compare-normalizer: identity. Module-level so the `dirty` memo's
  *  deps stay stable (a fresh inline closure would defeat the memo). */
@@ -56,6 +82,26 @@ interface Options {
    * loaded content on mount) never marks a phantom edit. Defaults to identity.
    */
   normalize?: (content: string) => string;
+  /**
+   * External change token. When it changes, the body is re-read from disk —
+   * this closes the `file change → reindex → entity updated_date → refresh`
+   * loop: feed the resolved entity's ``updated_date`` here so an out-of-band
+   * write (e.g. an agent editing an open doc) refreshes the rendered content.
+   * Guarded: a change is IGNORED while the buffer is dirty, so an external
+   * update never clobbers unsaved edits (the user's save wins).
+   */
+  reloadKey?: string | number;
+  /**
+   * Re-index the file into its backing entity after each write.
+   *
+   * Only for `owns_main_ref` types, where the entity is authoritative over the
+   * file and a stale entity actively reverts on-disk edits. OFF by default: a
+   * reindex is a full re-parse + entity/FTS/wiki write + broadcast, and for a
+   * hand-edited type (markdown, skill) it buys nothing — the file already IS
+   * the source of truth, so it's pure contention against the indexer's writer
+   * lock, plus a broadcast that bounces back as a redundant re-read.
+   */
+  reindexOnSave?: boolean;
 }
 
 /**
@@ -76,6 +122,7 @@ export function useFSRefContent(fsRef: FsRef | null, options?: Options): FsRefCo
   const autoSave = options?.autoSave ?? true;
   const autoSaveMs = options?.autoSaveMs ?? 3000;
   const normalize = options?.normalize ?? IDENTITY;
+  const reindexOnSave = options?.reindexOnSave ?? false;
 
   const [content, setContentState] = useState('');
   const [remoteContent, setRemoteContent] = useState('');
@@ -111,15 +158,35 @@ export function useFSRefContent(fsRef: FsRef | null, options?: Options): FsRefCo
     () => loaded && normalize(content) !== normalize(remoteContent),
     [loaded, content, remoteContent, normalize],
   );
+  // Live dirty flag for the reloadKey guard below (avoids adding `dirty` to the
+  // load effect's deps, which would re-fire it on every keystroke).
+  const dirtyRef = useRef(dirty);
+  dirtyRef.current = dirty;
+
+  // Distinguish an external `reloadKey` change (a background disk edit) from a
+  // path change / explicit reload(): only the former must yield to unsaved edits.
+  const reloadKey = options?.reloadKey;
+  const prevPathRef = useRef(path);
+  const prevReloadTriggerRef = useRef(reloadTrigger);
 
   // ── Load ──────────────────────────────────────────────────────────────────
-  // Keyed on `path` (stable string) + `reloadTrigger`, NOT the fsRef object —
-  // see fsRefRef note above. Reads the live `fsRefRef.current` so the closure
-  // always uses the current fsManager binding even though the effect didn't
-  // re-run for an identity-only change.
+  // Keyed on `path` (stable string) + `reloadTrigger` + `reloadKey`, NOT the
+  // fsRef object — see fsRefRef note above. Reads the live `fsRefRef.current` so
+  // the closure always uses the current fsManager binding even though the effect
+  // didn't re-run for an identity-only change.
   useEffect(() => {
     const fsRef = fsRefRef.current;
     if (!fsRef) return;
+    // Guard: a bare `reloadKey` bump (path + manual reload unchanged) is an
+    // external change signal — skip the re-read while the buffer is dirty so an
+    // out-of-band write never discards the user's unsaved edits (their save wins).
+    const pathChanged = prevPathRef.current !== path;
+    const manualReload = prevReloadTriggerRef.current !== reloadTrigger;
+    prevPathRef.current = path;
+    prevReloadTriggerRef.current = reloadTrigger;
+    if (!pathChanged && !manualReload && dirtyRef.current) {
+      return;
+    }
     let cancelled = false;
     setLoaded(false);
     setLoadError(null);
@@ -156,7 +223,7 @@ export function useFSRefContent(fsRef: FsRef | null, options?: Options): FsRefCo
     void load();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [path, reloadTrigger]);
+  }, [path, reloadTrigger, reloadKey]);
 
   // ── Re-create (missing-file recovery) ────────────────────────────────────
   const recreate = useCallback(async () => {
@@ -187,6 +254,7 @@ export function useFSRefContent(fsRef: FsRef | null, options?: Options): FsRefCo
       await fsRef.write(contentToSave);
       setRemoteContent(contentToSave);
       setLastSync(new Date());
+      if (reindexOnSave) reindexAfterWrite(fsRef.path);
     } catch (err) {
       console.error('[useFSRefContent] Save failed:', err);
     } finally {
@@ -197,7 +265,7 @@ export function useFSRefContent(fsRef: FsRef | null, options?: Options): FsRefCo
         void saveRef.current(); // re-save with whatever content changed during the in-flight save
       }
     }
-  }, [fsRef]);
+  }, [fsRef, reindexOnSave]);
 
   saveRef.current = save;
 

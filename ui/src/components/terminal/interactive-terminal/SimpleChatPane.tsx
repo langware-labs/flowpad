@@ -1,13 +1,16 @@
 import { AgenticProcess } from '@sdk';
 import { AutoScrollContainer, AutoScrollContainerHandle } from '@src/components/AutoScrollContainer';
+import { ChatActivityLine } from '@src/components/entity-execution-panel/ChatActivityLine';
 import { TurnGroupsList } from '@src/components/entity-execution-panel/TurnGroupsList';
-import { groupTurnEvents } from '@src/components/floating-chat/groupTurnEvents';
+import { useTurnActivity } from '@src/components/entity-execution-panel/hooks/useTurnActivity';
+import { useTurnGroups } from '@src/components/floating-chat/groupTurnEvents';
 import { useAgenticProcessStream } from '@src/hooks/use-agentic-process-stream';
 import { cn } from '@src/lib/utils';
 import { Trans } from '@lingui/react/macro';
 import { MessageSquare } from 'lucide-react';
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { PlanInteractionBar } from './PlanInteractionBar';
+import { useTurnCompletionReconcile } from './useTurnCompletionReconcile';
 
 interface SimpleChatPaneProps {
   /** The interactive tab's live PTY AgenticProcess. */
@@ -37,13 +40,20 @@ export function SimpleChatPane({ process, className }: SimpleChatPaneProps) {
     });
   }, [process.id]);
 
+  // A browser reload can remount this pane while a backend turn is still in
+  // flight — converge with the transcript once when that turn completes.
+  useTurnCompletionReconcile(process);
+
   const items = useAgenticProcessStream(process);
-  const turnGroups = useMemo(() => groupTurnEvents(items), [items]);
+  // Incremental grouping: committed groups keep identity across live appends
+  // so the memoized rows below only re-render the trailing group (QA D10).
+  const turnGroups = useTurnGroups(items);
+  const activity = useTurnActivity(process);
 
   const scrollRef = useRef<AutoScrollContainerHandle>(null);
   useEffect(() => {
     scrollRef.current?.scrollToBottom();
-  }, [turnGroups.length]);
+  }, [turnGroups.length, activity.active]);
 
   return (
     <div className={cn('flex h-full min-h-0 flex-col bg-background', className)} data-testid="simple-chat-pane">
@@ -61,6 +71,12 @@ export function SimpleChatPane({ process, className }: SimpleChatPaneProps) {
         ) : (
           <div className="w-full px-4 py-3">
             <TurnGroupsList groups={turnGroups} worker={process.worker_type ?? undefined} />
+            <ChatActivityLine
+              process={process}
+              active={activity.active}
+              startedAt={activity.startedAt}
+              status={activity.status}
+            />
           </div>
         )}
       </AutoScrollContainer>

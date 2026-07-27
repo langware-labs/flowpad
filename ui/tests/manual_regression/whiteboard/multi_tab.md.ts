@@ -24,6 +24,13 @@ async function openBoard(page: Page, id: string) {
 // Inject one labelled rectangle and fire the editor's onChange with the
 // committed scene (the 500ms gap lets updateScene commit before serialize).
 async function injectRect(page: Page, label: string) {
+  // Re-wait for the live hooks: the editor can remount between openEditor() and
+  // here (a data-load re-render), clearing window.__whiteboardApi. Concrete signal.
+  await page.waitForFunction(
+    () => typeof (window as any).__whiteboardApi === 'object' && !!(window as any).__whiteboardApi
+      && typeof (window as any).__excalidrawLib === 'object' && !!(window as any).__excalidrawLib,
+    null, { timeout: 15_000 },
+  );
   await page.evaluate((text) => {
     const lib = (window as any).__excalidrawLib;
     const api = (window as any).__whiteboardApi;

@@ -24,6 +24,7 @@ class EntityType(StrEnum):
     LOG = "log"
     AGENTIC_PROCESS = "agentic_process"
     ARTIFACT = "artifact"
+    DEPLOYMENT = "deployment"
     BOOKMARK = "bookmark"
     ANNOTATION = "annotation"
     COMMENT = "comment"
@@ -102,11 +103,11 @@ class EntityType(StrEnum):
     DOC_DB = "doc_db"
     RECORD_ERROR = "record_error"
     TEXT_FILE = "text_file"
-    WORKFLOW = "workflow"
     MARKDOWN = "markdown"
     MARKDOWN_INDEX = "markdown_index"
     SPEC = "spec"
     PROMPT = "prompt"
+    PROMPT_RESULT = "prompt_result"
     CONVERSATION = "conversation"
     WHITEBOARD = "whiteboard"
     AGENT_TRACE = "agent_trace"
@@ -115,15 +116,34 @@ class EntityType(StrEnum):
     # parsed & served like a worker transcript/session (worker_type "workflow").
     WORKFLOW_RUN = "workflow_run"
     USAGE_REPORT = "usage_report"
+    ASSET_CLEANUP_REPORT = "asset_cleanup_report"
     DATASET = "dataset"
+    # A reusable slide-deck template — a folder of layout HTML components +
+    # shared design tokens under assets/deck-templates/ (see the decker skill).
+    DECK_TEMPLATE = "deck_template"
+    # A generated presentation — a folder under assets/decks/ holding the
+    # self-contained deck HTML + its deck.json build record (see decker skill).
+    DECK = "deck"
+    # A flat tabular file asset — a .csv (editable) or .xlsx (read-only view)
+    # discovered anywhere in a project, rendered in a grid editor.
+    SPREADSHEET = "spreadsheet"
     FLOWPAD_DIAGNOSIS = "flowpad_diagnosis"
     COLLABORATION_ROOM = "collaboration_room"
+    # A host/guest remote-execution session that lives inside a CollaborationRoom
+    # (alongside its files/assets): guest sends Prompts, host's worker returns
+    # PromptResults. See builtin/remote_worker_session.py.
+    REMOTE_WORKER_SESSION = "remote_worker_session"
     # Transient indexer waypoints — fan-out scaffolding, never persisted.
     USER_HOME_FOLDER = "user_home_folder"
     REAL_PROJECT_CWD = "real_project_cwd"
     SYSTEM_ROOT = "system_root"
     CWD_ROOT = "cwd_root"
     FOLDER = "folder"
+    SECRET_ORIGIN = "secret_origin"
+    CONTACTS_GROUP = "contacts_group"
+    # A blessed dot-taxonomy tag name (flow_sdk/builtin/tag.py). Optional
+    # enrichment — anonymous tags (plain strings) need no entity at all.
+    TAG = "tag"
 
     # ── DB / hub entity types (formerly BuiltinEntityType-only) ──────────────
     USER = "user"
@@ -134,7 +154,6 @@ class EntityType(StrEnum):
     ORGANIZATION = "organization"
     WORKSPACE = "workspace"
     PAGE = "page"
-    FLOW = "flow"
     INVITATION = "invitation"
     MENTION = "mention"
     CONNECTION = "connection"
@@ -157,18 +176,39 @@ class EntityType(StrEnum):
     PROCESS_RESULT = "process_result"
     CRON_EVENT = "cron_event"
     FLOW_MESSAGE = "flow_message"
+    # ── Flow-graph slice (FlowManager) — DB-only entities, no asset_ref ──────
+    # A station in the flow graph: binds a program (skill/callback/instruction)
+    # to execution defaults; executions are separate AgenticProcess entities.
+    FLOW_NODE = "flow_node"
+    # A folder-backed flow document (graph.json + display.json + scripts/ +
+    # runs/). NOTE: "flow" stays reserved by the retired conversational Flow.
+    AGENTIC_FLOW = "agentic_flow"
+    # One execution of an AgenticFlow — row is start/end bookkeeping; the full
+    # trace lives in the flow folder's runs/<id>.jsonl.
+    AGENTIC_FLOW_RUN = "agentic_flow_run"
+    # A folder-backed guided-onboarding document (graph.json of guided_step
+    # nodes + child *.html pages). Runs on the FlowManager engine like an
+    # AgenticFlow, but typed separately so it stays out of the Flows list.
+    JOURNEY = "journey"
+    # A user's private progress through a Journey (DB-only, one per user+journey).
+    JOURNEY_JOURNAL = "journey_journal"
+    # A received, staged bundle attachment awaiting explicit install
+    # (DB-only entity — no TypeInfo/RecordType; see builtin/message_attachment.py).
+    MESSAGE_ATTACHMENT = "message_attachment"
     TEAM_SPACE = "team_space"
     NOTIFICATION = "notification"
+    # The @local singleton owning the inbox unread projection (see
+    # builtin/inbox_manager.py + flow_sdk/inbox). DB-only, not user-creatable.
+    INBOX_MANAGER = "inbox_manager"
     RUN = "run"
-    # Git identity split (see builtin/git_remote.py / builtin/git_branch.py).
-    GIT_REMOTE = "git_remote"
-    GIT_BRANCH = "git_branch"
     # A file on disk outside the record store (DB-only; SemanticLock targets).
     FILE = "file"
     # A content-panel tab — DB-only placement record keyed by a DockPointer
     # hash (docs/tab-management.md). Minted on demand (Tab.ensure_for).
     TAB = "tab"
     # Entity types that previously had no enum member (string-literal `type`).
+    # Retired: Artifact composition now uses canonical parent_type_id. Keep the
+    # persisted value parseable, but do not register a public entity surface.
     ARTIFACT_RELATION = "artifact_relation"
     FS_ITEM = "fs_item"
     KNOWLEDGE_BASE = "knowledge_base"

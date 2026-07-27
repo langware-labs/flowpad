@@ -2,177 +2,118 @@
 id: 23897332-8b35-504e-8b94-1234fe32ea0b
 ---
 
-# Local Hot-Patch Runbook
+# Local Patch Runbook
 
-How to apply a **single-commit hot-patch** to the locally-installed `flowpad` (the
-uv-tool deployment from [`pypi-deploy.md`](./pypi-deploy.md) → _Local Deployment_) **in
-place, without rebuilding the wheel and without running tests.**
+How to run **your local checkout's code** on the locally-installed `flowpad` — the uv-tool
+deployment on port **9007** that the desktop app (and a bare `flow start`) runs.
 
-> **Two surfaces, two patch paths.** This runbook (sections below) patches the **backend**
-> (`flow_sdk` Python in `site-packages`). To patch the **Electron desktop shell** itself —
-> `electron/main.js` bundled inside the installed `Flowpad.app`'s `app.asar` — jump to
-> [Patching the desktop app (Electron shell)](#patching-the-desktop-app-electron-shell). The
-> two are independent: a backend patch never touches the `.app`, and a shell patch never
-> touches `site-packages`.
+> **There is exactly one supported way to patch the local install: a full, stamped
+> deployment.** Bump `flow_sdk/_version.py` to `${max(checkout,PyPI)}+local<N>`, run
+> `build_ui.py`, `uv build`, `uv tool install` the wheel, restart. This is the _Local
+> Deployment_ in the [`deploy-pypi` skill](../.claude/skills/deploy-pypi/SKILL.md) — the same wheel path a real release
+> takes, just with a `+local<N>` label.
+>
+> ⚠️ **Do NOT overlay files into `site-packages`** (`git archive HEAD | tar -x` onto the
+> install). It *looks* faster but is wrong on three counts, all of which bit us (2026-07-04):
+> 1. **It doesn't stamp `+local<N>`** — nothing bumps the version, so `flow` / About /
+>    `upgrade --info` can't tell you whether local code or the stock wheel is running.
+> 2. **It silently *downgrades* the version.** The overlay ships the checkout's plain
+>    `_version.py` over a stamped install, so `0.2.88+local4` → plain `0.2.88` — the
+>    `+local` marker that survives auto-update is gone.
+> 3. **It doesn't delete files the commit removed** (`tar -x` only overwrites). Stale
+>    modules from an abandoned feature linger and crash startup via the type-registry
+>    auto-import (an orphaned `git_branch_type_info.py` referencing a since-removed
+>    `EntityType.GIT_BRANCH` did exactly this).
+>
+> The old `scripts/local_patch.sh` did this overlay and has been **deleted**. Use the
+> stamped deployment below.
 
-This is the **local mirror** of the hub's [`cloud_patch.md`](../../test_flowpad/FlowPad/docs/cloud_patch.md).
-Same principle — `git archive` a commit, overlay it straight onto the running
-deployment, restart the service:
+## The two halves
 
-| | Cloud (hub VM) | Local (uv-tool install) |
-| --- | --- | --- |
-| capture | `git archive <SHA>` | `git archive <ref>` |
-| transport | `… \| ssh --tunnel-through-iap` | (none — same machine) |
-| overlay | `sudo tar -xf - -C /opt/flowpad_app/flowpad-hub-X.Y.Z` | `tar -xf - -C <site-packages>` |
-| restart | `sudo systemctl restart flowpad` | `flow stop && flow start` |
-| health | `$(hostname -i):8000/api/v1/health/version` | `127.0.0.1:9007/api/v1/graph/bootstrap` |
+The desktop is **two independently-versioned halves**; patch only the one(s) that diverge
+from the latest release, and stamp only that half:
 
-> ⚠️ **This is the fast inner-loop path, not the deploy path.** The supported way to ship
-> a build is the full **Local Deployment** in [`pypi-deploy.md`](./pypi-deploy.md)
-> (`build_ui.py` → `uv build` → `uv tool install`). Use this runbook to iterate quickly on
-> backend code already installed. **No tests are run** — that is by design; verify behavior
-> yourself. Any patch is wiped the next time you run the full local deployment (see
-> _Lifetime_).
+| Half | What it is | Ship | Stamp |
+| --- | --- | --- | --- |
+| **SDK / backend** | `flow_sdk` + the `ui`/`ts_sdk` it serves | wheel built from this checkout | `${max(checkout,PyPI)}+local<N>` |
+| **Electron shell** | `electron/` bundled in `Flowpad.app`'s `app.asar` | asar repacked with your `main.js` | `<electron-base>-patch<N>` |
 
----
+This top section covers the **SDK/backend** half (the common case — backend and/or UI
+changes with `electron/` untouched). For the Electron shell — and the full "which half
+diverged?" decision — see
+[Patching the desktop app (Electron shell)](#patching-the-desktop-app-electron-shell) below.
 
-## TL;DR
-
-```bash
-scripts/local_patch.sh                              # overlay flow_sdk @ HEAD + restart
-scripts/local_patch.sh <ref>                        # overlay flow_sdk @ <ref> + restart
-scripts/local_patch.sh -- flow_sdk/server/app.py    # single-file patch @ HEAD (cleaner)
-scripts/local_patch.sh <ref> --ui                   # backend + rebuilt frontend
-scripts/local_patch.sh --dry-run -- flow_sdk/...    # list what would change; apply nothing
-```
-
-The raw mechanism the script runs (backend, one file):
+## SDK / backend local deploy
 
 ```bash
-SP=$(~/.local/share/uv/tools/flowpad/bin/python3 -c 'import sysconfig;print(sysconfig.get_paths()["purelib"])')
-git archive HEAD flow_sdk/server/app.py | tar -xf - -C "$SP"
-( cd ~ && flow stop && FLOWPAD_NO_BROWSER=1 flow start )
+# 0. Base = max(checkout _version, PyPI latest) — NOT the raw checkout. If the checkout lags
+#    PyPI, a plain/lower triple lets the backend self-updater reinstall the published wheel
+#    over your patch (see the auto-update note below).
+SDK_CHECKOUT=$(python3 -c 'print(open("flow_sdk/_version.py").read().split("\"")[1])')
+PYPI_LATEST=$(curl -s https://pypi.org/pypi/flowpad/json | python3 -c 'import sys,json;print(json.load(sys.stdin)["info"]["version"])')
+SDK=$(python3 -c 'import sys;from packaging.version import Version as V;print(max(V(sys.argv[1]),V(sys.argv[2])))' "$SDK_CHECKOUT" "$PYPI_LATEST")
+N=1     # next free +local count; restart at 1 whenever $SDK moves
+
+# 1. Stamp, bake the UI into the wheel, build the wheel
+echo "__version__ = \"${SDK}+local${N}\"" > flow_sdk/_version.py
+rm -rf dist build flowpad.egg-info
+NODE_OPTIONS=--max-old-space-size=8192 python3 build_ui.py   # REQUIRED — bakes ui+ts_sdk into the wheel
+uv build
+
+# 2. Install the wheel as the uv-tool (REPLACES the whole flow_sdk copy — no stale files)
+(cd ~ && uv tool install --force --python 3.13 "$OLDPWD"/dist/flowpad-*.whl)
+
+# 3. Restart from a NEUTRAL dir (repo cwd's .env.local hijacks FLOW_INSTANCE/port)
+FLOW=~/.local/share/uv/tools/flowpad/bin/flow
+(cd ~ && "$FLOW" stop; FLOWPAD_NO_BROWSER=1 "$FLOW" start)
+
+# 4. Discard the +local marker from the tree
+git checkout flow_sdk/_version.py
 ```
 
-`git archive` emits a tar of **tracked files at that commit** (no `.git`, no working-tree
-noise). `tar -xf -` **overlays** them in place — it overwrites matched files but does
-**not** delete untracked ones.
+### Verify
 
----
+```bash
+FLOW=~/.local/share/uv/tools/flowpad/bin/flow
+"$FLOW" upgrade --info                                   # "version" must read ${SDK}+local${N}
+curl -fsS -o /dev/null -w '%{http_code}\n' http://127.0.0.1:9007/api/v1/graph/bootstrap   # 200 = up
+# UI landed? swap in a string your change adds:
+curl -s http://localhost:9007/ | grep -oE '/assets/index[^"]+\.js' | head -1 \
+  | xargs -I{} curl -s http://localhost:9007{} | grep -c "<a-string-your-change-adds>"     # >0 = live
+```
 
-## Why it works (topology facts)
+> **Why `max(checkout, PyPI)` and not the raw checkout.** The backend self-updater (`flow
+> upgrade` / `self_update.py`) reinstalls the published wheel whenever
+> `is_newer(installed, PyPI_latest)` (`flow_sdk/utils/semver.py`), and that compares the
+> `major.minor.patch` **triple first** — the `+local` tag only breaks a tie at an *equal*
+> triple. So `0.2.76+local1 < 0.2.77`: the updater silently overwrites your patch with stock
+> release. Base on `max(checkout, PyPI)` so the triple is ≥ PyPI and the `+local` tag wins
+> the tie. A genuinely higher release (`0.2.78`) will still — and should — win; the local
+> patch is ephemeral by design. Restart `+localN` at 1 when the base moves.
 
-The uv-tool install is **not** a container and **not** an editable/`-e` link — it is a
-plain **copy** of the wheel's `flow_sdk/` package under the tool's `site-packages`. So
-overwriting `.py` files there + restarting the process re-imports the patched code, exactly
-like the hub's source-tree systemd service.
+## Topology facts (why it works)
 
-- **Install dir** (the local `<APP_DIR>`): `~/.local/share/uv/tools/flowpad/lib/python3.13/site-packages`.
-  Resolve it cwd-independently with
+- **Install dir**: `~/.local/share/uv/tools/flowpad/lib/python3.13/site-packages`. Resolve it
+  cwd-independently with
   `~/.local/share/uv/tools/flowpad/bin/python3 -c 'import sysconfig;print(sysconfig.get_paths()["purelib"])'`.
-  **Do not** resolve it by importing `flow_sdk` from the repo — cwd shadows the install and
-  you'd get the working tree instead.
-- **Installed package**: the wheel ships **only `flow_sdk`** (`top_level.txt`). Paths
-  outside `flow_sdk` are not part of the running program — the script warns and the server
-  ignores them.
-- **Restart**: `flow stop && flow start` against the prod instance on **port 9007**. Run it
-  from a **neutral dir** (the script uses `$HOME`): `run.py` loads the repo's `.env.local`
-  with `override=True`, so a repo-cwd `flow start` would hijack `FLOW_INSTANCE=oss` / port
-  9008 instead of prod. (Same `.env.local` override trap noted in the local-deploy notes.)
-- **Python pin**: the install must be on **Python 3.13** — the wheel deadlocks on startup
-  under 3.14. The patch does not change the interpreter; the deployment already pinned it.
+  **Do not** resolve it by importing `flow_sdk` from the repo — cwd shadows the install.
+- **The wheel ships only `flow_sdk`** (`top_level.txt`); the frontend reaches the app only as
+  the **built** `flow_sdk/server/static/` baked in by `build_ui.py`.
+- **Restart from a neutral dir** (`$HOME`): `run.py` loads the repo's `.env.local` with
+  `override=True`, so a repo-cwd `flow start` hijacks `FLOW_INSTANCE=oss` / port 9008 instead
+  of prod on 9007.
+- **Python pin 3.13** — the wheel deadlocks on startup under 3.14.
+- **`uv tool install` replaces the whole `flow_sdk/` copy**, so it never leaves the
+  stale deleted-file cruft an overlay would.
 
----
+## Lifetime & rollback
 
-## The flow
-
-### 0. Prereqs
-- A local deployment exists (`flow` at `~/.local/share/uv/tools/flowpad/bin/flow`). If not,
-  run **Local Deployment** in [`pypi-deploy.md`](./pypi-deploy.md) first.
-- The commit you want to ship exists in your repo. **Uncommitted edits are not captured** —
-  commit them, or pass `git stash create`'s sha as `<ref>`.
-
-### 1. Capture the baseline (the script prints this)
-Current installed version + whether 9007 is answering — so you can prove the change and
-roll back.
-
-### 2. Patch + restart
-```bash
-scripts/local_patch.sh <ref> -- <path> ...
-```
-The script: `git archive <ref> -- <paths>` → tar → overlay into `site-packages` →
-**sha-verify** the first `.py` against the ref (proves the bytes landed) → `flow stop` →
-`flow start`.
-
-### 3. Verify
-The script polls `127.0.0.1:9007/api/v1/graph/bootstrap` until healthy (a few seconds warm)
-and prints `flow upgrade --info`.
-
-> **Note:** like cloud patch, a **code-only** patch does **not** change the reported
-> `version` — verify the **behavior** (or instance logs), not the version string, unless you
-> intentionally bumped `flow_sdk/_version.py` in the commit.
-
----
-
-## Timing
-
-| Phase | Expected |
-| --- | --- |
-| `git archive \| tar` overlay | < 1s |
-| `flow stop` | ~1s |
-| `flow start` → healthy on 9007 | ~1–5s warm (cold first boot longer) |
-
-No network hop, no VM, no 30s Neo4j connect — the local loop is seconds, not ~30s.
-
----
-
-## Special cases
-
-- **Frontend change (`ui/**`)**: the served bundle is the **built** `flow_sdk/server/static/`,
-  not source. Pass `--ui` — the script runs `build_ui.py` then overlays the rebuilt static
-  into the install. (Local analog of the hub's "rebuild on the box".) Heavier (~30s build);
-  skip it for backend-only patches.
-- **Dependency change (`pyproject.toml` / `uv.lock`)**: an overlay does **not** install deps.
-  Re-run the full **Local Deployment** (`uv tool install`) — the script warns if a manifest
-  is in the patch set.
-- **Backend-only change**: the TL;DR is complete. Nothing extra.
-- **Deleted files**: `tar -x` overlays, it does **not** remove files the commit deleted. If a
-  deletion matters, delete the file from `site-packages/flow_sdk/...` by hand (or re-run the
-  full local deployment).
-
----
-
-## Rollback
-
-Symmetric — re-ship the original file(s) from the prior commit/tag and restart:
-
-```bash
-scripts/local_patch.sh <original-ref> -- <path> ...
-```
-
-Or re-run the full **Local Deployment** to realign the install with a freshly-built wheel.
-
----
-
-## Lifetime — what survives, what wipes the patch
-
-- ✅ **Survives `flow stop` / `flow start` and a machine reboot** — the patched files live in
-  `site-packages`; restarting just re-imports them.
-- ❌ **Wiped by the next `uv tool install`** (i.e. running the full Local Deployment again) —
-  that replaces the whole `flow_sdk/` copy with the wheel's. So a local patch lasts **until
-  your next full local build**, which then "aligns" the install.
-
-So if a fix matters beyond your next local build, **commit it to the branch** — don't leave
-it only in the overlaid `site-packages`.
-
----
-
-## Validated end-to-end (2026-06-03)
-
-`scripts/local_patch.sh -- flow_sdk/server/app.py` against the `0.2.39+local` install:
-baseline (up on 9007) → capture (1 file) → overlay → **sha-verified in place** → `flow stop`
-→ `flow start` → healthy on 9007 in **~1s**. `--dry-run`, bad-ref, and dep-manifest-warning
-paths all behaved.
+- ✅ Survives `flow stop`/`start` and reboot. ✅ The `+local<N>` tag survives auto-update as
+  long as its triple ≥ PyPI latest.
+- ❌ A genuinely higher PyPI release supersedes it (by design) — re-deploy to catch up.
+- **Rollback** = reinstall the published wheel:
+  `(cd ~ && uv tool install --force --python 3.13 flowpad==$SDK)` (or a specific version),
+  then restart.
 
 ---
 
@@ -258,18 +199,18 @@ under `~/.local/share/uv/tools/flowpad/.../site-packages` that the top of this r
 
 | Change | How it reaches the running app | Need to touch `app.asar`? |
 | --- | --- | --- |
-| **Backend `.py`** | overlay the file into the install + restart — `scripts/local_patch.sh` | no |
-| **Frontend (`ui/**` / `ts_sdk/**`)** | `scripts/local_patch.sh <ref> --ui` — runs `build_ui.py` then overlays the rebuilt `static/` **into the install**; reload the window | no |
+| **Backend `.py`** | [stamped SDK deploy](#sdk--backend-local-deploy) (build wheel + `uv tool install`) + restart | no |
+| **Frontend (`ui/**` / `ts_sdk/**`)** | same [stamped SDK deploy](#sdk--backend-local-deploy) — `build_ui.py` bakes the rebuilt `static/` into the wheel; reload the window | no |
 | **Electron `main.js` / `preload.js`** | **bundled in `app.asar` at build time** — stale until you repack | **yes** |
 
-So a UI-only change needs the `--ui` overlay + a reload — **not** an asar repack. Only
+So a UI-only change needs the SDK deploy + a reload — **not** an asar repack. Only
 main-process (`electron/`) changes require the steps below.
 
 > ⚠️ **Most common miss.** Shell and renderer are independent surfaces, and a bare `build_ui.py`
 > writes the **repo**'s `static/` while 9007 serves the **install** copy — so a UI change can be
-> built and still not appear (the asar repack below ships `main.js`, never `ui/**`). Use
-> `--ui` (it overlays into the install), then prove the renderer landed — swap in a string your
-> change adds:
+> built and still not appear (the asar repack below ships `main.js`, never `ui/**`). Rebuild via
+> the SDK deploy (the wheel bakes `static/` in), then prove the renderer landed — swap in a
+> string your change adds:
 > ```bash
 > curl -s http://localhost:9007/ | grep -oE '/assets/index[^"]+\.js' | head -1 \
 >   | xargs -I{} curl -s http://localhost:9007{} | grep -c "inbox-search-input"   # >0 = live
@@ -415,7 +356,7 @@ echo "SDK_LOCAL=$SDK_LOCAL ELE_LOCAL=$ELE_LOCAL  SDK_base=$SDK (checkout=$SDK_CH
 #   ELE_LOCAL=0 → STAMP="${ELECTRON_BASE}"          (plain — shell == release, NO -patch)
 [ "$ELE_LOCAL" = 1 ] && STAMP="${ELECTRON_BASE}-patch1" || STAMP="${ELECTRON_BASE}"
 
-# 0d. UI changes only: rebuild + overlay into the install — NO asar repack needed (see --ui above).
+# 0d. UI changes only: rebuild via the stamped SDK deploy (build_ui.py bakes static/ into the wheel) — NO asar repack needed.
 
 # 1. Kill the app naturally (quits the shell AND its child backend on 9007)
 osascript -e 'tell application "Flowpad" to quit'

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Layout, TypeId, ViewType } from '@sdk';
+import { Layout, PageId, TypeId, ViewType } from '@sdk';
 import { projectScope } from '@src/lib/scope-filter';
 import { DockPointer } from '@src/navigation/DockPointer';
 
@@ -128,7 +128,7 @@ function representativePointers(): DockPointer[] {
     DockPointer.forProject(project, { conversationId: conversation }, Layout.WIN),
     DockPointer.forInbox({ conversationId: conversation, messageId: U('feed') }),
     DockPointer.forConversation(conversation, { messageId: U('babe') }, Layout.WIN),
-    DockPointer.forTasks('task-alpha', { conversationId: conversation, layout: Layout.DEV }),
+    DockPointer.forTasks(U('a1fa'), { conversationId: conversation, layout: Layout.DEV }),
     DockPointer.forSearch('release notes closed', {
       record_type: 'skill',
       status: 'active',
@@ -150,6 +150,10 @@ function representativePointers(): DockPointer[] {
     new DockPointer(ViewType.MACHINE, 'processes'),
     new DockPointer(ViewType.TRIGGERS, 'trigger/set?name=a+b'),
     new DockPointer(ViewType.CRON, 'cron-job-1'),
+    // Page dimension: an explicit desk page (never emits the segment) and a
+    // non-desk hub page (emits /dock/hub/…) both round-trip through the URL.
+    new DockPointer(ViewType.CONVERSATION, conversation, {}, Layout.DOCK, PageId.DESK),
+    new DockPointer(ViewType.CONVERSATION, conversation, {}, Layout.WIN, PageId.HUB),
   ];
 }
 

@@ -28,6 +28,12 @@ from flow_sdk.responses.response import ApiResponse
 # Helpers
 # ---------------------------------------------------------------------------
 
+# The wire now emits the raw lifecycle FSM value verbatim: a live (alive) process
+# reports "running" (canonical status model, docs/agent/agentic_process_statuses.md).
+# Turn-in-flight is the separate ``busy`` boolean, not a status value.
+_LIVE_STATUSES = ("running",)
+
+
 def _compute_node_id(bootstrap_resp) -> str:
     return bootstrap_resp.json()["data"]["default_compute_node"]["id"]
 
@@ -134,9 +140,11 @@ async def test_loader_sees_no_error_signal_after_restart(bootstrapped_client):
     assert proc_resp.status_code == 200
     proc = ApiResponse(**proc_resp.json()).data
 
-    # Process looks RUNNING → loader does NOT call process.open()
-    assert proc["status"] == "running", (
-        "Process shows RUNNING after restart — loader has no reason to call open()"
+    # Process looks RUNNING → loader does NOT call process.open(). See
+    # _LIVE_STATUSES: the wire projects the running FSM to ready/busy.
+    assert proc["status"] in _LIVE_STATUSES, (
+        "Process shows a live (running-projected) status after restart — "
+        f"loader has no reason to call open(); got {proc['status']!r}"
     )
     assert proc["shell_id"] == shell_id, "shell_id is set — loader will look up the shell"
     assert proc["session_id"] == session_id, "session_id preserved"
@@ -194,7 +202,8 @@ async def test_open_correctly_reconnects_claude_session(bootstrapped_client):
             f"/api/v1/graph/agentic_process/{process_id}"
         )
         proc = ApiResponse(**proc_resp.json()).data
-        assert proc["status"] == "running"
+        # Wire projects stored "running" → ready/busy (canonical status model).
+        assert proc["status"] in _LIVE_STATUSES, proc["status"]
         assert proc["shell_id"] is not None
         assert proc["session_id"] == session_id
 
@@ -356,7 +365,8 @@ async def test_open_preserves_session_id_after_restart(bootstrapped_client):
         proc = ApiResponse(**proc_resp.json()).data
         assert proc["session_id"] == session_id
         assert proc["shell_id"] == new_shell_id
-        assert proc["status"] == "running"
+        # Wire projects stored "running" → ready/busy (canonical status model).
+        assert proc["status"] in _LIVE_STATUSES, proc["status"]
 
     finally:
         jsonl_path.unlink(missing_ok=True)

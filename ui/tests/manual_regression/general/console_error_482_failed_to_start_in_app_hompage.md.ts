@@ -11,7 +11,6 @@ test.describe('App homepage — no 482 failed-to-start', () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => {
       localStorage.setItem('llm-setup-modal-seen', 'true');
-      localStorage.setItem('flowpad-index-approved', 'true');
     });
   });
 

@@ -6,6 +6,7 @@ import type { NavigatorDescriptor } from '@src/components/navigator-panel/types'
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { useOpenTabTargetIds } from '@src/tabs/useTabs';
 import { useProject } from '@src/hooks/useProject';
 import { useContext } from '@src/hooks/useContext';
 import { notify } from '@src/notifications';
@@ -15,6 +16,8 @@ import { pickHistoryTitle } from '@src/components/entity-execution-panel/history
 import { useResumeInTerminal } from '@src/hooks/use-resume-in-terminal';
 import { useIsAdvanced } from '@src/contexts/view-mode-context';
 import { ScopeFilterIconBar } from '@src/components/scope-filter/ScopeFilterIconBar';
+import { terminalProfile } from '@src/components/spotlight/profiles';
+import { InputDialog } from '@src/components/ui/input-dialog';
 import { useChatHistory } from './useChatHistory';
 import { ChatsFilterBar } from './ChatsFilterBar';
 import { ChatsList } from './ChatsList';
@@ -35,25 +38,29 @@ export function ChatsNavigator() {
   const isAdvanced = useIsAdvanced();
   const { t } = useLingui();
 
-  const [search, setSearch] = useState('');
   const [pendingDelete, setPendingDelete] = useState<{
     workerId: string;
     workerType: string | null;
     processId: string | null;
     title: string;
   } | null>(null);
+  const [resumeByIdOpen, setResumeByIdOpen] = useState(false);
 
   const scope = useMemo<ScopeFilter>(
     () => currentDock?.scopeFilter ?? defaultScopeFilter(project?.id ?? null),
     [currentDock, project?.id],
   );
 
-  const filters = useMemo(() => ({ scope, search }), [scope, search]);
+  const filters = useMemo(() => ({ scope, search: '' }), [scope]);
   const { buckets, total, isLoading, refetch } = useChatHistory(filters);
 
   // Active row = the process the Shell URL currently targets (URL-first).
   const activeProcessId =
     activeTerminalTargetTypeId?.type === AgenticProcess.type ? activeTerminalTargetTypeId.id : null;
+
+  // Process ids that currently back an open (terminal) tab → those rows stay
+  // bright; chats with no open tab dim until hovered/opened.
+  const openProcessIds = useOpenTabTargetIds();
 
   const handleScopeChange = useCallback(
     (next: ScopeFilter) => {
@@ -157,19 +164,20 @@ export function ChatsNavigator() {
             onScopeChange={handleScopeChange}
           />
         ),
-        filterBar: (
-          <ChatsFilterBar
-            search={search}
-            onSearchChange={setSearch}
-            onNewChat={handleNewChat}
-          />
-        ),
+        filterBar: <ChatsFilterBar onNewChat={handleNewChat} onResumeById={() => setResumeByIdOpen(true)} />,
+      },
+      search: {
+        recordTypes: terminalProfile.allowedEntityTypes ?? [],
+        scope,
+        routeViaTerminal: true,
+        placeholder: t`Search chats…`,
       },
       customBody: (
         <ChatsList
           buckets={buckets}
           isLoading={isLoading}
           activeProcessId={activeProcessId}
+          openProcessIds={openProcessIds}
           onSelect={handleSelect}
           onToggleFavorite={handleToggleFavorite}
           onDelete={requestDelete}
@@ -179,13 +187,13 @@ export function ChatsNavigator() {
     [
       total,
       handleNewChat,
-      search,
       scope,
       project,
       handleScopeChange,
       buckets,
       isLoading,
       activeProcessId,
+      openProcessIds,
       handleSelect,
       handleToggleFavorite,
       requestDelete,
@@ -195,6 +203,15 @@ export function ChatsNavigator() {
   return (
     <>
       <NavigatorPanel descriptor={descriptor} />
+      <InputDialog
+        open={resumeByIdOpen}
+        onOpenChange={setResumeByIdOpen}
+        title={t`Resume session by id`}
+        description={t`Paste a session id (UUID) to restore it in a new tab.`}
+        placeholder="e.g. 0fa1a8c2-7b1d-4d6c-9d4e-b3e6c2f1d8aa"
+        confirmLabel={t`Resume`}
+        onConfirm={(sessionId) => resumeInTerminal(sessionId)}
+      />
       <ConfirmDialog
         open={!!pendingDelete}
         onOpenChange={(open) => !open && setPendingDelete(null)}

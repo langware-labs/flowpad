@@ -26,6 +26,7 @@ out-of-tree hub work.
 from __future__ import annotations
 
 import asyncio
+import os
 import time
 import uuid
 from pathlib import Path
@@ -52,7 +53,7 @@ def _read_env_local(repo: Path) -> dict[str, str]:
 
 
 async def _alice_and_bob(hub_base_url: str, hub_login_payload: dict):
-    """Save alice's creds and resolve bob's via the sibling repo's .env.local.
+    """Save alice's creds and resolve bob from the cycle env or repo fallback.
 
     Mirrors the pattern in ``test_share_with_recipients.py`` so the two
     test files stay parallel.
@@ -66,10 +67,10 @@ async def _alice_and_bob(hub_base_url: str, hub_login_payload: dict):
     login_as(hub_login_payload)
 
     app_env = _read_env_local(REPO_APP)
-    bob_email = app_env.get("FLOWPAD_CLOUD_USER_EMAIL")
-    bob_pw = app_env.get("FLOWPAD_CLOUD_USER_PASSWORD")
+    bob_email = os.environ.get("BOB_EMAIL") or app_env.get("FLOWPAD_CLOUD_USER_EMAIL")
+    bob_pw = os.environ.get("BOB_PW") or app_env.get("FLOWPAD_CLOUD_USER_PASSWORD")
     if not bob_email or not bob_pw:
-        pytest.skip("missing FLOWPAD_CLOUD_USER_{EMAIL,PASSWORD} in flowpad-app/.env.local")
+        pytest.skip("missing BOB_EMAIL/BOB_PW and flowpad-app fallback credentials")
 
     async with httpx.AsyncClient(timeout=5.0) as h:
         r = await h.post(f"{hub_base_url}/api/v1/login", json={"email": bob_email, "password": bob_pw})

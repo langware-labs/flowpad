@@ -42,11 +42,21 @@ _REAL_HOME_TEST_MODULES = frozenset({
     "test_claude_cli",
     "test_clean_claude_pty",
     "test_clean_claude_pty_stress",
+    "test_cli_driver_binary_smoke",
     "test_markdown_index",
     "test_prompt_queue_integration",
+    "test_process_status_report_stream",
+    "test_relaunch_kills_session_orphan",
     "test_agent",
     "test_debug_log_records",
+    "test_skill_chip_live_stream",
     "test_skill_transcript_analysis",
+    "test_docs_browse_skill",
+    "test_context_process",
+    "test_system_prompt",
+    "test_settings_instruction",
+    "test_asset_cleanup_agent",
+    "test_context_folder_worker",
 })
 
 
@@ -81,8 +91,15 @@ def _real_home_for_cli_subprocess_tests(request):
     else:
         yield
 
-from tests.api.conftest import clean_db, client, bootstrapped_client, reset_db_for_testclient, drain_background_tasks  # noqa: F401
-from flow_sdk.builtin.worker_status import ApiErrorTimeoutError
+from flow_sdk.builtin.worker_status import ApiErrorTimeoutError  # noqa: E402
+from tests.api.conftest import (  # noqa: F401, E402
+    bootstrap_payload,
+    bootstrapped_client,
+    clean_db,
+    client,
+    drain_background_tasks,
+    reset_db_for_testclient,
+)
 
 
 @pytest.hookimpl(hookwrapper=True)
@@ -165,8 +182,10 @@ def allocate_ports(unused_tcp_port_factory):
         port, = allocate_ports()          # one port
         p1, p2 = allocate_ports(2)        # two ports
     """
+
     def _allocate(n: int = 1) -> tuple:
         return tuple(unused_tcp_port_factory() for _ in range(n))
+
     return _allocate
 
 
@@ -187,6 +206,7 @@ def allocate_ports(unused_tcp_port_factory):
 _WORKER_PARAMS = [
     pytest.param("claude", id="claude"),
     pytest.param("codex", id="codex"),
+    pytest.param("copilot", id="copilot"),
 ]
 
 
@@ -216,15 +236,28 @@ def make_process(worker_id) -> Callable[..., Awaitable]:
     """
     from flow_sdk.builtin.agentic_process import AgenticProcess
     from flow_sdk.flowpad_types.enums import WorkerType
+    from tests.long_tests._model_tier import small_model_for
 
     _DRIVER_TO_ENUM = {
         "claude": WorkerType.CLAUDE_CODE,
         "codex": WorkerType.CODEX,
+        "copilot": WorkerType.COPILOT,
     }
     enum_value = _DRIVER_TO_ENUM[worker_id]
 
     async def _make(**kwargs):
-        return await AgenticProcess(worker_type=enum_value, **kwargs).save()
+        # Default every agentic-process test to the cheapest model the worker can
+        # actually resolve (see ``_model_tier.small_model_for`` — Copilot must stay
+        # unset). Tests that need a specific model still win: their
+        # ``cli_config['model']`` is preserved, and only the key is defaulted.
+        cli_config = {**(kwargs.pop("cli_config", None) or {})}
+        model = small_model_for(enum_value)
+        if model:
+            cli_config.setdefault("model", model)
+        return await AgenticProcess(
+            worker_type=enum_value, cli_config=cli_config, **kwargs
+        ).save()
+
     return _make
 
 
@@ -236,4 +269,5 @@ def external_session_snapshot(worker_id) -> Callable[[], set[str]]:
     before / after the run and asserts the diff is empty.
     """
     from flow_sdk.builtin.agentic_process.cli_drivers import get_driver
+
     return get_driver(worker_id).external_session_dirs

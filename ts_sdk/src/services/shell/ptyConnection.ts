@@ -88,7 +88,7 @@ export class PtyConnection {
   private readonly _eventFireListeners = new Set<PtyEventFireListener>();
   private static readonly MAX_EVENT_FIRES = 200;
 
-  /** Pending raw text not yet terminated by \n. Fed into the line stream. */
+  /** Pending raw text not yet terminated by LF or a terminal-row CR. */
   private _lineBuffer = '';
 
   /** onReady subscribers — fired once when attach completes + live stream opens. */
@@ -240,7 +240,8 @@ export class PtyConnection {
 
   /**
    * Walk the buffered replay chunks in seq order, decode + ANSI-strip,
-   * split on \n, and run a single trigger against each line. Used by
+   * split on LF / CRLF / bare CR terminal-row boundaries, and run a single
+   * trigger against each line. Used by
    * ``addTrigger`` to retroactively match history when a watcher
    * registers after replay has already drained chunks through the
    * line buffer.
@@ -257,9 +258,9 @@ export class PtyConnection {
       buf += this.decoder.decode(chunk.data, { stream: true });
     }
     buf += this.decoder.decode();
-    const lines = buf.split('\n');
+    const lines = buf.split(/\r\n|[\r\n]/);
     for (const raw of lines) {
-      const line = stripAnsi(raw.endsWith('\r') ? raw.slice(0, -1) : raw);
+      const line = stripAnsi(raw);
       if (!line) continue;
       const m = line.match(trigger.pattern);
       if (!m) continue;
@@ -295,14 +296,23 @@ export class PtyConnection {
 
   private _feedLineBuffer(decoded: string): void {
     this._lineBuffer += decoded;
-    let nl = this._lineBuffer.indexOf('\n');
-    while (nl !== -1) {
-      // Slice off the line (keep trailing CR off if present).
-      let line = this._lineBuffer.slice(0, nl);
-      if (line.endsWith('\r')) line = line.slice(0, -1);
-      this._lineBuffer = this._lineBuffer.slice(nl + 1);
+    while (this._lineBuffer.length > 0) {
+      const cr = this._lineBuffer.indexOf('\r');
+      const lf = this._lineBuffer.indexOf('\n');
+      const boundary = cr === -1 ? lf : lf === -1 ? cr : Math.min(cr, lf);
+      if (boundary === -1) return;
+
+      let boundaryWidth = 1;
+      if (this._lineBuffer[boundary] === '\r') {
+        // A CR at the end of a chunk may be the first half of CRLF. Keep it
+        // until the next chunk so CRLF emits exactly one row even when split.
+        if (boundary === this._lineBuffer.length - 1) return;
+        if (this._lineBuffer[boundary + 1] === '\n') boundaryWidth = 2;
+      }
+
+      const line = this._lineBuffer.slice(0, boundary);
+      this._lineBuffer = this._lineBuffer.slice(boundary + boundaryWidth);
       this._emitLine(stripAnsi(line));
-      nl = this._lineBuffer.indexOf('\n');
     }
   }
 
@@ -496,6 +506,12 @@ export class PtyConnection {
 
       this._attachedPtyId = targetPtyId;
       this._attached = true;
+      // Remembered independently of attach state: a FAILED re-attach attempt
+      // (not_found during the recovery gap) nulls _attachedPtyId, but the
+      // self-healing hooks must still know what to re-attach when
+      // on_recovered arrives.
+      this._reattachPtyId = targetPtyId;
+      this._wireReattachHooks();
       this._emitReady();
     })();
 
@@ -509,10 +525,50 @@ export class PtyConnection {
     return this._attachPromise;
   }
 
-  // Note: there is deliberately no WS-close handler here. Connection membership
-  // is backend-owned (PtyRegistry parks/resumes on the WS lifecycle), so the PTY
-  // pipeline stays armed across a transient drop and resumed output renders
-  // without a client re-attach.
+  // ── Self-healing membership (frozen-terminal RCA, bug A) ──────────────────
+  //
+  // Connection membership lives ONLY in the backend's in-memory PtyRegistry.
+  // Park/resume preserves it across a transient WS drop of the SAME backend
+  // process — but a RESTARTED backend has an empty registry, and the recovery
+  // watchdog respawns workers with no attached connections. Route loaders
+  // (the only other attach caller) run on mount only, so an already-open pane
+  // stayed deaf forever. These hooks re-issue the attach whenever the
+  // transport returns (on_reconnected) or the backend reports it revived our
+  // worker (on_recovered). Re-attaching is idempotent — backend membership is
+  // a set, and the repaint is a no-op frame refresh — so firing on a plain
+  // park/resume cycle is harmless.
+
+  /** Un-subscribers for the re-attach hooks; null until first attach. */
+  private _reattachUnhooks: Array<() => void> | null = null;
+
+  /** The PTY id the hooks should re-attach — survives failed attach attempts
+   *  (which null _attachedPtyId). Set on every successful attach. */
+  private _reattachPtyId: string | null = null;
+
+  private _wireReattachHooks(): void {
+    if (this._reattachUnhooks) return;
+    this._reattachUnhooks = []; // claim synchronously; wiring completes async
+    void import('../../websocket.js').then(({ ConnectionManager }) => {
+      if (!this._reattachUnhooks) return; // disposed while the import resolved
+      const connectionManager = ConnectionManager.getInstance();
+      const reattach = () => {
+        if (!this._reattachPtyId) return;
+        void this.attach(this._reattachPtyId, { force: true }).catch(() => {
+          // not_found while recovery is still in flight — the on_recovered
+          // event will re-fire us once the worker is back.
+        });
+      };
+      const onRecovered = (msg: { shell_id?: string }) => {
+        if (msg?.shell_id === this.shellId) reattach();
+      };
+      connectionManager.on('on_reconnected', reattach);
+      connectionManager.on('on_recovered', onRecovered);
+      this._reattachUnhooks.push(
+        () => connectionManager.off('on_reconnected', reattach),
+        () => connectionManager.off('on_recovered', onRecovered),
+      );
+    });
+  }
 
   // ── Fast cross-platform PTY ping ──────────────────────────────────────────
 
@@ -552,6 +608,9 @@ export class PtyConnection {
   }
 
   dispose(): void {
+    this._reattachUnhooks?.forEach((off) => off());
+    this._reattachUnhooks = null;
+    this._reattachPtyId = null;
     this._listeners.clear();
     this._readyListeners.clear();
     this._disconnectListeners.clear();

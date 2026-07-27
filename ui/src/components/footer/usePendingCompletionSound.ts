@@ -10,20 +10,20 @@ import { soundByKey } from '@src/assets/sounds/notification/manifest';
  *
  * Mount this once at app scope (footer). Renders nothing.
  *
- * Cold-reload safety: we gate the ping on the server-stamped
- * `ready_for_input_since` being strictly newer than this hook's mount time.
- * Items the store hydrates from WS after first render whose `readyAt`
- * predates mount are part of the user's backlog from before the reload —
- * not "new news" — and stay silent. Only true mid-session transitions ping.
+ * Cold-reload safety: we gate the ping on the client-stamped transition
+ * `readyAt` being strictly newer than this hook's mount time. The glow is
+ * transition-driven — a process already pending at reload never re-arms
+ * (its `readyAt` stays null and it never enters the pending snapshot), so
+ * only true mid-session transitions ping.
  */
 export function usePendingCompletionSound(): void {
   const pending = usePendingActions();
   const { preferences } = useInstancePreferences();
   const mountedAtRef = useRef<number>(Date.now());
   // processId -> readyAt of the last time we observed/announced this id.
-  // Re-arming (TTL expiry → re-ready with a fresh server timestamp) shows
-  // up as a different readyAt for the same id, which is correctly treated
-  // as a new transition.
+  // Re-arming (a fresh transition back into a glow status) shows up as a
+  // different readyAt for the same id, which is correctly treated as a new
+  // transition.
   const seenRef = useRef<Map<string, number>>(new Map());
 
   useEffect(() => {

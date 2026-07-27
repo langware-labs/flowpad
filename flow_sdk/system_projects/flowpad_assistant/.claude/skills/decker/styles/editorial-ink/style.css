@@ -1,0 +1,45 @@
+/* editorial-ink — personality layer */
+.reveal h1, .reveal h2, .reveal h3 {
+  font-family: var(--font-display);
+  font-weight: var(--fw-bold);
+  letter-spacing: -0.015em;
+}
+/* a small-caps label with a hairline running off it, not a coloured caption */
+.kicker {
+  font-family: var(--font-display);
+  font-variant: small-caps;
+  text-transform: none;
+  font-size: 17px;
+  font-weight: var(--fw-medium);
+  display: flex; align-items: center; gap: var(--sp-3);
+}
+.kicker::after { content: ""; flex: 0 0 64px; height: 1px; background: var(--accent); }
+.accent-rule { width: 56px; height: 2px; margin: 0 0 var(--sp-5) 0; }
+
+/* in print a "card" is not a box — it is a column under a rule */
+.card {
+  background: transparent; border: 0;
+  border-top: 1px solid var(--text);
+  border-radius: 0; padding: var(--sp-4) 0 0 0;
+}
+.metric-value {
+  font-family: var(--font-display); color: var(--text);
+  font-size: 74px; letter-spacing: -0.02em;
+}
+.metric-label {
+  color: var(--accent); font-variant: small-caps; text-transform: none;
+  letter-spacing: 0.06em; font-size: 18px;
+}
+.metric-delta { color: var(--text-secondary); font-size: 17px; font-style: italic; }
+.subtitle { font-style: italic; }
+
+.layout-agenda-list li { border-bottom: 1px solid var(--border); }
+.layout-agenda-list li::before {
+  font-family: var(--font-display); font-weight: var(--fw-regular);
+  font-size: 34px; color: var(--accent);
+}
+.layout-agenda-list .agenda-detail { font-style: italic; }
+.layout-cover-centered .cover-meta {
+  font-variant: small-caps; font-size: 17px; letter-spacing: 0.05em;
+}
+.layout-closing-centered .closing-contact { font-style: italic; }

@@ -74,6 +74,25 @@ export function decodeUrlObject<T>(
 }
 
 /**
+ * Drop every param in this codec's namespace, leaving other namespaces intact —
+ * the "no value at all" counterpart to {@link mergeUrlObject}. Needed because an
+ * object can be *unsatisfiable* (a scope pinned to a project that no longer
+ * exists), and the honest URL for that is one carrying no such object, not one
+ * carrying a half-erased shell of it.
+ */
+export function clearUrlObject<T>(
+  codec: UrlObjectCodec<T>,
+  options: Record<string, string> | undefined,
+): Record<string, string> {
+  const prefix = `${codec.ns}${SEP}`;
+  const next: Record<string, string> = {};
+  for (const [key, v] of Object.entries(options ?? {})) {
+    if (!key.startsWith(prefix)) next[key] = v;
+  }
+  return next;
+}
+
+/**
  * Merge `value`'s namespaced params into `options`, REPLACING any prior keys in
  * this codec's namespace so stale fields can't linger and shadow the new value.
  * Keys in other namespaces pass through untouched.
@@ -83,10 +102,5 @@ export function mergeUrlObject<T>(
   options: Record<string, string> | undefined,
   value: T,
 ): Record<string, string> {
-  const prefix = `${codec.ns}${SEP}`;
-  const next: Record<string, string> = {};
-  for (const [key, v] of Object.entries(options ?? {})) {
-    if (!key.startsWith(prefix)) next[key] = v;
-  }
-  return { ...next, ...encodeUrlObject(codec, value) };
+  return { ...clearUrlObject(codec, options), ...encodeUrlObject(codec, value) };
 }

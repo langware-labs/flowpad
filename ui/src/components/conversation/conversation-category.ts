@@ -31,8 +31,10 @@ export interface CategoryInputs {
   latestPtrTs?: string | null;
   /** Invitation entity off the first message's context (if any). */
   invitation?: Invitation | null;
-  /** The local viewer — invitation/ownership are relative to this. */
-  viewer: { email: string; cloudUserId: string | null };
+  /** The local viewer — invitation/ownership/unread are relative to this.
+   *  Both ids are needed: a message's `sender_id` is stamped with the cloud
+   *  user id when logged in, the local desktop user id otherwise. */
+  viewer: { email: string; cloudUserId: string | null; localUserId: string | null };
 }
 
 export interface ConversationFacets {
@@ -41,7 +43,8 @@ export interface ConversationFacets {
   isInvitation: boolean;
   /** `archived_at` is set and not yet revived by newer activity. */
   isArchived: boolean;
-  /** Latest received message is unread (invitation rows count as unread). */
+  /** Latest RECEIVED message is unread (invitation rows count as unread).
+   *  Viewer-relative: a self-sent latest message never makes the row unread. */
   isUnread: boolean;
 }
 
@@ -70,14 +73,34 @@ export function conversationFacets(inp: CategoryInputs): ConversationFacets {
   const isArchived =
     archivedAt !== null && !Number.isNaN(archivedAt) && latestTime <= archivedAt;
 
-  // Unread — invitation rows always carry an actionable CTA, so count as unread.
+  // Unread — viewer-relative, like invitation: sending a message must not make
+  // the conversation look unread to the sender himself (there is nothing for
+  // him to read). Invitation rows always carry an actionable CTA, so they
+  // count as unread.
+  const senderId = latestMessage?.sender_id ?? null;
+  const isSelfSent =
+    !!senderId &&
+    (senderId === viewer.cloudUserId || senderId === viewer.localUserId);
   const isUnread = isInvitation
     ? true
     : latestMessage
-      ? !latestMessage.is_read
+      ? !latestMessage.is_read && !isSelfSent
       : false;
 
   return { kind, isInvitation, isArchived, isUnread };
+}
+
+// ── Recency sort — shared by InboxView + RecentConversationsStrip ────────────
+// Newest `updated_date` first, with a STABLE `id` tiebreaker. Without the
+// tiebreaker, rows with equal or missing `updated_date` fall back to the input
+// order — which is the server's non-deterministic result order — so the list
+// re-shuffled between fetches (i.e. on every inbox open). The tiebreaker makes
+// the sort a total order, so equal-timestamp rows keep a fixed position.
+export function compareConversationsByRecency(a: Conversation, b: Conversation): number {
+  const ta = a.updated_date ? new Date(a.updated_date).getTime() : 0;
+  const tb = b.updated_date ? new Date(b.updated_date).getTime() : 0;
+  if (tb !== ta) return tb - ta;
+  return (a.id ?? '').localeCompare(b.id ?? '');
 }
 
 // ── Chips — a per-row category label ─────────────────────────────────────────

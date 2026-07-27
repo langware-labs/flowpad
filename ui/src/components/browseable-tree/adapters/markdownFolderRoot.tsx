@@ -2,6 +2,7 @@ import React from 'react';
 import { FileText, Folder, FolderPlus, Library, Network, Plus, RefreshCw, User as UserIcon } from 'lucide-react';
 import { lucideByName } from '@src/lib/lucide-by-name';
 import apiClient from '@sdk/client';
+import { CountChip } from '@src/components/browseable-tree/CountChip';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { ViewType } from '@src/types/ViewType';
 import type { AssetTypeInfo, AssetTypeVault } from '@src/hooks/use-asset-types';
@@ -166,11 +167,7 @@ function MarkdownCountBadge({ filter }: { filter: AssetFilter }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterKey]);
   if (total === null || total === 0) return null;
-  return (
-    <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-      {total > 999 ? '999+' : total}
-    </span>
-  );
+  return <CountChip count={total} />;
 }
 
 /** Build the root-level toolbar: Scan + New. */

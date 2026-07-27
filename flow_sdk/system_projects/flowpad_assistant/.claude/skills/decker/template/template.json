@@ -1,0 +1,10 @@
+{
+  "metadata": {
+    "title": "New Deck Template",
+    "description": "A Reveal.js slide-deck template — re-skin by applying a style from the decker skill's styles/ catalog (common/tokens.css + common/style.css).",
+    "page_types": ["cover", "agenda", "content", "media", "metrics", "closing"],
+    "style": "default",
+    "reveal_version": "5.2.0"
+  },
+  "data": {}
+}

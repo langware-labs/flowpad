@@ -19,8 +19,13 @@ Session continuity:
   headless⇄PTY toggle keeps one continuous session. (We still tee the events into
   the process-local transcript for our own readers.)
 
-Cancel semantics: ``close_session()`` sends SIGTERM → 5 s grace → SIGKILL,
-matching the Claude worker's contract.
+Cancel semantics: ``close_session()`` sends SIGINT to the codex root process
+first — the CLI winds the turn down itself (reaping its tool children, so the
+stdout pipe reaches EOF promptly) and its rollout stays coherent for resume.
+Only if codex doesn't exit within the existing ``CANCEL_GRACE_SECONDS`` does
+the legacy SIGTERM → grace → SIGKILL tree teardown run. A user-requested
+cancel is reported as the canonical turn-abort STATUS frame, not
+``exit-error`` — genuine crashes still surface ``exit-error``.
 
 Logger namespace: ``flow_sdk.builtin.agentic_process.cli_drivers.codex.stream_worker``
 — deliberately distinct from the Claude worker so log filtering by namespace
@@ -32,13 +37,21 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
 from pathlib import Path
 from typing import AsyncIterator
 
-from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import AgenticContext
-from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import AgenticWorker
-from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_path_env
+from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
+    STREAM_JSON_LINE_LIMIT_BYTES,
+    AgenticContext,
+    AgenticWorker,
+    WorkerSpawnError,
+    build_worker_spawn_env,
+    interrupt_then_terminate_asyncio_process_tree,
+    resolve_worker_argv0,
+    stamp_cli_run_id,
+    terminate_asyncio_process_tree,
+    wait_for_asyncio_process_or_kill_tree,
+)
 from flow_sdk.builtin.agentic_process.cli_drivers.codex.cli import CodexCliOptions
 from flow_sdk.builtin.agentic_process.cli_drivers.codex.event_to_flowdata import (
     convert_line,
@@ -47,6 +60,7 @@ from flow_sdk.builtin.agentic_process.cli_drivers.codex.event_to_flowdata import
 from flow_sdk.builtin.agentic_process.cli_drivers.codex.session_history import (
     codex_transcript_path_for_process,
 )
+from flow_sdk.builtin.agentic_process.turn_abort import abort_status_frame
 from flow_sdk.external_apis.llm.llm_drivers.flow_data import (
     FlowData,
     FlowDataType,
@@ -69,9 +83,10 @@ class CodexCLIStreamWorker(AgenticWorker):
     def __init__(self, transcript_path: Path | str | None = None) -> None:
         self._session_id: str | None = None
         self._proc: asyncio.subprocess.Process | None = None
-        self._transcript_path: Path | None = (
-            Path(transcript_path) if transcript_path else None
-        )
+        self._process_run_id: str | None = None
+        self._transcript_path: Path | None = Path(transcript_path) if transcript_path else None
+        self._cancel_requested = False
+        self._cancelled_gracefully = False
 
     @classmethod
     def for_process(cls, process_id: str) -> "CodexCLIStreamWorker":
@@ -82,17 +97,34 @@ class CodexCLIStreamWorker(AgenticWorker):
     def transcript_path(self) -> Path | None:
         return self._transcript_path
 
+    @property
+    def cancelled_gracefully(self) -> bool:
+        """True when SIGINT let codex wind its own turn down cleanly.
+
+        The cancel choke point (``_http_cancel_prompt``) skips the flowpad abort
+        sidecar marker in that case — a graceful SIGINT lets codex record its own
+        ``event_msg.turn_aborted`` in the rollout, so a sidecar marker would
+        replay as a DUPLICATE turn-terminated STATUS (``merge_abort_markers`` has
+        no dedup). A force-killed codex records nothing, so the sidecar is kept.
+        """
+        return self._cancelled_gracefully
+
     async def execute(
         self,
         prompt: str,
         context: AgenticContext,
     ) -> AsyncIterator[FlowData]:
-        argv, env = self._build_spawn(context)
-        if argv is None:
-            yield _error("codex binary not found in PATH")
-            return
+        self._process_run_id = None
+        try:
+            argv, env, stdin = self._build_spawn(context, prompt)
+        except WorkerSpawnError as e:
+            # Surface the message on the chat stream, then propagate so the
+            # turn runner latches status=FAILED + start_failure.
+            yield _error(str(e))
+            raise
 
         logger.info("CodexCLIStreamWorker: launching %s", " ".join(argv))
+        self._process_run_id = stamp_cli_run_id(env)
 
         # Open transcript file for tee'ing the JSONL stream.
         # Append mode keeps existing content if the worker is reused (rare).
@@ -102,8 +134,7 @@ class CodexCLIStreamWorker(AgenticWorker):
                 self._transcript_path.parent.mkdir(parents=True, exist_ok=True)
                 tee_fh = open(self._transcript_path, "ab", buffering=0)
             except OSError as e:
-                logger.warning("CodexCLIStreamWorker: failed to open transcript %s: %s",
-                               self._transcript_path, e)
+                logger.warning("CodexCLIStreamWorker: failed to open transcript %s: %s", self._transcript_path, e)
 
         try:
             self._proc = await asyncio.create_subprocess_exec(
@@ -113,18 +144,21 @@ class CodexCLIStreamWorker(AgenticWorker):
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                limit=STREAM_JSON_LINE_LIMIT_BYTES,
             )
         except Exception as e:
             logger.exception("CodexCLIStreamWorker: spawn failed")
             if tee_fh:
                 tee_fh.close()
-            yield _error(f"spawn failed: {e}")
-            return
+            message = f"spawn failed: {e}"
+            yield _error(message)
+            raise WorkerSpawnError("codex", message) from e
 
-        # Pipe the prompt in and close stdin so codex starts processing.
+        # Pipe the prompt (with any system-prompt addition already prepended by
+        # the options' stdin sink) in, and close stdin so codex starts processing.
         try:
             assert self._proc.stdin is not None
-            self._proc.stdin.write(prompt.encode("utf-8"))
+            self._proc.stdin.write((stdin or "").encode("utf-8"))
             await self._proc.stdin.drain()
             self._proc.stdin.close()
         except Exception as e:
@@ -152,15 +186,12 @@ class CodexCLIStreamWorker(AgenticWorker):
             await self._terminate_process()
             raise
         finally:
-            if self._proc and self._proc.returncode is None:
-                try:
-                    await asyncio.wait_for(self._proc.wait(), timeout=CANCEL_GRACE_SECONDS)
-                except asyncio.TimeoutError:
-                    logger.warning(
-                        "CodexCLIStreamWorker: subprocess did not exit in grace; sending SIGKILL"
-                    )
-                    self._proc.kill()
-                    await self._proc.wait()
+            if self._proc:
+                await wait_for_asyncio_process_or_kill_tree(
+                    self._proc,
+                    CANCEL_GRACE_SECONDS,
+                    run_id=self._process_run_id,
+                )
 
             stderr_task.cancel()
             try:
@@ -176,7 +207,11 @@ class CodexCLIStreamWorker(AgenticWorker):
 
             # If codex exited with a non-zero code without emitting turn.completed
             # we still owe the caller a clean END frame (mirrors Claude worker).
-            if self._proc and self._proc.returncode not in (0, None):
+            # A user-requested cancel is not an error — report the canonical
+            # turn-abort STATUS instead of ``exit-error``.
+            if self._cancel_requested:
+                yield abort_status_frame()
+            elif self._proc and self._proc.returncode not in (0, None):
                 yield _status(
                     "exit-error",
                     f"codex exited with code {self._proc.returncode}",
@@ -184,7 +219,27 @@ class CodexCLIStreamWorker(AgenticWorker):
             yield final_end_frame()
 
     async def close_session(self) -> None:
-        await self._terminate_process()
+        """Stop the in-flight turn — SIGINT first, tree kill as backstop.
+
+        SIGINT lets codex wind down its own turn (it reaps the tool child, so
+        the stdout pipe reaches EOF immediately, and the rollout tail stays
+        coherent for ``codex exec resume``). Anything that survives the
+        existing ``CANCEL_GRACE_SECONDS`` — the root or a stray tool child —
+        goes through the standard force-kill tree teardown (same budget the
+        kill path already used — no new/raised timeout).
+        """
+        self._cancel_requested = True
+        proc = self._proc
+        if proc is None:
+            return
+        # A graceful SIGINT wind-down means codex recorded its own turn abort in
+        # the rollout; the cancel choke point then skips the duplicate flowpad
+        # sidecar marker (see the ``cancelled_gracefully`` property).
+        self._cancelled_gracefully = await interrupt_then_terminate_asyncio_process_tree(
+            proc,
+            CANCEL_GRACE_SECONDS,
+            run_id=self._process_run_id,
+        )
 
     def get_session_id(self) -> str | None:
         return self._session_id
@@ -198,13 +253,14 @@ class CodexCLIStreamWorker(AgenticWorker):
     def _build_spawn(
         self,
         context: AgenticContext,
-    ) -> tuple[list[str] | None, dict[str, str]]:
-        # Discovered harness capability supplies the CLI's bin folder
-        # (terminal-PATH resolution) — None ⇔ codex is not installed.
-        path_env = worker_path_env("codex")
-        if path_env is None:
-            return None, {}
+        prompt: str,
+    ) -> tuple[list[str], dict[str, str], str | None]:
+        """Build the ``(argv, env, stdin)`` spawn tuple.
 
+        Raises :class:`WorkerSpawnError` when codex is not installed (no
+        harness capability discovered) or its executable can't be resolved on
+        the spawn PATH.
+        """
         opts = CodexCliOptions(
             workdir=context.workdir,
             env_vars=dict(context.env_vars) if context.env_vars else None,
@@ -220,15 +276,22 @@ class CodexCLIStreamWorker(AgenticWorker):
             # turn mints a fresh session_id (the headless multi-turn resume bug).
             ephemeral=False,
         )
-        argv, env_from_opts = opts.to_spawn_args()
+        opts.add_dirs = list(context.add_dirs or [])
+        opts.developer_instructions = context.developer_instructions
+        opts.extra_config_overrides = list(context.extra_config_overrides or [])
+        # Asset-backed system instructions ride developer_instructions; the
+        # legacy system_prompt_append path remains unused for new launches.
+        argv, env_from_opts, stdin = opts.to_spawn(instruction=prompt, system_prompt_append=context.instructions)
 
-        # Inherit os.environ so codex can find creds, PATH, ~/.codex; overlay
-        # the capability's PATH prepend (argv[0] + `#!/usr/bin/env node`
-        # resolution), then caller-provided env_vars last so they win.
-        env = dict(os.environ)
-        env.update(path_env)
-        env.update(env_from_opts)
-        return argv, env
+        # Inherit os.environ so codex can find creds, ~/.codex; overlay the
+        # caller-provided env_vars (they win, except the discovered capability
+        # bin folder stays first on PATH), then pin argv[0] to the discovered
+        # absolute executable — the subprocess layer resolves a bare argv[0]
+        # against the PARENT process PATH on some platforms, and a desktop
+        # service PATH commonly lacks the nvm bin dir discovery recorded.
+        env = build_worker_spawn_env("codex", env_from_opts)
+        argv = resolve_worker_argv0("codex", argv, env)
+        return argv, env, stdin
 
     async def _drain_stderr(self, proc: asyncio.subprocess.Process) -> None:
         if proc.stderr is None:
@@ -245,24 +308,13 @@ class CodexCLIStreamWorker(AgenticWorker):
 
     async def _terminate_process(self) -> None:
         proc = self._proc
-        if proc is None or proc.returncode is not None:
+        if proc is None:
             return
-        try:
-            proc.terminate()
-        except ProcessLookupError:
-            return
-        try:
-            await asyncio.wait_for(proc.wait(), timeout=CANCEL_GRACE_SECONDS)
-        except asyncio.TimeoutError:
-            logger.warning("CodexCLIStreamWorker: grace expired, sending SIGKILL")
-            try:
-                proc.kill()
-            except ProcessLookupError:
-                return
-            try:
-                await proc.wait()
-            except Exception:
-                pass
+        await terminate_asyncio_process_tree(
+            proc,
+            CANCEL_GRACE_SECONDS,
+            run_id=self._process_run_id,
+        )
 
 
 # ── Module helpers ────────────────────────────────────────────────────────────

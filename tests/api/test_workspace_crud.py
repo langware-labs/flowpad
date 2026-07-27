@@ -14,7 +14,6 @@ from typing import List
 import pytest
 
 from flow_sdk.builtin.workspace import Workspace
-from flow_sdk.builtin.page import Page
 from flow_sdk.responses.response import ApiResponse, ApiResponseStatus
 
 
@@ -132,48 +131,3 @@ async def test_workspace_created_by_local_user(bootstrapped_client, user):
     ws_data = await create_workspace(client, "Authored WS")
     assert ws_data["created_by"] == user.id
     assert ws_data["updated_by"] == user.id
-
-
-async def test_create_page_under_workspace(bootstrapped_client):
-    """Test creating a page under a workspace scope."""
-    client = bootstrapped_client
-    ws_data = await create_workspace(client, "WS With Pages")
-    ws_id = ws_data["id"]
-
-    # Create a page scoped to the workspace
-    page = Page(title="Scoped Page")
-    response = await client.post(
-        f"/api/v1/graph/workspace/{ws_id}/page",
-        json=json.loads(page.model_dump_json(exclude_none=True)),
-    )
-    assert response.status_code == 200, response.text
-    res = response.json()
-    assert res["status"] == ApiResponseStatus.SUCCESS.value
-    assert res["data"]["title"] == "Scoped Page"
-
-
-async def test_list_pages_under_workspace(bootstrapped_client):
-    """Test listing pages under a specific workspace scope."""
-    client = bootstrapped_client
-    ws_data = await create_workspace(client, "WS List Pages")
-    ws_id = ws_data["id"]
-
-    # Create pages under workspace
-    for title in ["WS Page 1", "WS Page 2"]:
-        page = Page(title=title)
-        response = await client.post(
-            f"/api/v1/graph/workspace/{ws_id}/page",
-            json=json.loads(page.model_dump_json(exclude_none=True)),
-        )
-        assert response.status_code == 200, response.text
-
-    # List pages under workspace
-    response = await client.get(f"/api/v1/graph/workspace/{ws_id}/page")
-    assert response.status_code == 200, response.text
-    res = response.json()
-    assert res["status"] == ApiResponseStatus.SUCCESS.value
-    pages = res["data"]
-    assert isinstance(pages, list)
-    titles = [p["title"] for p in pages]
-    assert "WS Page 1" in titles
-    assert "WS Page 2" in titles

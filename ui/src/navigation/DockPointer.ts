@@ -1,4 +1,19 @@
-import { AgenticProcess, ClaudeSession, Layout, Project, Shell, TypeId, VFSPath, type IDockPointer } from '@sdk';
+import {
+  AgenticProcess,
+  ClaudeSession,
+  Layout,
+  PageId,
+  Project,
+  RemoteWorkerSession,
+  Shell,
+  TypeId,
+  VFSPath,
+  WorldViewProjection,
+  isWorldViewProjection,
+  normalizeWorldViewDockPointer,
+  type IDockPointer,
+  type WorldViewProjection as WorldViewProjectionName,
+} from '@sdk';
 import { VIEW_SLOTS, ViewSlot, ViewType, VIEWER_REGISTRY } from '../types/ViewType';
 import { NavigationError, NavigationErrorType } from './NavigationError';
 import { buildDockUrl, parseDockUrl, parseQueryParams } from './url-builder';
@@ -8,16 +23,20 @@ import { AssetEditor, AssetMode, AssetRoutingMethod, editorForType, LOCAL_COMPUT
 import {
   ALL_SCOPE_FILTER,
   dockOptionsToScopeFilter,
+  pinnedProjectId,
   scopeFilterKey,
   scopeFilterToDockOptions,
   withScopeFilterOptions,
+  withoutScopeFilterOptions,
   type ScopeFilter,
 } from '@src/lib/scope-filter';
+import { dockOptionsToSideWindows, withSideWindowsOptions, type SideWindowsState } from '@src/lib/side-windows';
+import type { ViewMode } from '@src/contexts/view-mode-context';
+import { DEFAULT_WORLDVIEW_COLOR_MODE, type WorldViewColorMode } from '@src/types/WorldViewColorMode';
 import {
-  dockOptionsToSideWindows,
-  withSideWindowsOptions,
-  type SideWindowsState,
-} from '@src/lib/side-windows';
+  DEFAULT_GRAPH_PRESENTATION,
+  type GraphPresentation,
+} from '@src/types/GraphPresentation';
 
 /**
  * URL query-param key carrying the "highlight this thing" intent across the
@@ -28,6 +47,79 @@ import {
  * which is not a dock URL).
  */
 export const HIGHLIGHT_PARAM = 'highlight';
+export const VIEW_MODE_PARAM = 'viewMode';
+
+/**
+ * URL query-param key selecting which translated body of an asset to show. It
+ * carries a language code (`es`, `he`, `fr-CA`, …); absent means the original
+ * doc. Like the other option params it rides in `options` and is deliberately
+ * EXCLUDED from `tabHash`, so switching languages swaps the body inline in the
+ * SAME tab (no new tab). Pairs with `DockPointer.lang` / `withLang()`; the
+ * asset editor reads it to point at the matching `translations[].ref`.
+ */
+export const LANG_PARAM = 'lang';
+
+/**
+ * URL query-param key carrying the ACTIVE USER JOURNEY across the app. Null by
+ * default; when set, the guided journey tray is shown for that journey and the
+ * orchestrator drives its current step. Like the other option params it rides in
+ * `options` (so it is reload- and back-button-safe, and deliberately EXCLUDED
+ * from `tabHash` — showing a journey never spawns a tab). It is TOPMOST/sticky:
+ * `openDock` carries it onto any target that doesn't set one, so the journey
+ * stays visible across navigation until explicitly closed. Pairs with
+ * `DockPointer.journeyId` / `withJourney()`, `useActiveJourneyId()` (home root),
+ * and `navigation.showJourney()` / `closeJourney()`.
+ */
+export const JOURNEY_PARAM = 'journeyId';
+
+/**
+ * Canonicalize a compute-node-relative path: forward slashes, collapsed
+ * separators, no leading/trailing slash. Single owner of the rel-path form the
+ * `fs/<relPath>` assets pointer carries (fsFolderRoot re-exports this for the
+ * browse-side consumers).
+ */
+export function normalizeRel(path: string | null | undefined): string {
+  if (!path) return '';
+  return path.replace(/\\/g, '/').replace(/\/+/g, '/').replace(/^\/+/, '').replace(/\/+$/, '');
+}
+
+export const ASSET_COMPARE_POINTER_PREFIX = 'asset-compare/';
+
+export interface AssetComparePointerPayload {
+  computeNodeId: string;
+  workdir: string;
+  file: string;
+  assetPath: string;
+  assetType: string;
+  assetLabel: string;
+}
+
+function encodePointerJson(value: unknown): string {
+  const json = JSON.stringify(value);
+  return btoa(unescape(encodeURIComponent(json)))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '');
+}
+
+function decodePointerJson<T>(value: string): T | null {
+  try {
+    const padded = value + '='.repeat((4 - (value.length % 4)) % 4);
+    const json = decodeURIComponent(escape(atob(padded.replace(/-/g, '+').replace(/_/g, '/'))));
+    return JSON.parse(json) as T;
+  } catch {
+    return null;
+  }
+}
+
+export function decodeAssetComparePointer(pointer: string | null | undefined): AssetComparePointerPayload | null {
+  if (!pointer?.startsWith(ASSET_COMPARE_POINTER_PREFIX)) return null;
+  return decodePointerJson<AssetComparePointerPayload>(pointer.slice(ASSET_COMPARE_POINTER_PREFIX.length));
+}
+
+function isViewMode(value: string | undefined): value is ViewMode {
+  return value === 'vibe' || value === 'standard' || value === 'advanced' || value === 'dev';
+}
 
 /**
  * Lens pointer structure for sub-routing within lens viewer
@@ -77,23 +169,28 @@ export class DockPointer implements IDockPointer {
   public readonly pointer?: string | undefined;
   public readonly options?: Record<string, string> | undefined;
   public readonly layout: Layout;
+  /** Which SPA-surface this dock addresses. Defaults to `desk` (today's desktop
+   *  app); a sibling of `viewType`, never folded into `pointer`. */
+  public readonly page: PageId;
 
   constructor(data: IDockPointer, layout?: Layout);
-  constructor(viewType?: ViewType, pointer?: string, options?: Record<string, string>, layout?: Layout);
+  constructor(viewType?: ViewType, pointer?: string, options?: Record<string, string>, layout?: Layout, page?: PageId);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  constructor(viewTypeOrData?: any, pointerOrLayout?: any, options?: any, layout?: any) {
+  constructor(viewTypeOrData?: any, pointerOrLayout?: any, options?: any, layout?: any, page?: any) {
     if (viewTypeOrData && typeof viewTypeOrData === 'object') {
       // IDockPointer overload
       this.viewType = viewTypeOrData.viewType as ViewType | undefined;
       this.pointer = viewTypeOrData.pointer;
       this.options = viewTypeOrData.options;
       this.layout = (pointerOrLayout as Layout) ?? Layout.DOCK;
+      this.page = (viewTypeOrData.page as PageId | undefined) ?? PageId.DESK;
     } else {
       // Positional overload
       this.viewType = viewTypeOrData;
       this.pointer = pointerOrLayout as string | undefined;
       this.options = options;
       this.layout = layout ?? Layout.DOCK;
+      this.page = (page as PageId | undefined) ?? PageId.DESK;
     }
   }
 
@@ -118,6 +215,43 @@ export class DockPointer implements IDockPointer {
       this.pointer,
       withScopeFilterOptions(this.options, scope),
       this.layout,
+      this.page,
+    );
+  }
+
+  /**
+   * The project this dock pins as its active-project context (`project` scope
+   * mode), or null. Reads through the scope selectors — no call site picks the
+   * mode/id fields apart itself.
+   */
+  get scopeProjectId(): string | null {
+    return pinnedProjectId(this.scopeFilter);
+  }
+
+  /**
+   * Is this dock's TAB IDENTITY keyed by its scope? True for the scope-keyed
+   * views (Assets, Explorer) whose `tabHash` folds every sub-pointer of one
+   * scope into a single tab. Only these can be stranded by an unsatisfiable
+   * scope — their tab literally cannot be minted without a live project — so
+   * it's the one class of dock that needs scope repair before materialization.
+   */
+  get scopeKeyed(): boolean {
+    return !!(this.viewType && VIEWER_REGISTRY[this.viewType]?.scopeKeyed);
+  }
+
+  /**
+   * Clone this pointer with its scope removed — same surface, no scope keys.
+   * The recovery for a scope that can't be satisfied (see `repairUnsatisfiableScope`
+   * in main-loader): the dock keeps showing what the URL names, just unscoped,
+   * instead of filtering against a project that isn't there.
+   */
+  withoutScopeFilter(): DockPointer {
+    return new DockPointer(
+      this.viewType,
+      this.pointer,
+      withoutScopeFilterOptions(this.options),
+      this.layout,
+      this.page,
     );
   }
 
@@ -143,6 +277,7 @@ export class DockPointer implements IDockPointer {
       this.pointer,
       withSideWindowsOptions(this.options, state),
       this.layout,
+      this.page,
     );
   }
 
@@ -167,7 +302,72 @@ export class DockPointer implements IDockPointer {
       this.pointer,
       { ...this.options, [HIGHLIGHT_PARAM]: wikiword },
       this.layout,
+      this.page,
     );
+  }
+
+  /** Clone this dock addressing a different SPA-surface (page). */
+  withPage(page: PageId): DockPointer {
+    return new DockPointer(this.viewType, this.pointer, this.options, this.layout, page);
+  }
+
+  /**
+   * Page-local view-mode override carried by the URL. This never represents the
+   * user's persisted default; consumers combine it with PrefKey.VIEW_MODE in the
+   * view-mode context.
+   */
+  get viewMode(): ViewMode | null {
+    const value = this.options?.[VIEW_MODE_PARAM];
+    return isViewMode(value) ? value : null;
+  }
+
+  /** Clone this dock with a page-local view-mode override, or remove it with null. */
+  withViewMode(mode: ViewMode | null): DockPointer {
+    const nextOptions = { ...(this.options ?? {}) };
+    if (mode) nextOptions[VIEW_MODE_PARAM] = mode;
+    else delete nextOptions[VIEW_MODE_PARAM];
+    return new DockPointer(this.viewType, this.pointer, nextOptions, this.layout, this.page);
+  }
+
+  /**
+   * The translated-body language this dock asks to show, or null for the
+   * original doc. URL-carried (shareable + back-safe) and excluded from
+   * `tabHash`, so language switches stay in the same tab. Pairs with
+   * `withLang()`; consumed by the markdown asset editor to swap the body ref.
+   */
+  get lang(): string | null {
+    return this.options?.[LANG_PARAM] ?? null;
+  }
+
+  /** Clone this dock pointed at a translated body, or back to the original with null. */
+  withLang(lang: string | null): DockPointer {
+    return this.withOption(LANG_PARAM, lang);
+  }
+
+  /**
+   * The user journey this dock is showing, or null. URL-carried (reload- and
+   * back-safe) and excluded from `tabHash`, so a journey overlays the current
+   * surface instead of spawning a tab. See {@link JOURNEY_PARAM}.
+   */
+  get journeyId(): string | null {
+    return this.options?.[JOURNEY_PARAM] ?? null;
+  }
+
+  /**
+   * Clone this dock with one URL option set (or cleared with null) — the
+   * generic form behind `withLang`/`withJourney` and the sticky-param
+   * carry-forward in `openDock`.
+   */
+  withOption(key: string, value: string | null): DockPointer {
+    const nextOptions = { ...(this.options ?? {}) };
+    if (value) nextOptions[key] = value;
+    else delete nextOptions[key];
+    return new DockPointer(this.viewType, this.pointer, nextOptions, this.layout, this.page);
+  }
+
+  /** Clone this dock showing a journey, or close it (clear the param) with null. */
+  withJourney(journeyId: string | null): DockPointer {
+    return this.withOption(JOURNEY_PARAM, journeyId);
   }
 
   /**
@@ -180,19 +380,27 @@ export class DockPointer implements IDockPointer {
     pointer?: string,
     searchParams?: URLSearchParams,
     layout?: Layout,
+    page?: PageId,
   ): DockPointer;
   static fromUrl(
     viewTypeOrUrl: string,
     pointer?: string,
     searchParams?: URLSearchParams,
     layout: Layout = Layout.DOCK, // Default to DOCK for backward compatibility
+    page: PageId = PageId.DESK, // Default to DESK for backward compatibility
   ): DockPointer {
     if (pointer === undefined && searchParams === undefined) {
       try {
         const url = new URL(viewTypeOrUrl, 'http://flowpad.local');
         const parsedUrl = parseDockUrl(url.pathname);
         if (parsedUrl?.viewType) {
-          return DockPointer.fromUrl(parsedUrl.viewType, parsedUrl.pointer, url.searchParams, parsedUrl.layout);
+          return DockPointer.fromUrl(
+            parsedUrl.viewType,
+            parsedUrl.pointer,
+            url.searchParams,
+            parsedUrl.layout,
+            parsedUrl.page,
+          );
         }
       } catch {
         // Not a URL-shaped value; continue with the historical viewType parser.
@@ -213,7 +421,7 @@ export class DockPointer implements IDockPointer {
     // Parse options from query params
     const options = searchParams ? parseQueryParams(searchParams) : {};
 
-    return new DockPointer(viewType as ViewType, decodedPointer, options, layout);
+    return new DockPointer(viewType as ViewType, decodedPointer, options, layout, page);
   }
 
   /**
@@ -224,17 +432,22 @@ export class DockPointer implements IDockPointer {
   }
 
   /**
+   * Live-session dock — /dock/live_session/<sessionId>. Top-level (not nested
+   * under project/room) because the GUEST holds a session before any host
+   * project or CollaborationRoom exists (DRAFT/PENDING states).
+   */
+  static forLiveSession(sessionId: string, layout: Layout = Layout.DOCK): DockPointer {
+    return new DockPointer(ViewType.LIVE_SESSION, sessionId, {}, layout);
+  }
+
+  /**
    * Triggers dock. The selected trigger id (and the transient "creating" mode)
    * ride in OPTIONS, never `pointer`, so the Triggers tabHash stays `triggers|`
    * — selection/creation are URL-addressable + reload-safe but stay in ONE tab
    * (the same rule the scope filter already follows here). Pair with the
    * `trigger` / `creating` option keys read by TriggersView/TriggersNavigator.
    */
-  static forTriggers(
-    triggerId?: string,
-    opts?: { creating?: string },
-    layout: Layout = Layout.DOCK,
-  ): DockPointer {
+  static forTriggers(triggerId?: string, opts?: { creating?: string }, layout: Layout = Layout.DOCK): DockPointer {
     const options: Record<string, string> = {};
     if (triggerId) options.trigger = triggerId;
     if (opts?.creating) options.creating = opts.creating;
@@ -261,6 +474,18 @@ export class DockPointer implements IDockPointer {
    */
   static forCheckpoint(checkpointHash: string, layout: Layout = Layout.DOCK): DockPointer {
     return new DockPointer(ViewType.DIFF, checkpointHash, undefined, layout);
+  }
+
+  /**
+   * Create dock pointer for an asset working-tree comparison.
+   */
+  static forAssetCompare(payload: AssetComparePointerPayload, layout: Layout = Layout.DOCK): DockPointer {
+    return new DockPointer(
+      ViewType.DIFF,
+      `${ASSET_COMPARE_POINTER_PREFIX}${encodePointerJson(payload)}`,
+      undefined,
+      layout,
+    );
   }
 
   /**
@@ -335,10 +560,10 @@ export class DockPointer implements IDockPointer {
     if (DockPointer.isAgenticProcessPointer(pointer)) {
       return { kind: 'legacy', agenticProcessTypeId: new TypeId(method), filePath: `/${value}` };
     }
-    if (method === AssetRoutingMethod.TYPEID) {
+    if (method === String(AssetRoutingMethod.TYPEID)) {
       return { kind: 'typeid', planTypeId: new TypeId(value) };
     }
-    if (method === AssetRoutingMethod.VFS) {
+    if (method === String(AssetRoutingMethod.VFS)) {
       return { kind: 'vfs', vfsValue: value };
     }
     return null;
@@ -415,9 +640,10 @@ export class DockPointer implements IDockPointer {
    * Pointer format: "wiki/<encoded name>"
    * URL: /dock/assets/wiki/<encoded name>
    */
-  static forWiki(name: string, layout: Layout = Layout.DOCK, space?: string): DockPointer {
-    // Canonical grammar: wiki/<space>/<name> (space default @local).
-    return AssetDocPointer.forWiki(name, space).toDockPointer(layout);
+  static forWiki(name: string, layout: Layout = Layout.DOCK, space?: string, fragment?: string): DockPointer {
+    // Canonical grammar: wiki/<space>/<name> (space default @local). An optional
+    // `fragment` deep-links to a heading; it rides as a query param, not the path.
+    return AssetDocPointer.forWiki(name, space, undefined, fragment).toDockPointer(layout);
   }
 
   /**
@@ -435,6 +661,16 @@ export class DockPointer implements IDockPointer {
   }
 
   /**
+   * Create a pointer for the project landing rendered inside the project-scoped
+   * Assets tab. Assets is scope-keyed, so this shares the same tab as the asset
+   * manager for that project while still giving the landing a restorable URL.
+   */
+  static forAssetProjectHome(options?: { scope?: ScopeFilter }, layout: Layout = Layout.DOCK): DockPointer {
+    const base = new DockPointer(ViewType.ASSETS, AssetMode.PROJECT_HOME, undefined, layout);
+    return options?.scope ? base.withScopeFilter(options.scope) : base;
+  }
+
+  /**
    * Create dock pointer for an asset folder view (filtered list under a folder).
    * Pointer format: "folder/<typeName>/<typeid>/<relPath>"
    *   - typeid is a VFS entity identifier like "compute_node-@local" or "project-<uuid>".
@@ -448,10 +684,28 @@ export class DockPointer implements IDockPointer {
     layout: Layout = Layout.DOCK,
   ): DockPointer {
     const cleanRel = relPath.replace(/^\/+/, '').replace(/\/+$/, '');
-    const pointer = cleanRel
-      ? `folder/${typeName}/${typeid}/${cleanRel}`
-      : `folder/${typeName}/${typeid}`;
+    const pointer = cleanRel ? `folder/${typeName}/${typeid}/${cleanRel}` : `folder/${typeName}/${typeid}`;
     return new DockPointer(ViewType.ASSETS, pointer, undefined, layout);
+  }
+
+  /**
+   * Create dock pointer for a real-filesystem folder browsed inside the Assets
+   * view (a project context folder or any folder under one).
+   * Pointer format: "fs/<relPath>" — relPath is compute-node-relative (no
+   * leading slash), the same form the Explorer's VFS listing uses.
+   * URL: /dock/assets/fs/<relPath>
+   */
+  static forAssetFsFolder(path: string, layout: Layout = Layout.DOCK): DockPointer {
+    return new DockPointer(ViewType.ASSETS, `fs/${normalizeRel(path)}`, undefined, layout);
+  }
+
+  /**
+   * Parse an `fs/<relPath>` assets pointer into its compute-node-relative path.
+   * Returns null if the pointer is not an fs pointer.
+   */
+  static parseAssetFsPointer(pointer: string | undefined | null): string | null {
+    if (!pointer || !pointer.startsWith('fs/')) return null;
+    return pointer.slice('fs/'.length);
   }
 
   /**
@@ -478,14 +732,6 @@ export class DockPointer implements IDockPointer {
   }
 
   /**
-   * Create dock pointer for workflows viewer
-   * @param workflowId - Optional workflow entity ID to view/edit
-   */
-  static forWorkflows(workflowId?: string, layout: Layout = Layout.DOCK): DockPointer {
-    return new DockPointer(ViewType.WORKFLOWS, workflowId, undefined, layout);
-  }
-
-  /**
    * Create dock pointer for a project's collaboration view, optionally with
    * an active collaboration_room and/or an active tab inside that room, or
    * a focused conversation.
@@ -494,16 +740,18 @@ export class DockPointer implements IDockPointer {
    *   /dock/project/<projectId>
    *   /dock/project/<projectId>/collaboration_room/<roomId>
    *   /dock/project/<projectId>/collaboration_room/<roomId>/tab/<typeid>
+   *   /dock/project/<projectId>/collaboration_room/<roomId>/session/<sessionId>
    *   /dock/project/<projectId>/conversation/<conversationId>
    *
    * `typeid` is the standard TypeId string (e.g. "agentic_process-<uuid>").
    *
    * Precedence: when both `roomId` and `conversationId` are passed, `conversationId`
-   * wins — the room shape is dropped to keep the URL unambiguous.
+   * wins — the room shape is dropped to keep the URL unambiguous. Within a room,
+   * `sessionId` (the active shared session) takes precedence over `tab`.
    */
   static forProject(
     projectId?: string,
-    sub?: { roomId?: string | null; tab?: TypeId | null; conversationId?: string | null },
+    sub?: { roomId?: string | null; tab?: TypeId | null; conversationId?: string | null; sessionId?: string | null },
     layout: Layout = Layout.DOCK,
   ): DockPointer {
     if (!projectId) return new DockPointer(ViewType.PROJECT, undefined, undefined, layout);
@@ -512,7 +760,9 @@ export class DockPointer implements IDockPointer {
       segments.push('conversation', sub.conversationId);
     } else if (sub?.roomId) {
       segments.push('collaboration_room', sub.roomId);
-      if (sub.tab) {
+      if (sub.sessionId) {
+        segments.push('session', sub.sessionId);
+      } else if (sub.tab) {
         segments.push('tab', sub.tab.toString());
       }
     }
@@ -526,14 +776,19 @@ export class DockPointer implements IDockPointer {
    *   <projectId>
    *   <projectId>/collaboration_room/<roomId>
    *   <projectId>/collaboration_room/<roomId>/tab/<type>-<id>
+   *   <projectId>/collaboration_room/<roomId>/session/<sessionId>
    *   <projectId>/conversation/<conversationId>
    *
    * Returns nulls for segments that aren't present or the input is malformed.
    */
-  static parseProjectPointer(
-    pointer: string | undefined | null,
-  ): { projectTypeId: TypeId | null; roomId: string | null; tabTypeId: TypeId | null; conversationId: string | null } {
-    if (!pointer) return { projectTypeId: null, roomId: null, tabTypeId: null, conversationId: null };
+  static parseProjectPointer(pointer: string | undefined | null): {
+    projectTypeId: TypeId | null;
+    roomId: string | null;
+    tabTypeId: TypeId | null;
+    sessionId: string | null;
+    conversationId: string | null;
+  } {
+    if (!pointer) return { projectTypeId: null, roomId: null, tabTypeId: null, sessionId: null, conversationId: null };
     const parts = pointer.split('/').filter(Boolean);
     // parts[0] identifies the project. It may arrive bare (`<id>`) or as a
     // serialized `<type>-<id>` typeid — route it through TypeId so the type
@@ -542,12 +797,15 @@ export class DockPointer implements IDockPointer {
     const projectTypeId = parts[0] ? DockPointer.projectSegmentToTypeId(parts[0]) : null;
     let roomId: string | null = null;
     let tabTypeId: TypeId | null = null;
+    let sessionId: string | null = null;
     let conversationId: string | null = null;
     if (parts[1] === 'conversation' && parts[2]) {
       conversationId = parts[2];
     } else if (parts[1] === 'collaboration_room' && parts[2]) {
       roomId = parts[2];
-      if (parts[3] === 'tab' && parts[4]) {
+      if (parts[3] === 'session' && parts[4]) {
+        sessionId = parts[4];
+      } else if (parts[3] === 'tab' && parts[4]) {
         try {
           tabTypeId = new TypeId(parts[4]);
         } catch {
@@ -555,7 +813,7 @@ export class DockPointer implements IDockPointer {
         }
       }
     }
-    return { projectTypeId, roomId, tabTypeId, conversationId };
+    return { projectTypeId, roomId, tabTypeId, sessionId, conversationId };
   }
 
   /**
@@ -590,9 +848,10 @@ export class DockPointer implements IDockPointer {
    * `folder/<typeid>/<relPath>`, `wiki/<name>`) — so the project view can
    * reuse AssetsPage's existing selection parser without inventing new shapes.
    */
-  static splitProjectPointer(
-    pointer: string | undefined | null,
-  ): { projectId: string | null; assetSubPointer: string } {
+  static splitProjectPointer(pointer: string | undefined | null): {
+    projectId: string | null;
+    assetSubPointer: string;
+  } {
     if (!pointer) return { projectId: null, assetSubPointer: '' };
     const slash = pointer.indexOf('/');
     if (slash < 0) return { projectId: pointer, assetSubPointer: '' };
@@ -609,13 +868,10 @@ export class DockPointer implements IDockPointer {
    * shell. Non-ASSETS pointers and falsy `projectId` pass through unchanged —
    * call sites can use this unconditionally.
    */
-  static rebaseAssetsOntoProject(
-    p: DockPointer,
-    projectId: string | null | undefined,
-  ): DockPointer {
+  static rebaseAssetsOntoProject(p: DockPointer, projectId: string | null | undefined): DockPointer {
     if (!projectId || p.viewType !== ViewType.ASSETS) return p;
     const sub = p.pointer ? `${projectId}/${p.pointer}` : projectId;
-    return new DockPointer(ViewType.PROJECT, sub, p.options, p.layout);
+    return new DockPointer(ViewType.PROJECT, sub, p.options, p.layout, p.page);
   }
 
   /**
@@ -634,24 +890,12 @@ export class DockPointer implements IDockPointer {
     const queryOptions: Record<string, string> = {};
     if (options?.conversationId) queryOptions.conversation = options.conversationId;
     if (options?.messageId) queryOptions.message = options.messageId;
-    return new DockPointer(ViewType.INBOX, undefined, Object.keys(queryOptions).length ? queryOptions : undefined, layout);
-  }
-
-  /**
-   * Create dock pointer for execute flow viewer
-   * @param options - Optional options object with vfsAbsPath and session
-   * @param options.vfsAbsPath - Optional VFS absolute path to execute (e.g., "compute_node-@local/path/to/file.md")
-   * @param options.machineSessionId - Optional machine session identifier (used by worker-sessions-panel)
-   */
-  static forExecuteFlow(
-    options?: { vfsAbsPath?: string; machineSessionId?: string },
-    layout: Layout = Layout.DOCK,
-  ): DockPointer {
-    const queryOptions: Record<string, string> = {};
-    if (options?.vfsAbsPath) queryOptions.vfsAbsPath = options.vfsAbsPath;
-    if (options?.machineSessionId) queryOptions.machineSessionId = options.machineSessionId;
-
-    return new DockPointer(ViewType.EXECUTE_FLOW, undefined, queryOptions, layout);
+    return new DockPointer(
+      ViewType.INBOX,
+      undefined,
+      Object.keys(queryOptions).length ? queryOptions : undefined,
+      layout,
+    );
   }
 
   /**
@@ -686,7 +930,7 @@ export class DockPointer implements IDockPointer {
   static forHome(
     tab?: string,
     item?: string,
-    options?: { scope?: string; project?: string; expand?: boolean },
+    options?: { scope?: string; project?: string; expand?: boolean; vibeNoProcess?: boolean },
     layout: Layout = Layout.DOCK,
   ): DockPointer {
     const queryOptions: Record<string, string> = {};
@@ -694,6 +938,7 @@ export class DockPointer implements IDockPointer {
     if (options?.scope && options.scope !== 'all') queryOptions.scope = options.scope;
     if (options?.project) queryOptions.project = options.project;
     if (options?.expand) queryOptions.expand = 'true';
+    if (options?.vibeNoProcess) queryOptions.vibeNoProcess = 'true';
     return new DockPointer(ViewType.HOME, tab, queryOptions, layout);
   }
 
@@ -771,14 +1016,168 @@ export class DockPointer implements IDockPointer {
    */
   static forGraph(
     typeId?: TypeId | null,
-    options?: { depth?: number; selected?: string },
+    options?: { depth?: number; selected?: string; hidden?: readonly string[]; query?: string },
     layout: Layout = Layout.DOCK,
   ): DockPointer {
     const pointer = typeId ? `${typeId.type}/${typeId.id}` : undefined;
     const queryOptions: Record<string, string> = {};
     if (options?.depth) queryOptions.depth = String(options.depth);
     if (options?.selected) queryOptions.selected = options.selected;
-    return new DockPointer(ViewType.GRAPH, pointer, Object.keys(queryOptions).length ? queryOptions : undefined, layout);
+    const hidden = [...new Set(options?.hidden ?? [])].filter(Boolean).sort();
+    if (hidden.length) queryOptions.hide = hidden.join(',');
+    if (options?.query) queryOptions.q = options.query;
+    return new DockPointer(
+      ViewType.GRAPH,
+      pointer,
+      Object.keys(queryOptions).length ? queryOptions : undefined,
+      layout,
+    );
+  }
+
+  /** Create one projection-first WorldView URL with all in-view state in query options. */
+  static forWorldView(
+    projection: WorldViewProjectionName = WorldViewProjection.DEPLOYMENT,
+    options?: {
+      focus?: TypeId | string | null;
+      depth?: number;
+      selected?: string;
+      signal?: WorldViewColorMode;
+      /** Renderer choice — serialized as `?render=` (see GraphPresentation). */
+      render?: GraphPresentation;
+      hidden?: readonly string[];
+      query?: string;
+    },
+    layout: Layout = Layout.DOCK,
+    page: PageId = projection === WorldViewProjection.DEPLOYMENT ? PageId.DESK : PageId.HUB,
+  ): DockPointer {
+    const queryOptions: Record<string, string> = {};
+    const focus = typeof options?.focus === 'string' ? options.focus : options?.focus?.toString();
+    if (focus) queryOptions.focus = focus;
+    if (options?.depth) queryOptions.depth = String(options.depth);
+    if (options?.selected) queryOptions.selected = options.selected;
+    if (
+      projection === WorldViewProjection.DEPLOYMENT &&
+      options?.signal &&
+      options.signal !== DEFAULT_WORLDVIEW_COLOR_MODE
+    ) {
+      queryOptions.signal = options.signal;
+    }
+    if (options?.render && options.render !== DEFAULT_GRAPH_PRESENTATION) queryOptions.render = options.render;
+    const hidden = [...new Set(options?.hidden ?? [])].filter(Boolean).sort();
+    if (hidden.length) queryOptions.hide = hidden.join(',');
+    if (options?.query) queryOptions.q = options.query;
+    return new DockPointer(
+      ViewType.WORLDVIEW,
+      projection,
+      Object.keys(queryOptions).length ? queryOptions : undefined,
+      layout,
+      page,
+    );
+  }
+
+  /** Shared query-option assembly for the subgraph-surface pointers. */
+  private static subgraphOptions(options?: {
+    depth?: number;
+    /** Omit `depth` when it equals this (URL hygiene, one rule for every
+     *  subgraph-surface pointer). */
+    defaultDepth?: number;
+    selected?: string;
+    render?: GraphPresentation;
+    hidden?: readonly string[];
+    query?: string;
+    carry?: Record<string, string>;
+  }): Record<string, string> | undefined {
+    const queryOptions: Record<string, string> = { ...(options?.carry ?? {}) };
+    if (options?.render && options.render !== DEFAULT_GRAPH_PRESENTATION) queryOptions.render = options.render;
+    if (options?.depth && options.depth !== options.defaultDepth) queryOptions.depth = String(options.depth);
+    if (options?.selected) queryOptions.selected = options.selected;
+    const hidden = [...new Set(options?.hidden ?? [])].filter(Boolean).sort();
+    if (hidden.length) queryOptions.hide = hidden.join(',');
+    if (options?.query) queryOptions.q = options.query;
+    return Object.keys(queryOptions).length ? queryOptions : undefined;
+  }
+
+  /**
+   * Tag graph/tree at `/dock/tag/graph[/<name>]` — <name> is a dot-path
+   * TAG NAME (not a typeid; ghost tags are first-class). Focus lives in
+   * the pointer (dependency pattern); `view=tree` and friends ride options.
+   */
+  static forTagGraph(
+    tag?: string | null,
+    options?: {
+      /** Data shape owned by this surface (`?view=tree` = ontology tree). */
+      view?: 'tree';
+      depth?: number;
+      selected?: string;
+      render?: GraphPresentation;
+      hidden?: readonly string[];
+      query?: string;
+      carry?: Record<string, string>;
+    },
+    layout: Layout = Layout.DOCK,
+  ): DockPointer {
+    const pointer = tag ? `graph/${encodeURIComponent(tag)}` : 'graph';
+    const carry = { ...(options?.carry ?? {}) };
+    if (options?.view) carry.view = options.view;
+    return new DockPointer(
+      ViewType.TAG,
+      pointer,
+      DockPointer.subgraphOptions({ ...options, carry }),
+      layout,
+    );
+  }
+
+  /** Split a TAG pointer: `graph[/<name>]` → `{ sub: 'graph', tag }`. */
+  static parseTagPointer(pointer: string | undefined): { sub: string; tag: string | null } | null {
+    if (!pointer) return null;
+    const idx = pointer.indexOf('/');
+    const sub = idx < 0 ? pointer : pointer.slice(0, idx);
+    if (sub !== 'graph') return null;
+    const tag = idx < 0 ? null : pointer.slice(idx + 1);
+    return { sub, tag: tag ? DockPointer.tryDecode(tag) : null };
+  }
+
+  /** Best-effort decode for pointer segments encoded by the `for*` factories. */
+  private static tryDecode(segment: string): string {
+    try {
+      return decodeURIComponent(segment);
+    } catch {
+      return segment;
+    }
+  }
+
+  /**
+   * Generic entity-subgraph at `/dock/subgraph/<projection>[/<focusKey>]` —
+   * layer 2's zero-new-frontend-code path. The focus segment is a node key.
+   */
+  static forSubgraph(
+    projection: string,
+    focusKey?: string | null,
+    options?: {
+      depth?: number;
+      selected?: string;
+      render?: GraphPresentation;
+      hidden?: readonly string[];
+      query?: string;
+      carry?: Record<string, string>;
+    },
+    layout: Layout = Layout.DOCK,
+  ): DockPointer {
+    const pointer = focusKey ? `${projection}/${encodeURIComponent(focusKey)}` : projection;
+    return new DockPointer(ViewType.SUBGRAPH, pointer, DockPointer.subgraphOptions(options), layout);
+  }
+
+  /** Split a SUBGRAPH pointer into `{ projection, focus }`. */
+  static parseSubgraphPointer(
+    pointer: string | undefined,
+  ): { projection: string; focus: string | null } | null {
+    if (!pointer) return null;
+    const idx = pointer.indexOf('/');
+    if (idx < 0) return { projection: pointer, focus: null };
+    const projection = pointer.slice(0, idx);
+    if (!projection) return null;
+    const focus = pointer.slice(idx + 1);
+    return { projection, focus: focus ? DockPointer.tryDecode(focus) : null };
   }
 
   /**
@@ -800,9 +1199,19 @@ export class DockPointer implements IDockPointer {
   /** Split a GRAPH pointer into its `{ type, id }` parts. */
   static parseGraphPointer(pointer: string | undefined): { type: string; id: string } | null {
     if (!pointer) return null;
-    const idx = pointer.indexOf('/');
-    if (idx < 0) return null;
-    return { type: pointer.slice(0, idx), id: pointer.slice(idx + 1) };
+    const parts = pointer.split('/');
+    if (parts.length !== 2 || !parts[0] || !parts[1]) return null;
+    return { type: parts[0], id: parts[1] };
+  }
+
+  /** Parse one of the three canonical projection pointer values. */
+  static parseWorldViewProjection(pointer: string | undefined): WorldViewProjectionName | null {
+    return isWorldViewProjection(pointer) ? pointer : null;
+  }
+
+  /** Split a retired entity-rooted WORLDVIEW pointer for redirect compatibility. */
+  static parseWorldViewPointer(pointer: string | undefined): { type: string; id: string } | null {
+    return DockPointer.parseGraphPointer(pointer);
   }
 
   /**
@@ -822,8 +1231,7 @@ export class DockPointer implements IDockPointer {
     // delimiter isn't an embedded "//" in the URL (react-router normalizes
     // "//" to "/", silently demoting the path to a relative one). The parser
     // re-adds it. Same hazard + fix as forPlan above.
-    const cleanValue =
-      method === 'vfs' && value.startsWith('/') ? value.slice(1) : value;
+    const cleanValue = method === 'vfs' && value.startsWith('/') ? value.slice(1) : value;
     const pointer = `${method}/${cleanValue}`;
     const queryOptions: Record<string, string> = {};
     if (options?.selected) queryOptions.selected = options.selected;
@@ -838,9 +1246,7 @@ export class DockPointer implements IDockPointer {
   /** Split a K_BROWSER pointer into `{ method, value }` (default method `vfs`).
    *  vfs values get their leading "/" re-added (forKnowledgeBrowser strips it);
    *  legacy double-slash URLs (`vfs//Users/…`) parse identically. */
-  static parseKnowledgeBrowserPointer(
-    pointer: string | undefined,
-  ): { method: 'vfs' | 'typeid'; value: string } | null {
+  static parseKnowledgeBrowserPointer(pointer: string | undefined): { method: 'vfs' | 'typeid'; value: string } | null {
     if (!pointer) return null;
     const idx = pointer.indexOf('/');
     if (idx < 0) return { method: 'vfs', value: pointer };
@@ -895,17 +1301,14 @@ export class DockPointer implements IDockPointer {
    *   The task view itself only renders the task; the segment is purely a
    *   canonical anchor (so deep-links from the email / inbox can carry both).
    */
-  static forTasks(
-    taskId?: string,
-    options?: { conversationId?: string; layout?: Layout },
-  ): DockPointer {
+  static forTasks(taskId?: string, options?: { conversationId?: string; layout?: Layout }): DockPointer {
+    // Task is now a generic folder asset — it opens through the shared asset
+    // editor (`editor/task/typeid/task-<id>`), not a bespoke ViewType.TASKS.
+    // Delegating here transparently repoints every `forTasks` caller.
     const layout = options?.layout ?? Layout.DOCK;
-    const pointer = taskId
-      ? options?.conversationId
-        ? `${taskId}/conversation/${options.conversationId}`
-        : taskId
-      : undefined;
-    return new DockPointer(ViewType.TASKS, pointer, undefined, layout);
+    if (!taskId) return DockPointer.forAssetList('task', undefined, layout);
+    const opts = options?.conversationId ? { conversationId: options.conversationId } : undefined;
+    return DockPointer.forAssetEditorByTypeId('task', new TypeId('task', taskId), layout, opts);
   }
 
   /**
@@ -926,9 +1329,7 @@ export class DockPointer implements IDockPointer {
     sub?: { messageId?: string | null },
     layout: Layout = Layout.DOCK,
   ): DockPointer {
-    const pointer = sub?.messageId
-      ? `${conversationId}/message/${sub.messageId}`
-      : conversationId;
+    const pointer = sub?.messageId ? `${conversationId}/message/${sub.messageId}` : conversationId;
     return new DockPointer(ViewType.CONVERSATION, pointer, undefined, layout);
   }
 
@@ -941,9 +1342,10 @@ export class DockPointer implements IDockPointer {
    *
    * Returns nulls for segments that aren't present or the input is malformed.
    */
-  static parseConversationPointer(
-    pointer: string | undefined | null,
-  ): { conversationId: string | null; messageId: string | null } {
+  static parseConversationPointer(pointer: string | undefined | null): {
+    conversationId: string | null;
+    messageId: string | null;
+  } {
     if (!pointer) return { conversationId: null, messageId: null };
     const parts = pointer.split('/').filter(Boolean);
     const conversationId = parts[0] ?? null;
@@ -967,7 +1369,14 @@ export class DockPointer implements IDockPointer {
    */
   static forSearch(
     query?: string,
-    filters?: { record_type?: string; status?: string; scope?: string; time_preset?: string; time_start?: string; time_end?: string },
+    filters?: {
+      record_type?: string;
+      status?: string;
+      scope?: string;
+      time_preset?: string;
+      time_start?: string;
+      time_end?: string;
+    },
     layout: Layout = Layout.DOCK,
   ): DockPointer {
     const opts: Record<string, string> = {};
@@ -1025,12 +1434,21 @@ export class DockPointer implements IDockPointer {
   }
 
   /**
+   * Create dock pointer for the user Preferences screen.
+   * @param category - Optional category whose tab should be active
+   */
+  static forPreferences(category?: string, layout: Layout = Layout.DOCK): DockPointer {
+    return new DockPointer(ViewType.PREFERENCES, category, {}, layout);
+  }
+
+  /**
    * Check equality with another dock pointer
    */
   equals(other: DockPointer): boolean {
     return (
       this.viewType === other.viewType &&
       this.pointer === other.pointer &&
+      this.page === other.page &&
       this.slot === other.slot &&
       this.layout === other.layout &&
       JSON.stringify(this.options) === JSON.stringify(other.options)
@@ -1063,33 +1481,52 @@ export class DockPointer implements IDockPointer {
     if (VIEWER_REGISTRY[this.viewType]?.chrome === 'fullbleed') return null;
     // A bare shell is the terminal host; only a session-pointer shell is a tab.
     if (this.viewType === ViewType.SHELL && !this.pointer) return null;
-    // Assets is a SINGLE tab per scope: every type/folder/editor sub-pointer of
-    // one scope folds into ONE tab. Identity = the scope filter (global when
-    // unset), NOT the sub-pointer. scopeFilterKey: 'all' | 'user' |
-    // 'project:<id>' | 'filter:<0|1>:p1,p2'.
-    if (this.viewType === ViewType.ASSETS) {
-      return `${ViewType.ASSETS}|${scopeFilterKey(this.scopeFilter ?? ALL_SCOPE_FILTER)}`;
+    // Page namespaces tab identity: `desk` (the default) stays UNPREFIXED so every
+    // existing persisted `Tab.pointer` key is byte-identical (no migration); a
+    // non-desk page prefixes its id, giving each page its own tab namespace so a
+    // `desk` tab and a `hub` tab with the same viewType/pointer never collide.
+    const pagePrefix = this.page === PageId.DESK ? '' : `${this.page}|`;
+    // A scope-keyed view (Assets, Explorer) is a SINGLE tab per scope: every
+    // sub-pointer (asset type/folder/editor, explorer folder) of one scope folds
+    // into ONE tab. Identity = the scope filter (global when unset), NOT the
+    // sub-pointer. scopeFilterKey: 'all' | 'user' | 'project:<id>' |
+    // 'filter:<0|1>:p1,p2'.
+    if (VIEWER_REGISTRY[this.viewType]?.scopeKeyed) {
+      return `${pagePrefix}${this.viewType}|${scopeFilterKey(this.scopeFilter ?? ALL_SCOPE_FILTER)}`;
     }
-    return `${this.viewType}|${this.pointer ?? ''}`;
+    // Pointer-folding views (e.g. Preferences) collapse all their category/field
+    // sub-pointers into ONE tab: identity is the viewType, pointer dropped. The
+    // flag lives in VIEWER_REGISTRY so this stays declarative (cf. the fullbleed
+    // check above) instead of hardcoding viewTypes here.
+    if (VIEWER_REGISTRY[this.viewType]?.foldsPointer) {
+      return `${pagePrefix}${this.viewType}|`;
+    }
+    return `${pagePrefix}${this.viewType}|${this.pointer ?? ''}`;
   }
 
   /** Serialize this dock's tab-identity fields (viewType + pointer) as JSON.
    *  This is what Tab.pointer stores in the DB. Returns null if tabHash is null. */
   toJSON(): string | null {
     if (!this.tabHash) return null;
-    // Assets identity is the SCOPE, not the sub-pointer. Normalize the pointer to
+    // Scope-keyed identity is the SCOPE, not the sub-pointer. Normalize the pointer to
     // '' and persist the scope (options) + the computed tabHash so: (a) the stored
     // JSON is constant for a given scope regardless of which type was last viewed
     // → the backend mints ONE Tab row per scope; (b) `Tab.dockPointer` rebuilds the
     // same tabHash directly from the stored field; (c) clicking the chip reopens the
     // scoped browser root.
-    if (this.viewType === ViewType.ASSETS) {
+    if (VIEWER_REGISTRY[this.viewType]?.scopeKeyed) {
       return JSON.stringify({
-        viewType: ViewType.ASSETS,
+        viewType: this.viewType,
         pointer: '',
         options: this.scopeFilter ? scopeFilterToDockOptions(this.scopeFilter) : undefined,
         tabHash: this.tabHash,
       });
+    }
+    // Pointer-folding views (Preferences, …) persist a constant identity: pointer
+    // normalized to '' so the backend mints ONE Tab row regardless of which
+    // category was last viewed (same intent as the ASSETS scope-folding above).
+    if (VIEWER_REGISTRY[this.viewType]?.foldsPointer) {
+      return JSON.stringify({ viewType: this.viewType, pointer: '' });
     }
     return JSON.stringify({ viewType: this.viewType ?? '', pointer: this.pointer ?? '' });
   }
@@ -1105,10 +1542,21 @@ export class DockPointer implements IDockPointer {
       };
       const { viewType, pointer, options } = parsed;
       if (!viewType) return null;
-      const dp = DockPointer.fromUrl(viewType, pointer || undefined);
+      const normalized = normalizeWorldViewDockPointer({
+        viewType: viewType as ViewType,
+        pointer,
+        options,
+      });
+      const dp = DockPointer.fromUrl(
+        normalized.viewType ?? viewType,
+        normalized.pointer || undefined,
+        undefined,
+        Layout.DOCK,
+        normalized.page ?? PageId.DESK,
+      );
       // Restore scope options (assets identity) so the reconstructed dock's
       // tabHash matches the live nav dock's.
-      return options ? new DockPointer(dp.viewType, dp.pointer, options, dp.layout) : dp;
+      return normalized.options ? new DockPointer(dp.viewType, dp.pointer, normalized.options, dp.layout, dp.page) : dp;
     } catch {
       return null;
     }
@@ -1125,6 +1573,17 @@ export class DockPointer implements IDockPointer {
   get targetTypeId(): TypeId | null {
     const pointer = this.pointer;
     if (!pointer) return null;
+    if (this.viewType === ViewType.WORLDVIEW) {
+      const focus = this.options?.focus ?? null;
+      const separator = focus?.indexOf(TypeId.DELIMITER) ?? -1;
+      return separator > 0
+        ? DockPointer.tryTypeId(focus!.slice(0, separator), focus!.slice(separator + TypeId.DELIMITER.length))
+        : null;
+    }
+    if (this.viewType === ViewType.GRAPH) {
+      const parsed = DockPointer.parseGraphPointer(pointer);
+      return parsed ? DockPointer.tryTypeId(parsed.type, parsed.id) : null;
+    }
     // A PLAN dock addresses its PLAN entity directly in the `typeid/<plan-id>`
     // form; the `vfs/<path>` form is path-resolved and carries no typeid target.
     if (this.viewType === ViewType.PLAN) {
@@ -1141,6 +1600,16 @@ export class DockPointer implements IDockPointer {
         return DockPointer.tryTypeId(ClaudeSession.type, lens.ref);
       }
     }
+    // A live-session dock targets its RemoteWorkerSession entity (id = session
+    // id). The viewType STRING ('live_session') differs from the entity TYPE
+    // ('remote_worker_session'), so it must be surfaced explicitly — the generic
+    // fallback below would mint the tab against a non-existent 'live_session'
+    // target, leaving it untitled and projectless (Global-scoped). Puts the
+    // session on the same entity rail as every other tab: the mint resolves its
+    // title (host/guest) and the loader its project.
+    if (this.viewType === ViewType.LIVE_SESSION) {
+      return DockPointer.tryTypeId(RemoteWorkerSession.type, pointer);
+    }
     // A PROJECT-rebased asset dock (`/dock/project/<id>/<assetSubPointer>`, the
     // output of `rebaseAssetsOntoProject`) carries its target in the asset
     // sub-pointer, addressed exactly as a plain ASSETS dock would. A
@@ -1153,7 +1622,7 @@ export class DockPointer implements IDockPointer {
       const typeid = this.assetEditorValue(assetSub, AssetRoutingMethod.TYPEID);
       return typeid ? DockPointer.tryTypeId(typeid) : null;
     }
-    const candidate = pointer.includes('/typeid/') ? pointer.split('/typeid/').pop() ?? '' : pointer;
+    const candidate = pointer.includes('/typeid/') ? (pointer.split('/typeid/').pop() ?? '') : pointer;
     return (
       DockPointer.tryTypeId(candidate) ??
       (this.viewType && !pointer.includes('/') ? DockPointer.tryTypeId(this.viewType, pointer) : null)
@@ -1199,7 +1668,7 @@ export class DockPointer implements IDockPointer {
    * ASSETS dock and the PROJECT-rebased form (un-rebased via `assetSubPointer`).
    */
   get vfsPath(): VFSPath | null {
-    const assetsPointer = this.viewType === ViewType.ASSETS ? this.pointer ?? null : this.assetSubPointer;
+    const assetsPointer = this.viewType === ViewType.ASSETS ? (this.pointer ?? null) : this.assetSubPointer;
     const value = this.assetEditorValue(assetsPointer, AssetRoutingMethod.VFS);
     return value ? VFSPath.parse(value) : null;
   }
@@ -1221,11 +1690,12 @@ export class DockPointer implements IDockPointer {
   /**
    * Convert to URL segments (for building URLs)
    */
-  toUrlSegments(): { viewType: ViewType; pointer?: string; layout: Layout } {
+  toUrlSegments(): { viewType: ViewType; pointer?: string; layout: Layout; page: PageId } {
     return {
       viewType: this.viewType!,
       pointer: this.pointer,
       layout: this.layout,
+      page: this.page,
     };
   }
 
@@ -1236,7 +1706,7 @@ export class DockPointer implements IDockPointer {
     if (!this.viewType) {
       throw new NavigationError(NavigationErrorType.UNKNOWN_VIEW, 'Cannot serialize DockPointer without a view type');
     }
-    return buildDockUrl(currentPath, this.viewType, this.pointer, this.options, this.layout);
+    return buildDockUrl(currentPath, this.viewType, this.pointer, this.options, this.layout, this.page);
   }
 
   /**

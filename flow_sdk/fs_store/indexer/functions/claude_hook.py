@@ -26,10 +26,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import uuid
 from datetime import datetime
 from pathlib import Path
-
-import uuid
 
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
@@ -40,7 +39,6 @@ from flow_sdk.fs_store.source_file_records import (  # RFC-6901 (shared)
     _escape_json_pointer,
     _unescape_json_pointer,
 )
-
 
 # ── Stage 1: source-file enumeration (was: claude_hook_fn / claude_hook_extras_fn)
 
@@ -209,9 +207,9 @@ def _read_hook_fragment(path: Path, json_path: str) -> dict | None:
 
 def _hook_scope(ref: FSRef) -> str:
     """settings.local.json hooks are 'local'; everything else inherits the root scope."""
-    if Path(ref.path).name == "settings.local.json":
+    if Path(getattr(ref, "path", ref)).name == "settings.local.json":
         return "local"
-    return ref.scope or "user"
+    return getattr(ref, "scope", None) or "user"
 
 
 def _hook_id(scope: str, frag: dict) -> str:
@@ -224,22 +222,28 @@ def _hook_id(scope: str, frag: dict) -> str:
     return f"{scope}:{frag['event_type']}:{matcher_hash}"
 
 
-def claude_hook_id(ref: FSRef) -> str:
+def claude_hook_identity_key(ref: FSRef | Path) -> str:
     """Stable, filesystem-safe **UUID** id for a single hook FSRef (json_path
     fragment). The natural key carries a ``:`` (illegal in a Windows folder
     name); hashing it into a uuid5 — with the same ``f"{type}:{key}"`` formula
     ``Entity.allocate_id`` uses — yields a path-safe id identical to the DB id.
     """
-    frag = _read_hook_fragment(Path(ref.path), ref.json_path or "")
+    path = Path(getattr(ref, "path", ref))
+    json_path = getattr(ref, "json_path", None) or ""
+    frag = _read_hook_fragment(path, json_path)
     if frag is None:
         # Fallback keeps the id stable+unique even if the fragment is unreadable.
-        key = f"{_hook_scope(ref)}:{ref.json_path or Path(ref.path).name}"
+        key = f"{_hook_scope(ref)}:{json_path or path.name}"
     else:
         key = _hook_id(_hook_scope(ref), frag)
-    return mint_uuid(f"{RecordType.CLAUDE_HOOK}:{key}", namespace=uuid.NAMESPACE_DNS)
+    return f"{RecordType.CLAUDE_HOOK}:{key}"
 
 
-def extract_claude_hook(ref: FSRef) -> list[FSRecord]:
+def claude_hook_id(ref: FSRef) -> str:
+    return mint_uuid(claude_hook_identity_key(ref), namespace=uuid.NAMESPACE_DNS)
+
+
+def extract_claude_hook(ref: FSRef, resolved_id: str) -> list[FSRecord]:
     """Parse one CLAUDE_HOOK FSRef into a record matching the legacy hook item shape."""
     path = Path(ref.path)
     frag = _read_hook_fragment(path, ref.json_path or "")
@@ -269,7 +273,7 @@ def extract_claude_hook(ref: FSRef) -> list[FSRecord]:
     if frag["flowpad_hook_id"]:
         fields["flowpad_hook_id"] = frag["flowpad_hook_id"]
 
-    rec = FSRecord(type=RecordType.CLAUDE_HOOK, id=_hook_id(scope, frag), **fields)
+    rec = FSRecord(type=RecordType.CLAUDE_HOOK, id=resolved_id, **fields)
     object.__setattr__(rec, "_asset_ref", FSRef(path, read_only=True, json_path=ref.json_path))
     return [rec]
 

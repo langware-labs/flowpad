@@ -2,8 +2,16 @@
 
 from __future__ import annotations
 
+import os
 import re
+import stat
+import tempfile
+from pathlib import Path
 from typing import Any
+
+
+def _asset_path(ref: Any) -> Path:
+    return Path(getattr(ref, "_path", ref))
 
 
 def _coerce_scalar(value: str) -> Any:
@@ -148,6 +156,84 @@ def merge_frontmatter(
         merged.update(updates)
     tail = "\n" if body and not body.endswith("\n") else ""
     return _render_frontmatter(merged) + "\n\n" + body + tail
+
+
+def read_frontmatter_id(
+    path: Any,
+    *,
+    keys: tuple[str, ...] = ("id", "asset_id"),
+) -> str | None:
+    """Purely read the first valid v4/v5 id from frontmatter.
+
+    ``keys`` is the type-owned precedence list. Invalid candidates are ignored
+    so a valid legacy field remains backward-compatible. The file is never
+    rewritten or backfilled by extraction.
+    """
+    from flow_sdk.fs_store.identifier import adopt_entity_id  # noqa: PLC0415
+
+    path = _asset_path(path)
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    frontmatter = _extract_frontmatter(text)
+    if not frontmatter:
+        return None
+    fields = _yaml_load(frontmatter) or {}
+    for key in keys:
+        adopted = adopt_entity_id(fields.get(key))
+        if adopted is not None:
+            return adopted
+    return None
+
+
+def _atomic_write_text(path: Path, text: str) -> None:
+    """Atomically replace ``path`` with UTF-8 ``text``, preserving its mode."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        if path.read_text(encoding="utf-8") == text:
+            return
+    except OSError:
+        pass
+
+    fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        try:
+            os.chmod(temporary, stat.S_IMODE(path.stat().st_mode))
+        except OSError:
+            pass
+        os.replace(temporary, path)
+    except BaseException:
+        try:
+            os.unlink(temporary)
+        except OSError:
+            pass
+        raise
+
+
+def write_frontmatter_id(path: Any, entity_id: str) -> bool:
+    """Force ``entity_id`` into a file's frontmatter ``id:`` — returns whether it
+    persisted. Preserves the body and every existing field, including legacy id
+    fields: writing identity is not a cleanup or migration operation."""
+    from flow_sdk.fs_store.identifier import adopt_entity_id  # noqa: PLC0415
+
+    path = _asset_path(path)
+    adopted = adopt_entity_id(entity_id)
+    if adopted is None:
+        return False
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        text = ""
+    try:
+        _atomic_write_text(path, merge_frontmatter(text, {"id": adopted}, prepend=True))
+        return True
+    except OSError:
+        return False
 
 
 def _render_frontmatter(fields: dict[str, Any]) -> str:

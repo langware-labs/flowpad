@@ -24,7 +24,6 @@ from flow_sdk.fs_store.record_types import RecordType
 _SCOPE_REQUIRING_TYPES = [
     RecordType.SKILL,
     RecordType.AGENT,
-    RecordType.WORKFLOW,
     RecordType.CLAUDE_MD,
     RecordType.CLAUDE_RULES,
     RecordType.COMMAND,

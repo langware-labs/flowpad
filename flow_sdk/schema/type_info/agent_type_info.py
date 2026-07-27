@@ -1,11 +1,11 @@
 """Type metadata for AGENT."""
+from flow_sdk.fs_store.indexer.functions._asset_identity import IDENTITY_CAPSULE, capsule_identity, frontmatter_id
+from flow_sdk.fs_store.indexer.functions.agent import (
+    extract_agent,
+)
 from flow_sdk.schema.type_info import TypeMetadata, render_entity_frontmatter
 from flow_sdk.schema.types import EntityType
 from flow_sdk.schema.view_mode import ViewMode
-from flow_sdk.fs_store.indexer.functions.agent import (
-    agent_gen_id,
-    extract_agent,
-)
 
 
 def _agent_default_body(entity) -> str:
@@ -25,14 +25,17 @@ def _agent_default_body(entity) -> str:
 
 AGENT = TypeMetadata(
     type=EntityType.AGENT,
+    displayName="Agents",
     from_disk_fn=extract_agent,
-    gen_uuid_fn=agent_gen_id,
+    capsules=(IDENTITY_CAPSULE,),
+    identity_backend=capsule_identity(frontmatter_id),
     indexed_by_default=True,
     browseable_by=ViewMode.STANDARD,
     creatable=True,
     api_visible=True,
     icon="Bot",
     index_fields=["description"],
-    main_subdir=".claude/agents",
+    asset_class="shared",
+    family="agents",
     default_body_fn=_agent_default_body,
 )

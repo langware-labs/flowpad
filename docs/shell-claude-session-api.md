@@ -2,143 +2,220 @@
 id: 69b3f08c-4316-5b87-a6bb-f49c1c3d1c31
 ---
 
-# Shell & ClaudeSession Client-Side API
+# shellMode vs Direct / Agentic PTY
 
-## Overview
+Consolidated reference for how a **plain shell terminal** differs from an
+**agentic process running over a PTY**. Both ride the one PTY stack (transport,
+replay, attach/input/resize) documented in
+[`pty-terminal-spec.md`](./pty-terminal-spec.md) and
+[`agent-management/pty-websocket.md`](./agent-management/pty-websocket.md); tab
+placement/lifecycle is [`tab-management.md`](./tab-management.md). This doc only
+covers what is *different* between the two shapes — creation paths, entity/record
+model, `shell_mode`, title/rename, and recovery — and points at those docs for
+the shared machinery rather than restating it.
 
-Client-side TypeScript domain interfaces for working with Shell and Claude Code sessions. Shell is a generic shell with no Claude knowledge. ClaudeSession runs *inside* a Shell and depends on it — not the other way around.
+> **Note:** an earlier version of this file documented a client-side domain API
+> under `ts_sdk/src/domain/` (`Shell` / `ClaudeSession` / `ClaudeSessionRecord`
+> interfaces). **That module does not exist in the tree.** The real client
+> surfaces are the `Shell` entity wrapper (`ts_sdk/src/entities/shell.ts`, one
+> eager `PtyConnection`) and the `AgenticProcess` entity
+> (`ts_sdk/src/process/agentic-process.ts`). This rewrite reflects the as-built
+> code.
 
-## Usage
+---
 
-```typescript
-// Shell is generic — just runs commands
-const shell = new Shell(sessionId);
-assert(shell.status === 'idle');
+## 1. The core distinction
 
-await shell.run("echo hello");
-assert(shell.status === 'idle'); // back to idle after command completes
+Both a plain terminal and an agent-in-a-terminal are the **same OS PTY + the
+same `Shell` entity as transport**. The difference is *what runs as the PTY
+process* and *whether an `AgenticProcess` sits on top*:
 
-// Claude session is created *on top of* a shell
-const claudeSession = await ClaudeSession.start(shell, { instruction: "fix the bug" });
-assert(shell.status === 'running');       // shell sees a foreground process
-assert(claudeSession.status === 'running');
+| | Plain shell tab | Agentic process tab |
+|---|---|---|
+| Tab identity | `shell-<id>` (the `Shell`) | `agentic_process-<id>` (the `AgenticProcess`) |
+| Entities | `Shell` only | `AgenticProcess` (identity) **+** `Shell` (transport, `AgenticProcess.shell_id`) |
+| PTY process | `$SHELL` / `/bin/zsh` (`spawn_args=None`) | the worker CLI itself, e.g. `claude --session-id …` (`spawn_args=[…]`), unless `shell_mode=True` |
+| `Shell.worker_pid` | `None` (no tracked worker) | set — the worker process |
+| Worker session / transcript | none | `AgenticProcess.session_id` + Claude/Codex `.jsonl` transcript |
+| Headless (no PTY) mode | n/a | yes — `visible=False` prompt turns run CLI print/exec, no PTY (§6) |
+| Creation entry point | `navigation.openNewShell` | `navigation.openNewClaudeProcess` |
+| Recovery after restart | `_recover_bare_shells` (respawn `$SHELL`) | `run_pty_recovery` (`claude --resume <session_id>`) |
 
-await claudeSession.waitForTurn();
-assert(claudeSession.status === 'complete');
+Everything below the PTY handle — WebSocket transport, framed stream replay,
+attach/detach FSM, resize, TTL cleanup — is **identical** for both. See the two
+PTY docs.
 
-// Closing the Claude session returns the shell to idle
-await claudeSession.close();
-assert(shell.status === 'idle');
+---
 
-// Can also attach to an existing Claude session via record
-const record = await ClaudeSessionRecord.fromClaudeSessionId(knownClaudeSessionId);
-const session = ClaudeSession.fromRecord(record, shell);
-```
+## 2. Plain shell tab — creation & model
 
-## Interfaces
+Frontend: `NavigationActions.openNewShell` (`ui/src/navigation/NavigationActions.ts:495`):
 
-### Types (`ts_sdk/src/domain/types.ts`)
+1. `Shell.create(cn, { name, workdir })` — `name` is the next free `"Tab N"`
+   (`nextTerminalName`, `ui/src/components/terminal/rename-rules.ts:38`).
+2. Stamps `project_id` (caller-pinned → active dock project → backend default
+   `@local`), `newShell.save(cn.typeId)`.
+3. `openShell(shellId)` → navigates to `shell.dockPointer` (`shell-<id>`).
 
-```typescript
-export type ShellStatus = 'idle' | 'running' | 'closed';
+On mount the terminal view drives `Shell` `open`
+(`flow_sdk/builtin/shell.py:816` `_http_open` → `start_pty`). With **no
+`spawn_args`**, the provider spawns the login shell (`$SHELL`, else `/bin/zsh` on
+macOS, `/bin/bash`/`/bin/sh` on Linux, `pwsh`→`powershell`→`cmd` on Windows —
+`agent-management/pty-websocket.md` §3). There is no `AgenticProcess`, no
+`worker_pid`, no `session_id`, no transcript. Persistence is the `ShellRecord` +
+its `PtyStreamFile` only (`pty-terminal-spec.md` §10–12).
 
-export type ClaudeSessionStatus = 'idle' | 'running' | 'complete';
+---
 
-export interface ShellResult {
-  stdout: string;
-  stderr: string;
-  exitCode: number;
-}
-```
+## 3. Agentic process tab — creation & model
 
-### IShell (`ts_sdk/src/domain/shell.ts`)
+Frontend: `NavigationActions.openNewClaudeProcess` (`NavigationActions.ts:465`)
+→ `computeNode.createProcess({ workdir, projectId, workerType }, { visible:true })`
+mints an `AgenticProcess`, then `openShellProcess(processId)` navigates to
+`process.terminalDockPointer` (`agentic_process-<id>`). The loader calls
+`process.start({ visible:true })`, which creates or reuses a `Shell` as
+transport and spawns the worker.
 
-Shell is a generic shell. No Claude awareness.
+Backend `AgenticProcess.open/start`
+(`flow_sdk/builtin/agentic_process/agentic_process.py:1103`) branches on
+`shell_mode` (`agentic_process.py:403`, `APIField(default=False)`):
 
-```typescript
-export interface IShell {
-  readonly sessionId: string;
-  readonly name: string;
-  readonly status: ShellStatus;
-  readonly workdir: string | undefined;
+### `shell_mode=False` — direct PTY spawn (default)
 
-  /** Set or update environment variables. Merges with existing env; later calls override earlier ones. */
-  setEnv(vars: Record<string, string>): Promise<void>;
-
-  /** Run a command in the foreground. Status → 'running' while active, then back to 'idle'. */
-  run(command: string): Promise<ShellResult>;
-
-  /** Close the shell entirely. Kills any running process. Status → 'closed'. */
-  close(): Promise<void>;
-}
-```
-
-### IClaudeSessionRecord (`ts_sdk/src/domain/claude-session.ts`)
-
-```typescript
-export interface IClaudeSessionRecord {
-  readonly sessionId: string;
-  readonly slug: string | undefined;
-  readonly model: string | undefined;
-  readonly cwd: string | undefined;
-  readonly status: ClaudeSessionStatus;
-  readonly messageCount: number;
-  readonly inputTokens: number;
-  readonly outputTokens: number;
-  readonly durationMs: number;
-  readonly toolsUsed: string[] | undefined;
-
-  // Static on implementing class:
-  // static fromClaudeSessionId(claudeSessionId: string): Promise<IClaudeSessionRecord>
-}
-```
-
-### IClaudeSession (`ts_sdk/src/domain/claude-session.ts`)
-
-ClaudeSession runs inside a Shell. It depends on Shell, not vice versa.
-
-```typescript
-export interface IClaudeSession {
-  readonly record: IClaudeSessionRecord;
-  readonly status: ClaudeSessionStatus;
-  readonly workerSessionId: string;
-
-  /** The shell this Claude session is running inside. */
-  readonly shell: IShell;
-
-  /** Resume a paused session: `claude --resume <id>` */
-  resume(): Promise<void>;
-
-  /** Wait for Claude to finish its current turn. Polls until 'complete'. */
-  waitForTurn(): Promise<ClaudeSessionStatus>;
-
-  /**
-   * Close this Claude session.
-   * The underlying shell returns to 'idle'.
-   * Does NOT close the shell itself.
-   */
-  close(): Promise<void>;
-
-  // Static on implementing class:
-  // static start(shell: IShell, options?: { model?, permissionMode?, sessionId?, instruction? }): Promise<IClaudeSession>
-  // static fromRecord(record: IClaudeSessionRecord, shell: IShell): IClaudeSession
-}
-```
-
-## Design Decisions
-
-1. **One-way dependency**: `ClaudeSession` → `Shell`. Shell has zero Claude knowledge.
-2. **Shell status is simple**: `idle | running | closed`. Shell just sees a foreground process — it doesn't know or care if it's Claude.
-3. **`ClaudeSession.close()` de-occupies the shell** — shell goes back to `idle`, not `closed`.
-4. **`ClaudeSession.start()` is a static factory** — takes a shell + options, returns a session running inside that shell.
-5. **Static factories on classes, not interfaces** — TypeScript interfaces can't define statics.
-
-## File Layout
+The **worker CLI is the PTY process** — no intermediary shell:
 
 ```
-ts_sdk/src/domain/
-├── types.ts           # ShellStatus, ClaudeSessionStatus, ShellResult
-├── shell.ts           # IShell interface
-├── claude-session.ts  # IClaudeSessionRecord, IClaudeSession interfaces
-└── index.ts           # Barrel exports
+cmd.to_spawn_args(instruction) → (argv, env)          # e.g. ["claude","--session-id",…]
+worker_path_env / run_discovery                        # prepend the CLI bin dir to PATH
+shell.start_pty(spawn_args=argv, extra_env=env)        # provider spawns argv directly
+shell.set_worker_pid_direct(cmd)                       # worker_pid = the PTY pid (no polling)
 ```
+
+`set_worker_pid_direct` (`shell.py:671`) records `worker_pid = pty_pid` directly
+because Claude *is* the PTY — no child-process hunting.
+
+### `shell_mode=True` — legacy zsh intermediary
+
+Kept for compatibility. Spawns a plain shell, then injects the command and hunts
+for the worker child pid:
+
+```
+shell.start_pty()                                      # bare $SHELL PTY
+shell.launch(cmd, instruction)                         # shell.py:624
+  → shell.write(cmd.to_shell_string(instruction))      # types the command in
+  → _poll_for_worker_pid(shell_pid, "claude", 1.0s)    # find the child pid
+```
+
+`worker_alive()` (`shell.py:696`) validates `worker_pid` still exists and its
+cmdline matches `worker_name` (+ expected `--session-id`), used by both paths to
+avoid double-launching and by recovery.
+
+The direct path is preferred: no prompt-ready race, no injected-command grace
+period, exact pid, and a clean `on_exit` mapping worker death → process status.
+
+---
+
+## 4. Title & rename behavior
+
+OSC window-title handling is **entirely frontend** — there is no backend OSC
+parser; `Shell.auto_rename` (`shell.py:117`) is only the gate deciding whether
+xterm titles may overwrite `Shell.name`. `TerminalPanel`
+(`ui/src/components/terminal/TabbedTerminal.tsx`) watches the xterm OSC title and,
+when `auto_rename` is set and the target permits it:
+
+- **`cleanTitle(raw)`** (`rename-rules.ts:11`, added
+  commit `e3710f9c`) strips spinner frames (Braille/box glyphs), emoji/icons,
+  rotation arrows, ANSI CSI escapes, and C0/C1 control bytes — so animation ticks
+  that reduce to the same text never fire a save. Script-agnostic: removes
+  symbols, never letters, so RTL/CJK titles survive.
+- **`allowRename(clean)`** requires a real letter (`\p{L}`), rejects a bare
+  TypeId, and rejects any `"Claude Code"` title (the CLI's default).
+- On pass: `source.name = clean; source.save()` **and** `Tab.setNameById(clean)`
+  (mirror to the durable Tab chip via `set_name`, **not** `rename` — `rename`
+  would pin `auto_rename=false`; see `tab-management.md` Part 0 on
+  `set_name` vs `rename`).
+
+Which targets auto-title — `shouldAutoSaveTitleForTarget`
+(`rename-rules.ts:61`): a **plain shell always** auto-titles; an **agentic
+process** auto-titles **unless it is Codex/Copilot** (they emit unstable
+titles). A user rename pins `auto_rename=false` and stops the mirror.
+
+---
+
+## 5. Tab handling
+
+Both kinds are first-class `Tab` entities and share one strip
+(`UnifiedTabStrip`), one store (`all-tabs-store`), and one body (`TabbedTerminal`)
+— full model in [`tab-management.md`](./tab-management.md) Part 0. The only
+kind-specific differences:
+
+- **Chip glyph**: terminal tabs draw from `Tab.icon_key` + `PROVIDER_META`
+  (claude/codex/copilot/terminal); content tabs from `iconForType` (backend
+  TypeInfo). `tab-row-item.tsx` builds both generically.
+- **Close semantics** (capability matrix, Part 3 §3): closing a shell/AP chip is
+  **destroy-entity** (`tabs/close` → `tabbed=false` **and** PTY/worker teardown);
+  `AgenticProcess.close` calls `hide_tabs_for_target` and the AP row persists as
+  `stopped` (so entity-delete cleanup never fires for it), whereas a bare
+  `Shell.close` deletes the record + entity.
+- **Body attach**: `TabbedTerminal` warm-mounts one `TerminalPanel` per terminal
+  `Tab`; each panel hydrates its own live entity (`Shell` for a bare tab, the
+  `AgenticProcess` → its `shell_id` for a process tab) and attaches its PTY on
+  mount (URL-first; no list-wide join).
+
+---
+
+## 6. Interactive vs headless (agentic only)
+
+A plain shell is always interactive (it only exists as a PTY). An
+`AgenticProcess` has two execution modes keyed on `visible`
+(`agentic_process.py`, `status_predicates.py`):
+
+- `visible=True` → interactive PTY path (§3) — a `Shell` + live PTY + replay.
+- `visible=False` → `driver.headless_prompt(...)` — CLI print/exec, structured
+  transcript capture, **no `Shell`, no PTY, no `pty_output_msg`**.
+
+The bridge between modes is the worker `session_id` / transcript identity, not
+the PTY: a process can preserve `session_id` across headless and interactive
+opens and, when it becomes visible, resume/fork the existing transcript. See
+`agent-management/pty-websocket.md` §10.
+
+---
+
+## 7. Recovery after a backend restart
+
+In-memory PTY state is lost on restart; `flow_sdk/server/pty_recovery.py`
+respawns by liveness, and the two shapes take **different** recovery paths:
+
+- **Agentic**: `run_pty_recovery` (`pty_recovery.py:179`) respawns dead workers
+  with `claude --resume <session_id>`; liveness = `has_attachable_pty() and
+  worker_alive()`.
+- **Bare shell**: `_recover_bare_shells` (`pty_recovery.py:258`) respawns
+  recently-active plain terminals whose id is **not** owned by any AP; liveness =
+  `has_attachable_pty()` alone (a bare shell has no worker to check).
+
+Clients then re-`attach` to the rebuilt PTY via the normal flow.
+
+---
+
+## 8. Discrepancies & robustness concerns (for arch review)
+
+- **No promotion of an in-shell agent.** If a user types `claude` inside a
+  *plain* shell tab, nothing detects it or promotes the `Shell` to an
+  `AgenticProcess` — there is no backend cmdline/OSC sniffing that mints an AP.
+  The agent runs, but with none of the agentic machinery (`session_id`,
+  transcript indexing, worker status, resume, headless bridge, `claude --resume`
+  recovery). The two creation paths are the only way to get an agentic tab. This
+  is a deliberate simplification but a real capability gap.
+- **Two launch styles for one outcome** (`shell_mode` True/False). The legacy
+  zsh-intermediary path (`shell.launch` + `_poll_for_worker_pid`) is a parallel,
+  race-prone code path kept only for compatibility. Candidate for removal once no
+  callers set `shell_mode=True`.
+- **OSC title trust is client-only.** `auto_rename` gates on the backend but the
+  *value* is whatever the frontend derives from xterm; `cleanTitle`/`allowRename`
+  are the only sanitizers. A headless or non-browser client never contributes a
+  title, so the durable name depends on a browser having viewed the tab.
+- **Recovery liveness asymmetry.** Agentic recovery needs both an attachable PTY
+  and a live worker; bare-shell recovery needs only the PTY. A worker that
+  survived but whose PTY died, or vice versa, is handled by AP recovery, but the
+  ownership split (`agentic_shell_ids` set) means a shell mislabeled between the
+  two sets could be recovered by the wrong reaper.

@@ -32,11 +32,6 @@ pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
             id="url-only",
         ),
         pytest.param(
-            [Attachment(attachment_type=AttachmentType.REPO, data="/Users/x/repo")],
-            False,
-            id="repo-only",
-        ),
-        pytest.param(
             [Attachment(attachment_type=AttachmentType.PROMPT, data="inline prompt text")],
             False,
             id="inline-prompt",

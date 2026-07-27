@@ -18,7 +18,6 @@ from flow_sdk.fs_store.operations.conversation import default_data_dir, default_
 from flow_sdk.fs_store import RecordDataRef, RecordType
 from flow_sdk.fs_store.record_paths import (
     get_default_records_data_root,
-    record_stem,
 )
 
 
@@ -29,12 +28,12 @@ from flow_sdk.fs_store.record_paths import (
 
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 def test_default_data_dir_resolves_under_records_data_root():
-    """Standard records-data layout: <root>/conversation/conversation-@<id>/."""
+    """Standard records-data layout: <root>/conversation/<id>/ (bare id)."""
     record_id = "aa-positive"
     expected = (
         get_default_records_data_root()
         / RecordType.CONVERSATION
-        / record_stem(RecordType.CONVERSATION, record_id)
+        / record_id
     )
     assert default_data_dir(record_id) == expected
 
@@ -45,7 +44,7 @@ def test_default_jsonl_path_ends_with_conversation_jsonl():
     record_id = "bb-positive"
     p = default_jsonl_path(record_id)
     assert p.name == "conversation.jsonl"
-    assert p.parent.name == record_stem(RecordType.CONVERSATION, record_id)
+    assert p.parent.name == record_id
 
 
 @pytest.mark.timeout(30)  # do not increase timeout without approval
@@ -111,23 +110,23 @@ def test_path_is_never_under_system_projects_tree():
 
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 def test_directory_name_does_not_leak_email_or_slug():
-    """The folder must use the standard `conversation-@<id>` stem.
+    """The folder must be the bare record id.
 
     Earlier the handler built a slug from participant emails; that leaked
     addresses into filesystem paths and broke the records-data convention.
     """
     record_id = "gg-no-slug"
     parent = default_jsonl_path(record_id).parent
-    assert parent.name == f"{RecordType.CONVERSATION}-@{record_id}"
-    # Sanity: the dir name MUST NOT contain '@' twice (i.e. an email) or
-    # any other path-unfriendly chars beyond the canonical separator.
-    assert parent.name.count("@") == 1
+    assert parent.name == record_id
+    # Sanity: the dir name MUST NOT contain '@' (i.e. an email / uname sigil)
+    # or any other path-unfriendly chars.
+    assert "@" not in parent.name
 
 
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 def test_empty_id_rejected():
     """Empty id must raise — never silently bucket multiple Conversations
-    into a shared `conversation-@/` folder."""
+    into a shared bare-`<id>` folder."""
     with pytest.raises(ValueError):
         default_data_dir("")
     with pytest.raises(ValueError):

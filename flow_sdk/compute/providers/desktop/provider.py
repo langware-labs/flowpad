@@ -23,6 +23,9 @@ import anyio
 import psutil
 
 from flow_sdk.config import PLATFORM_DARWIN, PLATFORM_WIN32
+from flow_sdk.flowpad_types import CLICommand, ExecutionEnvironmentStatus, RuntimeEnvironment, SendFileEntry
+from flow_sdk.flowpad_types.machine_status import ComputeNodeInfo
+from flow_sdk.flowpad_types.runtime_environment import ComputeNodeSize
 
 from ..compute_provider import (
     ComputeProvider,
@@ -30,11 +33,18 @@ from ..compute_provider import (
     get_remote_paths_and_data_for_files,
 )
 
-from flow_sdk.flowpad_types import CLICommand, ExecutionEnvironmentStatus, RuntimeEnvironment, SendFileEntry
-from flow_sdk.flowpad_types.machine_status import MACHINE_STATUS_SCRIPT, ComputeNodeInfo
-from flow_sdk.flowpad_types.runtime_environment import ComputeNodeSize
-
 logger = logging.getLogger(__name__)
+
+
+def _pty_return_code(pty_process: Any) -> int | None:
+    """Normalize PTY exit status, preserving signal termination as negative."""
+    exit_status = getattr(pty_process, "exitstatus", None)
+    if isinstance(exit_status, int):
+        return exit_status
+    signal_status = getattr(pty_process, "signalstatus", None)
+    if isinstance(signal_status, int):
+        return -signal_status
+    return None
 
 _INHERITED_NO_COLOR_ENV_VARS = (
     "NO_COLOR",
@@ -79,11 +89,7 @@ def _build_interactive_pty_env(
     Claude/Codex/plain shells by default. Explicit per-worker env still wins
     through ``extra_env``.
     """
-    env = {
-        k: v
-        for k, v in os.environ.items()
-        if not k.startswith(_CLAUDE_INHERITED_ENV_PREFIXES)
-    }
+    env = {k: v for k, v in os.environ.items() if not k.startswith(_CLAUDE_INHERITED_ENV_PREFIXES)}
     for key in _CLAUDE_INHERITED_ENV_VARS:
         env.pop(key, None)
 
@@ -150,41 +156,6 @@ if sys.platform != PLATFORM_WIN32:
 else:
     fcntl = None
     termios = None
-
-
-def _winpty_safe_cwd(path: str) -> str:
-    """Return a winpty-safe working directory on Windows.
-
-    winpty rejects directory paths whose characters aren't representable in the
-    system ANSI code page, surfacing as ``[WinError 123]`` (ERROR_INVALID_NAME)
-    — e.g. a project folder with Hebrew characters on a Latin Windows install.
-    The 8.3 "short" name of an *existing* directory is pure ASCII, so resolve to
-    it when available. Falls back to the original path when short-name
-    generation is disabled on the volume (``GetShortPathNameW`` then echoes the
-    input) or anything goes wrong, so we never regress the ASCII-path case.
-
-    The directory must already exist for the short name to resolve — callers
-    must ``os.makedirs`` first.
-    """
-    if sys.platform != PLATFORM_WIN32:
-        return path
-    try:
-        import ctypes
-        from ctypes import wintypes
-
-        GetShortPathNameW = ctypes.windll.kernel32.GetShortPathNameW  # type: ignore[attr-defined]
-        GetShortPathNameW.argtypes = [wintypes.LPCWSTR, wintypes.LPWSTR, wintypes.DWORD]
-        GetShortPathNameW.restype = wintypes.DWORD
-
-        needed = GetShortPathNameW(path, None, 0)
-        if needed == 0:
-            return path
-        buf = ctypes.create_unicode_buffer(needed)
-        if GetShortPathNameW(path, buf, needed) == 0:
-            return path
-        return buf.value or path
-    except Exception:
-        return path
 
 
 def _ps_single_quote(value: str) -> str:
@@ -420,6 +391,7 @@ class LocalComputeProvider(ComputeProvider):
                     result[path] = f"Error reading file: {str(e)}"
             return result
         else:
+
             async def iter_file_content(file_path: str):
                 try:
                     async with await anyio.open_file(file_path, "rb") as f:
@@ -520,14 +492,16 @@ class LocalComputeProvider(ComputeProvider):
                 try:
                     cpu_percent = proc.cpu_percent()
                     info = proc.info
-                    processes.append({
-                        "pid": info["pid"],
-                        "name": info["name"] or "unknown",
-                        "cpu_percent": cpu_percent,
-                        "memory_mb": round((info["memory_info"].rss if info["memory_info"] else 0) / (1024**2), 2),
-                        "path": info["exe"] or "",
-                        "status": info["status"] or "unknown",
-                    })
+                    processes.append(
+                        {
+                            "pid": info["pid"],
+                            "name": info["name"] or "unknown",
+                            "cpu_percent": cpu_percent,
+                            "memory_mb": round((info["memory_info"].rss if info["memory_info"] else 0) / (1024**2), 2),
+                            "path": info["exe"] or "",
+                            "status": info["status"] or "unknown",
+                        }
+                    )
                 except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
                     pass
 
@@ -539,14 +513,16 @@ class LocalComputeProvider(ComputeProvider):
                 net_conns = psutil.net_connections(kind="inet")
                 for conn in net_conns:
                     if conn.laddr and conn.laddr.port:
-                        connections.append({
-                            "port": conn.laddr.port,
-                            "pid": conn.pid or 0,
-                            "process_name": "",
-                            "process_path": "",
-                            "status": conn.status,
-                            "type": "TCP" if conn.type == 1 else "UDP",
-                        })
+                        connections.append(
+                            {
+                                "port": conn.laddr.port,
+                                "pid": conn.pid or 0,
+                                "process_name": "",
+                                "process_path": "",
+                                "status": conn.status,
+                                "type": "TCP" if conn.type == 1 else "UDP",
+                            }
+                        )
             except (psutil.AccessDenied, PermissionError, OSError):
                 pass
 
@@ -581,7 +557,11 @@ class LocalComputeProvider(ComputeProvider):
             env_assignments = []
             for flow_env in env:
                 # Extract the actual value from SecretStr
-                env_value = flow_env.value.get_secret_value() if hasattr(flow_env.value, 'get_secret_value') else str(flow_env.value)
+                env_value = (
+                    flow_env.value.get_secret_value()
+                    if hasattr(flow_env.value, "get_secret_value")
+                    else str(flow_env.value)
+                )
 
                 if sys.platform == PLATFORM_WIN32:
                     escaped_value = (
@@ -795,7 +775,32 @@ class LocalComputeProvider(ComputeProvider):
                         final_spawn_args = [shell_cmd]
 
             # Spawn PTY using ptyprocess/winpty (cross-platform)
-            pty_working_dir = working_dir if working_dir else self._node_dirs.get(provider_node_id, self._default_working_dir)
+            pty_working_dir = (
+                working_dir if working_dir else self._node_dirs.get(provider_node_id, self._default_working_dir)
+            )
+
+            # Validate in the parent before ptyprocess forks. On POSIX,
+            # os.execvpe raises ValueError for an embedded NUL, while
+            # ptyprocess's child-side error path only catches OSError. The
+            # child then leaves its exec-error pipe open and the parent blocks
+            # forever waiting for a result. Reject malformed argv/env/cwd here
+            # so the normal AgenticProcess failure rollback can run.
+            if not isinstance(pty_working_dir, str):
+                raise TypeError("PTY working directory must be a string")
+            if "\x00" in pty_working_dir:
+                raise ValueError("PTY working directory contains an embedded NUL")
+            for index, arg in enumerate(final_spawn_args):
+                if not isinstance(arg, str):
+                    raise TypeError(f"PTY argv[{index}] must be a string")
+                if "\x00" in arg:
+                    raise ValueError(f"PTY argv[{index}] contains an embedded NUL")
+            for key, value in env.items():
+                if not isinstance(key, str) or not isinstance(value, str):
+                    raise TypeError("PTY environment keys and values must be strings")
+                if "\x00" in key or "=" in key:
+                    raise ValueError("PTY environment key is invalid")
+                if "\x00" in value:
+                    raise ValueError(f"PTY environment value for {key!r} contains an embedded NUL")
 
             # The PATH scan (find_command), the makedirs, and PtyProcess.spawn
             # (a fork+exec whose cost scales with the parent process image and
@@ -839,19 +844,20 @@ class LocalComputeProvider(ComputeProvider):
                         f"non-UTF-8 decode)."
                     ) from mkdir_exc
 
-                # winpty can't represent non-ASCII (e.g. Hebrew) cwd paths and
-                # fails with [WinError 123]; spawn against the ASCII 8.3 short
-                # name on Windows. No-op elsewhere and for already-ASCII paths.
-                spawn_cwd = _winpty_safe_cwd(pty_working_dir)
-
-                logger.info(
-                    f"Spawning PTY (session={session_id}, cwd={spawn_cwd!r}, "
-                    f"argv={final_spawn_args!r})"
-                )
+                # Spawn with the cwd EXACTLY as given — never rewrite it.
+                # Session-keyed CLIs (claude/codex/copilot) derive their
+                # transcript-store key from the exact cwd string, so any
+                # rewrite (e.g. the 8.3 short name a since-removed workaround
+                # substituted here) makes ``--resume`` look up the wrong key
+                # and exit immediately — the "Flowpad workspace" crash-loop.
+                # Non-ASCII (e.g. Hebrew) cwds are fine as-is: pywinpty ≥ 3
+                # spawns them correctly on both the ConPTY and winpty backends
+                # (covered by a real-PTY test in test_desktop_path_unicode.py).
+                logger.info(f"Spawning PTY (session={session_id}, cwd={pty_working_dir!r}, argv={final_spawn_args!r})")
                 try:
                     return PtyProcess.spawn(  # type: ignore[union-attr]
                         final_spawn_args,
-                        cwd=spawn_cwd,
+                        cwd=pty_working_dir,
                         env=env,
                         dimensions=(rows, cols),
                     )
@@ -862,17 +868,11 @@ class LocalComputeProvider(ComputeProvider):
                     # exactly how the Hebrew-cwd diagnosis went unverified. Log
                     # every spawn input so the NEXT failure is self-diagnosing.
                     logger.error(
-                        "PTY spawn failed (session=%s): %r\n"
-                        "  argv      = %r\n"
-                        "  cwd(raw)  = %r\n"
-                        "  cwd(spawn)= %r  (short_path_applied=%s)\n"
-                        "  PATH      = %r",
+                        "PTY spawn failed (session=%s): %r\n  argv = %r\n  cwd  = %r\n  PATH = %r",
                         session_id,
                         spawn_exc,
                         final_spawn_args,
                         pty_working_dir,
-                        spawn_cwd,
-                        spawn_cwd != pty_working_dir,
                         env.get("PATH"),
                         exc_info=True,
                     )
@@ -906,7 +906,7 @@ class LocalComputeProvider(ComputeProvider):
                                 else:
                                     # Process died
                                     try:
-                                        exit_code = pty_process.exitstatus
+                                        exit_code = _pty_return_code(pty_process)
                                     except Exception:
                                         pass
                                     logger.info(
@@ -921,13 +921,20 @@ class LocalComputeProvider(ComputeProvider):
                                 if not pty_session_running["value"]:
                                     break
                                 logger.warning(
-                                    f"PTY read error (session={session_id}, "
-                                    f"argv={final_spawn_args!r}): {read_exc!r}"
+                                    f"PTY read error (session={session_id}, argv={final_spawn_args!r}): {read_exc!r}"
                                 )
                                 break
                     except Exception:
                         pass
                     finally:
+                        # EOF may arrive before the loop takes its explicit
+                        # `isalive() == false` branch. Reap non-blockingly once
+                        # more so signal deaths retain their negative status.
+                        try:
+                            if not pty_process.isalive():
+                                exit_code = _pty_return_code(pty_process)
+                        except Exception:
+                            pass
                         if on_exit is not None:
                             try:
                                 on_exit(exit_code)
@@ -985,9 +992,16 @@ class LocalComputeProvider(ComputeProvider):
 
             del self._pty_processes[pty_key]
 
-    async def send_pty_input(
-        self, provider_node_id: str, session_id: str, data: bytes, cols: int, rows: int, _retry_count: int = 0
+    async def _fail_dead_pty(
+        self, pty_key: tuple[str, str], log_msg: str, reason: str, raise_msg: str, *, warn: bool = False
     ) -> None:
+        """Log, clean up a dead PTY session, and raise. A dead PTY is always
+        surfaced (raise) here — never retried/respawned (interface invariant #7)."""
+        (logger.warning if warn else logger.info)(log_msg)
+        await self._cleanup_dead_pty_session(pty_key, reason)
+        raise RuntimeError(raise_msg)
+
+    async def send_pty_input(self, provider_node_id: str, session_id: str, data: bytes, cols: int, rows: int) -> None:
         """Send input to a PTY session.
 
         Args:
@@ -996,7 +1010,6 @@ class LocalComputeProvider(ComputeProvider):
             data: Bytes to send to the PTY
             cols: Number of columns for the PTY
             rows: Number of rows for the PTY
-            _retry_count: Internal retry count for handling dead processes
         """
         pty_key = (provider_node_id, session_id)
         if pty_key not in self._pty_processes:
@@ -1004,25 +1017,19 @@ class LocalComputeProvider(ComputeProvider):
 
         pty_info = self._pty_processes[pty_key]
         process = pty_info["process"]  # type: ignore[assignment]
-        on_output = pty_info.get("on_output")
 
-        # Validate process is still alive
+        # Validate process is still alive. A dead PTY is surfaced (raise), NOT
+        # respawned here: recreating via get_or_create_pty_session would spawn a
+        # default $SHELL WITHOUT the worker's spawn_args (a bare shell over the
+        # agent's session). Respawn is owned solely by _perform_open / start_pty /
+        # pty_recovery (interface invariant #7) — they hold spawn_args + the
+        # per-shell open lock.
         if not process.isalive():
-            logger.info(f"[LOCAL] PTY process died (PID {process.pid}), cleaning up and restarting: {session_id}")
-
-            # Store the on_output callback before cleanup
-            await self._cleanup_dead_pty_session(pty_key, "process died before sending input")
-
-            # Retry once by creating a new PTY session
-            if _retry_count < 1 and on_output is not None:
-                logger.info(f"[LOCAL] Restarting PTY session and retrying input: {session_id}")
-                # Recreate the PTY session with the same callback
-                await self.get_or_create_pty_session(provider_node_id, session_id, on_output, rows, cols)
-                # Retry the input operation
-                return await self.send_pty_input(provider_node_id, session_id, data, cols, rows, _retry_count + 1)
-
-            raise RuntimeError(
-                f"PTY process died (PID {process.pid}). Session cleaned up: {provider_node_id}:{session_id}"
+            await self._fail_dead_pty(
+                pty_key,
+                f"[LOCAL] PTY process died (PID {process.pid}), cleaning up: {session_id}",
+                "process died before sending input",
+                f"PTY process died (PID {process.pid}). Session cleaned up: {provider_node_id}:{session_id}",
             )
 
         try:
@@ -1041,23 +1048,17 @@ class LocalComputeProvider(ComputeProvider):
                 else:
                     process.write(data)
         except Exception as e:
-            # Process or FD became invalid
-            logger.warning(f"[LOCAL] Write to PTY failed: {str(e)}")
-            await self._cleanup_dead_pty_session(pty_key, f"write failed: {str(e)}")
+            # Process or FD became invalid — surface it (see the isalive() note
+            # above); respawn is not this method's job.
+            await self._fail_dead_pty(
+                pty_key,
+                f"[LOCAL] Write to PTY failed: {str(e)}",
+                f"write failed: {str(e)}",
+                f"Failed to write to PTY (process may have died): {str(e)}",
+                warn=True,
+            )
 
-            # Retry once
-            if _retry_count < 1 and on_output is not None:
-                logger.info(f"[LOCAL] Restarting PTY after write failure and retrying: {session_id}")
-                # Recreate the PTY session
-                await self.get_or_create_pty_session(provider_node_id, session_id, on_output, rows, cols)
-                # Retry the operation
-                return await self.send_pty_input(provider_node_id, session_id, data, cols, rows, _retry_count + 1)
-
-            raise RuntimeError(f"Failed to write to PTY (process may have died): {str(e)}") from e
-
-    async def resize_pty(
-        self, provider_node_id: str, session_id: str, cols: int, rows: int, _retry_count: int = 0
-    ) -> None:
+    async def resize_pty(self, provider_node_id: str, session_id: str, cols: int, rows: int) -> None:
         """Resize a PTY session.
 
         Args:
@@ -1065,7 +1066,6 @@ class LocalComputeProvider(ComputeProvider):
             session_id: The session ID for the PTY
             cols: Number of columns
             rows: Number of rows
-            _retry_count: Internal retry counter (max 1 retry)
         """
         pty_key = (provider_node_id, session_id)
         if pty_key not in self._pty_processes:
@@ -1073,43 +1073,30 @@ class LocalComputeProvider(ComputeProvider):
 
         pty_info = self._pty_processes[pty_key]
         process = pty_info["process"]  # type: ignore[assignment]
-        on_output = pty_info.get("on_output")
 
-        # Validate process is still alive
+        # Validate process is still alive. Dead PTY surfaces (raise), never a bare
+        # respawn here — see the note in send_pty_input; respawn is owned by
+        # _perform_open / start_pty / pty_recovery (interface invariant #7).
         if not process.isalive():
-            logger.info(f"[LOCAL] PTY process died (PID {process.pid}), cleaning up and restarting: {session_id}")
-
-            await self._cleanup_dead_pty_session(pty_key, "process died before resize")
-
-            # Retry once by creating a new PTY session
-            if _retry_count < 1 and on_output is not None:
-                logger.info(f"[LOCAL] Restarting PTY session and retrying resize: {session_id}")
-                # Recreate the PTY session with the same callback
-                await self.get_or_create_pty_session(provider_node_id, session_id, on_output, rows, cols)
-                # Retry the resize operation
-                return await self.resize_pty(provider_node_id, session_id, cols, rows, _retry_count + 1)
-
-            raise RuntimeError(
-                f"PTY process died (PID {process.pid}). Session cleaned up: {provider_node_id}:{session_id}"
+            await self._fail_dead_pty(
+                pty_key,
+                f"[LOCAL] PTY process died (PID {process.pid}), cleaning up: {session_id}",
+                "process died before resize",
+                f"PTY process died (PID {process.pid}). Session cleaned up: {provider_node_id}:{session_id}",
             )
 
         # Resize PTY (ptyprocess/winpty both use setwinsize(rows, cols))
         try:
             process.setwinsize(rows, cols)
         except Exception as e:
-            # FD became invalid
-            logger.warning(f"[LOCAL] Resize PTY failed: {str(e)}")
-            await self._cleanup_dead_pty_session(pty_key, f"resize failed: {str(e)}")
-
-            # Retry once
-            if _retry_count < 1 and on_output is not None:
-                logger.info(f"[LOCAL] Restarting PTY after resize failure and retrying: {session_id}")
-                # Recreate the PTY session
-                await self.get_or_create_pty_session(provider_node_id, session_id, on_output, rows, cols)
-                # Retry the operation
-                return await self.resize_pty(provider_node_id, session_id, cols, rows, _retry_count + 1)
-
-            raise RuntimeError(f"Failed to resize PTY (process may have died): {str(e)}") from e
+            # FD became invalid — surface it; respawn is not this method's job.
+            await self._fail_dead_pty(
+                pty_key,
+                f"[LOCAL] Resize PTY failed: {str(e)}",
+                f"resize failed: {str(e)}",
+                f"Failed to resize PTY (process may have died): {str(e)}",
+                warn=True,
+            )
 
     def is_pty_alive(self, provider_node_id: str, session_id: str) -> bool:
         """Cross-platform check whether a PTY session's process is still running."""
@@ -1119,16 +1106,20 @@ class LocalComputeProvider(ComputeProvider):
         pid = self._pty_processes[pty_key].get("pid")
         return self._is_process_alive(pid) if pid else False
 
-    async def pick_folder(self, provider_node_id: str, initial_dir: str | None = None) -> str | None:
-        """Open a native OS folder-picker dialog on the local machine.
+    async def pick_folder(
+        self, provider_node_id: str, initial_dir: str | None = None, mode: str = "folder"
+    ) -> str | None:
+        """Open a native OS path-picker dialog on the local machine.
 
         Args:
             provider_node_id: The local compute node provider ID.
             initial_dir: Optional path to open the dialog at initially. The frontend
                 sends VFS-relative paths (no leading slash) — we rewrite those to
                 absolute OS paths here so the native dialogs can consume them.
+            mode: ``"folder"`` (default) or ``"file"`` — which picker to show.
         """
         import subprocess
+
         from flow_sdk.config import get_os_root_path
 
         # Normalize VFS-relative → absolute OS path. Drop the hint if it doesn't
@@ -1138,33 +1129,36 @@ class LocalComputeProvider(ComputeProvider):
             if sys.platform == PLATFORM_WIN32:
                 has_drive = len(initial_dir) >= 2 and initial_dir[1] == ":"
                 if not has_drive:
-                    initial_dir = os.path.join(
-                        get_os_root_path(), initial_dir.replace("/", os.sep).lstrip(os.sep)
-                    )
+                    initial_dir = os.path.join(get_os_root_path(), initial_dir.replace("/", os.sep).lstrip(os.sep))
             elif not initial_dir.startswith("/"):
                 initial_dir = "/" + initial_dir
             if not os.path.isdir(initial_dir):
                 initial_dir = None
 
+        pick_file = mode == "file"
+
         if sys.platform == PLATFORM_DARWIN:
             # Activate Finder to bring the dialog in front, close any Finder
-            # windows so only the picker is visible, then choose folder.
+            # windows so only the picker is visible, then choose the path.
             if initial_dir:
                 default_location = f'default location POSIX file "{initial_dir}"'
             else:
                 default_location = ""
+            chooser = "choose file" if pick_file else "choose folder"
             apple_script = (
                 'tell application "Finder"\n'
                 "    activate\n"
                 "    close every window\n"
                 "end tell\n"
                 "delay 0.1\n"
-                f"set theFolder to choose folder {default_location}\n"
-                "return POSIX path of theFolder"
+                f"set thePath to {chooser} {default_location}\n"
+                "return POSIX path of thePath"
             )
             result = subprocess.run(
                 ["osascript", "-e", apple_script],
-                capture_output=True, text=True, timeout=120,
+                capture_output=True,
+                text=True,
+                timeout=120,
             )
             if result.returncode == 0 and result.stdout.strip():
                 return result.stdout.strip().rstrip("/")
@@ -1177,33 +1171,43 @@ class LocalComputeProvider(ComputeProvider):
             # break the script. Force UTF-8 on the dialog's stdout (and decode
             # it as UTF-8) so a returned non-ASCII path survives intact instead
             # of being mangled by the console's cp1252 default.
-            selected_path_line = (
-                f"$d.SelectedPath = {_ps_single_quote(initial_dir)}; "
-                if initial_dir else ""
-            )
-            ps_script = (
-                "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; "
-                "Add-Type -AssemblyName System.Windows.Forms; "
-                "$d = New-Object System.Windows.Forms.FolderBrowserDialog; "
-                f"{selected_path_line}"
-                "if ($d.ShowDialog() -eq 'OK') { $d.SelectedPath } else { '' }"
-            )
+            if pick_file:
+                initial_line = f"$d.InitialDirectory = {_ps_single_quote(initial_dir)}; " if initial_dir else ""
+                ps_script = (
+                    "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; "
+                    "Add-Type -AssemblyName System.Windows.Forms; "
+                    "$d = New-Object System.Windows.Forms.OpenFileDialog; "
+                    f"{initial_line}"
+                    "if ($d.ShowDialog() -eq 'OK') { $d.FileName } else { '' }"
+                )
+            else:
+                selected_path_line = f"$d.SelectedPath = {_ps_single_quote(initial_dir)}; " if initial_dir else ""
+                ps_script = (
+                    "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; "
+                    "Add-Type -AssemblyName System.Windows.Forms; "
+                    "$d = New-Object System.Windows.Forms.FolderBrowserDialog; "
+                    f"{selected_path_line}"
+                    "if ($d.ShowDialog() -eq 'OK') { $d.SelectedPath } else { '' }"
+                )
             result = subprocess.run(
                 ["powershell", "-NoProfile", "-Command", ps_script],
-                capture_output=True, encoding="utf-8", timeout=120,
+                capture_output=True,
+                encoding="utf-8",
+                timeout=120,
             )
             output = (result.stdout or "").strip()
             return output or None
 
         else:
             # Linux — try zenity, then kdialog
-            zenity_args = ["zenity", "--file-selection", "--directory"]
+            zenity_args = ["zenity", "--file-selection"] + ([] if pick_file else ["--directory"])
             kdialog_start = initial_dir or "."
+            kdialog_cmd = "--getopenfilename" if pick_file else "--getexistingdirectory"
             if initial_dir:
                 zenity_args += ["--filename", initial_dir.rstrip("/") + "/"]
             for args in (
                 zenity_args,
-                ["kdialog", "--getexistingdirectory", kdialog_start],
+                ["kdialog", kdialog_cmd, kdialog_start],
             ):
                 try:
                     result = subprocess.run(args, capture_output=True, text=True, timeout=120)
@@ -1242,20 +1246,24 @@ class LocalComputeProvider(ComputeProvider):
     def list_pty_sessions(self, cn_id: str) -> list[dict]:
         """Return [{shell_id, connection_id, name}] for all active sessions on this node."""
         from .pty_session_manager import pty_registry
+
         result = []
         for (compute_node_id, _pn_id, shell_id), state in pty_registry.states.items():
             if compute_node_id == cn_id:
-                result.append({
-                    "shell_id": shell_id,
-                    "connection_id": state.connection_id,
-                    "compute_node_id": compute_node_id,
-                    "name": state.name or shell_id,
-                })
+                result.append(
+                    {
+                        "shell_id": shell_id,
+                        "connection_id": state.connection_id,
+                        "compute_node_id": compute_node_id,
+                        "name": state.name or shell_id,
+                    }
+                )
         return result
 
     def reset_all_sessions(self, cn_id: str, pn_id: str | None = None) -> int:
         """Clear all in-memory PTY state for a node. Returns count of sessions cleared."""
         from .pty_session_manager import pty_registry
+
         node_keys = [k for k in pty_registry.states if k[0] == cn_id]
         for key in node_keys:
             del pty_registry.states[key]
@@ -1269,6 +1277,7 @@ class LocalComputeProvider(ComputeProvider):
         """Return a LocalPtySession handle if an active session exists."""
         from .local_pty_session import LocalPtySession
         from .pty_session_manager import pty_registry
+
         for key in pty_registry.states:
             if key[0] == cn_id and key[2] == shell_id:
                 return LocalPtySession(key[0], key[1], key[2], self, pty_registry)

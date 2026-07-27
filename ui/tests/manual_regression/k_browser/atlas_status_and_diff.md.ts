@@ -34,7 +34,6 @@ function seedVault() {
 async function openAtlas(page: Page) {
   await page.addInitScript(() => {
     localStorage.setItem('llm-setup-modal-seen', 'true');
-    localStorage.setItem('flowpad-index-approved', '1');
   });
   await page.goto(ATLAS_URL);
   const skip = page.getByRole('button', { name: /Skip( for now)?/ });

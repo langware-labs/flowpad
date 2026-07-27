@@ -19,6 +19,7 @@
 #   scripts/instance_ctl.sh kill   <name> [--keep-env]
 #   scripts/instance_ctl.sh status [<name>]
 #   scripts/instance_ctl.sh list
+#   scripts/instance_ctl.sh gc     [--yes] [--age DAYS]
 #
 # The launch writes FLOW_INSTANCE=<name> into .env.<name>.local, so `flow`
 # commands run against that instance target it: `FLOW_INSTANCE=<name> flow ...`
@@ -44,15 +45,18 @@ env_file()     { echo "$REPO_ROOT/.env.$1.local"; }   # vite reads this via --mo
 
 port_in_use() { lsof -nP -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1; }
 
+# in_list <item> <space-separated-list>
+in_list() {
+  local x
+  for x in $2; do [ "$x" = "$1" ] && return 0; done
+  return 1
+}
+
 # Ports we must never hand out even if nothing is currently listening on them,
 # because another well-known service owns them on this machine:
 #   5001 -> neo4j
 RESERVED_PORTS="5001"
-port_reserved() {
-  local p
-  for p in $RESERVED_PORTS; do [ "$p" = "$1" ] && return 0; done
-  return 1
-}
+port_reserved() { in_list "$1" "$RESERVED_PORTS"; }
 
 # find_free_port <band_base> <preferred>  -> echoes a free port in [preferred, band_base+99]
 find_free_port() {
@@ -90,6 +94,70 @@ spawn_detached() {
 }
 
 # ---------------------------------------------------------------------------
+# gc — remove data dirs (and env files) of dead, abandoned instances.
+#
+# An instance is garbage when ALL of:
+#   * it is not on the protected list (long-lived instances),
+#   * no live process carries FLOW_INSTANCE=<name> in its environment
+#     (ownership check — port checks lie once the 500X/600X band is recycled),
+#   * no file under its data dir was touched within the age window.
+# Runs automatically (with --yes) at the start of every launch, so leftovers
+# from abandoned scratch instances can't accumulate again.
+# ---------------------------------------------------------------------------
+PROTECTED_INSTANCES="${PROTECTED_INSTANCES:-prod oss dev-1 dev-2}"
+
+cmd_gc() {
+  local yes=0 age_days=7
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --yes) yes=1; shift;;
+      --age) age_days="$2"; shift 2;;
+      *) die "unknown gc flag: $1";;
+    esac
+  done
+
+  local root="$FLOW_HOME/instances"
+  [ -d "$root" ] || { log "gc: no instances dir — nothing to do"; return 0; }
+
+  # One env-visible process dump for all liveness checks (own processes only,
+  # which is exactly who launches instances).
+  local ps_env_dump
+  ps_env_dump="$(ps eww -ax -o command= 2>/dev/null || true)"
+
+  # bash-3.2-safe accumulation (no arrays under set -u): names are plain tokens.
+  local candidates="" count=0 d name
+  for d in "$root"/*/; do
+    [ -d "$d" ] || continue
+    name="$(basename "$d")"
+    in_list "$name" "$PROTECTED_INSTANCES" && continue
+    [[ "$ps_env_dump" =~ (^|[[:space:]])FLOW_INSTANCE=$name([[:space:]]|$) ]] && continue
+    [ -n "$(find "$d" -type f -mtime "-$age_days" -print -quit 2>/dev/null)" ] && continue
+    candidates="$candidates $name"; count=$((count + 1))
+  done
+
+  if [ "$count" = 0 ]; then
+    log "gc: nothing to clean (dead + idle >${age_days}d; protected: $PROTECTED_INSTANCES)"
+    return 0
+  fi
+
+  log "gc: dead instances idle >${age_days}d:"
+  local n
+  for n in $candidates; do echo "    $n"; done
+
+  if [ "$yes" != 1 ]; then
+    printf 'Delete these %d instance dir(s)? [y/N] ' "$count"
+    local reply; read -r reply
+    case "$reply" in y|Y|yes) ;; *) log "gc: aborted"; return 0;; esac
+  fi
+
+  for n in $candidates; do
+    rm -rf "$(instance_dir "$n")"
+    rm -f "$(env_file "$n")"
+  done
+  log "gc: removed $count instance dir(s)"
+}
+
+# ---------------------------------------------------------------------------
 # launch
 # ---------------------------------------------------------------------------
 cmd_launch() {
@@ -109,6 +177,9 @@ cmd_launch() {
   password="${password:-$name-pw-1234}"
 
   require_uv; require_npm
+
+  # Sweep dead, abandoned instances before allocating a new one.
+  cmd_gc --yes || true
 
   # If already running, tear it down first (idempotent relaunch).
   if [ -f "$(registry "$name")" ]; then
@@ -276,6 +347,12 @@ cmd_kill() {
   done
 
   rm -f "$reg"
+  # The backend deletes its own server.json on graceful shutdown, but the
+  # TERM→port-kill sequence above doesn't guarantee one. A leftover
+  # server.json is poison: hook broadcasts (flow hooks report) POST to every
+  # file, and once the port band is recycled the stale entries all hit
+  # whatever live server owns the port now.
+  rm -f "$(instance_dir "$name")/server.json"
   if [ "$keep_env" = 0 ] && [ -n "$ef" ] && [ -f "$ef" ]; then
     rm -f "$ef"; log "removed env file $ef"
   fi
@@ -322,12 +399,14 @@ main() {
     kill)   cmd_kill   "$@";;
     status) cmd_status "$@";;
     list)   cmd_list   "$@";;
+    gc)     cmd_gc     "$@";;
     *) cat >&2 <<EOF
 usage:
   scripts/instance_ctl.sh launch <name> [--email E] [--password P] [--hub URL]
   scripts/instance_ctl.sh kill   <name> [--keep-env]
   scripts/instance_ctl.sh status [<name>]
   scripts/instance_ctl.sh list
+  scripts/instance_ctl.sh gc     [--yes] [--age DAYS]
 EOF
        exit 2;;
   esac

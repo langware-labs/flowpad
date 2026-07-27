@@ -2,10 +2,21 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from typing import ClassVar, List, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar, List, NamedTuple, Optional
+
+
+class MessageRef(NamedTuple):
+    """A reference to one message in a conversation's ordered log: which message
+    (``id`` — the FlowMessage id, local ``@`` marker stripped so it matches
+    hub-side ids) and when it landed (``landed_at`` — None when the projected
+    timestamp is missing/unparseable). Parsed from ``Conversation.message_ids``."""
+
+    id: str
+    landed_at: Optional[datetime]
 
 from flow_sdk._compat import StrEnum  # 3.10-safe StrEnum (project pins py3.10)
 from flow_sdk.api.api_types.api_field import APIField
+from flow_sdk.builtin.user import normalize_email
 from flow_sdk.core import Entity
 from flow_sdk.db.drivers.db_base_record import TypeId
 from flow_sdk.schema.types import EntityType
@@ -128,11 +139,18 @@ class Conversation(Entity):
     remote_project_name: Optional[str] = APIField(None)
     message_count: int = APIField(0)
     message_ids: Optional[str] = APIField(None)  # JSON-encoded [{"typeid": ..., "ts": ...}]
-    participants: list[dict] = APIField(default_factory=list)  # [{user_id, email, name, role}]
-    # When False, hub suppresses delivery_status fan-out to the original
-    # sender (delivered/received UPDATE frames are filtered by hub-side
-    # Conversation._fanout_status_update). Co-recipients still see them.
-    message_status_visible: bool = APIField(default=True)
+    # Roster cache lives on the Entity base as ``members`` (generic hub capability).
+    # The hub sends/receives the conversation roster on the WIRE as ``participants``
+    # (its field + fanout key); that key is adapted to ``members`` at ingest
+    # (hub_bridge._handle_conversation_op, flow_message_action metadata upsert).
+    # Conversation-scoped default transfer mode for asset shares. When True,
+    # asset shares into this conversation ride as Git-origin metadata (the
+    # receiver clones/pulls on an explicit Download) instead of copied bytes.
+    # Hub-synced and fanned to all participants (rides ``_fanout_self_update``),
+    # so the choice is remembered and inherited by later replies from either
+    # side. Defaults False (copy) — the sender opts in per conversation via the
+    # Share dialog's Git toggle. Plain-text replies never change it.
+    git_sharing_enabled: bool = APIField(default=False)
     # Strip-only dismissal. When set, the Recent Conversations strip hides
     # this row UNTIL a FlowMessage newer than ``dismissed_at`` is appended
     # (auto-revive on new activity). The Inbox ignores this field entirely.
@@ -207,47 +225,50 @@ class Conversation(Entity):
         from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient  # noqa: PLC0415
 
         await super().share()
-        # Link each shared-context doc to this conversation locally (the hub
-        # doesn't host doc types). This makes the doc effective-remote so a
-        # comment on it auto-shares under the conversation (the hub parent).
-        await self._link_context_to_conversation()
         if not recipients:
+            # Link each shared-context doc to this conversation locally (the hub
+            # doesn't host doc types). This makes the doc effective-remote so a
+            # comment on it auto-shares under the conversation (the hub parent).
+            await self._link_context_to_conversation()
             return self
         creds = load_credentials()
         if not creds or not creds.api_key:
             raise RuntimeError("Cloud login required")
 
-        # Deliver any messages composed while this conversation was still local
-        # (the conversation just became remote via super().share() above). A
-        # normal conversation is remote before its first message, so every
-        # message reaches the hub at send time; a conversation composed offline
-        # — the flow-diagnose support artifact — wrote its messages locally
-        # while remote=False and they were never pushed. Flush them through the
-        # same send pipeline a normal reply uses, BEFORE inviting, so the
-        # invitation's callback_override and the recipient's first fetch resolve.
-        await self._deliver_pending_messages()
-
-        # Post-accept landing: point at the conversation's first FlowMessage on
-        # the hub — that URL renders MessageLanding, which hosts the "Open in
-        # Flowpad" button. Computed once per share; same value for every
-        # recipient. Falls back to None (hub default = entity URL) when the
-        # conversation has no messages yet.
-        callback_override = self._first_message_landing_path()
-
-        # Push hub-shareable assets (skill/agent) to the hub so each becomes a
-        # first-class node owned by the sharer, and collect one ``reader`` target
-        # per asset. These ride the SAME invitation as the conversation
-        # ``member`` grant: on accept the recipient gets a direct, durable role
-        # edge on the asset itself, so access survives the conversation being
-        # left or deleted (the conversation is the channel, not the access).
-        asset_targets = await self._share_hostable_assets()
-
         async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:
-            # Caller joins so the creator enters ``participants``.
+            # Join IMMEDIATELY after create. The hub stamps ``initiated_by`` on
+            # this call; until then even the creator cannot owner-delete the
+            # row. Local context linking, pending-message delivery, and asset
+            # sharing can all block or fail, so none may sit in this ownership
+            # gap and leave an undeletable conversation behind.
             await client.post(f"/graph/conversation/{self.id}/join", {})
+
+            # Link each shared-context doc to this conversation locally (the hub
+            # doesn't host doc types). This makes the doc effective-remote so a
+            # comment on it auto-shares under the conversation (the hub parent).
+            await self._link_context_to_conversation()
+
+            # Deliver any messages composed while this conversation was still
+            # local. Flush them through the same send pipeline a normal reply
+            # uses, BEFORE inviting, so the invitation's callback_override and
+            # the recipient's first fetch resolve.
+            await self._deliver_pending_messages()
+
+            # Post-accept landing: point at the conversation's first FlowMessage
+            # on the hub. Falls back to None (hub default = entity URL) when the
+            # conversation has no messages yet.
+            callback_override = self._first_message_landing_path()
+
+            # Push hub-shareable assets to the hub and carry their reader grants
+            # on the same invitation as the conversation member grant.
+            asset_targets = await self._share_hostable_assets()
+
             # One invitation per recipient.
             for email in recipients:
                 if not email or not isinstance(email, str):
+                    continue
+                email = normalize_email(email)
+                if not email:
                     continue
                 body: dict = {
                     "recipient_email": email,
@@ -393,33 +414,68 @@ class Conversation(Entity):
             if fm.body_status == BodyStatus.UPLOADING:
                 await _upload_body_and_finalize(fm, self.id)
 
-    def _first_message_landing_path(self) -> Optional[str]:
-        """Return ``/flow_message/<id>`` for the earliest FM in this conv, or None.
+    def message_refs(self) -> "list[MessageRef]":
+        """This conversation's messages in order (oldest-first), as lightweight
+        references parsed from the ``message_ids`` projection.
 
-        Parses ``self.message_ids`` (JSON-encoded list of Pointers ordered
-        oldest-first by jsonl append order). Strips the local ``@`` marker
-        so the path matches hub-side ids.
+        The ONE reader of the projection's JSON shape — the landing path, the
+        inbox unread count, and any future consumer resolve messages through
+        here. Skips non-FlowMessage/corrupt entries; empty list when the
+        projection is missing or unparseable.
+
+        (Distinct from ``fs_store.operations.conversation.message_pointers(rec)``,
+        which reads the on-disk jsonl source of truth into SDK ``Pointer``s; this
+        reads the entity's already-projected ``message_ids`` field.)
         """
         if not self.message_ids:
-            return None
+            return []
         try:
             import json  # noqa: PLC0415
-            msgs = json.loads(self.message_ids)
+
+            entries = json.loads(self.message_ids)
         except (json.JSONDecodeError, TypeError):
-            return None
-        if not isinstance(msgs, list) or not msgs:
-            return None
-        try:
-            from flow_sdk.fs_store.type_id import TypeId  # noqa: PLC0415
-            tid = TypeId(msgs[0].get("typeid", ""))
-        except (ValueError, AttributeError, TypeError):
-            return None
-        if tid.type != "flow_message" or not tid.id:
-            return None
-        msg_id = tid.id.lstrip("@")
-        if not msg_id:
-            return None
-        return f"/flow_message/{msg_id}"
+            return []
+        if not isinstance(entries, list):
+            return []
+        refs: list[MessageRef] = []
+        for entry in entries:
+            typeid = str(entry.get("typeid") or "") if isinstance(entry, dict) else ""
+            if "-" not in typeid:
+                continue
+            ptype, pid = typeid.split("-", 1)
+            pid = pid.lstrip("@")
+            if ptype != "flow_message" or not pid:
+                continue
+            ts_raw = entry.get("ts")
+            try:
+                landed_at = datetime.fromisoformat(str(ts_raw).replace("Z", "+00:00")) if ts_raw else None
+            except ValueError:
+                landed_at = None
+            refs.append(MessageRef(pid, landed_at))
+        return refs
+
+    def is_archived(self) -> bool:
+        """Conversation-level archive with auto-revive (see ``archived_at``):
+        True while the stamp is set and no message NEWER than it has landed.
+        Same comparison as the FE row facets (`conversation-category.ts`
+        ``isArchived``) — a missing/unparseable latest timestamp does NOT
+        revive."""
+        if self.archived_at is None:
+            return False
+        refs = self.message_refs()
+        latest_ts = refs[-1].landed_at if refs else None
+        if latest_ts is None:
+            return True
+        archived_at = self.archived_at
+        if latest_ts.tzinfo is None or archived_at.tzinfo is None:
+            latest_ts = latest_ts.replace(tzinfo=None)
+            archived_at = archived_at.replace(tzinfo=None)
+        return latest_ts <= archived_at
+
+    def _first_message_landing_path(self) -> Optional[str]:
+        """Return ``/flow_message/<id>`` for the earliest FM in this conv, or None."""
+        refs = self.message_refs()
+        return f"/flow_message/{refs[0].id}" if refs else None
 
     async def summary(self) -> str:
         """Plain-text summary of this conversation: a header (title,
@@ -443,7 +499,7 @@ class Conversation(Entity):
             role = p.get("role")
             return f"{label} ({role})" if role else str(label)
 
-        participants = ", ".join(_who(p) for p in (self.participants or [])) or "(none)"
+        participants = ", ".join(_who(p) for p in (self.members or [])) or "(none)"
         lines = [
             f"Conversation: {self.title or '(untitled)'}",
             f"Participants: {participants}",
@@ -471,6 +527,8 @@ class Conversation(Entity):
         shared_context_entities: Optional[list] = None,
         cloned_from_id: Optional[str] = None,
         cloned_from_sender_id: Optional[str] = None,
+        remote_worker_session_id: Optional[str] = None,
+        kind: Optional[str] = None,
     ) -> dict:
         """Append a FlowMessage to this conversation on the hub.
 
@@ -522,10 +580,26 @@ class Conversation(Entity):
             body["cloned_from_id"] = cloned_from_id
         if cloned_from_sender_id:
             body["cloned_from_sender_id"] = cloned_from_sender_id
+        # Live-session key + SESSION_EVENT discriminator. The hub drops these
+        # until its FlowMessage schema mirrors them (unknown-field drop) — the
+        # authoritative carrier is the remote_worker_session TYPE_ID attachment
+        # already in ``attachment``; receivers re-derive via derive_session_fields.
+        if remote_worker_session_id:
+            body["remote_worker_session_id"] = remote_worker_session_id
+        if kind:
+            body["kind"] = kind
         body["conversation_id"] = self.id
         path = build_hub_url(self, action="add_message")
         async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:
-            return await client.post(path, body)
+            data = await client.post(path, body)
+        # Some hub deployments do not echo conversation_id on the FlowMessage
+        # payload even though the add_message route is scoped to this
+        # conversation. Preserve the known parent locally so callers that pack
+        # the returned message into a body bundle can restore file-backed assets
+        # into the receiver's mapped project.
+        if isinstance(data, dict) and not data.get("conversation_id"):
+            data["conversation_id"] = self.id
+        return data
 
     async def remove_message(self, flow_message_id: str) -> dict:
         """Delete a FlowMessage from this conversation on the hub.

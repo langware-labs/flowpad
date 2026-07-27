@@ -78,9 +78,10 @@ function vfsUrl(editor: string, machinePath: string): string {
 }
 
 /**
- * Reveal the doc-chat panel. The `markdown` editor (EditorWithSidePanel) keeps
- * the EntityExecutionPanel in a "Chat" side-tab (data-testid="md-side-tab-chat")
- * that must be selected; the `agent`/`skill` editors embed the panel directly.
+ * Reveal the doc-chat panel. The `agent` editor embeds the EntityExecutionPanel
+ * directly; the `skill` editor keeps it behind its own "Chat" tab that must be
+ * selected. (The markdown editor's side-window Chat tab was removed — the
+ * markdown-family doc types are intentionally not driven here.)
  */
 async function openChatPanel(page: Page) {
   // After the goto, the asset-editor loader normalizes the URL (it appends view

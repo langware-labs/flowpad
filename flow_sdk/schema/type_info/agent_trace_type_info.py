@@ -2,14 +2,14 @@
 import json
 from typing import Optional
 
+from flow_sdk.fs_store.indexer.functions._asset_identity import NATIVE_JSON_IDENTITY, resolved_path_key
+from flow_sdk.fs_store.indexer.functions.agent_trace import (
+    extract_agent_trace,
+)
 from flow_sdk.schema.type_info import TypeMetadata
 from flow_sdk.schema.type_info.base_meta import BaseMeta
 from flow_sdk.schema.types import EntityType
 from flow_sdk.schema.view_mode import ViewMode
-from flow_sdk.fs_store.indexer.functions.agent_trace import (
-    agent_trace_gen_id,
-    extract_agent_trace,
-)
 
 
 class AgentTraceMeta(BaseMeta):
@@ -47,14 +47,17 @@ def _agent_trace_default_body(entity) -> Optional[str]:
 AGENT_TRACE = TypeMetadata(
     type=EntityType.AGENT_TRACE,
     from_disk_fn=extract_agent_trace,
-    gen_uuid_fn=agent_trace_gen_id,
+    identity_backend=NATIVE_JSON_IDENTITY,
+    id_stable_key_fn=resolved_path_key,
     indexed_by_default=True,
     browseable_by=ViewMode.ADVANCED,
     creatable=False,
     icon="Route",
     api_visible=True,
     index_fields=["name", "session_id", "verdict"],
-    main_subdir=".claude/agent_traces",
+    asset_class="harness",
+    harness="claude",
+    family="agent_traces",
     main_layout="folder",
     main_file="trace.json",
     # asset_ref IS .claude/agent_traces/<name>/trace.json (the walker emits the

@@ -5,14 +5,19 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
 from pathlib import Path
 from typing import Any, AsyncIterator
 
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
+    STREAM_JSON_LINE_LIMIT_BYTES,
     AgenticContext,
     AgenticWorker,
-    worker_path_env,
+    WorkerSpawnError,
+    build_worker_spawn_env,
+    resolve_worker_argv0,
+    stamp_cli_run_id,
+    terminate_asyncio_process_tree,
+    wait_for_asyncio_process_or_kill_tree,
 )
 from flow_sdk.builtin.agentic_process.cli_drivers.copilot.cli import CopilotCliOptions
 from flow_sdk.builtin.agentic_process.cli_drivers.copilot.event_to_flowdata import (
@@ -35,6 +40,7 @@ class CopilotCLIStreamWorker(AgenticWorker):
     def __init__(self, transcript_path: Path | str | None = None) -> None:
         self._session_id: str | None = None
         self._proc: asyncio.subprocess.Process | None = None
+        self._process_run_id: str | None = None
         self._transcript_path = Path(transcript_path) if transcript_path else None
         self._interrupted = False
         self._stderr_lines: list[str] = []
@@ -49,25 +55,45 @@ class CopilotCLIStreamWorker(AgenticWorker):
     def transcript_path(self) -> Path | None:
         return self._transcript_path
 
+    @property
+    def cancelled_gracefully(self) -> bool:
+        """True once this turn was interrupted — copilot self-records the abort.
+
+        Copilot's CLI emits no terminal on kill, so ``execute`` writes a synthetic
+        ``flowpad.interrupted`` event into its OWN transcript (rendered as a
+        turn-terminated STATUS on replay). The cancel choke point therefore skips
+        the flowpad sidecar marker for copilot too — otherwise the sidecar marker
+        AND the synthetic event both replay as duplicate turn-terminated STATUS
+        frames (``merge_abort_markers`` has no dedup). Symmetric to claude/codex,
+        whose CLIs record their own aborts on a graceful interrupt.
+        """
+        return self._interrupted
+
     async def execute(
         self,
         prompt: str,
         context: AgenticContext,
     ) -> AsyncIterator[FlowData]:
+        self._process_run_id = None
         self._session_id = context.resume_session_id or context.session_id
-        argv, env = self._build_spawn(context)
-        if argv is None:
+        try:
+            argv, env, stdin = self._build_spawn(context, prompt)
+        except WorkerSpawnError as e:
+            # Surface the message on the transcript (tail_status → FAILED) and
+            # the chat stream, then propagate so the turn runner latches
+            # status=FAILED + start_failure.
             event = {
                 "type": "flowpad.error",
                 "sessionId": self._session_id,
-                "message": "copilot binary not found in PATH",
+                "message": str(e),
             }
             self._write_jsonl_path(event)
             for fd in self._converter.convert_event(event):
                 yield fd
-            return
+            raise
 
         logger.info("CopilotCLIStreamWorker: launching %s", " ".join(argv))
+        self._process_run_id = stamp_cli_run_id(env)
         tee_fh = None
         if self._transcript_path is not None:
             try:
@@ -85,6 +111,7 @@ class CopilotCLIStreamWorker(AgenticWorker):
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                limit=STREAM_JSON_LINE_LIMIT_BYTES,
             )
         except Exception as exc:
             logger.exception("CopilotCLIStreamWorker: spawn failed")
@@ -98,11 +125,14 @@ class CopilotCLIStreamWorker(AgenticWorker):
                 tee_fh.close()
             for fd in self._converter.convert_event(event):
                 yield fd
-            return
+            raise WorkerSpawnError("copilot", str(event["message"])) from exc
 
         try:
             assert self._proc.stdin is not None
-            stdin_prompt = prompt if prompt.endswith("\n") else f"{prompt}\n"
+            # stdin already carries any system-prompt addition (prepended by the
+            # options' sink); copilot just needs a trailing newline to submit.
+            base = stdin or ""
+            stdin_prompt = base if base.endswith("\n") else f"{base}\n"
             self._proc.stdin.write(stdin_prompt.encode("utf-8"))
             await self._proc.stdin.drain()
             self._proc.stdin.close()
@@ -132,13 +162,12 @@ class CopilotCLIStreamWorker(AgenticWorker):
             await self._terminate_process()
             raise
         finally:
-            if self._proc and self._proc.returncode is None:
-                try:
-                    await asyncio.wait_for(self._proc.wait(), timeout=CANCEL_GRACE_SECONDS)
-                except asyncio.TimeoutError:
-                    logger.warning("CopilotCLIStreamWorker: grace expired, sending SIGKILL")
-                    self._proc.kill()
-                    await self._proc.wait()
+            if self._proc:
+                await wait_for_asyncio_process_or_kill_tree(
+                    self._proc,
+                    CANCEL_GRACE_SECONDS,
+                    run_id=self._process_run_id,
+                )
 
             try:
                 await stderr_task
@@ -175,13 +204,14 @@ class CopilotCLIStreamWorker(AgenticWorker):
     def _build_spawn(
         self,
         context: AgenticContext,
-    ) -> tuple[list[str] | None, dict[str, str]]:
-        # Discovered harness capability supplies the CLI's bin folder
-        # (terminal-PATH resolution) — None ⇔ copilot is not installed.
-        path_env = worker_path_env("copilot")
-        if path_env is None:
-            return None, {}
+        prompt: str,
+    ) -> tuple[list[str], dict[str, str], str | None]:
+        """Build the ``(argv, env, stdin)`` spawn tuple.
 
+        Raises :class:`WorkerSpawnError` when copilot is not installed (no
+        harness capability discovered) or its executable can't be resolved on
+        the spawn PATH.
+        """
         opts = CopilotCliOptions(
             workdir=context.workdir,
             env_vars=dict(context.env_vars) if context.env_vars else None,
@@ -194,12 +224,20 @@ class CopilotCLIStreamWorker(AgenticWorker):
             json_stream=True,
             no_ask_user=True,
             allow_all=True,
+            no_custom_instructions=not bool(context.custom_instruction_dirs),
+            custom_instruction_dirs=list(context.custom_instruction_dirs or []),
         )
-        argv, env_from_opts = opts.to_spawn_args()
-        env = dict(os.environ)
-        env.update(path_env)  # capability bin-folder PATH prepend
-        env.update(env_from_opts)
-        return argv, env
+        # Asset-backed system instructions ride COPILOT_CUSTOM_INSTRUCTIONS_DIRS;
+        # the legacy system_prompt_append path remains unused for new launches.
+        argv, env_from_opts, stdin = opts.to_spawn(
+            instruction=prompt, system_prompt_append=context.instructions
+        )
+        # Context env_vars win (except the discovered capability bin folder
+        # stays first on PATH); argv[0] is pinned to the discovered absolute
+        # executable so a stripped backend service PATH can't break the spawn.
+        env = build_worker_spawn_env("copilot", env_from_opts)
+        argv = resolve_worker_argv0("copilot", argv, env)
+        return argv, env, stdin
 
     async def _drain_stderr(self, proc: asyncio.subprocess.Process) -> None:
         if proc.stderr is None:
@@ -217,24 +255,13 @@ class CopilotCLIStreamWorker(AgenticWorker):
 
     async def _terminate_process(self) -> None:
         proc = self._proc
-        if proc is None or proc.returncode is not None:
+        if proc is None:
             return
-        try:
-            proc.terminate()
-        except ProcessLookupError:
-            return
-        try:
-            await asyncio.wait_for(proc.wait(), timeout=CANCEL_GRACE_SECONDS)
-        except asyncio.TimeoutError:
-            logger.warning("CopilotCLIStreamWorker: grace expired, sending SIGKILL")
-            try:
-                proc.kill()
-            except ProcessLookupError:
-                return
-            try:
-                await proc.wait()
-            except Exception:
-                pass
+        await terminate_asyncio_process_tree(
+            proc,
+            CANCEL_GRACE_SECONDS,
+            run_id=self._process_run_id,
+        )
 
     def _terminal_synthetic_event(self) -> dict[str, Any] | None:
         if self._interrupted:

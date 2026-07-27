@@ -44,19 +44,23 @@ async function waitHealthy(port: number, budgetMs: number): Promise<boolean> {
 
 beforeAll(async () => {
   const logPath = `/tmp/project_fetch_fast.${INSTANCE}.log`;
-  const logFd = (await fs.open(logPath, 'w')).fd;
-  proc = spawn('uv', ['run', '-m', 'flow_sdk.server.run'], {
-    cwd: REPO_ROOT,
-    env: {
-      ...process.env,
-      FLOW_INSTANCE: INSTANCE,
-      LOCAL_SERVER_PORT: String(PORT),
-      MINIHUB_RELOAD: 'False', // single process, no watchfiles
-      FLOWPAD_SKIP_DOTENV: 'true', // honor the env we pin here, not .env.local
-      FLOWPAD_SKIP_LOCK: 'true', // don't fight the desktop app's singleton lock
-    },
-    stdio: ['ignore', logFd, logFd],
-  });
+  const logHandle = await fs.open(logPath, 'w');
+  try {
+    proc = spawn('uv', ['run', '-m', 'flow_sdk.server.run'], {
+      cwd: REPO_ROOT,
+      env: {
+        ...process.env,
+        FLOW_INSTANCE: INSTANCE,
+        LOCAL_SERVER_PORT: String(PORT),
+        MINIHUB_RELOAD: 'False', // single process, no watchfiles
+        FLOWPAD_SKIP_DOTENV: 'true', // honor the env we pin here, not .env.local
+        FLOWPAD_SKIP_LOCK: 'true', // don't fight the desktop app's singleton lock
+      },
+      stdio: ['ignore', logHandle.fd, logHandle.fd],
+    });
+  } finally {
+    await logHandle.close();
+  }
   const up = await waitHealthy(PORT, 60_000); // server-boot budget (setup, not the SLO)
   if (!up) {
     throw new Error(`backend '${INSTANCE}' did not come up on :${PORT} — see ${logPath}`);

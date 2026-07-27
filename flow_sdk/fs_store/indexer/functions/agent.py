@@ -10,8 +10,8 @@ markdown rendering) live in ``flow_sdk/fs_store/operations/agent.py``.
 
 Public helpers used outside the indexer:
   - ``parse_agent_markdown(text, name)`` — pure frontmatter+body parse
-  - ``extract_agent(ref)`` — parser_fn entry
-  - ``agent_id(ref)`` / ``agent_gen_id(ref)`` — id helpers
+  - ``extract_agent(ref, resolved_id)`` — parser_fn entry
+  - ``agent_id(ref)`` — compatibility read helper
   - ``AGENTS_SPEC_FIELDS`` / ``KEY_TO_JSON`` / ``JSON_TO_KEY`` — spec mapping
 """
 
@@ -23,21 +23,19 @@ from typing import Any
 
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.identifier import is_valid_entity_id, mint_uuid
-from flow_sdk.fs_store.indexer.index_function import IndexerOptions
-from flow_sdk.fs_store.record_types import RecordType
-
+from flow_sdk.fs_store.identifier import mint_uuid
 from flow_sdk.fs_store.indexer._frontmatter import (
     _extract_body,
     _extract_frontmatter,
-    _render_frontmatter,
     _yaml_load,
 )
-
+from flow_sdk.fs_store.indexer.index_function import IndexerOptions
+from flow_sdk.fs_store.record_types import RecordType
 
 # Fields stored in _data that map to the Claude Code --agents JSON spec
 AGENTS_SPEC_FIELDS = (
     "description",
+    "kind",
     "tools",
     "disallowed_tools",
     "model",
@@ -99,6 +97,7 @@ def _read_frontmatter_id(path: Path) -> str | None:
     fields = _yaml_load(fm) or {}
     raw = fields.get("id") or fields.get("asset_id")
     from flow_sdk.fs_store.identifier import adopt_entity_id  # noqa: PLC0415
+
     return adopt_entity_id(raw)  # validate-on-adopt (v4/v5) → else caller derives
 
 
@@ -128,46 +127,39 @@ def agent_id(ref: FSRef) -> str:
     return ref._path.stem
 
 
-def agent_gen_id(ref: FSRef) -> str:
-    """Mint+write id into agent .md frontmatter (idempotent), returning a
-    stable, filesystem-safe **UUID**.
+def agent_peek_entity_id(ref: FSRef) -> str:
+    """Entity UUID for an agent .md without writing the source.
 
-    The frontmatter still stores the raw derived key (frontmatter name or
-    filename stem); the returned id hashes that key into a uuid5 with the same
-    ``f"{type}:{key}"`` formula ``Entity.allocate_id`` uses, so the probe's
-    shadow-home id matches the DB id. An already-conforming adopted id is kept
-    as-is.
+    Strictly read-only, so it is safe to call from request handlers
+    (``TypeInfo.mint_id`` persists a missing identity capsule, which would dirty
+    read-only mounts and trip the dev reload watcher).
+
+    Reads the canonical identity capsule first, then valid legacy frontmatter.
+    On a miss it returns the same stable v5 derivation used by indexing.
     """
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    info = SchemaRegistry.get(str(RecordType.AGENT))
+    if info is not None:
+        existing = info.extract_id(ref)
+        if existing is not None:
+            return existing
     try:
         text = ref._path.read_text(encoding="utf-8")
     except OSError:
-        key = agent_id(ref)
-        return key if is_valid_entity_id(key) else mint_uuid(f"{RecordType.AGENT}:{key}", namespace=uuid.NAMESPACE_DNS)
-    fm = _extract_frontmatter(text)
-    fields: dict = {}
-    if fm:
-        parsed = _yaml_load(fm)
-        if isinstance(parsed, dict):
-            fields.update(parsed)
-    from flow_sdk.fs_store.identifier import adopt_entity_id  # noqa: PLC0415
-    adopted = adopt_entity_id(fields.get("id") or fields.get("asset_id"))
-    if adopted:  # validate-on-adopt — already a conforming UUID, keep it
-        return adopted
-    name = fields.get("name")
-    if isinstance(name, str) and name.strip():
-        new_id = name.strip()
+        key = ref._path.stem
     else:
-        new_id = ref._path.stem
-    body = _extract_body(text)
-    merged = {"id": new_id, **{k: v for k, v in fields.items() if k not in ("id", "asset_id")}}
-    try:
-        ref._path.write_text(
-            _render_frontmatter(merged) + "\n\n" + body + ("\n" if body and not body.endswith("\n") else ""),
-            encoding="utf-8",
-        )
-    except OSError:
-        pass
-    return mint_uuid(f"{RecordType.AGENT}:{new_id}", namespace=uuid.NAMESPACE_DNS)
+        fm = _extract_frontmatter(text)
+        fields = (_yaml_load(fm) if fm else None) or {}
+        from flow_sdk.fs_store.identifier import adopt_entity_id  # noqa: PLC0415
+
+        adopted = adopt_entity_id(fields.get("id") or fields.get("asset_id"))
+        if adopted:
+            return adopted
+        name = fields.get("name")
+        key = name.strip() if isinstance(name, str) and name.strip() else ref._path.stem
+    return mint_uuid(f"{RecordType.AGENT}:{key}", namespace=uuid.NAMESPACE_DNS)
+
 
 
 # ── Parse + extract ──────────────────────────────────────────────────────────
@@ -179,6 +171,9 @@ def parse_agent_markdown(text: str, name: str | None = None) -> dict[str, Any]:
     Returns id/name/spec fields + 'prompt' (the body). Used by both the
     indexer extractor and ``operations/agent.py`` helpers.
     """
+    from flow_sdk.capsules import strip_capsule_blocks  # noqa: PLC0415
+
+    text = strip_capsule_blocks(text)
     fm_text = _extract_frontmatter(text)
     fields = _yaml_load(fm_text) if fm_text else {}
     body = _extract_body(text)
@@ -196,7 +191,7 @@ def parse_agent_markdown(text: str, name: str | None = None) -> dict[str, Any]:
     return data
 
 
-def extract_agent(ref: FSRef) -> list[FSRecord]:
+def extract_agent(ref: FSRef, resolved_id: str) -> list[FSRecord]:
     """Parse an agent .md into a Record. Replaces ``AgentRecord._from_fsref_sync``.
 
     Eagerly populates: id, name, description, prompt, content (for FTS body =
@@ -210,6 +205,7 @@ def extract_agent(ref: FSRef) -> list[FSRecord]:
     except OSError:
         return []
     data = parse_agent_markdown(text, name=path.stem)
+    data["id"] = resolved_id
     data["type"] = RecordType.AGENT
     data["status"] = "active"
     # prompt is stored under 'prompt_text' on the shim subclass; for parser_fn-

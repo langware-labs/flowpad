@@ -11,7 +11,6 @@ test.describe('Home usage/cost overview — no fetch error', () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => {
       localStorage.setItem('llm-setup-modal-seen', 'true');
-      localStorage.setItem('flowpad-index-approved', 'true');
     });
   });
 

@@ -14,6 +14,8 @@ interface ChatsListProps {
   isLoading: boolean;
   /** Active process id (from the URL/context) → highlighted row. */
   activeProcessId: string | null;
+  /** Process ids that back an open tab → bright; others dim until hovered. */
+  openProcessIds: Set<string>;
   onSelect: (entry: WorkerHistoryEntry) => void;
   onToggleFavorite: (entry: WorkerHistoryEntry) => void;
   onDelete: (entry: WorkerHistoryEntry) => void;
@@ -23,6 +25,7 @@ export function ChatsList({
   buckets,
   isLoading,
   activeProcessId,
+  openProcessIds,
   onSelect,
   onToggleFavorite,
   onDelete,
@@ -46,6 +49,7 @@ export function ChatsList({
                   key={entry.agentic_process_id ?? entry.worker_id}
                   entry={entry}
                   selected={!!activeProcessId && entry.agentic_process_id === activeProcessId}
+                  hasOpenTab={!!entry.agentic_process_id && openProcessIds.has(entry.agentic_process_id)}
                   onSelect={() => onSelect(entry)}
                   onToggleFavorite={() => onToggleFavorite(entry)}
                   onDelete={() => onDelete(entry)}

@@ -1,11 +1,11 @@
 import { dataManager } from '../APIEntity';
 import { ActionInfo } from '../models/ActionInfo';
+import type { GitOrigin } from '../models/GitOrigin';
 
 export interface FindProjectResult {
   found: boolean;
   local_path: string | null;
-  repo_url: string;
-  branch: string;
+  git_origin: GitOrigin | null;
   known_projects: Array<{ name: string; path: string }>;
 }
 
@@ -24,30 +24,25 @@ export interface CloneResult {
 
 export async function findProjectForTask(
   taskId: string,
-  fallback?: { projectUrl?: string; branch?: string; repoId?: string },
+  fallback?: { gitOrigin?: GitOrigin | null },
 ): Promise<FindProjectResult> {
   const action = new ActionInfo('find-project', 'task', taskId, 'POST');
-  if (fallback && (fallback.projectUrl || fallback.branch || fallback.repoId)) {
-    action.bodyParameters = {
-      project_url: fallback.projectUrl ?? '',
-      branch: fallback.branch ?? '',
-      repo_id: fallback.repoId ?? '',
-    };
+  if (fallback?.gitOrigin) {
+    action.bodyParameters = { git_origin: fallback.gitOrigin };
   }
   const res = await dataManager.callAction<undefined, FindProjectResult>(action);
-  return res ?? { found: false, local_path: null, repo_url: '', branch: '', known_projects: [] };
+  return res ?? { found: false, local_path: null, git_origin: null, known_projects: [] };
 }
 
 export async function pullForTask(
   taskId: string,
   localPath?: string,
-  fallback?: { projectUrl?: string; branch?: string },
+  fallback?: { gitOrigin?: GitOrigin | null },
 ): Promise<PullResult> {
   const action = new ActionInfo('pull-for-task', 'task', taskId, 'POST');
   action.bodyParameters = {
     ...(localPath ? { local_path: localPath } : {}),
-    ...(fallback?.projectUrl ? { project_url: fallback.projectUrl } : {}),
-    ...(fallback?.branch ? { branch: fallback.branch } : {}),
+    ...(fallback?.gitOrigin ? { git_origin: fallback.gitOrigin } : {}),
   };
   const res = await dataManager.callAction<undefined, PullResult>(action);
   return res ?? { success: false, conflicts: false, error: 'Unknown error' };
@@ -56,15 +51,13 @@ export async function pullForTask(
 export async function cloneForTask(
   taskId: string,
   targetDir: string,
-  fallback?: { projectUrl?: string; branch?: string },
+  fallback?: { gitOrigin?: GitOrigin | null },
 ): Promise<CloneResult> {
   const action = new ActionInfo('clone-for-task', 'task', taskId, 'POST');
   action.bodyParameters = {
     target_dir: targetDir,
-    ...(fallback?.projectUrl ? { project_url: fallback.projectUrl } : {}),
-    ...(fallback?.branch ? { branch: fallback.branch } : {}),
+    ...(fallback?.gitOrigin ? { git_origin: fallback.gitOrigin } : {}),
   };
   const res = await dataManager.callAction<undefined, CloneResult>(action);
   return res ?? { success: false, conflicts: false, error: 'Unknown error', cloned_path: null };
 }
-

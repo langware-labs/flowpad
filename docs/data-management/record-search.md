@@ -219,6 +219,11 @@ DELETE /fs-records/index
 `sync_to_db()` is called explicitly and runs inline (within the async call chain) — there is no `IndexWorker` thread, debounce queue, or background daemon. Index calls happen in:
 - The CRUD handlers in `fs_records_actions.py` — `sync_to_db()` is awaited directly on create/update of a record (e.g. `fs_records_actions.py:1284`, `:1322`), *before* the `_broadcast_fs_record_op(...)` notification.
 - The bulk `FSIndexer` invoked by `POST /fs-records/index` (and on discover, `fs_records_actions.py:1115`), which batches `FtsEntry`s for one `fts_upsert(list)`.
+- FlowMessage body unpack for shared file-backed entities. In normal copy mode,
+  the unpacker first writes the copied asset into the mapped project, then indexes
+  that path. In git transfer mode, the unpacker resolves or clones the `GitOrigin`
+  checkout and indexes the real checkout path directly. A markdown document shared
+  this way becomes searchable only after that receive/open/index step has run.
 - Explicit application code.
 
 > **Important — webhook entities are NOT FTS-indexed**: Entities created via the listen webhook (`POST /api/v1/webhook/listen` / `_reflect_entity` in `flow_sdk/app/actions/listen.py`) use `entity.save(scope)` directly and do **not** call `sync_to_db()` or `fts_upsert()`. These entities will not appear in FTS search results until a (re)index via `POST /fs-records/index`. Only entities created through the `sync_to_db()` / indexer path get FTS entries automatically.

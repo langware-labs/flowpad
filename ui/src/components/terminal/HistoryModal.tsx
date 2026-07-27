@@ -1,4 +1,5 @@
-import { AgenticProcess } from '@sdk';
+import { AgenticProcess, PrefKey } from '@sdk';
+import { usePreference } from '@src/hooks/use-preference';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { Checkbox } from '@src/components/ui/checkbox';
 import { SideDrawer } from '@src/components/ui/side-drawer';
@@ -64,34 +65,6 @@ function formatFullDate(iso: string | null | undefined): string {
   });
 }
 
-type SortDir = 'desc' | 'asc';
-const SORT_STORAGE_KEY = 'flowpad.historyModal.sortDir';
-const ALL_PROJECTS_STORAGE_KEY = 'flowpad.historyModal.allProjects';
-
-// localStorage-backed useState. `parse` maps the raw stored value (null when
-// absent/unavailable) to the typed value, doubling as the default.
-function usePersistedState<T extends string | boolean>(
-  key: string,
-  parse: (raw: string | null) => T,
-): [T, React.Dispatch<React.SetStateAction<T>>] {
-  const [value, setValue] = useState<T>(() => {
-    if (typeof window === 'undefined') return parse(null);
-    try {
-      return parse(window.localStorage.getItem(key));
-    } catch {
-      return parse(null);
-    }
-  });
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(key, String(value));
-    } catch {
-      // localStorage may be unavailable (private mode, quota, etc.) — preference simply doesn't persist.
-    }
-  }, [key, value]);
-  return [value, setValue];
-}
-
 function WorkerIcon({ workerType }: { workerType: WorkerHistoryEntry['worker_type'] }) {
   if (workerType === 'codex') {
     return <CodexIcon className="h-3.5 w-3.5 shrink-0 text-emerald-500" />;
@@ -119,12 +92,12 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
   const { indexProjectSessions } = useSystemTools();
   const [refreshing, setRefreshing] = useState(false);
 
-  const [allProjects, setAllProjects] = usePersistedState(ALL_PROJECTS_STORAGE_KEY, (raw) => raw === 'true');
+  const [allProjects, setAllProjects] = usePreference<boolean>(PrefKey.HISTORY_ALL_PROJECTS);
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(() => new Set());
   const [peekKey, setPeekKey] = useState<string | null>(null);
   const [peekProcess, setPeekProcess] = useState<AgenticProcess | null>(null);
   const [peekResolving, setPeekResolving] = useState(false);
-  const [sortDir, setSortDir] = usePersistedState<SortDir>(SORT_STORAGE_KEY, (raw) => (raw === 'asc' ? 'asc' : 'desc'));
+  const [sortDir, setSortDir] = usePreference<string>(PrefKey.HISTORY_SORT_DIR);
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState('');
   const searchInputRef = useRef<HTMLInputElement | null>(null);
@@ -327,7 +300,7 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
                     : t`Sort by time: oldest first (click for newest first)`
                 }
                 className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
-                onClick={() => setSortDir((d) => (d === 'desc' ? 'asc' : 'desc'))}
+                onClick={() => setSortDir(sortDir === 'desc' ? 'asc' : 'desc')}
                 data-testid="history-sort-time"
                 aria-label={t`Sort by time`}
               >

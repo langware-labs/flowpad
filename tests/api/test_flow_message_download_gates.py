@@ -32,6 +32,8 @@ import pytest
 import flow_sdk.fs_store.indexer.registrations  # noqa: F401
 
 from flow_sdk.builtin.flow_message import BODY_FILENAME, AttachmentType, BodyStatus, FlowMessage
+from flow_sdk.builtin.message_attachment import MessageAttachment
+from flow_sdk.fs_store.operations import flow_message as fm_data_ops
 
 
 pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
@@ -113,13 +115,13 @@ async def test_open_ready_pointer_issues_download(bootstrapped_client) -> None:
 
 
 # ---------------------------------------------------------------------------
-# No-project parking gate (explicit download_body path)
+# No-project staging (explicit download_body path)
 #
 # A READY body whose bundle carries a file-backed asset (prompt) but whose
-# conversation maps to NO project must: materialize the top FlowMessage, PARK
-# the asset (extract-but-don't-copy/index), and surface a 409 with
-# ``{needs_project: True, pending_types: [...]}`` so the UI prompts "map a
-# project first" and re-downloads. Driven through the real route + real
+# conversation maps to NO project must materialize the top FlowMessage and STAGE
+# the asset (extract-but-don't-copy/index) successfully. Project selection is an
+# explicit later install decision, not a download gate. Driven through the real
+# route + real
 # unpack_bundle; only the hub bundle fetch is stubbed (the file's house style).
 # ---------------------------------------------------------------------------
 
@@ -148,31 +150,31 @@ def _no_project_bundle_bytes(fm_id: str, conv_id: str, prompt_id: str) -> bytes:
         zf.writestr("header.json", json.dumps(msg, ensure_ascii=False))
         # Conversation entry → creates a local Conversation with NO project_id.
         zf.writestr(
-            f"attachment/conversation-@{conv_id}/header.json",
+            f"attachment/conversation-{conv_id}/header.json",
             json.dumps(
                 {"type": "conversation", "id": conv_id, "participants": [], "project_id": None},
                 ensure_ascii=False,
             ),
         )
         zf.writestr(
-            f"attachment/conversation-@{conv_id}/conversation.jsonl",
+            f"attachment/conversation-{conv_id}/conversation.jsonl",
             json.dumps(pointer, ensure_ascii=False) + "\n",
         )
         # File-backed prompt asset → parked when no project is mapped.
         zf.writestr(
-            f"attachment/prompt-@{prompt_id}/prompts/shared.md",
+            f"attachment/prompt-{prompt_id}/prompts/shared.md",
             f"---\nid: {prompt_id}\nname: Shared Prompt\nuse_count: 1\n---\n\nFix the auth bug.\n",
         )
     return buf.getvalue()
 
 
 @pytest.mark.asyncio
-async def test_download_body_no_project_parks_assets_and_returns_needs_project_409(
+async def test_download_body_no_project_stages_assets_without_materializing(
     bootstrapped_client,
 ) -> None:
     """body_status=READY + file-backed asset + conversation with no project →
-    the FM materializes, the asset is parked (not indexed), and the route
-    returns 409 with ``{needs_project: True, pending_types: ['prompt']}``."""
+    the FM and deterministic MessageAttachment materialize, staged bytes persist,
+    and no project asset is indexed before explicit install."""
     from flow_sdk.builtin.conversation import Conversation
     from flow_sdk.builtin.prompt import Prompt
 
@@ -207,18 +209,38 @@ async def test_download_body_no_project_parks_assets_and_returns_needs_project_4
             f"/api/v1/graph/flow_message/{fm_id}/download_body", json={},
         )
 
-    assert r.status_code == 409, r.text
+    assert r.status_code == 200, r.text
     body = r.json()
-    assert body.get("status") in ("FAIL", "fail"), body
+    assert body.get("status") == "SUCCESS", body
     data = body.get("data") or {}
-    assert data.get("needs_project") is True, body
-    assert "prompt" in (data.get("pending_types") or []), body
+    assert data.get("flow_message_id") == fm_id, body
+    assert data.get("body_status") == BodyStatus.READY.value, body
 
-    # The top FlowMessage still materialized despite the gate being raised.
+    assert fm_data_ops.is_downloaded(fm_id)
+    assert fm_data_ops.is_unpacked(fm_id)
+
+    entry_key = f"prompt-{prompt_id}"
+    ma = await MessageAttachment.get_one({
+        "id": MessageAttachment.allocate_deterministic_id(fm_id, entry_key),
+    })
+    assert ma is not None, "download did not stage a MessageAttachment"
+    assert ma.flow_message_id == fm_id
+    assert ma.conversation_id == conv_id
+    assert ma.asset_type == "prompt" and ma.asset_id == prompt_id
+    assert not ma.scope
+    assert ma.unpacked_path == f"unpacked/attachment/{entry_key}"
+
+    staged = fm_data_ops.staged_entry_dir(fm_id, entry_key) / "prompts/shared.md"
+    assert staged.exists(), f"staged prompt missing: {staged}"
+    staged_text = staged.read_text(encoding="utf-8")
+    assert f"id: {prompt_id}" in staged_text
+    assert "Fix the auth bug." in staged_text
+
+    # The top FlowMessage remains available after successful staging.
     assert await FlowMessage.get_one({"id": fm_id}) is not None
     # The conversation was created (parked context) with NO project mapped.
     conv = await Conversation.get_one({"id": conv_id})
     assert conv is not None
     assert not getattr(conv, "project_id", None), "conversation must stay project-less"
-    # The file-backed prompt was PARKED — never copied into a project / indexed.
+    # The file-backed prompt is staged — never copied into a project / indexed.
     assert await Prompt.get_one({"id": prompt_id}) is None, "prompt must NOT be materialized"

@@ -224,6 +224,12 @@ class DBEntity(DBBaseRecord):
         updated_dump.update(fields)
         updated_model = self.model_validate(updated_dump)
         for k in fields.keys():
+            # Computed fields ride every outbound payload, so clients echo them
+            # back on a full-entity PUT (e.g. Project.include_dirs) — they have
+            # no setter, and the model_validate above already gave validators
+            # their chance to adopt the value. Only declared fields are settable.
+            if k not in self.__class__.model_fields:
+                continue
             setattr(self, k, getattr(updated_model, k))
 
     async def expand_permissions(self):
@@ -412,7 +418,10 @@ class DBEntity(DBBaseRecord):
                 op = OperationType.CREATE
             else:
                 op = OperationType.UPDATE
-            self_op = DataOpMessage(data=self, op=op, to_entity=self.typeid)
+            # from_entity = the save's owner — rides the notification so the
+            # unified-bus adapter can stamp containment scope (phase 3).
+            self_op = DataOpMessage(data=self, op=op, to_entity=self.typeid,
+                                    from_entity=owner)
             await self.add_entity_op_notification(self_op)
             self._notify_observers(self_op)
         self._dirty = False
@@ -428,6 +437,12 @@ class DBEntity(DBBaseRecord):
     async def add_entity_op_notification(op_message: DataOpMessage, notify_immediately: bool = False):
         from flow_sdk.core.network.resource_tracker import handle_entity_op
 
+        # Unified-bus dual-publish (docs/flow-events.md phase 3): every entity
+        # write becomes entity.created/updated/deleted. This is the ONE funnel
+        # all DataOpMessage sites flow through; legacy invalidation untouched.
+        from flow_sdk.db.entity_on_tag import emit_entity_tag
+
+        emit_entity_tag(op_message)
         await handle_entity_op(op_message)
 
     async def update(self: DBEntityType) -> DBEntityType:

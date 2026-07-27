@@ -22,6 +22,7 @@ the spawn is offloaded off the event loop.
 
 import asyncio
 import time
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -32,6 +33,49 @@ from flow_sdk.compute.providers.desktop.provider import LocalComputeProvider
 # blocking spawn produces one large gap. Generous enough to absorb scheduler
 # jitter, far below the on-loop spawn cost.
 MAX_LOOP_GAP_S = 0.05
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("spawn_args", "extra_env", "error_type"),
+    [
+        (["/bin/cat\x00bad"], None, ValueError),
+        (["/bin/cat"], {"BAD\x00KEY": "value"}, ValueError),
+        (["/bin/cat"], {"BAD=KEY": "value"}, ValueError),
+        (["/bin/cat"], {"BAD": "before\x00after"}, ValueError),
+        (["/bin/cat"], {1: "value"}, TypeError),
+        (["/bin/cat"], {"BAD": 1}, TypeError),
+    ],
+)
+async def test_invalid_pty_spawn_input_is_rejected_before_fork(
+    spawn_args, extra_env, error_type
+):
+    """Malformed exec input must never enter ptyprocess's child error pipe.
+
+    In particular, an embedded NUL raises ValueError in the forked child while
+    ptyprocess catches only OSError, which otherwise blocks the parent forever.
+    """
+    provider = LocalComputeProvider()
+    node_id = await provider.create_node("invalid-spawn-node", None)
+
+    with patch(
+        "flow_sdk.compute.providers.desktop.provider.asyncio.to_thread",
+        new_callable=AsyncMock,
+    ) as to_thread:
+        with pytest.raises(error_type):
+            await asyncio.wait_for(
+                provider.get_or_create_pty_session(
+                    node_id,
+                    "invalid-spawn-session",
+                    on_output=lambda _b: None,
+                    spawn_args=spawn_args,
+                    extra_env=extra_env,
+                ),
+                timeout=0.5,
+            )
+
+    to_thread.assert_not_awaited()
+    assert not provider._pty_processes
 
 
 @pytest.mark.asyncio

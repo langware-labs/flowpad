@@ -32,6 +32,10 @@ services:
       # (claude prints an auth error and exits, which is what the tests then
       # assert against, never a hard "command not found").
       ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+      # Claude Code refuses --dangerously-skip-permissions as root; these
+      # containers run as root BY DESIGN (isolated fs). IS_SANDBOX=1 is the
+      # CLI's own containers-are-sandboxes escape hatch.
+      IS_SANDBOX: "1"
     ports:
       - "9008:9008"
     volumes:
@@ -61,6 +65,10 @@ services:
       # Critical: this is set per service in this compose file, never via
       # shell-inheritance, so bob can't accidentally pick up alice's FLOWPAD_DEV.
       ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+      # Claude Code refuses --dangerously-skip-permissions as root; these
+      # containers run as root BY DESIGN (isolated fs). IS_SANDBOX=1 is the
+      # CLI's own containers-are-sandboxes escape hatch.
+      IS_SANDBOX: "1"
     ports:
       - "9007:9007"
     volumes:

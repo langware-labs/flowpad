@@ -65,9 +65,10 @@ async def test_orphan_delete_keeps_live_project_markdown(bootstrapped_client, tm
     from flow_sdk.fs_store.operations.all_projects import invalidate_projects_cache
 
     # pytest's tmp_path lives under the OS temp dir, which get_all_projects
-    # (include_temp=False) filters out — a real workspace isn't temp. Treat the
-    # test project as a normal path so the global orphan walk includes it.
-    monkeypatch.setattr(_ap, "is_temp_path", lambda *_a, **_k: False)
+    # filters out through the canonical project-cwd policy — a real workspace
+    # isn't temp. Treat the test project as a normal path so the global orphan
+    # walk includes it.
+    monkeypatch.setattr(_ap, "is_valid_project_cwd", lambda *_a, **_k: True)
 
     # A real project tree (sibling of records_root / fake_home) with one live md.
     proj_dir = tmp_path / "workspace" / "projA"

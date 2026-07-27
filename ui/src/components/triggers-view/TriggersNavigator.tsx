@@ -74,6 +74,7 @@ export function TriggersNavigator() {
   const descriptor: NavigatorDescriptor = useMemo(
     () => ({
       id: 'triggers',
+      search: { recordTypes: ['trigger'], scope: urlScope, placeholder: 'Search triggers…' },
       header: {
         title: 'Triggers',
         countBadge: triggers.length,

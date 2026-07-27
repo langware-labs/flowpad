@@ -3,7 +3,7 @@ import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import { useCallback, useMemo } from 'react';
 
 /**
- * List + create + delete `Comment` entities scoped to a markdown doc.
+ * List + create + update + delete `Comment` entities scoped to a markdown doc.
  *
  * Parent linkage is the canonical `parent_type_id` ("<type>-<id>") on the
  * comment itself, filtered client-side. We DO also pass the scope to
@@ -88,6 +88,19 @@ export function useDocComments(docTypeId: string | null | undefined) {
     [parentTypeId, parentKey, refetch],
   );
 
+  const updateComment = useCallback(
+    async (commentEntity: Comment, text: string): Promise<void> => {
+      if (!parentTypeId || !text.trim()) return;
+      // Mutate + save through the same generic entity path `addComment` uses; a
+      // saved remote comment's PUT reflects to the hub (store.save → Hub-Reflect),
+      // so the edit syncs to every participant. No bespoke action.
+      commentEntity.raw_content = text.trim();
+      await commentEntity.save(parentTypeId);
+      await refetch();
+    },
+    [parentTypeId, refetch],
+  );
+
   const deleteComment = useCallback(
     async (commentEntity: Comment): Promise<void> => {
       await commentEntity.delete();
@@ -96,5 +109,5 @@ export function useDocComments(docTypeId: string | null | undefined) {
     [refetch],
   );
 
-  return { comments, isLoading, error, addComment, deleteComment };
+  return { comments, isLoading, error, addComment, updateComment, deleteComment };
 }

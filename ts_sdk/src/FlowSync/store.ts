@@ -1,4 +1,3 @@
-import { decode, encode } from '@msgpack/msgpack';
 import { EventEmitter } from 'events';
 import { v4 as uuidv4 } from 'uuid';
 import { ApiError, isApiError } from '../ApiResponse';
@@ -8,6 +7,8 @@ import { IEntity } from '../IEntity';
 import { ActionInfo, BootstrapInfo, ScanInfo } from '../models';
 import { TypeId } from '../models/TypeId';
 import { dockOptionsToScopeFilter } from '../utils/scope-filter';
+import { isHubOnly } from '../utils/hub-runtime';
+import { isAbsoluteMachinePath } from '../utils/vfs-path';
 import { UserRole } from '../services/membershipService';
 import {
   ConnectionManager,
@@ -16,16 +17,15 @@ import {
   OAuthMessage,
   PtyOutputMessage,
   RestApiMessage,
-  TranscriptMessage,
 } from '../websocket';
 import { FlowData, FlowDataSource } from '../flow_processing';
 import { getUtmParams } from './auth';
+import { emitEntityTag } from './entity.onTag';
 import { ExpansionType } from './expand';
 import { EntityFactory } from '../schema/factory';
 import { SubscriptionMap, TypeIdMap, WatchMap, WatchQueryMap } from './map';
 import { ExpansionRequest, QueryRequest } from './query';
 import { ActionType, JSONSchemaParser, TypeInfo } from './schema';
-import { IStream, IStreamConfig, WSStream } from './stream';
 import { ptyOrphanBuffer } from '../services/shell/ptyOrphanBuffer';
 
 export enum EntityStatus {
@@ -62,7 +62,15 @@ class EntityRef<T> {
    */
   notFound: boolean = false;
   entityPendingPromises: PendingPromise<T>[] = [];
-  pendingUpdate: any = null;
+  /** Latest WS state received while an HTTP read/save owns this ref. */
+  pendingUpdate: IEntity | null = null;
+  /**
+   * Save serialization is independent of ``status``. Status is observable
+   * cache state and can be touched by reads/notifications; it must never be
+   * the mutex that decides whether two writes may overlap.
+   */
+  saveTail: Promise<void> = Promise.resolve();
+  saveInFlight: boolean = false;
 
   constructor(entity: T | null = null) {
     this.entity = entity;
@@ -91,7 +99,6 @@ export class DataManager<T extends Manageable> extends EventEmitter {
    * (icon/browseable_by/creatable/fields) and validation schemas.
    */
   typeInfos: { [type: string]: TypeInfo } = {};
-  streams: WSStream[] = [];
   saveIntervalMs: number = 5000;
   isPopupOpen = false;
   dataOpQueryInvalidation = false;
@@ -114,8 +121,6 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     manager.on('on_open', this.onConnectionOpen.bind(this));
     manager.on('on_close', this.onConnectionClose.bind(this));
     manager.on('on_data_op', this.onDataOp.bind(this));
-    manager.on('on_stream_msg', this.onStreamMessage.bind(this));
-    manager.on('on_bin_msg', this.onBinMessage.bind(this));
     manager.on('on_control_msg', this.onControlMessage.bind(this));
     manager.on('on_oauth_msg', this.onOAuthMessage.bind(this));
     manager.on('on_pty_output_msg', this.onPtyOutputMessage.bind(this));
@@ -126,8 +131,6 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     manager.off('on_open', this.onConnectionOpen.bind(this));
     manager.off('on_close', this.onConnectionClose.bind(this));
     manager.off('on_data_op', this.onDataOp.bind(this));
-    manager.off('on_stream_msg', this.onStreamMessage.bind(this));
-    manager.off('on_bin_msg', this.onBinMessage.bind(this));
     manager.off('on_control_msg', this.onControlMessage.bind(this));
     manager.off('on_oauth_msg', this.onOAuthMessage.bind(this));
     manager.off('on_pty_output_msg', this.onPtyOutputMessage.bind(this));
@@ -157,6 +160,16 @@ export class DataManager<T extends Manageable> extends EventEmitter {
   public iconForType(type: string): string | null {
     if (typeof type !== 'string') return null;
     return this.typeInfos[type.toLowerCase()]?.icon ?? null;
+  }
+
+  /**
+   * Single source of truth for a type's UX-friendly label — the backend-authored
+   * ``TypeInfo.display_name``. Null when unknown / unlabeled; callers fall back to
+   * ``humanizeType`` (see `labelForType` in the app).
+   */
+  public displayNameForType(type: string): string | null {
+    if (typeof type !== 'string') return null;
+    return this.typeInfos[type.toLowerCase()]?.display_name ?? null;
   }
 
   /**
@@ -205,6 +218,12 @@ export class DataManager<T extends Manageable> extends EventEmitter {
   }
 
   async refreshScanInfo(): Promise<void> {
+    // Hub mode: the hub backend has no local fs-records `/index-status` (404).
+    // Seed an empty (idle, never-indexed) scan info instead of round-tripping.
+    if (isHubOnly()) {
+      this.setScanInfo({ total_indexed: 0, last_indexed_at: null, never_indexed: true, stale: false });
+      return;
+    }
     try {
       const raw = await apiClient.get<any>('/graph/compute_node/@local/fs-records/index-status');
       this.setScanInfo({
@@ -266,84 +285,6 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     // Do not call connect() here — a second caller races with ConnectionManager
     // and creates duplicate WebSocket instances (same connection_id, two sockets).
   }
-  public async createStream(config: IStreamConfig): Promise<WSStream | null> {
-    const connection_manager = ConnectionManager.getInstance();
-    if (!connection_manager.connected) {
-      console.warn('Connection not established, can not create stream');
-      return null;
-    }
-    const actionInfo = new ActionInfo('ws_stream');
-    actionInfo.method = 'POST';
-    actionInfo.bodyParameters = { stream_info: config };
-    const iStream = await this.callAction<any, IStream>(actionInfo);
-    iStream.config = config;
-    const stream = new WSStream(iStream);
-    if (this.streams[iStream.id]) {
-      console.warn('Stream already exists', iStream.id);
-    }
-    stream.on('ON_SEND', async (data: Blob) => {
-      const socket = connection_manager.getSocket();
-      if (!socket) {
-        console.warn('Socket not found, can not send stream data');
-        return;
-      }
-      const dataBuffer = new Uint8Array(await data.arrayBuffer());
-      const msg = encode([iStream.id, dataBuffer]);
-      socket.send(msg);
-    });
-    stream.on('ON_CLOSE', async () => {
-      await this.closeStream(iStream.id);
-    });
-    this.streams[iStream.id] = stream;
-    return stream;
-  }
-  public async closeStream(stream_id: number) {
-    const actionInfo = new ActionInfo('delete_ws_stream');
-    actionInfo.method = 'DELETE';
-    actionInfo.queryParameters = { stream_id };
-    await this.callAction<any, any>(actionInfo);
-    this.streams.splice(stream_id, 1);
-  }
-
-  private async onBinMessage(data: ArrayBuffer) {
-    if (!data) {
-      console.warn('Stream bin message is empty', data);
-      return;
-    }
-    // const arrayBuffer = new Uint8Array(await data.arrayBuffer());
-    const decoded = decode(data);
-    if (!decoded || !Array.isArray(decoded) || decoded.length < 2) {
-      console.warn('Stream bin message is invalid', decoded);
-      return;
-    }
-    const stream_id = decoded[0];
-    const stream = this.streams[stream_id];
-    if (!stream) {
-      console.warn('Stream not found on binary message', data);
-    }
-    // const byteArray = decoded[1]
-    // let byteString = '';
-    // for (let i = 0; i < byteArray.length; i++) {
-    //   byteString += byteArray[i].toString(16).padStart(2, '0') + ' ';
-    // }
-    await stream.handleBinMessage(decoded[1]);
-  }
-
-  private async onStreamMessage(data: TranscriptMessage) {
-    if (!data) {
-      console.warn('Stream message is empty', data);
-      return;
-    }
-    if (!data.stream_id) {
-      console.warn('Stream ID is empty', data);
-    }
-    const stream = this.streams[data.stream_id];
-    if (!stream) {
-      console.warn('Stream not found', data);
-    }
-    await stream.handleMessage(data);
-  }
-
   private onControlMessage(data: ControlMessage) {
     this.isPopupOpen = data.state;
   }
@@ -438,6 +379,9 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       console.warn(`Data op messages ignored, Entity constructor not found for type: ${typeId.type}`);
       return;
     }
+    // Bus wake-up BEFORE the branchy cache handling below: several branches
+    // early-return (uncached update, in-flight buffer) and must still emit.
+    emitEntityTag(typeId, op, data ?? null);
     // Handle delete operation by removing from all query results
     if (op === 'delete') {
       this.watchedQueries.removeEntityFromResults(typeId.type, typeId);
@@ -476,12 +420,30 @@ export class DataManager<T extends Manageable> extends EventEmitter {
           void this._query(watchedQuery.request).then((queryResult) => {
             watchedQuery.updateResults(queryResult);
           });
+        } else if (matches && inResults) {
+          // Field update on a row already IN the results: the cache merge below
+          // (castAndDeepAssign) mutates the very object held in `results`, so
+          // the data is fresh — but without a notify the subscribers never
+          // re-render and the value stays stale-in-React (e.g. the `activate`
+          // recency stamp never reordering a live list). Local, no network —
+          // the symmetric completion of the splice branch above.
+          watchedQuery.notifyCallbacks();
         }
       }
     }
 
     switch (op) {
       case 'create': {
+        const existingRef = this.entities.get(typeId);
+        if (existingRef && (existingRef.saveInFlight || existingRef.status === EntityStatus.FETCHING)) {
+          // An in-flight save OR GET owns this ref (same guard as the 'update'
+          // branch). Applying the create now would let a slower GET response
+          // (whose body predates the create) merge back on top and erase it.
+          // Buffer instead; fetchByTypeId/save flush it via applyPendingUpdate
+          // once the request resolves, so the create's fields win.
+          this.bufferPendingUpdate(existingRef, data);
+          break;
+        }
         const entity = this.castAndDeepAssign(data);
         this.register_new_entity(typeId, entity);
         this._notifyAllAliases(typeId, entity, entity);
@@ -492,9 +454,11 @@ export class DataManager<T extends Manageable> extends EventEmitter {
           return;
         }
         const ref = this.getRef(typeId);
-        if (!ref.entity) {
-          // Entity fetch is in-flight — buffer the update; fetchByTypeId will apply it on completion
-          ref.pendingUpdate = data;
+        if (ref.saveInFlight || ref.status === EntityStatus.FETCHING || !ref.entity) {
+          // An HTTP read/save owns this ref. Buffer the update and leave the
+          // status FETCHING: marking READY here lets a later save overlap the
+          // active request, while merging now lets an older response erase it.
+          this.bufferPendingUpdate(ref, data);
           return;
         }
         ref.entity = this.castAndDeepAssign(data);
@@ -513,6 +477,21 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       }
     }
     this.resolvePendingRequests();
+  }
+
+  private bufferPendingUpdate(ref: EntityRef<T>, data: IEntity): void {
+    // DataOps are normally full entities, but merging also preserves fields
+    // when a producer sends a partial update. Later arrivals win per field.
+    ref.pendingUpdate = ref.pendingUpdate ? { ...ref.pendingUpdate, ...data } : { ...data };
+  }
+
+  private applyPendingUpdate(typeId: TypeId, ref: EntityRef<T>): boolean {
+    if (!ref.pendingUpdate || !ref.entity) return false;
+    const pending = ref.pendingUpdate;
+    ref.pendingUpdate = null;
+    ref.entity = this.castAndDeepAssign(pending);
+    this._notifyAllAliases(typeId, ref.entity, ref.entity);
+    return true;
   }
 
   async saveAllDirty() {
@@ -748,31 +727,53 @@ export class DataManager<T extends Manageable> extends EventEmitter {
         // `name` — both for entities with no display override and for plain
         // cached rows that have no `displayName` getter.
         const ent = this.getByTypeIdFromCache(tid) as
-          | { displayName?: string | null; name?: string | null }
+          | { displayName?: string | null; name?: string | null; hasSyntheticDisplayName?: boolean }
           | null;
+        // Never adopt the `<type>-<id>` synthetic as a tab name: returning it here
+        // would freeze `agentic_process-<id>` into the durable `Tab.name` (backfill
+        // only heals a NULL name). Fall back to null so the chip shows the provider
+        // label until a real name is stamped onto the entity (backend
+        // `stamp_default_name`), which then flows through `displayName`.
+        if (ent?.hasSyntheticDisplayName) return null;
         return (ent?.displayName ?? ent?.name) ?? null;
       } catch {
         return null;
       }
     };
-    // Assets is a single scope-keyed tab — its STORED title follows the SCOPE,
-    // not the (in-tab) sub-pointer: single project → "<project>'s Assets"; user
-    // → "My Assets"; global / all / multi-select → null (chip falls back to the
-    // registry "Assets" title). Runs before the empty-pointer guard because a
-    // scoped assets dock normalizes its pointer to ''. (The strip overlays the
-    // ACTIVE assets tab with the focused asset's own name + icon at render time
-    // — see `useTabStripItems` — so this scope title shows for inactive tabs.)
-    if (dock?.viewType === 'assets') {
+    // A scope-keyed browser (Assets, Explorer) is a single tab per scope — its
+    // STORED title follows the SCOPE, not the (in-tab) sub-pointer: single
+    // project → "<project>'s Assets"/"…'s Files"; user → "My Assets"/"My Files";
+    // global / all / multi-select → null (chip falls back to the registry
+    // title). Runs before the empty-pointer guard because a scoped dock
+    // normalizes its pointer to ''. (The strip overlays the ACTIVE assets tab
+    // with the focused asset's own name + icon at render time — see
+    // `useTabStripItems` — so this scope title shows for inactive tabs.)
+    if (dock?.viewType === 'assets' || dock?.viewType === 'explorer') {
+      const noun = dock.viewType === 'assets' ? 'Assets' : 'Files';
       const scope = dockOptionsToScopeFilter(dock.options);
       if (scope?.mode === 'project' && scope.activeProjectId) {
         const name = nameFromCache('project', scope.activeProjectId);
-        return name ? `${name}'s Assets` : 'Assets';
+        return name ? `${name}'s ${noun}` : noun;
       }
-      if (scope?.mode === 'user') return 'My Assets';
+      if (scope?.mode === 'user') return `My ${noun}`;
+      return null;
+    }
+    // The Desktop is scope-keyed too: a project-scoped desktop chip is named
+    // "<project> Desktop"; the global/user desktop falls back to the registry
+    // title ("Desktop").
+    if (dock?.viewType === 'desktop') {
+      const scope = dockOptionsToScopeFilter(dock.options);
+      if (scope?.mode === 'project' && scope.activeProjectId) {
+        const name = nameFromCache('project', scope.activeProjectId);
+        return name ? `${name} Desktop` : null;
+      }
       return null;
     }
     const pointer = dock?.pointer ?? '';
     if (!pointer) return null;
+    if (dock?.viewType === 'diff' && pointer.startsWith('asset-compare/')) {
+      return 'Asset compare';
+    }
     const lastSegment = (path: string): string | null =>
       decodeURIComponent(path).split('/').filter(Boolean).pop() ?? null;
     // 1. entity — asset-editor typeid form, a bare `<type>-<id>` pointer, or a
@@ -917,10 +918,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     ref.status = EntityStatus.READY;
 
     // Apply any update that arrived via WebSocket while the GET was in-flight
-    if (ref.pendingUpdate) {
-      ref.entity = this.castAndDeepAssign(ref.pendingUpdate);
-      ref.pendingUpdate = null;
-    }
+    this.applyPendingUpdate(typeId, ref);
 
     return ref.entity as U | null;
   }
@@ -1037,15 +1035,39 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     })) as any;
   }
 
-  public async save<U extends T>(selfTypeId: TypeId, scope: TypeId[] = []): Promise<U> {
+  public async save<U extends T>(selfTypeId: TypeId, scope: TypeId[] = [], entityJson?: IEntity): Promise<U> {
     const ref = this.entities.get(selfTypeId);
     if (!ref) {
       throw new Error('Can not create, Entity not defined');
     }
-    // Serialize on any in-flight request for this ref. A loop, not a single
-    // await: a concurrent save() can flip the ref back to FETCHING between our
-    // wake-up and our own status check. A rejection belongs to the *other*
-    // request — this save is a fresh attempt, so swallow it and re-check.
+    const entity = ref.entity;
+    if (!entity) {
+      throw new Error('Can not create, Empty ref entity');
+    }
+    // APIEntity supplies a snapshot captured at its save() call. Keep the
+    // fallback for internal callers such as saveAllDirty, and clone either
+    // form before enqueueing so no caller can mutate a queued payload.
+    const capturedJson = JSON.parse(JSON.stringify(entityJson ?? entity.toJSON())) as IEntity;
+    const capturedScope = [...scope];
+
+    const operation = ref.saveTail.then(() => this.saveSnapshot<U>(ref, selfTypeId, capturedScope, capturedJson));
+    // A failed write rejects its own caller but must not poison the queue.
+    ref.saveTail = operation.then(
+      () => undefined,
+      () => undefined,
+    );
+    return await operation;
+  }
+
+  private async saveSnapshot<U extends T>(
+    ref: EntityRef<T>,
+    selfTypeId: TypeId,
+    scope: TypeId[],
+    entityJson: IEntity,
+  ): Promise<U> {
+    // A GET/refresh may already own the ref. Save ordering itself is handled
+    // by saveTail above; this loop only preserves the existing read-vs-write
+    // exclusion contract.
     while (ref.status === EntityStatus.FETCHING) {
       await this.waitForTypeId(selfTypeId).catch(() => {});
     }
@@ -1054,7 +1076,6 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     if (!entity) {
       throw new Error('Can not create, Empty ref entity');
     }
-    const entityJson = entity.toJSON();
     const entityType = entity.typeId.type;
     if (!entityType) {
       throw new Error('Can not create, Entity type not found');
@@ -1063,10 +1084,11 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     for (const parent_type_id of scope) {
       scope_path = `${scope_path}/${parent_type_id.type}/${parent_type_id.id}`;
     }
+    ref.saveInFlight = true;
+    ref.status = EntityStatus.FETCHING;
     try {
       let newEntityJson: IEntity | null = null;
       if (!entity.saved) {
-        ref.status = EntityStatus.FETCHING;
         const endpoint = `${GRAPH_API_PREFIX}${scope_path}/${entity.typeId.type}`;
         newEntityJson = (await apiClient.post<IEntity>(endpoint, entityJson)) as IEntity;
       } else {
@@ -1077,7 +1099,6 @@ export class DataManager<T extends Manageable> extends EventEmitter {
         if (!entity.typeId.id) {
           throw new Error('Entity missing id on ref');
         }
-        ref.status = EntityStatus.FETCHING;
         const endpoint = `${GRAPH_API_PREFIX}${scope_path}/${entity.typeId.type}/${entity.typeId.id}`;
         // A remote entity's save reflects to the hub: the server forwards the PUT,
         // merges the hub's authoritative response (incl. server times) back onto the
@@ -1091,6 +1112,9 @@ export class DataManager<T extends Manageable> extends EventEmitter {
         throw new Error('No data returned');
       }
       ref.entity = this.castAndDeepAssign(newEntityJson);
+      // A WS update may have arrived after the request began. Apply it after
+      // the HTTP snapshot so the older response cannot erase newer state.
+      this.applyPendingUpdate(selfTypeId, ref);
       ref.status = EntityStatus.READY;
       ref.error = null;
       if (ref.entity) {
@@ -1104,8 +1128,16 @@ export class DataManager<T extends Manageable> extends EventEmitter {
         ref.error = error;
         console.log(error.stack);
       }
+      // Preserve an authoritative update even when the HTTP transport failed.
+      // The save promise still rejects, but the cache no longer discards WS
+      // state that arrived while the request was active.
+      if (this.applyPendingUpdate(selfTypeId, ref)) {
+        ref.status = EntityStatus.READY;
+        ref.error = null;
+      }
       throw error;
     } finally {
+      ref.saveInFlight = false;
       this.resolvePendingRequests();
     }
   }
@@ -1158,13 +1190,15 @@ export class DataManager<T extends Manageable> extends EventEmitter {
 
     const endpoint = actionInfo.actionUrl;
 
-    let requestConfig: any = undefined;
+    let requestConfig: any = actionInfo.abortSignal
+      ? { signal: actionInfo.abortSignal }
+      : undefined;
     if (actionInfo.isRawResponse) {
       requestConfig = {
+        ...(requestConfig ?? {}),
         transformResponse: (data: any) => {
           return { data };
         },
-        signal: actionInfo.abortSignal || undefined,
         responseType: actionInfo.responseType || undefined,
       };
     }
@@ -1347,13 +1381,37 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       for (const parent_type_id of scope) {
         const parent_ref = this.entities.get(parent_type_id);
         if (parent_ref && parent_ref.entity && !parent_ref.entity.saved) {
-          return [];
+          try {
+            await this.fetchByTypeId(parent_type_id);
+          } catch (error) {
+            const httpStatus =
+              (error as { response?: { status?: number }; status?: number })?.response?.status ??
+              (error as { status?: number })?.status;
+            if (httpStatus === 404) {
+              parent_ref.status = EntityStatus.ERROR;
+              parent_ref.notFound = true;
+              return [];
+            }
+            throw error;
+          }
+          const refreshedParent = this.getByTypeIdFromCache(parent_type_id);
+          if (refreshedParent && !refreshedParent.saved) {
+            return [];
+          }
         }
       }
 
       let apiQuery: any = {};
       if (query) {
         apiQuery = query.toJSON();
+      }
+      // Blob-carrying types (comment.raw_content, …) serve their blob fields
+      // only under expand=blobs — without this, a scoped query returns rows
+      // with EMPTY bodies (a receiver's synced comment renders "(empty)" in
+      // the gutter; the author only sees text via their in-memory copy).
+      // Mirrors getLoadingExpansions' hasBlobs rule on the by-id load path.
+      if (!apiQuery.expand && this.getSchema(type)?.hasBlobs) {
+        apiQuery.expand = 'blobs';
       }
       let scope_path = '';
       for (const parent_type_id of scope) {
@@ -1563,6 +1621,21 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     if (cachedSource) {
       source.expand = this.mergeExpansions(cachedSource.expand, source.expand);
 
+      // Collision occurrences are a complete backend projection. They must
+      // replace the cached array: deepAssign merges arrays by index and would
+      // otherwise retain deleted trailing paths after a 3 -> 2 -> 1 update.
+      let assignSource = source;
+      if (Array.isArray(source.asset_occurrences)) {
+        cachedSource.asset_occurrences = source.asset_occurrences.map(
+          (occurrence: unknown) =>
+            occurrence && typeof occurrence === 'object'
+              ? { ...(occurrence as Record<string, unknown>) }
+              : occurrence,
+        );
+        const { asset_occurrences: _assetOccurrences, ...rest } = source;
+        assignSource = rest;
+      }
+
       const maybeOnEntityUpdate = (cachedSource as any).onEntityUpdate;
       const hasEntityUpdateHook = typeof maybeOnEntityUpdate === 'function';
       if (hasEntityUpdateHook) {
@@ -1575,11 +1648,11 @@ export class DataManager<T extends Manageable> extends EventEmitter {
 
       // When entities provide their own update hook, avoid clobbering normalized
       // state fields with raw snake_case payloads.
-      if (hasEntityUpdateHook && source && typeof source === 'object' && 'state' in source) {
-        const { state: _ignoredState, ...rest } = source;
+      if (hasEntityUpdateHook && assignSource && typeof assignSource === 'object' && 'state' in assignSource) {
+        const { state: _ignoredState, ...rest } = assignSource;
         this.deepAssign(cachedSource, rest);
       } else {
-        this.deepAssign(cachedSource, source);
+        this.deepAssign(cachedSource, assignSource);
       }
       // ``deepAssign`` re-adds the raw ``shared_context_entities`` /
       // ``private_context_entities`` string arrays without the constructor's
@@ -1615,11 +1688,17 @@ export class DataManager<T extends Manageable> extends EventEmitter {
    * recovery, no discovery scan, no indexing — returns the entity or null.
    * The cheap path→entity conversion (e.g. minting a vfs asset tab's project);
    * `systemTools.discoverByPath` is the heavy recovery counterpart, used only by
-   * the editor view on a bulk miss. Hydrates + caches the hit via the standard
+   * the editor view on a miss. Hydrates + caches the hit via the standard
    * dedup path.
+   *
+   * Accepts both machine-absolute paths and slash-less VFS sub-paths: stored
+   * `asset_ref` is the machine-absolute form, so a relative-looking path is
+   * prefixed with `/` here — the single choke point — rather than at each
+   * call site.
    */
   public async getEntityByPath<U extends T>(path: string): Promise<U | null> {
-    const json = await apiClient.get<any>('/assets/entity', { params: { path } }).catch(() => null);
+    const machine = isAbsoluteMachinePath(path) ? path : `/${path}`;
+    const json = await apiClient.get<any>('/assets/entity', { params: { path: machine } }).catch(() => null);
     if (!json) return null;
     return this.updateEntityFromJson<U>(json);
   }

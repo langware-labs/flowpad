@@ -7,8 +7,10 @@ asserts the descriptor list attribution matches the plan's source matrix.
 
 from __future__ import annotations
 
+import json
 import uuid
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -17,6 +19,7 @@ from flow_sdk.builtin.agentic_process import AgenticProcess
 from flow_sdk.builtin.agentic_process.agentic_process import (
     AssetDescriptor,
     AssetSource,
+    AssetUsageKind,
     READONLY_ASSET_SOURCES,
     is_readonly_source,
 )
@@ -144,6 +147,106 @@ def _by_source(descriptors: list[AssetDescriptor], source: AssetSource) -> list[
     return [d for d in descriptors if d.source == source]
 
 
+def _usage_kinds(descriptor: AssetDescriptor) -> set[AssetUsageKind]:
+    return {u.kind for u in descriptor.usage}
+
+
+def _file_read(path: str | Path, entry_id: str = "entry-read-1"):
+    from flow_sdk.transcript_analyzer.entries.file_read import FileReadEntry
+
+    return FileReadEntry(
+        id=f"{entry_id}:id",
+        session_id="session-usage",
+        timestamp="2026-07-11T00:00:00Z",
+        worker="claude",
+        entry_id=entry_id,
+        tool_name="Read",
+        path=str(path),
+    )
+
+
+def _stub_transcript(monkeypatch, entries: list) -> None:
+    """Stub ``_load_transcript`` with a fixed entry list.
+
+    The fake exposes the same ``filter(kind=…)`` selector the real
+    ``AgentTranscriptFile`` does, since usage attribution consumes entries
+    through it.
+    """
+
+    def _filter(*, kind=None, tool_name=None):
+        for e in entries:
+            if kind is not None and getattr(e, "kind", None) is not kind:
+                continue
+            yield e
+
+    fake = SimpleNamespace(entries=entries, filter=_filter)
+    monkeypatch.setattr(
+        AgenticProcess,
+        "_load_transcript",
+        lambda self, descriptor=None: fake,
+        raising=False,
+    )
+
+
+# ── Real-transcript harness ───────────────────────────────────────────────────
+# Author a genuine Claude session JSONL on disk and parse it through the REAL
+# analyzer (``AgentTranscriptFile`` via ``_load_transcript``). Nothing about the
+# parse or the usage attribution is mocked — only the transcript's *location* is
+# injected, which in production is the driver's session-id→path lookup. This is
+# what lets these tests catch bugs that fabricated ``FileReadEntry`` objects hide:
+# the entry *kinds* the parser actually emits are what's under test.
+
+
+def _claude_line(*, role: str, blocks: list, uid: str, parent: str | None = None) -> dict:
+    """One Claude JSONL envelope line (``assistant``/``user``)."""
+    return {
+        "type": role,
+        "uuid": uid,
+        "parentUuid": parent,
+        "sessionId": "session-usage",
+        "timestamp": "2026-07-14T00:00:00.000Z",
+        "cwd": "/tmp",
+        "version": "2.1.209",
+        "message": {"role": role, "content": blocks},
+    }
+
+
+def _skill_block(skill_slug: str) -> dict:
+    """A native ``Skill`` tool_use block — how Claude records ``/<skill>``.
+
+    Parses to a ``SkillCallEntry`` (skill_name=slug) and, crucially, produces
+    NO file read of the skill folder.
+    """
+    return {"type": "tool_use", "id": "toolu_skill_1", "name": "Skill", "input": {"skill": skill_slug, "args": ""}}
+
+
+def _read_block(path: str | Path) -> dict:
+    """A ``Read`` tool_use block — parses to a ``FileReadEntry(path=…)``."""
+    return {"type": "tool_use", "id": "toolu_read_1", "name": "Read", "input": {"file_path": str(path)}}
+
+
+def _write_claude_transcript(path: Path, lines: list[dict]) -> Path:
+    path.write_text("\n".join(json.dumps(line) for line in lines) + "\n")
+    return path
+
+
+def _real_transcript(monkeypatch, jsonl_path: Path) -> None:
+    """Point the process at a real on-disk Claude JSONL, parsed for real."""
+    from flow_sdk.transcript_analyzer import (
+        TranscriptDescriptor,
+        TranscriptFormat,
+        TranscriptSource,
+    )
+
+    desc = TranscriptDescriptor(
+        path=jsonl_path,
+        format=TranscriptFormat.CLAUDE_JSONL,
+        source=TranscriptSource.WORKER_SESSION,
+        session_id="session-usage",
+    )
+    monkeypatch.setattr(AgenticProcess, "transcript", property(lambda self: desc))
+
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
@@ -211,7 +314,10 @@ async def test_inline_persona_descriptor(tree):
     proc = _make_proc(cli_config={"agents_json": {"inline_helper": {"description": "x"}}})
     descs = await proc.get_asset_descriptors()
     inline = _by_source(descs, AssetSource.INLINE)
-    assert any(d.typeid == "agent-inline_helper" and d.posix_path is None for d in inline)
+    match = next((d for d in inline if d.typeid == "agent-inline_helper"), None)
+    assert match is not None
+    assert match.posix_path is None
+    assert AssetUsageKind.INLINE_PERSONA in _usage_kinds(match)
 
 
 @pytest.mark.asyncio
@@ -284,6 +390,138 @@ async def test_inline_fallback_to_embedded_agent_ids(tree):
     descs = await proc.get_asset_descriptors()
     inline = _by_source(descs, AssetSource.INLINE)
     assert any(d.typeid == "agent-legacy_persona" for d in inline)
+
+
+AGENT_MD = """---
+name: {name}
+description: test persona
+---
+
+You are a test persona.
+"""
+
+
+def _write_agent_md(path: Path, name: str) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(AGENT_MD.format(name=name))
+    return path
+
+
+@pytest.mark.asyncio
+async def test_inline_legacy_name_resolves_to_entity_id(tree):
+    """A legacy embedded_agent_ids NAME whose materialized .md exists resolves
+    to the real entity uuid (openable typeid) with the materialized path."""
+    from flow_sdk.fs_store.fs_ref import FSRef
+    from flow_sdk.fs_store.indexer.functions.agent import agent_peek_entity_id
+    from flow_sdk.fs_store.record_types import RecordType
+
+    proc = _make_proc()
+    assets_dir = await proc._assets_dir_path()
+    md = _write_agent_md(assets_dir / ".claude" / "agents" / "legacy_vibe.md", "legacy_vibe")
+    proc.embedded_agent_ids = ["legacy_vibe"]
+
+    descs = await proc.get_asset_descriptors()
+    inline = _by_source(descs, AssetSource.INLINE)
+    expected_id = agent_peek_entity_id(FSRef(md, record_type=RecordType.AGENT))
+    match = [d for d in inline if d.typeid == f"agent-{expected_id}"]
+    assert match, inline
+    assert match[0].posix_path == canonical_posix_path(md)
+    # The raw name-form must be gone.
+    assert not any(d.typeid == "agent-legacy_vibe" for d in inline)
+
+
+@pytest.mark.asyncio
+async def test_inline_resolved_dedups_against_embedded(tree):
+    """A legacy name that resolves to an entity id already in
+    embedded_asset_refs collapses into the EMBEDDED row (no INLINE dup)."""
+    from flow_sdk.api.api_types.type_id import TypeId
+    from flow_sdk.fs_store.fs_ref import FSRef
+    from flow_sdk.fs_store.indexer.functions.agent import agent_peek_entity_id
+    from flow_sdk.fs_store.record_types import RecordType
+
+    proc = _make_proc()
+    assets_dir = await proc._assets_dir_path()
+    md = _write_agent_md(assets_dir / ".claude" / "agents" / "dup_vibe.md", "dup_vibe")
+    entity_id = agent_peek_entity_id(FSRef(md, record_type=RecordType.AGENT))
+    proc.embedded_asset_refs = [TypeId(f"agent-{entity_id}")]
+    proc.embedded_agent_ids = ["dup_vibe"]
+
+    descs = await proc.get_asset_descriptors()
+    matching = [d for d in descs if d.typeid == f"agent-{entity_id}"]
+    sources = {d.source for d in matching}
+    assert AssetSource.EMBEDDED in sources
+    assert AssetSource.INLINE not in sources
+
+
+@pytest.mark.asyncio
+async def test_load_embedded_agent_action_records_entity_ref(tree, tmp_path):
+    """load_embedded_agent_action persists the agent's ENTITY ref (uuid form)
+    in embedded_asset_refs — not a name in embedded_agent_ids — and the
+    descriptor comes out EMBEDDED + openable. A legacy name entry for the
+    same agent is migrated away on touch."""
+    import types
+
+    from flow_sdk.fs_store.fs_ref import FSRef
+    from flow_sdk.fs_store.indexer.functions.agent import agent_peek_entity_id
+    from flow_sdk.fs_store.record_types import RecordType
+
+    src = _write_agent_md(tmp_path / "src_agents" / "fresh_vibe.md", "fresh_vibe")
+    proc = _make_proc()
+    proc.embedded_agent_ids = ["fresh_vibe"]  # legacy leftover → must migrate away
+
+    saved: list[None] = []
+    async def _fake_save(self):
+        saved.append(None)
+        return self
+    object.__setattr__(proc, "save", types.MethodType(_fake_save, proc))
+
+    res = await proc.load_embedded_agent_action(asset_ref=str(src))
+    assert res.status == "SUCCESS", res
+    assert saved
+
+    expected_id = agent_peek_entity_id(FSRef(src, record_type=RecordType.AGENT))
+    refs = [str(r) for r in proc.embedded_asset_refs]
+    assert refs == [f"agent-{expected_id}"]
+    assert res.data["ref"] == f"agent-{expected_id}"
+    assert proc.embedded_agent_ids == []
+
+    assets_dir = await proc._assets_dir_path()
+    assert (assets_dir / ".claude" / "agents" / "fresh_vibe.md").is_file()
+
+    descs = await proc.get_asset_descriptors()
+    matching = [d for d in descs if d.typeid == f"agent-{expected_id}"]
+    assert matching and all(d.source == AssetSource.EMBEDDED for d in matching)
+
+    # Idempotent: re-attach doesn't duplicate the ref.
+    await proc.load_embedded_agent_action(asset_ref=str(src))
+    assert [str(r) for r in proc.embedded_asset_refs] == [f"agent-{expected_id}"]
+
+
+def test_agent_peek_entity_id_reads_capsule_without_writing(tmp_path):
+    """agent_peek_entity_id never writes the source file. Under capsule-v4 it
+    cannot predict a not-yet-minted random v4 (the documented asymmetry), but
+    once gen_id has stamped the v4 into the frontmatter capsule, peek reads and
+    returns that same id. An already-adopted frontmatter UUID wins on both."""
+    from flow_sdk.fs_store.fs_ref import FSRef
+    from flow_sdk.fs_store.identifier import is_valid_entity_id
+    from flow_sdk.fs_store.indexer.functions.agent import agent_peek_entity_id
+    from flow_sdk.fs_store.record_types import RecordType
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry
+
+    md = _write_agent_md(tmp_path / "peek_agent.md", "peeky")
+    before = md.read_bytes()
+    peeked = agent_peek_entity_id(FSRef(md, record_type=RecordType.AGENT))
+    assert md.read_bytes() == before, "peek must not write"
+    assert is_valid_entity_id(peeked)
+    # gen_id stamps a fresh v4 into the frontmatter capsule; peek then reads it.
+    minted = SchemaRegistry.get("agent").mint_id(FSRef(md, record_type=RecordType.AGENT))
+    assert uuid.UUID(minted).version == 4
+    assert agent_peek_entity_id(FSRef(md, record_type=RecordType.AGENT)) == minted
+
+    adopted = str(uuid.uuid4())
+    md2 = tmp_path / "adopted_agent.md"
+    md2.write_text(f"---\nid: {adopted}\nname: adoptee\n---\n\nBody.\n")
+    assert agent_peek_entity_id(FSRef(md2, record_type=RecordType.AGENT)) == adopted
 
 
 # ── Missing-coverage tests added per debugMCP-validation review ──────────────
@@ -360,6 +598,186 @@ async def test_embedded_materialized_path_layout(tree, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_embedded_descriptor_is_marked_used_without_file_read(tree, monkeypatch):
+    """Vibe-style embedded personas are process-active even when the transcript
+    never contains a Read of the agent markdown."""
+    from flow_sdk.api.api_types.type_id import TypeId
+
+    async def _fake_path_for(self, ref, assets_dir):
+        return assets_dir / ".claude" / "agents" / "vibe.md"
+
+    monkeypatch.setattr(AgenticProcess, "_materialized_path_for", _fake_path_for)
+    _stub_transcript(monkeypatch, [])
+
+    proc = _make_proc(embedded_asset_refs=[
+        TypeId("agent-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+    ])
+    descs = await proc.get_asset_descriptors()
+    embedded = _by_source(descs, AssetSource.EMBEDDED)
+    assert len(embedded) == 1
+    assert embedded[0].posix_path.endswith("/.claude/agents/vibe.md")
+    assert AssetUsageKind.EMBEDDED_ASSET in _usage_kinds(embedded[0])
+
+
+@pytest.mark.asyncio
+async def test_file_read_marks_matching_asset_used(tree, monkeypatch):
+    _stub_transcript(monkeypatch, [_file_read(tree["paths"]["e_agent"])])
+
+    proc = _make_proc(additional_dirs=[str(tree["extra_dir"])])
+    descs = await proc.get_asset_descriptors()
+    extra = _by_source(descs, AssetSource.ADDITIONAL_DIR)
+    match = next(d for d in extra if d.typeid == f"agent-{tree['ents']['e_agent'].id}")
+
+    assert AssetUsageKind.TRANSCRIPT_FILE_READ in _usage_kinds(match)
+    usage = next(u for u in match.usage if u.kind == AssetUsageKind.TRANSCRIPT_FILE_READ)
+    assert usage.path == canonical_posix_path(tree["paths"]["e_agent"])
+    assert usage.entry_id == "entry-read-1"
+
+
+@pytest.mark.asyncio
+async def test_folder_backed_skill_file_read_marks_skill_used(tree, tmp_path, monkeypatch):
+    """Read-discovered skills (Codex-style, or any run that reads ``SKILL.md``)
+    are marked used.
+
+    Refined from a fabricated ``FileReadEntry`` to a REAL Claude JSONL parsed
+    through the analyzer, so the parse→attribute seam is actually exercised —
+    a hand-built entry proved the model of the read, not the read itself.
+    """
+    skill_md = tree["paths"]["u_skill_user"] / "SKILL.md"
+    skill_md.write_text("# u_skill\n")
+    jsonl = _write_claude_transcript(
+        tmp_path / "skill_read.jsonl",
+        [
+            _claude_line(role="user", blocks=[{"type": "text", "text": "read it"}], uid="u1"),
+            _claude_line(role="assistant", blocks=[_read_block(skill_md)], uid="a1", parent="u1"),
+        ],
+    )
+    _real_transcript(monkeypatch, jsonl)
+
+    proc = _make_proc()
+    descs = await proc.get_asset_descriptors()
+    user_descs = _by_source(descs, AssetSource.USER_DIR)
+    match = next(d for d in user_descs if d.typeid == f"skill-{tree['ents']['u_skill_user'].id}")
+
+    assert AssetUsageKind.TRANSCRIPT_FILE_READ in _usage_kinds(match)
+    usage = next(u for u in match.usage if u.kind == AssetUsageKind.TRANSCRIPT_FILE_READ)
+    assert usage.path == canonical_posix_path(skill_md)
+
+
+@pytest.mark.asyncio
+async def test_native_skill_invocation_marks_skill_used(tree, tmp_path, monkeypatch):
+    """A skill run via the native ``Skill`` tool (Claude ``/rca``) must be marked
+    used in the asset view — even though it produces NO ``SKILL.md`` file read.
+
+    Regression for the real ``054a161c`` transcript: the process invoked ``rca``
+    through the Skill tool, so the parsed transcript holds a ``SkillCallEntry``
+    and ZERO reads of the skill folder. Usage attribution keyed only off
+    ``FileReadEntry`` (``_transcript_file_reads`` → ``_annotate_asset_usage``)
+    therefore left ``rca`` unmarked, and the Asset Manager popover's ``used``
+    badge (``assetDescriptorHasUsage`` = ``usage.length > 0``) stayed off.
+
+    Drives a real Claude JSONL through the analyzer so the ``SkillCallEntry`` is
+    produced for real — no fabricated entry, no mocked parser.
+    """
+    jsonl = _write_claude_transcript(
+        tmp_path / "native_skill.jsonl",
+        [
+            _claude_line(role="user", blocks=[{"type": "text", "text": "/u_skill do it"}], uid="u1"),
+            _claude_line(role="assistant", blocks=[_skill_block("u_skill")], uid="a1", parent="u1"),
+        ],
+    )
+    _real_transcript(monkeypatch, jsonl)
+
+    proc = _make_proc()
+    descs = await proc.get_asset_descriptors()
+    user_descs = _by_source(descs, AssetSource.USER_DIR)
+    match = next(d for d in user_descs if d.typeid == f"skill-{tree['ents']['u_skill_user'].id}")
+
+    # The asset view marks a skill used iff descriptor.usage is non-empty
+    # (assetDescriptorHasUsage). A native Skill-tool invocation must satisfy it.
+    assert match.usage, (
+        "skill invoked via the native Skill tool is not marked used — "
+        "usage attribution ignores SkillCallEntry, only FileReadEntry counts"
+    )
+
+
+@pytest.mark.asyncio
+async def test_transcript_only_asset_is_returned(tree, tmp_path, monkeypatch):
+    transcript_dir = tmp_path / "transcript_only"
+    transcript_dir.mkdir()
+    note_path = transcript_dir / "note.md"
+    note_path.write_text("# transcript only\n")
+    doc = Docs(
+        id=str(uuid.uuid4()),
+        name="transcript_only_note",
+        asset_ref=canonical_posix_path(note_path),
+    )
+    await doc.save()
+    try:
+        _stub_transcript(monkeypatch, [_file_read(note_path)])
+
+        proc = _make_proc()
+        descs = await proc.get_asset_descriptors()
+        match = next(d for d in descs if d.typeid == f"markdown-{doc.id}")
+
+        assert match.source == AssetSource.EXTERNAL
+        assert match.posix_path == canonical_posix_path(note_path)
+        assert AssetUsageKind.TRANSCRIPT_FILE_READ in _usage_kinds(match)
+    finally:
+        await doc.delete()
+
+
+@pytest.mark.asyncio
+async def test_cross_project_home_transcript_asset_uses_external_source(tree, monkeypatch):
+    """A project-scoped entity under $HOME but owned by another project should
+    not be mislabeled as USER_DIR when it only appears via transcript reads.
+
+    It lands in EXTERNAL, the not-attributable bucket. Note this row IS inside a
+    source dir ($HOME) — it's rejected by the cross-project rule, not by being
+    somewhere unknown. EXTERNAL means "no source dir claims it", nothing more.
+    """
+    other_project_doc = tree["user_home"] / "other_project" / "notes" / "other.md"
+    other_project_doc.parent.mkdir(parents=True)
+    other_project_doc.write_text("# other project\n")
+    doc = Docs(
+        id=str(uuid.uuid4()),
+        name="other_project_note",
+        asset_ref=canonical_posix_path(other_project_doc),
+        scope="project",
+        project_id=str(uuid.uuid4()),
+    )
+    await doc.save()
+    try:
+        _stub_transcript(monkeypatch, [_file_read(other_project_doc)])
+
+        proc = _make_proc(project_id=str(uuid.uuid4()))
+        descs = await proc.get_asset_descriptors()
+        match = next(d for d in descs if d.typeid == f"markdown-{doc.id}")
+
+        assert match.source == AssetSource.EXTERNAL
+        assert match.source_dir is None
+        assert AssetUsageKind.TRANSCRIPT_FILE_READ in _usage_kinds(match)
+    finally:
+        await doc.delete()
+
+
+@pytest.mark.asyncio
+async def test_get_assets_action_serializes_usage(tree):
+    proc = _make_proc(cli_config={"agents_json": {"inline_helper": {"description": "x"}}})
+
+    res = await proc.get_assets_action()
+    inline = next(a for a in res.data["assets"] if a["typeid"] == "agent-inline_helper")
+
+    assert inline["usage"] == [{
+        "kind": AssetUsageKind.INLINE_PERSONA.value,
+        "path": None,
+        "entry_id": None,
+        "timestamp": None,
+        "label": "Loaded as inline persona",
+    }]
+
+
+@pytest.mark.asyncio
 async def test_remove_dir_drops_descriptors(tree):
     """Mutating additional_dirs / workdir between calls must change the
     descriptor list (the read is not cached)."""
@@ -406,6 +824,9 @@ def test_is_readonly_source_partition():
         AssetSource.USER_DIR: True,
         AssetSource.WORKDIR: True,
         AssetSource.ADDITIONAL_DIR: True,
+        AssetSource.CONTEXT_DIR: True,
+        AssetSource.SYSTEM: True,
+        AssetSource.EXTERNAL: True,
     }
     # Every enum member is covered (no missing keys → guards drift).
     assert set(expected) == set(AssetSource)
@@ -530,6 +951,153 @@ async def test_foreign_project_skill_under_home_is_hidden(tree):
                 pass
 
 
+@pytest.fixture
+def system_root(tree, monkeypatch):
+    """Point the assistant-root lookup at a tmp dir under $HOME.
+
+    Mirrors prod, where the pip package sits at
+    ``~/.local/share/uv/tools/flowpad/.../flowpad_assistant/`` and the user_home
+    prefix therefore swallows it. Returns the root; the caller seeds assets under
+    it. The real lookup is lru_cached, so patch the symbol itself.
+    """
+    import flow_sdk.config as config_mod
+
+    root = tree["user_home"] / ".local" / "flowpad_assistant"
+    root.mkdir(parents=True, exist_ok=True)
+    canonical = canonical_posix_path(root)
+    monkeypatch.setattr(config_mod, "flowpad_assistant_canonical_root", lambda: canonical)
+    return root
+
+
+async def _seed_system_skill(root: Path) -> tuple[Skill, Path]:
+    path = root / ".claude" / "skills" / "sys_skill"
+    path.mkdir(parents=True, exist_ok=True)
+    ent = await Skill(
+        id=str(uuid.uuid4()), name=f"sys_skill_{uuid.uuid4().hex[:6]}",
+        asset_ref=canonical_posix_path(path),
+        scope="system",
+    ).save()
+    return ent, path
+
+
+@pytest.mark.asyncio
+async def test_system_scope_assistant_skill_under_home_is_not_a_user_asset(tree, system_root):
+    """A SYSTEM-scoped skill under $HOME must never be attributed to USER_DIR.
+
+    The bundled flowpad_assistant assets belong to the mounted assistant, not to
+    the person — mislabeling them makes Flowpad's own built-in skills show up in
+    the Assets panel as ``USER · SHLOM`` personal assets. They are also not listed
+    as *available*: the assistant's catalog is represented by a single "mounted"
+    marker in the UI, and one row per shipped skill would drown the list.
+    """
+    ent, _ = await _seed_system_skill(system_root)
+    try:
+        descs = await _make_proc().get_asset_descriptors()
+        user_ids = {d.typeid.split("-", 1)[1] for d in _by_source(descs, AssetSource.USER_DIR)}
+        assert ent.id not in user_ids, (
+            "system-scoped assistant skill under $HOME was mislabeled as a "
+            "USER_DIR (personal) asset"
+        )
+        assert not [d for d in descs if d.typeid.endswith(ent.id)], (
+            "an unused assistant skill must not be listed at all"
+        )
+    finally:
+        try:
+            await ent.delete()
+        except Exception:
+            pass
+
+
+@pytest.mark.asyncio
+async def test_system_scope_skill_read_in_transcript_uses_system_source(
+    tree, system_root, monkeypatch
+):
+    """Once a run actually uses a bundled skill, it appears — scoped SYSTEM.
+
+    This is the row the old code mislabeled: no source dir claimed it, so it fell
+    through to the not-attributable bucket and the UI showed it as "transcript"
+    (an answer on the usage axis, in the location column). It has a location; it
+    ships with Flowpad.
+    """
+    ent, path = await _seed_system_skill(system_root)
+    skill_md = path / "SKILL.md"
+    skill_md.write_text("# sys skill\n")
+    try:
+        _stub_transcript(monkeypatch, [_file_read(skill_md)])
+        descs = await _make_proc().get_asset_descriptors()
+        match = next(d for d in descs if d.typeid.endswith(ent.id))
+
+        assert match.source == AssetSource.SYSTEM
+        assert match.source_dir == canonical_posix_path(system_root)
+        assert AssetUsageKind.TRANSCRIPT_FILE_READ in _usage_kinds(match)
+    finally:
+        try:
+            await ent.delete()
+        except Exception:
+            pass
+
+
+@pytest.mark.asyncio
+async def test_system_scope_at_foreign_path_is_dropped_not_claimed(tree, monkeypatch):
+    """``scope`` alone must not win — the path has to agree.
+
+    ``scope`` is a persisted column and ``_stamp_scope`` never clobbers an
+    explicit value, so a row can claim to be system while living nowhere near the
+    assistant. Attributing it to SYSTEM would hand back a source_dir that is not a
+    prefix of posix_path, breaking an invariant every other descriptor upholds.
+    Such a row is dropped, exactly as before.
+    """
+    import flow_sdk.config as config_mod
+
+    monkeypatch.setattr(
+        config_mod, "flowpad_assistant_canonical_root", lambda: "/nowhere/flowpad_assistant"
+    )
+    liar_path = tree["user_home"] / ".claude" / "skills" / "liar_skill"
+    liar_path.mkdir(parents=True, exist_ok=True)
+    ent = await Skill(
+        id=str(uuid.uuid4()), name=f"liar_{uuid.uuid4().hex[:6]}",
+        asset_ref=canonical_posix_path(liar_path),
+        scope="system",
+    ).save()
+    try:
+        descs = await _make_proc().get_asset_descriptors()
+        assert not [d for d in descs if d.typeid.endswith(ent.id)]
+    finally:
+        try:
+            await ent.delete()
+        except Exception:
+            pass
+
+
+@pytest.mark.asyncio
+async def test_assistant_own_project_still_lists_its_system_skills(tree, system_root):
+    """The Flowpad Assistant is itself a Project whose mount IS the assistant root.
+
+    Looking *at* the assistant must still show its skills, so the system rule is
+    deliberately scoped to the USER_DIR home catchall: a deeper source dir wins the
+    longest-prefix match and keeps winning. Guards the regression where hoisting the
+    scope check above the match empties the assistant project's own asset list (and
+    every editable install with system_projects inside the repo tree).
+    """
+    from flow_sdk.builtin.agentic_process.agentic_process import scan_path_asset_descriptors
+
+    ent, _ = await _seed_system_skill(system_root)
+    try:
+        descs = await scan_path_asset_descriptors(
+            [(canonical_posix_path(system_root), AssetSource.PROJECT_DIR)],
+            own_project_id="",
+            types=["skill", "agent"],
+        )
+        match = next((d for d in descs if d.typeid.endswith(ent.id)), None)
+        assert match is not None, "the assistant project's own skills vanished from its asset list"
+        assert match.source == AssetSource.PROJECT_DIR
+    finally:
+        try:
+            await ent.delete()
+        except Exception:
+            pass
+
+
 @pytest.mark.asyncio
 async def test_get_asset_descriptors_read_only_partition(tree, monkeypatch):
     """Every descriptor returned by get_asset_descriptors() agrees with
@@ -556,3 +1124,115 @@ async def test_get_asset_descriptors_read_only_partition(tree, monkeypatch):
         # Writable iff EMBEDDED or INLINE; everything else read-only.
         expected_ro = d.source not in {AssetSource.EMBEDDED, AssetSource.INLINE}
         assert is_readonly_source(d.source) is expected_ro, d
+
+
+# ── Project context folders (include_dirs) ───────────────────────────────────
+
+
+async def _seed_context_skill(tree, tmp_path: Path):
+    """Create <tmp>/context_dir/.claude/skills/ctx_skill/SKILL.md + its Skill
+    entity, and return (context_dir, skill_entity). The dir is deliberately
+    OUTSIDE user_home / project_root / workdir so it gets a clean CONTEXT_DIR
+    attribution."""
+    context_dir = tmp_path / "context_dir"
+    skill_path = context_dir / ".claude" / "skills" / "ctx_skill"
+    skill_path.mkdir(parents=True, exist_ok=True)
+    (skill_path / "SKILL.md").write_text("# ctx skill\n")
+    skill_ent = await Skill(
+        id=str(uuid.uuid4()),
+        name=f"ctx_skill_{uuid.uuid4().hex[:6]}",
+        asset_ref=canonical_posix_path(skill_path),
+    ).save()
+    return context_dir, skill_ent
+
+
+@pytest.mark.asyncio
+async def test_context_dir_attribution(tree, tmp_path):
+    """A skill living under project.include_dirs is surfaced as CONTEXT_DIR
+    (the requested scenario: temp skill in a context folder added to a project,
+    visible to a process bound to that project)."""
+    context_dir, skill_ent = await _seed_context_skill(tree, tmp_path)
+    project = await Project(
+        id=str(uuid.uuid4()),
+        name=f"ctx_project_{uuid.uuid4().hex[:6]}",
+        fs_storage_mount_path=str(tree["project_root"]),
+        include_dirs=[canonical_posix_path(context_dir)],
+    ).save()
+    try:
+        proc = _make_proc(project_id=project.id)
+        descs = await proc.get_asset_descriptors()
+        ctx_descs = _by_source(descs, AssetSource.CONTEXT_DIR)
+        assert skill_ent.id in {d.typeid.split("-", 1)[1] for d in ctx_descs}
+        # Attribution carries the matched context dir.
+        for d in ctx_descs:
+            assert d.source_dir == canonical_posix_path(context_dir), d
+    finally:
+        for e in (skill_ent, project):
+            try:
+                await e.delete()
+            except Exception:
+                pass
+
+
+@pytest.mark.asyncio
+async def test_resolved_add_dirs_includes_project_context(tree, tmp_path):
+    """After get_project() stamps the cache, resolved_add_dirs mounts the
+    project's context folders — this is the --add-dir set every agentic worker
+    launches with. Deduped against per-process additional_dirs."""
+    context_dir, skill_ent = await _seed_context_skill(tree, tmp_path)
+    ctx_canon = canonical_posix_path(context_dir)
+    project = await Project(
+        id=str(uuid.uuid4()),
+        name=f"ctx_project_{uuid.uuid4().hex[:6]}",
+        fs_storage_mount_path=str(tree["project_root"]),
+        include_dirs=[ctx_canon],
+    ).save()
+    try:
+        # Before get_project(): the sync property can't see the project yet.
+        proc = _make_proc(project_id=project.id)
+        assert ctx_canon not in proc.resolved_add_dirs
+
+        # get_project() stamps the cache → the property now mounts it.
+        await proc.get_project()
+        assert ctx_canon in proc.resolved_add_dirs
+
+        # Dedup: an explicit copy in additional_dirs doesn't double it.
+        proc.additional_dirs = [ctx_canon]
+        assert proc.resolved_add_dirs.count(ctx_canon) == 1
+    finally:
+        for e in (skill_ent, project):
+            try:
+                await e.delete()
+            except Exception:
+                pass
+
+
+@pytest.mark.asyncio
+async def test_add_remove_context_dir_actions(tree, tmp_path):
+    """Project.add_context_dir / remove_context_dir canonicalize, dedup, and
+    persist include_dirs."""
+    context_dir, skill_ent = await _seed_context_skill(tree, tmp_path)
+    ctx_canon = canonical_posix_path(context_dir)
+    project = await Project(
+        id=str(uuid.uuid4()),
+        name=f"ctx_project_{uuid.uuid4().hex[:6]}",
+        fs_storage_mount_path=str(tree["project_root"]),
+    ).save()
+    try:
+        await project.add_context_dir(str(context_dir))
+        assert ctx_canon in project.include_dirs
+        # Idempotent — a second add (even un-canonical) doesn't double.
+        await project.add_context_dir(str(context_dir))
+        assert project.include_dirs.count(ctx_canon) == 1
+        # Persisted: reload from the store reflects the field.
+        reloaded = await Project.get_by_id(project.id)
+        assert ctx_canon in (reloaded.include_dirs or [])
+        # Remove drops it.
+        await project.remove_context_dir(str(context_dir))
+        assert ctx_canon not in project.include_dirs
+    finally:
+        for e in (skill_ent, project):
+            try:
+                await e.delete()
+            except Exception:
+                pass

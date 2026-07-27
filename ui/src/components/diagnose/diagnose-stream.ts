@@ -1,4 +1,4 @@
-import { ActionInfo, dataManager } from '@sdk';
+import { ActionInfo, dataContext, dataManager } from '@sdk';
 
 /**
  * The SSE events forwarded verbatim by POST /api/v1/graph/diagnose — mirrors the
@@ -32,9 +32,11 @@ export async function streamDiagnose(
   signal?: AbortSignal,
 ): Promise<void> {
   // Null-entity graph service action → POST /api/v1/graph/diagnose, streamed.
+  // The active project rides along so the recorded diagnosis remembers the
+  // project the issue happened on (its origin project).
   const info = new ActionInfo('diagnose', null, null, 'POST', false, true, signal);
-  info.bodyParameters = { message };
-  const resp = await dataManager.callAction<{ message: string }, Response>(info);
+  info.bodyParameters = { message, project_id: dataContext.project?.id ?? null };
+  const resp = await dataManager.callAction<{ message: string; project_id: string | null }, Response>(info);
   if (!resp || !resp.body) throw new Error('No streaming response body');
 
   const reader = resp.body.getReader();

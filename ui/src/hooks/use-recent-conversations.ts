@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { Conversation, QueryRequest } from '@sdk';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
+import { compareConversationsByRecency } from '@src/components/conversation/conversation-category';
 
 /**
  * The most recent open conversations (not dismissed, not archived), ordered by
@@ -21,10 +22,7 @@ export function useRecentConversations(
     () =>
       conversations
         .filter((c) => !c.dismissed_at && !c.archived_at && c.id !== excludeId)
-        .sort(
-          (a, b) =>
-            new Date(b.updated_date ?? 0).getTime() - new Date(a.updated_date ?? 0).getTime(),
-        )
+        .sort(compareConversationsByRecency)
         .slice(0, limit),
     [conversations, excludeId, limit],
   );

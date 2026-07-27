@@ -9,7 +9,7 @@ incident → diagnosis → fix → ship loop, exchanging real flowpad AI assets:
   • Skill          — Bob's N+1 trace analyzer
   • Skill          — Bob's regression-test generator
   • URL            — dashboards, PR
-  • REPO           — repo path
+  • URL            — repository pointer
   • PROMPT         — Bob's "Approve & Run" prompts (skill invocations)
 
 Real local entities (Skills + Specs) are created on Alice's local backend so
@@ -19,7 +19,7 @@ also bind to context_entities so the incident Spec acts as the through-line.
 Story beats:
     1. Alice → Bob   incident spec + dashboard URL
     2. Bob   → Alice ask for trace IDs
-    3. Alice → Bob   trace IDs + repo pointer
+    3. Alice → Bob   trace IDs + repository URL
     4. Bob   → Alice analysis Skill + Approve & Run prompt
     5. Alice → Bob   skill output, root cause
     6. Alice → Bob   fix plan spec
@@ -72,7 +72,7 @@ ALICE_PW = os.environ.get("DEMO_ALICE_PW", "alice-pw-1234")
 BOB_EMAIL = os.environ.get("DEMO_BOB_EMAIL", "bob@local.test")
 BOB_PW = os.environ.get("DEMO_BOB_PW", "bob-pw-1234")
 
-REPO_PATH = str(Path(__file__).resolve().parents[1])
+DEMO_REPO_URL = "https://github.com/example/checkout-api"
 
 
 # --- local entity creation -------------------------------------------------
@@ -597,8 +597,8 @@ async def _run_demo() -> int:
             context=[incident_ctx],
         )
 
-        # ---------- msg 3: Alice → Bob — traces + repo --------------------
-        print("[3/9] Alice posts trace IDs + repo pointer")
+        # ---------- msg 3: Alice → Bob — traces + repo URL -----------------
+        print("[3/9] Alice posts trace IDs + repo URL")
         await _post_message(
             alice_ws, bob_ws, conv_id=conv_id, sender_name="Alice",
             text=(
@@ -606,10 +606,10 @@ async def _run_demo() -> int:
                 "  • tr_a1b2c3  — 4.2s, 8-item cart\n"
                 "  • tr_c3d4e5  — 3.8s, 6-item cart\n"
                 "  • tr_e5f6a7  — 4.6s, 11-item cart\n"
-                "Latency scales with cart size — looks pattern-y. Repo:"
+                "Latency scales with cart size — looks pattern-y. Repo URL:"
             ),
             attachment=[
-                {"attachment_type": "repo", "data": REPO_PATH},
+                {"attachment_type": "url", "data": DEMO_REPO_URL},
             ],
             context=[incident_ctx],
         )

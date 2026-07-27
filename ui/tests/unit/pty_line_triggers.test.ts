@@ -65,6 +65,28 @@ describe('PtyConnection.onLine', () => {
     expect(lines).toEqual(['hello', 'world']);
   });
 
+  it('emits ANSI-stripped terminal redraw rows delimited by bare \\r', () => {
+    const pc = makePty();
+    const lines: string[] = [];
+    pc.onLine((l) => lines.push(l));
+
+    pc.appendOutput(b64('\x1b[H\x1b[31m❯ where is the plan some.md?\x1b[0m\r\x1b[3BWorking\rnext'));
+
+    expect(lines).toEqual(['❯ where is the plan some.md?', 'Working']);
+  });
+
+  it('coalesces CRLF split across chunks into one boundary', () => {
+    const pc = makePty();
+    const lines: string[] = [];
+    pc.onLine((l) => lines.push(l));
+
+    pc.appendOutput(b64('hello\r'));
+    expect(lines).toEqual([]);
+
+    pc.appendOutput(b64('\nworld\rnext'));
+    expect(lines).toEqual(['hello', 'world']);
+  });
+
   it('clear() resets the line buffer (no carryover after reattach)', () => {
     const pc = makePty();
     const lines: string[] = [];
@@ -138,6 +160,19 @@ describe('PtyConnection.addTrigger', () => {
     expect(matches).toEqual(['plan-x.md']);
   });
 
+  it('matches a Claude-style terminal redraw row delimited by bare CR', () => {
+    const pc = makePty();
+    const matches: string[] = [];
+    pc.addTrigger({
+      pattern: /plan some\.md/i,
+      onMatch: (_line, m) => matches.push(m[0]),
+    });
+
+    pc.appendOutput(b64('\x1b[H\x1b[38;2;255;255;255m❯ where is the plan some.md?\x1b[39m\r\x1b[3B'));
+
+    expect(matches).toEqual(['plan some.md']);
+  });
+
   it('multiple triggers on the same connection are independent', () => {
     const pc = makePty();
     const planMatches: string[] = [];
@@ -199,6 +234,27 @@ describe('PtyConnection.addTrigger', () => {
     expect(fires.length).toBe(2);
     expect(fires.every((f) => f.duringReplay)).toBe(true);
     expect(fires.every((f) => f.label === 'late-binding')).toBe(true);
+  });
+
+  it('catches up on bare-CR terminal rows from replay', () => {
+    const pc = makePty();
+    pc.appendOutput(b64('\x1b[H❯ where is the plan replay.md?\r\x1b[3BWorking\r'), 1);
+
+    const matches: string[] = [];
+    pc.addTrigger({
+      pattern: /plan replay\.md/i,
+      label: 'redraw-replay',
+      onMatch: (_line, m) => matches.push(m[0]),
+    });
+
+    expect(matches).toEqual(['plan replay.md']);
+    expect(pc.getEventFires()).toEqual([
+      expect.objectContaining({
+        label: 'redraw-replay',
+        duringReplay: true,
+        line: expect.stringContaining('plan replay.md'),
+      }),
+    ]);
   });
 
   it('catchup does not double-fire on subsequent live chunks', () => {

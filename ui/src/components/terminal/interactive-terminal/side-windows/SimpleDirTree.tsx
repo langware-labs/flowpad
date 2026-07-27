@@ -225,7 +225,7 @@ export const SimpleDirTree: React.FC<SimpleDirTreeProps> = ({
         onSelectFile(openPath);
         return;
       }
-      navigation.openEditor(openPath);
+      navigation.openFile(openPath);
     },
     [computeNodeTypeId, currentPath, navigation, onSelectFile],
   );

@@ -7,8 +7,8 @@ import { ProcessStatusLine } from '@src/components/agentic-progress/shared/proce
  * Contract exercised by this file:
  *
  *   The Open-in-Terminal button is enabled iff
- *     visible interactive worker: status == RUNNING && workerStatus ∈ {IDLE, COMPLETE, INTERRUPTED}
- *     headless CLI worker: process has a session and is STOPPED or FAILED
+ *     interactive PTY worker: the process is ready (RUNNING && !busy), or its turn is done/resumable
+ *     headless CLI worker: its turn is done/resumable, or a saved session is STOPPED/FAILED
  *
  *   Label text comes from workerStatusConfig when running, processStatusConfig otherwise.
  */
@@ -17,6 +17,7 @@ function makeProcess(overrides: Partial<Record<string, unknown>> = {}) {
   return {
     status: ProcessStatus.RUNNING,
     workerStatus: WorkerStatus.IDLE,
+    busy: false,
     session_id: 'sess-abc',
     visible: false,
     ...overrides,
@@ -50,14 +51,18 @@ describe('ProcessStatusLine — Open-in-Terminal gate', () => {
     expect(screen.queryByTestId('process-status-line-open-terminal')).toBeNull();
   });
 
-  it('is enabled when an interactive worker is ready_for_input', () => {
+  it('is enabled when an interactive worker is RUNNING and not busy', () => {
+    // Readiness is derived from lifecycle + the backend-owned busy flag. Raw
+    // workerStatus is display-only, so an IDLE fallback cannot override a
+    // RUNNING, non-busy process. For a PTY worker the click simply focuses the
+    // existing terminal, even before a session id has materialised.
     render(
       <ProcessStatusLine
-        process={makeProcess({ workerStatus: WorkerStatus.IDLE, session_id: null, visible: true })}
+        process={makeProcess({ workerStatus: WorkerStatus.IDLE, session_id: null, pty_mode: true })}
         onOpenInTerminal={() => {}}
       />,
     );
-    const btn = screen.getByTestId('process-status-line-open-terminal') as HTMLButtonElement;
+    const btn = screen.getByTestId('process-status-line-open-terminal');
     expect(btn.disabled).toBe(false);
   });
 
@@ -68,7 +73,7 @@ describe('ProcessStatusLine — Open-in-Terminal gate', () => {
         onOpenInTerminal={() => {}}
       />,
     );
-    const btn = screen.getByTestId('process-status-line-open-terminal') as HTMLButtonElement;
+    const btn = screen.getByTestId('process-status-line-open-terminal');
     expect(btn.disabled).toBe(false);
   });
 
@@ -79,18 +84,18 @@ describe('ProcessStatusLine — Open-in-Terminal gate', () => {
         onOpenInTerminal={() => {}}
       />,
     );
-    const btn = screen.getByTestId('process-status-line-open-terminal') as HTMLButtonElement;
+    const btn = screen.getByTestId('process-status-line-open-terminal');
     expect(btn.disabled).toBe(false);
   });
 
-  it('is disabled while the worker is mid-turn (THINKING)', () => {
+  it('is disabled while the process is busy, even when workerStatus is THINKING', () => {
     render(
       <ProcessStatusLine
-        process={makeProcess({ workerStatus: WorkerStatus.THINKING, visible: true })}
+        process={makeProcess({ workerStatus: WorkerStatus.THINKING, visible: true, busy: true })}
         onOpenInTerminal={() => {}}
       />,
     );
-    const btn = screen.getByTestId('process-status-line-open-terminal') as HTMLButtonElement;
+    const btn = screen.getByTestId('process-status-line-open-terminal');
     expect(btn.disabled).toBe(true);
   });
 
@@ -101,7 +106,7 @@ describe('ProcessStatusLine — Open-in-Terminal gate', () => {
         onOpenInTerminal={() => {}}
       />,
     );
-    const btn = screen.getByTestId('process-status-line-open-terminal') as HTMLButtonElement;
+    const btn = screen.getByTestId('process-status-line-open-terminal');
     expect(btn.disabled).toBe(true);
   });
 

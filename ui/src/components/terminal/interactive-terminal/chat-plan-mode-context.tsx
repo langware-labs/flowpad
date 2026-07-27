@@ -47,7 +47,7 @@ export function ChatPlanModeProvider({
   process: AgenticProcess | null;
   children: ReactNode;
 }) {
-  const enabled = !!process && process.pty_mode === false && !!process.supports_plan_mode;
+  const enabled = !!process && process.isHeadless && !!process.supports_plan_mode;
   const [planPending, setPlanPending] = useState(false);
   const [sending, setSending] = useState(false);
 

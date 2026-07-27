@@ -56,10 +56,11 @@ async def test_status_action_returns_new_shape(bootstrapped_client, user):
         assert "is_active" not in data
         assert "waiting_for_prompt" not in data
 
-        # Default lifecycle is NEW; default worker is IDLE (no session).
+        # Default lifecycle is NEW (not projected); worker_status is null (no
+        # session/transcript → "nothing found", never coerced to a placeholder).
         assert data["status"] == ProcessStatus.NEW.value
-        assert data["worker_status"] == WorkerStatus.IDLE.value
-        # NEW lifecycle can never be ready_for_input (RUNNING is the gate).
+        assert data["worker_status"] is None
+        # NEW lifecycle can never be ready_for_input (only READY is).
         assert data["ready_for_input"] is False
     finally:
         await process.delete()
@@ -117,12 +118,15 @@ async def test_status_reflects_lifecycle_writes(bootstrapped_client, user):
         assert data["status"] == ProcessStatus.STARTING.value
         assert data["ready_for_input"] is False
 
-        # RUNNING — still no session_id, so worker has never been prompted → ready.
+        # RUNNING — still no session_id, so worker has never been prompted and no
+        # turn is in flight → status is the raw ``running`` (emitted verbatim),
+        # ``busy`` is False, and ``ready_for_input`` is True.
         process.status = ProcessStatus.RUNNING.value
         await process.save()
         resp = await client.get(f"/api/v1/graph/agentic_process/{process.id}/status")
         data = ApiResponse(**resp.json()).data
         assert data["status"] == ProcessStatus.RUNNING.value
+        assert data["busy"] is False
         assert data["ready_for_input"] is True
 
         # STOPPED (terminal) — not ready any more.

@@ -20,7 +20,7 @@ import {
 import { notify } from '@src/notifications';
 import { useProject } from '@src/hooks/useProject';
 import { parseTypeid } from '@src/components/asset-manager/asset-row-helpers';
-import type { ProcessEntry } from '@src/components/workflows-view/workflow-run-store';
+import type { ProcessEntry } from '@src/components/process-runs/process-run-store';
 
 interface UseRunOnFileArgs {
   /** VFS path the AgenticProcess will be keyed to (typically the file's TypeId or `<typeid>/<sub_path>`). */
@@ -46,8 +46,7 @@ const MCP_SERVER = 'flow-sdk-mcp';
 /**
  * Hook that owns the "Run an asset on this file" flow for the generic markdown
  * editor. Mirrors the lazy-create + attach + prompt pattern used by
- * `EntityExecutionPanel` (chat tab) and the spawn pattern used by
- * `WorkflowAssetEditor` (workflow runs):
+ * `EntityExecutionPanel` (chat tab):
  *
  *   1. Verify `flow-sdk-mcp` is enabled; if not, surface the modal.
  *   2. `ComputeNode.getById('@local').createProcess({ targetVfsPath, outputFormat: 'stream-json', … })`.
@@ -99,7 +98,7 @@ export function useRunOnFile({
       const fileLocator = filePath ?? targetVfsPath;
       const instruction = `Run the file ${fileLocator} with the asset ${assetType}: ${assetLocator}`;
 
-      void proc.prompt(instruction);
+      void proc.submit(instruction);
       setProcessEntry({ process: proc });
       onOpenSideWindow?.('runs');
     },

@@ -20,6 +20,9 @@ import {
 } from '@sdk';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiTestSetup, get_local_compute_node, getTestSignupInfo } from '../utils/test-utils';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 
 // ── Instruction template ────────────────────────────────────────────────────
 
@@ -42,6 +45,11 @@ function buildClassifyInstruction(outputDir: string): string {
   ].join('\n');
 }
 
+interface WorkerHistoryCandidate {
+  worker_type?: string;
+  worker_id?: string;
+}
+
 // ── Test suite ──────────────────────────────────────────────────────────────
 
 describe('classify_session', () => {
@@ -50,9 +58,7 @@ describe('classify_session', () => {
     try {
       await fetch(`${window.location.origin}/health/status`, { signal: AbortSignal.timeout(2000) });
     } catch {
-      throw new Error(
-        'Server not running — start it with: uv run -m flow_sdk.server.run',
-      );
+      throw new Error('Server not running — start it with: uv run -m flow_sdk.server.run');
     }
 
     await apiTestSetup(getTestSignupInfo(), ctx.task.name);
@@ -73,31 +79,55 @@ describe('classify_session', () => {
     const computeNode = await get_local_compute_node();
     const localFsTypeId = new TypeId(ComputeNode.type, '@local');
 
-    // ── 1. Fetch the most recent Claude session ─────────────────────────────
-    const sessionsRaw = await apiClient.get<any>(
-      `${GRAPH_API_PREFIX}/${ComputeNode.type}/@local/fs-records/claude_session?limit=1`,
+    // ── 1. Seed a tiny, CONTROLLED Claude session to fork (hermetic) ─────────
+    // Do NOT grab the machine's most-recent on-disk session (worker-history[0]):
+    // in a live QA run that "latest" session is an unrelated/huge transcript
+    // (e.g. the QA cycle's own orchestration session), whose resumed context
+    // derails the trivial classify instruction so the artifact is never written.
+    // Instead run ONE minimal turn in a throwaway workdir to mint our own session,
+    // then fork THAT — the pipeline under test (fork → turn → artifact) is
+    // exercised identically, but deterministically.
+    const seedWorkdir = fs.mkdtempSync(path.join(os.tmpdir(), 'classify-seed-'));
+    const seed = await computeNode.createProcess(
+      { workdir: seedWorkdir, permissionMode: 'bypassPermissions' },
+      { visible: false, pty_mode: false },
     );
-    const sessions: any[] = Array.isArray(sessionsRaw)
-      ? sessionsRaw
-      : Array.isArray((sessionsRaw as any)?.data)
-        ? (sessionsRaw as any).data
-        : [];
+    await seed.watch();
+    const seedDone = new Promise<void>((resolve) => {
+      const unsub = seed.on('complete', () => {
+        unsub();
+        resolve();
+      });
+    });
+    await seed.executeInstruction('Reply with exactly: SEED_OK', { sync: false });
+    await Promise.race([
+      seedDone,
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('seed session turn did not complete')), 90_000),
+      ),
+    ]);
+    const seedText = String((seed as any).session_id ?? '');
+    if (!seedText) {
+      // If the model was unavailable/limited, skip rather than fail — same
+      // policy as the classify turn below.
+      context.skip('seed session did not capture a session_id (Claude unavailable?)');
+    }
 
-    expect(sessions.length, 'Need at least one Claude session on disk').toBeGreaterThan(0);
-
-    const session = sessions[0];
-    const sessionId: string = session.session_id ?? session.id;
-    const cwd: string = session.cwd ?? normalizedHome;
+    const sessionId = seedText;
+    const cwd = seedWorkdir;
 
     console.log(`[classify] forking session ${sessionId} in ${cwd}`);
 
     // ── 2. Fork session into a new AgenticProcess ───────────────────────────
-    const agenticProcess = await computeNode.createProcess({
-      workdir: cwd,
-      permissionMode: 'bypassPermissions',
-      resumeSessionId: sessionId,
-      forkSession: true,
-    });
+    const agenticProcess = await computeNode.createProcess(
+      {
+        workdir: cwd,
+        permissionMode: 'bypassPermissions',
+        resumeSessionId: sessionId,
+        forkSession: true,
+      },
+      { visible: false, pty_mode: false },
+    );
     await agenticProcess.watch();
 
     console.log(`[classify] created process ${agenticProcess.id}`);

@@ -9,13 +9,11 @@ import {
   LocalConnectionStatus,
   makeConnectionSlot,
 } from './services/cloud_status';
+import { toplog } from './services/toplog';
 import { defineGlobal } from './utils/globals';
 
 type MessageType =
-  | 'entity_msg'
   | 'data_op_msg'
-  | 'stream_msg'
-  | 'transcript_msg'
   | 'control_msg'
   | 'oauth_msg'
   | 'rest_api_msg'
@@ -29,8 +27,12 @@ type MessageType =
   | 'cloud_connection_status_msg'
   | 'privacy_mode_msg'
   | 'toplog_state_msg'
+  | 'flow_run_event_msg'
+  | 'tag_msg'
+  | 'flow_node_status_msg'
   | 'ui_command'
-  | 'recovered_msg';
+  | 'recovered_msg'
+  | 'broadcast';
 
 
 interface BaseMessage {
@@ -128,6 +130,48 @@ export interface ToplogStateMessage extends BaseMessage {
 }
 
 /**
+ * Broadcast for every event/lifecycle beat of an AgenticFlow run — the live
+ * run stream. Backend mirror: FlowRunEventMessage in flow_sdk/api/messages.py.
+ */
+/** The unified event-bus frame — one serialized FlowEvent (docs/flow-events.md). */
+export interface TagMsg extends BaseMessage {
+  message_type: 'tag_msg';
+  event: import('./tags/EventBus').FlowEvent;
+}
+
+export interface FlowRunEventMessage extends BaseMessage {
+  message_type: 'flow_run_event_msg';
+  flow_id: string;
+  run_id: string;
+  /** run_start | event | run_end */
+  kind: string;
+  event: string;
+  data: Record<string, unknown>;
+  node: string;
+  status: string;
+  ts: string;
+}
+
+/**
+ * Broadcast on every FlowManager scheduler transition for a flow node — the
+ * push feed for live queue/active counters and node status lines.
+ * Backend mirror: FlowNodeStatusMessage in flow_sdk/api/messages.py.
+ */
+export interface FlowNodeStatusMessage extends BaseMessage {
+  message_type: 'flow_node_status_msg';
+  flow_id: string;
+  run_id: string;
+  node_id: string;
+  phase: 'queued' | 'merged' | 'started' | 'finished' | 'failed';
+  /** Node runtime counts AFTER this transition. */
+  queued: number;
+  active: number;
+  /** started → {program_kind, process_id?}; finished → {duration_ms, stdout?...}; failed → {error}. */
+  detail: Record<string, unknown>;
+  ts: string;
+}
+
+/**
  * Server → client directive to drive the UI (navigate, open, etc.).
  * Emitted by the local Flowpad server when an agent invokes a `flow navigate ...`
  * command. The server resolves targeting via presence tracking and sends this
@@ -143,6 +187,10 @@ export interface UiCommandMessage extends BaseMessage {
   id?: string;
   /** For `navigate_vfs`: the absolute file path to open in the asset editor. */
   path?: string;
+  /** For `desktop_notify`: the notification kind (e.g. "message"). */
+  notify_type?: string;
+  /** For `desktop_notify`: the kind-specific payload (conversation_id, message_id, sender_name, preview, …). */
+  info?: Record<string, unknown>;
 }
 
 export interface LlmConfigMessage extends BaseMessage {
@@ -227,6 +275,16 @@ export interface FlowDataMessage extends EntityMessage {
   };
 }
 
+/** Server-wide fan-out ping (``flow_sdk/server/routes/websocket.py broadcast()``):
+ *  no target entity, just a ``broadcast_type`` discriminator (the shared
+ *  ``BroadcastMessage`` model in ``flow_sdk/api/messages.py``; currently
+ *  ``tabs_changed``). Optional because the client→server relay fan-out sends a
+ *  bare ``broadcast`` with no discriminator. */
+export interface BroadcastMessage extends BaseMessage {
+  message_type: 'broadcast';
+  broadcast_type?: string;
+}
+
 export type DataOpType = 'create' | 'update' | 'delete';
 
 /** Enum form of {@link DataOpType}. Use these members instead of bare
@@ -248,12 +306,14 @@ export class ConnectionManager extends EventEmitter {
   private static instance: ConnectionManager;
   private socket: WebSocket | null = null;
   private pendingRequests: Map<string, PendingRequest<unknown>> = new Map();
+  private warnedMessageTypes = new Set<string>();
   private requestTimeoutMs: number = 30000;
 
   // Reconnect state
   private reconnectAttempts: number = 0;
   private baseReconnectDelay: number = 500; // ms
   private isReconnecting: boolean = false;
+  private disposed: boolean = false;
 
   // Local WS connection slot — same enum vocabulary as the cloud side
   // (narrower: no auth_rejected/verified since the local server is the
@@ -273,7 +333,6 @@ export class ConnectionManager extends EventEmitter {
     const prev = this._connection.status;
     const prevError = this._connection.error;
     this._connection = { status, error };
-    void import('./FlowSync/context').then((mod) => mod.dataContext.setLocalConnectionStatus?.(status));
     if (prev !== status || prevError !== error) {
       this.emit('connection_status_changed', this._connection);
     }
@@ -290,12 +349,36 @@ export class ConnectionManager extends EventEmitter {
     this.isReconnecting = false;
   }
 
+  /**
+   * Permanently tear down this manager and its socket.
+   *
+   * A normal transport close must reconnect, but an SDK realm that is being
+   * discarded (for example, an isolated test/client realm) must not keep
+   * retrying its old backend after the realm has been replaced.
+   */
+  public dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+
+    for (const pending of this.pendingRequests.values()) {
+      clearTimeout(pending.timeout);
+      pending.reject(new Error('Connection manager disposed'));
+    }
+    this.pendingRequests.clear();
+
+    this.socket?.close(1000, 'connection manager disposed');
+    this.removeAllListeners();
+  }
+
   constructor() {
     super();
     ConnectionManager.instance = this;
   }
 
   public async connect(): Promise<void> {
+    if (this.disposed) {
+      throw new Error('Connection manager disposed');
+    }
     if (this.socket?.readyState === WebSocket.OPEN) {
       return;
     }
@@ -332,7 +415,8 @@ export class ConnectionManager extends EventEmitter {
       ws.addEventListener('message', (event) => {
         try {
           if (event.data instanceof ArrayBuffer) {
-            this.onBinMessage(event.data);
+            // Binary frames are unused (dead on_bin_msg path removed —
+            // flow-events phase-8 scan found zero subscribers).
           } else if (typeof event.data === 'string') {
             this.onMessage(JSON.parse(event.data));
           } else {
@@ -362,6 +446,7 @@ export class ConnectionManager extends EventEmitter {
       });
       ws.addEventListener('error', (event) => {
         console.error('WebSocket error:', event);
+        this.reportLifecycle('ws_error', {});
         this.setConnectionStatus('error', 'WebSocket error');
       });
     } catch (e) {
@@ -409,7 +494,21 @@ export class ConnectionManager extends EventEmitter {
     }
   }
 
+  /**
+   * WS lifecycle breadcrumb (FLOWPAD-1935): one console line per transport
+   * event (open, close with code+wasClean, errors, reconnect attempts/
+   * failures). Read next to the backend's own [PtyRegistry] park/resume and
+   * disconnect-reason lines, these name a transport-death mechanism: a
+   * backend park with NO ws_close here proves the close event was never
+   * delivered (zombie socket); ws_reconnect_scheduled with no ws_open /
+   * ws_reconnect_failed after it proves a wedged dial.
+   */
+  private reportLifecycle(event: string, detail: Record<string, unknown> = {}): void {
+    console.info(`[ConnectionManager] lifecycle: ${event}`, { connection_id: this.id, ...detail });
+  }
+
   onOpen(event: Event) {
+    this.reportLifecycle('ws_open', { attempts_used: this.reconnectAttempts });
     // Reset reconnect attempts on successful connection
     this.reconnectAttempts = 0;
     this.emit('on_open');
@@ -418,10 +517,25 @@ export class ConnectionManager extends EventEmitter {
 
   onClose(event: CloseEvent) {
     this.emit('on_close');
-    // Automatically reconnect on unexpected disconnect
-    if (!event.wasClean && !this.isReconnecting) {
-      console.warn('[ConnectionManager] Connection closed unexpectedly, reconnecting...', {
+    const willReconnect = !this.disposed && !this.isReconnecting;
+    this.reportLifecycle('ws_close', {
+      code: event.code,
+      was_clean: event.wasClean,
+      reason: event.reason || '',
+      action: willReconnect ? 'reconnect' : this.disposed ? 'disposed' : 'skip_reconnect_in_flight',
+    });
+    // Reconnect on ANY close, clean or not. Nothing in the product ever
+    // intentionally closes the local WS, so every close is a transport loss —
+    // including a gracefully restarting backend's proper close frame
+    // (1012, wasClean=true). The old `!event.wasClean` guard read that
+    // goodbye as final and permanently disabled reconnection: the app kept
+    // working over HTTP while its WS stayed dead, the backend attached a
+    // connection_id it didn't hold, and PTY output vanished
+    // (frozen-terminal RCA, FLOWPAD-1935 — bug B).
+    if (willReconnect) {
+      console.warn('[ConnectionManager] Connection closed, reconnecting...', {
         code: event.code,
+        wasClean: event.wasClean,
         reason: event.reason,
       });
       void this.reconnect();
@@ -435,7 +549,7 @@ export class ConnectionManager extends EventEmitter {
    * (which was a memory leak when the server was down for a long time).
    */
   private async reconnect(): Promise<void> {
-    if (this.isReconnecting) {
+    if (this.disposed || this.isReconnecting) {
       return;
     }
 
@@ -447,7 +561,13 @@ export class ConnectionManager extends EventEmitter {
       Math.random() * 1000; // Add jitter
 
     console.log(`[ConnectionManager] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts})`);
+    this.reportLifecycle('ws_reconnect_scheduled', { attempt: this.reconnectAttempts, delay_ms: Math.round(delay) });
     await new Promise((resolve) => setTimeout(resolve, delay));
+
+    if (this.disposed) {
+      this.isReconnecting = false;
+      return;
+    }
 
     try {
       await this.connect();
@@ -457,21 +577,19 @@ export class ConnectionManager extends EventEmitter {
       console.log('[ConnectionManager] Reconnected successfully');
     } catch (error) {
       console.error('[ConnectionManager] Reconnect failed:', error);
+      this.reportLifecycle('ws_reconnect_failed', {
+        attempt: this.reconnectAttempts,
+        error: error instanceof Error ? error.message : String(error),
+      });
       this.isReconnecting = false;
       // Schedule next attempt without recursive await (avoids Promise chain memory leak)
-      setTimeout(() => void this.reconnect(), 0);
+      if (!this.disposed) setTimeout(() => void this.reconnect(), 0);
     }
   }
 
   onMessage(data: BaseMessage) {
-    if (data.message_type === 'entity_msg') {
-      return null;
-    }
     if (data.message_type === 'control_msg') {
       return this.onControlMessage(data as ControlMessage);
-    }
-    if (data.message_type === 'transcript_msg') {
-      return this.onStreamMessage(data as TranscriptMessage);
     }
     if (data.message_type === 'data_op_msg') {
       return this.onDataOpMessage(data as DataOpMessage);
@@ -506,6 +624,15 @@ export class ConnectionManager extends EventEmitter {
     if (data.message_type === 'privacy_mode_msg') {
       return this.onPrivacyModeMessage(data as PrivacyModeMessage);
     }
+    if (data.message_type === 'tag_msg') {
+      return this.onTagMessage(data as TagMsg);
+    }
+    if (data.message_type === 'flow_run_event_msg') {
+      return this.onFlowRunEventMessage(data as FlowRunEventMessage);
+    }
+    if (data.message_type === 'flow_node_status_msg') {
+      return this.onFlowNodeStatusMessage(data as FlowNodeStatusMessage);
+    }
     if (data.message_type === 'toplog_state_msg') {
       return this.onToplogStateMessage(data as ToplogStateMessage);
     }
@@ -515,6 +642,23 @@ export class ConnectionManager extends EventEmitter {
     if (data.message_type === 'recovered_msg') {
       return this.onRecoveredMessage(data);
     }
+    if (data.message_type === 'broadcast') {
+      return this.onBroadcastMessage(data as BroadcastMessage);
+    }
+    // A message_type with no case above is silently invisible to every consumer
+    // (that's how the `broadcast` drop hid the stale-tab-strip bug) — surface it
+    // once per type. Deliberately-ignored types get an explicit `return null`
+    // case instead (see entity_msg).
+    if (!this.warnedMessageTypes.has(data.message_type)) {
+      this.warnedMessageTypes.add(data.message_type);
+      console.warn('[ConnectionManager] Unhandled message_type:', data.message_type);
+    }
+  }
+
+  /** Server-wide fan-out ping — re-emitted as ``on_broadcast`` for stores that
+   *  refetch on it (e.g. the tab strip on ``broadcast_type === 'tabs_changed'``). */
+  onBroadcastMessage(data: BroadcastMessage) {
+    this.emit('on_broadcast', data);
   }
 
   /** Distinct PTY-recovery signal: the backend watchdog respawned a session's
@@ -540,27 +684,28 @@ export class ConnectionManager extends EventEmitter {
     this.emit('on_toplog_state_msg', data);
   }
 
+  /** Unified event bus frame → the ws-bridge feeds it into the app EventBus. */
+  onTagMessage(data: TagMsg) {
+    this.emit('on_tag_msg', data);
+  }
+
+  onFlowRunEventMessage(data: FlowRunEventMessage) {
+    this.emit('on_flow_run_event_msg', data);
+  }
+
+  onFlowNodeStatusMessage(data: FlowNodeStatusMessage) {
+    this.emit('on_flow_node_status_msg', data);
+  }
+
   onUiCommandMessage(data: UiCommandMessage) {
     this.emit('on_ui_command', data);
   }
 
-  onBinMessage(data: ArrayBuffer) {
-    // print all the data in the buffer
-    // const byteArray = new Uint8Array(data);
-    // let byteString = '';
-    // for (let i = 0; i < byteArray.length; i++) {
-    //   byteString += byteArray[i].toString(16).padStart(2, '0') + ' ';
-    // }
-    this.emit('on_bin_msg', data);
-  }
 
   onControlMessage(data: ControlMessage) {
     this.emit('on_control_msg', data);
   }
 
-  onStreamMessage(data: TranscriptMessage) {
-    this.emit('on_stream_msg', data);
-  }
 
   private parseTypeId(rawTypeId: ITypeId): TypeId | null {
     try {
@@ -664,8 +809,14 @@ export class ConnectionManager extends EventEmitter {
       }
 
       const timeoutMs = options?.timeout ?? this.requestTimeoutMs;
+      const tSent = performance.now();
       const timeout = setTimeout(() => {
         this.pendingRequests.delete(message.message_id);
+        toplog.log(
+          'process_load',
+          `WS request TIMEOUT after ${(performance.now() - tSent).toFixed(0)}ms (budget ${timeoutMs}ms) ` +
+            `${message.method} action=${message.action ?? ''} target=${message.target_typeid?.type ?? ''}-${(message.target_typeid?.id ?? '').slice(0, 8)} pending=${this.pendingRequests.size}`,
+        );
         reject(new Error(`Request timeout for message_id: ${message.message_id}`));
       }, timeoutMs);
 

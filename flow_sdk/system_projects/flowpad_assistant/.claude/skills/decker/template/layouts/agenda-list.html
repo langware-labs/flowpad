@@ -1,0 +1,30 @@
+<section class="layout layout-agenda-list" data-layout="agenda-list" data-page-type="agenda">
+  <style>
+    .layout-agenda-list ol[data-slot="items"] { list-style: none; margin: var(--sp-5) 0 0 0; padding: 0; counter-reset: agenda; }
+    .layout-agenda-list li { display: flex; gap: var(--sp-4); align-items: baseline; padding: var(--sp-4) 0; border-bottom: 1px solid var(--border); }
+    .layout-agenda-list li::before { counter-increment: agenda; content: counter(agenda, decimal-leading-zero); color: var(--accent); font-weight: var(--fw-bold); font-size: var(--fs-subtitle); min-width: 2.2ch; }
+    .layout-agenda-list .agenda-label { font-size: var(--fs-subtitle); font-weight: var(--fw-medium); }
+    .layout-agenda-list .agenda-detail { color: var(--text-secondary); font-size: var(--fs-body); margin-left: auto; }
+  </style>
+  <h2 data-slot="title">Agenda</h2>
+  <ol data-slot="items">
+    <template data-item>
+      <li>
+        <span class="agenda-label" data-slot="label">Agenda item</span>
+        <span class="agenda-detail" data-slot="detail" data-optional>detail</span>
+      </li>
+    </template>
+    <li>
+      <span class="agenda-label">Where we are today</span>
+      <span class="agenda-detail">5 min</span>
+    </li>
+    <li>
+      <span class="agenda-label">What we are proposing</span>
+      <span class="agenda-detail">15 min</span>
+    </li>
+    <li>
+      <span class="agenda-label">Next steps &amp; discussion</span>
+      <span class="agenda-detail">10 min</span>
+    </li>
+  </ol>
+</section>

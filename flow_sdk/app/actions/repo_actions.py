@@ -4,7 +4,7 @@ Ported from FlowPad: flowpad/hub/app/actions/repo_actions.py
 Types and constants brought as-is. GitHub token lookup simplified for desktop.
 
 Routes:
-  GET/POST /api/v1/graph/repo/branches?repo_url=...
+  GET/POST /api/v1/graph/repo/branches with {git_origin}
 """
 
 import asyncio
@@ -15,6 +15,7 @@ from typing import Any, Optional
 import requests
 from pydantic import BaseModel, ConfigDict
 
+from flow_sdk.builtin.git_origin import GitOrigin
 from flow_sdk.core import action
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.request_context.request_info import RequestInfo
@@ -50,9 +51,7 @@ class GithubApiRequestConsts:
 
 
 class RequestFields:
-    REPO_URL = "repo_url"
-    OWNER = "owner"
-    NAME = "name"
+    GIT_ORIGIN = "git_origin"
     PROVIDER = "provider"
     PAGE = "page"
     INVITATION_ID = "invitation_id"
@@ -190,7 +189,7 @@ def _classify_github_error(response) -> ApiResponse | None:
 class RepoReqInfo(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
     repo_action: str
-    repo_url: str | None = None
+    git_origin: GitOrigin | None = None
 
     @staticmethod
     def from_request_info(request_info: RequestInfo):
@@ -199,7 +198,7 @@ class RepoReqInfo(BaseModel):
             raise RuntimeError("No subpath found in request info")
         sub_path_parts = subpath.split("/")
         repo_action = sub_path_parts[0]
-        return RepoReqInfo(repo_action=repo_action, repo_url=None)
+        return RepoReqInfo(repo_action=repo_action, git_origin=None)
 
 
 def get_request_repo_info() -> RepoReqInfo:
@@ -219,20 +218,14 @@ def get_request_repo_info() -> RepoReqInfo:
     return RepoReqInfo.from_request_info(current_request_info)
 
 
-def _parse_github_url(repo_url: str) -> tuple[str, str, str]:
-    clean_url = repo_url.replace(".git", "")
-    if GithubApiRequestConsts.HOSTNAME not in clean_url:
+def _github_api_url_from_origin(git_origin: GitOrigin) -> tuple[str, str, str]:
+    if (git_origin.provider or "").strip().lower() != GITHUB_PROVIDER:
         raise ValueError("Only GitHub repositories are supported")
 
-    parts = clean_url.split("/")
-    if GithubApiRequestConsts.HOSTNAME in parts:
-        github_index = parts.index(GithubApiRequestConsts.HOSTNAME)
-        if len(parts) < github_index + 3:
-            raise ValueError("Invalid GitHub URL format")
-        owner = parts[github_index + 1]
-        curr_repo = parts[github_index + 2]
-    else:
-        raise ValueError("Invalid GitHub URL")
+    owner = _safe_slug(git_origin.owner)
+    curr_repo = _safe_slug(git_origin.name)
+    if not owner or not curr_repo:
+        raise ValueError("owner and name must be valid GitHub slugs")
 
     api_url = f"{GithubApiRequestConsts.API_BASE_URL}/{owner}/{curr_repo}/branches"
     return api_url, owner, curr_repo
@@ -334,34 +327,21 @@ async def _fetch_branches_from_github(api_url: str, headers: dict) -> ApiRespons
 async def get_branches_list(
     request_info: RequestInfo,
     repo_info: RepoReqInfo,
-    owner: str | None = None,
-    name: str | None = None,
 ) -> ApiResponse:
-    """List branches. Accepts either a full ``repo_info.repo_url`` OR explicit ``owner`` + ``name``.
+    """List branches for ``repo_info.git_origin``.
 
-    Owner/name path segments are validated against ``_GITHUB_SLUG_RE`` so a
-    crafted ``owner='foo/../../user/repos'`` can't redirect the GitHub API URL
-    to a different endpoint.
+    The origin's owner/name coordinates are validated against ``_GITHUB_SLUG_RE``
+    so a crafted owner value can't redirect the GitHub API URL to a different
+    endpoint.
     """
-    api_url: str
-    if owner is not None or name is not None:
-        safe_owner = _safe_slug(owner)
-        safe_name = _safe_slug(name)
-        if not safe_owner or not safe_name:
-            return ApiFailResponse(
-                message="owner and name must be valid GitHub slugs",
-                status_code=400,
-            )
-        api_url = f"{GithubApiRequestConsts.API_BASE_URL}/{safe_owner}/{safe_name}/branches"
-    elif repo_info.repo_url:
-        try:
-            api_url, _o, _n = _parse_github_url(repo_info.repo_url)
-        except ValueError as e:
-            return ApiFailResponse(message=str(e), status_code=400)
-        except Exception as e:
-            return ApiFailResponse(message=f"Failed to parse repository URL: {str(e)}", status_code=400)
-    else:
-        return ApiFailResponse(message="Repository URL or owner+name is required", status_code=400)
+    if not repo_info.git_origin:
+        return ApiFailResponse(message="git_origin is required", status_code=400)
+    try:
+        api_url, _o, _n = _github_api_url_from_origin(repo_info.git_origin)
+    except ValueError as e:
+        return ApiFailResponse(message=str(e), status_code=400)
+    except Exception as e:
+        return ApiFailResponse(message=f"Failed to parse git_origin: {str(e)}", status_code=400)
 
     token = await _get_github_token(request_info)
     headers = _prepare_github_headers(token)
@@ -415,18 +395,28 @@ async def list_user_repos(request_info: RequestInfo, page: int = 1) -> ApiRespon
     repos = []
     for r in raw_repos:
         owner_obj = r.get("owner") or {}
+        owner = owner_obj.get("login", "")
+        name = r.get("name", "")
+        default_branch = r.get("default_branch") or "main"
         repos.append({
             "provider": GITHUB_PROVIDER,
-            "owner": owner_obj.get("login", ""),
-            "name": r.get("name", ""),
+            "owner": owner,
+            "name": name,
             "full_name": r.get("full_name", ""),
             "private": bool(r.get("private")),
-            "default_branch": r.get("default_branch") or "main",
+            "default_branch": default_branch,
             "pushed_at": r.get("pushed_at") or "",
             "role": _role_from_permissions(r.get("permissions")),
             "html_url": r.get("html_url", ""),
             "description": r.get("description") or "",
             "fork": bool(r.get("fork")),
+            "git_origin": GitOrigin(
+                provider=GITHUB_PROVIDER,
+                owner=owner,
+                name=name,
+                branch=default_branch,
+                rel_path=".",
+            ).model_dump(mode="json"),
         })
     next_page = _parse_next_page_from_link(response.headers.get("Link"))
     return ApiSuccessResponse(data={"repos": repos, "next_page": next_page, "page": page})
@@ -522,9 +512,13 @@ async def repo() -> ApiResponse:
         query = getattr(current_request_info, "request_parameters", None) or {}
         body = {**query, **request_data}
 
-        repo_url = body.get(RequestFields.REPO_URL)
-        owner = body.get(RequestFields.OWNER)
-        name = body.get(RequestFields.NAME)
+        raw_git_origin = body.get(RequestFields.GIT_ORIGIN)
+        git_origin = None
+        if raw_git_origin not in (None, ""):
+            try:
+                git_origin = GitOrigin.model_validate(raw_git_origin)
+            except Exception as e:
+                return ApiFailResponse(message=f"git_origin is invalid: {e}", status_code=400)
         # `int(...)` on an attacker-supplied string can raise — catch and
         # return a 400 instead of a 500 from the catch-all middleware.
         raw_page = body.get(RequestFields.PAGE, 1)
@@ -539,15 +533,16 @@ async def repo() -> ApiResponse:
         if repo_info.repo_action not in allowed_repo_actions:
             return ApiFailResponse(message=f"Action {repo_info.repo_action} is not allowed")
 
-        if repo_url:
-            repo_info.repo_url = repo_url
+        repo_info.git_origin = git_origin
 
         # Provider gate — only github implemented in v1.
+        if git_origin and git_origin.provider:
+            provider = git_origin.provider.lower()
         if provider != GITHUB_PROVIDER:
             return ApiFailResponse(message=f"Provider '{provider}' not yet supported")
 
         if repo_info.repo_action == RepoActions.BRANCHES:
-            return await get_branches_list(current_request_info, repo_info, owner=owner, name=name)
+            return await get_branches_list(current_request_info, repo_info)
         if repo_info.repo_action == RepoActions.LIST:
             return await list_user_repos(current_request_info, page=page)
         if repo_info.repo_action == RepoActions.INVITATIONS:

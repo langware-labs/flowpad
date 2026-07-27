@@ -1,14 +1,20 @@
 """Type metadata for CODEX_SESSION."""
+import uuid
+
+from flow_sdk.fs_store.indexer.functions._asset_identity import derived_identity
+from flow_sdk.fs_store.indexer.functions.codex_sessions import (
+    codex_session_id_from_file,
+    codex_session_stable_key,
+    extract_codex_session,
+)
 from flow_sdk.schema.type_info import TypeMetadata
 from flow_sdk.schema.types import EntityType
-from flow_sdk.fs_store.indexer.functions.codex_sessions import (
-    extract_codex_session,
-    codex_session_id,
-)
 
 CODEX_SESSION = TypeMetadata(
     type=EntityType.CODEX_SESSION,
     indexed_by_default=True,
     from_disk_fn=extract_codex_session,
-    gen_uuid_fn=codex_session_id,
+    identity_backend=derived_identity(codex_session_id_from_file),
+    id_stable_key_fn=codex_session_stable_key,
+    id_namespace=uuid.NAMESPACE_DNS,
 )

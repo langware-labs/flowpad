@@ -147,7 +147,10 @@ describe('PendingActionsChip — worker status list', () => {
     render(<PendingActionsChip />);
     await userEvent.click(await screen.findByTestId('pending-actions-chip'));
     const popover = await screen.findByTestId('pending-actions-popover');
-    await userEvent.click(within(within(popover).getByRole('listitem')).getByRole('button'));
+    const row = within(popover).getByRole('listitem');
+    await userEvent.click(
+      within(row).getByRole('button', { name: new RegExp(id.slice(0, 8), 'i') }),
+    );
 
     expect(openShellProcess).toHaveBeenCalledWith(id);
     expect(openLens).not.toHaveBeenCalled();
@@ -160,7 +163,10 @@ describe('PendingActionsChip — worker status list', () => {
     render(<PendingActionsChip />);
     await userEvent.click(await screen.findByTestId('pending-actions-chip'));
     const popover = await screen.findByTestId('pending-actions-popover');
-    await userEvent.click(within(within(popover).getByRole('listitem')).getByRole('button'));
+    const row = within(popover).getByRole('listitem');
+    await userEvent.click(
+      within(row).getByRole('button', { name: new RegExp(id.slice(0, 8), 'i') }),
+    );
 
     // Background → transcript branch (openLens), never the terminal-attach path.
     // (openLens resolution needs a cached session_id, exercised in the browser;

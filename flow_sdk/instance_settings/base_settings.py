@@ -32,6 +32,7 @@ ENV_DESKTOP_DB = "DESKTOP_DB"
 ENV_SQLITE_DATABASE_PATH = "SQLITE_DATABASE_PATH"
 ENV_FS_RECORD_PATH = "FS_RECORD_PATH"
 ENV_FLOWPAD_CLAUDE_HOME = "FLOWPAD_CLAUDE_HOME"
+ENV_CLAUDE_CONFIG_DIR = "CLAUDE_CONFIG_DIR"
 ENV_CODEX_HOME = "CODEX_HOME"
 ENV_FLOWPAD_HUB_URL = "FLOWPAD_HUB_URL"
 ENV_MINIHUB_HOST = "MINIHUB_HOST"
@@ -50,10 +51,16 @@ DEFAULT_PROD_PORT = 9007
 DEFAULT_DB_DRIVER = "sqlite"
 DEFAULT_MINIHUB_HOST = "0.0.0.0"
 
+
+def _canonical_lexical_path(path: str | os.PathLike[str]) -> Path:
+    """Normalize a configured path without touching the filesystem."""
+    return Path(os.path.abspath(os.path.expanduser(os.fspath(path))))
+
 # Phase B additions — instance identity + sod accessor.
 INSTANCE_NAME_RE = re.compile(r"^[a-z0-9_-]{1,32}$")
 SOD_KEY_KEYCHAIN_SERVICE = "Flowpad.ai.sod_key"
 CONSENT_MARKER_FILENAME = ".secrets_enabled"
+COOKIE_GATE_MARKER_FILENAME = ".cookie_gate_armed"
 SODOT_FILENAME = "sodot"
 
 # Sentinel for the per-instance memoized key/store fields, set on the frozen
@@ -104,6 +111,7 @@ class BaseInstanceSettings:
     inbox_last_fetch_path: Path
     conversation_last_sync_path: Path
     transcript_cursors_path: Path
+    worker_history_cache_path: Path
 
     # ---- Toplog filter file (watched by the builtin FSOp toplog trigger) ----
     toplog_config_path: Path
@@ -246,6 +254,7 @@ class BaseInstanceSettings:
             inbox_last_fetch_path=instance_dir / "inbox.json",
             conversation_last_sync_path=instance_dir / "conversation_sync.json",
             transcript_cursors_path=instance_dir / "transcript_cursors.json",
+            worker_history_cache_path=instance_dir / "worker_history_cache.sqlite",
             toplog_config_path=instance_dir / "toplog.json",
             # On in dev, off in prod/named/test — only the initial seed value.
             toplog_enabled=is_dev,
@@ -302,8 +311,29 @@ class BaseInstanceSettings:
 
     @staticmethod
     def _resolve_claude_home() -> Path:
-        env = os.environ.get(ENV_FLOWPAD_CLAUDE_HOME)
-        return Path(env) if env else Path.home() / ".claude"
+        """Resolve the one transcript/config root shared with Claude Code.
+
+        ``FLOWPAD_CLAUDE_HOME`` is Flowpad's explicit override;
+        ``CLAUDE_CONFIG_DIR`` is Claude Code's native override. Letting both
+        point at different roots makes Flowpad miss transcripts the worker has
+        already materialized, so reject that split before any worker starts.
+
+        Paths are canonicalized lexically (``~`` expansion, absolute path,
+        ``.``/``..`` collapse) without resolving symlinks or requiring the
+        directory to exist.
+        """
+        flowpad_raw = os.environ.get(ENV_FLOWPAD_CLAUDE_HOME)
+        claude_raw = os.environ.get(ENV_CLAUDE_CONFIG_DIR)
+        flowpad_home = _canonical_lexical_path(flowpad_raw) if flowpad_raw else None
+        claude_home = _canonical_lexical_path(claude_raw) if claude_raw else None
+
+        if flowpad_home is not None and claude_home is not None and flowpad_home != claude_home:
+            raise ValueError(
+                f"{ENV_FLOWPAD_CLAUDE_HOME} and {ENV_CLAUDE_CONFIG_DIR} must point to the same directory "
+                f"(got {flowpad_home} and {claude_home})"
+            )
+
+        return flowpad_home or claude_home or _canonical_lexical_path(Path.home() / ".claude")
 
     @staticmethod
     def _resolve_codex_home() -> Path:
@@ -423,6 +453,19 @@ class BaseInstanceSettings:
         content" remain independent facts. Touched by ``enable_secrets()``.
         """
         return self.instance_dir / CONSENT_MARKER_FILENAME
+
+    @property
+    def cookie_gate_marker_path(self) -> Path:
+        """cookie-gate armed marker. Presence ⇔ this instance is request-gated.
+
+        Same stat()-only trick as ``consent_marker_path``, for the same reason:
+        answering "is this instance gated?" from the sod would decrypt it, and
+        decrypting fetches the Fernet key — a keychain prompt on the first
+        request after every restart, on installs that are never gated. Holds no
+        secret; the value itself lives in the sod. See
+        ``flow_sdk/instance_settings/cookie_gate.py``.
+        """
+        return self.instance_dir / COOKIE_GATE_MARKER_FILENAME
 
     @property
     def sod_key(self) -> bytes:

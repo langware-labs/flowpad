@@ -1,8 +1,8 @@
 """Toplog routes — single owner under ``/api/v1/toplog/*``.
 
 * ``GET  /state``   — current ``{enabled, filter}``.
-* ``POST /on``      — turn topics on. Body: ``{"topics": ["pty", ...]}``.
-* ``POST /off``     — turn topics off. Body: ``{"topics": ["pty", ...]}``.
+* ``POST /on``      — turn tags on. Body: ``{"tags": ["pty", ...]}``.
+* ``POST /off``     — turn tags off. Body: ``{"tags": ["pty", ...]}``.
 * ``POST /enable``  — flip the master switch on.
 * ``POST /disable`` — flip the master switch off.
 
@@ -23,15 +23,15 @@ from flow_sdk.responses.response import ApiSuccessResponse
 router = APIRouter(prefix="/api/v1/toplog")
 
 
-async def _topics(request: Request) -> list[str]:
+async def _tags(request: Request) -> list[str]:
     try:
         body = await request.json()
     except Exception:
         body = {}
-    topics = (body or {}).get("topics") or []
-    if isinstance(topics, str):
-        topics = [topics]
-    return [str(t) for t in topics]
+    tags = (body or {}).get("tags") or []
+    if isinstance(tags, str):
+        tags = [tags]
+    return [str(t) for t in tags]
 
 
 @router.get("/state")
@@ -42,15 +42,15 @@ async def get_state():
 
 @router.post("/on")
 async def turn_on(request: Request):
-    """Turn the given topics on. Body: ``{"topics": [...]}``."""
-    toplog.on(*await _topics(request))
+    """Turn the given tags on. Body: ``{"tags": [...]}``."""
+    toplog.on(*await _tags(request))
     return ApiSuccessResponse(data=toplog.state())
 
 
 @router.post("/off")
 async def turn_off(request: Request):
-    """Turn the given topics off. Body: ``{"topics": [...]}``."""
-    toplog.off(*await _topics(request))
+    """Turn the given tags off. Body: ``{"tags": [...]}``."""
+    toplog.off(*await _tags(request))
     return ApiSuccessResponse(data=toplog.state())
 
 

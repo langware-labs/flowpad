@@ -5,6 +5,5 @@ export * from './map';
 export * from './query';
 export * from './schema';
 export * from './store';
-export * from './stream';
 export * from '../models/TypeId';
 export * from './expand';

@@ -16,6 +16,12 @@ export interface UseEntityResult<T> {
   isError: boolean;
   error: ApiError | null;
   isSuccess: boolean;
+  /**
+   * True when the backend returned 404 for this typeId. This is a terminal
+   * "missing row" state, not a transient request error, so callers can render an
+   * unavailable target without re-fetching on every remount.
+   */
+  notFound: boolean;
   refetch: () => Promise<void>;
 }
 

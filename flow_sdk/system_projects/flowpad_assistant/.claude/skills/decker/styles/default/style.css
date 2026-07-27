@@ -1,0 +1,4 @@
+/* default — no personality layer by design.
+ * theme.css already renders this palette; the structural fix lives there and
+ * applies to every style. Kept as a file so every style has the same 3-file
+ * shape and so re-styling stays a plain overwrite. */

@@ -1,11 +1,11 @@
 """Tests for ClaudeCliOptions — all Claude CLI switch scenarios."""
 
-import json
 import sys
+
 import pytest
 
-from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import factory
 from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeCliOptions
+from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import factory
 
 
 @pytest.fixture(autouse=True)
@@ -96,6 +96,17 @@ def test_model():
     cmd = ClaudeCliOptions(session_id="s", model="claude-opus-4-5", workdir="/p")
     result = cmd.to_shell_string()
     assert "--model" in result and "claude-opus-4-5" in result
+
+
+def test_model_tier_persists_raw_and_emits_resolved_model():
+    cmd = ClaudeCliOptions(session_id="s", model="sm", workdir="/p")
+
+    assert cmd.model == "sm"
+    assert cmd.to_json()["model"] == "sm"
+
+    argv, _env = cmd.to_spawn_args()
+    assert argv[argv.index("--model") + 1] == "haiku"
+    assert "--model haiku" in cmd.to_shell_string()
 
 
 def test_no_model():

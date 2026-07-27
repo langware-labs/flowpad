@@ -1,4 +1,4 @@
-import { ActionInfo, dataManager } from '@sdk';
+import { GitWorkdir } from '@sdk';
 import type { GitStatus } from '@sdk';
 
 /**
@@ -20,7 +20,6 @@ import type { GitStatus } from '@sdk';
 // Re-export the SDK's git-status shapes (single source of truth - the same
 // types ``GitWorkdir`` returns) so callers can keep importing them from here.
 export type { GitStatus, GitStatusFile } from '@sdk';
-export type GitStatusData = GitStatus;
 
 /** Coalesce window - long enough to absorb a burst of tab mounts, short enough
  *  that an explicit refresh is rarely needed for routine UI freshness. */
@@ -28,7 +27,7 @@ const TTL_MS = 3000;
 
 interface Entry {
   at: number;
-  promise: Promise<GitStatusData | null>;
+  promise: Promise<GitStatus | null>;
 }
 
 const cache = new Map<string, Entry>();
@@ -44,18 +43,15 @@ export function getGitStatus(
   computeNodeId: string | null,
   workdir: string | null,
   opts?: { force?: boolean },
-): Promise<GitStatusData | null> {
+): Promise<GitStatus | null> {
   if (!computeNodeId || !workdir) return Promise.resolve(null);
   const key = keyFor(computeNodeId, workdir);
   const now = Date.now();
   const hit = cache.get(key);
   if (!opts?.force && hit && now - hit.at < TTL_MS) return hit.promise;
 
-  const action = new ActionInfo('git-ops', 'compute_node', computeNodeId, 'GET');
-  action.subpath = 'status';
-  action.queryParameters = { workdir };
-  const promise = dataManager
-    .callAction<null, GitStatusData>(action)
+  const promise: Promise<GitStatus | null> = new GitWorkdir(workdir, computeNodeId)
+    .getStatus()
     .catch(() => null);
   cache.set(key, { at: now, promise });
   // Auto-evict after the TTL so the Map stays bounded across a long session

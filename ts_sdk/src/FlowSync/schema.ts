@@ -16,9 +16,13 @@ export type ActionType =
  * A type's ``browseable_by`` is the *minimum* mode at which it is browseable
  * (cumulative: standard ⊂ advanced ⊂ dev). null ⇒ never browseable.
  */
-export type ViewMode = 'standard' | 'advanced' | 'dev';
+export type ViewMode = 'vibe' | 'standard' | 'advanced' | 'dev';
 
-const VIEW_MODE_ORDER: Record<ViewMode, number> = { standard: 0, advanced: 1, dev: 2 };
+// Vibe is the lowest tier (simpler than Standard): a type required at 'standard'
+// or above never shows in Vibe. The backend only ever emits standard/advanced/dev
+// as a type's `browseable_by` (its minimum tier); 'vibe' only appears here as the
+// client's *current* mode, so it just needs a well-defined rank.
+const VIEW_MODE_ORDER: Record<ViewMode, number> = { vibe: 0, standard: 1, advanced: 2, dev: 3 };
 
 /** True iff a type whose ``browseable_by`` is ``required`` shows in ``current`` (cumulative). */
 export function isBrowseableIn(required: ViewMode | null | undefined, current: ViewMode): boolean {
@@ -50,11 +54,32 @@ export interface TypeInfo {
   creatable: boolean;
   api_visible: boolean;
   icon: string | null;
+  /** UX-friendly label for the type (e.g. "Skills"); backend-owned, null when the
+   *  type has no curated label — callers fall back to `humanizeType(type_name)`. */
+  display_name: string | null;
   parent_type: string | null;
   locations: string[];
+  /** Fixed inner filename for folder-layout assets when one exists, e.g. SKILL.md. */
+  main_file?: string | null;
+  /** True when a folder-layout type's asset_ref points at the inner main_file. */
+  main_file_is_asset_ref?: boolean;
   /** True when asset_ref is a bare folder (e.g. skill): the Assets sidebar
    *  expands the row into its on-disk file tree. Derived from the folder layout. */
   folder_backed: boolean;
+  /** The entity owns its backing file (re-rendered from the default body on every
+   *  save, e.g. task/spec), so an orphaned row (file missing / no asset_ref) can
+   *  self-heal with a single save. Defaults false for hand-edited files (markdown/skill). */
+  owns_main_ref?: boolean;
+  /** Reception seam: the verb the receive UI shows for this type — the install
+   *  CTA reads ``"<reception_verb> the <typeLabel>"`` (e.g. "Set up the app"). */
+  reception_verb?: string;
+  /** Reception seam: the built-in skill that sets a received attachment of this
+   *  type up in a Vibe session (null ⇒ it just opens). Presentational hint only —
+   *  the backend owns the actual dispatch in ``Entity.setup_on_receive``. */
+  setup_skill?: string | null;
+  /** Reception seam: ``"auto"`` ⇒ row-only payload auto-installed at unpack
+   *  (no review gate) — its chip navigates instead of opening the review modal. */
+  receive_policy?: string | null;
   schema_hash: string;
   schema: JSONSchemaProperty | null;
 }

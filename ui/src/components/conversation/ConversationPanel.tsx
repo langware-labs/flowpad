@@ -7,8 +7,8 @@ import { OpenProjectComponent } from '@src/components/open-project-component/ope
 import { TabbedSideDrawer } from '@src/components/ui/side-drawer';
 import { CollapsedSideRail, SideRailButton } from '@src/components/ui/collapsed-side-rail';
 import { useProcessesForTarget } from '@src/components/entity-execution-panel/hooks/useProcessesForTarget';
-import { WorkflowRunsPanel } from '@src/components/workflows-view/WorkflowRunsPanel';
-import type { ProcessEntry } from '@src/components/workflows-view/workflow-run-store';
+import { ProcessRunsPanel } from '@src/components/process-runs/ProcessRunsPanel';
+import type { ProcessEntry } from '@src/components/process-runs/process-run-store';
 import { ConversationView } from './ConversationView';
 import { useProjectMappingGate } from './useProjectMappingGate';
 import { ChipsExcludeProvider } from './chips/ChipsExcludeContext';
@@ -174,8 +174,13 @@ export function ConversationPanel({
   const taskKeys = useMemo(() => taskChipKeys(task ?? null), [task]);
 
   // Drawer + ribbon state. Drawer is collapsible — toggled via the ribbon.
-  const [sideOpen, setSideOpen] = useState<boolean>(true);
+  // Starts minimized: executing a prompt surfaces the run inline via the
+  // per-message run-status one-liner (near the Execute button), so the drawer
+  // opens only on demand (ribbon toggle or clicking a run-status one-liner).
+  const [sideOpen, setSideOpen] = useState<boolean>(false);
   const [activeSideTab, setActiveSideTab] = useState<ConversationSideTab>('context');
+  // The run a message's one-liner asked to open — highlighted in the Runs tab.
+  const [focusedRunId, setFocusedRunId] = useState<string | null>(null);
   // Selection drives the bubble highlight + per-row highlight in the
   // aggregated Context panel. It's a list rather than a single id so that
   // clicking a context entity can light up *every* message the entity was
@@ -274,10 +279,9 @@ export function ConversationPanel({
   };
   if (showRuns) {
     drawerChildren.runs = (
-      <WorkflowRunsPanel
+      <ProcessRunsPanel
         entries={runEntries}
-        currentEntry={null}
-        computeNodeId={targetStr || undefined}
+        currentEntry={runEntries.find((e) => e.process.id === focusedRunId) ?? null}
       />
     );
   }
@@ -292,11 +296,12 @@ export function ConversationPanel({
     setSideOpen(true);
   };
 
-  // Approve & Execute spawns a new headless AgenticProcess; surface it
-  // immediately by popping the drawer open on the Runs tab. No-op when the
-  // conversation has no Runs target (project-only views, etc.).
-  const revealRunsTab = useCallback(() => {
+  // Clicking a message's run-status one-liner opens that run in the Runs tab,
+  // focused on it. Execution itself no longer pops the drawer — the user opens
+  // it here on demand. No-op when the conversation has no Runs target.
+  const openRun = useCallback((processId: string) => {
     if (!showRuns) return;
+    setFocusedRunId(processId);
     setActiveSideTab('runs');
     setSideOpen(true);
   }, [showRuns]);
@@ -323,7 +328,7 @@ export function ConversationPanel({
                 ensureMapped={ensureMapped}
                 selectedMessageIds={selectedMessageIds}
                 onSelectMessage={selectOneMessage}
-                onApproveAndExecuteFired={revealRunsTab}
+                onOpenRun={openRun}
               />
             </ChipsExcludeProvider>
           </div>

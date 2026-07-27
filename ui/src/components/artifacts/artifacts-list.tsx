@@ -1,4 +1,4 @@
-import { Artifact, ArtifactType } from '@sdk';
+import { Artifact, kindMatches } from '@sdk';
 import { notify } from '@src/notifications';
 import { useArtifactActions } from '@src/hooks/flow-hooks';
 import { useCurrentArtifacts } from '@src/hooks/flow-hooks';
@@ -6,12 +6,14 @@ import { FileText, Loader2 } from 'lucide-react';
 import React, { useCallback, useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import { ArtifactCard } from './artifact-card';
-import { getArtifactTypeConfig } from './artifact-type-config';
+import { EntityIcon } from '../graph-view/ui/EntityIcon';
 
 interface ArtifactsListProps {
-  /** Filter by artifact type */
-  filterType?: ArtifactType;
-  /** Group artifacts by type */
+  /** Filter by the open dot-path kind. */
+  filterKind?: string;
+  /** @deprecated Use filterKind. */
+  filterType?: string;
+  /** Group artifacts by kind. */
   groupByType?: boolean;
   /** Show add button */
   showAdd?: boolean;
@@ -21,7 +23,12 @@ interface ArtifactsListProps {
   className?: string;
 }
 
-export const ArtifactsList: React.FC<ArtifactsListProps> = ({ filterType, groupByType = true, className = '' }) => {
+export const ArtifactsList: React.FC<ArtifactsListProps> = ({
+  filterKind,
+  filterType,
+  groupByType = true,
+  className = '',
+}) => {
   const { data: artifacts = [], isLoading } = useCurrentArtifacts();
   const { deleteArtifact, isDeleting } = useArtifactActions();
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -29,9 +36,10 @@ export const ArtifactsList: React.FC<ArtifactsListProps> = ({ filterType, groupB
 
   // Filter artifacts
   const filteredArtifacts = useMemo(() => {
-    if (!filterType) return artifacts;
-    return artifacts.filter((a) => a.artifact_type === filterType);
-  }, [artifacts, filterType]);
+    const requestedKind = filterKind ?? filterType;
+    if (!requestedKind) return artifacts;
+    return artifacts.filter((artifact) => kindMatches(requestedKind, artifact.kind));
+  }, [artifacts, filterKind, filterType]);
 
   // Group artifacts by type
   const groupedArtifacts = useMemo(() => {
@@ -42,11 +50,11 @@ export const ArtifactsList: React.FC<ArtifactsListProps> = ({ filterType, groupB
     const groups: Record<string, Artifact[]> = {};
 
     filteredArtifacts.forEach((artifact) => {
-      const type = artifact.artifact_type || ArtifactType.FILE;
-      if (!groups[type]) {
-        groups[type] = [];
+      const kind = artifact.kind;
+      if (!groups[kind]) {
+        groups[kind] = [];
       }
-      groups[type].push(artifact);
+      groups[kind].push(artifact);
     });
 
     return groups;
@@ -97,17 +105,14 @@ export const ArtifactsList: React.FC<ArtifactsListProps> = ({ filterType, groupB
   if (groupByType && Object.keys(groupedArtifacts).length > 1) {
     return (
       <div className={`space-y-6 ${className}`}>
-        {Object.entries(groupedArtifacts).map(([type, artifactsInGroup]) => {
+        {Object.entries(groupedArtifacts).map(([kind, artifactsInGroup]) => {
           if (artifactsInGroup.length === 0) return null;
 
-          const typeConfig = getArtifactTypeConfig(type as ArtifactType);
-          const Icon = typeConfig.icon;
-
           return (
-            <div key={type}>
+            <div key={kind}>
               <div className="mb-3 flex items-center gap-2">
-                <Icon className={`h-5 w-5 ${typeConfig.color}`} />
-                <h3 className="text-sm font-semibold">{typeConfig.label}</h3>
+                <EntityIcon type={Artifact.type} size={18} />
+                <h3 className="font-mono text-sm font-semibold">{kind}</h3>
                 <span className="text-xs text-muted-foreground">({artifactsInGroup.length})</span>
               </div>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">

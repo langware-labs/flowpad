@@ -75,3 +75,33 @@ async def test_project_delete_preserves_local_compute_node() -> None:
     survivor = await ComputeNode.get_local(create=False)
     assert survivor is not None, "project delete destroyed the shared @local compute node"
     assert str(survivor.id) == cn_id
+
+
+@pytest.mark.asyncio
+async def test_project_delete_preserves_dynamic_protected_source(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    import flow_sdk.config as config
+    from flow_sdk.fs_store.path_utils import canonical_posix_path
+
+    source = tmp_path / "dynamic-protected-source"
+    source.mkdir()
+    sentinel = source / "keep.txt"
+    sentinel.write_text("keep")
+
+    # It begins as an ordinary project. Changing the configured workspace root
+    # later proves protection is derived at deletion time, not stored stale.
+    project = Project(name=source.name, fs_storage_mount_path=str(source))
+    await project.save()
+    assert not project.protected_path
+
+    canonical = canonical_posix_path(source)
+    monkeypatch.setattr(config, "AGENT_MOUNT_FOLDER", canonical)
+    monkeypatch.setattr(config, "agent_workspace_root", lambda: source)
+    assert project.protected_path
+
+    await project._delete_with_children()
+
+    assert sentinel.read_text() == "keep"
+    assert await Project.get_by_id(project.id) is None

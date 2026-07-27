@@ -39,6 +39,9 @@ function relFromAbs(absPath: string): string {
   return absPath.replace(/^\/+/, '');
 }
 
+/** Node-id / multi-select-key prefix for a file under a folder-backed asset. */
+const SKILL_FILE_KEY_PREFIX = 'skill-file:';
+
 function fileIcon(name: string): React.ReactNode {
   const ext = name.slice(name.lastIndexOf('.') + 1).toLowerCase();
   const Icon = lucideByName(FILE_EXT_ICONS[ext] ?? 'File');
@@ -147,12 +150,24 @@ export function skillFolderListChildren(
         return folderNode(childAbs, name, selfId, pageSize);
       }
       return {
-        id: `skill-file:${childAbs}`,
+        id: `${SKILL_FILE_KEY_PREFIX}${childAbs}`,
         kind: 'asset',
         label: name,
         icon: fileIcon(name),
         hasChildren: false as const,
         pointer: DockPointer.forAssetEditor('code', childAbs),
+        // Multi-select: files under a folder-backed asset. The bulk delete closes
+        // over `childAbs` (no path reconstruction from the id) and refreshes this
+        // folder node so deleted rows drop out.
+        selectionKey: `${SKILL_FILE_KEY_PREFIX}${childAbs}`,
+        selectable: true,
+        selectionType: 'file',
+        bulkDelete: {
+          run: async () => {
+            await fsManager.delete(COMPUTE_NODE_ID, relFromAbs(childAbs));
+          },
+          refreshId: selfId,
+        },
         toolbar: [deleteAction(childAbs, name, selfId)],
       };
     });

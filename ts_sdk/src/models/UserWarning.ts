@@ -38,6 +38,8 @@ export interface UserWarning {
   targetView: ViewType;
   /** Optional pointer for the target view (e.g., file path, section) */
   targetPointer?: string;
+  /** Optional wiki page title to open on click — used when no `onClick` is set */
+  wikiPage?: string;
   /** Optional callback to execute when the warning is clicked (in addition to navigation) */
   onClick?: () => void;
 }
@@ -52,7 +54,10 @@ export const WARNING_IDS = {
   CLOUD_CONNECTION_AUTH_REJECTED: 'cloud-connection-auth-rejected',
   HUB_REQUEST_FAILED: 'hub-request-failed',
   NO_COMPUTE_NODE: 'no-compute-node',
+  NO_HARNESS: 'no-harness',
+  HARNESS_LOGIN: 'harness-login-required',
   SNIFFER_NOT_FOUND: 'sniffer-not-found',
+  SNIFFER_ACTIVE: 'sniffer-active',
   SECRETS_NOT_ENABLED: 'secrets-not-enabled',
 } as const;
 
@@ -181,6 +186,39 @@ export function createNoComputeNodeWarning(): UserWarning {
 }
 
 /**
+ * Create a warning for no installed harness (coding agent CLI). Clicking it
+ * opens the shipped "Install a harness" wiki page with per-harness install
+ * instructions.
+ */
+export function createNoHarnessWarning(): UserWarning {
+  return {
+    id: WARNING_IDS.NO_HARNESS,
+    icon: 'AlertCircle',
+    color: 'orange',
+    message: 'No harness found',
+    description: 'Install a coding agent CLI (Claude, Codex or Copilot) to run agents. Click for setup instructions.',
+    targetView: ViewType.CAPABILITIES,
+    wikiPage: 'Install a harness',
+  };
+}
+
+/**
+ * Create a warning shown when harness CLIs are installed but none is logged
+ * in. The warnings popover routes clicks on this id to the harness-login
+ * modal (device-login flow).
+ */
+export function createHarnessLoginWarning(): UserWarning {
+  return {
+    id: WARNING_IDS.HARNESS_LOGIN,
+    icon: 'KeyRound',
+    color: 'orange',
+    message: 'Harness login required',
+    description: 'A coding agent CLI is installed but not signed in. Click to sign in.',
+    targetView: ViewType.CAPABILITIES,
+  };
+}
+
+/**
  * Create a warning shown when the OS keychain access for app-secrets has
  * not been approved yet. Clicking it opens the SecretApprovalDialog via
  * `secretApprovalGate.request()`.
@@ -195,6 +233,22 @@ export function createSecretsNotEnabledWarning(): UserWarning {
     targetView: ViewType.AI_CONFIG,
   };
 }
+
+/**
+ * Create a warning shown while the hook sniffer is actually installed in the
+ * harness settings file — every coding-agent session on this machine reports
+ * its hook events to Flowpad. Clicking it turns the sniffer off (routed to the
+ * `sniffer.disable` command by the warnings popover, so the toast and the
+ * popover share one disable path and one wording).
+ */
+export const SNIFFER_ACTIVE_WARNING: UserWarning = {
+  id: WARNING_IDS.SNIFFER_ACTIVE,
+  icon: 'AlertTriangle',
+  color: 'yellow',
+  message: 'Hook sniffer is on',
+  description: 'Claude Code hooks report every session on this machine to Flowpad.',
+  targetView: ViewType.HOOKS,
+};
 
 /**
  * Create a warning for sniffer hook not found

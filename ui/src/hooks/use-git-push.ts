@@ -1,18 +1,8 @@
 import { useCallback, useState } from 'react';
-import { ActionInfo, dataManager } from '@sdk';
+import { GitWorkdir } from '@sdk';
 import { notify } from '@src/notifications/notify';
 import { getViewMode } from '@src/components/view-mode';
 import { pushToastCopy, type PushKind } from '@src/lib/publish-state';
-
-interface PushResult {
-  ok: boolean;
-  conflict: boolean;
-  nothing: boolean;
-  /** Typed outcome from GitRepo._classify_push_error (back-compat: may be absent). */
-  kind?: PushKind;
-  branch: string | null;
-  message: string;
-}
 
 export interface UseGitPushResult {
   /** Run the greedy push (commit-all → pull --rebase → push). */
@@ -41,13 +31,10 @@ export function useGitPush(
     if (!computeNodeId || !workdir || busy) return;
     setBusy(true);
     try {
-      const action = new ActionInfo('git-ops', 'compute_node', computeNodeId, 'POST');
-      action.subpath = 'push';
-      action.bodyParameters = { workdir };
-      const res = await dataManager.callAction<null, PushResult>(action);
-      // Typed outcome → plain-language, mode-aware copy. Fall back to flags when
-      // an older backend doesn't send `kind`.
-      const kind: PushKind = res?.kind ?? (res?.nothing ? 'nothing' : res?.conflict ? 'conflict' : res?.ok ? 'pushed' : 'generic');
+      const res = await new GitWorkdir(workdir, computeNodeId).push();
+      // Typed outcome → plain-language, mode-aware copy. `kind` is a required
+      // field of GitPushResult; guard only against a malformed response.
+      const kind: PushKind = res?.kind ?? 'generic';
       const copy = pushToastCopy(kind, getViewMode(), { branch: res?.branch, message: res?.message });
       if (copy.level === 'success') {
         notify.success({ title: copy.title, message: copy.message, durationMs: 4000 });

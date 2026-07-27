@@ -32,7 +32,6 @@ import io
 import os
 import sys
 import time
-from pathlib import Path
 from typing import Any, Optional
 
 import httpx
@@ -44,7 +43,7 @@ HUB_URL = os.environ.get("FLOWPAD_HUB_URL", "http://localhost:8093").rstrip("/")
 HUB_API = f"{HUB_URL}/api/v1"
 ALICE_EMAIL = os.environ.get("DEMO_ALICE_EMAIL", "alice@local.test")
 BOB_EMAIL = os.environ.get("DEMO_BOB_EMAIL", "bob@local.test")
-REPO_PATH = str(Path(__file__).resolve().parents[1])
+DEMO_REPO_URL = "https://github.com/example/read-receipts"
 
 
 # ---------------------------------------------------------------------------
@@ -304,10 +303,10 @@ async def main() -> int:
             text=(
                 "On it. Will sketch the fanout path against the existing "
                 "Conversation._fanout_message and post an architecture doc "
-                "in an hour. Repo pointer for my own bookmark."
+                "in an hour. Repo URL for my own bookmark."
             ),
             attachment=[
-                {"attachment_type": "repo", "data": REPO_PATH},
+                {"attachment_type": "url", "data": DEMO_REPO_URL},
             ],
         )
 

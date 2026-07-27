@@ -1,14 +1,16 @@
 import { cloudManager, connectionManager, dataContext } from '@sdk';
 import { ViewType } from '@src/types/ViewType';
 import type { NotificationAction } from './types';
-import { notify } from './notify';
+import { dismiss, notify } from './notify';
 
 /**
  * Maps backend WS signals into `notify()` calls — the single ingest point.
  *
- * The multi-toast "Cloud sign-in expired" storm is fixed here: every hub error
- * of a given status class uses ONE stable id, so N broadcasts collapse to one
- * live toast that updates in place (was one sonner toast per event).
+ * Hub-error toast storms are fixed here: every hub error of a given status
+ * class uses ONE stable id, so N broadcasts collapse to one live toast that
+ * updates in place (was one sonner toast per event). A 401 only toasts when a
+ * previously-valid session lapsed ("Cloud sign-in expired"); the plain
+ * logged-out state stays silent (login CTA overlay covers it).
  *
  * Owns: the `hub_client_error` listener, the one-shot bootstrap notice, and the
  * `on_flow_data` hook_op listener (skill / incoming-task badges) that used to
@@ -60,7 +62,9 @@ function handleHubClientError(msg: HubClientErrorMsg): void {
     // the *normal* logged-out state — not an error. The inbox/conversation
     // surfaces show a Login CTA overlay for that case, so swallow the toast.
     // Only surface "sign-in expired" when a previously-valid cloud session
-    // actually lapsed (we still believe we're logged in).
+    // actually lapsed (we still believe we're logged in) — without it the
+    // instance drifts into a silently signed-out state and every cloud action
+    // fails with an unexplained 401/403 later.
     if (cloudManager.loginStatus !== 'logged_in') return;
     notify.error({
       id: 'cloud-auth-expired',
@@ -90,12 +94,50 @@ function handleHubClientError(msg: HubClientErrorMsg): void {
       actions: [detail],
     });
   } else if (statusCode >= 400) {
+    // Benign rejection: inviting someone who already accepted means the desired
+    // state (they're a member) already holds, and the invite dialog surfaces its
+    // own contextual error — the generic toast on top is pure noise.
+    if (/already accepted/i.test(rawMessage)) {
+      console.warn(`[cloud] hub rejected ${method} ${path} (${statusCode}) — benign: ${rawMessage}`);
+      return;
+    }
     notify.error({
       id: 'cloud-request-rejected',
       title: 'Cloud request rejected',
       message: rawMessage || `The cloud rejected the request (${statusCode}).`,
       actions: [detail],
     });
+  }
+}
+
+// --- cloud connection slot ---------------------------------------------------
+
+/**
+ * The `hub_client_error` path above reacts to a FAILED hub HTTP request. This
+ * reacts to the connection STATUS SLOT, so an outage that never rides a request
+ * (WS connection dropped, or a box that boots unreachable and makes no cloud
+ * call) still surfaces. Reuses the SAME toast ids as the request path so the two
+ * collapse to one live toast instead of double-firing, and clears on recovery.
+ * Reads the authoritative slot rather than the event payload. Desktop-only.
+ */
+function handleCloudConnectionStatus(): void {
+  if (!cloudManager.connectionControlsAvailable) return;
+  const status = cloudManager.connectionSlot.status;
+  if (status === 'error') {
+    notify.error({
+      id: 'cloud-unreachable',
+      title: 'Cloud is not available',
+      message: "We couldn't reach the cloud service. Check your connection or try again in a moment.",
+    });
+  } else if (status === 'auth_rejected') {
+    notify.error({
+      id: 'cloud-auth-expired',
+      title: 'Cloud sign-in expired',
+      message: 'Please sign in again to keep using cloud features.',
+      actions: [{ label: 'Sign in', command: 'cloud.signin' }],
+    });
+  } else if (status === 'connected' || status === 'verified') {
+    dismiss('cloud-unreachable');
   }
 }
 
@@ -140,8 +182,8 @@ async function handleFlowData(_typeId: unknown, flowData: Record<string, unknown
           id: `skill-activated:${meta.skill_name}`,
           level: 'info',
           title: meta.skill_name,
-          category: ViewType.EXECUTE_FLOW,
-          actions: [{ label: 'View', href: `/dock/${ViewType.EXECUTE_FLOW}` }],
+          category: ViewType.ASSETS,
+          actions: [{ label: 'View', href: '/dock/assets/list/skill' }],
         });
       }
     } else if (eventName === 'started_generating_skill' && context?.skill_name) {
@@ -153,7 +195,13 @@ async function handleFlowData(_typeId: unknown, flowData: Record<string, unknown
         title: `Generating: ${context.skill_name}`,
         category: ViewType.ASSETS,
         actions: context.session_id
-          ? [{ label: 'View Session', command: 'terminal.resume', args: { sessionId: context.session_id, ...(context.cwd ? { cwd: context.cwd } : {}) } }]
+          ? [
+              {
+                label: 'View Session',
+                command: 'terminal.resume',
+                args: { sessionId: context.session_id, ...(context.cwd ? { cwd: context.cwd } : {}) },
+              },
+            ]
           : undefined,
       });
     } else if (eventName === 'skill_ready' && context?.skill_name) {
@@ -161,10 +209,8 @@ async function handleFlowData(_typeId: unknown, flowData: Record<string, unknown
         id: `skill:${context.session_id ?? context.skill_name}`,
         level: 'success',
         title: `Ready: ${context.skill_name}`,
-        category: ViewType.EXECUTE_FLOW,
-        actions: context.cwd
-          ? [{ label: 'Execute Skill', href: `/dock/${ViewType.EXECUTE_FLOW}/${encodeURIComponent(context.cwd)}` }]
-          : undefined,
+        category: ViewType.ASSETS,
+        actions: [{ label: 'View Skill', href: '/dock/assets/list/skill' }],
       });
     }
   }
@@ -183,7 +229,9 @@ async function handleFlowData(_typeId: unknown, flowData: Record<string, unknown
       title: taskTitle,
       category: ViewType.TASKS,
       typeId: taskTypeId,
-      actions: [{ label: 'View', href: taskTypeId ? `/dock/${ViewType.TASKS}/${taskTypeId}` : `/dock/${ViewType.TASKS}` }],
+      actions: [
+        { label: 'View', href: taskTypeId ? `/dock/${ViewType.TASKS}/${taskTypeId}` : `/dock/${ViewType.TASKS}` },
+      ],
     });
 
     // Side-effect: open the incoming-task dialog (kept out of `notify`).
@@ -194,11 +242,20 @@ async function handleFlowData(_typeId: unknown, flowData: Record<string, unknown
   }
 }
 
+// Event-bus adapter: the bus expects a void listener; fire-and-forget the
+// async handler through one stable reference so off() can unsubscribe it.
+function onFlowDataEvent(typeId: unknown, flowData: Record<string, unknown>): void {
+  void handleFlowData(typeId, flowData);
+}
+
 /** Wire all WS-driven notifications. Call once at app start; returns a cleanup fn. */
 export function initNotificationIngest(): () => void {
   flushBootstrapNotice();
   cloudManager.on('hub_client_error', handleHubClientError);
-  connectionManager.on('on_flow_data', handleFlowData);
+  cloudManager.on('connection_status_changed', handleCloudConnectionStatus);
+  connectionManager.on('on_flow_data', onFlowDataEvent);
+  // Catch a box that already booted into an errored connection before this wired up.
+  handleCloudConnectionStatus();
 
   // Dev-only test bridge: lets browser automation drive the real ingest path
   // (hub errors, hook_op flow data) and the dispatcher directly. Stripped from
@@ -214,6 +271,7 @@ export function initNotificationIngest(): () => void {
 
   return () => {
     cloudManager.off('hub_client_error', handleHubClientError);
-    connectionManager.off('on_flow_data', handleFlowData);
+    cloudManager.off('connection_status_changed', handleCloudConnectionStatus);
+    connectionManager.off('on_flow_data', onFlowDataEvent);
   };
 }

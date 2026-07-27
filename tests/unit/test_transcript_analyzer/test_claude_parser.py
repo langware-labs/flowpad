@@ -17,6 +17,7 @@ from flow_sdk.transcript_analyzer import (
     UnknownEntry,
     UserMessageEntry,
 )
+from flow_sdk.transcript_analyzer.parsers.claude import ClaudeParser
 
 
 def test_parses_all_lines_with_one_warning_for_unknown(claude_jsonl):
@@ -141,6 +142,30 @@ def test_user_message_entry_fields(claude_jsonl):
     users = [e for e in t.entries if isinstance(e, UserMessageEntry)]
     assert len(users) == 1
     assert users[0].text  # non-empty after sanitization
+
+
+def test_flowpad_embedded_agent_prompt_envelope_is_meta():
+    parser = ClaudeParser()
+    text = (
+        "# You are the 'vibe' agent\n"
+        "The user is chatting with you (this agent) directly.\n\n"
+        "## Instructions\n"
+        "Internal routing instructions.\n\n"
+        "# User message\n"
+        "Open the app"
+    )
+    entries = parser.feed(
+        {
+            "type": "user",
+            "message": {"content": [{"type": "text", "text": text}]},
+            "uuid": "u1",
+        },
+        0,
+    )
+
+    assert len(entries) == 1
+    assert isinstance(entries[0], UserMessageEntry)
+    assert entries[0].is_meta is True
 
 
 def test_meta_kind_propagation(claude_jsonl):

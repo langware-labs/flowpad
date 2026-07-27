@@ -23,13 +23,19 @@ from flow_sdk.external_apis.llm.llm_drivers.flow_data import (
     FlowElementType,
 )
 from flow_sdk.transcript_analyzer._helpers import flatten_tool_result
+from flow_sdk.transcript_analyzer.derive import derive_entry
 from flow_sdk.transcript_analyzer.entries import (
     AssistantMessageEntry,
     ToolResultEntry,
-    ToolUseEntry,
+    UserMessageEntry,
 )
-from flow_sdk.transcript_analyzer.parsers.claude import ClaudeParser
+from flow_sdk.transcript_analyzer.parsers.claude import (
+    ClaudeParser,
+    build_semantic_tool_entry,
+)
 from flow_sdk.transcript_analyzer.process_entry import ProcessEntry
+
+from .session_history import entry_to_flowdata
 
 logger = logging.getLogger(__name__)
 
@@ -183,35 +189,47 @@ def _convert_assistant_event(event: dict[str, Any], line_index: int) -> list[Flo
             tool_name = str(block.get("name") or "")
             tool_use_id = str(block.get("id") or "")
             tool_input = block.get("input") if isinstance(block.get("input"), dict) else {}
-            entry = ToolUseEntry(
+            # Route through the SAME semantic mapping the JSONL parser uses,
+            # then the SAME converter the history path uses, so a live frame is
+            # identical to the one a reload replays — including the semantic
+            # subtype (file_write / skill_call / flow_command …) the chips read.
+            entry = derive_entry(build_semantic_tool_entry(
                 tool_name=tool_name,
                 tool_use_id=tool_use_id,
                 tool_input=tool_input,
-                **_base_for_event(event, line_index, block_index, tool_use_id),
-            )
-            out.append(_with_process_entry(FlowData(
-                flow_value={
-                    "tool_name": tool_name,
-                    "tool_call_id": tool_use_id,
-                    "tool_use_id": tool_use_id,
-                    "args": tool_input,
-                    "input": tool_input,
-                },
-                created_time=entry.timestamp,
-                attributes={
-                    "element-type": FlowElementType.TOOL_CALL,
-                    "data-type": FlowDataType.OBJECT,
-                    "tool-name": tool_name,
-                    "tool-use-id": tool_use_id,
-                },
-            ), entry))
+                envelope={},
+                base=_base_for_event(event, line_index, block_index, tool_use_id),
+            ))
+            out.append(entry_to_flowdata(entry, observation_kind="live"))
     return out
 
 
 def _convert_user_event(event: dict[str, Any], line_index: int) -> list[FlowData]:
     out: list[FlowData] = []
     for block_index, block in enumerate(_content_blocks(event)):
-        if not isinstance(block, dict) or block.get("type") != "tool_result":
+        if not isinstance(block, dict):
+            continue
+        # Framework-injected user lines (skill bodies, command expansions)
+        # arrive on the live stream as user text blocks mid-turn — the same
+        # lines the transcript stamps ``isMeta``. Emit them so the live chat
+        # renders the same meta chip a reload does. ``is_meta=True`` is by
+        # construction, not read off the event: the live stream strips the
+        # ``isMeta`` field, and a genuine user turn is never echoed on stdout
+        # (verified against the real CLI with ``--input-format stream-json``),
+        # so a stdout user text block is always a framework injection.
+        if block.get("type") == "text":
+            text = block.get("text")
+            if isinstance(text, str) and text:
+                entry = UserMessageEntry(
+                    text=text,
+                    is_meta=True,
+                    **_base_for_event(event, line_index, block_index, ""),
+                )
+                # Delegate to the history path's converter so the live frame
+                # is identical to the one a reload replays.
+                out.append(entry_to_flowdata(entry, observation_kind="live"))
+            continue
+        if block.get("type") != "tool_result":
             continue
         tool_use_id = str(block.get("tool_use_id") or "")
         output = flatten_tool_result(block.get("content"))

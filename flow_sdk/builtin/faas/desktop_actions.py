@@ -1,4 +1,5 @@
 """DesktopActionsMixin — desktop/OS interaction actions for ComputeNode."""
+
 from __future__ import annotations
 
 import json
@@ -8,8 +9,8 @@ import platform
 
 from starlette.responses import RedirectResponse
 
-from flow_sdk.config import AGENT_MOUNT_FOLDER
 from flow_sdk.builtin.faas.system_profile_types import SystemProfile
+from flow_sdk.config import AGENT_MOUNT_FOLDER
 from flow_sdk.flowpad_types.machine_status import ExecutionEnvironmentStatus, MachineStatus
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
@@ -242,11 +243,13 @@ class DesktopActionsMixin:
         """
         try:
             from flow_sdk.request_context.methods import get_current_request_info
+
             request_info = get_current_request_info()
             body = await request_info.get_post_data() if request_info else {}
             initial_dir: str | None = body.get("initial_dir") if isinstance(body, dict) else None
+            mode: str = (body.get("mode") if isinstance(body, dict) else None) or "folder"
             selected_path = await self.compute_provider.pick_folder(
-                self.verified_node_provider_id, initial_dir=initial_dir
+                self.verified_node_provider_id, initial_dir=initial_dir, mode=mode
             )
             return ApiSuccessResponse(data={"path": selected_path})
         except Exception as e:

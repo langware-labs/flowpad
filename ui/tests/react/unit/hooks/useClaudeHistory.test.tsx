@@ -52,8 +52,18 @@ describe('useClaudeHistory hook (end-to-end)', () => {
       expect(entries[i - 1].timestamp_ms).toBeGreaterThanOrEqual(entries[i].timestamp_ms);
     }
 
-    // --- Limit respected ---
-    expect(entries.length).toBeLessThanOrEqual(5);
+    // --- Limit semantics: PER-PROJECT-SCOPE, not a global top-N ---
+    // `get_worker_history` (backend) keeps each project's newest `limit` sessions
+    // rather than a single global `collected[:limit]`, so an UNSCOPED fetch returns
+    // up to `limit` PER project_id and the total legitimately exceeds `limit` on a
+    // populated machine. The wire response carries only the display `project`
+    // (project_name/cwd basename), which collapses distinct project_ids, so the
+    // exact per-project_id cap isn't reconstructable here — it's owned by the
+    // backend worker_history tests. Assert the observable contract: `limit` still
+    // bounds the walk (a smaller limit returns no more entries than a larger one).
+    const { result: r1 } = renderHook(() => useClaudeHistory(1));
+    await waitFor(() => expect(r1.current.isLoading).toBe(false), { timeout: 10000 });
+    expect(r1.current.entries.length).toBeLessThanOrEqual(entries.length);
 
     // --- Embedded session (_session) ---
     const withSession = entries.find((e) => e._session != null);

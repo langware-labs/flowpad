@@ -123,3 +123,22 @@ def flow_rs_set_restricted(service: str, account: str, value: str) -> None:
         raise RuntimeError(
             f"flow-rs set_key_restricted exit {proc.returncode}: {(proc.stderr or proc.stdout).strip()}"
         )
+
+
+def flow_rs_delete_restricted(service: str, account: str) -> None:
+    """Remove the ``(service, account)`` entry via the signed binary's
+    ``delete_key`` (``security delete-generic-password`` on macOS, keyring-crate
+    delete elsewhere). No-op if the entry is absent. Raises ``RuntimeError`` on
+    any other failure (or when no vendored binary is available)."""
+    bin_path = _resolve_or_raise()
+    proc = subprocess.run(
+        [str(bin_path), "delete_key", service, account],
+        capture_output=True,
+        encoding="utf-8",
+    )
+    # flow-rs delete_key is a documented no-op when absent (exit 0). Some builds
+    # signal "not found" with exit 1 — treat both as success.
+    if proc.returncode not in (0, 1):
+        raise RuntimeError(
+            f"flow-rs delete_key exit {proc.returncode}: {(proc.stderr or proc.stdout).strip()}"
+        )

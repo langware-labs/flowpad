@@ -12,7 +12,7 @@ id: d0c8a8e6-41d7-5afb-9fdc-9e4346f9c767
 test 1: Project view mounts the asset browser (not a legacy DOCS sidebar)
 - navigate to {APP_URL}/dock/project/@flowpad_assistant
 - wait for the project view to render
-- validate the "Assets" heading and a "Project: " scope indicator are present (asset browser)
+- validate the "Project assets" header and the project-name chip scope indicator are present (asset browser)
 - validate the page does NOT contain the text "No editor for type: project"
 - check console for errors
 - validate no errors appeared

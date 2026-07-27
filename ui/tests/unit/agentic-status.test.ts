@@ -6,6 +6,7 @@ import {
   ExecutionMode,
   getDisplayStatus,
   hasWorkerStarted,
+  isBusy,
   isProcessActive,
   isProcessRunning,
   isProcessStartable,
@@ -14,6 +15,7 @@ import {
   isWorkerTerminal,
   ProcessStatus,
   supportedExecutionModes,
+  WORKER_BUSY_STATUSES,
   WorkerStatus,
 } from '@sdk';
 
@@ -23,24 +25,35 @@ import {
  * These tests validate the two-axis status model surfaced by
  * ``ts_sdk/src/process/agentic-types.ts``:
  *
- *   ProcessStatus — app/user-level lifecycle (6 values, stored, explicit writers)
- *   WorkerStatus  — expert-level worker state (12 values, derived, not stored)
+ *   ProcessStatus — logical "what it means" status. Stored FSM projected on the
+ *                   wire to ready/busy (8 enum members incl. legacy RUNNING).
+ *   WorkerStatus  — raw "what we found" worker state (14 values, derived, nullable)
  *
- * Set parity (WORKER_RUNNING_STATUSES / WORKER_TERMINAL_STATUSES) is enforced
+ * Set parity (WORKER_RUNNING_STATUSES / WORKER_BUSY_STATUSES / …) is enforced
  * against the shared fixture ``test_fixtures/status_sets.json`` — the same file
- * the Python ``test_running_set_matches_spec`` test loads. Editing one side
- * without updating the other breaks both tests.
+ * the Python contract tests load. Editing one side without the other breaks both.
  */
 
 // ─── Shared fixture ──────────────────────────────────────────────────────────
 
+interface ReadyForInputCase {
+  status: string;
+  busy: boolean;
+  pty_mode: boolean;
+  session_id: string | null;
+  expected: boolean;
+  label: string;
+}
+
 interface StatusSetsFixture {
   worker_running: string[];
+  worker_busy: string[];
   worker_terminal: string[];
-  worker_ready_for_input: string[];
   worker_execution_error: string[];
-  process_running: string[];
+  process_stored_running: string[];
+  process_running_wire: string[];
   process_startable: string[];
+  ready_for_input_cases: ReadyForInputCase[];
 }
 
 const FIXTURE_PATH = resolve(__dirname, '../../../test_fixtures/status_sets.json');
@@ -49,13 +62,15 @@ const fixture: StatusSetsFixture = JSON.parse(readFileSync(FIXTURE_PATH, 'utf-8'
 // ─── ProcessStatus wire values ───────────────────────────────────────────────
 
 describe('ProcessStatus', () => {
-  it('has exactly 6 canonical values', () => {
+  it('has exactly 6 canonical lifecycle values (no ready/busy projection)', () => {
     expect(Object.values(ProcessStatus).sort()).toEqual(
       ['failed', 'new', 'running', 'starting', 'stopped', 'stopping'].sort(),
     );
   });
 
-  it('wire value for RUNNING is "running" (renamed from "live")', () => {
+  it('has no ready/busy status values — busy is a separate boolean now', () => {
+    expect((ProcessStatus as Record<string, unknown>).READY).toBeUndefined();
+    expect((ProcessStatus as Record<string, unknown>).BUSY).toBeUndefined();
     expect(ProcessStatus.RUNNING).toBe('running');
     expect((ProcessStatus as Record<string, unknown>).LIVE).toBeUndefined();
   });
@@ -97,7 +112,7 @@ describe('WorkerStatus', () => {
       [
         'initializing',
         'idle',
-        'waiting',
+        'working',
         'thinking',
         'tool_call',
         'tool_running',
@@ -144,14 +159,20 @@ describe('set parity (vs test_fixtures/status_sets.json)', () => {
     expect(new Set(actual)).toEqual(new Set(fixture.worker_terminal));
   });
 
-  it('process_running fixture matches isProcessRunning', () => {
+  it('process_running_wire fixture matches isProcessRunning', () => {
     const actual = Object.values(ProcessStatus).filter((s) => isProcessRunning(s as ProcessStatus));
-    expect(new Set(actual)).toEqual(new Set(fixture.process_running));
+    expect(new Set(actual)).toEqual(new Set(fixture.process_running_wire));
   });
 
   it('process_startable fixture matches isProcessStartable', () => {
     const actual = Object.values(ProcessStatus).filter((s) => isProcessStartable(s as ProcessStatus));
     expect(new Set(actual)).toEqual(new Set(fixture.process_startable));
+  });
+
+  it('WORKER_BUSY_STATUSES matches fixture worker_busy byte-for-byte', () => {
+    // The raw worker states that make a turn busy — the same literal the Python
+    // _BUSY_WORKER_STATUSES asserts against (api_error excluded; it maps to ready).
+    expect(new Set(WORKER_BUSY_STATUSES)).toEqual(new Set(fixture.worker_busy));
   });
 
   it('ERROR_WORKER_STATUSES matches fixture worker_execution_error', () => {
@@ -195,23 +216,17 @@ describe('classifyExecutionMode', () => {
     },
   );
 
-  it.each([WorkerStatus.ERROR, WorkerStatus.API_TIMEOUT, WorkerStatus.INACTIVE])(
-    'error worker_status=%s wins over visible (PTY)',
-    (w) => {
-      expect(
-        classifyExecutionMode({ status: ProcessStatus.RUNNING, visible: true, workerStatus: w }),
-      ).toBe(ExecutionMode.Error);
-    },
-  );
-
-  it.each([WorkerStatus.ERROR, WorkerStatus.API_TIMEOUT, WorkerStatus.INACTIVE])(
-    'CLI error via worker_status=%s (no PID needed)',
-    (w) => {
-      expect(
-        classifyExecutionMode({ status: ProcessStatus.RUNNING, visible: false, workerStatus: w }),
-      ).toBe(ExecutionMode.Error);
-    },
-  );
+  // An error worker_status classifies as Error regardless of visible — over PTY
+  // (visible=true) AND CLI (visible=false, no PID needed).
+  it.each(
+    [WorkerStatus.ERROR, WorkerStatus.API_TIMEOUT, WorkerStatus.INACTIVE].flatMap((w) =>
+      [true, false].map((visible) => [w, visible] as const),
+    ),
+  )('error worker_status=%s wins over visible=%s → Error', (w, visible) => {
+    expect(
+      classifyExecutionMode({ status: ProcessStatus.RUNNING, visible, workerStatus: w }),
+    ).toBe(ExecutionMode.Error);
+  });
 
   it('PTY with dead PID → Error', () => {
     expect(
@@ -226,10 +241,50 @@ describe('classifyExecutionMode', () => {
     ).toBe(ExecutionMode.Background);
   });
 
-  it('reflects a visible flip Interactive↔Background', () => {
+  it('reflects a visible flip Interactive↔Background (fallback when pty_mode absent)', () => {
     const base = { status: ProcessStatus.RUNNING, workerStatus: WorkerStatus.THINKING };
     expect(classifyExecutionMode({ ...base, visible: true })).toBe(ExecutionMode.Interactive);
     expect(classifyExecutionMode({ ...base, visible: false })).toBe(ExecutionMode.Background);
+  });
+
+  // ── transport-keyed (pty_mode) rows — the new contract ──
+  it.each([ProcessStatus.RUNNING, ProcessStatus.STARTING])(
+    'live %s + pty_mode=true → Interactive',
+    (s) => {
+      expect(classifyExecutionMode({ status: s, pty_mode: true })).toBe(ExecutionMode.Interactive);
+    },
+  );
+
+  it.each([ProcessStatus.RUNNING, ProcessStatus.STARTING])(
+    'live %s + pty_mode=false → Background',
+    (s) => {
+      expect(classifyExecutionMode({ status: s, pty_mode: false })).toBe(ExecutionMode.Background);
+    },
+  );
+
+  it('hidden live PTY (visible=false, pty_mode=true) → Interactive, NOT Background', () => {
+    // Transport wins over tab visibility — the row the old visible-keyed
+    // classifier bucketed as a headless Background worker.
+    expect(
+      classifyExecutionMode({ status: ProcessStatus.RUNNING, visible: false, pty_mode: true }),
+    ).toBe(ExecutionMode.Interactive);
+  });
+
+  it('hidden live PTY with dead PID → Error (rule 2 keys on pty_mode)', () => {
+    expect(
+      classifyExecutionMode({
+        status: ProcessStatus.RUNNING,
+        visible: false,
+        pty_mode: true,
+        pidAlive: false,
+      }),
+    ).toBe(ExecutionMode.Error);
+  });
+
+  it('shown headless worker (visible=true, pty_mode=false) → Background', () => {
+    expect(
+      classifyExecutionMode({ status: ProcessStatus.RUNNING, visible: true, pty_mode: false }),
+    ).toBe(ExecutionMode.Background);
   });
 });
 
@@ -253,63 +308,142 @@ describe('supportedExecutionModes', () => {
   });
 });
 
-// ─── isReadyForInput truth table ─────────────────────────────────────────────
+// ─── isReadyForInput / isBusy — the ONE gate, two orthogonal axes ────────────
+//
+// Realigned: ``isBusy`` reads the separate ``busy`` boolean; ``isReadyForInput``
+// ⇔ ``!busy && (status === RUNNING || fresh-headless || headless-idle)`` where
+// fresh-headless = CLI transport + NEW, and headless-idle = CLI transport +
+// STOPPED + a live ``session_id``. They do NOT re-derive from workerStatus.
+// "ready" and "busy" are disjoint by construction.
 
 describe('isReadyForInput', () => {
-  const readyWorkers: WorkerStatus[] = [
-    WorkerStatus.IDLE,
-    WorkerStatus.COMPLETE,
-    WorkerStatus.INTERRUPTED,
-  ];
-  const notReadyWorkers: WorkerStatus[] = [
-    WorkerStatus.INITIALIZING,
-    WorkerStatus.WAITING,
-    WorkerStatus.THINKING,
-    WorkerStatus.TOOL_CALL,
-    WorkerStatus.TOOL_RUNNING,
-    WorkerStatus.ERROR,
-    WorkerStatus.INACTIVE,
-    WorkerStatus.API_ERROR,
-    WorkerStatus.API_TIMEOUT,
-    WorkerStatus.UNKNOWN,
-  ];
-
-  it.each(readyWorkers)('returns true when status=RUNNING and workerStatus=%s', (w) => {
-    expect(isReadyForInput({ status: ProcessStatus.RUNNING, workerStatus: w })).toBe(true);
+  it('is true for RUNNING and not busy', () => {
+    expect(isReadyForInput({ status: ProcessStatus.RUNNING, busy: false })).toBe(true);
+    expect(isReadyForInput({ status: ProcessStatus.RUNNING })).toBe(true); // busy defaults falsy
   });
 
-  it.each(notReadyWorkers)('returns false when status=RUNNING and workerStatus=%s', (w) => {
-    expect(isReadyForInput({ status: ProcessStatus.RUNNING, workerStatus: w })).toBe(false);
+  it('is false when RUNNING but busy (a turn is in flight)', () => {
+    expect(isReadyForInput({ status: ProcessStatus.RUNNING, busy: true })).toBe(false);
   });
 
   it.each([
+    ProcessStatus.STARTING, // live bookend, but the worker isn't fully up → not ready
+    ProcessStatus.STOPPING,
+    ProcessStatus.STOPPED, // no session_id here → not headless-idle → not ready
+    ProcessStatus.FAILED,
+  ])('is false for %s (no live headless session)', (s) => {
+    expect(isReadyForInput({ status: s, busy: false })).toBe(false);
+  });
+
+  it('ignores workerStatus; at RUNNING session_id is irrelevant', () => {
+    // A ready process stays ready whatever the raw worker label says.
+    expect(
+      isReadyForInput({ status: ProcessStatus.RUNNING, busy: false, workerStatus: WorkerStatus.THINKING }),
+    ).toBe(true);
+    // A busy process is not ready even if the worker label looks idle.
+    expect(
+      isReadyForInput({ status: ProcessStatus.RUNNING, busy: true, workerStatus: WorkerStatus.IDLE, session_id: 's' }),
+    ).toBe(false);
+  });
+
+  it('is false when there is no status at all', () => {
+    expect(isReadyForInput({})).toBe(false);
+  });
+
+  it('is true for a fresh headless process and false for a fresh PTY process', () => {
+    expect(isReadyForInput({ status: ProcessStatus.NEW, busy: false, pty_mode: false })).toBe(true);
+    expect(isReadyForInput({ status: ProcessStatus.NEW, busy: false, pty_mode: true })).toBe(false);
+    expect(isReadyForInput({ status: ProcessStatus.NEW, busy: true, pty_mode: false })).toBe(false);
+  });
+});
+
+// ─── isReadyForInput — headless-idle readiness (RCA #12a) ─────────────────────
+//
+// The CLI transport runs a fresh `claude -p` worker per turn, so between turns a
+// headless session sits at STOPPED with its session_id preserved — yet is ready
+// for the next prompt and to toggle chat⇄terminal back. Mirror of the Python
+// is_ready_from_busy headless-idle branch. Without it the toggle wedged off.
+
+describe('isReadyForInput — headless-idle', () => {
+  it('is true for CLI transport (pty_mode=false) + STOPPED + live session_id', () => {
+    expect(
+      isReadyForInput({ status: ProcessStatus.STOPPED, busy: false, pty_mode: false, session_id: 'sess-abc' }),
+    ).toBe(true);
+  });
+
+  it('is false at STOPPED without a session_id (never prompted)', () => {
+    expect(
+      isReadyForInput({ status: ProcessStatus.STOPPED, busy: false, pty_mode: false }),
+    ).toBe(false);
+  });
+
+  it('is false for PTY transport (pty_mode=true) at STOPPED even with a session', () => {
+    // An interactive worker needs a live PID; a stopped PTY is not headless-idle.
+    expect(
+      isReadyForInput({ status: ProcessStatus.STOPPED, busy: false, pty_mode: true, session_id: 'sess-abc' }),
+    ).toBe(false);
+  });
+
+  it('is false when the headless session is busy (a turn is in flight)', () => {
+    expect(
+      isReadyForInput({ status: ProcessStatus.STOPPED, busy: true, pty_mode: false, session_id: 'sess-abc' }),
+    ).toBe(false);
+  });
+
+  it.each([ProcessStatus.STARTING, ProcessStatus.FAILED])(
+    'is false for CLI %s + session_id (only STOPPED qualifies as headless-idle)',
+    (s) => {
+      expect(isReadyForInput({ status: s, busy: false, pty_mode: false, session_id: 'sess-abc' })).toBe(false);
+    },
+  );
+});
+
+// ─── isReadyForInput — cross-language contract (shared fixture rows) ─────────
+//
+// The same ``ready_for_input_cases`` rows are iterated by the Python
+// ``test_ready_for_input_contract_cases`` against ``is_ready_from_busy`` — the
+// two language predicates cannot silently diverge on the RUNNING baseline,
+// the fresh-headless (NEW + CLI) branch, or the headless-idle branch.
+
+describe('isReadyForInput — contract (test_fixtures/status_sets.json)', () => {
+  const cases = fixture.ready_for_input_cases;
+
+  it('fixture carries the shared truth table', () => {
+    expect(cases.length).toBeGreaterThan(0);
+  });
+
+  it.each(cases)('$label', (c) => {
+    expect(
+      isReadyForInput({
+        status: c.status as ProcessStatus,
+        busy: c.busy,
+        pty_mode: c.pty_mode,
+        session_id: c.session_id ?? undefined,
+      }),
+    ).toBe(c.expected);
+  });
+});
+
+describe('isBusy', () => {
+  it('is true exactly when the busy boolean is set', () => {
+    expect(isBusy({ status: ProcessStatus.RUNNING, busy: true })).toBe(true);
+  });
+
+  it.each([
+    ProcessStatus.RUNNING,
     ProcessStatus.NEW,
     ProcessStatus.STARTING,
     ProcessStatus.STOPPING,
     ProcessStatus.STOPPED,
     ProcessStatus.FAILED,
-  ])('returns false for non-RUNNING lifecycle status %s regardless of worker status', (s) => {
-    for (const w of [...readyWorkers, ...notReadyWorkers]) {
-      expect(isReadyForInput({ status: s, workerStatus: w })).toBe(false);
-    }
+  ])('is false for %s when busy is unset', (s) => {
+    expect(isBusy({ status: s })).toBe(false);
+    expect(isBusy({ status: s, busy: false })).toBe(false);
   });
 
-  it('treats missing workerStatus + no session as ready (never prompted)', () => {
-    expect(isReadyForInput({ status: ProcessStatus.RUNNING, session_id: null })).toBe(true);
-    expect(isReadyForInput({ status: ProcessStatus.RUNNING })).toBe(true);
-  });
-
-  it('treats missing workerStatus + session set as busy (just launched)', () => {
-    expect(isReadyForInput({ status: ProcessStatus.RUNNING, session_id: 'sess-1' })).toBe(false);
-  });
-
-  it('reads worker_status (snake_case) on wire payloads', () => {
-    expect(
-      isReadyForInput({
-        status: ProcessStatus.RUNNING,
-        worker_status: WorkerStatus.IDLE,
-      }),
-    ).toBe(true);
+  it('is the disjoint complement of isReadyForInput while RUNNING', () => {
+    expect(isBusy({ status: ProcessStatus.RUNNING, busy: false })).toBe(false);
+    expect(isReadyForInput({ status: ProcessStatus.RUNNING, busy: true })).toBe(false);
   });
 });
 
@@ -335,6 +469,15 @@ describe('getDisplayStatus', () => {
     }
   });
 
+  it('surfaces worker errors even after the lifecycle has stopped', () => {
+    expect(
+      getDisplayStatus({ status: ProcessStatus.STOPPED, workerStatus: WorkerStatus.ERROR }),
+    ).toBe(WorkerStatus.ERROR);
+    expect(
+      getDisplayStatus({ status: ProcessStatus.STOPPED, worker_status: WorkerStatus.API_TIMEOUT }),
+    ).toBe(WorkerStatus.API_TIMEOUT);
+  });
+
   it('returns undefined for processes with no status at all', () => {
     expect(getDisplayStatus({})).toBeUndefined();
   });
@@ -347,7 +490,7 @@ describe('hasWorkerStarted', () => {
     expect(hasWorkerStarted(WorkerStatus.INITIALIZING)).toBe(false);
     const started: WorkerStatus[] = [
       WorkerStatus.IDLE,
-      WorkerStatus.WAITING,
+      WorkerStatus.WORKING,
       WorkerStatus.THINKING,
       WorkerStatus.TOOL_CALL,
       WorkerStatus.TOOL_RUNNING,

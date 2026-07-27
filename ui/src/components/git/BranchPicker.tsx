@@ -1,4 +1,4 @@
-import type { BranchSummary, GitProvider, RepoSummary } from '@sdk';
+import type { BranchSummary, RepoSummary } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import { Input } from '@src/components/ui/input';
 import { useGitBranches } from '@src/hooks/use-git-providers';
@@ -7,7 +7,7 @@ import { useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 
 interface BranchPickerProps {
-  repo: { provider: GitProvider; owner: string; name: string; default_branch: string; full_name: string };
+  repo: RepoSummary;
   onSelect: (branch: BranchSummary) => void;
   onBack: () => void;
 }

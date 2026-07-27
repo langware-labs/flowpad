@@ -21,6 +21,7 @@ import pytest
 
 from flow_sdk.builtin.agentic_process import AgenticProcess
 from flow_sdk.builtin.agentic_process.cli_drivers.codex import CodexCliOptions
+from flow_sdk.builtin.process_lifecycle import ProcessStatus
 from flow_sdk.flowpad_types.enums.worker_enums import WorkerType
 
 
@@ -150,11 +151,58 @@ def test_toggling_flowpad_assistant_changes_restart_snapshot(worker_type):
     assert on._restart_snapshot() != off._restart_snapshot()
 
 
-def test_visible_changes_codex_launch_shape_but_not_claude_launch_shape():
+def test_pty_mode_changes_codex_launch_shape_but_never_restart_hash():
+    # The worker argv keys on the *transport intent* (``pty_mode``), NOT on tab
+    # ``visible`` (commit 624ddb89): codex's interactive PTY shape differs from
+    # its ``codex exec --json`` headless shape, so pty_mode flips the raw launch
+    # PAYLOAD (ephemeral/json_stream). But the restart HASH must ignore those
+    # transport-derived fields (QA R03): a PTY⇄CLI switch replaces the worker
+    # itself, so it must never read as config drift / a phantom "restart
+    # required" glow. Both comparators share TRANSPORT_DERIVED_WORKER_FIELDS.
+    codex_headless = AgenticProcess(worker_type="codex", pty_mode=False)
+    codex_pty = AgenticProcess(worker_type="codex", pty_mode=True)
+    headless_worker = codex_headless._restart_snapshot_payload()["worker"]
+    pty_worker = codex_pty._restart_snapshot_payload()["worker"]
+    assert (headless_worker["ephemeral"], headless_worker["json_stream"]) != (
+        pty_worker["ephemeral"],
+        pty_worker["json_stream"],
+    )
+    assert codex_headless._restart_snapshot() == codex_pty._restart_snapshot()
+
     codex_hidden = AgenticProcess(worker_type="codex", visible=False)
     codex_visible = AgenticProcess(worker_type="codex", visible=True)
-    claude_hidden = AgenticProcess(worker_type="claude_code", visible=False)
-    claude_visible = AgenticProcess(worker_type="claude_code", visible=True)
+    assert codex_hidden._restart_snapshot() == codex_visible._restart_snapshot()
 
-    assert codex_hidden._restart_snapshot() != codex_visible._restart_snapshot()
-    assert claude_hidden._restart_snapshot() == claude_visible._restart_snapshot()
+    claude_headless = AgenticProcess(worker_type="claude_code", pty_mode=False)
+    claude_pty = AgenticProcess(worker_type="claude_code", pty_mode=True)
+    assert claude_headless._restart_snapshot() == claude_pty._restart_snapshot()
+
+
+@pytest.mark.asyncio
+async def test_restart_required_flips_on_config_change_and_clears_on_revert():
+    """The save-hook maintains ``restart_required`` symmetrically against the
+    snapshot-hash contract: a worker-relevant config change while RUNNING flips it
+    ON, and reverting that change back to the running worker's hash clears it.
+
+    Fails pre-fix: the hook only flipped the flag ON — a change-then-undo left a
+    phantom "restart needed" glow that only a real restart could clear.
+    """
+    p = AgenticProcess(
+        worker_type="claude_code",
+        status=ProcessStatus.RUNNING.value,
+        workdir="/repo/original",
+    )
+    # Pin the baseline exactly as a successful start_pty() would.
+    p.last_started_hash = p._restart_snapshot()
+    await p.save()
+    assert p.restart_required is False
+
+    # A worker-relevant config change (workdir is in the generic snapshot) → drift → flag ON.
+    p.workdir = "/repo/moved"
+    await p.save()
+    assert p.restart_required is True
+
+    # Revert it → snapshot matches the running worker's hash again → flag clears.
+    p.workdir = "/repo/original"
+    await p.save()
+    assert p.restart_required is False

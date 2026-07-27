@@ -37,7 +37,7 @@ export function CommitMergeButton({ process, onInjectPrompt }: CommitMergeButton
 
   // Auto-close the tab once Claude finishes the commit-merge task.
   // "Active" here means "worker is actively running a turn" — so we watch the
-  // worker status transition out of a running state (WAITING/THINKING/TOOL_*).
+  // worker status transition out of a running state (WORKING/THINKING/TOOL_*).
   useEffect(() => {
     if (!awaitingCompletion) return;
     const workerBusy = isWorkerRunning(process.workerStatus ?? WorkerStatus.IDLE);

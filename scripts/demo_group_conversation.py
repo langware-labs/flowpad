@@ -45,7 +45,6 @@ import httpx
 
 HUB = os.environ.get("FLOWPAD_HUB_URL", "http://localhost:8093").rstrip("/")
 FLOW_HOME = Path(os.environ.get("FLOW_HOME", str(Path.home() / ".flow")))
-REPO_ROOT = str(Path(__file__).resolve().parents[1])
 
 
 # --------------------------------------------------------------------------
@@ -117,7 +116,7 @@ def build_roster(n_devs: int) -> dict[str, Participant]:
 #   {"op": "start", "sender": <role>, "to": <role>, "text": ..., "attach": [...]}
 #   {"op": "msg",   "sender": <role>, "text": ..., "attach": [...]}
 #   {"op": "add",   "adder": <role>, "member": <role>}     <- mid-conversation join
-# "attach" is any subset of ["asset", "file", "prompt", "url", "repo"].
+# "attach" is any subset of ["asset", "file", "prompt", "url", "repo_link"].
 
 def scenario_s1_three() -> tuple[int, list[dict]]:
     timeline = [
@@ -145,7 +144,7 @@ def scenario_s1_three() -> tuple[int, list[dict]]:
          "text": "Joining late — caught up on the thread. I own the canary tooling. "
                  "Sharing the rollback runbook (file), my canary-guard skill (asset), "
                  "and an Approve & Run prompt to roll v2.41 back to v2.40 now.",
-         "attach": ["asset", "file", "prompt", "repo"]},
+         "attach": ["asset", "file", "prompt", "repo_link"]},
 
         {"op": "msg", "sender": "dev-1",
          "text": "Rollback prompt looks right. Also sharing the regression-test prompt "
@@ -180,7 +179,7 @@ def scenario_s2_five() -> tuple[int, list[dict]]:
         {"op": "add", "adder": "alice", "member": "dev-3"},
         {"op": "msg", "sender": "dev-3",
          "text": "Infra. Sharing the rollout repo + canary-guard skill + rollout prompt.",
-         "attach": ["asset", "file", "prompt", "repo"]},
+         "attach": ["asset", "file", "prompt", "repo_link"]},
 
         {"op": "add", "adder": "alice", "member": "dev-4"},
         {"op": "msg", "sender": "dev-4",
@@ -368,8 +367,8 @@ def build_attachments(client: httpx.Client, p: Participant, kinds: list[str], se
             atts.append({"attachment_type": "url",
                          "data": "https://datadog.example.com/dash/checkout-latency"
                                  "?from=14:00&to=15:00&deploy=v2.41-canary"})
-        elif kind == "repo":
-            atts.append({"attachment_type": "repo", "data": REPO_ROOT})
+        elif kind == "repo_link":
+            atts.append({"attachment_type": "url", "data": "https://github.com/example/checkout-api"})
     return atts
 
 
@@ -575,7 +574,7 @@ def run(scenario_key: str) -> int:
 
 
 def _att_glyph(atts: list[dict]) -> str:
-    g = {"type_id": "📎", "file": "📄", "prompt": "⌨", "url": "🔗", "repo": "📁"}
+    g = {"type_id": "📎", "file": "📄", "prompt": "⌨", "url": "🔗"}
     return "".join(g.get(a["attachment_type"], "?") for a in atts) or "—"
 
 

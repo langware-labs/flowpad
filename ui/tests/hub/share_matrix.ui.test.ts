@@ -26,15 +26,16 @@
  * flaky on a busy host (each passes individually); per-`describe` contexts
  * would isolate them further.
  *
- * Requires: local hub (8093) + two launched instances with frontends. Defaults
- * to dev-1/dev-2; override with MATRIX_INST_1 / MATRIX_INST_2 (a fresh pair is
- * recommended — see below). Skips when the hub or instances aren't up.
+ * Requires the explicit SHARE_INST_1/SHARE_INST_2 pair with live frontends and
+ * the cycle-owned FLOWPAD_HUB_URL. Skips when the hub or instances aren't up.
  */
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Browser } from 'playwright';
 import { testEntityName, trackForCleanup, trackTypeId } from '../_cleanup';
 import { hubAvailable } from './_hub';
 import {
+  HUB_INST_1 as INST_1,
+  HUB_INST_2 as INST_2,
   getInstance,
   instanceAvailable,
   type ResolvedInstance,
@@ -53,14 +54,6 @@ import {
   type InstancePage,
 } from './_browser';
 
-// Instance names are overridable so the matrix can run on a FRESH pair
-// (recommended — long-lived instances accumulate stale invitations that the
-// receiver-side accept step then has to wade through):
-//   scripts/instance_ctl.sh launch mx3 && scripts/instance_ctl.sh launch mx4
-//   MATRIX_INST_1=mx3 MATRIX_INST_2=mx4 npx vitest run --project hub share_matrix
-const INST_1 = process.env.MATRIX_INST_1 || 'dev-1';
-const INST_2 = process.env.MATRIX_INST_2 || 'dev-2';
-
 let skipReason: string | null = null;
 let dev1: ResolvedInstance;
 let dev2: ResolvedInstance;
@@ -73,7 +66,7 @@ const ts = Date.now();
 beforeAll(async () => {
   const hub = await hubAvailable();
   if (!hub.ok) return void (skipReason = hub.reason ?? 'hub unreachable');
-  if (!(await instanceAvailable(INST_1)) || !(await instanceAvailable(INST_2))) {
+  if (!instanceAvailable(INST_1) || !instanceAvailable(INST_2)) {
     return void (skipReason = `launch ${INST_1} + ${INST_2} via scripts/instance_ctl.sh`);
   }
   dev1 = await getInstance(INST_1);
@@ -85,11 +78,11 @@ beforeAll(async () => {
   // Warm the editor routes once: the Vite dev server cold-transforms the
   // Milkdown/Monaco/Excalidraw bundles on first hit, which would otherwise
   // eat A1/B1's 30s budget. This is fixture warming, not a timeout bump.
-  const warm = trackForCleanup(await dev1.sdk.Workflow.createInProject(null, testEntityName('workflow')));
-  await p1.page.goto(`${p1.feUrl}/dock/assets/editor/workflow/typeid/workflow-${warm.id}`, {
+  const warm = trackForCleanup(await dev1.sdk.DynamicWorkflow.createInProject(null, testEntityName('workflow')));
+  await p1.page.goto(`${p1.feUrl}/dock/assets/editor/dynamic_workflow/typeid/dynamic_workflow-${warm.id}?viewMode=advanced`, {
     waitUntil: 'domcontentloaded',
   });
-  const warmShare = p1.page.getByTestId('markdown-editor-share');
+  const warmShare = p1.page.getByTestId('dynamic-workflow-editor-share');
   await warmShare.waitFor({ timeout: 60_000 }).catch(() => undefined);
   // Open + close the share dialog once too: its chunk, the contact picker,
   // and the conversations-for-contacts query all cold-load on first open.
@@ -106,13 +99,23 @@ beforeAll(async () => {
   // Warm the RECEIVER's (p2) editor bundles too — p2 is a SEPARATE Vite dev
   // server, so the first editor open (A3) would otherwise cold-transform the
   // Milkdown/Excalidraw bundles. Route to each editor once to trigger it.
-  const warmWf2 = trackForCleanup(await dev2.sdk.Workflow.createInProject(null, testEntityName('workflow')));
-  await p2.page.goto(`${p2.feUrl}/dock/assets/editor/workflow/typeid/workflow-${warmWf2.id}`, {
+  const warmWf2 = trackForCleanup(await dev2.sdk.DynamicWorkflow.createInProject(null, testEntityName('workflow')));
+  await p2.page.goto(`${p2.feUrl}/dock/assets/editor/dynamic_workflow/typeid/dynamic_workflow-${warmWf2.id}?viewMode=advanced`, {
     waitUntil: 'domcontentloaded',
   });
-  await p2.page.locator('[data-testid="md-editor-with-side-panel"]').waitFor({ timeout: 60_000 }).catch(() => undefined);
+  await p2.page.locator('[data-testid="dynamic-workflow-editor"]').waitFor({ timeout: 60_000 }).catch(() => undefined);
   const warmWb2 = trackForCleanup(await dev2.sdk.Whiteboard.create(testEntityName('whiteboard')));
-  await p2.page.goto(`${p2.feUrl}/dock/assets/editor/whiteboard/typeid/whiteboard-${warmWb2.id}`, {
+  const warmWbRef = (warmWb2 as { asset_ref?: string }).asset_ref;
+  if (warmWbRef) {
+    const { promises: nodeFs } = await import('node:fs');
+    await nodeFs.mkdir(warmWbRef, { recursive: true });
+    await nodeFs.writeFile(
+      `${warmWbRef}/board.json`,
+      JSON.stringify({ kind: 'excalidraw', version: 1, data: { elements: [] } }),
+    );
+    await nodeFs.writeFile(`${warmWbRef}/WHITE_BOARD.md`, '# warm whiteboard\n');
+  }
+  await p2.page.goto(`${p2.feUrl}/dock/assets/editor/whiteboard/typeid/whiteboard-${warmWb2.id}?viewMode=advanced`, {
     waitUntil: 'domcontentloaded',
   });
   await p2.page.locator('[data-testid="whiteboard-editor"]').waitFor({ timeout: 60_000 }).catch(() => undefined);
@@ -122,10 +125,98 @@ afterAll(async () => {
   await browser?.close();
   // This matrix materializes entities on BOTH instances (Alice creates + shares;
   // Bob receives copies). The global single-realm leak sweep can't reach the
-  // far side, so purge our e2etest-* rows on both backends directly — pure
-  // teardown hygiene so the leftover detector stays green.
+  // far side. Conversations must go through their canonical cloud lifecycle:
+  // deleting only the local mirrors makes the next conversation-list sync
+  // rebuild every old hub conversation and starts a refetch/broadcast storm.
   if (!skipReason && dev1 && dev2) {
-    const SWEEP = ['conversation', 'skill', 'agent', 'workflow', 'whiteboard', 'markdown', 'spec', 'prompt'];
+    // Decline receiver-side test invitations before deleting their local
+    // Conversation mirrors. A generic local DELETE does not express the
+    // hub-side decline intent; after a bailed run that left the invitation
+    // pending forever, so every later sync rebuilt and broadcast all prior
+    // e2etest rows. Match through the canonical invitation target path and
+    // touch only conversations carrying this harness's test prefix.
+    const receiverConversations = await fetch(
+      `${dev2.apiUrl}/api/v1/graph/conversation`,
+    ).then((r) => r.json()).catch(() => null);
+    const receiverInvitations = await fetch(
+      `${dev2.apiUrl}/api/v1/graph/invitation`,
+    ).then((r) => r.json()).catch(() => null);
+    const testConversationIds = new Set(
+      ((receiverConversations?.data ?? []) as any[])
+        .filter((row) => String(row?.title ?? '').startsWith('e2etest-'))
+        .map((row) => String(row.id)),
+    );
+    for (const invitation of (receiverInvitations?.data ?? []) as any[]) {
+      const match = String(invitation?.target_url_path ?? '').match(
+        /^\/conversation\/([0-9a-f-]+)$/,
+      );
+      if (
+        !invitation?.accepted
+        && invitation?.id
+        && match
+        && testConversationIds.has(match[1])
+      ) {
+        await fetch(`${dev2.apiUrl}/api/v1/graph/invitation-decline`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ invitation_id: invitation.id }),
+        }).catch(() => undefined);
+      }
+    }
+
+    const cleanupFailures: string[] = [];
+    const instances = [dev1, dev2];
+    const testConversations = new Map<ResolvedInstance, any[]>();
+
+    // The forward scenario can create a Bob-owned conversation that is also
+    // mirrored on Alice. Both mirrors omit created_by in the local hub
+    // projection, so let the hub's owner check identify which side may delete.
+    for (const inst of instances) {
+      await fetch(`${inst.apiUrl}/api/v1/graph/conversation-list`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}',
+      }).catch(() => undefined);
+      const listed = await fetch(`${inst.apiUrl}/api/v1/graph/conversation`)
+        .then((r) => r.json())
+        .catch(() => null);
+      const rows = ((listed?.data ?? []) as any[]).filter(
+        (row) => row?.id && String(row?.title ?? '').startsWith('e2etest-'),
+      );
+      testConversations.set(inst, rows);
+    }
+
+    for (const inst of instances) {
+      for (const conversation of testConversations.get(inst) ?? []) {
+        const id = String(conversation.id);
+        let mode = conversation.remote ? 'delete_for_all' : 'local';
+        // The same remote entity may already have disappeared after its owner
+        // deleted it from the other instance. The action treats that missing
+        // hub target as success and removes the remaining local mirror.
+        let result = await fetch(`${inst.apiUrl}/api/v1/graph/conversation-delete`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ conversation_id: id, mode }),
+        }).then((r) => r.json()).catch(() => null);
+        if (
+          conversation.remote
+          && result?.status !== 'SUCCESS'
+          && Number(result?.data?.hub_status) === 403
+        ) {
+          mode = 'leave';
+          result = await fetch(`${inst.apiUrl}/api/v1/graph/conversation-delete`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ conversation_id: id, mode }),
+          }).then((r) => r.json()).catch(() => null);
+        }
+        if (result?.status !== 'SUCCESS' && !String(result?.message ?? '').includes('Conversation not found')) {
+          cleanupFailures.push(`${inst.name} conversation ${id} (${mode}): ${JSON.stringify(result)}`);
+        }
+      }
+    }
+
+    const SWEEP = ['skill', 'agent', 'workflow', 'whiteboard', 'markdown', 'spec', 'prompt'];
     for (const inst of [dev1, dev2]) {
       for (const type of SWEEP) {
         const list = await fetch(`${inst.apiUrl}/api/v1/graph/${type}`).then((r) => r.json()).catch(() => null);
@@ -136,6 +227,9 @@ afterAll(async () => {
           }
         }
       }
+    }
+    if (cleanupFailures.length) {
+      throw new Error(`share matrix cleanup failed:\n${cleanupFailures.join('\n')}`);
     }
   }
 });
@@ -150,10 +244,28 @@ beforeEach((context: any) => {
 async function conversationIdByTitle(inst: ResolvedInstance, title: string): Promise<string> {
   const deadline = Date.now() + 20_000;
   for (;;) {
-    const r = await fetch(`${inst.apiUrl}/api/v1/graph/conversation?limit=100`).then((x) => x.json());
-    const rows: Array<{ id: string; title?: string }> = r?.data ?? [];
+    const rows = (await inst.sdk.Conversation.query(
+      new inst.sdk.QueryRequest({
+        type: 'conversation',
+        query: { title },
+        name: 'conversation by exact title (hub test)',
+      }),
+      true,
+    ).catch(() => [])) as Array<{ id: string; title?: string }>;
     const hit = rows.find((c) => c.title === title);
-    if (hit) return hit.id;
+    if (hit) {
+      // The dialog can create the local Conversation before its FlowMessage
+      // reaches the hub. Accepting in that gap joins a conversation whose hub
+      // message list is still empty, so the receiver has nothing to render.
+      // Stay inside this helper's existing deadline and require the newest
+      // message to have crossed the hub boundary (created → sent or later).
+      const pointers = ((hit as any).conversationMessageIds ?? []) as Array<{ id?: string }>;
+      const latestId = pointers[pointers.length - 1]?.id;
+      const latest = latestId
+        ? await inst.sdk.FlowMessage.getById(latestId).catch(() => null)
+        : null;
+      if (latest && latest.delivery_status !== 'created') return hit.id;
+    }
     if (Date.now() > deadline) throw new Error(`no conversation titled "${title}" on ${inst.name}`);
     await new Promise((res) => setTimeout(res, 500));
   }
@@ -187,8 +299,44 @@ async function downloadAndOpenAssetClean(
     await inst.page.waitForTimeout(400);
   }
 
+  // STAGED RECEPTION (f1276cd5): download STAGES the asset (MessageAttachment,
+  // scope=null) — the chip renders dashed and opens the review/install modal,
+  // never the editor (consent boundary). Install explicitly into the mapped
+  // project via the modal's backend action, then open the editor at its dock
+  // URL — the same target the context panel's Open resolves. (The chip→modal
+  // UX has its own coverage; this test's assertion target stays "the shared
+  // asset opens cleanly in the receiver's editor".)
+  const chipMatch = /^entity-chip-([a-z_]+)-(.+)$/.exec(chipTestId);
+  if (!chipMatch) throw new Error(`unexpected chip testid ${chipTestId}`);
+  const [, assetType, assetId] = chipMatch;
+  const convRow = await fetch(`${inst.apiUrl}/api/v1/graph/conversation/${conversationId}`)
+    .then((r) => r.json()).catch(() => null);
+  const projectId = convRow?.data?.project_id as string;
+  let staged: any = null;
+  const stagedDeadline = Date.now() + 10_000;
+  while (!staged && Date.now() < stagedDeadline) {
+    const rows = await fetch(`${inst.apiUrl}/api/v1/graph/message_attachment`)
+      .then((r) => r.json()).catch(() => null);
+    staged = ((rows?.data ?? []) as any[]).find(
+      (m) => m.conversation_id === conversationId && m.asset_id === assetId,
+    ) ?? null;
+    if (!staged) await inst.page.waitForTimeout(400);
+  }
+  if (!staged) throw new Error(`staged MessageAttachment for ${assetType}-${assetId} never appeared on ${inst.name}`);
+  const install = await fetch(`${inst.apiUrl}/api/v1/graph/message_attachment/${staged.id}/install`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ scope: 'project', project_id: projectId }),
+  }).then((r) => r.json());
+  if (install?.status !== 'SUCCESS') {
+    throw new Error(`install failed on ${inst.name}: ${JSON.stringify(install?.message)}`);
+  }
+
   resetConsoleErrors(inst);
-  await inst.page.getByTestId(chipTestId).first().click();
+  await inst.page.goto(
+    `${inst.feUrl}/dock/assets/editor/${assetType}/typeid/${assetType}-${assetId}?viewMode=advanced`,
+    { waitUntil: 'domcontentloaded' },
+  );
   // Assert the editor CONTAINER attaches (it mounts when the asset resolves) +
   // a clean console — NOT a late toolbar button or strict dock-tab visibility,
   // which lag the actual open by tens of seconds in the dock split view.
@@ -198,9 +346,9 @@ async function downloadAndOpenAssetClean(
   expect(realConsoleErrors(inst.consoleErrors)).toEqual([]);
 }
 
-// ─── Scenario A: asset-page share — workflow (MarkdownEditor share button) ───
-// Workflow (not skill): it has a default_body_fn, so a bare SDK create
-// materializes the .md and the editor mounts fully. (A skill create writes
+// ─── Scenario A: asset-page share — dynamic workflow ────────────────────────
+// DynamicWorkflow (not skill): it has a default_body_fn, so a bare SDK create
+// materializes the .js and the editor mounts fully. (A skill create writes
 // only the DB row — the editor sits on its missing-file card, which has no
 // share affordance. That's the product's current shape, not a test gap.)
 
@@ -212,12 +360,12 @@ describe('A. asset-page share: workflow', () => {
   const convTitle = testEntityName('conv');
 
   it('A1 share — dev-1 shares from the workflow editor UI', async () => {
-    const wf = trackForCleanup(await dev1.sdk.Workflow.createInProject(null, testEntityName('workflow')));
+    const wf = trackForCleanup(await dev1.sdk.DynamicWorkflow.createInProject(null, testEntityName('workflow')));
     workflowId = wf.id!;
-    await p1.page.goto(`${p1.feUrl}/dock/assets/editor/workflow/typeid/workflow-${workflowId}`, {
+    await p1.page.goto(`${p1.feUrl}/dock/assets/editor/dynamic_workflow/typeid/dynamic_workflow-${workflowId}?viewMode=advanced`, {
       waitUntil: 'domcontentloaded',
     });
-    await p1.page.getByTestId('markdown-editor-share').click({ timeout: 20_000 });
+    await p1.page.getByTestId('dynamic-workflow-editor-share').click({ timeout: 20_000 });
     await driveShareDialog(p1.page, {
       recipientEmail: dev2.email,
       note: `here is a workflow ${ts}`,
@@ -229,7 +377,7 @@ describe('A. asset-page share: workflow', () => {
   });
 
   it('A2 accept — dev-2 accepts the invitation in its UI', async () => {
-    await acceptInvitationInUI(p2);
+    await acceptInvitationInUI(p2, convId);
   });
 
   // Receiver materialization: the body bundle downloads, unpacks, and
@@ -241,8 +389,8 @@ describe('A. asset-page share: workflow', () => {
     await downloadAndOpenAssetClean(
       p2,
       convId,
-      `entity-chip-workflow-${workflowId}`,
-      '[data-testid="md-editor-with-side-panel"]',
+      `entity-chip-dynamic_workflow-${workflowId}`,
+      '[data-testid="dynamic-workflow-editor"]',
     );
   });
 
@@ -281,7 +429,7 @@ describe('B. asset-page share: whiteboard', () => {
       );
       await nodeFs.writeFile(`${assetRef}/WHITE_BOARD.md`, `# ${wbName}\n`);
     }
-    await p1.page.goto(`${p1.feUrl}/dock/assets/editor/whiteboard/typeid/whiteboard-${wbId}`, {
+    await p1.page.goto(`${p1.feUrl}/dock/assets/editor/whiteboard/typeid/whiteboard-${wbId}?viewMode=advanced`, {
       waitUntil: 'domcontentloaded',
     });
     // Wait for the editor to finish mounting (board.json read settles) before
@@ -300,7 +448,7 @@ describe('B. asset-page share: whiteboard', () => {
   });
 
   it('B2 accept — dev-2 accepts the invitation in its UI', async () => {
-    await acceptInvitationInUI(p2);
+    await acceptInvitationInUI(p2, convId);
   });
 
   // Receiver materializes the shared whiteboard under the same id (see A3) —
@@ -365,7 +513,7 @@ describe('C. forward a message', () => {
   });
 
   it('C4 accept + receive — dev-2 accepts and sees the forwarded text', async () => {
-    await acceptInvitationInUI(p2);
+    await acceptInvitationInUI(p2, fwdConvId);
     await openConversation(p2, fwdConvId);
     await waitForMessageText(p2, `forward me ${ts}`);
   });

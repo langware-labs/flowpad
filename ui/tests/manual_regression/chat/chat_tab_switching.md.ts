@@ -20,13 +20,8 @@ test.describe('Chat Tab Switching', () => {
     // Navigate back to home
     await page.goto('/dock/home');
     await expect(page).toHaveURL(/\/dock\/home/, { timeout: 10_000 });
-    // Dismiss WelcomeModal if shown (may reappear after navigating back to home with a clean DB)
-    const skipForNow = page.getByRole('button', { name: 'Skip for now' });
-    if (await skipForNow.isVisible({ timeout: 5_000 }).catch(() => false)) {
-      await skipForNow.click({ force: true }).catch(() => {});
-      await page.waitForTimeout(500);
-    }
-    // Use CSS selector instead of getByRole to avoid aria-hidden issues when modal is present
+    // waitForLanding uses a CSS selector instead of getByRole to avoid aria-hidden
+    // issues while a modal is present.
     await waitForLanding(page);
 
     // Navigate to a new shell terminal

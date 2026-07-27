@@ -8,6 +8,7 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Iterator
 
+from .derive import derive_entries
 from .entries import (
     AssistantMessageEntry,
     FileReadEntry,
@@ -170,7 +171,9 @@ class AgentTranscriptFile:
         stays pristine across delta boundaries) into ``self.entries``."""
         snapshot = [copy.copy(e) for e in self._unfolded]
         folded = self._fold_assistant_messages(snapshot)
-        self.entries = self._fold_tool_results(folded)
+        # Derivation runs LAST, after tool results have been folded in, so a
+        # derived entry (e.g. FlowCommandEntry) inherits exit_code/stdout.
+        self.entries = derive_entries(self._fold_tool_results(folded))
         return self.entries
 
     def _read_whole_document(self) -> list[TranscriptEntry]:
@@ -305,10 +308,25 @@ class AgentTranscriptFile:
                 continue
             call_index[tuid] = e
 
+        # Transport mirrors (codex ``event_msg.patch_apply_end``) duplicate a
+        # canonical result under the same tool_use_id. Drop a mirror whenever
+        # the canonical (non-mirror) result exists anywhere in the list —
+        # folding runs over the FULL retained list, so this pairing works
+        # across delta boundaries regardless of write order. A mirror whose
+        # canonical line never arrived (turn killed between the two writes)
+        # survives as the durable result frame.
+        canonical_result_ids = {
+            e.tool_use_id
+            for e in entries
+            if isinstance(e, ToolResultEntry) and e.tool_use_id and not e.is_transport_mirror
+        }
+
         kept: list[TranscriptEntry] = []
         for e in entries:
             if not isinstance(e, ToolResultEntry):
                 kept.append(e)
+                continue
+            if e.is_transport_mirror and e.tool_use_id in canonical_result_ids:
                 continue
             target = call_index.get(e.tool_use_id) if e.tool_use_id else None
             if target is None:

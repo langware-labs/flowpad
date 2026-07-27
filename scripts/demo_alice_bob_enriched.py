@@ -365,10 +365,10 @@ def main() -> int:
          [{"attachment_type": "type_id", "data": f"agent-{agent_responder}"}],
          [incident_ctx], None),
 
-        # 3 — Alice posts traces + REPO + FILE log excerpt
+        # 3 — Alice posts traces + repository URL + FILE log excerpt
         (ALICE_ID, "Alice",
-         "Three traces, all on /checkout/finalize:\n  • tr_a1b2c3 — 4.2s, 8-item cart\n  • tr_c3d4e5 — 3.8s, 6-item cart\n  • tr_e5f6a7 — 4.6s, 11-item cart\nLatency scales with cart size — pattern-y. Repo + raw log excerpt for tr_a1b2c3 attached.",
-         [{"attachment_type": "repo", "data": str(Path(__file__).resolve().parents[1])},
+         "Three traces, all on /checkout/finalize:\n  • tr_a1b2c3 — 4.2s, 8-item cart\n  • tr_c3d4e5 — 3.8s, 6-item cart\n  • tr_e5f6a7 — 4.6s, 11-item cart\nLatency scales with cart size — pattern-y. Repository URL + raw log excerpt for tr_a1b2c3 attached.",
+         [{"attachment_type": "url", "data": "https://github.com/example/checkout-api"},
           {"attachment_type": "file", "data": "data/trace_excerpt.log"}],
          [incident_ctx],
          [("trace_excerpt.log", TRACE_EXCERPT_LOG)]),

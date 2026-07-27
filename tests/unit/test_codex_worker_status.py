@@ -101,7 +101,7 @@ def test_codex_rollout_user_message_is_waiting_when_active(tmp_path: Path):
         },
     ])
 
-    assert codex_tail_status(transcript) == WorkerStatus.WAITING
+    assert codex_tail_status(transcript) == WorkerStatus.WORKING
 
 
 def test_codex_rollout_tool_begin_is_tool_running_when_active(tmp_path: Path):
@@ -188,16 +188,20 @@ def test_codex_driver_falls_back_to_recent_rollout_by_workdir(
     assert CodexDriver().transcript_path(proc) == rollout
 
 
-def test_agentic_process_running_missing_transcript_is_idle(
+def test_agentic_process_running_missing_transcript_is_none_and_ready(
     isolated_instance_paths: Path,
 ):
-    # A RUNNING worker with no transcript yet is spawned-and-idle, waiting for
-    # its first prompt — IDLE, not INITIALIZING. Reporting INITIALIZING here is
-    # what pinned never-prompted sessions on the spinner forever (fix 45898129).
+    # A RUNNING worker with no transcript yet is spawned-and-idle, waiting for its
+    # first prompt. Under the realigned RAW model there is nothing to derive, so
+    # the raw status is None; the ready/busy meaning comes from is_turn_busy, and
+    # with no turn in flight the process is READY (not pinned on a spinner).
+    from flow_sdk.builtin.agentic_process.status_predicates import is_ready_for_input
+
     proc = AgenticProcess(worker_type=WorkerType.CODEX, session_id="missing")
     proc.status = ProcessStatus.RUNNING.value
 
-    assert proc._discover_status_from_transcript() == WorkerStatus.IDLE
+    assert proc._discover_status_from_transcript() is None
+    assert is_ready_for_input(proc) is True
 
 
 def test_agentic_process_starting_missing_transcript_is_initializing(

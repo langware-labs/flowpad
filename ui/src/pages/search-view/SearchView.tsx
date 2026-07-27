@@ -5,6 +5,7 @@ import { SearchCalibrationPanel } from '@src/components/search-calibration/Searc
 import { ActivityIndicator } from '@src/components/search-index/ActivityIndicator';
 import { IndexNowModal } from '@src/components/search-index/IndexNowModal';
 import { IndexRecommendedBanner } from '@src/components/search-index/IndexRecommendedBanner';
+import { INDEX_BUILD_LABEL, INDEX_PROMPT_DESCRIPTION, INDEX_PROMPT_TITLE } from '@src/components/search-index/index-copy';
 import { Badge } from '@src/components/ui/badge';
 import { Button } from '@src/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@src/components/ui/dropdown-menu';
@@ -21,8 +22,6 @@ import { useCallback, useEffect, useState } from 'react';
 import { Trans } from '@lingui/react/macro';
 
 const LS_KEY = 'flowpad-search-filters';
-const _INDEX_APPROVED_KEY = 'flowpad-index-approved';
-const _SCAN_DISMISSED_KEY = 'flowpad-scan-dismissed';
 
 function loadStoredFilters(): SearchFilters {
   try {
@@ -53,7 +52,7 @@ function SkeletonCard() {
   );
 }
 
-type IndexState = 'loading' | 'never_indexed' | 'denied' | 'stale' | 'ok';
+type IndexState = 'loading' | 'never_indexed' | 'stale' | 'ok';
 
 /**
  * SearchView — full-width record semantic search page.
@@ -106,22 +105,16 @@ export function SearchView() {
   const [scanInfo, setScanInfo] = useState(() => dataManager.scanInfo);
   useEffect(() => dataManager.onScanInfoChange(setScanInfo), []);
 
-  // Index status
-  const { state: statusState } = useIndexStatus();
-  const [indexState, setIndexState] = useState<IndexState>('loading');
+  // Index status — derived, not mirrored: `statusState` is the single source of
+  // truth, and a completed build calls `refreshStatus()` to re-read it.
+  const { state: statusState, refresh: refreshStatus } = useIndexStatus();
   const [modalOpen, setModalOpen] = useState(false);
 
-  useEffect(() => {
-    if (statusState.phase !== 'ready') return;
-    const { never_indexed, stale } = statusState.status;
-    if (never_indexed) setIndexState('never_indexed');
-    else if (stale) setIndexState('stale');
-    else setIndexState('ok');
-  }, [statusState]);
-
-  useEffect(() => {
-    if (indexState === 'never_indexed' && !localStorage.getItem(_INDEX_APPROVED_KEY) && !sessionStorage.getItem(_SCAN_DISMISSED_KEY)) setModalOpen(true);
-  }, [indexState]);
+  const indexState: IndexState =
+    statusState.phase !== 'ready' ? 'loading'
+    : statusState.status.never_indexed ? 'never_indexed'
+    : statusState.status.stale ? 'stale'
+    : 'ok';
 
   // Sync from URL when dock options change (e.g., browser back/forward)
   useEffect(() => {
@@ -157,31 +150,27 @@ export function SearchView() {
     latencyMs,
   } = useRecordSearch(searchQueryForRequest, searchFiltersForRequest, calibration, scope);
   const isLoading = searchScopeLoading || searchLoading;
+  // The user has actually asked for something — an empty result is worth reporting.
+  const hasActiveQuery = Boolean(
+    query.trim().length >= 2 || filters.record_type || filters.status || filters.scope || filters.time_preset,
+  );
 
   // Push query/filter changes to URL so browser history and sharing work
   const handleQueryChange = useCallback(
     (q: string) => {
-      if (indexState === 'never_indexed' || indexState === 'denied') {
-        setModalOpen(true);
-        return;
-      }
       setQuery(q);
       navigation.openSearch(q || undefined, filters);
     },
-    [indexState, navigation, filters],
+    [navigation, filters],
   );
 
   const handleFiltersChange = useCallback(
     (f: SearchFilters) => {
-      if (indexState === 'never_indexed' || indexState === 'denied') {
-        setModalOpen(true);
-        return;
-      }
       setFilters(f);
       saveFilters(f);
       navigation.openSearch(query || undefined, f);
     },
-    [indexState, navigation, query],
+    [navigation, query],
   );
 
   const handleClearAll = useCallback(() => {
@@ -249,10 +238,7 @@ export function SearchView() {
 
       {/* Search bar row — with refresh button */}
       <div className="shrink-0 flex items-start gap-2">
-        <div
-          className="flex-1"
-          onClick={indexState === 'denied' ? () => setModalOpen(true) : undefined}
-        >
+        <div className="flex-1">
           <RecordSearchBar
             compact={false}
             query={query}
@@ -287,7 +273,7 @@ export function SearchView() {
         <IndexRecommendedBanner
           lastIndexedAt={statusState.status.last_indexed_at!}
           types={statusState.status.default_types}
-          onComplete={() => setIndexState('ok')}
+          onComplete={refreshStatus}
         />
       )}
 
@@ -324,17 +310,35 @@ export function SearchView() {
           </div>
         )}
 
-        {!isLoading && !error && (query.trim().length >= 2 || filters.record_type || filters.status || filters.scope || filters.time_preset) && results.length === 0 && (
-          <div className="flex flex-col items-center gap-3 py-12 text-center text-muted-foreground">
+        {/* One empty state, branching on why it's empty. Never-indexed leads with an
+            inline, non-blocking offer (the modal is opt-in — a first-run user is
+            never interrupted by it); otherwise report the miss. */}
+        {!isLoading && !error && results.length === 0 && (indexState === 'never_indexed' || hasActiveQuery) && (
+          <div
+            className="flex flex-col items-center gap-3 py-12 text-center text-muted-foreground"
+            data-testid={indexState === 'never_indexed' ? 'search-never-indexed' : undefined}
+          >
             <FileSearch className="h-10 w-10 opacity-40" />
-            <div>
-              <p className="font-medium"><Trans>No records found</Trans></p>
-              {query.trim() ? (
-                <p className="text-sm"><Trans>No records found for &ldquo;{query}&rdquo;</Trans></p>
-              ) : (
-                <p className="text-sm"><Trans>No records of this type</Trans></p>
-              )}
-            </div>
+            {indexState === 'never_indexed' ? (
+              <>
+                <div>
+                  <p className="font-medium">{INDEX_PROMPT_TITLE}</p>
+                  <p className="mx-auto max-w-md text-sm">{INDEX_PROMPT_DESCRIPTION}</p>
+                </div>
+                <Button onClick={() => setModalOpen(true)} data-testid="search-index-cta">
+                  {INDEX_BUILD_LABEL}
+                </Button>
+              </>
+            ) : (
+              <div>
+                <p className="font-medium"><Trans>No records found</Trans></p>
+                {query.trim() ? (
+                  <p className="text-sm"><Trans>No records found for &ldquo;{query}&rdquo;</Trans></p>
+                ) : (
+                  <p className="text-sm"><Trans>No records of this type</Trans></p>
+                )}
+              </div>
+            )}
           </div>
         )}
 
@@ -352,8 +356,8 @@ export function SearchView() {
         <IndexNowModal
           open={modalOpen}
           types={statusState.status.default_types}
-          onComplete={() => { localStorage.setItem(_INDEX_APPROVED_KEY, '1'); setModalOpen(false); setIndexState('ok'); }}
-          onDeny={() => { sessionStorage.setItem(_SCAN_DISMISSED_KEY, '1'); setModalOpen(false); setIndexState('denied'); }}
+          onComplete={() => { setModalOpen(false); refreshStatus(); }}
+          onDeny={() => setModalOpen(false)}
         />
       )}
 

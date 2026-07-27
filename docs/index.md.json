@@ -179,14 +179,6 @@
       "size_bytes": 30569
     },
     {
-      "name": "pypi-deploy.md",
-      "rel_path": "pypi-deploy.md",
-      "title": "Pypi Deploy",
-      "summary": "Synthetic placeholder summary for pypi-deploy.md (2585 bytes).",
-      "content_hash": "sha256:demo_pypi-deploy.md",
-      "size_bytes": 2585
-    },
-    {
       "name": "record-entity-sync.md",
       "rel_path": "record-entity-sync.md",
       "title": "Record Entity Sync",

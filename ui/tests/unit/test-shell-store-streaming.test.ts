@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ShellCmdProgress, ShellCommandProcessor } from '@sdk/flow_processing/shell-cmd-processor';
-import { ShellOutputFlowData } from '@sdk/entities/flow/flow-data-types/shell-output';
+import { ShellOutputFlowData } from '@sdk/flow_processing/flow-data-types/shell-output';
 import { MockXMLStreamer } from './mock_flow_streamer_test_utils';
 
 /**

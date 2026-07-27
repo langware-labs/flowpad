@@ -12,6 +12,7 @@ import json
 from typing import Any
 
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import WorkerCLIOptions
+from flow_sdk.builtin.agentic_process.model_tiers import CLAUDE_MODEL_TIERS
 from flow_sdk.config import PLATFORM_WIN32
 
 
@@ -40,6 +41,14 @@ class ClaudeCliOptions(WorkerCLIOptions):
         )
         # → claude ... --resume 'src-uuid' --fork-session --session-id 'new-uuid'
     """
+
+    # sm/md/lg → haiku/sonnet/opus, applied when emitting the worker command.
+    MODEL_TIERS = CLAUDE_MODEL_TIERS
+
+    EXECUTABLE = "claude"
+    PROMPT_CHANNEL = "argv"  # claude takes the prompt as a `-- <text>` positional
+    SYSTEM_PROMPT_FLAG = "--append-system-prompt"
+    SYSTEM_PROMPT_FILE_FLAG = "--append-system-prompt-file"
 
     def __init__(
         self,
@@ -90,73 +99,102 @@ class ClaudeCliOptions(WorkerCLIOptions):
     # WorkerCLIOptions contract
     # ------------------------------------------------------------------
 
-    def _build_worker_args(self) -> list[str]:
-        import shlex
+    def _resolve_binary(self) -> list[str]:
+        """Resolve the ``claude`` argv prefix on PATH; wrap a win32 ``.cmd``/
+        ``.bat`` launcher through COMSPEC so PtyProcess can exec it."""
+        import os
+        import shutil
+        import sys
 
-        args: list[str] = ["claude"]
+        resolved = shutil.which("claude")
+        if sys.platform == PLATFORM_WIN32 and resolved and resolved.lower().endswith((".cmd", ".bat")):
+            comspec = os.environ.get("COMSPEC") or "cmd.exe"
+            return [comspec, "/c", resolved]
+        return [resolved or "claude"]
 
+    def _emit_flags(self) -> list[str]:
+        """Claude's argv flags (after the binary, before the ``-- <instruction>``).
+        Order is canonical-argv; the shell form re-places ``--add-dir`` below."""
+        flags: list[str] = []
         if self.permission_mode == "bypassPermissions":
-            args.append("--dangerously-skip-permissions")
+            flags.append("--dangerously-skip-permissions")
         elif self.permission_mode in ("plan", "default", "acceptEdits"):
-            # Claude Code's session-level permission/plan modes — passed
-            # through to the CLI verbatim. ``plan`` is required for the
-            # model to be allowed to call ``ExitPlanMode``.
-            args.append(f"--permission-mode {shlex.quote(self.permission_mode)}")
+            # ``plan`` is required for the model to call ``ExitPlanMode``.
+            flags.extend(["--permission-mode", self.permission_mode])
         if self.chrome:
-            args.append("--chrome")
+            flags.append("--chrome")
         if self.debug:
-            args.append("--debug")
+            flags.append("--debug")
         if self.worktree:
-            args.append("--worktree")
+            flags.append("--worktree")
         if self.verbose:
-            args.append("--verbose")
+            flags.append("--verbose")
         if self.output_format:
-            args.append(f"--output-format {shlex.quote(self.output_format)}")
-
+            flags.extend(["--output-format", self.output_format])
         if self.resume and self.session_id:
             if self.fork_session_id:
                 # Fork: --resume <source> --fork-session --session-id <new>
-                args.append(f"--resume {shlex.quote(self.fork_session_id)}")
-                args.append("--fork-session")
-                args.append(f"--session-id {shlex.quote(self.session_id)}")
+                flags.extend(["--resume", self.fork_session_id, "--fork-session", "--session-id", self.session_id])
             else:
-                args.append(f"--resume {shlex.quote(self.session_id)}")
+                flags.extend(["--resume", self.session_id])
         elif self.session_id:
-            args.append(f"--session-id {shlex.quote(self.session_id)}")
-
-        if self.model:
-            args.append(f"--model {shlex.quote(self.model)}")
+            flags.extend(["--session-id", self.session_id])
+        if self.resolved_model:
+            flags.extend(["--model", self.resolved_model])
         if self.effort:
-            args.append(f"--effort {shlex.quote(self.effort)}")
+            flags.extend(["--effort", self.effort])
         if self.agents_json:
-            args.append(f"--agents {shlex.quote(json.dumps(self.agents_json))}")
-        for d in self.add_dirs:
-            args.append(f"--add-dir {shlex.quote(d)}")
-
+            flags.extend(["--agents", json.dumps(self.agents_json)])
         if self.print_mode:
-            args.append("-p")
-
-        return args
+            flags.append("-p")
+        for d in self.add_dirs:
+            flags.extend(["--add-dir", d])
+        return flags
 
     def to_shell_string(self, instruction: str | None = None) -> str:
-        """Build shell command with --add-dir flags appended after the instruction.
+        """Shell form of the claude command. The shell ordering differs from argv
+        (and between OSes) — a pre-existing claude quirk we reproduce exactly:
 
-        Claude CLI requires that the prompt/instruction appear before --add-dir
-        flags when both are present. This override separates --add-dir from the
-        other args so _build_posix can insert the instruction first.
-        """
+        * posix: ``--add-dir`` goes at the very end, AFTER the instruction (the
+          CLI registers skills only when add-dir trails the prompt here);
+        * win32: ``--add-dir`` stays inline, before ``-p`` and the instruction.
+
+        Both derive from ``_emit_flags`` (the single argv source) — no second
+        flag list."""
+        import shlex
         import sys
 
-        args = self._build_worker_args()
+        p_flag: list[str] = []
+        add_dir: list[str] = []
+        rest: list[str] = []
+        flags = self._emit_flags()
+        i = 0
+        while i < len(flags):
+            if flags[i] == "--add-dir" and i + 1 < len(flags):
+                add_dir.extend(flags[i:i + 2])
+                i += 2
+            elif flags[i] == "-p":
+                p_flag.append("-p")
+                i += 1
+            else:
+                rest.append(flags[i])
+                i += 1
+
+        # Launch-derived instructions ride the shell form too — the PTY spawn
+        # is exactly this string, and the interactive CLI accepts the flag.
+        if self.system_prompt_file and self.SYSTEM_PROMPT_FILE_FLAG:
+            rest.extend([self.SYSTEM_PROMPT_FILE_FLAG, self.system_prompt_file])
+        if self.system_prompt_append and self.SYSTEM_PROMPT_FLAG:
+            rest.extend([self.SYSTEM_PROMPT_FLAG, self.system_prompt_append])
+
+        def q(xs: list[str]) -> list[str]:
+            return [shlex.quote(x) for x in xs]
+
         if sys.platform == "win32":
-            return self._build_win32(args, instruction)
-
-        main_args = [a for a in args if not a.startswith("--add-dir ")]
-        add_dir_args = [a for a in args if a.startswith("--add-dir ")]
-
-        cmd = self._build_posix(main_args, instruction)
-        if add_dir_args:
-            cmd += " " + " ".join(add_dir_args)
+            return self._build_win32(["claude", *q(rest), *q(add_dir), *p_flag], instruction)
+        cmd = self._build_posix(["claude", *q(rest), *p_flag], instruction)
+        if add_dir:
+            cmd += " " + " ".join(q(add_dir))
         return cmd
 
     # ------------------------------------------------------------------
@@ -183,71 +221,6 @@ class ClaudeCliOptions(WorkerCLIOptions):
             "effort": self.effort,
         })
         return d
-
-    def to_spawn_args(self, instruction: str | None = None) -> tuple[list[str], dict[str, str]]:
-        """Build argv list and env dict for PtyProcess.spawn() — no shell intermediary.
-
-        Builds argv directly (each flag and value as separate elements) rather than
-        going through shell-string quoting.
-        """
-        import os
-        import shutil
-        import sys
-
-        resolved: str | None = shutil.which("claude")
-        if sys.platform == PLATFORM_WIN32:
-            if resolved and resolved.lower().endswith((".cmd", ".bat")):
-                comspec = os.environ.get("COMSPEC") or "cmd.exe"
-                argv: list[str] = [comspec, "/c", resolved]
-            else:
-                argv = [resolved or "claude"]
-        else:
-            argv = [resolved or "claude"]
-
-        if self.permission_mode == "bypassPermissions":
-            argv.append("--dangerously-skip-permissions")
-        elif self.permission_mode in ("plan", "default", "acceptEdits"):
-            # Session-level permission/plan modes — pass-through to CLI.
-            argv.extend(["--permission-mode", self.permission_mode])
-        if self.chrome:
-            argv.append("--chrome")
-        if self.debug:
-            argv.append("--debug")
-        if self.worktree:
-            argv.append("--worktree")
-        if self.verbose:
-            argv.append("--verbose")
-        if self.output_format:
-            argv.extend(["--output-format", self.output_format])
-
-        if self.resume and self.session_id:
-            if self.fork_session_id:
-                argv.extend(["--resume", self.fork_session_id, "--fork-session", "--session-id", self.session_id])
-            else:
-                argv.extend(["--resume", self.session_id])
-        elif self.session_id:
-            argv.extend(["--session-id", self.session_id])
-
-        if self.model:
-            argv.extend(["--model", self.model])
-        if self.effort:
-            argv.extend(["--effort", self.effort])
-        if self.agents_json:
-            import json as _json
-            argv.extend(["--agents", _json.dumps(self.agents_json)])
-        if self.print_mode:
-            argv.append("-p")
-
-        # ``--add-dir`` must come BEFORE the ``--`` instruction separator —
-        # the Claude CLI only registers skills/agents from a mounted directory
-        # when the flag is parsed as a flag, not as a positional after ``--``.
-        for d in self.add_dirs:
-            argv.extend(["--add-dir", d])
-
-        if instruction:
-            argv.extend(["--", instruction])
-
-        return argv, dict(self.env_vars)
 
     @classmethod
     def from_json(cls, data: dict[str, Any]) -> "ClaudeCliOptions":

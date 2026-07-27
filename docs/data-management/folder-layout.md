@@ -324,8 +324,9 @@ These types are extracted from `~/.claude/settings.json` (or project-level `.cla
 
 The old `flow_sdk/fs_records/` per-type record classes (`ClaudeRootFsRecord`, `ClaudeSessionFsRecord`, `SkillRecord`, `AgenticProcess`, …) no longer exist. With `FSRecord` knowing nothing about types, all per-type behavior lives in **free functions registered on `TypeInfo`** and dispatched by the indexer:
 
-- `from_disk_fn(FSRef) -> list[FSRecord]` — parse a source file/dir into records (cold path)
-- `gen_uuid_fn(FSRef) -> str` — mint/read the record id (hot path)
+- `from_disk_fn(FSRef, resolved_id) -> list[FSRecord]` — parse payload after identity has been resolved once
+- `capsules` / `identity_backend` — named capsule declarations plus canonical and legacy/native identity observation
+- `id_stable_key_fn(FSRef) -> str | None`, `id_namespace` — optional deterministic v5 policy
 - `asset_hash_fn(FSRef) -> float` — cheap freshness stat
 - `post_sync_fn`, `default_body_fn`, `meta_model`, `main_subdir`, `main_layout`
 
@@ -464,18 +465,18 @@ $HOME/
           scan_log.jsonl                # scan log
           types/
             <type>/
-              type_info.json            # per-type TypeInfo
               scan_log.jsonl            # per-type scan log
               index_log.jsonl           # per-type index log
+                                        # (no type_info.json — TypeInfo is NOT persisted; see schema-registry.md)
         records/                         # owned record shadow folders
           task/
             task-@<uid>/
               metadata.json             # ALL persisted fields (flat)
-              <epoch>_<hexdigest>.hash  # index sentinel (zero-byte)
+              <epoch>_<hash>_<pathdigest>.hash  # index sentinel (zero-byte; legacy 2-part form still reconciles)
           skill/
             skill-@<uid>/
               metadata.json
-              <epoch>_<hexdigest>.hash
+              <epoch>_<hash>_<pathdigest>.hash
           claude_error/
             claude_error-@<fingerprint>/
               metadata.json

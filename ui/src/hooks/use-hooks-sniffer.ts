@@ -3,7 +3,9 @@ import {
   dataContext,
   type FlowData,
   type HooksSnifferStatus,
+  PrefKey,
   snifferManager,
+  loadSnifferPreference,
   TypeId,
   VFSPath,
   getTranscriptDockPointer,
@@ -11,7 +13,8 @@ import {
   parseTranscriptPath,
 } from '@sdk';
 import { useContext, useEntityData } from '@sdk/react/hooks';
-import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { usePreference } from '@src/hooks/use-preference';
 import { useProjectList } from './use-claude-projects';
 
 export type EventLayer = 'debug' | 'info' | 'raw_notifications' | 'resource';
@@ -39,46 +42,6 @@ export type SnifferEvent = {
   /** Pre-computed trigger log lens pointer. Null for events without a hook_entry_id. */
   triggerLogDockPointer: { ref: string; options: Record<string, string> } | null;
 };
-
-const MAX_EVENTS_STORAGE_KEY = 'flowpad-sniffer-max-events';
-const DEFAULT_MAX_EVENTS = 100;
-const SNIFFER_ENABLED_STORAGE_KEY = 'flowpad.snifferEnabled';
-
-function loadMaxEvents(): number {
-  try {
-    const stored = localStorage.getItem(MAX_EVENTS_STORAGE_KEY);
-    if (stored) {
-      const val = parseInt(stored, 10);
-      if (val > 0 && val <= 10000) return val;
-    }
-  } catch {
-    // ignore
-  }
-  return DEFAULT_MAX_EVENTS;
-}
-
-/** Last user decision. Returns ``null`` when no preference has been recorded
- *  so callers can fall back to the backend state — bootstrap auto-enables
- *  the sniffer on desktop init, and clobbering that to OFF on every fresh
- *  install would clear the just-injected ~/.claude/settings.json hooks. */
-function loadSnifferPreference(): boolean | null {
-  try {
-    const stored = localStorage.getItem(SNIFFER_ENABLED_STORAGE_KEY);
-    if (stored === 'true') return true;
-    if (stored === 'false') return false;
-  } catch {
-    // ignore
-  }
-  return null;
-}
-
-function saveSnifferPreference(enabled: boolean): void {
-  try {
-    localStorage.setItem(SNIFFER_ENABLED_STORAGE_KEY, enabled ? 'true' : 'false');
-  } catch {
-    // ignore
-  }
-}
 
 function safeParse(raw: string): any {
   try {
@@ -122,29 +85,13 @@ function extractSessionId(item: FlowData): string | null {
   );
 }
 
-function saveMaxEvents(val: number): void {
-  try {
-    localStorage.setItem(MAX_EVENTS_STORAGE_KEY, String(val));
-  } catch {
-    // ignore
-  }
-}
-
 export function useHooksSniffer() {
   const [hookId, setHookId] = useState<string | null>(() => dataContext.snifferHook?.entity.id ?? null);
   const [isToggling, setIsToggling] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
-  const [maxEvents, setMaxEventsRaw] = useState(loadMaxEvents);
+  const [maxEvents, setMaxEvents] = usePreference<number>(PrefKey.SNIFFER_MAX_EVENTS);
   const pausedSnapshot = useRef<readonly any[]>([]);
   const globalIndexOffsetRef = useRef(0);
-
-  const setMaxEvents: Dispatch<SetStateAction<number>> = useCallback((action) => {
-    setMaxEventsRaw((prev) => {
-      const next = typeof action === 'function' ? action(prev) : action;
-      saveMaxEvents(next);
-      return next;
-    });
-  }, []);
 
   const { flowData, clear: clearEntityData } = useEntityData(hookId ? new TypeId(AgentHook.type, hookId) : null);
   const { projects } = useProjectList();
@@ -478,9 +425,8 @@ export function useHooksSniffer() {
   const enable = useCallback(async () => {
     setIsToggling(true);
     try {
-      await snifferManager.enable();   // entity.watch() fully awaited inside
+      await snifferManager.enable();   // records the preference + watches inside
       setHookId(snifferManager.entity?.id ?? null);
-      saveSnifferPreference(true);
     } finally {
       setIsToggling(false);
     }
@@ -489,11 +435,10 @@ export function useHooksSniffer() {
   const disable = useCallback(async () => {
     setIsToggling(true);
     try {
-      await snifferManager.disable();  // unwatch + clear inside
+      await snifferManager.disable();  // unwatch + clear + record preference inside
       setHookId(null);
       sessionToProjectRef.current.clear();
       globalIndexOffsetRef.current = 0;
-      saveSnifferPreference(false);
     } finally {
       setIsToggling(false);
     }

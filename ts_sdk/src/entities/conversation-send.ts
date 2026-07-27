@@ -1,5 +1,6 @@
 import { dataManager } from '../APIEntity';
 import { ActionInfo } from '../models/ActionInfo';
+import { normalizeEmail } from '../utils/utils';
 import { sendReply } from './notifications';
 import {
   Conversation,
@@ -22,6 +23,13 @@ export interface ConversationSendPayload {
    *  also merges these onto the parent Conversation and links them back —
    *  parity with the new-conversation path, without minting a new invite. */
   sharedContextEntities?: string[];
+  /** Body-bundle transfer policy + per-share opt-ins. Defaults to copy. */
+  shareConfig?: {
+    transferMode?: 'copy' | 'git';
+    /** When true, the receiver mints a FAVORITE bookmark pointing at the shared
+     *  asset when it installs. Default off. */
+    createBookmark?: boolean;
+  };
 }
 
 /** Send into an already-existing conversation. Thin wrap over ``sendReply`` —
@@ -32,16 +40,16 @@ export async function sendToExistingConversation(
 ): Promise<void> {
   const hasAssetRefs = !!payload.assetReferences?.length;
   const hasSharedCtx = !!payload.sharedContextEntities?.length;
+  const extras = {
+    ...(hasAssetRefs ? { assetReferences: payload.assetReferences } : {}),
+    ...(hasSharedCtx ? { sharedContextEntities: payload.sharedContextEntities } : {}),
+    ...(payload.shareConfig ? { shareConfig: payload.shareConfig } : {}),
+  };
   await sendReply(
     { conversationId },
     payload.text,
     payload.files,
-    hasAssetRefs || hasSharedCtx
-      ? {
-          ...(hasAssetRefs ? { assetReferences: payload.assetReferences } : {}),
-          ...(hasSharedCtx ? { sharedContextEntities: payload.sharedContextEntities } : {}),
-        }
-      : undefined,
+    hasAssetRefs || hasSharedCtx || !!payload.shareConfig ? extras : undefined,
   );
 }
 
@@ -132,7 +140,7 @@ export async function createConversationForShare(
       if (!gate.ok) throw new Error(gate.error);
     }
     const emails = params.participants
-      .map((p) => (p.email || '').trim())
+      .map((p) => normalizeEmail(p.email) || '')
       .filter((e): e is string => !!e && e.includes('@'));
     if (emails.length === 0) {
       throw new Error('At least one recipient email is required');
@@ -142,7 +150,11 @@ export async function createConversationForShare(
       opts?.draftRef?.current ??
       new Conversation({
         title: params.title,
-        participants: params.participants,
+        members: params.participants,
+        // Local-only project mapping (the hub body strips project_id) — without
+        // it a remote-shared conversation loses its project association and the
+        // sender's conversation list can't scope it.
+        ...(params.project_id ? { project_id: params.project_id } : {}),
         // ``shared_context_entities`` is a wire-lifted field (not on IConversation);
         // the APIEntity base moves it into ``_shared_context_entities_`` on construct.
         ...(params.shared_context_entities && params.shared_context_entities.length > 0
@@ -150,7 +162,7 @@ export async function createConversationForShare(
           : {}),
       } as Partial<Conversation>);
     if (params.title !== undefined) conv.title = params.title;
-    conv.participants = params.participants;
+    conv.members = params.participants;
     if (opts?.draftRef) opts.draftRef.current = conv;
 
     await conv.save();

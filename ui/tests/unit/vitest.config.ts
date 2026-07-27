@@ -1,4 +1,3 @@
-import path from 'path';
 import { defineConfig, mergeConfig } from 'vitest/config';
 import viteConfig from '../../vite.config';
 
@@ -9,14 +8,13 @@ export default mergeConfig(
   defineConfig({
     resolve: {
       alias: {
-        '@shared-compat': path.resolve(__dirname, '../utils/shared-compat.ts'),
       },
     },
     test: {
       hookTimeout: 15000,
       testTimeout: 15000,
       environment: 'jsdom',
-      setupFiles: ['./tests/unit/testSetup.ts'],
+      setupFiles: ['./tests/_lingui-mock.ts', './tests/unit/testSetup.ts'],
       pool: 'threads',
       poolOptions: {
         threads: {

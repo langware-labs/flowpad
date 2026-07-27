@@ -1,13 +1,18 @@
 ---
 id: 40c37f22-76be-5f63-bcb1-bdd5cb626cf9
+version: 2
 ---
 
 # AgentApi.md — Agent Execution API Specification
 
+> **HISTORICAL** — this design spec predates the two-axis (`pty_mode`/`visible`)
+> model. The maintained interface reference is [docs/interface/](docs/interface/README.md);
+> the three-layer diagram below remains the canonical framing.
+
 > Design and implementation guide for the three-layer agent execution stack.
 > Last updated: 2026-04-04
 
----
+***
 
 ## Architecture
 
@@ -27,32 +32,34 @@ id: 40c37f22-76be-5f63-bcb1-bdd5cb626cf9
 Each layer is **independently usable** and has no knowledge of the layer above
 it. A developer can use any layer directly depending on their needs.
 
-| You want to…                                  | Use            |
-|-----------------------------------------------|----------------|
-| Run Claude on a task and await the result     | AgenticProcess |
-| Launch any CLI tool in a persistent tab       | Shell          |
-| Raw PTY byte I/O, WS routing, replay buffer   | Pty            |
+| You want to…                                | Use            |
+| ------------------------------------------- | -------------- |
+| Run Claude on a task and await the result   | AgenticProcess |
+| Launch any CLI tool in a persistent tab     | Shell          |
+| Raw PTY byte I/O, WS routing, replay buffer | Pty            |
 
 ### Terminology — consistent across all layers
 
-| Pattern            | Verb       | Meaning                                    |
-|--------------------|------------|--------------------------------------------|
-| Class factory      | `.open()`  | Create + start in one call                 |
-| Instance start     | `.start()` | Start a pre-constructed object             |
-| Graceful stop      | `.stop()`  | Pause; preserve state for resume           |
-| Full teardown      | `.close()` | Kill + delete; permanent                   |
-| Crash simulation   | `.kill()`  | Kill OS process, no disk cleanup (Pty only)|
-| One-shot execution | `.run()`   | Create, execute, return result, clean up   |
+| Pattern            | Verb       | Meaning                                     |
+| ------------------ | ---------- | ------------------------------------------- |
+| Class factory      | `.open()`  | Create + start in one call                  |
+| Instance start     | `.start()` | Start a pre-constructed object              |
+| Graceful stop      | `.stop()`  | Pause; preserve state for resume            |
+| Full teardown      | `.close()` | Kill + delete; permanent                    |
+| Crash simulation   | `.kill()`  | Kill OS process, no disk cleanup (Pty only) |
+| One-shot execution | `.run()`   | Create, execute, return result, clean up    |
 
 ### Async rules — consistent across all layers
 
-- **Properties are always synchronous.** Any value requiring I/O (DB lookup,
+* **Properties are always synchronous.** Any value requiring I/O (DB lookup,
   psutil check) is a method, not a property.
-- `status` and `is_idle` are **properties** — synchronous transcript tail read (~60µs).
-- `is_running()`, `shell()`, `worker_alive()` are **async methods** — they hit
+
+* `status` and `is_idle` are **properties** — synchronous transcript tail read (\~60µs).
+
+* `is_running()`, `shell()`, `worker_alive()` are **async methods** — they hit
   the DB or OS process table.
 
----
+***
 
 ## Layer 1 — Pty
 
@@ -74,10 +81,13 @@ callback needs async operations.
 
 ### When to use directly
 
-- You need raw bytes in/out with precise control.
-- You are building a custom terminal UI.
-- You need to multiplex multiple WebSocket viewers onto one PTY.
-- You are writing infrastructure or OS-level tests.
+* You need raw bytes in/out with precise control.
+
+* You are building a custom terminal UI.
+
+* You need to multiplex multiple WebSocket viewers onto one PTY.
+
+* You are writing infrastructure or OS-level tests.
 
 ### Quickstart
 
@@ -99,7 +109,7 @@ await pty.write(b"npm test\r")
 missed = pty.snapshot(since=seq)   # get all output produced while away
 ```
 
----
+***
 
 ### Main API
 
@@ -190,7 +200,7 @@ class Pty:
     # Current terminal height. Updated by resize().
 ```
 
----
+***
 
 ### Supporting types
 
@@ -201,28 +211,28 @@ class OutputChunk:
     timestamp: float  # unix timestamp when this chunk was produced
 ```
 
----
+***
 
 ### Implementation status
 
-| Item | Status | Notes |
-|---|---|---|
-| `Pty.open()` classmethod | 🔧 refactor | Factory lives on ComputeNode; wrap into standalone class factory |
-| `close()` | ✅ ready | Confirmed: kills OS + disk + buffer |
-| `kill()` | ✅ ready | Confirmed: no disk touch |
-| `is_alive` | ✅ ready | Property via `provider.is_pty_alive()` |
-| `write()` | ✅ ready | Exists as `send(data: bytes)` — rename |
-| `resize()` | ✅ ready | Smart no-op already implemented |
-| `output()` | ➕ new | No AsyncIterator exists; add asyncio.Queue wired to on_output callback |
-| `snapshot()` | ✅ ready | Exists as `get_replay(since_seq)` — rename |
-| `latest_seq` | ✅ ready | Property via replay_buffer |
-| `attach()` | ✅ ready | |
-| `detach()` | ✅ ready | |
-| `connections` | 🔧 refactor | `connection_ids: set` in PtySessionState; add frozenset property |
-| `name` r/w | 🔧 refactor | Write via `set_name()`; add read from session state |
-| `cols`, `rows` | 🔧 refactor | Stored in PtySessionState; expose on PtySession abstraction |
+| Item                     | Status      | Notes                                                                   |
+| ------------------------ | ----------- | ----------------------------------------------------------------------- |
+| `Pty.open()` classmethod | 🔧 refactor | Factory lives on ComputeNode; wrap into standalone class factory        |
+| `close()`                | ✅ ready     | Confirmed: kills OS + disk + buffer                                     |
+| `kill()`                 | ✅ ready     | Confirmed: no disk touch                                                |
+| `is_alive`               | ✅ ready     | Property via `provider.is_pty_alive()`                                  |
+| `write()`                | ✅ ready     | Exists as `send(data: bytes)` — rename                                  |
+| `resize()`               | ✅ ready     | Smart no-op already implemented                                         |
+| `output()`               | ➕ new       | No AsyncIterator exists; add asyncio.Queue wired to on\_output callback |
+| `snapshot()`             | ✅ ready     | Exists as `get_replay(since_seq)` — rename                              |
+| `latest_seq`             | ✅ ready     | Property via replay\_buffer                                             |
+| `attach()`               | ✅ ready     | <br />                                                                  |
+| `detach()`               | ✅ ready     | <br />                                                                  |
+| `connections`            | 🔧 refactor | `connection_ids: set` in PtySessionState; add frozenset property        |
+| `name` r/w               | 🔧 refactor | Write via `set_name()`; add read from session state                     |
+| `cols`, `rows`           | 🔧 refactor | Stored in PtySessionState; expose on PtySession abstraction             |
 
----
+***
 
 ## Layer 2 — Shell
 
@@ -230,12 +240,16 @@ class OutputChunk:
 
 A `Shell` is a PTY session with a database-backed identity. It adds:
 
-- **Persistence**: Shell entity survives server restarts (record on disk, entity in SQLite).
-- **Worker tracking**: knows the PID and name of the CLI process running inside.
-- **Worker launching**: `launch()` injects a `WorkerCLIOptions` command and
+* **Persistence**: Shell entity survives server restarts (record on disk, entity in SQLite).
+
+* **Worker tracking**: knows the PID and name of the CLI process running inside.
+
+* **Worker launching**: `launch()` injects a `WorkerCLIOptions` command and
   tracks the child PID.
-- **Environment management**: persists env vars and injects live `export` commands.
-- **Tab ordering**: `tab_order` positions the shell in the UI tab strip.
+
+* **Environment management**: persists env vars and injects live `export` commands.
+
+* **Tab ordering**: `tab_order` positions the shell in the UI tab strip.
 
 Shell is agnostic to what runs inside it — it works with any CLI tool.
 
@@ -244,10 +258,13 @@ and is redundant — it exists for historical reasons.
 
 ### When to use directly
 
-- You want to run any CLI tool in a persistent, resumable tab.
-- You need worker PID tracking and alive checks.
-- You need to list and manage running terminal sessions.
-- You are building the terminal UI layer.
+* You want to run any CLI tool in a persistent, resumable tab.
+
+* You need worker PID tracking and alive checks.
+
+* You need to list and manage running terminal sessions.
+
+* You are building the terminal UI layer.
 
 ### Quickstart
 
@@ -275,7 +292,7 @@ for sh in await Shell.active():
     print(f"{sh.name}  pid={sh.worker_pid}  {sh.status}")
 ```
 
----
+***
 
 ### Main API
 
@@ -401,7 +418,7 @@ class Shell:
     # Next available tab position (max existing + 1, or 0).
 ```
 
----
+***
 
 ### Advanced API — Shell
 
@@ -423,7 +440,7 @@ def last_launch_cmd(self) -> "WorkerCLIOptions | None"
 # Use to inspect current worker flags or build a modified command for restart.
 ```
 
----
+***
 
 ### Supporting types
 
@@ -435,38 +452,38 @@ class WorkerInfo:
     started_at: str         # ISO 8601 timestamp
 ```
 
----
+***
 
 ### Implementation status
 
-| Item | Status | Notes |
-|---|---|---|
-| `Shell.__init__` | ✅ ready | All fields available |
-| `Shell.open()` classmethod | 🔧 refactor | Exists as HTTP action — extract into classmethod |
-| `__aenter__/__aexit__` | ➕ new | |
-| `start()` | ✅ ready | Exists as `start_pty()` — rename |
-| `close()` | ✅ ready | Exists as HTTP action — extract |
-| `stop()` | 🔧 refactor | Exists as HTTP action — extract |
-| `restart()` | ➕ new | `stop()` + `start()` |
-| `is_alive` | ✅ ready | Exists as `connected` property — rename |
-| `status` | ✅ ready | APIField |
-| `write()` | ✅ ready | Exists as `send_input(cmd, bracketed=True)` — rename |
-| `write_raw()` | ➕ new | `self.pty.write(data)` |
-| `read()` | ✅ ready | Exists as `read_output()` — rename |
-| `output()` | ➕ new | Delegates to `self.pty.output()` |
-| `launch()` | ✅ ready | Exists as `run_process()` — rename |
-| `worker_alive()` | ✅ ready | |
-| `worker_pid` | ✅ ready | APIField |
-| `worker_name` | ✅ ready | APIField |
-| `set_env()` | ✅ ready | Exists as HTTP action — extract |
-| `rename()` | 🔧 refactor | Inside `update-display` action — extract |
-| `tab_order` | ✅ ready | APIField |
-| `Shell.active()` | ✅ ready | Exists as `get_active_sessions()` — rename |
-| `Shell.next_tab_order()` | ✅ ready | |
-| `shell.pty` (advanced) | ➕ new | One-liner property |
-| `last_launch_cmd` (advanced) | ➕ new | Add APIField; populate in run_process() |
+| Item                         | Status      | Notes                                                |
+| ---------------------------- | ----------- | ---------------------------------------------------- |
+| `Shell.__init__`             | ✅ ready     | All fields available                                 |
+| `Shell.open()` classmethod   | 🔧 refactor | Exists as HTTP action — extract into classmethod     |
+| `__aenter__/__aexit__`       | ➕ new       | <br />                                               |
+| `start()`                    | ✅ ready     | Exists as `start_pty()` — rename                     |
+| `close()`                    | ✅ ready     | Exists as HTTP action — extract                      |
+| `stop()`                     | 🔧 refactor | Exists as HTTP action — extract                      |
+| `restart()`                  | ➕ new       | `stop()` + `start()`                                 |
+| `is_alive`                   | ✅ ready     | Exists as `connected` property — rename              |
+| `status`                     | ✅ ready     | APIField                                             |
+| `write()`                    | ✅ ready     | Exists as `send_input(cmd, bracketed=True)` — rename |
+| `write_raw()`                | ➕ new       | `self.pty.write(data)`                               |
+| `read()`                     | ✅ ready     | Exists as `read_output()` — rename                   |
+| `output()`                   | ➕ new       | Delegates to `self.pty.output()`                     |
+| `launch()`                   | ✅ ready     | Exists as `run_process()` — rename                   |
+| `worker_alive()`             | ✅ ready     | <br />                                               |
+| `worker_pid`                 | ✅ ready     | APIField                                             |
+| `worker_name`                | ✅ ready     | APIField                                             |
+| `set_env()`                  | ✅ ready     | Exists as HTTP action — extract                      |
+| `rename()`                   | 🔧 refactor | Inside `update-display` action — extract             |
+| `tab_order`                  | ✅ ready     | APIField                                             |
+| `Shell.active()`             | ✅ ready     | Exists as `get_active_sessions()` — rename           |
+| `Shell.next_tab_order()`     | ✅ ready     | <br />                                               |
+| `shell.pty` (advanced)       | ➕ new       | One-liner property                                   |
+| `last_launch_cmd` (advanced) | ➕ new       | Add APIField; populate in run\_process()             |
 
----
+***
 
 ## Layer 3 — AgenticProcess
 
@@ -475,15 +492,19 @@ class WorkerInfo:
 An `AgenticProcess` is a Claude Code CLI execution run. It wraps Shell +
 ClaudeCliOptions and adds:
 
-- **Session management**: assigns a `session_id` (Claude JSONL session file),
+* **Session management**: assigns a `session_id` (Claude JSONL session file),
   handles resume and fork automatically.
-- **Status tracking**: derives live status from the Claude session transcript
-  (last 4 KB read, ~60µs). Does not poll the DB on every check.
-- **Prompt routing**: `prompt()` sends to a running Claude or starts fresh,
+
+* **Status tracking**: derives live status from the Claude session transcript
+  (last 4 KB read, \~60µs). Does not poll the DB on every check.
+
+* **Prompt routing**: `prompt()` sends to a running Claude or starts fresh,
   depending on current state.
-- **Completion detection**: polls transcript every 2s when the PTY shell
+
+* **Completion detection**: polls transcript every 2s when the PTY shell
   outlives the Claude process (interactive terminal mode).
-- **Plan mode**: Claude presents a plan and pauses; you approve or reject via
+
+* **Plan mode**: Claude presents a plan and pauses; you approve or reject via
   the hook's wait-for-response mechanism.
 
 ### When to use
@@ -534,7 +555,7 @@ async with AgenticProcess(workdir="/project") as proc:
     await proc.wait()
 ```
 
----
+***
 
 ### Main API
 
@@ -668,7 +689,7 @@ class AgenticProcess:
     # launching (subprocess started but JSONL not yet written).
 ```
 
----
+***
 
 ### Result types
 
@@ -695,7 +716,7 @@ class ProcessError(Exception):
     session_id: str
 ```
 
----
+***
 
 ### Status reference
 
@@ -724,7 +745,7 @@ Do NOT test against (internal / transient):
   STEPPING     stepping through plan
 ```
 
----
+***
 
 ### Advanced API — AgenticProcess
 
@@ -762,7 +783,7 @@ async def set_session_id(self, session_id: str) -> None
 # Use when wrapping a session created outside this API (e.g. from a hook).
 ```
 
----
+***
 
 ### WorkerCLIOptions — command builder
 
@@ -811,40 +832,40 @@ class ClaudeCliOptions(WorkerCLIOptions):
     # Inherits: add_env(), to_shell_string(), to_json(), from_json()
 ```
 
----
+***
 
 ### Implementation status
 
-| Item | Status | Notes |
-|---|---|---|
-| `__init__(workdir, model, mode, add_dirs, env)` | 🔧 refactor | Add explicit constructor; currently Entity fields only |
-| `AgenticProcess.run()` classmethod | ➕ new | No equivalent exists; build from start+prompt+wait+result |
-| `AgenticProcess.resume()` classmethod | ➕ new | Fork-chain logic exists; wrap into factory |
-| `AgenticProcess.fork()` classmethod | ➕ new | CLI flag support exists; wrap into factory |
-| `__aenter__/__aexit__` | ➕ new | |
-| `start()` | ✅ ready | Exists as `open()` action — rename + extract |
-| `stop()` | ✅ ready | Exists as action — extract |
-| `wait()` | ✅ ready | Exists as `waitForIdle()` — rename |
-| `prompt()` | ✅ ready | Exists; unwrap ApiResponse wrapper |
-| `stream()` | ➕ new | Tail JSONL as async generator mapping to StreamEvent |
-| `send()` | ✅ ready | Exists as `send_input()` — rename |
-| `plan()` + Plan class | ➕ new | execute_plan() exists; add Plan object + hook response wiring |
-| `Plan.approve()` | ➕ new | Hook mechanism exists; wire response path |
-| `Plan.reject(feedback)` | ➕ new | inject() feedback + re-plan |
-| `status` property | ✅ ready | Computed from transcript tail |
-| `session_id` | ✅ ready | Exists as `worker_session_id` — rename/alias |
-| `is_running()` async method | ✅ ready | Exists as `is_cli_running()` — rename (stays async) |
-| `is_idle` property | ✅ ready | |
-| `shell()` async method (advanced) | ✅ ready | Exists as `get_shell()` — rename (stays async) |
-| `cli_options` property (advanced) | ✅ ready | |
-| `add_dir()` (advanced) | ✅ ready | Action exists — expose as plain method |
-| `inject()` (advanced) | ✅ ready | Exists as `_control_inject_message()` — make public |
-| `set_session_id()` (advanced) | ✅ ready | Direct field assignment + save() |
-| `RunResult` type | ➕ new | Aggregate from ClaudeSessionRecord stats |
-| `StreamEvent` type | ➕ new | Map JSONL entry types to typed events |
-| `ProcessError` exception | ➕ new | Simple dataclass |
+| Item                                            | Status      | Notes                                                          |
+| ----------------------------------------------- | ----------- | -------------------------------------------------------------- |
+| `__init__(workdir, model, mode, add_dirs, env)` | 🔧 refactor | Add explicit constructor; currently Entity fields only         |
+| `AgenticProcess.run()` classmethod              | ➕ new       | No equivalent exists; build from start+prompt+wait+result      |
+| `AgenticProcess.resume()` classmethod           | ➕ new       | Fork-chain logic exists; wrap into factory                     |
+| `AgenticProcess.fork()` classmethod             | ➕ new       | CLI flag support exists; wrap into factory                     |
+| `__aenter__/__aexit__`                          | ➕ new       | <br />                                                         |
+| `start()`                                       | ✅ ready     | Exists as `open()` action — rename + extract                   |
+| `stop()`                                        | ✅ ready     | Exists as action — extract                                     |
+| `wait()`                                        | ✅ ready     | Exists as `waitForIdle()` — rename                             |
+| `prompt()`                                      | ✅ ready     | Exists; unwrap ApiResponse wrapper                             |
+| `stream()`                                      | ➕ new       | Tail JSONL as async generator mapping to StreamEvent           |
+| `send()`                                        | ✅ ready     | Exists as `send_input()` — rename                              |
+| `plan()` + Plan class                           | ➕ new       | execute\_plan() exists; add Plan object + hook response wiring |
+| `Plan.approve()`                                | ➕ new       | Hook mechanism exists; wire response path                      |
+| `Plan.reject(feedback)`                         | ➕ new       | inject() feedback + re-plan                                    |
+| `status` property                               | ✅ ready     | Computed from transcript tail                                  |
+| `session_id`                                    | ✅ ready     | Exists as `worker_session_id` — rename/alias                   |
+| `is_running()` async method                     | ✅ ready     | Exists as `is_cli_running()` — rename (stays async)            |
+| `is_idle` property                              | ✅ ready     | <br />                                                         |
+| `shell()` async method (advanced)               | ✅ ready     | Exists as `get_shell()` — rename (stays async)                 |
+| `cli_options` property (advanced)               | ✅ ready     | <br />                                                         |
+| `add_dir()` (advanced)                          | ✅ ready     | Action exists — expose as plain method                         |
+| `inject()` (advanced)                           | ✅ ready     | Exists as `_control_inject_message()` — make public            |
+| `set_session_id()` (advanced)                   | ✅ ready     | Direct field assignment + save()                               |
+| `RunResult` type                                | ➕ new       | Aggregate from ClaudeSessionRecord stats                       |
+| `StreamEvent` type                              | ➕ new       | Map JSONL entry types to typed events                          |
+| `ProcessError` exception                        | ➕ new       | Simple dataclass                                               |
 
----
+***
 
 ## Cross-layer access
 
@@ -880,103 +901,103 @@ async for chunk in pty.output():
 await pty.close()
 ```
 
----
+***
 
 ## What is NOT public API
 
 Internal implementation details that must not be called from outside the SDK.
 
-| Name | Layer | Reason excluded |
-|---|---|---|
-| `PtySessionManager` | Pty | Internal WS multiplexer; use attach/detach on Pty |
-| `PtyReplayBuffer` | Pty | Internal buffer; use snapshot() on Pty |
-| `PtySessionState` | Pty | Internal state bag; properties exposed on Pty |
-| `LocalPtySession` | Pty | Concrete provider impl; always typed as Pty |
-| `close_for_connection()` | Pty | "Last viewer closes session" — inside detach() |
-| `detach_all_for_connection()` | Pty | WS disconnect handler; server-internal |
-| `cleanup_expired_sessions()` | Pty | Background maintenance; automatic |
-| `pty_key` tuple | Pty | (cn_id, pn_id, shell_id) — provider routing detail |
-| `open_pty()` | Shell | Alias for start() without DB writes; use start() |
-| `start_pty()` | Shell | Rename to start() |
-| `from_record()` / `sync_from_record()` | Shell | Persistence internals |
-| `fetch_pty_sequence()` | Shell | Debug replay; use shell.pty.snapshot() |
-| `update_display()` | Shell | HTTP action; use rename() |
-| `run()` HTTP action | Shell | One-shot subprocess; unrelated to PTY |
-| `pty_pid` field | Shell | Always equals shell.id; redundant — deprecate |
-| `connected` | Shell | Rename to is_alive |
-| `send_input()` | Shell | Rename to write() / write_raw() |
-| `read_output()` | Shell | Rename to read() |
-| `run_process()` | Shell | Rename to launch() |
-| `get_active_sessions()` | Shell | Rename to active() |
-| `_poll_for_completion()` | AgenticProcess | Internal; callers use wait() |
-| `_make_pty_exit_callback()` | AgenticProcess | Internal PTY wiring |
-| `_get_or_create_shell()` | AgenticProcess | Internal; called by start() |
-| `_find_resumable_session()` | AgenticProcess | Internal fork-chain walk |
-| `_control_inject_message()` | AgenticProcess | Rename to inject() (make public) |
-| `_discover_status_from_transcript()` | AgenticProcess | Internal; exposed via status |
-| `_is_exist_claude_resume_session()` | AgenticProcess | Internal |
-| `get_history()` stub | AgenticProcess | Returns empty; remove until real |
-| `queue_action()` | AgenticProcess | Unstable JSON-file mechanism |
-| `execute()` HTTP action | AgenticProcess | Wrapper around prompt() |
-| `open()` HTTP action | AgenticProcess | Wrapper around start() |
-| `exit_action()` HTTP action | AgenticProcess | Wrapper around close() |
-| `pending_user` | AgenticProcess | Duplicate of is_idle |
-| `worker_session_id` | AgenticProcess | Rename to session_id |
-| `cli_config` field | AgenticProcess | Serialised storage; exposed via cli_options |
-| `context_data` field | AgenticProcess | Internal misc bag |
-| `source_vfs_path` | AgenticProcess | Internal VFS routing |
-| `favorite_index` | AgenticProcess | UI concern |
-| `worker_type` field | AgenticProcess | Currently unused in execution path |
+| Name                                   | Layer          | Reason excluded                                       |
+| -------------------------------------- | -------------- | ----------------------------------------------------- |
+| `PtySessionManager`                    | Pty            | Internal WS multiplexer; use attach/detach on Pty     |
+| `PtyReplayBuffer`                      | Pty            | Internal buffer; use snapshot() on Pty                |
+| `PtySessionState`                      | Pty            | Internal state bag; properties exposed on Pty         |
+| `LocalPtySession`                      | Pty            | Concrete provider impl; always typed as Pty           |
+| `close_for_connection()`               | Pty            | "Last viewer closes session" — inside detach()        |
+| `detach_all_for_connection()`          | Pty            | WS disconnect handler; server-internal                |
+| `cleanup_expired_sessions()`           | Pty            | Background maintenance; automatic                     |
+| `pty_key` tuple                        | Pty            | (cn\_id, pn\_id, shell\_id) — provider routing detail |
+| `open_pty()`                           | Shell          | Alias for start() without DB writes; use start()      |
+| `start_pty()`                          | Shell          | Rename to start()                                     |
+| `from_record()` / `sync_from_record()` | Shell          | Persistence internals                                 |
+| `fetch_pty_sequence()`                 | Shell          | Debug replay; use shell.pty.snapshot()                |
+| `update_display()`                     | Shell          | HTTP action; use rename()                             |
+| `run()` HTTP action                    | Shell          | One-shot subprocess; unrelated to PTY                 |
+| `pty_pid` field                        | Shell          | Always equals shell.id; redundant — deprecate         |
+| `connected`                            | Shell          | Rename to is\_alive                                   |
+| `send_input()`                         | Shell          | Rename to write() / write\_raw()                      |
+| `read_output()`                        | Shell          | Rename to read()                                      |
+| `run_process()`                        | Shell          | Rename to launch()                                    |
+| `get_active_sessions()`                | Shell          | Rename to active()                                    |
+| `_poll_for_completion()`               | AgenticProcess | Internal; callers use wait()                          |
+| `_make_pty_exit_callback()`            | AgenticProcess | Internal PTY wiring                                   |
+| `_get_or_create_shell()`               | AgenticProcess | Internal; called by start()                           |
+| `_find_resumable_session()`            | AgenticProcess | Internal fork-chain walk                              |
+| `_control_inject_message()`            | AgenticProcess | Rename to inject() (make public)                      |
+| `_discover_status_from_transcript()`   | AgenticProcess | Internal; exposed via status                          |
+| `_is_exist_claude_resume_session()`    | AgenticProcess | Internal                                              |
+| `get_history()` stub                   | AgenticProcess | Returns empty; remove until real                      |
+| `queue_action()`                       | AgenticProcess | Unstable JSON-file mechanism                          |
+| `execute()` HTTP action                | AgenticProcess | Wrapper around prompt()                               |
+| `open()` HTTP action                   | AgenticProcess | Wrapper around start()                                |
+| `exit_action()` HTTP action            | AgenticProcess | Wrapper around close()                                |
+| `pending_user`                         | AgenticProcess | Duplicate of is\_idle                                 |
+| `worker_session_id`                    | AgenticProcess | Rename to session\_id                                 |
+| `cli_config` field                     | AgenticProcess | Serialised storage; exposed via cli\_options          |
+| `context_data` field                   | AgenticProcess | Internal misc bag                                     |
+| `source_vfs_path`                      | AgenticProcess | Internal VFS routing                                  |
+| `favorite_index`                       | AgenticProcess | UI concern                                            |
+| `worker_type` field                    | AgenticProcess | Currently unused in execution path                    |
 
----
+***
 
 ## Implementation roadmap
 
 ### New code required (➕)
 
-| Item | Layer | Effort | Notes |
-|---|---|---|---|
-| `Pty.open()` classmethod | Pty | S | Wrap ComputeNode.create_pty() into standalone factory |
-| `pty.output()` | Pty | M | asyncio.Queue fed by on_output callback (thread→loop bridge) |
-| `pty.connections` property | Pty | XS | frozenset from PtySessionState.connection_ids |
-| `pty.cols`, `pty.rows` | Pty | XS | Read from PtySessionState |
-| `pty.name` read | Pty | XS | Read from PtySessionState |
-| `Shell.open()` classmethod | Shell | XS | Extract from HTTP action |
-| `Shell` context manager | Shell | XS | `__aenter__`/`__aexit__` |
-| `shell.restart()` | Shell | XS | stop() + start() |
-| `shell.write_raw()` | Shell | XS | `self.pty.write(data)` |
-| `shell.output()` | Shell | XS | Delegates to `self.pty.output()` |
-| `shell.rename()` | Shell | XS | Extract from update-display action |
-| `shell.pty` property | Shell | XS | `self.compute_node.get_pty(self.id)` |
-| `shell.last_launch_cmd` | Shell | XS | Add APIField; populate in run_process() |
-| `AgenticProcess.__init__` | AgenticProcess | S | Explicit constructor mapping to Entity fields |
-| `AgenticProcess` context manager | AgenticProcess | XS | |
-| `AgenticProcess.run()` | AgenticProcess | S | start+prompt+wait+RunResult |
-| `AgenticProcess.resume()` | AgenticProcess | S | Factory pre-baking resume cli_config |
-| `AgenticProcess.fork()` | AgenticProcess | S | Factory pre-baking fork cli_config |
-| `proc.stream()` | AgenticProcess | L | Async generator tailing JSONL → StreamEvent |
-| `proc.plan()` + Plan class | AgenticProcess | L | Hook wait-for-response integration |
-| `Plan.approve()` / `Plan.reject()` | AgenticProcess | M | Wire hook response path |
-| `RunResult` dataclass | AgenticProcess | S | Aggregate ClaudeSessionRecord stats |
-| `StreamEvent` dataclass | AgenticProcess | XS | Typed event wrapper |
-| `ProcessError` exception | AgenticProcess | XS | |
+| Item                               | Layer          | Effort | Notes                                                         |
+| ---------------------------------- | -------------- | ------ | ------------------------------------------------------------- |
+| `Pty.open()` classmethod           | Pty            | S      | Wrap ComputeNode.create\_pty() into standalone factory        |
+| `pty.output()`                     | Pty            | M      | asyncio.Queue fed by on\_output callback (thread→loop bridge) |
+| `pty.connections` property         | Pty            | XS     | frozenset from PtySessionState.connection\_ids                |
+| `pty.cols`, `pty.rows`             | Pty            | XS     | Read from PtySessionState                                     |
+| `pty.name` read                    | Pty            | XS     | Read from PtySessionState                                     |
+| `Shell.open()` classmethod         | Shell          | XS     | Extract from HTTP action                                      |
+| `Shell` context manager            | Shell          | XS     | `__aenter__`/`__aexit__`                                      |
+| `shell.restart()`                  | Shell          | XS     | stop() + start()                                              |
+| `shell.write_raw()`                | Shell          | XS     | `self.pty.write(data)`                                        |
+| `shell.output()`                   | Shell          | XS     | Delegates to `self.pty.output()`                              |
+| `shell.rename()`                   | Shell          | XS     | Extract from update-display action                            |
+| `shell.pty` property               | Shell          | XS     | `self.compute_node.get_pty(self.id)`                          |
+| `shell.last_launch_cmd`            | Shell          | XS     | Add APIField; populate in run\_process()                      |
+| `AgenticProcess.__init__`          | AgenticProcess | S      | Explicit constructor mapping to Entity fields                 |
+| `AgenticProcess` context manager   | AgenticProcess | XS     | <br />                                                        |
+| `AgenticProcess.run()`             | AgenticProcess | S      | start+prompt+wait+RunResult                                   |
+| `AgenticProcess.resume()`          | AgenticProcess | S      | Factory pre-baking resume cli\_config                         |
+| `AgenticProcess.fork()`            | AgenticProcess | S      | Factory pre-baking fork cli\_config                           |
+| `proc.stream()`                    | AgenticProcess | L      | Async generator tailing JSONL → StreamEvent                   |
+| `proc.plan()` + Plan class         | AgenticProcess | L      | Hook wait-for-response integration                            |
+| `Plan.approve()` / `Plan.reject()` | AgenticProcess | M      | Wire hook response path                                       |
+| `RunResult` dataclass              | AgenticProcess | S      | Aggregate ClaudeSessionRecord stats                           |
+| `StreamEvent` dataclass            | AgenticProcess | XS     | Typed event wrapper                                           |
+| `ProcessError` exception           | AgenticProcess | XS     | <br />                                                        |
 
 ### Renames only (✅ — zero logic change)
 
-| Current | New | Layer |
-|---|---|---|
-| `PtySession.send(bytes)` | `Pty.write(bytes)` | Pty |
-| `PtySession.get_replay(seq)` | `Pty.snapshot(since)` | Pty |
-| `Shell.start_pty()` | `Shell.start()` | Shell |
-| `Shell.connected` | `Shell.is_alive` | Shell |
-| `Shell.send_input(cmd, bracketed)` | `Shell.write(text)` | Shell |
-| `Shell.read_output()` | `Shell.read()` | Shell |
-| `Shell.run_process()` | `Shell.launch()` | Shell |
-| `Shell.get_active_sessions()` | `Shell.active()` | Shell |
-| `AgenticProcess.open()` | `AgenticProcess.start()` | AgenticProcess |
-| `AgenticProcess.waitForIdle()` | `AgenticProcess.wait()` | AgenticProcess |
-| `AgenticProcess.worker_session_id` | `AgenticProcess.session_id` | AgenticProcess |
-| `AgenticProcess.is_cli_running()` | `AgenticProcess.is_running()` | AgenticProcess |
-| `AgenticProcess.get_shell()` | `AgenticProcess.shell()` | AgenticProcess |
-| `AgenticProcess.send_input()` | `AgenticProcess.send()` | AgenticProcess |
-| `AgenticProcess._control_inject_message()` | `AgenticProcess.inject()` | AgenticProcess |
+| Current                                    | New                           | Layer          |
+| ------------------------------------------ | ----------------------------- | -------------- |
+| `PtySession.send(bytes)`                   | `Pty.write(bytes)`            | Pty            |
+| `PtySession.get_replay(seq)`               | `Pty.snapshot(since)`         | Pty            |
+| `Shell.start_pty()`                        | `Shell.start()`               | Shell          |
+| `Shell.connected`                          | `Shell.is_alive`              | Shell          |
+| `Shell.send_input(cmd, bracketed)`         | `Shell.write(text)`           | Shell          |
+| `Shell.read_output()`                      | `Shell.read()`                | Shell          |
+| `Shell.run_process()`                      | `Shell.launch()`              | Shell          |
+| `Shell.get_active_sessions()`              | `Shell.active()`              | Shell          |
+| `AgenticProcess.open()`                    | `AgenticProcess.start()`      | AgenticProcess |
+| `AgenticProcess.waitForIdle()`             | `AgenticProcess.wait()`       | AgenticProcess |
+| `AgenticProcess.worker_session_id`         | `AgenticProcess.session_id`   | AgenticProcess |
+| `AgenticProcess.is_cli_running()`          | `AgenticProcess.is_running()` | AgenticProcess |
+| `AgenticProcess.get_shell()`               | `AgenticProcess.shell()`      | AgenticProcess |
+| `AgenticProcess.send_input()`              | `AgenticProcess.send()`       | AgenticProcess |
+| `AgenticProcess._control_inject_message()` | `AgenticProcess.inject()`     | AgenticProcess |

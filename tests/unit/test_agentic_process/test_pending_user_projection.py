@@ -1,13 +1,16 @@
-"""H4: WorkerStatus.PENDING_USER projection + terminal_at lifecycle.
+"""Realigned: ``_discover_status_from_transcript`` returns the RAW worker status
+with NO projection.
 
-Covers the serializer-layer projection that turns underlying terminal
-statuses into PENDING_USER (age < 5min) or INACTIVE (age >= 5min), and the
-flush-side lifecycle that maintains ``terminal_at`` itself.
+The former PENDING_USER (recent) / INACTIVE (aged) projection over ``terminal_at``
+was removed — worker status is now "what we found" (raw), and the ready/busy
+meaning is derived separately by ``status_predicates``. These tests pin that the
+raw ``tail_status`` value passes straight through regardless of ``terminal_at``
+age, and that a raw ``pending_user`` / ``inactive`` (which ``_tail_status`` CAN
+return directly) is not re-synthesized.
 """
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -30,33 +33,37 @@ def _make_ap(status: ProcessStatus = ProcessStatus.RUNNING) -> AgenticProcess:
     )
 
 
-def test_projection_recent_terminal_becomes_pending_user(monkeypatch) -> None:
+@pytest.mark.parametrize(
+    "raw",
+    [
+        WorkerStatus.COMPLETE,
+        WorkerStatus.ERROR,
+        WorkerStatus.INTERRUPTED,
+        WorkerStatus.PENDING_USER,
+        WorkerStatus.INACTIVE,
+        WorkerStatus.API_TIMEOUT,
+        WorkerStatus.THINKING,
+        WorkerStatus.IDLE,
+    ],
+)
+def test_raw_status_passes_through_unprojected(monkeypatch, raw) -> None:
+    """Whatever ``tail_status`` returns is what ``_discover_status_from_transcript``
+    returns — no projection layer rewrites it."""
     ap = _make_ap()
-    ap.terminal_at = datetime.now(timezone.utc) - timedelta(seconds=60)  # 1 min ago
     monkeypatch.setattr(
         type(ap), "driver",
-        property(lambda self: _StubDriver(WorkerStatus.COMPLETE)),
+        property(lambda self, r=raw: _StubDriver(r)),
         raising=False,
     )
-    assert ap._discover_status_from_transcript() == WorkerStatus.PENDING_USER
+    assert ap._discover_status_from_transcript() == raw
 
 
-def test_projection_aged_terminal_becomes_inactive(monkeypatch) -> None:
+def test_terminal_stays_raw_complete_regardless_of_age(monkeypatch) -> None:
+    """A finished COMPLETE stays COMPLETE — the removed projection used to flip it
+    to PENDING_USER (recent) / INACTIVE (aged >5min) against a stored terminal
+    instant. There is no age to project against anymore (the `terminal_at` field
+    and the projection are both gone), so the raw status is authoritative."""
     ap = _make_ap()
-    ap.terminal_at = datetime.now(timezone.utc) - timedelta(seconds=400)  # > 5 min
-    monkeypatch.setattr(
-        type(ap), "driver",
-        property(lambda self: _StubDriver(WorkerStatus.COMPLETE)),
-        raising=False,
-    )
-    assert ap._discover_status_from_transcript() == WorkerStatus.INACTIVE
-
-
-def test_projection_skipped_when_terminal_at_unset(monkeypatch) -> None:
-    """If terminal_at is None we keep the raw underlying status — the
-    projection layer is opt-in via the field being set."""
-    ap = _make_ap()
-    assert ap.terminal_at is None
     monkeypatch.setattr(
         type(ap), "driver",
         property(lambda self: _StubDriver(WorkerStatus.COMPLETE)),
@@ -65,32 +72,17 @@ def test_projection_skipped_when_terminal_at_unset(monkeypatch) -> None:
     assert ap._discover_status_from_transcript() == WorkerStatus.COMPLETE
 
 
-def test_projection_only_applies_to_clean_terminals(monkeypatch) -> None:
-    """API_TIMEOUT and INACTIVE aren't projected — they're terminal-with-cause
-    and shouldn't pass through the PendingUser grace window."""
-    ap = _make_ap()
-    ap.terminal_at = datetime.now(timezone.utc) - timedelta(seconds=60)
-    for raw in (WorkerStatus.API_TIMEOUT, WorkerStatus.INACTIVE):
-        monkeypatch.setattr(
-            type(ap), "driver",
-            property(lambda self, r=raw: _StubDriver(r)),
-            raising=False,
-        )
-        assert ap._discover_status_from_transcript() == raw
-
-
 class _StubDriver:
     """Minimal driver shim — owns the tail_status return value + a fixed
-    transcript_path so the AP's _discover_status_from_transcript reaches
-    the projection branch."""
+    transcript_path so the AP's _discover_status_from_transcript reaches the
+    tail read."""
 
-    def __init__(self, status: WorkerStatus) -> None:
+    def __init__(self, status: WorkerStatus, path: Path | None = None) -> None:
         self.next_status = status
+        self._path = path if path is not None else Path("/tmp/_raw_status_test.jsonl")
 
     def tail_status(self, _path: Path) -> WorkerStatus:
         return self.next_status
 
     def transcript_path(self, _ap: AgenticProcess) -> Path:
-        # Any path the AP's stat() will see — projection ignores the value
-        # because we override tail_status.
-        return Path("/tmp/_pending_user_projection_test.jsonl")
+        return self._path

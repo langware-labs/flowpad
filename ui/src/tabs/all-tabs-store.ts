@@ -1,4 +1,4 @@
-import { ConnectionManager, Tab, type ITab } from '@sdk';
+import { ConnectionManager, Tab, type BroadcastMessage, type ITab } from '@sdk';
 import { useEffect, useSyncExternalStore } from 'react';
 import { computeReorder } from '@src/tabs/tab-order';
 import { syncTabLifecycleWithTabs } from '@src/tabs/tab-lifecycle';
@@ -31,6 +31,7 @@ export function coerceTab(tab: Tab | ITab): Tab {
         pointer: '',
         target_type: null,
         target_id: null,
+        parent_tab_id: null,
         visible: true,
         icon_key: null,
         worktree: false,
@@ -76,11 +77,44 @@ export function applyAllTabs(tabs: Array<Tab | ITab>): void {
   notify();
 }
 
-/** Fetch the canonical global list and adopt it. */
-export async function refreshAllTabs(): Promise<Tab[]> {
-  const tabs = await Tab.listAll();
-  applyAllTabs(tabs);
-  return tabs;
+let refreshInFlight: Promise<Tab[]> | null = null;
+let refreshRequestedAgain = false;
+
+/** Fetch the canonical global list and adopt it. Concurrent calls coalesce onto
+ *  one in-flight fetch: a burst of `tabs_changed` pings (e.g. close-all fires
+ *  one broadcast per tab) costs at most two `list_all` round-trips — the one in
+ *  flight plus a single trailing refetch — and responses can never land
+ *  out of order and overwrite a newer snapshot with an older list. Callers
+ *  joining mid-flight resolve after the trailing refetch, so they always
+ *  observe state at least as fresh as their call. */
+export function refreshAllTabs(): Promise<Tab[]> {
+  if (refreshInFlight) {
+    refreshRequestedAgain = true;
+    return refreshInFlight;
+  }
+  refreshInFlight = (async () => {
+    try {
+      let tabs = await Tab.listAll();
+      applyAllTabs(tabs);
+      while (refreshRequestedAgain) {
+        refreshRequestedAgain = false;
+        tabs = await Tab.listAll();
+        applyAllTabs(tabs);
+      }
+      return tabs;
+    } finally {
+      refreshInFlight = null;
+      refreshRequestedAgain = false;
+    }
+  })();
+  return refreshInFlight;
+}
+
+function refreshAllTabsInBackground(): void {
+  // The API client already reports transport failures. Background consumers
+  // own the rejection so an unavailable backend cannot escape as an unhandled
+  // promise; explicit callers of refreshAllTabs still receive the rejection.
+  void refreshAllTabs().catch(() => undefined);
 }
 
 /** Optimistic drag preview: reorder the current tabs by a predicted id order
@@ -100,13 +134,16 @@ export function applyPredictedOrder(reorderId: string, afterId: string | null, b
 
 let attached = false;
 let loadedOnce = false;
-function attach(): void {
+/** Subscribe the store to the backend's global `tabs_changed` ping (a
+ *  `broadcast` WS message — see `broadcast_tabs_changed` in
+ *  `flow_sdk/builtin/tab.py`). Idempotent; exported so non-React consumers
+ *  (tests) can drive the real reactivity path. */
+export function attachTabsChangedPing(): void {
   if (attached) return;
   attached = true;
   const cm = ConnectionManager.getInstance();
-  cm.on('on_flow_data', (_typeId: unknown, flowData: unknown) => {
-    const fd = (flowData ?? {}) as { element_type?: string; elementType?: string };
-    if ((fd.element_type ?? fd.elementType) === 'tabs_changed') void refreshAllTabs();
+  cm.on('on_broadcast', (msg: BroadcastMessage) => {
+    if (msg?.broadcast_type === 'tabs_changed') refreshAllTabsInBackground();
   });
 }
 
@@ -115,10 +152,10 @@ function attach(): void {
 export function useAllTabs(): Tab[] {
   const tabs = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
   useEffect(() => {
-    attach();
+    attachTabsChangedPing();
     if (!loadedOnce) {
       loadedOnce = true;
-      void refreshAllTabs();
+      refreshAllTabsInBackground();
     }
   }, []);
   return tabs;

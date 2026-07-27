@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import type { FlowMessage, TypeId } from '@sdk';
 import type { Attachment } from '@sdk/entities/flow-message';
-import { flowMessageGitBranchTypeId, flowMessageSpecOrPlanTypeId } from '../flow-message-helpers';
+import { flowMessageSpecOrPlanTypeId } from '../flow-message-helpers';
 import { ATTACHMENT_ACTION_DESCRIPTORS } from './registry';
 import { flowMessagePromptEntityTypeId, promptAttachmentsOf } from './prompt-attachment';
 import type { AttachmentAction, AttachmentActionContext, AttachmentActionHandlers } from './types';
@@ -15,6 +15,10 @@ export interface UseAttachmentActionsArgs {
   handlers: AttachmentActionHandlers;
   isComposerPreview?: boolean;
   hasPlanSession?: boolean;
+  /** Whether the conversation already has a worker session (→ "new run" chip). */
+  workerSessionExists?: boolean;
+  workerSessionLabel?: string | null;
+  workerSessionInFlight?: boolean;
 }
 
 export interface UseAttachmentActionsResult {
@@ -38,6 +42,9 @@ export function useAttachmentActions({
   handlers,
   isComposerPreview = false,
   hasPlanSession = false,
+  workerSessionExists = false,
+  workerSessionLabel = null,
+  workerSessionInFlight = false,
 }: UseAttachmentActionsArgs): UseAttachmentActionsResult {
   return useMemo(() => {
     const resolvedFm = fm ?? null;
@@ -47,9 +54,11 @@ export function useAttachmentActions({
       isFromOther,
       isComposerPreview,
       specOrPlanTypeId: flowMessageSpecOrPlanTypeId(resolvedFm),
-      gitBranchTypeId: flowMessageGitBranchTypeId(resolvedFm),
       promptEntityTypeId: flowMessagePromptEntityTypeId(resolvedFm),
       hasPlanSession,
+      workerSessionExists,
+      workerSessionLabel,
+      workerSessionInFlight,
       handlers,
     };
     const actions = ATTACHMENT_ACTION_DESCRIPTORS.filter((d) => d.visible(ctx)).map((d) => d.build(ctx));
@@ -60,5 +69,5 @@ export function useAttachmentActions({
     };
     // handlers is rebuilt per render by the bubble — memo on its fields' identities
     // would be noise; the bubble's own memoization keeps this cheap enough.
-  }, [fm, messageId, isFromOther, isComposerPreview, hasPlanSession, handlers]);
+  }, [fm, messageId, isFromOther, isComposerPreview, hasPlanSession, workerSessionExists, workerSessionLabel, workerSessionInFlight, handlers]);
 }

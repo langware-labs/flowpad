@@ -16,7 +16,7 @@ documented contract.
 from __future__ import annotations
 
 import json
-from typing import Any, NoReturn, Optional
+from typing import Any, Callable, NoReturn, Optional
 
 import typer
 
@@ -43,6 +43,37 @@ def discover_port() -> int:
         return resolve_cli_port()
     except InstanceNotRunningError as e:
         fail(EXIT_CONNECTION_ERROR, "INSTANCE_NOT_RUNNING", str(e))
+
+
+def post_graph_json(
+    url: str,
+    payload: Optional[dict],
+    *,
+    timeout: int = 15,
+    on_error: "Callable[[int, dict], NoReturn]",
+) -> dict:
+    """POST JSON to a graph endpoint and return the SUCCESS envelope's ``data``.
+
+    Owns the transport layer every graph-action command shares: request errors
+    and non-JSON bodies fail as CONNECTION_ERROR; any other non-success response
+    is delegated to ``on_error(status_code, body)`` — which must exit — so each
+    command keeps its own documented exit-code contract without re-implementing
+    the POST/parse/envelope boilerplate.
+    """
+    import requests
+
+    try:
+        resp = requests.post(url, json=payload or {}, timeout=timeout)
+    except requests.exceptions.RequestException as e:
+        fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", f"Cannot reach Flowpad server at {url}: {e}")
+    try:
+        body = resp.json()
+    except ValueError:
+        fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", f"Bad response: {resp.text[:200]}")
+
+    if resp.status_code != 200 or body.get("status") != "SUCCESS":
+        on_error(resp.status_code, body)
+    return body.get("data") or {}
 
 
 def resolve_process_id(process_opt: Optional[str]) -> str:

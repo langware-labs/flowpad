@@ -18,19 +18,23 @@ rewrite semantics:
 
 from __future__ import annotations
 
+import asyncio
 import os
 import uuid
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from flow_sdk.app.actions.flow_message_action import _fetch_conversation_messages
+from flow_sdk.app.actions.flow_message_action import (
+    _conv_fetch_inflight,
+    _drain_conversation_message_fetches,
+    _fetch_conversation_messages,
+)
 from flow_sdk.builtin.conversation import _PROJECTION_SENTINEL
 from flow_sdk.builtin.flow_message import FlowMessage
 from flow_sdk.fs_store.operations.conversation import default_jsonl_path
 from flow_sdk.fs_store.pointer import Pointer
 from flow_sdk.fs_store.type_id import TypeId
-
 
 _TS = "2026-06-01T10:00:00Z"
 
@@ -48,9 +52,7 @@ def _fm(fm_id: str, **over) -> FlowMessage:
 def _write_jsonl(conv_id: str, fm_ids: list[str]) -> None:
     path = default_jsonl_path(conv_id)
     path.parent.mkdir(parents=True, exist_ok=True)
-    lines = [
-        Pointer(TypeId(type="flow_message", id=i), _TS).to_jsonl_line() for i in fm_ids
-    ]
+    lines = [Pointer(TypeId(type="flow_message", id=i), _TS).to_jsonl_line() for i in fm_ids]
     path.write_text("".join(line + "\n" for line in lines))
 
 
@@ -58,11 +60,7 @@ def _pointer_ids(conv_id: str) -> list[str]:
     path = default_jsonl_path(conv_id)
     if not path.exists():
         return []
-    return [
-        Pointer.from_jsonl_line(line).id
-        for line in path.read_text().splitlines()
-        if line.strip()
-    ]
+    return [Pointer.from_jsonl_line(line).id for line in path.read_text().splitlines() if line.strip()]
 
 
 async def _run(conv_id: str, hub_children, fm_by_id: dict[str, FlowMessage | Exception]):
@@ -99,6 +97,46 @@ async def _run(conv_id: str, hub_children, fm_by_id: dict[str, FlowMessage | Exc
     return project_mock
 
 
+@pytest.mark.asyncio
+async def test_overlapping_drains_claim_each_conversation_once():
+    """StrictMode can dispatch two list reconciles in the same event-loop
+    turn. The detached drains must atomically claim an id before their first
+    await; checking ``Lock.locked()`` before the semaphore let both copies
+    queue and fetch the same conversation serially."""
+    conv_id = "aaaa0010-1111-4111-8111-000000000010"
+    started = asyncio.Event()
+    release = asyncio.Event()
+    calls = 0
+
+    async def fake_fetch(_conv_id, _someone_typeid):
+        nonlocal calls
+        calls += 1
+        started.set()
+        await release.wait()
+
+    _conv_fetch_inflight.clear()
+    with patch(
+        "flow_sdk.app.actions.flow_message_action._fetch_conversation_messages",
+        new=fake_fetch,
+    ):
+        first = asyncio.create_task(
+            _drain_conversation_message_fetches([conv_id], "user-x"),
+        )
+        await started.wait()
+        second = asyncio.create_task(
+            _drain_conversation_message_fetches([conv_id], "user-x"),
+        )
+        try:
+            # The overlapping drain observes the existing atomic claim and
+            # finishes without entering fake_fetch.
+            await second
+            assert calls == 1
+        finally:
+            release.set()
+            await asyncio.gather(first, second)
+            _conv_fetch_inflight.clear()
+
+
 @pytest.fixture(autouse=True)
 def _records_root(monkeypatch, tmp_path):
     monkeypatch.setattr(
@@ -119,7 +157,7 @@ async def test_bare_row_reprojects_when_everything_current():
     project_mock = await _run(conv, [_hub_child(i) for i in ids], {i: _fm(i) for i in ids})
 
     assert _pointer_ids(conv) == ids  # rewrite preserved the full set
-    project_mock.assert_awaited()     # projection ALWAYS recomputed
+    project_mock.assert_awaited()  # projection ALWAYS recomputed
 
 
 @pytest.mark.asyncio
@@ -142,7 +180,7 @@ async def test_in_sync_reconcile_leaves_jsonl_untouched():
     await _run(conv, [_hub_child(i) for i in ids], {i: _fm(i) for i in ids})
 
     assert path.stat().st_mtime_ns == before  # file not rewritten
-    assert _pointer_ids(conv) == ids          # and still holds the same set
+    assert _pointer_ids(conv) == ids  # and still holds the same set
 
 
 @pytest.mark.asyncio
@@ -163,9 +201,9 @@ async def test_hub_side_delete_drops_stale_pointer():
     "pending_fields",
     [
         {"delivery_status": "created", "remote": False},  # pre-accept local send
-        {"kind": "invitation", "remote": True},           # invitation placeholder
-        {"is_draft": True, "remote": True},               # local draft
-        {"remote": False},                                # no confirmed hub twin
+        {"kind": "invitation", "remote": True},  # invitation placeholder
+        {"is_draft": True, "remote": True},  # local draft
+        {"remote": False},  # no confirmed hub twin
     ],
     ids=["created", "invitation", "draft", "not-remote"],
 )
@@ -181,6 +219,41 @@ async def test_local_pending_survives_rewrite(pending_fields):
     )
 
     assert set(_pointer_ids(conv)) == {on_hub, pending}
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_invitation_placeholder_is_prepended_and_ts_clamped():
+    """A local-only invitation placeholder is the conversation's logical
+    first message, but its own ts post-dates the first real message (the
+    synth path loses a materialization race) — the rewrite must PREPEND it
+    AND clamp its ts to the earliest hub message's, because the UI re-sorts
+    bubbles by pointer ts (conversation-items.ts) and would otherwise swap
+    the invitation back after the first paint (FLOWPAD-1940)."""
+    conv = "aaaa0009-1111-4111-8111-000000000009"
+    real = "bbbb0009-1111-4111-8111-000000000001"
+    invite = "bbbb0009-1111-4111-8111-000000000002"
+    late_ts = "2026-06-01T10:00:00.750Z"  # placeholder lost the race by ~750ms
+    # On-disk shape is the bug shape: real message first, invitation last.
+    path = default_jsonl_path(conv)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        Pointer(TypeId(type="flow_message", id=real), _TS).to_jsonl_line()
+        + "\n"
+        + Pointer(TypeId(type="flow_message", id=invite), late_ts).to_jsonl_line()
+        + "\n"
+    )
+    await _run(
+        conv,
+        [_hub_child(real)],
+        {real: _fm(real), invite: _fm(invite, kind="invitation", remote=True)},
+    )
+
+    assert _pointer_ids(conv) == [invite, real]
+    ptrs = [Pointer.from_jsonl_line(line) for line in path.read_text().splitlines() if line.strip()]
+    # Clamped to the real message's ts — a tie, which the UI's stable sort
+    # resolves by list order, keeping the prepended invitation first.
+    assert ptrs[0].ts == _TS
 
 
 @pytest.mark.asyncio
@@ -241,7 +314,9 @@ def test_should_fetch_rule():
         c._set_projection("message_count", count, _PROJECTION_SENTINEL)
         if count:
             c._set_projection(
-                "message_ids", "[{\"typeid\": \"flow_message-x\"}]", _PROJECTION_SENTINEL,
+                "message_ids",
+                '[{"typeid": "flow_message-x"}]',
+                _PROJECTION_SENTINEL,
             )
         return c
 
@@ -274,7 +349,9 @@ async def test_empty_hub_list_is_a_real_answer():
     pending = "bbbb0007-1111-4111-8111-000000000002"
     _write_jsonl(conv, [gone, pending])
     project_mock = await _run(
-        conv, [], {gone: _fm(gone), pending: _fm(pending, delivery_status="created", remote=False)},
+        conv,
+        [],
+        {gone: _fm(gone), pending: _fm(pending, delivery_status="created", remote=False)},
     )
 
     assert _pointer_ids(conv) == [pending]

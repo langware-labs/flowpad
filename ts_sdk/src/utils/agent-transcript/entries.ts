@@ -20,6 +20,7 @@ export type EntryKind =
   | 'file_edit'
   | 'file_read'
   | 'shell_command'
+  | 'flow_command'
   | 'search'
   | 'web_fetch'
   | 'todo_update'
@@ -183,6 +184,22 @@ export interface ShellCommandEntry extends BaseEntry {
   tool_use_id: string;
 }
 
+/**
+ * A `flow` CLI invocation — DERIVED from a shell command, never parsed off a
+ * raw line. Mirrors backend `flow_sdk/transcript_analyzer/entries/flow_command.py`.
+ * Extends the shell shape, so every shell field is still present.
+ */
+export interface FlowCommandEntry extends Omit<ShellCommandEntry, 'kind'> {
+  kind: 'flow_command';
+  /** Top-level CLI command: 'show', 'navigate', 'record', … */
+  verb: string;
+  /** Sub-command that addresses something: 'entity', 'file', … */
+  subverb: string | null;
+  /** The addressed TypeId or path, when the sub-command takes one. */
+  target: string | null;
+  flow_args: string[];
+}
+
 export interface SearchEntry extends BaseEntry {
   kind: 'search';
   search_kind: string; // 'glob' | 'grep' | 'find'
@@ -251,6 +268,7 @@ export type GenericEntry =
   | FileEditEntry
   | FileReadEntry
   | ShellCommandEntry
+  | FlowCommandEntry
   | SearchEntry
   | WebFetchEntry
   | TodoUpdateEntry
@@ -272,6 +290,7 @@ export const isFileWrite = (e: GenericEntry): e is FileWriteEntry => e.kind === 
 export const isFileEdit = (e: GenericEntry): e is FileEditEntry => e.kind === 'file_edit';
 export const isFileRead = (e: GenericEntry): e is FileReadEntry => e.kind === 'file_read';
 export const isShellCommand = (e: GenericEntry): e is ShellCommandEntry => e.kind === 'shell_command';
+export const isFlowCommand = (e: GenericEntry): e is FlowCommandEntry => e.kind === 'flow_command';
 export const isSearch = (e: GenericEntry): e is SearchEntry => e.kind === 'search';
 export const isWebFetch = (e: GenericEntry): e is WebFetchEntry => e.kind === 'web_fetch';
 export const isTodoUpdate = (e: GenericEntry): e is TodoUpdateEntry => e.kind === 'todo_update';
@@ -286,7 +305,8 @@ export const isUnknown = (e: GenericEntry): e is UnknownEntry => e.kind === 'unk
 /** True for any kind that represents a discrete agent operation (file/shell/web/etc). */
 export const isOperation = (e: GenericEntry): boolean =>
   e.kind === 'file_write' || e.kind === 'file_edit' || e.kind === 'file_read' ||
-  e.kind === 'shell_command' || e.kind === 'search' || e.kind === 'web_fetch' ||
+  e.kind === 'shell_command' || e.kind === 'flow_command' ||
+  e.kind === 'search' || e.kind === 'web_fetch' ||
   e.kind === 'todo_update' || e.kind === 'agent_spawn' || e.kind === 'tool_use';
 
 // ── Header / response shape ─────────────────────────────────────────────────

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import shutil
 import subprocess
 from abc import ABC, abstractmethod
@@ -11,9 +12,12 @@ from flow_sdk.core.capabilities.models import (
     CapabilityKind,
     CapabilityResult,
     CapabilitySpec,
+    CapabilityState,
     CapabilityValue,
     capability_kind_matches,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class CapabilityRunner(ABC):
@@ -34,10 +38,10 @@ class CapabilityRunner(ABC):
         )
 
     @abstractmethod
-    async def check(self) -> CapabilityResult:
+    async def test(self, scope=None) -> CapabilityResult:
         ...
 
-    async def install(self) -> CapabilityResult:
+    async def setup(self, scope=None) -> CapabilityResult:
         """Default install: start the capability's install agentic process.
 
         The browser needs the process id while the worker is still running, so
@@ -45,11 +49,6 @@ class CapabilityRunner(ABC):
         refreshes the capability row after the worker reaches a terminal state.
         """
         return await run_capability_install_process(self.spec)
-
-    @abstractmethod
-    async def test(self) -> CapabilityResult:
-        ...
-
 
 class CliCapabilityRunner(CapabilityRunner):
     def __init__(
@@ -59,11 +58,16 @@ class CliCapabilityRunner(CapabilityRunner):
         executable: str,
         test_args: list[str] | None = None,
         timeout_seconds: float = 5.0,
+        worker_type: str | None = None,
     ) -> None:
         self.spec = spec
         self.executable = executable
         self.test_args = test_args or ["--version"]
         self.timeout_seconds = timeout_seconds
+        # Set for harness CLIs: the worker whose driver provides auth_probe.
+        # Passed explicitly at registration (like MCPCapabilityRunner's
+        # worker_type) rather than parsed back out of the kind string.
+        self.worker_type = worker_type
 
     async def discover(self, probe: dict) -> CapabilityValue:
         """Value = the CLI's bin FOLDER (FSRef dict), resolved by the sweep's
@@ -115,18 +119,7 @@ class CliCapabilityRunner(CapabilityRunner):
             details={"executable": self.executable},
         )
 
-    async def check(self) -> CapabilityResult:
-        path = self._resolve()
-        if not path:
-            return self._not_found_result()
-        return CapabilityResult(
-            ok=True,
-            available=True,
-            message=f"{self.executable} CLI is available.",
-            details={"executable": self.executable, "path": path},
-        )
-
-    async def test(self) -> CapabilityResult:
+    async def test(self, scope=None) -> CapabilityResult:
         # Disk-verified resolution (PATHEXT-aware on Windows) — test actually
         # executes the binary, so a stale discovered folder must surface here.
         folder = self._discovered_folder()
@@ -134,12 +127,17 @@ class CliCapabilityRunner(CapabilityRunner):
         if not path:
             return self._not_found_result()
         try:
-            proc = await asyncio.to_thread(
-                subprocess.run,
-                [path, *self.test_args],
-                capture_output=True,
-                text=True,
-                timeout=self.timeout_seconds,
+            # The version run and the auth probe are independent subprocesses —
+            # run them concurrently (_auth_details never raises).
+            proc, auth = await asyncio.gather(
+                asyncio.to_thread(
+                    subprocess.run,
+                    [path, *self.test_args],
+                    capture_output=True,
+                    text=True,
+                    timeout=self.timeout_seconds,
+                ),
+                self._auth_details(),
             )
         except subprocess.TimeoutExpired:
             return CapabilityResult(
@@ -156,17 +154,34 @@ class CliCapabilityRunner(CapabilityRunner):
                 details={"executable": self.executable, "path": path},
             )
         output = (proc.stdout or proc.stderr or "").strip()
+        details = {
+            "executable": self.executable,
+            "path": path,
+            "returncode": proc.returncode,
+            "output": output[:1000],
+        }
+        if auth is not None:
+            details["auth"] = auth
         return CapabilityResult(
             ok=proc.returncode == 0,
             available=True,
             message=f"{self.executable} CLI test {'passed' if proc.returncode == 0 else 'failed'}.",
-            details={
-                "executable": self.executable,
-                "path": path,
-                "returncode": proc.returncode,
-                "output": output[:1000],
-            },
+            details=details,
         )
+
+    async def _auth_details(self) -> dict | None:
+        """Login state for harness CLIs, merged into the test result so the
+        capabilities window shows it. Best-effort: auth can never fail the
+        test action, and runners without a worker_type report nothing."""
+        if self.worker_type is None:
+            return None
+        try:
+            from flow_sdk.builtin.agentic_process.cli_drivers import get_driver
+
+            return (await get_driver(self.worker_type).auth_probe()).to_json()
+        except Exception as exc:
+            logger.debug("auth probe for %s failed: %s", self.spec.kind, exc)
+            return None
 
 
 class CapabilityReferenceRunner(CapabilityRunner):
@@ -260,51 +275,259 @@ class CapabilityReferenceRunner(CapabilityRunner):
             )
         return None
 
-    async def _delegate(self, action: str) -> CapabilityResult:
+    async def _delegate(self, action: str, scope=None) -> CapabilityResult:
         reference = await self._resolve_reference_kind()
         failure = self._target_failure(reference)
         if failure is not None:
             return failure
-        check: CapabilityCheck = await getattr(get_capability_registry(), action)(reference)
+        check: CapabilityCheck = await getattr(get_capability_registry(), action)(reference, scope=scope)
         result = check.result
         return result.model_copy(update={"details": {**result.details, "reference_kind": reference}})
 
-    async def check(self) -> CapabilityResult:
-        return await self._delegate("check")
+    async def test(self, scope=None) -> CapabilityResult:
+        return await self._delegate("test", scope)
 
-    async def install(self) -> CapabilityResult:
-        return await self._delegate("install")
-
-    async def test(self) -> CapabilityResult:
-        return await self._delegate("test")
+    async def setup(self, scope=None) -> CapabilityResult:
+        return await self._delegate("setup", scope)
 
 
 class ChromeAuthenticatedBrowsingRunner(CapabilityRunner):
     def __init__(self, spec: CapabilitySpec) -> None:
         self.spec = spec
 
-    async def check(self) -> CapabilityResult:
-        from flow_sdk.builtin.capability import Capability
+    async def test(self, scope=None) -> CapabilityResult:
+        return await run_chrome_authenticated_probe()
 
-        capability = await Capability.get_by_kind(self.spec.kind)
-        latest = capability.last_test if capability else None
-        if isinstance(latest, dict) and latest.get("ok") and latest.get("available"):
+
+class GhCliCapabilityRunner(CliCapabilityRunner):
+    """GitHub CLI: available ⇔ installed AND authenticated.
+
+    Unlike harness CLIs (whose auth lives in the worker driver), gh's auth is
+    probed here: ``gh auth token`` is offline and fast, exiting non-zero when
+    no credential is stored (an env ``GH_TOKEN`` counts as authenticated —
+    that's a real, usable credential).
+    """
+
+    async def test(self, scope=None) -> CapabilityResult:
+        path = self._resolve()
+        if not path:
+            result = self._not_found_result()
+            result.details["installed"] = False
+            return result
+        authenticated = await self._is_authenticated(path)
+        return CapabilityResult(
+            ok=True,
+            available=authenticated,
+            message=(
+                "gh CLI is installed and authenticated."
+                if authenticated
+                else "gh CLI is installed but not logged in — run the GitHub login."
+            ),
+            details={
+                "executable": self.executable,
+                "path": path,
+                "installed": True,
+                "authenticated": authenticated,
+            },
+        )
+
+    async def _is_authenticated(self, path: str) -> bool:
+        proc = await asyncio.to_thread(
+            subprocess.run,
+            [path, "auth", "token", "--hostname", "github.com"],
+            capture_output=True,
+            text=True,
+            timeout=self.timeout_seconds,
+        )
+        return proc.returncode == 0 and bool((proc.stdout or "").strip())
+
+    async def _auth_details(self) -> dict | None:
+        # gh has no worker driver — probe login state directly (network-verified
+        # ``gh auth status``, unlike check()'s offline token read).
+        path = self._resolve()
+        if not path:
+            return None
+        try:
+            proc = await asyncio.to_thread(
+                subprocess.run,
+                [path, "auth", "status", "--hostname", "github.com"],
+                capture_output=True,
+                text=True,
+                timeout=self.timeout_seconds,
+            )
+        except Exception:
+            return None
+        output = (proc.stdout or proc.stderr or "").strip()
+        return {
+            "status": "logged_in" if proc.returncode == 0 else "logged_out",
+            "verified": True,
+            "output": output[:1000],
+        }
+
+    @property
+    def device_login_spec(self):
+        spec = gh_device_login_spec()
+        # The backend process PATH may not see gh (discovery resolves against
+        # the login-shell PATH) — pin the discovered absolute path into argv.
+        path = self._resolve()
+        if path:
+            import dataclasses
+
+            spec = dataclasses.replace(spec, login_argv=(path, *spec.login_argv[1:]))
+        return spec
+
+    async def login_probe(self):
+        """WorkerAuthResult-shaped probe for the device-login machinery."""
+        from flow_sdk.builtin.agentic_process.cli_drivers.auth_probe import (
+            WorkerAuthResult,
+            WorkerAuthStatus,
+        )
+
+        path = self._resolve()
+        if not path:
+            return WorkerAuthResult(
+                status=WorkerAuthStatus.NOT_INSTALLED,
+                message="gh CLI is not installed.",
+            )
+        authenticated = await self._is_authenticated(path)
+        return WorkerAuthResult(
+            status=WorkerAuthStatus.LOGGED_IN if authenticated else WorkerAuthStatus.LOGGED_OUT,
+            verified=True,
+            message="gh is authenticated." if authenticated else "gh is not logged in.",
+        )
+
+
+def gh_device_login_spec():
+    """gh's RFC-8628 device flow (one-time code shown in the terminal, approved
+    at github.com/login/device). Lazily imported: auth_probe sits under the
+    heavy agentic_process package which core/capabilities must not load at
+    import time."""
+    import re
+
+    from flow_sdk.builtin.agentic_process.cli_drivers.auth_probe import DeviceLoginSpec
+
+    return DeviceLoginSpec(
+        login_argv=("gh", "auth", "login", "--hostname", "github.com", "--git-protocol", "https", "--web"),
+        url_re=re.compile(r"(https://github\.com/login/device)"),
+        code_re=re.compile(r"one-time code:\s*([A-Z0-9]{4}-[A-Z0-9]{4})"),
+        accepts_code_paste=False,
+    )
+
+
+class GithubAccountRunner(CapabilityRunner):
+    """Parent GitHub capability: "a GitHub connection FlowPad can use".
+
+    Available via EITHER the connected account's OAuth token (the clone-from-git
+    flow's credential) OR an authenticated gh CLI. Deliberately NOT modeled as
+    ``dependent_capability_kinds`` on gh — the dependency cascade would block
+    the parent whenever gh is absent, but OAuth alone must suffice.
+    """
+
+    def __init__(self, spec: CapabilitySpec) -> None:
+        self.spec = spec
+
+    async def _oauth_token(self) -> str | None:
+        # Request-user first; background contexts (discovery sweep, the OAuth
+        # poll task) have no request user — fall back to the local user's SOD
+        # entry so the check doesn't go blind off-request. Never raises.
+        try:
+            from flow_sdk.app.actions.oauth_action import _get_github_token_for_current_user
+
+            token, error = await _get_github_token_for_current_user()
+            if token:
+                return token
+        except Exception:
+            pass
+        try:
+            from flow_sdk.builtin.user import User
+            from flow_sdk.request_context.methods import get_user_credentials
+
+            user = await User.get_local()
+            if user is None:
+                return None
+            # Same FK convention as _save_github_token_to_sod's write side.
+            return await get_user_credentials(user, "github_credentials", user.id)
+        except Exception:
+            return None
+
+    async def test(self, scope=None) -> CapabilityResult:
+        if scope is not None and getattr(scope, "scope_type", None) == "project":
+            from flow_sdk.builtin.git_origin import GitOrigin
+            from flow_sdk.builtin.project import Project
+            from flow_sdk.utils.git import git_remote_access
+
+            project = await Project.get_by_id(scope.scope_id)
+            root = project.fs_storage_mount_path if project else None
+            if not root:
+                return CapabilityResult(
+                    ok=False,
+                    available=False,
+                    message="Project has no local Git workspace.",
+                    details={"reason": "no-workspace"},
+                )
+            origin = await asyncio.to_thread(GitOrigin.for_asset_path, root)
+            if origin is None:
+                return CapabilityResult(
+                    ok=False,
+                    available=False,
+                    message="Project has no Git repository and remote.",
+                    details={"reason": "no-git-remote"},
+                )
+            token = await self._oauth_token()
+            accessible, branch = await git_remote_access(origin.clone_url(), token=token)
+            return CapabilityResult(
+                ok=True,
+                available=accessible,
+                message=(
+                    "Project GitHub remote is accessible."
+                    if accessible
+                    else "Project GitHub remote is not accessible."
+                ),
+                details={
+                    "scope_type": "project",
+                    "scope_id": scope.scope_id,
+                    "clone_url": origin.clone_url(),
+                    "default_branch": branch,
+                    "authenticated": bool(token),
+                },
+            )
+        if await self._oauth_token():
             return CapabilityResult(
                 ok=True,
                 available=True,
-                message="Authenticated Chrome browsing probe has passed.",
-                details={"last_test": latest},
-                process_id=latest.get("process_id"),
+                message="GitHub account is connected (OAuth).",
+                details={"method": "oauth"},
             )
+        gh_check = await get_capability_registry().test(CapabilityKind.GITHUB_GH.value)
+        if gh_check.result.available:
+            return CapabilityResult(
+                ok=True,
+                available=True,
+                message="GitHub is reachable through the authenticated gh CLI.",
+                details={"method": "gh"},
+            )
+        return CapabilityResult(
+            ok=True,
+            available=False,
+            message="Connect GitHub (OAuth) or authenticate the gh CLI.",
+            details={"method": None},
+        )
+
+    async def setup(self, scope=None) -> CapabilityResult:
         return CapabilityResult(
             ok=False,
             available=False,
-            message="Run the authenticated Chrome browsing test to validate this capability.",
+            message="GitHub connects via OAuth or gh login — use the GitHub setup journey.",
             details={},
         )
 
-    async def test(self) -> CapabilityResult:
-        return await run_chrome_authenticated_probe()
+GH_INSTALL_PROMPT = (
+    "Install the GitHub CLI (`gh`) on this machine using the appropriate "
+    "package manager (brew on macOS, apt/dnf on Linux, winget on Windows) and "
+    "verify `gh --version` works. Do NOT run `gh auth login` — authentication "
+    "is a separate interactive step the user completes themselves. Be concise "
+    "and proceed autonomously."
+)
 
 
 # Generic setup prompt for a capability with no curated instructions of its
@@ -322,7 +545,7 @@ _INSTALL_MONITOR_TASKS: set[asyncio.Task] = set()
 
 async def resolve_default_harness_kind() -> str:
     """Resolve the user-selected default harness capability to a concrete leaf."""
-    check = await get_capability_registry().check(CapabilityKind.HARNESS.value)
+    check = await get_capability_registry().test(CapabilityKind.HARNESS.value)
     reference = check.result.details.get("reference_kind")
     if not check.result.available or not isinstance(reference, str):
         raise RuntimeError(f"Default harness is not available: {check.result.message}")
@@ -358,9 +581,9 @@ def _schedule_install_monitor(process_id: str, kind: str) -> None:
     task.add_done_callback(_INSTALL_MONITOR_TASKS.discard)
 
 
-def _last_install_parts(capability: Any) -> tuple[dict, dict]:
-    """The persisted install-start result and its details dict, tolerating absence."""
-    started = capability.last_install if isinstance(capability.last_install, dict) else {}
+def _last_setup_parts(capability: Any) -> tuple[dict, dict]:
+    """The persisted setup-start result and its details dict, tolerating absence."""
+    started = capability.last_setup if isinstance(capability.last_setup, dict) else {}
     details = started.get("details") if isinstance(started.get("details"), dict) else {}
     return started, details
 
@@ -382,26 +605,31 @@ async def _monitor_capability_install_process(process_id: str, kind: str) -> Non
         from flow_sdk.core.capabilities.discovery import run_discovery
 
         await run_discovery([kind])
-        check = await get_capability_registry().check(kind)
+        check = await get_capability_registry().test(kind)
         capability.last_check = check.result.model_dump(mode="json")
-        started, started_details = _last_install_parts(capability)
-        capability.last_install = CapabilityResult(
+        started, started_details = _last_setup_parts(capability)
+        capability.last_setup = CapabilityResult(
             ok=bool(started.get("ok", True)) and check.result.ok,
             available=check.result.available,
             message=f"{started.get('message') or 'Install process completed.'} {check.result.message}",
-            details={**started_details, **check.result.details},
+            # install_finalized distinguishes this terminal write from the
+            # install-START write (same process_id) — setupCapability waits on it.
+            details={**started_details, **check.result.details, "install_finalized": True},
             process_id=process_id,
         ).model_dump(mode="json")
+        capability.state = capability.derive_state(check.result, attempted=True)
         await capability.save(notify=True)
     except Exception as exc:
-        _, started_details = _last_install_parts(capability)
-        capability.last_install = CapabilityResult(
+        _, started_details = _last_setup_parts(capability)
+        capability.last_setup = CapabilityResult(
             ok=False,
             available=False,
             message=f"Install process failed: {exc}",
-            details={**started_details, "error": str(exc)},
+            details={**started_details, "error": str(exc), "install_finalized": True},
             process_id=process_id,
+            state=CapabilityState.ERROR.value,
         ).model_dump(mode="json")
+        capability.state = CapabilityState.ERROR.value
         await capability.save(notify=True)
 
 
@@ -606,6 +834,22 @@ def get_default_capability_specs() -> list[CapabilitySpec]:
             icon="Globe",
             dependent_capability_kinds=[CapabilityKind.CLAUDE_CLI.value],
         ),
+        CapabilitySpec(
+            name="GitHub",
+            kind=CapabilityKind.GITHUB.value,
+            description="A GitHub connection FlowPad can use — the connected account (OAuth) or the gh CLI.",
+            icon="Github",
+            homepage_url="https://github.com",
+        ),
+        CapabilitySpec(
+            name="GitHub CLI (gh)",
+            kind=CapabilityKind.GITHUB_GH.value,
+            description="The GitHub CLI, installed and authenticated.",
+            icon="Terminal",
+            value_type=_FOLDER,
+            homepage_url="https://cli.github.com",
+            install_prompt=GH_INSTALL_PROMPT,
+        ),
     ]
 
 
@@ -623,6 +867,12 @@ class CapabilityRegistry:
     def kinds(self) -> list[str]:
         return list(self._runners.keys())
 
+    def worker_type_for_kind(self, kind: str) -> str | None:
+        """The worker whose driver serves this kind (None ⇔ not a harness
+        CLI). Reads the runner's registration-time worker_type — never parses
+        the kind string."""
+        return getattr(self._runners.get(kind), "worker_type", None)
+
     def get(self, kind: str) -> CapabilityRunner:
         try:
             return self._runners[kind]
@@ -638,12 +888,12 @@ class CapabilityRegistry:
     def matching_specs(self, query_kind: str) -> list[CapabilitySpec]:
         return [runner.spec for runner in self._runners.values() if runner.spec.matches(query_kind)]
 
-    async def check(self, kind: str, *, include_dependencies: bool = True) -> CapabilityCheck:
+    async def test(self, kind: str, *, include_dependencies: bool = True, scope=None) -> CapabilityCheck:
         runner = self.get(kind)
         dependencies: dict[str, CapabilityResult] = {}
         if include_dependencies:
             for dep_kind in runner.spec.dependent_capability_kinds:
-                dependencies[dep_kind] = (await self.check(dep_kind, include_dependencies=True)).result
+                dependencies[dep_kind] = (await self.test(dep_kind, include_dependencies=True, scope=scope)).result
         blocked = [k for k, result in dependencies.items() if not result.available]
         if blocked:
             return CapabilityCheck(
@@ -656,19 +906,25 @@ class CapabilityRegistry:
                 ),
                 dependencies=dependencies,
             )
-        return CapabilityCheck(kind=kind, result=await runner.check(), dependencies=dependencies)
+        try:
+            result = await runner.test(scope) if scope is not None else await runner.test()
+        except Exception as exc:
+            # A crashed probe is ERROR (retryable) — distinct from a clean
+            # "not available" verdict. Unknown kinds still raise (KeyError
+            # from self.get above, before we ever get here).
+            logger.warning("capability test for %s crashed: %s", kind, exc)
+            result = CapabilityResult(
+                ok=False,
+                available=False,
+                message=f"Capability test failed: {exc}",
+                details={"error": str(exc)},
+                state=CapabilityState.ERROR.value,
+            )
+        return CapabilityCheck(kind=kind, result=result, dependencies=dependencies)
 
-    async def install(self, kind: str) -> CapabilityCheck:
+    async def setup(self, kind: str, *, scope=None) -> CapabilityCheck:
         runner = self.get(kind)
-        return CapabilityCheck(kind=kind, result=await runner.install())
-
-    async def test(self, kind: str) -> CapabilityCheck:
-        dependency_check = await self.check(kind, include_dependencies=True)
-        if not dependency_check.result.available and dependency_check.result.details.get("missing_dependencies"):
-            return dependency_check
-        runner = self.get(kind)
-        return CapabilityCheck(kind=kind, result=await runner.test(), dependencies=dependency_check.dependencies)
-
+        return CapabilityCheck(kind=kind, result=await runner.setup(scope))
 
 def _build_default_registry() -> CapabilityRegistry:
     registry = CapabilityRegistry()
@@ -683,21 +939,31 @@ def _build_default_registry() -> CapabilityRegistry:
         CliCapabilityRunner(
             spec=specs[CapabilityKind.CLAUDE_CLI.value],
             executable="claude",
+            worker_type="claude",
         )
     )
     registry.register(
         CliCapabilityRunner(
             spec=specs[CapabilityKind.CODEX_CLI.value],
             executable="codex",
+            worker_type="codex",
         )
     )
     registry.register(
         CliCapabilityRunner(
             spec=specs[CapabilityKind.COPILOT_CLI.value],
             executable="copilot",
+            worker_type="copilot",
         )
     )
     registry.register(ChromeAuthenticatedBrowsingRunner(specs[CapabilityKind.CHROME_AUTHENTICATED.value]))
+    registry.register(GithubAccountRunner(specs[CapabilityKind.GITHUB.value]))
+    registry.register(
+        GhCliCapabilityRunner(
+            spec=specs[CapabilityKind.GITHUB_GH.value],
+            executable="gh",
+        )
+    )
     return registry
 
 
@@ -706,3 +972,8 @@ _DEFAULT_REGISTRY = _build_default_registry()
 
 def get_capability_registry() -> CapabilityRegistry:
     return _DEFAULT_REGISTRY
+
+
+def worker_type_for_kind(kind: str) -> str | None:
+    """Module-level convenience over the default registry."""
+    return _DEFAULT_REGISTRY.worker_type_for_kind(kind)

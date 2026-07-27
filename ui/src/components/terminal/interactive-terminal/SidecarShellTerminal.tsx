@@ -7,7 +7,13 @@ import { WebLinksAddon } from '@xterm/addon-web-links';
 import { Terminal as XTerm } from '@xterm/xterm';
 import { useTheme } from 'next-themes';
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { FONT_FAMILY, FONT_SIZE_PX, openTerminalLink } from './terminalConfig';
+import {
+  FONT_FAMILY,
+  FONT_SIZE_PX,
+  applyRtlGridContract,
+  openTerminalLink,
+  registerOsc52ClipboardWrite,
+} from './terminalConfig';
 
 const DARK_THEME = {
   background: '#1e1e1e',
@@ -122,8 +128,10 @@ export const SidecarShellTerminal: React.FC<SidecarShellTerminalProps> = ({ shel
 
     try {
       term.open(container);
+      applyRtlGridContract(container);
       terminalRef.current = term;
       fitAddonRef.current = fit;
+      registerOsc52ClipboardWrite(term);
     } catch (e) {
       console.error('[SidecarShellTerminal] Failed to open terminal:', e);
       return;

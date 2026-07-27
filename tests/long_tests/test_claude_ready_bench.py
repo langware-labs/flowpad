@@ -40,38 +40,35 @@ PER_ITER_TIMEOUT = 30.0
 BETWEEN_ITERS_S = 1.0
 
 
-async def _wait_for_marker(pty, marker: bytes, timeout_s: float) -> tuple[float | None, int]:
-    """Subscribe to pty.output(); return (elapsed from now, bytes read) once marker seen."""
-    buf = bytearray()
+async def _wait_for_first_output(shell_id: str, timeout_s: float, min_bytes: int = 1) -> tuple[float | None, int]:
+    """Poll the on-disk PTY stream file; return (elapsed, bytes) once the worker
+    writes its first output. "First output" (any bytes from the spawned CLI) is a
+    stable, marker-free readiness signal — the old workdir-name marker was brittle
+    (Claude renders an abbreviated cwd, not the raw tmp dir name).
+
+    The in-memory replay buffer + pty.output()/snapshot() were removed — the
+    canonical capture is now the .pty stream file (see _pty_helpers.read_pty_stream).
+    """
+    from tests.long_tests._pty_helpers import read_pty_stream
+
     t0 = time.perf_counter()
-
-    # Drain the replay buffer first in case some chunks already landed
-    # between start() returning and us subscribing.
-    for chunk in pty.snapshot(since=0):
-        buf.extend(chunk.data)
-        if marker in buf:
-            return (time.perf_counter() - t0, len(buf))
-
     deadline = t0 + timeout_s
-
-    async def read_loop():
-        async for data in pty.output():
-            buf.extend(data)
-            if marker in buf:
-                return
-    try:
-        await asyncio.wait_for(read_loop(), timeout=max(0.01, deadline - time.perf_counter()))
-    except asyncio.TimeoutError:
-        return (None, len(buf))
-    return (time.perf_counter() - t0, len(buf))
+    text = ""
+    while time.perf_counter() < deadline:
+        text = read_pty_stream(shell_id)
+        if len(text) >= min_bytes:
+            return (time.perf_counter() - t0, len(text))
+        await asyncio.sleep(0.02)
+    return (None, len(text))
 
 
 @pytest.mark.skip(
     reason=(
-        "External LLM dependency + cross-test contamination: passes in "
-        "isolation (10/10) but flakes in full suite. Depends on Anthropic-API "
-        "responsiveness. Same class as test_workflow_run_creates_hello_world "
-        "skip — tracked in debug_log.md."
+        "Manual profiling bench (spawns real `claude` per iteration). Un-skip to "
+        "run: `DEEP_TESTING=1 uv run pytest tests/long_tests/test_claude_ready_bench.py -s`. "
+        "Reports two series: start_pty() backend cost and start->first-output total. "
+        "Rehabilitated 2026-07-01 (re-fetch after start_pty; first-output signal "
+        "replaces the brittle workdir marker; reads the .pty stream file)."
     ),
 )
 @pytest.mark.asyncio
@@ -92,41 +89,41 @@ async def test_agentic_process_ready_time_L2(local_project, local_compute_node):
         except Exception:
             pass
 
-    samples: list[float] = []
+    # Two independent series: the backend start_pty() cost (our code — the part
+    # that should be sub-second) and time-to-first-PTY-output (dominated by the
+    # external Claude CLI cold start).
+    start_samples: list[float] = []
+    total_samples: list[float] = []
     print(f"\n[L2] AgenticProcess claude-ready, {ITERATIONS} iterations")
 
     for i in range(1, ITERATIONS + 1):
         process = await AgenticProcess(worker_type=WorkerType.CLAUDE_CODE).save()
-        marker = None
         try:
             t0 = time.perf_counter()
             result = await process.start_pty()
             t_start_returned = time.perf_counter()
 
             assert isinstance(result, ApiSuccessResponse), f"start() failed: {result}"
+            start_cost_ms = (t_start_returned - t0) * 1000
+            start_samples.append(start_cost_ms)
 
-            # Marker = last path component of the project's workdir.
-            # Claude prints it on the first frame (the "~/…/proj" line).
-            workdir = process.workdir or str(Path.home())
-            marker = Path(workdir).name.encode()
-
+            # start_pty() mutates a reloaded copy under the open lock, not this
+            # in-memory object — re-fetch to observe the spawned shell (matches
+            # the production HTTP path, see test_clean_claude_pty).
+            process = await AgenticProcess.get_by_id(process.id)
             shell = await process.shell()
             assert shell is not None
-            pty = shell.compute_node.get_pty(shell.id)
-            assert pty is not None, "PTY should exist after start()"
 
-            elapsed, nbytes = await _wait_for_marker(pty, marker, PER_ITER_TIMEOUT)
+            elapsed, nbytes = await _wait_for_first_output(shell.id, PER_ITER_TIMEOUT)
             if elapsed is None:
-                print(f"  iter {i:2d}: TIMEOUT (read {nbytes} bytes, no {marker!r})")
+                print(f"  iter {i:2d}: start()={start_cost_ms:7.1f} ms   "
+                      f"first-output=TIMEOUT ({nbytes}B)")
                 continue
 
-            # "start to marker" = time from before start() to when marker appeared.
-            total_ms = (t_start_returned - t0 + elapsed) * 1000
-            start_cost_ms = (t_start_returned - t0) * 1000
-            wait_ms = elapsed * 1000
-            samples.append(total_ms)
-            print(f"  iter {i:2d}: {total_ms:7.1f} ms   "
-                  f"(start()={start_cost_ms:.1f} ms, then +{wait_ms:.1f} ms for marker, {nbytes}B)")
+            total_ms = start_cost_ms + elapsed * 1000
+            total_samples.append(total_ms)
+            print(f"  iter {i:2d}: start()={start_cost_ms:7.1f} ms   "
+                  f"+{elapsed*1000:7.1f} ms to first output   = {total_ms:7.1f} ms total ({nbytes}B)")
         finally:
             try:
                 await process.close()
@@ -135,18 +132,22 @@ async def test_agentic_process_ready_time_L2(local_project, local_compute_node):
             if i < ITERATIONS:
                 await asyncio.sleep(BETWEEN_ITERS_S)
 
-    assert samples, "no successful samples"
-    samples.sort()
-    mn = samples[0]
-    mx = samples[-1]
-    med = statistics.median(samples)
-    mean = statistics.mean(samples)
-    stdev = statistics.stdev(samples) if len(samples) > 1 else 0.0
+    def _stats(name: str, xs: list[float]) -> None:
+        if not xs:
+            print(f"\n{name}: no samples")
+            return
+        xs = sorted(xs)
+        med = statistics.median(xs)
+        mean = statistics.mean(xs)
+        stdev = statistics.stdev(xs) if len(xs) > 1 else 0.0
+        print(f"\n{name} (ms):")
+        print(f"  n      = {len(xs)}")
+        print(f"  min    = {xs[0]:7.1f}")
+        print(f"  median = {med:7.1f}")
+        print(f"  mean   = {mean:7.1f}")
+        print(f"  max    = {xs[-1]:7.1f}")
+        print(f"  stdev  = {stdev:7.1f}")
 
-    print(f"\nL2 claude-ready (AgenticProcess, in-process, ms):")
-    print(f"  n      = {len(samples)}")
-    print(f"  min    = {mn:7.1f}")
-    print(f"  median = {med:7.1f}")
-    print(f"  mean   = {mean:7.1f}")
-    print(f"  max    = {mx:7.1f}")
-    print(f"  stdev  = {stdev:7.1f}")
+    _stats("L2 start_pty() backend cost", start_samples)
+    _stats("L2 start->first-output total", total_samples)
+    assert start_samples, "no successful start_pty() samples"

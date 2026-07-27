@@ -2,7 +2,7 @@
  * Fork action from the global search dock-menu on a claude_session result.
  * Source: fork_action_from_search_dock.md
  *
- * The Fork action (GitBranch) lives in RECORD_TYPE_NAV['claude_session'].actions
+ * The Fork action lives in RECORD_TYPE_NAV['claude_session'].actions
  * and is surfaced by SearchResultCard / EntitySearchModal — i.e. on a
  * claude_session SEARCH RESULT, which is backed by the FTS search index. The
  * Spotlight quick-open rows (sourced from worker-history / ~/.claude) only carry
@@ -33,7 +33,7 @@ test('Fork action from search dock-menu creates a visible interactive PTY', asyn
 
   // If an index ever holds a claude_session here, exercise the Fork action:
   // open the global search, find the claude_session result, open its actions
-  // menu, click Fork (GitBranch), and verify the dock navigates to a new
+  // menu, click Fork, and verify the dock navigates to a new
   // visible AgenticProcess shell tab (createProcess body { visible:true,
   // watchProcess:false }) that accepts keyboard input.
   // (Left unimplemented while total===0 keeps this skipped — encode it once the

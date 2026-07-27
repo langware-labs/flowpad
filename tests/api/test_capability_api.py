@@ -19,13 +19,18 @@ async def test_capabilities_are_seeded_as_system_entities(bootstrapped_client):
 
 
 @pytest.mark.asyncio
-async def test_capability_check_action_returns_available_bool(bootstrapped_client, monkeypatch):
+async def test_capability_test_action_returns_available_bool(bootstrapped_client, monkeypatch):
     import flow_sdk.core.capabilities.registry as registry_mod
 
-    monkeypatch.setattr(registry_mod.shutil, "which", lambda executable: f"/usr/bin/{executable}")
+    monkeypatch.setattr(registry_mod.shutil, "which", lambda executable, path=None: f"/usr/bin/{executable}")
+    monkeypatch.setattr(
+        registry_mod.subprocess,
+        "run",
+        lambda *args, **kwargs: type("Completed", (), {"returncode": 0, "stdout": "ok", "stderr": ""})(),
+    )
     capability_id = capability_id_for_kind(CapabilityKind.CLAUDE_CLI.value)
 
-    response = await bootstrapped_client.post(f"/api/v1/graph/capability/{capability_id}/check")
+    response = await bootstrapped_client.post(f"/api/v1/graph/capability/{capability_id}/test")
 
     assert response.status_code == 200, response.text
     data = response.json()["data"]
@@ -50,7 +55,7 @@ async def test_capabilities_summary_groups_by_intent(bootstrapped_client):
 
 
 @pytest.mark.asyncio
-async def test_install_intent_launches_setup_agent(bootstrapped_client, monkeypatch):
+async def test_setup_intent_launches_setup_agent(bootstrapped_client, monkeypatch):
     import flow_sdk.server.routes.capabilities as routes_mod
     from flow_sdk.core.capabilities.models import CapabilityResult
 
@@ -63,7 +68,7 @@ async def test_install_intent_launches_setup_agent(bootstrapped_client, monkeypa
     monkeypatch.setattr(routes_mod, "run_capability_install_for_intent", _fake_intent)
 
     response = await bootstrapped_client.post(
-        "/api/v1/graph/capabilities/install-intent", json={"text": "I want email"}
+        "/api/v1/graph/capabilities/setup-intent", json={"text": "I want email"}
     )
 
     assert response.status_code == 200, response.text

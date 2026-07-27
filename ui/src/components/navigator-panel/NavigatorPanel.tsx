@@ -1,7 +1,10 @@
 import { PanelLeft, PanelLeftClose } from 'lucide-react';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useLingui } from '@lingui/react/macro';
 import { BrowseableTree, ToolbarButton } from '@src/components/browseable-tree/BrowseableTree';
+import { TreeSelectionContext, useTreeSelection } from '@src/components/browseable-tree/useTreeSelection';
+import { useNavigatorSearch } from './NavigatorSearch';
+import { SelectionActionBar } from './SelectionActionBar';
 import type { NavigatorDescriptor, NavigatorWidth } from './types';
 
 const DEFAULT_WIDTH: NavigatorWidth = { default: 224, min: 160, max: 560 };
@@ -51,6 +54,62 @@ export function NavigatorPanel({
   const [collapsed, setCollapsed] = useState(() => readCollapsed(id) ?? false);
   const [width, setWidth] = useState<number>(() => readWidth(id, bounds, legacyKeys));
   const [isResizing, setIsResizing] = useState(false);
+
+  // Context-aware search — inert unless the descriptor declares `search`.
+  const search = useNavigatorSearch(descriptor.search);
+
+  // Multi-select — engaged only when the descriptor opts in via `bulkActions`.
+  // The hook always runs (stable hook order); the context value is null when
+  // disabled, so the tree behaves exactly as before.
+  const selection = useTreeSelection();
+  const selectionEnabled = !!descriptor.bulkActions;
+  const selectionRef = useRef(selection);
+  selectionRef.current = selection;
+  const descriptorRef = useRef(descriptor);
+  descriptorRef.current = descriptor;
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  // OS-native keyboard: Cmd/Ctrl+A select-all (only when focus is inside this
+  // panel), Esc clear, Delete/Backspace → the destructive bulk action. Ignored
+  // while typing in an input so editors keep their own Cmd+A / Delete.
+  useEffect(() => {
+    if (!selectionEnabled) return;
+    const onKey = (e: KeyboardEvent) => {
+      const sel = selectionRef.current;
+      const target = e.target as HTMLElement | null;
+      const typing =
+        !!target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable);
+      if (typing) return;
+      const mod = e.metaKey || e.ctrlKey;
+      if (mod && (e.key === 'a' || e.key === 'A')) {
+        if (panelRef.current && target && panelRef.current.contains(target)) {
+          e.preventDefault();
+          sel.selectAllInScope();
+        }
+        return;
+      }
+      if (sel.count === 0) return;
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        sel.clear();
+        return;
+      }
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        const acts = descriptorRef.current.bulkActions?.(sel.selectedNodes) ?? [];
+        const del = acts.find((a) => a.variant === 'destructive');
+        if (del && (!del.enabledWhen || del.enabledWhen(sel.selectedNodes))) {
+          e.preventDefault();
+          void del.run(sel.selectedNodes, { scopeRootId: sel.scopeRootId, clearSelection: sel.clear });
+        }
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [selectionEnabled]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -121,9 +180,12 @@ export function NavigatorPanel({
 
   const header = descriptor.header;
 
+  const showSelectionBar = selectionEnabled && selection.count > 0 && !search.active;
+
   return (
-    <>
+    <TreeSelectionContext.Provider value={selectionEnabled ? selection : null}>
       <div
+        ref={panelRef}
         className="flex-shrink-0 overflow-hidden border-r"
         style={{ width }}
         data-testid={`navigator-panel-${id}`}
@@ -131,39 +193,54 @@ export function NavigatorPanel({
         <div className="flex h-full flex-col" style={{ width }}>
           {header && (
             <div className="flex flex-shrink-0 items-center gap-1 border-b px-1.5 py-1">
-              <button
-                type="button"
-                onClick={() => setCollapsed(true)}
-                title={header.title ? t`Hide ${header.title}` : t`Hide panel`}
-                aria-label={t`Collapse navigator`}
-                className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded hover:bg-muted"
-                data-testid={`navigator-collapse-${id}`}
-              >
-                <PanelLeftClose className="h-3.5 w-3.5 text-muted-foreground" />
-              </button>
-              {header.title && (
-                <span className="min-w-0 truncate text-xs font-medium text-muted-foreground">{header.title}</span>
-              )}
-              {header.countBadge != null && header.countBadge > 0 && (
-                <span className="rounded-full bg-muted px-1.5 text-[10px] font-medium leading-4 text-muted-foreground">
-                  {header.countBadge}
-                </span>
-              )}
-              {(header.headerRight || (header.toolbar && header.toolbar.length > 0)) && (
-                <div className="ml-auto flex flex-shrink-0 items-center gap-0.5">
-                  {header.headerRight}
-                  {header.toolbar?.map((a) => (
-                    <ToolbarButton key={a.id} action={a} />
-                  ))}
-                </div>
+              {search.active ? (
+                search.headerRow
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setCollapsed(true)}
+                    title={header.title ? t`Hide ${header.title}` : t`Hide panel`}
+                    aria-label={t`Collapse navigator`}
+                    className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded hover:bg-muted"
+                    data-testid={`navigator-collapse-${id}`}
+                  >
+                    <PanelLeftClose className="h-3.5 w-3.5 text-muted-foreground" />
+                  </button>
+                  {header.title && (
+                    <span className="min-w-0 truncate text-xs font-medium text-muted-foreground">{header.title}</span>
+                  )}
+                  {header.countBadge != null && header.countBadge > 0 && (
+                    <span className="rounded-full bg-muted px-1.5 text-[10px] font-medium leading-4 text-muted-foreground">
+                      {header.countBadge}
+                    </span>
+                  )}
+                  {(header.headerRight || (header.toolbar && header.toolbar.length > 0) || search.searchIcon) && (
+                    <div className="ml-auto flex flex-shrink-0 items-center gap-0.5">
+                      {search.searchIcon}
+                      {header.headerRight}
+                      {header.toolbar?.map((a) => (
+                        <ToolbarButton key={a.id} action={a} />
+                      ))}
+                    </div>
+                  )}
+                </>
               )}
             </div>
           )}
-          {header?.filterBar && (
+          {showSelectionBar && (
+            <SelectionActionBar
+              selection={selection}
+              actions={descriptor.bulkActions?.(selection.selectedNodes) ?? []}
+            />
+          )}
+          {!search.active && header?.filterBar && (
             <div className="flex flex-shrink-0 items-center gap-1 border-b p-1.5">{header.filterBar}</div>
           )}
           <div className="min-h-0 flex-1 overflow-y-auto">
-            {descriptor.customBody ?? (descriptor.wrapTree ? descriptor.wrapTree(tree) : tree)}
+            {search.active
+              ? search.body
+              : (descriptor.customBody ?? (descriptor.wrapTree ? descriptor.wrapTree(tree) : tree))}
           </div>
         </div>
       </div>
@@ -178,6 +255,6 @@ export function NavigatorPanel({
         }`}
         data-testid={`navigator-resize-${id}`}
       />
-    </>
+    </TreeSelectionContext.Provider>
   );
 }

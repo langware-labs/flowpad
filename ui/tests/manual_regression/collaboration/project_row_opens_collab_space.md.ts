@@ -27,7 +27,6 @@ test.describe('Project view = asset browser', () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => {
       localStorage.setItem('llm-setup-modal-seen', 'true');
-      localStorage.setItem('flowpad-index-approved', 'true');
     });
   });
 
@@ -41,8 +40,10 @@ test.describe('Project view = asset browser', () => {
     await page.waitForLoadState('networkidle', { timeout: 25_000 }).catch(() => {});
     expect(page.url()).toMatch(/\/dock\/project\/[0-9a-f-]{36}/);
     await expect(page.locator('body')).not.toContainText('No editor for type: project');
-    await expect(page.getByText('Assets', { exact: true }).first()).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByText(/Project:/).first()).toBeVisible({ timeout: 15_000 });
+    // Project view header renders "Project assets"; the project scope indicator
+    // is the project-name chip (data-testid="project-name-chip"), not a "Project:" label.
+    await expect(page.getByText('Project assets').first()).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId('project-name-chip').first()).toBeVisible({ timeout: 15_000 });
 
     const offending = errors.filter((e) => !/ResizeObserver|favicon/.test(e) && !/user-/.test(e) && !/agent_hook/.test(e) && !/\b404\b/.test(e));
     expect(offending, `Console errors: ${offending.join(', ')}`).toHaveLength(0);
@@ -54,8 +55,10 @@ test.describe('Project view = asset browser', () => {
     await page.waitForLoadState('networkidle', { timeout: 25_000 }).catch(() => {});
 
     // The BrowseableTree groups by editable type; project has no asset editor,
-    // so the project surface here is the project-scope filter chip, not a tree node.
-    await expect(page.getByRole('button', { name: 'Project filter' })).toBeVisible({ timeout: 20_000 });
+    // so the project surface here is the project-scope filter control. That
+    // control is the ScopeFilterIconBar "Project" toggle, whose accessible name
+    // (its title) is "Current project: <name>" when a project is active.
+    await expect(page.getByRole('button', { name: /Current project/i }).first()).toBeVisible({ timeout: 20_000 });
 
     // The tree groups assets by type (e.g. Markdown or Agent node present).
     const tree = page.getByRole('tree');

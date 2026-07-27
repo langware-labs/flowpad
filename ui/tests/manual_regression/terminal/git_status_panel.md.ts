@@ -1,7 +1,7 @@
 /**
  * Regression tests: Git Status Side Panel (Unified Side Window)
  *
- * Feature: A GitBranch icon in the TerminalBottomRibbon (agentic process terminals only)
+ * Feature: A git branch icon in the TerminalBottomRibbon (agentic process terminals only)
  * opens a Git tab in the unified side window showing the current branch, ahead/behind counts,
  * and a list of changed/added/deleted/untracked files with per-file insertion/deletion counts.
  *
@@ -29,7 +29,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test, expect } from '@playwright/test';
-import { activePanel, dismissSetupModal, ensureSideTabOpen, getSideWindow, startClaudeSession } from './helpers';
+import { activePanel, dismissSetupModal, ensureAdvancedView, ensureSideTabOpen, getSideWindow, skipIfPtyExhausted, startClaudeSession } from './helpers';
 import { apiOrigin } from '../_shared/api';
 
 const API_URL = apiOrigin();
@@ -59,6 +59,7 @@ async function gotoAgenticProcess(page: import('@playwright/test').Page) {
   if (cachedAgenticUrl) {
     await page.goto(cachedAgenticUrl);
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 15_000 });
+    await ensureAdvancedView(page);
     const visible = await ribbon.isVisible({ timeout: 10_000 }).catch(() => false);
     if (visible) return;
     // Cached process is gone — fall through to full navigation.
@@ -69,16 +70,26 @@ async function gotoAgenticProcess(page: import('@playwright/test').Page) {
   const skip = page.getByRole('button', { name: 'Skip' });
   if (await skip.isVisible({ timeout: 2_000 }).catch(() => false)) await skip.click();
 
-  await page.waitForURL(/\/dock\/shell\/(shell-|agentic_process-)/, { timeout: 60_000 });
+  try {
+    await page.waitForURL(/\/dock\/shell\/(shell-|agentic_process-)/, { timeout: 60_000 });
 
-  if (!page.url().includes('agentic_process-')) {
-    await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 60_000 });
-    await startClaudeSession(page);
-    await page.waitForURL(/\/dock\/shell\/agentic_process-(?!new)/, { timeout: 60_000 });
+    if (!page.url().includes('agentic_process-')) {
+      await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 60_000 });
+      await startClaudeSession(page);
+      await page.waitForURL(/\/dock\/shell\/agentic_process-(?!new)/, { timeout: 60_000 });
+    }
+
+    // The ribbon + side-window panels only exist in Advanced view; the backend
+    // pref now wins over the localStorage seed, so flip to Advanced at runtime.
+    await ensureAdvancedView(page);
+
+    // Wait for the ribbon to be visible (can take >8s on a fresh process).
+    await expect(ribbon).toBeVisible({ timeout: 60_000 });
+  } catch (e) {
+    // Host out of PTY devices → no live process/ribbon. Sanctioned live-env skip.
+    await skipIfPtyExhausted(page);
+    throw e;
   }
-
-  // Wait for the ribbon to be visible (can take >8s on a fresh process).
-  await expect(ribbon).toBeVisible({ timeout: 60_000 });
 
   // The ribbon/toolbar re-renders continuously while the worker initializes
   // (status updates via useSyncExternalStore) — a click issued mid-churn keeps

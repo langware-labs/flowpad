@@ -11,7 +11,8 @@ import { Button } from '@src/components/ui/button';
 import { cn } from '@src/lib/utils';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { ViewType } from '@sdk';
+import { usePreference } from '@src/hooks/use-preference';
+import { PrefKey, ViewType } from '@sdk';
 import {
   Braces,
   Check,
@@ -30,28 +31,8 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { Trans, useLingui } from '@lingui/react/macro';
 
 // ---------------------------------------------------------------------------
-// Filter persistence (shared keys with EventSnifferChip)
+// Layer filter constants
 // ---------------------------------------------------------------------------
-
-const FILTERS_STORAGE_KEY = 'flowpad-sniffer-filters';
-
-function loadFilters(): PipelineFilters {
-  return parsePipelineFilters(localStorage.getItem(FILTERS_STORAGE_KEY));
-}
-
-function saveFilters(filters: PipelineFilters): void {
-  try {
-    localStorage.setItem(FILTERS_STORAGE_KEY, JSON.stringify(filters));
-  } catch {
-    // ignore
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Layer filter persistence
-// ---------------------------------------------------------------------------
-
-const LAYERS_STORAGE_KEY = 'flowpad-sniffer-layers';
 
 const ALL_LAYERS: EventLayer[] = ['debug', 'info', 'raw_notifications', 'resource'];
 
@@ -61,33 +42,6 @@ const LAYER_LABELS: Record<EventLayer, string> = {
   raw_notifications: 'notifications',
   resource: 'resource',
 };
-
-function loadLayers(): EventLayer[] | null {
-  try {
-    const stored = localStorage.getItem(LAYERS_STORAGE_KEY);
-    if (stored) {
-      const parsed = JSON.parse(stored);
-      if (Array.isArray(parsed)) {
-        return parsed.filter((l: string) => ALL_LAYERS.includes(l as EventLayer)) as EventLayer[];
-      }
-    }
-  } catch {
-    // ignore
-  }
-  return null;
-}
-
-function saveLayers(layers: EventLayer[] | null): void {
-  try {
-    if (layers !== null) {
-      localStorage.setItem(LAYERS_STORAGE_KEY, JSON.stringify(layers));
-    } else {
-      localStorage.removeItem(LAYERS_STORAGE_KEY);
-    }
-  } catch {
-    // ignore
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Props
@@ -112,11 +66,14 @@ export function HeartbeatEventsViewer({ viewMode = 'live', selectedEventId, sele
   const { mask, setFilter, removeFilter, clearAll: clearMask } = useEventFilterMask();
   const isJsonMode = viewMode === 'json';
 
-  const [filters, setFilters] = useState<PipelineFilters>(() => {
-    const base = loadFilters();
-    const layers = loadLayers();
-    return layers ? { ...base, layers } : base;
-  });
+  const [storedFilters, setStoredFilters] = usePreference<PipelineFilters>(PrefKey.SNIFFER_FILTERS);
+  // EVENT_LAYERS is tri-state (registry default null): null = show all (no layer
+  // filter), [] = show none, [subset] = only that subset.
+  const [layers, setLayers] = usePreference<EventLayer[] | null>(PrefKey.EVENT_LAYERS);
+  const filters = useMemo<PipelineFilters>(() => {
+    const base = parsePipelineFilters(JSON.stringify(storedFilters));
+    return layers === null ? base : { ...base, layers };
+  }, [storedFilters, layers]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
@@ -128,26 +85,24 @@ export function HeartbeatEventsViewer({ viewMode = 'live', selectedEventId, sele
   const prevEventCountRef = useRef(0);
   const scrollSnapshotRef = useRef<{ scrollTop: number; scrollHeight: number } | null>(null);
 
-  const handleFilterChange = useCallback((update: Partial<PipelineFilters>) => {
-    setFilters((prev) => {
-      const next = { ...prev, ...update };
-      saveFilters(next);
-      return next;
-    });
-  }, []);
+  const handleFilterChange = useCallback(
+    (update: Partial<PipelineFilters>) => {
+      setStoredFilters({ ...storedFilters, ...update });
+    },
+    [storedFilters, setStoredFilters],
+  );
 
-  const handleLayerToggle = useCallback((layer: EventLayer) => {
-    setFilters((prev) => {
-      const current = prev.layers ?? [...ALL_LAYERS];
+  const handleLayerToggle = useCallback(
+    (layer: EventLayer) => {
+      const current = filters.layers ?? [...ALL_LAYERS];
       const has = current.includes(layer);
       const next: EventLayer[] = has ? current.filter((l) => l !== layer) : [...current, layer];
-      // If all selected, clear the layers filter (use level fallback)
+      // All selected → null ("show all", no filter); otherwise the explicit subset.
       const allSelected = ALL_LAYERS.every((l) => next.includes(l));
-      const layers = allSelected ? undefined : next;
-      saveLayers(layers ?? null);
-      return { ...prev, layers };
-    });
-  }, []);
+      setLayers(allSelected ? null : next);
+    },
+    [filters.layers, setLayers],
+  );
 
   const activeLayers = filters.layers ?? ALL_LAYERS;
 
@@ -396,19 +351,13 @@ export function HeartbeatEventsViewer({ viewMode = 'live', selectedEventId, sele
               <span className="mx-0.5 text-border">|</span>
               <button
                 className="px-1 text-[10px] font-medium text-muted-foreground transition-colors hover:text-foreground"
-                onClick={() => {
-                  saveLayers(null);
-                  setFilters((prev) => ({ ...prev, layers: undefined }));
-                }}
+                onClick={() => setLayers(null)}
               >
                 <Trans>all</Trans>
               </button>
               <button
                 className="px-1 text-[10px] font-medium text-muted-foreground transition-colors hover:text-foreground"
-                onClick={() => {
-                  saveLayers([]);
-                  setFilters((prev) => ({ ...prev, layers: [] }));
-                }}
+                onClick={() => setLayers([])}
               >
                 <Trans>none</Trans>
               </button>

@@ -164,6 +164,35 @@ class E2BComputeProvider(ComputeProvider):
             service_log.error(f"[E2B] Error getting status for {provider_node_id}: {e}")
             return ExecutionEnvironmentStatus.ERROR
 
+    async def get_node_details(self, provider_node_id: str) -> dict:
+        """Status + cheap live metadata (started_at, end_at, cpu, mem) from one get_info."""
+        sandbox = self._sandboxes.get(provider_node_id)
+        if sandbox is None:
+            # Never booted in this process (lazy boot) — no e2b id to probe.
+            return {"status": ExecutionEnvironmentStatus.READY.value}
+        try:
+            info = await AsyncSandbox.get_info(sandbox_id=sandbox.sandbox_id, api_key=get_e2b_api_key())
+        except Exception as e:
+            msg = str(e).lower()
+            st = (
+                ExecutionEnvironmentStatus.NOT_FOUND
+                if ("not found" in msg or "404" in msg)
+                else ExecutionEnvironmentStatus.ERROR
+            )
+            return {"status": st.value}
+        status = (
+            ExecutionEnvironmentStatus.READY
+            if info.state == SandboxState.RUNNING
+            else ExecutionEnvironmentStatus.PAUSED
+        )
+        return {
+            "status": status.value,
+            "started_at": info.started_at.isoformat() if info.started_at else None,
+            "end_at": info.end_at.isoformat() if info.end_at else None,
+            "cpu_count": info.cpu_count,
+            "memory_mb": info.memory_mb,
+        }
+
     async def get_machine_status(self, provider_node_id: str) -> dict:
         # Minimal stub; E2B exposes metrics separately. Return empty for now.
         return {}

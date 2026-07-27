@@ -152,6 +152,19 @@ def test_claude_force_include(tmp_path: Path) -> None:
     ]
 
 
+def test_claude_worktrees_excluded(tmp_path: Path) -> None:
+    """``.claude/worktrees`` (agent git-worktrees, full repo copies) is skipped
+    even though ``.claude/`` is otherwise force-included — otherwise a single
+    discover walks every worktree's tree (tens of thousands of files)."""
+    _touch(tmp_path / "keep.md")
+    _touch(tmp_path / ".claude" / "skills" / "thing.md")  # still indexed
+    _touch(tmp_path / ".claude" / "worktrees" / "agent-x" / "ui" / "buried.md")  # skipped
+    assert walk_markdown_files(tmp_path) == [
+        ".claude/skills/thing.md",
+        "keep.md",
+    ]
+
+
 def test_symlinked_dir_not_followed(tmp_path: Path) -> None:
     real = tmp_path / "real"
     _touch(real / "inside.md")

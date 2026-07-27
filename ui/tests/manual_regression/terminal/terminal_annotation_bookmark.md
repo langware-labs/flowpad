@@ -33,11 +33,20 @@ test 4: Creating a bookmark from the annotation gutter saves without error
 - validate no navigation away occurred (URL still contains agentic_process-0938e838)
 - validate no console errors related to bookmark creation
 
-test 5: "Open Session" from home navigates to the correct existing process (not a new one)
-- NOTE: this test depends on test 4 having run first (a bookmark must exist for process 0938e838)
-- navigate to {APP_URL} (home page)
-- find a bookmark card on the home page that corresponds to the bookmark created in test 4
-- note the current URL and process ID in it
-- click the "Open Session" button on the bookmark card
-- validate the navigation URL contains agentic_process-0938e838-d3b8-4c6c-8883-3be42d6b3522 (same process, NOT a new one)
-- validate the URL contains a ?t= timestamp parameter
+test 5: the bookmark persists with the correct session linkage and is listed by a live surface
+- NOTE: this test depends on test 4 having run first (a bookmark must exist for the process)
+- read the agentic process back from the backend and note its worker session id (agentic_process.session_id)
+- read the bookmark back from the backend and validate it persisted with bookmark_type "terminal_annotation" and content "e2e test bookmark"
+- validate the bookmark's session_id equals the process's worker session id (it is bound to THIS process's session, not a new/other one)
+- reload the process page and open the annotation index in the gutter
+- validate the bookmark is listed there by its content ("e2e test bookmark")
+
+> PROVENANCE (2026-07-07): the original test 5 clicked an "Open Session" button on a
+> home bookmark card and asserted it resumed the existing process with a `?t=`
+> timestamp. That surface — the home BookmarkColumn and the resume-from-bookmark
+> `?t=` path (useResumeInTerminal with a timestamp) — was removed in commit
+> 29e6c667 (2026-06-18, feed refactor). BookmarkColumn is now dead code (zero
+> render sites) and no live surface emits `?t=`. This scenario was updated to
+> guard what still exists (persistence + session linkage + live listing). The lost
+> timestamped-resume-from-bookmark coverage is recorded here for design review of
+> whether that removal was intended.

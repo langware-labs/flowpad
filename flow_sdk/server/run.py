@@ -10,7 +10,6 @@ import logging
 import os
 import sys
 import time
-from pathlib import Path
 
 # Ensure the repo root and SDK path are on sys.path so "server" and "flow_sdk"
 # are importable even when this script is run directly (e.g. `python run.py`).
@@ -27,9 +26,7 @@ if _sdk_path not in sys.path:
 # logging StreamHandler, which then silently drops the record. Force UTF-8 on
 # stdio before anything logs so those tracebacks reach the captured backend log
 # instead of vanishing. No-op on platforms that already default to UTF-8.
-from flow_sdk.config import PLATFORM_WIN32
-
-if sys.platform == PLATFORM_WIN32:
+if sys.platform == "win32":
     for _stream in (sys.stdout, sys.stderr):
         try:
             _stream.reconfigure(encoding="utf-8", errors="backslashreplace")  # type: ignore[union-attr]
@@ -85,6 +82,7 @@ def _acquire_singleton_lock() -> bool:
 
     global _lock
     from flow_sdk.config import get_port_file_path
+
     lock_path = get_port_file_path().with_suffix(".lock")
     pid_path = get_port_file_path().with_suffix(".pid")
     lock_path.parent.mkdir(parents=True, exist_ok=True)
@@ -124,7 +122,8 @@ def _acquire_singleton_lock() -> bool:
 
     logging.warning(
         "[singleton] Server already running (pid=%s) — exiting (our pid=%d)",
-        holder_pid or "unknown", os.getpid(),
+        holder_pid or "unknown",
+        os.getpid(),
     )
     return False
 
@@ -145,6 +144,7 @@ def _release_singleton_lock() -> None:
 # database, clobbering each other's conversation projections.
 try:
     from dotenv import find_dotenv
+
     # FLOWPAD_SKIP_DOTENV: opt-out for isolated test subprocesses that pin
     # LOCAL_SERVER_PORT / SQLITE_DATABASE_PATH via Popen env — without this,
     # ``override=True`` would clobber those back to .env.local's values.
@@ -171,6 +171,7 @@ from flow_sdk.instance_settings import get_instance_settings, reset_instance_set
 reset_instance_settings()
 get_instance_settings()
 
+
 def main():
     """Start the minihub server."""
     startup_start = time.time()
@@ -188,7 +189,7 @@ def main():
     print(f"Starting Flowpad server at http://{host}:{port}")
     print(f"Bootstrap endpoint: http://{host}:{port}/api/v1/graph/bootstrap")
     if reload_enabled:
-        print(f"Auto-reload: enabled (watching *.py files)")
+        print("Auto-reload: enabled (watching *.py files)")
 
     uvicorn_kwargs = {
         "host": host,
@@ -210,16 +211,14 @@ def main():
         _release_singleton_lock()
     else:
         # Import directly when not using reload
-        import_start = time.time()
-        from flow_sdk.server.app import app, _print_startup_timing
-        import_time = time.time() - import_start
+        from flow_sdk.server.app import _print_startup_timing, app
 
         # Show startup timing before starting the server
         _print_startup_timing()
-        print(f"Uvicorn initialization starting...")
+        print("Uvicorn initialization starting...")
 
         total_startup = time.time() - startup_start
-        print(f"Total startup time (until Uvicorn starts): {total_startup*1000:.2f} ms\n")
+        print(f"Total startup time (until Uvicorn starts): {total_startup * 1000:.2f} ms\n")
 
         uvicorn.run(app, **uvicorn_kwargs)
 

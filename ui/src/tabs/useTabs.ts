@@ -19,7 +19,10 @@ import { useEffect, useMemo, useState } from 'react';
 
 const TERMINAL_TARGET_TYPES = new Set<string>([Shell.type, AgenticProcess.type]);
 
-function tabKey(tab: Tab): string {
+/** The canonical strip chip key for a tab (its tabHash, else the raw id). The
+ *  ONE place this fallback rule lives — every strip must key chips by this so
+ *  select/close-by-key stay in lockstep. */
+export function tabKey(tab: Tab): string {
   return tab.dockPointer?.tabHash ?? tab.id;
 }
 
@@ -46,15 +49,45 @@ export function terminalTabsForScope(
   return uniqueTabsByDockKey(terminals.filter((t) => tabInProject(t, projectId)));
 }
 
+/** THE strip-partition rule: a tab with a `parent_tab_id` is a workspace CHILD
+ *  (a content tab a vibe workspace opened) and renders ONLY in its workspace's
+ *  child strip — never as a top-level chip. Every top-level tab-list consumer
+ *  must apply (or consciously decline) this predicate; `terminalTabsForScope`
+ *  and `useTabProjectBuckets` decline — children are content tabs by the
+ *  backend invariant, so they never appear in the terminal rails, and they DO
+ *  count as a project's open tabs. */
+export function isWorkspaceChild(tab: Tab | ITab): boolean {
+  return tab.parent_tab_id != null;
+}
+
 /** Tabs for the current active project + projectless (the render view for the
- *  unified tab strip). */
+ *  unified tab strip). Workspace children excluded — see `isWorkspaceChild`. */
 export function useCurrentTabs(): Tab[] {
   const all = useAllTabs();
   const { project } = useContext();
   return useMemo(
-    () => uniqueTabsByDockKey(all.filter((t) => tabInProject(t, project?.id ?? null))),
+    () =>
+      uniqueTabsByDockKey(
+        all.filter((t) => !isWorkspaceChild(t) && tabInProject(t, project?.id ?? null)),
+      ),
     [all, project?.id],
   );
+}
+
+/** Set of `tabHash`es for all currently-open tabs. Powers rail "dim entries that
+ *  have no open tab" — a Browseable row whose `pointer.tabHash` is in this set is
+ *  open and stays bright; everything else dims. */
+export function useOpenTabHashes(): Set<string> {
+  const all = useAllTabs();
+  return useMemo(() => new Set(all.map((t) => t.dockPointer?.tabHash).filter(Boolean) as string[]), [all]);
+}
+
+/** Set of target ids (AgenticProcess/Shell) that currently back a tab. Same
+ *  dimming rule as `useOpenTabHashes`, but for the custom-row rails (Chats) that
+ *  match by `target_id` rather than by a DockPointer. */
+export function useOpenTabTargetIds(): Set<string> {
+  const all = useAllTabs();
+  return useMemo(() => new Set(all.map((t) => t.target_id).filter(Boolean) as string[]), [all]);
 }
 
 /** React binding for terminal tabs, reading the global store. */
@@ -199,6 +232,10 @@ export interface TabProjectBucket {
 
 export interface UseTabProjectBucketsResult {
   buckets: TabProjectBucket[];
+  /** Number of visible projectless ("global") tabs — the Global scope's count.
+   *  Kind-agnostic, same as a project bucket's `tabCount`. Powers the Global chip
+   *  (which is shown only in the no-active-project scope). */
+  globalTabCount: number;
 }
 
 /**
@@ -208,19 +245,36 @@ export interface UseTabProjectBucketsResult {
  *
  * Membership is KIND-AGNOSTIC: every visible `Tab` counts (terminal, agent,
  * markdown, skill, …). Reads the same `all-tabs-store` projection the terminal
- * tabs use — no separate query. Global tabs (`project_id == null`) never bucket.
+ * tabs use — no separate query. Global tabs (`project_id == null`) don't form a
+ * project bucket; they are tallied separately into `globalTabCount` (the Global
+ * scope), which the chip surfaces only when no project is active.
  */
 export function useTabProjectBuckets(): UseTabProjectBucketsResult {
   const allTabs = useAllTabs();
 
-  const grouped = useMemo(() => {
+  const { grouped, globalTabCount } = useMemo(() => {
     const counts = new Map<string, number>();
+    let global = 0;
     for (const tab of allTabs) {
       const pid = tab.project_id ?? null;
-      if (!pid) continue;
+      if (!pid) {
+        // Projectless tab → the Global scope. There is no per-project "host" tab
+        // to skip here (a project's landing host carries the project's own id,
+        // never null), so every visible projectless tab counts.
+        global += 1;
+        continue;
+      }
+      // Skip a project's OWN landing/brief host tab (target === the project
+      // itself): `DockPointer.forProject` — where last-tab-close navigates —
+      // materializes a visible `project`-target Tab, but that is the empty-state
+      // host, not a real open tab. Counting it left the chip advertising "1 tab"
+      // for a project the brief correctly showed as empty. Membership in this
+      // chip means ≥1 real (content/terminal) tab; a project re-earns its slot
+      // when an actual session/content tab opens.
+      if (tab.target_type === Project.type) continue;
       counts.set(pid, (counts.get(pid) ?? 0) + 1);
     }
-    return Array.from(counts.entries());
+    return { grouped: Array.from(counts.entries()), globalTabCount: global };
   }, [allTabs]);
 
   const [status, setStatus] = useState<ReadonlyMap<string, BucketState>>(() => new Map());
@@ -286,7 +340,7 @@ export function useTabProjectBuckets(): UseTabProjectBucketsResult {
     });
   }, [grouped, status]);
 
-  return { buckets };
+  return { buckets, globalTabCount };
 }
 
 // Backward-compat aliases for migration

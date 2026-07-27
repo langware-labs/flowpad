@@ -17,10 +17,10 @@ from flow_sdk.core.network.connection_manager import set_external_connection_loo
 from flow_sdk.core.network.connections import (
     add_connection as add_registry_connection,
 )
+from flow_sdk.core.network.connections import is_client_gone as _is_client_gone
 from flow_sdk.core.network.connections import (
     remove_connection as remove_registry_connection,
 )
-from flow_sdk.core.network.connections import is_client_gone as _is_client_gone
 
 from .ws_rest import handle_rest_message
 
@@ -446,21 +446,26 @@ async def handle_json_message(connection_id: str, websocket: WebSocket, message_
         return True
 
 
-def _dispatch_pty_ws_lifecycle(connection_id: str, event: str) -> None:
+def _dispatch_pty_ws_lifecycle(connection_id: str, event: str, reason: str | None = None) -> None:
     """Drive the backend PTY connection-membership FSM on a WS lifecycle event.
 
     ``event="connect"`` resumes parked subscriptions (``on_ws_connect``);
     ``event="disconnect"`` parks them (``on_ws_disconnect``). Imported lazily to
     avoid a server<-compute import cycle at module load. Membership lives entirely
     in the backend, driven by these two transport events.
+
+    ``reason`` (disconnect only) records HOW the transport ended — clean close
+    frame vs abort — so a parked stream names its cause (FLOWPAD-1935).
     """
     try:
         import asyncio
 
         from flow_sdk.compute.providers.desktop.pty_session_manager import pty_registry
 
-        fn = pty_registry.on_ws_connect if event == "connect" else pty_registry.on_ws_disconnect
-        asyncio.ensure_future(fn(connection_id))
+        if event == "connect":
+            asyncio.ensure_future(pty_registry.on_ws_connect(connection_id))
+        else:
+            asyncio.ensure_future(pty_registry.on_ws_disconnect(connection_id, reason or "unknown"))
     except Exception as e:
         logger.warning(f"PTY membership FSM '{event}' failed for {connection_id}: {e}")
 
@@ -507,17 +512,24 @@ async def websocket_endpoint(websocket: WebSocket, connection_id: str):
     }
     await send_personal_message(json.dumps(confirmation), websocket)
 
+    # How the transport ended — the clean-close vs abort discriminator that the
+    # frozen-terminal RCA (FLOWPAD-1935) was missing. Close code 1000/1001 means
+    # the peer sent a proper close frame; 1006/receive-error means the TCP
+    # connection died without one (the client may not know it's gone).
+    disconnect_reason = "endpoint_exit"
     try:
         while True:
             # Receive message (text or binary)
             try:
                 message = await websocket.receive()
-            except Exception:
+            except Exception as e:
+                disconnect_reason = f"receive_error:{type(e).__name__}"
                 break
 
             msg_type = message.get("type", "")
 
             if msg_type == "websocket.disconnect":
+                disconnect_reason = f"disconnect_msg code={message.get('code')}"
                 break
 
             # Handle binary messages (STREAM_MSG - msgpack encoded)
@@ -550,11 +562,14 @@ async def websocket_endpoint(websocket: WebSocket, connection_id: str):
             # Handle message
             continue_loop = await handle_json_message(connection_id, websocket, message_data)
             if not continue_loop:
+                disconnect_reason = "send_failed_client_gone"
                 break
 
-    except WebSocketDisconnect:
+    except WebSocketDisconnect as e:
+        disconnect_reason = f"ws_disconnect code={getattr(e, 'code', 'unknown')}"
         logger.info(f"Client {connection_id} disconnected")
     except Exception as e:
+        disconnect_reason = f"error:{type(e).__name__}"
         logger.error(f"Error in WebSocket connection {connection_id}: {e}")
     finally:
         # Clean up connection
@@ -574,9 +589,12 @@ async def websocket_endpoint(websocket: WebSocket, connection_id: str):
 
         # Park this connection's PTY subscriptions (kept, not closed) so a
         # reconnect of the same id auto-restores delivery. PTYs stay alive.
-        _dispatch_pty_ws_lifecycle(connection_id, "disconnect")
+        _dispatch_pty_ws_lifecycle(connection_id, "disconnect", disconnect_reason)
 
-        logger.info(f"Client {connection_id} removed. Remaining connections: {len(_active_connections)}")
+        logger.info(
+            f"Client {connection_id} removed (reason={disconnect_reason}). "
+            f"Remaining connections: {len(_active_connections)}"
+        )
 
 
 def get_connection_count() -> int:
