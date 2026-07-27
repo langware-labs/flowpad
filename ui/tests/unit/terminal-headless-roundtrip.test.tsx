@@ -235,6 +235,12 @@ vi.mock('@src/components/view-mode', () => ({ useIsAdvanced: () => true }));
 vi.mock('@src/contexts/chat-ui-mode-context', () => ({
   useChatUiOverride: () => null,
   setChatUiOverride: () => {},
+  // Mirrors resolveChatMode against the mocks above: no override + the advanced
+  // view mode mocked at :234 ⇒ terminal, so only the pty_mode TRANSPORT flip
+  // moves the view (which is the round trip under test).
+  useEffectiveChatMode: () => 'terminal',
+  effectiveChatMode: () => 'terminal',
+  chatModeLaunchArgs: () => ({ context: {}, options: { visible: true, pty_mode: true } }),
 }));
 vi.mock('@src/notifications/notify', () => ({
   notify: { error: () => {}, success: () => {}, info: () => {}, warning: () => {} },

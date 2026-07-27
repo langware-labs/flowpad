@@ -44,7 +44,7 @@ import { ChatComposerBar } from './ChatComposerBar';
 import { ChatPlanModeProvider } from './chat-plan-mode-context';
 import { SimpleChatPane } from './SimpleChatPane';
 import { useProcessModeSwitch } from './use-process-mode-switch';
-import { useChatUiOverride } from '@src/contexts/chat-ui-mode-context';
+import { useEffectiveChatMode } from '@src/contexts/chat-ui-mode-context';
 import { useIsAdvanced } from '@src/components/view-mode';
 import { PtySyncProvider, usePtySyncSession } from './PtySyncContext';
 import { TerminalRuntimeErrorBanner } from './TerminalRuntimeErrorBanner';
@@ -174,8 +174,10 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   // is instant and never resets the terminal. Embedded terminals (chat side
   // panel) and shell-only tabs (no AgenticProcess) always keep the xterm.
   const isAdvanced = useIsAdvanced();
-  const chatOverride = useChatUiOverride();
-  const wantChat = chatOverride != null ? chatOverride === 'chat' : !isAdvanced;
+  // ONE resolution rule, shared with the launcher (`chatModeLaunchArgs`): the
+  // override when set, else the View-mode default. So the mode a session opens
+  // in and the mode this renders are always the same question.
+  const wantChat = useEffectiveChatMode() === 'chat';
   // Headless (`pty_mode === false`): there is no PTY/xterm to skin — the chat
   // pane is the ONLY view. Force it on regardless of the chat/terminal skin
   // override, and (in the render) skip mounting the xterm container entirely so
