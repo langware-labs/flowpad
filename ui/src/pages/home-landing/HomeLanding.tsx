@@ -1,7 +1,3 @@
-import { IncomingTaskDialog } from '@src/components/task-receive/IncomingTaskDialog';
-import { IncomingProjectDialog } from '@src/components/task-receive/IncomingProjectDialog';
-import { useIncomingTaskStore } from '@src/store/use-incoming-task-store';
-import { useIncomingProjectStore } from '@src/store/use-incoming-project-store';
 import { UsageBar } from '@src/components/cost-dashboard';
 import { RecordSearchBar } from '@src/components/record-search-bar/RecordSearchBar';
 import { NotificationFeed } from '@src/notifications';
@@ -12,14 +8,11 @@ import { SessionInput } from '@src/components/session-input/session-input';
 import { useGlobalSearchScope } from '@src/hooks/use-global-search-scope';
 import { AdvancedOnly, VibeSwap } from '@src/components/view-mode';
 import { useProjects } from '@src/hooks/use-projects';
-import { useProject } from '@src/hooks/useProject';
-import { useFS } from '@src/hooks/useFS';
-import { isCompleteGitOrigin, Project, TypeId } from '@sdk';
+import { HomeCustomBackground, HomeGreeting, useHomeCustomization } from '@src/components/home-customization';
 import { useStartVibeSession } from '@src/pages/flow-page/use-start-vibe-session';
 import { useAuth } from '@sdk/react/hooks';
 import { useSystemTools } from '@src/hooks/use-system-tools';
 import { ActivityIndicator } from '@src/components/search-index/ActivityIndicator';
-import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import type React from 'react';
 import { SearchFilters, SearchResult } from '@src/hooks/use-record-search';
@@ -27,11 +20,10 @@ import { navigateToResult } from '@src/navigation/record-type-nav';
 import { InlineSearchResults } from './InlineSearchResults';
 import { HomeFeedColumn } from './feed';
 import { X, CheckCircle2 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { GitOrigin, LastScanResult } from '@sdk';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { LastScanResult } from '@sdk';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { VIBE_MODEL_DEFAULT, VibeModelSelect, type VibeModelTier } from '@src/pages/flow-page/vibe-model-select';
-import { VibeWorkerSelect } from '@src/pages/flow-page/vibe-worker-select';
+import { VIBE_MODEL_DEFAULT, type VibeModelTier } from '@src/pages/flow-page/vibe-model-select';
 import { DEFAULT_WORKER_TYPE, type WorkerType } from '@src/components/workers/worker-types';
 
 /**
@@ -57,63 +49,6 @@ export function HomeLanding() {
   // The backend's /open handler unpacks the bundle and resolves
   // conversation_id / task_id from the FM's context, so we navigate directly
   // off the URL params — no FM lookup needed on the UI side.
-  const { pendingTask, setPendingTask } = useIncomingTaskStore();
-  const { pendingProject, setPendingProject } = useIncomingProjectStore();
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('action') !== 'open') return;
-    const fmId = params.get('fm') || '';
-    const convId = params.get('conversation_id') || '';
-    const taskId = params.get('task_id') || '';
-    const isTemplate = params.get('project_template') === '1';
-    const title = params.get('title') || 'Shared';
-    const senderName = params.get('sender_name') || 'Someone';
-    const gitOriginParam = params.get('git_origin');
-    let gitOrigin: GitOrigin | null = null;
-    if (gitOriginParam) {
-      try {
-        const parsed = JSON.parse(gitOriginParam) as GitOrigin;
-        gitOrigin = isCompleteGitOrigin(parsed) ? parsed : null;
-      } catch {
-        gitOrigin = null;
-      }
-    }
-
-    // Clean URL so refreshing doesn't re-trigger
-    const url = new URL(window.location.href);
-    for (const key of ['action', 'fm', 'conversation_id', 'task_id', 'project_template', 'title', 'sender_name', 'git_origin']) {
-      url.searchParams.delete(key);
-    }
-    window.history.replaceState(null, '', url.toString());
-
-    // Template launch: "X shared a project with you" — clone the template repo
-    // into a fresh, indexed Project on THIS box. Checked before the task branch
-    // because a template also carries a git_origin (but no task_id).
-    if (isTemplate && gitOrigin) {
-      setPendingProject({ gitOrigin, projectName: title, senderName });
-      return;
-    }
-
-    if (gitOrigin && taskId) {
-      setPendingTask({ taskId, taskTitle: title, senderName, gitOrigin });
-      return;
-    }
-
-    if (convId) {
-      navigation.openDock(DockPointer.forConversation(convId));
-      return;
-    }
-
-    // Last resort: no convId in the deep link. If we have a taskId, open the
-    // tasks dock; otherwise stay on home and let the strip surface the share
-    // once inbox-fetch lands the FM. ``fmId`` is unused here but kept in the
-    // URL params for diagnostics / future fallback.
-    void fmId;
-    if (taskId) {
-      navigation.openDock(DockPointer.fromUrl('tasks', taskId));
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
   const { lastScanResult } = useSystemTools();
   const [postScanResult, setPostScanResult] = useState<LastScanResult | null>(null);
 
@@ -129,22 +64,8 @@ export function HomeLanding() {
   const firstName = currentUser?.name?.split(' ')[0] || 'there';
 
   // Per-project home branding from the ACTIVE project's `.flow/customization/`
-  // (see backend Project.customization). A `home_title` overrides the greeting;
-  // `home.png` renders as the home background. Absent → today's default home.
-  const { project } = useProject();
-  const custom = project?.customization;
-  const homeTitle = custom?.home_title || null; // already trimmed server-side
-  const projectTypeId = useMemo(
-    () => (project?.id ? new TypeId(Project.type, project.id) : undefined),
-    [project?.id],
-  );
-  const fs = useFS(projectTypeId);
-  const homeBgUrl =
-    custom?.has_home_background && fs ? fs.getDownloadUrl('.flow/customization/home.png') : null;
-  // Render the greeting: the `.flow/customization` override when set, else the
-  // layout's default. One decision point, two heroes (standard + vibe).
-  const greeting = (spanClassName: string, fallback: React.ReactNode): React.ReactNode =>
-    homeTitle ? <span className={spanClassName}>{homeTitle}</span> : fallback;
+  // — shared across every home surface (see useHomeCustomization).
+  const { homeTitle, homeBackgroundUrl } = useHomeCustomization();
 
   const [draftPrompt, setDraftPrompt] = useState('');
 
@@ -154,8 +75,8 @@ export function HomeLanding() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchFilters, setSearchFilters] = useState<SearchFilters>({});
   const [selectedResultIndex, setSelectedResultIndex] = useState(-1);
-  const [vibeModel, setVibeModel] = useState<VibeModelTier>(VIBE_MODEL_DEFAULT);
-  const [vibeWorker, setVibeWorker] = useState<WorkerType>(DEFAULT_WORKER_TYPE);
+  const vibeModel: VibeModelTier = VIBE_MODEL_DEFAULT;
+  const vibeWorker: WorkerType = DEFAULT_WORKER_TYPE;
   const { scope: searchScope, isLoading: searchScopeLoading } = useGlobalSearchScope();
 
   useEffect(() => { setSelectedResultIndex(-1); }, [searchQuery]);
@@ -187,19 +108,7 @@ export function HomeLanding() {
 
   return (
     <div className="relative flex h-full flex-col overflow-hidden">
-      {/* Per-project home background image (`.flow/customization/home.png`), with
-          a scrim so foreground text stays legible. Rendered behind everything. */}
-      {homeBgUrl && (
-        <>
-          <div
-            aria-hidden
-            className="pointer-events-none absolute inset-0 z-0 bg-cover bg-center"
-            style={{ backgroundImage: `url("${homeBgUrl}")` }}
-            data-testid="home-custom-background"
-          />
-          <div aria-hidden className="pointer-events-none absolute inset-0 z-0 bg-background/60" />
-        </>
-      )}
+      <HomeCustomBackground url={homeBackgroundUrl} />
       <div className="relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden">
       <VibeSwap
         vibe={
@@ -214,12 +123,15 @@ export function HomeLanding() {
             />
             <div className="relative z-10 flex w-full max-w-2xl flex-col items-center gap-6 text-center">
               <h1 className="text-4xl font-bold tracking-tight sm:text-5xl">
-                {greeting(
-                  'vibe-gradient-text',
-                  <Trans>
-                    Build something <span className="vibe-gradient-text">amazing</span>
-                  </Trans>,
-                )}
+                <HomeGreeting
+                  override={homeTitle}
+                  className="vibe-gradient-text"
+                  fallback={
+                    <Trans>
+                      Build something <span className="vibe-gradient-text">amazing</span>
+                    </Trans>
+                  }
+                />
               </h1>
               <p className="text-lg text-muted-foreground">
                 <Trans>Create apps and tools by chatting with AI</Trans>
@@ -230,12 +142,6 @@ export function HomeLanding() {
                   value={draftPrompt}
                   onChange={setDraftPrompt}
                   allowAttachments
-                  footerSlot={
-                    <div className="flex min-w-0 items-center gap-1.5">
-                      <VibeModelSelect value={vibeModel} onChange={setVibeModel} />
-                      <VibeWorkerSelect value={vibeWorker} onChange={setVibeWorker} />
-                    </div>
-                  }
                   onSubmit={(msg, files) => void handleVibeSubmit(msg, files, vibeModel, vibeWorker)}
                 />
               </div>
@@ -292,12 +198,15 @@ export function HomeLanding() {
           {/* Hero — fixed at the top, never scrolls */}
           <div className="flex shrink-0 flex-col items-center gap-6 text-center">
             <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">
-              {greeting(
-                'bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent',
-                <Trans>
-                  Hey <span className="bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">{firstName}</span>
-                </Trans>,
-              )}
+              <HomeGreeting
+                override={homeTitle}
+                className="bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent"
+                fallback={
+                  <Trans>
+                    Hey <span className="bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">{firstName}</span>
+                  </Trans>
+                }
+              />
             </h1>
 
             <div className="flex w-full max-w-3xl flex-col items-end gap-2">
@@ -379,28 +288,7 @@ export function HomeLanding() {
         }
       />
 
-      {/* Incoming task dialog — pull/clone flow for shared tasks */}
-      {pendingTask && (
-        <IncomingTaskDialog
-          open={!!pendingTask}
-          taskId={pendingTask.taskId}
-          taskTitle={pendingTask.taskTitle}
-          senderName={pendingTask.senderName}
-          gitOrigin={pendingTask.gitOrigin}
-          onClose={() => setPendingTask(null)}
-        />
-      )}
 
-      {/* Incoming project dialog — "X shared a project with you" template launch */}
-      {pendingProject && (
-        <IncomingProjectDialog
-          open={!!pendingProject}
-          gitOrigin={pendingProject.gitOrigin}
-          projectName={pendingProject.projectName}
-          senderName={pendingProject.senderName}
-          onClose={() => setPendingProject(null)}
-        />
-      )}
       </div>
     </div>
   );

@@ -23,14 +23,20 @@ import { AssetEditor, AssetMode, AssetRoutingMethod, editorForType, LOCAL_COMPUT
 import {
   ALL_SCOPE_FILTER,
   dockOptionsToScopeFilter,
+  pinnedProjectId,
   scopeFilterKey,
   scopeFilterToDockOptions,
   withScopeFilterOptions,
+  withoutScopeFilterOptions,
   type ScopeFilter,
 } from '@src/lib/scope-filter';
 import { dockOptionsToSideWindows, withSideWindowsOptions, type SideWindowsState } from '@src/lib/side-windows';
 import type { ViewMode } from '@src/contexts/view-mode-context';
 import { DEFAULT_WORLDVIEW_COLOR_MODE, type WorldViewColorMode } from '@src/types/WorldViewColorMode';
+import {
+  DEFAULT_GRAPH_PRESENTATION,
+  type GraphPresentation,
+} from '@src/types/GraphPresentation';
 
 /**
  * URL query-param key carrying the "highlight this thing" intent across the
@@ -52,6 +58,19 @@ export const VIEW_MODE_PARAM = 'viewMode';
  * asset editor reads it to point at the matching `translations[].ref`.
  */
 export const LANG_PARAM = 'lang';
+
+/**
+ * URL query-param key carrying the ACTIVE USER JOURNEY across the app. Null by
+ * default; when set, the guided journey tray is shown for that journey and the
+ * orchestrator drives its current step. Like the other option params it rides in
+ * `options` (so it is reload- and back-button-safe, and deliberately EXCLUDED
+ * from `tabHash` — showing a journey never spawns a tab). It is TOPMOST/sticky:
+ * `openDock` carries it onto any target that doesn't set one, so the journey
+ * stays visible across navigation until explicitly closed. Pairs with
+ * `DockPointer.journeyId` / `withJourney()`, `useActiveJourneyId()` (home root),
+ * and `navigation.showJourney()` / `closeJourney()`.
+ */
+export const JOURNEY_PARAM = 'journeyId';
 
 /**
  * Canonicalize a compute-node-relative path: forward slashes, collapsed
@@ -201,6 +220,42 @@ export class DockPointer implements IDockPointer {
   }
 
   /**
+   * The project this dock pins as its active-project context (`project` scope
+   * mode), or null. Reads through the scope selectors — no call site picks the
+   * mode/id fields apart itself.
+   */
+  get scopeProjectId(): string | null {
+    return pinnedProjectId(this.scopeFilter);
+  }
+
+  /**
+   * Is this dock's TAB IDENTITY keyed by its scope? True for the scope-keyed
+   * views (Assets, Explorer) whose `tabHash` folds every sub-pointer of one
+   * scope into a single tab. Only these can be stranded by an unsatisfiable
+   * scope — their tab literally cannot be minted without a live project — so
+   * it's the one class of dock that needs scope repair before materialization.
+   */
+  get scopeKeyed(): boolean {
+    return !!(this.viewType && VIEWER_REGISTRY[this.viewType]?.scopeKeyed);
+  }
+
+  /**
+   * Clone this pointer with its scope removed — same surface, no scope keys.
+   * The recovery for a scope that can't be satisfied (see `repairUnsatisfiableScope`
+   * in main-loader): the dock keeps showing what the URL names, just unscoped,
+   * instead of filtering against a project that isn't there.
+   */
+  withoutScopeFilter(): DockPointer {
+    return new DockPointer(
+      this.viewType,
+      this.pointer,
+      withoutScopeFilterOptions(this.options),
+      this.layout,
+      this.page,
+    );
+  }
+
+  /**
    * The set of open side windows + the active one carried by this dock's
    * options, or null when none is set. The single generic accessor for
    * side-windows-in-URL across every dock — the option-key grammar lives
@@ -286,10 +341,33 @@ export class DockPointer implements IDockPointer {
 
   /** Clone this dock pointed at a translated body, or back to the original with null. */
   withLang(lang: string | null): DockPointer {
+    return this.withOption(LANG_PARAM, lang);
+  }
+
+  /**
+   * The user journey this dock is showing, or null. URL-carried (reload- and
+   * back-safe) and excluded from `tabHash`, so a journey overlays the current
+   * surface instead of spawning a tab. See {@link JOURNEY_PARAM}.
+   */
+  get journeyId(): string | null {
+    return this.options?.[JOURNEY_PARAM] ?? null;
+  }
+
+  /**
+   * Clone this dock with one URL option set (or cleared with null) — the
+   * generic form behind `withLang`/`withJourney` and the sticky-param
+   * carry-forward in `openDock`.
+   */
+  withOption(key: string, value: string | null): DockPointer {
     const nextOptions = { ...(this.options ?? {}) };
-    if (lang) nextOptions[LANG_PARAM] = lang;
-    else delete nextOptions[LANG_PARAM];
+    if (value) nextOptions[key] = value;
+    else delete nextOptions[key];
     return new DockPointer(this.viewType, this.pointer, nextOptions, this.layout, this.page);
+  }
+
+  /** Clone this dock showing a journey, or close it (clear the param) with null. */
+  withJourney(journeyId: string | null): DockPointer {
+    return this.withOption(JOURNEY_PARAM, journeyId);
   }
 
   /**
@@ -964,6 +1042,8 @@ export class DockPointer implements IDockPointer {
       depth?: number;
       selected?: string;
       signal?: WorldViewColorMode;
+      /** Renderer choice — serialized as `?render=` (see GraphPresentation). */
+      render?: GraphPresentation;
       hidden?: readonly string[];
       query?: string;
     },
@@ -982,6 +1062,7 @@ export class DockPointer implements IDockPointer {
     ) {
       queryOptions.signal = options.signal;
     }
+    if (options?.render && options.render !== DEFAULT_GRAPH_PRESENTATION) queryOptions.render = options.render;
     const hidden = [...new Set(options?.hidden ?? [])].filter(Boolean).sort();
     if (hidden.length) queryOptions.hide = hidden.join(',');
     if (options?.query) queryOptions.q = options.query;
@@ -992,6 +1073,111 @@ export class DockPointer implements IDockPointer {
       layout,
       page,
     );
+  }
+
+  /** Shared query-option assembly for the subgraph-surface pointers. */
+  private static subgraphOptions(options?: {
+    depth?: number;
+    /** Omit `depth` when it equals this (URL hygiene, one rule for every
+     *  subgraph-surface pointer). */
+    defaultDepth?: number;
+    selected?: string;
+    render?: GraphPresentation;
+    hidden?: readonly string[];
+    query?: string;
+    carry?: Record<string, string>;
+  }): Record<string, string> | undefined {
+    const queryOptions: Record<string, string> = { ...(options?.carry ?? {}) };
+    if (options?.render && options.render !== DEFAULT_GRAPH_PRESENTATION) queryOptions.render = options.render;
+    if (options?.depth && options.depth !== options.defaultDepth) queryOptions.depth = String(options.depth);
+    if (options?.selected) queryOptions.selected = options.selected;
+    const hidden = [...new Set(options?.hidden ?? [])].filter(Boolean).sort();
+    if (hidden.length) queryOptions.hide = hidden.join(',');
+    if (options?.query) queryOptions.q = options.query;
+    return Object.keys(queryOptions).length ? queryOptions : undefined;
+  }
+
+  /**
+   * Tag graph/tree at `/dock/tag/graph[/<name>]` — <name> is a dot-path
+   * TAG NAME (not a typeid; ghost tags are first-class). Focus lives in
+   * the pointer (dependency pattern); `view=tree` and friends ride options.
+   */
+  static forTagGraph(
+    tag?: string | null,
+    options?: {
+      /** Data shape owned by this surface (`?view=tree` = ontology tree). */
+      view?: 'tree';
+      depth?: number;
+      selected?: string;
+      render?: GraphPresentation;
+      hidden?: readonly string[];
+      query?: string;
+      carry?: Record<string, string>;
+    },
+    layout: Layout = Layout.DOCK,
+  ): DockPointer {
+    const pointer = tag ? `graph/${encodeURIComponent(tag)}` : 'graph';
+    const carry = { ...(options?.carry ?? {}) };
+    if (options?.view) carry.view = options.view;
+    return new DockPointer(
+      ViewType.TAG,
+      pointer,
+      DockPointer.subgraphOptions({ ...options, carry }),
+      layout,
+    );
+  }
+
+  /** Split a TAG pointer: `graph[/<name>]` → `{ sub: 'graph', tag }`. */
+  static parseTagPointer(pointer: string | undefined): { sub: string; tag: string | null } | null {
+    if (!pointer) return null;
+    const idx = pointer.indexOf('/');
+    const sub = idx < 0 ? pointer : pointer.slice(0, idx);
+    if (sub !== 'graph') return null;
+    const tag = idx < 0 ? null : pointer.slice(idx + 1);
+    return { sub, tag: tag ? DockPointer.tryDecode(tag) : null };
+  }
+
+  /** Best-effort decode for pointer segments encoded by the `for*` factories. */
+  private static tryDecode(segment: string): string {
+    try {
+      return decodeURIComponent(segment);
+    } catch {
+      return segment;
+    }
+  }
+
+  /**
+   * Generic entity-subgraph at `/dock/subgraph/<projection>[/<focusKey>]` —
+   * layer 2's zero-new-frontend-code path. The focus segment is a node key.
+   */
+  static forSubgraph(
+    projection: string,
+    focusKey?: string | null,
+    options?: {
+      depth?: number;
+      selected?: string;
+      render?: GraphPresentation;
+      hidden?: readonly string[];
+      query?: string;
+      carry?: Record<string, string>;
+    },
+    layout: Layout = Layout.DOCK,
+  ): DockPointer {
+    const pointer = focusKey ? `${projection}/${encodeURIComponent(focusKey)}` : projection;
+    return new DockPointer(ViewType.SUBGRAPH, pointer, DockPointer.subgraphOptions(options), layout);
+  }
+
+  /** Split a SUBGRAPH pointer into `{ projection, focus }`. */
+  static parseSubgraphPointer(
+    pointer: string | undefined,
+  ): { projection: string; focus: string | null } | null {
+    if (!pointer) return null;
+    const idx = pointer.indexOf('/');
+    if (idx < 0) return { projection: pointer, focus: null };
+    const projection = pointer.slice(0, idx);
+    if (!projection) return null;
+    const focus = pointer.slice(idx + 1);
+    return { projection, focus: focus ? DockPointer.tryDecode(focus) : null };
   }
 
   /**

@@ -8,6 +8,8 @@
  *   2. executeInstruction on a process with an embedded agent produces CHAT/TEXT FlowData output
  *
  * Uses new AgenticProcess({ workdir }).save([]) pattern — not computeNode.createProcess().
+ * Output-stream assertions explicitly select headless mode; the entity default
+ * is the interactive PTY transport, which does not expose the same FlowData stream.
  *
  * Requires: running backend at localhost:9007 + Claude Code installed.
  * Timeout: 180s (real Claude subprocess).
@@ -117,7 +119,7 @@ describe('AgenticProcess loadEmbeddedAgent', () => {
   }, TIMEOUT);
 
   it('executeInstruction produces CHAT/TEXT output', async (context: any) => {
-    const proc = await new AgenticProcess({ workdir }).save([]);
+    const proc = await new AgenticProcess({ workdir, pty_mode: false, visible: false }).save([]);
     await proc.loadEmbeddedAgent(agentFilePath);
     await proc.watch();
 
@@ -179,7 +181,7 @@ describe('AgenticProcess loadEmbeddedAgent', () => {
   }, TIMEOUT);
 
   it('multi-turn: second executeInstruction on the same process produces output', async (context: any) => {
-    const proc = await new AgenticProcess({ workdir }).save([]);
+    const proc = await new AgenticProcess({ workdir, pty_mode: false, visible: false }).save([]);
     await proc.loadEmbeddedAgent(agentFilePath);
     await proc.watch();
 

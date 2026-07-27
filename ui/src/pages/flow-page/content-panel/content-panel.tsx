@@ -18,8 +18,6 @@ import { ProcessTerminal } from '@src/components/process-terminal';
 import { SettingsView } from '@src/components/settings-view/SettingsView';
 import { PreferencesView } from '@src/components/preferences-view/PreferencesView';
 import { DesktopPage } from '@src/pages/desktop/DesktopPage';
-import { ShowView } from '@src/components/show-view/ShowView';
-import { AppHost } from '@src/components/app-host/AppHost';
 import { FilterName, getAllFilterDefinitions } from '@src/components/simple-file-manager';
 import { TasksRedirect } from '@src/components/tasks-viewer/TasksRedirect';
 import { HomeLanding } from '@src/pages/home-landing';
@@ -37,7 +35,6 @@ import { ConnectionsManager } from '@src/components/connections-manager';
 import { CapabilitiesView } from '@src/components/capabilities-view';
 import { ConversationRoute } from '@src/components/conversation';
 import { InboxView } from '@src/components/inbox-view/InboxView';
-import { SurveyView } from '@src/components/survey/SurveyView';
 import { TabbedTerminal } from '@src/components/terminal';
 import { TriggersView } from '@src/components/triggers-view';
 import { Button } from '@src/components/ui/button';
@@ -69,9 +66,24 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react
 // keeps app bootstrap independent of WebGL availability.
 const GraphView = lazy(() => import('@src/components/graph-view/GraphView').then((m) => ({ default: m.GraphView })));
 const WorldView = lazy(() => import('@src/components/graph-view/GraphView').then((m) => ({ default: m.WorldView })));
+const TagGraphView = lazy(() =>
+  import('@src/components/graph-view/TagGraphView').then((m) => ({ default: m.TagGraphView })),
+);
+const GenericSubgraphView = lazy(() =>
+  import('@src/components/graph-view/SubgraphView').then((m) => ({ default: m.GenericSubgraphView })),
+);
 // Lazy like GRAPH — keeps @xyflow/react out of app bootstrap.
 const AgenticFlowsView = lazy(() =>
   import('@src/components/agentic-flows/AgenticFlowsView').then((m) => ({ default: m.AgenticFlowsView })),
+);
+const SurveyView = lazy(() =>
+  import('@src/components/survey/SurveyView').then((m) => ({ default: m.SurveyView })),
+);
+const ShowView = lazy(() =>
+  import('@src/components/show-view/ShowView').then((m) => ({ default: m.ShowView })),
+);
+const AppHost = lazy(() =>
+  import('@src/components/app-host/AppHost').then((m) => ({ default: m.AppHost })),
 );
 const DocsGraphView = lazy(() =>
   import('@src/components/graph-view/DocsGraphView').then((m) => ({ default: m.DocsGraphView })),
@@ -303,7 +315,9 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
         return <MarkdownViewer />;
       case ViewType.SURVEY:
         return activeSurveyData && onSurveyComplete ? (
-          <SurveyView surveyData={activeSurveyData} onComplete={onSurveyComplete} />
+          <Suspense fallback={null}>
+            <SurveyView surveyData={activeSurveyData} onComplete={onSurveyComplete} />
+          </Suspense>
         ) : (
           <div className="p-6 text-muted-foreground">
             <Trans>No active survey</Trans>
@@ -377,9 +391,17 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
       case ViewType.CAPABILITIES:
         return <CapabilitiesView />;
       case ViewType.SHOW:
-        return <ShowView />;
+        return (
+          <Suspense fallback={null}>
+            <ShowView />
+          </Suspense>
+        );
       case ViewType.APPS:
-        return <AppHost />;
+        return (
+          <Suspense fallback={null}>
+            <AppHost />
+          </Suspense>
+        );
       case ViewType.GRAPH:
         return (
           <Suspense fallback={null}>
@@ -390,6 +412,18 @@ export function ContentPanel({ minimalChrome = false }: { minimalChrome?: boolea
         return (
           <Suspense fallback={null}>
             <WorldView />
+          </Suspense>
+        );
+      case ViewType.TAG:
+        return (
+          <Suspense fallback={null}>
+            <TagGraphView />
+          </Suspense>
+        );
+      case ViewType.SUBGRAPH:
+        return (
+          <Suspense fallback={null}>
+            <GenericSubgraphView />
           </Suspense>
         );
       case ViewType.AGENTIC_FLOWS:

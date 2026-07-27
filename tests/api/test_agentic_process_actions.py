@@ -286,7 +286,12 @@ async def test_register_webapp_artifact_attaches_to_project_and_shows(bootstrapp
     artifact = data["artifact"]
     deployment = data["deployment"]
     assert artifact["kind"] == "application.web"
-    assert artifact["origin"] == {"kind": "local", "base": str(tmp_path), "rel_path": "frontend"}
+    assert artifact["origin"] == {
+        "kind": "local",
+        "base": str(tmp_path),
+        "rel_path": "frontend",
+        "project_id": "",
+    }
     assert deployment["kind"] == "local.runtime.web"
     assert deployment["artifact_id"] == artifact["id"]
     assert deployment["provider_labels"]["flowpad.runtime.port"] == "3300"
@@ -493,6 +498,7 @@ async def test_input_stages_onto_queue_headless(bootstrapped_client, user):
     """``input`` on a cold/headless process stages onto the PERSISTED queue."""
     pid = await create_agentic_process(bootstrapped_client, pty_mode=False)
     base = f"/api/v1/graph/agentic_process/{pid}"
+    await bootstrapped_client.post(f"{base}/set-queue-enabled", json={"enabled": False})
 
     resp = await bootstrapped_client.post(f"{base}/input", json={"text": "staged line"})
     assert resp.status_code == 200, resp.text
@@ -502,6 +508,13 @@ async def test_input_stages_onto_queue_headless(bootstrapped_client, user):
 
     # The staged line is durable on the queue (survives a separate request).
     q = await bootstrapped_client.post(f"{base}/enqueue", json={"prompt": "second"})
+    pending_drains = [
+        task
+        for task in asyncio.all_tasks()
+        if task is not asyncio.current_task()
+        and "_maybe_drain_queue" in getattr(task.get_coro(), "__qualname__", "")
+    ]
+    await asyncio.gather(*pending_drains, return_exceptions=True)
     prompts = [e["prompt"] for e in ApiResponse(**q.json()).data["entries"]]
     assert prompts == ["staged line", "second"]
 

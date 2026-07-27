@@ -1,6 +1,7 @@
 import type { APIRequestContext } from '@playwright/test';
+import { apiBase } from '../_shared/api';
 
-const API = process.env.API_URL || `http://localhost:${process.env.LOCAL_SERVER_PORT || '9008'}`;
+const API = apiBase();
 
 /** Ensure the ACTIVE project has at least one markdown doc and return its name.
  *

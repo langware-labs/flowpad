@@ -28,6 +28,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/c
 import { cn } from '@src/lib/utils';
 import { useFlowDataTrace } from '@src/hooks/use-flow-data-trace';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { SETUP_GITHUB_JOURNEY_ID, SetupJourneyButton } from '@src/journey/SetupJourneyButton';
 import type { TraceEvent } from '@src/types/trace-event';
 import {
   BadgeCheck,
@@ -216,7 +217,7 @@ function CapabilityProcessRun({
 }
 
 /** Lazily tail a capability's last/active install process by id. */
-function RowProcess({ processId }: { processId: string }) {
+export function RowProcess({ processId }: { processId: string }) {
   const { navigation } = useDockNavigation();
   const typeId = useMemo(() => {
     try {
@@ -248,11 +249,11 @@ function CapabilityAccessRow({
   const Icon = capabilityIcon(access.icon);
 
   const runAction = useCallback(
-    async (action: 'check' | 'install') => {
+    async (action: 'test' | 'setup') => {
       setBusy(true);
       try {
-        if (action === 'check') await capabilityManager.check(access.kind);
-        else await capabilityManager.install(access.kind);
+        if (action === 'test') await capabilityManager.test(access.kind);
+        else await capabilityManager.setup(access.kind);
         await onRefresh();
       } finally {
         setBusy(false);
@@ -314,7 +315,7 @@ function CapabilityAccessRow({
           <div className="flex justify-end gap-1">
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-7 w-7" disabled={busy} onClick={() => void runAction('check')}>
+                <Button variant="ghost" size="icon" className="h-7 w-7" disabled={busy} onClick={() => void runAction('test')}>
                   <RefreshCw className={cn('h-3.5 w-3.5', busy && 'animate-spin')} />
                 </Button>
               </TooltipTrigger>
@@ -323,7 +324,7 @@ function CapabilityAccessRow({
             {access.installable && (
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon" className="h-7 w-7" disabled={busy} onClick={() => void runAction('install')}>
+                  <Button variant="ghost" size="icon" className="h-7 w-7" disabled={busy} onClick={() => void runAction('setup')}>
                     <Download className="h-3.5 w-3.5" />
                   </Button>
                 </TooltipTrigger>
@@ -403,6 +404,16 @@ function IntentSection({
       </button>
       {open && (
         <div>
+          {intent.intent === 'source_control' && !intent.available && (
+            <div className="flex items-center justify-between gap-2 border-b bg-muted/20 px-3 py-2">
+              <span className="text-xs text-muted-foreground">
+                <Trans>Connect GitHub and the gh CLI with a guided setup.</Trans>
+              </span>
+              <SetupJourneyButton journeyId={SETUP_GITHUB_JOURNEY_ID}>
+                <Trans>Set up GitHub</Trans>
+              </SetupJourneyButton>
+            </div>
+          )}
           {intent.capabilities.map((access) => (
             <CapabilityAccessRow
               key={access.kind}
@@ -427,7 +438,7 @@ function IntentInstaller({ onLaunched }: { onLaunched: () => Promise<unknown> })
     if (!value || busy) return;
     setBusy(true);
     try {
-      await capabilityManager.installIntent(value);
+      await capabilityManager.setupIntent(value);
       setText('');
       await onLaunched();
     } finally {

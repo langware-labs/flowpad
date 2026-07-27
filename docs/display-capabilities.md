@@ -37,7 +37,10 @@ The extension→viewer rule is ONE registry — `EXT_TO_EDITOR` +
 `editorForPath` in `ts_sdk/src/models/asset-editor.ts` — and every raw-file
 surface routes through it: `dockPointerForFile` (openFile / explorer / chat
 attachments), the vibe display's `vfsEditorEl`, and `assetPointerForTarget`
-(display history). File viewers are file-only `AssetEditor` values (like CODE:
+(display history). `dockPointerForFile` also carries a requested line across the
+branch: CODE keeps it as the `line` option, and the asset editors receive it as
+their `initialLine` option, so "open this file at line N" survives whichever
+viewer the extension selects. File viewers are file-only `AssetEditor` values (like CODE:
 no backing record type, `EDITOR_TYPES[e] === []`, `isFileOnlyEditor`), rendered
 by CODE-style early returns in `AssetEditorRouter`. The same file renders the
 same way on every surface.
@@ -50,11 +53,21 @@ same way on every surface.
 | png jpg jpeg gif webp svg avif bmp ico | IMAGE | `MediaViewer` (`<img>` via fs `download` URL) |
 | mp4 webm mov | VIDEO | `MediaViewer` (`<video>`) |
 | mp3 wav m4a ogg | AUDIO | `MediaViewer` (`<audio>`) |
-| everything else | CODE | `CodeEditor` (keeps line/column options) |
+| everything else | CODE | `CodeEditor` (honours the `line`/`column` options — reveals the line centred and marks it with `.flowpad-deep-link-line` until the next deep link) |
 
 Media bytes are served by the fs `download` action (`flow_sdk/actions/fs/
 fs_actions.py` — MIME from guess_type, inline disposition for image/video/
 audio, streaming). Text viewers read via FSRef.
+
+A file can also be **peeked without being opened**: `FilePreviewSheet`
+(`ui/src/components/file-preview/`) mounts the same read-only `EditorPane` in a
+sheet, addressed by absolute machine path + optional line, with "Open in editor"
+handing the same target to the dock. Because it reuses the pane, content
+loading, scroll-to-line and the deep-link marker are the surface's own — not a
+second rendering path. Opened with `openFilePreview(target)` and hosted by a
+single `FilePreviewRoot` in `App.tsx` — the same store-driven global-overlay
+convention as `openWikiModal` (see [wikitip.md](wikitip.md)), so a peek is an
+overlay rather than navigation and no caller mounts its own.
 
 Notes: `.jsonl` transcripts are never opened by extension — they route through
 the Lens (`/dock/lens/<worker>/transcript/<ref>` → `TranscriptViewer`).

@@ -18,6 +18,8 @@ import logging
 from datetime import datetime
 from typing import Any, Optional, Type
 
+from pydantic import TypeAdapter
+
 from flow_sdk._compat import UTC
 from flow_sdk.api.type_id import TypeId
 from flow_sdk.builtin.organization import Organization
@@ -28,6 +30,7 @@ logger = logging.getLogger(__name__)
 # Flat metadata fields we mirror from the hub payload, when present on the type.
 _MIRRORED_FIELDS = (
     "name",
+    "git_origin",
     "account",
     "domain",
     "icon",
@@ -36,6 +39,30 @@ _MIRRORED_FIELDS = (
     "shared_context_origins",
     "shared_secret_origins",
 )
+
+
+_FIELD_ADAPTERS: dict[tuple[type, str], Any] = {}
+
+
+def _validated_field(cls: Type[Entity], name: str, value: Any) -> Any:
+    """Coerce a raw hub value into the target field's declared type.
+
+    The create path gets this free from ``cls.model_validate``; the update path
+    used to ``setattr`` raw JSON, so a typed field (e.g. ``Project.git_origin``)
+    ended up holding a dict and every consumer had to re-check. Validate here,
+    at the mirror boundary, and fall back to the raw value if it doesn't fit.
+    """
+    if value is None:
+        return None
+    key = (cls, name)
+    adapter = _FIELD_ADAPTERS.get(key)
+    if adapter is None:
+        adapter = _FIELD_ADAPTERS[key] = TypeAdapter(cls.model_fields[name].annotation)
+    try:
+        return adapter.validate_python(value)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("[membership-sync] %s.%s did not validate: %s", cls.__name__, name, exc)
+        return value
 
 
 def _shared_secret_origin_payload(
@@ -119,7 +146,7 @@ async def materialize_remote_membership_entity(
 
     changed = False
     for k in fields:
-        v = data.get(k)
+        v = _validated_field(cls, k, data.get(k))
         if v is not None and getattr(existing, k, None) != v:
             setattr(existing, k, v)
             changed = True

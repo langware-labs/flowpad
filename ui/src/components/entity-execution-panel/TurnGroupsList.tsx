@@ -79,7 +79,7 @@ const TurnGroupRow = memo(function TurnGroupRow({
   const node =
     group.kind === 'message' ? (
       group.flowData.attributes?.['is-meta'] === 'true' ? (
-        <MetaMessageChip flowData={group.flowData} />
+        <MetaMessageChip flowData={group.flowData} skillName={group.skillName} />
       ) : (
         <ExecutionMessage flowData={group.flowData} worker={worker} isUser={isUser} />
       )

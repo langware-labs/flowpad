@@ -203,18 +203,24 @@ async def _mirror_to_rows(discovered: dict[str, CapabilityValue]) -> None:
             row = await Capability.get_by_kind(kind)
             if row is None:
                 continue
-            check = await registry.check(kind)
+            check = await registry.test(kind)
             last_check = check.result.model_dump(mode="json")
+            # Passive sweep (attempted=False): may flip a row to AVAILABLE or
+            # back off a stale AVAILABLE, but never promotes NONE ("never
+            # tried") to NOT_AVAILABLE — that takes an explicit user verb.
+            state = row.derive_state(check.result)
             unchanged = (
                 row.value == value.value
                 and row.value_type == value.value_type
                 and row.last_check == last_check
+                and row.state == state
             )
             if unchanged:
                 continue
             row.value = value.value
             row.value_type = value.value_type
             row.last_check = last_check
+            row.state = state
             await row.save(notify=True)
         except Exception:
             logger.exception("Failed to mirror capability value for %s", kind)

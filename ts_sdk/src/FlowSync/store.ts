@@ -17,10 +17,10 @@ import {
   OAuthMessage,
   PtyOutputMessage,
   RestApiMessage,
-  TranscriptMessage,
 } from '../websocket';
 import { FlowData, FlowDataSource } from '../flow_processing';
 import { getUtmParams } from './auth';
+import { emitEntityTag } from './entity.onTag';
 import { ExpansionType } from './expand';
 import { EntityFactory } from '../schema/factory';
 import { SubscriptionMap, TypeIdMap, WatchMap, WatchQueryMap } from './map';
@@ -379,6 +379,9 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       console.warn(`Data op messages ignored, Entity constructor not found for type: ${typeId.type}`);
       return;
     }
+    // Bus wake-up BEFORE the branchy cache handling below: several branches
+    // early-return (uncached update, in-flight buffer) and must still emit.
+    emitEntityTag(typeId, op, data ?? null);
     // Handle delete operation by removing from all query results
     if (op === 'delete') {
       this.watchedQueries.removeEntityFromResults(typeId.type, typeId);
@@ -1187,13 +1190,15 @@ export class DataManager<T extends Manageable> extends EventEmitter {
 
     const endpoint = actionInfo.actionUrl;
 
-    let requestConfig: any = undefined;
+    let requestConfig: any = actionInfo.abortSignal
+      ? { signal: actionInfo.abortSignal }
+      : undefined;
     if (actionInfo.isRawResponse) {
       requestConfig = {
+        ...(requestConfig ?? {}),
         transformResponse: (data: any) => {
           return { data };
         },
-        signal: actionInfo.abortSignal || undefined,
         responseType: actionInfo.responseType || undefined,
       };
     }

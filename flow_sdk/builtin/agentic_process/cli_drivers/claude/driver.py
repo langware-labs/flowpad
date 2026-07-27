@@ -60,11 +60,14 @@ class ClaudeDriver:
     name = "claude"
     preassign_interactive_session_id = True
     pty_submits_on_paste = True
-    # Real Claude Code 2.1.207 PTY captures paint the rotating ``Try \"…\"``
-    # placeholder only after the main composer is live. The welcome banner is
-    # earlier and therefore is not a readiness signal. Accept either the
-    # regular or non-breaking space Claude paints after the prompt glyph.
-    pty_composer_ready_pattern = re.compile(r'❯[ \t\u00a0]+Try "')
+    # Real Claude Code PTY captures expose two grounded blank-composer frames:
+    # a fresh boot paints the rotating ``Try "…"`` placeholder (2.1.207+),
+    # while a resumed session can paint a bare prompt followed immediately by
+    # the composer rule (2.1.220+). The welcome banner and echoed user prompts
+    # match neither form, so they cannot release typed delivery prematurely.
+    # Accept either the regular or non-breaking space Claude paints after the
+    # prompt glyph.
+    pty_composer_ready_pattern = re.compile(r'❯[ \t\u00a0]+(?:Try "|─{3,})')
     pins_resume_cwd = True  # pins CLAUDE_PROJECT_DIR + workdir to the source session's cwd
 
     # ── CLI shape ────────────────────────────────────────────────────────────

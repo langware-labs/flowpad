@@ -7,7 +7,6 @@ cwds take. Drives the real SQLite persistence layer (no mocks of save/query).
 """
 
 import uuid
-from pathlib import Path
 
 import pytest
 import pytest_asyncio
@@ -123,14 +122,76 @@ async def test_workspace_folders_materialize_as_projects(project_db, tmp_path, m
         assert again_by_name[name].project_id == by_name[name].project_id
 
 
+def test_copilot_project_iterator_rejects_home_but_keeps_subdir(
+    tmp_path,
+    monkeypatch,
+):
+    import dataclasses
+
+    import flow_sdk.fs_store.operations.all_projects as ap
+    import flow_sdk.instance_settings as isettings
+
+    home = tmp_path / "home"
+    project = home / "dev" / "repo"
+    project.mkdir(parents=True)
+    sessions = home / ".copilot" / "session-state"
+    for name, cwd in (("home", home), ("project", project)):
+        workspace = sessions / name / "workspace.yaml"
+        workspace.parent.mkdir(parents=True)
+        workspace.write_text(f"cwd: {cwd}\n")
+    patched = dataclasses.replace(
+        isettings.get_instance_settings(),
+        user_home=home,
+    )
+    monkeypatch.setattr(isettings, "get_instance_settings", lambda: patched)
+    monkeypatch.setattr(ap, "get_instance_settings", lambda: patched)
+
+    assert list(ap.iter_copilot_project_paths(include_temp=True)) == [project]
+
+
+@pytest.mark.asyncio
+async def test_get_all_projects_never_materializes_unsafe_home(
+    project_db,
+    tmp_path,
+    monkeypatch,
+):
+    import dataclasses
+
+    import flow_sdk.fs_store.operations.all_projects as ap
+    import flow_sdk.instance_settings as isettings
+    from flow_sdk.builtin.project import Project
+
+    home = tmp_path / "home"
+    project = home / "dev" / "repo"
+    project.mkdir(parents=True)
+    patched = dataclasses.replace(
+        isettings.get_instance_settings(),
+        user_home=home,
+    )
+    monkeypatch.setattr(isettings, "get_instance_settings", lambda: patched)
+    monkeypatch.setattr(ap, "get_instance_settings", lambda: patched)
+    monkeypatch.setattr(
+        ap,
+        "iter_claude_project_paths",
+        lambda **kwargs: iter((home, project)),
+    )
+    monkeypatch.setattr(ap, "iter_codex_project_paths", lambda **kwargs: iter(()))
+    monkeypatch.setattr(ap, "iter_copilot_project_paths", lambda **kwargs: iter(()))
+    monkeypatch.setattr(ap, "iter_workspace_project_paths", lambda **kwargs: iter(()))
+
+    projects = await ap.get_all_projects(include_temp=True, create_missing=True)
+
+    assert [info.cwd for info in projects] == [str(project.resolve())]
+    assert await Project.find_by_cwd(str(home)) is None
+    assert await Project.find_by_cwd(str(project)) is not None
+
+
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 @pytest.mark.asyncio
-async def test_agent_mount_root_entity_tagged_hidden(project_db, tmp_path, monkeypatch):
+async def test_agent_mount_root_entity_is_not_returned(project_db, tmp_path, monkeypatch):
     """A stale Project entity minted for the agent mount ROOT itself (by a past
-    ``recover_by_path`` before the guard) surfaces in ``get_all_projects`` tagged
-    ``system=True`` — i.e. it lands in the hidden list (filtered out of the picker
-    by default, revealable via "Show system projects"), rather than being dropped.
-    A real work subfolder under the root stays a normal (non-hidden) project."""
+    ``recover_by_path`` before the guard) must not re-enter the canonical project
+    list. A real work subfolder under the root stays a normal project."""
     import dataclasses
 
     import flow_sdk.config as cfg
@@ -158,7 +219,12 @@ async def test_agent_mount_root_entity_tagged_hidden(project_db, tmp_path, monke
 
     # Simulate the pre-guard stale entity sitting at the mount root, plus a real
     # work subfolder project under it (which must NOT be tagged hidden).
-    stale = Project(name="Flowpad workspace", fs_storage_mount_path=canonical_posix_path(ws))
+    stale = Project(
+        name="Flowpad workspace",
+        fs_storage_mount_path=canonical_posix_path(ws / "seed"),
+    )
+    # Bypass the new model backstop to reproduce a legacy persisted row.
+    object.__setattr__(stale, "fs_storage_mount_path", canonical_posix_path(ws))
     stale.id = Project.allocate_id(stale.model_dump())
     await stale.save()
     sub = Project(name="real-project", fs_storage_mount_path=canonical_posix_path(ws / "real-project"))
@@ -168,8 +234,7 @@ async def test_agent_mount_root_entity_tagged_hidden(project_db, tmp_path, monke
     projects = await ap.get_all_projects(include_temp=True, create_missing=False)
     by_name = {p.name: p for p in projects}
 
-    assert "Flowpad workspace" in by_name, by_name
-    assert by_name["Flowpad workspace"].system is True, "mount root must be tagged hidden"
+    assert "Flowpad workspace" not in by_name, by_name
     assert "real-project" in by_name, by_name
     assert by_name["real-project"].system is False, "subfolder project must stay non-hidden"
 

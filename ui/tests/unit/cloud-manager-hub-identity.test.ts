@@ -15,6 +15,7 @@ const LOCAL_USER = {
   email: 'alice@local.test',
 };
 
+const HUB_ORIGIN = 'https://hub.test';
 const originalLocation = window.location;
 
 async function createIdentityRealm(apiUrl: string) {
@@ -36,8 +37,8 @@ afterEach(() => {
 });
 
 describe('CloudManager hub identity', () => {
-  it('adopts the bootstrap user as the cloud identity and uses the serving origin', async () => {
-    const { sdk } = await createIdentityRealm('https://hub.test/api/v1');
+  it('adopts the bootstrap user as the cloud identity and uses the configured hub origin', async () => {
+    const { sdk } = await createIdentityRealm(`${HUB_ORIGIN}/api/v1`);
     sdk.setSupportedPagesForHubMode(['hub']);
 
     await sdk.cloudManager.bootstrap({
@@ -52,14 +53,14 @@ describe('CloudManager hub identity', () => {
       email: HUB_USER.email,
     });
     expect(sdk.cloudManager.currentUser?.typeId.toString()).toBe(`user-${HUB_USER.id}`);
-    expect(sdk.cloudManager.cloudUrl).toBe(window.location.origin);
+    expect(sdk.cloudManager.cloudUrl).toBe(HUB_ORIGIN);
     expect(sdk.dataContext.cloudLoginAvailable).toBe(true);
     expect(sdk.dataContext.cloudUser).toBe(sdk.cloudManager.currentUser);
     expect(sdk.dataContext.cloudUserTypeId?.toString()).toBe(`user-${HUB_USER.id}`);
   });
 
   it('maps an absent bootstrap user to a logged-out cloud identity', async () => {
-    const { sdk } = await createIdentityRealm('https://hub.test/api/v1');
+    const { sdk } = await createIdentityRealm(`${HUB_ORIGIN}/api/v1`);
     sdk.setSupportedPagesForHubMode(['hub']);
 
     await sdk.cloudManager.bootstrap({
@@ -70,14 +71,14 @@ describe('CloudManager hub identity', () => {
     expect(sdk.cloudManager.loginStatus).toBe('logged_out');
     expect(sdk.cloudManager.isLoggedIn).toBe(false);
     expect(sdk.cloudManager.currentUser).toBeNull();
-    expect(sdk.cloudManager.cloudUrl).toBe(window.location.origin);
+    expect(sdk.cloudManager.cloudUrl).toBe(HUB_ORIGIN);
     expect(sdk.dataContext.cloudLoginAvailable).toBe(false);
     expect(sdk.dataContext.cloudUser).toBeNull();
     expect(sdk.dataContext.cloudUserTypeId).toBeNull();
   });
 
   it('redirects through hub auth routes without desktop API or secret probes', async () => {
-    const { sdk } = await createIdentityRealm('https://hub.test/api/v1');
+    const { sdk } = await createIdentityRealm(`${HUB_ORIGIN}/api/v1`);
     sdk.setSupportedPagesForHubMode(['hub']);
     await sdk.cloudManager.bootstrap({
       user: null,
@@ -107,7 +108,7 @@ describe('CloudManager hub identity', () => {
   });
 
   it('mirrors the existing connection manager slot in hub mode', async () => {
-    const { sdk } = await createIdentityRealm('https://hub.test/api/v1');
+    const { sdk } = await createIdentityRealm(`${HUB_ORIGIN}/api/v1`);
     sdk.setSupportedPagesForHubMode(['hub']);
 
     await sdk.cloudManager.bootstrap({
@@ -155,7 +156,7 @@ describe('CloudManager hub identity', () => {
   });
 
   it('bypasses desktop secret provisioning before hub navigation login', async () => {
-    const { sdk } = await createIdentityRealm('https://hub.test/api/v1');
+    const { sdk } = await createIdentityRealm(`${HUB_ORIGIN}/api/v1`);
     sdk.setSupportedPagesForHubMode(['hub']);
     const secretProbe = vi.spyOn(sdk.secretsService, 'isEnabled');
     const login = vi.spyOn(sdk.cloudManager, 'login').mockResolvedValue(undefined);

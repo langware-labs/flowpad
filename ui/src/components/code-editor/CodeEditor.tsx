@@ -49,8 +49,17 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
 
   const fs = useFS(effectiveTypeId);
 
-  const { navigation } = useDockNavigation();
+  const { navigation, currentDock } = useDockNavigation();
   const [showHiddenItems, setShowHiddenItems] = useState(false);
+
+  // `?line=` on the dock (written by `DockPointer.forFile`) is a deep link into
+  // the active file — e.g. an interface block's "Open in editor". Only the
+  // active tab honours it; the others are just open, not targeted.
+  const deepLink = useMemo(() => {
+    const raw = currentDock?.options?.line;
+    const line = raw ? Number.parseInt(raw, 10) : NaN;
+    return Number.isFinite(line) && line > 0 ? line : null;
+  }, [currentDock]);
 
   // Dialog state for file/folder creation
   const [showFileInput, setShowFileInput] = useState(false);
@@ -532,6 +541,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
                 <EditorPane
                   readOnly={readOnly}
                   file={file}
+                  revealLine={tab.path === activeTab ? deepLink : null}
                   onExecuteScript={expandTerminal}
                   onShellCmd={(command) => {
                     handleShellCommand(command).catch((error) => {

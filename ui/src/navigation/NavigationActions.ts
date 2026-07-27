@@ -15,7 +15,7 @@ import {
 } from '@sdk';
 import { NavigateFunction } from 'react-router';
 import type { ViewMode } from '@src/contexts/view-mode-context';
-import { DockPointer, HIGHLIGHT_PARAM } from './DockPointer';
+import { DockPointer, HIGHLIGHT_PARAM, JOURNEY_PARAM } from './DockPointer';
 import { dockPointerForFile } from './local-file-pointer';
 import { FileOptions, TabOptions } from './types';
 import { preserveWindowLayout, stripDockPortion } from './url-builder';
@@ -51,6 +51,11 @@ export const SCOPE_SEEDED_VIEWS: ReadonlySet<ViewType> = new Set([
   ViewType.EXPLORER,
   ViewType.SHELL,
 ]);
+
+// URL options that are STICKY across navigation: openDock carries each from the
+// live URL onto any target that doesn't set it. A param here means "topmost
+// until explicitly closed" — clearing it must bypass openDock (see closeJourney).
+export const STICKY_OPTION_PARAMS: readonly string[] = [JOURNEY_PARAM];
 
 /**
  * NavigationActions - Navigation actions implementation
@@ -144,8 +149,105 @@ export class NavigationActions {
    * Used by the WikiTip backward link ("click here to highlight the feedentry").
    */
   highlight(wikiword: string): void {
+    this.openHomeRoot(wikiword);
+  }
+
+  /**
+   * THE primitive for editing query params on the LIVE URL without any other
+   * navigation: read the current URL, apply the mutator, no-op when nothing
+   * changed, commit. Every "tweak a param in place" flow goes through here —
+   * hand-rolling the split/mutate/clear/commit ritual per caller is how the
+   * `path || '/'` guard and the pending-nav clear drift apart.
+   */
+  private updateLiveUrlParams(mutate: (params: URLSearchParams) => void): void {
+    const current = NavigationActions.getCurrentBrowserUrl();
+    const [path, query] = current.split('?');
+    const params = new URLSearchParams(query ?? '');
+    mutate(params);
+    const rest = params.toString();
+    const url = rest ? `${path || '/'}?${rest}` : path || '/';
+    if (current === url) return;
     NavigationActions.clearCommittedPendingNavigation();
-    const url = `/?${HIGHLIGHT_PARAM}=${encodeURIComponent(wikiword)}`;
+    this.commitBrowserNavigation(url, url);
+  }
+
+  /**
+   * Set `?highlight=` on the LIVE URL without any other navigation — the
+   * transparent form of highlighting: wherever the user is (or is arriving,
+   * mid-route-change), only the param changes. Rebuilding from `currentDock`
+   * here would race an in-flight navigation and yank the user backwards.
+   */
+  applyHighlightInPlace(wikiword: string): void {
+    this.updateLiveUrlParams((params) => params.set(HIGHLIGHT_PARAM, wikiword));
+  }
+
+  /**
+   * Navigate to the app home root `/`, optionally with `?highlight=`, CARRYING
+   * the sticky URL options (journeyId) from the live URL — the home root is not
+   * a dock URL, so openDock's carry-forward can't do it. This is also the
+   * "start dock" surface a journey can name (`start: {kind: "root"}`).
+   */
+  openHomeRoot(highlightWord?: string): void {
+    NavigationActions.clearCommittedPendingNavigation();
+    const params = new URLSearchParams();
+    if (highlightWord) params.set(HIGHLIGHT_PARAM, highlightWord);
+    for (const key of STICKY_OPTION_PARAMS) {
+      const live = NavigationActions.currentUrlOption(key);
+      if (live) params.set(key, live);
+    }
+    const rest = params.toString();
+    const url = rest ? `/?${rest}` : '/';
+    if (NavigationActions.getCurrentBrowserUrl() === url) return;
+    this.commitBrowserNavigation(url, url);
+  }
+
+  /**
+   * A URL option read from the LIVE URL, or null. Parses the raw URL rather
+   * than `currentDock` so it also sees params carried on the home root (which
+   * has no DockPointer). The reader behind sticky-param carry-forward.
+   */
+  private static currentUrlOption(key: string): string | null {
+    const query = NavigationActions.getCurrentBrowserUrl().split('?')[1];
+    return query ? new URLSearchParams(query).get(key) : null;
+  }
+
+  /** The journey shown by the live URL, or null. */
+  private static currentJourneyId(): string | null {
+    return NavigationActions.currentUrlOption(JOURNEY_PARAM);
+  }
+
+  /**
+   * Show a user journey on the CURRENT surface — sets `?journeyId=` on the
+   * current dock pointer (or the home root when not on a dock URL). The journey
+   * then rides every subsequent navigation via openDock's carry-forward, so it
+   * stays topmost until {@link closeJourney}. URL-carried ⇒ reload-safe.
+   */
+  showJourney(journeyId: string): void {
+    if (this.currentDock) {
+      this.openDock(this.currentDock.withJourney(journeyId));
+      return;
+    }
+    NavigationActions.clearCommittedPendingNavigation();
+    const url = `/?${JOURNEY_PARAM}=${encodeURIComponent(journeyId)}`;
+    if (NavigationActions.getCurrentBrowserUrl() === url) return;
+    this.commitBrowserNavigation(url, url);
+  }
+
+  /**
+   * Explicitly close the journey — the ONLY thing that clears `journeyId`.
+   * Commits the stripped URL directly instead of going through `openDock`,
+   * whose carry-forward would immediately put the param back.
+   */
+  closeJourney(): void {
+    if (!NavigationActions.currentJourneyId()) return;
+    const dock = this.currentDock;
+    if (!dock?.journeyId) {
+      // Home root (or any non-dock URL) carrying the param: drop just that key.
+      this.updateLiveUrlParams((params) => params.delete(JOURNEY_PARAM));
+      return;
+    }
+    NavigationActions.clearCommittedPendingNavigation();
+    const url = dock.withJourney(null).toUrl();
     if (NavigationActions.getCurrentBrowserUrl() === url) return;
     this.commitBrowserNavigation(url, url);
   }
@@ -195,6 +297,18 @@ export class NavigationActions {
       extraOptions && Object.keys(extraOptions).length > 0
         ? new DockPointer(base.viewType, base.pointer, { ...base.options, ...extraOptions }, base.layout, base.page)
         : base;
+
+    // STICKY URL options: each listed param rides onto any target that doesn't
+    // set it, read from the LIVE URL (the home root `/` is not a dock URL yet
+    // can carry them). `journeyId` is the first — a shown journey is TOPMOST
+    // until `closeJourney()` (which bypasses openDock so the param can clear).
+    // New sticky params are one table entry, not another bespoke block.
+    for (const key of STICKY_OPTION_PARAMS) {
+      const live = NavigationActions.currentUrlOption(key);
+      if (live && !dock.options?.[key]) {
+        dock = dock.withOption(key, live);
+      }
+    }
 
     // URL-first default scope for scope-aware surfaces (assets, triggers, file
     // explorer): a dock opened WITHOUT an explicit scope (no `scope-*` keys →
@@ -418,6 +532,18 @@ export class NavigationActions {
    */
   openFile(path: string, options?: FileOptions): void {
     this.openDock(dockPointerForFile(path, options));
+  }
+
+  /**
+   * Open a FILE addressed by ABSOLUTE MACHINE path, on a given entity.
+   *
+   * Dock pointers address files as VFS paths (`compute_node-<id>/abs/path`), so
+   * every caller holding a real filesystem path has to convert first — and each
+   * one that did it inline was a chance for the two forms to drift. Same job as
+   * `openFolder` does for directories; `openFile` remains the VFS-path entry.
+   */
+  openMachinePath(machinePath: string, typeId: TypeId, options?: FileOptions): void {
+    this.openFile(VFSPath.fromMachinePath(machinePath, typeId).rawPath, options);
   }
 
   /**

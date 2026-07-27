@@ -30,4 +30,28 @@ describe('buildWizardPrompt', () => {
     const out = buildWizardPrompt('proc-1', req);
     expect(out).toContain('Presentation: interactive popup');
   });
+
+  // The close command is runnable, so it must never be runnable-as-is with an
+  // empty result — agents paste it verbatim and the caller gets a "done" that
+  // carries no data (the analyze-status report that never arrived).
+  it('never offers an empty data payload in the close example', () => {
+    expect(buildWizardPrompt('proc-1', req)).not.toContain('"data":{}');
+    expect(buildWizardPrompt('proc-1', req)).not.toContain('"data": {}');
+  });
+
+  it('omits data entirely when the caller declares no result shape', () => {
+    const out = buildWizardPrompt('proc-1', req);
+    expect(out).toContain(`flow wizard proc-1 close '{"status":"done"}'`);
+  });
+
+  it("renders the caller's result shape as placeholders to fill in", () => {
+    const shaped = {
+      ...req,
+      wizardData: { ...req.wizardData, resultShape: { readyForDone: '<true|false>', analysisPath: '<abs path>' } },
+    };
+    const out = buildWizardPrompt('proc-1', shaped, { headless: true });
+    expect(out).toContain('"readyForDone":"<true|false>"');
+    expect(out).toContain('"analysisPath":"<abs path>"');
+    expect(out).toMatch(/do not close with an empty or unedited/i);
+  });
 });

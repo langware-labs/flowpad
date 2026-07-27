@@ -2,12 +2,12 @@ import { useCallback, useMemo, useState } from 'react';
 import { Download, Loader2 } from 'lucide-react';
 import { useLingui } from '@lingui/react/macro';
 import { AgenticProcess, Conversation, TypeId } from '@sdk';
-import { ActionInfo } from '@sdk/models/ActionInfo';
 import { useEntity } from '@sdk/react/hooks';
 import { workerIcon } from '@src/components/lens-viewer/shared/transcript-features/transcript-utils';
 import { FavoriteStar } from '@src/components/favorites/FavoriteStar';
 import { AdvancedOnly } from '@src/components/view-mode';
 import { InputDialog } from '@src/components/ui/input-dialog';
+import { localBundleUrl } from '../flow-message-drafts';
 import { useChipsExclude } from './ChipsExcludeContext';
 import { ChipKey } from './keys';
 
@@ -18,10 +18,6 @@ interface MessageChipsProps {
   conversationId?: string;
   /** Message body — its first 10 words become the favorite / task title. */
   messageText?: string;
-}
-
-function localDownloadUrl(messageId: string): string {
-  return new ActionInfo('create-and-download-local-flowmsg', 'flow_message', messageId, 'GET').fullActionUrl;
 }
 
 /** First `n` whitespace-delimited words of `text`, trimmed. Empty when no text. */
@@ -93,7 +89,7 @@ export function MessageChips({ flowMessageId, conversationId, messageText }: Mes
       <span className="ml-1 flex items-center gap-0.5">
         {showDownload && (
           <a
-            href={localDownloadUrl(flowMessageId)}
+            href={localBundleUrl(flowMessageId)}
             download
             title={t`Download message`}
             className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground opacity-60 transition-opacity hover:opacity-100"

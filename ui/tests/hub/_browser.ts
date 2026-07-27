@@ -158,20 +158,38 @@ export async function driveShareDialog(page: Page, opts: ShareDialogOptions): Pr
  * invitation Accept CTA. Retries the refresh a few times — the invitation has
  * to sync down from the hub first.
  */
-export async function acceptInvitationInUI(inst: InstancePage): Promise<void> {
+export async function acceptInvitationInUI(
+  inst: InstancePage,
+  conversationId?: string,
+): Promise<void> {
   const { page } = inst;
-  // Catch the pending invitation down from the hub FIRST (the heavy
-  // conversation-list pipeline materializes the invitation placeholder the
-  // strip's Accept CTA reads), THEN load the page once. Polling the UI with a
-  // full reload per iteration is what blew the budget — one sync, one load.
-  await fetch(`${inst.apiUrl}/api/v1/graph/conversation-list`, {
+  // Catch the pending invitation down from the hub FIRST, then load the page
+  // once. The targeted invitation sync materializes the placeholder row
+  // without dispatching catch-up work for every historical conversation; that
+  // broad work contended with the subsequent accept action on long-lived
+  // cycle instances.
+  await fetch(`${inst.apiUrl}/api/v1/graph/invitation-sync`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: '{}',
   }).catch(() => undefined);
-  await page.goto(inst.feUrl, { waitUntil: 'domcontentloaded' });
+  // A known id belongs in Inbox, which renders the complete list. Going
+  // through Home first launches a second conversation-list reconcile before
+  // the Inbox navigation; on a long-lived instance those overlapping
+  // reconciles can replace the just-materialized row between visibility and
+  // click. Enter the authoritative full list once.
+  await page.goto(
+    conversationId ? `${inst.feUrl}/dock/inbox?viewMode=advanced` : inst.feUrl,
+    { waitUntil: 'domcontentloaded' },
+  );
 
-  const accept = page.getByTestId('accept-invitation-button').first();
+  const accept = conversationId
+    ? page
+        .locator(
+          `[data-testid="inbox-conversation-row"][data-conversation-id="${conversationId}"]`,
+        )
+        .getByTestId('inbox-accept-invitation-button')
+    : page.getByTestId('accept-invitation-button').first();
   const refresh = page.getByTestId('refresh-conversations-button');
   const deadline = Date.now() + 18_000;
   for (;;) {
@@ -183,11 +201,18 @@ export async function acceptInvitationInUI(inst: InstancePage): Promise<void> {
     }
     await page.waitForTimeout(1_000);
   }
-  // Long-lived instances can hold several pending invitations (earlier runs,
-  // multiple scenarios) — click each visible Accept ONCE so the one under
-  // test is included. Single pass only: a stale invitation whose hub row is
-  // gone keeps its CTA on error, and re-clicking it forever would starve the
-  // test. The caller verifies the real outcome (conversation opens) anyway.
+  if (conversationId) {
+    // This helper owns the UI action only. The caller's next-state assertion
+    // (shared chip, message text, or READY bundle) proves the asynchronous
+    // accept/join/materialize pipeline completed within that scenario's
+    // existing budget.
+    await accept.click();
+    return;
+  }
+
+  // Callers without a known conversation id retain the broad cleanup path:
+  // click each visible Accept once so long-lived instance residue cannot hide
+  // the invitation under test.
   const buttons = page.getByTestId('accept-invitation-button');
   const count = await buttons.count();
   for (let i = count - 1; i >= 0; i--) {

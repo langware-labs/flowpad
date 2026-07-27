@@ -332,6 +332,10 @@ async def _handle_github_disconnect() -> ApiResponse:
         if not user:
             return ApiFailResponse(message="User not found")
         await delete_user_credentials(user, "github_credentials", user.id)
+        from flow_sdk.builtin.capability import restamp_capability_state
+        from flow_sdk.core.capabilities import CapabilityKind
+
+        await restamp_capability_state(CapabilityKind.GITHUB.value)
         return ApiSuccessResponse(
             message="GitHub disconnected",
             data={"remaining_attachment_count": 0},

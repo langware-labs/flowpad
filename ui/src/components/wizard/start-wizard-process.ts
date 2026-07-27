@@ -56,9 +56,8 @@ export async function startWizardProcess<T = unknown>(
   if (!computeNode) throw new Error('No local compute node');
 
   // Prefer a STABLE target (the subject entity's TypeId) so the run is
-  // reconnectable via useProcessesForTarget — that's what lets a button reflect
-  // an in-flight wizard when the user navigates back. Fall back to a unique key
-  // only when the caller gave no subject.
+  // reconnectable via useProcessesForTarget regardless of whether the agent got
+  // around to stamping process_id. Fall back to a unique key when no subject.
   const target = request.wizardData?.targetTypeId?.trim() || `wizard:${request.wizardName}:${Date.now()}`;
   const process = await computeNode.createProcess(
     {

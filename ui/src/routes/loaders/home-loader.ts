@@ -1,6 +1,9 @@
 import { ContextEntitiesEnum, dataContext, initSdk, isHubOnly, TypeId } from '@sdk';
 import { redirect, type LoaderFunctionArgs as LoaderArgs } from 'react-router';
 import { TimeIt } from '@src/utils/timeit';
+import { runLoadRedirects } from './load-redirects';
+// Side-effect import: features register their load-redirect resolvers here.
+import '@src/journey/journey-load-redirect';
 
 /**
  * Ensure compute node is loaded for the current project
@@ -42,6 +45,17 @@ export async function loadHomePage(args: LoaderArgs) {
 
   await ensureComputeNodeLoaded();
   t.time('ensureComputeNode');
+
+  // Feature load-redirects (journey auto-launch et al) — done here, at load
+  // time, so the destination is real URL state (reload/back safe) rather than
+  // a post-render navigation hijack. The loader stays feature-agnostic:
+  // features register resolvers from their own modules.
+  const loadRedirect = await runLoadRedirects(args.request);
+  t.time('loadRedirects');
+  if (loadRedirect) {
+    // eslint-disable-next-line @typescript-eslint/only-throw-error
+    throw loadRedirect;
+  }
 
   t.done(1.2); // warn if total > 1200ms
 

@@ -1,6 +1,6 @@
 /**
  * RCA capture: a restarting worker's startup OSC title (the bare program name
- * `claude`) must NOT overwrite a topic-derived session name.
+ * `claude`) must NOT overwrite a tag-derived session name.
  *
  * Real mechanism end-to-end:
  * - The real TabbedTerminal → TerminalPanel → InteractiveTerminal mount with a
@@ -15,10 +15,11 @@
  *   mirroring tests/react/new-agentic-tab-loader-regression.test.tsx.
  *
  * The bug manifests as a PUT of the AgenticProcess with name='claude'. The
- * control assertion (a topic title MUST still flow into a save) proves the
+ * control assertion (a tag title MUST still flow into a save) proves the
  * delivery pipeline is live, so the 'claude' assertion can't pass vacuously.
  */
 import { render, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import {
@@ -47,10 +48,10 @@ const PROC_ID = '11111111-1111-4111-8111-111111111111';
 const SHELL_ID = '33333333-3333-4333-8333-333333333333';
 const TAB_ID = '40000000-0000-4000-8000-000000000001';
 
-/** The topic-derived name the session already has (what the bug destroys). */
+/** The tag-derived name the session already has (what the bug destroys). */
 const ORIGINAL_NAME = 'Fix expired invitation returning HTTP 500';
-/** A later topic title — the control proving the title pipeline is live. */
-const TOPIC_TITLE = 'Debug undelivered messages in conversation';
+/** A later tag title — the control proving the title pipeline is live. */
+const TAG_TITLE = 'Debug undelivered messages in conversation';
 
 let TabbedTerminalComponent: typeof import('@src/components/terminal/TabbedTerminal').default;
 
@@ -79,12 +80,21 @@ function oscTitle(title: string): string {
   return `\x1b]0;${title}\x07`;
 }
 
+/** The session-less TabbedTerminal body renders ProjectHome, whose favorites
+ *  mini-desktop reads react-query — the real tree gets its client from App.tsx,
+ *  so the harness has to supply one too or the render throws. */
+const testQueryClient = new QueryClient({
+  defaultOptions: { queries: { retry: false } },
+});
+
 function TerminalWorkspace() {
   const TabbedTerminal = TabbedTerminalComponent;
   return (
-    <div style={{ height: 320 }}>
-      <TabbedTerminal className="h-full" />
-    </div>
+    <QueryClientProvider client={testQueryClient}>
+      <div style={{ height: 320 }}>
+        <TabbedTerminal className="h-full" />
+      </div>
+    </QueryClientProvider>
   );
 }
 
@@ -277,7 +287,7 @@ describe('PTY title mirror vs program identity titles', () => {
     await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, null);
   });
 
-  it("does not adopt the worker's startup title 'claude' over a topic-derived name", async () => {
+  it("does not adopt the worker's startup title 'claude' over a tag-derived name", async () => {
     // Seed the tab store with the session's tab (what the route loader's
     // setupTab would have materialized) and navigate straight to it.
     applyAllTabs([new Tab(tabRow())]);
@@ -304,15 +314,15 @@ describe('PTY title mirror vs program identity titles', () => {
     //    title escape, delivered through the production WS ingest seam.
     shell.ptyConnection.routeOutput(btoa(oscTitle('claude')), 1);
 
-    // 2. A conversation later produces a topic title (the control signal).
-    shell.ptyConnection.routeOutput(btoa(oscTitle(TOPIC_TITLE)), 2);
+    // 2. A conversation later produces a tag title (the control signal).
+    shell.ptyConnection.routeOutput(btoa(oscTitle(TAG_TITLE)), 2);
 
     // The control MUST arrive: proves bytes flowed through xterm's parser into
     // the title mirror. Without this, the 'claude' assertion could pass only
     // because nothing was delivered at all. Waits on the Tab set_name mirror —
     // it receives the cleaned title verbatim, so it's a stable signal in both
     // the fixed and unfixed code paths.
-    await waitFor(() => expect(savedTabNames).toContain(TOPIC_TITLE), { timeout: 10000 });
+    await waitFor(() => expect(savedTabNames).toContain(TAG_TITLE), { timeout: 10000 });
 
     // THE BUG: the identity title must never have been persisted. Pre-fix the
     // mirror saves name='claude' (entity PUT + Tab set_name) the moment the

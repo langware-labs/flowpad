@@ -14,9 +14,8 @@ export interface UseCapabilityResult extends CapabilitySnapshot {
   error: unknown;
   activeProcess: AgenticProcess | null | undefined;
   refetch: () => Promise<void>;
-  check: () => Promise<CapabilitySnapshot>;
-  install: () => Promise<CapabilitySnapshot>;
   test: () => Promise<CapabilitySnapshot>;
+  setup: () => Promise<CapabilitySnapshot>;
 }
 
 export function useCapability(kind: string, options: UseCapabilityOptions = {}): UseCapabilityResult {
@@ -63,7 +62,7 @@ export function useCapability(kind: string, options: UseCapabilityOptions = {}):
   });
 
   const run = useCallback(
-    async (operation: 'load' | 'check' | 'install' | 'test') => {
+    async (operation: 'load' | 'test' | 'setup') => {
       setIsLoading(true);
       setError(null);
       try {
@@ -88,8 +87,7 @@ export function useCapability(kind: string, options: UseCapabilityOptions = {}):
     error,
     activeProcess,
     refetch: () => run('load').then(() => undefined),
-    check: () => run('check'),
-    install: () => run('install'),
     test: () => run('test'),
+    setup: () => run('setup'),
   };
 }

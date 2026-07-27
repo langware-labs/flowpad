@@ -10,7 +10,7 @@ The `flow_sdk.fs_store` package provides file-system backed records. There is no
 
 ## Where things are documented now
 
-| Topic | Doc |
+| Subject | Doc |
 |---|---|
 | The record class (`FSRecord`), meta, save/load, index-state (`.hash` sentinel, `index_required`, `orphan`) | [record-model.md](data-management/record-model.md) |
 | Shadow-folder layout (`<records_root>/<type>/<type>-@<id>/`), per-type source mapping | [folder-layout.md](data-management/folder-layout.md) |

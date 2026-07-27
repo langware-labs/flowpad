@@ -1,69 +1,44 @@
-import { AgenticProcess, isWorkerRunning, WorkerStatus, type Task, type WizardData } from '@sdk';
+import { isWorkerRunning, ProcessKind, WorkerStatus, type AgenticProcess, type Task, type WizardData } from '@sdk';
+import { useProcessesForTarget } from '@src/components/entity-execution-panel/hooks/useProcessesForTarget';
 import type { WizardModalAttachment } from '@src/components/wizard/wizard-modal';
-import { useProcessState } from '@src/hooks/use-process-state';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo } from 'react';
 
 const WIZARD_NAME = 'task-analyze';
 
+function workerActive(p: AgenticProcess): boolean {
+  // `workerStatus` (camelCase getter) is the LIVE value; `worker_status` (snake)
+  // is a readonly snapshot that never updates.
+  const ws = p.workerStatus;
+  return ws != null && (isWorkerRunning(ws) || ws === WorkerStatus.INITIALIZING);
+}
+
 /**
- * If a task already has a RUNNING `task-analyze` wizard process, return an adopt
+ * If a RUNNING `task-analyze` wizard exists for this task, return an adopt
  * payload the WizardButton reconnects to (spinner + live tool count, no second
- * run). Returns null when there's no such process — or it has finished — so the
- * button falls back to fresh/idle.
+ * run). Returns null when none is running — so the button falls back to
+ * fresh/idle.
  *
- * The task→process link is `task.process_id` (the analyze agent stamps it as
- * its FIRST action — before the analysis file exists — so we gate on that
- * alone, not on the later `analysis_path`, to catch a still-running analysis).
- * We then confirm the topic via the process's own `context_data.wizard.name`: a
- * non-analyze process that happens to be on the task (a chat/execution that
- * also stamped `process_id`) is NOT adopted — "if its topic is task-analyze,
- * use it; if not, show new".
+ * Keyed on the wizard's TARGET (the task's TypeId, stamped as the process's
+ * `target_typeid_str` at launch), NOT on `task.process_id`: the agent stamps
+ * `process_id` lazily and it can point at a stale prior run, so a target query
+ * is the reliable way to find the *current* run. We then confirm the tag via
+ * `context_data.wizard.name` and require a genuinely-active worker.
  */
 export function useAdoptAnalyzeProcess(task: Task | null): WizardModalAttachment | null {
-  const [process, setProcess] = useState<AgenticProcess | null>(null);
-
-  const processId = task?.process_id ?? undefined;
-
-  useEffect(() => {
-    if (!processId) {
-      setProcess(null);
-      return;
-    }
-    let cancelled = false;
-    let unwatch: (() => Promise<void>) | null = null;
-    void (async () => {
-      try {
-        const p = await AgenticProcess.getByIdWithHistory(processId);
-        if (cancelled || !p) return;
-        const wizard = p.context_data?.wizard as { name?: string } | undefined;
-        if (wizard?.name !== WIZARD_NAME) return; // not the analyze wizard → don't adopt
-        setProcess(p);
-        unwatch = await p.watch();
-      } catch (err) {
-        console.error('[useAdoptAnalyzeProcess] attach failed', err);
-      }
-    })();
-    return () => {
-      cancelled = true;
-      if (unwatch) void unwatch();
-    };
-  }, [processId]);
-
-  // Gate on WORKER status, not process `status`: a wizard whose agent finished
-  // its turn without closing sits at worker COMPLETE while process `status`
-  // lags at RUNNING — adopting that would reconnect to a dead run and spin
-  // forever. Only reflect a genuinely-active worker (mid-turn or starting up).
-  const { workerStatus } = useProcessState(process);
-  const running =
-    !!process && workerStatus != null && (isWorkerRunning(workerStatus) || workerStatus === WorkerStatus.INITIALIZING);
+  const target = task?.typeId?.toString();
+  const { processes } = useProcessesForTarget(target, { processType: ProcessKind.Wizard });
 
   return useMemo<WizardModalAttachment | null>(() => {
-    if (!running || !process) return null;
-    const wizard = process.context_data?.wizard as { data?: WizardData } | undefined;
+    const match = (processes ?? []).find((p) => {
+      const w = p.context_data?.wizard as { name?: string } | undefined;
+      return w?.name === WIZARD_NAME && workerActive(p);
+    });
+    if (!match) return null;
+    const w = match.context_data?.wizard as { data?: WizardData } | undefined;
     return {
-      process,
-      target: process.target_typeid_str ?? `wizard:${WIZARD_NAME}:${process.id}`,
-      request: { wizardName: WIZARD_NAME, wizardData: wizard?.data },
+      process: match,
+      target: match.target_typeid_str ?? String(target ?? ''),
+      request: { wizardName: WIZARD_NAME, wizardData: w?.data },
     };
-  }, [running, process]);
+  }, [processes, target]);
 }

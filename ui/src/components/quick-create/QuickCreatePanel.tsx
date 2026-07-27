@@ -17,9 +17,11 @@ import { useAddContextFolder } from '@src/hooks/use-add-context-folder';
 import type { ContextFolderScope } from '@src/hooks/use-project-context-folders';
 import { notify } from '@src/notifications';
 import { cn } from '@src/lib/utils';
+import { tagAttrs } from '@src/tags/tag-attrs';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { KeyRound, MessageSquarePlus } from 'lucide-react';
 import {
+  Fragment,
   forwardRef,
   useMemo,
   useState,
@@ -100,8 +102,10 @@ const DesktopTile = forwardRef<HTMLButtonElement, DesktopTileProps>(function Des
 });
 
 /** One labelled group of tiles. `headerExtra` sits beside the heading, for a
- *  control that scopes the whole group (the folder sources' private/shared). */
-function TileSection({
+ *  control that scopes the whole group (the folder sources' private/shared).
+ *  Exported so sibling home sections (the harness launcher) share one heading
+ *  style rather than re-deriving it. */
+export function TileSection({
   title,
   headerExtra,
   children,
@@ -135,7 +139,9 @@ function TippedTile({ wikiword, ...tile }: { wikiword: string } & DesktopTilePro
       buttonLabel={t`What is ${tile.label}?`}
       openDelay={TILE_TIP_DELAY}
     >
-      <DesktopTile {...tile} />
+      {/* Every tile is a tag (its wikiword): highlightable by journeys and
+          click-observable on the EventBus, with no per-tile wiring. */}
+      <DesktopTile {...tagAttrs(wikiword, 'button')} {...tile} />
     </WikiTip>
   );
 }
@@ -207,8 +213,13 @@ export function useQuickCreatePick() {
   return { panelProps, dialogs };
 }
 
-/** What the panel needs from its host — everything but the host's own dismiss. */
-export type PanelHandlers = Omit<QuickCreatePanelProps, 'onDone'>;
+/** What the panel needs from its host — everything but the host's own dismiss
+ *  and the display-only `sections` filter. */
+export type PanelHandlers = Omit<QuickCreatePanelProps, 'onDone' | 'sections' | 'extraSessionTiles'>;
+
+/** The tile groups this panel can render, in order. */
+export type QuickCreateSection = 'session' | 'message' | 'asset' | 'folder';
+const ALL_SECTIONS: QuickCreateSection[] = ['session', 'message', 'asset', 'folder'];
 
 export interface QuickCreatePanelProps {
   /** Open the per-type create dialog (name / folder / scope) for an asset type. */
@@ -221,6 +232,29 @@ export interface QuickCreatePanelProps {
   onNewMessage: () => void;
   /** Dismiss the host, if there is one to dismiss. A modal closes; a page no-ops. */
   onDone?: () => void;
+  /**
+   * Which tile groups to render, in this order. Defaults to all four (the "+"
+   * modal). The tabbed ProjectHome splits: `session` renders under its own
+   * tagged wrapper, `asset` + `folder` below the mini-desktop.
+   */
+  sections?: QuickCreateSection[];
+  /**
+   * Host-supplied tiles appended to the `session` group — e.g. ProjectHome's
+   * Terminal opener, whose creation path (and modals) live on the terminal
+   * strip controller rather than in this panel.
+   */
+  extraSessionTiles?: SessionTileDef[];
+}
+
+/** The session-tile shape hosts use for {@link QuickCreatePanelProps.extraSessionTiles}. */
+export interface SessionTileDef {
+  key: string;
+  Icon: TileIcon;
+  label: string;
+  wikiword: string;
+  iconClassName?: string;
+  disabled?: boolean;
+  onClick: () => void;
 }
 
 /**
@@ -233,7 +267,15 @@ export interface QuickCreatePanelProps {
  * that needs a dialog defers to the host, because a tile click dismisses the
  * modal host — and a dialog this panel owned would unmount with it.
  */
-export function QuickCreatePanel({ onPick, onBindSecret, onAddFolder, onNewMessage, onDone }: QuickCreatePanelProps) {
+export function QuickCreatePanel({
+  onPick,
+  onBindSecret,
+  onAddFolder,
+  onNewMessage,
+  extraSessionTiles = [],
+  onDone,
+  sections = ALL_SECTIONS,
+}: QuickCreatePanelProps) {
   const { t } = useLingui();
   // Only `creatable`/`type_name` are read below, both synchronous from the
   // registry — no vaults, so no `/assets/types` request per mount.
@@ -332,25 +374,28 @@ export function QuickCreatePanel({ onPick, onBindSecret, onAddFolder, onNewMessa
     },
   ];
 
-  return (
-    <div className="flex flex-col gap-4 pt-1" data-testid="quick-create-panel">
+  // Keyed by section so `sections` controls both membership AND order — the
+  // group is looked up, not laid out, so the caller's order is what renders.
+  const bySection: Record<QuickCreateSection, ReactNode> = {
+    session: (
       <TileSection title={<Trans>New session</Trans>}>
-        {sessionTiles.map((tile) => (
+        {[...sessionTiles, ...extraSessionTiles].map((tile) => (
           <TippedTile
             key={tile.key}
             wikiword={tile.wikiword}
             label={tile.label}
             Icon={tile.Icon}
             iconClassName={tile.iconClassName}
+            disabled={tile.disabled}
             onClick={tile.onClick}
           />
         ))}
       </TileSection>
-
-      {/* A conversation is a message to a person, not an agent session, and
-          not a file asset — hence its own section and a hardcoded tile (the
-          asset grid is registry types filtered by server `creatable`, and
-          `conversation` is neither). */}
+    ),
+    // A conversation is a message to a person, not an agent session, and not a
+    // file asset — hence its own section and a hardcoded tile (the asset grid is
+    // registry types filtered by server `creatable`, and `conversation` is neither).
+    message: (
       <TileSection title={<Trans>New message</Trans>}>
         <TippedTile
           wikiword={CONVERSATION_WIKI}
@@ -363,7 +408,8 @@ export function QuickCreatePanel({ onPick, onBindSecret, onAddFolder, onNewMessa
           }}
         />
       </TileSection>
-
+    ),
+    asset: (
       <TileSection title={<Trans>New asset</Trans>}>
         {assetItems.map((item) => (
           <TippedTile
@@ -388,7 +434,8 @@ export function QuickCreatePanel({ onPick, onBindSecret, onAddFolder, onNewMessa
           />
         ))}
       </TileSection>
-
+    ),
+    folder: (
       <TileSection
         title={<Trans>New folder</Trans>}
         headerExtra={<ContextFolderScopeChips scope={folderScope} onChange={setFolderScope} />}
@@ -408,6 +455,14 @@ export function QuickCreatePanel({ onPick, onBindSecret, onAddFolder, onNewMessa
           />
         ))}
       </TileSection>
+    ),
+  };
+
+  return (
+    <div className="flex flex-col gap-4 pt-1" data-testid="quick-create-panel">
+      {sections.map((s) => (
+        <Fragment key={s}>{bySection[s]}</Fragment>
+      ))}
     </div>
   );
 }

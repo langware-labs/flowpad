@@ -2,7 +2,7 @@ import { instancePreferences, InstancePreferencesEvent, PrefKey } from '@sdk';
 import { useCallback, useEffect, useSyncExternalStore } from 'react';
 
 /**
- * Read and write a single preference by its dotted topic key.
+ * Read and write a single preference by its dotted tag key.
  *
  * Returns a `[value, setValue]` tuple (useState-like). The value is the stored
  * "data" coerced to its registered dataType; `setValue` schedules a debounced
@@ -37,7 +37,7 @@ const subscribe = (callback: () => void) => {
 
 const getSnapshot = () => instancePreferences.version;
 
-export function usePreference<T = unknown>(topic: PrefKey): [T, (value: T) => void] {
+export function usePreference<T = unknown>(tag: PrefKey): [T, (value: T) => void] {
   useEffect(() => {
     if (!instancePreferences.isLoaded) {
       void instancePreferences.loadJson();
@@ -48,10 +48,10 @@ export function usePreference<T = unknown>(topic: PrefKey): [T, (value: T) => vo
 
   const setValue = useCallback(
     (value: T) => {
-      instancePreferences.set(topic, value);
+      instancePreferences.set(tag, value);
     },
-    [topic],
+    [tag],
   );
 
-  return [instancePreferences.get(topic) as T, setValue];
+  return [instancePreferences.get(tag) as T, setValue];
 }

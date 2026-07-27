@@ -2,6 +2,9 @@
 (auth, entity, worker, process, trace).
 """
 
+# Re-export agent enums
+from flow_sdk.flowpad_types.enums.agent_enums import AgentKind
+
 # Re-export auth enums
 from flow_sdk.flowpad_types.enums.auth_enums import VISITOR_AUTH_ROLE, AuthRole, BuiltInConstant
 
@@ -27,6 +30,8 @@ from flow_sdk.flowpad_types.enums.worker_enums import WorkerCapability, WorkerTa
 
 
 __all__ = [
+    # Agent enums
+    "AgentKind",
     # Auth enums
     "AuthRole",
     "BuiltInConstant",

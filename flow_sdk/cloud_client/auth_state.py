@@ -94,6 +94,11 @@ async def set_connection_status(
         await broadcast(msg.model_dump_json())
     except Exception:
         pass
+    # Unified-bus dual-publish (docs/flow-events.md phase 6): node liveness —
+    # deterministic local-node target, zero DB work (see node_on_tag.py).
+    from flow_sdk.cloud_client.node_on_tag import emit_node_transition
+
+    emit_node_transition(status.value, error)
 
 
 async def invalidate_hub_login(reason: str) -> None:
