@@ -97,28 +97,28 @@ The sender is skipped because the hub's entity-save auto-notify already echoed
 the row to the sender; re-delivering the content would be redundant (and arrives
 without `from_entity`, so it would hit the denied fallback — see §2).
 
-### Status fanout targets / honors the sender
+### Status fanout targets
 
-Two distinct status pushes, with **inverse** sender handling:
+Two distinct status pushes:
 
 1. **`sent` → sender alone.** Because content fanout skipped the sender, the
    sender would never learn its own message advanced `created → sent`. So
    `add_message` pushes `_fanout_status_update(fm, only_user_id=fm.sender_id)`
    (`conversation.py:118-122, 283-299`) to bump that one row.
 
-2. **`delivered` / `received` → everyone, honoring visibility.** When a
-   recipient auto-acks, the resulting status update fans to all participants —
-   but `_fanout_status_update` applies the inverse skip: `skip = fm.sender_id if
-   not self.message_status_visible else None` (`conversation.py:298`). With read
-   receipts OFF the **sender** is the one skipped; with them ON everyone
-   (sender included) sees the tick advance.
+2. **`delivered` / `received` → auto-watch recipients.** A recipient
+   installation emits these acknowledgements only when
+   `preferences.notifications.share_message_status` is enabled. The Hub persists
+   the resulting FlowMessage update, and generic role-based auto-watch routes it
+   once to every live connection that can access the message. Legacy explicit
+   watch mode retains the participant fanout helper.
 
 ```
             sender skipped?   targets
-  CREATE        YES           recipients               (content; sender already has it)
-  sent          —             sender only              (only_user_id)
-  delivered/    iff status    all, or all-but-sender   (visibility-gated inverse skip)
-   received      hidden
+  CREATE        YES           recipients              (content; sender already has it)
+  sent          —             sender only             (only_user_id)
+  delivered/    NO            role-accessible live connections
+   received
 ```
 
 `_fanout_message_delete` (`conversation.py:216-231`) is the deliberate
