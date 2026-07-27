@@ -2393,13 +2393,19 @@ class AgenticProcess(Entity):
         if isinstance(body, ApiFailResponse):
             return body
 
+        # Port is OPTIONAL: an app that we serve has no dev server to point at.
+        # Absent → no Deployment at all, and the display derives `served`. The
+        # continuum has always said both companions are independent; requiring a
+        # port here was the one thing making a served-only app unregistrable.
         raw_port = str(body.get("port") or "").strip()
-        try:
-            port = int(raw_port)
-        except ValueError:
-            return ApiFailResponse(message="port is required", status_code=400)
-        if port <= 0 or port > 65535:
-            return ApiFailResponse(message=f"Invalid port: {raw_port}", status_code=400)
+        port: int | None = None
+        if raw_port:
+            try:
+                port = int(raw_port)
+            except ValueError:
+                return ApiFailResponse(message=f"Invalid port: {raw_port}", status_code=400)
+            if port <= 0 or port > 65535:
+                return ApiFailResponse(message=f"Invalid port: {raw_port}", status_code=400)
 
         raw_path = str(body.get("path") or "").strip()
         if not raw_path:
@@ -2409,7 +2415,7 @@ class AgenticProcess(Entity):
         except Exception:
             artifact_path = raw_path
 
-        name = str(body.get("name") or "").strip() or Path(artifact_path).name or f"Web App {port}"
+        name = str(body.get("name") or "").strip() or Path(artifact_path).name or "Web App"
         start_cmd = str(body.get("start_cmd") or "").strip()
         health = str(body.get("health") or "/").strip() or "/"
         description = str(body.get("description") or "").strip() or f"Web app at {artifact_path}"
@@ -2469,44 +2475,49 @@ class AgenticProcess(Entity):
                 project.artifacts = list(project.artifacts or []) + [artifact.id]
                 await project.save()
 
-        deployment_id = mint_uuid(f"deployment:legacy-artifact:{artifact.id}")
-        deployment = await Deployment.get_by_id(deployment_id)
-        deployment_payload = {
-            "name": f"{name} (local)",
-            "kind": "local.runtime.web",
-            "artifact_id": artifact.id,
-            "artifact_link_source": "manual",
-            "target": {
-                "provider": "local",
-                "scope": project.id if project is not None else "machine",
-                "location": f"http://localhost:{port}",
-            },
-            "resource": {
-                "full_resource_name": f"local://localhost:{port}",
-                "asset_type": "flowpad.local/Process",
-                "provider_uid": str(port),
-            },
-            "status": {
-                "sync_state": "current",
-                "provider_state": "configured",
-                "observed_at": datetime.now(UTC).isoformat(),
-            },
-            "provider_labels": {
-                "flowpad.runtime.port": str(port),
-                "flowpad.runtime.start_cmd": start_cmd,
-                "flowpad.runtime.health": health,
-            },
-            "source_revision": getattr(git_origin, "head_commit", None),
-            "project_id": project.id if project is not None else self.project_id,
-            "parent_type_id": str(project.typeid) if project is not None else None,
-        }
-        if deployment is None:
-            deployment = Deployment(id=deployment_id, **deployment_payload)
-        else:
-            deployment.apply_field_updates(deployment_payload)
-        await deployment.save()
-        if project is not None:
-            await project.attach_child(deployment)
+        # No port → no runtime plane. A served-only app is complete without one,
+        # and inventing a Deployment for a dev server that does not exist would
+        # make `_app_payload` derive `dev` and point the display at nothing.
+        deployment = None
+        if port is not None:
+            deployment_id = mint_uuid(f"deployment:legacy-artifact:{artifact.id}")
+            deployment = await Deployment.get_by_id(deployment_id)
+            deployment_payload = {
+                "name": f"{name} (local)",
+                "kind": "local.runtime.web",
+                "artifact_id": artifact.id,
+                "artifact_link_source": "manual",
+                "target": {
+                    "provider": "local",
+                    "scope": project.id if project is not None else "machine",
+                    "location": f"http://localhost:{port}",
+                },
+                "resource": {
+                    "full_resource_name": f"local://localhost:{port}",
+                    "asset_type": "flowpad.local/Process",
+                    "provider_uid": str(port),
+                },
+                "status": {
+                    "sync_state": "current",
+                    "provider_state": "configured",
+                    "observed_at": datetime.now(UTC).isoformat(),
+                },
+                "provider_labels": {
+                    "flowpad.runtime.port": str(port),
+                    "flowpad.runtime.start_cmd": start_cmd,
+                    "flowpad.runtime.health": health,
+                },
+                "source_revision": getattr(git_origin, "head_commit", None),
+                "project_id": project.id if project is not None else self.project_id,
+                "parent_type_id": str(project.typeid) if project is not None else None,
+            }
+            if deployment is None:
+                deployment = Deployment(id=deployment_id, **deployment_payload)
+            else:
+                deployment.apply_field_updates(deployment_payload)
+            await deployment.save()
+            if project is not None:
+                await project.attach_child(deployment)
 
         micro_app = await self._upsert_webapp_micro_app(
             artifact,
@@ -2531,7 +2542,7 @@ class AgenticProcess(Entity):
         return ApiSuccessResponse(
             data={
                 "artifact": artifact.model_dump(mode="json"),
-                "deployment": deployment.model_dump(mode="json"),
+                "deployment": deployment.model_dump(mode="json") if deployment is not None else None,
                 "micro_app": micro_app.model_dump(mode="json") if micro_app is not None else None,
                 "shown": shown,
             }
@@ -2757,12 +2768,15 @@ class AgenticProcess(Entity):
 
     @action.post(action_name="terminal-input")
     async def _http_terminal_input(self) -> ApiSuccessResponse | ApiFailResponse:
-        """Type a command into the user-visible terminal — ``{command, shell_id?}``.
+        """Run a command in the user-visible terminal and RETURN ITS OUTPUT —
+        ``{command, shell_id?, timeout?}``.
 
-        ``Shell.write`` appends the newline and writes straight to the PTY, so
-        the command appears and runs exactly as if the user had typed it. This
-        is deliberately NOT ``Shell.run``, which is a detached subprocess whose
-        output never reaches the screen.
+        Writes straight to the PTY, so the command appears and runs exactly as
+        if the user had typed it — and reads the result back, so the caller
+        learns what happened. An agent that can type but not read has to guess
+        at its own effects; both halves go through the one PTY the user is
+        watching. This is deliberately NOT ``Shell.run``, which is a detached
+        subprocess whose output never reaches the screen.
         """
         from flow_sdk.builtin.shell import Shell  # noqa: PLC0415
 
@@ -2782,8 +2796,13 @@ class AgenticProcess(Entity):
                 status_code=404,
             )
 
-        await shell.write(command)
-        return ApiSuccessResponse(data={"shell_id": str(shell.id), "command": command})
+        try:
+            timeout = float(body.get("timeout") or 120.0)
+        except (TypeError, ValueError):
+            return ApiFailResponse(message="timeout must be a number", status_code=400)
+
+        result = await shell.run_and_capture(command, timeout=timeout)
+        return ApiSuccessResponse(data={"shell_id": str(shell.id), "command": command, **result})
 
     # ── Wizard completion ───────────────────────────────────────────────────
 

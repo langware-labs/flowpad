@@ -1,12 +1,23 @@
 ---
 id: 65601ecc-75b9-5558-9d00-6773deec7284
 name: web-app-builder
-description: Build and develop full-stack web applications from a tested, copy-as-is
-  template — Next.js 16 + TypeScript + Tailwind v4 + shadcn/ui frontend, FastAPI
-  backend, Supabase Postgres + Drizzle ORM, deployable to Vercel + Supabase, with
-  Claude Code GitHub Action CI. Use this whenever the user wants to create, scaffold,
-  bootstrap, or prototype a web app, website, SaaS, dashboard, CRUD app, admin panel,
-  or anything with a UI plus a database/auth — even if they don't literally say
+# NOTE: folded block scalar (>-), not a plain scalar. A bare "word: word" inside
+# a plain multi-line scalar is a YAML syntax error, and when the frontmatter
+# fails to parse the loader falls back to the H1 title — the skill then appears
+# in the agent's list with NO description and is never routed to.
+description: >-
+  Build and develop web applications from tested, copy-as-is templates.
+  TWO templates ship with this skill and the FIRST step is choosing between them.
+  (1) `template-flowpad/` — a static app on the Flowpad TS SDK, for apps that work
+  with Flowpad's OWN data — tasks, docs, projects, agents, conversations. Anything
+  the user would expect to show up inside Flowpad ("a task manager", "a kanban of
+  my tasks", "a dashboard of my projects", "browse my docs") uses THIS one, so the
+  app reads and writes the same entities Flowpad does instead of a private copy.
+  (2) `template/` — Next.js 16 + TypeScript + Tailwind v4 + shadcn/ui + FastAPI +
+  Supabase Postgres + Drizzle, deployable to Vercel, for apps that own their data
+  and need their own database/auth/signups. Use this skill whenever the user wants
+  to create, scaffold, bootstrap, or prototype a web app, website, SaaS, dashboard,
+  CRUD app, admin panel, or anything with a UI — even if they don't literally say
   "web app", and even (especially) when they phrase it as "build me a website
   using flowpad assistant" — website building belongs to THIS skill, not to the
   flowpad-assistance skill. Slide decks / presentations / pitch decks are NOT
@@ -33,6 +44,32 @@ allowed-tools:
 
 # Web App Builder
 
+## FIRST: which template? (decide before writing anything)
+
+Two templates ship with this skill. Pick by **whose data the app manages** — not
+by how the request is phrased.
+
+| The app works with… | Template | Stack |
+|---|---|---|
+| **Flowpad's own data** — tasks, docs, projects, agents, conversations | **`template-flowpad/`** | static HTML/JS + the Flowpad TS SDK |
+| **Its own** data — needs a database, auth, signups, or a Vercel deploy | `template/` | Next.js + FastAPI + Supabase |
+
+Decide with one question: **would the user expect what they create in this app
+to show up in Flowpad?**
+
+- "a task manager", "a kanban for my tasks", "a dashboard of my projects",
+  "something to browse my docs" → **`template-flowpad/`**. These are views onto
+  data Flowpad already owns. Building them on Supabase creates a second,
+  disconnected copy of the user's tasks — the app looks right and is useless.
+- "a SaaS with user signups", "a landing page with a waitlist", "a booking site
+  for my customers" → `template/`. The data is the app's own and belongs in its
+  own database.
+
+If it is genuinely ambiguous, ask. Read `template-flowpad/README.md` before
+building a Flowpad app; the rest of this file is about `template/`.
+
+---
+
 Build full-stack web applications using the 2026 default stack:
 
 | Layer    | Choice                                      |
@@ -49,6 +86,12 @@ Everything runs **local-first** (no cloud account needed to develop) and deploys
 to Vercel + Supabase without restructuring.
 
 ## Bootstrap — copy as-is, run as-is (non-negotiable)
+
+> **This section is the `template/` (Supabase) path.** If you chose
+> `template-flowpad/` above, stop here and follow
+> `template-flowpad/README.md` instead — it has its own, much shorter
+> bootstrap (`cp -R`, edit three files, `flow app serve`). Everything below
+> about Supabase, Drizzle, and the setup script does not apply to it.
 
 The skill ships a complete, tested template in `template/` next to this file.
 Bootstrapping a new app is a *copy*, not a *generation*:
