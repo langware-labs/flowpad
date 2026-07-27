@@ -1,6 +1,8 @@
 import { MessageSquare } from 'lucide-react';
 import { useLingui } from '@lingui/react/macro';
+import { compactEntityActionClassName } from '@src/components/entity-actions/action-button-styles';
 import { Button } from '@src/components/ui/button';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { ViewMode, useIsVibe } from '@src/contexts/view-mode-context';
 import { isContentAssetDock } from '@src/navigation/content-asset-dock';
 import type { DockPointer } from '@src/navigation/DockPointer';
@@ -22,27 +24,34 @@ export function DiscussInVibeButton({
 }) {
   const { t } = useLingui();
   const label = t`Discuss`;
+  const tooltip = loading
+    ? t`Finishing asset load…`
+    : disabled
+      ? t`Select a project to discuss this file`
+      : label;
+
   return (
-    <Button
-      type="button"
-      variant="outline"
-      size="sm"
-      className="h-7 shrink-0 gap-1.5 rounded-full px-2.5"
-      disabled={disabled}
-      onClick={() => navigation.openDock(dock.withViewMode(ViewMode.Vibe))}
-      aria-label={label}
-      title={
-        loading
-          ? t`Finishing asset load…`
-          : disabled
-            ? t`Select a project to discuss this file`
-            : label
-      }
-      data-testid="asset-discuss-in-vibe"
-    >
-      <MessageSquare className="h-3.5 w-3.5" />
-      <span>{label}</span>
-    </Button>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="inline-flex shrink-0">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className={compactEntityActionClassName}
+            disabled={disabled}
+            onClick={() => navigation.openDock(dock.withViewMode(ViewMode.Vibe))}
+            aria-label={tooltip}
+            data-testid="asset-discuss-in-vibe"
+          >
+            <MessageSquare className="h-3.5 w-3.5" />
+          </Button>
+        </span>
+      </TooltipTrigger>
+      <TooltipContent side="bottom" className="text-xs">
+        {tooltip}
+      </TooltipContent>
+    </Tooltip>
   );
 }
 

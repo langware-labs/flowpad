@@ -1,10 +1,14 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DiscussInVibeButton } from '@src/components/assets/editor/AssetDiscussButton';
+import { TooltipProvider } from '@src/components/ui/tooltip';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { ViewMode } from '@src/contexts/view-mode-context';
 
 afterEach(cleanup);
+
+const renderButton = (node: React.ReactNode) =>
+  render(<TooltipProvider delayDuration={0}>{node}</TooltipProvider>);
 
 describe('DiscussInVibeButton', () => {
   it('navigates exactly once to the same dock with only viewMode changed', () => {
@@ -16,7 +20,7 @@ describe('DiscussInVibeButton', () => {
       .withOption('journeyId', 'journey-1')
       .withOption('sideWindows', 'context,revisions');
 
-    render(
+    renderButton(
       <DiscussInVibeButton
         dock={dock}
         navigation={{ openDock }}
@@ -37,9 +41,24 @@ describe('DiscussInVibeButton', () => {
     });
   });
 
+  it('renders as a compact icon-only action with an accessible tooltip label', () => {
+    renderButton(
+      <DiscussInVibeButton
+        dock={DockPointer.forFile('/project/note.md')}
+        navigation={{ openDock: vi.fn() }}
+      />,
+    );
+
+    const button = screen.getByTestId('asset-discuss-in-vibe');
+    expect(button.getAttribute('aria-label')).toBe('Discuss');
+    expect(button.classList.contains('h-7')).toBe(true);
+    expect(button.classList.contains('w-7')).toBe(true);
+    expect(button.textContent).toBe('');
+  });
+
   it('leaves the projectless seam disabled without navigating', () => {
     const openDock = vi.fn();
-    render(
+    renderButton(
       <DiscussInVibeButton
         dock={DockPointer.forFile('/tmp/note.txt')}
         navigation={{ openDock }}
