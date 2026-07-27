@@ -1,14 +1,19 @@
 import { ContextEntitiesEnum, dataContext, DockPointerData, Shell, ViewType } from '@sdk';
 import { NavigationActions } from '@src/navigation/NavigationActions';
+import { openNewChat } from '@src/navigation/open-new-chat';
+import * as chatMode from '@src/contexts/chat-ui-mode-context';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-describe('NavigationActions.openNewClaudeProcess', () => {
+describe('openNewChat + NavigationActions', () => {
   afterEach(() => {
     NavigationActions.resetPendingNavigationForTests();
     vi.restoreAllMocks();
   });
 
-  it('creates an idle process record without eagerly starting it', async () => {
+  /** The chat mode decides BOTH halves of the launch: transport (only `terminal`
+   *  runs a PTY) and surface. These pin the createProcess args per mode so the
+   *  one chain can't drift back to a hardcoded transport. */
+  function stubComputeNode() {
     const startSpy = vi.fn();
     const createProcessSpy = vi.fn().mockResolvedValue({
       id: 'process-123',
@@ -17,7 +22,6 @@ describe('NavigationActions.openNewClaudeProcess', () => {
       terminalDockPointer: new DockPointerData(ViewType.SHELL, 'agentic_process-process-123'),
       start: startSpy,
     });
-
     vi.spyOn(dataContext, 'getContextEntity').mockImplementation((entityKey) => {
       if (entityKey === ContextEntitiesEnum.CurrentComputeNodeTypeId) {
         return { createProcess: createProcessSpy } as any;
@@ -27,20 +31,54 @@ describe('NavigationActions.openNewClaudeProcess', () => {
       }
       return null;
     });
+    return { createProcessSpy, startSpy };
+  }
 
+  it('launches a terminal chat on a PTY, without eagerly starting it', async () => {
+    const { createProcessSpy, startSpy } = stubComputeNode();
+    vi.spyOn(chatMode, 'getChatMode').mockReturnValue('terminal');
     const navigation = new NavigationActions(vi.fn(), null);
-    const result = await navigation.openNewClaudeProcess();
+    const openShell = vi.spyOn(navigation, 'openShellProcess').mockResolvedValue(null);
+
+    const process = await openNewChat(navigation);
 
     expect(createProcessSpy).toHaveBeenCalledWith(
       { workdir: '/tmp/project' },
-      { watchProcess: false, visible: true },
+      { watchProcess: false, visible: true, pty_mode: true },
     );
     expect(startSpy).not.toHaveBeenCalled();
-    expect(result).toEqual({
-      processId: 'process-123',
-      shellId: null,
-      dockPointer: new DockPointerData(ViewType.SHELL, 'agentic_process-process-123'),
-    });
+    expect(process?.id).toBe('process-123');
+    expect(openShell).toHaveBeenCalledWith('process-123', { chatMode: 'terminal' });
+  });
+
+  it('launches a chat-mode chat headless', async () => {
+    const { createProcessSpy } = stubComputeNode();
+    vi.spyOn(chatMode, 'getChatMode').mockReturnValue('chat');
+    const navigation = new NavigationActions(vi.fn(), null);
+    const openShell = vi.spyOn(navigation, 'openShellProcess').mockResolvedValue(null);
+
+    await openNewChat(navigation);
+
+    expect(createProcessSpy).toHaveBeenCalledWith(
+      { workdir: '/tmp/project', outputFormat: 'stream-json' },
+      { watchProcess: false, visible: false, pty_mode: false },
+    );
+    expect(openShell).toHaveBeenCalledWith('process-123', { chatMode: 'chat' });
+  });
+
+  it('launches a vibe chat headless and carries the vibe view mode', async () => {
+    const { createProcessSpy } = stubComputeNode();
+    vi.spyOn(chatMode, 'getChatMode').mockReturnValue('vibe');
+    const navigation = new NavigationActions(vi.fn(), null);
+    const openShell = vi.spyOn(navigation, 'openShellProcess').mockResolvedValue(null);
+
+    await openNewChat(navigation);
+
+    expect(createProcessSpy).toHaveBeenCalledWith(
+      { workdir: '/tmp/project', outputFormat: 'stream-json' },
+      { watchProcess: false, visible: false, pty_mode: false },
+    );
+    expect(openShell).toHaveBeenCalledWith('process-123', { chatMode: 'vibe', viewMode: 'vibe' });
   });
 
   it('creates a plain shell without eagerly starting it', async () => {

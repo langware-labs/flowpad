@@ -37,6 +37,7 @@ import { useResumeInTerminal } from '@src/hooks/use-resume-in-terminal';
 import { notify } from '@src/notifications';
 import { PROVIDER_META } from '@src/tabs/provider-meta';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { openNewChat } from '@src/navigation/open-new-chat';
 import { Cloud, Container, History, SquareTerminal } from 'lucide-react';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import React, { useCallback, useMemo, useRef, useState } from 'react';
@@ -159,18 +160,18 @@ export function useTerminalStripController({
         // Capability API unavailable (older backend) — don't block tab creation.
       }
       const launchProjectId = launch?.projectId ?? spawnProjectId;
-      const result = await navigation.openNewClaudeProcess({
+      // openNewChat creates AND navigates — it owns the chat-mode propagation,
+      // so a second openShellProcess here would re-navigate the same dock
+      // without `?chatMode` and strip the mode back off the URL.
+      const process = await openNewChat(navigation, {
         ...(launchProjectId ? { projectId: launchProjectId } : {}),
         ...(launch?.cwd ? { cwd: launch.cwd } : {}),
         ...(workerType ? { workerType } : {}),
       });
-      if (!result) {
+      if (!process) {
         clearPending();
         return;
       }
-      // URL-first: navigate to the new process's terminal; the loader materializes
-      // its Tab and the strip/body re-render from the one source.
-      await navigation.openShellProcess(result.processId);
       clearPending();
     },
     [askInstallOneOf, clearPending, navigation, spawnProjectId],
