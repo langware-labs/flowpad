@@ -175,6 +175,7 @@ export class NavigationActions {
     this.updateLiveUrlParams((params) => params.set(HIGHLIGHT_PARAM, wikiword));
   }
 
+
   /**
    * Navigate to the app home root `/`, optionally with `?highlight=`, CARRYING
    * the sticky URL options (journeyId) from the live URL — the home root is not
@@ -571,7 +572,7 @@ export class NavigationActions {
 
   async openShell(
     shellId: string,
-    options?: { cwd?: string; startCommand?: string; skipPermissions?: boolean },
+    options?: { cwd?: string; startCommand?: string; skipPermissions?: boolean; viewMode?: string },
   ): Promise<Shell | null> {
     const extraOptions = toStringRecord(options);
     const shell = Shell.getByIdFromCache(shellId) ?? (await Shell.getById(shellId));
@@ -662,6 +663,8 @@ export class NavigationActions {
     computeNode?: ComputeNode;
     skipNavigate?: boolean;
     projectId?: string;
+    /** Open the terminal in this view mode (`vibe` keeps a journey in its skin). */
+    viewMode?: string;
   }): Promise<{ shellId: string } | null> {
     try {
       const cn = options?.computeNode ?? dataContext.computeNode;
