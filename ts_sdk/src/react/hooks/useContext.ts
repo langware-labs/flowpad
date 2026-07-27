@@ -79,6 +79,7 @@ export function useContext() {
     activeTerminalTargetTypeId: typeof dataContext.activeTerminalTargetTypeId;
     workdir: typeof dataContext.workdir;
     snifferEnabled: typeof dataContext.snifferEnabled;
+    snifferInstalled: typeof dataContext.snifferInstalled;
     isConnected: typeof dataContext.isConnected;
   }>({
     user: dataContext.user,
@@ -117,6 +118,7 @@ export function useContext() {
     activeTerminalTargetTypeId: dataContext.activeTerminalTargetTypeId,
     workdir: dataContext.workdir,
     snifferEnabled: dataContext.snifferEnabled,
+    snifferInstalled: dataContext.snifferInstalled,
     isConnected: dataContext.isConnected,
   });
 
@@ -165,6 +167,7 @@ export function useContext() {
       activeTerminalTargetTypeId: dataContext.activeTerminalTargetTypeId,
       workdir: dataContext.workdir,
       snifferEnabled: dataContext.snifferEnabled,
+      snifferInstalled: dataContext.snifferInstalled,
       isConnected: dataContext.isConnected,
     };
 
@@ -213,6 +216,7 @@ export function useContext() {
       typeIdChanged(prev.activeTerminalTargetTypeId, current.activeTerminalTargetTypeId) ||
       prev.workdir !== current.workdir ||
       prev.snifferEnabled !== current.snifferEnabled ||
+      prev.snifferInstalled !== current.snifferInstalled ||
       prev.isConnected !== current.isConnected
     ) {
       snapshotRef.current = current;

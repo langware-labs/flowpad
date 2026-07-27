@@ -82,6 +82,10 @@ _WRAPPED_URL_RE = re.compile(r"(https://\S+)((?:\n[A-Za-z0-9%&=+_.~/:?\-]+(?=\n|
 # plaintext storage is the only option and "yes" is what the user would say.
 AUTO_ANSWERS: list[tuple["re.Pattern[str]", str]] = [
     (re.compile(r"Store token in plaintext config file\? \(y/N\)"), "y\r"),
+    # gh auth login --web pauses on Enter before trying to open the browser.
+    # The device URL + code are already printed (and scraped) by then; a failed
+    # browser-open on a headless host is harmless.
+    (re.compile(r"Press Enter to open .* in your browser"), "\r"),
 ]
 
 

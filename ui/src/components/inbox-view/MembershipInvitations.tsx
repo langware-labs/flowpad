@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Invitation,
   QueryRequest,
@@ -31,7 +31,17 @@ function isExpired(inv: Invitation): boolean {
   return !Number.isNaN(at.getTime()) && at.getTime() < Date.now();
 }
 
-export function MembershipInvitations({ recipientEmail }: { recipientEmail: string | null }) {
+export function MembershipInvitations({
+  recipientEmail,
+  onPendingCount,
+}: {
+  recipientEmail: string | null;
+  /** Reports the rendered pending count so the parent's empty-state logic can
+   *  account for these rows (a membership-only inbox must not also say
+   *  "No unread conversations"). Rendering only — the numeric unread badge is
+   *  backend-owned (InboxManager.unread) and never derived from this list. */
+  onPendingCount?: (count: number) => void;
+}) {
   const request = useMemo(() => new QueryRequest({ type: Invitation.type, query: {} }), []);
   const { data: invitations = [], refetch } = useEntitiesQuery<Invitation>(request);
 
@@ -49,6 +59,10 @@ export function MembershipInvitations({ recipientEmail }: { recipientEmail: stri
       return true;
     });
   }, [invitations, recipientEmail]);
+
+  useEffect(() => {
+    onPendingCount?.(pending.length);
+  }, [pending.length, onPendingCount]);
 
   if (pending.length === 0) return null;
 

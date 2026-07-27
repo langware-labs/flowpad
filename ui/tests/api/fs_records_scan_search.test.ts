@@ -29,6 +29,20 @@ const signupInfo = getTestSignupInfo();
 /** Base URL for fs-records actions on the @local compute node. */
 const CN_FS_BASE = `${GRAPH_API_PREFIX}/${ComputeNode.type}/@local/fs-records`;
 
+/** Build a scan/index URL scoped to user records rather than every known project. */
+function scopedFsRecordsUrl(
+  action: 'scan' | 'index',
+  params: Record<string, string | number> = {},
+): string {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    query.set(key, String(value));
+  }
+  query.set('user', 'true');
+  query.set('projects', '');
+  return `${CN_FS_BASE}/${action}?${query.toString()}`;
+}
+
 /**
  * Unwrap the data payload from an ApiSuccessResponse.
  * apiClient may return the wrapped `{ status, data }` shape or pre-unwrapped data.
@@ -71,12 +85,8 @@ describe('fs-records scan', () => {
   });
 
   it('GET /fs-records/scan returns aggregate stats', async () => {
-    // user-only scope keeps the walk bounded to USER_HOME expanders (Claude/Codex
-    // session + plan metadata) on machines with many discovered project cwds.
-    // Omitting the scope filter is now explicit "all known projects" via
-    // get_all_scope_filter() and recursively walks every project tree.
     const response = await apiClient.get<unknown>(
-      `${CN_FS_BASE}/scan?limit_types=5&user=true&projects=`,
+      scopedFsRecordsUrl('scan', { limit_types: 5 }),
     );
     const data = unwrapData(response);
     expect(data).toHaveProperty('types');
@@ -86,9 +96,10 @@ describe('fs-records scan', () => {
   });
 
   it('GET /fs-records/scan?type=skill discovers skills', async () => {
-    // Scan discovers skills from ~/.claude/skills and cwd/.claude/skills directories,
-    // NOT from the records root where CRUD-created records are stored.
-    const response = await apiClient.get<unknown>(`${CN_FS_BASE}/scan?type=skill`);
+    // Seed the user scope through the public API rather than depending on
+    // whatever skills happen to exist on the developer's machine.
+    await createSkill(`Scan Skill ${Date.now()}`, 'scoped scan test');
+    const response = await apiClient.get<unknown>(scopedFsRecordsUrl('scan', { type: 'skill' }));
     const data = unwrapData(response);
 
     expect(data.type).toBe('skill');
@@ -104,7 +115,7 @@ describe('fs-records scan', () => {
 
   it('GET /fs-records/scan?type=skill includes byte stats', async () => {
     await createSkill('Byte Stats Skill', 'byte stats test');
-    const response = await apiClient.get<unknown>(`${CN_FS_BASE}/scan?type=skill`);
+    const response = await apiClient.get<unknown>(scopedFsRecordsUrl('scan', { type: 'skill' }));
     const data = unwrapData(response);
     expect(data).toHaveProperty('min_bytes');
     expect(data).toHaveProperty('max_bytes');
@@ -114,7 +125,9 @@ describe('fs-records scan', () => {
 
   it('GET /fs-records/scan?type=unknown returns 400', async () => {
     try {
-      await apiClient.get<unknown>(`${CN_FS_BASE}/scan?type=no_such_type_xyz`);
+      await apiClient.get<unknown>(
+        scopedFsRecordsUrl('scan', { type: 'no_such_type_xyz' }),
+      );
       // If no exception thrown, the response may contain an error code
       // Accept either: thrown or status FAIL
     } catch {
@@ -133,7 +146,10 @@ describe('fs-records index', () => {
   });
 
   it('POST /fs-records/index?type=skill returns valid response shape', async () => {
-    const response = await apiClient.post<unknown>(`${CN_FS_BASE}/index?type=skill`, {});
+    const response = await apiClient.post<unknown>(
+      scopedFsRecordsUrl('index', { type: 'skill' }),
+      {},
+    );
     const data = unwrapData(response);
     expect(data).toHaveProperty('type');
     expect(data.type).toBe('skill');
@@ -145,9 +161,12 @@ describe('fs-records index', () => {
   });
 
   it('POST /fs-records/index?type=skill processes discovered skills', async () => {
-    // Index discovers skills from ~/.claude/skills directories (not from CRUD-created records).
+    await createSkill(`Index Skill ${Date.now()}`, 'scoped index test');
     // Some skills may fail sync_to_db, so we check indexed + errors >= discovered count.
-    const response = await apiClient.post<unknown>(`${CN_FS_BASE}/index?type=skill`, {});
+    const response = await apiClient.post<unknown>(
+      scopedFsRecordsUrl('index', { type: 'skill' }),
+      {},
+    );
     const data = unwrapData(response);
     expect(data.type).toBe('skill');
     const total = Number(data.indexed) + Number(data.errors);
@@ -155,8 +174,12 @@ describe('fs-records index', () => {
   });
 
   it('POST /fs-records/index (all types) returns total and types array', async () => {
-    // Use limit_per_type=2&limit_types=3 so this test completes quickly on machines with large datasets.
-    const response = await apiClient.post<unknown>(`${CN_FS_BASE}/index?limit_per_type=2&limit_types=3`, {});
+    // Exercise the aggregate path with one bounded type/record. The per-type
+    // cases above cover skill indexing in depth.
+    const response = await apiClient.post<unknown>(
+      scopedFsRecordsUrl('index', { limit_per_type: 1, limit_types: 1 }),
+      {},
+    );
     const data = unwrapData(response);
     expect(data).toHaveProperty('indexed');
     expect(data).toHaveProperty('types');
@@ -185,7 +208,7 @@ describe('fs-records search', () => {
   it('GET /fs-records/search?record_type=skill lists skills without query (browse mode)', async () => {
     // Browse mode returns skills that have been indexed into the DB.
     // First index skills so browse has data to return.
-    await apiClient.post<unknown>(`${CN_FS_BASE}/index?type=skill`, {});
+    await apiClient.post<unknown>(scopedFsRecordsUrl('index', { type: 'skill' }), {});
 
     const response = await apiClient.get<unknown>(`${CN_FS_BASE}/search?record_type=skill`);
     const data = unwrapData(response);
@@ -218,19 +241,22 @@ describe('fs-records full cycle: scan → index → search', () => {
   /**
    * Full cycle: scan discovers skills from .claude/skills dirs, index syncs them to DB,
    * and search finds them via FTS.
-   *
-   * Note: CRUD-created skills (via POST /fs-records/skill) are stored in the records root,
-   * NOT in .claude/skills, so they won't appear in scan/index. This test uses pre-existing
-   * skills from the .claude/skills directories.
    */
   it('scan discovers skills → index → search finds indexed skills', async () => {
+    await createSkill(`Full Cycle Skill ${Date.now()}`, 'scoped full-cycle test');
+
     // 1. Scan: skills should be discoverable from .claude/skills dirs
-    const scanResp = await apiClient.get<unknown>(`${CN_FS_BASE}/scan?type=skill`);
+    const scanResp = await apiClient.get<unknown>(
+      scopedFsRecordsUrl('scan', { type: 'skill' }),
+    );
     const scanData = unwrapData(scanResp);
     expect(Number(scanData.count)).toBeGreaterThanOrEqual(1);
 
     // 2. Index: POST /fs-records/index?type=skill
-    const indexResp = await apiClient.post<unknown>(`${CN_FS_BASE}/index?type=skill`, {});
+    const indexResp = await apiClient.post<unknown>(
+      scopedFsRecordsUrl('index', { type: 'skill' }),
+      {},
+    );
     const indexData = unwrapData(indexResp);
     // Some or all skills may error during sync_to_db; verify the response shape
     const totalProcessed = Number(indexData.indexed) + Number(indexData.errors);
@@ -249,7 +275,7 @@ describe('fs-records full cycle: scan → index → search', () => {
   });
 
   it('after indexing, search with record_type filter returns only matching type', async () => {
-    await apiClient.post<unknown>(`${CN_FS_BASE}/index?type=skill`, {});
+    await apiClient.post<unknown>(scopedFsRecordsUrl('index', { type: 'skill' }), {});
 
     const response = await apiClient.get<unknown>(
       `${CN_FS_BASE}/search?record_type=skill`,
@@ -264,7 +290,7 @@ describe('fs-records full cycle: scan → index → search', () => {
 
   it('search response has correct shape for useRecordSearch hook', async () => {
     // Verify the exact shape that useRecordSearch.ts expects from the API
-    await apiClient.post<unknown>(`${CN_FS_BASE}/index?type=skill`, {});
+    await apiClient.post<unknown>(scopedFsRecordsUrl('index', { type: 'skill' }), {});
 
     const response = await apiClient.get<unknown>(`${CN_FS_BASE}/search?record_type=skill`);
     const data = unwrapData(response);

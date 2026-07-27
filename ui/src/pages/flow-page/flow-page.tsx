@@ -63,11 +63,11 @@ export default function FlowPage() {
   const hubMode = currentDock?.page === PageId.HUB;
 
   // Vibe mode: a stripped Lovable-style skin that still carries the left rail in
-  // its already-reserved footprint. CollapsedSidebar renders a minimal rail in
-  // Vibe — top navigation (back/refresh) + a Home button, and the shared bottom
-  // cluster (search / assistant / theme / user login) — with the middle nav
-  // (Chats, Inbox, Assets, …) dropped. Same width as Standard/Advanced, so the
-  // content column and footer controls don't shift when the view mode changes.
+  // its already-reserved footprint. What the rail shows in Vibe is NOT decided
+  // here — it comes from RAIL_ITEMS (components/collapsed-sidebar/rail-visibility.ts),
+  // the single ordered spec every mode resolves against. The rail's width is the
+  // same in every mode, so the content column and footer controls don't shift
+  // when the view mode changes.
   if (isVibe && !hubMode) {
     return (
       <SidebarProvider defaultOpen={false} className="h-full !min-h-0">

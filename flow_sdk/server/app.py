@@ -55,8 +55,10 @@ from flow_sdk.server import FlowServer
 
 from .routes import (
     agent_records_router,
+    agentic_flows_router,
     assets_router,
     auth_router,
+    capabilities_router,
     chat_router,
     cloud_router,
     compute_register_router,
@@ -66,19 +68,20 @@ from .routes import (
     directory_router,
     docs_graph_router,
     favorites_router,
+    git_router,
     hooks_router,
+    journeys_router,
     markdown_index_router,
-    capabilities_router,
     navigate_router,
-    project_router,
     privacy_router,
+    project_router,
     pty_stream_router,
     search_router,
     semantic_checker_router,
+    subgraph_router,
+    tags_router,
     testing_router,
     toplog_router,
-    agentic_flows_router,
-    journeys_router,
     transcripts_router,
     ui_router,
     version_router,
@@ -91,11 +94,13 @@ from .routes import (
 
 async def _on_server_startup():
     """Write server.json for discovery by hooks/CLI and start cron scheduler."""
+    from flow_sdk.builtin.process_lifecycle import clear_backend_restart_request
     from flow_sdk.config import set_server_info
     from flow_sdk.db.drivers.sqlite.connection import get_database_path
     from flow_sdk.instance_settings import get_instance_settings
 
     settings = get_instance_settings()
+    clear_backend_restart_request()
     print(f"  Database path: {get_database_path()}")
 
     # Development: mirror all logs to a file on disk in addition to the
@@ -135,6 +140,17 @@ async def _on_server_startup():
         await Capability.ensure_seeded()
     except Exception as _e:  # noqa: BLE001
         print(f"  Capability seed: failed ({_e})")
+
+    # Seed the shipped tag vocabulary as system Tag entities (the taxonomy
+    # catalog IS the entities — no separate registry). Idempotent: uuid5 ids
+    # converge on re-runs; user tags are never touched.
+    try:
+        from flow_sdk.builtin.tag import seed_system_tags
+
+        _tag_rows = await seed_system_tags()
+        print(f"  Tag seed: {_tag_rows} row(s) written")
+    except Exception as _e:  # noqa: BLE001
+        print(f"  Tag seed: failed ({_e})")
 
     # Discover capability values in the background (every restart). The env
     # probe runs in a separate subprocess with a hard cap — nothing blocks
@@ -197,14 +213,14 @@ async def _on_server_startup():
     except Exception as e:
         print(f"  Cron scheduler: failed to start ({e})")
 
-    # Arm backend→app topic forwarding (unified event bus — docs/flow-events.md).
+    # Arm backend→app tag forwarding (unified event bus — docs/flow-events.md).
     try:
-        from flow_sdk.topics.ws_forward import start_topic_forwarding
+        from flow_sdk.tags.ws_forward import start_tag_forwarding
 
-        start_topic_forwarding()
-        print("  Topic forwarding: armed")
+        start_tag_forwarding()
+        print("  Tag forwarding: armed")
     except Exception as _e:  # noqa: BLE001
-        print(f"  Topic forwarding: failed to arm ({_e})")
+        print(f"  Tag forwarding: failed to arm ({_e})")
 
     # Warm schema cache in background so first bootstrap call is fast
     import asyncio as _asyncio
@@ -267,7 +283,7 @@ async def _seed_service_triggers() -> None:
 
             await set_service_flows()
         except Exception:
-            service_log.exception("set_service_flows failed")
+            logging.getLogger(__name__).exception("set_service_flows failed")
         print("  System triggers: upserted")
     except Exception:
         logging.getLogger(__name__).exception("System triggers: failed to seed")
@@ -279,6 +295,14 @@ async def _start_fsop_watcher() -> None:
         from flow_sdk.server.fsop_watcher import fsop_watcher
 
         await fsop_watcher.start()
+        # Arm TAG triggers (unified-bus subscriptions — flow-events phase 4).
+        from flow_sdk.builtin.tag_triggers import start_tag_triggers
+
+        await start_tag_triggers()
+        # Arm graph-level flow subscriptions (flow-events phase 5).
+        from flow_sdk.flow_manager import get_flow_manager
+
+        await get_flow_manager().arm_all_flow_subscriptions()
         print(f"  FSOp watcher: started ({len(fsop_watcher)} trigger(s))")
     except Exception:
         logging.getLogger(__name__).exception("FSOp watcher: failed to start")
@@ -515,6 +539,8 @@ server.add_router(assets_router)
 server.add_router(project_router, prefix="/api/v1")
 server.add_router(compute_register_router)
 server.add_router(debug_router)
+server.add_router(tags_router)
+server.add_router(subgraph_router)
 server.add_router(navigate_router)
 server.add_router(agent_records_router)
 server.add_router(transcripts_router)
@@ -529,6 +555,7 @@ server.add_router(capabilities_router)
 server.add_router(toplog_router)
 server.add_router(agentic_flows_router)
 server.add_router(journeys_router)
+server.add_router(git_router)
 server.add_router(worldview_router)
 
 server.on_startup(_on_server_startup)

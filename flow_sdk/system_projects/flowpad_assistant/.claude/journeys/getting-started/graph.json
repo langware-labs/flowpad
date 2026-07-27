@@ -4,28 +4,24 @@
   "name": "Getting started",
   "description": "Build your first vibe agent: a shopping master that finds the best deals \u2014 created, instructed, and put to work, step by step.",
   "enabled": true,
-  "auto_launch": true,
+  "auto_launch": false,
   "config": {
     "deadline_s": 2592000,
     "retention_runs": 3
   },
   "nodes": [
     {
-      "id": "step1",
+      "id": "step0",
       "node_type": "guided_step",
-      "name": "Open your project home",
+      "name": "Open your project page",
       "node_data": {
-        "status_line": "Click the highlighted Project home entry.",
+        "status_line": "Click your highlighted project name in the footer to open its page.",
         "present": {
-          "dock": {
-            "kind": "asset_list",
-            "name": "agent"
-          },
-          "highlight": "ProjectHome"
+          "highlight": "ProjectPage"
         },
         "await": {
-          "topic": "app.route.loaded",
-          "target": "dock:assets/project-home"
+          "tag": "app.ui.button.clicked",
+          "target": "ProjectPage"
         }
       }
     },
@@ -37,13 +33,10 @@
         "group": "Create your vibe agent",
         "status_line": "Click the highlighted Sub agent tile and name it \"shopping-master\".",
         "present": {
-          "dock": {
-            "kind": "home"
-          },
           "highlight": "Sub agents"
         },
         "await": {
-          "topic": "app.ui.button.clicked",
+          "tag": "app.ui.button.clicked",
           "target": "Sub agents"
         }
       }
@@ -54,31 +47,36 @@
       "name": "Write the instructions",
       "node_data": {
         "group": "Create your vibe agent",
-        "status_line": "Write: \"You are shopping master, find the best deal, always show product name and price\" \u2014 then click the Use agent button.",
+        "status_line": "Click \"Fill text\" to write the instructions, then Next.",
         "present": {
-          "highlight": "UseAgent"
+          "highlight": "AgentInstructions"
         },
         "await": {
-          "topic": "app.ui.button.clicked",
-          "target": "UseAgent"
+          "tag": "app.journey.act.done",
+          "target": "fill:AgentInstructions",
+          "manual": true
+        },
+        "act": {
+          "kind": "fill",
+          "target": "AgentInstructions",
+          "text": "You are shopping master, find the best deal, always show product name and price"
         }
       }
     },
     {
-      "id": "step4",
+      "id": "step3b",
       "node_type": "guided_step",
       "name": "Use your agent",
       "node_data": {
-        "group": "Use your vibe agent",
-        "status_line": "Your agent is loading into a live vibe process\u2026",
-        "present": {},
+        "status_line": "Click the highlighted Use agent button \u2014 it loads your agent into a live vibe workspace.",
+        "present": {
+          "highlight": "UseAgent"
+        },
         "await": {
-          "topic": "app.entity.created",
-          "target": "agentic_process:*",
-          "matchEvent": {
-            "process_type": "chat"
-          }
-        }
+          "tag": "app.ui.button.clicked",
+          "target": "UseAgent"
+        },
+        "group": "Use your vibe agent"
       }
     },
     {
@@ -90,38 +88,20 @@
         "status_line": "Ask your shopping master to search for a smartphone.",
         "present": {},
         "await": {
-          "topic": "app.entity.updated",
+          "tag": "app.entity.updated",
           "target": "agentic_process:*",
           "matchEvent": {
             "status": "running"
           }
         }
       }
-    },
-    {
-      "id": "congrats",
-      "node_type": "guided_step",
-      "name": "You're all set",
-      "node_data": {
-        "status_line": "That's it \u2014 you're ready to go! \ud83c\udf89",
-        "present": {
-          "dock": {
-            "kind": "asset_editor",
-            "vfs": "congrats.html"
-          }
-        },
-        "await": {
-          "topic": "app.page.signal",
-          "target": "finish"
-        }
-      }
     }
   ],
   "edges": [
     {
-      "id": "e1",
+      "id": "e0",
       "from": {
-        "node": "step1",
+        "node": "step0",
         "event": "done"
       },
       "to": {
@@ -145,28 +125,21 @@
         "event": "done"
       },
       "to": {
-        "node": "step4"
+        "node": "step3b"
       }
     },
     {
-      "id": "e4",
+      "id": "e3b5",
       "from": {
-        "node": "step4",
+        "node": "step3b",
         "event": "done"
       },
       "to": {
         "node": "step5"
       }
-    },
-    {
-      "id": "e5",
-      "from": {
-        "node": "step5",
-        "event": "done"
-      },
-      "to": {
-        "node": "congrats"
-      }
     }
-  ]
+  ],
+  "start": {
+    "kind": "root"
+  }
 }

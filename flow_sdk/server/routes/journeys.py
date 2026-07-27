@@ -98,6 +98,8 @@ async def launch(journey_id: str):
         return ApiFailResponse(message=f"Unknown journey: {journey_id}")
     journal = await journey.launch(await _acting_user_id())
     if journal is None:
+        if not await journey.gate_open():
+            return ApiFailResponse(message="Nothing to set up — this journey's capabilities are already available.")
         return ApiFailResponse(message="journey has no guided_step nodes")
     return ApiSuccessResponse(data=_dump(journal))
 
@@ -109,6 +111,8 @@ async def restart(journey_id: str):
         return ApiFailResponse(message=f"Unknown journey: {journey_id}")
     journal = await journey.restart(await _acting_user_id())
     if journal is None:
+        if not await journey.gate_open():
+            return ApiFailResponse(message="Nothing to set up — this journey's capabilities are already available.")
         return ApiFailResponse(message="journey has no guided_step nodes")
     return ApiSuccessResponse(data=_dump(journal))
 

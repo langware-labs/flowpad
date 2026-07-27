@@ -7,10 +7,19 @@ import pytest
 from flow_sdk.compute.providers.desktop.provider import (
     LocalComputeProvider,
     _build_interactive_pty_env,
+    _pty_return_code,
 )
 
 # Import types from the flow-sdk
 from flow_sdk.flowpad_types import ExecutionEnvironmentStatus, RuntimeEnvironment
+
+
+def test_pty_return_code_preserves_signal_termination():
+    class SignaledProcess:
+        exitstatus = None
+        signalstatus = 15
+
+    assert _pty_return_code(SignaledProcess()) == -15
 
 
 @pytest.fixture

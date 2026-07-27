@@ -24,6 +24,7 @@ import asyncio
 import functools
 import json
 import logging
+import ntpath
 import os
 import platform
 import shutil
@@ -60,6 +61,7 @@ from flow_sdk.external_apis.llm.llm_drivers.definitions import LLMProvider
 from flow_sdk.flowpad_types.runtime_environment import OSType, RuntimeEnvironment
 from flow_sdk.models import AppPaths, BootstrapInfo, EnvInfo, LmInfo
 from flow_sdk.models.responses import ApiSuccessResponse
+from flow_sdk.preferences import DEFAULT_SHARE_MESSAGE_STATUS, PREF_SHARE_MESSAGE_STATUS
 
 router = APIRouter()
 
@@ -1165,23 +1167,95 @@ async def _ensure_system_projects(desktop_user: Optional[Entity] = None) -> list
     return ensured
 
 
-async def _reap_agent_mount_root_projects() -> None:
-    """Delete any stale Project entity minted for the agent mount ROOT
-    (``~/Flowpad workspace``) before ``recover_by_path`` was gated.
+async def _reap_protected_path_projects() -> None:
+    """Remove stale protected-path Project rows and exact Project shadows.
 
-    The mount root is infrastructure (where agentic processes run), never a
-    user project — a legacy find-or-create left a "Flowpad workspace" Project
-    row behind. Scanning ``Project.get_all()`` with ``is_agent_mount_root``
-    catches both canonical roots the predicate covers. Idempotent: a no-op once
-    the row is gone.
+    Source content and relationship targets are deliberately untouched:
+    ``Project.destroy`` / ``FSRecord.destroy`` cascade through entity children,
+    while project delete-with-children can remove source folders.
     """
-    from flow_sdk.config import is_agent_mount_root  # noqa: PLC0415
+    from flow_sdk.builtin.tab import delete_tabs_for_missing_project  # noqa: PLC0415
+    from flow_sdk.core.cache.entity_cache import uname_cache  # noqa: PLC0415
+    from flow_sdk.db import get_db_driver  # noqa: PLC0415
+    from flow_sdk.fs_store.indexer.roots import _CWD_PID_CACHE  # noqa: PLC0415
+    from flow_sdk.fs_store.operations.all_projects import (  # noqa: PLC0415
+        invalidate_projects_cache,
+    )
+    from flow_sdk.fs_store.path_utils import is_protected_path  # noqa: PLC0415
+    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
 
-    for proj in await Project.get_all():
-        mp = getattr(proj, "fs_storage_mount_path", None)
-        if mp and is_agent_mount_root(mp):
-            await proj.destroy()
-            logging.info(f"[bootstrap] Reaped stale agent-mount-root project {proj.id}")
+    settings = get_instance_settings()
+    project_shadows = settings.records_root / "project"
+    projects = await Project.get_all()
+    rows_by_id = {str(project.id): project for project in projects}
+    protected_row_ids = {
+        str(project.id)
+        for project in projects
+        if project.fs_storage_mount_path and project.protected_path
+    }
+
+    # Orphan shadows are independent evidence: their DB row may already be
+    # gone, but protected-path metadata must not survive to be re-adopted.
+    shadow_by_id: dict[str, Path] = {}
+    protected_shadow_ids: set[str] = set()
+    if project_shadows.is_dir():
+        for shadow in project_shadows.iterdir():
+            metadata = shadow / "metadata.json"
+            if not shadow.is_dir() or not metadata.is_file():
+                continue
+            try:
+                data = json.loads(metadata.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            project_id = str(data.get("id") or shadow.name)
+            mount = (
+                data.get("fs_storage_mount_path")
+                or data.get("cwd")
+                or data.get("real_path")
+            )
+            name = data.get("name")
+            if not mount and isinstance(name, str) and (
+                os.path.isabs(name) or ntpath.isabs(name)
+            ):
+                mount = name
+            if mount and is_protected_path(mount):
+                protected_shadow_ids.add(project_id)
+                shadow_by_id[project_id] = shadow
+
+    protected_ids = protected_row_ids | protected_shadow_ids
+    if not protected_ids:
+        return
+
+    driver = get_db_driver()
+    for project_id in sorted(protected_ids):
+        project = rows_by_id.get(project_id)
+        if project_id in protected_row_ids and project is not None:
+            if hasattr(driver, "fts_delete"):
+                await driver.fts_delete(project_id)
+            if project.uname:
+                uname_cache.invalidate("project", project.uname)
+            await Project.delete_by_id(project_id)
+
+        shadow = shadow_by_id.get(project_id) or project_shadows / project_id
+        try:
+            if shadow.parent.resolve() == project_shadows.resolve():
+                shutil.rmtree(shadow)
+        except FileNotFoundError:
+            pass
+        except OSError as exc:
+            logging.warning(
+                "[bootstrap] Failed to remove protected-path project shadow %s: %s",
+                shadow,
+                exc,
+            )
+
+        if project_id in protected_row_ids or project is None:
+            await delete_tabs_for_missing_project(project_id)
+        logging.info("[bootstrap] Reaped protected-path project %s", project_id)
+
+    if protected_row_ids:
+        invalidate_projects_cache()
+        _CWD_PID_CACHE.clear()
 
 
 async def _index_system_project_markdowns(projects: list[Project]) -> None:
@@ -1256,7 +1330,7 @@ async def index_system_content() -> None:
     except Exception as e:
         logging.warning(f"[startup-index] Failed to ensure system projects (non-fatal): {e}")
     try:
-        await _reap_agent_mount_root_projects()
+        await _reap_protected_path_projects()
     except Exception as e:
         logging.warning(f"[startup-index] Failed to reap mount-root project (non-fatal): {e}")
     try:
@@ -1491,7 +1565,7 @@ def setup_desktop_filesystem() -> None:
 
     # Per-instance UI preferences. Defaults must stay in sync with the
     # PREF_REGISTRY in ts_sdk/src/preferences/prefRegistry.ts. Keys are the dotted
-    # topic ids `preferences.<category>.<name>`; the frontend store migrates any
+    # tag ids `preferences.<category>.<name>`; the frontend store migrates any
     # legacy flat-keyed preferences.json on load.
     # Legacy location: <workspace>/.flow/settings.json — migrated below.
     prefs_path = _preferences_path()
@@ -1504,6 +1578,7 @@ def setup_desktop_filesystem() -> None:
         "preferences.terminal.buffer_sync_updates": False,
         "preferences.notifications.sound_enabled": False,
         "preferences.notifications.sound_key": "supershort-ping",
+        PREF_SHARE_MESSAGE_STATUS: DEFAULT_SHARE_MESSAGE_STATUS,
         "preferences.advanced.scrollback_lines": 1000,
         "preferences.advanced.experimental_flags": {},
         # Indexer engine: "python" (FSIndexer) | "rust" (external RSIndexer via
@@ -1760,6 +1835,17 @@ async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
         compute_node = await get_or_create_local_compute_node(local_project=project, desktop_user=user)
         _t.time("get_or_create_local_compute_node")
 
+        # Ensure + repair the @local inbox unread projection. The mutable
+        # ``unread`` value is deliberately NOT put in BootstrapInfo (cached 30s)
+        # — the FE hydrates it via the normal entity GET/watch channel.
+        try:
+            from flow_sdk.inbox import recompute_unread as _recompute_unread
+
+            await _recompute_unread("bootstrap", user.typeid if user else None)
+        except Exception as e:
+            logging.warning(f"[bootstrap] inbox recompute failed (non-fatal): {e}")
+        _t.time("inbox_recompute")
+
         sandbox_available = is_sandbox_available()
         sandbox_compute_node: Optional[ComputeNode] = None
         if sandbox_available:
@@ -1810,9 +1896,11 @@ async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
         from flow_sdk.app.actions.hooks_sniffer import (  # noqa: PLC0415
             _create_or_update_sniffer_hook,
             _get_sniffer_hook,
+            sniffer_installed,
         )
         from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
         sniffer_hook = None
+        sniffer_is_installed = False
         try:
             sniffer_hook = await _get_sniffer_hook()
             _t.time("get_sniffer_hook")
@@ -1823,15 +1911,19 @@ async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
                 _t.time("create_or_update_sniffer_hook")
                 await sniffer_hook.apply()
                 _t.time("sniffer_hook.apply")
+            # What settings.json actually carries — the UI warns on this, not on
+            # the DB entity, so a sniffer installed by another instance shows up.
+            sniffer_is_installed = sniffer_installed()
+            _t.time("sniffer_installed")
         except Exception as e:
             logging.warning(f"Failed to auto-enable sniffer hook: {e}")
 
         # Build BootstrapInfo using Pydantic model
         types = build_all_type_payloads()
         _t.time("build_all_type_payloads")
+        from flow_sdk.i18n import get_supported_locales, get_translation_targets  # noqa: PLC0415
         from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
         from flow_sdk.instance_settings.privacy_mode import get_privacy_mode  # noqa: PLC0415
-        from flow_sdk.i18n import get_supported_locales, get_translation_targets  # noqa: PLC0415
         bootstrap_info = BootstrapInfo(
             types=types,
             user=entity_to_dict(user),
@@ -1855,6 +1947,7 @@ async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
             capabilities_summary=capabilities_summary.model_dump(mode="json"),
             scan_info=scan_info,
             sniffer_hook=entity_to_dict(sniffer_hook) if sniffer_hook else None,
+            sniffer_installed=sniffer_is_installed,
             records_root=str(get_instance_settings().records_root),
             supported_locales=get_supported_locales(),
             translation_targets=get_translation_targets(),

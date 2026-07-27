@@ -11,6 +11,7 @@ import asyncio
 import inspect
 import logging
 import time
+from collections.abc import Collection
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
@@ -168,6 +169,17 @@ class IndexerFunc(Protocol):
     # A walker that genuinely needs async (DB lookups, real HTTP) may instead
     # expose ``async def __call__``; scan() detects and awaits it directly.
     def __call__(self, nodes: list[FSRef], opts: IndexerOptions) -> list[FSRef]: ...
+
+
+def _normalize_output_types(
+    output_type: RecordType | Collection[RecordType] | None,
+) -> frozenset[RecordType] | None:
+    """Normalize public single/multi-output registration metadata."""
+    if output_type is None:
+        return None
+    if isinstance(output_type, RecordType):
+        return frozenset({output_type})
+    return frozenset(output_type)
 
 
 def _has_dispatch(info) -> bool:
@@ -382,25 +394,27 @@ class FSIndexer:
         roots: list[FSRef] | None = None,
     ) -> None:
         self._roots: list[FSRef] = list(roots) if roots is not None else []
-        # Each entry: (fn, output_type | None). ``output_type`` is the
-        # ``RecordType`` the function emits; ``None`` means "unknown / multiple
-        # types" and the dispatcher must always run it (legacy fallback).
-        self._functions: dict[RecordType, list[tuple[IndexerFunc, RecordType | None]]] = {}
+        # Each entry: (fn, output_types | None). ``None`` means the outputs are
+        # unknown and disables pruning globally (legacy conservative fallback).
+        self._functions: dict[
+            RecordType,
+            list[tuple[IndexerFunc, frozenset[RecordType] | None]],
+        ] = {}
 
     def add_function(
         self,
         record_type: RecordType,
         fn: IndexerFunc,
-        output_type: RecordType | None = None,
+        output_type: RecordType | Collection[RecordType] | None = None,
     ) -> None:
         """Register ``fn`` on input ``record_type``.
 
-        ``output_type`` declares the ``RecordType`` ``fn`` emits — used by
-        ``scan()`` to skip the function when ``opts.types`` is set and the
-        function's output can't reach any requested type. ``None`` means
-        "unknown" and disables the skip (the function always runs).
+        ``output_type`` accepts one or many emitted ``RecordType`` values.
+        ``None`` means "unknown" and conservatively disables pruning.
         """
-        self._functions.setdefault(record_type, []).append((fn, output_type))
+        self._functions.setdefault(record_type, []).append(
+            (fn, _normalize_output_types(output_type))
+        )
 
     def add_root(self, node: FSRef) -> None:
         self._roots.append(node)
@@ -422,11 +436,12 @@ class FSIndexer:
         reverse: dict[RecordType, set[RecordType]] = {}
         any_unannotated = False
         for t_in, fns in self._functions.items():
-            for _fn, t_out in fns:
-                if t_out is None:
+            for _fn, output_types in fns:
+                if output_types is None:
                     any_unannotated = True
                     continue
-                reverse.setdefault(t_out, set()).add(t_in)
+                for t_out in output_types:
+                    reverse.setdefault(t_out, set()).add(t_in)
         if any_unannotated:
             # Mixed registration: be safe and don't skip anything.
             return None
@@ -1444,8 +1459,12 @@ class FSIndexer:
                     per_type_counts[node.record_type] = per_type_counts.get(node.record_type, 0) + 1
                     current_rt = node.record_type
                 fns = functions.get(node.record_type, []) if node.record_type is not None else []
-                for fn, out_type in fns:
-                    if needed_output_types is not None and out_type is not None and out_type not in needed_output_types:
+                for fn, output_types in fns:
+                    if (
+                        needed_output_types is not None
+                        and output_types is not None
+                        and not output_types.intersection(needed_output_types)
+                    ):
                         continue
                     if _is_async_walker(fn):
                         pending.append((node, fn))

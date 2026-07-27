@@ -141,6 +141,9 @@ class EntityType(StrEnum):
     FOLDER = "folder"
     SECRET_ORIGIN = "secret_origin"
     CONTACTS_GROUP = "contacts_group"
+    # A blessed dot-taxonomy tag name (flow_sdk/builtin/tag.py). Optional
+    # enrichment — anonymous tags (plain strings) need no entity at all.
+    TAG = "tag"
 
     # ── DB / hub entity types (formerly BuiltinEntityType-only) ──────────────
     USER = "user"
@@ -194,6 +197,9 @@ class EntityType(StrEnum):
     MESSAGE_ATTACHMENT = "message_attachment"
     TEAM_SPACE = "team_space"
     NOTIFICATION = "notification"
+    # The @local singleton owning the inbox unread projection (see
+    # builtin/inbox_manager.py + flow_sdk/inbox). DB-only, not user-creatable.
+    INBOX_MANAGER = "inbox_manager"
     RUN = "run"
     # A file on disk outside the record store (DB-only; SemanticLock targets).
     FILE = "file"

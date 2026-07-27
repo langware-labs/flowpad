@@ -2,81 +2,125 @@ import { describe, expect, it } from 'vitest';
 import { ViewMode } from '@src/contexts/view-mode-context';
 import {
   MODE_CHAIN,
-  RAIL_DELTAS,
+  NO_GATES,
+  RAIL_ITEMS,
   resolveRail,
-  type RailDelta,
+  type RailGate,
   type RailItemId,
-  type RailStatus,
 } from '@src/components/collapsed-sidebar/rail-visibility';
 
 /**
- * Equivalence proof: the delta model must reproduce the rail exactly as the old
- * per-item visibility matrix rendered it (including the formerly special-cased
- * Bookmarks = vibe-only and Discover = dev-only affordances).
+ * The rail's two invariants, as tests.
+ *
+ * This file previously proved equivalence with a per-mode DELTA table that had a
+ * removal escape hatch (`noShow`). That hatch had exactly one use — dropping
+ * Bookmarks at Standard — and it produced the bug this slice fixes: stepping UP a
+ * mode made an icon disappear. The model is now strictly additive, so the
+ * equivalence tests are gone and the monotonicity test below is what stops it
+ * coming back.
  */
-// 'tasks' is an additive item that rides EVERY mode as visible (the release
-// side shipped it ALL_VISIBLE — see RAIL_DELTAS' Vibe entry, commit 4cbd7269);
-// its delta landed without this reference being updated. No existing item's
-// placement changed.
-const OLD_MATRIX: Record<ViewMode, Record<'visible' | 'collapsed', readonly RailItemId[]>> = {
-  [ViewMode.Vibe]: {
-    visible: ['home', 'inbox', 'tasks', 'bookmarks'],
-    collapsed: ['files'],
-  },
-  [ViewMode.Standard]: {
-    visible: ['home', 'chats', 'inbox', 'tasks'],
-    collapsed: ['files'],
-  },
-  [ViewMode.Advanced]: {
-    visible: ['home', 'chats', 'inbox', 'tasks', 'assets'],
-    collapsed: ['triggers', 'hooks', 'files'],
-  },
-  [ViewMode.Dev]: {
-    // 'agentic-flows' (FlowStudio) is an additive Dev-only rail item from the
-    // flow-graph slice (d6f25601); its RAIL_DELTAS entry landed without this
-    // reference being updated. No existing item's placement changed.
-    visible: ['home', 'chats', 'inbox', 'tasks', 'assets', 'discover', 'agentic-flows'],
-    collapsed: ['triggers', 'hooks', 'files', 'capabilities'],
-  },
-};
 
-describe('resolveRail — equivalence with the legacy visibility matrix', () => {
-  for (const mode of MODE_CHAIN) {
-    it(`reproduces the ${mode} rail`, () => {
-      const rail = resolveRail(mode);
-      const byStatus = (s: RailStatus) =>
-        [...rail.entries()].filter(([, v]) => v === s).map(([id]) => id);
-      expect(new Set(byStatus('visible'))).toEqual(new Set(OLD_MATRIX[mode].visible));
-      expect(new Set(byStatus('collapsed'))).toEqual(new Set(OLD_MATRIX[mode].collapsed));
-    });
-  }
+const ALL_GATES: Record<RailGate, boolean> = { project: true, conversations: true, tasks: true };
 
-  it('noShow removes an inherited icon from every higher mode (bookmarks)', () => {
-    expect(resolveRail(ViewMode.Vibe).get('bookmarks')).toBe('visible');
-    expect(resolveRail(ViewMode.Standard).has('bookmarks')).toBe(false);
-    expect(resolveRail(ViewMode.Advanced).has('bookmarks')).toBe(false);
-    expect(resolveRail(ViewMode.Dev).has('bookmarks')).toBe(false);
+const idsFor = (mode: ViewMode, gates = ALL_GATES): RailItemId[] =>
+  resolveRail(mode, gates).map((item) => item.id);
+
+/** Is `sub` a subsequence of `full` (same relative order, gaps allowed)? */
+function isSubsequence<T>(sub: readonly T[], full: readonly T[]): boolean {
+  let i = 0;
+  for (const item of full) if (i < sub.length && sub[i] === item) i++;
+  return i === sub.length;
+}
+
+describe('resolveRail — modes are strictly additive', () => {
+  it('every fuller mode is a superset of the simpler one', () => {
+    for (let i = 1; i < MODE_CHAIN.length; i++) {
+      const simpler = new Set(idsFor(MODE_CHAIN[i - 1]));
+      const fuller = new Set(idsFor(MODE_CHAIN[i]));
+      const lost = [...simpler].filter((id) => !fuller.has(id));
+      expect(lost, `${MODE_CHAIN[i]} dropped ${lost.join(', ')} from ${MODE_CHAIN[i - 1]}`).toEqual([]);
+    }
   });
 
-  it('noShow defaults to empty for every mode that omits it', () => {
-    for (const mode of MODE_CHAIN) {
-      expect(RAIL_DELTAS[mode].noShow ?? []).toEqual(mode === ViewMode.Standard ? ['bookmarks'] : []);
-    }
+  it('Standard is Vibe plus nothing — the two rails have the same members', () => {
+    // Standard's only difference from Vibe is what `chats` targets, which is a
+    // click-time fork in the component, not a membership difference.
+    expect(idsFor(ViewMode.Standard)).toEqual(idsFor(ViewMode.Vibe));
+  });
+
+  it('each mode adds the items declared at it', () => {
+    expect(idsFor(ViewMode.Advanced)).toContain('triggers');
+    expect(idsFor(ViewMode.Advanced)).toContain('hooks');
+    expect(idsFor(ViewMode.Standard)).not.toContain('triggers');
+    expect(idsFor(ViewMode.Dev)).toEqual(expect.arrayContaining(['discover', 'agentic-flows', 'capabilities']));
+    expect(idsFor(ViewMode.Advanced)).not.toContain('discover');
   });
 });
 
-describe('resolveRail — delta semantics (synthetic table)', () => {
-  const SYNTH: Record<ViewMode, RailDelta> = {
-    [ViewMode.Vibe]: { collapsed: ['files'] },
-    [ViewMode.Standard]: { visible: ['files'] }, // promotion: collapsed → visible
-    [ViewMode.Advanced]: { collapsed: ['files'] }, // demotion back
-    [ViewMode.Dev]: { noShow: ['files'] }, // removal
-  };
+describe('resolveRail — order is the same in every mode', () => {
+  const specOrder = RAIL_ITEMS.map((item) => item.id);
 
-  it('a later entry for an id overrides the inherited status', () => {
-    expect(resolveRail(ViewMode.Vibe, SYNTH).get('files')).toBe('collapsed');
-    expect(resolveRail(ViewMode.Standard, SYNTH).get('files')).toBe('visible');
-    expect(resolveRail(ViewMode.Advanced, SYNTH).get('files')).toBe('collapsed');
-    expect(resolveRail(ViewMode.Dev, SYNTH).has('files')).toBe(false);
+  for (const mode of MODE_CHAIN) {
+    it(`${mode}'s rail is a subsequence of RAIL_ITEMS`, () => {
+      expect(isSubsequence(idsFor(mode), specOrder)).toBe(true);
+    });
+  }
+
+  it('holds when gates drop items out of the middle', () => {
+    const gated = idsFor(ViewMode.Dev, { project: false, conversations: false, tasks: true });
+    expect(isSubsequence(gated, specOrder)).toBe(true);
+    expect(gated).not.toContain('project');
+    expect(gated).not.toContain('inbox');
+    expect(gated).toContain('tasks');
+  });
+
+  it('places the top rail in the agreed order', () => {
+    const top = resolveRail(ViewMode.Vibe, ALL_GATES)
+      .filter((item) => item.placement === 'top')
+      .map((item) => item.id);
+    expect(top).toEqual(['home', 'project', 'chats', 'bookmarks', 'inbox', 'tasks']);
+  });
+});
+
+describe('resolveRail — content gates', () => {
+  it('drops gated items when their gate is unsatisfied', () => {
+    const none = idsFor(ViewMode.Dev, NO_GATES);
+    expect(none).not.toContain('project');
+    expect(none).not.toContain('inbox');
+    expect(none).not.toContain('tasks');
+    // Ungated neighbours survive.
+    expect(none).toEqual(expect.arrayContaining(['home', 'chats', 'bookmarks']));
+  });
+
+  it('gates are independent — tasks content does not reveal inbox', () => {
+    const tasksOnly = idsFor(ViewMode.Vibe, { project: false, conversations: false, tasks: true });
+    expect(tasksOnly).toContain('tasks');
+    expect(tasksOnly).not.toContain('inbox');
+
+    const convsOnly = idsFor(ViewMode.Vibe, { project: false, conversations: true, tasks: false });
+    expect(convsOnly).toContain('inbox');
+    expect(convsOnly).not.toContain('tasks');
+  });
+
+  it('a fresh instance with a project shows exactly Home, Project, Chats, Bookmarks', () => {
+    const top = resolveRail(ViewMode.Vibe, { project: true, conversations: false, tasks: false })
+      .filter((item) => item.placement === 'top')
+      .map((item) => item.id);
+    expect(top).toEqual(['home', 'project', 'chats', 'bookmarks']);
+  });
+});
+
+describe('RAIL_ITEMS — spec integrity', () => {
+  it('has no Assets entry (the project item already opens them)', () => {
+    expect(RAIL_ITEMS.find((item) => (item.id as string) === 'assets')).toBeUndefined();
+  });
+
+  it('declares each id exactly once', () => {
+    const ids = RAIL_ITEMS.map((item) => item.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it('only declares modes that exist in the chain', () => {
+    for (const item of RAIL_ITEMS) expect(MODE_CHAIN).toContain(item.from);
   });
 });

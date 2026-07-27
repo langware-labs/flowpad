@@ -161,6 +161,91 @@ async def test_create_group_task_fans_out_and_is_idempotent(bootstrapped_client,
     assert len(await Task.get_all({"parent_id": parent["id"]})) == 2
 
 
+async def test_assign_task_gives_the_task_to_one_owner(bootstrapped_client, hub_faked):
+    parent = await _create(bootstrapped_client, "task", {"type": "task", "title": "Fix Login"})
+
+    resp = await bootstrapped_client.post(
+        f"{GRAPH}/task/{parent['id']}/assign-task",
+        json={"email": "Bob@X.com", "name": "Bob", "message": "please take a look"},
+    )
+    assert resp.status_code == 200, resp.text
+    data = resp.json()["data"]
+    assert (data["self"], data["created"], data["assignee"]) == (False, True, "bob@x.com")
+
+    # The owner surface: assignee + reporter stamped, overview named after the
+    # person, shared to the hub.
+    parent_row = await Task.get_one({"id": parent["id"]})
+    assert parent_row.assignee == "bob@x.com"
+    assert parent_row.reporter == "owner@x.com"
+    assert (parent_row.kind, parent_row.group_name, parent_row.remote) == (TaskKind.GROUP.value, "Bob", True)
+
+    # Exactly one member task — title-only clone keyed to the assignee.
+    children = await Task.get_all({"parent_id": parent["id"]})
+    assert len(children) == 1
+    child = children[0]
+    assert data["child"] == str(child.typeid)
+    assert (child.assignee, child.title, child.status) == ("bob@x.com", "Fix Login", "to_do")
+    assert len(hub_faked["children"]) == 1  # is_child edge created on the hub
+
+    # One invitation carrying the caller's message; child target first (editor).
+    member_posts = [p for p in hub_faked["posts"] if p[0].endswith("/members")]
+    assert len(member_posts) == 1
+    path, body = member_posts[0]
+    assert path == f"/graph/task/{child.id}/members"
+    assert body["recipient_email"] == "bob@x.com"
+    assert body["message"] == "please take a look"
+    assert body["invitation_targets"] == [
+        {"typeid": f"task-{child.id}", "role": "editor"},
+        {"typeid": f"task-{parent['id']}", "role": "guest"},
+    ]
+
+
+async def test_assign_task_is_idempotent(bootstrapped_client, hub_faked):
+    parent = await _create(bootstrapped_client, "task", {"type": "task", "title": "Again"})
+    first = await bootstrapped_client.post(
+        f"{GRAPH}/task/{parent['id']}/assign-task", json={"email": "bob@x.com"}
+    )
+    child_typeid = first.json()["data"]["child"]
+
+    again = await bootstrapped_client.post(
+        f"{GRAPH}/task/{parent['id']}/assign-task", json={"email": "bob@x.com"}
+    )
+    data = again.json()["data"]
+    assert data["created"] is False, "re-assigning the same person reuses their member task"
+    assert data["child"] == child_typeid
+    assert len(await Task.get_all({"parent_id": parent["id"]})) == 1
+
+
+async def test_assign_task_to_self_stays_local(bootstrapped_client, hub_faked):
+    parent = await _create(bootstrapped_client, "task", {"type": "task", "title": "Mine"})
+
+    resp = await bootstrapped_client.post(
+        f"{GRAPH}/task/{parent['id']}/assign-task", json={"email": "owner@x.com"}
+    )
+    assert resp.json()["data"] == {"child": None, "self": True, "created": False, "assignee": "owner@x.com"}
+
+    parent_row = await Task.get_one({"id": parent["id"]})
+    assert parent_row.assignee == "owner@x.com"
+    assert parent_row.kind != TaskKind.GROUP.value, "assigning to yourself is not a group"
+    assert await Task.get_all({"parent_id": parent["id"]}) == []
+    assert hub_faked["posts"] == [], "nothing is sent to the hub"
+
+
+async def test_assign_task_rejects_member_task_and_missing_email(bootstrapped_client, hub_faked):
+    parent = await _create(bootstrapped_client, "task", {"type": "task", "title": "T"})
+    await bootstrapped_client.post(f"{GRAPH}/task/{parent['id']}/assign-task", json={"email": "bob@x.com"})
+    child = (await Task.get_all({"parent_id": parent["id"]}))[0]
+
+    # A member task is somebody's copy — re-assigning it would fork the chain.
+    resp = await bootstrapped_client.post(
+        f"{GRAPH}/task/{child.id}/assign-task", json={"email": "carol@x.com"}
+    )
+    assert resp.status_code == 400
+
+    resp = await bootstrapped_client.post(f"{GRAPH}/task/{parent['id']}/assign-task", json={})
+    assert resp.status_code == 400
+
+
 async def test_sync_group_merges_member_owned_fields(bootstrapped_client, hub_faked, monkeypatch):
     parent = await _create(bootstrapped_client, "task", {"type": "task", "title": "Audit"})
     group = await _create(

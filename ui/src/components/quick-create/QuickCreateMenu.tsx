@@ -9,8 +9,8 @@ import {
   NewProjectDialog,
   NewProjectFromGitDialog,
   ProjectSelectorModal,
-  useCloneGitProjectAndOpen,
   useEnsureProject,
+  useGitCloneDialogSubmit,
 } from '@src/components/project-selector';
 import {
   DropdownMenu,
@@ -52,7 +52,7 @@ export function QuickCreateMenu({ children, open, onOpenChange, onPick }: QuickC
   const { computeNode } = useAgentContext();
   const { navigation } = useDockNavigation();
   const ensureProject = useEnsureProject();
-  const cloneGitProject = useCloneGitProjectAndOpen();
+  const handleCreateGitProject = useGitCloneDialogSubmit(computeNode?.id);
   const [projectModalOpen, setProjectModalOpen] = useState(false);
   const [newLocalProjectOpen, setNewLocalProjectOpen] = useState(false);
   const [newGitProjectOpen, setNewGitProjectOpen] = useState(false);
@@ -84,27 +84,6 @@ export function QuickCreateMenu({ children, open, onOpenChange, onPick }: QuickC
       await ensureProject(`${cleanParent}/${cleanName}`);
     },
     [ensureProject],
-  );
-
-  const handleCreateGitProject = useCallback(
-    async (
-      url: string,
-      acceptSuggested?: string,
-      branch?: string,
-    ): Promise<{ ok: true } | { ok: false; suggestedName: string; attemptedName: string }> => {
-      if (!computeNode) {
-        throw new Error('No compute node available');
-      }
-      const result = await cloneGitProject(computeNode.id, url, { targetName: acceptSuggested, branch });
-      if (result.kind === 'ok') {
-        return { ok: true };
-      }
-      if (result.kind === 'collision') {
-        return { ok: false, suggestedName: result.suggestedName, attemptedName: result.attemptedName };
-      }
-      throw new Error(result.message);
-    },
-    [computeNode, cloneGitProject],
   );
 
   const projectItems = useMemo(

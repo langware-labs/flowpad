@@ -19,6 +19,9 @@ vi.mock('@src/components/graph-view/url-state', () => ({
   useGraphUrlState: () => ({
     state: {
       projection: graphUrlState.projection,
+      // Renderer choice (?render=). The heat legend only exists on the Sigma
+      // canvas, so the double must carry it or the legend never renders.
+      presentation: 'sigma',
       focus: null,
       selected: null,
       depth: 4,

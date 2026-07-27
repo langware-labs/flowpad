@@ -206,8 +206,8 @@
   border-color: var(--ink-strong);
 }
 
-/* ---- topic pills (atlas .section language) --------------------------- */
-.agentic-flows .afl-topic .card {
+/* ---- tag pills (atlas .section language) --------------------------- */
+.agentic-flows .afl-tag .card {
   width: 188px;
   background: var(--paper-2);
   border: 1px solid var(--afl-edge);
@@ -217,12 +217,12 @@
   box-shadow: 0 1px 0 hsl(var(--border) / 0.55), 0 6px 18px -10px hsl(0 0% 0% / 0.3);
   transition: border-color 0.16s, box-shadow 0.16s;
 }
-.agentic-flows .afl-topic:hover .card { border-color: var(--ink-faint); }
-.agentic-flows .afl-topic.selected .card {
+.agentic-flows .afl-tag:hover .card { border-color: var(--ink-faint); }
+.agentic-flows .afl-tag.selected .card {
   background: var(--rubric-dim);
   border-color: var(--rubric);
 }
-.agentic-flows .afl-topic .ttl {
+.agentic-flows .afl-tag .ttl {
   font-family: var(--mono);
   font-size: 10.5px;
   letter-spacing: 0.14em;
@@ -232,9 +232,9 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.agentic-flows .afl-topic .ttl .pfx { color: var(--ink-faint); }
+.agentic-flows .afl-tag .ttl .pfx { color: var(--ink-faint); }
 
-/* inline emit popover on a selected topic pill */
+/* inline emit popover on a selected tag pill */
 .agentic-flows .afl-emitpop {
   margin-top: 7px;
   background: var(--paper);

@@ -11,16 +11,19 @@ from pathlib import Path
 import pytest
 
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.fs_store.indexer.index_function import IndexerOptions
-from flow_sdk.fs_store.record_types import RecordType
-from flow_sdk.fs_store.indexer.functions.codex_projects import codex_projects_fn
+from flow_sdk.fs_store.indexer.functions.codex_projects import (
+    _read_codex_projects_from_config,
+    _scan_cwd,
+    codex_projects_fn,
+)
 from flow_sdk.fs_store.indexer.functions.codex_sessions import (
     discover_codex_session_paths_iter,
     ensure_codex_session_stats,
     extract_codex_session_from_path,
     get_codex_session,
 )
-
+from flow_sdk.fs_store.indexer.index_function import IndexerOptions
+from flow_sdk.fs_store.record_types import RecordType
 
 # do not increase timeout without approval
 pytestmark = pytest.mark.timeout(30)
@@ -35,6 +38,47 @@ def test_codex_projects_discovery(codex_sandbox: Path):
     assert "/repo" in cwds
     assert "/Users/test/never_used" in cwds  # config-only project still discovered
     assert "/Users/test/proj_b" in cwds
+
+
+def test_codex_config_and_rollout_reject_home_but_keep_subdir_and_windows(
+    tmp_path,
+    monkeypatch,
+):
+    import dataclasses
+    import json
+
+    import flow_sdk.instance_settings as instance_settings
+
+    home = tmp_path / "home"
+    project = home / "dev" / "repo"
+    project.mkdir(parents=True)
+    patched = dataclasses.replace(
+        instance_settings.get_instance_settings(),
+        user_home=home,
+    )
+    monkeypatch.setattr(instance_settings, "get_instance_settings", lambda: patched)
+
+    config = tmp_path / "config.toml"
+    config.write_text(
+        f'[projects."{home}"]\ntrust_level = "trusted"\n'
+        f'[projects."{project}"]\ntrust_level = "trusted"\n'
+        r"[projects.'C:\work\repo']" + "\ntrust_level = \"trusted\"\n"
+    )
+    projects = _read_codex_projects_from_config(config, include_temp=True)
+    assert str(home) not in projects
+    assert str(project) in projects
+    assert r"C:\work\repo" in projects
+
+    home_rollout = tmp_path / "rollout-home.jsonl"
+    home_rollout.write_text(json.dumps(
+        {"type": "session_meta", "payload": {"cwd": str(home)}}
+    ))
+    project_rollout = tmp_path / "rollout-project.jsonl"
+    project_rollout.write_text(json.dumps(
+        {"type": "session_meta", "payload": {"cwd": str(project)}}
+    ))
+    assert _scan_cwd(home_rollout, include_temp=True) is None
+    assert _scan_cwd(project_rollout, include_temp=True) == str(project)
 
 
 def _sessions_with_stats() -> list:

@@ -34,8 +34,9 @@ logger = logging.getLogger(__name__)
 
 
 _TOOL_USE_KINDS = frozenset({
-    "tool_use", "shell_command", "file_write", "file_edit", "file_read",
-    "search", "web_fetch", "todo_update", "agent_spawn", "exit_plan_mode",
+    "tool_use", "shell_command", "flow_command", "file_write", "file_edit",
+    "file_read", "search", "web_fetch", "todo_update", "agent_spawn",
+    "exit_plan_mode", "skill_call",
 })
 
 

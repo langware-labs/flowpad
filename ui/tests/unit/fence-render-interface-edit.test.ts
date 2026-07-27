@@ -147,6 +147,62 @@ describe('applyInterfaceEdit param edits', () => {
   });
 });
 
+describe('applyInterfaceEdit class member edits', () => {
+  const CLASS_SOURCE = `name: Agent
+properties:
+  status: ProcessStatus? # reflected
+methods:
+  start:
+    signature: "async (prompt?: string) -> ApiResponse"
+    description: Start the worker.
+`;
+
+  it('renames and edits a property without losing optionality or comments', () => {
+    const renamed = applyInterfaceEdit(CLASS_SOURCE, {
+      kind: 'property-name',
+      property: 'status',
+      value: 'workerStatus',
+    });
+    const next = applyInterfaceEdit(renamed, {
+      kind: 'property-type',
+      property: 'workerStatus',
+      value: 'WorkerStatus',
+    });
+
+    expect(next).toContain('# reflected');
+    expect(parseInterfaceBlock(next).properties[0]).toMatchObject({
+      name: 'workerStatus',
+      type: 'WorkerStatus',
+      optional: true,
+    });
+  });
+
+  it('toggles a property optional marker through the same scalar convention as params', () => {
+    const next = applyInterfaceEdit(CLASS_SOURCE, {
+      kind: 'property-optional',
+      property: 'status',
+      optional: false,
+    });
+    expect(parseInterfaceBlock(next).properties[0]).toMatchObject({ optional: false });
+    expect(next).toContain('status: ProcessStatus');
+    expect(next).not.toContain('status: ProcessStatus?');
+  });
+
+  it('edits a described method signature without flattening its object', () => {
+    const next = applyInterfaceEdit(CLASS_SOURCE, {
+      kind: 'method-signature',
+      method: 'start',
+      value: 'async () -> boolean',
+    });
+    expect(next).toContain('description: Start the worker.');
+    expect(parseInterfaceBlock(next).methods[0]).toEqual({
+      name: 'start',
+      signature: 'async () -> boolean',
+      description: 'Start the worker.',
+    });
+  });
+});
+
 describe('applyInterfaceEdit safety', () => {
   /*
    * The card can be one render behind the document. Doing nothing beats

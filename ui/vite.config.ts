@@ -81,17 +81,21 @@ export default defineConfig(({ mode }) => {
       // `/api/*` URLs from inside the sandbox. In Electron/wheel this is
       // same-origin with the backend (no proxy needed); in `npm run dev` the
       // backend is on a different port, so proxy it here.
-      proxy: {
-        '/api/v1/connect/ws': {
-          target: `ws://localhost:${env.LOCAL_SERVER_PORT || '9007'}`,
-          ws: true,
-          changeOrigin: true,
-        },
-        '/api': {
-          target: `http://localhost:${env.LOCAL_SERVER_PORT || '9007'}`,
-          changeOrigin: true,
-        },
-      },
+      // Hub-mode runs with an explicit VITE_API_URL and must exercise the real
+      // hub origin. Keep the proxy only for ordinary local desktop dev.
+      proxy: env.VITE_API_URL
+        ? undefined
+        : {
+            '/api/v1/connect/ws': {
+              target: `ws://localhost:${env.LOCAL_SERVER_PORT || '9007'}`,
+              ws: true,
+              changeOrigin: true,
+            },
+            '/api': {
+              target: `http://localhost:${env.LOCAL_SERVER_PORT || '9007'}`,
+              changeOrigin: true,
+            },
+          },
     },
     optimizeDeps: {
       exclude: ['playwright-core', 'playwright'],

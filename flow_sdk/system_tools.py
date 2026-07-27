@@ -450,14 +450,10 @@ async def clear_all_data() -> ClearAllResult:
     entity_cache.clear()
     uname_cache.clear()
 
-    # Capability system rows are wiped along with the DB below, and the seed
-    # guard caches which driver was seeded. The wipe reinits a fresh driver
-    # (auto-invalidating the driver-keyed guard), but clear it explicitly too so
-    # the capability specs are re-seeded on next access — otherwise a factory
-    # reset could silently lose all capabilities until the process restarts.
-    from flow_sdk.builtin.capability import Capability  # noqa: PLC0415
-
-    Capability._seeded_driver = None
+    # Capability system rows are wiped along with the DB below. No seed-guard
+    # reset is needed: Capability._seeded_dbs is keyed on the live driver
+    # object, and the reinit below constructs a fresh driver — the new DB
+    # re-seeds on next access automatically.
 
     # 4. Close DB, delete file, reinitialize
     from flow_sdk.db.database import close_db, init_db  # noqa: PLC0415
@@ -514,7 +510,7 @@ async def clear_all_data() -> ClearAllResult:
         # only by the startup-index path — the bootstrap() route handler above
         # rebuilds @local but NOT the system projects, so without this a factory
         # reset silently loses them until the process restarts (same class of bug
-        # as the Capability._seeded_driver reset above). Their absence makes the FE
+        # as the driver-keyed Capability._seeded_dbs guard). Their absence makes the FE
         # assistant resolver log "Invalid entity type or ID" console errors on every
         # page load. Non-fatal — mirror startup's best-effort handling.
         try:

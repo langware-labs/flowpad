@@ -54,12 +54,17 @@ FunctionRuntime = Literal["inline", "subprocess"]
 # that the frontend orchestrator observes; when satisfied the orchestrator injects
 # this node's `done`, routed onward by the ordinary edge machinery. No new viewer,
 # no DOM interception — pure guidance/orchestration over standard surfaces.
-GUIDED_PRESENT_KINDS = {"asset_editor", "wiki", "home", "asset_list"}
-# The await side is a unified-bus subscription (docs/topics.md): `topic` names
+GUIDED_PRESENT_KINDS = {"asset_editor", "wiki", "home", "asset_list", "root"}
+# What a guided step can do FOR the user, offered as a button on the step.
+# `run` types a command into the step's terminal; `fs_check` proves a file
+# landed. The frontend owns each kind's semantics — this is the vocabulary.
+GUIDED_ACT_KINDS = {"fill", "open_terminal", "run", "fs_check", "setup_capability",
+                    "oauth_connect", "device_login", "git_check"}
+# The await side is a unified-bus subscription (docs/tags.md): `tag` names
 # the awaited event (`app.page.signal`, `app.route.loaded`, `app.entity.created`,
 # or `manual` for Continue-only), `target`/`vfs`/`home` filter it, and an
 # optional `confirm` store-query proves it (event ≠ proof). The engine only
-# requires the topic — the frontend JourneyManager owns the semantics.
+# requires the tag — the frontend JourneyManager owns the semantics.
 
 # Retired spellings → the pointed message users get instead of a pydantic enum error.
 _RETIRED_NODE_TYPES = {
@@ -92,6 +97,10 @@ class FlowConfig(BaseModel):
     max_hops: int = 16          # per-run event-hop budget (cycle guard)
     max_processes: int = 10     # per-run spawned-process budget
     deadline_s: int = 600       # per-run wall-clock budget
+    # Subscription-entry storm cap (runs started by the subscriptions: block,
+    # per minute). Bounds cross-flow ping-pong loops the self-brake can't see
+    # (A→B→A chains mint fresh envelopes every hop). One warn per window.
+    max_entries_per_minute: int = 30
 
 
 class FlowNodeDef(BaseModel):
@@ -118,6 +127,22 @@ class FlowNodeDef(BaseModel):
         return "subprocess" if str(self.node_data.get("function") or "").endswith(".py") else "inline"
 
 
+class FlowSubscriptionDef(BaseModel):
+    """A graph-level unified-bus subscription (docs/flow-events.md phase 5):
+    a matching FlowEvent starts a FRESH run — entry event ``event`` (default:
+    the bus tag string), ``data = {tag, target, data}``, delivered to
+    ``node`` directly when set, else edge-routed from ``$external``."""
+
+    id: str = ""
+    pattern: str
+    target: Optional[str] = None
+    scope: list[str] = Field(default_factory=list)
+    # Entry event name inside the flow; defaults to the bus tag.
+    event: Optional[str] = None
+    # Direct-delivery node (bypasses edge routing), like inject's target_node.
+    node: Optional[str] = None
+
+
 class EdgeEndpoint(BaseModel):
     node: str
     event: str = CATCH_ALL_EVENT
@@ -142,6 +167,7 @@ class FlowDoc(BaseModel):
     description: str = ""
     enabled: bool = True  # the flow's active switch
     config: FlowConfig = Field(default_factory=FlowConfig)
+    subscriptions: list[FlowSubscriptionDef] = Field(default_factory=list)
     nodes: list[FlowNodeDef] = Field(default_factory=list)
     edges: list[FlowEdgeDef] = Field(default_factory=list)
 
@@ -210,6 +236,16 @@ class FlowDoc(BaseModel):
             target = self.node(e.to_node)
             if target is not None and target.node_type == "trigger":
                 problems.append(f"edge {e.id}: trigger nodes accept no inputs")
+        for sub in self.subscriptions:
+            # The tags-owned bus-pattern grammar gate (same rule as TAG
+            # triggers — one owner, right dependency direction).
+            from flow_sdk.tags import validate_bus_pattern
+
+            problem = validate_bus_pattern(sub.pattern)
+            if problem:
+                problems.append(f"subscription {sub.id or sub.pattern!r}: {problem}")
+            if sub.node and sub.node not in known:
+                problems.append(f"subscription {sub.id or sub.pattern!r}: unknown node {sub.node}")
         for n in self.nodes:
             if n.node_type == "agent":
                 nd = n.node_data
@@ -222,19 +258,37 @@ class FlowDoc(BaseModel):
             if n.node_type == "guided_step":
                 nd = n.node_data
                 present = nd.get("present") or {}
-                dock = present.get("dock") or {}
-                if dock.get("kind") not in GUIDED_PRESENT_KINDS:
+                # A dock is OPTIONAL: a step may highlight in place (moving the
+                # user off the surface they must click would defeat it), or
+                # present nothing at all and just wait. Only the kind is checked,
+                # and only when a dock is actually given.
+                dock = present.get("dock")
+                if dock is not None and dock.get("kind") not in GUIDED_PRESENT_KINDS:
                     problems.append(
-                        f"node {n.id}: guided_step needs node_data.present.dock.kind "
+                        f"node {n.id}: guided_step present.dock.kind must be "
                         f"in {sorted(GUIDED_PRESENT_KINDS)}"
                     )
                 await_spec = nd.get("await") or {}
-                topic = await_spec.get("topic")
-                if not isinstance(topic, str) or not topic:
+                tag = await_spec.get("tag")
+                if not isinstance(tag, str) or not tag:
                     problems.append(
-                        f"node {n.id}: guided_step needs node_data.await.topic "
-                        "(a non-empty bus topic string, e.g. 'app.page.signal', or 'manual')"
+                        f"node {n.id}: guided_step needs node_data.await.tag "
+                        "(a non-empty bus tag string, e.g. 'app.page.signal', or 'manual')"
                     )
+                # `act` — what the journey OFFERS to do for the user (a step
+                # button, not an automatic side effect). It aims at a tag word
+                # like `present.highlight` does, so a missing target is dead.
+                act = nd.get("act")
+                if act is not None:
+                    if act.get("kind") not in GUIDED_ACT_KINDS:
+                        problems.append(
+                            f"node {n.id}: guided_step act.kind must be in {sorted(GUIDED_ACT_KINDS)}"
+                        )
+                    if not (act.get("target") or "").strip():
+                        problems.append(
+                            f"node {n.id}: guided_step act needs a target (a tag word, "
+                            "e.g. 'AgentInstructions')"
+                        )
                 continue
             if n.node_type != "function":
                 continue

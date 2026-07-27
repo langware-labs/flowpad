@@ -41,9 +41,9 @@ const EXE_PATH_RX = /^(?:[a-z]:[\\/]|\\\\)[^:*?"<>|]*\.exe$/i;
 
 /** True when a (cleaned) OSC title is merely the running program announcing
  *  itself — the worker CLI's startup title (`claude`) or the console's default
- *  exe-path title — rather than a topic. Identity titles say nothing about the
+ *  exe-path title — rather than a tag. Identity titles say nothing about the
  *  session, but a worker re-emits one on every restart; adopting it would
- *  clobber a topic-derived name (the "session renamed itself to claude" bug).
+ *  clobber a tag-derived name (the "session renamed itself to claude" bug).
  *  Applies only to the auto-title mirror: a user manually naming a tab
  *  "claude" goes through `Tab.rename`, not this gate. */
 export function isProgramIdentityTitle(title: string, process?: AgenticProcess | null): boolean {

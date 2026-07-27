@@ -51,7 +51,7 @@ async def compute_harness_state(wait_for_discovery: bool = True) -> dict:
     default_kind: str | None = None
     show_harness_select = True
     try:
-        chk = await registry.check(CapabilityKind.HARNESS.value)
+        chk = await registry.test(CapabilityKind.HARNESS.value)
         default_kind = chk.result.details.get("reference_kind")
         show_harness_select = not chk.result.available
     except Exception:
