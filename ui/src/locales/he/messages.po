@@ -214,6 +214,11 @@ msgstr "{0} נוסף בהצלחה."
 msgid "{0} icon"
 msgstr "סמל {0}"
 
+#. placeholder {0}: workerLabel(unavailableWorker)
+#: src/components/entity-execution-panel/WorkerUnavailableNotice.tsx
+msgid "{0} is unavailable"
+msgstr ""
+
 #. placeholder {0}: frame.issue_count
 #: src/components/assets/editor/agent-trace/TraceDetailPanel.tsx
 msgid "{0} issues"
@@ -1942,6 +1947,7 @@ msgstr "לא ניתן לעדכן — מוצגים הנתונים מהסנכרו�
 #: src/components/wizard/WizardHost.tsx
 #: src/pages/entry/LaunchLanding.tsx
 #: src/pages/flow-page/VibeAssignTaskDialog.tsx
+#: src/pages/flow-page/VibeWorkerSwitchDialog.tsx
 #: src/pages/home-landing/feed/HomeFeedColumn.tsx
 #: src/pages/hub-home/NewDesktopDialog.tsx
 #: src/pages/live-status/LiveStatus.tsx
@@ -2032,7 +2038,7 @@ msgstr "שינויים ({0})"
 #~ msgid "Changes saved successfully"
 #~ msgstr "השינויים נשמרו בהצלחה"
 
-#: src/pages/flow-page/vibe-workspace.tsx
+#: src/pages/flow-page/vibe-chat-pane.tsx
 #~ msgid "Changing worker requires a new chat. The current chat stays in history."
 #~ msgstr "שינוי ה-worker דורש צ'אט חדש. הצ'אט הנוכחי יישמר בהיסטוריה."
 
@@ -2129,6 +2135,10 @@ msgstr "בחר מסמך מהסרגל הצדדי כדי לצפות בתוכנו"
 #: src/components/assistance-viewer/AssistanceViewer.tsx
 msgid "Choose a task from the sidebar to view details"
 msgstr "בחר משימה מסרגל הצד כדי להציג פרטים"
+
+#: src/components/entity-execution-panel/WorkerUnavailableNotice.tsx
+msgid "Choose another worker"
+msgstr ""
 
 #: src/components/quick-create/ScopeSelection.tsx
 msgid "Choose folder…"
@@ -2883,6 +2893,10 @@ msgstr "המשך"
 #: src/journey/JourneyViewer.tsx
 msgid "Continue journey"
 msgstr "המשיכו במסע"
+
+#: src/pages/flow-page/VibeWorkerSwitchDialog.tsx
+msgid "Continue this conversation"
+msgstr ""
 
 #: src/components/login-required-dialog.tsx
 msgid "Continue with Email"
@@ -12881,7 +12895,11 @@ msgstr "התחילו את המסע"
 msgid "Start live session"
 msgstr "התחלת סשן חי"
 
-#: src/pages/flow-page/vibe-workspace.tsx
+#: src/pages/flow-page/VibeWorkerSwitchDialog.tsx
+msgid "Start new"
+msgstr ""
+
+#: src/pages/flow-page/vibe-chat-pane.tsx
 #~ msgid "Start new {0} chat?"
 #~ msgstr "צ'אט חדש עם {0}?"
 
@@ -12889,7 +12907,7 @@ msgstr "התחלת סשן חי"
 msgid "Start new chat"
 msgstr "התחילו שיחה חדשה"
 
-#: src/pages/flow-page/vibe-workspace.tsx
+#: src/pages/flow-page/vibe-chat-pane.tsx
 #~ msgid "Start new chat?"
 #~ msgstr "להתחיל צ'אט חדש?"
 
@@ -12917,6 +12935,10 @@ msgstr "התחל חדר"
 #: src/components/machine-overview/service-status-led.tsx
 #~ msgid "Start services"
 #~ msgstr "הפעל שירותים"
+
+#: src/pages/flow-page/VibeWorkerSwitchDialog.tsx
+msgid "Start with an empty chat or carry this conversation into the new worker. The current chat stays in Recent."
+msgstr ""
 
 #: src/components/collaboration/RoomHeader.tsx
 msgid "started"
@@ -13124,6 +13146,11 @@ msgstr "החלף פרויקט"
 #: src/components/status-bar.tsx
 msgid "Switch Project"
 msgstr "החלף פרויקט"
+
+#. placeholder {0}: workerLabel(workerType)
+#: src/pages/flow-page/VibeWorkerSwitchDialog.tsx
+msgid "Switch to {0}?"
+msgstr ""
 
 #: src/components/terminal/interactive-terminal/TerminalBottomRibbon.tsx
 msgid "Switch to chat view"
@@ -13624,6 +13651,10 @@ msgstr "עקבה זו קדומה מתצוגת stack הקריאות. הפעל מ�
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "This will delete all debug logs from <0>~/.claude/debug/</0> and all parsed error records."
 msgstr "פעולה זו תמחק את כל יומני הניפוי מ-<0>~/.claude/debug/</0> ואת כל רשומות השגיאות שנותחו."
+
+#: src/components/entity-execution-panel/WorkerUnavailableNotice.tsx
+msgid "This worker cannot continue the chat right now."
+msgstr ""
 
 #: src/components/assets/editor/usage-report/UsageReportAssetEditor.tsx
 #: src/components/terminal/interactive-terminal/pty-events-viewer/PTYEventsViewer.tsx
@@ -14653,8 +14684,8 @@ msgid "Work on the other participant's machine"
 msgstr "לעבוד על המחשב של המשתתף השני"
 
 #: src/components/entity-execution-panel/ExecutionSettingsPopover.tsx
-#: src/pages/flow-page/vibe-worker-select.tsx
-#: src/pages/flow-page/vibe-worker-select.tsx
+#: src/components/workers/WorkerTypeSelect.tsx
+#: src/components/workers/WorkerTypeSelect.tsx
 msgid "Worker"
 msgstr "עובד"
 

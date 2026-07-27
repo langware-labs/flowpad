@@ -803,6 +803,7 @@ export function EntityExecutionPanel({
               <TurnGroupsList
                 groups={inlineGroups}
                 worker={activeProcess?.worker_type ?? undefined}
+                onWorkerChange={handleWorkerChange}
               />
               {activeProcess && (
                 <ChatActivityLine

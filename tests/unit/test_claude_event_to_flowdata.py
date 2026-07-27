@@ -8,23 +8,25 @@ Fixture events mirror the shapes emitted by Claude CLI 2.1.116 in
 
 from __future__ import annotations
 
+import pytest
+
 from flow_sdk.builtin.agentic_process.cli_drivers.claude import (
     convert_event,
     convert_line,
     final_end_frame,
 )
-import pytest
-
+from flow_sdk.builtin.agentic_process.cli_drivers.claude.session_history import (
+    entry_to_flowdata,
+)
 from flow_sdk.external_apis.llm.llm_drivers.flow_data import (
     FlowDataType,
     FlowElementType,
 )
-from flow_sdk.builtin.agentic_process.cli_drivers.claude.session_history import (
-    entry_to_flowdata,
-)
 from flow_sdk.transcript_analyzer.derive import derive_entry
-from flow_sdk.transcript_analyzer.parsers.claude import build_semantic_tool_entry
-
+from flow_sdk.transcript_analyzer.parsers.claude import (
+    ClaudeParser,
+    build_semantic_tool_entry,
+)
 
 # ── system:* events ───────────────────────────────────────────────────────────
 
@@ -122,6 +124,39 @@ def test_assistant_unknown_block_type_is_ignored():
         "message": {"content": [{"type": "some-future-thing", "data": 1}]},
     })
     assert out == []
+
+
+def test_weekly_limit_live_flowdata_matches_replay_shape():
+    event = {
+        "type": "assistant",
+        "error": "rate_limit",
+        "isApiErrorMessage": True,
+        "apiErrorStatus": 429,
+        "uuid": "quota-event",
+        "sessionId": "quota-session",
+        "timestamp": "2026-07-27T10:00:00Z",
+        "message": {
+            "model": "<synthetic>",
+            "stop_reason": "stop_sequence",
+            "content": [{
+                "type": "text",
+                "text": "You've hit your weekly limit · resets 3pm (Asia/Jerusalem)",
+            }],
+        },
+    }
+
+    live = convert_event(event)[0]
+    entry = ClaudeParser().feed(event, 0)[0]
+    replay = entry_to_flowdata(entry, observation_kind="replay")
+
+    assert live.attributes["element-type"] == FlowElementType.WORKER_UNAVAILABLE
+    assert live.attributes["subtype"] == "worker_unavailable"
+    assert live.flow_value == replay.flow_value
+    assert live.process_entry["transcript_entry"] == replay.process_entry["transcript_entry"]
+    assert live.flow_value["recoverable_with_alternative"] is True
+    assert "<flow-worker-unavailable " in live.to_xml
+    assert 'worker-type="claude_code"' in live.to_xml
+    assert 'status-code="429"' in live.to_xml
 
 
 # ── user / tool_result ────────────────────────────────────────────────────────

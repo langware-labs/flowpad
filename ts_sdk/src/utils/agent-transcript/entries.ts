@@ -30,6 +30,7 @@ export type EntryKind =
   | 'summary'
   | 'meta'
   | 'token_usage'
+  | 'worker_unavailable'
   | 'unknown';
 
 /** Common envelope fields shared across every entry. */
@@ -126,6 +127,19 @@ export interface TokenUsageEntry extends BaseEntry {
   cache_read_tokens?: number | null;
   cache_creation_tokens?: number | null;
   reasoning_output_tokens?: number | null;
+}
+
+/** A worker cannot continue this chat, but another configured worker may. */
+export type WorkerUnavailableReason = 'quota_exhausted' | 'rate_limited';
+
+export interface WorkerUnavailableEntry extends BaseEntry {
+  kind: 'worker_unavailable';
+  reason: WorkerUnavailableReason;
+  worker_type: string;
+  provider_error: string;
+  status_code: number | null;
+  recoverable_with_alternative: boolean;
+  message: string;
 }
 
 export interface UnknownEntry extends BaseEntry {
@@ -278,6 +292,7 @@ export type GenericEntry =
   | SummaryEntry
   | MetaEntry
   | TokenUsageEntry
+  | WorkerUnavailableEntry
   | UnknownEntry;
 
 // ── Type guards ─────────────────────────────────────────────────────────────
@@ -296,6 +311,8 @@ export const isWebFetch = (e: GenericEntry): e is WebFetchEntry => e.kind === 'w
 export const isTodoUpdate = (e: GenericEntry): e is TodoUpdateEntry => e.kind === 'todo_update';
 export const isAgentSpawn = (e: GenericEntry): e is AgentSpawnEntry => e.kind === 'agent_spawn';
 export const isSkillCall = (e: GenericEntry): e is SkillCallEntry => e.kind === 'skill_call';
+export const isWorkerUnavailable = (e: GenericEntry): e is WorkerUnavailableEntry =>
+  e.kind === 'worker_unavailable';
 export const isSystem = (e: GenericEntry): e is SystemEntry => e.kind === 'system';
 export const isSummary = (e: GenericEntry): e is SummaryEntry => e.kind === 'summary';
 export const isMeta = (e: GenericEntry): e is MetaEntry => e.kind === 'meta';

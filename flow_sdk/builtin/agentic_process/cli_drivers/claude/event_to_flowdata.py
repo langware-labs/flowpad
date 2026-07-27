@@ -32,6 +32,7 @@ from flow_sdk.transcript_analyzer.entries import (
 from flow_sdk.transcript_analyzer.parsers.claude import (
     ClaudeParser,
     build_semantic_tool_entry,
+    parse_worker_unavailable_event,
 )
 from flow_sdk.transcript_analyzer.process_entry import ProcessEntry
 
@@ -62,7 +63,19 @@ def convert_event(event: dict[str, Any]) -> list[FlowData]:
 
     if etype == "assistant":
         try:
-            out = _convert_assistant_event(event, _line_index)
+            worker_unavailable = parse_worker_unavailable_event(
+                event,
+                _base_for_event(event, _line_index, 0, ""),
+            )
+            if worker_unavailable is not None:
+                out = [
+                    entry_to_flowdata(
+                        worker_unavailable,
+                        observation_kind="live",
+                    )
+                ]
+            else:
+                out = _convert_assistant_event(event, _line_index)
         except Exception:
             logger.debug("claude_event_to_flowdata: assistant parse failed", exc_info=True)
             out = [_status("parse-error", _safe_dump(event))]
