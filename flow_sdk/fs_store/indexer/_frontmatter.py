@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 import stat
 import tempfile
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 def _asset_path(ref: Any) -> Path:
@@ -97,8 +100,13 @@ def _yaml_load(text: str) -> dict[str, Any]:
         parsed = yaml.safe_load(text)
         if isinstance(parsed, dict):
             return parsed
-    except Exception:
-        pass
+    except Exception as e:
+        # Say something. The fallback reader below is line-based, so malformed
+        # YAML degrades to a PARTIAL dict rather than an error — a skill whose
+        # `description:` spans lines silently loses it and stops being routable,
+        # with nothing in the logs to explain why. One unquoted colon has
+        # already shipped that way twice.
+        logger.warning("frontmatter YAML did not parse (%s); falling back to the line reader", e)
     return _parse_simple_yaml_map(text)
 
 

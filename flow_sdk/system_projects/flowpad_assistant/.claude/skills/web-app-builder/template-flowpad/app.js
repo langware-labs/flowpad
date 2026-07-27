@@ -20,8 +20,12 @@ const titleEl = document.getElementById('new-title');
 /** Latest rows from the watched query. Rendering reads ONLY this. */
 let tasks = [];
 
-/** The project this app belongs to. Entities are saved INTO it — see below. */
-let projectTypeId = null;
+/**
+ * The project this app belongs to, as a PROMISE. Only writes need it, so it is
+ * started at boot and awaited at the point of use — keeping its round-trip off
+ * the path to first paint.
+ */
+let projectTypeIdPromise = null;
 
 /**
  * Resolve the project that owns this app.
@@ -81,14 +85,15 @@ formEl.addEventListener('submit', async (event) => {
   titleEl.value = '';
   // ALWAYS pass the project scope. Without it the task is placed outside the
   // project and never appears in the user's task list.
-  await new sdk.Task({ title }).save(projectTypeId);
+  await new sdk.Task({ title }).save(await projectTypeIdPromise);
 });
 
 async function main() {
   // Loads the type registry + current project/compute node. Entity calls
   // before this resolves will fail.
   await sdk.initSdk();
-  projectTypeId = await resolveProjectTypeId();
+  // Started, deliberately not awaited: the list below can paint without it.
+  projectTypeIdPromise = resolveProjectTypeId();
 
   // A watched query is the live channel: the callback fires whenever anything
   // changes these rows — this app, the Flowpad UI, another window, an agent.
