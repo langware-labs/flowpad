@@ -3225,7 +3225,15 @@ def _should_fetch_messages(local_conv: Optional[Conversation], hub_conv: dict) -
     (single-flight, cheap) fetch and let the authoritative reconcile settle
     it. A genuinely empty conversation just reconciles to empty again; once
     the hub ships counts this branch never fires.
+
+    A hub-deleted conversation is a hard "no" before any of the above: the
+    user deleted it, so ``local_conv`` is (correctly) always None going
+    forward, which would otherwise read as "never synced" forever and
+    re-dispatch a fetch that resurrects its full message history on every
+    single list call.
     """
+    if hub_conv.get("deleted_at"):
+        return False
     if local_conv is None:
         return True
     if Conversation.is_stale(local_conv, hub_conv):
