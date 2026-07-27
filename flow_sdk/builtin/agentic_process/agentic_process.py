@@ -2734,8 +2734,8 @@ class AgenticProcess(Entity):
         )
         from flow_sdk.builtin.worker_status import (
             _has_pending_tool_use,
-            _last_assistant_stop_reason,
             _last_user_is_tool_result,
+            _scan_reversed,
         )
 
         deadline = time.monotonic() + timeout
@@ -2835,10 +2835,11 @@ class AgenticProcess(Entity):
                         if _sz > 4096:
                             _fh.seek(_sz - 4096)
                         _tail_chunk = _fh.read().decode("utf-8", errors="replace")
+                    _last_stop_reason = _scan_reversed(_tail_chunk)[2]
                     _post_tool_idle = (
                         _last_user_is_tool_result(_tail_chunk)
                         and not _has_pending_tool_use(_tail_chunk)
-                        and _last_assistant_stop_reason(_tail_chunk) == "end_turn"
+                        and _last_stop_reason == "end_turn"
                     )
                 except OSError:
                     pass
