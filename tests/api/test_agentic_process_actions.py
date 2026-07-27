@@ -486,6 +486,71 @@ async def test_register_webapp_artifact_mints_delivery_micro_app(bootstrapped_cl
 
 
 @pytest.mark.asyncio
+async def test_registering_without_a_port_yields_a_served_app(bootstrapped_client, user, tmp_path):
+    """An app Flowpad serves itself has no dev server, so it has no Deployment.
+
+    This is the shape that lets a generated app use the SDK: served from our own
+    origin, it is handed the API origin and the session cookies. Minting a
+    Deployment for a port nobody is listening on would make the display derive
+    `dev` and point at nothing.
+    """
+    from flow_sdk.builtin.faas.micro_app import MicroApp
+
+    project = Project(name="served-only-proj", fs_storage_mount_path=str(tmp_path))
+    await project.save()
+    app_dir = tmp_path / "task-manager"
+    app_dir.mkdir()
+    (app_dir / "index.html").write_text("<html><body>tasks</body></html>")
+    pid = await create_agentic_process(
+        bootstrapped_client,
+        visible=False,
+        pty_mode=False,
+        workdir=str(tmp_path),
+        project_id=project.id,
+    )
+
+    resp = await bootstrapped_client.post(
+        f"/api/v1/graph/agentic_process/{pid}/register-webapp-artifact",
+        json={"name": "Task Manager", "path": str(app_dir), "show": True},
+    )
+    assert resp.status_code == 200, resp.text
+    data = ApiResponse(**resp.json()).data
+
+    assert data["artifact"]["kind"] == "application.web"
+    assert data["deployment"] is None
+    assert data["micro_app"]["artifact_id"] == data["artifact"]["id"]
+    assert await Deployment.get_one({"artifact_id": data["artifact"]["id"]}) is None
+
+    # The display resolves to the served runtime, with no port to point at.
+    assert data["shown"]["kind"] == "app"
+    assert data["shown"]["runtime"] == "served"
+    assert "port" not in data["shown"]
+
+    rows = await MicroApp.get_all({"artifact_id": data["artifact"]["id"]})
+    assert len(rows) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_malformed_port_is_still_rejected(bootstrapped_client, user, tmp_path):
+    """Omitting the port is now legal; sending a bad one is still an error —
+    otherwise a typo would silently downgrade an app to served-only."""
+    project = Project(name="bad-port-proj", fs_storage_mount_path=str(tmp_path))
+    await project.save()
+    app_dir = tmp_path / "app"
+    app_dir.mkdir()
+    pid = await create_agentic_process(
+        bootstrapped_client, visible=False, pty_mode=False, workdir=str(tmp_path), project_id=project.id
+    )
+
+    resp = await bootstrapped_client.post(
+        f"/api/v1/graph/agentic_process/{pid}/register-webapp-artifact",
+        json={"name": "App", "path": str(app_dir), "port": "not-a-port", "show": False},
+    )
+    assert resp.status_code == 400
+    assert ApiResponse(**resp.json()).status == ApiResponseStatus.FAIL.value
+
+
+@pytest.mark.asyncio
 async def test_static_app_folder_is_its_own_build_output(bootstrapped_client, user, tmp_path):
     """A static app has no build step: the registered folder IS the deliverable.
 
