@@ -13,7 +13,6 @@ import {
   PrefKey,
   Shell,
   toplog,
-  WorkerMode,
   type AgenticProcess,
   type MarkdownDoc,
 } from '@sdk';
@@ -45,8 +44,8 @@ import { ProcessToolbar } from './ProcessToolbar';
 import { ChatComposerBar } from './ChatComposerBar';
 import { ChatPlanModeProvider } from './chat-plan-mode-context';
 import { SimpleChatPane } from './SimpleChatPane';
-import { notify } from '@src/notifications/notify';
-import { setChatUiOverride, useChatUiOverride } from '@src/contexts/chat-ui-mode-context';
+import { useProcessModeSwitch } from './use-process-mode-switch';
+import { useChatUiOverride } from '@src/contexts/chat-ui-mode-context';
 import { useIsAdvanced } from '@src/components/view-mode';
 import { PtySyncProvider, usePtySyncSession } from './PtySyncContext';
 import { TerminalRuntimeErrorBanner } from './TerminalRuntimeErrorBanner';
@@ -1508,53 +1507,18 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   );
 
   // ── Chat ⇄ Terminal mode switch (mutually-exclusive execution modes) ───────
-  // Chat = headless print-mode (no PTY); Terminal = interactive PTY. The toggle
-  // is a real lifecycle action now, not just a view flip — one standardized
-  // `switchMode(WorkerMode.Interactive|CLI)`: →terminal spawns + resumes the PTY;
-  // →chat kills the PTY worker, keeping the session, and reverts to headless
-  // routing. Both reconcile the transcript (clear + force-reload) so the
-  // destination view shows turns the other mode produced. The backend 409s a
-  // mid-turn switch; `switching` guards against double-trigger + drives the spinner.
-  const [switching, setSwitching] = useState(false);
-  const handleToggleView = useCallback(async () => {
-    // Mirror the ribbon's disabled gate: never attempt a switch mid-turn (the
-    // backend 409s it). The button is disabled in that state; this is the
-    // belt-and-suspenders guard for any non-click caller.
-    if (!process || switching || !awaitingUserInput) return;
-    const toChat = !showSimpleChat; // currently terminal → go chat
-    setSwitching(true);
-    try {
-      if (toChat) {
-        await process.switchMode(WorkerMode.CLI);
-        setChatUiOverride('chat');
-      } else {
-        const dims = terminalRef.current
-          ? { cols: terminalRef.current.cols, rows: terminalRef.current.rows }
-          : undefined;
-        await process.switchMode(WorkerMode.Interactive, dims);
-        setChatUiOverride('terminal');
-      }
-    } catch (err) {
-      console.error('[InteractiveTerminal] mode switch failed', err);
-      notify.error({
-        title: toChat ? 'Could not switch to chat' : 'Could not switch to terminal',
-        message: err instanceof Error ? err.message : String(err),
-      });
-      setSwitching(false);
-      return;
-    }
-    // The TRANSPORT switch is done — re-enable the toggle now. The transcript
-    // reconcile (pull in turns the other mode produced) is a VIEW concern and is
-    // slow on a large session (the backend transcript parse), so DON'T hold the
-    // toggle disabled behind it — that wedged rapid switching. Reconcile in the
-    // background; the chat pane fills in when it resolves (and the live WS stream
-    // keeps it current meanwhile). `loadHistory({ force: true })` REPLACES the
-    // stream with the transcript (clears internally) — no separate clear needed.
-    setSwitching(false);
-    void process
-      .loadHistory({ force: true })
-      .catch((err) => console.debug('[InteractiveTerminal] post-switch reconcile deferred:', err));
-  }, [process, switching, showSimpleChat, awaitingUserInput]);
+  // Owned by `useProcessModeSwitch` (this is the ONE call site — a second would
+  // own a second, disagreeing `switching` state). The control itself lives in the
+  // terminal header, built by ProcessToolbar from the props threaded below.
+  const getTerminalDims = useCallback(
+    () => (terminalRef.current ? { cols: terminalRef.current.cols, rows: terminalRef.current.rows } : undefined),
+    [],
+  );
+  const { switching, switchTo } = useProcessModeSwitch({
+    process,
+    awaitingUserInput,
+    getDims: getTerminalDims,
+  });
 
   // Compute synthetic shell-pane active state for the ribbon
   const ribbonOpenTabs = sidecarShellId ? [...sideWindowTabs, SideTabId.Shell] : sideWindowTabs;
@@ -1646,6 +1610,11 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
             embedded={embedded}
             onClose={onClose}
             shell={shell}
+            chatActive={showSimpleChat}
+            transportMode={(liveProcess ?? process)?.pty_mode === false ? 'chat' : 'terminal'}
+            switching={switching}
+            switchEnabled={awaitingUserInput}
+            onSwitchMode={canToggleView ? (mode) => void switchTo(mode) : undefined}
           />
         )}
         {activePane === 'shell' && sidecarShellId && <PaneBar label="Shell" onClose={() => void handleKillSidecar()} />}
@@ -1844,10 +1813,6 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
                 <ChatComposerBar process={process} onPasteImages={handleChatPasteImages} />
               ) : undefined
             }
-            chatActive={showSimpleChat}
-            switching={switching}
-            toggleEnabled={awaitingUserInput}
-            onToggleView={canToggleView ? () => void handleToggleView() : undefined}
           />
         )}
       </div>

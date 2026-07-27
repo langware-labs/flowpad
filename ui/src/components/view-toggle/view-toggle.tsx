@@ -4,6 +4,12 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@src/components/ui/tooltip';
+import {
+  SEGMENTED_ACTIVE,
+  SEGMENTED_BUTTON,
+  SEGMENTED_GROUP,
+  SEGMENTED_IDLE,
+} from '@src/components/ui/segmented';
 import { ViewMode, setViewMode, useViewMode } from '@src/contexts/view-mode-context';
 import { useDockNavigation } from '@src/navigation';
 import { Code, FlaskConical, LayoutGrid, WandSparkles, type LucideIcon } from 'lucide-react';
@@ -87,7 +93,7 @@ export function ViewToggle() {
         data-testid="view-toggle"
         role="radiogroup"
         aria-label="View mode"
-        className="flex h-6 items-center gap-0.5 rounded-md border border-border bg-muted/40 p-0.5"
+        className={SEGMENTED_GROUP}
       >
       {modes.map((m) => {
         const Icon = ICONS[m];
@@ -109,11 +115,7 @@ export function ViewToggle() {
                   const next = NEXT[m];
                   if (next) reveal(next);
                 }}
-                className={`flex h-5 w-6 items-center justify-center rounded-sm transition-colors ${
-                  active
-                    ? 'bg-accent text-primary ring-1 ring-primary/40'
-                    : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground'
-                }`}
+                className={`${SEGMENTED_BUTTON} ${active ? SEGMENTED_ACTIVE : SEGMENTED_IDLE}`}
                 aria-label={LABELS[m]}
               >
                 <Icon className="h-3 w-3" />

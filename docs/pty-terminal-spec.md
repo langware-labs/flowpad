@@ -926,7 +926,7 @@ content written at width A and reflowed to B equals content written at B.
 An interactive agent tab (`InteractiveTerminal.tsx`) can present the *same*
 agentic session two ways. This section is the consolidated reference for the two
 renderers, their transports, and how each derives its content. **Mode switching
-UX (the toggle control, View mode) is owned by `docs/viewmodes.md`; the
+UX (the switch control, View mode) is owned by `docs/viewmodes.md`; the
 headless/PTY session concept is owned by the headless⇄PTY mode docs — this
 section only covers what each renderer draws and from where.**
 
@@ -947,11 +947,11 @@ never resets the PTY.
 
 ### 14.2 Which renderer shows — selection logic
 
-All in `InteractiveTerminal.tsx:159-168`:
+All in `InteractiveTerminal.tsx` (the `showSimpleChat` derivation):
 
 ```
 isAdvanced   = useIsAdvanced()                    // View mode (Standard ⊂ Advanced ⊂ Dev)
-chatOverride = useChatUiOverride()                // 'chat' | 'terminal' | null (bottom-ribbon toggle)
+chatOverride = useChatUiOverride()                // 'chat' | 'terminal' | null (header mode switch)
 wantChat     = chatOverride != null ? chatOverride === 'chat' : !isAdvanced
 isHeadless   = !embedded && process.pty_mode === false
 showSimpleChat = isHeadless || (wantChat && !embedded && process)
@@ -970,6 +970,17 @@ canToggleView  = !embedded && process
   && <div ref={xtermContainerRef}>`). The mount effect early-returns on the
   missing ref, so no `PtySync` attach is attempted for a process that has no
   shell.
+
+**The control** is `TerminalModeSwitch.tsx` — a 3-segment control (chat |
+terminal | vibe) rendered **leftmost in the terminal header** (`HeaderSlots.modeSwitch`,
+built by `ProcessToolbar` and placed by both `InteractiveTabHeader` layouts), where
+the CURRENT mode is the selected segment. The header sits *above* the pane, so the
+chat overlay (`absolute inset-0` inside the pane) never covers it. `chat`/`terminal`
+are the two transports and run `useProcessModeSwitch().switchTo` (see
+`docs/agent-management/mode-switching.md`); `vibe` is a skin, not a transport — it
+reuses the Discuss affordance (`?viewMode=vibe` navigation onto the very same
+process dock), is never gated, and is never the selected segment because vibe
+replaces the page with `VibeWorkspace` and this header is not mounted there.
 
 ### 14.3 Where the chat UI's content comes from (NOT the PTY)
 

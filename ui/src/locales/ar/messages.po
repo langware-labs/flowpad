@@ -1606,7 +1606,7 @@ msgstr ""
 msgid "Available on cloud"
 msgstr "متاح على السحابة"
 
-#: src/components/terminal/interactive-terminal/TerminalBottomRibbon.tsx
+#: src/components/terminal/interactive-terminal/TerminalModeSwitch.tsx
 msgid "Available when the agent is waiting for your input"
 msgstr ""
 
@@ -2045,6 +2045,10 @@ msgstr ""
 #: src/pages/flow-page/vibe-chat-pane.tsx
 #~ msgid "Changing worker requires a new chat. The current chat stays in history."
 #~ msgstr ""
+
+#: src/components/terminal/interactive-terminal/TerminalModeSwitch.tsx
+msgid "Chat"
+msgstr ""
 
 #: src/components/floating-chat/FloatingChatWindow.tsx
 msgid "Chat history"
@@ -2892,6 +2896,10 @@ msgstr ""
 #: src/components/survey/SurveyView.tsx
 #: src/journey/JourneyTray.tsx
 msgid "Continue"
+msgstr ""
+
+#: src/components/terminal/interactive-terminal/TerminalModeSwitch.tsx
+msgid "Continue in vibe mode"
 msgstr ""
 
 #: src/journey/JourneyViewer.tsx
@@ -12188,6 +12196,10 @@ msgstr ""
 msgid "Session is not running"
 msgstr ""
 
+#: src/components/terminal/interactive-terminal/TerminalModeSwitch.tsx
+msgid "Session mode"
+msgstr ""
+
 #: src/pages/flow-page/vibe-recent-sessions.tsx
 #: src/tabs/useTerminalStripController.tsx
 msgid "Session not found"
@@ -13159,8 +13171,8 @@ msgid "Switch to {0}?"
 msgstr ""
 
 #: src/components/terminal/interactive-terminal/TerminalBottomRibbon.tsx
-msgid "Switch to chat view"
-msgstr ""
+#~ msgid "Switch to chat view"
+#~ msgstr ""
 
 #: src/components/theme-toggle/theme-toggle.tsx
 msgid "Switch to dark mode"
@@ -13179,10 +13191,10 @@ msgstr ""
 #~ msgstr ""
 
 #: src/components/terminal/interactive-terminal/TerminalBottomRibbon.tsx
-msgid "Switch to terminal view"
-msgstr ""
+#~ msgid "Switch to terminal view"
+#~ msgstr ""
 
-#: src/components/terminal/interactive-terminal/TerminalBottomRibbon.tsx
+#: src/components/terminal/interactive-terminal/TerminalModeSwitch.tsx
 msgid "Switching…"
 msgstr ""
 
@@ -13318,6 +13330,7 @@ msgid "Template:"
 msgstr ""
 
 #: src/components/project-home/ProjectHome.tsx
+#: src/components/terminal/interactive-terminal/TerminalModeSwitch.tsx
 msgid "Terminal"
 msgstr ""
 
@@ -14374,6 +14387,10 @@ msgstr ""
 
 #: src/components/account/user-info.tsx
 msgid "Version:"
+msgstr ""
+
+#: src/components/terminal/interactive-terminal/TerminalModeSwitch.tsx
+msgid "Vibe"
 msgstr ""
 
 #: src/components/project-home/VibeAgentsCard.tsx

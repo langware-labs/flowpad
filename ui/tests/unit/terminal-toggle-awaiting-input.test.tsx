@@ -1,38 +1,21 @@
 import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { isReadyForInput, ProcessStatus } from '@sdk';
-import { TerminalBottomRibbon } from '@src/components/terminal/interactive-terminal/TerminalBottomRibbon';
+import { TerminalModeSwitch } from '@src/components/terminal/interactive-terminal/TerminalModeSwitch';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-
-// Keep the ribbon light: stub the view-mode hook + Prompt Library so we render
-// just the toggle chrome.
-vi.mock('@src/components/view-mode', () => ({
-  useIsAdvanced: () => false,
-}));
-vi.mock('@src/components/prompt-library/PromptLibraryMenu', () => ({
-  PromptLibraryMenu: () => null,
-}));
-
-const baseProps = {
-  fileCount: 0,
-  isActive: true,
-  openTabs: [],
-  activeSideTab: null,
-  onOpenSideTab: vi.fn(),
-  process: null,
-};
 
 afterEach(() => cleanup());
 
-// The chat⇄terminal toggle may only be used while the agent is awaiting the
+// The chat⇄terminal switch may only be used while the agent is awaiting the
 // user's input — a mid-turn switchMode is 409'd by the backend. The gate is the
-// single readiness predicate: the toggle is enabled ⇔ not busy AND (the process
-// is RUNNING, fresh-headless, OR headless-idle — a CLI-transport session STOPPED
-// between per-turn workers with a live session_id). "ready" and "busy" are disjoint by
-// construction (!busy gates first), so enabling on ready can never hit the
-// backend's busy 409. These tests pin the predicate and the ribbon wiring.
+// single readiness predicate: the transport segments are enabled ⇔ not busy AND
+// (the process is RUNNING, fresh-headless, OR headless-idle — a CLI-transport
+// session STOPPED between per-turn workers with a live session_id). "ready" and
+// "busy" are disjoint by construction (!busy gates first), so enabling on ready
+// can never hit the backend's busy 409. These tests pin the predicate and the
+// header control's wiring.
 
-describe('isReadyForInput — the "your turn" toggle gate', () => {
+describe('isReadyForInput — the "your turn" switch gate', () => {
   it('is true for a RUNNING, non-busy process', () => {
     expect(isReadyForInput({ status: ProcessStatus.RUNNING, busy: false })).toBe(true);
     expect(isReadyForInput({ status: ProcessStatus.RUNNING })).toBe(true); // busy defaults falsy
@@ -40,7 +23,7 @@ describe('isReadyForInput — the "your turn" toggle gate', () => {
 
   it('is true for a headless-idle session (CLI transport, STOPPED, live session_id)', () => {
     // RCA #12a: switching terminal→chat kills the per-turn PTY and lands the
-    // process at STOPPED with its session_id preserved. The toggle must stay
+    // process at STOPPED with its session_id preserved. The switch must stay
     // enabled so the user can switch back without first sending a message.
     expect(
       isReadyForInput({ status: ProcessStatus.STOPPED, busy: false, pty_mode: false, session_id: 'sess-abc' }),
@@ -48,8 +31,8 @@ describe('isReadyForInput — the "your turn" toggle gate', () => {
   });
 
   it('is true for a fresh headless process before its first turn', async () => {
-    const onToggleView = vi.fn();
-    const toggleEnabled = isReadyForInput({
+    const onSelect = vi.fn();
+    const enabled = isReadyForInput({
       status: ProcessStatus.NEW,
       busy: false,
       pty_mode: false,
@@ -57,18 +40,21 @@ describe('isReadyForInput — the "your turn" toggle gate', () => {
     });
 
     render(
-      <TerminalBottomRibbon
-        {...baseProps}
-        chatActive
-        onToggleView={onToggleView}
-        toggleEnabled={toggleEnabled}
+      <TerminalModeSwitch
+        current="chat"
+        transport="chat"
+        switching={false}
+        enabled={enabled}
+        showVibe={false}
+        onSelect={onSelect}
+        onVibe={vi.fn()}
       />,
     );
 
-    const btn = screen.getByRole('button', { name: 'Switch to terminal view' });
-    expect((btn as HTMLButtonElement).disabled).toBe(false);
+    const btn = screen.getByRole('radio', { name: 'Terminal' });
+    expect(btn.disabled).toBe(false);
     await userEvent.click(btn);
-    expect(onToggleView).toHaveBeenCalledTimes(1);
+    expect(onSelect).toHaveBeenCalledWith('terminal');
   });
 
   it('is false when busy (turn in flight) and for non-live states with no live headless session', () => {
@@ -95,58 +81,90 @@ describe('isReadyForInput — the "your turn" toggle gate', () => {
   });
 });
 
-describe('TerminalBottomRibbon — chat⇄terminal toggle gating', () => {
-  it('disables the toggle and explains why when the agent is not awaiting input', async () => {
-    const onToggleView = vi.fn();
-    render(
-      <TerminalBottomRibbon
-        {...baseProps}
-        chatActive
-        onToggleView={onToggleView}
-        toggleEnabled={false}
-      />,
-    );
+describe('TerminalModeSwitch — transport segment gating', () => {
+  const renderSwitch = (over: Partial<Parameters<typeof TerminalModeSwitch>[0]> = {}) => {
+    const props = {
+      current: 'chat' as const,
+      // Default: skin and transport agree, so `terminal` is a real switch.
+      transport: 'chat' as const,
+      switching: false,
+      enabled: true,
+      showVibe: false,
+      onSelect: vi.fn(),
+      onVibe: vi.fn(),
+      ...over,
+    };
+    render(<TerminalModeSwitch {...props} />);
+    return props;
+  };
 
-    const btn = screen.getByRole('button', {
-      name: 'Available when the agent is waiting for your input',
-    });
-    expect((btn as HTMLButtonElement).disabled).toBe(true);
-
-    // Clicking a disabled toggle is inert — never fires switchMode (no 409).
-    await userEvent.click(btn);
-    expect(onToggleView).not.toHaveBeenCalled();
+  it('marks the current mode as the selected segment', () => {
+    renderSwitch({ current: 'chat' });
+    expect(screen.getByRole('radio', { name: 'Chat' }).getAttribute('aria-checked')).toBe('true');
+    expect(screen.getByRole('radio', { name: 'Terminal' }).getAttribute('aria-checked')).toBe('false');
   });
 
-  it('enables the toggle and fires the switch when the agent is awaiting input', async () => {
-    const onToggleView = vi.fn();
-    render(
-      <TerminalBottomRibbon
-        {...baseProps}
-        chatActive
-        onToggleView={onToggleView}
-        toggleEnabled
-      />,
-    );
+  it('disables the transport segments and explains why when the agent is not awaiting input', async () => {
+    const { onSelect } = renderSwitch({ enabled: false });
 
-    const btn = screen.getByRole('button', { name: 'Switch to terminal view' });
-    expect((btn as HTMLButtonElement).disabled).toBe(false);
+    const btn = screen.getByRole('radio', { name: 'Terminal' });
+    expect(btn.disabled).toBe(true);
+    expect(btn.title).toBe('Available when the agent is waiting for your input');
+
+    // Clicking a disabled segment is inert — never fires switchMode (no 409).
+    await userEvent.click(btn);
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it('enables the segments and fires the switch when the agent is awaiting input', async () => {
+    const { onSelect } = renderSwitch({ enabled: true });
+
+    const btn = screen.getByRole('radio', { name: 'Terminal' });
+    expect(btn.disabled).toBe(false);
 
     await userEvent.click(btn);
-    expect(onToggleView).toHaveBeenCalledTimes(1);
+    expect(onSelect).toHaveBeenCalledWith('terminal');
   });
 
   it('stays disabled mid-switch even if the status would otherwise allow it', () => {
-    render(
-      <TerminalBottomRibbon
-        {...baseProps}
-        chatActive
-        onToggleView={vi.fn()}
-        toggleEnabled
-        switching
-      />,
-    );
-    // While switching the label is the in-flight one, and the button is disabled.
-    const btn = screen.getByRole('button', { name: 'Switch to terminal view' });
-    expect((btn as HTMLButtonElement).disabled).toBe(true);
+    renderSwitch({ enabled: true, switching: true });
+    const btn = screen.getByRole('radio', { name: 'Terminal' });
+    expect(btn.disabled).toBe(true);
+    expect(btn.title).toBe('Switching…');
+  });
+
+  it('never gates the vibe segment — it does no transport work', async () => {
+    // Mid-turn AND mid-switch: the two states that lock both transports. Vibe is
+    // pure ?viewMode navigation onto the same process dock, so it stays live.
+    const { onVibe } = renderSwitch({ enabled: false, switching: true, showVibe: true });
+
+    const btn = screen.getByRole('radio', { name: 'Vibe' });
+    expect(btn.disabled).toBe(false);
+    // Vibe is never the SELECTED mode here: vibe replaces the page with
+    // VibeWorkspace, so this header is not mounted in vibe.
+    expect(btn.getAttribute('aria-checked')).toBe('false');
+
+    await userEvent.click(btn);
+    expect(onVibe).toHaveBeenCalledTimes(1);
+  });
+
+  it('omits the vibe segment in a popped-out window', () => {
+    renderSwitch({ showVibe: false });
+    expect(screen.queryByRole('radio', { name: 'Vibe' })).toBeNull();
+  });
+
+  it('never gates a segment that needs no transport work', async () => {
+    // Standard view over a LIVE PTY: the skin says chat, the transport is already
+    // terminal. Picking `terminal` is a free skin flip, so the mid-turn gate must
+    // not swallow it — watching the raw terminal while the agent works is exactly
+    // when you want it. The other direction (`chat` = kill the PTY) stays gated.
+    const { onSelect } = renderSwitch({ current: 'chat', transport: 'terminal', enabled: false });
+
+    const terminalBtn = screen.getByRole('radio', { name: 'Terminal' });
+    expect(terminalBtn.disabled).toBe(false);
+    await userEvent.click(terminalBtn);
+    expect(onSelect).toHaveBeenCalledWith('terminal');
+
+    expect(screen.getByRole('radio', { name: 'Chat' }).disabled).toBe(true);
   });
 });

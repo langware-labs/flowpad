@@ -48,7 +48,8 @@ test('C01/C03/C09/C10: a new headless Codex opens as chat and reload preserves t
     await expect(active).toHaveAttribute('data-pty-mode', 'false');
     await expect(active.getByTestId('simple-chat-pane')).toBeVisible();
     await expect(active.locator('.xterm')).toHaveCount(0);
-    await expect(active.getByTestId('terminal-chat-toggle')).toHaveAccessibleName('Switch to terminal view');
+    // Headless ⇒ the chat segment of the header mode switch is the selected one.
+    await expect(active.getByTestId('terminal-mode-chat')).toHaveAttribute('aria-checked', 'true');
 
     await page.reload();
     await expect(page).toHaveURL(new RegExp(`/dock/shell/agentic_process-${processId}`));
@@ -72,8 +73,14 @@ test('C02-C16: transport switching stays one URL-first process with busy and acc
     join(repo, 'ui/src/components/terminal/interactive-terminal/InteractiveTerminal.tsx'),
     'utf8',
   );
-  const ribbon = readFileSync(
-    join(repo, 'ui/src/components/terminal/interactive-terminal/TerminalBottomRibbon.tsx'),
+  // The chat⇄terminal switch is the 3-mode control in the terminal HEADER; the
+  // transport action itself lives in the hook it calls.
+  const modeSwitch = readFileSync(
+    join(repo, 'ui/src/components/terminal/interactive-terminal/TerminalModeSwitch.tsx'),
+    'utf8',
+  );
+  const modeSwitchHook = readFileSync(
+    join(repo, 'ui/src/components/terminal/interactive-terminal/use-process-mode-switch.ts'),
     'utf8',
   );
   const terminalPanel = readFileSync(
@@ -86,12 +93,13 @@ test('C02-C16: transport switching stays one URL-first process with busy and acc
     'utf8',
   );
 
-  expect(interactive).toContain('process.switchMode');
+  expect(interactive).toContain('useProcessModeSwitch');
+  expect(modeSwitchHook).toContain('process.switchMode');
   expect(terminalPanel).toContain('data-worker-session-id');
   expect(terminalPanel).toContain('data-pty-mode');
-  expect(ribbon).toContain('disabled={switching || !toggleEnabled}');
-  expect(ribbon).toContain('aria-label={toggleLabel}');
-  expect(ribbon).toContain('data-chat-active={chatActive}');
+  expect(modeSwitch).toContain('disabled={transportDisabled}');
+  expect(modeSwitch).toContain('aria-label={labels[mode]}');
+  expect(modeSwitch).toContain("data-chat-active={current === 'chat'}");
   expect(sdk).toContain('_pendingTransport');
   expect(sdk).toContain('async switchMode(mode: WorkerMode');
   expect(backend).toContain('@action.post(action_name="switch-mode")');

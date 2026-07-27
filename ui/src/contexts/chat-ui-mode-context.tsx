@@ -10,7 +10,9 @@ import { defineGlobal } from '@sdk/utils';
  *
  * Owned by prefMan (`preferences.ui.chat_ui_mode`, a boot key). Stored as a string
  * where the empty string means "no override" (≡ null); the user flips it from the
- * bottom-ribbon toggle and it takes priority over the View-mode default until cleared.
+ * terminal header's mode switch (`TerminalModeSwitch`) and it takes priority over the
+ * View-mode default until cleared. NOTE it is instance-global, not per-session: a
+ * per-session skin would need a PrefKey keyed by process id.
  */
 export type ChatUiOverride = 'chat' | 'terminal' | null;
 
