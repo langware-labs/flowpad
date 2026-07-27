@@ -19,7 +19,6 @@ import { PtySyncSession } from '@sdk/pty-sync/PtySyncSession.js';
 import { useScrollSync } from '@sdk/pty-sync/ui/useScrollSync.js';
 import { XTermHarness } from '@sdk/pty-sync/ui/XTermHarness.js';
 import { useContext } from '@src/hooks/useContext';
-import { useEntity } from '@src/hooks/entity-hooks';
 import { useInputDir } from '@src/hooks/use-input-dir';
 import { useInstancePreferences } from '@src/hooks/use-instance-preferences';
 import { usePreference } from '@src/hooks/use-preference';
@@ -226,8 +225,21 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   // already mounted (first death, or a failed Retry), the only signal is the
   // entity update flipping `start_failure`. The loader-context `process` is
   // not reactive, so subscribe via useEntity and surface the banner here.
-  const { data: liveProcess } = useEntity<AgenticProcess>(process?.typeId ?? null);
-  const liveStartFailure = liveProcess?.start_failure ?? null;
+  // ── Session mode switch (chat ⇄ terminal ⇄ vibe) ──────────────────────────
+  // Owned by `useProcessModeSwitch` (this is the ONE call site for this mount —
+  // a second would own a second, disagreeing `switching` state). It derives the
+  // transport and the readiness gate from the reactive entity itself; all this
+  // mount contributes is the live xterm size for the →terminal direction. The
+  // control renders leftmost in the header, built as a slot by ProcessToolbar.
+  const getTerminalDims = useCallback(
+    () => (terminalRef.current ? { cols: terminalRef.current.cols, rows: terminalRef.current.rows } : undefined),
+    [],
+  );
+  const modeSwitch = useProcessModeSwitch({ process, getDims: getTerminalDims });
+
+  // The reactive entity comes from the mode-switch hook, which already
+  // subscribes to it — one subscription per process, not two.
+  const liveStartFailure = modeSwitch.live?.start_failure ?? null;
   useEffect(() => {
     if (!liveStartFailure || !process) return;
     dataContext.setTerminalRuntimeError({
@@ -1499,18 +1511,6 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     },
     [inputDirInfo, openSideTab],
   );
-
-  // ── Session mode switch (chat ⇄ terminal ⇄ vibe) ──────────────────────────
-  // Owned by `useProcessModeSwitch` (this is the ONE call site for this mount —
-  // a second would own a second, disagreeing `switching` state). It derives the
-  // transport and the readiness gate from the reactive entity itself; all this
-  // mount contributes is the live xterm size for the →terminal direction. The
-  // control renders leftmost in the header, built as a slot by ProcessToolbar.
-  const getTerminalDims = useCallback(
-    () => (terminalRef.current ? { cols: terminalRef.current.cols, rows: terminalRef.current.rows } : undefined),
-    [],
-  );
-  const modeSwitch = useProcessModeSwitch({ process, getDims: getTerminalDims });
 
   // Compute synthetic shell-pane active state for the ribbon
   const ribbonOpenTabs = sidecarShellId ? [...sideWindowTabs, SideTabId.Shell] : sideWindowTabs;

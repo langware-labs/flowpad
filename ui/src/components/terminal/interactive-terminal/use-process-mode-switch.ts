@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react';
 import { isReadyForInput, WorkerMode, type AgenticProcess } from '@sdk';
 import { useEntity } from '@src/hooks/entity-hooks';
-import { ViewMode } from '@src/contexts/view-mode-context';
+import { previousNonVibeViewMode, useIsVibe, ViewMode } from '@src/contexts/view-mode-context';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications/notify';
 
@@ -20,6 +20,9 @@ interface UseProcessModeSwitchOptions {
 }
 
 export interface ProcessModeSwitch {
+  /** The reactive entity this hook already subscribes to — exposed so a caller
+   *  doesn't open a second subscription to the same process. */
+  live: AgenticProcess | null;
   /** The transport the session is actually on (`pty_mode`), reactively. */
   transport: TransportMode;
   /** `isReadyForInput` — the backend 409s a mid-turn transport switch. */
@@ -55,7 +58,8 @@ export interface ProcessModeSwitch {
  */
 export function useProcessModeSwitch({ process, getDims }: UseProcessModeSwitchOptions): ProcessModeSwitch {
   const [switching, setSwitching] = useState(false);
-  const { currentDock, navigation } = useDockNavigation();
+  const { navigation } = useDockNavigation();
+  const isVibe = useIsVibe();
   // The reactive entity: `pty_mode` and the worker status both move underneath
   // us mid-session, and the switch's selection + gate must follow.
   const { data: liveProcess } = useEntity<AgenticProcess>(process?.typeId ?? null);
@@ -65,62 +69,61 @@ export function useProcessModeSwitch({ process, getDims }: UseProcessModeSwitchO
 
   const select = useCallback(
     (mode: SessionMode) => {
-      if (!currentDock) return;
+      if (!process) return;
 
-      // Vibe: a view mode of this same dock, reusing the Discuss affordance —
-      // "continue this conversation in vibe mode". Pure navigation, no transport
-      // work, so it is never gated on the worker being idle.
-      if (mode === 'vibe') {
-        navigation.openDock(currentDock.withViewMode(ViewMode.Vibe));
-        return;
-      }
-
-      // Leaving vibe for a renderer: drop the vibe view mode as the footer
-      // ViewToggle does — Standard is where its Vibe⇄Standard pair lands, and
-      // the chatMode below out-ranks Standard's default skin either way.
-      const dock = currentDock.withChatMode(mode).withViewMode(
-        currentDock.viewMode === ViewMode.Vibe ? ViewMode.Standard : currentDock.viewMode,
+      // Address the PROCESS, never the ambient dock. This hook is mounted in the
+      // vibe display strip too, where `currentDock` is often a CHILD tab (an
+      // asset editor opened from inside the workspace) — stamping the mode onto
+      // that URL would navigate the user to the child in the new mode instead of
+      // to their session. `openShellProcess` is the one place that knows how to
+      // build a process URL, and every other open-in-vibe call site uses it.
+      //
+      // Vibe is a view mode of that URL; chat/terminal is the renderer one level
+      // down. Leaving vibe restores the mode in use before it — entering vibe
+      // overwrote the persisted preference, so inheriting would pin the user in
+      // vibe and hardcoding Standard would quietly demote an Advanced user.
+      void navigation.openShellProcess(
+        process.id,
+        mode === 'vibe'
+          ? { viewMode: ViewMode.Vibe }
+          : { chatMode: mode, ...(isVibe ? { viewMode: previousNonVibeViewMode() } : {}) },
       );
-      navigation.openDock(dock);
 
-      // …and the part the URL can't express: move the worker if the pick
+      // …and the part the URL can't express: move the worker when the pick
       // disagrees with the live transport. Keyed on `pty_mode` (held stable by
       // the SDK desired-value latch) and NOT on the chat skin, whose preference
       // lags under rapid switching — a skin-keyed test could short-circuit a
-      // direction that has not actually landed.
-      if (!process || switching || transport === mode) return;
-      if (!awaitingUserInput) return; // mirrors the control's disabled gate
+      // direction that has not actually landed. `awaitingUserInput` mirrors the
+      // control's own disabled gate (the backend 409s a mid-turn switch).
+      if (mode === 'vibe' || switching || transport === mode || !awaitingUserInput) return;
 
       const toChat = mode === 'chat';
       setSwitching(true);
       void (async () => {
         try {
-          if (toChat) await process.switchMode(WorkerMode.CLI);
-          else await process.switchMode(WorkerMode.Interactive, getDims?.());
+          await process.switchMode(toChat ? WorkerMode.CLI : WorkerMode.Interactive, toChat ? undefined : getDims?.());
+          // The transcript reconcile pulls in turns the other mode produced. It
+          // is a VIEW concern and slow on a large session (backend transcript
+          // parse), so it is never awaited — holding the control behind it
+          // wedged rapid switching. `loadHistory({ force: true })` REPLACES the
+          // stream with the transcript (clears internally); the live WS stream
+          // keeps the pane current meanwhile.
+          void process
+            .loadHistory({ force: true })
+            .catch((err) => console.debug('[useProcessModeSwitch] post-switch reconcile deferred:', err));
         } catch (err) {
           console.error('[useProcessModeSwitch] mode switch failed', err);
           notify.error({
             title: toChat ? 'Could not switch to chat' : 'Could not switch to terminal',
             message: err instanceof Error ? err.message : String(err),
           });
+        } finally {
           setSwitching(false);
-          return;
         }
-        // The TRANSPORT switch is done — re-enable the control now. The transcript
-        // reconcile (pull in turns the other mode produced) is a VIEW concern and is
-        // slow on a large session (the backend transcript parse), so DON'T hold the
-        // control disabled behind it — that wedged rapid switching. Reconcile in the
-        // background; the chat pane fills in when it resolves (and the live WS stream
-        // keeps it current meanwhile). `loadHistory({ force: true })` REPLACES the
-        // stream with the transcript (clears internally) — no separate clear needed.
-        setSwitching(false);
-        void process
-          .loadHistory({ force: true })
-          .catch((err) => console.debug('[useProcessModeSwitch] post-switch reconcile deferred:', err));
       })();
     },
-    [process, switching, awaitingUserInput, transport, getDims, currentDock, navigation],
+    [process, switching, awaitingUserInput, transport, getDims, isVibe, navigation],
   );
 
-  return { transport, awaitingUserInput, switching, select };
+  return { live, transport, awaitingUserInput, switching, select };
 }

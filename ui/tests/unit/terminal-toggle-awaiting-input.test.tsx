@@ -2,6 +2,10 @@ import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { isReadyForInput, ProcessStatus } from '@sdk';
 import { TerminalModeSwitch } from '@src/components/terminal/interactive-terminal/TerminalModeSwitch';
+import type {
+  SessionMode,
+  TransportMode,
+} from '@src/components/terminal/interactive-terminal/use-process-mode-switch';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 afterEach(() => cleanup());
@@ -42,11 +46,8 @@ describe('isReadyForInput — the "your turn" switch gate', () => {
     render(
       <TerminalModeSwitch
         current="chat"
-        transport="chat"
-        switching={false}
-        enabled={enabled}
         showVibe={false}
-        onSelect={onSelect}
+        modeSwitch={{ transport: 'chat', awaitingUserInput: enabled, switching: false, select: onSelect }}
       />,
     );
 
@@ -81,18 +82,40 @@ describe('isReadyForInput — the "your turn" switch gate', () => {
 });
 
 describe('TerminalModeSwitch — transport segment gating', () => {
-  const renderSwitch = (over: Partial<Parameters<typeof TerminalModeSwitch>[0]> = {}) => {
+  /** `over` is flattened for brevity — the two per-mount props plus the hook
+   *  fields, reassembled into the `modeSwitch` object the component takes. */
+  const renderSwitch = (
+    over: Partial<{
+      current: SessionMode;
+      showVibe: boolean;
+      transport: TransportMode;
+      switching: boolean;
+      enabled: boolean;
+      onSelect: (m: SessionMode) => void;
+    }> = {},
+  ) => {
     const props = {
-      current: 'chat' as const,
+      current: 'chat' as SessionMode,
+      showVibe: false,
       // Default: skin and transport agree, so `terminal` is a real switch.
-      transport: 'chat' as const,
+      transport: 'chat' as TransportMode,
       switching: false,
       enabled: true,
-      showVibe: false,
       onSelect: vi.fn(),
       ...over,
     };
-    render(<TerminalModeSwitch {...props} />);
+    render(
+      <TerminalModeSwitch
+        current={props.current}
+        showVibe={props.showVibe}
+        modeSwitch={{
+          transport: props.transport,
+          awaitingUserInput: props.enabled,
+          switching: props.switching,
+          select: props.onSelect,
+        }}
+      />,
+    );
     return props;
   };
 

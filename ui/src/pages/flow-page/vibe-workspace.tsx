@@ -9,7 +9,7 @@ import { annotateImage } from '@src/components/image-annotator/image-annotator-s
 import { ResizablePanel, ResizablePanelGroup, ResizableHandle } from '@src/components/ui/resizable';
 import { useAgentContext } from '@src/contexts/agent-context';
 import { useAgenticProcessStream } from '@src/hooks/use-agentic-process-stream';
-import { useViewerStore, useProcessWebApp } from '@src/hooks/flow-hooks';
+import { useViewerStore, useProcessWebApp, useAppDisplay } from '@src/hooks/flow-hooks';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { AssetEditor, editorForPath, editorForType } from '@src/navigation/asset-doc-types';
 import { useEntity } from '@src/hooks/entity-hooks';
@@ -27,6 +27,8 @@ import { resolveProcessInputDir } from '@src/utils/upload-to-input-dir';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications/notify';
 import { WorkspaceChildStrip } from './workspace-child-strip';
+import { TerminalModeSwitch } from '@src/components/terminal/interactive-terminal/TerminalModeSwitch';
+import { useProcessModeSwitch } from '@src/components/terminal/interactive-terminal/use-process-mode-switch';
 import { ContentPanel } from './content-panel/content-panel';
 import { launchVibeSessionForProject } from './use-start-vibe-session';
 import { VIBE_STARTER_PROMPTS } from './vibe-starter-prompts';
@@ -146,6 +148,16 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
   // Bind by the workspace session id. The same hook also owns parent
   // registration/materialization for process and child presentations.
   const activeProcess = useVibeWorkspaceSessionHost(session);
+  // Same control and same hook as the terminal header — here `vibe` is the
+  // selected segment, so picking chat/terminal navigates back out to that
+  // renderer. Built here (not inside the strip) so the strip stays dumb: it
+  // takes a `leading` node and knows nothing about processes. No xterm is
+  // mounted in vibe, hence no dims for the →terminal direction.
+  const modeSwitch = useProcessModeSwitch({ process: activeProcess });
+  const modeSwitchSlot = activeProcess ? (
+    <TerminalModeSwitch current="vibe" showVibe modeSwitch={modeSwitch} />
+  ) : null;
+
   const streamItems = useAgenticProcessStream(activeProcess);
   const focus = useVibeFocus(streamItems);
   const reactiveProcess = useEntity<AgenticProcess>(activeProcess?.typeId ?? null);
@@ -208,7 +220,13 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
   // Feed the dev-server port into the viewer store — the exact channel
   // WebappViewer reads (`currentContext.viewerOptions.port`). A shown webapp
   // wins over stream focus. This is store state, not URL state.
+  //
+  // A shown APP is deliberately absent here: it carries its own identity
+  // (artifact_id) and derives its runtime, so pushing its port into the shared
+  // viewer store would re-create the port side-channel this replaces — and
+  // leave a stale port behind the moment the app is served instead.
   useEffect(() => {
+    if (shown?.kind === 'app') return;
     if (shown?.kind === 'webapp' && shown.port != null) {
       setCurrentContext({ viewerOptions: { port: String(shown.port) } });
       return;
@@ -228,6 +246,16 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
   );
   const webAppConfig = useProcessWebApp(activeProcess, webappPort);
   const webappFrameRef = useRef<PersistentIframeHandle>(null);
+
+  // A shown app: identity is the artifact, runtime (dev server vs built output
+  // we serve) is derived and user-switchable.
+  const appDisplay = useAppDisplay(
+    activeProcess,
+    shown?.kind === 'app' ? (shown.artifact_id ?? null) : null,
+    shown?.kind === 'app' && shown.port != null ? String(shown.port) : null,
+    shown?.kind === 'app' && (shown.runtime === 'dev' || shown.runtime === 'served') ? shown.runtime : null,
+  );
+  const appFrameRef = useRef<PersistentIframeHandle>(null);
 
   const submitAnnotatedDisplay = useCallback(async (file: File, context: DisplayAnnotationContext) => {
     if (!activeProcess?.id) throw new Error('No active Vibe session');
@@ -371,6 +399,45 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
 
     if (shown) {
       switch (shown.kind) {
+        case 'app': {
+          if (!appDisplay.src) return preview;
+          const appContext = displayAnnotationContextForShown(shown, appDisplay.src, appDisplay.port);
+          return (
+            <DisplayToolbar
+              externalUrl={appDisplay.src}
+              onAnnotate={(target) => {
+                void handleAnnotateDisplay(target, appContext);
+              }}
+              historySlot={historySlot}
+              perType={
+                <WebappDisplayToolbar
+                  host={appDisplay.src}
+                  port={appDisplay.port ?? ''}
+                  runtime={appDisplay.runtime}
+                  runtimes={appDisplay.available}
+                  onRuntimeChange={appDisplay.setRuntime}
+                  onRefresh={() => appFrameRef.current?.refresh()}
+                />
+              }
+            >
+              <PersistentIframe
+                // Keyed by src so a runtime switch remounts the wrapper.
+                // Changing src in place leaves BOTH the outgoing and incoming
+                // frames parked at opacity-0 — the registry activates a
+                // container on mount, and an in-place src change retires the
+                // old one without ever activating the new one. Switching
+                // runtimes is the first thing to change src routinely; the
+                // port-only path below effectively never does.
+                key={appDisplay.src}
+                ref={appFrameRef}
+                testId="vibe-app-frame"
+                src={appDisplay.src}
+                cacheKey={showNonce + refreshStamp}
+                onErrorRetry={() => onRetry(t`The web app is not working, please try to fix it.`)}
+              />
+            </DisplayToolbar>
+          );
+        }
         case 'webapp': {
           if (!webAppConfig.host) return preview;
           const webappContext = displayAnnotationContextForShown(shown, webAppConfig.host, webappPort);
@@ -470,6 +537,7 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
     onRetry,
     webAppConfig,
     webappPort,
+    appDisplay,
     t,
     navigation,
     activeProcess,
@@ -486,7 +554,7 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
       <ResizablePanel defaultSize={64} minSize={45}>
         <div className="flex h-full flex-col">
           <WorkspaceChildStrip
-            process={activeProcess}
+            leading={modeSwitchSlot}
             processTab={session.processTab}
             processDock={session.processDock}
             projectId={project?.id ?? null}

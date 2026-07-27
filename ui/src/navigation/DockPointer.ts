@@ -352,10 +352,7 @@ export class DockPointer implements IDockPointer {
 
   /** Clone this dock with a page-local chat-mode override, or remove it with null. */
   withChatMode(mode: ChatMode | null): DockPointer {
-    const nextOptions = { ...(this.options ?? {}) };
-    if (mode) nextOptions[CHAT_MODE_PARAM] = mode;
-    else delete nextOptions[CHAT_MODE_PARAM];
-    return new DockPointer(this.viewType, this.pointer, nextOptions, this.layout, this.page);
+    return this.withOption(CHAT_MODE_PARAM, mode);
   }
 
   /**

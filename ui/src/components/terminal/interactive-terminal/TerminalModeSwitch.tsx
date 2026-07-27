@@ -6,23 +6,17 @@ import {
   SEGMENTED_GROUP,
   SEGMENTED_IDLE,
 } from '@src/components/ui/segmented';
-import type { SessionMode, TransportMode } from './use-process-mode-switch';
+import type { ProcessModeSwitch, SessionMode } from './use-process-mode-switch';
 
 interface TerminalModeSwitchProps {
   /** The mode the session is CURRENTLY shown in — the selected segment. */
   current: SessionMode;
-  /** The mode the session's TRANSPORT is on (`pty_mode`). Usually equals
-   *  `current`, but Standard paints the chat pane over a live PTY, and in vibe
-   *  `current` is 'vibe' while the transport is still one of the two — so
-   *  picking the segment that already matches the transport does no work. */
-  transport: TransportMode;
-  /** A transport switch is in flight (spinner on the target segment). */
-  switching: boolean;
-  /** `isReadyForInput` — the backend 409s a mid-turn transport switch. */
-  enabled: boolean;
   /** Whether the vibe segment is offered (hidden in a popped-out window). */
   showVibe: boolean;
-  onSelect: (mode: SessionMode) => void;
+  /** The shared switch: live transport, readiness gate, in-flight flag, and the
+   *  one `select`. Taken whole rather than re-spelled as four props, so adding a
+   *  field to the hook doesn't ripple through both mounts. */
+  modeSwitch: ProcessModeSwitch;
 }
 
 const ICONS: Record<SessionMode, LucideIcon> = {
@@ -48,14 +42,8 @@ const ICONS: Record<SessionMode, LucideIcon> = {
  * `Tooltip` wrapper, so disabled segments still explain themselves without a
  * wrapper `<span>` swallowing clicks.
  */
-export function TerminalModeSwitch({
-  current,
-  transport,
-  switching,
-  enabled,
-  showVibe,
-  onSelect,
-}: TerminalModeSwitchProps) {
+export function TerminalModeSwitch({ current, showVibe, modeSwitch }: TerminalModeSwitchProps) {
+  const { transport, switching, awaitingUserInput: enabled, select } = modeSwitch;
   const { t } = useLingui();
   const labels: Record<SessionMode, string> = { chat: t`Chat`, terminal: t`Terminal`, vibe: t`Vibe` };
   const modes: SessionMode[] = showVibe ? ['chat', 'terminal', 'vibe'] : ['chat', 'terminal'];
@@ -77,8 +65,19 @@ export function TerminalModeSwitch({
         // Vibe only navigates; so does a pick already matching the transport.
         const free = mode === 'vibe' || mode === transport;
         const disabled = !free && (switching || !enabled);
-        // The spinner marks the DESTINATION — the segment being switched to.
-        const Icon = switching && !active && !free ? Loader2 : ICONS[mode];
+        // The spinner marks the segment whose TRANSPORT is moving. Deliberately
+        // not `&& !active`: navigation lands first, so the destination is already
+        // the selected segment by the time the worker starts switching — gating
+        // on !active made the spinner unreachable.
+        const spinning = switching && !free;
+        const Icon = spinning ? Loader2 : ICONS[mode];
+        const title = spinning
+          ? t`Switching…`
+          : disabled
+            ? t`Available when the agent is waiting for your input`
+            : mode === 'vibe'
+              ? t`Continue in vibe mode`
+              : labels[mode];
         return (
           <button
             key={mode}
@@ -88,21 +87,13 @@ export function TerminalModeSwitch({
             aria-label={labels[mode]}
             data-testid={`terminal-mode-${mode}`}
             disabled={disabled}
-            title={
-              switching && !free
-                ? t`Switching…`
-                : disabled
-                  ? t`Available when the agent is waiting for your input`
-                  : mode === 'vibe'
-                    ? t`Continue in vibe mode`
-                    : labels[mode]
-            }
-            onClick={() => onSelect(mode)}
+            title={title}
+            onClick={() => select(mode)}
             className={`${SEGMENTED_BUTTON} ${active ? SEGMENTED_ACTIVE : SEGMENTED_IDLE} ${
               disabled ? 'cursor-not-allowed opacity-50' : ''
             }`}
           >
-            <Icon className={`h-3 w-3 ${switching && !active && !free ? 'animate-spin' : ''}`} />
+            <Icon className={`h-3 w-3 ${spinning ? 'animate-spin' : ''}`} />
           </button>
         );
       })}
