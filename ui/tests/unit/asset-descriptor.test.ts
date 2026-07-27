@@ -82,4 +82,11 @@ describe('assetDescriptorHasUsage', () => {
       usage: [{ kind: 'transcript_file_read', path: base.posix_path, entry_id: 'entry-1' }],
     })).toBe(true);
   });
+
+  it('preserves true, false, and omitted remote compatibility states', () => {
+    const omitted: AssetDescriptor = { ...base };
+    expect(({ ...base, remote: true } satisfies AssetDescriptor).remote).toBe(true);
+    expect(({ ...base, remote: false } satisfies AssetDescriptor).remote).toBe(false);
+    expect(omitted.remote).toBeUndefined();
+  });
 });

@@ -29,13 +29,32 @@ test('a VFS editor URL selects the real file in the Files tree', async ({ page, 
     await expect(pageHeader).toContainText('interface.md');
     await expect(pageHeader.getByTestId('assets-page-header-path')).toContainText('/docs/agent');
     await expect(pageHeader.getByTestId('assets-page-header-copy-path')).toBeVisible();
-    await expect(pageHeader.getByTestId('assets-page-header-type-icon')).toBeVisible();
+    const headerEntityIcon = pageHeader.locator('[data-entity-location="local"]');
+    await expect(headerEntityIcon).toBeVisible();
+    await expect(headerEntityIcon.locator('[data-location-glyph="local"]')).toBeVisible();
+    await expect(headerEntityIcon.locator('[data-entity-type-icon]')).toBeVisible();
+    await expect(headerEntityIcon).toHaveAttribute('aria-label', /Local only/);
+    await expect(
+      headerEntityIcon.locator('[data-location-glyph], [data-entity-type-icon]'),
+    ).toHaveCount(2);
+    expect(
+      await headerEntityIcon
+        .locator('[data-location-glyph], [data-entity-type-icon]')
+        .evaluateAll((nodes) =>
+          nodes.map((node) =>
+            node.hasAttribute('data-location-glyph') ? 'location' : 'type',
+          ),
+        ),
+    ).toEqual(['location', 'type']);
+    await headerEntityIcon.locator('[data-location-glyph="local"]').hover();
+    await expect(page.getByRole('tooltip')).toHaveText('Local only');
     await expect(pageHeader.getByTestId('entity-actions-share')).toBeVisible();
     await expect(pageHeader.getByRole('button', { name: 'Add to favorites' })).toBeVisible();
     await expect(pageHeader.getByTestId('asset-discuss-in-vibe')).toBeVisible();
 
     const editorHeader = page.getByTestId('asset-editor-header');
     await expect(editorHeader.getByText('interface.md', { exact: true })).toHaveCount(0);
+    await expect(editorHeader.locator('[data-entity-location]')).toHaveCount(0);
     await expect(editorHeader.getByTestId('markdown-editor-copy-content')).toBeVisible();
     await expect(editorHeader.getByTestId('asset-discuss-in-vibe')).toHaveCount(0);
     await editorHeader.getByTestId('editor-mode-chip-editor').click();

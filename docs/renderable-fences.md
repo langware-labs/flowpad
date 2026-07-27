@@ -1,6 +1,6 @@
 # Renderable code fences
 
-Most fenced code blocks are text with syntax colour. A few are worth *drawing*:
+Most fenced code blocks are text with syntax colour. A few are worth _drawing_:
 a `mermaid` fence is a diagram, an `interface` fence is an API contract. This is
 the mechanism that lets a language opt into being drawn, without any other fence
 noticing.
@@ -8,7 +8,7 @@ noticing.
 Everything lives in `ui/src/components/milkdown-editor/plugins/fence-render/`
 and applies to the Milkdown surfaces only (`view` / `editor` / `learning`).
 Review mode (react-markdown) and raw-markdown mode (Monaco) still show the
-plain fence — the latter correctly, since it *is* the source view.
+plain fence — the latter correctly, since it _is_ the source view.
 
 ## Render-only, by construction
 
@@ -19,7 +19,7 @@ registered renderer falls through to the schema's own `toDOM` and behaves
 exactly as it did before.
 
 That property is what makes the feature safe to have at all, and it is worth
-preserving: any future change that needs to *write* through a fence should go
+preserving: any future change that needs to _write_ through a fence should go
 through `commit` (below) rather than touching the schema. Being a `$view` and
 not a `$nodeSchema` override also sidesteps the double-override crash
 documented in `plugins/bidi/schema.ts`.
@@ -38,8 +38,11 @@ concrete renderer modules for their side effect, the same direction
 make the generic layer depend on every implementation of it.
 
 The contract is throw-based: a renderer that cannot draw its input throws, and
-the host keeps the last good output and shows an inline error chip. A
-half-typed block degrades to "stale render + error" instead of flashing blank.
+the host keeps the last good output and shows an inline error chip below both
+panes. Keeping validation feedback outside the render pane matters: malformed
+YAML remains fully editable in Code while the precise parser/schema error stays
+visible. A half-typed block degrades to "stale render + error" instead of
+flashing blank.
 
 ## Tabs, and where their state lives
 
@@ -56,7 +59,7 @@ state and the view.
 
 **Caret precedence**: a caret inside the block always forces `Code`. If the
 source were hidden while the selection sat inside it, the caret would have
-nowhere to render and typing would go somewhere invisible. Switching *to* the
+nowhere to render and typing would go somewhere invisible. Switching _to_ the
 render tab moves the selection out of the node first.
 
 ## Host services
@@ -83,6 +86,13 @@ editing: values are click-to-edit and the optional badge is a toggle. Edits
 rewrite the block through `yaml`'s Document API rather than regenerating it, so
 comments, key order and quoting survive.
 
+The Code pane is the authoritative structural editor in Editor mode: it is the
+real ProseMirror code-block content, not a detached textarea, so typing, undo,
+autosave and Markdown serialization follow the ordinary document path. View
+mode shows the same source read-only. Existing top-level and member
+descriptions are editable in the rendered card; adding/removing fields or
+promoting a compact scalar to object form remains a Code-pane edit.
+
 An interface may describe either a callable (`params`, `returns`, `errors`) or a
 class-like surface with `methods` and `properties`. Class-like cards gain two
 sub-tabs inside the Interface pane; switching them is view state and never
@@ -97,9 +107,9 @@ properties:
     type: ProcessStatus
     description: Current lifecycle state.
 methods:
-  start: "async (prompt?: string) -> ApiResponse"
+  start: 'async (prompt?: string) -> ApiResponse'
   close:
-    signature: "async () -> void"
+    signature: 'async () -> void'
     description: Permanently tear down the process.
 ```
 
@@ -115,7 +125,7 @@ implemented — so the card stops being free-floating prose:
 
 ```yaml
 source:
-  origin:            # the SDK's FSOriginField union; omit `kind` → git
+  origin: # the SDK's FSOriginField union; omit `kind` → git
     kind: git
     provider: github
     owner: langware
@@ -133,7 +143,7 @@ agree on what a safe repo-relative path is.
 
 `source-location.ts` resolves an origin to a local path, in precedence order:
 an explicit `project_id`, then a local origin's own `base`, then the document's
-project root. Each failure returns a *reason* rather than throwing — that reason
+project root. Each failure returns a _reason_ rather than throwing — that reason
 is what the disabled chip's tooltip shows, because a dead control that explains
 nothing is worse than no control.
 

@@ -1602,6 +1602,10 @@ msgstr ""
 msgid "Available assets"
 msgstr ""
 
+#: src/components/graph-view/ui/EntityIcon.tsx
+msgid "Available on cloud"
+msgstr "متاح على السحابة"
+
 #: src/components/terminal/interactive-terminal/TerminalBottomRibbon.tsx
 msgid "Available when the agent is waiting for your input"
 msgstr ""
@@ -3035,7 +3039,8 @@ msgstr ""
 #~ msgid "Copy Log"
 #~ msgstr ""
 
-#: src/components/assets/editor/markdown/MarkdownEditor.tsx
+#: src/components/assets/AssetsPage.tsx
+#: src/components/assets/AssetsPage.tsx
 #: src/components/spec-editor/SpecEditor.tsx
 msgid "Copy path"
 msgstr ""
@@ -3163,6 +3168,7 @@ msgstr ""
 #: src/components/conversation/asset-review/useRunReceivedSkill.tsx
 #: src/components/conversation/asset-review/useRunReceivedSkill.tsx
 #: src/pages/flow-page/use-start-vibe-session.ts
+#: src/pages/flow-page/vibe-chat-pane.tsx
 #: src/pages/flow-page/vibe-no-process-workspace.tsx
 #: src/pages/flow-page/vibe-no-process-workspace.tsx
 msgid "Could not start"
@@ -5185,6 +5191,7 @@ msgid "Failed to start session"
 msgstr ""
 
 #: src/pages/flow-page/use-start-vibe-session.ts
+#: src/pages/flow-page/vibe-chat-pane.tsx
 #: src/pages/flow-page/vibe-no-process-workspace.tsx
 #: src/pages/flow-page/vibe-no-process-workspace.tsx
 msgid "Failed to start the build session."
@@ -7314,6 +7321,10 @@ msgstr ""
 #: src/components/graph-view/ui/TopBar.tsx
 msgid "Local graph:"
 msgstr ""
+
+#: src/components/graph-view/ui/EntityIcon.tsx
+msgid "Local only"
+msgstr "محلي فقط"
 
 #: src/components/inbox-view/InboxView.tsx
 #: src/components/inbox-view/InboxView.tsx
@@ -11876,6 +11887,10 @@ msgstr ""
 msgid "Select {0}"
 msgstr ""
 
+#: src/components/asset-manager/AssetPickerPopover.tsx
+msgid "Select {label}"
+msgstr ""
+
 #: src/components/GitHubConnectionDialog.tsx
 msgid "Select a branch"
 msgstr ""
@@ -14093,6 +14108,11 @@ msgstr ""
 #: src/components/inbox-view/InboxView.tsx
 #: src/components/inbox-view/InboxView.tsx
 msgid "Unread"
+msgstr ""
+
+#: src/components/assets/editor/AssetEditorHeader.tsx
+#: src/components/assets/editor/markdown/MarkdownEditor.tsx
+msgid "Unsaved changes"
 msgstr ""
 
 #: src/components/chats-navigator/ChatHistoryRow.tsx

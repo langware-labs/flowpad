@@ -29,7 +29,7 @@ import logging
 import uuid
 
 from flow_sdk.actions.action_registry import action as _action_registry
-from flow_sdk.api.api_types.api_field import APIField, Persist
+from flow_sdk.api.api_types.api_field import APIField, NoDBAPIField, Persist
 from flow_sdk.builtin.tab_order import (
     compute_insert_new,
     compute_reorder,
@@ -197,6 +197,7 @@ class Tab(Entity):
     # Never persisted — re-resolved on every list/close/rename action.
     status: str | None = APIField(default=None, persist=Persist.FALSE)
     is_disabled: bool = APIField(default=False, persist=Persist.FALSE)
+    target_remote: bool = NoDBAPIField(default=False)
 
     # ``name`` and ``project_id`` are inherited from the base Entity. ``name`` is
     # the generic source of truth for the tab label; ``rename`` reflects it onto
@@ -1039,6 +1040,69 @@ async def _populate_tab_statuses(
         tab.is_disabled = tab.status == "closing"
 
 
+async def _load_remote_targets(
+    tabs: list[Tab],
+    seed: "dict[tuple[str, str], object] | None" = None,
+) -> "dict[tuple[str, str], object]":
+    """Batch-load content targets needed by the tab cloud-state projection."""
+    from flow_sdk.db.drivers.query import (  # noqa: PLC0415
+        ExpressionNode,
+        QueryFilter,
+        QueryOp,
+    )
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    by_type_id = dict(seed or {})
+    ids_by_type: dict[str, set[str]] = {}
+    for tab in tabs:
+        if (
+            not tab.target_type
+            or not tab.target_id
+            or tab.target_type in _DB_BACKED_TARGET_TYPES
+            or (tab.target_type, str(tab.target_id)) in by_type_id
+        ):
+            continue
+        ids_by_type.setdefault(tab.target_type, set()).add(str(tab.target_id))
+
+    for target_type, ids in ids_by_type.items():
+        target_cls = SchemaRegistry.get_entity_cls(target_type)
+        if target_cls is None:
+            continue
+        try:
+            rows = await target_cls.get_all(
+                QueryFilter(
+                    match=ExpressionNode(
+                        op=QueryOp.IN,
+                        operands=["id", sorted(ids)],
+                    )
+                )
+            )
+        except Exception:
+            logger.debug(
+                "tab remote-target batch load failed for %s",
+                target_type,
+                exc_info=True,
+            )
+            continue
+        for row in rows:
+            by_type_id[(target_type, str(row.id))] = row
+    return by_type_id
+
+
+def _populate_tab_target_remote(
+    tabs: list[Tab],
+    target_map: "dict[tuple[str, str], object]",
+) -> None:
+    """Populate API-only target cloud state without persisting Tab rows."""
+    for tab in tabs:
+        target = (
+            target_map.get((tab.target_type, str(tab.target_id)))
+            if tab.target_type and tab.target_id
+            else None
+        )
+        tab.target_remote = bool(getattr(target, "remote", False))
+
+
 async def _project_from_pointer(pointer: str | None) -> str | None:
     """The owning project NAMED by a project-scoped dock pointer
     (``viewType:"project"`` → ``<project_id>/...``). A tab opened under
@@ -1104,6 +1168,8 @@ async def _build_tab_list(project: str | None) -> list[Tab]:
     by_id = {t.id: t for t in tabs}
     result = [by_id[tab_id] for tab_id in filtered]
     await _populate_tab_statuses(result, target_map)
+    remote_target_map = await _load_remote_targets(result, target_map)
+    _populate_tab_target_remote(result, remote_target_map)
     return result
 
 
@@ -1125,6 +1191,7 @@ def _serialize_row(tab: Tab) -> dict:
         "visible": tab.visible,
         "status": tab.status,
         "is_disabled": tab.is_disabled,
+        "target_remote": bool(tab.target_remote),
     }
 
 
@@ -1232,6 +1299,8 @@ async def _http_list_all(cls):
     tabs, target_map = await _visible_tabs_sorted_with_targets()
     await _backfill_tab_projects(tabs)
     await _populate_tab_statuses(tabs, target_map)
+    remote_target_map = await _load_remote_targets(tabs, target_map)
+    _populate_tab_target_remote(tabs, remote_target_map)
     return ApiSuccessResponse(data={"tabs": [_serialize_row(t) for t in tabs]})
 
 

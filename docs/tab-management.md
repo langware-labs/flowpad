@@ -207,6 +207,15 @@ consumer reads this one source and derives its view client-side:
   Drag-reorder paints an optimistic `applyPredictedOrder` (the
   parity-tested `computeReorder`) and commits `Tab.reorder`; the `tabs_changed`
   refresh adopts the canonical order.
+- Content tabs also carry runtime-only `target_remote`, resolved by the backend
+  in one bulk query per distinct target type. The field is a `NoDBAPIField`: it
+  is serialized for the strip but never persisted or denormalized at tab
+  creation. The compact chip renders known location immediately before the
+  registry glyph (Cloud / **Available on cloud** for true; HardDrive /
+  **Local only** for false). The tab's existing tooltip owns that copy, avoiding
+  a nested tooltip trigger. TypeScript keeps the field optional only for
+  old-backend compatibility; omission means unknown and renders no location
+  claim.
 - **`TabbedTerminal`** is the terminal **body only** — it maps the terminal
   `Tab`s and renders one warm-mounted `TerminalPanel` per row; each panel
   hydrates its OWN live entity (`useEntity`) for the transport `shell_id` + PTY
