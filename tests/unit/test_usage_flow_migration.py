@@ -9,7 +9,6 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from flow_sdk.builtin.agentic_flow import AgenticFlow
 from flow_sdk.usage_report.flow_node import _window_from_event
 from tests.conftest import async_context
 
@@ -46,19 +45,22 @@ async def test_publish_function_posts_feed_entry(tmp_path):
 
 
 @async_context
-async def test_seed_migrates_retired_monolith_graph(tmp_path):
+async def test_seed_migrates_retired_monolith_graph():
     from flow_sdk.builtin.trigger import Trigger
-    from flow_sdk.flow_manager.service_flows import _seed_daily_analysis
+    from flow_sdk.flow_manager.service_flows import _get_or_create_flow, _seed_daily_analysis
     from flow_sdk.server.builtin_triggers import set_service_triggers
 
     await set_service_triggers()
     trigger = await Trigger.get_by_uname("builtin_daily_usage_analysis")
     assert trigger is not None
 
-    folder = tmp_path / "daily-analysis"
-    folder.mkdir()
-    flow = AgenticFlow(name="daily-analysis", asset_ref=str(folder))
-    await flow.save()
+    # The full suite may already have seeded this service flow through a real
+    # TestClient lifespan. Exercise migration on that canonical row instead of
+    # creating a duplicate name whose resolver can legitimately select the
+    # existing system flow.
+    flow, _created = await _get_or_create_flow("daily-analysis")
+    assert flow is not None and flow.folder is not None
+    folder = flow.folder
     old_graph = {
         "version": 1, "id": flow.id, "name": "daily-analysis", "enabled": True,
         "nodes": [
