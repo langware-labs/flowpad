@@ -203,11 +203,20 @@ export function useJourneyManager(state: UseJourneyResult): JourneyManagerView {
       : null;
   const shellId = shellTypeId?.type === Shell.type ? shellTypeId.id : undefined;
 
+  // The project the JOURNEY ships in: `<root>/.claude/journeys/<name>`. Its
+  // try-it steps must run THERE — a tour that says "the repo you're in IS
+  // syncmd" was otherwise writing files into whatever project happened to be
+  // active (and running `syncmd` outside a git repo, where it cannot work).
+  const journeyRoot = useMemo(
+    () => /^(.*)\/\.claude\/journeys\/[^/]+\/?$/.exec(assetRef)?.[1] ?? null,
+    [assetRef],
+  );
+
   const openTerminal = useCallback(async () => {
     // openNewShell already navigates to the new shell when we don't opt out.
-    const result = await navigation.openNewShell();
+    const result = await navigation.openNewShell(journeyRoot ? { cwd: journeyRoot } : undefined);
     return result?.shellId ?? null;
-  }, [navigation]);
+  }, [navigation, journeyRoot]);
 
   const doAct = useCallback(() => {
     if (!act) return;
@@ -216,8 +225,8 @@ export function useJourneyManager(state: UseJourneyResult): JourneyManagerView {
     const controller = new AbortController();
     actAbortRef.current = controller;
     // Async acts announce their own outcome on the bus; nothing to await here.
-    void runAct(act, { shellId, openTerminal, signal: controller.signal });
-  }, [act, shellId, openTerminal]);
+    void runAct(act, { shellId, openTerminal, signal: controller.signal, projectRoot: journeyRoot });
+  }, [act, shellId, openTerminal, journeyRoot]);
 
   // A failed act re-offers its button — a `git_check` is MEANT to be retried
   // until the repo actually satisfies it ("not yet — try the command").
