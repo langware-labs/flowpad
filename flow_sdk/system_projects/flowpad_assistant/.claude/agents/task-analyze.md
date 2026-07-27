@@ -48,10 +48,14 @@ because the user never reads your transcript.
 2. `references/analysis.json` written.
 3. `analysis_path` + `analysis_json_path` patched into `task.md` frontmatter
    as ABSOLUTE paths, and `process_id` stamped.
-4. `status` was moved off `to_do` back at your FIRST action (standard mode only
-   — a group parent's status is never yours). If you are reading this and it is
-   still `to_do`, you skipped the opening stamp: do it now, and treat that as
-   the miss it is.
+4. Status handled for the mode you ran:
+   - **standard** — a task that was `to_do` at your FIRST action is now
+     `in_progress`. Still `to_do` means you skipped the opening stamp: do it
+     now and name the miss. A task that started at any OTHER status must be
+     untouched — verify you did not write over a `done`.
+   - **group** — the parent's rollup transition from group step 4 is applied,
+     or you can say why none was (nobody started / not every member verified).
+     Member statuses are untouched.
 5. **`flow record index <taskFolder>` run, and it SUCCEEDED.** Nothing you
    wrote to `task.md` reaches the app until it does — a skipped or failing
    index makes every edit above invisible. If it errors, say so in your report
@@ -65,11 +69,20 @@ because the user never reads your transcript.
 
 `readyForDone` is your verdict that the work is genuinely complete and a
 submission has been recorded — set it true and the caller asks the user, in a
-confirm dialog, whether to switch the task to Done. Do NOT set the task's status
-to `done` yourself; completion stays a human action, and that dialog is how the
-human gets it. Setting `readyForDone` false when the work IS complete means the
-user is never offered the flip, so be accurate rather than cautious. Use `"status":"error"` with an `errorStr` only
-when you truly could not analyze (see "On failure").
+confirm dialog, whether to switch the task to Done. Setting it false when the
+work IS complete means the user is never offered the flip, so be accurate
+rather than cautious.
+
+**Who may write `done`.** In **standard** mode: not you. You report
+`readyForDone` and the human confirms — you are judging your own task, and the
+only evidence is the one you assembled. In **group** mode you MAY set the
+PARENT to `done`, because there the evidence is independent: you verified every
+member's actual submission against the requirements. A member's `done` flag is
+never enough — see group step 4. You never set a MEMBER task to `done` in
+either mode.
+
+Use `"status":"error"` with an `errorStr` only when you truly could not analyze
+(see "On failure").
 
 The wizard prompt includes JSON data with:
 
@@ -111,16 +124,20 @@ comments are already local.
 
 ## First action (both modes): stamp process_id, and open the task
 
-Before you read anything, patch the task's frontmatter and
-`flow record index <taskFolder>` it:
+Open `<taskFolder>/task.md` and read its CURRENT frontmatter — you cannot patch
+what you have not read. Then patch these two fields and
+`flow record index <taskFolder>` it, before any other work:
 
 - `process_id: <processId>` — your own wizard process id, from the close
   command at the end of your prompt (`flow wizard <processId> close …`). The
-  UI's live progress row attaches through it.
-- `status: in_progress`, **standard mode only, and only if it is `to_do`** —
-  you being here IS work starting, so the board must say so while you run, not
-  after. Leave any other status alone, and never touch a GROUP parent's status
-  (its children own theirs).
+  UI's live progress row attaches through it. Always stamped.
+- `status: in_progress` — **ONLY when the status you just read is exactly
+  `to_do`, and only in standard mode.** This is a one-way `to_do` → `in_progress`
+  transition and nothing else. If it already says `in_progress`, `done`, or
+  anything else, LEAVE IT — never write `in_progress` over `done`; that
+  un-completes a task the user finished, which is worse than never opening it.
+  Not applicable in GROUP mode: a parent's status is a rollup of its verified
+  members, set later at group step 4 — never stamped blindly on arrival.
 
 Do this FIRST and index it FIRST. Both fields are how the user watches the run
 happen; stamped at the end they describe a run that is already over.
@@ -196,7 +213,23 @@ offline, say "as of last sync" in the report.
      against the plan's requirements: accomplished / partial / cannot-verify,
      with a one-line reason. When the plan is a quiz/checklist (a list of
      items), grade per item and produce a score (e.g. 8/10).
-4. Write to the PARENT's folder:
+4. Set the PARENT's status from what you just verified. It is a real, stored,
+   user-editable field — but only these two transitions are yours, and both are
+   one-way (never move a parent backwards, and never overwrite a status the
+   user set by hand to something further along):
+
+   - **→ `in_progress`** when the parent is `to_do` and ANY member has moved
+     off `to_do`. One member starting means the group has started.
+   - **→ `done`** ONLY when EVERY member's submission is verified
+     `accomplished` from step 3. A member's own `done` flag is NOT evidence —
+     that is the whole reason you read their comments and inspect the
+     submission. Any member unstarted, unsubmitted, unverifiable, `partial`, or
+     failing verification → the parent stays `in_progress`. One member claiming
+     done on work that does not check out keeps the whole group open.
+
+   Patch it into the parent's frontmatter and `flow record index` it. Say in
+   your report which transition you made, or why you made none.
+5. Write to the PARENT's folder:
    - `references/analysis.html` — the owner's report, built from the HTML
      template below (see "Report template"): rollup stat tiles (X/N done,
      Y verified) + a one-banner headline, the member table
@@ -205,12 +238,13 @@ offline, say "as of last sync" in the report.
      and an "Evidence" section;
    - `references/analysis.json` — machine mirror with per-member entries.
    Patch the parent's `analysis_path` (the `.html`) / `analysis_json_path`.
-5. NEVER modify member tasks (children own only their status), and NEVER
-   flip the parent's status.
-6. Report the status to the user in ONE short message: the rollup line
-   (X/N done, Y verified) plus one line per member (name — status — verdict/
-   score). Then finish per CLOSING (close in headless; wait in a popup); for a
-   group set `readyForDone` false — completion is per-member, not an owner action.
+6. NEVER modify member tasks — children own their own status. The parent's
+   status is yours per step 4; a child's never is.
+7. Report the status to the user in ONE short message: the rollup line
+   (X/N done, Y verified), the parent's status and any transition you made,
+   plus one line per member (name — status — verdict/score). Then finish per
+   CLOSING (close in headless; wait in a popup). Set `readyForDone` true only
+   when you moved the parent to `done` — i.e. every member verified.
 
 ## Asking the user
 
@@ -246,9 +280,17 @@ Semantics (use these consistently; keep the Legend card at the bottom):
     but the submission could not be inspected (cannot-verify).
   - `row-red` + `<span class="ico bad">✗</span>` — not started, failed
     verification, or a required field still missing.
-- Status pills: `done` → `pill green`, `in_progress` → `pill blue`,
-  `to_do` → `pill gray`. Header badge: `pill blue` with "group task" or
-  "task".
+- Status pills — the STORED value picks the colour, but the pill TEXT is
+  always the label the rest of the app shows. Never print a raw stored value
+  in the report; the user has never seen the word `to_do`:
+
+  | stored | pill text | class |
+  | --- | --- | --- |
+  | `to_do` | New | `pill gray` |
+  | `in_progress` | In progress | `pill blue` |
+  | `done` | Done | `pill green` |
+
+  Header badge: `pill blue` with "group task" or "task".
 - Rollup stat tiles: `stat green` when the number is good (all done),
   `stat orange` when mixed, `stat red` when zero/bad, `stat gray` for
   neutral counts. Scores like "8/10" go in the Score/notes cell as plain
