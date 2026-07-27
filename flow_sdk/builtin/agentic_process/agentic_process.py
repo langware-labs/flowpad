@@ -2403,8 +2403,8 @@ class AgenticProcess(Entity):
             try:
                 port = int(raw_port)
             except ValueError:
-                return ApiFailResponse(message=f"Invalid port: {raw_port}", status_code=400)
-            if port <= 0 or port > 65535:
+                port = None
+            if port is None or not 0 < port <= 65535:
                 return ApiFailResponse(message=f"Invalid port: {raw_port}", status_code=400)
 
         raw_path = str(body.get("path") or "").strip()
@@ -2478,46 +2478,19 @@ class AgenticProcess(Entity):
         # No port → no runtime plane. A served-only app is complete without one,
         # and inventing a Deployment for a dev server that does not exist would
         # make `_app_payload` derive `dev` and point the display at nothing.
-        deployment = None
-        if port is not None:
-            deployment_id = mint_uuid(f"deployment:legacy-artifact:{artifact.id}")
-            deployment = await Deployment.get_by_id(deployment_id)
-            deployment_payload = {
-                "name": f"{name} (local)",
-                "kind": "local.runtime.web",
-                "artifact_id": artifact.id,
-                "artifact_link_source": "manual",
-                "target": {
-                    "provider": "local",
-                    "scope": project.id if project is not None else "machine",
-                    "location": f"http://localhost:{port}",
-                },
-                "resource": {
-                    "full_resource_name": f"local://localhost:{port}",
-                    "asset_type": "flowpad.local/Process",
-                    "provider_uid": str(port),
-                },
-                "status": {
-                    "sync_state": "current",
-                    "provider_state": "configured",
-                    "observed_at": datetime.now(UTC).isoformat(),
-                },
-                "provider_labels": {
-                    "flowpad.runtime.port": str(port),
-                    "flowpad.runtime.start_cmd": start_cmd,
-                    "flowpad.runtime.health": health,
-                },
-                "source_revision": getattr(git_origin, "head_commit", None),
-                "project_id": project.id if project is not None else self.project_id,
-                "parent_type_id": str(project.typeid) if project is not None else None,
-            }
-            if deployment is None:
-                deployment = Deployment(id=deployment_id, **deployment_payload)
-            else:
-                deployment.apply_field_updates(deployment_payload)
-            await deployment.save()
-            if project is not None:
-                await project.attach_child(deployment)
+        deployment = (
+            await self._upsert_webapp_deployment(
+                artifact,
+                port=port,
+                name=name,
+                start_cmd=start_cmd,
+                health=health,
+                git_origin=git_origin,
+                project=project,
+            )
+            if port is not None
+            else None
+        )
 
         micro_app = await self._upsert_webapp_micro_app(
             artifact,
@@ -2552,6 +2525,69 @@ class AgenticProcess(Entity):
     # most likely to have produced one. Explicit ``dist`` in the request always
     # wins; this is only the fallback for an agent that registered without one.
     _BUILD_OUTPUT_DIRS = ("dist", "build", "out", ".output/public")
+
+    async def _upsert_webapp_deployment(
+        self,
+        artifact,
+        *,
+        port: int,
+        name: str,
+        start_cmd: str,
+        health: str,
+        git_origin,
+        project,
+    ):
+        """Create/update the Artifact's runtime companion — a local dev server.
+
+        Sibling of ``_upsert_webapp_micro_app``: one companion per plane, each
+        minted from a deterministic id so re-registering the same app updates
+        its row instead of forking a second one.
+        """
+        from datetime import datetime  # noqa: PLC0415
+
+        from flow_sdk._compat import UTC  # noqa: PLC0415
+        from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
+        from flow_sdk.builtin.deployment import Deployment  # noqa: PLC0415
+
+        deployment_id = mint_uuid(f"deployment:legacy-artifact:{artifact.id}")
+        deployment = await Deployment.get_by_id(deployment_id)
+        payload = {
+            "name": f"{name} (local)",
+            "kind": "local.runtime.web",
+            "artifact_id": artifact.id,
+            "artifact_link_source": "manual",
+            "target": {
+                "provider": "local",
+                "scope": project.id if project is not None else "machine",
+                "location": f"http://localhost:{port}",
+            },
+            "resource": {
+                "full_resource_name": f"local://localhost:{port}",
+                "asset_type": "flowpad.local/Process",
+                "provider_uid": str(port),
+            },
+            "status": {
+                "sync_state": "current",
+                "provider_state": "configured",
+                "observed_at": datetime.now(UTC).isoformat(),
+            },
+            "provider_labels": {
+                "flowpad.runtime.port": str(port),
+                "flowpad.runtime.start_cmd": start_cmd,
+                "flowpad.runtime.health": health,
+            },
+            "source_revision": getattr(git_origin, "head_commit", None),
+            "project_id": project.id if project is not None else self.project_id,
+            "parent_type_id": str(project.typeid) if project is not None else None,
+        }
+        if deployment is None:
+            deployment = Deployment(id=deployment_id, **payload)
+        else:
+            deployment.apply_field_updates(payload)
+        await deployment.save()
+        if project is not None:
+            await project.attach_child(deployment)
+        return deployment
 
     async def _upsert_webapp_micro_app(
         self,

@@ -18,7 +18,13 @@ from pathlib import Path
 import pytest
 import yaml
 
+from flow_sdk.fs_store.indexer.functions.skill import parse_skill_yaml_from_dir
+
 SYSTEM_PROJECTS = Path(__file__).resolve().parents[2] / "flow_sdk" / "system_projects"
+
+# Anything at or below this reads as the H1-title fallback ("Web App Builder"),
+# which carries no trigger information for routing.
+MIN_ROUTABLE_DESCRIPTION = 40
 
 SKILL_FILES = sorted(SYSTEM_PROJECTS.glob("*/.claude/skills/*/SKILL.md"))
 
@@ -33,27 +39,45 @@ def test_shipped_skills_are_discovered():
 
 
 @pytest.mark.parametrize("skill_md", SKILL_FILES, ids=_skill_id)
-def test_skill_frontmatter_parses_and_describes(skill_md: Path):
-    text = skill_md.read_text(encoding="utf-8")
-    assert text.startswith("---"), f"{skill_md} has no frontmatter block"
+def test_skill_frontmatter_is_strictly_valid_yaml(skill_md: Path):
+    """The frontmatter must parse under a STRICT reader.
 
+    Flowpad's own loader is forgiving — on a YAML error it falls back to a
+    line-based reader — but other consumers are not, and the fallback does not
+    recover the value: it keeps only the first line of a multi-line scalar. That
+    is how `web-app-builder` shipped broken. Its truncated first line was still
+    69 characters, so a length check against the forgiving loader saw nothing
+    wrong while the agent-facing list showed no description at all.
+
+    So this is the assertion that actually catches it: the YAML must be valid,
+    and then it does not matter which reader gets there first.
+    """
+    text = skill_md.read_text(encoding="utf-8")
     _, frontmatter, _ = text.split("---", 2)
     try:
-        meta = yaml.safe_load(frontmatter)
-    except yaml.YAMLError as e:  # pragma: no cover - the failure we are guarding
+        yaml.safe_load(frontmatter)
+    except yaml.YAMLError as e:
         pytest.fail(
-            f"{skill_md.parent.name}: frontmatter is not valid YAML, so the skill "
-            f"ships with no description and can never be routed to.\n{e}"
+            f"{skill_md.parent.name}: frontmatter is not valid YAML, so strict readers "
+            f"get no description and the skill becomes unroutable.\n{e}"
         )
 
-    assert isinstance(meta, dict), f"{skill_md.parent.name}: frontmatter is not a mapping"
+
+@pytest.mark.parametrize("skill_md", SKILL_FILES, ids=_skill_id)
+def test_skill_ships_a_routable_description(skill_md: Path):
+    """And what the loader ends up with must be worth routing on.
+
+    Complements the strict check above: `flow-diagnose` shipped
+    ``description: ">"`` — perfectly valid YAML, and perfectly useless.
+    """
+    meta = parse_skill_yaml_from_dir(skill_md.parent)
+    assert isinstance(meta, dict), f"{skill_md.parent.name}: frontmatter did not parse to a mapping"
 
     description = (meta.get("description") or "").strip()
     assert description, (
-        f"{skill_md.parent.name}: empty description — the agent has nothing to route on"
+        f"{skill_md.parent.name}: the loader reads no description — the agent has "
+        f"nothing to route on, and the skill is silently unreachable"
     )
-    # A title restated as a description ("Web App Builder") is the shape the H1
-    # fallback produces; it carries no trigger information.
-    assert len(description) > 40, (
+    assert len(description) > MIN_ROUTABLE_DESCRIPTION, (
         f"{skill_md.parent.name}: description is too short to route on: {description!r}"
     )
