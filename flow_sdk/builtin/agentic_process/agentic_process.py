@@ -2499,10 +2499,22 @@ class AgenticProcess(Entity):
         if project is not None:
             await project.attach_child(deployment)
 
+        micro_app = await self._upsert_webapp_micro_app(
+            artifact,
+            artifact_path=artifact_path,
+            name=name,
+            dist=body.get("dist"),
+            project=project,
+        )
+
         shown = None
         if bool(body.get("show", True)):
             try:
-                shown = await resolve_display_target(port=port)
+                # Pin the APP, not the port. The port is one of two ways this
+                # app can be reached and it changes between runs; the artifact
+                # id is the thing that stays true, and the display picks the
+                # live runtime from the companions.
+                shown = await resolve_display_target(artifact_id=artifact.id)
             except InvalidDisplayTarget as e:
                 return ApiFailResponse(message=str(e), status_code=400)
             await self.on_show(shown)
@@ -2511,9 +2523,70 @@ class AgenticProcess(Entity):
             data={
                 "artifact": artifact.model_dump(mode="json"),
                 "deployment": deployment.model_dump(mode="json"),
+                "micro_app": micro_app.model_dump(mode="json") if micro_app is not None else None,
                 "shown": shown,
             }
         )
+
+    # Conventional build-output directory names, in the order a toolchain is
+    # most likely to have produced one. Explicit ``dist`` in the request always
+    # wins; this is only the fallback for an agent that registered without one.
+    _BUILD_OUTPUT_DIRS = ("dist", "build", "out", ".output/public")
+
+    async def _upsert_webapp_micro_app(
+        self,
+        artifact,
+        *,
+        artifact_path: str,
+        name: str,
+        dist: object,
+        project,
+    ):
+        """Create/update the Artifact's delivery companion when built output exists.
+
+        Returns ``None`` when the app has no build output yet — a dev-server-only
+        app is a complete, valid app, so absence is the normal early state and
+        not an error.
+        """
+        from flow_sdk.api.api_types.identifier import mint_uuid  # noqa: PLC0415
+        from flow_sdk.builtin.faas.micro_app import AppLocationType, MicroApp  # noqa: PLC0415
+
+        app_root = Path(artifact_path)
+        dist_rel = str(dist or "").strip()
+        if dist_rel:
+            dist_path = app_root / dist_rel
+        else:
+            dist_path = next((app_root / c for c in self._BUILD_OUTPUT_DIRS if (app_root / c).is_dir()), None)
+            # A static app has no build step — the registered folder IS the
+            # deliverable, and discovery points at whichever directory holds
+            # index.html. Without this, exactly the apps that are ready to serve
+            # with no work at all would be the ones that never get a delivery
+            # companion.
+            if dist_path is None and (app_root / "index.html").is_file():
+                dist_path = app_root
+        if dist_path is None:
+            return None
+
+        # Deterministic, mirroring the Deployment id above: re-registering the
+        # same artifact must update its delivery row, never fork a second one.
+        micro_app_id = mint_uuid(f"micro_app:artifact:{artifact.id}")
+        micro_app = await MicroApp.get_by_id(micro_app_id)
+        payload = {
+            "name": name,
+            "location_type": AppLocationType.Artifact,
+            "location_root": str(dist_path),
+            "artifact_id": artifact.id,
+            "project_id": project.id if project is not None else self.project_id,
+            "parent_type_id": str(project.typeid) if project is not None else None,
+        }
+        if micro_app is None:
+            micro_app = MicroApp(id=micro_app_id, **payload)
+        else:
+            micro_app.apply_field_updates(payload)
+        await micro_app.save()
+        if project is not None:
+            await project.attach_child(micro_app)
+        return micro_app
 
     async def on_show(self, payload: dict) -> None:
         """Present *payload* to this process's watchers — the ``flow show`` verb.

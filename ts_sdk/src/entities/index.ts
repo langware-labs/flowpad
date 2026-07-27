@@ -68,6 +68,7 @@ export * from './usage-report';
 export * from './asset-cleanup-report';
 export * from './markdown';
 export * from './markdown-index';
+export * from './micro-app';
 export * from './plan';
 export * from './claude-md';
 export * from './claude-memory';

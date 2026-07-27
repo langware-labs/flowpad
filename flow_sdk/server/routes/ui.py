@@ -62,16 +62,14 @@ def serve_index_html(html: str) -> HTMLResponse:
 
     Idempotent, and ``|| ...`` so a host that already set the override (Electron
     preload) wins.
+
+    The injection itself lives in ``builtin/faas/serve_static`` so served apps
+    get the identical treatment from the identical string — the console and an
+    app it built should not be able to drift on how they find their backend.
     """
-    snippet = (
-        "<script>globalThis.__FLOWPAD_API_URL__="
-        "globalThis.__FLOWPAD_API_URL__||window.location.origin;</script>"
-    )
-    if snippet not in html:
-        idx = html.lower().find("<head>")
-        at = idx + len("<head>") if idx != -1 else 0  # no <head> → prepend, still before the bundle
-        html = html[:at] + snippet + html[at:]
-    return HTMLResponse(content=html)
+    from flow_sdk.builtin.faas.serve_static import inject_api_origin  # noqa: PLC0415
+
+    return HTMLResponse(content=inject_api_origin(html))
 
 
 def _get_index_candidates() -> list[Path]:
