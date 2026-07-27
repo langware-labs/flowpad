@@ -118,8 +118,10 @@ async def mint_share_favorite(
     pointing at ``(entity_type, entity_id)`` is left as-is. ``data`` shape matches
     the frontend ``addFavorite`` + the onboarding favorite in
     ``server/routes/bootstrap.py`` so every favorite surface resolves it the same
-    way. A shared favorite is unscoped (the receiver's Bookmark has no project
-    column) — it shows in the bookmarks slider regardless of the active project.
+    way. A shared favorite is deliberately left unscoped — unlike a ``flow show``,
+    which by definition happened inside a project, a received asset installs to
+    USER scope, so a global favorite matches where the asset actually lands. It
+    shows in the bookmarks slider regardless of the active project.
 
     ``asset_ref`` may be "" for a git-backed artifact whose checkout isn't
     resolved yet — the favorite navigates by ``(entity_type, entity_id)`` and
@@ -228,26 +230,54 @@ def _auto_leaf_title(payload: Dict[str, Any], target: _AutoTarget) -> str:
     return f"{target.entity_type}-{target.entity_id[:8]}" if target.entity_id else (target.entity_type or "item")
 
 
-async def mint_auto_favorite(*, owner, payload: Dict[str, Any]) -> "Bookmark | None":
+def _auto_pid(project_id: "str | None") -> "str | None":
+    """Normalized project key for auto-tree matching. The column is bimodal —
+    it holds both NULL and `""` for "no project" — so fold them together or a
+    project-less show builds two parallel trees. (The real fix is coercing `""`
+    to NULL at the storage seam; this is the third site working around it, after
+    ``prompt_helpers.project_prompts`` and ``Project.descriptors``.)"""
+    return str(project_id or "") or None
+
+
+async def mint_auto_favorite(
+    *, owner, payload: Dict[str, Any], project_id: Optional[str] = None
+) -> "Bookmark | None":
     """File a resolved ``flow show`` target into the ``Auto / <type> / item`` favorites
     tree (best-effort, idempotent). Returns the leaf favorite, or ``None`` when the
     payload can't be identified. All three levels are owned by ``owner`` and saved
-    unscoped (visible across projects) with ``notify=True`` so the UI ticks live.
+    with ``notify=True`` so the UI ticks live.
+
+    ``project_id`` is the project the show happened in (the caller's
+    ``effective_project_id``); every level of the tree is STAMPED with it, so the
+    auto tree is per-project — the whole reason ``flow show`` files a bookmark is
+    that you were working in that project. All three find-or-create lookups are
+    keyed by it too, or project B would adopt project A's Auto root and hang its
+    leaves there.
+
+    ``project_id=None`` (a project-less show — EMBEDDED/INLINE processes) keeps the
+    old unscoped behaviour: the row has no project and `bookmarkInScope` shows it
+    everywhere. That is also what every pre-stamping row already looks like, so
+    they keep working as global favorites instead of vanishing.
     """
     target = _auto_classify(payload)
     if not target.entity_id:
         return None
 
-    # Scan only the auto tree (source="auto"), the two levels concurrently — never
-    # the owner's manual favorites.
+    pid = _auto_pid(project_id)
+
+    # Scan only THIS project's auto tree (source="auto"), the two levels
+    # concurrently — never the owner's manual favorites. Scoped scans filter in
+    # the query; the unscoped scan has to filter in Python because `IS_NULL`
+    # misses the `""` rows — the same split as `prompt_helpers.project_prompts`.
+    scope_filter = {"project_id": pid} if pid else {}
     try:
         folders, leaves = await asyncio.gather(
             Bookmark.get_all(
-                {"bookmark_type": BookmarkType.FAVORITE_FOLDER.value, "source": AUTO_SOURCE},
+                {"bookmark_type": BookmarkType.FAVORITE_FOLDER.value, "source": AUTO_SOURCE, **scope_filter},
                 source_entity=owner,
             ),
             Bookmark.get_all(
-                {"bookmark_type": BookmarkType.FAVORITE.value, "source": AUTO_SOURCE},
+                {"bookmark_type": BookmarkType.FAVORITE.value, "source": AUTO_SOURCE, **scope_filter},
                 source_entity=owner,
             ),
         )
@@ -255,13 +285,18 @@ async def mint_auto_favorite(*, owner, payload: Dict[str, Any]) -> "Bookmark | N
         logger.warning("[bookmark] mint_auto_favorite scan failed", exc_info=True)
         return None
 
-    # 1) Auto root folder — keyed by data.auto_root.
+    if not pid:
+        folders = [f for f in folders if not f.project_id]
+        leaves = [b for b in leaves if not b.project_id]
+
+    # 1) Auto root folder — keyed by data.auto_root (within this project's tree).
     root = next((f for f in folders if (f.data or {}).get("auto_root")), None)
     if root is None:
         root = Bookmark(
             bookmark_type=BookmarkType.FAVORITE_FOLDER.value,
             title=AUTO_ROOT_TITLE,
             source=AUTO_SOURCE,
+            project_id=pid,
             data={"auto_root": True},
         )
         await root.save(owner)
@@ -281,13 +316,15 @@ async def mint_auto_favorite(*, owner, payload: Dict[str, Any]) -> "Bookmark | N
             title=target.label,
             source=AUTO_SOURCE,
             parent_id=str(root.id),
+            project_id=pid,
             data={"auto_type": target.bucket},
         )
         await sub.save(owner)
 
-    # 3) Leaf — dedup by target within the auto tree (the query already scoped to
-    #    source=="auto", so a manual star of the same entity never collides).
-    #    Self-heal its parent if it drifted.
+    # 3) Leaf — dedup by target within this project's auto tree (the query already
+    #    scoped to source=="auto", so a manual star of the same entity never
+    #    collides). Showing the same entity from two projects files it under each,
+    #    which is the point of scoping. Self-heal its parent if it drifted.
     def _matches(b: "Bookmark") -> bool:
         d = b.data or {}
         return d.get("entity_type") == target.entity_type and str(d.get("entity_id") or "") == target.entity_id
@@ -312,6 +349,7 @@ async def mint_auto_favorite(*, owner, payload: Dict[str, Any]) -> "Bookmark | N
         title=_auto_leaf_title(payload, target),
         source=AUTO_SOURCE,
         parent_id=str(sub.id),
+        project_id=pid,
         data={
             "entity_type": target.entity_type,
             "entity_id": target.entity_id,

@@ -2633,15 +2633,22 @@ class AgenticProcess(Entity):
 
     async def _auto_bookmark_show(self, payload: dict) -> None:
         """Drop the shown target into the nested ``Auto / <type> / item`` favorites
-        tree (idempotent). Owned by the local user; unscoped so it shows across
-        projects. Every leaf create broadcasts, so the folder counters tick live."""
+        tree (idempotent). Owned by the local user and STAMPED with this process's
+        project, so the auto tree scopes like every other project artifact instead
+        of piling up in the bookmarks slider of unrelated projects. A project-less
+        process (EMBEDDED/INLINE) mints an unscoped row, which stays global.
+        Every leaf create broadcasts, so the folder counters tick live."""
         from flow_sdk.builtin.bookmark import mint_auto_favorite  # noqa: PLC0415
         from flow_sdk.server.routes.bootstrap import get_or_create_local_user  # noqa: PLC0415
 
         owner = await get_or_create_local_user()
         if owner is None:
             return
-        await mint_auto_favorite(owner=owner, payload=payload)
+        # `effective_project_id`, not the raw field: a child process (received
+        # session, sub-run) inherits its parent's project rather than filing the
+        # show unscoped. It tests self before walking, so a project-bound process
+        # costs no extra lookup. `on_show` already wraps this call best-effort.
+        await mint_auto_favorite(owner=owner, payload=payload, project_id=await self.effective_project_id())
 
     @action.post(action_name="show")
     async def _http_show(self) -> ApiSuccessResponse | ApiFailResponse:
