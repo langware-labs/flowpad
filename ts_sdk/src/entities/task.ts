@@ -1,14 +1,40 @@
-import { APIEntity, registerEntity } from '../APIEntity';
+import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { dataContext } from '../FlowSync/context';
 import { FrontMatterFsRef } from '../fs/FrontMatterFsRef';
+import { ActionInfo } from '../models/ActionInfo';
 import { DockPointerData } from '../models/DockPointer';
 import { TypeId } from '../models/TypeId';
 import { IEntity } from '../IEntity';
 import type { GitOrigin } from '../models/GitOrigin';
+import { normalizeEmail } from '../utils/utils';
+import type { ConversationParticipant } from './conversation';
+import { createAndSendConversation } from './conversation-send';
 
 export enum TaskKind {
   STANDARD = 'standard',
   GROUP = 'group',
+}
+
+export interface TaskAssignOptions {
+  /** Rides the invitation email, and the notification message when sent. */
+  message?: string;
+  /** Session transcript to send with the notification: the file plus the
+   *  session it came from, so the chip and the bytes can't drift apart. */
+  transcript?: { files: File[]; sessionId?: string };
+  /** Skip the notification conversation. The assignment itself still lands —
+   *  the task and its invitation email do not depend on it. Default: send. */
+  notify?: boolean;
+  /** Cloud-login gate for the notification send (UI passes useCloudLoginGate). */
+  ensureCloudLogin?: () => Promise<{ ok: true } | { ok: false; error: string }>;
+}
+
+export interface TaskAssignResult {
+  /** Serialized typeid of the assignee's member task; null when self-assigned. */
+  childTypeid: string | null;
+  /** Notification conversation id; null when not sent. */
+  conversationId: string | null;
+  /** True when the assignee is the caller — a local stamp, nothing delivered. */
+  self: boolean;
 }
 
 export interface ITask extends IEntity {
@@ -268,6 +294,67 @@ export class Task extends APIEntity<Task> implements ITask {
           },
         })
       : '';
+  }
+
+  /**
+   * Give this task to someone — the whole assignment in one call.
+   *
+   * The backend `assign-task` action creates the assignee's member task on the
+   * hub (so their status changes sync back) and sends the invitation carrying
+   * `message`; for a teammate who already shares a container the hub grants the
+   * roles at once, so the task simply appears on their machine. Then, unless
+   * `notify: false`, a notification conversation goes out carrying the member
+   * task + parent chips and any `files` (pass `transcriptSessionId` to include
+   * the session transcript chip).
+   *
+   * `person` may be a bare email or a picker participant (member / contact /
+   * free-form email). Assigning to yourself only stamps `assignee` locally.
+   */
+  async assign(
+    person: ConversationParticipant | string,
+    opts: TaskAssignOptions = {},
+  ): Promise<TaskAssignResult> {
+    const participant: ConversationParticipant =
+      typeof person === 'string' ? { email: person } : person;
+    const email = normalizeEmail(participant.email);
+    if (!email) throw new Error('Task.assign: a recipient email is required');
+
+    const info = new ActionInfo('assign-task', Task.type, this.id, 'POST');
+    info.bodyParameters = {
+      email,
+      ...(participant.name ? { name: participant.name } : {}),
+      ...(opts.message?.trim() ? { message: opts.message.trim() } : {}),
+    };
+    const { child: childTypeid, self } = await dataManager.callAction<
+      Record<string, unknown>,
+      { child: string | null; self: boolean; created: boolean; assignee: string }
+    >(info);
+
+    this.assignee = email;
+    if (self || opts.notify === false) return { childTypeid, conversationId: null, self };
+
+    // The recipient's OWN member task is the featured chip; the parent overview
+    // rides as its own chip (it carries the body and attachments).
+    const chips = [
+      childTypeid,
+      this.typeId.toString(),
+      opts.transcript?.sessionId && `claude_session-${opts.transcript.sessionId}`,
+    ].filter(Boolean) as string[];
+    const sent = await createAndSendConversation(
+      {
+        project_id: null, // cross-user bundle conversation
+        participants: [participant],
+        title: this.title || 'Task',
+      },
+      {
+        text: (opts.message ?? '').trim(),
+        ...(opts.transcript?.files.length ? { files: opts.transcript.files } : {}),
+        assetReferences: chips,
+        sharedContextEntities: chips,
+      },
+      opts.ensureCloudLogin ? { ensureCloudLogin: opts.ensureCloudLogin } : undefined,
+    );
+    return { childTypeid, conversationId: sent.conversation_id, self };
   }
 
   /**

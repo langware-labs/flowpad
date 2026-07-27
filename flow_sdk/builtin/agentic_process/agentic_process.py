@@ -49,7 +49,11 @@ from flow_sdk.builtin.agentic_process.status_predicates import (
     is_ready_from_busy,
     is_turn_busy,
 )
-from flow_sdk.builtin.process_lifecycle import ProcessStatus
+from flow_sdk.builtin.process_lifecycle import (
+    ProcessStatus,
+    backend_restart_requested,
+    is_recoverable_worker_interruption,
+)
 from flow_sdk.builtin.worker_status import WorkerStatus
 from flow_sdk.builtin.worker_status import is_terminal as is_worker_terminal
 from flow_sdk.core import Entity, action
@@ -731,9 +735,8 @@ class AgenticProcess(Entity):
     start_failure: str | None = APIField(
         default=None,
         description=(
-            "Human-readable reason the last worker launch failed to start — set "
-            "when the worker exits within INSTANT_EXIT_WINDOW_SECONDS of its "
-            "launch (or dies while still STARTING). Non-None LATCHES the "
+            "Human-readable reason the worker failed to start or terminated "
+            "with a crash signal. Non-None LATCHES the "
             "process: auto-recovery sweeps and plain open() calls refuse to "
             "respawn until an explicit user retry (open with retry=true) "
             "clears it. This is what breaks the spawn → instant-death → "
@@ -2731,8 +2734,8 @@ class AgenticProcess(Entity):
         )
         from flow_sdk.builtin.worker_status import (
             _has_pending_tool_use,
-            _last_assistant_stop_reason,
             _last_user_is_tool_result,
+            _scan_reversed,
         )
 
         deadline = time.monotonic() + timeout
@@ -2832,10 +2835,11 @@ class AgenticProcess(Entity):
                         if _sz > 4096:
                             _fh.seek(_sz - 4096)
                         _tail_chunk = _fh.read().decode("utf-8", errors="replace")
+                    _last_stop_reason = _scan_reversed(_tail_chunk)[2]
                     _post_tool_idle = (
                         _last_user_is_tool_result(_tail_chunk)
                         and not _has_pending_tool_use(_tail_chunk)
-                        and _last_assistant_stop_reason(_tail_chunk) == "end_turn"
+                        and _last_stop_reason == "end_turn"
                     )
                 except OSError:
                     pass
@@ -6789,6 +6793,13 @@ class AgenticProcess(Entity):
                     self.id,
                     exc_info=True,
                 )
+            # Unified-bus dual-publish AFTER the persist (a law-5 subscriber
+            # fetching on receipt reads the post-write row).
+            from flow_sdk.builtin.agentic_process.agent_on_tag import emit_agent_status
+
+            emit_agent_status(self.id,
+                              current.value if current is not None else "",
+                              self.status, current_busy)
             await self.emit_flow_data(
                 {
                     "attributes": {
@@ -6937,8 +6948,43 @@ class AgenticProcess(Entity):
                             proc.status = ProcessStatus.STOPPED.value
                         await proc.save()
                         return
+                    if backend_restart_requested():
+                        # `flow instance restart-backend` marks its intent
+                        # before reaping the backend process tree. A worker may
+                        # translate TERM into a clean exit code, so the marker
+                        # is the authoritative distinction from a real
+                        # instant-exit failure. Leave the live state intact for
+                        # the replacement backend's watched-session recovery.
+                        logger.info(
+                            "AgenticProcess %s: backend restart requested; preserving %s for recovery",
+                            agentic_process_id,
+                            proc.status,
+                        )
+                        return
+                    if is_recoverable_worker_interruption(exit_code):
+                        # TERM/KILL/HUP are external interruptions. Keep the
+                        # live state intact so the watched-session recovery
+                        # owner can respawn it. Explicit exit() is handled by
+                        # the `_shell_exit_pending` branch above.
+                        logger.info(
+                            "AgenticProcess %s: worker interrupted by signal %s; preserving %s for recovery",
+                            agentic_process_id,
+                            -exit_code,
+                            proc.status,
+                        )
+                        return
                     proc.sidecar_shell_id = None
-                    if proc.status == ProcessStatus.STARTING.value or (
+                    if exit_code is not None and exit_code < 0:
+                        proc.status = ProcessStatus.FAILED.value
+                        proc.start_failure = (
+                            f"Worker terminated by crash signal {-exit_code}."
+                        )
+                        logger.warning(
+                            "AgenticProcess %s: %s Auto-relaunch paused until user retry.",
+                            agentic_process_id,
+                            proc.start_failure,
+                        )
+                    elif proc.status == ProcessStatus.STARTING.value or (
                         proc.status == ProcessStatus.RUNNING.value and worker_lifetime < INSTANT_EXIT_WINDOW_SECONDS
                     ):
                         # Failed start — either the worker died before the spawn

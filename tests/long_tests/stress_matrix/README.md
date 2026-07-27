@@ -26,7 +26,8 @@ DEEP_TESTING=1 ANTHROPIC_API_KEY=sk-... pytest tests/long_tests/stress_matrix/
 
 ## Pre-flight
 
-`conftest.py` validates the `ANTHROPIC_API_KEY` once per session via a
+`conftest.py` skips the matrix when `ANTHROPIC_API_KEY` is absent. When a key
+is supplied, it validates it once per session via a
 minimal `/v1/models` call. On invalid key or rate-limit the entire matrix
 aborts (no cells run) with a clear stderr message — these are environment
 problems, not runner-resilience signals.

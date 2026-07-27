@@ -7,6 +7,7 @@ import {
   MachineSubview,
   ShellInputFlowData,
   ViewType,
+  dataManager,
 } from '@sdk';
 import { LogsViewer, LogsViewerHandle } from './logs-viewer';
 import { MetricsChart, MetricsChartHandle } from './metrics-chart';
@@ -264,28 +265,13 @@ export const MachineOverview: React.FC = () => {
     setError(null);
 
     try {
-      // Call the status operation on the compute node via the flow
-      const actionInfo = new ActionInfo('get-machine-status', 'compute_node', computeNode.id, 'GET');
-      const response = await fetch(actionInfo.fullActionUrl, {
-        credentials: 'include',
-      });
-
-      if (!response.ok) {
-        throw new Error(`Failed to fetch machine status: ${response.statusText}`);
-      }
-
-      const data = await response.json();
-      if (data.data) {
-        setMachineStatus(data.data);
-      } else if (data.message) {
-        setError(data.message);
-      }
+      setMachineStatus(await computeNode.getMachineStatus());
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch machine status');
     } finally {
       setIsLoading(false);
     }
-  }, [computeNode?.id]);
+  }, [computeNode]);
 
   useEffect(() => {
     void fetchMachineStatus();
@@ -302,18 +288,8 @@ export const MachineOverview: React.FC = () => {
     setIsPauseResumeLoading(true);
     try {
       const actionInfo = new ActionInfo(`ops/${operation}`, 'compute_node', computeNode.id, 'POST');
-      const response = await fetch(actionInfo.fullActionUrl, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-      });
-
-      if (response.ok) {
-        // Refresh status after pause/resume
-        await fetchMachineStatus();
-      } else {
-        console.error(`[MachineOverview] ${operation} failed:`, response.status);
-      }
+      await dataManager.callAction<undefined, unknown>(actionInfo);
+      await fetchMachineStatus();
     } catch (err) {
       console.error(`Failed to ${operation} compute node:`, err);
     } finally {
@@ -579,22 +555,11 @@ export const MachineOverview: React.FC = () => {
 
     try {
       const actionInfo = new ActionInfo('ops/setup-lm-proxy', 'compute_node', computeNode.id, 'POST');
-      const response = await fetch(actionInfo.fullActionUrl, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-      });
-
-      const data = await response.json();
-      if (response.ok && data.data) {
-        setSetupLmProxyResult('success');
-        setSetupLmProxyMessage(data.data.message || t`LM proxy access configured`);
-        // Refresh config to show the new values
-        await fetchConfigFromMachine();
-      } else {
-        setSetupLmProxyResult('error');
-        setSetupLmProxyMessage(data.message || t`Failed to setup LM proxy`);
-      }
+      const data = await dataManager.callAction<undefined, { message?: string }>(actionInfo);
+      setSetupLmProxyResult('success');
+      setSetupLmProxyMessage(data?.message || t`LM proxy access configured`);
+      // Refresh config to show the new values
+      await fetchConfigFromMachine();
     } catch (err) {
       setSetupLmProxyResult('error');
       setSetupLmProxyMessage(err instanceof Error ? err.message : 'Failed to setup LM proxy');

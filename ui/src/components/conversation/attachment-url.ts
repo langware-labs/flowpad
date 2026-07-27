@@ -1,5 +1,9 @@
-import { ActionInfo } from '@sdk/models/ActionInfo';
-import { AttachmentType, attachmentDataString, type Attachment } from '@sdk/entities/flow-message';
+import {
+  AttachmentType,
+  attachmentDataString,
+  flowMessageAttachmentDownloadUrl,
+  type Attachment,
+} from '@sdk/entities/flow-message';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { dockPointerForFile } from '@src/navigation/local-file-pointer';
 
@@ -27,9 +31,7 @@ export function isDownloadableFileAttachment(
  * "only when the bytes are local" rule is applied in one place.
  */
 export function fileAttachmentUrl(messageId: string, vfsPath: string): string {
-  const action = new ActionInfo('fs', 'flow_message', messageId, 'GET');
-  action.subpath = `download/${vfsPath}`;
-  return action.fullActionUrl;
+  return flowMessageAttachmentDownloadUrl(messageId, vfsPath);
 }
 
 /**

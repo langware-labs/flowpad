@@ -7,30 +7,87 @@ from typing import Any
 
 from ..entries import (
     AssistantMessageEntry,
+    FileEditEntry,
+    FileReadEntry,
+    FileWriteEntry,
     MetaEntry,
+    ShellCommandEntry,
     SkillCallEntry,
     SystemEntry,
     ToolResultEntry,
     ToolUseEntry,
     UserMessageEntry,
 )
+from .._helpers import truncate_file_content
+from ..derive import SHELL_TOOL_NAMES
 from ..entries.usage import UsageEntry
 from ..entry import TranscriptEntry
 
 
+def _file_path(ti: dict) -> str:
+    for key in ("file_path", "path", "filePath", "filename"):
+        val = ti.get(key)
+        if isinstance(val, str) and val:
+            return val
+    return ""
+
+
 def _tool_or_skill_entry(*, tool_name: str, tool_use_id: str, tool_input: dict, **base: Any) -> TranscriptEntry:
-    """Copilot's native ``skill`` tool maps onto :class:`SkillCallEntry`;
-    every other tool stays a generic :class:`ToolUseEntry`."""
-    if str(tool_name).lower() == "skill":
-        ti = tool_input if isinstance(tool_input, dict) else {}
+    """Map a Copilot tool use onto a semantic entry kind.
+
+    Copilot names its file tools differently from Claude and does not publish a
+    stable list, so file ops are recognized by their *input shape* rather than
+    by name — a path plus content is a write, a path plus an old/new pair is an
+    edit, a bare path on a read-ish tool is a read. MCP tools (``mcp__*``) are
+    excluded: their inputs are arbitrary and a coincidental ``path`` key must
+    not masquerade as a file op. Everything unrecognized stays a generic
+    :class:`ToolUseEntry`, exactly as before.
+    """
+    ti = tool_input if isinstance(tool_input, dict) else {}
+    name = str(tool_name)
+    lower = name.lower()
+    common: dict[str, Any] = {"tool_name": name, "tool_use_id": tool_use_id, **base}
+
+    if lower == "skill":
         return SkillCallEntry(
             skill_name=str(ti.get("skill") or ti.get("name") or ""),
-            tool_name=tool_name,
-            tool_use_id=tool_use_id,
             tool_input=ti,
-            **base,
+            **common,
         )
-    return ToolUseEntry(tool_name=tool_name, tool_use_id=tool_use_id, tool_input=tool_input, **base)
+    if lower in SHELL_TOOL_NAMES and isinstance(ti.get("command"), str):
+        return ShellCommandEntry(command=str(ti.get("command") or ""), **common)
+
+    generic = ToolUseEntry(tool_input=ti, **common)
+    # One rule per guard, all at one indent: which shape won is otherwise
+    # invisible under four levels of nesting.
+    if lower.startswith("mcp__"):
+        return generic
+    path = _file_path(ti)
+    if not path:
+        return generic
+
+    old = ti.get("old_string", ti.get("old_str"))
+    new = ti.get("new_string", ti.get("new_str"))
+    if old is not None or new is not None:
+        return FileEditEntry(
+            path=path,
+            hunks=[{"old": str(old or ""), "new": str(new or ""), "replace_all": False}],
+            **common,
+        )
+    content = ti.get("content", ti.get("file_text"))
+    if isinstance(content, str):
+        return FileWriteEntry(
+            path=path,
+            # Truncated like every other worker's write entry — retaining full
+            # file bodies here is what makes one worker's transcript balloon.
+            content=truncate_file_content(content),
+            line_count=content.count("\n") + 1 if content else None,
+            bytes_count=len(content.encode("utf-8")) if content else None,
+            **common,
+        )
+    if any(tok in lower for tok in ("read", "view", "open", "cat")):
+        return FileReadEntry(path=path, **common)
+    return generic
 
 
 class CopilotParser:

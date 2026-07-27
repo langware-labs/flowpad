@@ -99,7 +99,7 @@ async def test_agentic_hammer(worker_type, transport, bootstrapped_client, tmp_p
         visible=pty,
         pty_mode=pty,
     )
-    await proc.save([])
+    await proc.save()
 
     prev_home = os.environ.get("HOME")
     os.environ["HOME"] = _REAL_HOME  # the CLI uses its real auth/config

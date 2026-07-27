@@ -913,6 +913,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         suggestion in ``data.suggested_name``. The caller re-submits with
         ``target_name`` set to accept the suggestion.
         """
+        from flow_sdk.app.actions.oauth_action import _get_github_token_for_current_user
         from flow_sdk.builtin.git_origin import GitOrigin
         from flow_sdk.builtin.project import Project
         from flow_sdk.config import AGENT_MOUNT_FOLDER
@@ -958,7 +959,10 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
                 status_code=409,
             )
 
-        ok, msg = await git_clone(clone_url, target_dir, branch=branch)
+        # Same credential path `/api/v1/git/remote-access` probes with (see
+        # git_remote_access) — no token → anonymous clone, as before.
+        token, _ = await _get_github_token_for_current_user()
+        ok, msg = await git_clone(clone_url, target_dir, branch=branch, token=token)
         if not ok:
             return ApiFailResponse(message=msg, status_code=400)
 

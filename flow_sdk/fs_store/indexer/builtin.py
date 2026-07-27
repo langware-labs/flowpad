@@ -66,6 +66,8 @@ def build_default_indexer() -> FSIndexer:
     import flow_sdk.fs_store.indexer.registrations  # noqa: F401, PLC0415
     from flow_sdk.fs_store.indexer.functions.agent import agent_fn
     from flow_sdk.fs_store.indexer.functions.agent_trace import agent_trace_fn
+    from flow_sdk.fs_store.indexer.functions.agentic_flow import agentic_flow_fn
+    from flow_sdk.fs_store.indexer.functions.asset_cleanup_report import asset_cleanup_report_fn
     from flow_sdk.fs_store.indexer.functions.claude_command import command_fn
     from flow_sdk.fs_store.indexer.functions.claude_hook import (
         claude_hook_files_extras_fn,
@@ -87,6 +89,7 @@ def build_default_indexer() -> FSIndexer:
     from flow_sdk.fs_store.indexer.functions.codex_sessions import codex_sessions_fn
     from flow_sdk.fs_store.indexer.functions.copilot_sessions import copilot_sessions_fn
     from flow_sdk.fs_store.indexer.functions.dynamic_workflows import dynamic_workflows_fn
+    from flow_sdk.fs_store.indexer.functions.journey import journey_fn
     from flow_sdk.fs_store.indexer.functions.markdown import (
         markdown_flat_fn,
         markdown_in_folder_fn,
@@ -101,16 +104,14 @@ def build_default_indexer() -> FSIndexer:
     )
     from flow_sdk.fs_store.indexer.functions.prompt import prompt_project_fn
     from flow_sdk.fs_store.indexer.functions.repo_assets import repo_assets_fn
-    from flow_sdk.fs_store.indexer.functions.skill import skill_fn, skill_in_folder_fn
     from flow_sdk.fs_store.indexer.functions.secret_origin import secret_origin_in_folder_fn
+    from flow_sdk.fs_store.indexer.functions.skill import skill_fn, skill_in_folder_fn
     from flow_sdk.fs_store.indexer.functions.spreadsheet import spreadsheet_in_folder_fn
     from flow_sdk.fs_store.indexer.functions.todo import todo_fn
     from flow_sdk.fs_store.indexer.functions.usage_report import usage_report_fn
-    from flow_sdk.fs_store.indexer.functions.asset_cleanup_report import asset_cleanup_report_fn
     from flow_sdk.fs_store.indexer.functions.whiteboard import whiteboard_fn
-    from flow_sdk.fs_store.indexer.functions.agentic_flow import agentic_flow_fn
-    from flow_sdk.fs_store.indexer.functions.journey import journey_fn
     from flow_sdk.fs_store.indexer.functions.workflow_run import workflow_run_fn
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
     # Transcript handlers are opt-in (full-JSONL parse is expensive — see
     # flow_sdk/fs_store/transcript_indexer/).
@@ -216,15 +217,19 @@ def build_default_indexer() -> FSIndexer:
 
     # Repo assets: the recursive agentic-assets/<type> hierarchy. One walker
     # discovers the whole nested tree per scope root (in-function recursion), so
-    # it registers on the roots only (not per repo type). output_type=None → it
-    # always runs and emits many types; each is materialized by its own type.
+    # it registers on the roots only (not per repo type). Its explicit output
+    # set keeps typed scans prunable without pretending this multi-output walker
+    # is unknown.
+    repo_output_types = frozenset(
+        RecordType(type_name) for type_name in SchemaRegistry.get_repo_types()
+    )
     for _root in (
         RecordType.USER_HOME_FOLDER,
         RecordType.REAL_PROJECT_CWD,
         RecordType.SYSTEM_ROOT,
         RecordType.CWD_ROOT,
     ):
-        idx.add_function(_root, repo_assets_fn)
+        idx.add_function(_root, repo_assets_fn, repo_output_types)
 
     # FOLDER (transient scaffold emitted by project_folder_walker_fn) expanders
     idx.add_function(RecordType.FOLDER, markdown_in_folder_fn, RecordType.MARKDOWN)

@@ -18,13 +18,18 @@ rewrite semantics:
 
 from __future__ import annotations
 
+import asyncio
 import os
 import uuid
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from flow_sdk.app.actions.flow_message_action import _fetch_conversation_messages
+from flow_sdk.app.actions.flow_message_action import (
+    _conv_fetch_inflight,
+    _drain_conversation_message_fetches,
+    _fetch_conversation_messages,
+)
 from flow_sdk.builtin.conversation import _PROJECTION_SENTINEL
 from flow_sdk.builtin.flow_message import FlowMessage
 from flow_sdk.fs_store.operations.conversation import default_jsonl_path
@@ -90,6 +95,46 @@ async def _run(conv_id: str, hub_children, fm_by_id: dict[str, FlowMessage | Exc
     ):
         await _fetch_conversation_messages(conv_id, someone_typeid="user-x")
     return project_mock
+
+
+@pytest.mark.asyncio
+async def test_overlapping_drains_claim_each_conversation_once():
+    """StrictMode can dispatch two list reconciles in the same event-loop
+    turn. The detached drains must atomically claim an id before their first
+    await; checking ``Lock.locked()`` before the semaphore let both copies
+    queue and fetch the same conversation serially."""
+    conv_id = "aaaa0010-1111-4111-8111-000000000010"
+    started = asyncio.Event()
+    release = asyncio.Event()
+    calls = 0
+
+    async def fake_fetch(_conv_id, _someone_typeid):
+        nonlocal calls
+        calls += 1
+        started.set()
+        await release.wait()
+
+    _conv_fetch_inflight.clear()
+    with patch(
+        "flow_sdk.app.actions.flow_message_action._fetch_conversation_messages",
+        new=fake_fetch,
+    ):
+        first = asyncio.create_task(
+            _drain_conversation_message_fetches([conv_id], "user-x"),
+        )
+        await started.wait()
+        second = asyncio.create_task(
+            _drain_conversation_message_fetches([conv_id], "user-x"),
+        )
+        try:
+            # The overlapping drain observes the existing atomic claim and
+            # finishes without entering fake_fetch.
+            await second
+            assert calls == 1
+        finally:
+            release.set()
+            await asyncio.gather(first, second)
+            _conv_fetch_inflight.clear()
 
 
 @pytest.fixture(autouse=True)

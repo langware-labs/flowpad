@@ -1,4 +1,4 @@
-import { ActionInfo, AgenticProcess } from '@sdk';
+import { AgenticProcess } from '@sdk';
 import { useMemo } from 'react';
 
 export interface WebAppConfig {
@@ -18,11 +18,8 @@ export function useProcessWebApp(flow: AgenticProcess | null | undefined, port: 
       return { host: '', cacheKey: 0 };
     }
 
-    const info = new ActionInfo('get-host', AgenticProcess.type, flow.id);
-    info.queryParameters = { port };
-
     return {
-      host: info.fullActionUrl,
+      host: flow.getWebAppHostUrl(port),
       cacheKey: Date.now(),
     };
   }, [flow, port]);

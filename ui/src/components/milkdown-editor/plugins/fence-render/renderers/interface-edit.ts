@@ -23,16 +23,23 @@ export type InterfaceEdit =
   | { kind: 'param-name'; param: string; value: string }
   | { kind: 'param-type'; param: string; value: string }
   | { kind: 'param-optional'; param: string; optional: boolean }
+  | { kind: 'property-name'; property: string; value: string }
+  | { kind: 'property-type'; property: string; value: string }
+  | { kind: 'property-optional'; property: string; optional: boolean }
+  | { kind: 'method-name'; method: string; value: string }
+  | { kind: 'method-signature'; method: string; value: string }
   | { kind: 'error'; index: number; value: string };
 
-function paramsMap(doc: Document): YAMLMap | null {
-  const params = doc.getIn(['params'], true);
-  return isMap(params) ? params : null;
+type MemberCollection = 'params' | 'properties' | 'methods';
+
+function memberMap(doc: Document, collection: MemberCollection): YAMLMap | null {
+  const members = doc.getIn([collection], true);
+  return isMap(members) ? members : null;
 }
 
-/** The key/value pair for a param, so we can edit the key node itself. */
-function paramPair(doc: Document, name: string) {
-  const map = paramsMap(doc);
+/** The key/value pair for a member, so we can edit the key node itself. */
+function memberPair(doc: Document, collection: MemberCollection, name: string) {
+  const map = memberMap(doc, collection);
   if (!map) return null;
   return map.items.find((item) => isScalar(item.key) && String(item.key.value) === name) ?? null;
 }
@@ -41,20 +48,30 @@ function paramPair(doc: Document, name: string) {
  * A param is either `title: string` or an object with `type:`. Returns the path
  * to whichever scalar actually holds the type.
  */
-function typePath(doc: Document, name: string): (string | number)[] | null {
-  const pair = paramPair(doc, name);
+function valuePath(
+  doc: Document,
+  collection: MemberCollection,
+  name: string,
+  objectKey: 'type' | 'signature',
+): (string | number)[] | null {
+  const pair = memberPair(doc, collection, name);
   if (!pair) return null;
-  if (isMap(pair.value)) return ['params', name, 'type'];
-  if (isScalar(pair.value)) return ['params', name];
+  if (isMap(pair.value)) return [collection, name, objectKey];
+  if (isScalar(pair.value)) return [collection, name];
   return null;
 }
 
-function currentType(doc: Document, name: string): string {
-  const path = typePath(doc, name);
+function currentValue(
+  doc: Document,
+  collection: MemberCollection,
+  name: string,
+  objectKey: 'type' | 'signature',
+): string {
+  const path = valuePath(doc, collection, name, objectKey);
   if (!path) return '';
   const node = doc.getIn(path);
-  // Types are always YAML scalars; anything else means a malformed block, and
-  // an empty string leaves the caller writing a plain type with no marker.
+  // Member values are always YAML scalars; anything else means a malformed
+  // block, and an empty string leaves the caller writing a plain value.
   return typeof node === 'string' ? node : '';
 }
 
@@ -82,7 +99,7 @@ export function applyInterfaceEdit(source: string, edit: InterfaceEdit): string 
     }
 
     case 'param-name': {
-      const pair = paramPair(doc, edit.param);
+      const pair = memberPair(doc, 'params', edit.param);
       if (!pair || !isScalar(pair.key)) return source;
       // Renaming through the key node keeps the pair — and therefore its value,
       // its position among siblings, and any trailing comment — intact.
@@ -92,20 +109,58 @@ export function applyInterfaceEdit(source: string, edit: InterfaceEdit): string 
     }
 
     case 'param-type': {
-      const path = typePath(doc, edit.param);
+      const path = valuePath(doc, 'params', edit.param, 'type');
       if (!path) return source;
       // Editing the type must not silently clear the optional marker.
-      const { optional } = splitOptional(currentType(doc, edit.param));
+      const { optional } = splitOptional(currentValue(doc, 'params', edit.param, 'type'));
       const next = splitOptional(edit.value).type;
       doc.setIn(path, optional ? `${next}${OPTIONAL_SUFFIX}` : next);
       break;
     }
 
     case 'param-optional': {
-      const path = typePath(doc, edit.param);
+      const path = valuePath(doc, 'params', edit.param, 'type');
       if (!path) return source;
-      const { type } = splitOptional(currentType(doc, edit.param));
+      const { type } = splitOptional(currentValue(doc, 'params', edit.param, 'type'));
       doc.setIn(path, edit.optional ? `${type}${OPTIONAL_SUFFIX}` : type);
+      break;
+    }
+
+    case 'property-name': {
+      const pair = memberPair(doc, 'properties', edit.property);
+      if (!pair || !isScalar(pair.key)) return source;
+      pair.key.value = edit.value;
+      break;
+    }
+
+    case 'property-type': {
+      const path = valuePath(doc, 'properties', edit.property, 'type');
+      if (!path) return source;
+      const { optional } = splitOptional(currentValue(doc, 'properties', edit.property, 'type'));
+      const next = splitOptional(edit.value).type;
+      doc.setIn(path, optional ? `${next}${OPTIONAL_SUFFIX}` : next);
+      break;
+    }
+
+    case 'property-optional': {
+      const path = valuePath(doc, 'properties', edit.property, 'type');
+      if (!path) return source;
+      const { type } = splitOptional(currentValue(doc, 'properties', edit.property, 'type'));
+      doc.setIn(path, edit.optional ? `${type}${OPTIONAL_SUFFIX}` : type);
+      break;
+    }
+
+    case 'method-name': {
+      const pair = memberPair(doc, 'methods', edit.method);
+      if (!pair || !isScalar(pair.key)) return source;
+      pair.key.value = edit.value;
+      break;
+    }
+
+    case 'method-signature': {
+      const path = valuePath(doc, 'methods', edit.method, 'signature');
+      if (!path) return source;
+      doc.setIn(path, edit.value);
       break;
     }
 

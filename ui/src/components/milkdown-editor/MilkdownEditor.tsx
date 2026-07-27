@@ -28,9 +28,10 @@ import type { EditorState } from '@milkdown/prose/state';
 import { TextSelection } from '@milkdown/prose/state';
 import type { MarkType } from '@milkdown/prose/model';
 import type { EditorView } from '@milkdown/prose/view';
-import { dataContext, VFSPath } from '@sdk';
+import { dataContext, VFSPath, type TypeId } from '@sdk';
 import { LOCAL_COMPUTE_NODE } from '@src/navigation/asset-doc-types';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { openFilePreview } from '@src/components/file-preview/file-preview';
 import {
   Bold, Italic, Code, Heading1, Heading2, Heading3,
   List, ListOrdered, SquareCode, Pilcrow, ExternalLink,
@@ -69,7 +70,7 @@ function stripHtmlComments(content: string): string {
 // preset doesn't recognize `[[..]]`, so we rewrite it to the markdown URL
 // form on the way in (clickable), and reverse on the way out (preserves
 // `[[..]]` in the source file).
-const _WIKILINK_DISPLAY_RE = /(?<!\\)\[\[([^\[\]\n|#^]+)(?:\|([^\[\]\n]+))?\]\]/g;
+const _WIKILINK_DISPLAY_RE = /(?<!\\)\[\[([^[\]\n|#^]+)(?:\|([^[\]\n]+))?\]\]/g;
 const _DOCK_WIKI_HREF_RE = /\[([^\]\n]+)\]\(\/dock\/assets\/wiki\/([^)\s#]+)\)/g;
 
 function wikilinksToMdLinks(md: string): string {
@@ -773,6 +774,14 @@ function MilkdownEditorInner({ content, onChange, editorMode, plugins, onActiveS
   const isReadOnly = editorMode === 'view' || editorMode === 'review';
   const { navigation, currentDock } = useDockNavigation();
 
+  /** The entity files are addressed through — the document's own compute node. */
+  const docEntityTypeId = (): TypeId =>
+    VFSPath.parse(currentDock?.pointer ?? '').typeId ?? LOCAL_COMPUTE_NODE;
+
+  const openMachinePath = (path: string, options?: { line?: number }) => {
+    navigation.openMachinePath(path, docEntityTypeId(), options);
+  };
+
   /*
    * Capabilities lent to fence renderers (see `plugins/fence-render/host-services`).
    * Held in a ref because the Milkdown editor is constructed once: the ctx slice
@@ -786,24 +795,22 @@ function MilkdownEditorInner({ content, onChange, editorMode, plugins, onActiveS
    */
   const hostServicesRef = useRef<FenceHostServices>({
     openFile: () => {},
+    previewFile: () => {},
     documentProjectRoot: () => null,
     projectRootById: () => null,
   });
   hostServicesRef.current = {
-    openFile: (path, options) => {
-      // Renderers resolve to an ABSOLUTE MACHINE path; editor docks address
-      // files as VFS paths (`compute_node-<id>/abs/path`). Converting here keeps
-      // that convention at the app boundary instead of teaching every renderer
-      // about compute nodes — without it the dock URL loses the entity prefix
-      // and the code editor never resolves the file.
-      //
-      // The entity is taken from the DOCUMENT's own dock so the source opens on
-      // the same compute node the doc is being read on. `LOCAL_COMPUTE_NODE` is
-      // only a fallback: it serializes to the `@local` uname, which the code
-      // editor does not resolve to a filesystem.
-      const docTypeId = VFSPath.parse(currentDock?.pointer ?? '').typeId ?? LOCAL_COMPUTE_NODE;
-      navigation.openFile(VFSPath.fromMachinePath(path, docTypeId).rawPath, options);
-    },
+    // Renderers resolve to an ABSOLUTE MACHINE path; editor docks address files
+    // as VFS paths (`compute_node-<id>/abs/path`). Converting here keeps that
+    // convention at the app boundary instead of teaching every renderer about
+    // compute nodes — without it the dock URL loses the entity prefix and the
+    // code editor never resolves the file. The entity comes from the DOCUMENT's
+    // own dock, so source opens on the compute node the doc is read on;
+    // `LOCAL_COMPUTE_NODE` is only a fallback (it serializes to the `@local`
+    // uname, which the code editor does not resolve to a filesystem).
+    openFile: (path, options) => openMachinePath(path, options),
+    previewFile: (path, options) =>
+      openFilePreview({ path, line: options?.line, typeId: docEntityTypeId() }),
     documentProjectRoot: () => projectRootOf(dataContext.project),
     projectRootById: (projectId) =>
       dataContext.project?.id === projectId ? projectRootOf(dataContext.project) : null,
@@ -873,6 +880,7 @@ function MilkdownEditorInner({ content, onChange, editorMode, plugins, onActiveS
           // the editor rather than freezing at construction.
           ctx.set(fenceHostServicesCtx.key, {
             openFile: (path, options) => hostServicesRef.current.openFile(path, options),
+            previewFile: (path, options) => hostServicesRef.current.previewFile(path, options),
             documentProjectRoot: () => hostServicesRef.current.documentProjectRoot(),
             projectRootById: (id) => hostServicesRef.current.projectRootById(id),
           });
@@ -1007,7 +1015,7 @@ function MilkdownEditorInner({ content, onChange, editorMode, plugins, onActiveS
     try {
       editor.action((ctx) => {
         const view = ctx.get(editorViewCtx);
-        dom = view.dom as HTMLElement;
+        dom = view.dom;
         view.dom.addEventListener('mousedown', onUser);
         view.dom.addEventListener('keydown', onUser);
       });

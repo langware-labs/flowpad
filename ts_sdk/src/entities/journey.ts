@@ -101,8 +101,11 @@ export class Journey extends APIEntity<Journey> implements IJourney {
   }
 
   /** Idempotent — returns the active journal, or starts a fresh one at the entry. */
-  async launch(): Promise<JourneyJournal> {
-    return new JourneyJournal(await apiClient.post<IJourneyJournal>(`${this.base}/launch`));
+  /** Null when the backend refused the launch (capability gate closed —
+   *  nothing left to set up — or the journey has no guided steps). */
+  async launch(): Promise<JourneyJournal | null> {
+    const data = await apiClient.post<IJourneyJournal | undefined>(`${this.base}/launch`);
+    return data ? new JourneyJournal(data) : null;
   }
 
   /** Archive the active journal (→ `restarted`) and launch a fresh one. */

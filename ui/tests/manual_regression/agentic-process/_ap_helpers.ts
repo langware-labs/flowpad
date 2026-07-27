@@ -7,6 +7,7 @@
  * which is the point at which the ProcessToolbar mounts in the Claude pane.
  */
 import { type Page, test, expect } from '@playwright/test';
+export { apiBase } from '../_shared/api';
 
 export async function dismissSetupModal(page: Page) {
   await page.addInitScript(() => {
@@ -110,16 +111,6 @@ export async function waitForRunningSession(page: Page, apiBase: string, process
  */
 export function sessionPopover(page: Page) {
   return page.locator('[data-radix-popper-content-wrapper]').filter({ hasText: 'Session Details' });
-}
-
-/**
- * API base for in-page fetches. Empty string = relative `/api/...` URLs,
- * which the Vite dev server proxies to whatever backend the app itself is
- * wired to — so tests always query the SAME backend as the UI under test.
- * QA_API_URL remains as an explicit override; never hardcode a port here.
- */
-export function apiBase(): string {
-  return process.env.QA_API_URL || '';
 }
 
 /**

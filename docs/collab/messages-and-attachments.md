@@ -353,7 +353,9 @@ Phase 1  RECEIVED    header + conversation rows indexed (pre-body).
                        (_maybe_eager_pull_bundle on body_status READY, retried
                        by notification_scanner); manual Download otherwise.
 Phase 2  DOWNLOADED  bundle in the FM's staging (download/ + unpacked/); every
-                     payload entry has a MessageAttachment row (scope=None).
+                     payload entry has a MessageAttachment row. Unbound
+                     conversations leave copy-mode entries at scope=None;
+                     bound conversations proceed directly to installation.
 Phase 3  REVIEWED    dashed chip → AssetReviewDialog (content + source:
                      embedded / git / cloud). receive_policy='auto' types
                      WAIVE this gate — see below.
@@ -371,16 +373,28 @@ Phase 5  SETUP/OPEN  TypeInfo.setup_skill spawns the Vibe setup session;
 the message plumbing itself — and always materialize at unpack; they are not
 reviewable attachments. Everything else is PAYLOAD and stages.
 
+**Conversation project binding is durable install consent.** Selecting a
+project for an attachment binds the conversation to that project, fans the
+choice out to every existing staged copy-mode attachment, and auto-installs
+future copy-mode arrivals there. An unbound conversation keeps those
+attachments staged for review and explicit installation. Git transfers are
+repository-determined rather than copied into the selected project, so the
+fan-out skips them.
+
 **`TypeInfo.receive_policy`.** The per-type gate declaration:
-`None` (default) ⇒ staged → review → explicit install — the consent boundary
-for anything agent-executable or byte-copying. `"auto"` ⇒ row-only passive
-payload (claude_session transcripts, flowpad_diagnosis): unpack stages the MA
-and installs it immediately through the same action — no review dialog, chip
-navigates directly, `receive_row_overrides` stamp local state (e.g.
-`received=True`), and no project is ever stamped (scope follows the
-conversation via the parent-chain fallback).
+`None` (default) ⇒ an unbound conversation follows staged → review → explicit
+install — the consent boundary for anything agent-executable or byte-copying;
+a bound conversation uses its durable project consent. `"auto"` ⇒ row-only
+passive payload (claude_session transcripts, flowpad_diagnosis): unpack stages
+the MA and installs it immediately through the same action — no review dialog,
+chip navigates directly, and `receive_row_overrides` stamp local state (e.g.
+`received=True`). Auto-policy entries install into the bound project when one
+is present; otherwise they install at user scope and inherit effective project
+context through the parent chain.
 
 Coverage: `tests/unit/test_receive_policy_auto_install.py` (pipeline contract),
+`tests/unit/test_conversation_project_binding.py` (project fan-out and future
+arrival auto-install),
 `ui/tests/unit/staged-chip-state.test.ts` (chip truth table incl. task), and
 `ui/tests/hub/transcript_share_two_client.test.ts` (live two-instance e2e over
 the hub: share → accept → download → auto-installed MA + received row).

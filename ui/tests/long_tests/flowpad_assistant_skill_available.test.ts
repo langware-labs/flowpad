@@ -69,7 +69,10 @@ describe('Flowpad Assistant mount — skill availability', () => {
     // No explicit worker_type / flag: load_flowpad_assistant is unset, so it
     // inherits the global default (True) → the Flowpad Assistant project is
     // mounted and its skills (incl. transcript-analyzer) are discoverable.
-    const proc = await new AgenticProcess({ workdir }).save([]);
+    // Skill discovery is asserted through executeInstruction's live FlowData,
+    // so select the headless stream transport explicitly. The entity default
+    // is an interactive PTY, whose output is read through the terminal.
+    const proc = await new AgenticProcess({ workdir, pty_mode: false, visible: false }).save([]);
     // Sanity: the per-process flag round-trips from the backend "as is".
     expect(proc.load_flowpad_assistant ?? null, 'flag should default to null (inherit global)').toBeNull();
     await proc.watch();

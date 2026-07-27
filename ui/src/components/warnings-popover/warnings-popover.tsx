@@ -4,6 +4,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popo
 import { openWikiModal } from '@src/components/wiki-tip';
 import { useDockNavigation } from '@src/navigation';
 import { useWarnings } from '@sdk/react/hooks';
+import { runCommand } from '@src/notifications';
 import {
   AlertCircle,
   AlertOctagon,
@@ -131,7 +132,11 @@ export function WarningsPopover() {
 
   const handleWarningClick = useCallback(
     (warning: UserWarning) => {
-      if (warning.id === WARNING_IDS.NO_HARNESS || warning.id === WARNING_IDS.HARNESS_LOGIN) {
+      if (warning.id === WARNING_IDS.SNIFFER_ACTIVE) {
+        // Same command the startup toast's Disable button runs — one path,
+        // one set of success/failure toasts.
+        runCommand('sniffer.disable', {}, { id: warning.id });
+      } else if (warning.id === WARNING_IDS.NO_HARNESS || warning.id === WARNING_IDS.HARNESS_LOGIN) {
         // Both harness warnings open the login modal — it shows install links
         // for missing CLIs and the device-login flow for logged-out ones.
         openHarnessLoginModal();

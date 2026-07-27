@@ -5,6 +5,7 @@ import {
   type HooksSnifferStatus,
   PrefKey,
   snifferManager,
+  loadSnifferPreference,
   TypeId,
   VFSPath,
   getTranscriptDockPointer,
@@ -41,31 +42,6 @@ export type SnifferEvent = {
   /** Pre-computed trigger log lens pointer. Null for events without a hook_entry_id. */
   triggerLogDockPointer: { ref: string; options: Record<string, string> } | null;
 };
-
-const SNIFFER_ENABLED_STORAGE_KEY = 'flowpad.snifferEnabled';
-
-/** Last user decision. Returns ``null`` when no preference has been recorded
- *  so callers can fall back to the backend state — bootstrap auto-enables
- *  the sniffer on desktop init, and clobbering that to OFF on every fresh
- *  install would clear the just-injected ~/.claude/settings.json hooks. */
-function loadSnifferPreference(): boolean | null {
-  try {
-    const stored = localStorage.getItem(SNIFFER_ENABLED_STORAGE_KEY);
-    if (stored === 'true') return true;
-    if (stored === 'false') return false;
-  } catch {
-    // ignore
-  }
-  return null;
-}
-
-function saveSnifferPreference(enabled: boolean): void {
-  try {
-    localStorage.setItem(SNIFFER_ENABLED_STORAGE_KEY, enabled ? 'true' : 'false');
-  } catch {
-    // ignore
-  }
-}
 
 function safeParse(raw: string): any {
   try {
@@ -449,9 +425,8 @@ export function useHooksSniffer() {
   const enable = useCallback(async () => {
     setIsToggling(true);
     try {
-      await snifferManager.enable();   // entity.watch() fully awaited inside
+      await snifferManager.enable();   // records the preference + watches inside
       setHookId(snifferManager.entity?.id ?? null);
-      saveSnifferPreference(true);
     } finally {
       setIsToggling(false);
     }
@@ -460,11 +435,10 @@ export function useHooksSniffer() {
   const disable = useCallback(async () => {
     setIsToggling(true);
     try {
-      await snifferManager.disable();  // unwatch + clear inside
+      await snifferManager.disable();  // unwatch + clear + record preference inside
       setHookId(null);
       sessionToProjectRef.current.clear();
       globalIndexOffsetRef.current = 0;
-      saveSnifferPreference(false);
     } finally {
       setIsToggling(false);
     }

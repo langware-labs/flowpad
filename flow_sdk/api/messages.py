@@ -40,7 +40,7 @@ class WSMessageType(Enum):
     FLOW_RUN_EVENT_MSG = "flow_run_event_msg"
     FLOW_NODE_STATUS_MSG = "flow_node_status_msg"
     # The unified event bus frame (docs/flow-events.md) — carries one FlowEvent.
-    TOPIC_MSG = "topic_msg"
+    TAG_MSG = "tag_msg"
 
 
 class ExeMessageSubType(StrEnum):
@@ -147,7 +147,7 @@ class PrivacyModeMessage(BaseMessage):
 
 class ToplogStateMessage(BaseMessage):
     """Broadcast when this instance's toplog state changes, so every open client
-    updates its in-memory topic set live (no reload). See flow_sdk/toplog.py."""
+    updates its in-memory tag set live (no reload). See flow_sdk/toplog.py."""
     message_type: str = WSMessageType.TOPLOG_STATE_MSG.value
     enabled: bool
     filter: Dict[str, bool]
@@ -186,14 +186,14 @@ class FlowNodeStatusMessage(BaseMessage):
     ts: str = ""
 
 
-class TopicMessage(BaseMessage):
+class TagMessage(BaseMessage):
     """The unified event-bus frame: one serialized FlowEvent
-    (flow_sdk/topics/envelope.py), forwarded backend→app for the declared
-    allowlist only (topics/ws_forward.py). The envelope rides as a plain dict
+    (flow_sdk/tags/envelope.py), forwarded backend→app for the declared
+    allowlist only (tags/ws_forward.py). The envelope rides as a plain dict
     so its schema stays pinned by the contract fixture, independent of
-    BaseMessage plumbing. TS mirror: ``TopicMsg`` in ``ts_sdk/src/websocket.ts``."""
+    BaseMessage plumbing. TS mirror: ``TagMsg`` in ``ts_sdk/src/websocket.ts``."""
 
-    message_type: str = WSMessageType.TOPIC_MSG.value
+    message_type: str = WSMessageType.TAG_MSG.value
     event: Dict[str, Any]
 
 

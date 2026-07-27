@@ -47,12 +47,12 @@ async def test_runner_check_install_test() -> None:
         spec, service="gmail", worker_type="claude_code", record_ids=["abc"]
     )
 
-    check = await runner.check()
+    check = await runner.test()
     assert check.available and check.ok
     assert check.details["service"] == "gmail"
 
     # install() is a no-op for MCP capabilities (configured, not installed).
-    install = await runner.install()
+    install = await runner.setup()
     assert "configured, not installed" in install.message
 
     # test() mirrors check() for now.

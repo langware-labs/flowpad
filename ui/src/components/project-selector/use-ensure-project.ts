@@ -59,16 +59,18 @@ export function useEnsureProject() {
   );
 }
 
+/** Where a project-open flow LANDS, once the project is adopted. */
+export type ProjectLanding = (project: Project) => void | Promise<void>;
+
 /**
- * Companion helper for the "From git" flow: the backend has already
- * cloned + saved the Project. We only need steps 3–5 of `useEnsureProject`.
+ * Default landing: go to the project's own dock. Callers on a home surface
+ * pass `useProjectOpener().openExistingProject` instead, which stays home.
  */
-export function useSelectExistingProject() {
+export function useSelectExistingProject(): ProjectLanding {
   const { navigation } = useDockNavigation();
 
   return useCallback(
     async (project: Project): Promise<void> => {
-      await project.setupForDesktop();
       await selectProjectContext(project);
       navigation.openDock(DockPointer.forProject(project.id));
     },
@@ -78,21 +80,57 @@ export function useSelectExistingProject() {
 
 /**
  * Shared "clone a git repo into a fresh Project, then open it" step, used by
- * both the QuickCreate "From git" flow and the received-template
- * `IncomingProjectDialog`. Centralizes the `Project.createFromGitUrl` result
- * contract (ok / collision / error) plus the open-on-success, so the two call
- * sites can't drift. Returns the raw result; each caller maps it to its own UI
- * (form banner vs. step machine).
+ * the QuickCreate "From git" flow, the Vibe home hero, and the
+ * received-template `IncomingProjectDialog`. Centralizes the
+ * `Project.createFromGitUrl` result contract (ok / collision / error), the
+ * desktop wiring, and the open-on-success, so the call sites can't drift.
+ *
+ * `landing` overrides where a successful clone lands (default: the project's
+ * dock). It's the ONLY thing that legitimately varies between call sites —
+ * pass a stable (memoized) callback. Returns the raw result; each caller maps
+ * it to its own UI (form banner vs. step machine).
  */
-export function useCloneGitProjectAndOpen() {
+export function useCloneGitProjectAndOpen(landing?: ProjectLanding) {
   const selectExisting = useSelectExistingProject();
+  const land = landing ?? selectExisting;
 
   return useCallback(
     async (computeNodeId: string, url: string, opts?: { targetName?: string; branch?: string }) => {
       const result = await Project.createFromGitUrl(computeNodeId, url, opts?.targetName, opts?.branch);
-      if (result.kind === 'ok') await selectExisting(result.project);
+      if (result.kind === 'ok') {
+        await result.project.setupForDesktop();
+        await land(result.project);
+      }
       return result;
     },
-    [selectExisting],
+    [land],
+  );
+}
+
+/**
+ * The `NewProjectFromGitDialog.onCreate` adapter: maps the clone result onto
+ * the shape the dialog speaks (`{ok:true}` closes it, `{ok:false, …}` shows the
+ * name-collision banner, a throw shows an error toast). Lives here with the
+ * result contract it decodes so a new `kind` is handled in one place rather
+ * than in every dialog that hosts the form.
+ */
+export function useGitCloneDialogSubmit(computeNodeId: string | null | undefined, landing?: ProjectLanding) {
+  const cloneAndOpen = useCloneGitProjectAndOpen(landing);
+
+  return useCallback(
+    async (
+      url: string,
+      acceptSuggested?: string,
+      branch?: string,
+    ): Promise<{ ok: true } | { ok: false; suggestedName: string; attemptedName: string }> => {
+      if (!computeNodeId) throw new Error('No compute node available');
+      const result = await cloneAndOpen(computeNodeId, url, { targetName: acceptSuggested, branch });
+      if (result.kind === 'ok') return { ok: true };
+      if (result.kind === 'collision') {
+        return { ok: false, suggestedName: result.suggestedName, attemptedName: result.attemptedName };
+      }
+      throw new Error(result.message);
+    },
+    [cloneAndOpen, computeNodeId],
   );
 }

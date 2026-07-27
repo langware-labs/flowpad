@@ -399,6 +399,13 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   /** Entity type for AgenticProcess */
   static type: string = 'agentic_process';
 
+  /** Backend redirect URL for the process's live web-app port. */
+  getWebAppHostUrl(port: string): string {
+    const action = new ActionInfo('get-host', AgenticProcess.type, this.id);
+    action.queryParameters = { port };
+    return action.fullActionUrl;
+  }
+
   /**
    * Spawn a visible AgenticProcess tab and (optionally) send an initial
    * prompt. Mirrors the `Start Claude` / `Start Codex` openers in
@@ -1129,9 +1136,6 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       // eslint-disable-next-line no-console
       console.log(`[PERF] +${(now - t0).toFixed(0)}ms ${label} took ${(now - start).toFixed(1)}ms`);
     };
-    const sImport = performance.now();
-    const { Shell } = await import('../entities/shell');
-    stamp('process.shell: dynamic import("../entities/shell")', sImport);
     const sGet = performance.now();
     const result = await Shell.getById<Shell>(this.shell_id);
     stamp('process.shell: Shell.getById', sGet);
@@ -1171,9 +1175,10 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   }
 
   /**
-   * Subscribe to ANSI-stripped output lines. Wires up the shell bridge on
-   * first use so ``process.on('line', ...)`` works even before the shell is
-   * fully attached. Returns an unsubscribe function.
+   * Subscribe to ANSI-stripped output rows (LF-delimited lines and bare-CR
+   * terminal redraw rows). Wires up the shell bridge on first use so
+   * ``process.on('line', ...)`` works even before the shell is fully attached.
+   * Returns an unsubscribe function.
    */
   onLine(handler: (line: string) => void): () => void {
     void this._ensureShellLineBridge();
@@ -1335,7 +1340,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * Distinguishes a streaming client (wait for END; never settle a pending turn
    * from a possibly-stale raw worker_status) from a passive client that only
    * watches entity busy edges (no stream, so it must settle from worker_status
-   * on busy:false or it hangs). Reset per turn by ``beginHeadlessTurn``.
+   * on busy:false or it hangs). Reset per turn by ``beginTurn``.
    */
   private _observedTurnFrame: boolean = false;
 
@@ -1578,7 +1583,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   }
 
   /** Start a headless turn without trusting a terminal status from its predecessor. */
-  private beginHeadlessTurn(): void {
+  private beginTurn(): void {
     this._turnOutcome = 'pending';
     this._observedTurnEnd = null;
     this._observedTurnError = null;
@@ -1596,7 +1601,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
 
     // A separately hydrated watcher may miss/coalesce the busy-start entity
     // edge. Its first live worker frame still establishes a new turn locally.
-    if (this._turnOutcome === null) this.beginHeadlessTurn();
+    if (this._turnOutcome === null) this.beginTurn();
     if (this._turnOutcome !== 'pending') return;
     // A frame for the pending turn means this client is streaming it — its END
     // frame is the authoritative terminator, so the busy:false edge must not
@@ -2246,8 +2251,10 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       observedError: this._observedTurnError,
       observedFrame: this._observedTurnFrame,
     };
-    if (!this.pty_mode) this.beginHeadlessTurn();
-    else this._error = null;
+    // Completion is per instruction, including interactive PTY prompts. A PTY
+    // process stays alive between turns, but each execute still owns a fresh
+    // worker-status terminal edge and must emit its own complete/error event.
+    this.beginTurn();
 
     // Optimistically echo user message into the stream
     this.appendUserMessage(instruction);
@@ -2476,7 +2483,6 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
      * backend refuses to respawn a latched process. */
     retry?: boolean;
   }): Promise<boolean> {
-    const { Shell } = await import('../entities/shell');
     // No client-side STOPPING guard. The server's ``open`` action runs
     // ``reap_if_orphaned()`` at entry: if the row is stuck in STOPPING with
     // a dead worker, it's reset to STOPPED and the start proceeds normally.
@@ -2747,7 +2753,6 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       return;
     }
     // Fallback: shell not yet in cache — load it and delegate
-    const { Shell } = await import('../entities/shell');
     const typeId = new TypeId(Shell.type, this.shell_id);
     const shell = await dataManager.getByTypeId<Shell>(typeId);
     if (!shell) throw new Error(`[AgenticProcess.sendInput] Shell ${this.shell_id} not found`);
@@ -2962,11 +2967,10 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     if (pendingVisible !== undefined && 'visible' in data && data.visible !== pendingVisible) {
       delete data.visible;
     }
-    const updateIsHeadless = (data.pty_mode ?? this.pty_mode) === false;
-    if (updateIsHeadless && data.busy === true && !wasBusy) {
+    if (data.busy === true && !wasBusy) {
       // Reset before applying any failure fields from the same payload, so a
       // combined {busy:true,status:failed} update cannot clear its own error.
-      this.beginHeadlessTurn();
+      this.beginTurn();
     }
     // Skip no-op transitions: castAndDeepAssign() runs this hook for every
     // WS entity-op AND for every REST-response write-through, so the same
@@ -3016,7 +3020,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     //
     // Settle from FAILED only on the TRANSITION into it, never on a statusless
     // op that merely observes an already-FAILED status. A fresh headless turn
-    // (beginHeadlessTurn above, on the busy:true edge) leaves ``status`` at a
+    // (beginTurn above, on the busy:true edge) leaves ``status`` at a
     // stale FAILED inherited from the prior turn; firing ``_handleError`` on
     // every subsequent name-stamp / transcript-debounce op would re-settle that
     // fresh pending turn as an error.

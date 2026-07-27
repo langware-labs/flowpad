@@ -235,3 +235,30 @@ def test_runner_source_policy_has_no_dotenv_execution_or_new_wait_budget() -> No
     assert "--workers=1" in executable
     assert "PLAYWRIGHT_JSON_OUTPUT_NAME" in executable
     assert "QA_BOB_HUB_ID" in executable
+
+
+def test_manifest_supports_root_scenarios_without_changing_nested_categories(tmp_path) -> None:
+    repo = tmp_path / "repo"
+    root = repo / "ui" / "tests" / "manual_regression"
+    nested = root / "terminal"
+    nested.mkdir(parents=True)
+
+    (root / "playwright.config.ts").write_text("export default {};\n", encoding="utf-8")
+    (root / "migration.md.ts").write_text("export {};\n", encoding="utf-8")
+    (nested / "playwright.config.ts").write_text("export default {};\n", encoding="utf-8")
+    (nested / "shell.md.ts").write_text("export {};\n", encoding="utf-8")
+
+    entries = phase11._manifest_entries(repo, root)
+
+    assert [(entry["file"], entry["category"], entry["config"]) for entry in entries] == [
+        (
+            "ui/tests/manual_regression/migration.md.ts",
+            "__root__",
+            "ui/tests/manual_regression/playwright.config.ts",
+        ),
+        (
+            "ui/tests/manual_regression/terminal/shell.md.ts",
+            "terminal",
+            "ui/tests/manual_regression/terminal/playwright.config.ts",
+        ),
+    ]

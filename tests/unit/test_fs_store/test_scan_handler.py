@@ -7,15 +7,22 @@ event emission, and scan_log writes.
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 import pytest
 
 from flow_sdk.builtin.faas.fs_records_actions import FsRecordsActionsMixin
 from flow_sdk.builtin.faas.in_process_activity import InProcessActivity
-from flow_sdk.fs_store.indexer import reset_shared_indexer
+from flow_sdk.fs_store.fs_ref import FSRef
+from flow_sdk.fs_store.indexer import (
+    PROGRESS_TEXT_COMPLETE,
+    FSIndexer,
+    IndexProgressTable,
+    TypeProgressRow,
+    reset_shared_indexer,
+)
 from flow_sdk.fs_store.record_types import RecordType
+from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
 
 class FakeQueryParams:
@@ -164,3 +171,156 @@ async def test_scan_handler_emits_table_snapshots(captured_progress):
     final = snapshots[-1]
     assert final["text"] == "complete"
     assert final["current"] is None
+
+
+@pytest.mark.asyncio
+async def test_typed_scan_projects_and_diffs_only_terminal_type(
+    tmp_path,
+    monkeypatch,
+    captured_progress,
+):
+    skill_path = tmp_path / "skill.md"
+    session_path = tmp_path / "session.jsonl"
+    skill_path.write_text("# skill\n")
+    session_path.write_text("{}\n")
+    nodes = [
+        FSRef(skill_path, record_type=RecordType.SKILL),
+        FSRef(session_path, record_type=RecordType.CLAUDE_SESSION),
+    ]
+    captured: dict[str, Any] = {}
+
+    class FakeIndexer:
+        async def scan(self, opts):
+            captured["requested_types"] = opts.types
+            row = TypeProgressRow(type_name="skill", done=1, total=0)
+            await opts.on_progress(IndexProgressTable(
+                job_name="scan",
+                rows=(row,),
+                current="skill",
+                done=1,
+                total=0,
+            ))
+            await opts.on_progress(IndexProgressTable(
+                job_name="scan",
+                rows=(row,),
+                current=None,
+                done=1,
+                total=0,
+                text=PROGRESS_TEXT_COMPLETE,
+            ))
+            return nodes
+
+    monkeypatch.setattr(
+        "flow_sdk.fs_store.indexer.get_shared_indexer",
+        lambda: FakeIndexer(),
+    )
+
+    async def all_scope(*, create_missing):
+        return object()
+
+    monkeypatch.setattr(
+        "flow_sdk.fs_store.operations.all_projects.get_all_scope_filter",
+        all_scope,
+    )
+    handler = _Handler()
+
+    async def scoped_roots(_scope_filter, *, foreground):
+        return ()
+
+    monkeypatch.setattr(handler, "_resolve_scoped_roots", scoped_roots)
+    identity_types: list[RecordType] = []
+
+    def ref_id(ref):
+        identity_types.append(ref.record_type)
+        return f"{ref.record_type}-id"
+
+    monkeypatch.setattr(handler, "_ref_id", ref_id)
+
+    def discover(type_names):
+        captured["diff_types"] = set(type_names)
+        return {}
+
+    monkeypatch.setattr(
+        FSIndexer,
+        "_discover_records_dir_ids",
+        staticmethod(discover),
+    )
+
+    def append_scan(cls, **kwargs):
+        captured["scan_log"] = kwargs
+        captured["activity_alive"] = (
+            handler._activity is not None and not handler._activity.is_complete
+        )
+        captured["terminal_seen_during_postprocess"] = any(
+            event.get("attributes", {}).get("text") == PROGRESS_TEXT_COMPLETE
+            for event in captured_progress
+        )
+        return "now"
+
+    monkeypatch.setattr(SchemaRegistry, "append_scan", classmethod(append_scan))
+
+    response = await handler._handle_fs_records_scan(
+        FakeRequestInfo({"type": "skill", "user": None, "projects": None})
+    )
+
+    assert captured["requested_types"] == [RecordType.SKILL]
+    assert captured["diff_types"] == {"skill"}
+    assert identity_types == [RecordType.SKILL, RecordType.SKILL]
+    assert response.data["type"] == "skill"
+    assert response.data["count"] == 1
+    assert captured["scan_log"]["type_name"] == "skill"
+    assert captured["activity_alive"] is True
+    assert captured["terminal_seen_during_postprocess"] is False
+    assert captured_progress[-1]["attributes"]["text"] == PROGRESS_TEXT_COMPLETE
+    assert handler._activity is None
+
+
+def test_typed_non_indexable_scan_is_projected_but_not_diffed(
+    tmp_path,
+    monkeypatch,
+):
+    folder = tmp_path / "folder"
+    folder.mkdir()
+    handler = _Handler()
+    identity_types: list[RecordType] = []
+
+    def project_identity(ref):
+        identity_types.append(ref.record_type)
+        return None
+
+    monkeypatch.setattr(handler, "_ref_id", project_identity)
+    captured: dict[str, Any] = {}
+
+    def discover(type_names):
+        captured["diff_types"] = set(type_names)
+        return {}
+
+    monkeypatch.setattr(
+        FSIndexer,
+        "_discover_records_dir_ids",
+        staticmethod(discover),
+    )
+    monkeypatch.setattr(
+        SchemaRegistry,
+        "append_scan",
+        classmethod(lambda cls, **kwargs: "now"),
+    )
+
+    response = handler._project_fs_records_scan(
+        nodes=[FSRef(folder, record_type=RecordType.FOLDER)],
+        filter_type="folder",
+        types_filter=[RecordType.FOLDER],
+        trigger="test",
+        scan_ms=1.0,
+        scope_explicit=False,
+    )
+
+    assert response.data["type"] == "folder"
+    assert response.data["count"] == 1
+    assert response.data["records"][0]["id"] == str(folder)
+    assert response.data["min_bytes"] == folder.stat().st_size
+    assert response.data["max_bytes"] == folder.stat().st_size
+    assert response.data["new"] == 0
+    assert response.data["pending"] == 0
+    assert identity_types == [RecordType.FOLDER]
+    assert captured["diff_types"] == set()
