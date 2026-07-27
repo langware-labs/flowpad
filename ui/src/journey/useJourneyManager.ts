@@ -5,6 +5,7 @@ import { AssetEditor } from '@src/navigation/asset-doc-types';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { ViewMode } from '@src/contexts/view-mode-context';
 import { projectScope } from '@src/lib/scope-filter';
 import { dockTarget } from '@src/tags/dock-target';
 import type { JourneyPresentDock, JourneyStep, UseJourneyResult } from './use-journey';
@@ -149,7 +150,10 @@ export function useJourneyManager(state: UseJourneyResult): JourneyManagerView {
       navigation.openHomeRoot(present.highlight);
       return;
     }
-    const pointer = pointerForDock(dock, assetRef, computeNodeTypeId, projectId);
+    // A journey runs in VIBE and never drops out of it: every surface it opens
+    // carries the mode, and `useDockViewModeOverrideSync` adopts it as the
+    // preference — so the skin survives the steps that navigate nowhere.
+    const pointer = pointerForDock(dock, assetRef, computeNodeTypeId, projectId)?.withViewMode(ViewMode.Vibe);
     if (pointer) {
       navigation.openDock(present.highlight ? pointer.withHighlight(present.highlight) : pointer);
     } else if (present.highlight) {
@@ -214,7 +218,10 @@ export function useJourneyManager(state: UseJourneyResult): JourneyManagerView {
 
   const openTerminal = useCallback(async () => {
     // openNewShell already navigates to the new shell when we don't opt out.
-    const result = await navigation.openNewShell(journeyRoot ? { cwd: journeyRoot } : undefined);
+    const result = await navigation.openNewShell({
+      viewMode: ViewMode.Vibe,
+      ...(journeyRoot ? { cwd: journeyRoot } : {}),
+    });
     return result?.shellId ?? null;
   }, [navigation, journeyRoot]);
 
