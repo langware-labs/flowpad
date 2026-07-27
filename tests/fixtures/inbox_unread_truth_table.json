@@ -1,0 +1,328 @@
+{
+  "comment": "Shared truth table for the inbox unread formula. Consumed by tests/unit/test_inbox_unread_truth_table.py (backend count_unread) and ui/tests/react/inbox-unread-truth-table.test.ts (frontend conversationFacets) so the scalar projection and the rendered Unread rows can never drift. One conversation contributes at most one; pending standalone invitations contribute one each.",
+  "viewer": {
+    "email": "me@local.test",
+    "cloud_user_id": "me-cloud",
+    "local_user_id": "me-local"
+  },
+  "now": "2026-07-15T12:00:00+00:00",
+  "cases": [
+    {
+      "name": "two unread received messages in one conversation count once",
+      "conversations": [
+        {
+          "id": "c1",
+          "archived_at": null,
+          "pointers": [
+            { "fm": "m1", "ts": "2026-07-15T10:00:00+00:00" },
+            { "fm": "m2", "ts": "2026-07-15T11:00:00+00:00" }
+          ]
+        }
+      ],
+      "messages": {
+        "m1": { "is_read": false, "sender_id": "alice" },
+        "m2": { "is_read": false, "sender_id": "alice" }
+      },
+      "invitations": [],
+      "expected": 1,
+      "facets": { "conversation": "c1", "isUnread": true, "isArchived": false, "isInvitation": false }
+    },
+    {
+      "name": "latest message read counts zero",
+      "conversations": [
+        {
+          "id": "c1",
+          "archived_at": null,
+          "pointers": [
+            { "fm": "m1", "ts": "2026-07-15T10:00:00+00:00" },
+            { "fm": "m2", "ts": "2026-07-15T11:00:00+00:00" }
+          ]
+        }
+      ],
+      "messages": {
+        "m1": { "is_read": false, "sender_id": "alice" },
+        "m2": { "is_read": true, "sender_id": "alice" }
+      },
+      "invitations": [],
+      "expected": 0,
+      "facets": { "conversation": "c1", "isUnread": false, "isArchived": false, "isInvitation": false }
+    },
+    {
+      "name": "latest message self-sent (cloud id) counts zero",
+      "conversations": [
+        {
+          "id": "c1",
+          "archived_at": null,
+          "pointers": [{ "fm": "m1", "ts": "2026-07-15T10:00:00+00:00" }]
+        }
+      ],
+      "messages": { "m1": { "is_read": false, "sender_id": "me-cloud" } },
+      "invitations": [],
+      "expected": 0,
+      "facets": { "conversation": "c1", "isUnread": false, "isArchived": false, "isInvitation": false }
+    },
+    {
+      "name": "latest message self-sent (local id) counts zero",
+      "conversations": [
+        {
+          "id": "c1",
+          "archived_at": null,
+          "pointers": [{ "fm": "m1", "ts": "2026-07-15T10:00:00+00:00" }]
+        }
+      ],
+      "messages": { "m1": { "is_read": false, "sender_id": "me-local" } },
+      "invitations": [],
+      "expected": 0
+    },
+    {
+      "name": "latest message is a draft counts zero",
+      "conversations": [
+        {
+          "id": "c1",
+          "archived_at": null,
+          "pointers": [{ "fm": "m1", "ts": "2026-07-15T10:00:00+00:00" }]
+        }
+      ],
+      "messages": { "m1": { "is_read": false, "sender_id": "alice", "is_draft": true } },
+      "invitations": [],
+      "expected": 0
+    },
+    {
+      "name": "orphan pointer (message not materialized) counts zero",
+      "conversations": [
+        {
+          "id": "c1",
+          "archived_at": null,
+          "pointers": [{ "fm": "missing", "ts": "2026-07-15T10:00:00+00:00" }]
+        }
+      ],
+      "messages": {},
+      "invitations": [],
+      "expected": 0
+    },
+    {
+      "name": "conversation with no pointers counts zero",
+      "conversations": [{ "id": "c1", "archived_at": null, "pointers": [] }],
+      "messages": {},
+      "invitations": [],
+      "expected": 0
+    },
+    {
+      "name": "archived unread conversation counts zero",
+      "conversations": [
+        {
+          "id": "c1",
+          "archived_at": "2026-07-15T11:00:00+00:00",
+          "pointers": [{ "fm": "m1", "ts": "2026-07-15T10:00:00+00:00" }]
+        }
+      ],
+      "messages": { "m1": { "is_read": false, "sender_id": "alice" } },
+      "invitations": [],
+      "expected": 0,
+      "facets": { "conversation": "c1", "isUnread": true, "isArchived": true, "isInvitation": false }
+    },
+    {
+      "name": "message newer than archived_at revives the conversation",
+      "conversations": [
+        {
+          "id": "c1",
+          "archived_at": "2026-07-15T10:30:00+00:00",
+          "pointers": [
+            { "fm": "m1", "ts": "2026-07-15T10:00:00+00:00" },
+            { "fm": "m2", "ts": "2026-07-15T11:00:00+00:00" }
+          ]
+        }
+      ],
+      "messages": {
+        "m1": { "is_read": true, "sender_id": "alice" },
+        "m2": { "is_read": false, "sender_id": "alice" }
+      },
+      "invitations": [],
+      "expected": 1,
+      "facets": { "conversation": "c1", "isUnread": true, "isArchived": false, "isInvitation": false }
+    },
+    {
+      "name": "pending conversation invitation with unread preview counts once (never two)",
+      "conversations": [
+        {
+          "id": "c1",
+          "archived_at": null,
+          "pointers": [{ "fm": "m1", "ts": "2026-07-15T10:00:00+00:00" }]
+        }
+      ],
+      "messages": {
+        "m1": { "is_read": false, "sender_id": "alice", "kind": "invitation" }
+      },
+      "invitations": [
+        {
+          "id": "inv1",
+          "accepted": false,
+          "recipient_email": "me@local.test",
+          "target_url_path": "/conversation/c1"
+        }
+      ],
+      "expected": 1,
+      "facets": { "conversation": "c1", "isUnread": true, "isArchived": false, "isInvitation": true }
+    },
+    {
+      "name": "accepted invitation with preview marked read counts zero",
+      "conversations": [
+        {
+          "id": "c1",
+          "archived_at": null,
+          "pointers": [{ "fm": "m1", "ts": "2026-07-15T10:00:00+00:00" }]
+        }
+      ],
+      "messages": {
+        "m1": { "is_read": true, "sender_id": "alice", "kind": "invitation" }
+      },
+      "invitations": [
+        {
+          "id": "inv1",
+          "accepted": true,
+          "recipient_email": "me@local.test",
+          "target_url_path": "/conversation/c1"
+        }
+      ],
+      "expected": 0,
+      "facets": { "conversation": "c1", "isUnread": false, "isArchived": false, "isInvitation": false }
+    },
+    {
+      "name": "accepted invitation with a later unread received message counts one",
+      "conversations": [
+        {
+          "id": "c1",
+          "archived_at": null,
+          "pointers": [
+            { "fm": "m1", "ts": "2026-07-15T10:00:00+00:00" },
+            { "fm": "m2", "ts": "2026-07-15T11:00:00+00:00" }
+          ]
+        }
+      ],
+      "messages": {
+        "m1": { "is_read": true, "sender_id": "alice", "kind": "invitation" },
+        "m2": { "is_read": false, "sender_id": "alice" }
+      },
+      "invitations": [
+        {
+          "id": "inv1",
+          "accepted": true,
+          "recipient_email": "me@local.test",
+          "target_url_path": "/conversation/c1"
+        }
+      ],
+      "expected": 1,
+      "facets": { "conversation": "c1", "isUnread": true, "isArchived": false, "isInvitation": false }
+    },
+    {
+      "name": "pending conversation invitation counts before its conversation has pointers",
+      "conversations": [{ "id": "c1", "archived_at": null, "pointers": [] }],
+      "messages": {},
+      "invitations": [
+        {
+          "id": "inv1",
+          "accepted": false,
+          "recipient_email": "me@local.test",
+          "target_url_path": "/conversation/c1"
+        }
+      ],
+      "expected": 1
+    },
+    {
+      "name": "pending conversation invitation counts before its conversation is materialized",
+      "conversations": [],
+      "messages": {},
+      "invitations": [
+        {
+          "id": "inv1",
+          "accepted": false,
+          "recipient_email": "me@local.test",
+          "target_url_path": "/conversation/c-not-yet-local"
+        }
+      ],
+      "expected": 1
+    },
+    {
+      "name": "pending membership invitation counts one (no conversation)",
+      "conversations": [],
+      "messages": {},
+      "invitations": [
+        {
+          "id": "inv1",
+          "accepted": false,
+          "recipient_email": "me@local.test",
+          "target_type": "organization",
+          "target_id": "org-1"
+        }
+      ],
+      "expected": 1
+    },
+    {
+      "name": "accepted membership invitation counts zero",
+      "conversations": [],
+      "messages": {},
+      "invitations": [
+        {
+          "id": "inv1",
+          "accepted": true,
+          "recipient_email": "me@local.test",
+          "target_type": "organization",
+          "target_id": "org-1"
+        }
+      ],
+      "expected": 0
+    },
+    {
+      "name": "expired invitation counts zero",
+      "conversations": [],
+      "messages": {},
+      "invitations": [
+        {
+          "id": "inv1",
+          "accepted": false,
+          "recipient_email": "me@local.test",
+          "target_type": "organization",
+          "target_id": "org-1",
+          "expiration_at": "2026-07-14T12:00:00+00:00"
+        }
+      ],
+      "expected": 0
+    },
+    {
+      "name": "invitation addressed to someone else counts zero",
+      "conversations": [],
+      "messages": {},
+      "invitations": [
+        {
+          "id": "inv1",
+          "accepted": false,
+          "recipient_email": "other@local.test",
+          "target_type": "organization",
+          "target_id": "org-1"
+        }
+      ],
+      "expected": 0
+    },
+    {
+      "name": "mark-all-read leaves a pending membership invitation counted",
+      "conversations": [
+        {
+          "id": "c1",
+          "archived_at": null,
+          "pointers": [{ "fm": "m1", "ts": "2026-07-15T10:00:00+00:00" }]
+        }
+      ],
+      "messages": { "m1": { "is_read": true, "sender_id": "alice" } },
+      "invitations": [
+        {
+          "id": "inv1",
+          "accepted": false,
+          "recipient_email": "me@local.test",
+          "target_type": "team",
+          "target_id": "team-1"
+        }
+      ],
+      "expected": 1
+    }
+  ]
+}

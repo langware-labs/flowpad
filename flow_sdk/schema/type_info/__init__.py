@@ -17,11 +17,14 @@ Concrete entity classes carry NO type-metadata config; they only attach
 from __future__ import annotations
 
 import importlib
+import logging
 import pkgutil
 from dataclasses import dataclass, field
 from typing import Any
 
 from flow_sdk.capsules import CapsuleSpec
+logger = logging.getLogger(__name__)
+
 from flow_sdk.fs_store.schema_registry import SchemaRegistry, TypeInfo
 from flow_sdk.schema.view_mode import ViewMode
 
@@ -182,13 +185,32 @@ def render_entity_frontmatter(entity: Any, fields: dict[str, Any]) -> str:
 
 
 def register_all() -> None:
-    """Import every ``*_info`` sibling module and register its TypeMetadata."""
+    """Import every ``*_info`` sibling module and register its TypeMetadata.
+
+    Each module is registered independently: a broken one (e.g. a stale
+    ``*_type_info.py`` left behind by a partial upgrade that references an
+    ``EntityType`` member a newer ``types.py`` has since removed) is logged and
+    SKIPPED rather than aborting the whole registry. Degrading to "that one type
+    is missing" keeps the server bootable — a wholesale failure here poisons
+    every entity lookup (SchemaRegistry can't finish loading) and the process
+    won't start. See the ``AttributeError: FLOW`` incident from a mismatched
+    site-packages install.
+    """
     import flow_sdk.schema.type_info as pkg
 
     for mod in pkgutil.iter_modules(pkg.__path__):
         if mod.name.startswith("_"):
             continue
-        module = importlib.import_module(f"{__name__}.{mod.name}")
-        for value in vars(module).values():
-            if isinstance(value, TypeMetadata):
-                value.register()
+        try:
+            module = importlib.import_module(f"{__name__}.{mod.name}")
+            for value in vars(module).values():
+                if isinstance(value, TypeMetadata):
+                    value.register()
+        except Exception:  # noqa: BLE001 — one bad module must not wedge the registry
+            logger.warning(
+                "register_all: skipping type_info module %r (failed to load/register) — "
+                "that type will be unavailable, but the registry stays usable. "
+                "A stale/mismatched install is the usual cause.",
+                mod.name,
+                exc_info=True,
+            )
