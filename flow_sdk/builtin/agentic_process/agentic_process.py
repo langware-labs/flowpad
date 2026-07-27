@@ -526,6 +526,15 @@ _OPEN_LOCKS: dict[str, asyncio.Lock] = collections.defaultdict(asyncio.Lock)
 _QUEUE_LOCKS: dict[str, asyncio.Lock] = collections.defaultdict(asyncio.Lock)
 
 
+#: Where a process remembers the terminal it opened for the user, so
+#: `flow terminal open` is idempotent (a re-show, not a second terminal) and
+#: `flow terminal run` needs no --shell. Deliberately NOT the Shell's
+#: ``agentic_process_id``: that marks the process's OWN transport shell and is
+#: driven by the worker lifecycle, which would tear the user's terminal down
+#: with it on every restart.
+TERMINAL_SHELL_KEY = "terminal_shell_id"
+
+
 async def _read_json_body() -> dict | ApiFailResponse:
     """JSON object body of the current request, or an ``ApiFailResponse``
     the action can return as-is."""
@@ -2678,6 +2687,103 @@ class AgenticProcess(Entity):
 
         await self.on_show(payload)
         return ApiSuccessResponse(data=payload)
+
+    # ── Agent-facing terminal ───────────────────────────────────────────────
+    #
+    # A worker's own Bash tool runs in a subprocess nobody can see. These two
+    # actions are how an agent uses the terminal the USER is looking at: one
+    # PTY, owned by the backend, that the browser only attaches to. Writes here
+    # land on the same file descriptor as a guided journey's `sendInput`, so
+    # agent-typed and journey-typed commands are indistinguishable on screen.
+
+    async def _current_terminal(self) -> "Shell | None":
+        """The live terminal this process already opened, or None."""
+        from flow_sdk.builtin.shell import Shell  # noqa: PLC0415
+
+        shell_id = (self.context_data or {}).get(TERMINAL_SHELL_KEY)
+        if not shell_id:
+            return None
+        shell = await Shell.get_one({"id": str(shell_id)})
+        if shell is None:
+            return None
+        # The row can outlive its PTY (backend restart, user closed the tab).
+        # A dead shell is not reusable — fall through and open a fresh one.
+        return shell if shell.is_alive else None
+
+    @action.post(action_name="terminal")
+    async def _http_open_terminal(self) -> ApiSuccessResponse | ApiFailResponse:
+        """Open (or re-show) the user-visible terminal — ``{cwd?, command?}``.
+
+        Idempotent by design: an agent that says "run it in the terminal" three
+        times must not litter the workspace with three terminals. An existing
+        live terminal is re-shown and reused; only its absence creates one.
+        """
+        from flow_sdk.builtin.shell import Shell  # noqa: PLC0415
+        from flow_sdk.core.display_target import shell_target  # noqa: PLC0415
+
+        body = await _read_json_body()
+        if isinstance(body, ApiFailResponse):
+            return body
+
+        shell = await self._current_terminal()
+        reused = shell is not None
+        if shell is None:
+            cwd = str(body.get("cwd") or "").strip() or self.workdir
+            if not cwd:
+                return ApiFailResponse(message="No cwd and the process has no workdir", status_code=400)
+            cn = await self._get_local_compute_node()
+            if cn is None:
+                return ApiFailResponse(message=LOCAL_COMPUTE_NODE_MISSING_FAILURE, status_code=500)
+            shell = Shell(
+                compute_node_id=str(cn.id),
+                compute_node_uname=getattr(cn, "uname", None),
+                name="Terminal",
+                workdir=cwd,
+                tab_order=await Shell.next_tab_order(),
+                project_id=self.project_id,
+            )
+            await shell.save()
+            await shell.start_pty()
+            self.context_data = {**(self.context_data or {}), TERMINAL_SHELL_KEY: str(shell.id)}
+            await self.save()
+
+        payload = shell_target(shell)
+        await self.on_show(payload)
+
+        command = str(body.get("command") or "").strip()
+        if command:
+            await shell.write(command)
+        return ApiSuccessResponse(data={**payload, "reused": reused, "command_sent": bool(command)})
+
+    @action.post(action_name="terminal-input")
+    async def _http_terminal_input(self) -> ApiSuccessResponse | ApiFailResponse:
+        """Type a command into the user-visible terminal — ``{command, shell_id?}``.
+
+        ``Shell.write`` appends the newline and writes straight to the PTY, so
+        the command appears and runs exactly as if the user had typed it. This
+        is deliberately NOT ``Shell.run``, which is a detached subprocess whose
+        output never reaches the screen.
+        """
+        from flow_sdk.builtin.shell import Shell  # noqa: PLC0415
+
+        body = await _read_json_body()
+        if isinstance(body, ApiFailResponse):
+            return body
+
+        command = str(body.get("command") or "").strip()
+        if not command:
+            return ApiFailResponse(message="command is required", status_code=400)
+
+        shell_id = str(body.get("shell_id") or "").strip()
+        shell = await Shell.get_one({"id": shell_id}) if shell_id else await self._current_terminal()
+        if shell is None:
+            return ApiFailResponse(
+                message="No open terminal — run `flow terminal open` first",
+                status_code=404,
+            )
+
+        await shell.write(command)
+        return ApiSuccessResponse(data={"shell_id": str(shell.id), "command": command})
 
     # ── Wizard completion ───────────────────────────────────────────────────
 

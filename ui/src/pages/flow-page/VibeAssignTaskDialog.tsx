@@ -93,8 +93,13 @@ export function VibeAssignTaskDialog({
         ...(projectId ? { project_id: projectId } : {}),
       }).save();
 
+      // The notification message must stand on its own: the title IS the issue,
+      // so it leads even when the (optional) notes are empty — otherwise the
+      // recipient gets a bare chip with no text.
+      const message = [title.trim(), notes.trim()].filter(Boolean).join('\n\n');
+
       await task.assign(person, {
-        message: notes.trim(),
+        message,
         transcript: await collectTranscript(),
         ensureCloudLogin,
       });
@@ -120,7 +125,7 @@ export function VibeAssignTaskDialog({
         <DialogHeader>
           <DialogTitle>{t`Ask someone for help`}</DialogTitle>
           <DialogDescription>
-            {t`Creates a task in this project and assigns it — it shows up on their board.`}
+            {t`Creates a task, assigns it to them, and sends them a message with the details.`}
           </DialogDescription>
         </DialogHeader>
 

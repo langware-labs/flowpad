@@ -16,7 +16,7 @@ import logging
 import os
 import re
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, ClassVar
 
 import psutil
 
@@ -627,6 +627,18 @@ class Shell(Entity):
                 return  # output has stopped — shell is at prompt
             last_seq = current_seq
             await asyncio.sleep(idle_ms / 1000)
+
+    #: Sentinel grammar for "run this and tell me how it went". MIRRORED in TS —
+    #: ``ui/src/terminal/run-in-terminal.ts`` builds the identical string, and a
+    #: test on each side pins this literal shape so the two cannot drift. The
+    #: appended ``echo`` is the only moment we know the command FINISHED, since
+    #: writing to a PTY proves delivery and nothing else.
+    SENTINEL_PREFIX: ClassVar[str] = "__flow_"
+
+    @classmethod
+    def sentinel_command(cls, command: str, marker: str) -> str:
+        """``<command>; echo "<marker>_$?"`` — the shared assertion grammar."""
+        return f'{command}; echo "{marker}_$?"'
 
     async def write(self, text: str) -> None:
         """Wait for the shell to be ready then inject text as if typed by the user.

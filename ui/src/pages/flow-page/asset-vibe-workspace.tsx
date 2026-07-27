@@ -6,6 +6,7 @@ import { dockPointerForFile } from '@src/navigation/local-file-pointer';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { editorForType } from '@src/navigation/asset-doc-types';
+import { shellIdFromShowTarget } from '@src/navigation/shell-show-target';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import {
   ResizableHandle,
@@ -39,6 +40,7 @@ interface AssetVibeWorkspaceProps {
   session: VibeWorkspaceSession | null;
 }
 
+/** Asset/file show targets only — a `shell` target is handled before this. */
 function dockForShowTarget(target: DisplayShowTarget) {
   const editor = target.type ? editorForType(target.type) : undefined;
   if (editor && target.typeid) {
@@ -175,6 +177,13 @@ export function AssetVibeWorkspace({ isVibe, session }: AssetVibeWorkspaceProps)
   const openShownTarget = useCallback(
     (target: DisplayShowTarget) => {
       try {
+        // A terminal is hosted as a workspace child tab, not opened as an asset
+        // — the same path the journey's open_terminal act takes.
+        const shellId = shellIdFromShowTarget(target);
+        if (shellId) {
+          void navigationRef.current.openShell(shellId, { viewMode: ViewMode.Vibe });
+          return;
+        }
         const targetDock = dockForShowTarget(target);
         if (!targetDock || !isContentAssetDock(targetDock)) return;
         const vibeDock = targetDock.withViewMode(ViewMode.Vibe);

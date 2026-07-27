@@ -26,6 +26,7 @@ export interface DisplayAnnotationContext {
 }
 
 export interface DisplayShowTarget {
+  /** Mirrors python `DisplayTargetKind`: entity | vfs | webapp | app | shell. */
   kind?: string;
   typeid?: string;
   type?: string;

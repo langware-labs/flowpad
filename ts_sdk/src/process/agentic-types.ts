@@ -158,13 +158,13 @@ const WORKER_TERMINAL_STATUSES = new Set<WorkerStatus>([
 ]);
 
 /** True while the worker is mid-turn (WORKING/THINKING/TOOL_CALL/TOOL_RUNNING/API_ERROR). */
-export function isWorkerRunning(status: WorkerStatus): boolean {
-  return WORKER_RUNNING_STATUSES.has(status);
+export function isWorkerRunning(status: WorkerStatus | null | undefined): boolean {
+  return status != null && WORKER_RUNNING_STATUSES.has(status);
 }
 
 /** True when the worker turn has ended and cannot be resumed in place. */
-export function isWorkerTerminal(status: WorkerStatus): boolean {
-  return WORKER_TERMINAL_STATUSES.has(status);
+export function isWorkerTerminal(status: WorkerStatus | null | undefined): boolean {
+  return status != null && WORKER_TERMINAL_STATUSES.has(status);
 }
 
 /**
@@ -172,8 +172,9 @@ export function isWorkerTerminal(status: WorkerStatus): boolean {
  * and is not in the ready-for-input baseline. Used to gate operations like
  * "fork" that are only sensible after at least one turn has happened.
  */
-export function hasWorkerStarted(status: WorkerStatus): boolean {
-  return status !== WorkerStatus.INITIALIZING;
+export function hasWorkerStarted(status: WorkerStatus | null | undefined): boolean {
+  // No reported status means no transcript — same "nothing yet" as INITIALIZING.
+  return status != null && status !== WorkerStatus.INITIALIZING;
 }
 
 /**

@@ -298,6 +298,10 @@ describe('workspace child adoption guard', () => {
   function processDock(): DockPointer {
     return new DockPointer(ViewType.SHELL, `agentic_process-${MD}`);
   }
+  /** A plain terminal — same viewType as the process dock, different pointer. */
+  function shellDock(): DockPointer {
+    return new DockPointer(ViewType.SHELL, `shell-${MD}`);
+  }
   function projectDock(): DockPointer {
     return new DockPointer(ViewType.PROJECT, MD);
   }
@@ -320,6 +324,22 @@ describe('workspace child adoption guard', () => {
 
   it('adopts a content-asset dock into the registered workspace', async () => {
     expect(await materializedParent(assetDock())).toBe(PARENT);
+  });
+
+  it('adopts a PLAIN shell dock — a terminal opened inside the workspace', async () => {
+    // Without this the terminal takes over the whole surface instead of
+    // rendering in the workspace's display pane.
+    expect(await materializedParent(shellDock())).toBe(PARENT);
+  });
+
+  it('never materializes (so never adopts) the new-terminal launcher landing', async () => {
+    // It redirects into a real shell first; `shouldMaterializeDock` keeps it
+    // away from the chokepoint entirely, so there is no tab to adopt.
+    setActiveTabParent(PARENT);
+    mockNoExistingTabs();
+    const spy = vi.spyOn(Tab, 'getFromDockPointer');
+    await setupTab(new DockPointer(ViewType.SHELL, 'new_terminal'));
+    expect(spy).not.toHaveBeenCalled();
   });
 
   it('adopts a raw file editor dock into the registered workspace', async () => {
@@ -375,6 +395,47 @@ describe('workspace child adoption guard', () => {
     await setupTab(d);
     expect(mint).toHaveBeenCalledTimes(1);
     expect((mint.mock.calls[0][1] as { parentTabId?: string | null } | undefined)?.parentTabId).toBeNull();
+  });
+
+  it('keeps a shell child its parent edge when no workspace is mounted', async () => {
+    // The inverse of the stale-edge stripper: a terminal adopted by a workspace
+    // must stay a child when it is re-navigated to from outside one, or the
+    // edge would be shed the first time the user clicks its chip. Verbatim
+    // reuse — no re-mint — proves `staleParentEdge` stayed false.
+    const d = shellDock();
+    const existing = new Tab({
+      id: nextTabId(),
+      pointer: d.toJSON() ?? '',
+      target_type: 'shell',
+      target_id: MD,
+      project_id: 'p1',
+      visible: true,
+      parent_tab_id: PARENT,
+    });
+    vi.spyOn(Tab, 'listAll').mockResolvedValue([existing]);
+    const mint = vi.spyOn(Tab, 'getFromDockPointer');
+    await setupTab(d);
+    expect(mint).not.toHaveBeenCalled();
+  });
+
+  it('reuses a PROJECT-LESS global terminal verbatim', async () => {
+    // The project self-heal is asset-scoped: a shell's project_id is pinned at
+    // creation and null means "global", so chasing it would re-mint on every
+    // navigation to a global terminal.
+    const d = shellDock();
+    const existing = new Tab({
+      id: nextTabId(),
+      pointer: d.toJSON() ?? '',
+      target_type: 'shell',
+      target_id: MD,
+      project_id: null,
+      visible: true,
+      parent_tab_id: null,
+    });
+    vi.spyOn(Tab, 'listAll').mockResolvedValue([existing]);
+    const mint = vi.spyOn(Tab, 'getFromDockPointer');
+    await setupTab(d);
+    expect(mint).not.toHaveBeenCalled();
   });
 
   it('still re-parents an existing asset tab into the active workspace', async () => {

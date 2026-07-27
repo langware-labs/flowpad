@@ -87,27 +87,28 @@ def _pointer_view_type(pointer: str | None) -> str | None:
 
 
 # Target types that can never be workspace CHILDREN. A vibe workspace groups the
-# content assets/files it opens under its process tab (``parent_tab_id``); a live
-# session anchor (process/shell) or a whole project is never "inside" another
-# workspace — adopting one was how nested-display / shell-under-display
-# corruption arose. Mirrors the FE allow-list (``dockAddressesAsset``): the FE
-# adopts only content-asset docks, this deny-list is the backend belt.
-# ``ensure_tab`` drops the hint silently (an old client may still send it) and
+# content it opens under its process tab (``parent_tab_id``): assets/files, and a
+# plain terminal — a shell opened from inside the workspace is content in its
+# display, the same as a file. What is never a child is a workspace ANCHOR: the
+# agentic process whose tab the workspace is mounted over, or a whole project.
+# Adopting one of those was how nested-display / shell-under-display corruption
+# arose, so they stay denied. Mirrors the FE allow-list
+# (``isAdoptableChildDock``); this deny-list is the backend belt. ``ensure_tab``
+# drops a forbidden hint silently (an old client may still send it) and
 # null-heals legacy corrupt rows on touch.
 _PARENT_FORBIDDEN_TARGET_TYPES = frozenset({
-    EntityType.SHELL.value,
     EntityType.AGENTIC_PROCESS.value,
     EntityType.PROJECT.value,
 })
 
 
 def _pointer_is_adoptable_child(pointer: str | None) -> bool:
-    """Only a content asset/file dock may be a workspace CHILD — the
-    pointer-shape mirror of the FE allow-list (``dockAddressesAsset``): an
-    assets ``editor/...`` pointer (typeid- or vfs-addressed), plain or
-    project-rebased (``<project-id>/editor/...``), or a raw ``editor`` file
-    pointer. Navigation surfaces (assets lists / project-home, explorer, shell,
-    project, inbox, …) are never children.
+    """Only workspace CONTENT may be a workspace CHILD — the pointer-shape
+    mirror of the FE allow-list (``isAdoptableChildDock``): an assets
+    ``editor/...`` pointer (typeid- or vfs-addressed), plain or project-rebased
+    (``<project-id>/editor/...``), a raw ``editor`` file pointer, or a PLAIN
+    shell (a terminal). Navigation surfaces (assets lists / project-home,
+    explorer, project, inbox, …) and workspace anchors are never children.
 
     Complements ``_PARENT_FORBIDDEN_TARGET_TYPES``, which keys on the declared
     ``target_type`` — NULL for list surfaces, so only a pointer-shape check can
@@ -135,6 +136,13 @@ def _pointer_is_adoptable_child(pointer: str | None) -> bool:
         # Project-rebased asset dock: ``<project-id>/<assetSubPointer>``.
         _, _, asset_sub = sub.partition('/')
         return asset_sub.startswith('editor/')
+    if vt == 'shell':
+        # A PLAIN terminal is workspace content. The process's own dock is the
+        # workspace ANCHOR — same viewType, ``agentic_process-<id>`` pointer —
+        # and adopting it would nest a workspace inside itself. ``new_terminal``
+        # is the launcher landing, never a materialized session.
+        s = sub.strip()
+        return bool(s) and s != 'new_terminal' and not s.startswith('agentic_process-')
     return False
 
 

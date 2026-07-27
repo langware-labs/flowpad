@@ -1,10 +1,10 @@
 import { EntityExecutionPanel } from '@src/components/entity-execution-panel';
 import { VibeAssignTaskButton } from './VibeAssignTaskButton';
-import { VibeCollaborateButton } from './VibeCollaborateButton';
 import {
   continueVibeSessionForProject,
   createVibeProcessForProject,
   embedVibeAgent,
+  vibeChatTargetForProject,
 } from './use-start-vibe-session';
 import { ViewMode } from '@src/contexts/view-mode-context';
 import { useAgentContext } from '@src/contexts/agent-context';
@@ -51,6 +51,18 @@ export function VibeChatPane({ process, workContext = null }: VibeChatPaneProps)
   } | null>(null);
   const [workerSwitchIntent, setWorkerSwitchIntent] =
     useState<VibeWorkerSwitchIntent | null>(null);
+
+  // A process created OUTSIDE the vibe flow — e.g. a plain shell/PTY tab opened
+  // in vibe mode — carries no `target_typeid_str`, and a null target hard-disables
+  // the composer (EntityExecutionPanel's documented contract). Key it to the
+  // project it already belongs to, the same way the vibe flow would have.
+  // Strictly a *process has no target* compensation: with no process resolved
+  // yet there is nothing to host, so stay null rather than opening a composer
+  // that would lazily mint a session.
+  const chatTarget = !process
+    ? null
+    : process.target_typeid_str ??
+      (process.project_id ? vibeChatTargetForProject(process.project_id) : null);
 
   const handleActiveWorkerChange = useCallback(
     ({
@@ -115,7 +127,7 @@ export function VibeChatPane({ process, workContext = null }: VibeChatPaneProps)
   return (
     <>
       <EntityExecutionPanel
-        target={process?.target_typeid_str ?? null}
+        target={chatTarget}
         processType={ProcessKind.Chat}
         className="h-full border-r border-border"
         dense
@@ -138,16 +150,10 @@ export function VibeChatPane({ process, workContext = null }: VibeChatPaneProps)
         historyOnLeft
         showProcessNameBar
         afterHistorySlot={
-          <>
-            <VibeAssignTaskButton
-              projectId={project?.id ?? null}
-              sessionTypeId={process?.typeId ?? null}
-            />
-            <VibeCollaborateButton
-              projectId={project?.id ?? null}
-              sessionTypeId={process?.typeId ?? null}
-            />
-          </>
+          <VibeAssignTaskButton
+            projectId={project?.id ?? null}
+            sessionTypeId={process?.typeId ?? null}
+          />
         }
         pastSessionsLabel={t`Past builds`}
         noPastSessionsLabel={t`No past builds`}

@@ -879,14 +879,19 @@ tab identity:
 
 - **Entry stays URL-first:** the strip's `Discuss` action opens the same
   dock with `viewMode=vibe`; it performs no context or tab writes.
-- **Adoption has one seam:** `materializeTab` classifies only single content
-  docks as adoptable. With no mounted workspace, `resolveColdOpenParent`
-  resolves the asset's project and canonical TypeId/VFS target, reuses the
-  newest matching Chat, or creates one headlessly. `Tab.getFromDockPointer`
-  persists the resulting `parent_tab_id`.
+- **Adoption has one seam:** `materializeTab` classifies workspace CONTENT as
+  adoptable (`isAdoptableChildDock`). With no mounted workspace,
+  `resolveColdOpenParent` resolves the asset's project and canonical
+  TypeId/VFS target, reuses the newest matching Chat, or creates one
+  headlessly. `Tab.getFromDockPointer` persists the resulting `parent_tab_id`.
 - **Raw files are first-class children:** non-empty `editor` pointers are
-  adoptable; empty editors, lists, folders, projects, graph/lens, and process
-  docks are not.
+  adoptable; empty editors, lists, folders, projects, and graph/lens docks are
+  not.
+- **Terminals are children too:** a plain shell dock opened while a workspace
+  is mounted is adopted and renders in its display pane (`ContentPanel`'s
+  `ViewType.SHELL` case), so "open a terminal" in Vibe keeps the chat pane.
+  The process's OWN dock shares `ViewType.SHELL` and is the workspace ANCHOR —
+  it is never adoptable, on either side of the wire.
 - **The parent remains authoritative on child URLs:** chat, `flow show`, and
   file-write subscriptions resolve from the parent process id. A shown
   file/entity is materialized through the normal loader and focused as another

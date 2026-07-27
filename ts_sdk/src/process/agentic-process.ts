@@ -62,7 +62,8 @@ import type {
  * (flow_sdk/core/display_target.py). Discriminated by `kind`.
  */
 export interface ShowTarget {
-  kind?: 'entity' | 'vfs' | 'webapp' | string;
+  /** Mirrors python `DisplayTargetKind` (flow_sdk/core/display_target.py). */
+  kind?: 'entity' | 'vfs' | 'webapp' | 'app' | 'shell' | string;
   /** entity: canonical `<type>-<id>` string. */
   typeid?: string;
   type?: string;
@@ -256,7 +257,8 @@ export interface IAgenticProcess extends IEntity {
   readonly status?: ProcessStatus;
   /** Turn-in-flight boolean (``is_turn_busy``) — orthogonal to ``status``. */
   readonly busy?: boolean;
-  readonly worker_status?: WorkerStatus;
+  /** Null on the wire when the backend has no transcript to derive one from. */
+  readonly worker_status?: WorkerStatus | null;
   session_id?: string | null;
   /**
    * USD cost of this process's session transcript so far. Computed
@@ -845,8 +847,15 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   /** Backend-derived turn-in-flight boolean (``is_turn_busy``), orthogonal to status. */
   private _busy: boolean = false;
 
-  /** Granular transcript-derived worker status. */
-  private _workerStatus: WorkerStatus = WorkerStatus.INITIALIZING;
+  /**
+   * Granular transcript-derived worker status, `undefined` when the backend has
+   * nothing to report — a worker spawned and idle at the prompt writes no
+   * transcript until its first turn, so `worker_status` is null on the wire.
+   * Never substitute a status here: INITIALIZING is the backend's to assert
+   * (lifecycle STARTING), and inventing it strands a ready worker behind a
+   * spinner nothing can clear.
+   */
+  private _workerStatus: WorkerStatus | undefined = undefined;
 
   /** Backend-owned lifecycle status. Read-only outside this class. */
   get status(): ProcessStatus {
@@ -866,12 +875,12 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     this._busy = value;
   }
 
-  /** Transcript-derived worker status. Read-only outside this class. */
-  get workerStatus(): WorkerStatus {
+  /** Transcript-derived worker status, or undefined when the backend reports none. */
+  get workerStatus(): WorkerStatus | undefined {
     return this._workerStatus;
   }
 
-  private set workerStatus(value: WorkerStatus) {
+  private set workerStatus(value: WorkerStatus | undefined) {
     this._workerStatus = value;
   }
 
@@ -1421,7 +1430,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     this.favorite_index = entity.favorite_index;
     this.status = (entity.status as ProcessStatus) ?? ProcessStatus.NEW;
     this.busy = entity.busy ?? false;
-    this.workerStatus = (entity.worker_status as WorkerStatus) ?? WorkerStatus.INITIALIZING;
+    this.workerStatus = entity.worker_status ?? undefined;
     this.session_id = entity.session_id;
     this.use_worker_history = entity.use_worker_history;
     this.shell_mode = entity.shell_mode;
