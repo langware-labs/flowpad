@@ -230,15 +230,6 @@ def _auto_leaf_title(payload: Dict[str, Any], target: _AutoTarget) -> str:
     return f"{target.entity_type}-{target.entity_id[:8]}" if target.entity_id else (target.entity_type or "item")
 
 
-def _auto_pid(project_id: "str | None") -> "str | None":
-    """Normalized project key for auto-tree matching. The column is bimodal —
-    it holds both NULL and `""` for "no project" — so fold them together or a
-    project-less show builds two parallel trees. (The real fix is coercing `""`
-    to NULL at the storage seam; this is the third site working around it, after
-    ``prompt_helpers.project_prompts`` and ``Project.descriptors``.)"""
-    return str(project_id or "") or None
-
-
 async def mint_auto_favorite(
     *, owner, payload: Dict[str, Any], project_id: Optional[str] = None
 ) -> "Bookmark | None":
@@ -247,23 +238,21 @@ async def mint_auto_favorite(
     payload can't be identified. All three levels are owned by ``owner`` and saved
     with ``notify=True`` so the UI ticks live.
 
-    ``project_id`` is the project the show happened in (the caller's
-    ``effective_project_id``); every level of the tree is STAMPED with it, so the
-    auto tree is per-project — the whole reason ``flow show`` files a bookmark is
-    that you were working in that project. All three find-or-create lookups are
-    keyed by it too, or project B would adopt project A's Auto root and hang its
-    leaves there.
-
-    ``project_id=None`` (a project-less show — EMBEDDED/INLINE processes) keeps the
-    old unscoped behaviour: the row has no project and `bookmarkInScope` shows it
-    everywhere. That is also what every pre-stamping row already looks like, so
-    they keep working as global favorites instead of vanishing.
+    ``project_id`` stamps every level and keys all three find-or-create lookups, so
+    project B can't adopt project A's Auto root. ``None`` (a project-less show —
+    EMBEDDED/INLINE) keeps the pre-stamping unscoped row, which ``bookmarkInScope``
+    shows everywhere. The eventual home for the stamp itself is the generic one in
+    ``Entity._prepare_for_storage`` — it doesn't fire here because
+    ``_resolve_scope_project`` only recognizes a project when the request target IS
+    one, and ``flow show`` posts to the process.
     """
     target = _auto_classify(payload)
     if not target.entity_id:
         return None
 
-    pid = _auto_pid(project_id)
+    # `""` and NULL both mean "no project" in this column, so fold them or a
+    # project-less show builds two parallel trees.
+    pid = project_id or None
 
     # Scan only THIS project's auto tree (source="auto"), the two levels
     # concurrently — never the owner's manual favorites. Scoped scans filter in
@@ -289,7 +278,7 @@ async def mint_auto_favorite(
         folders = [f for f in folders if not f.project_id]
         leaves = [b for b in leaves if not b.project_id]
 
-    # 1) Auto root folder — keyed by data.auto_root (within this project's tree).
+    # 1) Auto root folder — keyed by data.auto_root.
     root = next((f for f in folders if (f.data or {}).get("auto_root")), None)
     if root is None:
         root = Bookmark(
@@ -323,8 +312,7 @@ async def mint_auto_favorite(
 
     # 3) Leaf — dedup by target within this project's auto tree (the query already
     #    scoped to source=="auto", so a manual star of the same entity never
-    #    collides). Showing the same entity from two projects files it under each,
-    #    which is the point of scoping. Self-heal its parent if it drifted.
+    #    collides). Self-heal its parent if it drifted.
     def _matches(b: "Bookmark") -> bool:
         d = b.data or {}
         return d.get("entity_type") == target.entity_type and str(d.get("entity_id") or "") == target.entity_id

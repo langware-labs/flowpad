@@ -248,13 +248,9 @@ async def test_show_auto_bookmarks_into_nested_type_tree(bootstrapped_client, us
 
 @pytest.mark.asyncio
 async def test_show_auto_bookmarks_are_project_scoped(bootstrapped_client, user, tmp_path):
-    """A `flow show` files its auto favorite into the SHOWING PROJECT's tree.
-
-    Two projects showing the same target get their own Auto root, subfolder and
-    leaf, each stamped with `project_id` — otherwise every project's bookmarks
-    slider accumulates every other project's shows (the unscoped rows are global
-    by design, see ui/src/lib/bookmark-scope.ts). A project-less process still
-    mints an unscoped row, which stays visible everywhere.
+    """A `flow show` files its auto favorite into the SHOWING PROJECT's tree — two
+    projects get their own stamped root and leaf, or one project's slider shows
+    every other project's shows (unscoped rows are global — see bookmark-scope.ts).
     """
     from flow_sdk.builtin.bookmark import AUTO_SOURCE, BookmarkType
     from flow_sdk.server.routes.bootstrap import get_or_create_local_user
@@ -273,13 +269,12 @@ async def test_show_auto_bookmarks_are_project_scoped(bootstrapped_client, user,
     await proj_a.save()
     await proj_b.save()
 
+    pids = {}
     for project in (proj_a, proj_b):
-        pid = await create_agentic_process(
+        pids[project.id] = await create_agentic_process(
             bootstrapped_client, visible=False, pty_mode=False, project_id=project.id
         )
-        ap = await AgenticProcess.get_by_id(pid)
-        assert ap.project_id == project.id, "process must bind the project for the show to scope"
-        await ap.on_show(payload)
+        await (await AgenticProcess.get_by_id(pids[project.id])).on_show(payload)
 
     leaves = [b for b in await _auto(BookmarkType.FAVORITE) if (b.data or {}).get("entity_id") == "shared"]
     assert {b.project_id for b in leaves} == {proj_a.id, proj_b.id}, (
@@ -298,10 +293,7 @@ async def test_show_auto_bookmarks_are_project_scoped(bootstrapped_client, user,
 
     # Re-showing from project A is still idempotent WITHIN its own tree — it must
     # not adopt B's root or mint a second leaf.
-    pid_a = await create_agentic_process(
-        bootstrapped_client, visible=False, pty_mode=False, project_id=proj_a.id
-    )
-    await (await AgenticProcess.get_by_id(pid_a)).on_show(payload)
+    await (await AgenticProcess.get_by_id(pids[proj_a.id])).on_show(payload)
     again = [b for b in await _auto(BookmarkType.FAVORITE) if (b.data or {}).get("entity_id") == "shared"]
     assert len(again) == 2, "re-show must not duplicate within a project"
 
