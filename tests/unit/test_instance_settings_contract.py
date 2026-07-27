@@ -211,7 +211,7 @@ def test_override_db_path_updates_settings_without_env_writes(
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 @pytest.mark.asyncio
 async def test_reinit_db_no_env_writes(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, restore_db
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """``reinit_db`` is the UI "Switch DB" path. Pre-fix it wrote
     ``SQLITE_DATABASE_PATH`` to ``os.environ`` and never cleared it,
@@ -351,7 +351,7 @@ def test_open_sqlite_propagates_pragma_syntax_error_in_rw_mode(
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 @pytest.mark.asyncio
 async def test_reinit_db_rebinds_lazy_db_driver(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, restore_db
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     """reinit_db must rebind DBEntity._db / DBRelationship._db.
 
