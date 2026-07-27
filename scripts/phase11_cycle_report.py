@@ -425,10 +425,12 @@ def _manifest_entries(repo: Path, root: Path) -> list[dict[str, str]]:
         relative_root = source.relative_to(root)
         if "_results" in relative_root.parts:
             continue
-        if len(relative_root.parts) < 2:
-            raise Phase11Error(f"scenario has no category directory: {relative_root.as_posix()}")
-        category = relative_root.parts[0]
-        config = root / category / "playwright.config.ts"
+        if len(relative_root.parts) == 1:
+            category = "__root__"
+            config = root / "playwright.config.ts"
+        else:
+            category = relative_root.parts[0]
+            config = root / category / "playwright.config.ts"
         if not config.is_file():
             raise Phase11Error(f"category {category} has .md.ts scenarios but no playwright.config.ts")
         entries.append(

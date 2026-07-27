@@ -43,6 +43,11 @@ async function loadOwnedRealm(apiUrl: string, includeMain: boolean): Promise<Own
         disposed = true;
         sdk.connectionManager.dispose();
         ownedRealms.delete(realm);
+        // `vi.resetModules()` is worker-global, so retain the graph while any
+        // sibling owned realm is still live. Once the final realm is gone,
+        // evict the disposable graph so later imports cannot resolve modules
+        // configured for a now-killed backend.
+        if (ownedRealms.size === 0) vi.resetModules();
       },
     };
     ownedRealms.add(realm);

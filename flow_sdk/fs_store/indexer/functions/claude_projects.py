@@ -11,8 +11,6 @@ Replaces the parse-side behaviour of the deleted ``ProjectFsRecord`` subclass.
 from __future__ import annotations
 
 import json
-import os
-import re
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -20,87 +18,38 @@ from flow_sdk.fs_store import RecordType
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer.index_function import IndexerOptions
-from flow_sdk.fs_store.path_utils import canonical_posix_path
-from flow_sdk.utils.file_system import is_temp_path
+from flow_sdk.fs_store.path_utils import canonical_posix_path, is_valid_project_cwd
 
 # ── Helpers (moved from ProjectFsRecord) ─────────────────────────────────────
 
+
 def _claude_projects_dir() -> Path:
     from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
     return get_instance_settings().claude_projects_dir
 
-def _flow_records_norm_prefixes() -> tuple[str, ...]:
-    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
-    home_str = str(get_instance_settings().user_home)
-    # Internal record folders (incl. the dev_records variant) are never user
-    # projects — they must not surface in the project picker. Run each prefix
-    # through os.path.normpath + os.sep so it uses the SAME separators as the
-    # `normalized` cwd it's compared against in _is_valid_cwd; otherwise on
-    # Windows the prefix mixes "\" (from home_str) and "/" (literals) and the
-    # startswith() never matches, so the exclusion silently does nothing.
-    return tuple(
-        os.path.normpath(home_str + sub) + os.sep
-        for sub in (
-            "/.flow/records",
-            "/.flow/dev_records",
-            "/flow/records",
-            "/flow/dev_records",
-        )
-    )
 
 def _decode_claude_encoded(d: Path) -> str | None:
     from flow_sdk.fs_store.indexer.functions._claude_projects import decode_claude_project_dir  # noqa: PLC0415
+
     real = decode_claude_project_dir(d)
     if real is None:
         return None
     return str(real)
 
+
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
-# Windows drive-rooted prefix, e.g. "C:/" or "C:\\". canonical_posix_path()
-# emits forward-slash drive paths ("C:/Users/foo") while decode_claude_project_dir
-# emits backslash ones ("C:\\Users\\foo"); both reach this gate, so accept either
-# separator. Without this, a bare startswith("/") check drops every Windows
-# project cwd and the project list comes back empty.
-_WIN_DRIVE_ROOT_RE = re.compile(r"^[A-Za-z]:[/\\]")
-
-
-def _is_valid_cwd(cwd: str) -> bool:
-    """Reject system/temp paths and internal record folders."""
-    if not cwd:
-        return False
-    # Accept POSIX-rooted ("/foo") and Windows drive-rooted ("C:/foo") absolute
-    # paths; reject anything else (relative / garbage).
-    if not cwd.startswith("/") and not _WIN_DRIVE_ROOT_RE.match(cwd):
-        return False
-    # Reject bare filesystem roots ("/" and "C:/").
-    if cwd == "/" or _WIN_DRIVE_ROOT_RE.fullmatch(cwd):
-        return False
-    if is_temp_path(cwd):
-        return False
-    normalized = os.path.normpath(cwd) + os.sep
-    return not normalized.startswith(_flow_records_norm_prefixes())
-
-def _is_valid_project_dir(d: Path) -> bool:
-    real = _decode_claude_encoded(d)
-    if real is None:
-        return False
-    return _is_valid_cwd(real)
-
-def _is_valid_mount_path(path: str) -> bool:
-    return _is_valid_cwd(path)
 
 def _is_claude_encoded_ref(ref_path: Path) -> bool:
     """Detect Claude provenance by FSRef path structure."""
     parent = ref_path.parent
     return parent.name == "projects" and parent.parent.name == ".claude"
 
+
 # ── Walker ───────────────────────────────────────────────────────────────────
 
-def _is_temp_encoded(encoded: str) -> bool:
-    decoded = "/" + encoded.lstrip("-").replace("-", "/")
-    return not _is_valid_cwd(decoded)
 
 def claude_projects_fn(
     nodes: list[FSRef],
@@ -118,9 +67,12 @@ def claude_projects_fn(
         for child in sorted(projects_dir.iterdir()):
             if not child.is_dir():
                 continue
-            if not opts.include_temp and _is_temp_encoded(child.name):
-                continue
             decoded = decode_claude_project_dir(child)
+            if decoded is None or not is_valid_project_cwd(
+                decoded,
+                include_temp=opts.include_temp,
+            ):
+                continue
             out.append(
                 FSRef(
                     child,
@@ -132,7 +84,9 @@ def claude_projects_fn(
             )
     return out
 
+
 # ── Per-record find / upsert (records_root-scoped, used by extract_*) ────────
+
 
 def _find_project_record_by_cwd(cwd: str) -> FSRecord | None:
     """Return the first ID-sorted project record matching canonical ``cwd``."""
@@ -149,16 +103,14 @@ def _find_project_record_by_cwd(cwd: str) -> FSRecord | None:
             getattr(record, "fs_storage_mount_path", None),
             getattr(record, "real_path", None),
         )
-        if any(
-            value and canonical_posix_path(str(value)) == canonical
-            for value in candidates
-        ):
+        if any(value and canonical_posix_path(str(value)) == canonical for value in candidates):
             return record
         name = getattr(record, "name", None)
         if name and Path(str(name)).is_absolute():
             if canonical_posix_path(str(name)) == canonical:
                 return record
     return None
+
 
 def _compute_project_session_stats(rec: FSRecord) -> tuple[int, str | None]:
     """Walk Claude + Codex on-disk session sources and return aggregate
@@ -199,6 +151,7 @@ def _compute_project_session_stats(rec: FSRecord) -> tuple[int, str | None]:
 
     if is_codex and cwd:
         from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
         sessions_root = get_instance_settings().codex_sessions_dir
         if sessions_root.is_dir():
             for p in sessions_root.rglob("rollout-*.jsonl"):
@@ -230,6 +183,7 @@ def _compute_project_session_stats(rec: FSRecord) -> tuple[int, str | None]:
 
     return total, last_ts
 
+
 async def _refresh_session_stats_and_save(rec: FSRecord) -> FSRecord:
     """Recompute denormalized session stats onto ``rec`` and persist it.
 
@@ -249,6 +203,7 @@ async def _refresh_session_stats_and_save(rec: FSRecord) -> FSRecord:
     except Exception:
         pass
     return rec
+
 
 async def _upsert_project_for_cwd(
     cwd: str,
@@ -292,7 +247,9 @@ async def _upsert_project_for_cwd(
     rec = FSRecord(**kwargs)
     return await _refresh_session_stats_and_save(rec)
 
+
 # ── Identity reader/key + async parser_fn ────────────────────────────────────
+
 
 def _canonical_project_cwd(ref: FSRef | Path) -> str:
     """Resolve a direct cwd or Claude-encoded ref to one canonical cwd."""
@@ -304,6 +261,7 @@ def _canonical_project_cwd(ref: FSRef | Path) -> str:
         cwd = str(ref_path)
     return canonical_posix_path(cwd) if cwd else str(ref_path)
 
+
 def claude_project_identity_key(ref: FSRef | Path) -> str:
     """Stable v5 key for the filesystem project record, keyed by cwd."""
     return f"project-fsref:{_canonical_project_cwd(ref)}"
@@ -314,20 +272,24 @@ def existing_project_record_id(ref: FSRef | Path) -> str | None:
     record = _find_project_record_by_cwd(_canonical_project_cwd(ref))
     return str(record.id) if record is not None and record.id is not None else None
 
+
 async def extract_claude_project(ref: FSRef, resolved_id: str) -> list[FSRecord]:
     """Async parser_fn — upsert by canonical cwd. Replaces
     the deleted ``ProjectFsRecord.from_fsref``."""
     ref_path = Path(ref._path)
     if _is_claude_encoded_ref(ref_path):
         real = _decode_claude_encoded(ref_path)
-        if real is None or not _is_valid_cwd(real):
+        if real is None or not is_valid_project_cwd(real):
             return []
         rec = await _upsert_project_for_cwd(
-            real, resolved_id=resolved_id, claude_project=True, encoded_path=ref_path.name,
+            real,
+            resolved_id=resolved_id,
+            claude_project=True,
+            encoded_path=ref_path.name,
         )
         return [rec]
     ref_str = str(ref_path)
-    if not _is_valid_cwd(ref_str):
+    if not is_valid_project_cwd(ref_str):
         return []
     rec = await _upsert_project_for_cwd(ref_str, resolved_id=resolved_id, codex_project=True)
     return [rec]

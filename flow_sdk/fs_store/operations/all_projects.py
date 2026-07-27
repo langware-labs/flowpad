@@ -10,15 +10,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Iterator
 
+from flow_sdk.config import agent_workspace_root, is_hidden_project
 from flow_sdk.fs_store.indexer.functions._claude_projects import iter_claude_project_paths
 from flow_sdk.fs_store.indexer.functions.codex_projects import (
-    _is_valid_cwd,
     _read_codex_projects_from_config,
 )
-from flow_sdk.config import agent_workspace_root, is_hidden_project
-from flow_sdk.fs_store.path_utils import canonical_posix_path
+from flow_sdk.fs_store.path_utils import canonical_posix_path, is_valid_project_cwd
 from flow_sdk.instance_settings import get_instance_settings
-from flow_sdk.utils.file_system import is_temp_path
 
 if TYPE_CHECKING:
     from flow_sdk.server.search_filters import ScopeFilter
@@ -104,9 +102,7 @@ async def get_known_projects(*, include_temp: bool = False) -> list[ProjectInfo]
     for proj in await get_cached_projects():
         mount = getattr(proj, "fs_storage_mount_path", None)
         cwd = canonical_posix_path(mount) if mount else ""
-        if not cwd:
-            continue
-        if not include_temp and is_temp_path(cwd):
+        if not is_valid_project_cwd(cwd, include_temp=include_temp):
             continue
         infos.append(_entity_to_project_info(proj, cwd))
     return infos
@@ -121,9 +117,10 @@ def iter_codex_project_paths(include_temp: bool = False) -> Iterator[Path]:
     """
     config_path = get_instance_settings().codex_config_path
     seen: set[str] = set()
-    for cwd_str in _read_codex_projects_from_config(config_path):
-        if not _is_valid_cwd(cwd_str):
-            continue
+    for cwd_str in _read_codex_projects_from_config(
+        config_path,
+        include_temp=include_temp,
+    ):
         if cwd_str in seen:
             continue
         seen.add(cwd_str)
@@ -161,7 +158,7 @@ def iter_workspace_project_paths(include_temp: bool = False) -> Iterator[Path]:
                 continue
         except OSError:
             continue
-        if not include_temp and is_temp_path(canonical_posix_path(child)):
+        if not is_valid_project_cwd(child, include_temp=include_temp):
             continue
         yield child
 
@@ -192,12 +189,13 @@ def iter_copilot_project_paths(include_temp: bool = False) -> Iterator[Path]:
     seen: set[str] = set()
     for workspace in root.glob("*/workspace.yaml"):
         cwd = _read_copilot_workspace_cwd(workspace)
-        if not cwd or not cwd.startswith("/") or cwd == "/":
+        if not cwd or not is_valid_project_cwd(
+            cwd,
+            include_temp=include_temp,
+        ):
             continue
         canonical = canonical_posix_path(cwd)
         if not canonical or canonical in seen:
-            continue
-        if not include_temp and is_temp_path(canonical):
             continue
         path = Path(canonical)
         try:
@@ -224,7 +222,10 @@ async def get_all_projects(
     def _scan(paths: Iterator[Path], worker: str | None) -> None:
         for path in paths:
             canonical = canonical_posix_path(path)
-            if not canonical:
+            if not is_valid_project_cwd(
+                canonical,
+                include_temp=include_temp,
+            ):
                 continue
             info = fs_by_cwd.get(canonical)
             if info is None:
@@ -250,7 +251,9 @@ async def get_all_projects(
     by_cwd: dict[str, "Project"] = {}
     for proj in existing:
         if proj.fs_storage_mount_path:
-            by_cwd[canonical_posix_path(proj.fs_storage_mount_path)] = proj
+            canonical = canonical_posix_path(proj.fs_storage_mount_path)
+            if is_valid_project_cwd(canonical, include_temp=include_temp):
+                by_cwd[canonical] = proj
 
     to_create: list[ProjectInfo] = []
     for cwd, info in fs_by_cwd.items():
@@ -276,7 +279,7 @@ async def get_all_projects(
     if create_missing and to_create:
         for info in to_create:
             try:
-                await _materialize(info)
+                await _materialize(info, include_temp=include_temp)
             except Exception as exc:  # noqa: BLE001
                 import logging
                 logging.warning("get_all_projects: skip materialize %s: %s", info.cwd, exc)
@@ -288,7 +291,7 @@ async def get_all_projects(
         # already drop temp cwds). Apply the same guard here so a Project
         # entity that was once materialized for a temp cwd (e.g. via an
         # include_temp=True indexer run) doesn't resurface in the picker.
-        if not include_temp and is_temp_path(cwd):
+        if not is_valid_project_cwd(cwd, include_temp=include_temp):
             continue
         # A stale mount-root entity is tagged system=True by _entity_to_project_info
         # (via is_hidden_project) rather than dropped, so it lands in the hidden list.
@@ -330,7 +333,11 @@ async def get_all_scope_filter(
     )
 
 
-async def _materialize(info: ProjectInfo) -> None:
+async def _materialize(
+    info: ProjectInfo,
+    *,
+    include_temp: bool = False,
+) -> None:
     """Save a fresh ``Project`` for ``info.cwd``; mutate ``info.project_id``.
 
     The entity gets an opaque uuid4 id (NOT ``info.project_id``, which is the
@@ -338,6 +345,8 @@ async def _materialize(info: ProjectInfo) -> None:
     stamped with it still resolve; ``info.project_id`` is updated to the new id.
     """
     from flow_sdk.builtin.project import Project
+    if not is_valid_project_cwd(info.cwd, include_temp=include_temp):
+        return
     proj = Project.model_validate({
         "fs_storage_mount_path": info.cwd,
         "name": info.name,

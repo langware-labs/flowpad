@@ -116,7 +116,7 @@ class McpServerCapabilityRunner(CapabilityRunner):
             message=f"{self.service} MCP configured for {self.worker_type}.",
         )
 
-    async def check(self) -> CapabilityResult:
+    async def test(self) -> CapabilityResult:
         available = bool(self.record_ids)
         return CapabilityResult(
             ok=available,
@@ -129,18 +129,13 @@ class McpServerCapabilityRunner(CapabilityRunner):
             details=self._details(),
         )
 
-    async def install(self) -> CapabilityResult:
+    async def setup(self) -> CapabilityResult:
         # MCP servers are configured (in agent config files / cloud), not
         # installed — don't spawn the default install agentic process.
-        result = await self.check()
+        result = await self.test()
         return result.model_copy(
             update={"message": "MCP capabilities are configured, not installed."}
         )
-
-    async def test(self) -> CapabilityResult:
-        # Validation hook — mirrors check() for now (no live MCP handshake yet).
-        return await self.check()
-
 
 def discover_mcp_capability_specs() -> dict[str, dict]:
     """Desired MCP capabilities, keyed by kind.

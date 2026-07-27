@@ -6,6 +6,7 @@
 import { ActionInfo } from '../../models/ActionInfo';
 import { IResource } from '../../IResource';
 import type { ClaudeSessionRecordData } from '../../resource_management/fs_records/claude/claude-session';
+import { dataManager } from '../../APIEntity';
 
 // ═══════════════════════════════════════════════════════════════
 // ENUMS
@@ -724,9 +725,10 @@ export const SystemProfileUtils = {
  */
 export async function fetchSystemProfileFromComputeNode(computeNodeId: string): Promise<SystemProfile> {
   const actionInfo = new ActionInfo('get-system-profile', 'compute_node', computeNodeId, 'GET');
-  const response = await fetch(actionInfo.fullActionUrl, { credentials: 'include' });
-  const result = await response.json();
-  return result.data || SystemProfileUtils.createEmpty();
+  return (
+    (await dataManager.callAction<undefined, SystemProfile>(actionInfo)) ||
+    SystemProfileUtils.createEmpty()
+  );
 }
 
 
@@ -745,14 +747,10 @@ export async function openExternalFromComputeNode(
   const actionInfo = new ActionInfo('open-external', 'compute_node', computeNodeId, 'POST');
   const body: Record<string, unknown> = { path };
   if (options?.select) body.select = true;
-  const response = await fetch(actionInfo.fullActionUrl, {
-    method: 'POST',
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  const result = await response.json();
-  return result.data || null;
+  actionInfo.bodyParameters = body;
+  return dataManager.callAction<Record<string, unknown>, { opened: string; selected?: boolean } | null>(
+    actionInfo,
+  );
 }
 
 /**
@@ -765,14 +763,11 @@ export async function openTerminalFromComputeNode(
   cwd?: string,
 ): Promise<{ command: string; cwd: string | null } | null> {
   const actionInfo = new ActionInfo('open-terminal', 'compute_node', computeNodeId, 'POST');
-  const response = await fetch(actionInfo.fullActionUrl, {
-    method: 'POST',
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ command, cwd }),
-  });
-  const result = await response.json();
-  return result.data || null;
+  actionInfo.bodyParameters = { command, cwd };
+  return dataManager.callAction<
+    { command: string; cwd?: string },
+    { command: string; cwd: string | null } | null
+  >(actionInfo);
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -859,14 +854,18 @@ export interface ScanProjectResponse {
  * Indexer-backed project enumeration.
  * Use this for the project list sidebar.
  */
-export async function listProjectsFromComputeNode(computeNodeId: string): Promise<ListProjectsResponse> {
+export async function listProjectsFromComputeNode(
+  computeNodeId: string,
+  signal?: AbortSignal,
+): Promise<ListProjectsResponse> {
   const actionInfo = new ActionInfo('list-projects', 'compute_node', computeNodeId, 'GET');
-  const response = await fetch(actionInfo.fullActionUrl, { credentials: 'include' });
-  const result = await response.json();
-  if (result.status !== 'SUCCESS') {
-    throw new Error(result.message || 'Failed to list projects');
-  }
-  return result.data || { projects: [], total_count: 0 };
+  actionInfo.abortSignal = signal ?? null;
+  return (
+    (await dataManager.callAction<undefined, ListProjectsResponse>(actionInfo)) || {
+      projects: [],
+      total_count: 0,
+    }
+  );
 }
 
 /**
@@ -878,14 +877,9 @@ export async function fetchCostOverviewFromComputeNode(
   sessionLimit: number = 100,
 ): Promise<CostOverview> {
   const actionInfo = new ActionInfo('get-cost-overview', 'compute_node', computeNodeId, 'GET');
-  const url = `${actionInfo.fullActionUrl}?limit=${sessionLimit}`;
-  const response = await fetch(url, { credentials: 'include' });
-  const result = await response.json();
-  if (result.status !== 'SUCCESS') {
-    throw new Error(result.message || 'Failed to fetch cost overview');
-  }
+  actionInfo.queryParameters = { limit: sessionLimit };
   return (
-    result.data || {
+    (await dataManager.callAction<undefined, CostOverview>(actionInfo)) || {
       generated_at: new Date().toISOString(),
       session_count: 0,
       totals: {
@@ -918,18 +912,17 @@ export async function scanProjectFromComputeNode(
   projectEncodedName: string,
   limit: number = 100,
   includeSessions: boolean = true,
+  signal?: AbortSignal,
 ): Promise<ScanProjectResponse> {
   const actionInfo = new ActionInfo('scan-project', 'compute_node', computeNodeId, 'GET');
-  const url =
-    `${actionInfo.fullActionUrl}?project=${encodeURIComponent(projectEncodedName)}` +
-    `&limit=${limit}&include_sessions=${includeSessions ? 'true' : 'false'}`;
-  const response = await fetch(url, { credentials: 'include' });
-  const result = await response.json();
-  if (result.status !== 'SUCCESS') {
-    throw new Error(result.message || 'Failed to scan project');
-  }
+  actionInfo.queryParameters = {
+    project: projectEncodedName,
+    limit,
+    include_sessions: includeSessions,
+  };
+  actionInfo.abortSignal = signal ?? null;
   return (
-    result.data || {
+    (await dataManager.callAction<undefined, ScanProjectResponse>(actionInfo)) || {
       project_cwd: null,
       scanned_at: new Date().toISOString(),
       sessions: [],
@@ -961,13 +954,8 @@ export async function scanProjectFromComputeNode(
  */
 export async function fetchAllSkillsFromComputeNode(computeNodeId: string): Promise<SkillItem[]> {
   const actionInfo = new ActionInfo('scan-item', 'compute_node', computeNodeId, 'GET');
-  const url = `${actionInfo.fullActionUrl}?type=skills`;
-  const response = await fetch(url, { credentials: 'include' });
-  const result = await response.json();
-  if (result.status !== 'SUCCESS') {
-    throw new Error(result.message || 'Failed to fetch skills');
-  }
-  return (result.data as SkillItem[]) || [];
+  actionInfo.queryParameters = { type: 'skills' };
+  return (await dataManager.callAction<undefined, SkillItem[]>(actionInfo)) || [];
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1040,13 +1028,10 @@ export async function fetchClaudeContextFromComputeNode(
 ): Promise<ClaudeContextData | null> {
   try {
     const actionInfo = new ActionInfo('get-claude-context', 'compute_node', computeNodeId, 'GET');
-    const params = new URLSearchParams();
-    if (sessionId) params.set('session_id', sessionId);
-    const url = `${actionInfo.fullActionUrl}?${params.toString()}`;
-    const response = await fetch(url, { credentials: 'include' });
-    const result = await response.json();
-    if (result.status !== 'SUCCESS') return null;
-    const d = result.data as Partial<ClaudeContextData> | null;
+    if (sessionId) actionInfo.queryParameters = { session_id: sessionId };
+    const d = await dataManager.callAction<undefined, Partial<ClaudeContextData> | null>(
+      actionInfo,
+    );
     if (!d || !d.model) return null;
     return {
       model: d.model ?? 'unknown',
@@ -1074,10 +1059,6 @@ export async function fetchClaudeContextFromComputeNode(
  */
 export async function clearAllSkillUsage(computeNodeId: string): Promise<number> {
   const actionInfo = new ActionInfo('clear-skill-usage', 'compute_node', computeNodeId, 'GET');
-  const response = await fetch(actionInfo.fullActionUrl, { credentials: 'include' });
-  const result = await response.json();
-  if (result.status !== 'SUCCESS') {
-    throw new Error(result.message || 'Failed to clear skill usage');
-  }
-  return result.data?.cleared ?? 0;
+  const result = await dataManager.callAction<undefined, { cleared?: number } | null>(actionInfo);
+  return result?.cleared ?? 0;
 }

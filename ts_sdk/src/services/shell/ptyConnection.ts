@@ -88,7 +88,7 @@ export class PtyConnection {
   private readonly _eventFireListeners = new Set<PtyEventFireListener>();
   private static readonly MAX_EVENT_FIRES = 200;
 
-  /** Pending raw text not yet terminated by \n. Fed into the line stream. */
+  /** Pending raw text not yet terminated by LF or a terminal-row CR. */
   private _lineBuffer = '';
 
   /** onReady subscribers — fired once when attach completes + live stream opens. */
@@ -240,7 +240,8 @@ export class PtyConnection {
 
   /**
    * Walk the buffered replay chunks in seq order, decode + ANSI-strip,
-   * split on \n, and run a single trigger against each line. Used by
+   * split on LF / CRLF / bare CR terminal-row boundaries, and run a single
+   * trigger against each line. Used by
    * ``addTrigger`` to retroactively match history when a watcher
    * registers after replay has already drained chunks through the
    * line buffer.
@@ -257,9 +258,9 @@ export class PtyConnection {
       buf += this.decoder.decode(chunk.data, { stream: true });
     }
     buf += this.decoder.decode();
-    const lines = buf.split('\n');
+    const lines = buf.split(/\r\n|[\r\n]/);
     for (const raw of lines) {
-      const line = stripAnsi(raw.endsWith('\r') ? raw.slice(0, -1) : raw);
+      const line = stripAnsi(raw);
       if (!line) continue;
       const m = line.match(trigger.pattern);
       if (!m) continue;
@@ -295,14 +296,23 @@ export class PtyConnection {
 
   private _feedLineBuffer(decoded: string): void {
     this._lineBuffer += decoded;
-    let nl = this._lineBuffer.indexOf('\n');
-    while (nl !== -1) {
-      // Slice off the line (keep trailing CR off if present).
-      let line = this._lineBuffer.slice(0, nl);
-      if (line.endsWith('\r')) line = line.slice(0, -1);
-      this._lineBuffer = this._lineBuffer.slice(nl + 1);
+    while (this._lineBuffer.length > 0) {
+      const cr = this._lineBuffer.indexOf('\r');
+      const lf = this._lineBuffer.indexOf('\n');
+      const boundary = cr === -1 ? lf : lf === -1 ? cr : Math.min(cr, lf);
+      if (boundary === -1) return;
+
+      let boundaryWidth = 1;
+      if (this._lineBuffer[boundary] === '\r') {
+        // A CR at the end of a chunk may be the first half of CRLF. Keep it
+        // until the next chunk so CRLF emits exactly one row even when split.
+        if (boundary === this._lineBuffer.length - 1) return;
+        if (this._lineBuffer[boundary + 1] === '\n') boundaryWidth = 2;
+      }
+
+      const line = this._lineBuffer.slice(0, boundary);
+      this._lineBuffer = this._lineBuffer.slice(boundary + boundaryWidth);
       this._emitLine(stripAnsi(line));
-      nl = this._lineBuffer.indexOf('\n');
     }
   }
 

@@ -218,6 +218,7 @@ describe('source row on the card', () => {
     editable?: boolean;
     documentProjectRoot?: string | null;
     openFile?: (path: string, options?: { line?: number }) => void;
+    previewFile?: (path: string, options?: { line?: number }) => void;
   } = {}): HTMLElement {
     const el = document.createElement('div');
     renderInterfaceCard(BLOCK, el, {
@@ -226,6 +227,7 @@ describe('source row on the card', () => {
       editable: overrides.editable ?? true,
       host: {
         openFile: overrides.openFile ?? (() => {}),
+        previewFile: overrides.previewFile ?? (() => {}),
         // `??` would swallow an explicit null, which is exactly the case under test.
         documentProjectRoot: () =>
           'documentProjectRoot' in overrides ? overrides.documentProjectRoot! : '/repo',
@@ -236,24 +238,25 @@ describe('source row on the card', () => {
     return el;
   }
 
-  function openButton(el: HTMLElement): HTMLButtonElement {
-    return el.querySelector<HTMLButtonElement>('[data-testid="interface-source-open"]')!;
+  function chip(el: HTMLElement): HTMLButtonElement {
+    return el.querySelector<HTMLButtonElement>('[data-testid="interface-source"]')!;
   }
 
   it('renders the provenance label', () => {
-    expect(render().querySelector('[data-testid="interface-source"]')?.textContent).toContain(
-      'langware/flowpad · main — flow_sdk/api/tasks.py:42',
-    );
+    expect(chip(render()).textContent).toContain('langware/flowpad · main — flow_sdk/api/tasks.py:42');
   });
 
-  it('opens the resolved path at the line when clicked', () => {
+  /* One click = peek. Opening the file for real happens inside the preview. */
+  it('previews the resolved path at the line when clicked', () => {
+    const previewFile = vi.fn();
     const openFile = vi.fn();
-    openButton(render({ openFile })).click();
-    expect(openFile).toHaveBeenCalledWith('/repo/flow_sdk/api/tasks.py', { line: 42 });
+    chip(render({ previewFile, openFile })).click();
+    expect(previewFile).toHaveBeenCalledWith('/repo/flow_sdk/api/tasks.py', { line: 42 });
+    expect(openFile).not.toHaveBeenCalled();
   });
 
-  it('disables the button and carries the reason when unresolvable', () => {
-    const button = openButton(render({ documentProjectRoot: null }));
+  it('disables the chip and carries the reason when unresolvable', () => {
+    const button = chip(render({ documentProjectRoot: null }));
     expect(button.disabled).toBe(true);
     expect(button.getAttribute('data-reason')).toBe('No project open to resolve this origin against');
   });
@@ -264,14 +267,14 @@ describe('source row on the card', () => {
    * surface is exactly where following a contract to its source matters most.
    */
   it('stays enabled when the host is read-only', () => {
-    const openFile = vi.fn();
-    const el = render({ editable: false, openFile });
+    const previewFile = vi.fn();
+    const el = render({ editable: false, previewFile });
     expect(el.querySelectorAll('[contenteditable="true"]')).toHaveLength(0);
 
-    const button = openButton(el);
+    const button = chip(el);
     expect(button.disabled).toBe(false);
     button.click();
-    expect(openFile).toHaveBeenCalled();
+    expect(previewFile).toHaveBeenCalled();
   });
 
   it('renders no source row for a block without one', () => {
@@ -280,7 +283,12 @@ describe('source row on the card', () => {
       theme: 'dark',
       blockId: 'b1',
       editable: true,
-      host: { openFile: () => {}, documentProjectRoot: () => '/repo', projectRootById: () => null },
+      host: {
+        openFile: () => {},
+        previewFile: () => {},
+        documentProjectRoot: () => '/repo',
+        projectRootById: () => null,
+      },
       commit: () => {},
     });
     expect(el.querySelector('[data-testid="interface-source"]')).toBeNull();

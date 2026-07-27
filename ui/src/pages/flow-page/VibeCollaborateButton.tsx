@@ -3,6 +3,7 @@ import { MessagesSquare } from 'lucide-react';
 import { useLingui } from '@lingui/react/macro';
 import type { TypeId } from '@sdk';
 import { PersonRaisedHandIcon } from '@src/components/icons/PersonRaisedHandIcon';
+import { workspaceToolbarButton } from './workspace-toolbar-button';
 import { ShareToConversationDialog } from '@src/components/share-to-conversation/ShareToConversationDialog';
 import { collaborateShareSource } from '@src/hooks/share-sources';
 import { useCollaborationForProject } from '@src/hooks/useCollaborationForProject';
@@ -44,16 +45,13 @@ export function VibeCollaborateButton({
     [sessionKey],
   );
 
-  const iconBtn =
-    'flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40';
-
   return (
     <>
       <button
         type="button"
         onClick={() => (collaborating ? setConvOpen(true) : setShareOpen(true))}
         title={collaborating ? t`Open collaboration` : t`Collaborate`}
-        className={iconBtn}
+        className={workspaceToolbarButton}
         data-testid={collaborating ? 'vibe-collaborate-open' : 'vibe-collaborate'}
       >
         {collaborating ? (

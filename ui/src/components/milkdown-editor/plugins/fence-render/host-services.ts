@@ -22,6 +22,12 @@ export interface FenceHostServices {
    * compute nodes.
    */
   openFile(path: string, options?: { line?: number }): void;
+  /**
+   * Show a read-only peek at a file, scrolled to and highlighting `line` —
+   * the same dialog mechanism message attachments use for their previews.
+   * Same absolute-machine-path contract as `openFile`.
+   */
+  previewFile(path: string, options?: { line?: number }): void;
   /** Root path of the project the current document belongs to, if any. */
   documentProjectRoot(): string | null;
   /** Root path of a project by id, or null when it isn't available locally. */
@@ -34,6 +40,7 @@ export interface FenceHostServices {
  */
 export const NO_HOST_SERVICES: FenceHostServices = {
   openFile: () => {},
+  previewFile: () => {},
   documentProjectRoot: () => null,
   projectRootById: () => null,
 };

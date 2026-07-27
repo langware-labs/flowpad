@@ -84,6 +84,10 @@ class BootstrapInfo(BaseModel):
     # Capabilities view paints without a second round-trip.
     capabilities_summary: Optional[Dict[str, Any]] = None
     sniffer_hook: Optional[Dict[str, Any]] = None
+    # True when ~/.claude/settings.json actually carries sniffer hook commands.
+    # Independent of `sniffer_hook`: another instance on this machine may have
+    # installed them, and the UI must still surface (and be able to clear) that.
+    sniffer_installed: bool = False
     scan_info: Optional[Dict[str, Any]] = None
     records_root: Optional[str] = None
     # Locales the app ships translations for (single source of truth:

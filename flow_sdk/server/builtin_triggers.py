@@ -29,7 +29,7 @@ _log = logging.getLogger(__name__)
 @trigger_callbacks.register(
     "builtin_toplog_filter_apply",
     meaning="Fired when the per-instance toplog.json changes. Re-derives the "
-            "in-memory topic state from the file and broadcasts the new state to "
+            "in-memory tag state from the file and broadcasts the new state to "
             "all UI clients. This is the single broadcaster for toplog — every "
             "writer (backend, frontend-via-route, worker, human edit) converges "
             "through the file and this callback.",
@@ -76,7 +76,7 @@ def _service_trigger_specs() -> list[dict[str, Any]]:
             uname="builtin_toplog_watcher",
             name="Toplog filter watcher",
             description="Watches the per-instance toplog.json; re-applies the "
-                        "filter to topic loggers and broadcasts to UI.",
+                        "filter to tag loggers and broadcasts to UI.",
             trigger_type=TriggerType.FSOP,
             watch_path=str(settings.toplog_config_path),
             recursive=False,

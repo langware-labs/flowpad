@@ -193,8 +193,12 @@ async def test_run_and_execution_records_are_example_shaped(tmp_path):
     # Born-compatible examples: deterministic id + provenance source block.
     ex = json.loads((exec_dir / "example.json").read_text())["metadata"]
     assert ex["kind"] == "train"
-    assert ex["source"] == {"flow_id": flow.id, "run_id": fe.execution_id, "node_id": "a",
-                            "seq": 1, "event": "ask", "source_node": EXTERNAL_SOURCE, "hop": 0}
+    src = ex["source"]
+    assert src["event_id"] == fe.id  # phase 7: envelope identity in provenance
+    assert {k: src[k] for k in ("flow_id", "run_id", "node_id", "seq", "event",
+                                "source_node", "hop")} == {
+        "flow_id": flow.id, "run_id": fe.execution_id, "node_id": "a",
+        "seq": 1, "event": "ask", "source_node": EXTERNAL_SOURCE, "hop": 0}
     run_ex = json.loads((run_dir / "execution" / "example.json").read_text())["metadata"]
     assert run_ex["source"]["node_id"] == "$run"
 
@@ -611,3 +615,364 @@ def test_agent_node_without_definition_fails_validation():
     ok = parse_flow_doc(_doc(
         [{"id": "a", "node_type": "agent", "node_data": {"prompt": "hi"}}], []))
     assert ok.validate_graph() == []
+
+
+# ── phase 2: unified-bus boundary emissions (docs/flow-events.md) ────────────
+
+
+@async_context
+async def test_run_boundaries_emit_flow_tags(tmp_path):
+    """A run dual-publishes its boundaries onto the bus: started → output →
+    done, with the flow entity as target and run-innermost scope."""
+    from flow_sdk.tags import event_bus
+
+    @flow_functions.register("v2_bus_probe")
+    def _probe(event_name, data, ctx):
+        return {"ok": 1}
+
+    flow = await _make_flow(tmp_path, "busflow",
+        [_fn("a", "v2_bus_probe")],
+        [_edge("e1", EXTERNAL_SOURCE, "go", "a")])
+    got: list = []
+    # Filter to THIS flow: the bus is a process-wide singleton, so a run still
+    # finalizing from an earlier test would otherwise land its `flow.done` in
+    # `got` before this run's `flow.started` and fail the ordering assert.
+    unsub = event_bus.on("flow.*", got.append, target=f"agentic_flow:{flow.id}")
+    try:
+        fm = FlowManager()
+        fe = await fm.inject(flow.id, "go", {"x": 1})
+        await _until(lambda: not fm.live_run_ids(), "run finalized")
+        await _until(lambda: any(e.tag == "flow.done" for e in got), "done emitted")
+    finally:
+        unsub()
+
+    tags = [e.tag for e in got]
+    assert tags[0] == "flow.started"
+    assert "flow.output" in tags and tags[-1] == "flow.done"
+    for e in got:
+        assert e.target == f"agentic_flow:{flow.id}"
+        assert e.ctx.scope == [f"agentic_flow_run:{fe.execution_id}",
+                               f"agentic_flow:{flow.id}"]
+        assert e.data["run_id"] == fe.execution_id
+    out = next(e for e in got if e.tag == "flow.output")
+    assert out.data["event"] == "done" and out.data["payload"] == {"ok": 1}
+    done = next(e for e in got if e.tag == "flow.done")
+    assert done.data["status"] == "complete" and done.data["executions"] == 1
+
+
+@async_context
+async def test_guided_step_emits_waiting_and_step_done(tmp_path):
+    from flow_sdk.tags import event_bus
+
+    flow = await _make_flow(tmp_path, "busguided",
+        [{"id": "g", "node_type": "guided_step",
+          "node_data": {"status_line": "do the thing",
+                        "present": {"dock": {"home": True}},
+                        "await": {"tag": "manual"}}}],
+        [_edge("e1", EXTERNAL_SOURCE, "begin", "g")])
+    got: list = []
+    unsub = event_bus.on("flow.*", got.append)
+    try:
+        fm = FlowManager()
+        fe = await fm.inject(flow.id, "begin", target_node="g")
+        await _until(lambda: any(e.tag == "flow.waiting" for e in got), "parked")
+        waiting = next(e for e in got if e.tag == "flow.waiting")
+        assert waiting.data["node_id"] == "g"
+        assert waiting.data["status_line"] == "do the thing"
+
+        # Frontend releases the park: inject the node's done.
+        await fm.inject(flow.id, "done", execution_id=fe.execution_id, source_node="g")
+        await _until(lambda: any(e.tag == "flow.step.done" for e in got), "released")
+        step = next(e for e in got if e.tag == "flow.step.done")
+        assert step.data["node_id"] == "g" and step.data["event"] == "done"
+        await _until(lambda: not fm.live_run_ids(), "run finalized")
+    finally:
+        unsub()
+
+
+@async_context
+async def test_tripped_run_emits_flow_failed(tmp_path):
+    from flow_sdk.tags import event_bus
+
+    @flow_functions.register("v2_bus_cycle")
+    def _cyc(event_name, data, ctx):
+        return {}
+
+    flow = await _make_flow(tmp_path, "busfail",
+        [_fn("a", "v2_bus_cycle")],
+        [_edge("e1", EXTERNAL_SOURCE, "go", "a"), _edge("e2", "a", "done", "a")],
+        config={"max_hops": 3})
+    got: list = []
+    unsub = event_bus.on("flow.failed", got.append)
+    try:
+        fm = FlowManager()
+        await fm.inject(flow.id, "go")
+        await _until(lambda: not fm.live_run_ids(), "run finalized")
+        await _until(lambda: bool(got), "failed emitted")
+    finally:
+        unsub()
+    assert got[0].data["status"] == "tripped"
+    assert "exceeds max" in (got[0].data["error"] or "")
+
+
+@async_context
+async def test_entry_reserve_survives_concurrent_finalize_sweep(tmp_path):
+    """Regression (found live, phase-4 drill): a run must not sink between
+    _start_run and its entry event landing — a concurrent drain's
+    _maybe_finalize_all() used to sweep the 0/0 run before routing."""
+    ran: list[str] = []
+
+    @flow_functions.register("v2_reserve_probe")
+    def _probe(event_name, data, ctx):
+        ran.append(event_name)
+        return {}
+
+    flow = await _make_flow(tmp_path, "reserveflow",
+        [{"id": "t1", "node_type": "trigger",
+          "node_data": {"typeid": "trigger-2c9f8e64-3b21-4b4e-9a10-5f37f3d1c999"}},
+         _fn("a", "v2_reserve_probe")],
+        [_edge("e1", "t1", "fired", "a")])
+    fm = FlowManager()
+
+    # Simulate the interleave at its WORST point: the sweep runs during
+    # _start_run's own awaits (row save/attach/broadcast) — the run is already
+    # registered but its entry event hasn't routed. Born-reserved pending=1
+    # must hold it alive.
+    orig_broadcast = fm._broadcast_run_event
+
+    async def sweeping_broadcast(run, kind, payload):
+        if kind == "run_start":
+            fm._maybe_finalize_all()      # the concurrent drain's sweep
+            await asyncio.sleep(0)        # let any wrongly-scheduled finalize land
+        await orig_broadcast(run, kind, payload)
+
+    fm._broadcast_run_event = sweeping_broadcast
+    run_ids = await fm.on_trigger_fired("2c9f8e64-3b21-4b4e-9a10-5f37f3d1c999")
+    assert run_ids, "run should start"
+    await _until(lambda: ran == ["fired"], "entry event delivered despite sweep")
+    await _until(lambda: not fm.live_run_ids(), "run finalized after routing")
+    entries = read_run_journal(tmp_path / "reserveflow", run_ids[0])
+    kinds = [e["kind"] for e in entries]
+    # Ordering restored: the run must END after its entry event, never before.
+    assert kinds.index("run_end") > kinds.index("event")
+
+
+# ── phase 5: graph-level bus subscriptions ────────────────────────────────────
+
+
+@async_context
+async def test_flow_subscription_starts_run_with_mapped_entry(tmp_path):
+    from flow_sdk.tags import emit_tag, target_of
+
+    seen: list[dict] = []
+
+    @flow_functions.register("v2_sub_probe")
+    def _probe(event_name, data, ctx):
+        seen.append({"event": event_name, "data": data})
+        return {}
+
+    flow = await _make_flow(tmp_path, "subflow", [_fn("a", "v2_sub_probe")], [])
+    import json as _json
+    doc = _json.loads((tmp_path / "subflow" / "graph.json").read_text())
+    doc["subscriptions"] = [{"id": "s1", "pattern": "drill.sub.*",
+                             "target": "usage_report:*", "node": "a"}]
+    (tmp_path / "subflow" / "graph.json").write_text(_json.dumps(doc))
+
+    fm = FlowManager()
+    assert (await fm.load_flow(flow.id)) is not None  # load arms
+    emit_tag("drill.sub.ping", target_of("usage_report", "r-9"), {"k": 7})
+    emit_tag("drill.sub.ping", target_of("task", "t-1"))  # target-filtered out
+    await _until(lambda: len(seen) == 1, "subscription entry delivered")
+    assert seen[0]["event"] == "drill.sub.ping"  # default entry name = tag
+    assert seen[0]["data"] == {"tag": "drill.sub.ping",
+                               "target": "usage_report:r-9", "data": {"k": 7}}
+    await _until(lambda: not fm.live_run_ids(), "run finalized")
+
+
+@async_context
+async def test_flow_subscription_dedups_envelope_ids(tmp_path):
+    from flow_sdk.tags import FlowEvent, event_bus
+
+    seen: list[str] = []
+
+    @flow_functions.register("v2_sub_dedup")
+    def _probe(event_name, data, ctx):
+        seen.append(event_name)
+        return {}
+
+    flow = await _make_flow(tmp_path, "dedupflow", [_fn("a", "v2_sub_dedup")], [])
+    import json as _json
+    doc = _json.loads((tmp_path / "dedupflow" / "graph.json").read_text())
+    doc["subscriptions"] = [{"pattern": "dedup.*", "node": "a"}]
+    (tmp_path / "dedupflow" / "graph.json").write_text(_json.dumps(doc))
+    fm = FlowManager()
+    await fm.load_flow(flow.id)
+
+    env = FlowEvent(tag="dedup.hit", target="x:1", ctx={"origin": "local_server"})
+    event_bus.deliver(env)
+    event_bus.deliver(env)  # at-least-once redelivery of the SAME envelope
+    await _until(lambda: len(seen) >= 1, "first delivery")
+    await asyncio.sleep(0.05)
+    assert seen == ["dedup.hit"]  # exactly one run entry
+
+
+@async_context
+async def test_flow_subscription_self_loop_brake_allows_chaining(tmp_path):
+    """Flow A's boundary events must never re-enter A; flow B chains off A."""
+    entered: list[str] = []
+
+    @flow_functions.register("v2_chain_a")
+    def _a(event_name, data, ctx):
+        return {"from_a": True}
+
+    @flow_functions.register("v2_chain_b")
+    def _b(event_name, data, ctx):
+        entered.append(event_name)
+        return {}
+
+    import json as _json
+    flow_a = await _make_flow(tmp_path, "chain-a", [_fn("n", "v2_chain_a")],
+        [_edge("e1", EXTERNAL_SOURCE, "go", "n")])
+    doc_a = _json.loads((tmp_path / "chain-a" / "graph.json").read_text())
+    # A subscribes to its OWN flow.done — the self-brake must refuse it.
+    doc_a["subscriptions"] = [{"pattern": "flow.done",
+                               "target": f"agentic_flow:{flow_a.id}", "node": "n"}]
+    (tmp_path / "chain-a" / "graph.json").write_text(_json.dumps(doc_a))
+
+    flow_b = await _make_flow(tmp_path, "chain-b", [_fn("m", "v2_chain_b")], [])
+    doc_b = _json.loads((tmp_path / "chain-b" / "graph.json").read_text())
+    doc_b["subscriptions"] = [{"pattern": "flow.done",
+                               "target": f"agentic_flow:{flow_a.id}", "node": "m"}]
+    (tmp_path / "chain-b" / "graph.json").write_text(_json.dumps(doc_b))
+
+    fm = FlowManager()
+    await fm.load_flow(flow_a.id)
+    await fm.load_flow(flow_b.id)
+    await fm.inject(flow_a.id, "go")
+    # B enters exactly once (from A's flow.done); A never re-enters itself.
+    await _until(lambda: entered == ["flow.done"], "B chained off A")
+    await asyncio.sleep(0.1)
+    assert entered == ["flow.done"]
+    await _until(lambda: not fm.live_run_ids(), "all runs finalized")
+
+
+def test_flow_doc_subscription_validation():
+    import json as _json
+    parsed = parse_flow_doc(_json.dumps({
+        "version": 1, "nodes": [{"id": "a", "node_type": "function",
+                                 "node_data": {"function": "x"}}],
+        "edges": [],
+        "subscriptions": [{"pattern": "*"},
+                          {"pattern": "ok.*", "node": "ghost"}],
+    }))
+    problems = "\n".join(parsed.validate_graph())
+    assert "EVERY event" in problems
+    assert "unknown node ghost" in problems
+
+
+@async_context
+async def test_flow_subscription_ping_pong_capped(tmp_path):
+    """Two flows mutually subscribed (fresh envelopes per hop defeat dedup and
+    the self-brake) — the per-flow entry cap bounds the loop, never silent."""
+    import json as _json
+
+    a_entries: list[int] = []
+
+    @flow_functions.register("v2_pp_a")
+    def _a(event_name, data, ctx):
+        a_entries.append(1)
+        return {}
+
+    @flow_functions.register("v2_pp_b")
+    def _b(event_name, data, ctx):
+        return {}
+
+    flow_a = await _make_flow(tmp_path, "pp-a", [_fn("n", "v2_pp_a")],
+        [_edge("e1", EXTERNAL_SOURCE, "go", "n")],
+        config={"max_entries_per_minute": 3})
+    flow_b = await _make_flow(tmp_path, "pp-b", [_fn("m", "v2_pp_b")], [],
+        config={"max_entries_per_minute": 3})
+    for name, fid, other, node in (("pp-a", flow_a.id, flow_b.id, "n"),
+                                   ("pp-b", flow_b.id, flow_a.id, "m")):
+        doc = _json.loads((tmp_path / name / "graph.json").read_text())
+        doc["subscriptions"] = [{"pattern": "flow.done",
+                                 "target": f"agentic_flow:{other}", "node": node}]
+        (tmp_path / name / "graph.json").write_text(_json.dumps(doc))
+
+    fm = FlowManager()
+    await fm.load_flow(flow_a.id)
+    await fm.load_flow(flow_b.id)
+    await fm.inject(flow_a.id, "go")
+    await asyncio.sleep(0.5)  # let the ping-pong run into the cap
+    # A entered once externally + at most cap(3) subscription entries.
+    assert len(a_entries) <= 4
+    await _until(lambda: not fm.live_run_ids(), "loop drained after cap")
+
+
+@async_context
+async def test_flow_subscription_fanout_enters_every_subscribed_flow(tmp_path):
+    """One envelope fanning out to TWO subscribed flows must enter BOTH —
+    dedup is per (flow, envelope), never global (regression: a global id set
+    let the first flow consume the envelope for everyone)."""
+    import json as _json
+    from flow_sdk.tags import emit_tag
+
+    entered: list[str] = []
+
+    @flow_functions.register("v2_fan_x")
+    def _x(event_name, data, ctx):
+        entered.append("x")
+        return {}
+
+    @flow_functions.register("v2_fan_y")
+    def _y(event_name, data, ctx):
+        entered.append("y")
+        return {}
+
+    fm = FlowManager()
+    for name, fn_name, node in (("fan-x", "v2_fan_x", "nx"), ("fan-y", "v2_fan_y", "ny")):
+        flow = await _make_flow(tmp_path, name, [_fn(node, fn_name)], [])
+        doc = _json.loads((tmp_path / name / "graph.json").read_text())
+        doc["subscriptions"] = [{"pattern": "fan.*", "node": node}]
+        (tmp_path / name / "graph.json").write_text(_json.dumps(doc))
+        await fm.load_flow(flow.id)
+
+    emit_tag("fan.out", "x:1")  # ONE envelope, two subscribers
+    await _until(lambda: sorted(entered) == ["x", "y"], "both flows entered")
+    await _until(lambda: not fm.live_run_ids(), "runs finalized")
+
+
+@async_context
+async def test_entry_envelope_id_and_actor_preserved(tmp_path):
+    """Phase 7: a run entered from a bus envelope preserves its id + actor —
+    into the journal event row AND the example provenance."""
+    import json as _json
+    from flow_sdk.tags import FlowEvent, event_bus
+
+    @flow_functions.register("v2_prov")
+    def _p(event_name, data, ctx):
+        return {}
+
+    flow = await _make_flow(tmp_path, "provflow", [_fn("a", "v2_prov")], [])
+    doc = _json.loads((tmp_path / "provflow" / "graph.json").read_text())
+    doc["subscriptions"] = [{"pattern": "prov.*", "node": "a"}]
+    (tmp_path / "provflow" / "graph.json").write_text(_json.dumps(doc))
+    fm = FlowManager()
+    await fm.load_flow(flow.id)
+
+    env = FlowEvent(tag="prov.go", target="x:1",
+                    ctx={"origin": "local_server", "actor": "user:u-42"})
+    event_bus.deliver(env)
+    await _until(lambda: fm.live_run_ids() or None, "run started")
+    await _until(lambda: not fm.live_run_ids(), "run finalized")
+
+    run_id = (await AgenticFlowRun.get_all({"flow_id": flow.id}))[0].id
+    entries = read_run_journal(tmp_path / "provflow", run_id)
+    entry_row = next(e for e in entries if e["kind"] == "event")
+    assert entry_row["event_id"] == env.id      # preserved, never re-minted
+    assert entry_row["actor"] == "user:u-42"
+
+    exec_ex = _json.loads((run_record_dir(run_id) / "executions" / "1-a"
+                           / "example.json").read_text())["metadata"]["source"]
+    assert exec_ex["event_id"] == env.id
+    assert exec_ex["actor"] == "user:u-42"

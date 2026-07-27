@@ -197,7 +197,7 @@ def evaluate(hooks_data: dict, transcript: list) -> str | None:
         None if the rule should not activate,
         or a string message to inject if it should activate.
     """
-    # Example: Check if the last message mentions a specific topic
+    # Example: Check if the last message mentions a specific tag
     # if transcript and "deployment" in transcript[-1].get("content", "").lower():
     #     return "Include deployment guidelines..."
 

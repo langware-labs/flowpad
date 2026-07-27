@@ -43,7 +43,7 @@ async def test_prompt_queue_drains_into_worker(bootstrapped_client, tmp_path, vi
         workdir=str(tmp_path),
         visible=visible,
     )
-    await process.save([])
+    await process.save()
 
     sentinel = f"QUEUEOK{uuid.uuid4().hex[:8].upper()}"
     prompt = f"Reply with exactly the token {sentinel} and nothing else."

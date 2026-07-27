@@ -64,6 +64,52 @@ async def test_targeted_discover_mints_then_passes_same_id(tmp_path: Path) -> No
     assert set(await md_sources()) == {record.id}
 
 
+@pytest.mark.asyncio
+async def test_targeted_discover_only_normalizes_resolved_id_sources(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from datetime import datetime, timezone
+
+    from flow_sdk.fs_store import asset_occurrences as occurrence_module
+
+    driver = get_db_driver()
+    await driver.delete_entities_by_type("markdown")
+    path = tmp_path / "target.md"
+    path.write_text(f"---\nid: {CANONICAL_ID}\n---\n# target\n", encoding="utf-8")
+    unrelated = tmp_path / "unrelated.md"
+    unrelated.write_text(f"---\nid: {LEGACY_ID}\n---\n# unrelated\n", encoding="utf-8")
+    created_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
+
+    async def stored_sources(record_type: str):
+        assert record_type == "markdown"
+        return {
+            CANONICAL_ID: (str(path), None, None, None, created_at),
+            LEGACY_ID: (str(unrelated), None, None, None, created_at),
+        }
+
+    observed: dict[str, object] = {}
+    real_resolver = occurrence_module.resolve_asset_collisions
+
+    def capture_resolver(candidates, stored, identity_reader, git_probe, now):
+        observed["keys"] = set(stored)
+        observed["synthetic_keys"] = set(stored.synthetic_keys)
+        observed["occurrences"] = tuple(stored[("markdown", CANONICAL_ID)])
+        return real_resolver(candidates, stored, identity_reader, git_probe, now)
+
+    monkeypatch.setattr(driver, "list_entity_sources_by_type", stored_sources)
+    monkeypatch.setattr(
+        occurrence_module, "resolve_asset_collisions", capture_resolver,
+    )
+
+    record = await discover_record_by_path("markdown", str(path))
+
+    assert record is not None
+    assert record.id == CANONICAL_ID
+    assert observed["keys"] == {("markdown", CANONICAL_ID)}
+    assert observed["synthetic_keys"] == {("markdown", CANONICAL_ID)}
+    assert [item.path for item in observed["occurrences"]] == [str(path.resolve())]
+
+
 def test_db_free_loader_passes_resolved_id_to_parser(tmp_path: Path) -> None:
     path = _conflicting_markdown(tmp_path)
 

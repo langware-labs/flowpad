@@ -26,6 +26,9 @@ class EntryKind(str, Enum):
     FILE_EDIT = "file_edit"
     FILE_READ = "file_read"
     SHELL_COMMAND = "shell_command"
+    # A ``flow`` CLI invocation — DERIVED from a shell command, never parsed
+    # straight off a transcript line. See ``derive.py`` / ``FlowCommandEntry``.
+    FLOW_COMMAND = "flow_command"
     # A skill invocation, normalized across workers: Claude/Copilot emit a
     # native ``Skill`` tool-use; Codex loads a skill by reading its
     # ``SKILL.md``. See ``SkillCallEntry``.

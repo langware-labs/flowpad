@@ -35,6 +35,17 @@ from ..compute_provider import (
 
 logger = logging.getLogger(__name__)
 
+
+def _pty_return_code(pty_process: Any) -> int | None:
+    """Normalize PTY exit status, preserving signal termination as negative."""
+    exit_status = getattr(pty_process, "exitstatus", None)
+    if isinstance(exit_status, int):
+        return exit_status
+    signal_status = getattr(pty_process, "signalstatus", None)
+    if isinstance(signal_status, int):
+        return -signal_status
+    return None
+
 _INHERITED_NO_COLOR_ENV_VARS = (
     "NO_COLOR",
     "NODE_DISABLE_COLORS",
@@ -895,7 +906,7 @@ class LocalComputeProvider(ComputeProvider):
                                 else:
                                     # Process died
                                     try:
-                                        exit_code = pty_process.exitstatus
+                                        exit_code = _pty_return_code(pty_process)
                                     except Exception:
                                         pass
                                     logger.info(
@@ -916,6 +927,14 @@ class LocalComputeProvider(ComputeProvider):
                     except Exception:
                         pass
                     finally:
+                        # EOF may arrive before the loop takes its explicit
+                        # `isalive() == false` branch. Reap non-blockingly once
+                        # more so signal deaths retain their negative status.
+                        try:
+                            if not pty_process.isalive():
+                                exit_code = _pty_return_code(pty_process)
+                        except Exception:
+                            pass
                         if on_exit is not None:
                             try:
                                 on_exit(exit_code)

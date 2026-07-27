@@ -62,11 +62,18 @@ class DeviceLoginSession:
         on_change: Callable[["DeviceLoginSession"], Awaitable[None]] | None = None,
         argv: list[str] | None = None,
         probe_fn: Callable[[], Awaitable[WorkerAuthResult]] | None = None,
+        spec: DeviceLoginSpec | None = None,
     ) -> None:
+        """``spec`` serves non-worker CLIs (e.g. gh): the login flow is spec-
+        driven with no worker driver behind it, so the spec comes from the
+        caller (a capability runner) and ``worker_type`` is just the session
+        key. A spec-driven session requires ``probe_fn`` and resolves its own
+        env (no worker spawn env exists for it)."""
         self.worker_type = worker_type
-        self.spec: DeviceLoginSpec = get_driver(worker_type).device_login_spec
+        self.spec: DeviceLoginSpec = spec or get_driver(worker_type).device_login_spec
         self._argv = argv or list(self.spec.login_argv)
-        self._use_spawn_env = argv is None  # overridden argv resolves its own env
+        # Overridden argv or a caller-supplied spec resolves its own env.
+        self._use_spawn_env = argv is None and spec is None
         self._probe = probe_fn or (lambda: run_worker_auth_probe(worker_type))
         self._on_change = on_change
         self._loop: asyncio.AbstractEventLoop | None = None
@@ -231,13 +238,16 @@ async def start_device_login(
     worker_type: str,
     *,
     on_change: Callable[[DeviceLoginSession], Awaitable[None]] | None = None,
+    spec: DeviceLoginSpec | None = None,
+    probe_fn: Callable[[], Awaitable[WorkerAuthResult]] | None = None,
 ) -> DeviceLoginSession:
-    """Start (or replace) the login session for a worker type."""
+    """Start (or replace) the login session for a worker type (or, with
+    ``spec``+``probe_fn``, any spec-driven CLI keyed by that name)."""
     async with _SESSIONS_LOCK:
         old = _SESSIONS.get(worker_type)
         if old is not None:
             old.cancel()
-        session = DeviceLoginSession(worker_type, on_change=on_change)
+        session = DeviceLoginSession(worker_type, on_change=on_change, spec=spec, probe_fn=probe_fn)
         _SESSIONS[worker_type] = session
     await session.start()
     return session
