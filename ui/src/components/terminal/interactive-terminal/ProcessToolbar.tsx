@@ -51,7 +51,6 @@ import { PTYViewer } from './pty-viewer';
 import { PTYEventsViewer } from './pty-events-viewer';
 import { CommandStatusViewer } from './command-status-viewer';
 import type { ColVisibility, TraceFilters } from './InteractiveTerminal';
-import { setChatUiOverride, useChatUiOverride } from '@src/contexts/chat-ui-mode-context';
 import { resolveProcessDisplayName } from '@src/components/terminal/process-display-name';
 import {
   buildSessionResumeCommand,
@@ -100,7 +99,6 @@ export function ProcessToolbar({
   const { t, i18n } = useLingui();
   const handleInjectPrompt = useCallback((text: string) => void shell?.sendInput(text + '\r'), [shell]);
   const { navigation, windowMode } = useDockNavigation();
-  const chatOverride = useChatUiOverride();
   const [showPtyViewer, setShowPtyViewer] = useState(false);
   const [showPtyEventsViewer, setShowPtyEventsViewer] = useState(false);
   const [showCommandStatus, setShowCommandStatus] = useState(false);
@@ -403,26 +401,6 @@ export function ProcessToolbar({
               <Trans>Command Status</Trans>
             </span>
           </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuLabel className="text-xs text-muted-foreground">
-            <Trans>Chat mode</Trans>
-          </DropdownMenuLabel>
-          {/* The header's TerminalModeSwitch is the primary control; this is the
-                escape hatch it can't express — unchecking restores `null` (follow
-                View mode: Standard ⇒ chat, Advanced ⇒ terminal), which the
-                two-way switch has no segment for. See chat-ui-mode-context. */}
-          <DropdownMenuCheckboxItem
-            checked={chatOverride === 'chat'}
-            onSelect={(e) => e.preventDefault()}
-            onCheckedChange={(v) => setChatUiOverride(v ? 'chat' : null)}
-          >
-            <span className="text-xs">
-              <span className="font-medium">
-                <Trans>Force chat UI</Trans>
-              </span>
-              <span className="ml-1 text-muted-foreground">— {chatOverride ?? t`auto`}</span>
-            </span>
-          </DropdownMenuCheckboxItem>
         </DropdownMenuContent>
       </DropdownMenu>
     </>

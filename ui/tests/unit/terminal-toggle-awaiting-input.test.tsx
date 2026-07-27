@@ -2,10 +2,7 @@ import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { isReadyForInput, ProcessStatus } from '@sdk';
 import { TerminalModeSwitch } from '@src/components/terminal/interactive-terminal/TerminalModeSwitch';
-import type {
-  SessionMode,
-  TransportMode,
-} from '@src/components/terminal/interactive-terminal/use-process-mode-switch';
+import type { ChatMode } from '@src/contexts/chat-ui-mode-context';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 afterEach(() => cleanup());
@@ -47,7 +44,7 @@ describe('isReadyForInput — the "your turn" switch gate', () => {
       <TerminalModeSwitch
         current="chat"
         showVibe={false}
-        modeSwitch={{ transport: 'chat', awaitingUserInput: enabled, switching: false, select: onSelect }}
+        modeSwitch={{ ptyMode: false, awaitingUserInput: enabled, switching: false, select: onSelect }}
       />,
     );
 
@@ -86,19 +83,19 @@ describe('TerminalModeSwitch — transport segment gating', () => {
    *  fields, reassembled into the `modeSwitch` object the component takes. */
   const renderSwitch = (
     over: Partial<{
-      current: SessionMode;
+      current: ChatMode;
       showVibe: boolean;
-      transport: TransportMode;
+      ptyMode: boolean;
       switching: boolean;
       enabled: boolean;
-      onSelect: (m: SessionMode) => void;
+      onSelect: (m: ChatMode) => void;
     }> = {},
   ) => {
     const props = {
-      current: 'chat' as SessionMode,
+      current: 'chat' as ChatMode,
       showVibe: false,
-      // Default: skin and transport agree, so `terminal` is a real switch.
-      transport: 'chat' as TransportMode,
+      // Default: headless, so picking `terminal` is a real transport switch.
+      ptyMode: false,
       switching: false,
       enabled: true,
       onSelect: vi.fn(),
@@ -109,7 +106,7 @@ describe('TerminalModeSwitch — transport segment gating', () => {
         current={props.current}
         showVibe={props.showVibe}
         modeSwitch={{
-          transport: props.transport,
+          ptyMode: props.ptyMode,
           awaitingUserInput: props.enabled,
           switching: props.switching,
           select: props.onSelect,
@@ -173,7 +170,7 @@ describe('TerminalModeSwitch — transport segment gating', () => {
     // The vibe display strip renders the same control with current="vibe": the
     // session is shown in vibe while its transport stays chat or terminal, so
     // both renderer segments are live exits, not no-ops.
-    renderSwitch({ current: 'vibe', transport: 'terminal', showVibe: true, enabled: true });
+    renderSwitch({ current: 'vibe', ptyMode: true, showVibe: true, enabled: true });
     expect(screen.getByRole('radio', { name: 'Vibe' }).getAttribute('aria-checked')).toBe('true');
     expect(screen.getByRole('radio', { name: 'Chat' }).getAttribute('aria-checked')).toBe('false');
     expect(screen.getByRole('radio', { name: 'Terminal' }).disabled).toBe(false);
@@ -189,7 +186,7 @@ describe('TerminalModeSwitch — transport segment gating', () => {
     // terminal. Picking `terminal` is a free skin flip, so the mid-turn gate must
     // not swallow it — watching the raw terminal while the agent works is exactly
     // when you want it. The other direction (`chat` = kill the PTY) stays gated.
-    const { onSelect } = renderSwitch({ current: 'chat', transport: 'terminal', enabled: false });
+    const { onSelect } = renderSwitch({ current: 'chat', ptyMode: true, enabled: false });
 
     const terminalBtn = screen.getByRole('radio', { name: 'Terminal' });
     expect(terminalBtn.disabled).toBe(false);

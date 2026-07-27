@@ -2,14 +2,9 @@ import { useCallback, useState } from 'react';
 import { isReadyForInput, WorkerMode, type AgenticProcess } from '@sdk';
 import { useEntity } from '@src/hooks/entity-hooks';
 import { previousNonVibeViewMode, useIsVibe, ViewMode } from '@src/contexts/view-mode-context';
+import { chatModePtyMode, type ChatMode } from '@src/contexts/chat-ui-mode-context';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications/notify';
-
-/** The two TRANSPORT modes of one agentic session. */
-export type TransportMode = 'chat' | 'terminal';
-
-/** The three ways a session can be shown. `vibe` is a view mode, not a transport. */
-export type SessionMode = TransportMode | 'vibe';
 
 interface UseProcessModeSwitchOptions {
   process?: AgenticProcess | null;
@@ -23,14 +18,14 @@ export interface ProcessModeSwitch {
   /** The reactive entity this hook already subscribes to — exposed so a caller
    *  doesn't open a second subscription to the same process. */
   live: AgenticProcess | null;
-  /** The transport the session is actually on (`pty_mode`), reactively. */
-  transport: TransportMode;
+  /** Whether the session is actually on a PTY (`pty_mode`), reactively. */
+  ptyMode: boolean;
   /** `isReadyForInput` — the backend 409s a mid-turn transport switch. */
   awaitingUserInput: boolean;
   /** A transport switch is in flight. */
   switching: boolean;
-  /** Pick a mode. URL-first: this navigates; the URL load applies the mode. */
-  select: (mode: SessionMode) => void;
+  /** Pick a mode. URL-first: this navigates; the URL load applies and adopts it. */
+  select: (mode: ChatMode) => void;
 }
 
 /**
@@ -38,10 +33,12 @@ export interface ProcessModeSwitch {
  * One definition of "what picking a mode means", shared by every mount of
  * `TerminalModeSwitch` (the terminal header and the vibe display strip).
  *
- * **Every pick is URL-first.** The handler only navigates: `?chatMode=<mode>`
- * for the two renderers, `?viewMode=vibe` for vibe. The mounted URL is then the
- * single writer — `useDockChatModeOverrideSync` / `useDockViewModeOverrideSync`
- * pin the mode and adopt it as the preference. Nothing here writes a pref.
+ * **Every pick navigates:** `?chatMode=<mode>` for the two renderers,
+ * `?viewMode=vibe` for vibe. The mounted URL pins the mode for as long as it is
+ * mounted (`useDockChatModeOverrideSync` / `useDockViewModeOverrideSync`), which
+ * keeps the arrangement browsable. The preference is written here, before the
+ * navigation, so the remembered mode does not depend on the navigation landing
+ * — a mode-less process URL opened later reads the mode the user last picked.
  *
  * The one thing navigation cannot do is move the TRANSPORT, because that is a
  * worker lifecycle action, not a view: chat = headless print-mode (no PTY),
@@ -64,12 +61,20 @@ export function useProcessModeSwitch({ process, getDims }: UseProcessModeSwitchO
   // us mid-session, and the switch's selection + gate must follow.
   const { data: liveProcess } = useEntity<AgenticProcess>(process?.typeId ?? null);
   const live = liveProcess ?? process ?? null;
-  const transport: TransportMode = live?.pty_mode === false ? 'chat' : 'terminal';
+  const ptyMode = live?.pty_mode !== false;
   const awaitingUserInput = isReadyForInput(live ?? {});
 
   const select = useCallback(
-    (mode: SessionMode) => {
+    (mode: ChatMode) => {
       if (!process) return;
+
+      // Persist the pick BEFORE navigating. The URL is still the renderer's
+      // authority while a `?chatMode` dock is mounted, but it is not the only
+      // one: a mode-less process URL (a reopened tab, a pasted link) falls back
+      // to this preference, and a load that resolves the dock before the pref
+      // hydrates reads the default. Writing here means "last used mode" is
+      // already true by the time anything reads it, instead of only becoming
+      // true once the navigation lands.
 
       // Address the PROCESS, never the ambient dock. This hook is mounted in the
       // vibe display strip too, where `currentDock` is often a CHILD tab (an
@@ -85,7 +90,7 @@ export function useProcessModeSwitch({ process, getDims }: UseProcessModeSwitchO
       void navigation.openShellProcess(
         process.id,
         mode === 'vibe'
-          ? { viewMode: ViewMode.Vibe }
+          ? { chatMode: mode, viewMode: ViewMode.Vibe }
           : { chatMode: mode, ...(isVibe ? { viewMode: previousNonVibeViewMode() } : {}) },
       );
 
@@ -95,7 +100,7 @@ export function useProcessModeSwitch({ process, getDims }: UseProcessModeSwitchO
       // lags under rapid switching — a skin-keyed test could short-circuit a
       // direction that has not actually landed. `awaitingUserInput` mirrors the
       // control's own disabled gate (the backend 409s a mid-turn switch).
-      if (mode === 'vibe' || switching || transport === mode || !awaitingUserInput) return;
+      if (mode === 'vibe' || switching || chatModePtyMode(mode) === ptyMode || !awaitingUserInput) return;
 
       const toChat = mode === 'chat';
       setSwitching(true);
@@ -122,8 +127,8 @@ export function useProcessModeSwitch({ process, getDims }: UseProcessModeSwitchO
         }
       })();
     },
-    [process, switching, awaitingUserInput, transport, getDims, isVibe, navigation],
+    [process, switching, awaitingUserInput, ptyMode, getDims, isVibe, navigation],
   );
 
-  return { live, transport, awaitingUserInput, switching, select };
+  return { live, ptyMode, awaitingUserInput, switching, select };
 }
