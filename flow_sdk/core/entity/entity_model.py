@@ -448,8 +448,16 @@ class Entity(DBEntity):
         ),
     )
 
-    # Display name — overridden with required `str` on many subclasses
+    # Display label. BOTH are declared on the base and BOTH are optional, so
+    # every entity type carries the same two slots on both sides of the hub
+    # boundary — a payload that arrives under the "other" key is stored, not
+    # silently dropped by pydantic's extra="ignore". Each type still AUTHORS
+    # exactly one of them (``name`` for project/org/team/…, ``title`` for
+    # task/page/…) and may override it with a required `str`; the display
+    # chain (``APIEntity.defaultDisplayName``, ``iconForType`` callers,
+    # invitation label resolution) reads ``name or title``.
     name: str | None = APIField(default=None, description="Display name")
+    title: str | None = APIField(default=None, description="Display title")
     _icon: ClassVar[str | None] = None
 
     # Per-type schema for the sidecar ``{shared,private}_context_entity_data``

@@ -629,16 +629,17 @@ class Project(Entity):
 
         The project's own (uuid4) id is the shared identity — the base body
         already emits ``id = self.id`` (same-id invariant), so no id swap. This
-        override only (1) maps the local ``name`` to the hub's ``title`` field
-        and (2) strips local-only project fields the hub doesn't host (the
-        working-dir path, the presence overlay, indexer hints).
+        override only strips local-only project fields the hub doesn't host
+        (the working-dir path, the presence overlay, indexer hints).
+
+        ``name`` travels VERBATIM: a project's display label is ``name`` on
+        both sides. There is deliberately no ``name``→``title`` mapping here —
+        that rename was the seam a project rename fell through (the reflected
+        update PUT sends the raw request body, not this method, so the renamed
+        ``name`` was dropped by the hub as an unknown field).
         """
         body = super()._hub_body()
-        # Hub Project uses ``title``; local Project uses ``name``.
-        if self.name:
-            body["title"] = self.name
         for local_only in (
-            "name",
             "fs_storage_mount_path",
             "fs_storage_provider",
             "last_mode",

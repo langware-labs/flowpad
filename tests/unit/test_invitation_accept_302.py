@@ -264,7 +264,7 @@ async def test_handle_invitation_accept_project_fetches_payload_and_materializes
     project_client = MagicMock()
     project_client.get = AsyncMock(return_value={
         "id": project_id,
-        "title": "Shared Project",
+        "name": "Shared Project",
         "shared_context_entities": [folder_tid],
         "shared_context_origins": {folder_tid: origin.model_dump(mode="json")},
     })
