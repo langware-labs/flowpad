@@ -78,11 +78,11 @@ function ptyPlainText(stream: { events: Array<[string, ...unknown[]]> } | null):
 
 /** Five heavy scenarios — distinct work so the sessions don't collapse to one. */
 const SCENARIOS = [
-  { name: 'list-facts', topic: 'three short facts about the moon' },
-  { name: 'haiku', topic: 'a haiku about autumn rain' },
-  { name: 'steps', topic: 'three numbered steps to make tea' },
-  { name: 'definition', topic: 'a one-line definition of entropy' },
-  { name: 'pros-cons', topic: 'one pro and one con of remote work' },
+  { name: 'list-facts', tag: 'three short facts about the moon' },
+  { name: 'haiku', tag: 'a haiku about autumn rain' },
+  { name: 'steps', tag: 'three numbered steps to make tea' },
+  { name: 'definition', tag: 'a one-line definition of entropy' },
+  { name: 'pros-cons', tag: 'one pro and one con of remote work' },
 ];
 
 interface SessionResult {
@@ -106,12 +106,12 @@ suite(`PTY vs chat UI content across 5 heavy sessions (instance=${INSTANCE || 'u
     // agent, never present in the prompt.
     const tokensFor = (i: number) => ['T1', 'T2', 'T3', 'END'].map((p) => `${p}S${i}X${run}`);
 
-    const instructionFor = (i: number, topic: string) => {
+    const instructionFor = (i: number, tag: string) => {
       const [t1, t2, t3, end] = tokensFor(i);
       return (
         `Do this in order, then stop. Do not use any tools.\n` +
         `1) Print this exact token on its own line: ${t1}\n` +
-        `2) Write ${topic}.\n` +
+        `2) Write ${tag}.\n` +
         `3) Print this exact token on its own line: ${t2}\n` +
         `4) Write one more sentence about it.\n` +
         `5) Print this exact token on its own line: ${t3}\n` +
@@ -121,7 +121,7 @@ suite(`PTY vs chat UI content across 5 heavy sessions (instance=${INSTANCE || 'u
 
     // 1. Open all five heavy sessions concurrently.
     const procs: any[] = await Promise.all(
-      SCENARIOS.map((s, i) => sdk.AgenticProcess.openTab('claude_code', instructionFor(i, s.topic))),
+      SCENARIOS.map((s, i) => sdk.AgenticProcess.openTab('claude_code', instructionFor(i, s.tag))),
     );
     procs.forEach((p) => expect(p?.id).toBeTruthy());
 

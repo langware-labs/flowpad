@@ -68,6 +68,7 @@ describe('React launched-instance isolation source policy', () => {
       'asset-loader-project-context.test.tsx',
       'chat-history-row-rename-sync.test.tsx',
       'chats-open-recency.test.ts',
+      'dock-dead-scope-tab-setup.test.tsx',
       'project-view-mode-memory.test.ts',
       'pty_corruption.test.ts',
       'reactivity.test.ts',
@@ -78,11 +79,11 @@ describe('React launched-instance isolation source policy', () => {
     ]);
   });
 
-  it('writes the transcript fixture only under the explicit Claude test home', () => {
-    expect(CHATS_RECENCY).toContain('const CLAUDE_HOME = process.env.FLOWPAD_CLAUDE_HOME;');
-    expect(CHATS_RECENCY).toContain('!path.isAbsolute(CLAUDE_HOME)');
+  it('writes the transcript fixture under the backend-selected Claude home', () => {
+    expect(CHATS_RECENCY).toContain(
+      "process.env.FLOWPAD_CLAUDE_HOME || process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude')",
+    );
     expect(CHATS_RECENCY).toContain("path.join(CLAUDE_HOME, 'projects'");
-    expect(CHATS_RECENCY).not.toContain("path.join(os.homedir(), '.claude'");
     expect(CHATS_RECENCY).toMatch(/path\.join\(FLOW_HOME,\s*'instances',\s*FLOW_INSTANCE,\s*'react-fixtures'/s);
   });
 

@@ -198,6 +198,37 @@ export function agenticProcessShareSource(
   };
 }
 
+/**
+ * Read a vibe/agentic session's transcript: resolve the process, then load the
+ * raw jsonl through the shared attach rules (own session, else the fork parent
+ * trimmed to the fork point). The single owner of "which session, which bytes"
+ * — every surface that offers an attach-transcript toggle goes through here, so
+ * the chip id and the file can't drift apart.
+ *
+ * `files` seeds the list so a caller with its own attachments keeps them.
+ * Never throws: a missing transcript comes back as `attached: false` with a
+ * reason the caller can surface.
+ */
+export async function loadSessionTranscript(
+  typeId: TypeId,
+  { attach = true, files = [] }: { attach?: boolean; files?: File[] } = {},
+): Promise<{ files: File[]; sessionId?: string; attached: boolean; failureReason?: string }> {
+  const proc = await dataManager
+    .getByTypeId<AgenticProcess>(new TypeId(AgenticProcess.type, typeId.id))
+    .catch(() => null);
+  const result = await loadOptionalTranscript(files, {
+    attach,
+    proc: proc ?? undefined,
+    projectPath: (proc as { workdir?: string } | null)?.workdir ?? undefined,
+  });
+  return {
+    files: result.files,
+    sessionId: proc?.session_id ?? undefined,
+    attached: result.attached,
+    failureReason: result.failureReason,
+  };
+}
+
 /** Shared transcript prep for the AgenticProcess (session) shares: resolves the
  *  process, optionally attaches the raw jsonl, and rides the ClaudeTranscript
  *  (`claude_session-<id>`) as the chip + shared context. */
@@ -205,20 +236,11 @@ async function prepareProcessTranscript(
   typeId: TypeId,
   o: SharePrepOptions,
 ): Promise<SharePrepPayload> {
-  const proc = await dataManager
-    .getByTypeId<AgenticProcess>(new TypeId(AgenticProcess.type, typeId.id))
-    .catch(() => null);
-  const projectPath = (proc as { workdir?: string } | null)?.workdir ?? undefined;
-
-  let files = o.files ?? [];
-  const transcript = await loadOptionalTranscript(files, {
+  const { files, sessionId } = await loadSessionTranscript(typeId, {
     attach: o.attachTranscript !== false,
-    proc: proc ?? undefined,
-    projectPath,
+    files: o.files ?? [],
   });
-  files = transcript.files;
 
-  const sessionId = proc?.session_id ?? null;
   const transcriptRef = sessionId ? `claude_session-${sessionId}` : null;
   const processRef = `${AgenticProcess.type}-${typeId.id}`;
   return {

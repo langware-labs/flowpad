@@ -36,6 +36,16 @@ export interface FlowConfig {
   deadline_s?: number;
 }
 
+/** A graph-level unified-bus subscription (flow_doc.FlowSubscriptionDef). */
+export interface FlowSubscription {
+  id?: string;
+  pattern: string;
+  target?: string;
+  scope?: string[];
+  event?: string;
+  node?: string;
+}
+
 export interface FlowDoc {
   version: number;
   id?: string;
@@ -43,6 +53,7 @@ export interface FlowDoc {
   description?: string;
   enabled?: boolean;
   config?: FlowConfig;
+  subscriptions?: FlowSubscription[];
   nodes: FlowDocNode[];
   edges: FlowDocEdge[];
 }

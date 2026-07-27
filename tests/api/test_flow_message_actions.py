@@ -363,10 +363,8 @@ def _spec_blob_storage(tmp_path):
 async def _setup_mapped_conversation(tmp_path: Path, subdir: str = "proj"):
     """Create a real Project (on-disk mount) + a Conversation pointed at it.
 
-    Returns ``(conv_id, project_id, project_root)``. The mapped project is a
-    negative control during staging and the explicit destination during install.
-    ``project_root`` is read back from the saved Project so it matches entity
-    canonicalization."""
+    Returns ``(conv_id, project_id, project_root)``. ``project_root`` is read
+    back from the saved Project so it matches entity canonicalization."""
     from flow_sdk.builtin.user import User
     from flow_sdk.builtin.project import Project
     from flow_sdk.builtin.conversation import Conversation
@@ -429,14 +427,14 @@ async def _build_spec_bundle(
 
 
 @pytest.mark.asyncio
-async def test_upload_file_backed_asset_stages_without_materializing_in_mapped_project(
+async def test_upload_file_backed_asset_auto_installs_in_mapped_project(
     bootstrapped_client, tmp_path, _spec_blob_storage,
 ):
-    """[UNPACK-FB-STAGE] Reception stages a file-backed spec but does not copy
-    or index it before the user explicitly installs it."""
+    """[UNPACK-FB-AUTO-INSTALL] A bound conversation installs a received
+    file-backed spec into its project while retaining the staged source."""
     from flow_sdk.builtin.spec import Spec
 
-    conv_id, _project_id, project_root = await _setup_mapped_conversation(tmp_path)
+    conv_id, project_id, project_root = await _setup_mapped_conversation(tmp_path)
     spec_id = _new_id()
     fm_id = _new_id()
     sentinel = "RESTORE-SENTINEL-body-line"
@@ -459,17 +457,22 @@ async def test_upload_file_backed_asset_stages_without_materializing_in_mapped_p
     assert ma.flow_message_id == fm_id
     assert ma.conversation_id == conv_id
     assert ma.asset_type == "spec" and ma.asset_id == spec_id
-    assert not ma.scope
+    assert ma.scope == "project"
+    assert ma.project_id == project_id
     assert ma.unpacked_path == f"unpacked/attachment/{entry_key}"
 
     staged = fm_data_ops.staged_entry_dir(fm_id, entry_key) / _SPEC_LEAF_REL
     assert staged.exists(), f"staged spec missing: {staged}"
     assert sentinel in staged.read_text(encoding="utf-8")
 
-    # Even a mapped conversation does not grant install consent.
     dest = project_root / _SPEC_LEAF_REL
-    assert not dest.exists(), f"staging copied into the project without consent: {dest}"
-    assert await Spec.get_one({"id": spec_id}) is None, "staging indexed the spec prematurely"
+    assert dest.exists(), f"bound conversation did not materialize the spec: {dest}"
+    assert sentinel in dest.read_text(encoding="utf-8")
+
+    spec = await Spec.get_one({"id": spec_id})
+    assert spec is not None, "auto-install did not index the spec"
+    assert spec.project_id == project_id
+    assert spec.content and sentinel in spec.content
 
 
 @pytest.mark.asyncio

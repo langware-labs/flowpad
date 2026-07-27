@@ -1,9 +1,18 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { FlowData, FlowElementTypes, PrefKey, instancePreferences } from '@sdk';
 import { TurnGroupsList } from '@src/components/entity-execution-panel/TurnGroupsList';
 import { groupTurnEvents } from '@src/components/floating-chat/groupTurnEvents';
+
+function renderGroups(flowData: FlowData[]) {
+  return render(
+    <MemoryRouter>
+      <TurnGroupsList groups={groupTurnEvents(flowData)} />
+    </MemoryRouter>,
+  );
+}
 
 function replayFlowData(
   elementType: string,
@@ -68,7 +77,7 @@ describe('ToolEntryRow replay results', () => {
       2,
     );
 
-    render(<TurnGroupsList groups={groupTurnEvents([call, result])} />);
+    renderGroups([call, result]);
 
     fireEvent.click(screen.getByTestId('dense-tool-row-toggle'));
     const toolEntry = screen.getByTestId('tool-entry');
@@ -97,7 +106,7 @@ describe('ToolEntryRow replay results', () => {
       3,
     );
 
-    render(<TurnGroupsList groups={groupTurnEvents([operation])} />);
+    renderGroups([operation]);
 
     fireEvent.click(screen.getByTestId('dense-tool-row-toggle'));
     const toolEntry = screen.getByTestId('tool-entry');
@@ -124,7 +133,7 @@ describe('ToolEntryRow replay results', () => {
       7,
     );
 
-    render(<TurnGroupsList groups={groupTurnEvents([call, marker])} />);
+    renderGroups([call, marker]);
     fireEvent.click(screen.getByTestId('dense-tool-row-toggle'));
 
     expect(screen.getAllByTestId('tool-entry')[0]).toHaveAttribute('data-state', 'done');
@@ -144,7 +153,7 @@ describe('ToolEntryRow replay results', () => {
       5,
     );
 
-    render(<TurnGroupsList groups={groupTurnEvents([call, aborted])} />);
+    renderGroups([call, aborted]);
     fireEvent.click(screen.getByTestId('dense-tool-row-toggle'));
 
     expect(screen.getAllByTestId('tool-entry')[0]).toHaveAttribute('data-state', 'done');

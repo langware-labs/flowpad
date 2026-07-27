@@ -16,12 +16,12 @@ vi.mock('@src/components/entity-execution-panel/hooks/useProcessesForTarget', ()
 import { WorkerStatus } from '@sdk';
 import { useAdoptAnalyzeProcess } from '@src/hooks/use-adopt-analyze-process';
 
-function proc(topic: string, workerStatus: WorkerStatus, id = 'p1') {
+function proc(tag: string, workerStatus: WorkerStatus, id = 'p1') {
   return {
     id,
     workerStatus,
     target_typeid_str: 'task-abc',
-    context_data: { wizard: { name: topic, data: { title: 'Analyze group status' } } },
+    context_data: { wizard: { name: tag, data: { title: 'Analyze group status' } } },
   };
 }
 

@@ -1,4 +1,4 @@
-"""Group-task actions: ``create-group-task`` + ``sync-group``.
+"""Task assignment actions: ``create-group-task`` + ``assign-task`` + ``sync-group``.
 
 A GROUP task is one task instantiated for every member of a contacts group:
 the original task becomes the overview (``kind=group``) and each member gets
@@ -18,7 +18,12 @@ member task and ``guest`` on the parent. The hub marks the guest grant
 ``is_final`` at accept (see hub ``membership/services.py``) so it stops at the
 parent and never cascades to sibling member tasks.
 
-There is no hub→local push for plain tasks, so freshness is pull-based:
+``assign-task`` is the single-owner form of the same fan-out (a group of one):
+one member task, one invitation, and — because the hub grants an internal
+invite's roles at invite time — the assignee simply has the task, JIRA-style.
+It shares every helper below with the group flow.
+
+Pull remains the fallback for freshness:
 ``sync-group`` is fired by the UI when a group row is expanded/opened (owner
 side pulls member-owned fields; member side pulls the parent's display
 fields). The parent's plan (``spec.md``) is deliberately NOT shared — task and
@@ -50,6 +55,7 @@ from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.fs_store.identifier import mint_uuid
 from flow_sdk.fs_store.path_utils import canonical_posix_path
 from flow_sdk.request_context.methods import get_current_request_info
+from flow_sdk.request_context.request_info import RequestInfo
 from flow_sdk.responses.response import ApiResponse, ApiSuccessResponse
 
 logger = logging.getLogger(__name__)
@@ -199,15 +205,6 @@ async def _notify_quietly(entity: Task) -> None:
         logger.warning("[group-task] notify failed (non-fatal): %s", e)
 
 
-def _owner_email() -> str | None:
-    from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
-
-    creds = load_credentials()
-    if not creds:
-        return None
-    return normalize_email((creds.user or {}).get("email"))
-
-
 def _group_members(group: ContactsGroup, owner_email: str | None) -> tuple[list[str], list[dict]]:
     """Normalized, deduped member emails minus the owner; email-less entries
     are reported as failures (invitations are email-keyed)."""
@@ -247,18 +244,150 @@ async def _resolve_group(body: dict) -> ContactsGroup:
     return group
 
 
-async def _invite_member(email: str, child: Task, parent: Task) -> None:
+async def _invite_member(email: str, child: Task, parent: Task, message: str | None = None) -> None:
     """One invitation, two targets — the member task FIRST (the hub renders the
-    first non-conversation target as the inbox row), then the parent as guest."""
+    first non-conversation target as the inbox row), then the parent as guest.
+
+    ``message`` rides the invitation email; the default states the assignment.
+    """
     body = {
         "recipient_email": email,
         "invitation_targets": [
             {"typeid": f"task-{child.id}", "role": "editor"},
             {"typeid": f"task-{parent.id}", "role": "guest"},
         ],
-        "message": f'You have been assigned the task "{parent.title}"',
+        "message": message or f'You have been assigned the task "{parent.title}"',
     }
     await hub_post(BuiltinEntityType.TASK, body, child.id, "members")
+
+
+async def _prepare_parent_for_hub(task: Task, someone_typeid) -> None:
+    """Blob-expand + first-share the parent so member fan-out can hub-write."""
+    # Description is a blob — expand so it rides the hub POST body.
+    try:
+        await task.expand_blobs()
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[group-task] blob expansion failed (non-fatal): %s", e)
+    if not task.remote:
+        await task.share()
+        task.remote = True
+        await task.save(someone_typeid)
+
+
+async def _existing_children_by_assignee(task: Task) -> dict[str, Task]:
+    """Member tasks of ``task`` keyed by normalized assignee — the dedupe key
+    that makes a re-run (re-invite, retry) converge instead of duplicating."""
+    children = await Task.get_all({"parent_id": task.id}) or []
+    return {normalize_email(c.assignee): c for c in children if normalize_email(c.assignee)}
+
+
+async def _fan_out_member(
+    task: Task,
+    email: str,
+    child: Optional[Task],
+    someone_typeid,
+    *,
+    invite_message: str | None = None,
+) -> tuple[Task, bool]:
+    """Create-or-reuse ``email``'s member task and (re-)invite them.
+
+    ``child`` is their existing member task, or None to mint one. Returns
+    ``(child, created)``. The invitation is re-sent even for a pre-existing
+    child so a previously failed one can be retried; an already-accepted invite
+    is a hub 400 we treat as converged.
+    """
+    created = False
+    if child is None:
+        child = Task.model_validate(
+            {
+                "id": mint_uuid(),  # random v4 — member tasks have no natural key
+                "title": task.title,  # ONLY the title is cloned
+                "parent_id": task.id,
+                "assignee": email,
+                "kind": TaskKind.STANDARD,
+                "status": TaskStatus.TO_DO,
+                "project_id": task.project_id,
+            }
+        )
+        ref = _member_asset_ref(task.asset_ref, task.title, child.id)
+        if ref:
+            child.asset_ref = ref
+        child = await child.save(someone_typeid)
+        # Real hub child (is_child edge) — owner rights cascade; the member's
+        # guest-on-parent is cut at the parent by the hub's is_final grant, so
+        # siblings never leak.
+        await task.create_child(child)
+        await child.save(someone_typeid)
+        created = True
+    try:
+        await _invite_member(email, child, task, message=invite_message)
+    except Exception as invite_err:  # noqa: BLE001
+        if "accept" not in str(invite_err).lower():
+            raise
+    return child, created
+
+
+def _apply_group_flip(task: Task, group_name: str | None) -> bool:
+    """Mark the parent as a group overview in memory. Returns whether it changed
+    — the caller owns the single save, so a flip can ride along with other
+    parent-side edits instead of costing a second write."""
+    if task.kind == TaskKind.GROUP.value and task.group_name == group_name:
+        return False
+    task.kind = TaskKind.GROUP.value
+    # The group's name is what the owner surface renders ("Owner: <name>") —
+    # the task itself is the only place it's persisted.
+    task.group_name = group_name
+    return True
+
+
+async def _push_group_flip(task: Task) -> None:
+    """Push the group flip to the hub. A server-side save doesn't hub-reflect
+    (that's the client header path), so the hub row would otherwise never read
+    ``group`` for a member fetch."""
+    try:
+        await hub_put(
+            BuiltinEntityType.TASK,
+            str(task.id),
+            {"kind": task.kind, "group_name": task.group_name},
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[group-task] hub kind flip failed (non-fatal): %s", e)
+
+
+async def _require_assignable_task(action: str) -> tuple[Task, RequestInfo, dict, str | None]:
+    """Shared entry gate for the assignment actions.
+
+    Enforces local-mode + cloud login and resolves a top-level target task,
+    returning everything both actions need from the request: ``(task,
+    request_info, body, owner_email)`` — the owner email comes from the same
+    credentials read as the login check rather than a second one.
+    """
+    if _local_mode_share_blocked():
+        raise HTTPException(status_code=403, detail=LOCAL_MODE_SHARE_MESSAGE)
+    from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
+
+    creds = load_credentials()
+    if not creds or not creds.api_key:
+        raise HTTPException(status_code=403, detail=f"Cloud login required to {action}")
+
+    request_info = get_current_request_info()
+    if not request_info or not request_info.target_entity_typeid:
+        raise HTTPException(status_code=400, detail=f"{action}: target task typeid required")
+    target = request_info.target_entity_typeid
+    if target.type != Task.get_type():
+        raise HTTPException(status_code=400, detail=f"{action}: target must be a task")
+
+    task = await Task.get_one({"id": target.id})
+    if task is None:
+        raise HTTPException(status_code=404, detail=f"{action}: task not found")
+    if task.parent_id:
+        raise HTTPException(status_code=400, detail=f"{action}: a member task cannot be re-assigned")
+
+    try:
+        body = await request_info.get_post_data() or {}
+    except JSONDecodeError:
+        body = {}
+    return task, request_info, body, normalize_email((creds.user or {}).get("email"))
 
 
 @action.post(action_name="create-group-task", types=["task"])
@@ -273,49 +402,15 @@ async def create_group_task() -> ApiResponse:
     (``create_child``, is_child edge) → invitation (editor on child + guest on
     parent). Idempotent per member — re-running completes the remainder.
     """
-    if _local_mode_share_blocked():
-        raise HTTPException(status_code=403, detail=LOCAL_MODE_SHARE_MESSAGE)
-    from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
-
-    creds = load_credentials()
-    if not creds or not creds.api_key:
-        raise HTTPException(status_code=403, detail="Cloud login required to create a group task")
-
-    request_info = get_current_request_info()
-    if not request_info or not request_info.target_entity_typeid:
-        raise HTTPException(status_code=400, detail="create-group-task: target task typeid required")
-    target = request_info.target_entity_typeid
-    if target.type != Task.get_type():
-        raise HTTPException(status_code=400, detail="create-group-task: target must be a task")
-
-    try:
-        body = await request_info.get_post_data() or {}
-    except JSONDecodeError:
-        body = {}
-    task = await Task.get_one({"id": target.id})
-    if task is None:
-        raise HTTPException(status_code=404, detail="create-group-task: task not found")
-    if task.parent_id:
-        raise HTTPException(status_code=400, detail="create-group-task: a member task cannot become a group task")
+    task, request_info, body, owner_email = await _require_assignable_task("create-group-task")
     group = await _resolve_group(body)
 
-    members, failed = _group_members(group, _owner_email())
+    members, failed = _group_members(group, owner_email)
     if not members and not failed:
         raise HTTPException(status_code=400, detail="create-group-task: the contacts group has no members")
 
-    # Description is a blob — expand so it rides the hub POST body.
-    try:
-        await task.expand_blobs()
-    except Exception as e:  # noqa: BLE001
-        logger.warning("[group-task] blob expansion failed (non-fatal): %s", e)
-
-    if not task.remote:
-        await task.share()
-        task.remote = True
-        await task.save(request_info.someone_typeid)
-
-    existing_children = await Task.get_all({"parent_id": task.id})
-    by_assignee = {normalize_email(c.assignee): c for c in (existing_children or []) if normalize_email(c.assignee)}
+    await _prepare_parent_for_hub(task, request_info.someone_typeid)
+    by_assignee = await _existing_children_by_assignee(task)
 
     created: list[str] = []
     skipped: list[str] = []
@@ -324,67 +419,69 @@ async def create_group_task() -> ApiResponse:
     # the locally-stored ``assignee`` field on each task row.
     children: list[str] = []
     for email in members:
-        child = by_assignee.get(email)
         try:
-            if child is None:
-                child = Task.model_validate(
-                    {
-                        "id": mint_uuid(),  # random v4 — member tasks have no natural key
-                        "title": task.title,  # ONLY the title is cloned
-                        "parent_id": task.id,
-                        "assignee": email,
-                        "kind": TaskKind.STANDARD,
-                        "status": TaskStatus.TO_DO,
-                        "project_id": task.project_id,
-                    }
-                )
-                ref = _member_asset_ref(task.asset_ref, task.title, child.id)
-                if ref:
-                    child.asset_ref = ref
-                child = await child.save(request_info.someone_typeid)
-                # Real hub child (is_child edge) — owner rights cascade;
-                # the member's guest-on-parent is cut at the parent by the
-                # hub's is_final grant, so siblings never leak.
-                await task.create_child(child)
-                await child.save(request_info.someone_typeid)
-                created.append(email)
-            else:
-                skipped.append(email)
-            # (Re-)invite even for pre-existing children so a previously
-            # failed invitation can be retried; an already-accepted invite
-            # is a hub 400 we treat as converged.
-            try:
-                await _invite_member(email, child, task)
-            except Exception as invite_err:  # noqa: BLE001
-                msg = str(invite_err)
-                if "accept" not in msg.lower():
-                    raise
+            child, was_created = await _fan_out_member(
+                task, email, by_assignee.get(email), request_info.someone_typeid
+            )
+            (created if was_created else skipped).append(email)
             children.append(str(child.typeid))
         except Exception as e:  # noqa: BLE001
             logger.warning("[group-task] member %s failed: %s", email, e)
-            if email in created:
-                created.remove(email)
             failed.append({"email": email, "error": str(e)[:200]})
 
-    if (created or by_assignee) and (task.kind != TaskKind.GROUP.value or task.group_name != group.name):
-        task.kind = TaskKind.GROUP.value
-        # The group's name is what the owner surface renders ("Owner: <name>") —
-        # the task itself is the only place it's persisted.
-        task.group_name = group.name
+    # Only flip once a member task actually exists — an all-failed run leaves the
+    # task as it was rather than advertising a group with no members.
+    if (created or by_assignee) and _apply_group_flip(task, group.name):
         await task.save(request_info.someone_typeid)
-        # A server-side save doesn't hub-reflect (that's the client
-        # header path) — push the flip explicitly so the hub row reads
-        # ``group`` for every member fetch.
-        try:
-            await hub_put(
-                BuiltinEntityType.TASK,
-                str(task.id),
-                {"kind": TaskKind.GROUP.value, "group_name": group.name},
-            )
-        except Exception as e:  # noqa: BLE001
-            logger.warning("[group-task] hub kind flip failed (non-fatal): %s", e)
+        await _push_group_flip(task)
 
     return ApiSuccessResponse(data={"created": created, "skipped": skipped, "failed": failed, "children": children})
+
+
+@action.post(action_name="assign-task", types=["task"])
+async def assign_task() -> ApiResponse:
+    """``POST /graph/task/<id>/assign-task`` — give this task to ONE person.
+
+    Body: ``{"email": ..., "name"?: ..., "message"?: ...}``. The group-of-one
+    form of ``create-group-task``: the assignee gets a real hub member task
+    (``is_child``, editor-on-child + guest-on-parent) so their status changes
+    sync back, and — for an invite between people who already share a container
+    — the hub grants those roles immediately, so the task lands on their machine
+    without an accept step. ``message`` rides the invitation email.
+
+    Assigning to yourself is a local stamp only: no hub child, no invitation.
+    """
+    task, request_info, body, owner_email = await _require_assignable_task("assign-task")
+
+    email = normalize_email(body.get("email"))
+    if not email:
+        raise HTTPException(status_code=400, detail="assign-task: 'email' required")
+    name = str(body.get("name") or "").strip() or None
+    message = str(body.get("message") or "").strip() or None
+
+    task.assignee = email
+    task.reporter = task.reporter or owner_email
+
+    if email == owner_email:
+        await task.save(request_info.someone_typeid)
+        return ApiSuccessResponse(data={"child": None, "self": True, "created": False, "assignee": email})
+
+    await _prepare_parent_for_hub(task, request_info.someone_typeid)
+    by_assignee = await _existing_children_by_assignee(task)
+    child, created = await _fan_out_member(
+        task, email, by_assignee.get(email), request_info.someone_typeid, invite_message=message
+    )
+
+    # Reuse the group overview shape for a single owner: the member task carries
+    # the status, the parent stays the display surface. Named after the person
+    # so the owner surface reads "Owner: <name>". One save covers the flip and
+    # the assignee/reporter stamp above.
+    flipped = _apply_group_flip(task, name or email)
+    await task.save(request_info.someone_typeid)
+    if flipped:
+        await _push_group_flip(task)
+
+    return ApiSuccessResponse(data={"child": str(child.typeid), "self": False, "created": created, "assignee": email})
 
 
 @action.post(action_name="sync-group", types=["task"])

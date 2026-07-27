@@ -10,13 +10,12 @@ const h = vi.hoisted(() => ({ bookmarks: [] as Bookmark[], projectId: null as st
 
 // The hook reads the live bookmark list and the active project. Stub both so we
 // can drive a fixed set across projects.
-vi.mock('@sdk', async () => {
-  const actual = await vi.importActual<typeof import('@sdk')>('@sdk');
-  return { ...actual, dataContext: { get project() { return h.projectId ? { id: h.projectId } : null; } } };
-});
 vi.mock('@sdk/react/hooks', () => ({
   useEntitiesQuery: () => ({ data: h.bookmarks }),
   useProject: () => ({ project: h.projectId ? { id: h.projectId } : null }),
+}));
+vi.mock('@src/hooks/useContext', () => ({
+  useContext: () => ({ project: h.projectId ? { id: h.projectId } : null }),
 }));
 
 const { useUnopenedFavoritesCount } = await import('@src/hooks/use-unopened-favorites-count');

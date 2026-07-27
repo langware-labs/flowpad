@@ -25,12 +25,49 @@ from pathlib import Path
 
 import pytest
 
-
 # Instance-scoped env vars the validator and reinit_db used to write.
 _FORBIDDEN_WRITE_KEYS = {
     "SQLITE_DATABASE_PATH",
     "FS_RECORD_PATH",
 }
+
+
+@pytest.fixture(autouse=True)
+async def _restore_session_db_after_contract_test(initialize_test_db):
+    """Keep DB hot-swap contract tests isolated from the shared test session.
+
+    ``reinit_db`` intentionally performs a lasting process-global hot swap.
+    These tests exercise that contract with function-owned paths, so teardown
+    must restore the exact driver owned (and eventually closed) by the
+    session-scoped ``initialize_test_db`` fixture, not mint an unowned
+    replacement driver for the original path.
+    """
+    yield
+
+    from flow_sdk.core.cache.entity_cache import entity_cache, uname_cache
+    from flow_sdk.db.db_entity import DBEntity
+    from flow_sdk.db.db_relationship import DBRelationship
+    from flow_sdk.db.drivers.db_driver import (
+        _driver_instances,
+        db_lifecycle_guard,
+    )
+    from flow_sdk.instance_settings import override_db_path
+
+    session_db_path = initialize_test_db.config.database
+    assert session_db_path is not None
+
+    async with db_lifecycle_guard():
+        active_driver = _driver_instances.get("sqlite")
+        if active_driver is not None and active_driver is not initialize_test_db:
+            await active_driver.close()
+
+        override_db_path(session_db_path)
+        _driver_instances["sqlite"] = initialize_test_db
+        await initialize_test_db.open()
+        DBEntity._db = initialize_test_db
+        DBRelationship._db = initialize_test_db
+        entity_cache.clear()
+        uname_cache.clear()
 
 
 def _clean_instance_env(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -186,7 +223,6 @@ async def test_reinit_db_no_env_writes(
     ``get_instance_settings().db_path`` now reflects the new path.
     """
     from flow_sdk.db.database import reinit_db
-    from flow_sdk.db.drivers.db_driver import _driver_instances
     from flow_sdk.instance_settings import get_instance_settings
 
     writes: list[tuple[str, str]] = []

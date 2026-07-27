@@ -110,6 +110,13 @@ export function refreshAllTabs(): Promise<Tab[]> {
   return refreshInFlight;
 }
 
+function refreshAllTabsInBackground(): void {
+  // The API client already reports transport failures. Background consumers
+  // own the rejection so an unavailable backend cannot escape as an unhandled
+  // promise; explicit callers of refreshAllTabs still receive the rejection.
+  void refreshAllTabs().catch(() => undefined);
+}
+
 /** Optimistic drag preview: reorder the current tabs by a predicted id order
  *  (via the shared `computeReorder`, byte-equal to the backend), keeping each
  *  tab's resolved data. Replaced by the next `tabs-changed` refresh on drop. */
@@ -136,7 +143,7 @@ export function attachTabsChangedPing(): void {
   attached = true;
   const cm = ConnectionManager.getInstance();
   cm.on('on_broadcast', (msg: BroadcastMessage) => {
-    if (msg?.broadcast_type === 'tabs_changed') void refreshAllTabs();
+    if (msg?.broadcast_type === 'tabs_changed') refreshAllTabsInBackground();
   });
 }
 
@@ -148,7 +155,7 @@ export function useAllTabs(): Tab[] {
     attachTabsChangedPing();
     if (!loadedOnce) {
       loadedOnce = true;
-      void refreshAllTabs();
+      refreshAllTabsInBackground();
     }
   }, []);
   return tabs;

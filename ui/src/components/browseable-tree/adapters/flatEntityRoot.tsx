@@ -15,8 +15,8 @@ export interface FlatEntityRow {
   badge?: ReactNode;
   content?: ReactNode;
   rowClassName?: string;
-  /** Topic tag — makes the row highlightable + bus-observable (see types.ts). */
-  topic?: string;
+  /** Tag tag — makes the row highlightable + bus-observable (see types.ts). */
+  tag?: string;
   selectionKey?: string;
   toolbar?: ToolbarAction[];
   onRename?: (newName: string) => void | Promise<void>;
@@ -37,7 +37,7 @@ export function flatEntityRoots(rows: FlatEntityRow[]): BrowseableRoot[] {
       badge: row.badge,
       content: row.content,
       rowClassName: row.rowClassName,
-      topic: row.topic,
+      tag: row.tag,
       selectionKey: row.selectionKey,
       toolbar: row.toolbar,
       onRename: row.onRename,

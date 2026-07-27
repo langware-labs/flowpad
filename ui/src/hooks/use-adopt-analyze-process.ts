@@ -21,7 +21,7 @@ function workerActive(p: AgenticProcess): boolean {
  * Keyed on the wizard's TARGET (the task's TypeId, stamped as the process's
  * `target_typeid_str` at launch), NOT on `task.process_id`: the agent stamps
  * `process_id` lazily and it can point at a stale prior run, so a target query
- * is the reliable way to find the *current* run. We then confirm the topic via
+ * is the reliable way to find the *current* run. We then confirm the tag via
  * `context_data.wizard.name` and require a genuinely-active worker.
  */
 export function useAdoptAnalyzeProcess(task: Task | null): WizardModalAttachment | null {

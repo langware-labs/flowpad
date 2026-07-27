@@ -1117,7 +1117,7 @@ def _git_origin_index_scope(checkout_root: Path, rel_path: str, info) -> Path:
 
 
 def _repo_matches_git_origin(repo_path: Path, origin, *, require_branch: bool = False) -> bool:
-    return origin.matches_repo(repo_path, require_branch=require_branch)[0]
+    return origin.matches_checkout(repo_path, require_branch=require_branch)
 
 
 async def _project_id_for_checkout(
@@ -1142,21 +1142,7 @@ async def _project_id_for_checkout(
 
 
 def _next_git_clone_target(origin) -> Path:
-    from flow_sdk.config import AGENT_MOUNT_FOLDER  # noqa: PLC0415
-    from flow_sdk.utils.git import derive_repo_leaf_from_url  # noqa: PLC0415
-
-    base = Path(AGENT_MOUNT_FOLDER)
-    base.mkdir(parents=True, exist_ok=True)
-    leaf = derive_repo_leaf_from_url(origin.clone_url()) or (origin.name or "repo").removesuffix(".git")
-    leaf = "".join(c if c.isalnum() or c in ("-", "_", ".") else "-" for c in leaf).strip("-") or "repo"
-    candidate = base / leaf
-    n = 2
-    while candidate.exists():
-        if _repo_matches_git_origin(candidate, origin, require_branch=True):
-            return candidate
-        candidate = base / f"{leaf}-{n}"
-        n += 1
-    return candidate
+    return origin.next_clone_target()
 
 
 async def _resolve_git_checkout(

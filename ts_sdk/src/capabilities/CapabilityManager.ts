@@ -2,8 +2,16 @@ import { EventEmitter } from 'events';
 
 import { dataManager } from '../APIEntity';
 import apiClient from '../client';
-import { Capability, CapabilityActionName, CapabilityCheck, CapabilityResult } from '../entities/capability';
+import {
+  Capability,
+  CapabilityActionName,
+  CapabilityCheck,
+  CapabilityResult,
+  CapabilityState,
+  ICapability,
+} from '../entities/capability';
 import { normalizeKind } from '../models/Kind';
+import { EventBus } from '../tags/EventBus';
 import { defineGlobal } from '../utils/globals';
 import { isHubOnly } from '../utils/hub-runtime';
 
@@ -43,6 +51,8 @@ export interface CapabilityAccess {
   icon: string;
   available: boolean;
   checked: boolean;
+  /** Persisted four-state readiness (mirror of CapabilityState). */
+  state: CapabilityState;
   runnable: boolean;
   installable: boolean;
   worker_type: string | null;
@@ -192,9 +202,9 @@ export class CapabilityManager extends EventEmitter {
    * email"). Returns the spawned process id; refreshes the summary so the
    * row's running state surfaces.
    */
-  async installIntent(text: string): Promise<{ process_id?: string | null; message?: string }> {
+  async setupIntent(text: string): Promise<{ process_id?: string | null; message?: string }> {
     const result = await apiClient.post<{ process_id?: string | null; message?: string }>(
-      '/graph/capabilities/install-intent',
+      '/graph/capabilities/setup-intent',
       { text },
     );
     void this.getSummary(true);
@@ -252,7 +262,7 @@ export class CapabilityManager extends EventEmitter {
 
       for (const capability of snapshot.capabilities) {
         if (this.getResult(capability) !== null) continue;
-        const check = await this.runActionForCapability(capability, 'check');
+        const check = await this.runActionForCapability(capability, 'test');
         if (check.result.available) break;
       }
 
@@ -267,16 +277,68 @@ export class CapabilityManager extends EventEmitter {
     }
   }
 
-  async check(queryKind: string): Promise<CapabilitySnapshot> {
-    return this.runAction(queryKind, 'check');
+  /**
+   * Tri-state readiness for an exact capability kind: true = available,
+   * false = not available, null = unknown (never tried / errored — retryable
+   * via setupCapability). Reads the persisted row state; does NOT probe.
+   */
+  async checkCapability(kind: string): Promise<boolean | null> {
+    const query = normalizeKind(kind);
+    await this.load(true);
+    const state = this.capabilities.find((c) => c.kind === query)?.state ?? 'none';
+    if (state === 'available') return true;
+    if (state === 'not_available') return false;
+    return null;
   }
 
-  async install(queryKind: string): Promise<CapabilitySnapshot> {
-    return this.runAction(queryKind, 'install');
+  /**
+   * Run the capability's setup (backend install verb) to a terminal verdict:
+   * resolves true ⇔ the capability is available afterwards.
+   *
+   * When install spawns an agentic process, resolution waits for the install
+   * monitor's terminal row write (`last_setup.details.install_finalized`,
+   * arriving over the entity WS channel) — the monitor always terminates and
+   * persists a verdict, so no client-side timeout is layered on top.
+   */
+  async setupCapability(kind: string): Promise<boolean> {
+    const query = normalizeKind(kind);
+    await this.load();
+    const row = this.capabilities.find((c) => c.kind === query);
+    if (!row) throw new Error(`Capability ${query} was not found`);
+
+    let resolveTerminal: () => void;
+    const terminal = new Promise<void>((resolve) => {
+      resolveTerminal = resolve;
+    });
+    let expectedProcessId: string | null = null;
+    const off = EventBus.on(
+      'app.entity.updated',
+      (event) => {
+        const entity = (event.data?.entity ?? null) as ICapability | null;
+        const setup = entity?.last_setup;
+        if (!setup?.details?.install_finalized) return;
+        if (expectedProcessId && setup.process_id !== expectedProcessId) return;
+        resolveTerminal();
+      },
+      { target: `capability:${row.id}` },
+    );
+    try {
+      const check = await row.setup();
+      expectedProcessId = check.result.process_id ?? null;
+      if (expectedProcessId) await terminal;
+    } finally {
+      off();
+    }
+    void this.getSummary(true);
+    return (await this.checkCapability(query)) === true;
   }
 
   async test(queryKind: string): Promise<CapabilitySnapshot> {
     return this.runAction(queryKind, 'test');
+  }
+
+  async setup(queryKind: string): Promise<CapabilitySnapshot> {
+    return this.runAction(queryKind, 'setup');
   }
 
   /** Mutate one capability entity's persisted fields, save, then invalidate the
@@ -296,7 +358,7 @@ export class CapabilityManager extends EventEmitter {
     await capability.save();
     this.actionResults.delete(query);
     await this.load(true);
-    return this.check(query);
+    return this.test(query);
   }
 
   async setReferenceKind(queryKind: string, referenceKind: string): Promise<CapabilitySnapshot> {
@@ -345,7 +407,7 @@ export class CapabilityManager extends EventEmitter {
 
     for (const capability of capabilities) {
       const result = await this.runActionForCapability(capability, actionName);
-      if (actionName !== 'check' || result.result.available) break;
+      if (actionName !== 'test' || result.result.available) break;
     }
 
     return this.getSnapshot(query);
@@ -377,8 +439,7 @@ export class CapabilityManager extends EventEmitter {
   private getResult(capability: Capability): CapabilityResult | null {
     return (
       this.actionResults.get(capability.kind)?.result ??
-      capability.last_install ??
-      capability.last_check ??
+      capability.last_setup ??
       capability.last_test ??
       null
     );
@@ -388,9 +449,8 @@ export class CapabilityManager extends EventEmitter {
     if (!capability) return null;
     return (
       this.actionResults.get(capability.kind)?.result.process_id ??
-      capability.last_install?.process_id ??
+      capability.last_setup?.process_id ??
       capability.last_test?.process_id ??
-      capability.last_check?.process_id ??
       null
     );
   }

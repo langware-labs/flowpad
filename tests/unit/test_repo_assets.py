@@ -148,6 +148,32 @@ def test_real_task_type_discovered_at_agentic_assets(tmp_path):
     assert any(r._path == t and r.record_type == EntityType.TASK for r in refs)
 
 
+def test_repo_walker_emits_only_requested_type_but_traverses_other_parents(
+    tmp_path,
+):
+    import flow_sdk.fs_store.indexer.registrations  # noqa: F401
+    from flow_sdk.fs_store.fs_ref import FSRef
+    from flow_sdk.fs_store.indexer.functions.repo_assets import repo_assets_fn
+    from flow_sdk.fs_store.indexer.index_function import IndexerOptions
+    from flow_sdk.schema.types import EntityType
+
+    task = tmp_path / AGENTIC_ASSETS_DIR / "task" / "parent"
+    task.mkdir(parents=True)
+    (task / "task.md").write_text("# parent\n")
+    nested_spec = task / AGENTIC_ASSETS_DIR / "spec" / "child"
+    nested_spec.mkdir(parents=True)
+    (nested_spec / "spec.md").write_text("# child\n")
+
+    refs = repo_assets_fn(
+        [FSRef(tmp_path)],
+        IndexerOptions(types=[EntityType.SPEC]),
+    )
+
+    assert [(ref._path, ref.record_type) for ref in refs] == [
+        (nested_spec / "spec.md", EntityType.SPEC)
+    ]
+
+
 def test_repo_walker_noop_when_no_repo_types(tmp_path, monkeypatch):
     from flow_sdk.fs_store.fs_ref import FSRef
     from flow_sdk.fs_store.indexer.functions.repo_assets import repo_assets_fn

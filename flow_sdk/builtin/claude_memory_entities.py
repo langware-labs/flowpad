@@ -78,6 +78,9 @@ class Markdown(Entity):
 class Docs(Markdown):
     type: str = APIField(default="markdown")
     title: str = APIField(default="")
+    # OKF-compatible metadata. Values are preserved as authored for
+    # storage/search; the tag binding readers independently select and
+    # normalize the grammar-valid dot paths used by the taxonomy.
     tags: List[str] = APIField(default_factory=list)
     links: List[str] = APIField(default_factory=list)
 
