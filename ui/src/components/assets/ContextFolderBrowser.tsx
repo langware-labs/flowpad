@@ -1,3 +1,4 @@
+import { VFSPath } from '@sdk';
 import { FolderOpen, GitBranch } from 'lucide-react';
 import { useCallback } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
@@ -53,8 +54,12 @@ export function ContextFolderBrowser({ relPath, onNavigate, projectId }: Context
   );
 
   const handlePathChange = useCallback(
-    (path: string) => {
-      onNavigate(DockPointer.forAssetFsFolder(path));
+    (vfs: string) => {
+      // The file manager reports a VFS path (`compute_node-<id>/Users/…`); the
+      // `fs/` grammar is compute-node-RELATIVE. Without the strip the typeid
+      // rides into the pointer and comes back as part of `initialPath`, which
+      // lists as an empty folder.
+      onNavigate(DockPointer.forAssetFsFolder(VFSPath.parse(vfs).entitySubPath));
     },
     [onNavigate],
   );
