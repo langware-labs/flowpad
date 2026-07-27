@@ -1835,6 +1835,17 @@ async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
         compute_node = await get_or_create_local_compute_node(local_project=project, desktop_user=user)
         _t.time("get_or_create_local_compute_node")
 
+        # Ensure + repair the @local inbox unread projection. The mutable
+        # ``unread`` value is deliberately NOT put in BootstrapInfo (cached 30s)
+        # — the FE hydrates it via the normal entity GET/watch channel.
+        try:
+            from flow_sdk.inbox import recompute_unread as _recompute_unread
+
+            await _recompute_unread("bootstrap", user.typeid if user else None)
+        except Exception as e:
+            logging.warning(f"[bootstrap] inbox recompute failed (non-fatal): {e}")
+        _t.time("inbox_recompute")
+
         sandbox_available = is_sandbox_available()
         sandbox_compute_node: Optional[ComputeNode] = None
         if sandbox_available:

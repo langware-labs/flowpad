@@ -32,7 +32,10 @@ vi.mock('@src/contexts/dev-mode-context', () => ({ useDevMode: () => false }));
 vi.mock('@src/hooks/use-navigation-state', () => ({
   useNavigationState: () => ({ goBack: vi.fn(), canGoBack: false }),
 }));
-vi.mock('@src/store/use-inbox-store', () => ({ useInboxStore: () => ({ unreadCount: 0 }) }));
+vi.mock('@src/hooks/useInboxManager', () => ({
+  useInboxManager: () => ({ unread: 0 }),
+  useSyncOsBadge: () => undefined,
+}));
 vi.mock('@src/store/use-spotlight-store', () => ({
   useSpotlightStore: { getState: () => ({ openSpotlight: vi.fn() }) },
 }));

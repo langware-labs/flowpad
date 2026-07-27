@@ -14,6 +14,7 @@ import { useNavigationState } from '@src/hooks/use-navigation-state';
 import { UserDropdown } from '@src/pages/flow-page/content-panel/user-dropdown/user-dropdown';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { ViewType } from '@src/types/ViewType';
+import { useInboxManager } from '@src/hooks/useInboxManager';
 import {
   Sidebar,
   SidebarContent,
@@ -129,7 +130,7 @@ export function CollapsedSidebar() {
     setBookmarksAnchorTop(bookmarksBtnRef.current?.getBoundingClientRect().top);
   }, [bookmarks.open]);
   const devMode = useDevMode();
-  const { unreadCount } = useInboxStore();
+  const { unread: unreadCount } = useInboxManager();
   const unopenedFavorites = useUnopenedFavoritesCount();
   const viewMode = useViewMode();
   // Derived, not a second useIsVibe() subscription — that hook IS this comparison.

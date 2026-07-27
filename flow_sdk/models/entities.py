@@ -282,4 +282,9 @@ try:
 except ImportError as e:
     print(f"[WARN] Failed to import Tab: {e}")
 
+try:
+    from flow_sdk.builtin.inbox_manager import InboxManager  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import InboxManager: {e}")
+
 __all__ = []

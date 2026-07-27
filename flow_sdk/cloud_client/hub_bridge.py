@@ -17,6 +17,8 @@ import asyncio
 import logging
 import uuid
 from dataclasses import dataclass
+
+from flow_sdk import inbox
 from typing import Any, Callable, Optional
 
 from flow_sdk.cloud_client.ws_client import HubWebSocketManager, hub_ws_manager
@@ -551,6 +553,56 @@ class HubWsBridge:
                     logger.info(
                         "[bridge] inbound persisted fm=%s conv=%s", fm_id, conversation_id,
                     )
+
+                    # Republish the unread projection now that the row + pointer
+                    # projection have settled (never on the intermediate CREATE).
+                    inbox.touch("inbound-message")
+
+                    # OS-level desktop notification for an inbound message from
+                    # *another* user. Emitted HERE — after the message is
+                    # persisted — not alongside the persist task: the renderer
+                    # re-derives the unread count via ``listInboxMessages`` on
+                    # receipt, so broadcasting before the row lands would count a
+                    # stale inbox and the badge/pip would never increment.
+                    # Broadcast to every desktop window so a backgrounded window
+                    # still fires the banner/badge/dock-bounce. Skipped for our
+                    # own messages (self-sends the hub echoes back — same guard as
+                    # the auto-ack below). Own try/except so a notify hiccup is
+                    # never mistaken for a persist failure.
+                    if (
+                        local_user
+                        and payload.get("sender_id")
+                        and payload["sender_id"] != local_user.id
+                    ):
+                        try:
+                            from flow_sdk.notifications import notify_desktop
+                            text = " ".join((payload.get("text") or "").split())
+                            preview = text if len(text) <= 80 else text[:77] + "..."
+                            if not preview:
+                                preview = (
+                                    (payload.get("attachment_filename") or "").strip()
+                                    or "Sent you a message"
+                                )
+                            # Message → generic payload flattening lives HERE
+                            # (the Layer-2 consumer); the notification service
+                            # renders it blind. The click target is the same
+                            # /conversation/<id>/message/<id> pointer an in-app
+                            # bubble click navigates to.
+                            await notify_desktop(
+                                "message",
+                                title=payload.get("sender_name") or "New message",
+                                body=preview,
+                                click_target={
+                                    "view_type": "conversation",
+                                    "pointer": f"{conversation_id}/message/{fm_id}",
+                                },
+                            )
+                        except Exception as _notify_err:
+                            logger.warning(
+                                "[bridge] desktop notify failed fm=%s (non-fatal): %s",
+                                fm_id, _notify_err,
+                            )
+
                     # Auto-run a permitted contact's prompt (the receiver's local
                     # ContactPermission policy decides). Cheap pre-check on the raw
                     # payload so a plain text message never spawns the task (and its

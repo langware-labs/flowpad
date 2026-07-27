@@ -56,6 +56,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
   //   legacy python3.x → flow-rs migration flow to preserve existing secrets).
   provisionSodKey: (existingValue) => ipcRenderer.invoke('secrets:provision-sod-key', existingValue),
 
+  // OS-level desktop notifications (driven by the `desktop_notify` ui_command).
+  // desktopNotify shows a banner; setBadge sets the dock/launcher unread count;
+  // notifyAttention bounces the dock (macOS) or flashes the taskbar (Linux/Win);
+  // onNotificationClick fires when the user clicks a banner — `clickTarget` is
+  // an opaque navigation payload the renderer round-trips (the shell never
+  // inspects it, keeping the pipe generic for any notification type).
+  desktopNotify: ({ title, body, clickTarget }) => ipcRenderer.invoke('notify-os', { title, body, clickTarget }),
+  setBadge: (n) => ipcRenderer.invoke('set-badge', n),
+  notifyAttention: () => ipcRenderer.invoke('notify-attention'),
+  onNotificationClick: (callback) => ipcRenderer.on('notification-click', (_event, data) => callback(data)),
+
   // Show/hide the application menu. The renderer calls this with the current
   // "is advanced view mode" boolean; the menu is only shown in Advanced/Dev.
   // On macOS a minimal baseline menu stays installed even when hidden.
