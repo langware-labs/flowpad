@@ -42,6 +42,7 @@ _REAL_HOME_TEST_MODULES = frozenset({
     "test_claude_cli",
     "test_clean_claude_pty",
     "test_clean_claude_pty_stress",
+    "test_cli_driver_binary_smoke",
     "test_markdown_index",
     "test_prompt_queue_integration",
     "test_process_status_report_stream",

@@ -49,12 +49,11 @@ async def test_publish_function_posts_feed_entry(tmp_path):
 async def test_seed_migrates_retired_monolith_graph(tmp_path):
     from flow_sdk.builtin.trigger import Trigger
     from flow_sdk.flow_manager.service_flows import _seed_daily_analysis
+    from flow_sdk.server.builtin_triggers import set_service_triggers
 
-    trigger = Trigger(name="Last day usage analysis",
-                      uname="builtin_daily_usage_analysis",
-                      trigger_type="schedule", sched_trigger_type="cron",
-                      expr="0 7 * * *", scope="system")
-    await trigger.save()
+    await set_service_triggers()
+    trigger = await Trigger.get_by_uname("builtin_daily_usage_analysis")
+    assert trigger is not None
 
     folder = tmp_path / "daily-analysis"
     folder.mkdir()

@@ -50,7 +50,7 @@ const notifyAgentOnChange = (_operation: string, _path: string, _content?: strin
   // Empty placeholder - design TBD
 };
 
-interface EditorFileData {
+export interface EditorFileData {
   path: string;
   content?: string;
   blob?: Blob;
@@ -113,7 +113,9 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
   );
 
   const editorRef = useRef<editor.IStandaloneCodeEditor | null>(null);
-  const monacoRef = useRef<Monaco | null>(null);
+  // `Monaco` is already `any` in @monaco-editor/react's types, so `| null`
+  // added nothing to the union.
+  const monacoRef = useRef<Monaco>(null);
   const { resolvedTheme } = useTheme();
   const [isExecuting, setIsExecuting] = useState(false);
   const [isCustomView, setIsCustomView] = useState(isCustomViewAvailable(file?.language || ''));
@@ -219,6 +221,8 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
   // A deep link is honoured once per (file, line): re-revealing on every content
   // change would fight the user as they scroll away from it.
   const revealedRef = useRef<string | null>(null);
+  const decorationsRef = useRef<string[]>([]);
+  const [editorReady, setEditorReady] = useState(false);
 
   useEffect(() => {
     const editor = editorRef.current;
@@ -235,13 +239,28 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
       const line = Math.min(revealLine, model.getLineCount());
       editor.revealLineInCenter(line);
       editor.setPosition({ lineNumber: line, column: 1 });
+      // Scrolling there isn't enough to SEE it in a wall of code — mark the
+      // line until the next deep link replaces the decoration.
+      decorationsRef.current = editor.deltaDecorations(decorationsRef.current, [
+        {
+          range: { startLineNumber: line, startColumn: 1, endLineNumber: line, endColumn: 1 },
+          options: { isWholeLine: true, className: 'flowpad-deep-link-line' },
+        },
+      ]);
       revealedRef.current = key;
       return;
     }
 
     if (isUserScrolling) return;
     editor.revealLine(model.getLineCount());
-  }, [file, file?.content, isUserScrolling, revealLine]);
+    /*
+     * Depends on `fileContent`, not `file.content`: this pane sources content
+     * from the FS cache, so the prop stays undefined and an effect keyed on it
+     * never re-runs after the text arrives. `editorReady` covers the other half
+     * — the first run happens before Monaco mounts and bails on the null ref.
+     * Missing either one is why a deep link silently landed on line 1.
+     */
+  }, [file?.path, fileContent, isUserScrolling, revealLine, editorReady]);
 
   const clearSaveTimeout = useCallback(() => {
     if (!saveTimeoutRef.current) return;
@@ -275,6 +294,10 @@ export const EditorPane: React.FC<EditorPaneProps> = ({
   const handleEditorDidMount = (editor: editor.IStandaloneCodeEditor, monaco: Monaco) => {
     editorRef.current = editor;
     monacoRef.current = monaco;
+    // A ref alone can't retrigger the reveal effect below, which runs (and
+    // bails) before Monaco exists.
+    setEditorReady(true);
+
     if (!file) return;
 
     async function setupEditor(language: EditorLanguage) {

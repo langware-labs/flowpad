@@ -139,10 +139,22 @@ describe('group task attachments — file + git folder across two instances', ()
 
     // The file is COPIED onto the task (an fs/upload), not referenced by path —
     // a sender-local path is meaningless on Bob's machine.
-    const form = new FormData();
-    form.append('uploaded_file', new Blob([fileBody], { type: 'text/markdown' }), fileName);
+    // Keep the multipart body in the Node fetch realm. Vitest's jsdom
+    // `FormData` only accepts jsdom `Blob` instances, while Node fetch expects
+    // its own multipart objects; mixing the two fails before the request.
+    const boundary = `----flowpad-${randomUUID()}`;
+    const form = [
+      `--${boundary}`,
+      `Content-Disposition: form-data; name="uploaded_file"; filename="${fileName}"`,
+      'Content-Type: text/markdown',
+      '',
+      fileBody,
+      `--${boundary}--`,
+      '',
+    ].join('\r\n');
     const up = await fetch(`${alice.apiUrl}/api/v1/graph/task/${task.id}/fs/upload`, {
       method: 'POST',
+      headers: { 'Content-Type': `multipart/form-data; boundary=${boundary}` },
       body: form,
     }).then((r) => r.json());
     expect(up.status, JSON.stringify(up)).toBe('SUCCESS');
@@ -160,31 +172,34 @@ describe('group task attachments — file + git folder across two instances', ()
     });
     expect(created.status, JSON.stringify(created)).toBe('SUCCESS');
 
-    // ── Bob: accept the assignment ──
-    const invitation = await pollUntil(
-      async () => {
-        await bob.sdk.fetchConversations();
-        const all: any[] = await (bob.sdk.Invitation as any).query({ query: {} }, true).catch(() => []);
-        return all.find((inv) => !inv.accepted && (inv.target_url_path || '').includes(task.id)) ?? null;
-      },
-      30_000,
-      'pending group-task invitation on bob',
-    );
-    await bob.sdk.acceptInvitation({ invitation_id: invitation.id! });
-
-    // The member task is Bob's own child; the attachments live on the PARENT.
+    // ── Bob: observe an auto-accepted assignment, or accept it explicitly ──
+    // Current hubs auto-accept task-only assignments between same-org users.
+    // Older hubs retain the pending-invitation path, so exercise it when present.
+    let acceptedInvitation: string | null = null;
     const memberTask = await pollUntil(
       async () => {
         const rows = (await bob.sdk.Task.query(
           new bob.sdk.QueryRequest({ type: 'task', query: { parent_id: task.id }, name: 'member task (test)' }),
           true,
         ).catch(() => [])) as any[];
-        return rows[0] ?? null;
+        if (rows[0]) return rows[0];
+
+        await bob.sdk.fetchConversations();
+        const all: any[] = await (bob.sdk.Invitation as any).query({ query: {} }, true).catch(() => []);
+        const invitation = all.find(
+          (inv) => !inv.accepted && (inv.target_url_path || '').includes(task.id),
+        );
+        if (invitation && acceptedInvitation !== invitation.id) {
+          acceptedInvitation = invitation.id!;
+          await bob.sdk.acceptInvitation({ invitation_id: invitation.id! });
+        }
+        return null;
       },
       30_000,
-      'member task materialized on bob',
+      'group-task assignment materialized on bob',
     );
 
+    // The member task is Bob's own child; the attachments live on the PARENT.
     // `sync-group` is what pulls the parent's display fields + artifacts.
     await post(bob.apiUrl, `/graph/task/${memberTask.id}/sync-group`, {});
 

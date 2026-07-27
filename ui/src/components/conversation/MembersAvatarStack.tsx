@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
-import { Check, Link as LinkIcon, Loader2, X } from 'lucide-react';
+import { Check, Link as LinkIcon, Loader2, UserPlus, X } from 'lucide-react';
 import { mintInviteLink, type ConversationParticipant, type TypeId } from '@sdk';
 import { Avatar, AvatarFallback } from '@src/components/ui/avatar';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
@@ -32,6 +32,11 @@ interface MembersAvatarStackProps {
    *  a link is a standing self-invite, so each surface opts in deliberately
    *  (today the project MEMBERS row). */
   allowInviteLink?: boolean;
+  /** Show a visible invite trigger beside the member avatars. */
+  showInviteButton?: boolean;
+  /** Optional entity-specific prerequisite. Returning false keeps both invite
+   *  paths closed; project sharing uses this for its GitHub capability test. */
+  beforeInvite?: () => Promise<boolean>;
 }
 
 /**
@@ -44,7 +49,12 @@ interface MembersAvatarStackProps {
  * The hook (``useMembers``) handles the local-cache-first + on-mount refresh
  * pattern; this component is purely presentational.
  */
-export function MembersAvatarStack({ typeId, allowInviteLink = false }: MembersAvatarStackProps) {
+export function MembersAvatarStack({
+  typeId,
+  allowInviteLink = false,
+  showInviteButton = false,
+  beforeInvite,
+}: MembersAvatarStackProps) {
   const { t } = useLingui();
   const { entity, members, addMembers, removeMember, setRole, refresh, updating, stale, available, reason } =
     useMembers(typeId);
@@ -129,6 +139,7 @@ export function MembersAvatarStack({ typeId, allowInviteLink = false }: MembersA
     setLinking(true);
     setLinkError(null);
     try {
+      if (beforeInvite && !(await beforeInvite())) return;
       if (!(entity as { remote?: boolean }).remote) await entity.share();
       const link = await mintInviteLink(typeId);
       await navigator.clipboard.writeText(link.url);
@@ -154,6 +165,7 @@ export function MembersAvatarStack({ typeId, allowInviteLink = false }: MembersA
     setInviting(true);
     setInviteError(null);
     try {
+      if (beforeInvite && !(await beforeInvite())) return;
       await addMembers(emails);
       setSelected([]);
     } catch (err) {
@@ -197,6 +209,19 @@ export function MembersAvatarStack({ typeId, allowInviteLink = false }: MembersA
 
   return (
     <>
+    <div className="flex items-center gap-2">
+      {showInviteButton && (
+        <button
+          type="button"
+          onClick={() => handleOpenChange(true)}
+          className="inline-flex h-7 items-center gap-1.5 rounded-md bg-primary px-2.5 text-xs font-semibold text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+          aria-label={t`Invite members`}
+          data-testid="members-invite-button"
+        >
+          <UserPlus className="h-3.5 w-3.5" />
+          <Trans>Invite</Trans>
+        </button>
+      )}
     <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild>
         <button
@@ -421,6 +446,7 @@ export function MembersAvatarStack({ typeId, allowInviteLink = false }: MembersA
         )}
       </PopoverContent>
     </Popover>
+    </div>
     {permissionsContact && (
       <ContactPermissionsDialog
         open

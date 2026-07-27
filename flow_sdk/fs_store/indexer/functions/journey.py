@@ -74,6 +74,23 @@ def read_auto_launch(journey_dir: Path) -> bool:
     return bool(raw.get("auto_launch", False))
 
 
+def read_gate(journey_dir: Path) -> dict | None:
+    """The journey's `gate` block from the RAW graph.json, or None.
+
+    Journey-only concern outside the shared FlowDoc schema (same rationale as
+    ``read_auto_launch``). Shape: ``{"requires_capabilities": [kind, ...]}`` —
+    the journey is launchable only while at least one listed capability is
+    not yet available (there is something left to set up)."""
+    import json  # noqa: PLC0415
+
+    try:
+        raw = json.loads((journey_dir / GRAPH_JSON).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    gate = raw.get("gate")
+    return gate if isinstance(gate, dict) else None
+
+
 def journey_asset_hash(ref: FSRef) -> float:
     """Max mtime of graph.json + child *.html — display.json and runs/ excluded."""
     base = ref._path

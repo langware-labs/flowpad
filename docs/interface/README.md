@@ -7,7 +7,7 @@ id: 10f4e57c-07b4-5272-9750-0fd51154d0c1
 Complete interface reference for the objects that run agents and terminals: what
 exists on each side (Python backend / TypeScript SDK), every backend action and
 the Python method it calls, and the canonical flows as the tests drive them.
-Every topic file uses the same skeleton: **Python object & API → Backend
+Every reference page uses the same skeleton: **Python object & API → Backend
 actions → Frontend TS interface → Flows**.
 
 These pages are the *API surface*; the narrative story (why, lifecycle

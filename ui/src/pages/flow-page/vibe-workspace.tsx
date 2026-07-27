@@ -3,7 +3,6 @@ import { WebappViewer } from '@src/components/webapp-viewer';
 import CodeEditor from '@src/components/code-editor/CodeEditor';
 import DiffViewer from '@src/components/code-editor/DiffViewer';
 import { AssetEditorRouter } from '@src/components/assets/editor/AssetEditorRouter';
-import { McpAppPreview } from '@src/components/mcp-app-preview/McpAppPreview';
 import PersistentIframe, { PersistentIframeHandle } from '@src/components/persistent-iframe';
 import { DisplayToolbar, WebappDisplayToolbar } from '@src/components/display-toolbar';
 import { captureElementAsImageFile } from '@src/components/display-toolbar/capture-region';
@@ -34,6 +33,7 @@ import { setActiveTabParent } from '@src/tabs/tab-parent-context';
 import { setupTabAndAdopt } from '@src/tabs/setup-tab-and-adopt';
 import { notify } from '@src/notifications/notify';
 import { WorkspaceChildStrip } from './workspace-child-strip';
+import { VibeAssignTaskButton } from './VibeAssignTaskButton';
 import { VibeCollaborateButton } from './VibeCollaborateButton';
 import { ContentPanel } from './content-panel/content-panel';
 import { createVibeProcessForProject, embedVibeAgent, launchVibeSessionForProject } from './use-start-vibe-session';
@@ -51,7 +51,7 @@ import {
   type DisplayShowTarget,
 } from './display-annotation';
 import { Plus } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Trans, useLingui } from '@lingui/react/macro';
 import {
   normalizeVibeModelTier,
@@ -67,6 +67,9 @@ import {
 } from '@src/components/workers/worker-types';
 import { workerLabel } from '@src/components/lens-viewer/shared/transcript-features/transcript-utils';
 
+const McpAppPreview = lazy(() =>
+  import('@src/components/mcp-app-preview/McpAppPreview').then((m) => ({ default: m.McpAppPreview })),
+);
 
 interface VibeFocus {
   viewType: ViewType | null;
@@ -94,7 +97,16 @@ function assetPointerForTarget(target: DisplayShowTarget): AssetDocPointer | nul
 function vfsEditorEl(absPath: string, refreshKey?: number, process?: AgenticProcess | null) {
   const editor = editorForPath(absPath);
   if (editor === AssetEditor.MCP_APP) {
-    return <McpAppPreview key={`${absPath}:${refreshKey ?? 0}`} path={absPath} process={process ?? null} refreshKey={refreshKey} />;
+    return (
+      <Suspense fallback={null}>
+        <McpAppPreview
+          key={`${absPath}:${refreshKey ?? 0}`}
+          path={absPath}
+          process={process ?? null}
+          refreshKey={refreshKey}
+        />
+      </Suspense>
+    );
   }
   const pointer = AssetDocPointer.forVfs(editor, absPath).toPointer();
   return <AssetEditorRouter key={`${pointer}:${refreshKey ?? 0}`} pointer={pointer} />;
@@ -577,10 +589,16 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
           historyOnLeft
           showProcessNameBar
           afterHistorySlot={
-            <VibeCollaborateButton
-              projectId={project?.id ?? null}
-              sessionTypeId={activeProcess?.typeId ?? null}
-            />
+            <>
+              <VibeAssignTaskButton
+                projectId={project?.id ?? null}
+                sessionTypeId={activeProcess?.typeId ?? null}
+              />
+              <VibeCollaborateButton
+                projectId={project?.id ?? null}
+                sessionTypeId={activeProcess?.typeId ?? null}
+              />
+            </>
           }
           pastSessionsLabel={t`Past builds`}
           noPastSessionsLabel={t`No past builds`}

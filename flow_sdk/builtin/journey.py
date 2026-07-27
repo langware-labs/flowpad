@@ -121,6 +121,29 @@ class Journey(Entity):
 
         return read_auto_launch(Path(self.asset_ref)) if self.asset_ref else False
 
+    def gate(self) -> Optional[dict]:
+        """The `gate` block from graph.json (disk is truth), or None."""
+        from flow_sdk.fs_store.indexer.functions.journey import read_gate
+
+        return read_gate(Path(self.asset_ref)) if self.asset_ref else None
+
+    async def gate_open(self) -> bool:
+        """Capability gate: launchable only while something is left to set up.
+
+        With ``gate.requires_capabilities``, at least one listed capability
+        must be not-yet-available (tri-state True is "done"; False/None both
+        mean there is work). No gate (or an empty list) → always open."""
+        gate = self.gate()
+        kinds = (gate or {}).get("requires_capabilities") or []
+        if not kinds:
+            return True
+        from flow_sdk.core.capabilities import capability_available
+
+        for kind in kinds:
+            if await capability_available(kind) is not True:
+                return True
+        return False
+
     def is_system(self) -> bool:
         """True when this journey ships inside an SDK system project.
 
@@ -152,6 +175,8 @@ class Journey(Entity):
         candidates = sorted(await Journey.get_all({}), key=lambda j: j.is_system())
         for journey in candidates:
             if not journey.enabled or not journey.auto_launch_enabled():
+                continue
+            if not await journey.gate_open():
                 continue
             current = await journey.progress(user_id)
             if current is not None and current.status == JourneyStatus.COMPLETE.value:
@@ -198,6 +223,11 @@ class Journey(Entity):
         active = await self._active(user_id)
         if active is not None:
             return active
+        # Capability gate AFTER the idempotent short-circuit: an in-flight
+        # journal survives (mid-journey states may already read available),
+        # but a fresh launch with nothing left to set up is refused.
+        if not await self.gate_open():
+            return None
         doc = self.doc()
         if doc is None:
             return None

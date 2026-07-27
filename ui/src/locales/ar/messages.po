@@ -106,6 +106,10 @@ msgstr ""
 #~ msgid "(no git repo)"
 #~ msgstr ""
 
+#: src/pages/entry/LaunchLanding.tsx
+msgid "(no repo given)"
+msgstr ""
+
 #: src/components/inbox-view/InboxView.tsx
 msgid "(no subject)"
 msgstr ""
@@ -236,6 +240,12 @@ msgstr ""
 #. placeholder {0}: item.messageCount
 #: src/components/project-activity-strip/ProjectActivityStrip.tsx
 msgid "{0} msgs"
+msgstr ""
+
+#. placeholder {0}: person.name || person.email
+#. placeholder {1}: task.title
+#: src/pages/flow-page/VibeAssignTaskDialog.tsx
+msgid "{0} now has \"{1}\"."
 msgstr ""
 
 #. js-lingui-explicit-id
@@ -1213,6 +1223,10 @@ msgstr ""
 msgid "Annotations"
 msgstr ""
 
+#: src/pages/flow-page/VibeAssignTaskDialog.tsx
+msgid "Any detail that helps (optional)"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/EntityShareDialog.tsx
 msgid "Anyone with access can open this {entityType} directly via the link below."
 msgstr ""
@@ -1389,6 +1403,11 @@ msgstr ""
 #~ msgid "Ask Flowpad to solve..."
 #~ msgstr ""
 
+#: src/pages/flow-page/VibeAssignTaskButton.tsx
+#: src/pages/flow-page/VibeAssignTaskDialog.tsx
+msgid "Ask someone for help"
+msgstr ""
+
 #: src/components/floating-chat/FloatingChatWindow.tsx
 msgid "Ask the Flowpad Assistant anything."
 msgstr ""
@@ -1435,8 +1454,15 @@ msgstr ""
 #: src/components/assets/AssetsNavigator.tsx
 #: src/components/assets/AssetsPage.tsx
 #: src/components/assets/AssetsPage.tsx
-#: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 msgid "Assets"
+msgstr ""
+
+#: src/pages/flow-page/VibeAssignTaskDialog.tsx
+msgid "Assign"
+msgstr ""
+
+#: src/pages/flow-page/VibeAssignTaskDialog.tsx
+msgid "Assigning…"
 msgstr ""
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
@@ -1459,6 +1485,14 @@ msgstr ""
 #: src/components/skills-viewer/amd-editor/components/blocks/UiBlock.tsx
 #~ msgid "async"
 #~ msgstr ""
+
+#: src/components/graph-view/GraphView.tsx
+msgid "Atlas controls"
+msgstr ""
+
+#: src/components/graph-view/GraphView.tsx
+msgid "Atlas map view"
+msgstr ""
 
 #: src/components/image-annotator/AnnotatorToolbar.tsx
 msgid "Attach"
@@ -1485,6 +1519,10 @@ msgstr ""
 msgid "Attach session transcript"
 msgstr ""
 
+#: src/pages/flow-page/VibeAssignTaskDialog.tsx
+msgid "Attach this session's transcript"
+msgstr ""
+
 #: src/components/conversation/PromptComposerDialog.tsx
 msgid "Attach to reply"
 msgstr ""
@@ -1499,6 +1537,10 @@ msgstr ""
 
 #: src/components/new-conversation-dialog/NewConversationDialog.tsx
 msgid "Attachments"
+msgstr ""
+
+#: src/journey/JourneyStepLive.tsx
+msgid "Authenticated ✓"
 msgstr ""
 
 #: src/components/harness-login/HarnessLoginModal.tsx
@@ -1898,6 +1940,8 @@ msgstr ""
 #: src/components/triggers-view/TriggerEditor.tsx
 #: src/components/version-popover/version-popover.tsx
 #: src/components/wizard/WizardHost.tsx
+#: src/pages/entry/LaunchLanding.tsx
+#: src/pages/flow-page/VibeAssignTaskDialog.tsx
 #: src/pages/home-landing/feed/HomeFeedColumn.tsx
 #: src/pages/hub-home/NewDesktopDialog.tsx
 #: src/pages/live-status/LiveStatus.tsx
@@ -2013,6 +2057,10 @@ msgstr ""
 msgid "Chats"
 msgstr ""
 
+#: src/journey/JourneyTray.tsx
+msgid "Check"
+msgstr ""
+
 #: src/components/version-popover/version-popover.tsx
 #: src/components/version-popover/version-popover.tsx
 msgid "Check again"
@@ -2024,6 +2072,10 @@ msgstr ""
 
 #: src/components/capabilities-view/CapabilitiesView.tsx
 msgid "Checking"
+msgstr ""
+
+#: src/components/project-selector/NewProjectFromGitDialog.tsx
+msgid "Checking access…"
 msgstr ""
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
@@ -2376,8 +2428,6 @@ msgstr ""
 #: src/components/terminal/interactive-terminal/TraceGutter.tsx
 #: src/components/version-popover/diagnose-modal.tsx
 #: src/components/version-popover/diagnosis-report-modal.tsx
-#: src/journey/JourneyTray.tsx
-#: src/journey/JourneyTray.tsx
 msgid "Close"
 msgstr ""
 
@@ -2401,6 +2451,10 @@ msgstr ""
 
 #: src/components/project-activity-strip/BookmarkCard.tsx
 msgid "Close bookmark"
+msgstr ""
+
+#: src/components/graph-view/GraphView.tsx
+msgid "Close details"
 msgstr ""
 
 #: src/components/navigator-panel/NavigatorSearch.tsx
@@ -2693,6 +2747,7 @@ msgstr ""
 
 #: src/components/connections-manager.tsx
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
+#: src/journey/JourneyTray.tsx
 #: src/pages/hub-home/NewDesktopDialog.tsx
 msgid "Connect"
 msgstr ""
@@ -2703,6 +2758,10 @@ msgstr ""
 
 #: src/components/oauth/GitHubDeviceFlowModal.tsx
 msgid "Connect GitHub"
+msgstr ""
+
+#: src/components/capabilities-view/CapabilitiesView.tsx
+msgid "Connect GitHub and the gh CLI with a guided setup."
 msgstr ""
 
 #: src/components/InputSection.tsx
@@ -3058,7 +3117,7 @@ msgstr ""
 msgid "Could not load source: {error}"
 msgstr ""
 
-#: src/components/entity-execution-panel/MetaMessageChip.tsx
+#: src/components/entity-execution-panel/useOpenSkill.ts
 msgid "Could not open skill"
 msgstr ""
 
@@ -3129,8 +3188,16 @@ msgstr ""
 msgid "Couldn't check for updates: {error}"
 msgstr ""
 
+#: src/pages/entry/LaunchLanding.tsx
+msgid "Couldn't finish preparing your sandbox"
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/side-windows/SkillsAgentsPanel.tsx
 msgid "Couldn’t load transcript"
+msgstr ""
+
+#: src/components/project-selector/NewProjectFromGitDialog.tsx
+msgid "Couldn't reach that repository. Check the URL and try again."
 msgstr ""
 
 #: src/components/share-to-conversation/GitShareGateDialog.tsx
@@ -3293,6 +3360,10 @@ msgstr ""
 
 #: src/components/conversation/MembersAvatarStack.tsx
 msgid "Creates a link anyone can use to join as a member."
+msgstr ""
+
+#: src/pages/flow-page/VibeAssignTaskDialog.tsx
+msgid "Creates a task in this project and assigns it — it shows up on their board."
 msgstr ""
 
 #. placeholder {0}: classificationInfo.category
@@ -4187,6 +4258,10 @@ msgstr ""
 msgid "edges"
 msgstr ""
 
+#: src/components/graph-view/GraphView.tsx
+msgid "Edges"
+msgstr ""
+
 #: src/components/graph-view/ui/PropertyPanel.tsx
 msgid "Edges by kind"
 msgstr ""
@@ -4422,6 +4497,10 @@ msgstr ""
 #: src/components/skills-viewer/amd-editor/components/blocks/DoBlock.tsx
 #~ msgid "Enter instructions..."
 #~ msgstr ""
+
+#: src/journey/JourneyStepLive.tsx
+msgid "Enter the code here"
+msgstr ""
 
 #: src/components/hooks-manager/TriggerForm.tsx
 msgid "Enter trigger description"
@@ -4730,6 +4809,10 @@ msgstr ""
 
 #: src/components/hooks-view/hooks-view.tsx
 msgid "Exported"
+msgstr ""
+
+#: src/pages/entry/LaunchLanding.tsx
+msgid "External link"
 msgstr ""
 
 #: src/components/account/danger-zone.tsx
@@ -5064,8 +5147,8 @@ msgid "Failed to set project"
 msgstr ""
 
 #: src/components/machine-overview/machine-overview.tsx
-msgid "Failed to setup LM proxy"
-msgstr ""
+#~ msgid "Failed to setup LM proxy"
+#~ msgstr ""
 
 #: src/components/project-selector/NewProjectFromGitDialog.tsx
 msgid "Failed to start GitHub connection"
@@ -5220,6 +5303,10 @@ msgstr ""
 msgid "Files on disk not yet in the DB"
 msgstr ""
 
+#: src/journey/JourneyTray.tsx
+msgid "Fill text"
+msgstr ""
+
 #: src/components/git/BranchPicker.tsx
 msgid "Filter branches…"
 msgstr ""
@@ -5319,6 +5406,10 @@ msgstr ""
 
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Fit (f)"
+msgstr ""
+
+#: src/components/graph-view/GraphView.tsx
+msgid "Fit Atlas"
 msgstr ""
 
 #: src/components/workflow-runner/learning/PastAttemptsPane.tsx
@@ -5437,6 +5528,7 @@ msgstr ""
 #~ msgid "Flows:"
 #~ msgstr ""
 
+#: src/components/graph-view/GraphView.tsx
 #: src/components/graph-view/ui/PropertyPanel.tsx
 msgid "Focus local graph"
 msgstr ""
@@ -5445,6 +5537,7 @@ msgstr ""
 msgid "Focus local graph here"
 msgstr ""
 
+#: src/components/graph-view/GraphView.tsx
 #: src/components/graph-view/ui/PropertyPanel.tsx
 msgid "Focused"
 msgstr ""
@@ -5736,6 +5829,18 @@ msgstr ""
 msgid "Got a relative-looking ref with multiple segments: <0>{ref}</0>"
 msgstr ""
 
+#: src/components/graph-view/TagGraphView.tsx
+#~ msgid "Graph"
+#~ msgstr ""
+
+#: src/components/graph-view/TagGraphView.tsx
+msgid "Graph — taxonomy plus bound assets"
+msgstr ""
+
+#: src/components/graph-view/GraphView.tsx
+msgid "Graph presentation"
+msgstr ""
+
 #: src/components/graph-context/GraphContextViewer.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
 msgid "Graph view"
@@ -5752,6 +5857,10 @@ msgstr ""
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 msgid "Group Task"
+msgstr ""
+
+#: src/components/project-selector/NewProjectFromGitDialog.tsx
+msgid "Guided setup"
 msgstr ""
 
 #: src/components/terminal/openers/AskInstallOneOfDialog.tsx
@@ -6122,6 +6231,7 @@ msgstr ""
 msgid "IDE Connections (VS Code, Cursor, etc.)"
 msgstr ""
 
+#: src/components/graph-view/GraphView.tsx
 #: src/components/graph-view/ui/PropertyPanel.tsx
 msgid "Identity"
 msgstr ""
@@ -6461,6 +6571,7 @@ msgid "Invitations — dismiss"
 msgstr ""
 
 #: src/components/account/organization-panel.tsx
+#: src/components/conversation/MembersAvatarStack.tsx
 msgid "Invite"
 msgstr ""
 
@@ -6474,6 +6585,10 @@ msgstr ""
 
 #: src/components/account/organization-panel.tsx
 msgid "Invite failed"
+msgstr ""
+
+#: src/components/conversation/MembersAvatarStack.tsx
+msgid "Invite members"
 msgstr ""
 
 #: src/components/account/organization-panel.tsx
@@ -6703,6 +6818,10 @@ msgstr ""
 
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
 msgid "Launch a session first"
+msgstr ""
+
+#: src/pages/entry/LaunchLanding.tsx
+msgid "Launch sandbox"
 msgstr ""
 
 #: src/pages/hub-home/HubHome.tsx
@@ -6957,8 +7076,8 @@ msgstr ""
 #~ msgstr ""
 
 #: src/components/graph-view/GraphView.tsx
-msgid "Loading dependency graph…"
-msgstr ""
+#~ msgid "Loading dependency graph…"
+#~ msgstr ""
 
 #: src/components/machine-overview/service-status-led.tsx
 msgid "Loading deployment status…"
@@ -7151,6 +7270,7 @@ msgstr ""
 #: src/components/browseable-tree/BrowseableTree.tsx
 #: src/components/collaboration/CollaborationPage.tsx
 #: src/components/collaboration/SharedSessionsList.tsx
+#: src/components/file-preview/FilePreviewSheet.tsx
 #: src/components/graph-context/GraphContextViewer.tsx
 #: src/components/inbox-view/InboxView.tsx
 #: src/components/inbox-view/InboxView.tsx
@@ -7196,6 +7316,10 @@ msgstr ""
 msgid "locked after first message"
 msgstr ""
 
+#: src/journey/JourneyTray.tsx
+msgid "Log in"
+msgstr ""
+
 #: src/components/triggers-view/TriggerListItem.tsx
 msgid "Log mode"
 msgstr ""
@@ -7208,6 +7332,10 @@ msgstr ""
 
 #: src/pages/keychain-approval.tsx
 msgid "Login canceled"
+msgstr ""
+
+#: src/journey/JourneyStepLive.tsx
+msgid "Login failed — try again."
 msgstr ""
 
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
@@ -7485,6 +7613,11 @@ msgstr ""
 msgid "Minimize"
 msgstr ""
 
+#: src/journey/JourneyTray.tsx
+#: src/journey/JourneyTray.tsx
+msgid "Minimize to the journey icon"
+msgstr ""
+
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Mis-Sc"
 msgstr ""
@@ -7648,6 +7781,10 @@ msgstr ""
 #: src/components/account/user-info.tsx
 #: src/components/api-keys-view/api-keys-view.tsx
 msgid "Name:"
+msgstr ""
+
+#: src/components/graph-view/GraphView.tsx
+msgid "Neighbors"
 msgstr ""
 
 #. placeholder {0}: node.neighbors.length
@@ -7836,7 +7973,6 @@ msgstr ""
 msgid "New Schedule Trigger"
 msgstr ""
 
-#: src/components/project-home/ProjectHome.tsx
 #: src/components/quick-create/QuickCreateMenu.tsx
 #: src/components/quick-create/QuickCreatePanel.tsx
 msgid "New session"
@@ -7864,6 +8000,7 @@ msgstr ""
 #~ msgstr ""
 
 #: src/components/ui/pagination.tsx
+#: src/journey/JourneyTray.tsx
 msgid "Next"
 msgstr ""
 
@@ -7887,6 +8024,10 @@ msgstr ""
 #. placeholder {0}: new Date(trigger.next_run).toLocaleString()
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
 msgid "next: {0}"
+msgstr ""
+
+#: src/components/project-selector/NewProjectFromGitDialog.tsx
+msgid "No access to this repository. Connect GitHub if it's private, or check the URL."
 msgstr ""
 
 #: src/components/triggers-view/FsopTriggerDetail.tsx
@@ -8909,6 +9050,10 @@ msgstr ""
 msgid "Nothing to show."
 msgstr ""
 
+#: src/pages/entry/LaunchLanding.tsx
+msgid "Nothing was launched. You can close this tab."
+msgstr ""
+
 #: src/components/history-dropdown.tsx
 #~ msgid "Nothing yet!"
 #~ msgstr ""
@@ -9151,6 +9296,10 @@ msgstr ""
 msgid "Open folder: {projectPath}"
 msgstr ""
 
+#: src/pages/flow-page/vibe-new-chat.tsx
+msgid "Open from git"
+msgstr ""
+
 #: src/components/terminal/ProjectsCounterChip.tsx
 #: src/components/terminal/ProjectsCounterChip.tsx
 #: src/tabs/useTerminalStripController.tsx
@@ -9183,6 +9332,8 @@ msgstr ""
 #: src/components/conversation/AttachmentChip.tsx
 #: src/components/entity-execution-panel/MetaMessageChip.tsx
 #: src/components/entity-execution-panel/MetaMessageChip.tsx
+#: src/components/file-preview/FilePreviewSheet.tsx
+#: src/components/file-preview/FilePreviewSheet.tsx
 msgid "Open in editor"
 msgstr ""
 
@@ -9343,6 +9494,7 @@ msgstr ""
 
 #: src/components/diagnose/open-in-terminal-button.tsx
 #: src/components/terminal/interactive-terminal/ProcessToolbar.tsx
+#: src/journey/JourneyTray.tsx
 msgid "Open terminal"
 msgstr ""
 
@@ -9380,6 +9532,10 @@ msgstr ""
 
 #: src/components/lens-viewer/LlmIndexersViewer.tsx
 msgid "Open the rendered index.md."
+msgstr ""
+
+#: src/pages/entry/LaunchLanding.tsx
+msgid "Open the sandbox"
 msgstr ""
 
 #: src/components/workers/WorkerToolbar.tsx
@@ -9621,6 +9777,10 @@ msgstr ""
 msgid "Paste code from browser"
 msgstr ""
 
+#: src/components/assets/editor/whiteboard/WhiteboardAssetEditor.tsx
+msgid "Paste Mermaid syntax to replace the current board."
+msgstr ""
+
 #: src/components/terminal/interactive-terminal/side-windows/InputFilesPanel.tsx
 msgid "Paste or drag files here"
 msgstr ""
@@ -9720,6 +9880,10 @@ msgstr ""
 
 #: src/components/contact-picker/CreateContactsGroupDialog.tsx
 msgid "Pick a group in any conversation to add all its members at once."
+msgstr ""
+
+#: src/pages/flow-page/VibeAssignTaskDialog.tsx
+msgid "Pick a person or type an email"
 msgstr ""
 
 #: src/components/open-project-component/open-project-component.tsx
@@ -9906,9 +10070,13 @@ msgstr ""
 msgid "Preferences"
 msgstr ""
 
-#: src/components/terminal/interactive-terminal/side-windows/GitPanel.tsx
-#~ msgid "Preparing…"
-#~ msgstr ""
+#: src/pages/entry/LaunchLanding.tsx
+msgid "Preparing your sandbox…"
+msgstr ""
+
+#: src/pages/entry/LaunchLanding.tsx
+msgid "Preparing…"
+msgstr ""
 
 #: src/components/collaboration/RoomTabs.tsx
 #~ msgid "Press Enter to save, Esc to cancel"
@@ -10308,6 +10476,10 @@ msgstr ""
 
 #: src/components/quick-create/DesktopSurface.tsx
 msgid "Quick create"
+msgstr ""
+
+#: src/components/graph-view/GraphView.tsx
+msgid "Radial layout"
 msgstr ""
 
 #: src/components/machine-overview/machine-overview.tsx
@@ -11166,6 +11338,10 @@ msgstr ""
 msgid "Run from your terminal:"
 msgstr ""
 
+#: src/journey/JourneyTray.tsx
+msgid "Run it"
+msgstr ""
+
 #: src/components/triggers-view/ScheduleTriggerEditor.tsx
 msgid "Run now"
 msgstr ""
@@ -11764,6 +11940,10 @@ msgstr ""
 #~ msgid "Select an artifact type above to get type-specific metadata fields."
 #~ msgstr ""
 
+#: src/components/graph-view/GraphView.tsx
+#~ msgid "Select an Atlas card to inspect it."
+#~ msgstr ""
+
 #: src/components/terminal/openers/AskInstallOneOfDialog.tsx
 msgid "Select an available harness, or install one from its homepage and re-check it."
 msgstr ""
@@ -12019,6 +12199,8 @@ msgstr ""
 
 #: src/components/capabilities-view/CapabilitiesView.tsx
 #: src/components/project-home/SecretsCard.tsx
+#: src/journey/JourneyTray.tsx
+#: src/journey/SetupJourneyButton.tsx
 msgid "Set up"
 msgstr ""
 
@@ -12048,6 +12230,10 @@ msgstr ""
 
 #: src/components/task-receive/IncomingProjectDialog.tsx
 msgid "Set up as this name"
+msgstr ""
+
+#: src/components/capabilities-view/CapabilitiesView.tsx
+msgid "Set up GitHub"
 msgstr ""
 
 #: src/components/task-receive/IncomingProjectDialog.tsx
@@ -12209,6 +12395,11 @@ msgstr ""
 msgid "Show all"
 msgstr ""
 
+#: src/journey/JourneyTray.tsx
+#: src/journey/JourneyTray.tsx
+msgid "Show all steps"
+msgstr ""
+
 #: src/components/asset-manager/EntityTypeBar.tsx
 #: src/components/asset-manager/EntityTypeBar.tsx
 #: src/components/graph-view/ui/FilterChips.tsx
@@ -12254,6 +12445,11 @@ msgstr ""
 
 #: src/pages/flow-page/vibe-recent-sessions.tsx
 msgid "Show more"
+msgstr ""
+
+#: src/journey/JourneyTray.tsx
+#: src/journey/JourneyTray.tsx
+msgid "Show only the current step"
 msgstr ""
 
 #: src/components/workers/WorkerToolbar.tsx
@@ -12321,6 +12517,10 @@ msgstr ""
 
 #: src/components/lens-viewer/shared/transcript-features/TranscriptEntryItem.tsx
 msgid "sidechain"
+msgstr ""
+
+#: src/components/graph-view/GraphView.tsx
+msgid "Sigma graph view"
 msgstr ""
 
 #: src/pages/flow-page/content-panel/user-dropdown/user-dropdown.tsx
@@ -12404,7 +12604,7 @@ msgstr ""
 msgid "Skill name…"
 msgstr ""
 
-#: src/components/entity-execution-panel/MetaMessageChip.tsx
+#: src/components/entity-execution-panel/useOpenSkill.ts
 msgid "Skill not found"
 msgstr ""
 
@@ -12710,6 +12910,10 @@ msgstr ""
 msgid "Started"
 msgstr ""
 
+#: src/journey/JourneyStepLive.tsx
+msgid "Starting login…"
+msgstr ""
+
 #: src/components/lens-viewer/FsRecordsScannerViewer.tsx
 msgid "Starting scan…"
 msgstr ""
@@ -12831,6 +13035,10 @@ msgstr ""
 msgid "Subfolders"
 msgstr ""
 
+#: src/components/graph-view/GraphView.tsx
+msgid "subgraph projection"
+msgstr ""
+
 #: src/pages/flow-page/vibe-workspace.tsx
 msgid "Submit"
 msgstr ""
@@ -12909,9 +13117,17 @@ msgstr ""
 msgid "Switch to dark mode"
 msgstr ""
 
+#: src/components/graph-view/TagGraphView.tsx
+#~ msgid "Switch to graph view"
+#~ msgstr ""
+
 #: src/components/theme-toggle/theme-toggle.tsx
 msgid "Switch to light mode"
 msgstr ""
+
+#: src/components/graph-view/TagGraphView.tsx
+#~ msgid "Switch to ontology tree"
+#~ msgstr ""
 
 #: src/components/terminal/interactive-terminal/TerminalBottomRibbon.tsx
 msgid "Switch to terminal view"
@@ -12971,6 +13187,18 @@ msgstr ""
 msgid "Tab failed to open"
 msgstr ""
 
+#: src/components/graph-view/TagGraphView.tsx
+msgid "Tag Graph"
+msgstr ""
+
+#: src/components/graph-view/TagGraphView.tsx
+msgid "Tag shape"
+msgstr ""
+
+#: src/components/graph-view/TagGraphView.tsx
+msgid "Tag Tree"
+msgstr ""
+
 #: src/components/assets/editor/skill/SkillMetadataHeader.tsx
 #~ msgid "Tags:"
 #~ msgstr ""
@@ -12991,6 +13219,10 @@ msgstr ""
 #: src/components/conversation/ConversationContextPanel.tsx
 #: src/components/conversation/ConversationContextPanel.tsx
 msgid "Task"
+msgstr ""
+
+#: src/pages/flow-page/VibeAssignTaskDialog.tsx
+msgid "Task assigned"
 msgstr ""
 
 #: src/components/assistance-viewer/AssistanceViewer.tsx
@@ -13037,8 +13269,8 @@ msgid "Template:"
 msgstr ""
 
 #: src/components/project-home/ProjectHome.tsx
-#~ msgid "Terminal"
-#~ msgstr ""
+msgid "Terminal"
+msgstr ""
 
 #: src/components/sessions-view/sessions-view.tsx
 msgid "Terminal Sessions"
@@ -13187,6 +13419,10 @@ msgstr ""
 msgid "The session has new activity since the last analysis — run a fresh one (previous runs are kept)"
 msgstr ""
 
+#: src/pages/flow-page/VibeAssignTaskDialog.tsx
+msgid "The session transcript could not be read."
+msgstr ""
+
 #: src/pages/flow-page/content-panel/content-panel.tsx
 msgid "The tab content could not be prepared."
 msgstr ""
@@ -13293,6 +13529,10 @@ msgstr ""
 
 #: src/components/asset-manager/AssetManagerPopover.tsx
 msgid "This folder-backed asset has no main file metadata."
+msgstr ""
+
+#: src/pages/entry/LaunchLanding.tsx
+msgid "This link doesn't name a repository we can launch."
 msgstr ""
 
 #: src/components/collaboration/LiveSessionView.tsx
@@ -13599,6 +13839,10 @@ msgstr ""
 #~ msgid "Transcript File"
 #~ msgstr ""
 
+#: src/pages/flow-page/VibeAssignTaskDialog.tsx
+msgid "Transcript not attached"
+msgstr ""
+
 #: src/components/lens-viewer/ClaudeErrorsViewer.tsx
 msgid "Transcript not found"
 msgstr ""
@@ -13610,6 +13854,18 @@ msgstr ""
 #: src/components/assets/context-folder-sources.tsx
 #~ msgid "Travels with the project when shared"
 #~ msgstr ""
+
+#: src/components/graph-view/TagGraphView.tsx
+#~ msgid "Tree"
+#~ msgstr ""
+
+#: src/components/graph-view/TagGraphView.tsx
+msgid "Tree — hierarchy only"
+msgstr ""
+
+#: src/components/graph-view/GraphView.tsx
+msgid "Tree layout"
+msgstr ""
 
 #: src/pages/discover-page/discover-page.tsx
 #~ msgid "Trending"
@@ -14046,6 +14302,10 @@ msgstr ""
 msgid "Verified"
 msgstr ""
 
+#: src/journey/JourneyTray.tsx
+msgid "Verify"
+msgstr ""
+
 #: src/components/machine-overview/machine-overview.tsx
 msgid "Verify the machine can authenticate with the FlowPad API"
 msgstr ""
@@ -14266,6 +14526,7 @@ msgid "What changed? Sent to the recipients below…"
 msgstr ""
 
 #: src/components/share-to-conversation/ShareToConversationDialog.tsx
+#: src/pages/flow-page/VibeAssignTaskDialog.tsx
 msgid "What do you need help with?"
 msgstr ""
 
@@ -14445,6 +14706,14 @@ msgstr ""
 msgid "Worktree"
 msgstr ""
 
+#: src/components/graph-view/GraphView.tsx
+#~ msgid "WorldView presentation"
+#~ msgstr ""
+
+#: src/pages/entry/LaunchLanding.tsx
+msgid "Would you like to launch a sandbox for this repository?"
+msgstr ""
+
 #: src/components/collaboration/StartRoomDialog.tsx
 msgid "XKCD-J3F2"
 msgstr ""
@@ -14548,6 +14817,10 @@ msgstr ""
 msgid "Your Projects"
 msgstr ""
 
+#: src/pages/entry/LaunchLanding.tsx
+msgid "Your sandbox is ready"
+msgstr ""
+
 #: src/components/collapsed-sidebar/collapsed-sidebar.tsx
 #: src/pages/hub-home/HubHome.tsx
 msgid "Your world"
@@ -14575,12 +14848,14 @@ msgstr ""
 
 #: src/components/graph-context/ContextGraphCanvas.tsx
 #: src/components/graph-context/ContextGraphCanvas.tsx
+#: src/components/graph-view/GraphView.tsx
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Zoom in"
 msgstr ""
 
 #: src/components/graph-context/ContextGraphCanvas.tsx
 #: src/components/graph-context/ContextGraphCanvas.tsx
+#: src/components/graph-view/GraphView.tsx
 #: src/components/knowledge-atlas/KnowledgeAtlas.tsx
 msgid "Zoom out"
 msgstr ""

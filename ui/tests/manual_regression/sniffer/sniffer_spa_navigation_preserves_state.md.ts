@@ -33,12 +33,10 @@ test.describe('Sniffer — default-off survives SPA navigation', () => {
     // The per-instance gate is still off after all the routing.
     expect(await snifferHook(request), 'SPA navigation never enables the sniffer gate').toBeNull();
 
-    // No SNIFFER-RELATED console errors during navigation. Ignore ambient noise
-    // unrelated to the sniffer: resource 404s and in-flight use-claude-projects
-    // fetches aborted by the full-page route transition ("Failed to list
-    // projects: TypeError: Failed to fetch") — neither is a sniffer regression.
+    // No SNIFFER-RELATED console errors during navigation. Ignore unrelated
+    // resource 404s.
     const real = errors.filter(
-      (e) => !/Failed to load resource/.test(e) && !/Failed to list projects/.test(e),
+      (e) => !/Failed to load resource/.test(e),
     );
     expect(real, `sniffer-related console errors during SPA nav: ${real.join('\n')}`).toHaveLength(0);
   });

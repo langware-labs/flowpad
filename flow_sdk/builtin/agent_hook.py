@@ -377,9 +377,10 @@ class AgentHook(Entity):
 
         try:
             if self.is_sniffer:
-                from flow_sdk.builtin.claude_settings_sync import remove_sniffer_hook_from_settings
+                from flow_sdk.builtin.claude_settings_sync import purge_sniffer_entries_from_settings
 
-                await remove_sniffer_hook_from_settings(self, project_path=resolved_project_path)
+                # Marker-keyed, not entity-keyed: clears sniffer hooks whoever wrote them.
+                purge_sniffer_entries_from_settings(self.hook_scope, project_path=resolved_project_path)
             else:
                 from flow_sdk.builtin.claude_settings_sync import remove_hook_from_settings
 

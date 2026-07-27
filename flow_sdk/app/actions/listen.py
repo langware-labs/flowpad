@@ -200,7 +200,7 @@ async def _create_prompt_annotation(content: str, session_id: str) -> None:
             iso_timestamp=now_iso,
             data={},
         )
-        await annotation.save([])
+        await annotation.save()
     except Exception as exc:
         logger.debug("_create_prompt_annotation failed (non-critical): %s", exc)
 

@@ -82,7 +82,7 @@ async def test_relaunch_kills_session_orphan(bootstrapped_client, tmp_path):
         workdir=str(tmp_path),
         visible=True,
     )
-    await process.save([])
+    await process.save()
 
     orphan = None
     master = slave = None

@@ -91,7 +91,10 @@ def _write_bundle(tmp_path: Path, ids: Ids, *, conversation_id: str | None) -> P
 
 
 async def _make_project(tmp_path: Path, name: str) -> Project:
-    root = tmp_path / name
+    # ``tmp_records_root`` deliberately makes ``tmp_path`` the internal record
+    # store for this test. A real project must not live inside that store, so
+    # place its mount in a unique sibling directory.
+    root = tmp_path.parent / f"{tmp_path.name}-{name}-project"
     root.mkdir()
     project = Project(name=name, fs_storage_mount_path=str(root))
     await project.save(notify=False)

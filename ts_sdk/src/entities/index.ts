@@ -39,6 +39,7 @@ export * from './conversation';
 export * from './conversation-send';
 export * from './contact-permission';
 export * from './contacts-group';
+export * from './tag';
 export * from './feed-entry';
 export * from './folder';
 export * from './message-suggest';

@@ -24,9 +24,8 @@ except ImportError:
 
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer.index_function import IndexerOptions
+from flow_sdk.fs_store.path_utils import is_valid_project_cwd
 from flow_sdk.fs_store.record_types import RecordType
-from flow_sdk.config import is_agent_mount_root
-from flow_sdk.utils.file_system import is_temp_path
 
 # ── Codex project path helpers (inlined from former fs_records/codex/codex_project.py) ──
 
@@ -36,20 +35,11 @@ def _codex_project_id(cwd: str) -> str:
     return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"codex_project:{cwd}"))
 
 
-def _is_valid_cwd(cwd: str) -> bool:
-    """Filter out system/temp paths that should never appear as user projects."""
-    if not cwd or not cwd.startswith("/"):
-        return False
-    if cwd == "/":
-        return False
-    if is_temp_path(cwd):
-        return False
-    # The agent mount ROOT (~/Flowpad workspace) is infrastructure, never a
-    # project; its work subfolders are still valid cwds. See ``is_agent_mount_root``.
-    return not is_agent_mount_root(cwd)
-
-
-def _read_codex_projects_from_config(config_path: Path) -> dict[str, dict]:
+def _read_codex_projects_from_config(
+    config_path: Path,
+    *,
+    include_temp: bool = False,
+) -> dict[str, dict]:
     """Return ``{absolute_path: {trust_level}}`` from ``config.toml``."""
     if not config_path.is_file():
         return {}
@@ -63,7 +53,10 @@ def _read_codex_projects_from_config(config_path: Path) -> dict[str, dict]:
         return {}
     out: dict[str, dict] = {}
     for path, entry in projects.items():
-        if not isinstance(path, str) or not _is_valid_cwd(path):
+        if not isinstance(path, str) or not is_valid_project_cwd(
+            path,
+            include_temp=include_temp,
+        ):
             continue
         if isinstance(entry, dict):
             out[path] = {"trust_level": entry.get("trust_level")}
@@ -72,7 +65,7 @@ def _read_codex_projects_from_config(config_path: Path) -> dict[str, dict]:
     return out
 
 
-def _scan_cwd(jsonl: Path) -> str | None:
+def _scan_cwd(jsonl: Path, *, include_temp: bool = False) -> str | None:
     try:
         with open(jsonl, "rb") as fh:
             head = fh.read(8192).decode("utf-8", errors="replace")
@@ -89,7 +82,10 @@ def _scan_cwd(jsonl: Path) -> str | None:
         if raw.get("type") == "session_meta":
             payload = raw.get("payload") or {}
             cwd = payload.get("cwd")
-            if isinstance(cwd, str) and _is_valid_cwd(cwd):
+            if isinstance(cwd, str) and is_valid_project_cwd(
+                cwd,
+                include_temp=include_temp,
+            ):
                 return cwd
             return None
     return None
@@ -107,7 +103,10 @@ def codex_projects_fn(
             continue
 
         # Source 1: config.toml [projects.*] keys.
-        for cwd in _read_codex_projects_from_config(codex_home / "config.toml"):
+        for cwd in _read_codex_projects_from_config(
+            codex_home / "config.toml",
+            include_temp=opts.include_temp,
+        ):
             if cwd in seen_cwds:
                 continue
             seen_cwds.add(cwd)
@@ -124,7 +123,7 @@ def codex_projects_fn(
         if not sessions_root.is_dir():
             continue
         for jsonl in sessions_root.rglob("rollout-*.jsonl"):
-            cwd = _scan_cwd(jsonl)
+            cwd = _scan_cwd(jsonl, include_temp=opts.include_temp)
             if not cwd or cwd in seen_cwds:
                 continue
             seen_cwds.add(cwd)

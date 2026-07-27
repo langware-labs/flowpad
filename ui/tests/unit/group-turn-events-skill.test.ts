@@ -63,3 +63,100 @@ describe('groupTurnEvents — Skill tool events collapse into the meta chip', ()
     expect(dense.events[0].elementType).toBe(FlowElementTypes.TOOL_RESULT);
   });
 });
+
+describe('groupTurnEvents — the skill name comes off the structured call', () => {
+  function skillCall(skillName: string, toolUseId: string, i: number): FlowData {
+    // Shape the backend now emits on BOTH the live stream and a replay:
+    // SkillCallEntry.to_flow_data() carries `skill-name` + `skill_name`.
+    return new FlowData(
+      FlowElementTypes.TOOL_CALL,
+      JSON.stringify({ tool_call_id: toolUseId, skill_name: skillName, args: { skill: skillName } }),
+      {
+        i: String(i),
+        t: ts(i),
+        'data-type': 'object',
+        'tool-name': 'Skill',
+        'skill-name': skillName,
+        subtype: 'skill_call',
+      },
+    );
+  }
+
+  it('stamps the dropped call’s skill name onto the meta message group', () => {
+    const groups = groupTurnEvents([
+      skillCall('rca', 'tu-skill', 0),
+      userMessage('Base directory for this skill: /skills/rca', 1, true),
+    ]);
+
+    expect(groups).toHaveLength(1);
+    const meta = groups[0];
+    if (meta.kind !== 'message') throw new Error('expected message group');
+    expect(meta.skillName).toBe('rca');
+  });
+
+  it('reads the name from the flow value when the attribute is absent', () => {
+    const call = new FlowData(
+      FlowElementTypes.TOOL_CALL,
+      JSON.stringify({ tool_call_id: 'tu-skill', args: { skill: 'docit' } }),
+      { i: '0', t: ts(0), 'data-type': 'object', 'tool-name': 'Skill' },
+    );
+
+    const groups = groupTurnEvents([call, userMessage('Base directory for this skill: /s/docit', 1, true)]);
+
+    const meta = groups[0];
+    if (meta.kind !== 'message') throw new Error('expected message group');
+    expect(meta.skillName).toBe('docit');
+  });
+
+  it('leaves skillName unset for an ordinary meta message', () => {
+    const groups = groupTurnEvents([userMessage('some system note', 0, true)]);
+
+    const meta = groups[0];
+    if (meta.kind !== 'message') throw new Error('expected message group');
+    expect(meta.skillName).toBeUndefined();
+  });
+
+  it('does not leak a skill name onto a later unrelated meta message', () => {
+    const groups = groupTurnEvents([
+      skillCall('rca', 'tu-skill', 0),
+      userMessage('Base directory for this skill: /skills/rca', 1, true),
+      userMessage('an unrelated system note', 2, true),
+    ]);
+
+    const second = groups[1];
+    if (second.kind !== 'message') throw new Error('expected message group');
+    expect(second.skillName).toBeUndefined();
+  });
+});
+
+describe('groupTurnEvents — accounting frames stay out of the dense stream', () => {
+  const statusFrame = (subtype: string, i: number) =>
+    new FlowData(FlowElementTypes.STATUS, JSON.stringify({}), {
+      i: String(i),
+      t: ts(i),
+      'data-type': 'object',
+      subtype,
+    });
+
+  it.each(['token_usage', 'meta', 'summary'])('drops %s frames but keeps real operations', (subtype) => {
+    const groups = groupTurnEvents([
+      statusFrame(subtype, 0),
+      toolCall('Bash', 'tu-bash', 1),
+      toolResult('tu-bash', 2),
+    ]);
+
+    expect(groups).toHaveLength(1);
+    const dense = groups[0];
+    if (dense.kind !== 'dense') throw new Error('expected dense group');
+    expect(dense.events).toHaveLength(2);
+    expect(dense.events.every((e) => e.attributes['subtype'] !== subtype)).toBe(true);
+  });
+
+  it('keeps live lifecycle status frames — they describe the run', () => {
+    const groups = groupTurnEvents([statusFrame('init', 0), statusFrame('task_started', 1)]);
+
+    const dense = groups[0];
+    if (dense.kind !== 'dense') throw new Error('expected dense group');
+    expect(dense.events).toHaveLength(2);
+  });
+});

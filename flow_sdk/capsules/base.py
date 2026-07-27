@@ -22,6 +22,10 @@ class AssetCapsule(ABC):
         if resolved.is_file() and resolved.suffix.casefold() in {".md", ".markdown"}:
             from .code_comment import CodeCommentCapsule
             return CodeCommentCapsule(resolved)
+        if resolved.is_file():
+            from .line_comment import COMMENT_LEADERS, LineCommentCapsule
+            if resolved.suffix.casefold() in COMMENT_LEADERS:
+                return LineCommentCapsule(resolved)
         raise UnsupportedCapsuleFormatError(f"unsupported capsule path: {supplied}")
 
     @abstractmethod

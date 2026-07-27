@@ -299,6 +299,16 @@ class DataContext extends EventEmitter {
     this.emit(ContextEventType.CONTEXT_CHANGED);
   }
 
+  /** Whether the harness settings file actually carries sniffer hooks. This —
+   *  not `snifferEnabled` — is what "the sniffer is on" means to the user, so
+   *  it stays true for a sniffer another instance installed. */
+  setSnifferInstalled(value: boolean): void {
+    runInAction(() => {
+      this.snifferInstalled = value;
+    });
+    this.emit(ContextEventType.CONTEXT_CHANGED);
+  }
+
   /**
    * Set the active shell session ID and notify subscribers
    */
@@ -420,6 +430,7 @@ class DataContext extends EventEmitter {
   plugins: Plugin[] = [];
   snifferHook: SnifferHook | null = null;
   snifferEnabled: boolean = false;
+  snifferInstalled: boolean = false;
 
   constructor() {
     super();
@@ -478,6 +489,7 @@ class DataContext extends EventEmitter {
       warnings: computed,
       snifferHook: observable,
       snifferEnabled: observable,
+      snifferInstalled: observable,
     });
     this.setupAuthListeners();
     this.setupConnectionListeners();

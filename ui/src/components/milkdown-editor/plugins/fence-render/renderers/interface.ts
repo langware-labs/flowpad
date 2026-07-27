@@ -14,10 +14,33 @@
  * ProseMirror NodeView, is a lifecycle hazard for a card this static.
  */
 
+import { FileCode } from 'lucide-react';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+
 import { registerFenceRenderer, type FenceRenderContext, type FenceRenderer } from '../registry';
 import { applyInterfaceEdit, type InterfaceEdit } from './interface-edit';
-import { parseInterfaceBlock, type InterfaceParam, type InterfaceSpec } from './interface-schema';
+import {
+  parseInterfaceBlock,
+  type InterfaceMethod,
+  type InterfaceParam,
+  type InterfaceProperty,
+  type InterfaceSpec,
+} from './interface-schema';
 import { formatSourceLabel, resolveSourceLocation } from './source-location';
+
+/**
+ * The chip's glyph, rendered to markup rather than transcribed.
+ *
+ * This renderer builds plain DOM and cannot mount a React icon, but hand-copying
+ * lucide's path data drifts — the first version of this constant was already a
+ * stale revision of `file-code`. `renderToStaticMarkup` is the same escape hatch
+ * `graph-view/icons/iconToDataUri.ts` uses to get a lucide icon outside a React
+ * tree; computed once at module load.
+ */
+const SOURCE_ICON = renderToStaticMarkup(
+  createElement(FileCode, { width: 12, height: 12, 'aria-hidden': true }),
+);
 
 function el<K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -143,42 +166,239 @@ function paramRow(
   return row;
 }
 
+function propertyRow(
+  property: InterfaceProperty,
+  canEdit: boolean,
+  edit: (change: InterfaceEdit) => void,
+): HTMLElement {
+  const row = el('div', 'interface-card-param interface-card-property');
+
+  row.appendChild(
+    editable(
+      'interface-card-param-name interface-card-property-name',
+      property.name,
+      `interface-property-name-${property.name}`,
+      canEdit,
+      (value) => edit({ kind: 'property-name', property: property.name, value }),
+    ),
+  );
+  row.appendChild(
+    editable(
+      'interface-card-param-type interface-card-property-type',
+      property.type,
+      `interface-property-type-${property.name}`,
+      canEdit,
+      (value) => edit({ kind: 'property-type', property: property.name, value }),
+    ),
+  );
+
+  if (canEdit || property.optional) {
+    const badge = canEdit
+      ? el('button', 'interface-card-badge', 'optional')
+      : el('span', 'interface-card-badge', 'optional');
+    badge.setAttribute('data-testid', `interface-property-optional-${property.name}`);
+    badge.setAttribute('aria-pressed', String(property.optional));
+    badge.classList.toggle('is-off', !property.optional);
+    if (canEdit) {
+      (badge as HTMLButtonElement).type = 'button';
+      badge.title = property.optional ? 'Make required' : 'Make optional';
+      badge.addEventListener('click', () => {
+        edit({
+          kind: 'property-optional',
+          property: property.name,
+          optional: !property.optional,
+        });
+      });
+    }
+    row.appendChild(badge);
+  }
+
+  if (property.description) {
+    row.appendChild(el('span', 'interface-card-param-desc', property.description));
+  }
+  return row;
+}
+
+function methodRow(
+  method: InterfaceMethod,
+  canEdit: boolean,
+  edit: (change: InterfaceEdit) => void,
+): HTMLElement {
+  const row = el('div', 'interface-card-param interface-card-method');
+  row.appendChild(
+    editable(
+      'interface-card-param-name interface-card-method-name',
+      method.name,
+      `interface-method-name-${method.name}`,
+      canEdit,
+      (value) => edit({ kind: 'method-name', method: method.name, value }),
+    ),
+  );
+  row.appendChild(
+    editable(
+      'interface-card-param-type interface-card-method-signature',
+      method.signature,
+      `interface-method-signature-${method.name}`,
+      canEdit,
+      (value) => edit({ kind: 'method-signature', method: method.name, value }),
+    ),
+  );
+  if (method.description) {
+    row.appendChild(el('span', 'interface-card-param-desc', method.description));
+  }
+  return row;
+}
+
+type MemberTab = 'methods' | 'properties';
+
+interface InterfaceCardViewState {
+  activeMemberTab?: MemberTab;
+}
+
+function memberTabs(
+  spec: InterfaceSpec,
+  canEdit: boolean,
+  ctx: FenceRenderContext,
+  edit: (change: InterfaceEdit) => void,
+  state: InterfaceCardViewState,
+): HTMLElement | null {
+  if (!spec.methods.length && !spec.properties.length) return null;
+
+  const root = el('div', 'interface-card-members');
+  const tabs = el('div', 'interface-card-member-tabs');
+  tabs.setAttribute('role', 'tablist');
+  tabs.setAttribute('aria-label', `${spec.name} members`);
+
+  const methodsButton = el('button', 'interface-card-member-tab', 'Methods');
+  const propertiesButton = el('button', 'interface-card-member-tab', 'Properties');
+  methodsButton.type = 'button';
+  propertiesButton.type = 'button';
+  methodsButton.setAttribute('role', 'tab');
+  propertiesButton.setAttribute('role', 'tab');
+  methodsButton.setAttribute('data-testid', 'interface-subtab-methods');
+  propertiesButton.setAttribute('data-testid', 'interface-subtab-properties');
+
+  const methodsId = `${ctx.blockId}-interface-methods`;
+  const propertiesId = `${ctx.blockId}-interface-properties`;
+  const methodsTabId = `${methodsId}-tab`;
+  const propertiesTabId = `${propertiesId}-tab`;
+  methodsButton.id = methodsTabId;
+  propertiesButton.id = propertiesTabId;
+  methodsButton.setAttribute('aria-controls', methodsId);
+  propertiesButton.setAttribute('aria-controls', propertiesId);
+  tabs.append(methodsButton, propertiesButton);
+
+  const methodsPanel = el('div', 'interface-card-member-panel');
+  const propertiesPanel = el('div', 'interface-card-member-panel');
+  methodsPanel.id = methodsId;
+  propertiesPanel.id = propertiesId;
+  methodsPanel.setAttribute('role', 'tabpanel');
+  propertiesPanel.setAttribute('role', 'tabpanel');
+  methodsPanel.setAttribute('aria-labelledby', methodsTabId);
+  propertiesPanel.setAttribute('aria-labelledby', propertiesTabId);
+  methodsPanel.setAttribute('data-testid', 'interface-panel-methods');
+  propertiesPanel.setAttribute('data-testid', 'interface-panel-properties');
+
+  if (spec.methods.length) {
+    for (const method of spec.methods) methodsPanel.appendChild(methodRow(method, canEdit, edit));
+  } else {
+    methodsPanel.appendChild(el('div', 'interface-card-member-empty', 'No methods.'));
+  }
+
+  if (spec.properties.length) {
+    for (const property of spec.properties) {
+      propertiesPanel.appendChild(propertyRow(property, canEdit, edit));
+    }
+  } else {
+    propertiesPanel.appendChild(el('div', 'interface-card-member-empty', 'No properties.'));
+  }
+
+  const buttons: Record<MemberTab, HTMLButtonElement> = {
+    methods: methodsButton,
+    properties: propertiesButton,
+  };
+  const panels: Record<MemberTab, HTMLElement> = {
+    methods: methodsPanel,
+    properties: propertiesPanel,
+  };
+
+  const activate = (tab: MemberTab, focus = false) => {
+    state.activeMemberTab = tab;
+    for (const candidate of ['methods', 'properties'] as const) {
+      const active = candidate === tab;
+      buttons[candidate].setAttribute('aria-selected', String(active));
+      buttons[candidate].tabIndex = active ? 0 : -1;
+      panels[candidate].hidden = !active;
+    }
+    if (focus) buttons[tab].focus();
+  };
+
+  for (const tab of ['methods', 'properties'] as const) {
+    buttons[tab].addEventListener('mousedown', (event) => event.preventDefault());
+    buttons[tab].addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      activate(tab);
+    });
+    buttons[tab].addEventListener('keydown', (event) => {
+      if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+      event.preventDefault();
+      activate(tab === 'methods' ? 'properties' : 'methods', true);
+    });
+  }
+
+  const initial =
+    state.activeMemberTab === 'methods' || state.activeMemberTab === 'properties'
+      ? state.activeMemberTab
+      : spec.methods.length
+        ? 'methods'
+        : 'properties';
+  activate(initial);
+
+  root.append(tabs, methodsPanel, propertiesPanel);
+  return root;
+}
+
 /**
- * The provenance row: where this contract is grounded, and a way to go there.
+ * The provenance chip: where this contract is grounded, and a peek at it.
  *
- * The button is deliberately NOT gated on `canEdit`. Every other control here
- * hides when the host is read-only because it mutates the document; navigating
- * does not, and a read-only surface (the vibe display, a `view`-mode asset) is
- * exactly where following a contract to its source is most useful.
+ * Deliberately NOT gated on `canEdit`. Every other control here hides when the
+ * host is read-only because it mutates the document; previewing does not, and a
+ * read-only surface (the vibe display, a `view`-mode asset) is exactly where
+ * following a contract to its source matters most.
  */
 function sourceRow(spec: InterfaceSpec, ctx: FenceRenderContext): HTMLElement | null {
   if (!spec.source) return null;
-
-  const row = el('div', 'interface-card-source');
-  row.setAttribute('data-testid', 'interface-source');
-  row.appendChild(el('span', 'interface-card-source-label', formatSourceLabel(spec.source)));
 
   const location = resolveSourceLocation(spec.source, {
     documentProjectRoot: ctx.host.documentProjectRoot(),
     projectRootById: (id) => ctx.host.projectRootById(id),
   });
 
-  const button = el('button', 'interface-card-open', 'Open in editor');
-  button.type = 'button';
-  button.setAttribute('data-testid', 'interface-source-open');
+  // One chip, like a message attachment: icon + label, click to peek. Opening
+  // the file for real is the deliberate step inside the preview, not a second
+  // control competing for the same glance.
+  const chip = el('button', 'interface-card-source-chip');
+  chip.type = 'button';
+  chip.setAttribute('data-testid', 'interface-source');
+  chip.innerHTML = SOURCE_ICON;
+  chip.appendChild(el('span', 'interface-card-source-label', formatSourceLabel(spec.source)));
+
   if (location.ok) {
-    button.title = `Open ${location.path}`;
-    button.addEventListener('click', () => {
-      ctx.host.openFile(location.path, { line: location.line });
+    chip.title = `Preview ${location.path}`;
+    chip.addEventListener('click', () => {
+      ctx.host.previewFile(location.path, { line: location.line });
     });
   } else {
-    // A dead button that says nothing is worse than no button — carry the
-    // reason the resolver gave us.
-    button.disabled = true;
-    button.title = location.reason;
-    button.setAttribute('data-reason', location.reason);
+    // A dead chip that says nothing is worse than none — carry the reason the
+    // resolver gave us.
+    chip.disabled = true;
+    chip.title = location.reason;
+    chip.setAttribute('data-reason', location.reason);
   }
-  row.appendChild(button);
+
+  const row = el('div', 'interface-card-source');
+  row.appendChild(chip);
   return row;
 }
 
@@ -187,6 +407,7 @@ function buildCard(
   canEdit: boolean,
   ctx: FenceRenderContext,
   edit: (change: InterfaceEdit) => void,
+  state: InterfaceCardViewState,
 ): HTMLElement {
   const card = el('div', 'interface-card');
   card.setAttribute('data-testid', 'interface-card');
@@ -209,6 +430,9 @@ function buildCard(
     );
     card.appendChild(description);
   }
+
+  const members = memberTabs(spec, canEdit, ctx, edit, state);
+  if (members) card.appendChild(members);
 
   if (spec.params.length) {
     const section = el('div', 'interface-card-section');
@@ -260,19 +484,24 @@ function buildCard(
  * computed against current text, or two edits in a row would apply the second
  * to pre-first-edit YAML and silently revert the first.
  */
-function draw(source: string, host: HTMLElement, ctx: FenceRenderContext): void {
+function draw(
+  source: string,
+  host: HTMLElement,
+  ctx: FenceRenderContext,
+  state: InterfaceCardViewState,
+): void {
   const edit = (change: InterfaceEdit) => {
     const next = applyInterfaceEdit(source, change);
     if (next === source) return;
     ctx.commit(next);
-    draw(next, host, ctx);
+    draw(next, host, ctx, state);
   };
-  host.replaceChildren(buildCard(parseInterfaceBlock(source), ctx.editable, ctx, edit));
+  host.replaceChildren(buildCard(parseInterfaceBlock(source), ctx.editable, ctx, edit, state));
 }
 
 /** @internal — exported for tests, which need the card without a NodeView. */
 export function renderInterfaceCard(code: string, host: HTMLElement, ctx: FenceRenderContext): void {
-  draw(code, host, ctx);
+  draw(code, host, ctx, {});
 }
 
 export const interfaceRenderer: FenceRenderer = {

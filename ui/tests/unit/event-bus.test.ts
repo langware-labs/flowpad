@@ -1,40 +1,40 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import {
   EventBus,
-  TopicEventBus,
-  emitAppTopic,
-  onAppTopic,
-  topicMatches,
+  TagEventBus,
+  emitAppTag,
+  onAppTag,
+  tagMatches,
   targetMatches,
   type FlowEvent,
 } from '@sdk';
 
-describe('topicMatches — segment-wise glob over the dot path', () => {
-  it('matches exact topics', () => {
-    expect(topicMatches('app.route.loaded', 'app.route.loaded')).toBe(true);
-    expect(topicMatches('app.route.loaded', 'app.route.other')).toBe(false);
+describe('tagMatches — segment-wise glob over the dot path', () => {
+  it('matches exact tags', () => {
+    expect(tagMatches('app.route.loaded', 'app.route.loaded')).toBe(true);
+    expect(tagMatches('app.route.loaded', 'app.route.other')).toBe(false);
   });
 
   it('trailing * matches any suffix, including deeper paths', () => {
-    expect(topicMatches('app.route.*', 'app.route.loaded')).toBe(true);
-    expect(topicMatches('app.*', 'app.route.loaded')).toBe(true);
-    expect(topicMatches('app.*', 'app.entity.created')).toBe(true);
-    expect(topicMatches('*', 'anything.at.all')).toBe(true);
+    expect(tagMatches('app.route.*', 'app.route.loaded')).toBe(true);
+    expect(tagMatches('app.*', 'app.route.loaded')).toBe(true);
+    expect(tagMatches('app.*', 'app.entity.created')).toBe(true);
+    expect(tagMatches('*', 'anything.at.all')).toBe(true);
   });
 
   it('mid-pattern * matches exactly one segment', () => {
-    expect(topicMatches('app.*.clicked', 'app.button.clicked')).toBe(true);
-    expect(topicMatches('app.*.clicked', 'app.button.deep.clicked')).toBe(false);
+    expect(tagMatches('app.*.clicked', 'app.button.clicked')).toBe(true);
+    expect(tagMatches('app.*.clicked', 'app.button.deep.clicked')).toBe(false);
   });
 
   it('never matches partial segments or wrong prefixes', () => {
-    expect(topicMatches('app.route', 'app.route.loaded')).toBe(false);
-    expect(topicMatches('app.rou', 'app.route')).toBe(false);
-    expect(topicMatches('sandbox.*', 'app.route.loaded')).toBe(false);
+    expect(tagMatches('app.route', 'app.route.loaded')).toBe(false);
+    expect(tagMatches('app.rou', 'app.route')).toBe(false);
+    expect(tagMatches('sandbox.*', 'app.route.loaded')).toBe(false);
   });
 });
 
-describe('targetMatches — exact or type:* glob', () => {
+describe('targetMatches — exact or trailing-* prefix glob', () => {
   it('exact and wildcard forms', () => {
     expect(targetMatches('agent:1234', 'agent:1234')).toBe(true);
     expect(targetMatches('agent:*', 'agent:1234')).toBe(true);
@@ -43,12 +43,18 @@ describe('targetMatches — exact or type:* glob', () => {
     expect(targetMatches('next', 'finish')).toBe(false);
     expect(targetMatches('*', 'anything')).toBe(true);
   });
+
+  it('trailing * is a prefix glob below the type level too', () => {
+    expect(targetMatches('dock:shell/*', 'dock:shell/shell-2')).toBe(true);
+    expect(targetMatches('dock:shell/*', 'dock:assets/project-home')).toBe(false);
+    expect(targetMatches('dock:shell', 'dock:shell/shell-2')).toBe(false);
+  });
 });
 
-describe('TopicEventBus', () => {
-  let bus: TopicEventBus;
+describe('TagEventBus', () => {
+  let bus: TagEventBus;
   beforeEach(() => {
-    bus = new TopicEventBus();
+    bus = new TagEventBus();
   });
 
   it('emit/on round-trip delivers the full envelope', () => {
@@ -58,7 +64,7 @@ describe('TopicEventBus', () => {
 
     expect(seen).toHaveLength(1);
     const e = seen[0];
-    expect(e.topic).toBe('app.page.signal');
+    expect(e.tag).toBe('app.page.signal');
     expect(e.target).toBe('next');
     expect(e.data).toEqual({ extra: 1 });
     expect(e.id).toMatch(/^[0-9a-f-]{36}$/);
@@ -103,7 +109,7 @@ describe('TopicEventBus', () => {
     errSpy.mockRestore();
   });
 
-  it('non-matching topics are not delivered', () => {
+  it('non-matching tags are not delivered', () => {
     const handler = vi.fn();
     bus.on('app.route.loaded', handler);
     bus.emit('app.entity.created', 'agent:1');
@@ -114,25 +120,25 @@ describe('TopicEventBus', () => {
 describe('app. ontology sugar over the singleton', () => {
   beforeEach(() => EventBus.clear());
 
-  it('emitAppTopic/onAppTopic assemble the app. prefix — full topics inside', () => {
+  it('emitAppTag/onAppTag assemble the app. prefix — full tags inside', () => {
     const seen: FlowEvent[] = [];
-    const unsub = onAppTopic('route.*', (e) => seen.push(e));
-    emitAppTopic('route.loaded', 'dock:home');
+    const unsub = onAppTag('route.*', (e) => seen.push(e));
+    emitAppTag('route.loaded', 'dock:home');
     expect(seen).toHaveLength(1);
-    expect(seen[0].topic).toBe('app.route.loaded'); // full topic on the wire
+    expect(seen[0].tag).toBe('app.route.loaded'); // full tag on the wire
     unsub();
   });
 });
 
 // ── Cross-language contract (shared golden fixture) ──────────────────────────
-// The SAME fixture is parsed by tests/unit/test_topic_bus.py — both buses must
+// The SAME fixture is parsed by tests/unit/test_tag_bus.py — both buses must
 // agree on the envelope shape and every matching case.
 import contract from '../../../tests/fixtures/flow_event_contract.json';
 
 describe('FlowEvent contract (shared fixture)', () => {
-  it('topic matching agrees with the Python bus', () => {
-    for (const c of contract.topic_cases) {
-      expect(topicMatches(c.pattern, c.topic), `${c.pattern} vs ${c.topic}`).toBe(c.matches);
+  it('tag matching agrees with the Python bus', () => {
+    for (const c of contract.tag_cases) {
+      expect(tagMatches(c.pattern, c.tag), `${c.pattern} vs ${c.tag}`).toBe(c.matches);
     }
   });
 
@@ -143,7 +149,7 @@ describe('FlowEvent contract (shared fixture)', () => {
   });
 
   it('the golden envelope is accepted verbatim by deliver()', () => {
-    const bus = new TopicEventBus();
+    const bus = new TagEventBus();
     const seen: FlowEvent[] = [];
     bus.on('flow.*', (e) => seen.push(e));
     bus.deliver(contract.envelope as FlowEvent);
@@ -157,27 +163,27 @@ describe('FlowEvent contract (shared fixture)', () => {
 
 describe('deliver — relay entry (no re-mint)', () => {
   it('routes a pre-built envelope by pattern + target filter', () => {
-    const bus = new TopicEventBus();
+    const bus = new TagEventBus();
     const got: string[] = [];
     bus.on('flow.*', (e) => got.push(`flow:${e.id}`));
     bus.on('*', (e) => got.push(`agent:${e.id}`), { target: 'agent:*' });
     bus.deliver({
-      id: 'fixed-id', timestamp: 't', topic: 'flow.done', target: 'agentic_flow:1',
+      id: 'fixed-id', timestamp: 't', tag: 'flow.done', target: 'agentic_flow:1',
       data: {}, ctx: { origin: 'local_server' },
     });
     expect(got).toEqual(['flow:fixed-id']);
   });
 
   it('a throwing handler never blocks peers on deliver', () => {
-    const bus = new TopicEventBus();
+    const bus = new TagEventBus();
     const got: string[] = [];
     const err = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     bus.on('x.*', () => {
       throw new Error('boom');
     });
-    bus.on('x.*', (e) => got.push(e.topic));
+    bus.on('x.*', (e) => got.push(e.tag));
     bus.deliver({
-      id: 'i', timestamp: 't', topic: 'x.y', target: 'a:1', data: {}, ctx: { origin: 'local_server' },
+      id: 'i', timestamp: 't', tag: 'x.y', target: 'a:1', data: {}, ctx: { origin: 'local_server' },
     });
     expect(got).toEqual(['x.y']);
     err.mockRestore();

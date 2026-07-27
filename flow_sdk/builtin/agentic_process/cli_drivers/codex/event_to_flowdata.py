@@ -19,6 +19,7 @@ from flow_sdk.external_apis.llm.llm_drivers.flow_data import (
     FlowDataType,
     FlowElementType,
 )
+from flow_sdk.transcript_analyzer.derive import derive_entry
 from flow_sdk.transcript_analyzer.parsers.codex import CodexParser
 from flow_sdk.transcript_analyzer.process_entry import ProcessEntry
 
@@ -95,6 +96,10 @@ def final_end_frame() -> FlowData:
 
 
 def _wrap_live(entry) -> FlowData:
+    # Derived refinements (e.g. a `flow` CLI call inside a shell command)
+    # are applied here so the live frame matches what history's refold
+    # produces for the same entry.
+    entry = derive_entry(entry)
     pe = ProcessEntry(transcript_entry=entry, observation_kind="live")
     frames = entry.to_flow_data()
     if frames:

@@ -475,6 +475,93 @@ def test_tail_status_fresh_prompt_after_interrupt_is_working(tmp_path: Path):
     assert _tail_status(f) == WorkerStatus.WORKING
 
 
+def test_tail_status_fresh_turn_does_not_reuse_previous_end_turn(tmp_path: Path):
+    """A new user turn supersedes the previous turn's terminal evidence."""
+    f = tmp_path / "session.jsonl"
+    _write_jsonl(
+        f,
+        [
+            {"type": "user", "message": {"role": "user", "content": "turn one"}},
+            {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "stop_reason": "end_turn",
+                    "content": [],
+                },
+            },
+            {
+                "type": "user",
+                "message": {"role": "user", "content": "turn two"},
+            },
+        ],
+    )
+    os.utime(f, None)
+    assert _tail_status(f) == WorkerStatus.WORKING
+
+
+def test_tail_status_fresh_turn_ack_does_not_reuse_previous_end_turn(
+    tmp_path: Path,
+):
+    """An early last-prompt ack still belongs to the fresh, active turn."""
+    f = tmp_path / "session.jsonl"
+    _write_jsonl(
+        f,
+        [
+            {"type": "user", "message": {"role": "user", "content": "turn one"}},
+            {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "stop_reason": "end_turn",
+                    "content": [],
+                },
+            },
+            {
+                "type": "user",
+                "message": {"role": "user", "content": "turn two"},
+            },
+            {"type": "last-prompt"},
+        ],
+    )
+    os.utime(f, None)
+    assert _tail_status(f) == WorkerStatus.WORKING
+
+
+def test_tail_status_current_end_turn_wins_after_fresh_turn_ack(tmp_path: Path):
+    """Current-turn terminal evidence remains COMPLETE behind an idle ack."""
+    f = tmp_path / "session.jsonl"
+    _write_jsonl(
+        f,
+        [
+            {"type": "user", "message": {"role": "user", "content": "turn one"}},
+            {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "stop_reason": "end_turn",
+                    "content": [],
+                },
+            },
+            {
+                "type": "user",
+                "message": {"role": "user", "content": "turn two"},
+            },
+            {
+                "type": "assistant",
+                "message": {
+                    "role": "assistant",
+                    "stop_reason": "end_turn",
+                    "content": [],
+                },
+            },
+            {"type": "last-prompt"},
+        ],
+    )
+    os.utime(f, None)
+    assert _tail_status(f) == WorkerStatus.COMPLETE
+
+
 def test_tail_status_answered_user_question_falls_through(tmp_path: Path):
     """Once the user answers, the ``tool_result`` (paired by ``tool_use_id``)
     resolves the question and the tail classifies normally (here → COMPLETE)."""
