@@ -43,7 +43,7 @@ import { ChatComposerBar } from './ChatComposerBar';
 import { ChatPlanModeProvider } from './chat-plan-mode-context';
 import { SimpleChatPane } from './SimpleChatPane';
 import { useProcessModeSwitch } from './use-process-mode-switch';
-import { useEffectiveChatMode } from '@src/contexts/chat-ui-mode-context';
+import { useChatMode } from '@src/contexts/chat-ui-mode-context';
 import { useIsAdvanced } from '@src/components/view-mode';
 import { PtySyncProvider, usePtySyncSession } from './PtySyncContext';
 import { TerminalRuntimeErrorBanner } from './TerminalRuntimeErrorBanner';
@@ -173,10 +173,10 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   // is instant and never resets the terminal. Embedded terminals (chat side
   // panel) and shell-only tabs (no AgenticProcess) always keep the xterm.
   const isAdvanced = useIsAdvanced();
-  // ONE resolution rule, shared with the launcher (`chatModeLaunchArgs`): the
-  // override when set, else the View-mode default. So the mode a session opens
-  // in and the mode this renders are always the same question.
-  const wantChat = useEffectiveChatMode() === 'chat';
+  // The chat mode decides the surface: only `terminal` shows the xterm. (`vibe`
+  // renders VibeWorkspace instead of this component, so reaching here with vibe
+  // means a non-vibe View mode — the chat pane is the right fallback.)
+  const wantChat = useChatMode() !== 'terminal';
   // Headless (`pty_mode === false`): there is no PTY/xterm to skin — the chat
   // pane is the ONLY view. Force it on regardless of the chat/terminal skin
   // override, and (in the render) skip mounting the xterm container entirely so

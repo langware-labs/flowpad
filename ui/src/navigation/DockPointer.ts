@@ -128,7 +128,7 @@ function isViewMode(value: string | undefined): value is ViewMode {
 }
 
 function isChatMode(value: string | undefined): value is ChatMode {
-  return value === 'chat' || value === 'terminal';
+  return value === 'chat' || value === 'terminal' || value === 'vibe';
 }
 
 /**
@@ -340,7 +340,7 @@ export class DockPointer implements IDockPointer {
   }
 
   /**
-   * Which renderer an agentic session shows — the chat pane or the raw xterm.
+   * Which surface an agentic session shows — vibe, the chat pane, or the xterm.
    * Same shape as `viewMode` one level down: page-local, URL-carried (so the
    * mode is shareable and back-safe), never the persisted default. Consumers
    * combine it with PrefKey.CHAT_UI_MODE in the chat-ui-mode context.

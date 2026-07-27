@@ -1,73 +1,77 @@
 import { instancePreferences, PrefKey } from '@sdk';
 import { usePreference } from '@src/hooks/use-preference';
-import { getViewMode, isAdvancedMode, useIsAdvanced } from '@src/contexts/view-mode-context';
 import { useCurrentDock } from '@src/navigation/useDockNavigation';
 import { defineGlobal } from '@sdk/utils';
 import { useEffect, useSyncExternalStore } from 'react';
 
 /**
- * Which view an interactive agent tab shows.
- *  - `null`     → follow View mode (Standard ⇒ chat UI, Advanced ⇒ terminal).
- *  - `'chat'`   → force the chat UI regardless of View mode.
- *  - `'terminal'` → force the xterm terminal regardless of View mode.
+ * Chat mode — which surface an agent session is shown in. Three types:
+ *  - `'vibe'`     → the vibe workspace (side chat + display). The default.
+ *  - `'chat'`     → the chat pane.
+ *  - `'terminal'` → the raw xterm.
  *
- * Owned by prefMan (`preferences.ui.chat_ui_mode`, a boot key). Stored as
- * `'auto' | 'chat' | 'terminal'`; the historical `''` is still read as auto. An
- * override takes priority over the View-mode default until cleared. NOTE it is
- * instance-global, not per-session: a per-session skin would need a PrefKey
- * keyed by process id.
+ * ONE preference (`preferences.ui.chat_ui_mode`, a boot key owned by prefMan, so
+ * it syncs backend↔frontend) holds it. The mode switch writes it, so the default
+ * for the next session is simply the user's last pick. Read it with
+ * `getChatMode()`; when nothing is stored the default is `'vibe'`.
  *
- * The mode is also BROWSABLE: a dock URL can carry `?chatMode=chat|terminal`
- * (`DockPointer.withChatMode`), which `useDockChatModeOverrideSync` pins for the
- * mounted URL and adopts into the pref — exactly the `?viewMode` arrangement one
- * level up. So the switch never writes the pref from a click path: it navigates,
- * and the URL load is the single writer.
+ * Transport follows from the mode and has only two states: `'terminal'` is an
+ * interactive PTY, `'chat'` and `'vibe'` are both headless print-mode. See
+ * `chatModePtyMode`.
+ *
+ * NOTE `'vibe'` also exists in the unrelated ViewMode enum (the surface-complexity
+ * ladder). They are different enums that happen to share a name — a known
+ * confusion, to be cleaned up separately.
+ *
+ * The mode is also BROWSABLE: a dock URL can carry `?chatMode=` and
+ * `useDockChatModeOverrideSync` pins it for the mounted route and adopts it into
+ * the preference, so the switch never writes the pref from a click path.
  */
-export type ChatMode = 'chat' | 'terminal';
-export type ChatUiOverride = ChatMode | null;
+export type ChatMode = 'chat' | 'terminal' | 'vibe';
+
+export const CHAT_MODE_DEFAULT: ChatMode = 'vibe';
 
 declare global {
   interface Window {
-    setChatUi: (val: ChatUiOverride | boolean) => void;
-    getChatUi: () => ChatUiOverride;
+    setChatUi: (val: ChatMode | boolean) => void;
+    getChatUi: () => ChatMode;
   }
 }
 
 const LEGACY_BOOL_KEY = 'chatUiMode';
 
-/** Stored sentinel for "no override, follow View mode". The Preferences select
- *  cannot render an empty-string option, so the absent state is explicit; the
- *  historical '' is still read as auto (see `toOverride`). */
-const CHAT_MODE_AUTO = 'auto';
-
 // One-time migration of the legacy boolean flag (true meant "force chat").
 if (
   typeof localStorage !== 'undefined' &&
-  !getChatUiOverride() &&
+  !toChatMode(instancePreferences.get(PrefKey.CHAT_UI_MODE)) &&
   localStorage.getItem(LEGACY_BOOL_KEY) === 'true'
 ) {
   instancePreferences.set(PrefKey.CHAT_UI_MODE, 'chat');
 }
 if (typeof localStorage !== 'undefined') localStorage.removeItem(LEGACY_BOOL_KEY);
 
-function toOverride(v: unknown): ChatUiOverride {
-  return v === 'chat' || v === 'terminal' ? v : null;
+function toChatMode(v: unknown): ChatMode | null {
+  return v === 'chat' || v === 'terminal' || v === 'vibe' ? v : null;
 }
 
-export function setChatUiOverride(val: ChatUiOverride): void {
-  instancePreferences.set(PrefKey.CHAT_UI_MODE, val ?? CHAT_MODE_AUTO);
+/** THE read: the stored chat mode, or the default when nothing is stored. */
+export function getChatMode(): ChatMode {
+  return toChatMode(instancePreferences.get(PrefKey.CHAT_UI_MODE)) ?? CHAT_MODE_DEFAULT;
 }
 
-export function getChatUiOverride(): ChatUiOverride {
-  return toOverride(instancePreferences.get(PrefKey.CHAT_UI_MODE));
+export function setChatMode(val: ChatMode): void {
+  instancePreferences.set(PrefKey.CHAT_UI_MODE, val);
 }
 
-// Console helper, back-compatible with the old boolean form:
-//   setChatUi('chat' | 'terminal' | null) — explicit; setChatUi(true|false) — legacy.
-defineGlobal('setChatUi', (val: ChatUiOverride | boolean) => {
-  setChatUiOverride(val === true ? 'chat' : val === false ? null : val);
+/** Transport for a mode: only `terminal` runs an interactive PTY. */
+export function chatModePtyMode(mode: ChatMode = getChatMode()): boolean {
+  return mode === 'terminal';
+}
+
+defineGlobal('setChatUi', (val: ChatMode | boolean) => {
+  setChatMode(val === true ? 'chat' : val === false ? 'terminal' : val);
 });
-defineGlobal('getChatUi', getChatUiOverride);
+defineGlobal('getChatUi', getChatMode);
 
 // --- URL-carried override (mirrors the dock viewMode override) -------------
 // The URL's chatMode is also adopted into the persisted preference on load, so
@@ -75,29 +79,28 @@ defineGlobal('getChatUi', getChatUiOverride);
 // against externally-originated pref changes while a chatMode-carrying dock URL
 // is mounted, and to drop back to the pref the moment that URL unmounts.
 const chatModeOverrideListeners = new Set<() => void>();
-let dockChatModeOverride: ChatUiOverride = null;
+let dockChatModeOverride: ChatMode | null = null;
 
 function subscribeChatModeOverride(listener: () => void): () => void {
   chatModeOverrideListeners.add(listener);
   return () => chatModeOverrideListeners.delete(listener);
 }
 
-function getChatModeOverrideSnapshot(): ChatUiOverride {
+function getChatModeOverrideSnapshot(): ChatMode | null {
   return dockChatModeOverride;
 }
 
-function setDockChatModeOverride(val: ChatUiOverride): void {
+function setDockChatModeOverride(val: ChatMode | null): void {
   if (dockChatModeOverride === val) return;
   dockChatModeOverride = val;
   chatModeOverrideListeners.forEach((listener) => listener());
 }
 
 /**
- * Sync the current DockPointer's `?chatMode` into `useChatUiOverride()`.
- * Load-time owner of the chat/terminal arrangement: the mode switch only
- * navigates (same pointer, `?chatMode=<mode>`); when that URL loads here we pin
- * the mode AND adopt it as the persisted preference, so the choice survives
- * leaving the URL and the session without any write in the click path.
+ * Sync the current DockPointer's `?chatMode` into `useChatMode()`.
+ * Load-time owner of the arrangement: the switch only navigates; when that URL
+ * loads here we pin the mode AND adopt it as the preference — so the default for
+ * the next session is the user's last pick, with no write in the click path.
  */
 export function useDockChatModeOverrideSync(): void {
   const currentDock = useCurrentDock();
@@ -106,55 +109,19 @@ export function useDockChatModeOverrideSync(): void {
   useEffect(() => {
     setDockChatModeOverride(override);
     // instancePreferences.set no-ops on equal values, so no guard is needed here.
-    if (override) setChatUiOverride(override);
+    if (override) setChatMode(override);
   }, [override]);
 
   useEffect(() => () => setDockChatModeOverride(null), []);
 }
 
-/**
- * The ONE resolution rule for "which mode is this session in": the override when
- * set, otherwise the View-mode default (Standard ⇒ chat, Advanced/Dev ⇒
- * terminal). `InteractiveTerminal` renders by it and new sessions launch by it,
- * so what the user picks in the switch is what the next session opens as.
- */
-function resolveChatMode(override: ChatUiOverride, advanced: boolean): ChatMode {
-  return override ?? (advanced ? 'terminal' : 'chat');
-}
-
-/** Reactive form — re-renders on either input changing. */
-export function useEffectiveChatMode(): ChatMode {
-  return resolveChatMode(useChatUiOverride(), useIsAdvanced());
-}
-
-/** Imperative form for non-React callers (the launch path). Reads the persisted
- *  view mode; a URL `?viewMode` is adopted into that pref on load, so the two
- *  agree everywhere a session is launched from. */
-function effectiveChatMode(): ChatMode {
-  return resolveChatMode(getChatUiOverride(), isAdvancedMode(getViewMode()));
-}
-
-/**
- * `createProcess` arguments that launch a new session in the preferred mode.
- * Chat is the headless print-mode transport (no PTY, streams JSON); terminal is
- * an auto-started interactive PTY. Spread `context` into the first argument and
- * `options` into the second.
- */
-export function chatModeLaunchArgs(): {
-  context: { outputFormat?: 'stream-json' };
-  options: { visible: boolean; pty_mode: boolean };
-} {
-  return effectiveChatMode() === 'chat'
-    ? { context: { outputFormat: 'stream-json' }, options: { visible: false, pty_mode: false } }
-    : { context: {}, options: { visible: true, pty_mode: true } };
-}
-
-export function useChatUiOverride(): ChatUiOverride {
+/** Reactive read: the mounted URL's mode when it carries one, else the pref. */
+export function useChatMode(): ChatMode {
   const [value] = usePreference<string>(PrefKey.CHAT_UI_MODE);
   const override = useSyncExternalStore(
     subscribeChatModeOverride,
     getChatModeOverrideSnapshot,
     getChatModeOverrideSnapshot,
   );
-  return override ?? toOverride(value);
+  return override ?? toChatMode(value) ?? CHAT_MODE_DEFAULT;
 }

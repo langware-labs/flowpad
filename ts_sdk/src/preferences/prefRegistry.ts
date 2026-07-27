@@ -302,15 +302,12 @@ export const PREF_REGISTRY: Record<PrefKey, PrefInfo> = {
     surfaced: true,
     legacyLocalStorageKey: 'chatUiOverride',
     category: 'ui',
-    label: 'Session mode',
-    description:
-      'Which renderer an agent session opens in, and what the header mode switch remembers. Auto follows View mode (Standard = chat, Advanced = terminal).',
+    label: 'Chat mode',
+    description: 'Which surface a chat opens in. The mode switch updates this, so new chats open in whatever you last picked.',
     dataType: PrefDataType.STRING,
-    // 'auto' is an explicit sentinel, not '': the Preferences select cannot
-    // render an empty-string option. '' is still read as auto (legacy value).
-    defaultValue: 'auto',
+    defaultValue: 'vibe',
     options: [
-      { value: 'auto', label: 'Auto (follow View mode)' },
+      { value: 'vibe', label: 'Vibe' },
       { value: 'chat', label: 'Chat' },
       { value: 'terminal', label: 'Terminal' },
     ],

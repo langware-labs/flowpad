@@ -6,11 +6,12 @@ import {
   SEGMENTED_GROUP,
   SEGMENTED_IDLE,
 } from '@src/components/ui/segmented';
-import type { ProcessModeSwitch, SessionMode } from './use-process-mode-switch';
+import type { ProcessModeSwitch } from './use-process-mode-switch';
+import type { ChatMode } from '@src/contexts/chat-ui-mode-context';
 
 interface TerminalModeSwitchProps {
   /** The mode the session is CURRENTLY shown in — the selected segment. */
-  current: SessionMode;
+  current: ChatMode;
   /** Whether the vibe segment is offered (hidden in a popped-out window). */
   showVibe: boolean;
   /** The shared switch: live transport, readiness gate, in-flight flag, and the
@@ -19,7 +20,7 @@ interface TerminalModeSwitchProps {
   modeSwitch: ProcessModeSwitch;
 }
 
-const ICONS: Record<SessionMode, LucideIcon> = {
+const ICONS: Record<ChatMode, LucideIcon> = {
   chat: MessageSquare,
   terminal: SquareTerminal,
   vibe: WandSparkles,
@@ -43,10 +44,10 @@ const ICONS: Record<SessionMode, LucideIcon> = {
  * wrapper `<span>` swallowing clicks.
  */
 export function TerminalModeSwitch({ current, showVibe, modeSwitch }: TerminalModeSwitchProps) {
-  const { transport, switching, awaitingUserInput: enabled, select } = modeSwitch;
+  const { ptyMode, switching, awaitingUserInput: enabled, select } = modeSwitch;
   const { t } = useLingui();
-  const labels: Record<SessionMode, string> = { chat: t`Chat`, terminal: t`Terminal`, vibe: t`Vibe` };
-  const modes: SessionMode[] = showVibe ? ['chat', 'terminal', 'vibe'] : ['chat', 'terminal'];
+  const labels: Record<ChatMode, string> = { chat: t`Chat`, terminal: t`Terminal`, vibe: t`Vibe` };
+  const modes: ChatMode[] = showVibe ? ['chat', 'terminal', 'vibe'] : ['chat', 'terminal'];
 
   return (
     <div
@@ -63,7 +64,7 @@ export function TerminalModeSwitch({ current, showVibe, modeSwitch }: TerminalMo
       {modes.map((mode) => {
         const active = mode === current;
         // Vibe only navigates; so does a pick already matching the transport.
-        const free = mode === 'vibe' || mode === transport;
+        const free = mode === 'vibe' || (mode === 'terminal') === ptyMode;
         const disabled = !free && (switching || !enabled);
         // The spinner marks the segment whose TRANSPORT is moving. Deliberately
         // not `&& !active`: navigation lands first, so the destination is already

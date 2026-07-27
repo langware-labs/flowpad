@@ -15,7 +15,7 @@ import {
 } from '@sdk';
 import { NavigateFunction } from 'react-router';
 import type { ViewMode } from '@src/contexts/view-mode-context';
-import { chatModeLaunchArgs } from '@src/contexts/chat-ui-mode-context';
+import { openNewChat } from './open-new-chat';
 import { DockPointer, HIGHLIGHT_PARAM, JOURNEY_PARAM } from './DockPointer';
 import { dockPointerForFile } from './local-file-pointer';
 import { FileOptions, TabOptions } from './types';
@@ -668,19 +668,14 @@ export class NavigationActions {
         console.error('[NavigationActions] No compute node');
         return null;
       }
-      // Launch in the user's preferred session mode — the same rule the renderer
-      // resolves by, so a session opens as whatever the header mode switch was
-      // last left on (chat ⇒ headless print-mode, terminal ⇒ auto-started PTY).
-      const launch = chatModeLaunchArgs();
-      const agenticProcess = await computeNode.createProcess(
-        {
-          workdir: options?.cwd || dataContext.project?.fs_storage_mount_path,
-          projectId: options?.projectId ?? dataContext.project?.id,
-          ...(options?.workerType ? { workerType: options.workerType } : {}),
-          ...launch.context,
-        },
-        { watchProcess: false, ...launch.options },
-      );
+      // One chain for every front-face "open a chat" action — it owns the
+      // chat-mode read and the transport/surface that follow from it.
+      const agenticProcess = await openNewChat(this, {
+        ...(options?.cwd ? { cwd: options.cwd } : {}),
+        ...(options?.projectId ? { projectId: options.projectId } : {}),
+        ...(options?.workerType ? { workerType: options.workerType } : {}),
+      });
+      if (!agenticProcess) return null;
       return {
         processId: agenticProcess.id,
         shellId: agenticProcess.shell_id ?? null,

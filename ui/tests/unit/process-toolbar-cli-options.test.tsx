@@ -51,8 +51,10 @@ vi.mock('@src/components/terminal/interactive-terminal/command-status-viewer', (
 }));
 vi.mock('@src/navigation/useDockNavigation', () => ({ useDockNavigation: () => ({ navigation: {} }) }));
 vi.mock('@src/contexts/chat-ui-mode-context', () => ({
-  setChatUiOverride: () => {},
-  useChatUiOverride: () => null,
+  useChatMode: () => 'terminal',
+  getChatMode: () => 'terminal',
+  setChatMode: () => {},
+  chatModePtyMode: () => true,
 }));
 // SessionInfoPopover discovers the on-disk session record on mount — no
 // backend in this tier.
