@@ -1,95 +1,126 @@
 import { useCallback, useState } from 'react';
-import { WorkerMode, type AgenticProcess } from '@sdk';
-import { setChatUiOverride } from '@src/contexts/chat-ui-mode-context';
+import { isReadyForInput, WorkerMode, type AgenticProcess } from '@sdk';
+import { useEntity } from '@src/hooks/entity-hooks';
+import { ViewMode } from '@src/contexts/view-mode-context';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications/notify';
 
-/** The two TRANSPORT modes of one agentic session (vibe is a skin, not a
- *  transport — it rides the same process, see TerminalModeSwitch). */
+/** The two TRANSPORT modes of one agentic session. */
 export type TransportMode = 'chat' | 'terminal';
 
+/** The three ways a session can be shown. `vibe` is a view mode, not a transport. */
+export type SessionMode = TransportMode | 'vibe';
+
 interface UseProcessModeSwitchOptions {
-  process?: AgenticProcess;
-  /** `isReadyForInput(process)` — the backend 409s a mid-turn switch. */
+  process?: AgenticProcess | null;
+  /** Live xterm dimensions for the →terminal direction, when a terminal is
+   *  mounted. Ref-free so this hook stays testable and has no opinion about who
+   *  owns the terminal; omitted in vibe, where the backend picks defaults. */
+  getDims?: () => { cols: number; rows: number } | undefined;
+}
+
+export interface ProcessModeSwitch {
+  /** The transport the session is actually on (`pty_mode`), reactively. */
+  transport: TransportMode;
+  /** `isReadyForInput` — the backend 409s a mid-turn transport switch. */
   awaitingUserInput: boolean;
-  /** Live xterm dimensions for the →terminal direction; ref-free so this hook
-   *  stays testable and has no opinion about who owns the terminal. */
-  getDims: () => { cols: number; rows: number } | undefined;
+  /** A transport switch is in flight. */
+  switching: boolean;
+  /** Pick a mode. URL-first: this navigates; the URL load applies the mode. */
+  select: (mode: SessionMode) => void;
 }
 
 /**
- * Chat ⇄ Terminal mode switch (mutually-exclusive execution modes of ONE
- * session). Chat = headless print-mode (no PTY); Terminal = interactive PTY.
- * This is a real lifecycle action, not a view flip — one standardized
- * `switchMode(WorkerMode.Interactive|CLI)`: →terminal spawns + resumes the PTY;
- * →chat kills the PTY worker, keeping the session, and reverts to headless
- * routing. Both reconcile the transcript (clear + force-reload) so the
- * destination view shows turns the other mode produced. The backend 409s a
- * mid-turn switch; `switching` guards against double-trigger + drives the
- * spinner.
+ * The session mode switch — chat ⇄ terminal ⇄ vibe — for one agentic process.
+ * One definition of "what picking a mode means", shared by every mount of
+ * `TerminalModeSwitch` (the terminal header and the vibe display strip).
  *
- * Call this ONCE per terminal (in InteractiveTerminal, which owns the xterm ref
- * and the readiness signal) — a second call site would own a second, disagreeing
+ * **Every pick is URL-first.** The handler only navigates: `?chatMode=<mode>`
+ * for the two renderers, `?viewMode=vibe` for vibe. The mounted URL is then the
+ * single writer — `useDockChatModeOverrideSync` / `useDockViewModeOverrideSync`
+ * pin the mode and adopt it as the preference. Nothing here writes a pref.
+ *
+ * The one thing navigation cannot do is move the TRANSPORT, because that is a
+ * worker lifecycle action, not a view: chat = headless print-mode (no PTY),
+ * terminal = interactive PTY. So when — and only when — the pick disagrees with
+ * `pty_mode`, this also runs the standardized `switchMode(WorkerMode.CLI|
+ * Interactive)`: →terminal spawns + resumes the PTY; →chat kills the PTY worker,
+ * keeping `session_id` and the transcript, and reverts to headless routing. Both
+ * reconcile the transcript so the destination shows turns the other mode
+ * produced. The backend 409s a mid-turn switch; `switching` guards against
+ * double-trigger and drives the spinner.
+ *
+ * Call this ONCE per mount — a second call site would own a second, disagreeing
  * `switching` state.
  */
-export function useProcessModeSwitch({ process, awaitingUserInput, getDims }: UseProcessModeSwitchOptions): {
-  switching: boolean;
-  switchTo: (target: TransportMode) => Promise<void>;
-} {
+export function useProcessModeSwitch({ process, getDims }: UseProcessModeSwitchOptions): ProcessModeSwitch {
   const [switching, setSwitching] = useState(false);
+  const { currentDock, navigation } = useDockNavigation();
+  // The reactive entity: `pty_mode` and the worker status both move underneath
+  // us mid-session, and the switch's selection + gate must follow.
+  const { data: liveProcess } = useEntity<AgenticProcess>(process?.typeId ?? null);
+  const live = liveProcess ?? process ?? null;
+  const transport: TransportMode = live?.pty_mode === false ? 'chat' : 'terminal';
+  const awaitingUserInput = isReadyForInput(live ?? {});
 
-  const switchTo = useCallback(
-    async (target: TransportMode) => {
-      // Mirror the control's disabled gate: never attempt a switch mid-turn (the
-      // backend 409s it). The segments are disabled in that state; this is the
-      // belt-and-suspenders guard for any non-click caller.
-      if (!process || switching || !awaitingUserInput) return;
-      const toChat = target === 'chat';
-      // Transport already at the target → this pick is a pure SKIN flip, with no
-      // lifecycle action to run. That is the common case, not an edge one: in
-      // Standard view the chat pane is painted over a perfectly live PTY, so
-      // picking `terminal` there means "show me the xterm", not "spawn a PTY".
-      // Write the override and stop — never swallow the user's pick.
-      //
-      // The guard keys on the TRANSPORT (`pty_mode`, held stable by the SDK
-      // desired-value latch), NOT on the chat skin: `chatUiOverride` has a known
-      // re-render lag under rapid switching, so a skin-keyed guard could
-      // early-return on a direction that has not actually landed yet.
-      if (process.isHeadless === toChat) {
-        setChatUiOverride(target);
+  const select = useCallback(
+    (mode: SessionMode) => {
+      if (!currentDock) return;
+
+      // Vibe: a view mode of this same dock, reusing the Discuss affordance —
+      // "continue this conversation in vibe mode". Pure navigation, no transport
+      // work, so it is never gated on the worker being idle.
+      if (mode === 'vibe') {
+        navigation.openDock(currentDock.withViewMode(ViewMode.Vibe));
         return;
       }
+
+      // Leaving vibe for a renderer: drop the vibe view mode as the footer
+      // ViewToggle does — Standard is where its Vibe⇄Standard pair lands, and
+      // the chatMode below out-ranks Standard's default skin either way.
+      const dock = currentDock.withChatMode(mode).withViewMode(
+        currentDock.viewMode === ViewMode.Vibe ? ViewMode.Standard : currentDock.viewMode,
+      );
+      navigation.openDock(dock);
+
+      // …and the part the URL can't express: move the worker if the pick
+      // disagrees with the live transport. Keyed on `pty_mode` (held stable by
+      // the SDK desired-value latch) and NOT on the chat skin, whose preference
+      // lags under rapid switching — a skin-keyed test could short-circuit a
+      // direction that has not actually landed.
+      if (!process || switching || transport === mode) return;
+      if (!awaitingUserInput) return; // mirrors the control's disabled gate
+
+      const toChat = mode === 'chat';
       setSwitching(true);
-      try {
-        if (toChat) {
-          await process.switchMode(WorkerMode.CLI);
-          setChatUiOverride('chat');
-        } else {
-          await process.switchMode(WorkerMode.Interactive, getDims());
-          setChatUiOverride('terminal');
+      void (async () => {
+        try {
+          if (toChat) await process.switchMode(WorkerMode.CLI);
+          else await process.switchMode(WorkerMode.Interactive, getDims?.());
+        } catch (err) {
+          console.error('[useProcessModeSwitch] mode switch failed', err);
+          notify.error({
+            title: toChat ? 'Could not switch to chat' : 'Could not switch to terminal',
+            message: err instanceof Error ? err.message : String(err),
+          });
+          setSwitching(false);
+          return;
         }
-      } catch (err) {
-        console.error('[InteractiveTerminal] mode switch failed', err);
-        notify.error({
-          title: toChat ? 'Could not switch to chat' : 'Could not switch to terminal',
-          message: err instanceof Error ? err.message : String(err),
-        });
+        // The TRANSPORT switch is done — re-enable the control now. The transcript
+        // reconcile (pull in turns the other mode produced) is a VIEW concern and is
+        // slow on a large session (the backend transcript parse), so DON'T hold the
+        // control disabled behind it — that wedged rapid switching. Reconcile in the
+        // background; the chat pane fills in when it resolves (and the live WS stream
+        // keeps it current meanwhile). `loadHistory({ force: true })` REPLACES the
+        // stream with the transcript (clears internally) — no separate clear needed.
         setSwitching(false);
-        return;
-      }
-      // The TRANSPORT switch is done — re-enable the control now. The transcript
-      // reconcile (pull in turns the other mode produced) is a VIEW concern and is
-      // slow on a large session (the backend transcript parse), so DON'T hold the
-      // control disabled behind it — that wedged rapid switching. Reconcile in the
-      // background; the chat pane fills in when it resolves (and the live WS stream
-      // keeps it current meanwhile). `loadHistory({ force: true })` REPLACES the
-      // stream with the transcript (clears internally) — no separate clear needed.
-      setSwitching(false);
-      void process
-        .loadHistory({ force: true })
-        .catch((err) => console.debug('[InteractiveTerminal] post-switch reconcile deferred:', err));
+        void process
+          .loadHistory({ force: true })
+          .catch((err) => console.debug('[useProcessModeSwitch] post-switch reconcile deferred:', err));
+      })();
     },
-    [process, switching, awaitingUserInput, getDims],
+    [process, switching, awaitingUserInput, transport, getDims, currentDock, navigation],
   );
 
-  return { switching, switchTo };
+  return { transport, awaitingUserInput, switching, select };
 }

@@ -486,6 +486,7 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
       <ResizablePanel defaultSize={64} minSize={45}>
         <div className="flex h-full flex-col">
           <WorkspaceChildStrip
+            process={activeProcess}
             processTab={session.processTab}
             processDock={session.processDock}
             projectId={project?.id ?? null}

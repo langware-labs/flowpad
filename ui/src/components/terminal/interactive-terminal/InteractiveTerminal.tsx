@@ -9,7 +9,6 @@ import {
   FlowDataSource,
   fsStore,
   isProcessRunning,
-  isReadyForInput,
   PrefKey,
   Shell,
   toplog,
@@ -227,13 +226,6 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   // not reactive, so subscribe via useEntity and surface the banner here.
   const { data: liveProcess } = useEntity<AgenticProcess>(process?.typeId ?? null);
   const liveStartFailure = liveProcess?.start_failure ?? null;
-  // The chat⇄terminal toggle is enabled while the process is ready for input:
-  // RUNNING, fresh headless, or headless-idle, with no turn in flight. A mode
-  // switch mid-turn is 409'd by the backend on the SAME `is_turn_busy` predicate
-  // that sets the wire `busy` boolean, so `isReadyForInput` keeps the toggle in
-  // lock-step with the AP and cannot land on a 409 hole. `liveProcess` is the
-  // reactive entity; the loader `process` is the first-render fallback.
-  const awaitingUserInput = isReadyForInput(liveProcess ?? process ?? {});
   useEffect(() => {
     if (!liveStartFailure || !process) return;
     dataContext.setTerminalRuntimeError({
@@ -1506,19 +1498,17 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     [inputDirInfo, openSideTab],
   );
 
-  // ── Chat ⇄ Terminal mode switch (mutually-exclusive execution modes) ───────
-  // Owned by `useProcessModeSwitch` (this is the ONE call site — a second would
-  // own a second, disagreeing `switching` state). The control itself lives in the
-  // terminal header, built by ProcessToolbar from the props threaded below.
+  // ── Session mode switch (chat ⇄ terminal ⇄ vibe) ──────────────────────────
+  // Owned by `useProcessModeSwitch` (this is the ONE call site for this mount —
+  // a second would own a second, disagreeing `switching` state). It derives the
+  // transport and the readiness gate from the reactive entity itself; all this
+  // mount contributes is the live xterm size for the →terminal direction. The
+  // control renders leftmost in the header, built as a slot by ProcessToolbar.
   const getTerminalDims = useCallback(
     () => (terminalRef.current ? { cols: terminalRef.current.cols, rows: terminalRef.current.rows } : undefined),
     [],
   );
-  const { switching, switchTo } = useProcessModeSwitch({
-    process,
-    awaitingUserInput,
-    getDims: getTerminalDims,
-  });
+  const modeSwitch = useProcessModeSwitch({ process, getDims: getTerminalDims });
 
   // Compute synthetic shell-pane active state for the ribbon
   const ribbonOpenTabs = sidecarShellId ? [...sideWindowTabs, SideTabId.Shell] : sideWindowTabs;
@@ -1611,10 +1601,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
             onClose={onClose}
             shell={shell}
             chatActive={showSimpleChat}
-            transportMode={(liveProcess ?? process)?.pty_mode === false ? 'chat' : 'terminal'}
-            switching={switching}
-            switchEnabled={awaitingUserInput}
-            onSwitchMode={canToggleView ? (mode) => void switchTo(mode) : undefined}
+            modeSwitch={canToggleView ? modeSwitch : undefined}
           />
         )}
         {activePane === 'shell' && sidecarShellId && <PaneBar label="Shell" onClose={() => void handleKillSidecar()} />}

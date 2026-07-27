@@ -47,7 +47,6 @@ describe('isReadyForInput — the "your turn" switch gate', () => {
         enabled={enabled}
         showVibe={false}
         onSelect={onSelect}
-        onVibe={vi.fn()}
       />,
     );
 
@@ -91,7 +90,6 @@ describe('TerminalModeSwitch — transport segment gating', () => {
       enabled: true,
       showVibe: false,
       onSelect: vi.fn(),
-      onVibe: vi.fn(),
       ...over,
     };
     render(<TerminalModeSwitch {...props} />);
@@ -136,16 +134,26 @@ describe('TerminalModeSwitch — transport segment gating', () => {
   it('never gates the vibe segment — it does no transport work', async () => {
     // Mid-turn AND mid-switch: the two states that lock both transports. Vibe is
     // pure ?viewMode navigation onto the same process dock, so it stays live.
-    const { onVibe } = renderSwitch({ enabled: false, switching: true, showVibe: true });
+    const { onSelect } = renderSwitch({ enabled: false, switching: true, showVibe: true });
 
     const btn = screen.getByRole('radio', { name: 'Vibe' });
     expect(btn.disabled).toBe(false);
-    // Vibe is never the SELECTED mode here: vibe replaces the page with
-    // VibeWorkspace, so this header is not mounted in vibe.
+    // Not selected from a terminal header — vibe replaces the page with
+    // VibeWorkspace, so `current` is only ever 'vibe' at the vibe mount.
     expect(btn.getAttribute('aria-checked')).toBe('false');
 
     await userEvent.click(btn);
-    expect(onVibe).toHaveBeenCalledTimes(1);
+    expect(onSelect).toHaveBeenCalledWith('vibe');
+  });
+
+  it('selects vibe at the vibe mount, where the transport is still one of the two', () => {
+    // The vibe display strip renders the same control with current="vibe": the
+    // session is shown in vibe while its transport stays chat or terminal, so
+    // both renderer segments are live exits, not no-ops.
+    renderSwitch({ current: 'vibe', transport: 'terminal', showVibe: true, enabled: true });
+    expect(screen.getByRole('radio', { name: 'Vibe' }).getAttribute('aria-checked')).toBe('true');
+    expect(screen.getByRole('radio', { name: 'Chat' }).getAttribute('aria-checked')).toBe('false');
+    expect(screen.getByRole('radio', { name: 'Terminal' }).disabled).toBe(false);
   });
 
   it('omits the vibe segment in a popped-out window', () => {
