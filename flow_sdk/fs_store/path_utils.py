@@ -175,10 +175,16 @@ def is_valid_project_cwd(
     flavour, candidate, _filesystem_root = keyed
 
     if not include_temp:
-        from flow_sdk.utils.file_system import is_temp_path  # noqa: PLC0415
+        # The host-path helper must only inspect paths in the host's POSIX
+        # flavour. On POSIX, ``Path("C:/work")`` is relative and resolves
+        # beneath the current working directory (often /tmp in tests), which
+        # falsely rejects a valid Windows project cwd. Windows paths are
+        # checked by the flavour-preserving temp-root keys below.
+        if flavour == "posix":
+            from flow_sdk.utils.file_system import is_temp_path  # noqa: PLC0415
 
-        if is_temp_path(path):
-            return False
+            if is_temp_path(path):
+                return False
         if any(_same_or_under(candidate, root) for root in _temp_root_keys(flavour)):
             return False
     return True
