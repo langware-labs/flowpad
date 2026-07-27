@@ -1,10 +1,22 @@
-"""The shared dot-path ``kind`` ontology used by Artifact and Deployment."""
+"""The shared dot-path ``kind`` ontology used by Artifact and Deployment.
+
+COMPAT SHIM — the grammar now lives in ``flow_sdk/tags/grammar.py`` (one
+dot-taxonomy for kinds, bus tags, and capabilities). These names keep their
+exact historical behavior (normalize raises on invalid input); new code should
+import from ``flow_sdk.tags.grammar`` directly. Kept until the Phase-5
+importer migration retires this module.
+"""
 
 from __future__ import annotations
 
-import re
+from flow_sdk.tags.grammar import (
+    TAG_PATTERN as KIND_PATTERN,
+    normalize_tag,
+    tag_ancestors,
+    tag_is_within,
+)
 
-KIND_PATTERN = re.compile(r"^[a-z0-9_-]+(?:\.[a-z0-9_-]+)*$")
+__all__ = ["KIND_PATTERN", "kind_ancestors", "kind_matches", "normalize_kind"]
 
 
 def normalize_kind(kind: str) -> str:
@@ -14,30 +26,19 @@ def normalize_kind(kind: str) -> str:
     vocabulary without an SDK release, while this grammar keeps Python and
     TypeScript matching deterministic.
     """
-
-    if not isinstance(kind, str):
-        raise TypeError("kind must be a string")
-    normalized = kind.strip().lower()
-    if not KIND_PATTERN.fullmatch(normalized):
-        raise ValueError("kind must contain dot-separated lowercase letters, numbers, '_' or '-'")
-    return normalized
+    try:
+        return normalize_tag(kind)
+    except ValueError:
+        raise ValueError(
+            "kind must contain dot-separated lowercase letters, numbers, '_' or '-'"
+        ) from None
 
 
 def kind_matches(query: str, candidate: str) -> bool:
     """Return whether ``candidate`` is ``query`` or one of its descendants."""
-
-    normalized_query = normalize_kind(query)
-    normalized_candidate = normalize_kind(candidate)
-    return normalized_candidate == normalized_query or normalized_candidate.startswith(f"{normalized_query}.")
+    return tag_is_within(normalize_kind(candidate), normalize_kind(query))
 
 
 def kind_ancestors(kind: str, *, include_self: bool = False) -> list[str]:
     """Return dot ancestors from broadest to narrowest."""
-
-    normalized = normalize_kind(kind)
-    parts = normalized.split(".")
-    stop = len(parts) + 1 if include_self else len(parts)
-    return [".".join(parts[:index]) for index in range(1, stop)]
-
-
-__all__ = ["KIND_PATTERN", "kind_ancestors", "kind_matches", "normalize_kind"]
+    return tag_ancestors(normalize_kind(kind), include_self=include_self)

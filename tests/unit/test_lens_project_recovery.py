@@ -20,6 +20,7 @@ import pytest
 
 from flow_sdk.builtin.claude_session import ClaudeSession
 from flow_sdk.fs_store.indexer.roots import resolve_project_id_for_cwd
+from flow_sdk.fs_store.path_utils import is_valid_project_cwd
 
 # The active session id from the RCA (never indexed → "Entity not found").
 CLAUDE_SID = "7313667f-ab48-4add-8918-e6b30b8f8a77"
@@ -33,6 +34,10 @@ async def test_unindexed_claude_session_recovers_project_from_cwd(
     # working dir the transcript was recorded in, the one the folder encodes.
     cwd = tmp_path / "workdir"
     cwd.mkdir()
+    assert is_valid_project_cwd(cwd, include_temp=True), (
+        "fixture premise: the lens transcript must belong to a real project, "
+        "not HOME/an infrastructure root"
+    )
 
     # An on-disk Claude transcript for the session — but NOT indexed (no DB row,
     # exactly like the live session). resolve_session_jsonl globs

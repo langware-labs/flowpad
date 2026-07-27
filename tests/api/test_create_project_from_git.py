@@ -24,7 +24,13 @@ def _origin(url: str, branch: str = "") -> dict:
     return git_origin.model_dump(mode="json")
 
 
-async def _fake_git_clone(clone_url: str, target_dir: str, branch=None):
+#: kwargs the last _fake_git_clone call saw — lets a test assert on how the
+#: action invoked git without wrapping the fake again.
+last_clone: dict = {}
+
+
+async def _fake_git_clone(clone_url: str, target_dir: str, branch=None, token=None):
+    last_clone.update(clone_url=clone_url, target_dir=target_dir, branch=branch, token=token)
     Path(target_dir).mkdir(parents=True, exist_ok=False)
     (Path(target_dir) / "README.md").write_text(f"cloned from {clone_url}")
     return True, "Cloned successfully."
@@ -97,6 +103,41 @@ async def test_create_project_from_git_indexes_clone(bootstrapped_client, monkey
     assert project["fs_storage_mount_path"].endswith(f"/{leaf}")
     # The cloned tree was scanned exactly once, at its own path.
     assert indexed == [str(target)]
+
+
+# do not increase timeout without approval
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)
+async def test_create_project_from_git_clones_with_user_token(bootstrapped_client, monkeypatch):
+    """The clone must authenticate with the caller's stored GitHub token — see
+    ``git_remote_access`` in flow_sdk/utils/git.py for why check and clone have
+    to share a credential path."""
+    import flow_sdk.app.actions.oauth_action as oauth_action
+
+    bootstrap = await bootstrapped_client.get("/api/v1/graph/bootstrap")
+    cn_id = _cn_id(bootstrap.json())
+
+    leaf = "Private-World"
+    target = Path(AGENT_MOUNT_FOLDER) / leaf
+    if target.exists():
+        import shutil
+        shutil.rmtree(target)
+
+    async def _fake_token():
+        return "ghs_test_token", None
+
+    # Patched on the defining module — the action imports the helper lazily
+    # inside the function body, so it resolves the patched version at call time.
+    monkeypatch.setattr(oauth_action, "_get_github_token_for_current_user", _fake_token)
+
+    with patch("flow_sdk.utils.git.git_clone", side_effect=_fake_git_clone):
+        r = await bootstrapped_client.post(
+            f"/api/v1/graph/compute_node/{cn_id}/create-project-from-git",
+            json={"git_origin": _origin(f"https://github.com/octocat/{leaf}.git")},
+        )
+
+    assert r.status_code == 200, r.text
+    assert last_clone["token"] == "ghs_test_token"
 
 
 # do not increase timeout without approval

@@ -14,14 +14,51 @@ import { pageRedirectUrl } from '@src/navigation/supported-pages';
 import { setupTabAndAdopt } from '@src/tabs/setup-tab-and-adopt';
 import { ViewType } from '@src/types/ViewType';
 import { TimeIt } from '@src/utils/timeit';
-import { redirect, type LoaderFunctionArgs as LoaderArgs } from 'react-router';
-import { loadProject } from './load-project';
+import { redirect, replace, type LoaderFunctionArgs as LoaderArgs } from 'react-router';
+import { ProjectLoadError, loadProject } from './load-project';
 import { describeProcessStartError } from './load-process';
 import { markPerfT0, perfLog, perfTime } from './_perf';
 import { loadDockPointer } from './load-dock-pointer';
 
 // Re-export kept for existing consumers (unit tests import from here).
 export { describeProcessStartError };
+
+/**
+ * Drop a dock's scope when the project it pins does not exist, by redirecting to
+ * the SAME pointer with no scope keys.
+ *
+ * This runs before tab materialization on purpose, and only for a SCOPE-KEYED
+ * dock (Assets, Explorer), whose tab identity IS its scope
+ * (`tabHash` = `<viewType>|project:<id>`). Such a tab cannot be minted for a
+ * project that isn't there — `setupTab` throws "Tab could not be materialized
+ * for this URL.", records OpenFailed and returns, so NOTHING downstream runs:
+ * not the dock loader, not scope adoption, not any error surface. The dock is
+ * abandoned and the browse views render the dead scope's zero rows as an
+ * ordinary empty list. Any repair placed after this point is unreachable, which
+ * is what makes this the right seam. Docks whose identity ignores scope are
+ * unaffected and are left to resolve their own project (a shell derives it from
+ * its process), so they pay no extra fetch here.
+ *
+ * Only a resolved 404/403 (`ProjectLoadError`) strips the scope. A transient
+ * failure (offline, 5xx) leaves the URL alone — the project probably exists, and
+ * a network blip must not silently rewrite where the user is. Ids are per
+ * instance, so a dead scope is usually a stale tab/bookmark or a URL carried in
+ * from another instance.
+ */
+async function repairUnsatisfiableScope(dock: DockPointer, requestPath: string): Promise<void> {
+  if (!dock.scopeKeyed) return;
+  const projectId = dock.scopeProjectId;
+  if (!projectId || dataContext.project?.id === projectId) return;
+  try {
+    // Also warms the entity cache + context, so the dock loader's own scope
+    // adoption downstream is a cache hit rather than a second round trip.
+    await loadProject(new TypeId(Project.type, projectId));
+  } catch (cause) {
+    if (!(cause instanceof ProjectLoadError)) return;
+    // eslint-disable-next-line @typescript-eslint/only-throw-error
+    throw replace(dock.withoutScopeFilter().toUrl(requestPath));
+  }
+}
 
 /**
  * Ensure compute node is loaded for the current project.
@@ -130,6 +167,12 @@ export async function loadAgentApp(args: LoaderArgs) {
       // eslint-disable-next-line @typescript-eslint/only-throw-error
       throw redirect(pageRedirect);
     }
+  }
+
+  // A dock whose scope pins a project that no longer exists is repaired here —
+  // BEFORE setupTab tries (and fails) to materialize a tab keyed by that scope.
+  if (dockForSetup) {
+    await repairUnsatisfiableScope(dockForSetup, requestUrl.pathname);
   }
 
   if (!processId && !viewType && /^\/dock\/?$/.test(requestUrl.pathname)) {

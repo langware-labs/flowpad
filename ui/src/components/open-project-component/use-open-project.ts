@@ -174,5 +174,14 @@ export function useProjectOpener({ onProjectChanged, onPicked, onError }: UsePro
     [pickFolder, ensureProjectAndSetContext, onError, t],
   );
 
-  return { computeNode, ensureProjectAndSetContext, pickFolder, openProjectFolder };
+  return {
+    computeNode,
+    ensureProjectAndSetContext,
+    pickFolder,
+    openProjectFolder,
+    // The landing policy above (see `setCurrentProjectContext`), for callers
+    // holding an already-minted Project rather than a path — e.g. a git clone,
+    // where the backend minted it. A `ProjectLanding`.
+    openExistingProject: setCurrentProjectContext,
+  };
 }

@@ -5,6 +5,8 @@ import { X } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import flowpadIcon from '@src/assets/flowpad-icon.png';
+import { cn } from '@src/lib/utils';
+import { topmost } from '@src/lib/topmost';
 import { useFloatingChat } from './FloatingChatContext';
 import { useFlowpadAssistantProject } from './useFlowpadAssistantProject';
 import { Trans, useLingui } from '@lingui/react/macro';
@@ -245,17 +247,7 @@ export function FloatingChatWindow() {
           setPhase('closed');
         }
       }}
-      className={[
-        'fixed z-50 flex flex-col overflow-hidden rounded-lg bg-background',
-        // Light-blue accent border + ring so the panel pops off any background.
-        'border border-sky-400/70 ring-1 ring-sky-400/30',
-        'dark:border-sky-400/50 dark:ring-sky-400/20',
-        // Theme-aware shadow: light theme uses a deeper blue-grey drop +
-        // softer sky bloom so the panel reads off white backgrounds without
-        // the cast looking like a flat black drop. Dark stays glowing-blue.
-        'shadow-[0_22px_50px_-10px_rgba(15,23,42,0.30),0_12px_28px_-8px_rgba(30,64,175,0.28),0_0_0_1px_rgba(56,189,248,0.18)]',
-        'dark:shadow-[0_22px_60px_-12px_rgba(56,189,248,0.55),0_10px_32px_-10px_rgba(56,189,248,0.45)]',
-      ].join(' ')}
+      className={cn(topmost, 'overflow-hidden')}
       style={{
         left: bounds.x,
         top: bounds.y,

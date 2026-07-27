@@ -13,8 +13,13 @@ Model (version 1):
 * ``FlowNodeDef`` — ``node_type`` is one of:
     - ``trigger``  — entity-ref to a Trigger (``node_data.typeid``);
                      output-only (emits ``fired``), no inputs.
-    - ``agent``    — a spawned worker station (``program_kind: skill|instruction``,
-                     ``program_ref``, ``prompt``, ``model_size``, scheduler knobs).
+    - ``agent``    — a spawned worker station. Preferably REFERENCES an Agent
+                     definition entity (``node_data.typeid = "agent-<id>"`` —
+                     model/tools/system prompt live on the definition, like
+                     trigger→Trigger); inline fields (``program_kind:
+                     skill|instruction``, ``program_ref``, ``prompt``,
+                     ``model_size``) act as overrides, or stand alone for an
+                     anonymous ad-hoc agent.
     - ``function`` — a FlowFunction (``node_data.function`` = registry name or
                      ``scripts/<file>.py``; ``node_data.runtime`` = ``inline`` |
                      ``subprocess``). One contract everywhere:
@@ -34,11 +39,32 @@ from typing import Any, Literal, Optional
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 CATCH_ALL_EVENT = "*"
+# The virtual source for external injections (mirror of envelope.EXTERNAL_SOURCE
+# — kept literal here so the document model stays import-light).
+EXTERNAL_SOURCE_NODE = "$external"
 TRIGGER_FIRED_EVENT = "fired"
 AGENT_DONE_EVENT = "done"
 
-NodeType = Literal["trigger", "agent", "function"]
+NodeType = Literal["trigger", "agent", "function", "guided_step"]
 FunctionRuntime = Literal["inline", "subprocess"]
+
+# guided_step — a human-in-the-loop node (User Journeys). It PRESENTS a place in
+# the app (a standard dock pointer + optional wiki-word highlight), then PARKS the
+# run waiting for a standard signal (dock reached / entity query / process status)
+# that the frontend orchestrator observes; when satisfied the orchestrator injects
+# this node's `done`, routed onward by the ordinary edge machinery. No new viewer,
+# no DOM interception — pure guidance/orchestration over standard surfaces.
+GUIDED_PRESENT_KINDS = {"asset_editor", "wiki", "home", "asset_list", "root"}
+# What a guided step can do FOR the user, offered as a button on the step.
+# `run` types a command into the step's terminal; `fs_check` proves a file
+# landed. The frontend owns each kind's semantics — this is the vocabulary.
+GUIDED_ACT_KINDS = {"fill", "open_terminal", "run", "fs_check", "setup_capability",
+                    "oauth_connect", "device_login", "git_check"}
+# The await side is a unified-bus subscription (docs/tags.md): `tag` names
+# the awaited event (`app.page.signal`, `app.route.loaded`, `app.entity.created`,
+# or `manual` for Continue-only), `target`/`vfs`/`home` filter it, and an
+# optional `confirm` store-query proves it (event ≠ proof). The engine only
+# requires the tag — the frontend JourneyManager owns the semantics.
 
 # Retired spellings → the pointed message users get instead of a pydantic enum error.
 _RETIRED_NODE_TYPES = {
@@ -71,6 +97,10 @@ class FlowConfig(BaseModel):
     max_hops: int = 16          # per-run event-hop budget (cycle guard)
     max_processes: int = 10     # per-run spawned-process budget
     deadline_s: int = 600       # per-run wall-clock budget
+    # Subscription-entry storm cap (runs started by the subscriptions: block,
+    # per minute). Bounds cross-flow ping-pong loops the self-brake can't see
+    # (A→B→A chains mint fresh envelopes every hop). One warn per window.
+    max_entries_per_minute: int = 30
 
 
 class FlowNodeDef(BaseModel):
@@ -97,6 +127,22 @@ class FlowNodeDef(BaseModel):
         return "subprocess" if str(self.node_data.get("function") or "").endswith(".py") else "inline"
 
 
+class FlowSubscriptionDef(BaseModel):
+    """A graph-level unified-bus subscription (docs/flow-events.md phase 5):
+    a matching FlowEvent starts a FRESH run — entry event ``event`` (default:
+    the bus tag string), ``data = {tag, target, data}``, delivered to
+    ``node`` directly when set, else edge-routed from ``$external``."""
+
+    id: str = ""
+    pattern: str
+    target: Optional[str] = None
+    scope: list[str] = Field(default_factory=list)
+    # Entry event name inside the flow; defaults to the bus tag.
+    event: Optional[str] = None
+    # Direct-delivery node (bypasses edge routing), like inject's target_node.
+    node: Optional[str] = None
+
+
 class EdgeEndpoint(BaseModel):
     node: str
     event: str = CATCH_ALL_EVENT
@@ -121,6 +167,7 @@ class FlowDoc(BaseModel):
     description: str = ""
     enabled: bool = True  # the flow's active switch
     config: FlowConfig = Field(default_factory=FlowConfig)
+    subscriptions: list[FlowSubscriptionDef] = Field(default_factory=list)
     nodes: list[FlowNodeDef] = Field(default_factory=list)
     edges: list[FlowEdgeDef] = Field(default_factory=list)
 
@@ -175,7 +222,8 @@ class FlowDoc(BaseModel):
             problems.append("duplicate node ids")
         known = set(ids)
         for e in self.edges:
-            if e.from_.node not in known:
+            # $external is a legal virtual SOURCE (inject-fed edges), never a node.
+            if e.from_.node not in known and e.from_.node != EXTERNAL_SOURCE_NODE:
                 problems.append(f"edge {e.id}: unknown source node {e.from_.node}")
             if e.to_node not in known:
                 problems.append(f"edge {e.id}: unknown target node {e.to_node}")
@@ -188,7 +236,60 @@ class FlowDoc(BaseModel):
             target = self.node(e.to_node)
             if target is not None and target.node_type == "trigger":
                 problems.append(f"edge {e.id}: trigger nodes accept no inputs")
+        for sub in self.subscriptions:
+            # The tags-owned bus-pattern grammar gate (same rule as TAG
+            # triggers — one owner, right dependency direction).
+            from flow_sdk.tags import validate_bus_pattern
+
+            problem = validate_bus_pattern(sub.pattern)
+            if problem:
+                problems.append(f"subscription {sub.id or sub.pattern!r}: {problem}")
+            if sub.node and sub.node not in known:
+                problems.append(f"subscription {sub.id or sub.pattern!r}: unknown node {sub.node}")
         for n in self.nodes:
+            if n.node_type == "agent":
+                nd = n.node_data
+                if not (nd.get("typeid") or nd.get("program_ref") or nd.get("prompt")):
+                    problems.append(
+                        f"node {n.id}: agent nodes need an Agent reference (typeid) "
+                        "or an inline program (program_ref / prompt)"
+                    )
+                continue
+            if n.node_type == "guided_step":
+                nd = n.node_data
+                present = nd.get("present") or {}
+                # A dock is OPTIONAL: a step may highlight in place (moving the
+                # user off the surface they must click would defeat it), or
+                # present nothing at all and just wait. Only the kind is checked,
+                # and only when a dock is actually given.
+                dock = present.get("dock")
+                if dock is not None and dock.get("kind") not in GUIDED_PRESENT_KINDS:
+                    problems.append(
+                        f"node {n.id}: guided_step present.dock.kind must be "
+                        f"in {sorted(GUIDED_PRESENT_KINDS)}"
+                    )
+                await_spec = nd.get("await") or {}
+                tag = await_spec.get("tag")
+                if not isinstance(tag, str) or not tag:
+                    problems.append(
+                        f"node {n.id}: guided_step needs node_data.await.tag "
+                        "(a non-empty bus tag string, e.g. 'app.page.signal', or 'manual')"
+                    )
+                # `act` — what the journey OFFERS to do for the user (a step
+                # button, not an automatic side effect). It aims at a tag word
+                # like `present.highlight` does, so a missing target is dead.
+                act = nd.get("act")
+                if act is not None:
+                    if act.get("kind") not in GUIDED_ACT_KINDS:
+                        problems.append(
+                            f"node {n.id}: guided_step act.kind must be in {sorted(GUIDED_ACT_KINDS)}"
+                        )
+                    if not (act.get("target") or "").strip():
+                        problems.append(
+                            f"node {n.id}: guided_step act needs a target (a tag word, "
+                            "e.g. 'AgentInstructions')"
+                        )
+                continue
             if n.node_type != "function":
                 continue
             ref = str(n.node_data.get("function") or "")
@@ -206,8 +307,11 @@ class FlowDoc(BaseModel):
         return problems
 
 
-def _parse_trigger_ref(node: FlowNodeDef) -> str | None:
-    """A trigger node's referenced Trigger ENTITY id, via the TypeId grammar."""
+def _parse_entity_ref(node: FlowNodeDef, expected_type: str) -> str | None:
+    """A node's referenced ENTITY id (``node_data.typeid``), via the canonical
+    TypeId grammar — the one matcher for node→entity references (trigger nodes
+    → Trigger, agent nodes → Agent). Garbage refs parse to None, never a
+    partial match."""
     raw = str(node.node_data.get("typeid") or "")
     if not raw:
         return None
@@ -217,7 +321,17 @@ def _parse_trigger_ref(node: FlowNodeDef) -> str | None:
         tid = TypeId(raw)
     except Exception:
         return None
-    return tid.id if tid.type == "trigger" else None
+    return tid.id if tid.type == expected_type else None
+
+
+def _parse_trigger_ref(node: FlowNodeDef) -> str | None:
+    return _parse_entity_ref(node, "trigger")
+
+
+def agent_ref(node: FlowNodeDef) -> str | None:
+    """An agent node's referenced Agent ENTITY id (the definition), or None
+    for a purely inline agent node."""
+    return _parse_entity_ref(node, "agent")
 
 
 def parse_flow_doc(text: str) -> FlowDoc:

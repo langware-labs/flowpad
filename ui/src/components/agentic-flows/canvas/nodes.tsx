@@ -73,6 +73,7 @@ export function StationCard({ data, selected }: NodeProps) {
     parallel_limit?: number;
     merge_identical?: boolean;
     function?: string;
+    typeid?: string;
   };
   const isFunction = def.node_type === 'function';
   const runtime = isFunction ? functionRuntime(def) : '';
@@ -96,11 +97,16 @@ export function StationCard({ data, selected }: NodeProps) {
     });
   };
 
+  const agentRef = !isFunction && typeof nd.typeid === 'string' && nd.typeid.startsWith('agent-')
+    ? nd.typeid.slice('agent-'.length)
+    : '';
   const sub = isFunction
     ? nd.function || 'no function'
-    : nd.program_kind === 'skill'
-      ? `/${nd.program_ref}`
-      : nd.program_ref || nd.prompt || '';
+    : agentRef
+      ? `⚙ ${agentRef.slice(0, 8)}${nd.prompt ? ' + prompt' : ''}`
+      : nd.program_kind === 'skill'
+        ? `/${nd.program_ref}`
+        : nd.program_ref || nd.prompt || '';
 
   return (
     <div className={['afl-node', selected ? 'selected' : '', running ? 'running' : '', failed ? 'failed' : ''].join(' ')}>

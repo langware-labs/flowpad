@@ -57,6 +57,7 @@ export const WARNING_IDS = {
   NO_HARNESS: 'no-harness',
   HARNESS_LOGIN: 'harness-login-required',
   SNIFFER_NOT_FOUND: 'sniffer-not-found',
+  SNIFFER_ACTIVE: 'sniffer-active',
   SECRETS_NOT_ENABLED: 'secrets-not-enabled',
 } as const;
 
@@ -232,6 +233,22 @@ export function createSecretsNotEnabledWarning(): UserWarning {
     targetView: ViewType.AI_CONFIG,
   };
 }
+
+/**
+ * Create a warning shown while the hook sniffer is actually installed in the
+ * harness settings file — every coding-agent session on this machine reports
+ * its hook events to Flowpad. Clicking it turns the sniffer off (routed to the
+ * `sniffer.disable` command by the warnings popover, so the toast and the
+ * popover share one disable path and one wording).
+ */
+export const SNIFFER_ACTIVE_WARNING: UserWarning = {
+  id: WARNING_IDS.SNIFFER_ACTIVE,
+  icon: 'AlertTriangle',
+  color: 'yellow',
+  message: 'Hook sniffer is on',
+  description: 'Claude Code hooks report every session on this machine to Flowpad.',
+  targetView: ViewType.HOOKS,
+};
 
 /**
  * Create a warning for sniffer hook not found

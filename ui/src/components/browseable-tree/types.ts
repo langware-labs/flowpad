@@ -60,6 +60,11 @@ export interface Browseable {
    *  `opacity-50 hover:opacity-100`). Cosmetic only — never carries behavior. */
   rowClassName?: string;
 
+  /** Optional tag tag (see ui/src/tags): the row renders `data-tag`, so
+   *  it is highlightable by journeys/wiki links and click-observable on the
+   *  EventBus — declaratively, with no per-adapter DOM wiring. */
+  tag?: string;
+
   /** Optional full-row body that replaces the default `icon | label | badge`
    *  zone. Use for rich, multi-line rows (e.g. a trigger showing scope chip +
    *  name + type-specific metadata lines). When set, `label`/`icon`/`badge` are

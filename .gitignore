@@ -321,3 +321,4 @@ SOC2/
 /home-snapshot.md
 /feedback.md
 /prompts/
+flow_sdk/system_projects/**/.claude/journeys/*/runs/

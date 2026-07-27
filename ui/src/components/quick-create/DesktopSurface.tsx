@@ -35,6 +35,9 @@ export function DesktopSurface({
   const { currentDock } = useDockNavigation();
   const [modalOpen, setModalOpen] = useState(false);
   const { roots, onDropToBackground, onReorderRoot } = useFavoritesRoots({ filter });
+  // This surface hosts the quick-create dialog set itself. No page mounts it
+  // beside another host's instance (the project home renders its own tiles
+  // without this surface), so the host-supplied-panelProps branch is gone.
   const { panelProps, dialogs } = useQuickCreatePick();
   const { createFolder } = useFavorites();
 

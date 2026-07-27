@@ -40,7 +40,9 @@ dependencies = [
     "beautifulsoup4",
     "dpath",
     "tiktoken",
-    "usearch",
+    # <2.24: usearch 2.24+ depends on numkong, which ships no wheels for many
+    # platforms and fails to build from source (needs omp.h) — breaks fresh installs.
+    "usearch<2.24",
     "numpy",
     "bs4>=0.0.2",
     "h2",

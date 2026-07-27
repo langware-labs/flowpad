@@ -1,5 +1,6 @@
-import { APIEntity, registerEntity } from '../APIEntity';
+import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { FrontMatterFsRef } from '../fs/FrontMatterFsRef';
+import { ActionInfo } from '../models';
 import { DockPointerData } from '../models/DockPointer';
 import { dataContext } from '../FlowSync/context';
 import { ComputeNodeSize } from './compute-node';
@@ -26,6 +27,16 @@ export enum WorkerType {
   COPILOT = 'copilot',
   SIMPLE = 'simple',
 }
+
+/** How an agent asset is used. Mirrors backend `AgentKind`.
+ *  - Harness (default): a normal sub-agent run by the CLI harness.
+ *  - Vibe: a persona layered on top of the standard vibe agent (embedded after
+ *    it, in created-date order, on vibe process start). */
+export const AgentKind = {
+  Harness: 'harness',
+  Vibe: 'vibe',
+} as const;
+export type AgentKind = (typeof AgentKind)[keyof typeof AgentKind];
 
 export type Model = 'anthropic/claude-sonnet-4.5' | 'openai/gpt-5';
 
@@ -61,6 +72,7 @@ export interface IAgentRecord {
   max_turns?: number;
   tools?: string[];
   path?: string;
+  kind?: AgentKind;
 }
 
 /**
@@ -81,6 +93,10 @@ export class Agent extends APIEntity<Agent> {
   /** Absolute on-disk path to the agent .md file. */
   asset_ref?: string;
 
+  /** How the agent is used (mirror of backend `Agent.kind`). Defaults to
+   *  `harness`; `vibe` agents layer onto the standard vibe agent. */
+  kind?: AgentKind;
+
   // Legacy cloud fields — kept for UI compat only
   site_config?: ISiteConfig;
   agent_config?: IAgentConfig;
@@ -92,6 +108,7 @@ export class Agent extends APIEntity<Agent> {
     this.name = entity.name;
     this.description = entity.description;
     this.asset_ref = entity.asset_ref;
+    this.kind = entity.kind ?? AgentKind.Harness;
     this.histogram = entity.histogram || {};
     this.enabled = entity.enabled ?? true;
     this.agent_config = entity.agent_config;
@@ -130,5 +147,23 @@ export class Agent extends APIEntity<Agent> {
     const scopeIds = project?.typeId ? [project.typeId] : [];
     const agent = new Agent({ name: name.trim() });
     return agent.save(scopeIds);
+  }
+
+  /**
+   * Set this agent's `kind` (e.g. mark/unmark as a vibe agent). Backed by the
+   * `set-kind` action, which rewrites the `.claude/agents/<name>.md` frontmatter
+   * server-side preserving every other field, then reindexes — do NOT use
+   * entity save/FrontMatterFsRef for this (they'd drop other frontmatter).
+   */
+  async setKind(kind: AgentKind): Promise<void> {
+    await Agent.setKindById(this.id, kind);
+  }
+
+  /** Set `kind` for an agent by id — for callers that only hold a picked
+   *  descriptor's id (e.g. the vibe-agents picker) rather than the entity. */
+  static async setKindById(id: string, kind: AgentKind): Promise<void> {
+    const action = new ActionInfo('set-kind', Agent.type, id, 'POST');
+    action.bodyParameters = { kind };
+    await dataManager.callAction(action);
   }
 }

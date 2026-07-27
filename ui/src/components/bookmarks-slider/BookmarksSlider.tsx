@@ -38,7 +38,7 @@ export function BookmarksSlider({
   hoverProps: { onPointerEnter: PointerEventHandler; onPointerLeave: PointerEventHandler };
 }) {
   const { t } = useLingui();
-  const { filter, scopeBar } = useFavoritesScope();
+  const { filter, scopeKey, scopeBar } = useFavoritesScope();
   const { reapDead } = useFavorites();
   useCloseOnNavigate(open, () => onOpenChange(false));
   // Opening the bookmarks menu is when we clean house: hard-delete any dead
@@ -74,7 +74,7 @@ export function BookmarksSlider({
       onPointerEnter={hoverProps.onPointerEnter}
       onPointerLeave={hoverProps.onPointerLeave}
     >
-      <FavoritesTreeMenu filter={filter} />
+      <FavoritesTreeMenu key={scopeKey} filter={filter} />
     </LeftSlider>
   );
 }

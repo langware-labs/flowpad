@@ -121,13 +121,13 @@ export class InstancePreferences extends EventEmitter {
 
   // ===== Generic registry-keyed API =====
 
-  /** Current value for a topic, falling back to the registry default. */
+  /** Current value for a tag, falling back to the registry default. */
   get(key: PrefKey): unknown {
     return key in this._prefs ? this._prefs[key] : PREF_REGISTRY[key]?.defaultValue;
   }
 
   /**
-   * Set a topic's value (coerced to its registered dataType). No-op when the
+   * Set a tag's value (coerced to its registered dataType). No-op when the
    * value is unchanged. Bumps the version and schedules a debounced save.
    */
   set(key: PrefKey, value: unknown): void {

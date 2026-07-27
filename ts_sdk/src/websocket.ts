@@ -13,10 +13,7 @@ import { toplog } from './services/toplog';
 import { defineGlobal } from './utils/globals';
 
 type MessageType =
-  | 'entity_msg'
   | 'data_op_msg'
-  | 'stream_msg'
-  | 'transcript_msg'
   | 'control_msg'
   | 'oauth_msg'
   | 'rest_api_msg'
@@ -31,6 +28,7 @@ type MessageType =
   | 'privacy_mode_msg'
   | 'toplog_state_msg'
   | 'flow_run_event_msg'
+  | 'tag_msg'
   | 'flow_node_status_msg'
   | 'ui_command'
   | 'recovered_msg'
@@ -135,6 +133,12 @@ export interface ToplogStateMessage extends BaseMessage {
  * Broadcast for every event/lifecycle beat of an AgenticFlow run — the live
  * run stream. Backend mirror: FlowRunEventMessage in flow_sdk/api/messages.py.
  */
+/** The unified event-bus frame — one serialized FlowEvent (docs/flow-events.md). */
+export interface TagMsg extends BaseMessage {
+  message_type: 'tag_msg';
+  event: import('./tags/EventBus').FlowEvent;
+}
+
 export interface FlowRunEventMessage extends BaseMessage {
   message_type: 'flow_run_event_msg';
   flow_id: string;
@@ -411,7 +415,8 @@ export class ConnectionManager extends EventEmitter {
       ws.addEventListener('message', (event) => {
         try {
           if (event.data instanceof ArrayBuffer) {
-            this.onBinMessage(event.data);
+            // Binary frames are unused (dead on_bin_msg path removed —
+            // flow-events phase-8 scan found zero subscribers).
           } else if (typeof event.data === 'string') {
             this.onMessage(JSON.parse(event.data));
           } else {
@@ -583,14 +588,8 @@ export class ConnectionManager extends EventEmitter {
   }
 
   onMessage(data: BaseMessage) {
-    if (data.message_type === 'entity_msg') {
-      return null;
-    }
     if (data.message_type === 'control_msg') {
       return this.onControlMessage(data as ControlMessage);
-    }
-    if (data.message_type === 'transcript_msg') {
-      return this.onStreamMessage(data as TranscriptMessage);
     }
     if (data.message_type === 'data_op_msg') {
       return this.onDataOpMessage(data as DataOpMessage);
@@ -624,6 +623,9 @@ export class ConnectionManager extends EventEmitter {
     }
     if (data.message_type === 'privacy_mode_msg') {
       return this.onPrivacyModeMessage(data as PrivacyModeMessage);
+    }
+    if (data.message_type === 'tag_msg') {
+      return this.onTagMessage(data as TagMsg);
     }
     if (data.message_type === 'flow_run_event_msg') {
       return this.onFlowRunEventMessage(data as FlowRunEventMessage);
@@ -682,6 +684,11 @@ export class ConnectionManager extends EventEmitter {
     this.emit('on_toplog_state_msg', data);
   }
 
+  /** Unified event bus frame → the ws-bridge feeds it into the app EventBus. */
+  onTagMessage(data: TagMsg) {
+    this.emit('on_tag_msg', data);
+  }
+
   onFlowRunEventMessage(data: FlowRunEventMessage) {
     this.emit('on_flow_run_event_msg', data);
   }
@@ -694,23 +701,11 @@ export class ConnectionManager extends EventEmitter {
     this.emit('on_ui_command', data);
   }
 
-  onBinMessage(data: ArrayBuffer) {
-    // print all the data in the buffer
-    // const byteArray = new Uint8Array(data);
-    // let byteString = '';
-    // for (let i = 0; i < byteArray.length; i++) {
-    //   byteString += byteArray[i].toString(16).padStart(2, '0') + ' ';
-    // }
-    this.emit('on_bin_msg', data);
-  }
 
   onControlMessage(data: ControlMessage) {
     this.emit('on_control_msg', data);
   }
 
-  onStreamMessage(data: TranscriptMessage) {
-    this.emit('on_stream_msg', data);
-  }
 
   private parseTypeId(rawTypeId: ITypeId): TypeId | null {
     try {

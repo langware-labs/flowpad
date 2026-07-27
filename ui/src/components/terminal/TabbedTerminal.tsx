@@ -130,7 +130,7 @@ const TerminalPanel: React.FC<{
     const clean = cleanTitle(title);
     if (!allowRename(clean) || source.name === clean) return;
     // A restarting worker re-announces itself (title `claude` / the exe path)
-    // before any topic title exists — never let that clobber the stored name.
+    // before any tag title exists — never let that clobber the stored name.
     if (isProgramIdentityTitle(clean, isProcess ? process : null)) return;
     source.name = clean;
     void source.save().catch(() => {});
@@ -224,7 +224,7 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({ className = '', scope =
       <div className="flex h-full w-full flex-col">
         <div className="relative flex-1 overflow-hidden" data-testid="terminal-panels">
           {tabs.length === 0 ? (
-            <ProjectHome spawnProjectId={spawnProjectId} showSessionStarters />
+            <ProjectHome spawnProjectId={spawnProjectId} createOnly />
           ) : (
             tabs.map((tab) => {
               const tabHash = tabKey(tab);

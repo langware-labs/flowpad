@@ -107,7 +107,7 @@ describe('isProgramIdentityTitle', () => {
     expect(isProgramIdentityTitle('c:/users/me/.local/bin/claude.exe', claude)).toBe(true);
   });
 
-  it('lets topic titles through, including ones mentioning the worker', () => {
+  it('lets tag titles through, including ones mentioning the worker', () => {
     expect(isProgramIdentityTitle('Fix expired invitation returning HTTP 500', claude)).toBe(false);
     expect(isProgramIdentityTitle('✳ Fix Windows crash-loop on Claude resume', claude)).toBe(false);
   });

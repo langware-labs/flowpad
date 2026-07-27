@@ -499,6 +499,8 @@ function BrowseableRow({
       role="treeitem"
       aria-level={level + 1}
       aria-selected={isSelected}
+      data-tag={node.tag}
+      data-tag-kind={node.tag ? 'button' : undefined}
       data-multi-selected={multiSelected || undefined}
       aria-expanded={hasChildrenHint ? expanded : undefined}
       draggable={!!node.dragData}

@@ -1,13 +1,12 @@
-import { Agent, AgentTrace, APIEntity, AssetCleanupReport, dataManager, Deck, DeckTemplate, DynamicWorkflow, FSRef, Skill, Spreadsheet, Task, TypeId, UsageReport, VFSPath, Whiteboard } from '@sdk';
+import { Agent, AgentTrace, APIEntity, AssetCleanupReport, dataManager, Deck, DeckTemplate, DynamicWorkflow, FSRef, Journey, Skill, Spreadsheet, Task, TypeId, UsageReport, VFSPath, Whiteboard } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
-import { useMemo } from 'react';
+import { lazy, Suspense, useMemo } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import CodeEditor from '@src/components/code-editor/CodeEditor';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { AssetEditor, AssetRoutingMethod, EDITOR_TYPES, editorForType, isFileOnlyEditor } from '@src/navigation/asset-doc-types';
 import { HtmlPreview } from '@src/components/html-preview/HtmlPreview';
-import { McpAppPreview } from '@src/components/mcp-app-preview/McpAppPreview';
 import { MediaViewer } from '@src/components/media-viewer/MediaViewer';
 import { PdfViewer } from '@src/components/pdf-viewer/PdfViewer';
 import { EntityResolutionGate } from './EntityResolutionGate';
@@ -20,11 +19,18 @@ import { AgentTraceAssetEditor } from './agent-trace/AgentTraceAssetEditor';
 import { DynamicWorkflowAssetEditor } from './dynamic-workflow/DynamicWorkflowAssetEditor';
 import { UsageReportAssetEditor } from './usage-report/UsageReportAssetEditor';
 import { AssetCleanupReportAssetEditor } from './asset-cleanup/AssetCleanupReportAssetEditor';
+import { JourneyViewer } from '@src/journey/JourneyViewer';
 import { WhiteboardAssetEditor } from './whiteboard/WhiteboardAssetEditor';
 import { DeckTemplateViewer } from './deck-template/DeckTemplateViewer';
 import { DeckViewer } from './deck/DeckViewer';
-import { SpreadsheetAssetEditor } from './spreadsheet/SpreadsheetAssetEditor';
 import { AssetCollisionProvider, AssetCollisionShell } from './AssetCollisionUI';
+
+const McpAppPreview = lazy(() =>
+  import('@src/components/mcp-app-preview/McpAppPreview').then((m) => ({ default: m.McpAppPreview })),
+);
+const SpreadsheetAssetEditor = lazy(() =>
+  import('./spreadsheet/SpreadsheetAssetEditor').then((m) => ({ default: m.SpreadsheetAssetEditor })),
+);
 
 interface AssetEditorRouterProps {
   /** The ViewType.ASSETS pointer, e.g. "editor/<editor>/<method>/<value>". */
@@ -132,7 +138,11 @@ export function AssetEditorRouter({ pointer }: AssetEditorRouterProps) {
     return <HtmlPreview path={machinePathOf(ptr.value)} />;
   }
   if (ptr.editor === AssetEditor.MCP_APP) {
-    return <McpAppPreview path={machinePathOf(ptr.value)} process={flow ?? null} />;
+    return (
+      <Suspense fallback={<ConnectingFallback />}>
+        <McpAppPreview path={machinePathOf(ptr.value)} process={flow ?? null} />
+      </Suspense>
+    );
   }
   if (ptr.editor === AssetEditor.IMAGE || ptr.editor === AssetEditor.VIDEO || ptr.editor === AssetEditor.AUDIO) {
     // The enum values ARE the kind strings ('image' | 'video' | 'audio').
@@ -261,6 +271,15 @@ export function AssetEditorRouter({ pointer }: AssetEditorRouterProps) {
           )}
         />
       );
+    case AssetEditor.JOURNEY:
+      return (
+        <EntityResolutionGate<Journey>
+          type={Journey.type}
+          fsRef={fsRef}
+          typeLabel="journey"
+          render={(journey) => <JourneyViewer journey={journey} />}
+        />
+      );
     case AssetEditor.SPREADSHEET:
       return (
         <EntityResolutionGate<Spreadsheet>
@@ -269,7 +288,9 @@ export function AssetEditorRouter({ pointer }: AssetEditorRouterProps) {
           typeLabel="spreadsheet"
           render={(spreadsheet) => (
             <AssetCollisionShell entity={spreadsheet}>
-              <SpreadsheetAssetEditor fsRef={fsRef!} spreadsheet={spreadsheet} />
+              <Suspense fallback={<ConnectingFallback />}>
+                <SpreadsheetAssetEditor fsRef={fsRef!} spreadsheet={spreadsheet} />
+              </Suspense>
             </AssetCollisionShell>
           )}
         />

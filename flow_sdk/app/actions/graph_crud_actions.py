@@ -287,6 +287,22 @@ async def handle_create_entity(request: Request):
     if not someone_typeid:
         raise HTTPException(status_code=400, detail="invalid auth result")
 
+    # Entity-level save validation (a `save()` raising ValueError, e.g. Tag's
+    # reserved-root gate) is a client error, not a server fault — mapped once
+    # around the whole branch dispatch so every create path agrees.
+    try:
+        entity = await _dispatch_create_save(entity, request_info, someone_typeid)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    # TODO Turn off expand_permissions upon entity creation
+    await entity.expand_permissions()
+
+    return ApiSuccessResponse[Entity](data=entity)
+
+
+async def _dispatch_create_save(entity: Entity, request_info, someone_typeid) -> Entity:
+    """The three create arms (standalone / visitor / parented), extracted so
+    handle_create_entity can wrap them under one ValueError→400 mapping."""
     if not request_info.target_entity_typeid or request_info.target_entity_typeid.type == User.get_type():
         entity = await entity.save(someone_typeid)
     elif request_info.target_entity_typeid.type == Visitor.get_type():
@@ -325,7 +341,4 @@ async def handle_create_entity(request: Request):
             service_log.warn(
                 f"[create] auto-share child {entity.typeid} under {target_entity.typeid} failed (non-fatal): {e}"
             )
-    # TODO Turn off expand_permissions upon entity creation
-    await entity.expand_permissions()
-
-    return ApiSuccessResponse[Entity](data=entity)
+    return entity

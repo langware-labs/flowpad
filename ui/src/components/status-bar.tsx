@@ -9,6 +9,7 @@ import { useProjects } from '@src/hooks/use-projects';
 import { useContext } from '@src/hooks/useContext';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { tagAttrs } from '@src/tags/tag-attrs';
 import { fsManager } from '@sdk';
 import { ExternalLink, ArrowLeftRight } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
@@ -125,6 +126,7 @@ export function StatusBar({ className = '' }: StatusBarProps) {
           buttonLabel={t`What is a Flowpad project?`}
         >
           <button
+            {...tagAttrs('ProjectPage', 'button')}
             onClick={() => navigation.openDock(DockPointer.forProject(project.id))}
             // Flexible, truncating slot: it is the ONE element in the footer
             // allowed to shrink. min-w-0 defeats the flex min-content floor so

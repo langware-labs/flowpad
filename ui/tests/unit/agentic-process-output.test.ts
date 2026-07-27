@@ -1,5 +1,5 @@
-import { AgenticProcess, FlowData, FlowElementTypes, ProcessStatus, WorkerStatus } from '@sdk';
-import { describe, expect, it } from 'vitest';
+import { AgenticProcess, FlowData, FlowElementTypes, ProcessStatus, WorkerStatus, dataManager } from '@sdk';
+import { describe, expect, it, vi } from 'vitest';
 
 const PROCESS_ID = '00000000-0000-4000-8000-0000000000e1';
 const SECOND_PROCESS_ID = '00000000-0000-4000-8000-0000000000e2';
@@ -123,6 +123,35 @@ describe('AgenticProcess.output terminal delivery', () => {
     expect(process.error).toBeNull();
   });
 
+  it('emits a fresh completion for each sequential PTY executeInstruction turn', async () => {
+    const process = new WireUpdateProcess({
+      id: '00000000-0000-4000-8000-0000000000e7',
+      pty_mode: true,
+      busy: false,
+      worker_status: WorkerStatus.INITIALIZING,
+    });
+    const callAction = vi.spyOn(dataManager, 'callAction').mockResolvedValue({} as never);
+    let completions = 0;
+    process.on('complete', () => completions++);
+
+    try {
+      await process.executeInstruction('turn one', { sync: false });
+      process.applyWireUpdate({ worker_status: WorkerStatus.WORKING });
+      process.applyWireUpdate({ worker_status: WorkerStatus.COMPLETE });
+      expect(process.completed).toBe(true);
+
+      await process.executeInstruction('turn two', { sync: false });
+      expect(process.completed).toBe(false);
+      process.applyWireUpdate({ worker_status: WorkerStatus.WORKING });
+      process.applyWireUpdate({ worker_status: WorkerStatus.COMPLETE });
+
+      expect(process.completed).toBe(true);
+      expect(completions).toBe(2);
+    } finally {
+      callAction.mockRestore();
+    }
+  });
+
   it.each([WorkerStatus.INACTIVE, WorkerStatus.API_TIMEOUT])(
     'settles a live PTY %s terminal transition as an error',
     (workerStatus) => {
@@ -191,7 +220,7 @@ describe('AgenticProcess headless turn settlement (multi-client)', () => {
     let errors = 0;
     process.on('error', () => errors++);
 
-    // A fresh turn begins on the busy:true edge (beginHeadlessTurn → pending),
+    // A fresh turn begins on the busy:true edge (beginTurn → pending),
     // but ``status`` is still the stale FAILED inherited from the prior turn.
     process.applyWireUpdate({ busy: true, worker_status: WorkerStatus.WORKING });
     expect(process.error).toBeNull();

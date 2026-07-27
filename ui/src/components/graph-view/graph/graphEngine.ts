@@ -4,7 +4,6 @@ import { NodePictogramProgram } from '@sigma/node-image';
 import dagre from '@dagrejs/dagre';
 import forceAtlas2 from 'graphology-layout-forceatlas2';
 import Graph from 'graphology';
-import { hexForType } from '../ui/typeColors';
 import { paletteForTheme, type GraphPalette, type Theme } from './themeColors';
 import type { GraphLayout } from './loadDepGraph';
 import { cameraRatioForVisibleSpan } from './graphCamera';
@@ -12,6 +11,8 @@ import { drawGraphNodeHover, drawGraphNodeLabel } from './graphLabels';
 import { colorForWorldViewMode } from './heat';
 import { applyCircleForestLayout } from './circleLayout';
 import { DEFAULT_WORLDVIEW_COLOR_MODE, type WorldViewColorMode } from '@src/types/WorldViewColorMode';
+import { nodeDataForGraph, searchGraph, type NodeData, type SearchResult } from './graphModel';
+import type { GraphRenderer, LocalState } from './graphRenderer';
 
 const FLICKER_COLOR: Record<'create' | 'update' | 'delete', string> = {
   create: '#22d3ee',
@@ -20,32 +21,10 @@ const FLICKER_COLOR: Record<'create' | 'update' | 'delete', string> = {
 };
 const FLICKER_MS = 900;
 
-export type NodeData = {
-  key: string;
-  type: string;
-  id: string;
-  label: string;
-  isGhost: boolean;
-  community: number;
-  color: string;
-  degree: number;
-  properties: Record<string, unknown>;
-  neighbors: Array<{
-    key: string;
-    type: string;
-    label: string;
-    edgeKind: string;
-  }>;
-  edgeCounts: Record<string, number>;
-};
+export type { NodeData } from './graphModel';
+export type { LocalState } from './graphRenderer';
 
-export type LocalState = {
-  root: string | null;
-  depth: number;
-  visibleCount: number;
-};
-
-export class GraphEngine {
+export class GraphEngine implements GraphRenderer {
   readonly graph: Graph;
   readonly layout: GraphLayout;
   private sigma: Sigma | null = null;
@@ -425,64 +404,11 @@ export class GraphEngine {
   }
 
   getNodeData(key: string): NodeData | null {
-    if (!this.graph.hasNode(key)) return null;
-    const attrs = this.graph.getNodeAttributes(key);
-    const edgeCounts: Record<string, number> = {};
-    const neighbors: NodeData['neighbors'] = [];
-    this.graph.forEachEdge(key, (_edge, edgeAttrs, source, target) => {
-      const kind = (edgeAttrs.kind as string) ?? 'unknown';
-      edgeCounts[kind] = (edgeCounts[kind] ?? 0) + 1;
-      const other = source === key ? target : source;
-      if (neighbors.length < 30) {
-        neighbors.push({
-          key: other,
-          type: this.graph.getNodeAttribute(other, 'entityType') as string,
-          label: this.graph.getNodeAttribute(other, 'label') as string,
-          edgeKind: kind,
-        });
-      }
-    });
-    return {
-      key,
-      type: attrs.entityType as string,
-      id: attrs.entityId as string,
-      label: attrs.label as string,
-      isGhost: (attrs.isGhost as boolean) ?? false,
-      community: (attrs.community as number) ?? 0,
-      color: (attrs.color as string) ?? hexForType(attrs.entityType as string),
-      degree: this.graph.degree(key),
-      properties:
-        attrs.properties && typeof attrs.properties === 'object' ? (attrs.properties as Record<string, unknown>) : {},
-      neighbors,
-      edgeCounts,
-    };
+    return nodeDataForGraph(this.graph, key);
   }
 
-  searchNodes(query: string, limit = 8): Array<{ key: string; label: string; type: string; id: string }> {
-    if (!query) return [];
-    const q = query.toLowerCase();
-    const results: Array<{ key: string; label: string; type: string; id: string; score: number }> = [];
-    this.graph.forEachNode((node, attrs) => {
-      const label = ((attrs.label as string) ?? '').toLowerCase();
-      const id = ((attrs.entityId as string) ?? '').toLowerCase();
-      let score = -1;
-      if (label === q) score = 0;
-      else if (label.startsWith(q)) score = 1;
-      else if (label.includes(q)) score = 2;
-      else if (id.startsWith(q)) score = 3;
-      else if (id.includes(q)) score = 4;
-      if (score >= 0) {
-        results.push({
-          key: node,
-          label: attrs.label as string,
-          type: attrs.entityType as string,
-          id: attrs.entityId as string,
-          score,
-        });
-      }
-    });
-    results.sort((a, b) => a.score - b.score || a.label.length - b.label.length);
-    return results.slice(0, limit).map(({ key, label, type, id }) => ({ key, label, type, id }));
+  searchNodes(query: string, limit = 8): SearchResult[] {
+    return searchGraph(this.graph, query, limit);
   }
 
   onNodeSelect(fn: (key: string | null) => void): () => void {

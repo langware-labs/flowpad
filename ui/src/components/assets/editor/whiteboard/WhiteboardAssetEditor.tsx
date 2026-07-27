@@ -8,6 +8,7 @@ import { Button } from '@src/components/ui/button';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -454,6 +455,9 @@ export function WhiteboardAssetEditor({ fsRef, whiteboard }: WhiteboardAssetEdit
         <DialogContent>
           <DialogHeader>
             <DialogTitle><Trans>Import mermaid → board</Trans></DialogTitle>
+            <DialogDescription>
+              <Trans>Paste Mermaid syntax to replace the current board.</Trans>
+            </DialogDescription>
           </DialogHeader>
           <textarea
             data-testid="mermaid-import-textarea"
