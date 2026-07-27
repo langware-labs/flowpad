@@ -26,6 +26,8 @@ import {
 import { resolveProcessInputDir } from '@src/utils/upload-to-input-dir';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications/notify';
+import { shellIdFromShowTarget } from '@src/navigation/shell-show-target';
+import { ViewMode } from '@src/contexts/view-mode-context';
 import { WorkspaceChildStrip } from './workspace-child-strip';
 import { TerminalModeSwitch } from '@src/components/terminal/interactive-terminal/TerminalModeSwitch';
 import { useProcessModeSwitch } from '@src/components/terminal/interactive-terminal/use-process-mode-switch';
@@ -190,16 +192,27 @@ export function VibeWorkspace({ session }: VibeWorkspaceProps) {
     // tab) still lands on the deliverable — the on_show entity event has no
     // replay. Key the effect on the payload, not entity identity: the SDK
     // updates cached entities in place.
-    setShown(persistedShown);
+    //
+    // A shell target is NOT restorable content: the terminal it addresses lives
+    // on as its own child tab, and re-pinning it here would drag the user back
+    // into the terminal on every reload.
+    setShown(shellIdFromShowTarget(persistedShown) ? null : persistedShown);
   }, [activeProcess, persistedShownKey]);
 
   useEffect(() => {
     if (!activeProcess) return;
     return activeProcess.onShow((payload) => {
+      // A terminal is hosted as a tab, not rendered in the pane — open its dock
+      // and let workspace adoption place it (the journey's path exactly).
+      const shellId = shellIdFromShowTarget(payload);
+      if (shellId) {
+        void navigation.openShell(shellId, { viewMode: ViewMode.Vibe });
+        return;
+      }
       setShown(payload);
       setShowNonce((n) => n + 1);
     });
-  }, [activeProcess]);
+  }, [activeProcess, navigation]);
 
   // The `flow show` history (oldest first) is the AUTHORITATIVE server stack —
   // read on every render from the reactive process entity, never a

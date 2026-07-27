@@ -67,7 +67,16 @@ export function useVibeWorkspaceSession(): VibeWorkspaceSession | null {
     // Case 1 — the process URL itself: a SHELL dock with an agentic_process
     // pointer (the single URL family; legacy /dock/display forms redirect here
     // in the main loader's canonicalProcessDockPath).
-    if (currentDock.viewType === ViewType.SHELL) {
+    //
+    // The pointer check is load-bearing: a PLAIN shell dock (a terminal) is
+    // also viewType SHELL, but it is workspace CONTENT, not the anchor — it
+    // must fall through to the child lookup so a terminal opened inside the
+    // workspace keeps rendering in its display pane instead of taking over the
+    // whole surface.
+    if (
+      currentDock.viewType === ViewType.SHELL &&
+      DockPointer.isAgenticProcessPointer(currentDock.pointer)
+    ) {
       return build(tabByHash(currentDock.tabHash), currentDock, true);
     }
 

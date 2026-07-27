@@ -176,13 +176,19 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   // window, a mode-less process URL) — fall through to the process's own
   // transport via `isHeadless` below rather than pinning the pane, which would
   // put a chat over the live PTY of any task-runner process.
-  const wantChat = useChatMode() === 'chat';
+  const chatMode = useChatMode();
+  const wantChat = chatMode === 'chat';
   // Headless (`pty_mode === false`): there is no PTY/xterm to skin — the chat
   // pane is the ONLY view. Force it on regardless of the chat/terminal skin
   // override, and (in the render) skip mounting the xterm container entirely so
   // no PtySync attach is attempted for a process that has no shell.
   const isHeadless = !embedded && !!process && process.isHeadless;
   const showSimpleChat = isHeadless || (wantChat && !embedded && !!process);
+  // `null` = the mode is not known yet (first load in this browser profile, no
+  // boot seed). Neither surface is the right guess, so cover the pane until it
+  // resolves — a headless process needs no wait (its transport decides), and the
+  // xterm keeps mounting and attaching underneath, so this costs no open latency.
+  const chatModePending = chatMode === null && !isHeadless && !embedded && !!process;
   const canToggleView = !embedded && !!process;
   const [searchParams] = useSearchParams();
   const targetTimestamp = searchParams.get('t') ?? undefined;
@@ -1603,7 +1609,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
             onClose={onClose}
             shell={shell}
             chatActive={showSimpleChat}
-            modeSwitch={canToggleView ? modeSwitch : undefined}
+            modeSwitch={canToggleView && !chatModePending ? modeSwitch : undefined}
           />
         )}
         {activePane === 'shell' && sidecarShellId && <PaneBar label="Shell" onClose={() => void handleKillSidecar()} />}
@@ -1749,6 +1755,9 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
                     <SimpleChatPane process={process} />
                   </div>
                 )}
+                {/* Mode not resolved yet — hold the pane blank rather than paint
+                  a surface the stored preference is about to contradict. */}
+                {chatModePending && <div className="absolute inset-0 z-[70] bg-background" />}
               </div>
 
               {/* Side window (non-Shell tabs) */}
@@ -1777,7 +1786,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
           </div>
         </PtySyncProvider>
 
-        {process && (
+        {process && !chatModePending && (
           <TerminalBottomRibbon
             fileCount={fileCount}
             isActive={processIsActive}

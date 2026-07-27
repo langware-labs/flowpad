@@ -23,7 +23,8 @@ import { Callable } from './types';
  * opens the port preview.
  */
 export interface ReceiveShowTarget {
-  kind?: 'entity' | 'vfs' | 'webapp';
+  /** Mirrors python `DisplayTargetKind` (flow_sdk/core/display_target.py). */
+  kind?: 'entity' | 'vfs' | 'webapp' | 'app' | 'shell';
   typeid?: string;
   type?: string;
   id?: string;

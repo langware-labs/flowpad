@@ -3,6 +3,7 @@ import { useSyncExternalStore } from 'react';
 import { isHubOnly } from '@src/navigation/hub-runtime';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { isContentAssetDock } from '@src/navigation/content-asset-dock';
+import { isAdoptableChildDock } from '@src/navigation/adoptable-child-dock';
 import { ViewType } from '@src/types/ViewType';
 import { getActiveTabParent } from './tab-parent-context';
 
@@ -136,19 +137,22 @@ async function materializeTab(
   );
   const existingTab = findTabForDock(existing, dock);
   // A workspace surface (the vibe workspace) may have registered its process
-  // tab as the parent for tabs materialized right now. Only a CONTENT-ASSET
-  // dock is adoptable — a process/project/assets-list dock is a navigation
-  // *away* from the workspace (its loader runs before the workspace unmounts
-  // and clears the slot), and adopting those was how nested-workspace /
-  // process-under-process corruption arose. This is the ONLY grouping seam;
-  // no navigation call site knows about children, and the backend enforces the
-  // same invariant (`_PARENT_FORBIDDEN_TARGET_TYPES`) as the second belt.
-  // A content-asset tab adopts a parent registered by a mounted workspace or
-  // supplied by its mounted-view adoption pass. Process lookup/creation is not
-  // awaited here: route loaders must stay fast, so AssetVibeWorkspace resolves
-  // that side effect after the URL-owned asset view mounts.
-  const addressesAsset = isContentAssetDock(dock);
-  const parentTabId = addressesAsset
+  // tab as the parent for tabs materialized right now. Only workspace CONTENT
+  // is adoptable — content assets/files and a plain terminal (a shell opened
+  // from inside the workspace belongs in its display, like a file). A
+  // process/project/assets-list dock is a navigation *away* from the workspace
+  // (its loader runs before the workspace unmounts and clears the slot), and
+  // adopting those was how nested-workspace / process-under-process corruption
+  // arose. This is the ONLY grouping seam; no navigation call site knows about
+  // children, and the backend enforces the same invariant
+  // (`_PARENT_FORBIDDEN_TARGET_TYPES` + `_pointer_is_adoptable_child`) as the
+  // second belt. An adoptable tab takes a parent registered by a mounted
+  // workspace or supplied by its mounted-view adoption pass. Process
+  // lookup/creation is not awaited here: route loaders must stay fast, so
+  // AssetVibeWorkspace resolves that side effect after the URL-owned asset
+  // view mounts.
+  const addressesAdoptable = isAdoptableChildDock(dock);
+  const parentTabId = addressesAdoptable
     ? (options.parentTabId ?? getActiveTabParent())
     : null;
   // Mirror the backend's self-parent guard: a tab can never adopt itself, and
@@ -181,7 +185,7 @@ async function materializeTab(
   // project button re-opened the last process (RCA 2026-07-16). Falls through
   // to the mint below, where the backend (`ensure_tab`'s adoptable-pointer
   // guard) null-heals the row — same self-heal seam as its stale siblings.
-  const staleParentEdge = !!existingTab?.parent_tab_id && !addressesAsset;
+  const staleParentEdge = !!existingTab?.parent_tab_id && !addressesAdoptable;
   // A lens dock can't trust the row's denormalized project_id: the loader
   // activates the TARGET entity's project on every load, and the indexer may
   // re-stamp that target through the disk→DB path (`sync_to_db`), which skips
@@ -202,10 +206,16 @@ async function materializeTab(
   // edge. All four fall through to `getFromDockPointer`, which re-derives
   // project_id from the asset and adopts (or sheds) the parent, self-healing
   // the row.
+  //
+  // The project self-heal is ASSET-scoped, not adoptable-scoped: a shell's
+  // project_id is pinned at creation from the active project, never derived
+  // from a target, and a project-less shell is a legitimate GLOBAL terminal.
+  // Widening this to every adoptable dock would re-mint those on every single
+  // navigation chasing a project_id that is correctly null.
   if (
     existingTab &&
     !lensProjectStale &&
-    (existingTab.project_id || !addressesAsset) &&
+    (existingTab.project_id || !isContentAssetDock(dock)) &&
     !needsReparent &&
     !staleParentEdge
   ) {
@@ -262,6 +272,12 @@ export async function setupTab(dock: DockPointer, options: SetupTabOptions = {})
   // The route loader still runs its content adapter — and therefore remains
   // the context writer — while the durable tab identity and recency stamp are
   // reused locally. Explicit parent adoption must pass through materializeTab.
+  //
+  // Deliberately the ASSET predicate, not the adoptable one: this skip exists
+  // for the presentation morph on a live editor, where re-minting would queue
+  // behind a FETCHING entity ref. A shell dock has no such morph, and routing
+  // it through materializeTab on every navigation is exactly what re-asserts
+  // its workspace adoption when it is reopened from inside the workspace.
   const opened = entries.get(key);
   if (
     isContentAssetDock(dock) &&

@@ -27,6 +27,18 @@ async function resolveVibeAgentRef(): Promise<string | null> {
 type OpenShell = { openShellProcess: (procId: string, opts?: { viewMode?: ViewMode }) => void };
 
 /**
+ * The `target_typeid_str` every project-scoped vibe chat session is keyed to.
+ *
+ * The project's id-based TypeId — NOT `project.typeId`, which is the uname form
+ * `project-@local`. Every producer AND consumer of a vibe chat target must go
+ * through here: the string has to match exactly, or two surfaces that mean the
+ * same session key it differently and each sees an empty history.
+ */
+export function vibeChatTargetForProject(projectId: string): string {
+  return new TypeId(Project.type, projectId).toString();
+}
+
+/**
  * Ride the SDK-shipped `vibe` persona on a process so the driver's directive
  * (creator routing + the `flow show` presentation contract) is active. Shared
  * by BOTH vibe process-creation paths — the vibe-home launcher here and the
@@ -102,10 +114,7 @@ export async function createVibeProcessForProject(opts: {
     model = VIBE_MODEL_DEFAULT,
     workerType,
   } = opts;
-  // Key the session to the project's id-based TypeId (NOT project.typeId, the
-  // uname form `project-@local`) — VibeWorkspace's chat target must match this
-  // exact string to attach to the same process.
-  const target = targetVfsPath ?? new TypeId(Project.type, projectId).toString();
+  const target = targetVfsPath ?? vibeChatTargetForProject(projectId);
 
   const computeNode = await ComputeNode.getById('@local');
   if (!computeNode) throw new Error('No local compute node');

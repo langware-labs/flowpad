@@ -37,6 +37,26 @@ const subscribe = (callback: () => void) => {
 
 const getSnapshot = () => instancePreferences.version;
 
+/**
+ * Whether `tag`'s value is known yet — see `InstancePreferences.isResolved`.
+ *
+ * Use it wherever falling back to the registry default would paint a user-visible
+ * arrangement that the stored value then contradicts: hold the decision while
+ * this is false instead of rendering a guess and repainting. Re-renders on
+ * PREFERENCES_LOADED, so the wait ends the moment the value lands.
+ */
+export function usePreferenceResolved(tag: PrefKey): boolean {
+  useEffect(() => {
+    if (!instancePreferences.isLoaded) {
+      void instancePreferences.loadJson();
+    }
+  }, []);
+
+  useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+
+  return instancePreferences.isResolved(tag);
+}
+
 export function usePreference<T = unknown>(tag: PrefKey): [T, (value: T) => void] {
   useEffect(() => {
     if (!instancePreferences.isLoaded) {

@@ -59,9 +59,6 @@ vi.mock('@src/components/entity-execution-panel', () => ({
 vi.mock('@src/pages/flow-page/VibeAssignTaskButton', () => ({
   VibeAssignTaskButton: () => null,
 }));
-vi.mock('@src/pages/flow-page/VibeCollaborateButton', () => ({
-  VibeCollaborateButton: () => null,
-}));
 vi.mock('@src/pages/flow-page/use-start-vibe-session', () => ({
   createVibeProcessForProject: mocks.createProcess,
   continueVibeSessionForProject: mocks.continueProcess,

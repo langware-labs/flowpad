@@ -34,6 +34,7 @@ class DisplayTargetKind(StrEnum):
     VFS = "vfs"
     WEBAPP = "webapp"
     APP = "app"
+    SHELL = "shell"
 
 
 class InvalidDisplayTarget(ValueError):
@@ -69,6 +70,13 @@ async def resolve_display_target(
             entity = None  # unknown type collapses to "not found"
         if entity is None:
             raise DisplayTargetNotFound(f"Entity not found: {typeid}")
+        if entity.get_type() == "shell":
+            # A terminal is not an editable document: it is HOSTED as a tab, so
+            # the FE routes this kind to a shell-dock navigation rather than to
+            # an editor. Without its own kind it would arrive as a generic
+            # entity target, and `editorForType('shell')` is undefined — the
+            # display would silently fall back to the empty preview.
+            return shell_target(entity)
         return _entity_payload(entity)
 
     if path:
@@ -297,6 +305,24 @@ def entity_target(type_name: str, entity_id: str, *, name: str | None = None) ->
         "type": type_name,
         "id": entity_id,
         "name": name or None,
+    }
+
+
+def shell_target(shell: Entity) -> dict:
+    """A SHELL DisplayTarget payload — an address for a live terminal.
+
+    Unlike every other kind this is not something the display *renders*: the FE
+    opens the shell's dock, which a mounted vibe workspace adopts as a child tab
+    (see ``isAdoptableChildDock``). One hosting mechanism, shared with the
+    terminal a guided journey opens. ``workdir`` rides along so a caller can
+    label the terminal without re-fetching it."""
+    return {
+        "kind": DisplayTargetKind.SHELL,
+        "typeid": f"shell-{shell.id}",
+        "type": "shell",
+        "id": str(shell.id),
+        "name": getattr(shell, "name", None) or None,
+        "workdir": getattr(shell, "workdir", None) or None,
     }
 
 

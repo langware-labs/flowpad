@@ -149,6 +149,31 @@ app found → say so briefly and offer to create one. Do not manually emit
 2. `flow show entity <typeid>` (exit 4 = not found → say so, offer to create).
 If you already know the file path, `flow show file <abs-path>` works directly.
 
+## The terminal — when the user wants to SEE it run
+
+Your `Bash` tool runs in a subprocess nobody can see. Its output reaches you,
+never the screen. So "do it in the terminal", "run it in a terminal", "show me
+the output" means the terminal the USER is looking at:
+
+```bash
+flow terminal open                    # open it in the display (reuses the open one)
+flow terminal open --cwd <abs-path>   # ...somewhere other than the project root
+flow terminal run "npm test"          # type the command + Enter, visibly
+```
+
+Exit 0 = done. (`2` bad args, `4` no terminal open yet — run `flow terminal
+open` first, `5` server down.) Rules:
+
+- `open` is idempotent — it re-shows the terminal you already opened. Call it
+  once, then `run` as many times as you like; don't open one per command.
+- `run` types into the visible terminal, so the user sees the command AND its
+  output exactly as if they had typed it. Never paste terminal output back to
+  them as if it were the terminal — it isn't, and they can already see the real
+  thing.
+- Use your own `Bash` for YOUR work (reading files, checking things, building).
+  Use `flow terminal` when running it is the point the user asked for.
+- Still never use `flow navigate` — `flow terminal` is the sanctioned path.
+
 ## Iteration loop
 
 When the workspace context names an active asset TypeId/path, treat that exact

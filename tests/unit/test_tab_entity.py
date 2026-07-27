@@ -383,6 +383,73 @@ async def test_list_read_sweeps_stale_parent_off_non_adoptable_row() -> None:
 
 
 @pytest.mark.asyncio
+async def test_plain_shell_adopts_but_process_anchor_never_does() -> None:
+    # A terminal opened INSIDE a vibe workspace is content in its display, so a
+    # plain shell dock is an adoptable child. The process's own dock shares the
+    # `shell` viewType and is told apart only by its pointer — it is the
+    # workspace ANCHOR, and adopting it nests a workspace inside itself.
+    parent = await ensure_tab(_jptr("shell", f"agentic_process-{uuid.uuid4()}"))
+
+    terminal = await ensure_tab(
+        _jptr("shell", f"shell-{uuid.uuid4()}"),
+        target_type="shell",
+        target_id="sh-child",
+        parent_tab_id=parent.id,
+    )
+    assert terminal.parent_tab_id == parent.id, "a plain terminal is workspace content"
+
+    anchor_ptr = _jptr("shell", f"agentic_process-{uuid.uuid4()}")
+    anchor = await ensure_tab(
+        anchor_ptr,
+        target_type="agentic_process",
+        target_id=str(uuid.uuid4()),
+        parent_tab_id=parent.id,
+    )
+    assert anchor.parent_tab_id is None, "a process anchor is never a child (create)"
+
+    # …and the hint stays dropped when the same row is reopened.
+    reopened = await ensure_tab(anchor_ptr, parent_tab_id=parent.id)
+    assert reopened.id == anchor.id
+    assert reopened.parent_tab_id is None, "a process anchor is never a child (reopen)"
+
+
+@pytest.mark.asyncio
+async def test_list_read_keeps_a_plain_shell_child_but_sweeps_a_process_child() -> None:
+    # The bulk sweep runs on EVERY list read: if it disagreed with the adopt
+    # gate, a terminal's parent edge would be written and then stripped seconds
+    # later, leaving the workspace half-working.
+    from flow_sdk.builtin.shell import Shell
+    from flow_sdk.builtin.tab import _build_tab_list
+
+    parent = await ensure_tab(_jptr("shell", f"agentic_process-{uuid.uuid4()}"))
+    # A REAL Shell row: a shell-targeted tab whose entity is gone is hard-deleted
+    # by the missing-target sweep, which would mask what this test asserts.
+    shell = Shell(name=f"sweep-{uuid.uuid4().hex[:8]}")
+    await shell.save()
+    terminal = await ensure_tab(
+        _jptr("shell", f"shell-{shell.id}"),
+        target_type="shell",
+        target_id=str(shell.id),
+        parent_tab_id=parent.id,
+    )
+    # A process-pointer row force-fed a parent edge must still heal.
+    anchor = await ensure_tab(_jptr("shell", f"agentic_process-{uuid.uuid4()}"))
+    anchor.parent_tab_id = parent.id
+    await anchor.save()
+
+    await _build_tab_list(None)
+
+    kept = await Tab.get_one({"id": terminal.id})
+    assert kept is not None and kept.parent_tab_id == parent.id, (
+        "the sweep must not strip a plain terminal's workspace edge"
+    )
+    healed = await Tab.get_one({"id": anchor.id})
+    assert healed is not None and healed.parent_tab_id is None, (
+        "the sweep must still null-heal a process anchor carrying a parent edge"
+    )
+
+
+@pytest.mark.asyncio
 async def test_parent_tab_id_never_self() -> None:
     # Guard: a tab is never made its own parent (backend defense; the client
     # registers the display tab as parent and could re-materialize the display).

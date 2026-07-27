@@ -1,5 +1,5 @@
 import { instancePreferences, PrefKey } from '@sdk';
-import { usePreference } from '@src/hooks/use-preference';
+import { usePreference, usePreferenceResolved } from '@src/hooks/use-preference';
 import { previousNonVibeViewMode, ViewMode } from '@src/contexts/view-mode-context';
 import { useCurrentDock } from '@src/navigation/useDockNavigation';
 import { defineGlobal } from '@sdk/utils';
@@ -115,13 +115,26 @@ export function useDockChatModeOverrideSync(): void {
   useEffect(() => () => setDockChatModeOverride(null), []);
 }
 
-/** Reactive read: the mounted URL's mode when it carries one, else the pref. */
-export function useChatMode(): ChatMode {
+/**
+ * Reactive read: the mounted URL's mode when it carries one, else the pref.
+ *
+ * `null` means NOT KNOWN YET — the URL carries no mode and the preference has
+ * not been read in. Callers must hold the arrangement while it is null rather
+ * than substitute `CHAT_MODE_DEFAULT`: on the first load in a browser profile
+ * there is no localStorage boot seed, so defaulting paints vibe/chat for the
+ * ~1s until `preferences.json` lands and then repaints into the user's real
+ * mode. After that first load the boot seed makes this true synchronously, so
+ * the wait is a first-run cost only. Use `getChatMode()` for the imperative
+ * read — a click path runs long after boot and has nothing to wait for.
+ */
+export function useChatMode(): ChatMode | null {
   const [value] = usePreference<string>(PrefKey.CHAT_UI_MODE);
+  const resolved = usePreferenceResolved(PrefKey.CHAT_UI_MODE);
   const override = useSyncExternalStore(
     subscribeChatModeOverride,
     getChatModeOverrideSnapshot,
     getChatModeOverrideSnapshot,
   );
-  return override ?? toChatMode(value) ?? CHAT_MODE_DEFAULT;
+  if (override) return override;
+  return resolved ? (toChatMode(value) ?? CHAT_MODE_DEFAULT) : null;
 }
