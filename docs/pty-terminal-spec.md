@@ -951,7 +951,7 @@ All in `InteractiveTerminal.tsx` (the `showSimpleChat` derivation):
 
 ```
 isAdvanced   = useIsAdvanced()                    // View mode (Standard ⊂ Advanced ⊂ Dev)
-chatOverride = useChatUiOverride()                // 'chat' | 'terminal' | null (header mode switch)
+chatOverride = useChatUiOverride()                // 'chat'|'terminal'|null — URL ?chatMode, else pref
 wantChat     = chatOverride != null ? chatOverride === 'chat' : !isAdvanced
 isHeadless   = !embedded && process.pty_mode === false
 showSimpleChat = isHeadless || (wantChat && !embedded && process)
@@ -972,15 +972,19 @@ canToggleView  = !embedded && process
   shell.
 
 **The control** is `TerminalModeSwitch.tsx` — a 3-segment control (chat |
-terminal | vibe) rendered **leftmost in the terminal header** (`HeaderSlots.modeSwitch`,
+terminal | vibe) rendered **leftmost in the terminal header** and again leading
+vibe's display tab strip (`HeaderSlots.modeSwitch`,
 built by `ProcessToolbar` and placed by both `InteractiveTabHeader` layouts), where
 the CURRENT mode is the selected segment. The header sits *above* the pane, so the
 chat overlay (`absolute inset-0` inside the pane) never covers it. `chat`/`terminal`
 are the two transports and run `useProcessModeSwitch().switchTo` (see
 `docs/agent-management/mode-switching.md`); `vibe` is a skin, not a transport — it
 reuses the Discuss affordance (`?viewMode=vibe` navigation onto the very same
-process dock), is never gated, and is never the selected segment because vibe
-replaces the page with `VibeWorkspace` and this header is not mounted there.
+process dock) and is never gated. Every pick is URL-first — the renderer choice
+rides `?chatMode` (see `docs/agent-management/mode-switching.md`), so it is
+shareable and back-safe. In the terminal header `vibe` is never the selected
+segment (vibe replaces the page with `VibeWorkspace`, so this header isn't
+mounted there); at the vibe mount it is.
 
 ### 14.3 Where the chat UI's content comes from (NOT the PTY)
 

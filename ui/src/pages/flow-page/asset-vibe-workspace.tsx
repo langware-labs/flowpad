@@ -328,6 +328,7 @@ export function AssetVibeWorkspace({ isVibe, session }: AssetVibeWorkspaceProps)
           <div className={isVibe ? 'block' : 'hidden'}>
             {effectiveSession ? (
               <WorkspaceChildStrip
+                process={process}
                 processTab={effectiveSession.processTab}
                 processDock={effectiveSession.processDock}
                 projectId={project?.id ?? null}

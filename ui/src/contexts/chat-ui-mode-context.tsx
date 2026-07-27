@@ -1,6 +1,8 @@
 import { instancePreferences, PrefKey } from '@sdk';
 import { usePreference } from '@src/hooks/use-preference';
+import { useCurrentDock } from '@src/navigation/useDockNavigation';
 import { defineGlobal } from '@sdk/utils';
+import { useEffect, useSyncExternalStore } from 'react';
 
 /**
  * Which view an interactive agent tab shows.
@@ -13,8 +15,15 @@ import { defineGlobal } from '@sdk/utils';
  * terminal header's mode switch (`TerminalModeSwitch`) and it takes priority over the
  * View-mode default until cleared. NOTE it is instance-global, not per-session: a
  * per-session skin would need a PrefKey keyed by process id.
+ *
+ * The mode is also BROWSABLE: a dock URL can carry `?chatMode=chat|terminal`
+ * (`DockPointer.withChatMode`), which `useDockChatModeOverrideSync` pins for the
+ * mounted URL and adopts into the pref — exactly the `?viewMode` arrangement one
+ * level up. So the switch never writes the pref from a click path: it navigates,
+ * and the URL load is the single writer.
  */
-export type ChatUiOverride = 'chat' | 'terminal' | null;
+export type ChatMode = 'chat' | 'terminal';
+export type ChatUiOverride = ChatMode | null;
 
 declare global {
   interface Window {
@@ -54,7 +63,55 @@ defineGlobal('setChatUi', (val: ChatUiOverride | boolean) => {
 });
 defineGlobal('getChatUi', getChatUiOverride);
 
+// --- URL-carried override (mirrors the dock viewMode override) -------------
+// The URL's chatMode is also adopted into the persisted preference on load, so
+// this transient override normally equals the pref. It exists to pin the mode
+// against externally-originated pref changes while a chatMode-carrying dock URL
+// is mounted, and to drop back to the pref the moment that URL unmounts.
+const chatModeOverrideListeners = new Set<() => void>();
+let dockChatModeOverride: ChatUiOverride = null;
+
+function subscribeChatModeOverride(listener: () => void): () => void {
+  chatModeOverrideListeners.add(listener);
+  return () => chatModeOverrideListeners.delete(listener);
+}
+
+function getChatModeOverrideSnapshot(): ChatUiOverride {
+  return dockChatModeOverride;
+}
+
+function setDockChatModeOverride(val: ChatUiOverride): void {
+  if (dockChatModeOverride === val) return;
+  dockChatModeOverride = val;
+  chatModeOverrideListeners.forEach((listener) => listener());
+}
+
+/**
+ * Sync the current DockPointer's `?chatMode` into `useChatUiOverride()`.
+ * Load-time owner of the chat/terminal arrangement: the mode switch only
+ * navigates (same pointer, `?chatMode=<mode>`); when that URL loads here we pin
+ * the mode AND adopt it as the persisted preference, so the choice survives
+ * leaving the URL and the session without any write in the click path.
+ */
+export function useDockChatModeOverrideSync(): void {
+  const currentDock = useCurrentDock();
+  const override = currentDock?.chatMode ?? null;
+
+  useEffect(() => {
+    setDockChatModeOverride(override);
+    // instancePreferences.set no-ops on equal values, so no guard is needed here.
+    if (override) setChatUiOverride(override);
+  }, [override]);
+
+  useEffect(() => () => setDockChatModeOverride(null), []);
+}
+
 export function useChatUiOverride(): ChatUiOverride {
   const [value] = usePreference<string>(PrefKey.CHAT_UI_MODE);
-  return toOverride(value);
+  const override = useSyncExternalStore(
+    subscribeChatModeOverride,
+    getChatModeOverrideSnapshot,
+    getChatModeOverrideSnapshot,
+  );
+  return override ?? toOverride(value);
 }

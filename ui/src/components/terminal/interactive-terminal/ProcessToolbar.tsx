@@ -18,8 +18,7 @@ import { AssetManagerButton } from '@src/components/asset-manager';
 import { ViewSwap } from '@src/components/view-mode';
 import { AdvancedInteractiveTabHeader, StandardInteractiveTabHeader } from './InteractiveTabHeader';
 import { TerminalModeSwitch } from './TerminalModeSwitch';
-import type { TransportMode } from './use-process-mode-switch';
-import { ViewMode } from '@src/contexts/view-mode-context';
+import type { ProcessModeSwitch } from './use-process-mode-switch';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import {
@@ -75,22 +74,13 @@ interface ProcessToolbarProps {
   /** Shell entity for PTY Viewer (dev mode only). */
   shell?: Shell | null;
   // ── Mode switch (chat | terminal | vibe), rendered leftmost in the header ──
-  // These all come from InteractiveTerminal, which owns the transport switch (it
-  // has the xterm ref and the reactive live entity). Do NOT re-derive them here:
-  // this component's useSyncExternalStore snapshot does not include `pty_mode`,
-  // so a locally-derived selection would go stale on a transport flip, and
-  // `started` is a different predicate than the mid-turn readiness gate.
-  /** True when the chat skin is up (⇒ the `chat` segment is selected). */
+  /** True when the chat skin is up (⇒ the `chat` segment is selected). Comes from
+   * InteractiveTerminal, which owns the skin decision. Do NOT re-derive it here:
+   * this component's useSyncExternalStore snapshot excludes `pty_mode`. */
   chatActive?: boolean;
-  /** Which transport the session is actually on (`pty_mode`) — NOT the same as
-   * `chatActive`, which is the skin. Read from the reactive live entity upstream. */
-  transportMode?: TransportMode;
-  /** A transport switch is in flight. */
-  switching?: boolean;
-  /** `isReadyForInput` — the backend 409s a mid-turn switch. */
-  switchEnabled?: boolean;
-  /** Undefined ⇒ this tab can't switch modes; the whole control is hidden. */
-  onSwitchMode?: (mode: TransportMode) => void;
+  /** The shared mode switch. Undefined ⇒ this tab can't switch (embedded panel),
+   * and the whole control is hidden. */
+  modeSwitch?: ProcessModeSwitch;
 }
 
 export function ProcessToolbar({
@@ -105,10 +95,7 @@ export function ProcessToolbar({
   onClose,
   shell,
   chatActive,
-  transportMode,
-  switching,
-  switchEnabled,
-  onSwitchMode,
+  modeSwitch,
 }: ProcessToolbarProps) {
   const { t, i18n } = useLingui();
   const handleInjectPrompt = useCallback((text: string) => void shell?.sendInput(text + '\r'), [shell]);
@@ -217,23 +204,17 @@ export function ProcessToolbar({
 
   const setTrace = (key: keyof TraceFilters) => (val: boolean) => onTraceFiltersChange({ ...traceFilters, [key]: val });
 
-  // "Continue this conversation in vibe mode" — the same move the asset Discuss
-  // button makes, addressed by PROCESS rather than by the ambient dock: this is
-  // the process's own shell URL plus `?viewMode=vibe`, which is by construction
-  // what `useVibeWorkspaceSession` resolves a workspace from. Asking the process
-  // (as every other open-in-vibe call site does) means there is no dock-shape
-  // predicate here to drift out of sync with that resolver. Popped-out windows
-  // are excluded for the reason AssetDiscussButton excludes them: a detached
-  // window has no business swapping itself for a full-page workspace.
-  const modeSwitchSlot = onSwitchMode ? (
+  // Vibe is offered on every switchable tab except a popped-out window — a
+  // detached window has no business swapping itself for a full-page workspace
+  // (the reason AssetDiscussButton excludes windowMode too).
+  const modeSwitchSlot = modeSwitch ? (
     <TerminalModeSwitch
       current={chatActive ? 'chat' : 'terminal'}
-      transport={transportMode ?? 'terminal'}
-      switching={!!switching}
-      enabled={!!switchEnabled}
+      transport={modeSwitch.transport}
+      switching={modeSwitch.switching}
+      enabled={modeSwitch.awaitingUserInput}
       showVibe={!windowMode}
-      onSelect={onSwitchMode}
-      onVibe={() => void navigation.openShellProcess(process.id, { viewMode: ViewMode.Vibe })}
+      onSelect={modeSwitch.select}
     />
   ) : null;
 

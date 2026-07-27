@@ -1,4 +1,4 @@
-import { Tab } from '@sdk';
+import { Tab, type AgenticProcess } from '@sdk';
 import { Monitor, X } from 'lucide-react';
 import { useCallback, useMemo } from 'react';
 import { Button } from '@src/components/ui/button';
@@ -12,8 +12,13 @@ import { closeTabWithLifecycle, excludeClosingTabs, useTabLifecycles } from '@sr
 import { useTabStripItems } from '@src/tabs/tab-row-item';
 import { tabKey } from '@src/tabs/useTabs';
 import { useLingui } from '@lingui/react/macro';
+import { TerminalModeSwitch } from '@src/components/terminal/interactive-terminal/TerminalModeSwitch';
+import { useProcessModeSwitch } from '@src/components/terminal/interactive-terminal/use-process-mode-switch';
 
 interface WorkspaceChildStripProps {
+  /** The workspace's process — powers the leading session mode switch, so vibe
+   *  is a peer of chat/terminal here rather than a one-way door. */
+  process?: AgenticProcess | null;
   /** The workspace's fixed tab (the vibe display / process tab). Children are the
    *  tabs whose `parent_tab_id` is this tab's id. */
   processTab: Tab | null;
@@ -35,8 +40,17 @@ interface WorkspaceChildStripProps {
  * (`parent_tab_id`) is minted by the opener context at the tab chokepoint, and
  * vibe-mode continuity by the navigation layer — so this component stays dumb.
  */
-export function WorkspaceChildStrip({ processTab, processDock, projectId }: WorkspaceChildStripProps) {
+export function WorkspaceChildStrip({
+  process = null,
+  processTab,
+  processDock,
+  projectId,
+}: WorkspaceChildStripProps) {
   const { t } = useLingui();
+  // Same control, same hook as the terminal header — here `vibe` is the selected
+  // segment, so picking chat/terminal navigates back out to that renderer. No
+  // xterm is mounted in vibe, so no dims to hand the →terminal direction.
+  const modeSwitch = useProcessModeSwitch({ process });
   const { currentDock, navigation } = useDockNavigation();
   const allTabs = useAllTabs();
 
@@ -110,6 +124,20 @@ export function WorkspaceChildStrip({ processTab, processDock, projectId }: Work
 
   return (
     <div className="flex shrink-0 items-stretch border-b border-border bg-muted/20">
+      {/* Leading session mode switch — same position (leftmost) and same control
+          as the terminal header, so the mode is switchable from either surface. */}
+      {process && (
+        <div className="flex shrink-0 items-center border-r border-border px-1.5">
+          <TerminalModeSwitch
+            current="vibe"
+            transport={modeSwitch.transport}
+            switching={modeSwitch.switching}
+            enabled={modeSwitch.awaitingUserInput}
+            showVibe
+            onSelect={modeSwitch.select}
+          />
+        </div>
+      )}
       {/* Fixed, SQUARE Display header — deliberately NOT tab-shaped (no rounded
           chip, a solid right border) so it reads as the persistent surface, not
           a closable tab. The child tab strip begins to its right. */}

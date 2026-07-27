@@ -53,12 +53,24 @@ The current code routes on `pty_mode`:
   `:1315`). Body: `{"mode": "interactive" | "cli"[, cols, rows]}`.
 - **Frontend:** `AgenticProcess.switchMode(mode, opts?)`
   (`ts_sdk/src/process/agentic-process.ts:2360`).
-- **UI caller:** `useProcessModeSwitch().switchTo('chat' | 'terminal')`
-  (`interactive-terminal/use-process-mode-switch.ts`), driven by the leftmost
-  segment control in the terminal header (`TerminalModeSwitch.tsx`, built as a
-  slot by `ProcessToolbar`). `InteractiveTerminal` is the hook's ONE call site —
-  it owns the xterm ref and the readiness signal. (Historically this lived as a
-  2-state toggle button in the bottom ribbon.)
+- **UI caller:** `useProcessModeSwitch().select('chat' | 'terminal' | 'vibe')`
+  (`interactive-terminal/use-process-mode-switch.ts`), driven by
+  `TerminalModeSwitch.tsx` — the same 3-segment control mounted twice: leftmost
+  in the terminal header (a `ProcessToolbar` slot) and leading vibe's display tab
+  strip (`WorkspaceChildStrip`), where `vibe` is the selected segment. Each mount
+  calls the hook once (a second call would own a second, disagreeing `switching`
+  state); the hook derives the transport and the readiness gate from the reactive
+  entity itself. (Historically this was a 2-state toggle in the bottom ribbon.)
+
+**Every pick is URL-first.** `select` navigates — `?chatMode=chat|terminal`
+(`DockPointer.withChatMode`) for the renderers, `?viewMode=vibe` for vibe — and
+the mounted URL is the single writer: `useDockChatModeOverrideSync` pins the mode
+and adopts it into `PrefKey.CHAT_UI_MODE`, exactly as `useDockViewModeOverrideSync`
+does one level up. So the mode is shareable, back-safe, and survives the URL. The
+one thing navigation cannot express is the TRANSPORT, which is why `select` also
+runs `switchMode` when — and only when — the pick disagrees with `pty_mode`.
+Both params are threaded through the shell loader's scope-align redirect
+(`ProcessRouteCarry`), which otherwise rebuilds the URL and drops query options.
 
 ### → CLI (chat / headless)
 
@@ -97,23 +109,22 @@ Frontend `switchMode(Interactive)` (`agentic-process.ts:2361`):
 
 ### UI-side reconcile (both directions)
 
-`useProcessModeSwitch().switchTo` (`use-process-mode-switch.ts`):
-- Guards: `if (!process || switching || !awaitingUserInput) return;` — the
-  transport segments are disabled unless the worker is awaiting input (see gate
-  below).
-- Skin-only short circuit: when `process.isHeadless === toChat` the transport is
-  already where the user pointed, so it writes `chatUiOverride` and returns
-  without a lifecycle call. This is the common case, not an edge one — Standard
-  view paints the chat pane over a perfectly live PTY, so picking `terminal`
-  there means "show me the xterm", not "spawn a PTY". Keyed on the **transport**
-  (`pty_mode`, held stable by the SDK desired-value latch), NOT on the chat skin
-  — `chatUiOverride` lags under rapid switching, so a skin-keyed test could
-  short-circuit a direction that has not actually landed.
-- After the transport switch resolves, sets `chatUiOverride` and re-enables the
-  control **immediately**, then fires `process.loadHistory({ force: true })` in the
-  **background** to pull in turns the *other* mode produced. History reconcile is
-  deliberately not awaited (a large-session transcript parse is slow and would
-  wedge rapid switching); the live WS stream keeps the pane current meanwhile.
+`useProcessModeSwitch().select` (`use-process-mode-switch.ts`), after the
+navigation described above:
+- Skips the lifecycle call entirely when `transport === mode` — the URL already
+  said everything there was to say. This is the common case, not an edge one:
+  Standard view paints the chat pane over a perfectly live PTY, so picking
+  `terminal` there means "show me the xterm", not "spawn a PTY". The test keys on
+  the **transport** (`pty_mode`, held stable by the SDK desired-value latch), NOT
+  on the chat skin — the skin preference lags under rapid switching, so a
+  skin-keyed test could short-circuit a direction that has not actually landed.
+- Otherwise guards `if (!process || switching || !awaitingUserInput) return;`,
+  mirroring the control's own disabled gate (see below).
+- Re-enables the control **immediately** once the transport switch resolves, then
+  fires `process.loadHistory({ force: true })` in the **background** to pull in
+  turns the *other* mode produced. History reconcile is deliberately not awaited
+  (a large-session transcript parse is slow and would wedge rapid switching); the
+  live WS stream keeps the pane current meanwhile.
 
 ---
 
@@ -125,13 +136,12 @@ A switch is only legal while the worker is **awaiting user input**
 (`IDLE`/`COMPLETE`/`INTERRUPTED`/`PENDING_USER` — `isAwaitingUserInput`). Enforced
 in three layers:
 1. Backend `_enter_cli_mode` 409s on the prompt lock (`:1280`).
-2. The header switch's chat/terminal segments are disabled unless
-   `awaitingUserInput` (gate reads the reactive `liveProcess.workerStatus` in
-   `InteractiveTerminal` and is threaded to `ProcessToolbar` as `switchEnabled`).
-   Gating is per segment: a pick that needs no transport work (the segment
-   already matching `pty_mode` — Standard paints the chat pane over a live PTY —
-   and the **vibe** segment, which only navigates) is never gated.
-3. `switchTo` re-checks `awaitingUserInput` as a belt-and-suspenders guard for
+2. The switch's chat/terminal segments are disabled unless `awaitingUserInput`
+   (the hook derives it from the reactive entity via `isReadyForInput`). Gating
+   is per segment: a pick that needs no transport work — the segment already
+   matching `pty_mode`, and the **vibe** segment, which only navigates — is never
+   gated.
+3. `select` re-checks `awaitingUserInput` as a belt-and-suspenders guard for
    non-click callers.
 
 Note: the backend mid-turn guard only covers the **→CLI** direction (it lives in
