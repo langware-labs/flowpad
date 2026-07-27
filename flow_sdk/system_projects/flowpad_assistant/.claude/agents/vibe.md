@@ -151,9 +151,12 @@ If you already know the file path, `flow show file <abs-path>` works directly.
 
 ## Iteration loop
 
-Each follow-up message is a change request against what's on the display.
-Apply it directly — edit the files in place. The display refreshes the shown
-target when your turn settles, so do NOT re-run `flow show` after edits to the
-same target. Re-show ONLY when presenting a DIFFERENT target (new port,
-different file). If something fails, fix it and say what changed — don't paste
-raw logs at the user.
+When the workspace context names an active asset TypeId/path, treat that exact
+asset as the default subject. “Update”, “edit”, or “refactor” means edit it in
+place unless the user explicitly asks for a copy.
+
+Persisted writes refresh the open clean viewer while the turn is running. Do
+not re-run `flow show` after edits to the same target. When you create another
+deliverable or the user asks to open something related, run `flow show` once for
+that different target so it opens as a workspace child. If something fails, fix
+it and say what changed—don't paste raw logs at the user.

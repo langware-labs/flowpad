@@ -141,10 +141,12 @@ class LocalStorageDriver(StorageDriver):
         pass  # No authentication needed for local file system
 
     def _local_full_path(self, vfs_path: str) -> str:
-        relative_vpath = vfs_path
         vpath = VFSPath(vfs_path)
-        if vpath.is_absolute():
-            relative_vpath = vpath.entity_subpath
+        # Storage paths are relative to this driver's mount whether the caller
+        # uses `/foo` or `foo`. VFSPath is now a pure parser, so normalize at
+        # this storage boundary instead of relying on ambient request context
+        # to turn a leading slash into an absolute typed locator.
+        relative_vpath = vpath.entity_subpath
         # If entity_subpath is already an absolute OS path (e.g. C:/Users/... on Windows),
         # return it directly — joining with mount_path would double-prefix the drive letter.
         if os.path.isabs(relative_vpath):
@@ -256,7 +258,7 @@ class LocalStorageDriver(StorageDriver):
         # Extract the entity sub-path (strip typeid prefix if present)
         # This prevents double-prefixing when constructing item paths
         parsed_vpath = VFSPath(vfs_path)
-        entity_sub_path = parsed_vpath.entity_subpath if parsed_vpath.is_absolute() else vfs_path
+        entity_sub_path = parsed_vpath.entity_subpath
 
         if not os.path.isdir(storage_local_path):
             return []

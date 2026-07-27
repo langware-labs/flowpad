@@ -20,6 +20,9 @@ import { dockPointerForFile } from './local-file-pointer';
 import { FileOptions, TabOptions } from './types';
 import { preserveWindowLayout, stripDockPortion } from './url-builder';
 import { allScope, projectScope } from '@src/lib/scope-filter';
+import { isContentAssetDock } from './content-asset-dock';
+import { LOCAL_COMPUTE_NODE } from './asset-doc-types';
+import { vfsLocatorForComputeNode } from './vfs-locator';
 
 // Always returns a record (possibly empty) so consumers can read keys without
 // optional-chaining. An earlier version returned `undefined` for empty input,
@@ -88,10 +91,6 @@ export class NavigationActions {
     }
   }
 
-  private static needsRouterFallback(): boolean {
-    return typeof navigator !== 'undefined' && /\bjsdom\b/i.test(navigator.userAgent);
-  }
-
   private static clearCommittedPendingNavigation(): void {
     if (pendingDockNavigationUrl && pendingDockNavigationUrl === NavigationActions.getCurrentBrowserUrl()) {
       pendingDockNavigationUrl = null;
@@ -116,24 +115,19 @@ export class NavigationActions {
     this.markPendingNavigation(fullUrl);
 
     const from = NavigationActions.getCurrentBrowserUrl();
-    const willPush = from !== fullUrl;
+    const willNavigate = from !== fullUrl;
     toplog.log('navigation', 'commitBrowserNavigation', {
       from,
       to: fullUrl,
       routerUrl,
-      willPushState: willPush,
-      routerFallback: NavigationActions.needsRouterFallback(),
+      willNavigate,
       historyLen: window.history.length,
     });
-    if (willPush) {
-      window.history.pushState(null, '', fullUrl);
-      window.dispatchEvent(new PopStateEvent('popstate'));
-    }
-
-    // createMemoryRouter in RTL/jsdom is not wired to window.history/popstate.
-    // BrowserRouter is wired to popstate, so calling navigate there would run
-    // the route loaders twice.
-    if (NavigationActions.needsRouterFallback()) {
+    if (willNavigate) {
+      // React Router owns browser history and, critically, loader execution.
+      // A hand-written pushState/popstate updates useLocation but can bypass
+      // data-router revalidation, leaving the new URL rendered against stale
+      // context. Every dock transition therefore enters through navigate().
       void this.navigate(routerUrl);
     }
   }
@@ -320,7 +314,12 @@ export class NavigationActions {
     // respected untouched. This is what makes the left-rail Triggers / Files
     // icons open a project tab when a project is active and a global one
     // otherwise — exactly like the Assets icon.
-    if (dock.viewType && SCOPE_SEEDED_VIEWS.has(dock.viewType) && dock.scopeFilter === null) {
+    if (
+      dock.viewType &&
+      SCOPE_SEEDED_VIEWS.has(dock.viewType) &&
+      dock.scopeFilter === null &&
+      !isContentAssetDock(dock)
+    ) {
       const projectId = dataContext.project?.id ?? null;
       dock = dock.withScopeFilter(projectId ? projectScope(projectId) : allScope());
     }
@@ -395,10 +394,6 @@ export class NavigationActions {
     });
     this.markPendingNavigation(baseUrl);
     if (NavigationActions.getCurrentBrowserUrl() !== baseUrl) {
-      window.history.pushState(null, '', baseUrl);
-      window.dispatchEvent(new PopStateEvent('popstate'));
-    }
-    if (NavigationActions.needsRouterFallback()) {
       void this.navigate(baseUrl);
     }
   }
@@ -554,16 +549,19 @@ export class NavigationActions {
    * the `fs/` pointer expects (handles POSIX `/…` and Windows `C:\…`).
    */
   openFolder(machinePath: string): void {
-    let rel = machinePath;
-    const cn = dataContext.computeNodeTypeId;
-    if (cn) {
-      try {
-        rel = VFSPath.fromMachinePath(machinePath, cn).entitySubPath;
-      } catch {
-        // Not an absolute machine path — forAssetFsFolder normalizes it as-is.
-      }
+    const parsed = VFSPath.parse(machinePath);
+    if (parsed.isAbsolute) {
+      this.openDock(DockPointer.forAssetFs(parsed));
+      return;
     }
-    this.openDock(DockPointer.forAssetFsFolder(rel));
+
+    const liveTypeId = dataContext.computeNodeTypeId ?? LOCAL_COMPUTE_NODE;
+    const locatorTypeId = vfsLocatorForComputeNode(dataContext.computeNode) ?? liveTypeId;
+    const vfsPath =
+      machinePath.startsWith('/') || /^[A-Za-z]:[/\\]/.test(machinePath)
+        ? VFSPath.fromMachinePath(machinePath, locatorTypeId)
+        : VFSPath.fromTypeId(locatorTypeId, machinePath);
+    this.openDock(DockPointer.forAssetFs(vfsPath));
   }
 
   /** Navigate to the default shell view (no specific session) */

@@ -1,7 +1,6 @@
 import { Folder, FolderPlus, FolderTree, GitBranch, Trash2 } from 'lucide-react';
 import { DockPointer } from '@src/navigation/DockPointer';
-import { ViewType } from '@src/types/ViewType';
-import type { ProjectContextDirInfo, TypeId } from '@sdk';
+import { VFSPath, type ProjectContextDirInfo, type TypeId } from '@sdk';
 import type {
   Browseable,
   BrowseableDragData,
@@ -19,6 +18,7 @@ import {
 } from './fsFolderRoot';
 import { ContextFolderGitBadge } from '@src/components/assets/ContextFolderGitBadge';
 import { matchContextDir } from '@src/hooks/use-context-folder-for-rel';
+import { LOCAL_COMPUTE_NODE } from '@src/navigation/asset-doc-types';
 
 /**
  * assetContextFoldersRoot — the Assets navigator's "Context folders" root.
@@ -39,6 +39,8 @@ export interface AssetContextFoldersRootDeps {
   /** Compute node whose VFS backs the folders. When present, each context
    *  folder row expands into its real on-disk tree (lazy fs browse). */
   fsTypeId?: TypeId | null;
+  /** Stable locator for that node (`@local` locally, UUID remotely). */
+  fsLocatorTypeId?: TypeId | null;
   /** "Add context folder" toolbar action (native folder picker → add). */
   onAdd: () => void | Promise<void>;
   /** Per-row remove action. */
@@ -106,6 +108,7 @@ function dirNode(
   onDropItem: AssetContextFoldersRootDeps['onDropItem'],
   onExternalDrop: AssetContextFoldersRootDeps['onExternalDrop'],
   projectId: AssetContextFoldersRootDeps['projectId'],
+  locatorTypeId: TypeId,
 ): Browseable {
   const dir = info.path;
   const isGit = info.origin_kind === 'git';
@@ -114,7 +117,13 @@ function dirNode(
   // same cache as the body's file manager); without one it stays a leaf.
   // Its whole subtree accepts drops, each folder bound to its own path.
   const fsNode = fsTypeId
-    ? assetsFsFolderNode(fsTypeId, rel, undefined, subfolderDrop(onDropItem, onExternalDrop))
+    ? assetsFsFolderNode(
+        fsTypeId,
+        rel,
+        undefined,
+        subfolderDrop(onDropItem, onExternalDrop),
+        locatorTypeId,
+      )
     : null;
   return {
     ...fsNode,
@@ -139,7 +148,7 @@ function dirNode(
           projectId={projectId}
         />
       ) : undefined,
-    pointer: DockPointer.forAssetFsFolder(rel),
+    pointer: DockPointer.forAssetFs(VFSPath.fromTypeId(locatorTypeId, rel)),
     canDrop: onDropItem ? (data) => canDropIntoDir(dir, data) : undefined,
     onDrop: onDropItem
       ? async (data) => {
@@ -161,6 +170,7 @@ function dirNode(
 
 export function assetContextFoldersRoot(deps: AssetContextFoldersRootDeps): BrowseableRoot {
   const { dirs, fsTypeId, onAdd, onRemove, onDropItem, onExternalDrop, projectId } = deps;
+  const locatorTypeId = deps.fsLocatorTypeId ?? LOCAL_COMPUTE_NODE;
   const root: BrowseableRoot = {
     id: 'asset-context-folders-root',
     kind: 'root',
@@ -169,7 +179,11 @@ export function assetContextFoldersRoot(deps: AssetContextFoldersRootDeps): Brow
     hasChildren: dirs.length > 0,
     pointer: null,
     listChildren: (): Promise<Browseable[]> =>
-      Promise.resolve(dirs.map((info) => dirNode(info, fsTypeId, onRemove, onDropItem, onExternalDrop, projectId))),
+      Promise.resolve(
+        dirs.map((info) =>
+          dirNode(info, fsTypeId, onRemove, onDropItem, onExternalDrop, projectId, locatorTypeId),
+        ),
+      ),
     toolbar: [
       {
         id: 'add',
@@ -178,12 +192,25 @@ export function assetContextFoldersRoot(deps: AssetContextFoldersRootDeps): Brow
         run: onAdd,
       },
     ],
-    ownsPointer: (p) => p.viewType === ViewType.ASSETS && DockPointer.parseAssetFsPointer(p.pointer) !== null,
+    ownsPointer: (pointer) => {
+      const resource = pointer.resourceVfsPath;
+      return (
+        !!resource?.typeId?.equals(locatorTypeId) &&
+        !!matchContextDir(dirs, normalizeRel(resource.entitySubPath))
+      );
+    },
     pathFor: (p) => {
-      const rel = normalizeRel(DockPointer.parseAssetFsPointer(p.pointer) ?? '');
+      const resource = p.resourceVfsPath;
+      const rel =
+        resource?.typeId?.equals(locatorTypeId)
+          ? normalizeRel(resource.entitySubPath)
+          : '';
       const match = matchContextDir(dirs, rel);
       if (!match) return Promise.resolve([root]);
-      const chain: Browseable[] = [root, dirNode(match, fsTypeId, onRemove, onDropItem, onExternalDrop, projectId)];
+      const chain: Browseable[] = [
+        root,
+        dirNode(match, fsTypeId, onRemove, onDropItem, onExternalDrop, projectId, locatorTypeId),
+      ];
       // Deep-link below the context dir: chain the intermediate fs folder
       // nodes (same ids listChildren produces) so the tree auto-expands.
       if (fsTypeId) {
@@ -192,7 +219,15 @@ export function assetContextFoldersRoot(deps: AssetContextFoldersRootDeps): Brow
         let cur = dirRel;
         for (const seg of extra ? extra.split('/') : []) {
           cur = `${cur}/${seg}`;
-          chain.push(assetsFsFolderNode(fsTypeId, cur, seg, subfolderDrop(onDropItem, onExternalDrop)));
+          chain.push(
+            assetsFsFolderNode(
+              fsTypeId,
+              cur,
+              seg,
+              subfolderDrop(onDropItem, onExternalDrop),
+              locatorTypeId,
+            ),
+          );
         }
       }
       return Promise.resolve(chain);

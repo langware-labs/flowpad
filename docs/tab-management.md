@@ -863,6 +863,28 @@ origin: on matching key → navigate away via resolveActive
     earlier terminal-derived chip, which both undercounted projects (content-only
     projects vanished) and couldn't switch to a tab-less project.
 
+### Asset-origin Vibe workspaces
+
+A single asset/file tab can become a Vibe workspace child without changing its
+tab identity:
+
+- **Entry stays URL-first:** the strip's `Discuss` action opens the same
+  dock with `viewMode=vibe`; it performs no context or tab writes.
+- **Adoption has one seam:** `materializeTab` classifies only single content
+  docks as adoptable. With no mounted workspace, `resolveColdOpenParent`
+  resolves the asset's project and canonical TypeId/VFS target, reuses the
+  newest matching Chat, or creates one headlessly. `Tab.getFromDockPointer`
+  persists the resulting `parent_tab_id`.
+- **Raw files are first-class children:** non-empty `editor` pointers are
+  adoptable; empty editors, lists, folders, projects, graph/lens, and process
+  docks are not.
+- **The parent remains authoritative on child URLs:** chat, `flow show`, and
+  file-write subscriptions resolve from the parent process id. A shown
+  file/entity is materialized through the normal loader and focused as another
+  child; the launching asset does not re-key process history.
+- **Standard and Vibe share one content host:** collapsing/expanding the chat
+  panel preserves the `ContentPanel` instance and any dirty editor state.
+
 ## 10. Delivery phases
 
 - **P3.0 — this spec** (doc only). ✅

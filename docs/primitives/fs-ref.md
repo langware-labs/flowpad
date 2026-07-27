@@ -34,13 +34,13 @@ id: 44fde5fb-1fb6-4518-920e-cf686807280b
 
 5. A VFSPath is **absolute** if it has a typeId prefix; **relative** if it has only an `entity_sub_path`. Relative VFSPaths cannot be used for I/O.
 
-6. `absVfsPath` / `abs_vfspath` — path without `vfs://` protocol. `uri` — path with `vfs://` protocol. All I/O uses `absVfsPath`; `uri` is for display and JSON storage.
+6. `absVfsPath` / `abs_path` — path without `vfs://` protocol. Python's `abs_vfspath` remains a compatibility alias. `uri` — path with `vfs://` protocol. Route path segments use the protocol-free form; external locator strings use `uri`.
 
 7. `entitySubPath` / `entity_sub_path` — the portion after the typeId and slash. Always no leading slash. Empty string means the entity root. `filename` — last segment of `entitySubPath`. `parent` — new VFSPath with last segment stripped, same typeId.
 
 8. The backend always constructs a VFSPath from the URL via `EntityFSReqInfo.from_request_info()`: entity typeId from the URL path, `fs_action` from the first sub_path segment, `entity_sub_path` from the remaining segments. All fs handler code operates on `fs_info.vpath`, never on raw path strings.
 
-9. Python fallback: a VFSPath string starting with `/` and no typeId defaults to `compute_node-@local` in desktop mode (via `is_desktop()` or request context).
+9. Parsing is context-free in both languages. A string starting with `/` and no TypeId remains an untyped relative VFS value after normalization. Request ownership is applied explicitly by `EntityFSReqInfo.from_request_info()`; other callers use the TypeId factories.
 
 ## FSRef JSON Serialization
 

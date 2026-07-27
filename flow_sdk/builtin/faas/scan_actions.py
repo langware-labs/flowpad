@@ -335,7 +335,11 @@ class ScanActionsMixin:
             # substituting Claude launches the wrong worker with no signal
             # (e.g. a UI that knows 'copilot' talking to a backend that
             # doesn't), which is far more confusing than a failed request.
-            worker_type_raw = context_data.pop("worker_type", None) or WorkerType.CLAUDE_CODE.value
+            worker_type_raw = context_data.pop("worker_type", None)
+            if worker_type_raw is None:
+                from flow_sdk.core.capabilities.registry import resolve_default_worker_type
+
+                worker_type_raw = await resolve_default_worker_type()
             try:
                 worker_type = WorkerType(worker_type_raw)
             except ValueError:
@@ -344,6 +348,8 @@ class ScanActionsMixin:
             model = context_data.pop("model", None) or None
             permission_mode = context_data.pop("permission_mode", "bypassPermissions")
             agents_json = context_data.pop("agents_json", None)
+            env_vars_raw = context_data.pop("env_vars", None)
+            env_vars = dict(env_vars_raw) if isinstance(env_vars_raw, dict) else {}
             output_format = context_data.pop("output_format", None)
             # A ``stream-json`` process is headless by contract (print-mode, no
             # PTY — see ts_sdk agentic-context.ts). ``pty_mode`` defaults True
@@ -359,6 +365,7 @@ class ScanActionsMixin:
                 cli_opts = CodexCliOptions(
                     model=model,
                     permission_mode=permission_mode,
+                    env_vars=env_vars,
                 )
                 # Codex reads agent specs at runtime from the process entity
                 # (``CodexDriver.cli_options`` mirrors them onto ``skill_names``),
@@ -373,6 +380,7 @@ class ScanActionsMixin:
                     model=model,
                     permission_mode=permission_mode,
                     effort=context_data.pop("effort", None),
+                    env_vars=env_vars,
                 )
                 context_data.pop("chrome", None)
                 context_data.pop("debug", None)
@@ -382,6 +390,7 @@ class ScanActionsMixin:
                     model=model,
                     permission_mode=permission_mode,
                     agents_json=agents_json,
+                    env_vars=env_vars,
                     output_format=output_format,
                     chrome=bool(context_data.pop("chrome", False)),
                     debug=bool(context_data.pop("debug", True)),

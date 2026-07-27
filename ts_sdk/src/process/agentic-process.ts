@@ -477,7 +477,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * @returns The launched AgenticProcess (terminal dock already opened).
    */
   static async launch(opts: {
-    workerType: 'claude_code' | 'codex' | 'copilot';
+    workerType?: 'claude_code' | 'codex' | 'copilot';
     workdir: string;
     projectId?: string | null;
     /** First prompt — placed on the queue, popped as the launch instruction. */
@@ -504,7 +504,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       {
         workdir: opts.workdir,
         ...(opts.projectId ? { projectId: opts.projectId } : {}),
-        workerType: opts.workerType,
+        ...(opts.workerType ? { workerType: opts.workerType } : {}),
         ...(opts.enableAssistant ? { loadFlowpadAssistant: true } : {}),
         ...(opts.sharedContextEntities?.length ? { sharedContextEntities: opts.sharedContextEntities } : {}),
         ...(opts.processType ? { processType: opts.processType } : {}),
@@ -545,41 +545,31 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * ```
    */
   static async spawn(options: IAgenticProcessOptions, workerOptions?: ISpawnWorkerOptions): Promise<SpawnResult> {
-    const cliConfig = new ClaudeCliOptions({
-      model: options.model,
-      permission_mode: options.permissionMode ?? 'bypassPermissions',
-      chrome: options.chrome,
-      debug: options.debug,
-      worktree: options.worktree,
-      agents_json: options.agentsJson,
-      env_vars: options.envVars,
-      ...(options.resumeSessionId
-        ? options.forkSession
-          ? { resume: true, fork_session_id: options.resumeSessionId }
-          : { resume: true, session_id: options.resumeSessionId }
-        : {}),
-    });
+    const { ComputeNode } = await import('../entities/compute-node/compute-node');
+    const computeNode = await ComputeNode.getLocal();
+    if (!computeNode) throw new Error('[AgenticProcess.spawn] No local compute node');
 
-    const process = await new AgenticProcess({
-      cli_config: cliConfig.toJson(),
-      // When resuming, seed session_id on the entity so Python's start() keeps it
-      // instead of generating a new UUID (which would break transcript lookup).
-      ...(options.resumeSessionId && !options.forkSession ? { session_id: options.resumeSessionId } : {}),
-      context_data: {
-        instructions: options.instructions,
-        project_id: options.projectId,
-        max_thinking_tokens: options.maxThinkingTokens ?? 1024,
-        ...(options.resumeSessionId && !options.forkSession ? { resume_session_id: options.resumeSessionId } : {}),
+    // `createProcess` is the one backend-owned construction seam. It resolves a
+    // missing worker from the persisted harness capability and builds the
+    // vendor-specific CLI config; an explicit `options.workerType` remains an
+    // override. Keep creation non-visible so PTY activation still happens once,
+    // below, after optional ancestry/shell-mode fields are saved.
+    const process = await computeNode.createProcess(
+      {
+        ...options,
+        // Preserve spawn()'s historical no-debug default. The generic
+        // createProcess action defaults debug on for interactive openers.
+        debug: options.debug ?? false,
       },
-      workdir: options.workdir,
-      visible: workerOptions?.visible,
-      // Transport intent (the routing axis): headless → no PTY (one subprocess
-      // per turn); otherwise a long-lived PTY worker. Independent of ``visible``
-      // so a headless spawn stays headless even if a tab later shows it.
-      pty_mode: !workerOptions?.headless,
-      shell_mode: options.shellMode,
-      ...(options.targetVfsPath ? { target_typeid_str: options.targetVfsPath } : {}),
-    }).save(options.scope ?? []);
+      {
+        visible: false,
+        pty_mode: !workerOptions?.headless,
+        watchProcess: false,
+        ...(workerOptions?.result ? { result: workerOptions.result } : {}),
+      },
+    );
+    process.shell_mode = options.shellMode;
+    await process.save(options.scope ?? []);
 
     if (workerOptions?.headless) {
       await process.watch();
@@ -594,6 +584,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
 
     await process.start({
       instruction: workerOptions?.instruction,
+      visible: workerOptions?.visible,
       ptyTimeout: workerOptions?.ptyTimeout,
     });
     return { process, shell: await process.shell(), workerSessionId: process.session_id };
@@ -813,8 +804,9 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     const restored = this.wasRestoredFromSession;
     if (wt === 'codex') return restored ? 'codex-restore' : 'codex';
     if (wt === 'copilot') return restored ? 'copilot-restore' : 'copilot';
-    // Default to claude — that's what AgenticProcess.spawn produces unless a
-    // worker override is provided, so an unset worker_type means claude.
+    // Legacy rows may have no worker_type; keep their historical Claude icon.
+    // New processes are stamped with the capability-resolved worker by the
+    // backend createProcess action.
     if (wt === '' || wt === 'claude' || wt.startsWith('claude_') || wt.startsWith('claude-')) {
       return restored ? 'claude-restore' : 'claude';
     }
@@ -1271,6 +1263,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     }
     return out;
   }
+
 
   /**
    * Fetch the parsed worker transcript from the process-specific transcript source.

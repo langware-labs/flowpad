@@ -15,6 +15,8 @@ import { VibeWorkspace } from './vibe-workspace';
 import { VibeNewChat } from './vibe-new-chat';
 import { VibeNoProcessWorkspace } from './vibe-no-process-workspace';
 import { useVibeWorkspaceSession } from './use-vibe-workspace-session';
+import { isContentAssetDock } from '@src/navigation/content-asset-dock';
+import { AssetVibeWorkspace } from './asset-vibe-workspace';
 
 export default function FlowPage() {
   const { flow } = useAgentContext();
@@ -61,39 +63,11 @@ export default function FlowPage() {
   // not apply. Route it through the standard layout so ContentPanel's page=hub
   // dispatch renders HubHome / WorldView instead of the desk VibeNewChat hero.
   const hubMode = currentDock?.page === PageId.HUB;
+  const isAssetContent = !!currentDock && !hubMode && isContentAssetDock(currentDock);
 
-  // Vibe mode: a stripped Lovable-style skin that still carries the left rail in
-  // its already-reserved footprint. What the rail shows in Vibe is NOT decided
-  // here — it comes from RAIL_ITEMS (components/collapsed-sidebar/rail-visibility.ts),
-  // the single ordered spec every mode resolves against. The rail's width is the
-  // same in every mode, so the content column and footer controls don't shift
-  // when the view mode changes.
-  if (isVibe && !hubMode) {
-    return (
-      <SidebarProvider defaultOpen={false} className="h-full !min-h-0">
-        <div data-testid="flow-page" className="flex h-full w-full overflow-hidden bg-background">
-          <CollapsedSidebar />
-
-          <div className="flex min-w-0 flex-1 flex-col">
-            <div className="flex-1 overflow-hidden">
-              {vibeSession ? (
-                <VibeWorkspace session={vibeSession} />
-              ) : isVibeNoProcess ? (
-                <VibeNoProcessWorkspace />
-              ) : isHomeSurface ? (
-                <VibeNewChat />
-              ) : (
-                <ContentPanel />
-              )}
-            </div>
-            <Footer />
-          </div>
-        </div>
-      </SidebarProvider>
-    );
-  }
-
-  // New layout with collapsed sidebar and bottom terminal
+  // One common tree keeps asset/file ContentPanel ancestry stable while the URL
+  // changes only its view mode. Non-asset Vibe destinations retain the existing
+  // process-display/new-chat dispatch.
   return (
     <SidebarProvider defaultOpen={false} className="h-full !min-h-0">
       <div data-testid="flow-page" className="flex h-full w-full overflow-hidden bg-background">
@@ -105,9 +79,22 @@ export default function FlowPage() {
             (dozens of chips) blows the column out to thousands of px,
             pushing the right arrow / close-all / opener toolbar off-screen. */}
         <div className="flex min-w-0 flex-1 flex-col">
-          {/* Content Panel (full width) */}
           <div className="flex-1 overflow-hidden">
-            <ContentPanel />
+            {isAssetContent ? (
+              <AssetVibeWorkspace isVibe={isVibe} session={vibeSession} />
+            ) : isVibe && !hubMode ? (
+              vibeSession ? (
+                <VibeWorkspace session={vibeSession} />
+              ) : isVibeNoProcess ? (
+                <VibeNoProcessWorkspace />
+              ) : isHomeSurface ? (
+                <VibeNewChat />
+              ) : (
+                <ContentPanel />
+              )
+            ) : (
+              <ContentPanel />
+            )}
           </div>
 
           <Footer />

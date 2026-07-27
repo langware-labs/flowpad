@@ -5,7 +5,9 @@ cross_link_entities).
 
 Tests drive the flush helper directly so they don't have to fake the lifecycle
 ``status`` field (``status`` is owned by the start/stop paths, not the test
-harness). Non-markdown paths are skipped. FileEditEntry maps to file.write.
+harness). Non-markdown writes emit file.write and join the per-flush reindex
+batch, while non-markdown reads skip file events. FileEditEntry maps to
+file.write.
 """
 from __future__ import annotations
 
@@ -69,6 +71,7 @@ def _install_capture(ap: AgenticProcess, monkeypatch) -> list:
         "flow_sdk.core.entity.cross_link.cross_link_entities",
         _fake_cross_link,
     )
+    monkeypatch.setattr(type(ap), "_schedule_reindex_paths", lambda *_args, **_kwargs: None)
     return events
 
 
@@ -231,7 +234,7 @@ async def test_excludes_plan_and_internal_docs(initialize_test_db, monkeypatch) 
 
 
 @pytest.mark.asyncio
-async def test_filters_non_markdown_paths(initialize_test_db, monkeypatch) -> None:
+async def test_non_markdown_writes_emit_without_cross_linking(initialize_test_db, monkeypatch) -> None:
     ap = _make_ap()
     events = _install_capture(ap, monkeypatch)
 
@@ -244,7 +247,36 @@ async def test_filters_non_markdown_paths(initialize_test_db, monkeypatch) -> No
     )
 
     file_events = [(n, p) for n, p in events if n.startswith("file.")]
-    assert len(file_events) == 1
-    assert file_events[0][1]["path"] == "/tmp/keep.md"
+    assert [payload["path"] for _, payload in file_events] == [
+        "/tmp/data.json",
+        "/tmp/keep.md",
+    ]
+    assert all(name == "file.write" for name, _ in file_events)
     cross_links = [p for n, p in events if n == "cross_link"]
     assert len(cross_links) == 1 and cross_links[0]["path"] == "/tmp/keep.md"
+
+
+@pytest.mark.asyncio
+async def test_flush_schedules_one_reindex_for_all_deduplicated_write_paths(
+    initialize_test_db,
+    monkeypatch,
+) -> None:
+    ap = _make_ap()
+    _install_capture(ap, monkeypatch)
+    scheduled: list[tuple[list[str], str]] = []
+    monkeypatch.setattr(
+        type(ap),
+        "_schedule_reindex_paths",
+        lambda _self, paths, source: scheduled.append((list(paths), source)),
+    )
+
+    await ap._process_transcript_entries(
+        [
+            FileWriteEntry(path="/tmp/app.py", tool_name="Write", **_entry_base("e7")),
+            FileEditEntry(path="/tmp/app.py", tool_name="Edit", **_entry_base("e8")),
+            FileEditEntry(path="/tmp/data.json", tool_name="Edit", **_entry_base("e9")),
+            FileReadEntry(path="/tmp/read-only.txt", tool_name="Read", **_entry_base("e10")),
+        ],
+    )
+
+    assert scheduled == [(["/tmp/app.py", "/tmp/data.json"], "flush")]

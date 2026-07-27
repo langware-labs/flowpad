@@ -45,6 +45,15 @@ const navMocks = vi.hoisted(() => ({
 // loadEmbeddedAgent would need a live server; the shared helper is the
 // deterministic seam. Kept a spy so we can assert the host invokes it.
 const embedMock = vi.hoisted(() => vi.fn(async () => {}));
+const parentProcess = vi.hoisted(() => ({
+  id: '5e11aaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+  target_typeid_str: 'project-proj-1',
+  typeId: null,
+  context_data: {},
+  displayStack: [],
+  onShow: vi.fn(() => () => {}),
+  on: vi.fn(() => () => {}),
+}));
 vi.mock('@src/pages/flow-page/use-start-vibe-session', async (orig) => ({
   ...(await orig<typeof import('@src/pages/flow-page/use-start-vibe-session')>()),
   embedVibeAgent: embedMock,
@@ -84,7 +93,7 @@ vi.mock('@src/hooks/flow-hooks', () => ({
 vi.mock('@src/hooks/use-agentic-process-stream', () => ({
   useAgenticProcessStream: () => [],
 }));
-vi.mock('@src/hooks/entity-hooks', () => ({ useEntity: () => ({ data: undefined }) }));
+vi.mock('@src/hooks/entity-hooks', () => ({ useEntity: () => ({ data: parentProcess }) }));
 vi.mock('@src/tabs/tab-parent-context', () => ({ setActiveTabParent: vi.fn() }));
 vi.mock('@src/tabs/setup-tab-and-adopt', () => ({ setupTabAndAdopt: vi.fn(async () => {}) }));
 
@@ -127,7 +136,7 @@ describe('VIBE-006 — New must reach parity with the vibe-home creation path', 
     const session = {
       processTab: null,
       processDock: {} as never,
-      processId: 'P0',
+      processId: parentProcess.id,
       onProcessUrl: true,
     };
     render(<VibeWorkspace session={session} />);

@@ -48,11 +48,8 @@ import { useWorkerHistory, type WorkerHistoryEntry } from '@src/hooks/useWorkerH
 import { useProcessesForTarget } from './hooks/useProcessesForTarget';
 import { useAgenticProcessStream } from '@src/hooks/use-agentic-process-stream';
 import { AssetManagerButton } from '@src/components/asset-manager';
-import {
-  DEFAULT_WORKER_TYPE,
-  normalizeWorkerType,
-  type WorkerType,
-} from '@src/components/workers/worker-types';
+import { normalizeWorkerType, type WorkerType } from '@src/components/workers/worker-types';
+import { useDefaultWorkerType } from '@src/contexts/HarnessCapabilitiesContext';
 
 const EMPTY_TURN_GROUPS: TurnGroup[] = [];
 
@@ -205,6 +202,9 @@ interface EntityExecutionPanelProps {
    */
   promptContext?: { label: string; text: string } | null;
   onPromptContextConsumed?: () => void;
+  /** Called when the history picker chooses a concrete process. Hosts whose
+   * process identity is URL-bound use this to navigate/rebind the workspace. */
+  onProcessSelected?: (processId: string) => void;
   /**
    * Seed the picker to a SPECIFIC process instead of the "latest-wins" default.
    * Used when the panel must stay bound to one session across target-URL changes
@@ -259,9 +259,12 @@ export function EntityExecutionPanel({
   autoPrompt,
   promptContext,
   onPromptContextConsumed,
+  onProcessSelected,
   initialProcessId,
 }: EntityExecutionPanelProps) {
   const { t } = useLingui();
+  const capabilityDefaultWorkerType = useDefaultWorkerType();
+  const resolvedDefaultWorkerType = defaultWorkerType ?? capabilityDefaultWorkerType;
   const targetStr = target ?? '';
 
   // 1. Pull all processes attached to this target; sort newest-first for picker + auto-select.
@@ -437,7 +440,7 @@ export function EntityExecutionPanel({
   const [pendingAttachedRefs, setPendingAttachedRefs] = useState<string[]>([]);
   const [pendingProjectId, setPendingProjectId] = useState<string | null>(null);
   const [pendingModel, setPendingModel] = useState<string | null>(defaultModel ?? null);
-  const [pendingWorkerType, setPendingWorkerType] = useState<WorkerType | null>(defaultWorkerType ?? null);
+  const [pendingWorkerType, setPendingWorkerType] = useState<WorkerType | null>(null);
   const [modelSavePending, setModelSavePending] = useState(false);
 
   const activeModelValue = (activeProcess?.cli_config as Record<string, unknown> | undefined)?.model;
@@ -447,7 +450,7 @@ export function EntityExecutionPanel({
     : (pendingModel ?? defaultModel ?? null);
   const effectiveWorkerType = activeProcess
     ? normalizeWorkerType(activeProcess.worker_type)
-    : (pendingWorkerType ?? defaultWorkerType ?? null);
+    : (pendingWorkerType ?? resolvedDefaultWorkerType);
 
   const handleModelChange = useCallback(async (model: string) => {
     if (activeProcess && modelSavePending) return;
@@ -493,14 +496,15 @@ export function EntityExecutionPanel({
     setPendingAttachedRefs([]);
     setPendingProjectId(null);
     setPendingModel(effectiveModel);
-    setPendingWorkerType(effectiveWorkerType ?? defaultWorkerType ?? DEFAULT_WORKER_TYPE);
-  }, [defaultWorkerType, effectiveModel, effectiveWorkerType]);
+    setPendingWorkerType(effectiveWorkerType ?? resolvedDefaultWorkerType);
+  }, [effectiveModel, effectiveWorkerType, resolvedDefaultWorkerType]);
 
   const selectSession = useCallback((processId: string) => {
     setSelectedProcessId(processId);
     setLocalProcess(null);
     setForceNew(false);
-  }, []);
+    onProcessSelected?.(processId);
+  }, [onProcessSelected]);
 
   const liveAttachedRefs = useMemo(
     () => (activeProcess?.embedded_asset_refs ?? []).map((r) => r.toString()),
@@ -796,7 +800,10 @@ export function EntityExecutionPanel({
         {dense
           ? (
             <>
-              <TurnGroupsList groups={inlineGroups} worker={activeProcess?.worker_type ?? undefined} />
+              <TurnGroupsList
+                groups={inlineGroups}
+                worker={activeProcess?.worker_type ?? undefined}
+              />
               {activeProcess && (
                 <ChatActivityLine
                   process={activeProcess}

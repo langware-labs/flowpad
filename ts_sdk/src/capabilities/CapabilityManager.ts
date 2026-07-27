@@ -31,6 +31,8 @@ export interface CapabilitySnapshot {
    * capability's own kind.
    */
   resolvedKind: string | null;
+  /** Canonical process worker behind `resolvedKind`, from the backend summary. */
+  resolvedWorkerType: string | null;
 }
 
 /** One dependency edge in a CapabilityAccess (mirror of backend summary.py). */
@@ -232,6 +234,14 @@ export class CapabilityManager extends EventEmitter {
     const resolvedKind = capability
       ? ((result?.details?.reference_kind as string | undefined) ?? capability.reference_kind ?? capability.kind)
       : null;
+    const resolvedWorkerType =
+      (resolvedKind
+        ? this.summary?.capabilities.find((access) => access.kind === resolvedKind)?.worker_type
+        : null) ??
+      (capability
+        ? this.summary?.capabilities.find((access) => access.kind === capability.kind)?.worker_type
+        : null) ??
+      null;
 
     return {
       queryKind: query,
@@ -243,6 +253,7 @@ export class CapabilityManager extends EventEmitter {
       dependencies: capability ? (this.actionResults.get(capability.kind)?.dependencies ?? {}) : {},
       processId,
       resolvedKind,
+      resolvedWorkerType,
     };
   }
 

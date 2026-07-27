@@ -87,7 +87,7 @@ def _pointer_view_type(pointer: str | None) -> str | None:
 
 
 # Target types that can never be workspace CHILDREN. A vibe workspace groups the
-# content assets it opens under its process tab (``parent_tab_id``); a live
+# content assets/files it opens under its process tab (``parent_tab_id``); a live
 # session anchor (process/shell) or a whole project is never "inside" another
 # workspace — adopting one was how nested-display / shell-under-display
 # corruption arose. Mirrors the FE allow-list (``dockAddressesAsset``): the FE
@@ -102,11 +102,12 @@ _PARENT_FORBIDDEN_TARGET_TYPES = frozenset({
 
 
 def _pointer_is_adoptable_child(pointer: str | None) -> bool:
-    """Only a content-asset dock may be a workspace CHILD — the pointer-shape
-    mirror of the FE allow-list (``dockAddressesAsset``): an assets
-    ``editor/...`` pointer (typeid- or vfs-addressed), plain or project-rebased
-    (``<project-id>/editor/...``). Navigation surfaces (assets lists /
-    project-home, explorer, shell, project, inbox, …) are never children.
+    """Only a content asset/file dock may be a workspace CHILD — the
+    pointer-shape mirror of the FE allow-list (``dockAddressesAsset``): an
+    assets ``editor/...`` pointer (typeid- or vfs-addressed), plain or
+    project-rebased (``<project-id>/editor/...``), or a raw ``editor`` file
+    pointer. Navigation surfaces (assets lists / project-home, explorer, shell,
+    project, inbox, …) are never children.
 
     Complements ``_PARENT_FORBIDDEN_TARGET_TYPES``, which keys on the declared
     ``target_type`` — NULL for list surfaces, so only a pointer-shape check can
@@ -124,6 +125,10 @@ def _pointer_is_adoptable_child(pointer: str | None) -> bool:
         sub = str(data.get('pointer') or '')
     else:
         vt, _, sub = pointer.partition('|')
+    if vt == 'editor':
+        # The generic source viewer is a first-class content surface too. Empty
+        # pointers are the editor landing shell, not an addressable child.
+        return bool(sub.strip())
     if vt == 'assets':
         return sub.startswith('editor/')
     if vt == 'project':

@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router';
-import { DEFAULT_WORKER_TYPE } from '@src/components/workers/worker-types';
 import { VIBE_MODEL_DEFAULT } from '@src/pages/flow-page/vibe-model-select';
 
 const startVibe = vi.fn();
@@ -28,7 +27,7 @@ vi.mock('@src/pages/flow-page/vibe-recent-sessions', () => ({
 import { VibeNewChat } from '@src/pages/flow-page/vibe-new-chat';
 
 describe('VibeNewChat', () => {
-  it('submits the default portable model tier and worker', async () => {
+  it('submits the portable model tier and leaves worker resolution to the backend', async () => {
     const user = userEvent.setup();
     render(
       <MemoryRouter>
@@ -43,7 +42,6 @@ describe('VibeNewChat', () => {
       'build a dashboard',
       undefined,
       VIBE_MODEL_DEFAULT,
-      DEFAULT_WORKER_TYPE,
     );
   });
 });

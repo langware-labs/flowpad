@@ -82,7 +82,7 @@ beforeAll(async () => {
   await p1.page.goto(`${p1.feUrl}/dock/assets/editor/dynamic_workflow/typeid/dynamic_workflow-${warm.id}?viewMode=advanced`, {
     waitUntil: 'domcontentloaded',
   });
-  const warmShare = p1.page.getByTestId('dynamic-workflow-editor-share');
+  const warmShare = p1.page.getByTestId('entity-actions-share');
   await warmShare.waitFor({ timeout: 60_000 }).catch(() => undefined);
   // Open + close the share dialog once too: its chunk, the contact picker,
   // and the conversations-for-contacts query all cold-load on first open.
@@ -365,7 +365,7 @@ describe('A. asset-page share: workflow', () => {
     await p1.page.goto(`${p1.feUrl}/dock/assets/editor/dynamic_workflow/typeid/dynamic_workflow-${workflowId}?viewMode=advanced`, {
       waitUntil: 'domcontentloaded',
     });
-    await p1.page.getByTestId('dynamic-workflow-editor-share').click({ timeout: 20_000 });
+    await p1.page.getByTestId('entity-actions-share').click({ timeout: 20_000 });
     await driveShareDialog(p1.page, {
       recipientEmail: dev2.email,
       note: `here is a workflow ${ts}`,
@@ -436,7 +436,7 @@ describe('B. asset-page share: whiteboard', () => {
     // the share click — clicking mid-mount is what intermittently dropped the
     // share dispatch.
     await p1.page.getByTestId('whiteboard-editor').waitFor({ timeout: 25_000 });
-    await p1.page.getByTestId('whiteboard-editor-share').click({ timeout: 25_000 });
+    await p1.page.getByTestId('entity-actions-share').click({ timeout: 25_000 });
     await driveShareDialog(p1.page, {
       recipientEmail: dev2.email,
       note: `here is a whiteboard ${ts}`,

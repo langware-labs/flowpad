@@ -47,10 +47,11 @@ const queryClient = new QueryClient({
 // service-unavailable / network / config errors before any React tree mounts,
 // so a parallel inline error UI here is no longer needed.
 
-// The harness capability triple (Claude/Codex/Copilot) is owned by
-// `HarnessCapabilitiesProvider` below: it subscribes once, warms the cache at
-// startup, and every consumer (terminal strips, openers) reads the shared
-// snapshots via `useHarnessCapabilities` instead of re-subscribing.
+// The harness capability set (default reference + Claude/Codex/Copilot) is owned by
+// `HarnessCapabilitiesProvider` below: it subscribes once, loads persisted
+// snapshots without executing external harness probes, and every consumer
+// reads them via `useHarnessCapabilities`. Launch/setup actions perform the
+// definitive on-demand check.
 
 // Component that handles auth logic
 const AppContent = ({ children }: { children: React.ReactNode }) => {
